@@ -11,7 +11,7 @@ namespace Agent42.Agents;
 /// An Orleans grain wrapping a Microsoft Agent Framework <see cref="AIAgent"/>.
 /// Streams replies and persists the conversation session in the "agent-state"
 /// storage provider (Cosmos DB in production). Implements <see cref="IRemindable"/>
-/// so the agent can schedule durable reminders via the <c>create_reminder</c> tool.
+/// so the agent can schedule durable reminders via the <c>schedule_prompt</c> tool.
 /// </summary>
 public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
 {
@@ -23,23 +23,42 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
         """;
 
     private readonly IPersistentState<AgentGrainState> _state;
-    private readonly IChatClient _chatClient;
+    private readonly IChatClientFactory _chatClientFactory;
     private readonly ILogger<AgentGrain> _logger;
 
     private AIAgent _agent = null!;
     private AgentSession _session = null!;
+    private string _deployment = null!;
 
     public AgentGrain(
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
-        IChatClient chatClient,
+        IChatClientFactory chatClientFactory,
         ILogger<AgentGrain> logger)
     {
         _state = state;
-        _chatClient = chatClient;
+        _chatClientFactory = chatClientFactory;
         _logger = logger;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    {
+        _deployment = _state.State.DeploymentName ?? _chatClientFactory.DefaultDeployment;
+        _agent = BuildAgent(_deployment);
+
+        _session = _state.State.SerializedSession is { Length: > 0 } serialized
+            ? await _agent.DeserializeSessionAsync(
+                JsonSerializer.Deserialize<JsonElement>(serialized), cancellationToken: cancellationToken)
+            : await _agent.CreateSessionAsync(cancellationToken);
+
+        _logger.LogInformation("Agent grain {GrainKey} activated on model {Model} (existing session: {HasSession})",
+            this.GetPrimaryKeyString(), _deployment, _state.State.SerializedSession is not null);
+
+        await base.OnActivateAsync(cancellationToken);
+    }
+
+    // Builds the Agent Framework agent bound to a specific model deployment. Called on
+    // activation and again whenever the conversation switches models.
+    private AIAgent BuildAgent(string deployment)
     {
         // The agent's tools. Each is bound to this grain instance, so a tool can reach
         // Orleans (grain factory, reminders, state) directly through `this`.
@@ -55,27 +74,34 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
         var skills = SkillLibrary.LoadAll();
         var instructions = string.IsNullOrEmpty(skills) ? Instructions : $"{Instructions}\n\n{skills}";
 
-        _agent = new ChatClientAgent(
-            _chatClient,
+        return new ChatClientAgent(
+            _chatClientFactory.GetClient(deployment),
             instructions: instructions,
             name: "Agent42",
             tools: [schedulePrompt]);
-
-        _session = _state.State.SerializedSession is { Length: > 0 } serialized
-            ? await _agent.DeserializeSessionAsync(
-                JsonSerializer.Deserialize<JsonElement>(serialized), cancellationToken: cancellationToken)
-            : await _agent.CreateSessionAsync(cancellationToken);
-
-        _logger.LogInformation("Agent grain {GrainKey} activated (existing session: {HasSession})",
-            this.GetPrimaryKeyString(), _state.State.SerializedSession is not null);
-
-        await base.OnActivateAsync(cancellationToken);
     }
 
-    public async IAsyncEnumerable<string> ChatAsync(string message)
+    public Task<string> GetSelectedModelAsync() => Task.FromResult(_deployment);
+
+    public async IAsyncEnumerable<string> ChatAsync(string message, string? model)
     {
         _logger.LogInformation("Agent grain {GrainKey} received a message ({Length} chars)",
             this.GetPrimaryKeyString(), message.Length);
+
+        if (!string.IsNullOrWhiteSpace(model) && model != _deployment)
+        {
+            // Rehost the existing conversation on the newly picked model: snapshot the
+            // session, rebuild the agent against the new client, then restore the session
+            // so history carries over.
+            var snapshot = await _agent.SerializeSessionAsync(_session);
+            _deployment = model;
+            _state.State.DeploymentName = model;
+            _agent = BuildAgent(model);
+            _session = await _agent.DeserializeSessionAsync(snapshot);
+
+            _logger.LogInformation("Agent grain {GrainKey} switched to model {Model}",
+                this.GetPrimaryKeyString(), model);
+        }
 
         await foreach (AgentResponseUpdate update in _agent.RunStreamingAsync(message, _session))
         {
@@ -145,7 +171,7 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
             TimeSpan.FromMinutes(repeatEveryMinutes));
 
         _state.State.ScheduledPrompts[name] = new ReminderInfo(
-            $"schedule_prompt_{name}", prompt, dueInMinutes, repeatEveryMinutes, DateTimeOffset.UtcNow, TimesFired: 0);
+            name, prompt, dueInMinutes, repeatEveryMinutes, DateTimeOffset.UtcNow, TimesFired: 0);
         await _state.WriteStateAsync();
 
         _logger.LogInformation(
@@ -164,23 +190,20 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
     /// </summary>
     public async Task ReceiveReminder(string reminderName, TickStatus status)
     {
-        if(reminderName.StartsWith("schedule_prompt_"))
+        if (!_state.State.ScheduledPrompts.TryGetValue(reminderName, out var info))
         {
-            if (!_state.State.ScheduledPrompts.TryGetValue(reminderName, out var info))
-            {
-                _logger.LogWarning(
-                    "Reminder '{Reminder}' fired for conversation {GrainKey} but no metadata was found.",
-                    reminderName, this.GetPrimaryKeyString());
-                return;
-            }
-
-            await _agent.RunAsync([new ChatMessage(ChatRole.User, info.Prompt)], _session);
-            var serializedSession = await _agent.SerializeSessionAsync(_session);
-            _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
-
-            _state.State.ScheduledPrompts[reminderName] = info with { TimesFired = info.TimesFired + 1 };
-            
-            await _state.WriteStateAsync();
+            _logger.LogWarning(
+                "Reminder '{Reminder}' fired for conversation {GrainKey} but no metadata was found.",
+                reminderName, this.GetPrimaryKeyString());
+            return;
         }
+
+        await _agent.RunAsync([new ChatMessage(ChatRole.User, info.Prompt)], _session);
+        var serializedSession = await _agent.SerializeSessionAsync(_session);
+        _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
+
+        _state.State.ScheduledPrompts[reminderName] = info with { TimesFired = info.TimesFired + 1 };
+
+        await _state.WriteStateAsync();
     }
 }

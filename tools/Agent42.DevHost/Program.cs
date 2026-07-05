@@ -15,7 +15,17 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     WebRootPath = webRoot,
 });
 
+// The canned client ignores the model, but a factory + static catalog let the model
+// picker be exercised offline without any Azure environment.
 builder.Services.AddSingleton<IChatClient, CannedChatClient>();
+builder.Services.AddSingleton<IChatClientFactory>(sp =>
+    new SingleChatClientFactory(sp.GetRequiredService<IChatClient>(), "gpt-4o"));
+builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("gpt-4o",
+[
+    new ModelInfo("gpt-4o", "gpt-4o", "2024-08-06"),
+    new ModelInfo("gpt-4o-mini", "gpt-4o-mini", "2024-07-18"),
+    new ModelInfo("o3-mini", "o3-mini", "2025-01-31"),
+]));
 
 builder.UseOrleans(silo =>
 {

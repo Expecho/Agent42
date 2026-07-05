@@ -25,7 +25,7 @@ public sealed class AgentGrainTests : IAsyncLifetime
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("test-conversation");
 
         var chunks = new List<string>();
-        await foreach (var chunk in agent.ChatAsync("hi"))
+        await foreach (var chunk in agent.ChatAsync("hi", null))
         {
             chunks.Add(chunk);
         }
@@ -39,7 +39,7 @@ public sealed class AgentGrainTests : IAsyncLifetime
     {
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("history-conversation");
 
-        await foreach (var _ in agent.ChatAsync("hi"))
+        await foreach (var _ in agent.ChatAsync("hi", null))
         {
         }
 
@@ -71,11 +71,11 @@ public sealed class AgentGrainTests : IAsyncLifetime
     {
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-conversation");
 
-        await foreach (var _ in agent.ChatAsync("please remind me to drink water"))
+        await foreach (var _ in agent.ChatAsync("please remind me to drink water", null))
         {
         }
 
-        var reminders = await agent.GetRemindersAsync();
+        var reminders = await agent.GetScheduledPromptsAsync();
 
         var reminder = Assert.Single(reminders);
         Assert.Equal("drink-water", reminder.Name);
@@ -88,7 +88,7 @@ public sealed class AgentGrainTests : IAsyncLifetime
     {
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-firing-conversation");
 
-        await foreach (var _ in agent.ChatAsync("please remind me to drink water"))
+        await foreach (var _ in agent.ChatAsync("please remind me to drink water", null))
         {
         }
 
@@ -100,7 +100,7 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Equal("assistant", history[^1].Role);
         Assert.False(string.IsNullOrWhiteSpace(history[^1].Text));
 
-        var reminder = Assert.Single(await agent.GetRemindersAsync());
+        var reminder = Assert.Single(await agent.GetScheduledPromptsAsync());
         Assert.Equal(1, reminder.TimesFired);
     }
 
@@ -112,7 +112,12 @@ public sealed class AgentGrainTests : IAsyncLifetime
             // used in production.
             siloBuilder.AddMemoryGrainStorage(AgentGrain.StorageProviderName);
             siloBuilder.UseInMemoryReminderService();
-            siloBuilder.ConfigureServices(services => services.AddSingleton<IChatClient, FakeChatClient>());
+            siloBuilder.ConfigureServices(services =>
+            {
+                services.AddSingleton<IChatClient, FakeChatClient>();
+                services.AddSingleton<IChatClientFactory>(sp =>
+                    new SingleChatClientFactory(sp.GetRequiredService<IChatClient>(), "fake-model"));
+            });
         }
     }
 }

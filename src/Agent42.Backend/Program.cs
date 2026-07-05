@@ -1,9 +1,8 @@
 using Agent42.Agents;
 using Agent42.Backend;
-using Azure.AI.OpenAI;
 using Azure.Identity;
+using Azure.ResourceManager;
 using Microsoft.Azure.Cosmos;
-using Microsoft.Extensions.AI;
 using OpenTelemetry.Trace;
 
 const string OtelSourceName = "Agent42.Backend";
@@ -30,25 +29,29 @@ if (string.IsNullOrWhiteSpace(azureOpenAIEndpoint))
         "(e.g. https://<your-resource>.services.ai.azure.com).");
 }
 
-builder.Services.AddSingleton<IChatClient>(sp =>
+var defaultDeployment = builder.Configuration["AzureOpenAI:DeploymentName"] ?? "gpt-4o";
+
+// One credential drives both the data plane (chat inference) and the management plane
+// (listing the account's model deployments), so the container app's managed identity is
+// used for both.
+var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
 {
-    var config = sp.GetRequiredService<IConfiguration>();
-    var deployment = config["AzureOpenAI:DeploymentName"] ?? "gpt-4o";
-    var tenantId = config["AzureOpenAI:TenantId"];
-
-    var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
-    {
-        TenantId = tenantId,
-    });
-
-    IChatClient chatClient = new AzureOpenAIClient(new Uri(azureOpenAIEndpoint), credential)
-        .GetChatClient(deployment)
-        .AsIChatClient();
-
-    return chatClient.AsBuilder()
-        .UseOpenTelemetry(sourceName: OtelSourceName, configure: cfg => cfg.EnableSensitiveData = true)
-        .Build();
+    TenantId = builder.Configuration["AzureOpenAI:TenantId"],
 });
+
+// Resolves an OTel-instrumented chat client per model deployment, so a conversation can
+// switch between the models deployed in Azure AI Foundry.
+builder.Services.AddSingleton<IChatClientFactory>(
+    new AzureOpenAIChatClientFactory(
+        new Uri(azureOpenAIEndpoint), credential, defaultDeployment, OtelSourceName));
+
+// Live catalog of the deployed models, queried through the Azure Resource Manager SDK.
+builder.Services.AddSingleton(new ArmClient(credential));
+builder.Services.AddSingleton<IModelCatalog>(sp => new AzureModelCatalog(
+    sp.GetRequiredService<ArmClient>(),
+    sp.GetRequiredService<IConfiguration>(),
+    defaultDeployment,
+    sp.GetRequiredService<ILogger<AzureModelCatalog>>()));
 
 // Orleans silo: clustering comes from the Aspire Orleans resource when running
 // under Aspire orchestration; localhost clustering is the fallback for a single
@@ -70,7 +73,7 @@ builder.UseOrleans(silo =>
         options.IsResourceCreationEnabled = true;
     });
 
-    // Durable reminders (the create_reminder agent tool) persisted in Cosmos, so a
+    // Durable reminders (the schedule_prompt agent tool) persisted in Cosmos, so a
     // scheduled reminder survives silo restarts just like the agent state does.
     silo.UseCosmosReminderService(options =>
     {
@@ -84,9 +87,9 @@ builder.UseOrleans(silo =>
 
 var app = builder.Build();
 
-// Construct the chat client now (no network I/O) so configuration mistakes
+// Construct the default chat client now (no network I/O) so configuration mistakes
 // surface at startup instead of failing the first grain activation.
-_ = app.Services.GetRequiredService<IChatClient>();
+_ = app.Services.GetRequiredService<IChatClientFactory>().GetClient(null);
 
 app.MapDefaultEndpoints();
 

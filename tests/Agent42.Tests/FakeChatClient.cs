@@ -6,7 +6,7 @@ namespace Agent42.Tests;
 /// <summary>
 /// Deterministic in-memory <see cref="IChatClient"/> so agent tests run without a real model.
 /// When the user asks to be reminded about something it emits a call to the
-/// <c>create_reminder</c> tool, letting tests exercise the tool + Orleans reminder path
+/// <c>schedule_prompt</c> tool, letting tests exercise the tool + Orleans reminder path
 /// end-to-end; otherwise it returns a canned greeting.
 /// </summary>
 public sealed class FakeChatClient : IChatClient
@@ -47,7 +47,7 @@ public sealed class FakeChatClient : IChatClient
     }
 
     private static FunctionCallContent BuildReminderCall() =>
-        new("reminder-call-1", "create_reminder", new Dictionary<string, object?>
+        new("reminder-call-1", "schedule_prompt", new Dictionary<string, object?>
         {
             ["name"] = "drink-water",
             ["prompt"] = "Tell the user to drink some water.",

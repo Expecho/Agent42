@@ -36,6 +36,15 @@ param azureOpenAIDeploymentName string
 @description('Entra ID tenant id used for DefaultAzureCredential when calling Azure OpenAI.')
 param azureOpenAITenantId string
 
+@description('Subscription id of the Azure AI Foundry account, used by the live model picker to list deployments.')
+param azureOpenAISubscriptionId string
+
+@description('Resource group of the Azure AI Foundry account, used by the live model picker to list deployments.')
+param azureOpenAIResourceGroup string
+
+@description('Name of the Azure AI Foundry account, used by the live model picker to list deployments.')
+param azureOpenAIAccountName string
+
 @description('OTLP endpoint for OpenTelemetry export. Leave empty to disable OTLP export.')
 param otlpEndpoint string
 
@@ -115,6 +124,9 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             { name: 'AzureOpenAI__Endpoint', value: azureOpenAIEndpoint }
             { name: 'AzureOpenAI__DeploymentName', value: azureOpenAIDeploymentName }
             { name: 'AzureOpenAI__TenantId', value: azureOpenAITenantId }
+            { name: 'AzureOpenAI__SubscriptionId', value: azureOpenAISubscriptionId }
+            { name: 'AzureOpenAI__ResourceGroup', value: azureOpenAIResourceGroup }
+            { name: 'AzureOpenAI__AccountName', value: azureOpenAIAccountName }
             { name: 'OTEL_SERVICE_NAME', value: containerAppName }
             { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', value: otlpEndpoint }
           ]
