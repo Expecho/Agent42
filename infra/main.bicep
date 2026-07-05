@@ -54,6 +54,15 @@ param azureOpenAIDeploymentName string = 'gpt-4o'
 @description('Entra ID tenant id used for DefaultAzureCredential when calling Azure OpenAI.')
 param azureOpenAITenantId string = '2250fce3-5bc9-4ae7-a5e9-58c510a422ec'
 
+@description('Subscription id of the Azure AI Foundry account backing the live model picker. Defaults to this deployment\'s subscription.')
+param azureOpenAISubscriptionId string = subscription().subscriptionId
+
+@description('Resource group of the Azure AI Foundry account backing the live model picker.')
+param azureOpenAIResourceGroup string = 'agent42'
+
+@description('Name of the Azure AI Foundry account backing the live model picker.')
+param azureOpenAIAccountName string = 'Agent42'
+
 @description('OTLP endpoint for OpenTelemetry export. Leave empty to disable OTLP export.')
 param otlpEndpoint string = ''
 
@@ -122,6 +131,9 @@ module containerApp 'modules/container-app.bicep' = {
     azureOpenAIEndpoint: azureOpenAIEndpoint
     azureOpenAIDeploymentName: azureOpenAIDeploymentName
     azureOpenAITenantId: azureOpenAITenantId
+    azureOpenAISubscriptionId: azureOpenAISubscriptionId
+    azureOpenAIResourceGroup: azureOpenAIResourceGroup
+    azureOpenAIAccountName: azureOpenAIAccountName
     otlpEndpoint: otlpEndpoint
     authClientId: authClientId
     authClientSecret: authClientSecret
@@ -148,7 +160,7 @@ module cosmosRoleAssignment 'modules/cosmos-role-assignment.bicep' = {
 @description('The URL of the deployed Agent 42 backend.')
 output backendUrl string = 'https://${containerApp.outputs.fqdn}'
 
-@description('Principal id of the system-assigned managed identity of the Container App. Grant it the "Cognitive Services OpenAI User" role on the Agent 42 AI Foundry account (subscriptions/{sub}/resourceGroups/agent42/providers/Microsoft.CognitiveServices/accounts/Agent42) once, after the first deployment.')
+@description('Principal id of the system-assigned managed identity of the Container App. After the first deployment (or any deploy that creates a new identity), grant it two roles on the Agent 42 AI Foundry account (subscriptions/{sub}/resourceGroups/agent42/providers/Microsoft.CognitiveServices/accounts/Agent42): "Cognitive Services OpenAI User" (to call the model) and "Reader" (so the live model picker can list deployments via the management plane).')
 output containerAppPrincipalId string = containerApp.outputs.principalId
 
 @description('Name of the Cosmos DB account created for grain state.')

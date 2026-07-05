@@ -17,4 +17,11 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(1)]
     public Dictionary<string, ReminderInfo> ScheduledPrompts { get; set; } = [];
+
+    /// <summary>
+    /// The model deployment this conversation is currently using. Null means the
+    /// conversation hasn't picked one yet and falls back to the configured default.
+    /// </summary>
+    [Id(2)]
+    public string? DeploymentName { get; set; }
 }

@@ -10,10 +10,12 @@
   const form = document.getElementById("composerForm");
   const input = document.getElementById("promptInput");
   const sendBtn = document.getElementById("sendBtn");
+  const modelSelect = document.getElementById("modelSelect");
 
   let conversations = [];
   let activeId = crypto.randomUUID();
   let streaming = false;
+  let defaultModel = null;
 
   marked.setOptions({ gfm: true, breaks: true });
 
@@ -29,6 +31,42 @@
       : d.toLocaleDateString([], { month: "short", day: "numeric" }) +
         " · " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
+
+  /* ————— model picker ————— */
+
+  // Live-queried from Azure AI Foundry: the deployments the agent can run on.
+  async function loadModels() {
+    try {
+      const res = await fetch("/api/models");
+      if (!res.ok) return;
+      const data = await res.json();
+      defaultModel = data.default ?? null;
+
+      modelSelect.innerHTML = "";
+      for (const m of data.models ?? []) {
+        const opt = document.createElement("option");
+        opt.value = m.deployment;
+        opt.textContent = m.deployment;
+        if (m.version) opt.title = `${m.model ?? m.deployment} · ${m.version}`;
+        modelSelect.appendChild(opt);
+      }
+      if (defaultModel) setModel(defaultModel);
+      modelSelect.disabled = modelSelect.options.length === 0;
+    } catch { /* leave the picker disabled; chat still uses the server's default model */ }
+  }
+
+  // Select a deployment, adding it as an option first if the list doesn't have it
+  // (e.g. a conversation pinned to a model that has since been removed).
+  function setModel(deployment) {
+    if (!deployment) return;
+    if (![...modelSelect.options].some((o) => o.value === deployment)) {
+      const opt = document.createElement("option");
+      opt.value = deployment;
+      opt.textContent = deployment;
+      modelSelect.appendChild(opt);
+    }
+    modelSelect.value = deployment;
+  }
 
   /* ————— sidebar ————— */
 
@@ -130,9 +168,13 @@
     setEmptyVisible(true);
 
     try {
-      const res = await fetch(`/api/conversations/${encodeURIComponent(id)}/messages`);
-      if (!res.ok) return;
-      const turns = await res.json();
+      const [msgRes, modelRes] = await Promise.all([
+        fetch(`/api/conversations/${encodeURIComponent(id)}/messages`),
+        fetch(`/api/conversations/${encodeURIComponent(id)}/model`),
+      ]);
+      if (modelRes.ok) setModel(await modelRes.json());
+      if (!msgRes.ok) return;
+      const turns = await msgRes.json();
       for (const turn of turns) {
         const msg = addMessage(turn.role === "user" ? "user" : "agent");
         if (turn.role === "user") setUserText(msg, turn.text);
@@ -156,6 +198,7 @@
   async function send(prompt) {
     streaming = true;
     sendBtn.disabled = true;
+    modelSelect.disabled = true;
     input.value = "";
     autosize();
 
@@ -170,7 +213,7 @@
       const res = await fetch(`/api/chat/${encodeURIComponent(activeId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: prompt }),
+        body: JSON.stringify({ message: prompt, model: modelSelect.value || null }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
@@ -202,6 +245,7 @@
     } finally {
       streaming = false;
       sendBtn.disabled = false;
+      modelSelect.disabled = modelSelect.options.length === 0;
       scrollToBottom();
       input.focus();
       refreshConversations();
@@ -235,6 +279,7 @@
 
   /* ————— init ————— */
 
+  loadModels();
   refreshConversations();
   input.focus();
 })();

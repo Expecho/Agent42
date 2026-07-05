@@ -9,9 +9,18 @@ public interface IAgentGrain : IGrainWithStringKey
 {
     /// <summary>
     /// Sends a message to the agent and streams the assistant's reply back chunk by chunk.
+    /// When <paramref name="model"/> is a deployment name it switches the conversation to
+    /// that model for this and subsequent turns; null keeps the current model.
     /// </summary>
     [Alias("ChatAsync")]
-    IAsyncEnumerable<string> ChatAsync(string message);
+    IAsyncEnumerable<string> ChatAsync(string message, string? model);
+
+    /// <summary>
+    /// Returns the model deployment this conversation is currently using, so the UI can
+    /// restore the picker to the right selection when a conversation is reopened.
+    /// </summary>
+    [Alias("GetSelectedModelAsync")]
+    Task<string> GetSelectedModelAsync();
 
     /// <summary>
     /// Returns the visible conversation history (user and assistant turns), so a
