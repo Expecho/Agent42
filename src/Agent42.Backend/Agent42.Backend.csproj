@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" Version="13.3.0" />
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.13.0" />
+    <PackageReference Include="Microsoft.Orleans.Server" Version="10.2.1" />
+    <PackageReference Include="Microsoft.Orleans.Persistence.Cosmos" Version="10.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Agent42.Agents\Agent42.Agents.csproj" />
+    <ProjectReference Include="..\Agent42.ServiceDefaults\Agent42.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

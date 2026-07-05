@@ -1,0 +1,28 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Frontend
+node_modules/
+dist/
+.env*.local
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code local config/session artifacts
+.claude/
+.playwright-cli/
+
+# Local run logs
+*.log
+
+# Secrets — User Secrets live in %APPDATA%\Microsoft\UserSecrets, not the repo

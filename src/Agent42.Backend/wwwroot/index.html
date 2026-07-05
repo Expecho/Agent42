@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent 42 — Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90' font-family='monospace' fill='%23FFB13D'>42</text></svg>" />
+</head>
+<body>
+  <div class="app">
+
+    <aside class="sidebar" id="sidebar">
+      <header class="sidebar__header">
+        <div class="brand">
+          <span class="brand__mark">42</span>
+          <div class="brand__text">
+            <span class="brand__name">AGENT&nbsp;42</span>
+            <span class="brand__status"><span class="dot" aria-hidden="true"></span>silo online</span>
+          </div>
+        </div>
+      </header>
+
+      <button class="new-chat" id="newChatBtn" type="button">
+        <span class="new-chat__plus" aria-hidden="true">+</span> New conversation
+      </button>
+
+      <nav class="conversations" aria-label="Conversations">
+        <p class="conversations__label">// transmissions</p>
+        <ul class="conversations__list" id="conversationList"></ul>
+      </nav>
+
+      <footer class="sidebar__footer">
+        <span class="dont-panic">DON'T&nbsp;PANIC</span>
+      </footer>
+    </aside>
+
+    <main class="chat">
+      <div class="chat__scroll" id="chatScroll">
+        <div class="chat__thread" id="thread">
+          <div class="empty" id="emptyState">
+            <div class="empty__figure" aria-hidden="true">42</div>
+            <p class="empty__title">The answer is ready.</p>
+            <p class="empty__hint">Now ask the question — the agent replies in richly formatted markdown, and every conversation is kept so you can pick it up later.</p>
+          </div>
+        </div>
+      </div>
+
+      <form class="composer" id="composerForm">
+        <div class="composer__frame">
+          <textarea id="promptInput" class="composer__input" rows="1"
+            placeholder="Transmit a prompt…" aria-label="Prompt" required></textarea>
+          <button class="composer__send" id="sendBtn" type="submit" aria-label="Send prompt">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M2 8h11M9 3.5 13.5 8 9 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        <p class="composer__hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</p>
+      </form>
+    </main>
+
+  </div>
+
+  <script src="lib/marked.min.js"></script>
+  <script src="lib/purify.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

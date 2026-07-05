@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Agent42.AppHost/Agent42.AppHost.csproj" />
+    <Project Path="src/Agent42.ServiceDefaults/Agent42.ServiceDefaults.csproj" />
+    <Project Path="src/Agent42.Backend/Agent42.Backend.csproj" />
+    <Project Path="src/Agent42.Agents/Agent42.Agents.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Agent42.Tests/Agent42.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Agent42.DevHost/Agent42.DevHost.csproj" />
+  </Folder>
+</Solution>
