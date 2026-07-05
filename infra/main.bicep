@@ -57,6 +57,22 @@ param azureOpenAITenantId string = '2250fce3-5bc9-4ae7-a5e9-58c510a422ec'
 @description('OTLP endpoint for OpenTelemetry export. Leave empty to disable OTLP export.')
 param otlpEndpoint string = ''
 
+@description('Client id of the agent42-easyauth Entra ID app registration used by built-in authentication.')
+param authClientId string = 'e9a02aec-5368-4c9a-8211-d21222c4f30c'
+
+@secure()
+@description('Client secret of the agent42-easyauth app registration. Rotate with: az ad app credential reset --id <authClientId>, then update the AAD_CLIENT_SECRET GitHub secret.')
+param authClientSecret string
+
+@description('Entra ID tenant id that issues sign-in tokens for built-in authentication.')
+param authTenantId string = tenant().tenantId
+
+@description('Object ids of the only users allowed to sign in: peter.bons@aceve.com and msn@2000miles.nl. Must stay in sync with the user assignments on the agent42-easyauth enterprise app.')
+param authAllowedUserObjectIds array = [
+  '2da7fa48-e41e-4ebd-b665-96bc4210fefd' // peter.bons@aceve.com
+  '4e85e5fd-1130-4498-a29f-d02cad7ca43b' // msn@2000miles.nl
+]
+
 @description('CPU cores allocated to the container.')
 param containerCpu string = '0.5'
 
@@ -107,6 +123,10 @@ module containerApp 'modules/container-app.bicep' = {
     azureOpenAIDeploymentName: azureOpenAIDeploymentName
     azureOpenAITenantId: azureOpenAITenantId
     otlpEndpoint: otlpEndpoint
+    authClientId: authClientId
+    authClientSecret: authClientSecret
+    authTenantId: authTenantId
+    authAllowedUserObjectIds: authAllowedUserObjectIds
     cpu: containerCpu
     memory: containerMemory
     minReplicas: minReplicas

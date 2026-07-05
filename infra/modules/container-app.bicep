@@ -39,6 +39,19 @@ param azureOpenAITenantId string
 @description('OTLP endpoint for OpenTelemetry export. Leave empty to disable OTLP export.')
 param otlpEndpoint string
 
+@description('Client id of the Entra ID app registration used by built-in authentication (Easy Auth).')
+param authClientId string
+
+@secure()
+@description('Client secret of the Entra ID app registration used by built-in authentication.')
+param authClientSecret string
+
+@description('Entra ID tenant id that issues sign-in tokens for built-in authentication.')
+param authTenantId string
+
+@description('Object ids of the only Entra ID users allowed to sign in. Defense-in-depth next to the assignment requirement on the enterprise app.')
+param authAllowedUserObjectIds array
+
 @description('CPU cores allocated to the container, e.g. 0.5.')
 param cpu string
 
@@ -81,6 +94,10 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           name: 'registry-password'
           value: registryPassword
         }
+        {
+          name: 'microsoft-provider-authentication-secret'
+          value: authClientSecret
+        }
       ]
     }
     template: {
@@ -106,6 +123,42 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
       scale: {
         minReplicas: minReplicas
         maxReplicas: maxReplicas
+      }
+    }
+  }
+}
+
+// Built-in authentication (Easy Auth): every request must carry a Microsoft Entra
+// sign-in; unauthenticated browsers are redirected to the Entra login page.
+// Primary access control is the assignment requirement on the enterprise app
+// (only explicitly assigned users can complete sign-in); allowedPrincipals
+// repeats the allowlist here so the restriction survives portal config drift.
+resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
+  parent: containerApp
+  name: 'current'
+  properties: {
+    platform: {
+      enabled: true
+    }
+    globalValidation: {
+      unauthenticatedClientAction: 'RedirectToLoginPage'
+      redirectToProvider: 'azureactivedirectory'
+    }
+    identityProviders: {
+      azureActiveDirectory: {
+        enabled: true
+        registration: {
+          clientId: authClientId
+          clientSecretSettingName: 'microsoft-provider-authentication-secret'
+          openIdIssuer: '${environment().authentication.loginEndpoint}${authTenantId}/v2.0'
+        }
+        validation: {
+          defaultAuthorizationPolicy: {
+            allowedPrincipals: {
+              identities: authAllowedUserObjectIds
+            }
+          }
+        }
       }
     }
   }

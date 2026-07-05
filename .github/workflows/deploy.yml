@@ -75,4 +75,5 @@ jobs:
               imageTag="${{ needs.build-and-push.outputs.image-tag }}" \
               acrAdminUsername="$REGISTRY_NAME" \
               acrAdminPassword="$acr_password" \
+              authClientSecret="${{ secrets.AAD_CLIENT_SECRET }}" \
               cosmosLocation="northeurope"
