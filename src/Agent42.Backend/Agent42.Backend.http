@@ -1,0 +1,19 @@
+@Agent42.Backend_HostAddress = http://localhost:5284
+@conversationId = demo-conversation
+
+POST {{Agent42.Backend_HostAddress}}/api/chat/{{conversationId}}
+Content-Type: application/json
+
+{ "message": "hi" }
+
+###
+
+GET {{Agent42.Backend_HostAddress}}/api/conversations
+Accept: application/json
+
+###
+
+GET {{Agent42.Backend_HostAddress}}/api/conversations/{{conversationId}}/messages
+Accept: application/json
+
+###
