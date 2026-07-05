@@ -62,6 +62,11 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
     {
         // The agent's tools. Each is bound to this grain instance, so a tool can reach
         // Orleans (grain factory, reminders, state) directly through `this`.
+        var getDateTime = AIFunctionFactory.Create(
+            GetDate,
+            name: "get_date",
+            description: "Get the current date and time. Returns a string in the local timezone.");
+
         var schedulePrompt = AIFunctionFactory.Create(
             SchedulePromptAsync,
             name: "schedule_prompt",
@@ -70,20 +75,32 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
                 "fires after 'dueInMinutes' and then repeats every 'repeatEveryMinutes'. Orleans " +
                 "reminders fire at most once per minute, so both values must be at least 1.");
 
-        // Compose the base persona with the embedded skills that document each tool.
-        var skills = SkillLibrary.LoadAll();
-        var instructions = string.IsNullOrEmpty(skills) ? Instructions : $"{Instructions}\n\n{skills}";
+        // Agent Skills: markdown skills discovered on disk from Skills/<name>/SKILL.md.
+        // The provider advertises each skill's name + description in the system prompt and
+        // exposes a `load_skill` tool so the agent pulls the full guidance only when a task
+        // matches (progressive disclosure). This grain has no human-in-the-loop approval
+        // step, so load_skill is auto-approved; the skills ship no scripts or resources.
+        var skillsProvider = new AgentSkillsProvider(
+            Path.Combine(AppContext.BaseDirectory, "Skills"),
+            options: new AgentSkillsProviderOptions { DisableLoadSkillApproval = true });
 
         return new ChatClientAgent(
             _chatClientFactory.GetClient(deployment),
-            instructions: instructions,
-            name: "Agent42",
-            tools: [schedulePrompt]);
+            new ChatClientAgentOptions
+            {
+                Name = "Agent42",
+                ChatOptions = new ChatOptions
+                {
+                    Instructions = Instructions,
+                    Tools = [schedulePrompt, getDateTime]
+                },
+                AIContextProviders = [skillsProvider],
+            });
     }
 
     public Task<string> GetSelectedModelAsync() => Task.FromResult(_deployment);
 
-    public async IAsyncEnumerable<string> ChatAsync(string message, string? model)
+    public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(string message, string? model)
     {
         _logger.LogInformation("Agent grain {GrainKey} received a message ({Length} chars)",
             this.GetPrimaryKeyString(), message.Length);
@@ -103,11 +120,36 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
                 this.GetPrimaryKeyString(), model);
         }
 
+        // Token usage arrives as UsageContent updates, one per LLM turn (a tool-calling
+        // run has several); accumulate them and report the totals on the Done event.
+        long inputTokens = 0, outputTokens = 0, cachedTokens = 0;
+
         await foreach (AgentResponseUpdate update in _agent.RunStreamingAsync(message, _session))
         {
-            if (!string.IsNullOrEmpty(update.Text))
+            foreach (AIContent content in update.Contents)
             {
-                yield return update.Text;
+                switch (content)
+                {
+                    case TextContent text when !string.IsNullOrEmpty(text.Text):
+                        yield return new AgentStreamEvent(AgentStreamEventType.TextDelta, Text: text.Text);
+                        break;
+
+                    case FunctionCallContent call:
+                        yield return new AgentStreamEvent(AgentStreamEventType.ToolCallStart,
+                            ToolName: call.Name, ToolCallId: call.CallId, ToolInput: SerializeOrNull(call.Arguments));
+                        break;
+
+                    case FunctionResultContent result:
+                        yield return new AgentStreamEvent(AgentStreamEventType.ToolCallEnd,
+                            ToolCallId: result.CallId, ToolResult: SerializeOrNull(result.Result));
+                        break;
+
+                    case UsageContent usage:
+                        inputTokens += usage.Details.InputTokenCount.GetValueOrDefault();
+                        outputTokens += usage.Details.OutputTokenCount.GetValueOrDefault();
+                        cachedTokens += usage.Details.CachedInputTokenCount.GetValueOrDefault();
+                        break;
+                }
             }
         }
 
@@ -117,7 +159,15 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
 
         _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
             this.GetPrimaryKeyString());
+
+        yield return new AgentStreamEvent(AgentStreamEventType.Done,
+            InputTokens: inputTokens > 0 ? inputTokens : null,
+            OutputTokens: outputTokens > 0 ? outputTokens : null,
+            CachedTokens: cachedTokens > 0 ? cachedTokens : null);
     }
+
+    private static string? SerializeOrNull(object? value) =>
+        value is not null ? JsonSerializer.Serialize(value) : null;
 
     public Task<IReadOnlyList<ChatTurn>> GetHistoryAsync()
     {
@@ -138,6 +188,9 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
     public Task<IReadOnlyList<ReminderInfo>> GetScheduledPromptsAsync()
         => Task.FromResult<IReadOnlyList<ReminderInfo>>(
             [.. _state.State.ScheduledPrompts.Values.OrderBy(r => r.CreatedAt)]);
+
+    
+    private static DateTime GetDate() => DateTime.Now;
 
     /// <summary>
     /// Agent tool: schedules an Orleans reminder for this conversation. Exposed to the

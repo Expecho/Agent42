@@ -8,12 +8,14 @@ namespace Agent42.Agents;
 public interface IAgentGrain : IGrainWithStringKey
 {
     /// <summary>
-    /// Sends a message to the agent and streams the assistant's reply back chunk by chunk.
+    /// Sends a message to the agent and streams the turn back as typed events:
+    /// reply-text deltas, tool-call start/end notifications, and a closing
+    /// <see cref="AgentStreamEventType.Done"/> event with the turn's token usage.
     /// When <paramref name="model"/> is a deployment name it switches the conversation to
     /// that model for this and subsequent turns; null keeps the current model.
     /// </summary>
     [Alias("ChatAsync")]
-    IAsyncEnumerable<string> ChatAsync(string message, string? model);
+    IAsyncEnumerable<AgentStreamEvent> ChatAsync(string message, string? model);
 
     /// <summary>
     /// Returns the model deployment this conversation is currently using, so the UI can

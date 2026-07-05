@@ -14,8 +14,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Agent "skills": markdown guidance embedded into the agent's instructions. -->
-    <EmbeddedResource Include="Skills\**\*.md" />
+    <!-- Agent Skills (agentskills.io / Microsoft Agent Framework file-based skills):
+         each Skills/<name>/SKILL.md is discovered on disk at runtime by
+         AgentSkillsProvider, so the folder must sit next to the built assembly. -->
+    <Content Include="Skills\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

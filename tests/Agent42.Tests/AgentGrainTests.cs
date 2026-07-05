@@ -24,14 +24,17 @@ public sealed class AgentGrainTests : IAsyncLifetime
     {
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("test-conversation");
 
-        var chunks = new List<string>();
-        await foreach (var chunk in agent.ChatAsync("hi", null))
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("hi", null))
         {
-            chunks.Add(chunk);
+            events.Add(evt);
         }
 
-        var answer = string.Concat(chunks);
+        var answer = string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
         Assert.False(string.IsNullOrWhiteSpace(answer), "The agent should answer when it receives \"hi\".");
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
     }
 
     [Fact]
@@ -71,9 +74,17 @@ public sealed class AgentGrainTests : IAsyncLifetime
     {
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-conversation");
 
-        await foreach (var _ in agent.ChatAsync("please remind me to drink water", null))
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("please remind me to drink water", null))
         {
+            events.Add(evt);
         }
+
+        // The tool round-trip is surfaced to the client as start/end events.
+        var start = Assert.Single(events, e => e.Type == AgentStreamEventType.ToolCallStart);
+        Assert.Equal("schedule_prompt", start.ToolName);
+        Assert.Contains(events, e =>
+            e.Type == AgentStreamEventType.ToolCallEnd && e.ToolCallId == start.ToolCallId);
 
         var reminders = await agent.GetScheduledPromptsAsync();
 
