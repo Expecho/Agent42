@@ -36,6 +36,9 @@ param acrAdminPassword string
 @description('Name of the serverless Cosmos DB account to create. Must be globally unique, lowercase, 3-44 characters.')
 param cosmosAccountName string = 'cosmos-agent42-${uniqueString(resourceGroup().id)}'
 
+@description('Location for the Cosmos DB account. Defaults to the same location as other resources, but can be overridden independently if that region is temporarily out of capacity for new accounts.')
+param cosmosLocation string = location
+
 @description('Cosmos DB SQL database name used by the Orleans grain storage provider.')
 param cosmosDatabaseName string = 'agent42'
 
@@ -80,7 +83,7 @@ var containerImage = '${containerRegistryName}.azurecr.io/${imageName}:${imageTa
 module cosmos 'modules/cosmos.bicep' = {
   name: 'agent42-cosmos'
   params: {
-    location: location
+    location: cosmosLocation
     accountName: cosmosAccountName
     databaseName: cosmosDatabaseName
     containerName: cosmosContainerName
