@@ -69,6 +69,17 @@ builder.UseOrleans(silo =>
         options.ContainerName = "agent-state";
         options.IsResourceCreationEnabled = true;
     });
+
+    // Durable reminders (the create_reminder agent tool) persisted in Cosmos, so a
+    // scheduled reminder survives silo restarts just like the agent state does.
+    silo.UseCosmosReminderService(options =>
+    {
+        options.ConfigureCosmosClient(sp =>
+            ValueTask.FromResult(sp.GetRequiredService<CosmosClient>()));
+        options.DatabaseName = "agent42";
+        options.ContainerName = "reminders";
+        options.IsResourceCreationEnabled = true;
+    });
 });
 
 var app = builder.Build();

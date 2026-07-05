@@ -21,6 +21,7 @@ builder.UseOrleans(silo =>
 {
     silo.UseLocalhostClustering();
     silo.AddMemoryGrainStorage(AgentGrain.StorageProviderName);
+    silo.UseInMemoryReminderService();
 });
 
 var app = builder.Build();

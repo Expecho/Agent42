@@ -10,6 +10,12 @@
     <PackageReference Include="Microsoft.Agents.AI" Version="1.13.0" />
     <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.2.1" />
     <PackageReference Include="Microsoft.Orleans.Runtime" Version="10.2.1" />
+    <PackageReference Include="Microsoft.Orleans.Reminders" Version="10.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Agent "skills": markdown guidance embedded into the agent's instructions. -->
+    <EmbeddedResource Include="Skills\**\*.md" />
   </ItemGroup>
 
 </Project>

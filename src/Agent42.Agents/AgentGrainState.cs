@@ -10,4 +10,11 @@ public sealed class AgentGrainState
 {
     [Id(0)]
     public string? SerializedSession { get; set; }
+
+    /// <summary>
+    /// Reminders scheduled for this conversation, keyed by reminder name. Kept in sync
+    /// with the Orleans reminders registered by the grain.
+    /// </summary>
+    [Id(1)]
+    public Dictionary<string, ReminderInfo> ScheduledPrompts { get; set; } = [];
 }

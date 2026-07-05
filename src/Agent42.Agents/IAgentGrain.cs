@@ -19,4 +19,10 @@ public interface IAgentGrain : IGrainWithStringKey
     /// </summary>
     [Alias("GetHistoryAsync")]
     Task<IReadOnlyList<ChatTurn>> GetHistoryAsync();
+
+    /// <summary>
+    /// Returns the prompt currently scheduled for this conversation, oldest first.
+    /// </summary>
+    [Alias("GetScheduledPromptsAsync")]
+    Task<IReadOnlyList<ReminderInfo>> GetScheduledPromptsAsync();
 }
