@@ -158,6 +158,73 @@
 
   const scrollToBottom = () => { chatScroll.scrollTop = chatScroll.scrollHeight; };
 
+  /* ————— tool calls & token usage ————— */
+
+  const prettyJson = (text) => {
+    try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
+  };
+
+  // Tool activity is shown as collapsible chips above the reply text, one per call.
+  function addToolCall(msg, { toolCallId, toolName, toolInput }) {
+    const bubble = msg.querySelector(".msg__bubble");
+    let tools = bubble.querySelector(".msg__tools");
+    if (!tools) {
+      tools = document.createElement("div");
+      tools.className = "msg__tools";
+      bubble.insertBefore(tools, bubble.querySelector(".prose"));
+    }
+
+    const item = document.createElement("details");
+    item.className = "tool-call is-running";
+    if (toolCallId) item.dataset.callId = toolCallId;
+
+    const summary = document.createElement("summary");
+    const status = document.createElement("span");
+    status.className = "tool-call__status";
+    const name = document.createElement("span");
+    name.className = "tool-call__name";
+    name.textContent = toolName ?? "tool";
+    summary.append(status, name);
+    item.appendChild(summary);
+
+    if (toolInput) appendToolIo(item, "input", toolInput);
+    tools.appendChild(item);
+  }
+
+  function completeToolCall(msg, { toolCallId, toolResult }) {
+    const item =
+      (toolCallId && msg.querySelector(`.tool-call[data-call-id="${CSS.escape(toolCallId)}"]`)) ??
+      msg.querySelector(".tool-call.is-running");
+    if (!item) return;
+    item.classList.remove("is-running");
+    item.classList.add("is-done");
+    if (toolResult) appendToolIo(item, "result", toolResult);
+  }
+
+  function appendToolIo(item, label, json) {
+    const io = document.createElement("div");
+    io.className = "tool-call__io";
+    const lab = document.createElement("div");
+    lab.className = "tool-call__io-label";
+    lab.textContent = label;
+    const pre = document.createElement("pre");
+    pre.textContent = prettyJson(json);
+    io.append(lab, pre);
+    item.appendChild(io);
+  }
+
+  function showUsage(msg, { inputTokens, outputTokens, cachedTokens }) {
+    if (inputTokens == null && outputTokens == null) return;
+    const parts = [];
+    if (inputTokens != null) parts.push(`${inputTokens.toLocaleString()} in`);
+    if (outputTokens != null) parts.push(`${outputTokens.toLocaleString()} out`);
+    if (cachedTokens != null) parts.push(`${cachedTokens.toLocaleString()} cached`);
+    const usage = document.createElement("div");
+    usage.className = "msg__usage";
+    usage.textContent = `tokens · ${parts.join(" · ")}`;
+    msg.appendChild(usage);
+  }
+
   /* ————— conversation switching ————— */
 
   async function selectConversation(id) {
@@ -231,11 +298,17 @@
         for (const line of lines) {
           if (!line.trim()) continue;
           const chunk = JSON.parse(line);
-          if (chunk.type === "text") {
-            answer += chunk.content;
+          if (chunk.type === "textDelta") {
+            answer += chunk.text;
             setAgentMarkdown(agentMsg, answer, { caret: true });
-            scrollToBottom();
+          } else if (chunk.type === "toolCallStart") {
+            addToolCall(agentMsg, chunk);
+          } else if (chunk.type === "toolCallEnd") {
+            completeToolCall(agentMsg, chunk);
+          } else if (chunk.type === "done") {
+            showUsage(agentMsg, chunk);
           }
+          scrollToBottom();
         }
       }
       setAgentMarkdown(agentMsg, answer);

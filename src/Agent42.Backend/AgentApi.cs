@@ -1,14 +1,23 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Agent42.Agents;
 
 namespace Agent42.Backend;
 
 public static class AgentApi
 {
+    // NDJSON wire format for stream events: camelCase fields, camelCase enum values
+    // (e.g. "textDelta", "toolCallStart"), and null fields omitted.
+    private static readonly JsonSerializerOptions StreamEventJson = new(JsonSerializerOptions.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+
     public static IEndpointRouteBuilder MapAgentApi(this IEndpointRouteBuilder app)
     {
         // Streaming chat: sends a prompt to the conversation's agent grain and streams
-        // the reply back as NDJSON chunks.
+        // the turn back as NDJSON events (text deltas, tool calls, token usage).
         app.MapPost("/api/chat/{conversationId}", async (string conversationId, ChatRequest request, IGrainFactory grains, HttpContext http) =>
         {
             var userId = http.GetUserId();
@@ -16,10 +25,9 @@ public static class AgentApi
             var agent = grains.GetGrain<IAgentGrain>(AgentKey(userId, conversationId));
 
             http.Response.ContentType = "application/x-ndjson";
-            await foreach (var chunk in agent.ChatAsync(request.Message, request.Model))
+            await foreach (var evt in agent.ChatAsync(request.Message, request.Model))
             {
-                await http.Response.WriteAsync(
-                    JsonSerializer.Serialize(new ChatChunk("text", chunk), JsonSerializerOptions.Web) + "\n");
+                await http.Response.WriteAsync(JsonSerializer.Serialize(evt, StreamEventJson) + "\n");
                 await http.Response.Body.FlushAsync();
             }
         });
@@ -49,4 +57,3 @@ public static class AgentApi
 }
 
 public record ChatRequest(string Message, string? Model);
-public record ChatChunk(string Type, string Content);
