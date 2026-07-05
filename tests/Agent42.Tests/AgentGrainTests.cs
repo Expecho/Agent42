@@ -66,12 +66,52 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Equal("conv-2", conversations[1].Id);
     }
 
+    [Fact]
+    public async Task AskingToBeReminded_SchedulesAReminderViaTheTool()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-conversation");
+
+        await foreach (var _ in agent.ChatAsync("please remind me to drink water"))
+        {
+        }
+
+        var reminders = await agent.GetRemindersAsync();
+
+        var reminder = Assert.Single(reminders);
+        Assert.Equal("drink-water", reminder.Name);
+        Assert.Equal("Tell the user to drink some water.", reminder.Prompt);
+        Assert.True(reminder.DueInMinutes >= 1 && reminder.RepeatEveryMinutes >= 1);
+    }
+
+    [Fact]
+    public async Task WhenAReminderFires_ItsPromptIsSentToTheAgent()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-firing-conversation");
+
+        await foreach (var _ in agent.ChatAsync("please remind me to drink water"))
+        {
+        }
+
+        // Fire the reminder the way the Orleans runtime would.
+        await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
+
+        var history = await agent.GetHistoryAsync();
+        Assert.Contains(history, t => t.Role == "user" && t.Text == "Tell the user to drink some water.");
+        Assert.Equal("assistant", history[^1].Role);
+        Assert.False(string.IsNullOrWhiteSpace(history[^1].Text));
+
+        var reminder = Assert.Single(await agent.GetRemindersAsync());
+        Assert.Equal(1, reminder.TimesFired);
+    }
+
     private sealed class TestSiloConfigurator : ISiloConfigurator
     {
         public void Configure(ISiloBuilder siloBuilder)
         {
-            // In-memory stand-in for the Cosmos DB grain storage used in production.
+            // In-memory stand-ins for the Cosmos DB grain storage and reminder service
+            // used in production.
             siloBuilder.AddMemoryGrainStorage(AgentGrain.StorageProviderName);
+            siloBuilder.UseInMemoryReminderService();
             siloBuilder.ConfigureServices(services => services.AddSingleton<IChatClient, FakeChatClient>());
         }
     }
