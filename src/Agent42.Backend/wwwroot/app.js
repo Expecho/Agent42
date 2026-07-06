@@ -11,6 +11,9 @@
   const input = document.getElementById("promptInput");
   const sendBtn = document.getElementById("sendBtn");
   const modelSelect = document.getElementById("modelSelect");
+  const menuToggle = document.getElementById("menuToggle");
+  const backdrop = document.getElementById("backdrop");
+  const app = document.querySelector(".app");
 
   let conversations = [];
   let activeId = crypto.randomUUID();
@@ -257,6 +260,7 @@
   /* ————— conversation switching ————— */
 
   async function selectConversation(id) {
+    closeDrawer();
     if (streaming || id === activeId) return;
     activeId = id;
     renderSidebar();
@@ -283,12 +287,33 @@
   }
 
   function startNewConversation() {
+    closeDrawer();
     if (streaming) return;
     activeId = crypto.randomUUID();
     clearThread();
     setEmptyVisible(true);
     renderSidebar();
     input.focus();
+  }
+
+  /* ————— mobile drawer ————— */
+
+  // Off-canvas sidebar toggle for ≤760px. The backdrop's visibility and the slide
+  // animation are owned entirely by the CSS `.app.is-drawer-open` rules; JS only flips
+  // that class and keeps aria-expanded in sync. No-ops harmlessly on desktop.
+  function openDrawer() {
+    app.classList.add("is-drawer-open");
+    menuToggle.setAttribute("aria-expanded", "true");
+  }
+
+  function closeDrawer() {
+    app.classList.remove("is-drawer-open");
+    menuToggle.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleDrawer() {
+    if (app.classList.contains("is-drawer-open")) closeDrawer();
+    else openDrawer();
   }
 
   /* ————— sending & streaming ————— */
@@ -380,6 +405,16 @@
   });
 
   newChatBtn.addEventListener("click", startNewConversation);
+
+  menuToggle.addEventListener("click", toggleDrawer);
+  backdrop.addEventListener("click", closeDrawer);
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && app.classList.contains("is-drawer-open")) {
+      closeDrawer();
+      menuToggle.focus();
+    }
+  });
 
   /* ————— init ————— */
 
