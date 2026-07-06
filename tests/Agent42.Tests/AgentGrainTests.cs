@@ -1,6 +1,7 @@
 using Agent42.Agents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Orleans.Core.Internal;
 using Orleans.TestingHost;
 
 namespace Agent42.Tests;
@@ -47,6 +48,28 @@ public sealed class AgentGrainTests : IAsyncLifetime
         }
 
         var history = await agent.GetHistoryAsync();
+
+        Assert.Contains(history, t => t.Role == "user" && t.Text == "hi");
+        Assert.Contains(history, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
+    }
+
+    [Fact]
+    public async Task History_SurvivesGrainReactivation()
+    {
+        const string key = "reactivation-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await foreach (var _ in agent.ChatAsync("hi", null))
+        {
+        }
+
+        // Force the grain to deactivate, so reopening the conversation goes through
+        // OnActivateAsync → DeserializeSessionAsync — the path a user hits when they
+        // reselect an older conversation whose grain has idled out. The persisted
+        // session must round-trip the visible history.
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        var history = await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
 
         Assert.Contains(history, t => t.Role == "user" && t.Text == "hi");
         Assert.Contains(history, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
@@ -113,22 +136,5 @@ public sealed class AgentGrainTests : IAsyncLifetime
 
         var reminder = Assert.Single(await agent.GetScheduledPromptsAsync());
         Assert.Equal(1, reminder.TimesFired);
-    }
-
-    private sealed class TestSiloConfigurator : ISiloConfigurator
-    {
-        public void Configure(ISiloBuilder siloBuilder)
-        {
-            // In-memory stand-ins for the Cosmos DB grain storage and reminder service
-            // used in production.
-            siloBuilder.AddMemoryGrainStorage(AgentGrain.StorageProviderName);
-            siloBuilder.UseInMemoryReminderService();
-            siloBuilder.ConfigureServices(services =>
-            {
-                services.AddSingleton<IChatClient, FakeChatClient>();
-                services.AddSingleton<IChatClientFactory>(sp =>
-                    new SingleChatClientFactory(sp.GetRequiredService<IChatClient>(), "fake-model"));
-            });
-        }
     }
 }

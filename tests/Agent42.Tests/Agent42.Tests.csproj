@@ -8,15 +8,19 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="6.0.4" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
-    <PackageReference Include="Microsoft.Orleans.TestingHost" Version="10.2.1" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.Orleans.TestingHost" />
   </ItemGroup>
 
+  <!-- Backend is referenced so its minimal-API endpoints can be hosted in-memory
+       (TestServer) for HTTP-contract tests; it brings the ASP.NET shared framework. -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\Agent42.Agents\Agent42.Agents.csproj" />
+    <ProjectReference Include="..\..\src\Agent42.Backend\Agent42.Backend.csproj" />
   </ItemGroup>
 
   <ItemGroup>
