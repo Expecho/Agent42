@@ -5,9 +5,9 @@ namespace Agent42.Tests;
 
 /// <summary>
 /// Deterministic in-memory <see cref="IChatClient"/> so agent tests run without a real model.
-/// When the user asks to be reminded about something it emits a call to the
-/// <c>schedule_prompt</c> tool, letting tests exercise the tool + Orleans reminder path
-/// end-to-end; otherwise it returns a canned greeting.
+/// It maps the last user message to a tool call — "remind" schedules, "cancel all" clears
+/// every reminder, "cancel" clears one — so tests exercise the schedule/cancel tools and the
+/// Orleans reminder path end-to-end; otherwise it returns a canned greeting.
 /// </summary>
 public sealed class FakeChatClient : IChatClient
 {
@@ -16,8 +16,9 @@ public sealed class FakeChatClient : IChatClient
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
-        var contents = ShouldCallReminderTool(messages)
-            ? new List<AIContent> { BuildReminderCall() }
+        var call = SelectToolCall(messages);
+        var contents = call is not null
+            ? new List<AIContent> { call }
             : new List<AIContent> { new TextContent(string.Concat(ReplyChunks)) };
 
         return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, contents)));
@@ -27,9 +28,10 @@ public sealed class FakeChatClient : IChatClient
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (ShouldCallReminderTool(messages))
+        var call = SelectToolCall(messages);
+        if (call is not null)
         {
-            yield return new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent> { BuildReminderCall() });
+            yield return new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent> { call });
             yield break;
         }
 
@@ -55,18 +57,70 @@ public sealed class FakeChatClient : IChatClient
             ["repeatEveryMinutes"] = 60.0,
         });
 
-    private static bool ShouldCallReminderTool(IEnumerable<ChatMessage> messages)
+    private static FunctionCallContent BuildCancelCall() =>
+        new("cancel-call-1", "cancel_scheduled_prompt", new Dictionary<string, object?>
+        {
+            ["name"] = "drink-water",
+        });
+
+    private static FunctionCallContent BuildCancelAllCall() =>
+        new("cancel-all-call-1", "cancel_all_scheduled_prompts", new Dictionary<string, object?>());
+
+    // Picks the tool call (if any) the model should make for the current user turn.
+    private static FunctionCallContent? SelectToolCall(IEnumerable<ChatMessage> messages)
     {
         var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
 
-        // Once the tool has run this turn, its result is in the message list — answer in
-        // text instead of calling the tool again (which would loop forever).
-        if (list.Any(m => m.Contents.Any(c => c is FunctionResultContent)))
+        var lastUserIndex = LastUserIndex(list);
+        if (lastUserIndex < 0)
         {
-            return false;
+            return null;
         }
 
-        var lastUser = list.LastOrDefault(m => m.Role == ChatRole.User);
-        return lastUser?.Text?.Contains("remind", StringComparison.OrdinalIgnoreCase) == true;
+        // Once a tool has run for THIS turn, its result is in the messages that follow the
+        // triggering user message — answer in text instead of calling the tool again (which
+        // would loop forever). Scoping to messages after the last user turn is what lets a
+        // schedule-then-cancel conversation call a second tool on the later turn.
+        for (var i = lastUserIndex + 1; i < list.Count; i++)
+        {
+            if (list[i].Contents.Any(c => c is FunctionResultContent))
+            {
+                return null;
+            }
+        }
+
+        var text = list[lastUserIndex].Text ?? "";
+
+        // Ordering is load-bearing: "reminder" contains the substring "remind", so the cancel
+        // checks MUST precede the schedule check — do not reorder these branches.
+        if (text.Contains("cancel all", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildCancelAllCall();
+        }
+
+        if (text.Contains("cancel", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildCancelCall();
+        }
+
+        if (text.Contains("remind", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildReminderCall();
+        }
+
+        return null;
+    }
+
+    private static int LastUserIndex(IReadOnlyList<ChatMessage> list)
+    {
+        for (var i = list.Count - 1; i >= 0; i--)
+        {
+            if (list[i].Role == ChatRole.User)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 }

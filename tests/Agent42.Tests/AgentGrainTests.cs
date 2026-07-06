@@ -173,4 +173,80 @@ public sealed class AgentGrainTests : IAsyncLifetime
         var reminder = Assert.Single(await agent.GetScheduledPromptsAsync());
         Assert.Equal(1, reminder.TimesFired);
     }
+
+    [Fact]
+    public async Task AskingToCancel_RemovesTheReminderViaTheTool()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("cancel-conversation");
+
+        // Schedule a real, durable reminder first, so cancelling exercises the live
+        // GetReminder / UnregisterReminder path — not just a state-dict edit (cf. the
+        // Purge test, which can only assert the state, since GetReminders isn't on the grain).
+        await foreach (var _ in agent.ChatAsync("please remind me to drink water", null))
+        {
+        }
+
+        Assert.Single(await agent.GetScheduledPromptsAsync());
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("please cancel the drink water reminder", null))
+        {
+            events.Add(evt);
+        }
+
+        var start = Assert.Single(events, e => e.Type == AgentStreamEventType.ToolCallStart);
+        Assert.Equal("cancel_scheduled_prompt", start.ToolName);
+        Assert.Contains(events, e =>
+            e.Type == AgentStreamEventType.ToolCallEnd && e.ToolCallId == start.ToolCallId);
+
+        Assert.Empty(await agent.GetScheduledPromptsAsync());
+    }
+
+    [Fact]
+    public async Task AskingToCancelAll_RemovesEveryReminder()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("cancel-all-conversation");
+
+        // Schedule a real reminder so cancel-all iterates and unregisters a live reminder.
+        await foreach (var _ in agent.ChatAsync("please remind me to drink water", null))
+        {
+        }
+
+        Assert.Single(await agent.GetScheduledPromptsAsync());
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("please cancel all reminders", null))
+        {
+            events.Add(evt);
+        }
+
+        var start = Assert.Single(events, e => e.Type == AgentStreamEventType.ToolCallStart);
+        Assert.Equal("cancel_all_scheduled_prompts", start.ToolName);
+        Assert.Empty(await agent.GetScheduledPromptsAsync());
+
+        // Cancelling again with nothing scheduled hits the empty-state branch and must
+        // still return cleanly, leaving the (already empty) list untouched.
+        await foreach (var _ in agent.ChatAsync("please cancel all reminders", null))
+        {
+        }
+
+        Assert.Empty(await agent.GetScheduledPromptsAsync());
+    }
+
+    [Fact]
+    public async Task CancellingAnUnknownReminder_ReportsItGracefully()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("cancel-unknown-conversation");
+
+        // Nothing was ever scheduled, so the cancel tool hits its "no such reminder" branch.
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("please cancel the drink water reminder", null))
+        {
+            events.Add(evt);
+        }
+
+        var end = Assert.Single(events, e => e.Type == AgentStreamEventType.ToolCallEnd);
+        Assert.Contains("no scheduled reminder", end.ToolResult ?? "", StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await agent.GetScheduledPromptsAsync());
+    }
 }
