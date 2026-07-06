@@ -718,11 +718,124 @@ kbd {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
 
-/* narrow screens: stack */
+/* ————— mobile top bar + drawer ————— */
+
+/* Off-canvas chrome — desktop hidden; the @media block below reveals it at ≤760px. */
+.topbar { display: none; }
+.backdrop { display: none; }
+
+.topbar__menu {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: var(--amber);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.topbar__menu:hover {
+  border-color: var(--amber-deep);
+  background: var(--amber-glow);
+  box-shadow: 0 0 18px var(--amber-glow);
+}
+
+/* three-bar hamburger drawn from the span + its two pseudo-elements, tinted currentColor */
+.topbar__bars,
+.topbar__bars::before,
+.topbar__bars::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+}
+
+.topbar__bars {
+  position: relative;
+}
+
+.topbar__bars::before,
+.topbar__bars::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+
+.topbar__bars::before { top: -6px; }
+.topbar__bars::after { top: 6px; }
+
+.topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  font-size: 13px;
+}
+
+/* smaller-scale mirror of .brand__mark */
+.topbar__mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--amber-deep);
+  border-radius: 6px;
+  color: var(--amber);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -1px;
+  background: linear-gradient(160deg, var(--amber-glow), transparent 65%);
+  box-shadow: 0 0 14px var(--amber-glow), inset 0 0 8px rgba(255, 177, 61, 0.08);
+  text-shadow: 0 0 8px rgba(255, 177, 61, 0.55);
+}
+
+/* narrow screens: sidebar becomes an off-canvas drawer behind a dimming backdrop */
 
 @media (max-width: 760px) {
   .app { grid-template-columns: 1fr; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px dashed var(--line);
+  }
+
   .sidebar {
-    display: none;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(300px, 84vw);
+    z-index: 30;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.25s ease, visibility 0.25s ease;
+  }
+
+  .app.is-drawer-open .sidebar {
+    transform: none;
+    visibility: visible;
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: rgba(6, 5, 4, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  .app.is-drawer-open .backdrop {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
