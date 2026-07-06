@@ -1,6 +1,7 @@
 ---
 name: sync-docs
 description: After a code change, sweep the diff for documentation impact — stale gotchas/exemplars, decisions that need an ADR, specs to complete — and fix them in the same MR.
+user-invocable: true
 disable-model-invocation: false
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: decide
 description: Record an architectural or technical decision as an ADR in .agentic/decisions/, checking for conflicts with existing decisions and handling supersession.
+user-invocable: true
 argument-hint: "<short description of the decision>"
 ---
 

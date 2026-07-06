@@ -1,6 +1,7 @@
 ---
 name: onboard-existing
 description: Detection-driven setup of the agentic template for an existing codebase. Infers stack, commands, and conventions from source, mines git history and legacy docs for ADRs and gotchas, and asks the user only what cannot be inferred.
+user-invocable: true
 disable-model-invocation: true
 argument-hint: "[optional: path to repo root, defaults to cwd]"
 ---
