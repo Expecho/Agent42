@@ -101,6 +101,12 @@ param minReplicas int = 1
 @maxValue(1)
 param maxReplicas int = 1
 
+@description('Custom domain hostname bound to the Container App ingress. Leave empty to skip binding a custom domain.')
+param customDomainName string = 'chat.agent42.nl'
+
+@description('Name of the existing managed certificate resource in the Container Apps environment (rg-hosting/cae-hosting) backing customDomainName. Look up with: az containerapp env certificate list -n cae-hosting -g rg-hosting. Update if the certificate is ever recreated.')
+param customDomainCertificateName string = 'chat.agent42.nl-cae-host-260706080049'
+
 @description('Tags applied to all created resources.')
 param tags object = {
   application: 'agent42'
@@ -143,6 +149,8 @@ module containerApp 'modules/container-app.bicep' = {
     authClientSecret: authClientSecret
     authTenantId: authTenantId
     authAllowedUserObjectIds: authAllowedUserObjectIds
+    customDomainName: customDomainName
+    customDomainCertificateName: customDomainCertificateName
     cpu: containerCpu
     memory: containerMemory
     minReplicas: minReplicas
