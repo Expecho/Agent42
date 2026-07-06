@@ -48,4 +48,12 @@ public sealed class ConversationIndexGrain : Grain, IConversationIndexGrain
     public Task<IReadOnlyList<ConversationInfo>> GetConversationsAsync()
         => Task.FromResult<IReadOnlyList<ConversationInfo>>(
             [.. _state.State.Conversations.OrderByDescending(c => c.UpdatedAt)]);
+
+    public async Task RemoveAsync(string conversationId)
+    {
+        if (_state.State.Conversations.RemoveAll(c => c.Id == conversationId) > 0)
+        {
+            await _state.WriteStateAsync();
+        }
+    }
 }

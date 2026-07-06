@@ -36,4 +36,11 @@ public interface IAgentGrain : IGrainWithStringKey
     /// </summary>
     [Alias("GetScheduledPromptsAsync")]
     Task<IReadOnlyList<ReminderInfo>> GetScheduledPromptsAsync();
+
+    /// <summary>
+    /// Permanently deletes this conversation: unregisters its durable reminders and
+    /// clears the persisted session, so nothing is left to re-fire or resume.
+    /// </summary>
+    [Alias("PurgeAsync")]
+    Task PurgeAsync();
 }
