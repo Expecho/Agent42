@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using Agent42.Agents;
 using Agent42.Backend;
@@ -79,5 +80,29 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.NotNull(turns);
         Assert.Contains(turns!, t => t.Role == "user" && t.Text == "hi");
         Assert.Contains(turns!, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
+    }
+
+    [Fact]
+    public async Task DeleteConversation_RemovesItFromTheListAndClearsHistory()
+    {
+        const string id = "api-delete-conversation";
+
+        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("hi", null)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync(); // drain the NDJSON stream so the conversation is persisted
+        }
+
+        var before = await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
+        Assert.Contains(before!, c => c.Id == id);
+
+        var delete = await _client.DeleteAsync($"/api/conversations/{id}");
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+
+        var after = await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
+        Assert.DoesNotContain(after!, c => c.Id == id);
+
+        var history = await _client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages");
+        Assert.Empty(history!);
     }
 }
