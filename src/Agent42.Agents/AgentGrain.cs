@@ -75,6 +75,19 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
                 "fires after 'dueInMinutes' and then repeats every 'repeatEveryMinutes'. Orleans " +
                 "reminders fire at most once per minute, so both values must be at least 1.");
 
+        var cancelScheduledPrompt = AIFunctionFactory.Create(
+            CancelScheduledPromptAsync,
+            name: "cancel_scheduled_prompt",
+            description: "Cancel a single scheduled reminder for this conversation by its " +
+                "'name' — the same short identifier used when it was scheduled. Use this when " +
+                "the user wants to stop one specific reminder.");
+
+        var cancelAllScheduledPrompts = AIFunctionFactory.Create(
+            CancelAllScheduledPromptsAsync,
+            name: "cancel_all_scheduled_prompts",
+            description: "Cancel every scheduled reminder for this conversation at once. Use " +
+                "this only when the user wants to clear all of their reminders, not a single one.");
+
         // Agent Skills: markdown skills discovered on disk from Skills/<name>/SKILL.md.
         // The provider advertises each skill's name + description in the system prompt and
         // exposes a `load_skill` tool so the agent pulls the full guidance only when a task
@@ -92,7 +105,7 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
                 ChatOptions = new ChatOptions
                 {
                     Instructions = Instructions,
-                    Tools = [schedulePrompt, getDateTime]
+                    Tools = [schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime]
                 },
                 AIContextProviders = [skillsProvider],
             });
@@ -213,7 +226,7 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
 
     /// <summary>
     /// Agent tool: schedules an Orleans reminder for this conversation. Exposed to the
-    /// model as <c>schedule_prompt</c>; see <c>Skills/reminders.md</c> for guidance.
+    /// model as <c>schedule_prompt</c>; see <c>Skills/scheduledprompt/SKILL.md</c> for guidance.
     /// </summary>
     private async Task<string> SchedulePromptAsync(
         [Description("A short, stable identifier for the reminder, e.g. 'stand-up'. Reusing a name updates the existing reminder.")] string name,
@@ -252,6 +265,71 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
 
         return $"Reminder '{name}' scheduled: first firing in {dueInMinutes} minute(s), " +
             $"repeating every {repeatEveryMinutes} minute(s).";
+    }
+
+    /// <summary>
+    /// Agent tool: cancels a single scheduled reminder by name. Exposed to the model as
+    /// <c>cancel_scheduled_prompt</c>; see <c>Skills/scheduledprompt/SKILL.md</c> for guidance.
+    /// </summary>
+    private async Task<string> CancelScheduledPromptAsync(
+        [Description("The name of the reminder to cancel — the same short identifier used when it was scheduled.")] string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "Tell me which reminder to cancel by its name.";
+        }
+
+        if (!_state.State.ScheduledPrompts.ContainsKey(name))
+        {
+            return $"There is no scheduled reminder named '{name}' in this conversation.";
+        }
+
+        // The durable reminder keeps ticking unless it is explicitly unregistered —
+        // clearing the state entry alone would leave it firing (see PurgeAsync).
+        var reminder = await this.GetReminder(name);
+        if (reminder is not null)
+        {
+            await this.UnregisterReminder(reminder);
+        }
+
+        _state.State.ScheduledPrompts.Remove(name);
+        await _state.WriteStateAsync();
+
+        _logger.LogInformation(
+            "Agent grain {GrainKey} cancelled reminder '{Reminder}'",
+            this.GetPrimaryKeyString(), name);
+
+        return $"Reminder '{name}' cancelled.";
+    }
+
+    /// <summary>
+    /// Agent tool: cancels every scheduled reminder for this conversation. Exposed to the
+    /// model as <c>cancel_all_scheduled_prompts</c>; see <c>Skills/scheduledprompt/SKILL.md</c>.
+    /// </summary>
+    private async Task<string> CancelAllScheduledPromptsAsync()
+    {
+        if (_state.State.ScheduledPrompts.Count == 0)
+        {
+            return "There are no scheduled reminders to cancel in this conversation.";
+        }
+
+        var count = _state.State.ScheduledPrompts.Count;
+
+        // Durable reminders must each be unregistered explicitly, or they keep firing
+        // after the state is cleared (same reason PurgeAsync iterates them).
+        foreach (var reminder in await this.GetReminders())
+        {
+            await this.UnregisterReminder(reminder);
+        }
+
+        _state.State.ScheduledPrompts.Clear();
+        await _state.WriteStateAsync();
+
+        _logger.LogInformation(
+            "Agent grain {GrainKey} cancelled all {Count} scheduled reminder(s)",
+            this.GetPrimaryKeyString(), count);
+
+        return $"Cancelled {count} scheduled reminder(s).";
     }
 
     /// <summary>

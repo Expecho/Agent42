@@ -1,6 +1,6 @@
 ---
 name: scheduledprompt
-description: Schedule prompts for the current conversation with the schedule_prompt tool. Use whenever the user asks to be reminded of something, wants a recurring nudge, or wants the agent to do something later — for example "remind me to stand up every 30 minutes", "check in on me every morning", or "summarize this conversation in an hour".
+description: Schedule and cancel prompts for the current conversation with the schedule_prompt, cancel_scheduled_prompt, and cancel_all_scheduled_prompts tools. Use whenever the user asks to be reminded of something, wants a recurring nudge, wants the agent to do something later, or wants to stop, cancel, remove, or clear a reminder — for example "remind me to stand up every 30 minutes", "check in on me every morning", "cancel my stand-up reminder", or "clear all my reminders".
 metadata:
   author: agent42
   version: "1.0"
@@ -51,3 +51,18 @@ Confirm back to the user exactly what you scheduled — when it will first fire,
 it repeats, and what will happen when it does. Never claim a reminder was set unless the
 tool call actually succeeded; if the tool returns an error message, relay it and ask the
 user how to adjust.
+
+## Cancelling
+
+To stop a reminder, use the cancel tools:
+
+- `cancel_scheduled_prompt` — cancels **one** reminder. Pass its `name`, the same stable
+  identifier used when it was scheduled (e.g. `stand-up`). Use this when the user wants to
+  stop a specific reminder. If the name doesn't match a scheduled reminder, the tool says
+  so — relay that rather than claiming success.
+- `cancel_all_scheduled_prompts` — cancels **every** reminder in this conversation at once.
+  Use it only when the user clearly wants to clear all of them, never to cancel a single one.
+
+Both permanently unregister the durable reminder(s) so nothing fires again. After
+cancelling, confirm to the user exactly what was cancelled, and only claim a reminder was
+cancelled if the tool call actually succeeded.
