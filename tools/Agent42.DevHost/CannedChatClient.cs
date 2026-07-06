@@ -5,9 +5,9 @@ namespace Agent42.DevHost;
 
 /// <summary>
 /// Streams a canned markdown reply so the frontend can be exercised offline.
-/// Every turn ends with canned token usage, and a prompt containing "remind"
-/// triggers a <c>schedule_prompt</c> tool call, so the tool-call and usage UI
-/// can be exercised without a real model.
+/// Every turn ends with canned token usage, and the last user message is mapped to a
+/// tool call — "remind" schedules, "cancel all" clears every reminder, "cancel" clears
+/// one — so the tool-call and usage UI can be exercised without a real model.
 /// </summary>
 public sealed class CannedChatClient : IChatClient
 {
@@ -47,9 +47,10 @@ public sealed class CannedChatClient : IChatClient
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (ShouldCallReminderTool(messages))
+        var call = SelectToolCall(messages);
+        if (call is not null)
         {
-            yield return new ChatResponseUpdate(ChatRole.Assistant, [BuildReminderCall()]);
+            yield return new ChatResponseUpdate(ChatRole.Assistant, [call]);
             yield return new ChatResponseUpdate(ChatRole.Assistant, [BuildUsage(120, 25)]);
             yield break;
         }
@@ -73,6 +74,15 @@ public sealed class CannedChatClient : IChatClient
             ["repeatEveryMinutes"] = 60.0,
         });
 
+    private static FunctionCallContent BuildCancelCall() =>
+        new("canned-cancel-1", "cancel_scheduled_prompt", new Dictionary<string, object?>
+        {
+            ["name"] = "drink-water",
+        });
+
+    private static FunctionCallContent BuildCancelAllCall() =>
+        new("canned-cancel-all-1", "cancel_all_scheduled_prompts", new Dictionary<string, object?>());
+
     private static UsageContent BuildUsage(long input, long output) =>
         new(new UsageDetails
         {
@@ -81,19 +91,62 @@ public sealed class CannedChatClient : IChatClient
             CachedInputTokenCount = input / 2,
         });
 
-    private static bool ShouldCallReminderTool(IEnumerable<ChatMessage> messages)
+    // Picks the tool call (if any) the model should make for the current user turn.
+    private static FunctionCallContent? SelectToolCall(IEnumerable<ChatMessage> messages)
     {
         var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
 
-        // Once the tool has run this turn its result is in the message list — answer in
-        // text instead of calling the tool again (which would loop forever).
-        if (list.Any(m => m.Contents.Any(c => c is FunctionResultContent)))
+        var lastUserIndex = LastUserIndex(list);
+        if (lastUserIndex < 0)
         {
-            return false;
+            return null;
         }
 
-        var lastUser = list.LastOrDefault(m => m.Role == ChatRole.User);
-        return lastUser?.Text?.Contains("remind", StringComparison.OrdinalIgnoreCase) == true;
+        // Once a tool has run for THIS turn, its result is in the messages that follow the
+        // triggering user message — answer in text instead of calling the tool again (which
+        // would loop forever). Scoping to messages after the last user turn is what lets a
+        // schedule-then-cancel conversation call a second tool on the later turn.
+        for (var i = lastUserIndex + 1; i < list.Count; i++)
+        {
+            if (list[i].Contents.Any(c => c is FunctionResultContent))
+            {
+                return null;
+            }
+        }
+
+        var text = list[lastUserIndex].Text ?? "";
+
+        // Ordering is load-bearing: "reminder" contains the substring "remind", so the cancel
+        // checks MUST precede the schedule check — do not reorder these branches.
+        if (text.Contains("cancel all", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildCancelAllCall();
+        }
+
+        if (text.Contains("cancel", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildCancelCall();
+        }
+
+        if (text.Contains("remind", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildReminderCall();
+        }
+
+        return null;
+    }
+
+    private static int LastUserIndex(IReadOnlyList<ChatMessage> list)
+    {
+        for (var i = list.Count - 1; i >= 0; i--)
+        {
+            if (list[i].Role == ChatRole.User)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
