@@ -90,6 +90,7 @@
     }
     for (const conv of conversations) {
       const li = document.createElement("li");
+      li.className = "conv-row";
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "conv" + (conv.id === activeId ? " is-active" : "");
@@ -104,9 +105,37 @@
       time.textContent = timeLabel(conv.updatedAt);
 
       btn.append(title, time);
-      li.appendChild(btn);
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "conv__delete";
+      del.setAttribute("aria-label", `Delete conversation: ${conv.title}`);
+      del.textContent = "×";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteConversation(conv.id, conv.title);
+      });
+
+      li.append(btn, del);
       conversationList.appendChild(li);
     }
+  }
+
+  // Permanently deletes a conversation (session + reminders) after confirmation, then
+  // reconciles the sidebar. If the open conversation is deleted, reset to a new chat.
+  async function deleteConversation(id, title) {
+    if (streaming) return;
+    if (!confirm(`Delete "${title}"? This can't be undone.`)) return;
+
+    try {
+      const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) return;
+    } catch { return; /* silo may be unreachable; leave the row in place */ }
+
+    conversations = conversations.filter((c) => c.id !== id);
+    if (id === activeId) startNewConversation();
+    else renderSidebar();
+    refreshConversations();
   }
 
   /* ————— thread rendering ————— */

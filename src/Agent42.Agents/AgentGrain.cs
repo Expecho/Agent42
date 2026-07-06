@@ -189,6 +189,26 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
         => Task.FromResult<IReadOnlyList<ReminderInfo>>(
             [.. _state.State.ScheduledPrompts.Values.OrderBy(r => r.CreatedAt)]);
 
+    public async Task PurgeAsync()
+    {
+        // Reminders are durable and keep firing on their own schedule, so they must be
+        // unregistered explicitly — clearing state alone would leave them ticking.
+        foreach (var reminder in await this.GetReminders())
+        {
+            await this.UnregisterReminder(reminder);
+        }
+
+        _state.State.ScheduledPrompts.Clear();
+        _state.State.SerializedSession = null;
+        _state.State.DeploymentName = null;
+        await _state.ClearStateAsync();
+
+        _logger.LogInformation("Agent grain {GrainKey} purged", this.GetPrimaryKeyString());
+
+        // Start the next activation from clean state rather than the stale in-memory session.
+        this.DeactivateOnIdle();
+    }
+
     private static DateTime GetDate() => DateTime.Now;
 
     /// <summary>

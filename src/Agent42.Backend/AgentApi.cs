@@ -46,6 +46,16 @@ public static class AgentApi
         app.MapGet("/api/conversations/{conversationId}/model", async (string conversationId, IGrainFactory grains, HttpContext http) =>
             Results.Json(await grains.GetGrain<IAgentGrain>(AgentKey(http.GetUserId(), conversationId)).GetSelectedModelAsync()));
 
+        // Permanently deletes a conversation: purges the agent grain (session + durable
+        // reminders), then removes it from the user's conversation index.
+        app.MapDelete("/api/conversations/{conversationId}", async (string conversationId, IGrainFactory grains, HttpContext http) =>
+        {
+            var userId = http.GetUserId();
+            await grains.GetGrain<IAgentGrain>(AgentKey(userId, conversationId)).PurgeAsync();
+            await grains.GetGrain<IConversationIndexGrain>(userId).RemoveAsync(conversationId);
+            return Results.NoContent();
+        });
+
         // Live list of the model deployments available in the configured AI Foundry account.
         app.MapGet("/api/models", (IModelCatalog catalog, CancellationToken ct) => catalog.GetAsync(ct));
 
