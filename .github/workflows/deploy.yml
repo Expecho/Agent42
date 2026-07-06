@@ -61,6 +61,7 @@ jobs:
           creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
 
       - name: Deploy Bicep
+        id: deploy
         run: |
           acr_password=$(az acr credential show --name "$REGISTRY_NAME" --query "passwords[0].value" -o tsv)
 
@@ -68,7 +69,7 @@ jobs:
           # Cosmos accounts on first deploy ("high demand ... cannot fulfill your
           # request at this time"), and the account's region can't change after
           # creation, so this must keep matching wherever it actually lives.
-          az deployment group create \
+          principal_id=$(az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
             --parameters \
@@ -76,4 +77,31 @@ jobs:
               acrAdminUsername="$REGISTRY_NAME" \
               acrAdminPassword="$acr_password" \
               authClientSecret="${{ secrets.AAD_CLIENT_SECRET }}" \
-              cosmosLocation="northeurope"
+              cosmosLocation="northeurope" \
+            --query properties.outputs.containerAppPrincipalId.value -o tsv)
+          echo "principal-id=$principal_id" >> "$GITHUB_OUTPUT"
+
+      # Not managed via the Bicep above: the AI Foundry account lives in a separate
+      # resource group ('agent42') that this deploy identity has no general access
+      # to (only a role-assignment-scoped grant on this one account — see
+      # infra/main.bicep's history for why). A nested Bicep module targeting that
+      # RG would need Microsoft.Resources/deployments/write there too, which wasn't
+      # granted; a direct role-assignment PUT only needs
+      # Microsoft.Authorization/roleAssignments/write on the account itself, which
+      # was granted. Idempotent: skips if the container app identity already holds
+      # the role (e.g. unchanged between deploys).
+      - name: Grant Cognitive Services OpenAI User role to the container app identity
+        run: |
+          principal_id="${{ steps.deploy.outputs.principal-id }}"
+          scope="/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/agent42/providers/Microsoft.CognitiveServices/accounts/Agent42"
+          role_definition_id="/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/providers/Microsoft.Authorization/roleDefinitions/5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
+
+          existing_count=$(az rest --method get \
+            --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01&\$filter=principalId eq '${principal_id}'" \
+            --query "length(value[?properties.roleDefinitionId=='${role_definition_id}'])" -o tsv)
+
+          if [ "$existing_count" = "0" ]; then
+            az rest --method put \
+              --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/roleAssignments/$(uuidgen)?api-version=2022-04-01" \
+              --body "{\"properties\":{\"roleDefinitionId\":\"${role_definition_id}\",\"principalId\":\"${principal_id}\",\"principalType\":\"ServicePrincipal\"}}"
+          fi

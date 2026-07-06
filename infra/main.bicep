@@ -177,17 +177,3 @@ output containerAppPrincipalId string = containerApp.outputs.principalId
 
 @description('Name of the Cosmos DB account created for grain state.')
 output cosmosAccountName string = cosmos.outputs.accountName
-
-// Deployed into the AI Foundry account's own resource group ('agent42'), separate
-// from where the rest of this deployment runs. Requires the deploying principal to
-// hold a role assignment-capable role (e.g. "Role Based Access Control
-// Administrator", ideally condition-restricted to just this role definition) scoped
-// to the account below — a one-time manual grant; see the module for why.
-module openAIRoleAssignment 'modules/openai-role-assignment.bicep' = {
-  name: 'agent42-openai-role-assignment'
-  scope: resourceGroup(azureOpenAIResourceGroup)
-  params: {
-    accountName: azureOpenAIAccountName
-    principalId: containerApp.outputs.principalId
-  }
-}
