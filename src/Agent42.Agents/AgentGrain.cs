@@ -189,7 +189,6 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
         => Task.FromResult<IReadOnlyList<ReminderInfo>>(
             [.. _state.State.ScheduledPrompts.Values.OrderBy(r => r.CreatedAt)]);
 
-    
     private static DateTime GetDate() => DateTime.Now;
 
     /// <summary>

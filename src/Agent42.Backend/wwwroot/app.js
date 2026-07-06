@@ -239,7 +239,6 @@
         fetch(`/api/conversations/${encodeURIComponent(id)}/messages`),
         fetch(`/api/conversations/${encodeURIComponent(id)}/model`),
       ]);
-      if (modelRes.ok) setModel(await modelRes.json());
       if (!msgRes.ok) return;
       const turns = await msgRes.json();
       for (const turn of turns) {
@@ -248,6 +247,9 @@
         else setAgentMarkdown(msg, turn.text);
       }
       scrollToBottom();
+      // Restore the model picker only after the history is on screen, so a failure
+      // here can never prevent the conversation itself from rendering.
+      if (modelRes.ok) setModel(await modelRes.json());
     } catch { /* leave the empty state visible */ }
   }
 

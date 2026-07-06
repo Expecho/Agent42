@@ -1,81 +1,75 @@
 # Agent42
 
-A minimal chat agent hosted in Microsoft Orleans, using the Microsoft Agent Framework against Azure OpenAI, with a React + Vite frontend.
+A personal chat agent hosted in Microsoft Orleans: one grain per conversation wraps a
+Microsoft Agent Framework `ChatClientAgent` against Azure OpenAI (AI Foundry), with
+streaming replies, durable scheduled reminders, a model picker, and a vanilla-JS web UI
+served from the backend. Deployed to Azure Container Apps behind Entra ID Easy Auth.
 
 ## Architecture
 
 ```
-React + Vite (5173)  ──HTTP──▶  ASP.NET Core + Orleans Silo (5099)
-                                       │
-                                       ▼
-                                  ConversationGrain
-                                  (per conversation id)
-                                       │
-                                       ▼
-                                Azure OpenAI gpt-5-chat
+wwwroot UI (vanilla JS)  ──HTTP/NDJSON──▶  ASP.NET Core minimal API + Orleans silo
+                                                    │
+                                                    ▼
+                                        AgentGrain  (key: {userId}/{conversationId})
+                                        ├─ Agent Framework ChatClientAgent + tools
+                                        ├─ session persisted as grain state → Cosmos DB
+                                        └─ durable reminders (schedule_prompt) → Cosmos DB
+                                                    │
+                                                    ▼
+                                        Azure OpenAI (AI Foundry model deployments)
 ```
 
-- **Backend** — `src/Agent42.Backend/` — co-hosts ASP.NET Core minimal-API and an Orleans silo (`UseLocalhostClustering`, `AddMemoryGrainStorage`). One `ConversationGrain` per conversation id wraps a `ChatClientAgent` (Microsoft Agent Framework) and persists the agent session + chronological message log via Orleans `IPersistentState`.
-- **Frontend** — `src/agent42-web/` — Vite + React + TypeScript chat UI. Stores the conversation id in `localStorage`.
-- **Persistence** — in-memory grain storage (dev only — state is lost on silo restart).
+- **Backend** — `src/Agent42.Backend/` — minimal API (`AgentApi.cs`) co-hosted with an
+  Orleans silo; streams each turn as NDJSON events (text deltas, tool calls, token usage).
+- **Agents** — `src/Agent42.Agents/` — `AgentGrain` (chat, model switching, reminders,
+  runtime skills from `Skills/*/SKILL.md`), `ConversationIndexGrain` (per-user list).
+- **Frontend** — `src/Agent42.Backend/wwwroot/` — static vanilla JS (marked + DOMPurify);
+  deliberately no SPA build.
+- **Infra** — `infra/` (Bicep) + `.github/workflows/deploy.yml` (build → ACR → deploy).
 
-## Prerequisites
-
-- .NET 10 SDK
-- Node.js 22+ and npm
-- An Azure OpenAI deployment named `gpt-5-chat` at `https://agent42.cognitiveservices.azure.com/`
-
-## Configuration
-
-The endpoint and deployment name are committed to `src/Agent42.Backend/appsettings.json`. The API key is stored via .NET User Secrets — never in source.
+## Run locally
 
 ```powershell
-dotnet user-secrets set "AzureOpenAI:ApiKey" "<your-key>" --project src/Agent42.Backend
+# Offline dev loop — canned LLM, in-memory grains, no Azure or Docker needed.
+# UI at http://localhost:61326
+dotnet run --project tools/Agent42.DevHost
+
+# Full stack — Aspire orchestration with the Cosmos emulator (needs Docker).
+dotnet run --project src/Agent42.AppHost
 ```
 
-> **Security note:** the API key initially used during scaffolding was shared in chat. Rotate it in the Azure portal (resource → Keys and Endpoint → Regenerate Key 1), then update User Secrets with the new value.
+Running `src/Agent42.Backend` standalone requires a real Azure OpenAI endpoint
+(`AzureOpenAI:Endpoint`) and an identity with the `Cognitive Services OpenAI User` role;
+locally `DefaultAzureCredential` picks up your `az login`.
 
-The frontend reads `VITE_API_URL` from `src/agent42-web/.env.local` (default `http://localhost:5099`).
-
-## Run
-
-In two terminals:
+## Test
 
 ```powershell
-# terminal 1 — backend (silo + API on http://localhost:5099)
-dotnet run --project src/Agent42.Backend
+dotnet test Agent42.slnx
 ```
 
-```powershell
-# terminal 2 — frontend (http://localhost:5173)
-cd src/agent42-web
-npm install   # first time only
-npm run dev
-```
-
-Open http://localhost:5173 and chat. "New conversation" clears the local id and starts a fresh grain.
+xUnit + Orleans `TestingHost` with a fake chat client — no network needed.
 
 ## HTTP API
 
-- `POST /api/conversations` → `{ id }`
-- `POST /api/conversations/{id}/messages` body `{ "text": "..." }` → `{ reply }`
-- `GET /api/conversations/{id}/messages` → `[{ role, content, timestamp }, ...]`
+- `POST /api/chat/{conversationId}` body `{ "message": "...", "model": null }` → NDJSON stream of events
+- `GET  /api/conversations` → the signed-in user's conversations, most recent first
+- `GET  /api/conversations/{id}/messages` → visible history for resuming a conversation
+- `GET  /api/conversations/{id}/model` → the model this conversation currently uses
+- `GET  /api/models` → model deployments available in the AI Foundry account
 
-## Tests
+In production the user is the Entra ID principal injected by Easy Auth; locally
+everything maps to a single `local-dev` pseudo-user.
 
-End-to-end Playwright test (requires backend + frontend already running):
+## Deployment
 
-```powershell
-cd src/agent42-web
-npx playwright test
-```
+Push to `main` → `.github/workflows/deploy.yml` builds the container, pushes to ACR, and
+deploys `infra/main.bicep`. See `.agentic/gotchas.md` before touching infra — several
+constraints there (Cosmos region/containers, custom domain, role grants) are invisible
+in the code.
 
-The test sends a fact, then asks a follow-up that depends on the conversation memory — exercising both the silo and `ChatClientAgentSession` rehydration.
+## Contributing / agent docs
 
-## Production hardening (out of scope)
-
-- Swap `AddMemoryGrainStorage` for `AzureTable`, `AdoNet`, or `Cosmos` so state survives silo restarts.
-- Add request authentication (the API is currently open).
-- Compact long histories (rolling window or summarization) before they exceed model context.
-- Add streaming via Orleans Streams or `[AlwaysInterleave]` `IAsyncEnumerable<string>`.
-- Tune `MessagingOptions.ResponseTimeout` and `HttpClient.Timeout` past the default 100s for slow LLM calls.
+Commands, hard rules, and the knowledge layout live in `CLAUDE.md`; decisions in
+`.agentic/decisions/`; non-obvious constraints in `.agentic/gotchas.md`.
