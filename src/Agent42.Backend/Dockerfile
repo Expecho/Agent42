@@ -4,6 +4,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+# Central Package Management: all versions live in Directory.Packages.props at the
+# repo root, so restore needs it present before the project files (NU1015 otherwise).
+COPY Directory.Packages.props ./
 COPY src/Agent42.Backend/Agent42.Backend.csproj src/Agent42.Backend/
 COPY src/Agent42.Agents/Agent42.Agents.csproj src/Agent42.Agents/
 COPY src/Agent42.ServiceDefaults/Agent42.ServiceDefaults.csproj src/Agent42.ServiceDefaults/
