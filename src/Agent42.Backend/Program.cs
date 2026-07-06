@@ -70,18 +70,22 @@ builder.UseOrleans(silo =>
             ValueTask.FromResult(sp.GetRequiredService<CosmosClient>()));
         options.DatabaseName = "agent42";
         options.ContainerName = "agent-state";
-        options.IsResourceCreationEnabled = true;
+        options.IsResourceCreationEnabled = false;
     });
 
     // Durable reminders (the schedule_prompt agent tool) persisted in Cosmos, so a
     // scheduled reminder survives silo restarts just like the agent state does.
+    // Resource creation is disabled: the account has disableLocalAuth: true, and
+    // Cosmos's AAD data-plane RBAC cannot create databases/containers (only ARM
+    // control-plane can), so the "reminders" container is pre-created in
+    // infra/modules/cosmos.bicep instead.
     silo.UseCosmosReminderService(options =>
     {
         options.ConfigureCosmosClient(sp =>
             ValueTask.FromResult(sp.GetRequiredService<CosmosClient>()));
         options.DatabaseName = "agent42";
         options.ContainerName = "reminders";
-        options.IsResourceCreationEnabled = true;
+        options.IsResourceCreationEnabled = false;
     });
 });
 
