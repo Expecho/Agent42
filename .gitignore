@@ -19,7 +19,6 @@ Thumbs.db
 .vscode/
 
 # Claude Code local config/session artifacts
-.claude/
 .playwright-cli/
 
 # Local run logs
