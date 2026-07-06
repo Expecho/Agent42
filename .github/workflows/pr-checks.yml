@@ -1,0 +1,66 @@
+# PR quality gates. Thresholds and policy live in .agentic/quality-gates.yaml —
+# this workflow enforces: build, tests, format, vulnerable_packages: 0, and
+# doc-path integrity. outdated_packages is report-only (policy: report).
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore Agent42.slnx
+      - run: dotnet build Agent42.slnx --no-restore
+      - run: dotnet test Agent42.slnx --no-build
+      - run: dotnet format Agent42.slnx --verify-no-changes --no-restore
+
+  vulnerable-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore Agent42.slnx
+      - name: Fail on vulnerable packages (policy vulnerable_packages 0)
+        run: |
+          dotnet list Agent42.slnx package --vulnerable --include-transitive | tee vulnerable.txt
+          if grep -q "has the following vulnerable packages" vulnerable.txt; then
+            echo "Vulnerable packages found — policy is vulnerable_packages: 0 (quality-gates.yaml)."
+            exit 1
+          fi
+
+  outdated-packages:
+    runs-on: ubuntu-latest
+    continue-on-error: true # a nudge, not a block (policy: outdated_packages: report)
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore Agent42.slnx
+      - name: Report outdated packages
+        run: |
+          dotnet list Agent42.slnx package --outdated | tee outdated.txt
+          if grep -q "has the following updates" outdated.txt; then
+            echo "Outdated packages found — not blocking (policy: report), but update soon."
+            exit 1
+          fi
+
+  agent-docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node .agentic/scripts/check-doc-paths.mjs

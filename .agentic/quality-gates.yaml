@@ -1,0 +1,23 @@
+# Single source of truth for quality-gate thresholds.
+# Skills and CI read this file; thresholds are NEVER hardcoded elsewhere.
+
+gates:
+  new_issues: 0
+  new_security_issues: 0
+  duplication_pct_max: 3
+  coverage_new_code_pct_min: 80
+  cognitive_complexity_max: 15
+
+enforcement:
+  local: soft_warning        # skills render the gate table, ask proceed/abort on FAIL
+  ci: hard_block             # PR checks (.github/workflows/pr-checks.yml) block on:
+                             # build, tests, dotnet format, vulnerable packages,
+                             # doc-path integrity. Coverage/duplication/complexity
+                             # gates are self-reported only (no Sonar-style server).
+
+dependencies:
+  vulnerable_packages: 0     # hard block (CI: package-freshness job)
+  outdated_packages: report  # soft — surfaced in CI, upgraded via MRs, not blocked
+  add_policy: latest-stable  # new deps resolved from the feed at add time, never from memory
+
+coverage_tooling: coverlet  # dotnet test Agent42.slnx --collect:"XPlat Code Coverage"

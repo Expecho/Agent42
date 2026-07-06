@@ -41,8 +41,10 @@ public static class AgentApi
             grains.GetGrain<IAgentGrain>(AgentKey(http.GetUserId(), conversationId)).GetHistoryAsync());
 
         // The model this conversation is currently using, so the picker can be restored.
-        app.MapGet("/api/conversations/{conversationId}/model", (string conversationId, IGrainFactory grains, HttpContext http) =>
-            grains.GetGrain<IAgentGrain>(AgentKey(http.GetUserId(), conversationId)).GetSelectedModelAsync());
+        // Wrapped in Results.Json so the bare string is sent as JSON ("gpt-4o"), not as a
+        // text/plain body — the UI parses this response as JSON like every other endpoint.
+        app.MapGet("/api/conversations/{conversationId}/model", async (string conversationId, IGrainFactory grains, HttpContext http) =>
+            Results.Json(await grains.GetGrain<IAgentGrain>(AgentKey(http.GetUserId(), conversationId)).GetSelectedModelAsync()));
 
         // Live list of the model deployments available in the configured AI Foundry account.
         app.MapGet("/api/models", (IModelCatalog catalog, CancellationToken ct) => catalog.GetAsync(ct));
