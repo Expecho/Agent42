@@ -39,6 +39,14 @@
     </aside>
 
     <main class="chat">
+      <header class="topbar" id="topbar">
+        <button class="topbar__menu" id="menuToggle" type="button"
+                aria-label="Open conversations" aria-controls="sidebar" aria-expanded="false">
+          <span class="topbar__bars" aria-hidden="true"></span>
+        </button>
+        <span class="topbar__brand"><span class="topbar__mark">42</span>AGENT&nbsp;42</span>
+      </header>
+
       <div class="chat__scroll" id="chatScroll">
         <div class="chat__thread" id="thread">
           <div class="empty" id="emptyState">
@@ -68,6 +76,8 @@
         </div>
       </form>
     </main>
+
+    <div class="backdrop" id="backdrop"></div>
 
   </div>
 
