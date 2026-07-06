@@ -23,6 +23,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Grain test (Orleans TestCluster + fake client)  | `tests/Agent42.Tests/AgentGrainTests.cs`          | 2026-07-06 |
 | Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-07-06 |
 | Frontend logic (vanilla JS, no framework)       | `src/Agent42.Backend/wwwroot/app.js`              | 2026-07-06 |
+| PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
 
 ## Constraints
@@ -67,6 +68,20 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Results.Json(...)` so the API is uniformly JSON. Keep UI side-effects that can throw
   (model-picker restore) after the primary render.
 - **Evidence:** `src/Agent42.Backend/AgentApi.cs` (`/model` endpoint), `src/Agent42.Backend/wwwroot/app.js` (`selectConversation`), `tests/Agent42.Tests/AgentApiTests.cs`
+- **Verified:** 2026-07-06
+
+### Service worker must stay network-first for navigations and bypass /api
+
+- **Claim:** the whole app is behind Entra Easy Auth at the ingress (ADR 0002), so an
+  expired session turns any navigation into a 302 redirect to the Entra login. The PWA
+  service worker (`src/Agent42.Backend/wwwroot/sw.js`) is therefore **network-first for `req.mode ===
+  "navigate"`** (cached `index.html` is an offline-only fallback) and **returns early for
+  any `/api` path before touching the cache**. "Optimizing" the SW to cache-first
+  navigations would serve a stale shell over the login redirect (auth silently breaks);
+  caching `/api` would stale/leak per-user, auth-bearing, streaming chat responses. The
+  `PwaAssetsTests.ServiceWorker_BypassesApiBeforeCaching` test guards the `/api` ordering,
+  but the navigation strategy is only enforced here — keep it network-first.
+- **Evidence:** `src/Agent42.Backend/wwwroot/sw.js`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
 - **Verified:** 2026-07-06
 
 ### Agent Framework 1.13 session API differs from older samples
