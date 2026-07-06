@@ -10,6 +10,9 @@ param databaseName string
 @description('Cosmos DB SQL container name used for Orleans grain storage.')
 param containerName string
 
+@description('Cosmos DB SQL container name used for Orleans durable reminders.')
+param remindersContainerName string
+
 @description('Tags applied to the account.')
 param tags object
 
@@ -64,6 +67,37 @@ resource container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/container
       partitionKey: {
         paths: ['/PartitionKey']
         kind: 'Hash'
+      }
+    }
+  }
+}
+
+// Pre-created for the same reason as the grain-state container above: the account has
+// disableLocalAuth: true, and Cosmos's AAD data-plane RBAC cannot create databases or
+// containers (see https://aka.ms/cosmos-native-rbac) — Orleans.Reminders.Cosmos's own
+// IsResourceCreationEnabled auto-create path fails with a 403 (substatus 5300) for the
+// same reason. Partition key path matches Orleans.Reminders.Cosmos's own default
+// (ContainerProperties(containerName, "/PartitionKey")).
+resource remindersContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2026-03-15' = {
+  parent: database
+  name: remindersContainerName
+  properties: {
+    resource: {
+      id: remindersContainerName
+      partitionKey: {
+        paths: ['/PartitionKey']
+        kind: 'Hash'
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        includedPaths: [
+          { path: '/*' }
+        ]
+        excludedPaths: [
+          { path: '/StartAt/?' }
+          { path: '/Period/?' }
+          { path: '/_etag/?' }
+        ]
       }
     }
   }

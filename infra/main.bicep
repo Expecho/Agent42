@@ -45,6 +45,9 @@ param cosmosDatabaseName string = 'agent42'
 @description('Cosmos DB SQL container name used by the Orleans grain storage provider.')
 param cosmosContainerName string = 'agent-state'
 
+@description('Cosmos DB SQL container name used by the Orleans durable reminders provider.')
+param cosmosRemindersContainerName string = 'reminders'
+
 @description('Endpoint of the existing Azure AI Foundry / Azure OpenAI resource.')
 param azureOpenAIEndpoint string = 'https://agent42.services.ai.azure.com'
 
@@ -112,6 +115,7 @@ module cosmos 'modules/cosmos.bicep' = {
     accountName: cosmosAccountName
     databaseName: cosmosDatabaseName
     containerName: cosmosContainerName
+    remindersContainerName: cosmosRemindersContainerName
     tags: tags
   }
 }
