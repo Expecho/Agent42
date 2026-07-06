@@ -76,6 +76,12 @@ param maxReplicas int
 @description('Tags applied to the Container App.')
 param tags object
 
+@description('Custom domain hostname bound to the Container App ingress, e.g. chat.agent42.nl. Leave empty to skip binding a custom domain.')
+param customDomainName string = ''
+
+@description('Name of the existing managed certificate resource (Microsoft.App/managedEnvironments/managedCertificates, in the same resource group as the environment) backing customDomainName. Azure auto-generates this name (format <domain>-<environment-name>-<timestamp>) when the certificate is first created via `az containerapp hostname bind` or the portal; look it up with `az containerapp env certificate list -n <environmentName> -g <environmentResourceGroup>`. Required when customDomainName is set. If the certificate is ever recreated, this value must be updated to match, or this deployment will unbind the domain again.')
+param customDomainCertificateName string = ''
+
 resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
   name: containerAppName
   location: location
@@ -90,6 +96,21 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
         external: true
         targetPort: 8080
         transport: 'auto'
+        // Declared explicitly (rather than left to out-of-band `az containerapp hostname bind`)
+        // because every Bicep deployment overwrites the whole `ingress` object, including
+        // `customDomains` — an undeclared custom domain gets silently unbound (though its
+        // managed certificate resource survives) on the next redeploy otherwise.
+        customDomains: !empty(customDomainName) ? [
+          {
+            name: customDomainName
+            bindingType: 'SniEnabled'
+            certificateId: resourceId(
+              environmentResourceGroup,
+              'Microsoft.App/managedEnvironments/managedCertificates',
+              environmentName,
+              customDomainCertificateName)
+          }
+        ] : []
       }
       registries: [
         {
