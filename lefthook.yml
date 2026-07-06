@@ -4,7 +4,12 @@ pre-push:
     protect-main:
       run: |
         branch=$(git branch --show-current)
-        if [ "$branch" = "main" ]; then
-          echo "Direct push to $branch is blocked. Use a feature branch + MR."
-          exit 1
-        fi
+        # Protected list lives in .agentic/quality-gates.yaml (branches.protected).
+        protected=$(sed -n 's/^[[:space:]]*protected:[[:space:]]*\[\(.*\)\].*/\1/p' .agentic/quality-gates.yaml | tr ',' ' ')
+        [ -n "$protected" ] || protected="main master develop"
+        for p in $protected; do
+          if [ "$branch" = "$p" ]; then
+            echo "Direct push to $branch is blocked. Use a feature branch + MR."
+            exit 1
+          fi
+        done

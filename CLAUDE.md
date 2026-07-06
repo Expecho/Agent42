@@ -20,8 +20,10 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 
 ## Hard rules
 
-1. **Never commit or push to `main`.**
-   Always a branch (`feature/*`, `fix/*`, `hotfix/*`) + MR. (Enforced: `.claude/hooks/protect-main.mjs`, `lefthook.yml`.)
+1. **Never commit or push to a protected branch.** The list lives in ONE place —
+   `branches.protected` in `.agentic/quality-gates.yaml` — and is enforced from there
+   by the agent hook (`.claude/hooks/protect-main.mjs`) and the human hook (`lefthook.yml`).
+   Always a branch (`feature/*`, `fix/*`, `hotfix/*`) + MR.
 2. **Code is the source of truth.** Docs in this repo are pointers and rationale, never
    authority on structure. On conflict, trust code and fix the doc in the same MR.
 3. **Quality gates** live in `.agentic/quality-gates.yaml` — read them, never hardcode
@@ -39,10 +41,16 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 |------|-------|-------------|
 | Decisions + rationale | `.agentic/decisions/` (ADRs) | Before proposing any architectural change, grep here for prior art and supersessions |
 | Non-obvious constraints | `.agentic/gotchas.md` | Read the entries for your area before changing it |
-| Canonical code shapes | Exemplar paths listed in `gotchas.md` | Copy the exemplar's shape for new code; never invent structure |
+| Canonical code shapes | Exemplar paths listed in `.agentic/gotchas.md` | Copy the exemplar's shape for new code; never invent structure |
 | Multi-session plans | `.agentic/specs/` | Active plans; move to `specs/completed/` when done |
 
 ## Working agreement (the loop)
+
+**Choosing a workflow:** nontrivial change → `/plan`, then `/execute-plan` (per-step
+test gating) — each in a fresh session (`/clear`); the spec in `.agentic/specs/` is
+the complete handoff between them. Small urgent fixes go direct — minimal diff,
+regression test mandatory, always a `fix/*` or `hotfix/*` branch. Run `/audit-docs`
+periodically and after large refactors.
 
 **Before a change:** read `gotchas.md` entries for the touched area → open the relevant
 exemplar file → validate assumptions with search, not memory.
@@ -51,9 +59,14 @@ exemplar file → validate assumptions with search, not memory.
 can't express? → `/gotcha`. Diff invalidates a doc claim? → fix it in the same MR
 (`/sync-docs`). Then run test + lint before reporting completion.
 
-**Parallel subagents:** dispatching two or more write-capable subagents concurrently
-requires worktree isolation (`isolation: "worktree"`) — or run them sequentially.
-Parallel writers in one checkout corrupt each other's edits.
+**Parallel subagents:** for read-only fan-out (verifying claims, locating shapes,
+mining history) dispatch `scout` subagents (`.claude/agents/scout.md` — cheap model
+tier, evidence-or-unverified discipline) and keep judgment in the main session.
+Dispatching two or more write-capable subagents concurrently requires worktree
+isolation (`isolation: "worktree"`) — or run them sequentially. Parallel writers
+in one checkout corrupt each other's edits. For plan steps, dispatch
+`step-implementer` subagents (`.claude/agents/step-implementer.md`) — they carry
+the per-step discipline; plain subagents don't.
 
 **Convention enforcement:** conventions here are enforced by tooling
 (`dotnet format` whitespace/IDE analyzers — checked in CI; lefthook pre-push +

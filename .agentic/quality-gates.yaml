@@ -1,5 +1,8 @@
-# Single source of truth for quality-gate thresholds.
-# Skills and CI read this file; thresholds are NEVER hardcoded elsewhere.
+# Single source of truth for branch policy and quality-gate thresholds.
+# Hooks, skills, and CI read this file; values are NEVER hardcoded elsewhere.
+
+branches:
+  protected: [main]  # read by .claude/hooks/protect-main.mjs and lefthook.yml
 
 gates:
   new_issues: 0
