@@ -118,6 +118,42 @@ public sealed class AgentGrainTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Purge_ClearsHistoryAndUnregistersReminders()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("purge-conversation");
+
+        await foreach (var _ in agent.ChatAsync("please remind me to drink water", null))
+        {
+        }
+
+        // Precondition: the conversation has both history and a durable reminder.
+        Assert.NotEmpty(await agent.GetHistoryAsync());
+        Assert.Single(await agent.GetScheduledPromptsAsync());
+
+        // Purge iterates the grain's real registered reminders and unregisters each, so
+        // this call exercises the UnregisterReminder path against a live reminder.
+        await agent.PurgeAsync();
+
+        var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>("purge-conversation");
+        Assert.Empty(await reactivated.GetHistoryAsync());
+        Assert.Empty(await reactivated.GetScheduledPromptsAsync());
+    }
+
+    [Fact]
+    public async Task ConversationIndex_RemoveAsync_DropsTheConversation()
+    {
+        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("remove-user");
+
+        await index.TouchAsync("conv-1", "What is the answer to everything?");
+        await index.TouchAsync("conv-2", "Plan a trip to Magrathea");
+
+        await index.RemoveAsync("conv-1");
+
+        var conversations = await index.GetConversationsAsync();
+        Assert.Equal("conv-2", Assert.Single(conversations).Id);
+    }
+
+    [Fact]
     public async Task WhenAReminderFires_ItsPromptIsSentToTheAgent()
     {
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-firing-conversation");
