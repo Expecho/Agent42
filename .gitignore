@@ -18,8 +18,9 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Claude Code local config/session artifacts
-.claude/
+# Claude Code — track shared config, skills, and hooks (repo infrastructure that
+# CLAUDE.md and .agentic/ reference); ignore only the per-developer local override.
+.claude/settings.local.json
 .playwright-cli/
 
 # Local run logs
