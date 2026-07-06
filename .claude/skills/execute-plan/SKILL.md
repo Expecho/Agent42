@@ -1,6 +1,7 @@
 ---
 name: execute-plan
 description: Execute a plan from .agentic/specs/ with per-step test gating, evidence-based quality gates, and spec lifecycle handling through to an MR.
+user-invocable: true
 disable-model-invocation: true
 argument-hint: "[plan file — defaults to most recently modified plan-*.md in .agentic/specs/]"
 ---

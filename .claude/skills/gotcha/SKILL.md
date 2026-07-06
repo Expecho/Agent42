@@ -1,6 +1,7 @@
 ---
 name: gotcha
 description: Capture a non-obvious constraint or a new canonical exemplar in .agentic/gotchas.md, with an evidence path and verified date.
+user-invocable: true
 argument-hint: "<the trap or exemplar to record>"
 ---
 

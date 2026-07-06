@@ -27,4 +27,10 @@ public interface IConversationIndexGrain : IGrainWithStringKey
     /// <summary>Returns all conversations, most recently used first.</summary>
     [Alias("GetConversationsAsync")]
     Task<IReadOnlyList<ConversationInfo>> GetConversationsAsync();
+
+    /// <summary>
+    /// Removes a conversation from the index. No-op if it isn't listed.
+    /// </summary>
+    [Alias("RemoveAsync")]
+    Task RemoveAsync(string conversationId);
 }

@@ -1,6 +1,7 @@
 ---
 name: onboard-new
 description: Interview-driven setup of the agentic template for a greenfield repository. Asks the user for stack, commands, rules, and gates, then fills every onboard marker and seeds the first ADRs.
+user-invocable: true
 disable-model-invocation: true
 argument-hint: "[optional: one-line project description]"
 ---

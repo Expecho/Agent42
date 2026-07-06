@@ -1,6 +1,7 @@
 ---
 name: audit-docs
 description: Verify every claim in CLAUDE.md and .agentic/ against the actual code and report drift. Run periodically, after large refactors, or before a release.
+user-invocable: true
 argument-hint: "[optional: area to limit the audit to]"
 ---
 
