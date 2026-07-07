@@ -233,6 +233,90 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Empty(await agent.GetScheduledPromptsAsync());
     }
 
+    // AC2: binding pins the persona + model into the conversation and survives reactivation.
+    [Fact]
+    public async Task Binding_PinsPersonaAndModel_SurvivesReactivation()
+    {
+        const string key = "binding-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await agent.BindAgentAsync(new AgentBinding("agent-1", "Marvin", "You are Marvin.", "persona-model"));
+
+        var binding = await agent.GetAgentBindingAsync();
+        Assert.NotNull(binding);
+        Assert.Equal("agent-1", binding!.AgentId);
+        Assert.Equal("Marvin", binding.Name);
+        Assert.Equal("You are Marvin.", binding.SystemPrompt);
+        Assert.Equal("persona-model", binding.Model);
+        // The bound model becomes the conversation's model — the picker is hidden, so it never changes.
+        Assert.Equal("persona-model", await agent.GetSelectedModelAsync());
+
+        // Force deactivation so the binding is rehydrated from persisted state (Cosmos in prod).
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        Assert.Equal(binding, await reactivated.GetAgentBindingAsync());
+        Assert.Equal("persona-model", await reactivated.GetSelectedModelAsync());
+    }
+
+    // AC3: the bound system prompt actually reaches the model (FakeChatClient echoes what the
+    // terminal IChatClient receives as a [sys:…] marker — this is a real delivery assertion).
+    [Fact]
+    public async Task AgentChat_AppliesBoundSystemPrompt()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("agent-chat-conversation");
+        const string persona = "You are Zaphod, always speak in exclamations!";
+
+        await agent.BindAgentAsync(new AgentBinding("agent-z", "Zaphod", persona, "persona-model"));
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("hi", null))
+        {
+            events.Add(evt);
+        }
+
+        var answer = string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
+        // The fake echoes the instructions the terminal client received as [sys:…]. The
+        // Agent Framework skills provider appends its catalog to those instructions, so
+        // assert the persona is present in the echoed system prompt rather than an exact
+        // bracketed match — this still proves the bound prompt was delivered to the model.
+        Assert.Contains("[sys:", answer);
+        Assert.Contains(persona, answer);
+    }
+
+    // AC4: binding is immutable once set — a second bind can't flip the persona mid-conversation.
+    [Fact]
+    public async Task BindAgent_IsIdempotent_KeepsFirstPersona()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("idempotent-binding-conversation");
+
+        await agent.BindAgentAsync(new AgentBinding("agent-1", "First", "First prompt.", "model-a"));
+        await agent.BindAgentAsync(new AgentBinding("agent-2", "Second", "Second prompt.", "model-b"));
+
+        var binding = await agent.GetAgentBindingAsync();
+        Assert.NotNull(binding);
+        Assert.Equal("agent-1", binding!.AgentId);
+        Assert.Equal("First", binding.Name);
+        Assert.Equal("First prompt.", binding.SystemPrompt);
+        Assert.Equal("model-a", binding.Model);
+        Assert.Equal("model-a", await agent.GetSelectedModelAsync());
+    }
+
+    // A normal chat (no bind) reports no persona — the default Agent 42 persona is implicit.
+    [Fact]
+    public async Task NormalChat_HasNoBinding()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("unbound-conversation");
+
+        await foreach (var _ in agent.ChatAsync("hi", null))
+        {
+        }
+
+        Assert.Null(await agent.GetAgentBindingAsync());
+    }
+
     [Fact]
     public async Task CancellingAnUnknownReminder_ReportsItGracefully()
     {
