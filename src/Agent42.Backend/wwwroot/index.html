@@ -35,6 +35,14 @@
         <span class="new-chat__plus" aria-hidden="true">+</span> New conversation
       </button>
 
+      <nav class="agents" aria-label="Agents">
+        <div class="agents__head">
+          <p class="agents__label">// agents</p>
+          <button class="agents__add" id="addAgentBtn" type="button" aria-label="New agent">+</button>
+        </div>
+        <ul class="agents__list" id="agentList"></ul>
+      </nav>
+
       <nav class="conversations" aria-label="Conversations">
         <p class="conversations__label">// transmissions</p>
         <ul class="conversations__list" id="conversationList"></ul>
@@ -75,10 +83,11 @@
           </button>
         </div>
         <div class="composer__footer">
-          <label class="model" for="modelSelect">
+          <label class="model" id="modelField" for="modelSelect">
             <span class="model__label">// model</span>
             <select class="model__select" id="modelSelect" aria-label="Model" disabled></select>
           </label>
+          <span class="agent-lock" id="agentLabel" hidden></span>
           <p class="composer__hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</p>
         </div>
       </form>
@@ -87,6 +96,40 @@
     <div class="backdrop" id="backdrop"></div>
 
   </div>
+
+  <dialog class="agent-dialog" id="agentDialog">
+    <form class="agent-form" id="agentForm">
+      <h2 class="agent-form__title" id="agentFormTitle">New agent</h2>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// name</span>
+        <input class="agent-form__input" type="text" id="agentName" maxlength="60"
+               placeholder="e.g. Marvin" required />
+      </label>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// description</span>
+        <input class="agent-form__input" type="text" id="agentDescription" maxlength="140"
+               placeholder="A short note about this persona" />
+      </label>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// model</span>
+        <select class="agent-form__input agent-form__select" id="agentModelSelect" required></select>
+      </label>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// system prompt</span>
+        <textarea class="agent-form__input agent-form__textarea" id="agentSystemPrompt" rows="6"
+                  placeholder="You are…" required></textarea>
+      </label>
+
+      <div class="agent-form__actions">
+        <button class="agent-form__btn" type="button" id="agentCancelBtn">Cancel</button>
+        <button class="agent-form__btn agent-form__btn--primary" type="submit" id="agentSaveBtn">Save</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="lib/marked.min.js"></script>
   <script src="lib/purify.min.js"></script>

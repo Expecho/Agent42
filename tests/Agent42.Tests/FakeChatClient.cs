@@ -8,6 +8,12 @@ namespace Agent42.Tests;
 /// It maps the last user message to a tool call — "remind" schedules, "cancel all" clears
 /// every reminder, "cancel" clears one — so tests exercise the schedule/cancel tools and the
 /// Orleans reminder path end-to-end; otherwise it returns a canned greeting.
+///
+/// To let a test prove a bound persona actually reaches the model, it prepends a stable
+/// <c>[sys:…]</c> marker built from the instructions it receives. Agent Framework 1.13
+/// delivers <c>ChatOptions.Instructions</c> as <c>options.Instructions</c> (verified by a
+/// spike), but the marker also inspects system-role messages so the echo is robust if that
+/// delivery path ever changes.
 /// </summary>
 public sealed class FakeChatClient : IChatClient
 {
@@ -19,7 +25,7 @@ public sealed class FakeChatClient : IChatClient
         var call = SelectToolCall(messages);
         var contents = call is not null
             ? new List<AIContent> { call }
-            : new List<AIContent> { new TextContent(string.Concat(ReplyChunks)) };
+            : new List<AIContent> { new TextContent(InstructionsEcho(messages, options) + string.Concat(ReplyChunks)) };
 
         return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, contents)));
     }
@@ -35,11 +41,35 @@ public sealed class FakeChatClient : IChatClient
             yield break;
         }
 
+        var echo = InstructionsEcho(messages, options);
+        if (echo.Length > 0)
+        {
+            yield return new ChatResponseUpdate(ChatRole.Assistant, echo);
+            await Task.Yield();
+        }
+
         foreach (var chunk in ReplyChunks)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
             await Task.Yield();
         }
+    }
+
+    // Surfaces the instructions the terminal client received so a test can assert the bound
+    // system prompt was delivered. Prefers options.Instructions (how AF 1.13 carries it) and
+    // falls back to any system-role message. Empty when nothing was supplied.
+    private static string InstructionsEcho(IEnumerable<ChatMessage> messages, ChatOptions? options)
+    {
+        var instructions = options?.Instructions;
+        if (string.IsNullOrWhiteSpace(instructions))
+        {
+            instructions = messages
+                .Where(m => m.Role == ChatRole.System)
+                .Select(m => m.Text)
+                .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t));
+        }
+
+        return string.IsNullOrWhiteSpace(instructions) ? "" : $"[sys:{instructions}] ";
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;

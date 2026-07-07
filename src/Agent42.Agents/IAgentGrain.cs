@@ -25,6 +25,22 @@ public interface IAgentGrain : IGrainWithStringKey
     Task<string> GetSelectedModelAsync();
 
     /// <summary>
+    /// Binds a stored agent's persona (name, system prompt, model) into this conversation.
+    /// Idempotent: once a conversation is bound the persona is immutable, so a second call
+    /// is a no-op and can never flip the persona mid-conversation. Callers pass this on the
+    /// first turn of a freshly-started agent chat; normal chats never call it.
+    /// </summary>
+    [Alias("BindAgentAsync")]
+    Task BindAgentAsync(AgentBinding binding);
+
+    /// <summary>
+    /// Returns the persona bound to this conversation, or null for a normal chat. Lets the
+    /// UI lock the model picker and label an agent chat when it is reopened.
+    /// </summary>
+    [Alias("GetAgentBindingAsync")]
+    Task<AgentBinding?> GetAgentBindingAsync();
+
+    /// <summary>
     /// Returns the visible conversation history (user and assistant turns), so a
     /// client can resume a conversation later.
     /// </summary>

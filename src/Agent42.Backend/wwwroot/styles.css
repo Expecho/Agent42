@@ -24,6 +24,10 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute must beat class-level `display` rules (e.g. .model is inline-flex),
+   otherwise toggling `el.hidden` in JS silently does nothing on a specificity tie. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -242,6 +246,131 @@ body {
 }
 
 .conversations__empty {
+  color: var(--ink-faint);
+  font-size: 12px;
+  padding: 6px 4px;
+  font-style: italic;
+}
+
+/* ————— stored agents ————— */
+
+.agents {
+  flex: 0 1 auto;
+  max-height: 34vh;
+  overflow-y: auto;
+  padding: 4px 8px 8px 16px;
+  border-bottom: 1px dashed var(--line);
+  min-height: 0;
+}
+
+.agents__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 4px 8px;
+}
+
+.agents__label {
+  color: var(--ink-faint);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  margin: 0;
+  user-select: none;
+}
+
+.agents__add {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--amber-deep);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--amber);
+  font: 400 15px/1 var(--mono);
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.agents__add:hover { background: var(--amber-glow); box-shadow: 0 0 12px var(--amber-glow); }
+
+.agents__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.agent {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 8px 52px 8px 14px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-dim);
+  font: 400 12.5px/1.4 var(--mono);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent:hover { background: var(--line-soft); color: var(--ink); border-left-color: var(--amber-deep); }
+
+.agent__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent__model {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--amber-deep);
+}
+
+.agent__action {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-faint);
+  font: 400 12px/1 var(--mono);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.agent-row .agent__action:nth-of-type(2) { right: 30px; }
+.agent-row .agent__action:nth-of-type(3) { right: 6px; }
+
+.agent-row:hover .agent__action,
+.agent__action:focus-visible { opacity: 1; }
+
+.agent__action:hover { background: var(--line-soft); color: var(--amber); }
+
+.agents__empty {
   color: var(--ink-faint);
   font-size: 12px;
   padding: 6px 4px;
@@ -698,6 +827,136 @@ body {
   background: var(--bg-raised);
   color: var(--ink);
 }
+
+/* agent-locked composer: static persona label in place of the model picker */
+
+.agent-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font: 500 11.5px var(--mono);
+  letter-spacing: 0.03em;
+  color: var(--amber);
+  padding: 5px 11px;
+  border: 1px dashed var(--amber-deep);
+  border-radius: 6px;
+  background: var(--amber-glow);
+}
+
+/* ————— agent form dialog ————— */
+
+.agent-dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--ink);
+  padding: 0;
+  width: min(520px, 92vw);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+
+.agent-dialog::backdrop {
+  background: rgba(6, 5, 4, 0.6);
+}
+
+.agent-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 22px 20px;
+}
+
+.agent-form__title {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--ink);
+}
+
+.agent-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-form__label {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+  user-select: none;
+}
+
+.agent-form__input {
+  font: 400 13px var(--mono);
+  color: var(--ink);
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px 11px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.agent-form__input:focus {
+  border-color: var(--amber-deep);
+  box-shadow: 0 0 0 1px var(--amber-deep), 0 0 18px var(--amber-glow);
+}
+
+.agent-form__input::placeholder { color: var(--ink-faint); }
+
+.agent-form__textarea {
+  resize: vertical;
+  min-height: 96px;
+  line-height: 1.55;
+}
+
+.agent-form__select {
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--amber);
+  cursor: pointer;
+  padding-right: 28px;
+  /* amber chevron — same as the composer model picker */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23c97f1b' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+}
+
+.agent-form__select option {
+  background: var(--bg-raised);
+  color: var(--ink);
+}
+
+.agent-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.agent-form__btn {
+  font: 500 12.5px var(--mono);
+  letter-spacing: 0.04em;
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.agent-form__btn:hover { border-color: var(--ink-faint); color: var(--ink); }
+
+.agent-form__btn--primary {
+  border-color: var(--amber-deep);
+  color: var(--amber);
+  background: var(--amber-glow);
+}
+
+.agent-form__btn--primary:hover { background: rgba(255, 177, 61, 0.28); }
 
 kbd {
   font-family: var(--mono);
