@@ -97,14 +97,17 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
             Path.Combine(AppContext.BaseDirectory, "Skills"),
             options: new AgentSkillsProviderOptions { DisableLoadSkillApproval = true });
 
+        // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
+        // state at bind time; a normal chat falls back to the default Agent 42 persona.
+        // Old Cosmos state has null persona fields, so existing chats fall back too.
         return new ChatClientAgent(
             _chatClientFactory.GetClient(deployment),
             new ChatClientAgentOptions
             {
-                Name = "Agent42",
+                Name = _state.State.AgentName ?? "Agent42",
                 ChatOptions = new ChatOptions
                 {
-                    Instructions = Instructions,
+                    Instructions = _state.State.SystemPrompt ?? Instructions,
                     Tools = [schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime]
                 },
                 AIContextProviders = [skillsProvider],
@@ -112,6 +115,40 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
     }
 
     public Task<string> GetSelectedModelAsync() => Task.FromResult(_deployment);
+
+    public async Task BindAgentAsync(AgentBinding binding)
+    {
+        // Immutable once bound: a conversation keeps the first persona it was given, so a
+        // repeat bind (e.g. a retried first turn) can never flip it mid-conversation.
+        if (!string.IsNullOrEmpty(_state.State.AgentId))
+        {
+            return;
+        }
+
+        _state.State.AgentId = binding.AgentId;
+        _state.State.AgentName = binding.Name;
+        _state.State.SystemPrompt = binding.SystemPrompt;
+        _state.State.DeploymentName = binding.Model;
+
+        // Rebuild the agent so the pinned persona + model take effect, mirroring the
+        // model-switch path in ChatAsync: snapshot the session, rebuild, restore. Binding
+        // runs on a brand-new empty session, but copying that shape keeps the rebuild path
+        // uniform and avoids relying on an empty session being portable across instances.
+        var snapshot = await _agent.SerializeSessionAsync(_session);
+        _deployment = binding.Model;
+        _agent = BuildAgent(binding.Model);
+        _session = await _agent.DeserializeSessionAsync(snapshot);
+
+        await _state.WriteStateAsync();
+
+        _logger.LogInformation("Agent grain {GrainKey} bound to agent {AgentId} ({AgentName}) on model {Model}",
+            this.GetPrimaryKeyString(), binding.AgentId, binding.Name, binding.Model);
+    }
+
+    public Task<AgentBinding?> GetAgentBindingAsync()
+        => Task.FromResult(_state.State.AgentId is { Length: > 0 } id
+            ? new AgentBinding(id, _state.State.AgentName ?? "", _state.State.SystemPrompt ?? "", _deployment)
+            : null);
 
     public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(string message, string? model)
     {

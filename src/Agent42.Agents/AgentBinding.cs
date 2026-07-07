@@ -1,0 +1,17 @@
+namespace Agent42.Agents;
+
+/// <summary>
+/// A persona snapshot bound into a conversation: the source agent's id plus the name,
+/// system prompt, and model captured at bind time. Used both as the input to
+/// <see cref="IAgentGrain.BindAgentAsync"/> and the output of
+/// <see cref="IAgentGrain.GetAgentBindingAsync"/>. Snapshotting (rather than referencing
+/// the agent live) means editing or deleting the source agent never changes an existing
+/// chat — see ADR 0003.
+/// </summary>
+[GenerateSerializer]
+[Alias("Agent42.Agents.AgentBinding")]
+public sealed record AgentBinding(
+    [property: Id(0)] string AgentId,
+    [property: Id(1)] string Name,
+    [property: Id(2)] string SystemPrompt,
+    [property: Id(3)] string Model);

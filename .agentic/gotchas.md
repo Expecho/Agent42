@@ -18,11 +18,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 | Shape                                          | Exemplar                                          | Verified   |
 |------------------------------------------------|---------------------------------------------------|------------|
-| Orleans grain (state + reminders + agent tools) | `src/Agent42.Agents/AgentGrain.cs`                | 2026-07-06 |
-| Minimal-API endpoint group                      | `src/Agent42.Backend/AgentApi.cs`                 | 2026-07-06 |
-| Grain test (Orleans TestCluster + fake client)  | `tests/Agent42.Tests/AgentGrainTests.cs`          | 2026-07-06 |
+| Orleans grain (state + reminders + agent tools) | `src/Agent42.Agents/AgentGrain.cs`                | 2026-07-07 |
+| Per-user registry grain (list-in-state)         | `src/Agent42.Agents/AgentRegistryGrain.cs`        | 2026-07-07 |
+| Minimal-API endpoint group                      | `src/Agent42.Backend/AgentApi.cs`                 | 2026-07-07 |
+| Grain test (Orleans TestCluster + fake client)  | `tests/Agent42.Tests/AgentGrainTests.cs`          | 2026-07-07 |
 | Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-07-06 |
-| Frontend logic (vanilla JS, no framework)       | `src/Agent42.Backend/wwwroot/app.js`              | 2026-07-06 |
+| Frontend logic (vanilla JS, no framework)       | `src/Agent42.Backend/wwwroot/app.js`              | 2026-07-07 |
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
 
@@ -67,8 +68,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   shared `try`, it silently hid the whole conversation. Wrap string results in
   `Results.Json(...)` so the API is uniformly JSON. Keep UI side-effects that can throw
   (model-picker restore) after the primary render.
-- **Evidence:** `src/Agent42.Backend/AgentApi.cs` (`/model` endpoint), `src/Agent42.Backend/wwwroot/app.js` (`selectConversation`), `tests/Agent42.Tests/AgentApiTests.cs`
-- **Verified:** 2026-07-06
+- **Corollary — `Results.Json(null)` writes no body and no content-type.** Returning a
+  nullable value (e.g. `Task<AgentBinding?>` from the `/agent` endpoint) through
+  `Results.Json` sends an empty 200 with *no* `Content-Type` when the value is null, which
+  re-trips the same `response.json()` failure. Serialize explicitly for nullable payloads:
+  `Results.Text(JsonSerializer.Serialize(value, JsonSerializerOptions.Web), "application/json")`
+  so an absent value comes back as a real JSON `null`.
+- **Evidence:** `src/Agent42.Backend/AgentApi.cs` (`/model` and `/agent` endpoints), `src/Agent42.Backend/wwwroot/app.js` (`selectConversation`), `tests/Agent42.Tests/AgentApiTests.cs`
+- **Verified:** 2026-07-07
 
 ### Service worker must stay network-first for navigations and bypass /api
 
@@ -89,3 +96,19 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Claim:** it's `AgentSession` with `CreateSessionAsync` / `SerializeSessionAsync` / `DeserializeSessionAsync` — the `AgentThread` / `GetNewThread()` API from pre-1.13 samples (and model training data) no longer exists. Copy `AgentGrain.cs`, not blog posts.
 - **Evidence:** `src/Agent42.Agents/AgentGrain.cs`
 - **Verified:** 2026-07-06
+
+### Testing that a bound persona reaches the model needs the fake to echo its instructions
+
+- **Claim:** a `ChatClientAgent` built with `ChatClientAgentOptions.ChatOptions.Instructions`
+  delivers the system prompt to the *terminal* `IChatClient`, but a canned fake that only
+  returns a fixed reply can't prove it arrived — a storage round-trip
+  (`GetAgentBindingAsync`) proves the prompt was *saved*, not *delivered*. So `FakeChatClient`
+  deliberately echoes what it receives: it prepends a `[sys:…]` marker built from the
+  instructions it sees (checking `options?.Instructions` first, then any system-role
+  `ChatMessage`, so the echo is robust to however AF carries them), letting a test assert the
+  persona reached the model. Two traps when writing that assertion: the `AgentSkillsProvider`
+  *appends* its skill catalog to the instructions, so assert the prompt is *contained*, not an
+  exact match; and every chat now carries the default persona as instructions, so assert on a
+  *distinctive* bound prompt, not merely on non-empty instructions.
+- **Evidence:** `tests/Agent42.Tests/FakeChatClient.cs` (`InstructionsEcho`), `tests/Agent42.Tests/AgentGrainTests.cs` (`AgentChat_AppliesBoundSystemPrompt`)
+- **Verified:** 2026-07-07

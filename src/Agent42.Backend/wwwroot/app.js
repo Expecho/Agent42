@@ -11,14 +11,38 @@
   const input = document.getElementById("promptInput");
   const sendBtn = document.getElementById("sendBtn");
   const modelSelect = document.getElementById("modelSelect");
+  const modelField = document.getElementById("modelField");
+  const agentLabel = document.getElementById("agentLabel");
   const menuToggle = document.getElementById("menuToggle");
   const backdrop = document.getElementById("backdrop");
   const app = document.querySelector(".app");
+
+  const agentList = document.getElementById("agentList");
+  const addAgentBtn = document.getElementById("addAgentBtn");
+  const agentDialog = document.getElementById("agentDialog");
+  const agentForm = document.getElementById("agentForm");
+  const agentFormTitle = document.getElementById("agentFormTitle");
+  const agentNameInput = document.getElementById("agentName");
+  const agentDescriptionInput = document.getElementById("agentDescription");
+  const agentModelSelect = document.getElementById("agentModelSelect");
+  const agentSystemPromptInput = document.getElementById("agentSystemPrompt");
+  const agentCancelBtn = document.getElementById("agentCancelBtn");
 
   let conversations = [];
   let activeId = crypto.randomUUID();
   let streaming = false;
   let defaultModel = null;
+  let modelsData = { models: [], default: null };
+
+  let agents = [];
+  // The agent id to *bind*, sent on the wire only on the first turn of a freshly started
+  // agent chat, then cleared. Kept distinct from activeAgentId so a resumed agent chat never
+  // re-resolves (and rebinds against) a possibly-deleted agent.
+  let pendingAgentId = null;
+  // The agent id of the current chat (fresh or resumed). Drives the picker lock + label only.
+  let activeAgentId = null;
+  // The agent being edited in the dialog, or null when creating a new one.
+  let editingAgentId = null;
 
   marked.setOptions({ gfm: true, breaks: true });
 
@@ -42,20 +66,25 @@
     try {
       const res = await fetch("/api/models");
       if (!res.ok) return;
-      const data = await res.json();
-      defaultModel = data.default ?? null;
+      modelsData = await res.json();
+      defaultModel = modelsData.default ?? null;
 
-      modelSelect.innerHTML = "";
-      for (const m of data.models ?? []) {
-        const opt = document.createElement("option");
-        opt.value = m.deployment;
-        opt.textContent = m.deployment;
-        if (m.version) opt.title = `${m.model ?? m.deployment} · ${m.version}`;
-        modelSelect.appendChild(opt);
-      }
+      fillModelOptions(modelSelect);
       if (defaultModel) setModel(defaultModel);
       modelSelect.disabled = modelSelect.options.length === 0;
     } catch { /* leave the picker disabled; chat still uses the server's default model */ }
+  }
+
+  // Fills a <select> with the available model deployments (composer picker + agent form).
+  function fillModelOptions(select) {
+    select.innerHTML = "";
+    for (const m of modelsData.models ?? []) {
+      const opt = document.createElement("option");
+      opt.value = m.deployment;
+      opt.textContent = m.deployment;
+      if (m.version) opt.title = `${m.model ?? m.deployment} · ${m.version}`;
+      select.appendChild(opt);
+    }
   }
 
   // Select a deployment, adding it as an option first if the list doesn't have it
@@ -139,6 +168,158 @@
     if (id === activeId) startNewConversation();
     else renderSidebar();
     refreshConversations();
+  }
+
+  /* ————— stored agents ————— */
+
+  async function loadAgents() {
+    try {
+      const res = await fetch("/api/agents");
+      if (!res.ok) return;
+      agents = await res.json();
+      renderAgents();
+    } catch { /* silo may still be starting; the list refreshes on next action */ }
+  }
+
+  function renderAgents() {
+    agentList.innerHTML = "";
+    if (agents.length === 0) {
+      const li = document.createElement("li");
+      li.className = "agents__empty";
+      li.textContent = "no agents yet";
+      agentList.appendChild(li);
+      return;
+    }
+    for (const agent of agents) {
+      const li = document.createElement("li");
+      li.className = "agent-row";
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "agent";
+      btn.title = agent.description || agent.name;
+      btn.addEventListener("click", () => startAgentChat(agent));
+
+      const name = document.createElement("span");
+      name.className = "agent__name";
+      name.textContent = agent.name;
+
+      const model = document.createElement("span");
+      model.className = "agent__model";
+      model.textContent = agent.model;
+
+      btn.append(name, model);
+
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "agent__action";
+      edit.setAttribute("aria-label", `Edit agent: ${agent.name}`);
+      edit.textContent = "✎";
+      edit.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openAgentDialog(agent);
+      });
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "agent__action";
+      del.setAttribute("aria-label", `Delete agent: ${agent.name}`);
+      del.textContent = "🗑";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteAgent(agent.id, agent.name);
+      });
+
+      li.append(btn, edit, del);
+      agentList.appendChild(li);
+    }
+  }
+
+  // Clicking an agent always starts a NEW chat seeded with that agent's persona. The model
+  // is locked to the agent's; only pendingAgentId goes on the wire (bound on the first send).
+  function startAgentChat(agent) {
+    closeDrawer();
+    if (streaming) return;
+    activeId = crypto.randomUUID();
+    activeAgentId = agent.id;
+    pendingAgentId = agent.id;
+    clearThread();
+    setEmptyVisible(true);
+    setModel(agent.model);
+    lockPicker(agent.name, agent.model);
+    renderSidebar();
+    input.focus();
+  }
+
+  function openAgentDialog(agent) {
+    editingAgentId = agent?.id ?? null;
+    agentFormTitle.textContent = agent ? "Edit agent" : "New agent";
+    agentNameInput.value = agent?.name ?? "";
+    agentDescriptionInput.value = agent?.description ?? "";
+    agentSystemPromptInput.value = agent?.systemPrompt ?? "";
+    fillModelOptions(agentModelSelect);
+    // Preselect the agent's model when editing, otherwise the server default.
+    const preferred = agent?.model ?? defaultModel;
+    if (preferred) {
+      if (![...agentModelSelect.options].some((o) => o.value === preferred)) {
+        const opt = document.createElement("option");
+        opt.value = preferred;
+        opt.textContent = preferred;
+        agentModelSelect.appendChild(opt);
+      }
+      agentModelSelect.value = preferred;
+    }
+    agentDialog.showModal();
+    agentNameInput.focus();
+  }
+
+  async function saveAgent() {
+    const payload = {
+      name: agentNameInput.value.trim(),
+      description: agentDescriptionInput.value.trim(),
+      model: agentModelSelect.value,
+      systemPrompt: agentSystemPromptInput.value.trim(),
+    };
+    if (!payload.name || !payload.systemPrompt || !payload.model) return;
+
+    const url = editingAgentId ? `/api/agents/${encodeURIComponent(editingAgentId)}` : "/api/agents";
+    const method = editingAgentId ? "PUT" : "POST";
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) return;
+    } catch { return; /* silo may be unreachable; leave the dialog open */ }
+
+    agentDialog.close();
+    loadAgents();
+  }
+
+  async function deleteAgent(id, name) {
+    if (!confirm(`Delete agent "${name}"? Existing chats keep their persona.`)) return;
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) return;
+    } catch { return; /* silo may be unreachable; leave the row in place */ }
+
+    agents = agents.filter((a) => a.id !== id);
+    renderAgents();
+    loadAgents();
+  }
+
+  // In an agent chat the model is fixed to the agent's, so the picker is replaced by a
+  // static "agent · model" label; a normal chat shows the live picker.
+  function lockPicker(name, model) {
+    modelField.hidden = true;
+    agentLabel.hidden = false;
+    agentLabel.textContent = `⛓ ${name} · ${model}`;
+  }
+
+  function unlockPicker() {
+    modelField.hidden = false;
+    agentLabel.hidden = true;
   }
 
   /* ————— thread rendering ————— */
@@ -268,9 +449,10 @@
     setEmptyVisible(true);
 
     try {
-      const [msgRes, modelRes] = await Promise.all([
+      const [msgRes, modelRes, agentRes] = await Promise.all([
         fetch(`/api/conversations/${encodeURIComponent(id)}/messages`),
         fetch(`/api/conversations/${encodeURIComponent(id)}/model`),
+        fetch(`/api/conversations/${encodeURIComponent(id)}/agent`),
       ]);
       if (!msgRes.ok) return;
       const turns = await msgRes.json();
@@ -283,6 +465,20 @@
       // Restore the model picker only after the history is on screen, so a failure
       // here can never prevent the conversation itself from rendering.
       if (modelRes.ok) setModel(await modelRes.json());
+      // Then apply the agent binding — after the render + setModel, for the same reason.
+      // The binding is already snapshotted server-side, so leave pendingAgentId null: a
+      // resumed agent chat must never re-resolve (and rebind against) a deleted agent.
+      const binding = agentRes.ok ? await agentRes.json() : null;
+      if (binding) {
+        activeAgentId = binding.agentId;
+        pendingAgentId = null;
+        setModel(binding.model);
+        lockPicker(binding.name, binding.model);
+      } else {
+        activeAgentId = null;
+        pendingAgentId = null;
+        unlockPicker();
+      }
     } catch { /* leave the empty state visible */ }
   }
 
@@ -290,6 +486,9 @@
     closeDrawer();
     if (streaming) return;
     activeId = crypto.randomUUID();
+    activeAgentId = null;
+    pendingAgentId = null;
+    unlockPicker();
     clearThread();
     setEmptyVisible(true);
     renderSidebar();
@@ -333,10 +532,18 @@
 
     let answer = "";
     try {
+      // In an agent chat the model is pinned server-side, so never send a model (it would
+      // switch the conversation off the agent's model). agentId is sent only on the first
+      // turn of a freshly started agent chat (pendingAgentId), never on resumes.
+      const isAgentChat = activeAgentId != null;
       const res = await fetch(`/api/chat/${encodeURIComponent(activeId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: prompt, model: modelSelect.value || null }),
+        body: JSON.stringify({
+          message: prompt,
+          model: isAgentChat ? null : (modelSelect.value || null),
+          agentId: pendingAgentId,
+        }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
@@ -368,6 +575,9 @@
         }
       }
       setAgentMarkdown(agentMsg, answer);
+      // The persona is now bound server-side; don't resend agentId on later turns. Kept on
+      // failure so a retry rebinds.
+      pendingAgentId = null;
     } catch (err) {
       agentMsg.classList.add("is-error");
       setAgentMarkdown(agentMsg, `**Transmission failed.** ${err.message ?? err}`);
@@ -406,6 +616,13 @@
 
   newChatBtn.addEventListener("click", startNewConversation);
 
+  addAgentBtn.addEventListener("click", () => openAgentDialog(null));
+  agentCancelBtn.addEventListener("click", () => agentDialog.close());
+  agentForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveAgent();
+  });
+
   menuToggle.addEventListener("click", toggleDrawer);
   backdrop.addEventListener("click", closeDrawer);
 
@@ -428,5 +645,6 @@
 
   loadModels();
   refreshConversations();
+  loadAgents();
   input.focus();
 })();
