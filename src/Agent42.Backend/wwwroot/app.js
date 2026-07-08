@@ -11,6 +11,7 @@
   const input = document.getElementById("promptInput");
   const sendBtn = document.getElementById("sendBtn");
   const attachBtn = document.getElementById("attachBtn");
+  const micBtn = document.getElementById("micBtn");
   const fileInput = document.getElementById("fileInput");
   const attachmentPreview = document.getElementById("attachmentPreview");
   const modelSelect = document.getElementById("modelSelect");
@@ -60,6 +61,11 @@
   // The last profile fetched from the server. The server is the source of truth; this is
   // only a render cache, always reconciled against a fresh GET/PUT response.
   let profile = { preferredLanguage: "" };
+
+  // Stops live speech dictation. Reassigned by the speech-input wiring below when the Web
+  // Speech API is available; stays a no-op when it isn't (e.g. Firefox). Called at the top
+  // of send() so a late recognition result can't repopulate the just-cleared textarea.
+  let stopSpeech = () => {};
 
   // Curated BCP-47 tag → display name for the preferred-language picker. This selects the
   // *preferred language value* (seeds future speech input); it does not translate the UI.
@@ -642,6 +648,7 @@
   /* ————— sending & streaming ————— */
 
   async function send(prompt) {
+    stopSpeech(); // capture the dictated prompt and reset the mic before clearing the box
     streaming = true;
     sendBtn.disabled = true;
     modelSelect.disabled = true;
@@ -808,6 +815,91 @@
 
   attachBtn.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => handleFiles([...fileInput.files]));
+
+  /* ————— speech input (browser-native Web Speech API dictation) ————— */
+
+  // Vendor-prefixed in Chrome/Edge; absent in Firefox. Transcription runs on the browser
+  // vendor's cloud (ADR 0006), not in the app's Azure tenant. Requires a secure context —
+  // prod is https and localhost counts, so DevHost exercises it with a real mic.
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    micBtn.hidden = true; // graceful degradation: no dictation, no button, no wiring
+  } else {
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    const defaultPlaceholder = input.placeholder; // restored when a new dictation starts
+
+    // Text already in the box when dictation began; the transcript is appended to it so a
+    // dictated phrase never clobbers what the user typed first.
+    let baseText = "";
+    // True between start and end. Guards a late result fired after a stop from repopulating
+    // an already-cleared textarea (see stopSpeech / send).
+    let recognizing = false;
+
+    function setRecordingUi(on) {
+      micBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+
+    // Rebuild the transcript from the full results list each event: finals accumulate,
+    // the trailing interim streams live. Flat by design (cognitive-complexity gate).
+    recognition.addEventListener("result", (event) => {
+      if (!recognizing) return; // ignore trailing results after a stop
+      let final = "";
+      let interim = "";
+      for (const res of event.results) {
+        if (res.isFinal) final += res[0].transcript;
+        else interim += res[0].transcript;
+      }
+      input.value = baseText + final + interim;
+      autosize(); // programmatic value writes don't fire the "input" event
+      input.selectionStart = input.selectionEnd = input.value.length; // caret at end
+    });
+
+    recognition.addEventListener("start", () => {
+      recognizing = true;
+      setRecordingUi(true);
+    });
+
+    recognition.addEventListener("end", () => {
+      // Fires on manual stop and on Chrome's silence/timeout auto-stop; reset either way.
+      recognizing = false;
+      setRecordingUi(false);
+      input.focus();
+    });
+
+    recognition.addEventListener("error", (event) => {
+      recognizing = false;
+      setRecordingUi(false);
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        // Mic permission denied/blocked — subtle one-shot hint, no intrusive alert.
+        input.placeholder = "Microphone access blocked — check browser permissions.";
+      }
+    });
+
+    micBtn.addEventListener("click", () => {
+      if (recognizing) {
+        recognition.stop();
+        return;
+      }
+      baseText = input.value; // append to whatever is already in the box
+      input.placeholder = defaultPlaceholder; // clear any stale "mic blocked" hint
+      // Read the cached profile at start (no re-fetch); fall back to the device language.
+      recognition.lang = profile.preferredLanguage || navigator.language;
+      try {
+        recognition.start();
+      } catch { /* start() throws if already started; ignore the double-tap race */ }
+    });
+
+    // Idempotent stop, wired into send(). Mutes late results synchronously (recognizing =
+    // false) before send() clears the textarea, then stops the engine and resets the mic.
+    stopSpeech = () => {
+      if (!recognizing) return;
+      recognizing = false;
+      recognition.stop();
+    };
+  }
 
   newChatBtn.addEventListener("click", startNewConversation);
 
