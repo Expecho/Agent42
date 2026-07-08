@@ -9,9 +9,6 @@ model: opus
 
 # Plan a nontrivial change
 
-Transformed from the workspace `/forge` skill: single-repo, gates read from
-`quality-gates.yaml` (never hardcoded), interview discipline from `/jira-implement`.
-
 Model routing: planning is judgment-dense, so the frontmatter pins `model: opus`
 (alias, resolved at invocation — never a pinned model ID; the override lasts the
 current turn only). If the session already runs a stronger model, delete the pin —
