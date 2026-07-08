@@ -221,4 +221,67 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.Equal("You are Trillian.", binding.SystemPrompt);
         Assert.Equal("trillian-model", binding.Model);
     }
+
+    // AC2: GET /api/profile is application/json and returns the empty default when never set
+    // (honors the JSON-contract gotcha — a non-null object via Results.Json, never a bare string).
+    [Fact]
+    public async Task ProfileEndpoint_ReturnsJson_WithDefaultWhenUnset()
+    {
+        var response = await _client.GetAsync("/api/profile");
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+        var profile = await response.Content.ReadFromJsonAsync<UserProfile>();
+        Assert.NotNull(profile);
+        Assert.Equal("", profile!.PreferredLanguage);
+    }
+
+    // AC3: PUT persists the language; the next GET reflects it.
+    [Fact]
+    public async Task ProfileEndpoint_PersistsPreferredLanguage()
+    {
+        var putRes = await _client.PutAsJsonAsync("/api/profile", new ProfileUpdateRequest("nl-NL"));
+        putRes.EnsureSuccessStatusCode();
+        Assert.Equal("application/json", putRes.Content.Headers.ContentType?.MediaType);
+        var saved = await putRes.Content.ReadFromJsonAsync<UserProfile>();
+        Assert.Equal("nl-NL", saved!.PreferredLanguage);
+
+        var getBack = await _client.GetFromJsonAsync<UserProfile>("/api/profile");
+        Assert.Equal("nl-NL", getBack!.PreferredLanguage);
+    }
+
+    // AC4: the profile is isolated per user (the Entra object id). The shared _client sends no
+    // principal header (→ "local-dev"), so this builds explicit requests carrying distinct
+    // X-MS-CLIENT-PRINCIPAL-ID values; TestServer has no ingress stripping X-MS-CLIENT-* headers.
+    [Fact]
+    public async Task ProfileEndpoint_IsScopedPerUser()
+    {
+        await PutProfileAsAsync("user-alice", "de-DE");
+
+        var bobProfile = await GetProfileAsAsync("user-bob");
+        Assert.Equal("", bobProfile.PreferredLanguage);
+
+        var aliceProfile = await GetProfileAsAsync("user-alice");
+        Assert.Equal("de-DE", aliceProfile.PreferredLanguage);
+    }
+
+    private async Task PutProfileAsAsync(string principalId, string language)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, "/api/profile")
+        {
+            Content = JsonContent.Create(new ProfileUpdateRequest(language)),
+        };
+        request.Headers.Add("X-MS-CLIENT-PRINCIPAL-ID", principalId);
+        using var response = await _client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private async Task<UserProfile> GetProfileAsAsync(string principalId)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/profile");
+        request.Headers.Add("X-MS-CLIENT-PRINCIPAL-ID", principalId);
+        using var response = await _client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<UserProfile>())!;
+    }
 }
