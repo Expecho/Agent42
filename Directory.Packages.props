@@ -5,12 +5,14 @@
   <ItemGroup>
     <!-- Aspire -->
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.3.0" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.3.0" />
     <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.3.0" />
     <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.3.0" />
     <!-- Azure + AI -->
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.ResourceManager.CognitiveServices" Version="1.5.2" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.1" />
     <PackageVersion Include="MessagePack" Version="3.1.7" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.13.0" />
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.13.0" />

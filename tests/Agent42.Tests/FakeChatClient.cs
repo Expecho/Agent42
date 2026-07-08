@@ -25,7 +25,10 @@ public sealed class FakeChatClient : IChatClient
         var call = SelectToolCall(messages);
         var contents = call is not null
             ? new List<AIContent> { call }
-            : new List<AIContent> { new TextContent(InstructionsEcho(messages, options) + string.Concat(ReplyChunks)) };
+            : new List<AIContent>
+            {
+                new TextContent(InstructionsEcho(messages, options) + ImageEcho(messages) + string.Concat(ReplyChunks)),
+            };
 
         return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, contents)));
     }
@@ -41,7 +44,7 @@ public sealed class FakeChatClient : IChatClient
             yield break;
         }
 
-        var echo = InstructionsEcho(messages, options);
+        var echo = InstructionsEcho(messages, options) + ImageEcho(messages);
         if (echo.Length > 0)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, echo);
@@ -70,6 +73,17 @@ public sealed class FakeChatClient : IChatClient
         }
 
         return string.IsNullOrWhiteSpace(instructions) ? "" : $"[sys:{instructions}] ";
+    }
+
+    // Surfaces the number of image content parts on the last user message as an [img:N] marker,
+    // so a test can assert an attachment actually reached the model — a storage round-trip proves
+    // persistence, not delivery. Counts UriContent/DataContent (how images ride on a turn).
+    private static string ImageEcho(IEnumerable<ChatMessage> messages)
+    {
+        var lastUser = (messages as IReadOnlyList<ChatMessage> ?? messages.ToList())
+            .LastOrDefault(m => m.Role == ChatRole.User);
+        var count = lastUser?.Contents.Count(c => c is UriContent or DataContent) ?? 0;
+        return count > 0 ? $"[img:{count}] " : "";
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;

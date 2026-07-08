@@ -24,6 +24,7 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly IPersistentState<AgentGrainState> _state;
     private readonly IChatClientFactory _chatClientFactory;
+    private readonly IAttachmentStore _attachments;
     private readonly ILogger<AgentGrain> _logger;
 
     private AIAgent _agent = null!;
@@ -33,10 +34,12 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
     public AgentGrain(
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
         IChatClientFactory chatClientFactory,
+        IAttachmentStore attachments,
         ILogger<AgentGrain> logger)
     {
         _state = state;
         _chatClientFactory = chatClientFactory;
+        _attachments = attachments;
         _logger = logger;
     }
 
@@ -150,10 +153,11 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
             ? new AgentBinding(id, _state.State.AgentName ?? "", _state.State.SystemPrompt ?? "", _deployment)
             : null);
 
-    public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(string message, string? model)
+    public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(
+        string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null)
     {
-        _logger.LogInformation("Agent grain {GrainKey} received a message ({Length} chars)",
-            this.GetPrimaryKeyString(), message.Length);
+        _logger.LogInformation("Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s))",
+            this.GetPrimaryKeyString(), message.Length, attachments?.Count ?? 0);
 
         if (!string.IsNullOrWhiteSpace(model) && model != _deployment)
         {
@@ -170,11 +174,52 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
                 this.GetPrimaryKeyString(), model);
         }
 
+        // Refresh the image URLs on PRIOR turns before this model call. Azure OpenAI re-fetches
+        // a prior turn's image URL on every subsequent turn (Step 1 spike), and a blob SAS is
+        // short-lived — but a warm grain serves many turns without reactivating, so this must run
+        // per turn, not only on activation, or a long-lived conversation 400s once a SAS expires.
+        await RehydrateAttachmentUrlsAsync();
+
+        // Build the user turn. Images ride alongside the text as UriContent parts pointing at
+        // a store-provided URL (a blob SAS in prod, a placeholder offline) — never raw bytes,
+        // so the serialized session stays small (ADR 0004). Record this turn's refs so history
+        // can re-render them.
+        var contents = new List<AIContent>();
+        if (!string.IsNullOrEmpty(message))
+        {
+            contents.Add(new TextContent(message));
+        }
+
+        var turnRefs = new List<AttachmentRef>();
+        if (attachments is { Count: > 0 })
+        {
+            foreach (var attachment in attachments)
+            {
+                var url = await _attachments.GetReadUrlAsync(attachment);
+                contents.Add(new UriContent(url, attachment.MediaType));
+                turnRefs.Add(attachment);
+            }
+        }
+
+        // Never send a message with no content parts (an empty text-only turn keeps a TextContent).
+        if (contents.Count == 0)
+        {
+            contents.Add(new TextContent(string.Empty));
+        }
+
+        // Keep TurnAttachments 1:1 with the user turns already in history before appending this
+        // turn's entry, so the index join holds even for conversations created before this list
+        // existed (old Cosmos state deserializes it empty).
+        AlignTurnAttachmentsToHistory();
+        _state.State.TurnAttachments.Add(turnRefs);
+
+        var userMessage = new ChatMessage(ChatRole.User, contents);
+
         // Token usage arrives as UsageContent updates, one per LLM turn (a tool-calling
         // run has several); accumulate them and report the totals on the Done event.
         long inputTokens = 0, outputTokens = 0, cachedTokens = 0;
 
-        await foreach (AgentResponseUpdate update in _agent.RunStreamingAsync(message, _session))
+        await foreach (AgentResponseUpdate update in _agent.RunStreamingAsync([userMessage], _session))
         {
             foreach (AIContent content in update.Contents)
             {
@@ -226,11 +271,35 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
             return Task.FromResult<IReadOnlyList<ChatTurn>>([]);
         }
 
-        var turns = messages
-            .Where(m => (m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
-                && !string.IsNullOrWhiteSpace(m.Text))
-            .Select(m => new ChatTurn(m.Role.Value, m.Text))
-            .ToList();
+        var turns = new List<ChatTurn>();
+        var userTurnIndex = 0;
+        foreach (var message in messages)
+        {
+            if (message.Role == ChatRole.User)
+            {
+                // Join this user turn to its attachments by index (one TurnAttachments entry per
+                // user turn, in order — see ChatAsync/ReceiveReminder).
+                var refs = userTurnIndex < _state.State.TurnAttachments.Count
+                    ? _state.State.TurnAttachments[userTurnIndex]
+                    : null;
+                userTurnIndex++;
+
+                var hasAttachments = refs is { Count: > 0 };
+                // Retain an image-only turn (blank text but an image attached) — the old filter
+                // dropped any blank-text message, which would hide an image-only prompt.
+                if (string.IsNullOrWhiteSpace(message.Text) && !hasAttachments)
+                {
+                    continue;
+                }
+
+                turns.Add(new ChatTurn(
+                    message.Role.Value, message.Text ?? "", hasAttachments ? refs : null));
+            }
+            else if (message.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(message.Text))
+            {
+                turns.Add(new ChatTurn(message.Role.Value, message.Text));
+            }
+        }
 
         return Task.FromResult<IReadOnlyList<ChatTurn>>(turns);
     }
@@ -385,12 +454,79 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
             return;
         }
 
+        // Refresh prior turns' image URLs before this model call too (a reminder can fire on a
+        // long-warm grain whose SAS URLs have since expired) — same reason as ChatAsync.
+        await RehydrateAttachmentUrlsAsync();
+
+        // A reminder-fired turn is a user turn too, so it must push a (always empty) attachment
+        // entry to keep TurnAttachments aligned 1:1 with user turns by index (constraint 11).
+        AlignTurnAttachmentsToHistory();
         await _agent.RunAsync([new ChatMessage(ChatRole.User, info.Prompt)], _session);
+        _state.State.TurnAttachments.Add([]);
+
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
 
         _state.State.ScheduledPrompts[reminderName] = info with { TimesFired = info.TimesFired + 1 };
 
         await _state.WriteStateAsync();
+    }
+
+    // Pads TurnAttachments with empty entries so it has one entry per user turn already in the
+    // session before the caller appends this turn's entry. This keeps the index join in
+    // GetHistoryAsync correct even for conversations that predate TurnAttachments (old Cosmos
+    // state deserializes it empty) — the first new turn back-fills the gap.
+    private void AlignTurnAttachmentsToHistory()
+    {
+        if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
+        {
+            return;
+        }
+
+        var priorUserTurns = messages.Count(m => m.Role == ChatRole.User);
+        while (_state.State.TurnAttachments.Count < priorUserTurns)
+        {
+            _state.State.TurnAttachments.Add([]);
+        }
+    }
+
+    // Refreshes the image URLs on the session's prior turns so the next model call always sends
+    // currently-valid URLs. Azure OpenAI re-fetches a prior turn's image URL on every later turn
+    // (Step 1 spike), and a blob SAS is short-lived, so stale URLs would 400. Called before every
+    // model call (not just on activation), because a warm grain serves many turns per activation.
+    // Each user turn's UriContent parts are matched, in order, to that turn's stored attachment
+    // refs. Prod re-mints a fresh SAS; the in-memory store returns its stable placeholder (a no-op).
+    private async Task RehydrateAttachmentUrlsAsync()
+    {
+        if (_state.State.TurnAttachments.Count == 0
+            || !_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
+        {
+            return;
+        }
+
+        var userTurnIndex = 0;
+        foreach (var message in messages)
+        {
+            if (message.Role != ChatRole.User)
+            {
+                continue;
+            }
+
+            var refs = userTurnIndex < _state.State.TurnAttachments.Count
+                ? _state.State.TurnAttachments[userTurnIndex]
+                : null;
+            userTurnIndex++;
+
+            if (refs is not { Count: > 0 })
+            {
+                continue;
+            }
+
+            var uriParts = message.Contents.OfType<UriContent>().ToList();
+            for (var i = 0; i < uriParts.Count && i < refs.Count; i++)
+            {
+                uriParts[i].Uri = await _attachments.GetReadUrlAsync(refs[i]);
+            }
+        }
     }
 }

@@ -73,15 +73,24 @@
       </div>
 
       <form class="composer" id="composerForm">
+        <div class="composer__previews" id="attachmentPreview" hidden></div>
         <div class="composer__frame">
+          <button class="composer__attach" id="attachBtn" type="button" aria-label="Attach image">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
+              <circle cx="5.5" cy="6.5" r="1.1" fill="currentColor"/>
+              <path d="M3 12l3.2-3.2 2 2 3-3.4L14 11.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
           <textarea id="promptInput" class="composer__input" rows="1"
-            placeholder="Transmit a prompt…" aria-label="Prompt" required></textarea>
+            placeholder="Transmit a prompt…" aria-label="Prompt"></textarea>
           <button class="composer__send" id="sendBtn" type="submit" aria-label="Send prompt">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M2 8h11M9 3.5 13.5 8 9 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
         </div>
+        <input type="file" id="fileInput" accept="image/*" multiple hidden />
         <div class="composer__footer">
           <label class="model" id="modelField" for="modelSelect">
             <span class="model__label">// model</span>

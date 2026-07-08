@@ -14,15 +14,44 @@ public static class AgentApi
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
+    // Attachments are images only this phase, capped so a single upload can't be abused;
+    // the durable bytes live in blob storage, never in the serialized session (ADR 0004).
+    private const long MaxAttachmentBytes = 10 * 1024 * 1024;
+
     public static IEndpointRouteBuilder MapAgentApi(this IEndpointRouteBuilder app)
     {
         // Streaming chat: sends a prompt to the conversation's agent grain and streams
         // the turn back as NDJSON events (text deltas, tool calls, token usage).
-        app.MapPost("/api/chat/{conversationId}", async (string conversationId, ChatRequest request, IGrainFactory grains, HttpContext http) =>
+        app.MapPost("/api/chat/{conversationId}", async (string conversationId, ChatRequest request, IGrainFactory grains, IAttachmentStore attachments, HttpContext http) =>
         {
             var userId = http.GetUserId();
-            await grains.GetGrain<IConversationIndexGrain>(userId).TouchAsync(conversationId, request.Message);
             var agent = grains.GetGrain<IAgentGrain>(AgentKey(userId, conversationId));
+
+            // Resolve the ids the client sends back into refs, server-side, so a turn can only
+            // attach images that actually exist under this user's conversation key (never a
+            // client-supplied blob path). Unknown ids are skipped rather than failing the turn.
+            IReadOnlyList<AttachmentRef>? attachmentRefs = null;
+            if (request.AttachmentIds is { Count: > 0 })
+            {
+                var resolved = new List<AttachmentRef>();
+                foreach (var id in request.AttachmentIds)
+                {
+                    var reference = await attachments.GetAsync(AgentKey(userId, conversationId), id);
+                    if (reference is not null)
+                    {
+                        resolved.Add(reference);
+                    }
+                }
+
+                attachmentRefs = resolved;
+            }
+
+            // Title the conversation from the message; an image-only turn has no text, so fall
+            // back to the first attachment's filename (or a placeholder) rather than a blank title.
+            var title = !string.IsNullOrWhiteSpace(request.Message)
+                ? request.Message
+                : attachmentRefs?.FirstOrDefault()?.FileName ?? "Image";
+            await grains.GetGrain<IConversationIndexGrain>(userId).TouchAsync(conversationId, title);
 
             // The client sends AgentId only on the first turn of a freshly-started agent chat.
             // Snapshot that persona into the conversation before the turn runs (BindAgentAsync
@@ -43,7 +72,7 @@ public static class AgentApi
             }
 
             http.Response.ContentType = "application/x-ndjson";
-            await foreach (var evt in agent.ChatAsync(request.Message, model))
+            await foreach (var evt in agent.ChatAsync(request.Message, model, attachmentRefs))
             {
                 await http.Response.WriteAsync(JsonSerializer.Serialize(evt, StreamEventJson) + "\n");
                 await http.Response.Body.FlushAsync();
@@ -57,6 +86,48 @@ public static class AgentApi
         // Full visible history of one conversation, so the UI can resume it.
         app.MapGet("/api/conversations/{conversationId}/messages", (string conversationId, IGrainFactory grains, HttpContext http) =>
             grains.GetGrain<IAgentGrain>(AgentKey(http.GetUserId(), conversationId)).GetHistoryAsync());
+
+        // Uploads an image attachment for a conversation and returns its metadata as JSON (the
+        // client sends the id back on the next chat turn). Rejects non-images and oversize files.
+        // Antiforgery is disabled: the app is gated by Easy Auth (ADR 0002), not cookies+forms.
+        app.MapPost("/api/conversations/{conversationId}/attachments", async (string conversationId, IFormFile file, IAttachmentStore attachments, HttpContext http) =>
+        {
+            if (file is null || file.Length == 0)
+            {
+                return Results.BadRequest("No file was uploaded.");
+            }
+
+            if (file.Length > MaxAttachmentBytes)
+            {
+                return Results.BadRequest($"Attachment exceeds the {MaxAttachmentBytes / (1024 * 1024)} MB limit.");
+            }
+
+            if (string.IsNullOrEmpty(file.ContentType)
+                || !file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.BadRequest("Only image attachments are supported.");
+            }
+
+            using var buffer = new MemoryStream();
+            await file.CopyToAsync(buffer);
+
+            var reference = await attachments.SaveAsync(
+                AgentKey(http.GetUserId(), conversationId), file.FileName, file.ContentType, buffer.ToArray());
+
+            // Return only what the browser needs (id + display metadata) — the internal blob
+            // path stays server-side, addressed by id under the authenticated user's key.
+            return Results.Json(new AttachmentMetadata(reference.Id, reference.MediaType, reference.FileName));
+        }).DisableAntiforgery();
+
+        // Streams a stored attachment's bytes to the browser. First-party proxy (authenticated by
+        // Easy Auth, user-scoped by grain key), so the page never holds a blob SAS (constraint 6).
+        app.MapGet("/api/conversations/{conversationId}/attachments/{attachmentId}", async (string conversationId, string attachmentId, IAttachmentStore attachments, HttpContext http) =>
+        {
+            var content = await attachments.OpenReadAsync(AgentKey(http.GetUserId(), conversationId), attachmentId);
+            return content is null
+                ? Results.NotFound()
+                : Results.File(content.Bytes, content.MediaType);
+        });
 
         // The model this conversation is currently using, so the picker can be restored.
         // Wrapped in Results.Json so the bare string is sent as JSON ("gpt-4o"), not as a
@@ -129,9 +200,15 @@ public static class AgentApi
         => $"{userId}/{conversationId}";
 }
 
-// AgentId is the stored agent to bind on the first turn of an agent chat; the default
-// keeps existing positional callers (new ChatRequest("hi", null)) compiling.
-public record ChatRequest(string Message, string? Model, string? AgentId = null);
+// AgentId is the stored agent to bind on the first turn of an agent chat; AttachmentIds are
+// the ids returned by the upload endpoint for images to send with this turn. Both are trailing
+// defaults so existing positional callers (new ChatRequest("hi", null)) keep compiling.
+public record ChatRequest(
+    string Message, string? Model, string? AgentId = null, IReadOnlyList<string>? AttachmentIds = null);
+
+// What the upload endpoint returns to the browser: the id to send back on the next turn plus
+// the metadata needed to render a preview. The internal blob path is deliberately omitted.
+public record AttachmentMetadata(string Id, string MediaType, string FileName);
 
 // Client payload for creating (POST) or updating (PUT) a stored agent. The id and
 // timestamps are owned by the registry grain, so they aren't part of the request.
