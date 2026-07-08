@@ -831,6 +831,32 @@ body {
 .composer__attach:hover { background: var(--line-soft); color: var(--amber); border-color: var(--amber-deep); }
 .composer__attach:active { transform: translateY(1px); }
 
+/* dictation control — mirrors .composer__attach at rest; pulses amber while recording */
+
+.composer__mic {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.composer__mic:hover { background: var(--line-soft); color: var(--amber); border-color: var(--amber-deep); }
+.composer__mic:active { transform: translateY(1px); }
+
+.composer__mic[aria-pressed="true"] {
+  color: var(--amber);
+  border-color: var(--amber-deep);
+  background: var(--amber-glow);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
 .composer__previews {
   display: flex;
   flex-wrap: wrap;
