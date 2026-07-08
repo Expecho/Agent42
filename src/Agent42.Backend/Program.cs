@@ -2,6 +2,7 @@ using Agent42.Agents;
 using Agent42.Backend;
 using Azure.Identity;
 using Azure.ResourceManager;
+using Azure.Storage.Blobs;
 using Microsoft.Azure.Cosmos;
 using OpenTelemetry.Trace;
 
@@ -44,6 +45,26 @@ var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
 builder.Services.AddSingleton<IChatClientFactory>(
     new AzureOpenAIChatClientFactory(
         new Uri(azureOpenAIEndpoint), credential, defaultDeployment, OtelSourceName));
+
+// Blob-backed attachment store (ADR 0004): durable image bytes live in blob storage, never in
+// the serialized session. Prefer an Aspire-provided connection (Azurite under the AppHost);
+// otherwise use the blob endpoint + the same managed identity, whose Storage Blob Data
+// Contributor role also enables key-free user-delegation SAS.
+var blobConnection = builder.Configuration.GetConnectionString("blobs");
+if (!string.IsNullOrWhiteSpace(blobConnection))
+{
+    builder.Services.AddSingleton(new BlobServiceClient(blobConnection));
+}
+else
+{
+    var blobEndpoint = builder.Configuration["Storage:BlobEndpoint"]
+        ?? throw new InvalidOperationException(
+            "Storage:BlobEndpoint is not configured. Set it in appsettings.json, user secrets, " +
+            "or the Storage__BlobEndpoint environment variable (e.g. https://<account>.blob.core.windows.net).");
+    builder.Services.AddSingleton(new BlobServiceClient(new Uri(blobEndpoint), credential));
+}
+
+builder.Services.AddSingleton<IAttachmentStore, BlobAttachmentStore>();
 
 // Live catalog of the deployed models, queried through the Azure Resource Manager SDK.
 builder.Services.AddSingleton(new ArmClient(credential));

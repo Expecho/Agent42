@@ -13,9 +13,12 @@ public interface IAgentGrain : IGrainWithStringKey
     /// <see cref="AgentStreamEventType.Done"/> event with the turn's token usage.
     /// When <paramref name="model"/> is a deployment name it switches the conversation to
     /// that model for this and subsequent turns; null keeps the current model.
+    /// <paramref name="attachments"/> are images to send alongside the text as a multimodal
+    /// turn; null or empty is a plain text turn. The default keeps existing 2-arg callers working.
     /// </summary>
     [Alias("ChatAsync")]
-    IAsyncEnumerable<AgentStreamEvent> ChatAsync(string message, string? model);
+    IAsyncEnumerable<AgentStreamEvent> ChatAsync(
+        string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null);
 
     /// <summary>
     /// Returns the model deployment this conversation is currently using, so the UI can

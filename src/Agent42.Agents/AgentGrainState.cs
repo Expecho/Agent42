@@ -41,4 +41,16 @@ public sealed class AgentGrainState
     /// <summary>The bound agent's system prompt, snapshotted at bind time.</summary>
     [Id(5)]
     public string? SystemPrompt { get; set; }
+
+    /// <summary>
+    /// Attachments per user turn, in turn order — one entry (possibly empty) for every user
+    /// turn, including reminder-fired turns, so <c>GetHistoryAsync</c> can join a turn to its
+    /// attachments by index. The serialized session stores each image only as a short URL (the
+    /// bytes live in blob storage, ADR 0004); this list carries the stable attachment ids and
+    /// blob paths the browser and rehydrate-on-read need. Old Cosmos state deserializes this as
+    /// an empty list, so pre-attachment conversations simply have no refs (the grain back-fills
+    /// the alignment on the next turn).
+    /// </summary>
+    [Id(6)]
+    public List<List<AttachmentRef>> TurnAttachments { get; set; } = [];
 }

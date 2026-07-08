@@ -33,6 +33,9 @@ public sealed class AgentApiTests : IAsyncLifetime
         // Registered so the /api/models endpoint's parameter is resolved as a service
         // (otherwise minimal-API metadata inference treats it as a body and fails to map).
         appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
+        // The chat endpoint resolves attachments through the store; the in-memory store is
+        // process-global, so it is the same instance the silo grain sees (constraint 10).
+        appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         _app = appBuilder.Build();
         _app.MapAgentApi();
         await _app.StartAsync();

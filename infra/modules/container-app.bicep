@@ -27,6 +27,9 @@ param containerImage string
 @description('Cosmos DB endpoint used for grain state (identity-based auth, no key).')
 param cosmosAccountEndpoint string
 
+@description('Blob service endpoint of the attachments storage account (identity-based auth, no key).')
+param blobEndpoint string
+
 @description('Endpoint of the Azure AI Foundry / Azure OpenAI resource used by the agent.')
 param azureOpenAIEndpoint string
 
@@ -142,6 +145,7 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           env: [
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'ConnectionStrings__cosmos', value: cosmosAccountEndpoint }
+            { name: 'Storage__BlobEndpoint', value: blobEndpoint }
             { name: 'AzureOpenAI__Endpoint', value: azureOpenAIEndpoint }
             { name: 'AzureOpenAI__DeploymentName', value: azureOpenAIDeploymentName }
             { name: 'AzureOpenAI__TenantId', value: azureOpenAITenantId }

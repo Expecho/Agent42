@@ -48,6 +48,12 @@ param cosmosContainerName string = 'agent-state'
 @description('Cosmos DB SQL container name used by the Orleans durable reminders provider.')
 param cosmosRemindersContainerName string = 'reminders'
 
+@description('Name of the storage account to create for image attachments. Must be globally unique, lowercase alphanumeric, 3-24 characters.')
+param storageAccountName string = 'stagent42${uniqueString(resourceGroup().id)}'
+
+@description('Name of the private blob container that holds conversation image attachments.')
+param attachmentsContainerName string = 'attachments'
+
 @description('Endpoint of the existing Azure AI Foundry / Azure OpenAI resource.')
 param azureOpenAIEndpoint string = 'https://agent42.services.ai.azure.com'
 
@@ -126,6 +132,16 @@ module cosmos 'modules/cosmos.bicep' = {
   }
 }
 
+module storage 'modules/storage.bicep' = {
+  name: 'agent42-storage'
+  params: {
+    location: location
+    accountName: storageAccountName
+    containerName: attachmentsContainerName
+    tags: tags
+  }
+}
+
 module containerApp 'modules/container-app.bicep' = {
   name: 'agent42-container-app'
   params: {
@@ -138,6 +154,7 @@ module containerApp 'modules/container-app.bicep' = {
     registryPassword: acrAdminPassword
     containerImage: containerImage
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
+    blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint
     azureOpenAIDeploymentName: azureOpenAIDeploymentName
     azureOpenAITenantId: azureOpenAITenantId
@@ -172,8 +189,11 @@ module cosmosRoleAssignment 'modules/cosmos-role-assignment.bicep' = {
 @description('The URL of the deployed Agent 42 backend.')
 output backendUrl string = 'https://${containerApp.outputs.fqdn}'
 
-@description('Principal id of the system-assigned managed identity of the Container App. After the first deployment (or any deploy that creates a new identity), grant it two roles on the Agent 42 AI Foundry account (subscriptions/{sub}/resourceGroups/agent42/providers/Microsoft.CognitiveServices/accounts/Agent42): "Cognitive Services OpenAI User" (to call the model) and "Reader" (so the live model picker can list deployments via the management plane).')
+@description('Principal id of the system-assigned managed identity of the Container App. After the first deployment (or any deploy that creates a new identity), grant it two roles on the Agent 42 AI Foundry account (subscriptions/{sub}/resourceGroups/agent42/providers/Microsoft.CognitiveServices/accounts/Agent42): "Cognitive Services OpenAI User" (to call the model) and "Reader" (so the live model picker can list deployments via the management plane). Also grant it "Storage Blob Data Contributor" on the attachments storage account (see storageAccountName output) — this is classic Microsoft.Authorization RBAC the Contributor deploy SP cannot create, so it is a manual step: az role assignment create --assignee-object-id <thisPrincipalId> --assignee-principal-type ServicePrincipal --role "Storage Blob Data Contributor" --scope /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<storageAccountName>')
 output containerAppPrincipalId string = containerApp.outputs.principalId
 
 @description('Name of the Cosmos DB account created for grain state.')
 output cosmosAccountName string = cosmos.outputs.accountName
+
+@description('Name of the storage account created for image attachments. Its blob endpoint is passed to the container app as Storage__BlobEndpoint; grant the container app identity Storage Blob Data Contributor on it (see containerAppPrincipalId output).')
+output storageAccountName string = storage.outputs.accountName

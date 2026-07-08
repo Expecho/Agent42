@@ -10,6 +10,9 @@
   const form = document.getElementById("composerForm");
   const input = document.getElementById("promptInput");
   const sendBtn = document.getElementById("sendBtn");
+  const attachBtn = document.getElementById("attachBtn");
+  const fileInput = document.getElementById("fileInput");
+  const attachmentPreview = document.getElementById("attachmentPreview");
   const modelSelect = document.getElementById("modelSelect");
   const modelField = document.getElementById("modelField");
   const agentLabel = document.getElementById("agentLabel");
@@ -33,6 +36,10 @@
   let streaming = false;
   let defaultModel = null;
   let modelsData = { models: [], default: null };
+
+  // Images uploaded for the turn being composed: {id, mediaType, fileName} from the upload
+  // endpoint. Sent as attachmentIds on the next send, then cleared. Reset on conversation switch.
+  let pendingAttachments = [];
 
   let agents = [];
   // The agent id to *bind*, sent on the wire only on the first turn of a freshly started
@@ -243,6 +250,7 @@
     activeId = crypto.randomUUID();
     activeAgentId = agent.id;
     pendingAgentId = agent.id;
+    clearPendingAttachments();
     clearThread();
     setEmptyVisible(true);
     setModel(agent.model);
@@ -355,8 +363,91 @@
     return msg;
   }
 
-  function setUserText(msg, text) {
-    msg.querySelector(".msg__bubble").textContent = text;
+  // Fills a user bubble with its (optional) images followed by its text. Images are always
+  // fetched through the first-party display proxy by id, so the same path renders a live send
+  // and a reloaded turn — the page never holds a blob URL.
+  function fillUserBubble(msg, text, attachments, convId) {
+    const bubble = msg.querySelector(".msg__bubble");
+    bubble.textContent = "";
+
+    if (attachments && attachments.length) {
+      const gallery = document.createElement("div");
+      gallery.className = "msg__images";
+      for (const att of attachments) {
+        const img = document.createElement("img");
+        img.className = "msg__image";
+        img.loading = "lazy";
+        img.alt = att.fileName || "attachment";
+        img.src = attachmentUrl(convId, att.id);
+        gallery.appendChild(img);
+      }
+      bubble.appendChild(gallery);
+    }
+
+    if (text) {
+      const body = document.createElement("div");
+      body.className = "msg__text";
+      body.textContent = text;
+      bubble.appendChild(body);
+    }
+  }
+
+  const attachmentUrl = (convId, attachmentId) =>
+    `/api/conversations/${encodeURIComponent(convId)}/attachments/${encodeURIComponent(attachmentId)}`;
+
+  /* ————— attachments (compose) ————— */
+
+  // Uploads each picked image to the current conversation and shows a removable thumbnail. The
+  // upload returns an id the next send references; the bytes already live server-side by then.
+  async function handleFiles(files) {
+    if (streaming) return;
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) continue;
+      try {
+        const body = new FormData();
+        body.append("file", file, file.name);
+        const res = await fetch(attachmentsUrl(activeId), { method: "POST", body });
+        if (!res.ok) continue;
+        pendingAttachments.push(await res.json());
+        renderAttachmentPreview();
+      } catch { /* skip this file; the others still upload */ }
+    }
+    fileInput.value = ""; // let the same file be picked again after a remove
+  }
+
+  const attachmentsUrl = (convId) =>
+    `/api/conversations/${encodeURIComponent(convId)}/attachments`;
+
+  function renderAttachmentPreview() {
+    attachmentPreview.innerHTML = "";
+    attachmentPreview.hidden = pendingAttachments.length === 0;
+    pendingAttachments.forEach((att) => {
+      const chip = document.createElement("div");
+      chip.className = "attach-chip";
+
+      const img = document.createElement("img");
+      img.className = "attach-chip__thumb";
+      img.alt = att.fileName || "attachment";
+      img.src = attachmentUrl(activeId, att.id);
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "attach-chip__remove";
+      remove.setAttribute("aria-label", `Remove ${att.fileName || "attachment"}`);
+      remove.textContent = "×";
+      remove.addEventListener("click", () => {
+        pendingAttachments = pendingAttachments.filter((a) => a.id !== att.id);
+        renderAttachmentPreview();
+      });
+
+      chip.append(img, remove);
+      attachmentPreview.appendChild(chip);
+    });
+  }
+
+  function clearPendingAttachments() {
+    pendingAttachments = [];
+    renderAttachmentPreview();
   }
 
   function setAgentMarkdown(msg, text, { caret = false } = {}) {
@@ -444,6 +535,7 @@
     closeDrawer();
     if (streaming || id === activeId) return;
     activeId = id;
+    clearPendingAttachments();
     renderSidebar();
     clearThread();
     setEmptyVisible(true);
@@ -458,7 +550,7 @@
       const turns = await msgRes.json();
       for (const turn of turns) {
         const msg = addMessage(turn.role === "user" ? "user" : "agent");
-        if (turn.role === "user") setUserText(msg, turn.text);
+        if (turn.role === "user") fillUserBubble(msg, turn.text, turn.attachments, id);
         else setAgentMarkdown(msg, turn.text);
       }
       scrollToBottom();
@@ -488,6 +580,7 @@
     activeId = crypto.randomUUID();
     activeAgentId = null;
     pendingAgentId = null;
+    clearPendingAttachments();
     unlockPicker();
     clearThread();
     setEmptyVisible(true);
@@ -524,8 +617,14 @@
     input.value = "";
     autosize();
 
+    // Snapshot the composed attachments for this turn and clear the strip so the next turn
+    // starts clean. They were uploaded to activeId, so they belong to this conversation.
+    const turnAttachments = pendingAttachments;
+    const convId = activeId;
+    clearPendingAttachments();
+
     const userMsg = addMessage("user");
-    setUserText(userMsg, prompt);
+    fillUserBubble(userMsg, prompt, turnAttachments, convId);
     const agentMsg = addMessage("agent");
     setAgentMarkdown(agentMsg, "", { caret: true });
     scrollToBottom();
@@ -543,6 +642,7 @@
           message: prompt,
           model: isAgentChat ? null : (modelSelect.value || null),
           agentId: pendingAgentId,
+          attachmentIds: turnAttachments.map((a) => a.id),
         }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
@@ -610,9 +710,13 @@
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const prompt = input.value.trim();
-    if (!prompt || streaming) return;
+    // Allow an image-only turn (no text) as long as something is attached.
+    if ((!prompt && pendingAttachments.length === 0) || streaming) return;
     send(prompt);
   });
+
+  attachBtn.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => handleFiles([...fileInput.files]));
 
   newChatBtn.addEventListener("click", startNewConversation);
 

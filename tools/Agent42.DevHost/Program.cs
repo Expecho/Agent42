@@ -27,6 +27,10 @@ builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("gpt-4o",
     new ModelInfo("o3-mini", "o3-mini", "2025-01-31"),
 ]));
 
+// In-memory attachment store: no Azure Storage offline. The canned client ignores image
+// content, so uploads still round-trip for the display proxy and history rendering.
+builder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
+
 builder.UseOrleans(silo =>
 {
     silo.UseLocalhostClustering();

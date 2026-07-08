@@ -80,4 +80,8 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   Bicep to RG `rg-agent42`; app is behind Entra ID Easy Auth at chat.agent42.nl.
 - The AI Foundry account `Agent42` lives in a *different* RG (`agent42`); the deploy
   SP only holds role-assignment rights there — see gotchas before touching IAM/infra.
+- Image attachments live in an Azure Storage account (private `attachments` container,
+  provisioned in `infra/modules/storage.bicep`); bytes stay out of the 2 MB Cosmos session
+  item (ADR 0004). Its Storage Blob Data Contributor grant is a manual `az role assignment`
+  step (see gotchas), like the OpenAI grant.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
