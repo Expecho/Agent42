@@ -49,6 +49,16 @@
       </nav>
 
       <footer class="sidebar__footer">
+        <button class="sidebar__settings" id="openProfileBtn" type="button">
+          <span class="sidebar__gear" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="2.1" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M8 1.4v1.6M8 13v1.6M14.6 8H13M3 8H1.4M12.66 3.34l-1.13 1.13M4.47 11.53l-1.13 1.13M12.66 12.66l-1.13-1.13M4.47 4.47 3.34 3.34"
+                    stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+          </span>
+          Preferences
+        </button>
         <span class="dont-panic">DON'T&nbsp;PANIC</span>
       </footer>
     </aside>
@@ -136,6 +146,27 @@
       <div class="agent-form__actions">
         <button class="agent-form__btn" type="button" id="agentCancelBtn">Cancel</button>
         <button class="agent-form__btn agent-form__btn--primary" type="submit" id="agentSaveBtn">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- User profile / preferences. Reuses the agent-dialog/agent-form styling. Built to grow:
+       add more <section class="agent-form__section"> blocks (or fields) as preferences expand. -->
+  <dialog class="agent-dialog" id="profileDialog">
+    <form class="agent-form" id="profileForm">
+      <h2 class="agent-form__title">Preferences</h2>
+
+      <section class="agent-form__section">
+        <label class="agent-form__field">
+          <span class="agent-form__label">// preferred language</span>
+          <select class="agent-form__input agent-form__select" id="profileLanguage"></select>
+        </label>
+        <p class="agent-form__note">Used as the default for future speech input. It doesn't translate the interface.</p>
+      </section>
+
+      <div class="agent-form__actions">
+        <button class="agent-form__btn" type="button" id="profileCancelBtn">Cancel</button>
+        <button class="agent-form__btn agent-form__btn--primary" type="submit" id="profileSaveBtn">Save</button>
       </div>
     </form>
   </dialog>

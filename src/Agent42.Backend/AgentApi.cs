@@ -191,6 +191,22 @@ public static class AgentApi
             return Results.NoContent();
         });
 
+        // ————— user profile (per-user preferences) —————
+
+        // The signed-in user's profile. Wrapped in Results.Json so the returned object is
+        // served as application/json (the browser calls response.json()); the grain never
+        // returns null — it yields the empty default when the profile was never saved.
+        app.MapGet("/api/profile", async (IGrainFactory grains, HttpContext http) =>
+            Results.Json(await grains.GetGrain<IUserProfileGrain>(http.GetUserId()).GetAsync()));
+
+        // Saves the signed-in user's profile and returns the stored value (as JSON).
+        app.MapPut("/api/profile", async (ProfileUpdateRequest request, IGrainFactory grains, HttpContext http) =>
+        {
+            var saved = await grains.GetGrain<IUserProfileGrain>(http.GetUserId())
+                .SaveAsync(new UserProfile(request.PreferredLanguage));
+            return Results.Json(saved);
+        });
+
         return app;
     }
 
@@ -213,3 +229,7 @@ public record AttachmentMetadata(string Id, string MediaType, string FileName);
 // Client payload for creating (POST) or updating (PUT) a stored agent. The id and
 // timestamps are owned by the registry grain, so they aren't part of the request.
 public record AgentUpsertRequest(string Name, string Description, string Model, string SystemPrompt);
+
+// Client payload for PUT /api/profile: the preferred-language BCP-47 tag the user picked
+// ("" = use the device default). More preference fields will be added here as the profile grows.
+public record ProfileUpdateRequest(string PreferredLanguage);
