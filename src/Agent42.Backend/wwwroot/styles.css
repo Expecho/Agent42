@@ -489,6 +489,27 @@ body {
   overflow-wrap: break-word;
 }
 
+/* image attachments inside a user bubble */
+
+.msg__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.msg__images + .msg__text {
+  margin-top: 10px;
+}
+
+.msg__image {
+  max-width: 260px;
+  max-height: 260px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  display: block;
+  cursor: pointer;
+}
+
 .msg--agent .msg__meta { color: var(--amber-deep); }
 
 .msg--agent .msg__bubble {
@@ -763,6 +784,67 @@ body {
 .composer__send:hover:not(:disabled) { background: rgba(255, 177, 61, 0.28); }
 .composer__send:active:not(:disabled) { transform: translateY(1px); }
 .composer__send:disabled { opacity: 0.35; cursor: default; }
+
+/* attach control + thumbnail previews */
+
+.composer__attach {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.composer__attach:hover { background: var(--line-soft); color: var(--amber); border-color: var(--amber-deep); }
+.composer__attach:active { transform: translateY(1px); }
+
+.composer__previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 4px 8px;
+}
+
+.attach-chip {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+
+.attach-chip__thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attach-chip__remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(11, 10, 9, 0.82);
+  color: var(--ink);
+  font: 400 14px/1 var(--mono);
+  cursor: pointer;
+}
+
+.attach-chip__remove:hover { background: var(--red); color: var(--bg); }
 
 .composer__footer {
   display: flex;

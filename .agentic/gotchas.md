@@ -24,6 +24,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Grain test (Orleans TestCluster + fake client)  | `tests/Agent42.Tests/AgentGrainTests.cs`          | 2026-07-07 |
 | Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-07-06 |
 | Frontend logic (vanilla JS, no framework)       | `src/Agent42.Backend/wwwroot/app.js`              | 2026-07-07 |
+| Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/IAttachmentStore.cs`, `src/Agent42.Agents/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/BlobAttachmentStore.cs` | 2026-07-08 |
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
 
@@ -112,3 +113,43 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   *distinctive* bound prompt, not merely on non-empty instructions.
 - **Evidence:** `tests/Agent42.Tests/FakeChatClient.cs` (`InstructionsEcho`), `tests/Agent42.Tests/AgentGrainTests.cs` (`AgentChat_AppliesBoundSystemPrompt`)
 - **Verified:** 2026-07-07
+
+### Image attachment bytes must stay out of the session, and prior-turn image URLs get re-fetched
+
+- **Claim:** the serialized `AgentSession` is written to one `agent-state` Cosmos item every
+  turn, and Cosmos caps an item at **2 MB** — so attachment bytes can never be inlined
+  (`DataContent`), or the first real photo blows the limit (ADR 0004). Images live in blob
+  storage and reach the model as a **`UriContent` user-delegation SAS URL** (a short string).
+  The non-obvious trap: a Step 1 spike proved Azure OpenAI **re-fetches a prior turn's image
+  URL on every later turn**, so a short-lived SAS baked into a reopened conversation would 400.
+  `AgentGrain` therefore **rehydrates before every model call** (`RehydrateAttachmentUrlsAsync`,
+  from both `ChatAsync` and `ReceiveReminder`) — refreshing the SAS on every attachment
+  `UriContent` in the session. Not just on activation: a warm grain serves many turns without
+  reactivating, so an activation-only refresh would let a short-lived SAS lapse mid-conversation
+  and 400 on the next turn. It also persists per-turn refs in `AgentGrainState.TurnAttachments`
+  (one entry per user turn, in order,
+  including an empty entry on the reminder path) so history joins turns to images by index.
+  Don't "simplify" back to `DataContent`, and don't drop the rehydrate step. This is a prod-blob
+  property the offline harness can't test (the in-memory store returns non-expiring URLs).
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`RehydrateAttachmentUrlsAsync`, `ChatAsync`, `AlignTurnAttachmentsToHistory`), `src/Agent42.Backend/BlobAttachmentStore.cs`, `.agentic/decisions/0004-attachments-in-blob.md`
+- **Verified:** 2026-07-08
+
+### Attachments Storage RBAC is in Bicep — but only because the deploy SP was elevated once
+
+- **Claim:** the **Storage Blob Data Contributor** grant to the container app identity
+  (`infra/modules/storage-role-assignment.bicep`) is classic `Microsoft.Authorization/roleAssignments`,
+  which a plain Contributor cannot create. It works in Bicep only because the deploy SP
+  (`sp-agent42-deploy`) was granted **Role Based Access Control Administrator** on `rg-agent42` — a
+  one-time manual elevation done 2026-07-08 (`az role assignment create … --role "Role Based Access
+  Control Administrator" --scope subscriptions/<sub>/resourceGroups/rg-agent42`). If that elevation is
+  removed or the SP recreated, this module's deploy fails with an authorization error — fall back to a
+  manual `az role assignment create` of Storage Blob Data Contributor. This is the key difference from
+  the **OpenAI grant, which stays manual** (its account is in a *different* RG where a cross-RG Bicep
+  role module fails). The role also authorizes `generateUserDelegationKey`, so no account key is needed
+  (shared-key auth is disabled on the account). The agent never runs role-assignment writes itself; the
+  one-time elevation was run by the user.
+- **Gotcha on Windows/Git Bash:** an `az … --scope "/subscriptions/…"` argument starting with `/` is
+  mangled by MSYS path conversion into a Windows path → ARM returns `MissingSubscription`. Drop the
+  leading `/` (`--scope "subscriptions/…"`) or prefix the command with `MSYS_NO_PATHCONV=1`.
+- **Evidence:** `infra/modules/storage-role-assignment.bicep`, `infra/main.bicep` (`storageRoleAssignment` module), `infra/modules/storage.bicep`
+- **Verified:** 2026-07-08

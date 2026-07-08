@@ -333,4 +333,101 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Contains("no scheduled reminder", end.ToolResult ?? "", StringComparison.OrdinalIgnoreCase);
         Assert.Empty(await agent.GetScheduledPromptsAsync());
     }
+
+    // AC3: a turn carrying an attachment actually delivers an image content part to the model —
+    // the fake echoes [img:N] built from the non-text parts it received, so this proves delivery,
+    // not just that the ref was stored.
+    [Fact]
+    public async Task Chat_WithAttachment_DeliversImagePartToModel()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("attachment-delivery-conversation");
+        var reference = new AttachmentRef("att-1", "k/att-1", "image/png", "pic.png");
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("what is in this picture", null, [reference]))
+        {
+            events.Add(evt);
+        }
+
+        var answer = string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
+        Assert.Contains("[img:1]", answer);
+    }
+
+    // AC4c: an image-only user turn (blank text, image attached) is kept in history — the old
+    // filter dropped every blank-text message, which would hide such a turn on reload.
+    [Fact]
+    public async Task History_KeepsImageOnlyTurn()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("image-only-conversation");
+        var reference = new AttachmentRef("only-1", "k/only-1", "image/png", "pic.png");
+
+        await foreach (var _ in agent.ChatAsync("", null, [reference]))
+        {
+        }
+
+        var history = await agent.GetHistoryAsync();
+        var userTurn = Assert.Single(history, t => t.Role == "user");
+        Assert.NotNull(userTurn.Attachments);
+        var att = Assert.Single(userTurn.Attachments!);
+        Assert.Equal("only-1", att.Id);
+    }
+
+    // AC4b: refs stay joined to the correct turn across a text → schedule → reminder-fired → image
+    // sequence. The reminder-fired turn is a user turn too, so it must push an empty entry or the
+    // index join drifts and the image lands on the wrong turn (constraint 11).
+    [Fact]
+    public async Task History_KeepsAttachmentRefsAlignedAcrossTurns()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("aligned-conversation");
+
+        // Turn 1: plain text.
+        await foreach (var _ in agent.ChatAsync("first message", null))
+        {
+        }
+
+        // Turn 2: schedules a reminder (tool call), still a plain user turn.
+        await foreach (var _ in agent.ChatAsync("please remind me to drink water", null))
+        {
+        }
+
+        // Turn 3: the reminder fires — a user turn injected by the runtime, no attachments.
+        await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
+
+        // Turn 4: the image turn.
+        var reference = new AttachmentRef("img-4", "k/img-4", "image/png", "p.png");
+        await foreach (var _ in agent.ChatAsync("look at this", null, [reference]))
+        {
+        }
+
+        var userTurns = (await agent.GetHistoryAsync()).Where(t => t.Role == "user").ToList();
+
+        // The image ref is on the "look at this" turn and nowhere else.
+        var imageTurn = Assert.Single(userTurns, t => t.Text == "look at this");
+        Assert.NotNull(imageTurn.Attachments);
+        Assert.Equal("img-4", Assert.Single(imageTurn.Attachments!).Id);
+        Assert.All(userTurns.Where(t => t.Text != "look at this"), t => Assert.Null(t.Attachments));
+    }
+
+    // Attachment refs survive a grain deactivation/reactivation — the join list is persisted
+    // state, so a reopened conversation still re-renders its images.
+    [Fact]
+    public async Task History_AttachmentRefs_SurviveReactivation()
+    {
+        const string key = "attachment-reactivation-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var reference = new AttachmentRef("react-1", "k/react-1", "image/png", "pic.png");
+
+        await foreach (var _ in agent.ChatAsync("keep this image", null, [reference]))
+        {
+        }
+
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        var history = await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        var userTurn = Assert.Single(history, t => t.Role == "user" && t.Text == "keep this image");
+        Assert.NotNull(userTurn.Attachments);
+        Assert.Equal("react-1", Assert.Single(userTurn.Attachments!).Id);
+    }
 }
