@@ -62,7 +62,7 @@ entry per user turn, in order) so history joins each turn to its images by index
 - A new Azure Storage account + private `attachments` container is provisioned in Bicep
   (`infra/modules/storage.bicep`). The blob endpoint is passed to the container app as
   `Storage__BlobEndpoint`.
-- **The Storage Blob Data Contributor grant is in Bicep** (`modules/storage-role-assignment.bicep`),
+- **The Storage Blob Data Contributor grant is in Bicep** (`infra/modules/storage-role-assignment.bicep`),
   contingent on a one-time manual elevation: it is classic `Microsoft.Authorization/roleAssignments`,
   which a plain Contributor cannot create, so the deploy SP was granted **Role Based Access Control
   Administrator** on `rg-agent42` (done 2026-07-08). Unlike the OpenAI grant — which stays a manual
