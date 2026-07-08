@@ -31,6 +31,12 @@
   const agentSystemPromptInput = document.getElementById("agentSystemPrompt");
   const agentCancelBtn = document.getElementById("agentCancelBtn");
 
+  const openProfileBtn = document.getElementById("openProfileBtn");
+  const profileDialog = document.getElementById("profileDialog");
+  const profileForm = document.getElementById("profileForm");
+  const profileLanguage = document.getElementById("profileLanguage");
+  const profileCancelBtn = document.getElementById("profileCancelBtn");
+
   let conversations = [];
   let activeId = crypto.randomUUID();
   let streaming = false;
@@ -50,6 +56,31 @@
   let activeAgentId = null;
   // The agent being edited in the dialog, or null when creating a new one.
   let editingAgentId = null;
+
+  // The last profile fetched from the server. The server is the source of truth; this is
+  // only a render cache, always reconciled against a fresh GET/PUT response.
+  let profile = { preferredLanguage: "" };
+
+  // Curated BCP-47 tag → display name for the preferred-language picker. This selects the
+  // *preferred language value* (seeds future speech input); it does not translate the UI.
+  // An empty tag means "use the device language". Extend this list as needed.
+  const LANGUAGES = [
+    { tag: "", name: "Use device language" },
+    { tag: "en-US", name: "English (United States)" },
+    { tag: "en-GB", name: "English (United Kingdom)" },
+    { tag: "nl-NL", name: "Nederlands (Nederland)" },
+    { tag: "nl-BE", name: "Nederlands (België)" },
+    { tag: "de-DE", name: "Deutsch (Deutschland)" },
+    { tag: "fr-FR", name: "Français (France)" },
+    { tag: "es-ES", name: "Español (España)" },
+    { tag: "it-IT", name: "Italiano (Italia)" },
+    { tag: "pt-PT", name: "Português (Portugal)" },
+    { tag: "pt-BR", name: "Português (Brasil)" },
+    { tag: "sv-SE", name: "Svenska (Sverige)" },
+    { tag: "pl-PL", name: "Polski (Polska)" },
+    { tag: "ja-JP", name: "日本語 (日本)" },
+    { tag: "zh-CN", name: "中文 (简体)" },
+  ];
 
   marked.setOptions({ gfm: true, breaks: true });
 
@@ -698,6 +729,66 @@
     input.style.height = Math.min(input.scrollHeight, 180) + "px";
   }
 
+  /* ————— profile / preferences ————— */
+
+  // GET the server-stored profile (the source of truth). Silent on failure — the panel still
+  // opens with the device-language default.
+  async function loadProfile() {
+    try {
+      const res = await fetch("/api/profile");
+      if (!res.ok) return;
+      profile = await res.json();
+    } catch { /* silo may be unreachable; keep the current cached profile */ }
+  }
+
+  // Fills the language <select>, preselecting the stored tag. A stored tag that isn't in the
+  // curated list is appended so it's never silently dropped.
+  function fillLanguageOptions(select, selectedTag) {
+    select.innerHTML = "";
+    for (const lang of LANGUAGES) {
+      const opt = document.createElement("option");
+      opt.value = lang.tag;
+      opt.textContent = lang.name;
+      select.appendChild(opt);
+    }
+    if (selectedTag && ![...select.options].some((o) => o.value === selectedTag)) {
+      const opt = document.createElement("option");
+      opt.value = selectedTag;
+      opt.textContent = selectedTag;
+      select.appendChild(opt);
+    }
+    select.value = selectedTag ?? "";
+  }
+
+  async function openProfileDialog() {
+    await loadProfile(); // reconcile against the server before showing the current value
+    fillLanguageOptions(profileLanguage, profile.preferredLanguage ?? "");
+    profileDialog.showModal();
+    profileLanguage.focus();
+  }
+
+  async function saveProfile() {
+    const payload = { preferredLanguage: profileLanguage.value };
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) return;
+      profile = await res.json(); // reconcile: the server trims/caps the tag
+    } catch { return; /* silo may be unreachable; leave the dialog open */ }
+
+    profileDialog.close();
+  }
+
+  openProfileBtn.addEventListener("click", () => openProfileDialog());
+  profileCancelBtn.addEventListener("click", () => profileDialog.close());
+  profileForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveProfile();
+  });
+
   input.addEventListener("input", autosize);
 
   input.addEventListener("keydown", (e) => {
@@ -750,5 +841,6 @@
   loadModels();
   refreshConversations();
   loadAgents();
+  loadProfile();
   input.focus();
 })();

@@ -20,6 +20,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 |------------------------------------------------|---------------------------------------------------|------------|
 | Orleans grain (state + reminders + agent tools) | `src/Agent42.Agents/AgentGrain.cs`                | 2026-07-07 |
 | Per-user registry grain (list-in-state)         | `src/Agent42.Agents/AgentRegistryGrain.cs`        | 2026-07-07 |
+| Per-user singleton-preference grain (get/save)  | `src/Agent42.Agents/UserProfileGrain.cs`          | 2026-07-08 |
 | Minimal-API endpoint group                      | `src/Agent42.Backend/AgentApi.cs`                 | 2026-07-07 |
 | Grain test (Orleans TestCluster + fake client)  | `tests/Agent42.Tests/AgentGrainTests.cs`          | 2026-07-07 |
 | Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-07-06 |
@@ -91,6 +92,20 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   but the navigation strategy is only enforced here — keep it network-first.
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
 - **Verified:** 2026-07-06
+
+### A shared static instance must never be a grain-state default (Orleans mutates it)
+
+- **Claim:** giving Orleans grain state a default that is a *cached static* instance
+  (`public static T Empty { get; } = new(...)` used as `State.Prop = T.Empty`) leaks across
+  grains: Orleans' generated copier/serializer writes *into* the state object it is handed, so
+  every grain that started from the shared instance ends up seeing another grain's value. This
+  is invisible in the code (the record is immutable-looking) and hides in single-test runs — it
+  only surfaces when two grains with *different* keys are exercised in one process and one reads
+  another's data. Make the default a **factory** (`public static T Empty => new(...)`, a fresh
+  instance per access) or initialize the field with `new(...)` directly — never a `{ get; } =`
+  singleton. Same discipline as the list defaults (`= []`) elsewhere.
+- **Evidence:** `src/Agent42.Agents/UserProfile.cs` (`Empty` is `=> new("")`), `src/Agent42.Agents/UserProfileGrain.cs` (`UserProfileState.Profile`), `tests/Agent42.Tests/UserProfileGrainTests.cs` (`UserProfile_Empty_IsAFreshInstance_NotASharedSingleton` deterministically guards the factory property; `UserProfile_IsIsolatedPerUser` originally surfaced the leak in-cluster)
+- **Verified:** 2026-07-08
 
 ### Agent Framework 1.13 session API differs from older samples
 

@@ -378,10 +378,37 @@ body {
 }
 
 .sidebar__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   padding: 16px 20px;
   border-top: 1px dashed var(--line);
   text-align: center;
 }
+
+.sidebar__settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font: 500 12px var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.sidebar__settings:hover {
+  color: var(--amber);
+  border-color: var(--amber-deep);
+  background: var(--amber-glow);
+}
+
+.sidebar__gear { display: inline-flex; color: currentColor; }
 
 .dont-panic {
   font-size: 11px;
@@ -957,10 +984,24 @@ body {
   color: var(--ink);
 }
 
+/* Groups related fields so the profile dialog can grow section-by-section. */
+.agent-form__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .agent-form__field {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.agent-form__note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-faint);
 }
 
 .agent-form__label {
