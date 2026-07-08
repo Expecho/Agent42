@@ -134,16 +134,22 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`RehydrateAttachmentUrlsAsync`, `ChatAsync`, `AlignTurnAttachmentsToHistory`), `src/Agent42.Backend/BlobAttachmentStore.cs`, `.agentic/decisions/0004-attachments-in-blob.md`
 - **Verified:** 2026-07-08
 
-### Storage Blob Data Contributor grant is a manual CLI step, not Bicep
+### Attachments Storage RBAC is in Bicep — but only because the deploy SP was elevated once
 
-- **Claim:** the attachments storage account is created in Bicep, but its **Storage Blob Data
-  Contributor** grant to the container app's managed identity is *not*. That role is classic
-  `Microsoft.Authorization/roleAssignments`, which the Contributor deploy SP cannot create
-  (same shape as the OpenAI grant above; Cosmos RBAC only works in Bicep because it's a distinct
-  resource type). The exact `az role assignment create` command is surfaced by the
-  `containerAppPrincipalId` output in `main.bicep` and must be run by the user. The role also
-  authorizes `generateUserDelegationKey`, so no account key is needed (shared-key auth is
-  disabled on the account). The agent prepares the command and hands it to the user; it never
-  runs role-assignment writes against prod.
-- **Evidence:** `infra/main.bicep` (`containerAppPrincipalId` output), `infra/modules/storage.bicep`
+- **Claim:** the **Storage Blob Data Contributor** grant to the container app identity
+  (`infra/modules/storage-role-assignment.bicep`) is classic `Microsoft.Authorization/roleAssignments`,
+  which a plain Contributor cannot create. It works in Bicep only because the deploy SP
+  (`sp-agent42-deploy`) was granted **Role Based Access Control Administrator** on `rg-agent42` — a
+  one-time manual elevation done 2026-07-08 (`az role assignment create … --role "Role Based Access
+  Control Administrator" --scope subscriptions/<sub>/resourceGroups/rg-agent42`). If that elevation is
+  removed or the SP recreated, this module's deploy fails with an authorization error — fall back to a
+  manual `az role assignment create` of Storage Blob Data Contributor. This is the key difference from
+  the **OpenAI grant, which stays manual** (its account is in a *different* RG where a cross-RG Bicep
+  role module fails). The role also authorizes `generateUserDelegationKey`, so no account key is needed
+  (shared-key auth is disabled on the account). The agent never runs role-assignment writes itself; the
+  one-time elevation was run by the user.
+- **Gotcha on Windows/Git Bash:** an `az … --scope "/subscriptions/…"` argument starting with `/` is
+  mangled by MSYS path conversion into a Windows path → ARM returns `MissingSubscription`. Drop the
+  leading `/` (`--scope "subscriptions/…"`) or prefix the command with `MSYS_NO_PATHCONV=1`.
+- **Evidence:** `infra/modules/storage-role-assignment.bicep`, `infra/main.bicep` (`storageRoleAssignment` module), `infra/modules/storage.bicep`
 - **Verified:** 2026-07-08

@@ -186,14 +186,27 @@ module cosmosRoleAssignment 'modules/cosmos-role-assignment.bicep' = {
   }
 }
 
+// Grants the Container App identity Storage Blob Data Contributor on the attachments account.
+// This is classic Azure RBAC (Microsoft.Authorization/roleAssignments), so it works here ONLY
+// because the deploy service principal was granted "Role Based Access Control Administrator" on
+// this resource group (a one-time manual step — see the gotchas file). If that elevation is ever
+// removed, or the SP recreated, fall back to the manual `az role assignment create` grant.
+module storageRoleAssignment 'modules/storage-role-assignment.bicep' = {
+  name: 'agent42-storage-role-assignment'
+  params: {
+    accountName: storage.outputs.accountName
+    principalId: containerApp.outputs.principalId
+  }
+}
+
 @description('The URL of the deployed Agent 42 backend.')
 output backendUrl string = 'https://${containerApp.outputs.fqdn}'
 
-@description('Principal id of the system-assigned managed identity of the Container App. After the first deployment (or any deploy that creates a new identity), grant it two roles on the Agent 42 AI Foundry account (subscriptions/{sub}/resourceGroups/agent42/providers/Microsoft.CognitiveServices/accounts/Agent42): "Cognitive Services OpenAI User" (to call the model) and "Reader" (so the live model picker can list deployments via the management plane). Also grant it "Storage Blob Data Contributor" on the attachments storage account (see storageAccountName output) — this is classic Microsoft.Authorization RBAC the Contributor deploy SP cannot create, so it is a manual step: az role assignment create --assignee-object-id <thisPrincipalId> --assignee-principal-type ServicePrincipal --role "Storage Blob Data Contributor" --scope /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<storageAccountName>')
+@description('Principal id of the system-assigned managed identity of the Container App. After the first deployment (or any deploy that creates a new identity), grant it two roles on the Agent 42 AI Foundry account (subscriptions/{sub}/resourceGroups/agent42/providers/Microsoft.CognitiveServices/accounts/Agent42): "Cognitive Services OpenAI User" (to call the model) and "Reader" (so the live model picker can list deployments via the management plane). These stay manual because the AI Foundry account is in a different RG where a cross-RG Bicep role module fails. The attachments Storage Blob Data Contributor grant is now handled in Bicep (modules/storage-role-assignment.bicep).')
 output containerAppPrincipalId string = containerApp.outputs.principalId
 
 @description('Name of the Cosmos DB account created for grain state.')
 output cosmosAccountName string = cosmos.outputs.accountName
 
-@description('Name of the storage account created for image attachments. Its blob endpoint is passed to the container app as Storage__BlobEndpoint; grant the container app identity Storage Blob Data Contributor on it (see containerAppPrincipalId output).')
+@description('Name of the storage account created for image attachments. Its blob endpoint is passed to the container app as Storage__BlobEndpoint; the container app identity is granted Storage Blob Data Contributor on it in Bicep (modules/storage-role-assignment.bicep).')
 output storageAccountName string = storage.outputs.accountName

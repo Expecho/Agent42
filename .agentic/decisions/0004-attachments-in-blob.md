@@ -62,10 +62,13 @@ entry per user turn, in order) so history joins each turn to its images by index
 - A new Azure Storage account + private `attachments` container is provisioned in Bicep
   (`infra/modules/storage.bicep`). The blob endpoint is passed to the container app as
   `Storage__BlobEndpoint`.
-- **The Storage Blob Data Contributor grant is a manual step, not Bicep** — it is classic
-  `Microsoft.Authorization/roleAssignments`, which the Contributor deploy SP cannot create
-  (same shape as the OpenAI grant; see gotchas). The exact `az role assignment create`
-  command is handed to the user via the `containerAppPrincipalId` deployment output.
+- **The Storage Blob Data Contributor grant is in Bicep** (`modules/storage-role-assignment.bicep`),
+  contingent on a one-time manual elevation: it is classic `Microsoft.Authorization/roleAssignments`,
+  which a plain Contributor cannot create, so the deploy SP was granted **Role Based Access Control
+  Administrator** on `rg-agent42` (done 2026-07-08). Unlike the OpenAI grant — which stays a manual
+  `az rest` step because its account is in a *different* RG where a cross-RG Bicep role module fails —
+  the storage account is in the deploy RG, so once the SP can write role assignments there, Bicep
+  handles it. If that elevation is removed or the SP recreated, fall back to a manual grant (see gotchas).
 - Bytes staying out of Cosmos is a **prod-blob property** the offline unit harness cannot
   exercise (the in-memory store returns non-expiring placeholder URLs), so it is verified by
   the Step 1 spike + code review rather than a unit test — honestly out of unit scope.
