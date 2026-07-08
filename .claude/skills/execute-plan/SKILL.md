@@ -8,9 +8,6 @@ argument-hint: "[plan file — defaults to most recently modified plan-*.md in .
 
 # Execute a plan
 
-Transformed from the workspace `/erupt` skill. The three disciplines that made it
-valuable are kept; the multi-repo, expertise-YAML, and hardcoded-threshold parts are not.
-
 Model routing: no model pin here — a skill-level pin lasts one turn and this skill
 spans many. The cost lever is `step-implementer` (pinned to the `sonnet` tier in
 its frontmatter): implementers do the bulk build work cheaply, while this
@@ -81,12 +78,16 @@ and flag it for removal — do not estimate a number for it. On FAIL, follow the
 `enforcement.local` policy in quality-gates.yaml (default: show the table, ask
 proceed/abort).
 
+Add the quality gate table to the MR description, so reviewers see the evidence and
+can verify it themselves. If the gate fails, do not proceed to MR creation until is passes
+
 ## Step 5 — Close the loop
 
 - Dispatch a `critic` subagent (`.claude/agents/critic.md`) on the full diff for
   template compliance: exemplar-shape violations, tripped gotchas, undocumented
   decisions, unpaid doc debt. Fix findings before committing. (For bug-hunting
   review, the native `/code-review` skill covers it — don't duplicate that here.)
+- Update the spec, add a new section that tells where the implementation has diverged from the plan.
 - Move the spec to `.agentic/specs/completed/`.
 - Decisions made along the way → `/decide`. Traps discovered → `/gotcha`.
   Diff invalidates an existing doc claim → fix it now (see `/sync-docs`).
