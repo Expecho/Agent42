@@ -21,8 +21,11 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IChatClient, FakeChatClient>();
             services.AddSingleton<IChatClientFactory>(sp =>
                 new SingleChatClientFactory(sp.GetRequiredService<IChatClient>(), "fake-model"));
-            // Process-global in-memory store, shared with the endpoint DI container (constraint 10).
+            // Process-global in-memory stores, shared with the endpoint DI container (constraint 10).
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
+            // Document ingestion + retrieval stand-ins (ADR 0007): the grain resolves these to
+            // search uploaded documents.
+            services.AddDocumentRagFakes();
         });
     }
 }

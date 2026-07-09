@@ -1,9 +1,11 @@
 using Agent42.Agents;
 using Agent42.Backend;
+using Azure.AI.OpenAI;
 using Azure.Identity;
 using Azure.ResourceManager;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Extensions.AI;
 using OpenTelemetry.Trace;
 
 const string OtelSourceName = "Agent42.Backend";
@@ -65,6 +67,45 @@ else
 }
 
 builder.Services.AddSingleton<IAttachmentStore, BlobAttachmentStore>();
+
+// Document RAG (ADR 0007). The embedding deployment is a manual prerequisite the user owns (a
+// text-embedding-3-small deployment in the AI Foundry account, RG agent42 — the same account the
+// chat client uses, so no new RBAC). Validated eagerly so a missing deployment name fails at
+// startup, not on the first upload.
+var embeddingDeployment = builder.Configuration["AzureOpenAI:EmbeddingDeploymentName"];
+if (string.IsNullOrWhiteSpace(embeddingDeployment))
+{
+    throw new InvalidOperationException(
+        "AzureOpenAI:EmbeddingDeploymentName is not configured. Set it in appsettings.json, " +
+        "user secrets, or the AzureOpenAI__EmbeddingDeploymentName environment variable " +
+        "(the name of a text-embedding-3-small deployment in the AI Foundry account).");
+}
+
+// Reuse the same endpoint + managed identity as the chat client; the identity's existing
+// Cognitive Services OpenAI User grant already authorizes embeddings (no new RBAC).
+var azureOpenAIClient = new AzureOpenAIClient(new Uri(azureOpenAIEndpoint), credential);
+builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
+    azureOpenAIClient.GetEmbeddingClient(embeddingDeployment).AsIEmbeddingGenerator());
+
+builder.Services.AddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
+builder.Services.AddSingleton<DocumentChunker>();
+builder.Services.AddSingleton<DocumentIngestionService>();
+
+// Branch the document index exactly like the blob store above: use Cosmos vector search only when
+// the doc-chunks container is configured (production, threaded from Bicep). Under the AppHost's
+// Cosmos emulator — which can't do vector search — this key is absent, so the in-memory index is
+// used and the emulator never receives a vector query (constraint 6). The container is pre-created
+// in Bicep with its vector policy; CosmosDocumentIndex never creates on use (disableLocalAuth).
+var docChunksContainer = builder.Configuration["Cosmos:DocChunksContainerName"];
+if (!string.IsNullOrWhiteSpace(docChunksContainer))
+{
+    builder.Services.AddSingleton<IDocumentIndex>(sp => new CosmosDocumentIndex(
+        sp.GetRequiredService<CosmosClient>(), "agent42", docChunksContainer));
+}
+else
+{
+    builder.Services.AddSingleton<IDocumentIndex, InMemoryDocumentIndex>();
+}
 
 // Live catalog of the deployed models, queried through the Azure Resource Manager SDK.
 builder.Services.AddSingleton(new ArmClient(credential));

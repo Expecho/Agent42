@@ -86,4 +86,11 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   (`infra/modules/storage-role-assignment.bicep`), which works only because the deploy SP holds
   RBAC Administrator on `rg-agent42` (a one-time manual elevation — see gotchas). The OpenAI
   grant stays manual (different RG).
+- Document RAG (ADR 0007): uploaded documents (PDF/Office/text) are **ingest-only** — extracted,
+  chunked, embedded (`text-embedding-3-small`) and stored in a Cosmos NoSQL **vector** container
+  (`doc-chunks`), retrieved via an agentic `search_documents` grain tool; they never become chat
+  attachments (off the image `UriContent` path). The embedding deployment is a **manual prerequisite**
+  in the `Agent42` AI Foundry account (needs no new RBAC — the existing OpenAI User grant covers it),
+  and the Cosmos vector path is prod-only (offline/AppHost use an in-memory index). See gotchas before
+  touching the vector container or embedding config.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

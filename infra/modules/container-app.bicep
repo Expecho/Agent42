@@ -36,6 +36,12 @@ param azureOpenAIEndpoint string
 @description('Model deployment name used for chat completions.')
 param azureOpenAIDeploymentName string
 
+@description('Embedding model deployment name used for document RAG (ADR 0007).')
+param azureOpenAIEmbeddingDeploymentName string
+
+@description('Cosmos DB container name for document RAG vector search (ADR 0007). Its presence switches the app onto the Cosmos document index.')
+param cosmosDocChunksContainerName string
+
 @description('Entra ID tenant id used for DefaultAzureCredential when calling Azure OpenAI.')
 param azureOpenAITenantId string
 
@@ -148,6 +154,8 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             { name: 'Storage__BlobEndpoint', value: blobEndpoint }
             { name: 'AzureOpenAI__Endpoint', value: azureOpenAIEndpoint }
             { name: 'AzureOpenAI__DeploymentName', value: azureOpenAIDeploymentName }
+            { name: 'AzureOpenAI__EmbeddingDeploymentName', value: azureOpenAIEmbeddingDeploymentName }
+            { name: 'Cosmos__DocChunksContainerName', value: cosmosDocChunksContainerName }
             { name: 'AzureOpenAI__TenantId', value: azureOpenAITenantId }
             { name: 'AzureOpenAI__SubscriptionId', value: azureOpenAISubscriptionId }
             { name: 'AzureOpenAI__ResourceGroup', value: azureOpenAIResourceGroup }

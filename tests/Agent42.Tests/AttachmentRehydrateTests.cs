@@ -42,6 +42,8 @@ public sealed class CountingStoreSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IChatClientFactory>(sp =>
                 new SingleChatClientFactory(sp.GetRequiredService<IChatClient>(), "fake-model"));
             services.AddSingleton<IAttachmentStore, CountingAttachmentStore>();
+            // The grain resolves the document retrieval stand-ins (ADR 0007).
+            services.AddDocumentRagFakes();
         });
     }
 }

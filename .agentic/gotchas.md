@@ -168,3 +168,45 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   leading `/` (`--scope "subscriptions/…"`) or prefix the command with `MSYS_NO_PATHCONV=1`.
 - **Evidence:** `infra/modules/storage-role-assignment.bicep`, `infra/main.bicep` (`storageRoleAssignment` module), `infra/modules/storage.bicep`
 - **Verified:** 2026-07-08
+
+### Document RAG embedding deployment is a manual prerequisite — but needs no new RBAC
+
+- **Claim:** the `text-embedding-3-small` deployment used for document RAG (ADR 0007) is **not**
+  provisioned by this repo's Bicep — it lives in the `Agent42` AI Foundry account in the *different*
+  RG `agent42`, the same reason the OpenAI role grant stays a manual step. The user must create the
+  deployment and its name must match `AzureOpenAI:EmbeddingDeploymentName` (default
+  `text-embedding-3-small`, eager-validated at startup — a missing value throws before the first
+  upload, not on it). **No new role assignment is required:** the container app identity's existing
+  *Cognitive Services OpenAI User* grant already authorizes embeddings on that account, so the
+  embedding client reuses the same endpoint + `DefaultAzureCredential` as the chat client.
+- **Evidence:** `src/Agent42.Backend/Program.cs` (embedding-generator registration + eager check), `src/Agent42.Backend/appsettings.json`, `.agentic/decisions/0007-document-rag-cosmos-vector-search.md`
+- **Verified:** 2026-07-09
+
+### Cosmos vector search is prod-only: capability + pre-created container + no create-on-use
+
+- **Claim:** document retrieval (ADR 0007) needs the account-level `EnableNoSQLVectorSearch`
+  capability **and** the `doc-chunks` container pre-created in Bicep with its vector policy
+  (partition `/ownerKey`, vector path `/embedding` float32/cosine/1536, **`quantizedFlat`** index — a
+  `flat` index caps at 505 dims and can't hold a 1536-dim embedding). `CosmosDocumentIndex` uses the
+  **raw `CosmosClient` and never creates on use** — the account is `disableLocalAuth: true`, so
+  AAD data-plane RBAC can't create the container (same 403 wall as the Orleans providers); a vector
+  *connector* that calls `EnsureCollectionExists` would fail here. The container schema in Bicep
+  (property names `ownerKey`/`embedding`, lowercase `id`) must exactly match the item POCO the code
+  writes/reads. This path **cannot be exercised offline**: `Program.cs` registers `CosmosDocumentIndex`
+  only when `Cosmos:DocChunksContainerName` is set (threaded from Bicep in prod); under the AppHost
+  Cosmos emulator that key is absent, so the in-memory index is used and the emulator never runs a
+  vector query — the emulator uses a well-known key and can't reproduce the no-create-rights wall
+  anyway. The `ORDER BY VectorDistance(...)` (ascending) → most-similar-first ordering is a prod-smoke
+  fact (AC7), not something the offline harness verifies.
+- **Evidence:** `infra/modules/cosmos.bicep` (`doc-chunks` container + capability), `src/Agent42.Backend/CosmosDocumentIndex.cs`, `src/Agent42.Backend/Program.cs` (index branch), `.agentic/decisions/0007-document-rag-cosmos-vector-search.md`
+- **Verified:** 2026-07-09
+
+### Docnet.Core DocLib.Instance is a process-global native singleton — serialize PDF extraction
+
+- **Claim:** PDF text extraction (ADR 0007) uses Docnet.Core, which wraps a **process-global native
+  PDFium handle** via `DocLib.Instance`. It is **not safe for concurrent `GetDocReader` calls**, so
+  `DocumentTextExtractor` serializes every PDF extraction through a single static lock. Do not
+  dispose `DocLib.Instance` per call (it frees the native library for the whole process); only the
+  `IDocReader`/`IPageReader` are disposed. Fine at per-conversation, synchronous-ingestion scale.
+- **Evidence:** `src/Agent42.Agents/DocumentTextExtractor.cs` (`PdfLock`)
+- **Verified:** 2026-07-09

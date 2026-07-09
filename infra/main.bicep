@@ -48,6 +48,9 @@ param cosmosContainerName string = 'agent-state'
 @description('Cosmos DB SQL container name used by the Orleans durable reminders provider.')
 param cosmosRemindersContainerName string = 'reminders'
 
+@description('Cosmos DB SQL container name used for document RAG vector search (ADR 0007). Setting it also switches the app onto the Cosmos document index (vs the in-memory one).')
+param cosmosDocChunksContainerName string = 'doc-chunks'
+
 @description('Name of the storage account to create for image attachments. Must be globally unique, lowercase alphanumeric, 3-24 characters.')
 param storageAccountName string = 'stagent42${uniqueString(resourceGroup().id)}'
 
@@ -59,6 +62,9 @@ param azureOpenAIEndpoint string = 'https://agent42.services.ai.azure.com'
 
 @description('Model deployment name used for chat completions.')
 param azureOpenAIDeploymentName string = 'gpt-4o'
+
+@description('Embedding model deployment name used for document RAG (ADR 0007). Must exist in the AI Foundry account (a manual prerequisite the user creates); the container app identity\'s existing Cognitive Services OpenAI User grant already authorizes it.')
+param azureOpenAIEmbeddingDeploymentName string = 'text-embedding-3-small'
 
 @description('Entra ID tenant id used for DefaultAzureCredential when calling Azure OpenAI.')
 param azureOpenAITenantId string = '2250fce3-5bc9-4ae7-a5e9-58c510a422ec'
@@ -128,6 +134,7 @@ module cosmos 'modules/cosmos.bicep' = {
     databaseName: cosmosDatabaseName
     containerName: cosmosContainerName
     remindersContainerName: cosmosRemindersContainerName
+    docChunksContainerName: cosmosDocChunksContainerName
     tags: tags
   }
 }
@@ -157,6 +164,8 @@ module containerApp 'modules/container-app.bicep' = {
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint
     azureOpenAIDeploymentName: azureOpenAIDeploymentName
+    azureOpenAIEmbeddingDeploymentName: azureOpenAIEmbeddingDeploymentName
+    cosmosDocChunksContainerName: cosmosDocChunksContainerName
     azureOpenAITenantId: azureOpenAITenantId
     azureOpenAISubscriptionId: azureOpenAISubscriptionId
     azureOpenAIResourceGroup: azureOpenAIResourceGroup
