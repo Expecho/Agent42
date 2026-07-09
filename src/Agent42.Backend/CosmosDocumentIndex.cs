@@ -8,7 +8,7 @@ namespace Agent42.Backend;
 /// (ADR 0007). Each chunk is one item partitioned by <c>ownerKey</c> (the
 /// <c>{userId}/{conversationId}</c> grain key), so every query and delete is single-partition and
 /// owner-scoped by construction. Retrieval is a <c>VectorDistance</c> top-k query over a
-/// <c>quantizedFlat</c> index (1536-dim <c>text-embedding-3-small</c> exceeds the 505-dim cap of a
+/// <c>quantizedFlat</c> index (3072-dim <c>text-embedding-3-large</c> exceeds the 505-dim cap of a
 /// <c>flat</c> index; at &lt;1000 vectors <c>quantizedFlat</c> falls back to a full scan, which is
 /// correct and cheap at this scale).
 ///

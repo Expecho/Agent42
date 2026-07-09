@@ -64,7 +64,7 @@ param azureOpenAIEndpoint string = 'https://agent42.services.ai.azure.com'
 param azureOpenAIDeploymentName string = 'gpt-4o'
 
 @description('Embedding model deployment name used for document RAG (ADR 0007). Must exist in the AI Foundry account (a manual prerequisite the user creates); the container app identity\'s existing Cognitive Services OpenAI User grant already authorizes it.')
-param azureOpenAIEmbeddingDeploymentName string = 'text-embedding-3-small'
+param azureOpenAIEmbeddingDeploymentName string = 'text-embedding-3-large'
 
 @description('Entra ID tenant id used for DefaultAzureCredential when calling Azure OpenAI.')
 param azureOpenAITenantId string = '2250fce3-5bc9-4ae7-a5e9-58c510a422ec'

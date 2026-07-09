@@ -112,8 +112,8 @@ resource remindersContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/
 // Document-RAG vector container (ADR 0007). Pre-created — like the containers above — because the
 // account has disableLocalAuth: true and Cosmos AAD data-plane RBAC cannot create containers, so
 // CosmosDocumentIndex never creates on use. Partitioned by /ownerKey (the {userId}/{conversationId}
-// grain key) so every retrieval is single-partition and owner-scoped. The 1536-dim
-// text-embedding-3-small vector forces quantizedFlat (a flat index caps at 505 dims); at
+// grain key) so every retrieval is single-partition and owner-scoped. The 3072-dim
+// text-embedding-3-large vector forces quantizedFlat (a flat index caps at 505 dims); at
 // per-conversation scale (<1000 vectors) quantizedFlat is a full scan, which is correct and cheap.
 // The /embedding vector path is excluded from normal indexing (it is served by the vector index).
 resource docChunksContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2026-03-15' = {
@@ -132,7 +132,7 @@ resource docChunksContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/
             path: '/embedding'
             dataType: 'float32'
             distanceFunction: 'cosine'
-            dimensions: 1536
+            dimensions: 3072
           }
         ]
       }

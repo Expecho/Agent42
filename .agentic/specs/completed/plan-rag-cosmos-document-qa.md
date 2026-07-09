@@ -45,13 +45,13 @@ uses are GA.
    Evidence: `infra/modules/cosmos.bicep`; gotcha "Cosmos containers must be pre-declared in Bicep".
 
 2. **1536-dim embeddings force `quantizedFlat` (or DiskANN), never `flat`.** Cosmos `flat`
-   vector index caps at 505 dims; `text-embedding-3-small` is 1536. At per-conversation scale
+   vector index caps at 505 dims; `text-embedding-3-large` is 1536. At per-conversation scale
    (<1000 vectors) `quantizedFlat` falls back to a full scan — acceptable (slightly higher RU),
    and correct for this scale. Evidence: Microsoft Learn "Vector search in Azure Cosmos DB for NoSQL".
 
 3. **The embedding model deployment is a MANUAL prerequisite the user owns.** The AI Foundry
    account `Agent42` lives in RG `agent42` (a different RG), not this repo's Bicep — the same
-   reason the OpenAI RBAC grant is a manual `az rest` step. A `text-embedding-3-small` deployment
+   reason the OpenAI RBAC grant is a manual `az rest` step. A `text-embedding-3-large` deployment
    must be created there by the user. **No new RBAC:** the container app identity's existing
    *Cognitive Services OpenAI User* grant already authorizes embeddings on that account.
    Evidence: gotcha "OpenAI role grant is a CLI step in the deploy workflow, not Bicep";
@@ -246,7 +246,7 @@ uses are GA.
 
 ## Manual prerequisites (user action items — not code)
 
-- Create a **`text-embedding-3-small`** deployment in the `Agent42` AI Foundry account (RG `agent42`).
+- Create a **`text-embedding-3-large`** deployment in the `Agent42` AI Foundry account (RG `agent42`).
   Confirm the deployment name and set `AzureOpenAI:EmbeddingDeploymentName`.
 - Confirm **no new RBAC** is needed (existing *Cognitive Services OpenAI User* covers embeddings).
 - The Bicep vector-capability change deploys via the normal pipeline; if enabling the capability on
@@ -346,7 +346,7 @@ Divergences from the written plan:
 
 ### Outstanding USER actions before prod works (not code)
 
-1. Create a **`text-embedding-3-small`** deployment in the `Agent42` AI Foundry account (RG `agent42`);
+1. Create a **`text-embedding-3-large`** deployment in the `Agent42` AI Foundry account (RG `agent42`);
    confirm its name matches `AzureOpenAI:EmbeddingDeploymentName`. No new RBAC needed.
 2. Deploy the Bicep (adds `EnableNoSQLVectorSearch` + the `doc-chunks` container). Preview first with
    `az deployment group what-if -g rg-agent42 -f infra/main.bicep ...`. If enabling the account vector

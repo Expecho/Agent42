@@ -171,11 +171,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ### Document RAG embedding deployment is a manual prerequisite — but needs no new RBAC
 
-- **Claim:** the `text-embedding-3-small` deployment used for document RAG (ADR 0007) is **not**
+- **Claim:** the `text-embedding-3-large` deployment used for document RAG (ADR 0007) is **not**
   provisioned by this repo's Bicep — it lives in the `Agent42` AI Foundry account in the *different*
   RG `agent42`, the same reason the OpenAI role grant stays a manual step. The user must create the
   deployment and its name must match `AzureOpenAI:EmbeddingDeploymentName` (default
-  `text-embedding-3-small`, eager-validated at startup — a missing value throws before the first
+  `text-embedding-3-large`, eager-validated at startup — a missing value throws before the first
   upload, not on it). **No new role assignment is required:** the container app identity's existing
   *Cognitive Services OpenAI User* grant already authorizes embeddings on that account, so the
   embedding client reuses the same endpoint + `DefaultAzureCredential` as the chat client.
@@ -186,8 +186,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 - **Claim:** document retrieval (ADR 0007) needs the account-level `EnableNoSQLVectorSearch`
   capability **and** the `doc-chunks` container pre-created in Bicep with its vector policy
-  (partition `/ownerKey`, vector path `/embedding` float32/cosine/1536, **`quantizedFlat`** index — a
-  `flat` index caps at 505 dims and can't hold a 1536-dim embedding). `CosmosDocumentIndex` uses the
+  (partition `/ownerKey`, vector path `/embedding` float32/cosine/3072, **`quantizedFlat`** index — a
+  `flat` index caps at 505 dims and can't hold a 3072-dim embedding). `CosmosDocumentIndex` uses the
   **raw `CosmosClient` and never creates on use** — the account is `disableLocalAuth: true`, so
   AAD data-plane RBAC can't create the container (same 403 wall as the Orleans providers); a vector
   *connector* that calls `EnsureCollectionExists` would fail here. The container schema in Bicep

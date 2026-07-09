@@ -13,8 +13,8 @@ namespace Agent42.Agents;
 /// </summary>
 public sealed class DeterministicEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
 {
-    // Small vs. the 1536-dim production model — enough buckets for term overlap to separate texts,
-    // cheap to compute. The production Cosmos path uses text-embedding-3-small (ADR 0007).
+    // Small vs. the 3072-dim production model — enough buckets for term overlap to separate texts,
+    // cheap to compute. The production Cosmos path uses text-embedding-3-large (ADR 0007).
     public const int Dimensions = 128;
 
     public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(

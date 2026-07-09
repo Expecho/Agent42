@@ -22,7 +22,7 @@ providers.
 
 ## Decision
 Documents are **ingest-only**. On upload the backend extracts text, chunks it (~1000 chars,
-~200 overlap), embeds each chunk with Azure OpenAI `text-embedding-3-small`, and upserts it into
+~200 overlap), embeds each chunk with Azure OpenAI `text-embedding-3-large`, and upserts it into
 an **Azure Cosmos DB for NoSQL vector container** (`doc-chunks`), partitioned by the
 `{userId}/{conversationId}` grain key (ADR 0001 scoping). A document is **never** stored as a chat
 attachment, never sent back as an `attachmentId`, and never enters the image `UriContent` path.
@@ -42,7 +42,7 @@ deterministic bag-of-words fake offline — so the whole flow round-trips with n
   *never* create the container on use — the container is pre-created in Bicep with its vector policy
   (a connector that insists on `EnsureCollectionExists` would 403 against the `disableLocalAuth`
   account). `VectorDistance` top-k SQL, single-partition by owner key.
-- **The 1536-dim embedding forces a `quantizedFlat` vector index** (a `flat` index caps at 505 dims).
+- **The 3072-dim embedding forces a `quantizedFlat` vector index** (a `flat` index caps at 505 dims).
   At per-conversation scale (<1000 vectors) `quantizedFlat` is a full scan — correct and cheap.
 
 ## Alternatives considered
@@ -65,17 +65,17 @@ deterministic bag-of-words fake offline — so the whole flow round-trips with n
   scope. Rejected for local extraction libraries.
 - **Azure AI Search** — a second stateful service; Cosmos vector search reuses an account already
   operated. Rejected.
-- **`flat` vector index** — simpler, but caps at 505 dims and can't hold a 1536-dim embedding.
+- **`flat` vector index** — simpler, but caps at 505 dims and can't hold a 3072-dim embedding.
 - **A cross-conversation per-user document library** — out of scope; documents are per-conversation.
 
 ## Consequences
-- **Two manual prerequisites the user owns.** A `text-embedding-3-small` deployment must be created
+- **Two manual prerequisites the user owns.** A `text-embedding-3-large` deployment must be created
   in the `Agent42` AI Foundry account (RG `agent42`); the container app identity's existing
   *Cognitive Services OpenAI User* grant already authorizes embeddings, so **no new RBAC**. The
   NoSQL vector-search capability is added to the existing account in Bicep — an in-place account
   update; if the platform requires a portal/CLI toggle instead, that is a one-time manual step.
 - **New infra in `cosmos.bicep`**: the `EnableNoSQLVectorSearch` capability and the `doc-chunks`
-  container (partition `/ownerKey`, vector path `/embedding` float32/cosine/1536, `quantizedFlat`
+  container (partition `/ownerKey`, vector path `/embedding` float32/cosine/3072, `quantizedFlat`
   index). `AzureOpenAI__EmbeddingDeploymentName` and `Cosmos__DocChunksContainerName` are threaded
   through `main.bicep` → `container-app.bicep`; the latter's presence is what switches prod onto the
   Cosmos index (absent under the AppHost emulator, which then uses the in-memory index and never

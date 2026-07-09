@@ -69,7 +69,7 @@ else
 builder.Services.AddSingleton<IAttachmentStore, BlobAttachmentStore>();
 
 // Document RAG (ADR 0007). The embedding deployment is a manual prerequisite the user owns (a
-// text-embedding-3-small deployment in the AI Foundry account, RG agent42 — the same account the
+// text-embedding-3-large deployment in the AI Foundry account, RG agent42 — the same account the
 // chat client uses, so no new RBAC). Validated eagerly so a missing deployment name fails at
 // startup, not on the first upload.
 var embeddingDeployment = builder.Configuration["AzureOpenAI:EmbeddingDeploymentName"];
@@ -78,7 +78,7 @@ if (string.IsNullOrWhiteSpace(embeddingDeployment))
     throw new InvalidOperationException(
         "AzureOpenAI:EmbeddingDeploymentName is not configured. Set it in appsettings.json, " +
         "user secrets, or the AzureOpenAI__EmbeddingDeploymentName environment variable " +
-        "(the name of a text-embedding-3-small deployment in the AI Foundry account).");
+        "(the name of a text-embedding-3-large deployment in the AI Foundry account).");
 }
 
 // Reuse the same endpoint + managed identity as the chat client; the identity's existing
