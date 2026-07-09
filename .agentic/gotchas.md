@@ -31,6 +31,24 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ## Constraints
 
+### Chrome on Android flags interim speech results as `isFinal` with `confidence: 0`
+
+- **Claim:** Voice dictation cannot be verified on desktop alone. Desktop Edge/Chrome and
+  Chrome-on-Android deviate from the Web Speech spec in *different* ways, and a transcript
+  fold correct on one stacks growth stages ("Hoe" + "Hoe laat" + …) on the other — the
+  double-output bug on Android PWAs. On Android every interim stage arrives `isFinal: true`
+  with `confidence: 0`; promoting it into the permanent `finalTranscript` accumulator (which
+  never revisits what it appended) re-adds each stage. Only the interim branch is
+  self-correcting (rebuilt per event), so an unscored result must fall through to it — hence
+  the `distrustZeroConfidenceFinals` UA guard in the result handler. The guard must stay
+  Android-only: desktop engines may report `confidence: 0` on a genuine final, and demoting it
+  there silently drops the segment. The C# asset tests are source-text heuristics (no JS
+  runner in repo), so they cannot catch an engine deviation — always retest dictation on a
+  real Android PWA.
+- **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (`distrustZeroConfidenceFinals`);
+  upstream precedent: `react-speech-recognition` `RecognitionManager.js`
+- **Verified:** 2026-07-09
+
 ### Cosmos containers must be pre-declared in Bicep
 
 - **Claim:** the Cosmos account has `disableLocalAuth: true` and AAD data-plane RBAC cannot create databases/containers — only ARM can. Any new container must be added to `infra/modules/cosmos.bicep`; Orleans providers run with `IsResourceCreationEnabled = false`, so runtime auto-create silently isn't there to save you.
