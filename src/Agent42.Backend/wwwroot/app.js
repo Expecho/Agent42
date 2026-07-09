@@ -861,6 +861,13 @@
   if (!SpeechRecognition) {
     micBtn.hidden = true; // graceful degradation: no dictation, no button, no wiring
   } else {
+    // Chrome on Android flags every interim growth stage isFinal: true while reporting
+    // confidence: 0; trusting the flag re-appends each stage to the permanent accumulator
+    // ("Hoe" + "Hoe laat" + …), the double-output bug on Android PWAs. Distrust unscored
+    // finals THERE ONLY — desktop engines can report confidence 0 on a genuine final, and
+    // demoting it there would silently drop the segment. UA check, mirroring react-speech-recognition.
+    const distrustZeroConfidenceFinals = /android/i.test(navigator.userAgent);
+
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -883,14 +890,19 @@
     }
 
     // Only walk the results changed in THIS event (from resultIndex): fold newly-finalized
-    // segments into finalTranscript once, and rebuild just the trailing interim live. Flat by
-    // design (cognitive-complexity gate).
+    // segments into finalTranscript once, and rebuild just the trailing interim live. A final
+    // is trusted only when the engine actually scored it (confidence > 0) on Android — an
+    // unscored "final" is really an interim growth stage, so it must fall through to the
+    // self-correcting interim branch, not the permanent accumulator. Flat by design
+    // (cognitive-complexity gate).
     recognition.addEventListener("result", (event) => {
       if (!recognizing) return; // ignore trailing results after a stop
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i];
-        if (res.isFinal) finalTranscript += res[0].transcript;
+        const trustworthyFinal =
+          res.isFinal && (!distrustZeroConfidenceFinals || (res[0].confidence ?? 0) > 0);
+        if (trustworthyFinal) finalTranscript += res[0].transcript;
         else interim += res[0].transcript;
       }
       input.value = baseText + finalTranscript + interim;

@@ -51,6 +51,19 @@ public sealed class SpeechInputAssetsTests
     }
 
     [Fact]
+    public async Task AppJs_DistrustsZeroConfidenceFinalsOnAndroid()
+    {
+        var app = await _client.GetStringAsync("/app.js");
+        // Guards the Android double-output fix: Chrome on Android flags interim growth stages
+        // isFinal: true with confidence 0, so a final is only folded into the permanent
+        // accumulator when the engine actually scored it — otherwise it stacks ("HoeHoe laat…").
+        // The guard is UA-gated (Android only; desktop finals may legitimately carry confidence 0).
+        // Source-text heuristic; the runtime behaviour is verified manually on a real Android PWA.
+        Assert.Contains("distrustZeroConfidenceFinals", app);
+        Assert.Contains(".confidence", app);
+    }
+
+    [Fact]
     public async Task AppJs_DrivesRecognitionLanguageFromDevice()
     {
         var app = await _client.GetStringAsync("/app.js");
