@@ -36,6 +36,8 @@ public sealed class AttachmentTests : IAsyncLifetime
         appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
         appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
+        // The upload endpoint resolves the ingestion service even on the image path (ADR 0007).
+        appBuilder.Services.AddDocumentRagFakes();
         _app = appBuilder.Build();
         _app.MapAgentApi();
         await _app.StartAsync();
@@ -108,14 +110,16 @@ public sealed class AttachmentTests : IAsyncLifetime
         Assert.Equal("cat.png", metadata.FileName);
     }
 
-    // AC2: a non-image or oversize upload is rejected with 400.
+    // AC2: an unsupported media type or an oversize upload is rejected with 400. Documents
+    // (PDF/Office/text) are no longer rejected — they take the ingestion path (ADR 0007) — so this
+    // now asserts rejection of a genuinely unsupported binary type.
     [Fact]
-    public async Task Upload_RejectsNonImageAndOversize()
+    public async Task Upload_RejectsUnsupportedTypeAndOversize()
     {
-        var nonImage = await _client.PostAsync(
+        var unsupported = await _client.PostAsync(
             "/api/conversations/ac2-conversation/attachments",
-            ImageForm([1, 2, 3], "text/plain", "notes.txt"));
-        Assert.Equal(HttpStatusCode.BadRequest, nonImage.StatusCode);
+            ImageForm([1, 2, 3], "application/octet-stream", "blob.bin"));
+        Assert.Equal(HttpStatusCode.BadRequest, unsupported.StatusCode);
 
         var oversize = await _client.PostAsync(
             "/api/conversations/ac2-conversation/attachments",

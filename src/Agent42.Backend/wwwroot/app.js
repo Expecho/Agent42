@@ -48,6 +48,11 @@
   // endpoint. Sent as attachmentIds on the next send, then cleared. Reset on conversation switch.
   let pendingAttachments = [];
 
+  // Documents uploaded to this conversation: {kind, fileName, chunkCount}. Display-only — a
+  // document is ingest-only (indexed server-side for the search_documents tool, ADR 0007), so it
+  // is NEVER sent back as an attachmentId. The chip is a "just indexed" indicator.
+  let pendingDocuments = [];
+
   let agents = [];
   // The agent id to *bind*, sent on the wire only on the first turn of a freshly started
   // agent chat, then cleared. Kept distinct from activeAgentId so a resumed agent chat never
@@ -434,18 +439,24 @@
 
   /* ————— attachments (compose) ————— */
 
-  // Uploads each picked image to the current conversation and shows a removable thumbnail. The
-  // upload returns an id the next send references; the bytes already live server-side by then.
+  // Uploads each picked file to the current conversation. The server branches on media type: an
+  // image comes back as {id,...} and is sent as an attachmentId on the next turn; a document comes
+  // back as {kind:"document",...}, is indexed for retrieval server-side, and is shown as a chip but
+  // never sent back (ADR 0007). Unsupported types get a non-OK response and are skipped.
   async function handleFiles(files) {
     if (streaming) return;
     for (const file of files) {
-      if (!file.type.startsWith("image/")) continue;
       try {
         const body = new FormData();
         body.append("file", file, file.name);
         const res = await fetch(attachmentsUrl(activeId), { method: "POST", body });
         if (!res.ok) continue;
-        pendingAttachments.push(await res.json());
+        const meta = await res.json();
+        if (meta.kind === "document") {
+          pendingDocuments.push(meta);
+        } else {
+          pendingAttachments.push(meta);
+        }
         renderAttachmentPreview();
       } catch { /* skip this file; the others still upload */ }
     }
@@ -457,7 +468,31 @@
 
   function renderAttachmentPreview() {
     attachmentPreview.innerHTML = "";
-    attachmentPreview.hidden = pendingAttachments.length === 0;
+    attachmentPreview.hidden = pendingAttachments.length === 0 && pendingDocuments.length === 0;
+    pendingDocuments.forEach((doc) => {
+      const chip = document.createElement("div");
+      chip.className = "attach-chip attach-chip--doc";
+      chip.title = `${doc.fileName} — ${doc.chunkCount} passage(s) indexed. Ask a question about it.`;
+
+      const label = document.createElement("span");
+      label.className = "attach-chip__doc";
+      label.textContent = `📄 ${doc.fileName}`;
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "attach-chip__remove";
+      remove.setAttribute("aria-label", `Dismiss ${doc.fileName}`);
+      remove.textContent = "×";
+      // Display-only: dismissing the chip doesn't un-index the document (that happens when the
+      // whole conversation is deleted).
+      remove.addEventListener("click", () => {
+        pendingDocuments = pendingDocuments.filter((d) => d !== doc);
+        renderAttachmentPreview();
+      });
+
+      chip.append(label, remove);
+      attachmentPreview.appendChild(chip);
+    });
     pendingAttachments.forEach((att) => {
       const chip = document.createElement("div");
       chip.className = "attach-chip";
@@ -484,6 +519,7 @@
 
   function clearPendingAttachments() {
     pendingAttachments = [];
+    pendingDocuments = [];
     renderAttachmentPreview();
   }
 

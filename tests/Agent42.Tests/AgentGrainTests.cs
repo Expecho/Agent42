@@ -430,4 +430,56 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.NotNull(userTurn.Attachments);
         Assert.Equal("react-1", Assert.Single(userTurn.Attachments!).Id);
     }
+
+    // AC5: asked about an uploaded document, the agent calls search_documents and the tool result
+    // carries citations (source file + page). The chunk is seeded into the process-global in-memory
+    // index under the conversation's grain key; the FakeChatClient calls the tool for any message
+    // mentioning a document, and the deterministic embedder makes the "magrathea" chunk rank.
+    [Fact]
+    public async Task AgentChat_UsesDocumentSearch_WithCitations()
+    {
+        const string key = "docsearch-conversation";
+        await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
+
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("what does the document say about magrathea", null))
+        {
+            events.Add(evt);
+        }
+
+        var start = Assert.Single(events, e => e.Type == AgentStreamEventType.ToolCallStart);
+        Assert.Equal("search_documents", start.ToolName);
+
+        var end = Assert.Single(events, e =>
+            e.Type == AgentStreamEventType.ToolCallEnd && e.ToolCallId == start.ToolCallId);
+        // The tool result carries the citation: the source file name and the excerpt text.
+        Assert.Contains("guide.pdf", end.ToolResult ?? "");
+        Assert.Contains("Magrathea", end.ToolResult ?? "");
+    }
+
+    // Minor 4: purging a conversation deletes its indexed document chunks so extracted text
+    // doesn't outlive the conversation.
+    [Fact]
+    public async Task Purge_DeletesIndexedDocumentChunks()
+    {
+        const string key = "docpurge-conversation";
+        var (index, embedding) = await SeedChunkAsync(key, new DocumentChunk("g.pdf", null, 0, "towel"));
+        Assert.NotEmpty(await index.SearchAsync(key, embedding, topK: 5));
+
+        await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).PurgeAsync();
+
+        Assert.Empty(await index.SearchAsync(key, embedding, topK: 5));
+    }
+
+    // Seeds one embedded chunk into the process-global in-memory index under an owner key, using the
+    // same deterministic embedder the grain uses — so the grain's retrieval tool sees it.
+    private static async Task<(InMemoryDocumentIndex Index, ReadOnlyMemory<float> Embedding)> SeedChunkAsync(
+        string ownerKey, DocumentChunk chunk)
+    {
+        var index = new InMemoryDocumentIndex();
+        var embedding = (await new DeterministicEmbeddingGenerator().GenerateAsync([chunk.Text]))[0].Vector;
+        await index.UpsertChunksAsync(ownerKey, [new EmbeddedChunk(chunk, embedding)]);
+        return (index, embedding);
+    }
 }

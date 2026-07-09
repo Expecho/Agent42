@@ -31,6 +31,15 @@ builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("gpt-4o",
 // content, so uploads still round-trip for the display proxy and history rendering.
 builder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
 
+// Document RAG offline (ADR 0007): the real (deterministic, Azure-free) extractor + chunker, a
+// deterministic embedding generator, an in-memory vector index, and the ingestion service — so a
+// document upload → question round-trips locally with no Cosmos or Azure OpenAI.
+builder.Services.AddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
+builder.Services.AddSingleton<DocumentChunker>();
+builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, DeterministicEmbeddingGenerator>();
+builder.Services.AddSingleton<IDocumentIndex, InMemoryDocumentIndex>();
+builder.Services.AddSingleton<DocumentIngestionService>();
+
 builder.UseOrleans(silo =>
 {
     silo.UseLocalhostClustering();

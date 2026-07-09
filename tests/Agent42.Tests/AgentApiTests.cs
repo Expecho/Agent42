@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.Builder;
@@ -36,6 +38,8 @@ public sealed class AgentApiTests : IAsyncLifetime
         // The chat endpoint resolves attachments through the store; the in-memory store is
         // process-global, so it is the same instance the silo grain sees (constraint 10).
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
+        // Document ingestion + retrieval stand-ins for the upload endpoint and grain (ADR 0007).
+        appBuilder.Services.AddDocumentRagFakes();
         _app = appBuilder.Build();
         _app.MapAgentApi();
         await _app.StartAsync();
@@ -263,6 +267,42 @@ public sealed class AgentApiTests : IAsyncLifetime
 
         var aliceProfile = await GetProfileAsAsync("user-alice");
         Assert.Equal("de-DE", aliceProfile.PreferredLanguage);
+    }
+
+    // AC1 + AC (Step 5): a document upload is accepted (not rejected as non-image), returns a
+    // document-kind marker with NO id (so the client never sends it back as an attachmentId), and
+    // its text is indexed and searchable via the process-global in-memory index the grain also sees.
+    [Fact]
+    public async Task Upload_Document_IsAccepted_IndexedAndNotAnAttachment()
+    {
+        const string convId = "doc-upload-conversation";
+
+        using var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(TestDocuments.SampleTwoPagePdf());
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(DocumentMediaTypes.Pdf);
+        form.Add(fileContent, "file", "guide.pdf");
+
+        var response = await _client.PostAsync($"/api/conversations/{convId}/attachments", form);
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+        var raw = await response.Content.ReadAsStringAsync();
+        // A document marker, not an AttachmentMetadata — there is no id for the client to send back.
+        Assert.DoesNotContain("\"id\"", raw);
+        var result = JsonSerializer.Deserialize<DocumentUploadResult>(raw, JsonSerializerOptions.Web);
+        Assert.NotNull(result);
+        Assert.Equal("document", result!.Kind);
+        Assert.Equal("guide.pdf", result.FileName);
+        Assert.True(result.ChunkCount > 0, "the PDF should have produced at least one indexed chunk");
+
+        // The chunk text is retrievable from the same process-global index the grain queries,
+        // scoped to this conversation's owner key. The default (headerless) user id is "local-dev".
+        var index = new InMemoryDocumentIndex();
+        var embedder = new DeterministicEmbeddingGenerator();
+        var query = (await embedder.GenerateAsync(["magrathea"]))[0].Vector;
+        var hits = await index.SearchAsync($"local-dev/{convId}", query, topK: 3);
+        Assert.Contains(hits, h => h.Text.Contains("magrathea", StringComparison.OrdinalIgnoreCase));
+        Assert.All(hits, h => Assert.Equal("guide.pdf", h.FileName));
     }
 
     private async Task PutProfileAsAsync(string principalId, string language)

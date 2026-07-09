@@ -13,6 +13,9 @@ param containerName string
 @description('Cosmos DB SQL container name used for Orleans durable reminders.')
 param remindersContainerName string
 
+@description('Cosmos DB SQL container name used for document RAG vector search (ADR 0007).')
+param docChunksContainerName string
+
 @description('Tags applied to the account.')
 param tags object
 
@@ -37,6 +40,9 @@ resource account 'Microsoft.DocumentDB/databaseAccounts@2026-03-15' = {
     ]
     capabilities: [
       { name: 'EnableServerless' }
+      // NoSQL vector search for the document-RAG container below (ADR 0007). This is an
+      // account-level capability; adding it to the existing account is an in-place update.
+      { name: 'EnableNoSQLVectorSearch' }
     ]
     minimalTlsVersion: 'Tls12'
     disableLocalAuth: true
@@ -97,6 +103,53 @@ resource remindersContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/
           { path: '/StartAt/?' }
           { path: '/Period/?' }
           { path: '/_etag/?' }
+        ]
+      }
+    }
+  }
+}
+
+// Document-RAG vector container (ADR 0007). Pre-created — like the containers above — because the
+// account has disableLocalAuth: true and Cosmos AAD data-plane RBAC cannot create containers, so
+// CosmosDocumentIndex never creates on use. Partitioned by /ownerKey (the {userId}/{conversationId}
+// grain key) so every retrieval is single-partition and owner-scoped. The 3072-dim
+// text-embedding-3-large vector forces quantizedFlat (a flat index caps at 505 dims); at
+// per-conversation scale (<1000 vectors) quantizedFlat is a full scan, which is correct and cheap.
+// The /embedding vector path is excluded from normal indexing (it is served by the vector index).
+resource docChunksContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2026-03-15' = {
+  parent: database
+  name: docChunksContainerName
+  properties: {
+    resource: {
+      id: docChunksContainerName
+      partitionKey: {
+        paths: ['/ownerKey']
+        kind: 'Hash'
+      }
+      vectorEmbeddingPolicy: {
+        vectorEmbeddings: [
+          {
+            path: '/embedding'
+            dataType: 'float32'
+            distanceFunction: 'cosine'
+            dimensions: 3072
+          }
+        ]
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        includedPaths: [
+          { path: '/*' }
+        ]
+        excludedPaths: [
+          { path: '/embedding/*' }
+          { path: '/_etag/?' }
+        ]
+        vectorIndexes: [
+          {
+            path: '/embedding'
+            type: 'quantizedFlat'
+          }
         ]
       }
     }

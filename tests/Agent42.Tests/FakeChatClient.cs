@@ -110,6 +110,14 @@ public sealed class FakeChatClient : IChatClient
     private static FunctionCallContent BuildCancelAllCall() =>
         new("cancel-all-call-1", "cancel_all_scheduled_prompts", new Dictionary<string, object?>());
 
+    // Passes the user's text through as the search query, so the deterministic embedding generator
+    // retrieves the chunk that shares its words (see DeterministicEmbeddingGenerator).
+    private static FunctionCallContent BuildSearchDocumentsCall(string query) =>
+        new("search-docs-call-1", "search_documents", new Dictionary<string, object?>
+        {
+            ["query"] = query,
+        });
+
     // Picks the tool call (if any) the model should make for the current user turn.
     private static FunctionCallContent? SelectToolCall(IEnumerable<ChatMessage> messages)
     {
@@ -134,6 +142,13 @@ public sealed class FakeChatClient : IChatClient
         }
 
         var text = list[lastUserIndex].Text ?? "";
+
+        // A message mentioning a document triggers the retrieval tool. Independent of the
+        // reminder branches below.
+        if (text.Contains("document", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildSearchDocumentsCall(text);
+        }
 
         // Ordering is load-bearing: "reminder" contains the substring "remind", so the cancel
         // checks MUST precede the schedule check — do not reorder these branches.
