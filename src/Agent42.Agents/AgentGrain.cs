@@ -20,11 +20,16 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
     private const string Instructions = """
         You are Agent 42, a friendly and helpful assistant.
         Answer the user's questions concisely and accurately.
+        When a question may be answered by a document the user uploaded to this conversation,
+        call the search_documents tool and ground your answer in the returned excerpts, citing
+        the source file and page (or chunk index) you used.
         """;
 
     private readonly IPersistentState<AgentGrainState> _state;
     private readonly IChatClientFactory _chatClientFactory;
     private readonly IAttachmentStore _attachments;
+    private readonly IDocumentIndex _documentIndex;
+    private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddings;
     private readonly ILogger<AgentGrain> _logger;
 
     private AIAgent _agent = null!;
@@ -35,11 +40,15 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
         IChatClientFactory chatClientFactory,
         IAttachmentStore attachments,
+        IDocumentIndex documentIndex,
+        IEmbeddingGenerator<string, Embedding<float>> embeddings,
         ILogger<AgentGrain> logger)
     {
         _state = state;
         _chatClientFactory = chatClientFactory;
         _attachments = attachments;
+        _documentIndex = documentIndex;
+        _embeddings = embeddings;
         _logger = logger;
     }
 
@@ -91,6 +100,14 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
             description: "Cancel every scheduled reminder for this conversation at once. Use " +
                 "this only when the user wants to clear all of their reminders, not a single one.");
 
+        var searchDocuments = AIFunctionFactory.Create(
+            SearchDocumentsAsync,
+            name: "search_documents",
+            description: "Search the documents the user uploaded to THIS conversation for passages " +
+                "relevant to a question. Returns matching excerpts, each with its source file name " +
+                "and page number (or chunk index when the format has no pages). Use it whenever a " +
+                "question might be answered by an uploaded document, then cite the file and page.");
+
         // Agent Skills: markdown skills discovered on disk from Skills/<name>/SKILL.md.
         // The provider advertises each skill's name + description in the system prompt and
         // exposes a `load_skill` tool so the agent pulls the full guidance only when a task
@@ -111,7 +128,7 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
                 ChatOptions = new ChatOptions
                 {
                     Instructions = _state.State.SystemPrompt ?? Instructions,
-                    Tools = [schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime]
+                    Tools = [schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime, searchDocuments]
                 },
                 AIContextProviders = [skillsProvider],
             });
@@ -317,6 +334,11 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
             await this.UnregisterReminder(reminder);
         }
 
+        // Remove the conversation's indexed document chunks too, so deleting a conversation doesn't
+        // leave its extracted document text behind (privacy — ADR 0007). The index is owner-scoped
+        // by the same grain key.
+        await _documentIndex.DeleteAsync(this.GetPrimaryKeyString());
+
         _state.State.ScheduledPrompts.Clear();
         _state.State.SerializedSession = null;
         _state.State.DeploymentName = null;
@@ -329,6 +351,33 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
     }
 
     private static DateTime GetDate() => DateTime.Now;
+
+    /// <summary>
+    /// Agent tool: retrieves the passages most relevant to <paramref name="query"/> from the
+    /// documents uploaded to THIS conversation (ADR 0007). Embeds the query with the same generator
+    /// used at ingestion, then asks the owner-scoped <see cref="IDocumentIndex"/> for the top matches.
+    /// Scoped by the grain key (<c>{userId}/{conversationId}</c>), so it can only ever see this
+    /// conversation's documents. Returns each excerpt with its citation metadata (file, page/chunk).
+    /// </summary>
+    private async Task<IReadOnlyList<DocumentChunk>> SearchDocumentsAsync(
+        [Description("The question or keywords to search the uploaded documents for.")] string query,
+        [Description("Maximum number of excerpts to return. Defaults to 5.")] int maxResults = 5)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return [];
+        }
+
+        var generated = await _embeddings.GenerateAsync([query]);
+        var results = await _documentIndex.SearchAsync(
+            this.GetPrimaryKeyString(), generated[0].Vector, maxResults > 0 ? maxResults : 5);
+
+        _logger.LogInformation(
+            "Agent grain {GrainKey} searched documents for '{Query}' → {Count} excerpt(s)",
+            this.GetPrimaryKeyString(), query, results.Count);
+
+        return results;
+    }
 
     /// <summary>
     /// Agent tool: schedules an Orleans reminder for this conversation. Exposed to the

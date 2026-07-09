@@ -14,8 +14,9 @@ public static class AgentApi
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
-    // Attachments are images only this phase, capped so a single upload can't be abused;
-    // the durable bytes live in blob storage, never in the serialized session (ADR 0004).
+    // Uploads are capped so a single request can't be abused. Images become chat attachments
+    // whose bytes live in blob storage, never in the serialized session (ADR 0004); documents are
+    // ingested for retrieval and never stored as attachments (ADR 0007).
     private const long MaxAttachmentBytes = 10 * 1024 * 1024;
 
     public static IEndpointRouteBuilder MapAgentApi(this IEndpointRouteBuilder app)
@@ -87,10 +88,15 @@ public static class AgentApi
         app.MapGet("/api/conversations/{conversationId}/messages", (string conversationId, IGrainFactory grains, HttpContext http) =>
             grains.GetGrain<IAgentGrain>(AgentKey(http.GetUserId(), conversationId)).GetHistoryAsync());
 
-        // Uploads an image attachment for a conversation and returns its metadata as JSON (the
-        // client sends the id back on the next chat turn). Rejects non-images and oversize files.
-        // Antiforgery is disabled: the app is gated by Easy Auth (ADR 0002), not cookies+forms.
-        app.MapPost("/api/conversations/{conversationId}/attachments", async (string conversationId, IFormFile file, IAttachmentStore attachments, HttpContext http) =>
+        // Uploads a file for a conversation. Branches on media type: an image becomes a chat
+        // attachment (bytes in blob storage, sent to the model as a UriContent SAS — ADR 0004) and
+        // returns an id the client sends back on the next turn; a supported document type is
+        // ingested for retrieval (extract → chunk → embed → index, ADR 0007) and is NOT registered
+        // as an attachment — it returns a document-kind marker with no id, so the client never sends
+        // it back as an attachmentId (a document must never enter the image UriContent path).
+        // Rejects unsupported and oversize files. Antiforgery is disabled: the app is gated by Easy
+        // Auth (ADR 0002), not cookies+forms.
+        app.MapPost("/api/conversations/{conversationId}/attachments", async (string conversationId, IFormFile file, IAttachmentStore attachments, DocumentIngestionService ingestion, HttpContext http) =>
         {
             if (file is null || file.Length == 0)
             {
@@ -99,24 +105,32 @@ public static class AgentApi
 
             if (file.Length > MaxAttachmentBytes)
             {
-                return Results.BadRequest($"Attachment exceeds the {MaxAttachmentBytes / (1024 * 1024)} MB limit.");
+                return Results.BadRequest($"Upload exceeds the {MaxAttachmentBytes / (1024 * 1024)} MB limit.");
             }
 
-            if (string.IsNullOrEmpty(file.ContentType)
-                || !file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-            {
-                return Results.BadRequest("Only image attachments are supported.");
-            }
+            var contentType = file.ContentType ?? "";
+            var ownerKey = AgentKey(http.GetUserId(), conversationId);
 
             using var buffer = new MemoryStream();
             await file.CopyToAsync(buffer);
+            var bytes = buffer.ToArray();
 
-            var reference = await attachments.SaveAsync(
-                AgentKey(http.GetUserId(), conversationId), file.FileName, file.ContentType, buffer.ToArray());
+            if (contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                var reference = await attachments.SaveAsync(ownerKey, file.FileName, contentType, bytes);
+                // Return only what the browser needs (id + display metadata) — the internal blob
+                // path stays server-side, addressed by id under the authenticated user's key.
+                return Results.Json(new AttachmentMetadata(reference.Id, reference.MediaType, reference.FileName));
+            }
 
-            // Return only what the browser needs (id + display metadata) — the internal blob
-            // path stays server-side, addressed by id under the authenticated user's key.
-            return Results.Json(new AttachmentMetadata(reference.Id, reference.MediaType, reference.FileName));
+            if (DocumentMediaTypes.IsSupported(contentType))
+            {
+                var chunkCount = await ingestion.IngestAsync(ownerKey, file.FileName, contentType, bytes);
+                // No id: a document is retrieval-only, never sent back as an attachment (ADR 0007).
+                return Results.Json(new DocumentUploadResult("document", file.FileName, contentType, chunkCount));
+            }
+
+            return Results.BadRequest("Only image and document (PDF, Office, text) attachments are supported.");
         }).DisableAntiforgery();
 
         // Streams a stored attachment's bytes to the browser. First-party proxy (authenticated by
@@ -222,9 +236,14 @@ public static class AgentApi
 public record ChatRequest(
     string Message, string? Model, string? AgentId = null, IReadOnlyList<string>? AttachmentIds = null);
 
-// What the upload endpoint returns to the browser: the id to send back on the next turn plus
-// the metadata needed to render a preview. The internal blob path is deliberately omitted.
+// What the upload endpoint returns for an image: the id to send back on the next turn plus the
+// metadata needed to render a preview. The internal blob path is deliberately omitted.
 public record AttachmentMetadata(string Id, string MediaType, string FileName);
+
+// What the upload endpoint returns for a document: a kind marker (so the client renders a chip and
+// never sends it back as an attachmentId — documents are retrieval-only, ADR 0007), the filename,
+// and how many chunks were indexed (0 = no extractable text, e.g. a scanned PDF).
+public record DocumentUploadResult(string Kind, string FileName, string MediaType, int ChunkCount);
 
 // Client payload for creating (POST) or updating (PUT) a stored agent. The id and
 // timestamps are owned by the registry grain, so they aren't part of the request.
