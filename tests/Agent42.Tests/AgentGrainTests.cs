@@ -458,6 +458,29 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Contains("Magrathea", end.ToolResult ?? "");
     }
 
+    // Registering an ingested document folds its name into the model's instructions, so the model
+    // is aware the document exists (it is otherwise invisible — ingest-only). The FakeChatClient
+    // echoes the instructions it received as [sys:…]; a non-"document" message avoids triggering the
+    // search tool so the echo is visible.
+    [Fact]
+    public async Task RegisterDocument_MakesTheModelAwareOfIt()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("doc-awareness-conversation");
+        await agent.RegisterDocumentAsync("budget.xlsx");
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("hello there", null))
+        {
+            events.Add(evt);
+        }
+
+        var answer = string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
+        Assert.Contains("[sys:", answer);
+        Assert.Contains("budget.xlsx", answer);
+    }
+
     // Minor 4: purging a conversation deletes its indexed document chunks so extracted text
     // doesn't outlive the conversation.
     [Fact]
