@@ -44,8 +44,8 @@ uses are GA.
    **stateful, region-pinned, `disableLocalAuth` account** — treat as sensitive.
    Evidence: `infra/modules/cosmos.bicep`; gotcha "Cosmos containers must be pre-declared in Bicep".
 
-2. **1536-dim embeddings force `quantizedFlat` (or DiskANN), never `flat`.** Cosmos `flat`
-   vector index caps at 505 dims; `text-embedding-3-large` is 1536. At per-conversation scale
+2. **3072-dim embeddings force `quantizedFlat` (or DiskANN), never `flat`.** Cosmos `flat`
+   vector index caps at 505 dims; `text-embedding-3-large` is 3072. At per-conversation scale
    (<1000 vectors) `quantizedFlat` falls back to a full scan — acceptable (slightly higher RU),
    and correct for this scale. Evidence: Microsoft Learn "Vector search in Azure Cosmos DB for NoSQL".
 
@@ -163,7 +163,7 @@ uses are GA.
 
 1. **[spike] De-risk the Cosmos vector container** (`/spike-dotnet`, throwaway file outside the
    tree). Confirm: (a) a container created with a `vectorEmbeddingPolicy`(path `/embedding`,
-   float32, cosine, 1536) + `quantizedFlat` index can be **read/written via managed-identity
+   float32, cosine, 3072) + `quantizedFlat` index can be **read/written via managed-identity
    data-plane with no create rights**; (b) a `VectorDistance()` top-k query filtered by an owner
    partition returns results; (c) whether the chosen connector insists on creating the container
    (→ if so, prod impl uses raw `CosmosClient`). *Output:* the exact container JSON for Bicep + the
@@ -239,7 +239,7 @@ uses are GA.
     `handleFiles` L441-442 to accept non-image types and render a document chip; surface the answer's
     citations lightly. Verify: `PwaAssetsTests` if applicable + manual `/verify` of the upload→ask flow.
 
-12. **ADR + docs** — `/decide` ADR 0007 (Cosmos vector store; `quantizedFlat`/1536; agentic-tool
+12. **ADR + docs** — `/decide` ADR 0007 (Cosmos vector store; `quantizedFlat`/3072; agentic-tool
     retrieval; per-conversation; synchronous ingestion; manual embedding-deployment prerequisite);
     `/gotcha` for the manual embedding deployment + the vector-capability/container-pre-creation
     coupling + emulator caveat; update `CLAUDE.md` repo-notes. Verify: `/audit-docs` clean.
