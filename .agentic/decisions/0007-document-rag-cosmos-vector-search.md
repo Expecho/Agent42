@@ -32,6 +32,13 @@ tools) that embeds the query and returns the top-k chunks with citation metadata
 the agent is instructed to cite the source it used. Ingestion is **synchronous** within the upload
 request (personal-scale, small documents).
 
+Because a document is ingest-only and therefore **invisible to the model** (it is never in the chat
+history), the model would otherwise have no signal a file was uploaded and would answer "I don't see a
+file" instead of calling the tool. So on a successful ingest the upload endpoint registers the file
+name with the grain (`AgentGrainState.DocumentNames`), and the grain **folds the document names into
+its instructions** — telling the model the documents exist and to call `search_documents` for
+questions about them. Without this awareness injection the agentic tool is unreliable.
+
 Mirroring `IAttachmentStore`, an `IDocumentIndex` abstraction has a Cosmos impl for prod and an
 in-memory impl for dev/tests, and the embedding generator is real (Azure) in the backend and a
 deterministic bag-of-words fake offline — so the whole flow round-trips with no Azure.
