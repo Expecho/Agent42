@@ -96,7 +96,7 @@ public static class AgentApi
         // it back as an attachmentId (a document must never enter the image UriContent path).
         // Rejects unsupported and oversize files. Antiforgery is disabled: the app is gated by Easy
         // Auth (ADR 0002), not cookies+forms.
-        app.MapPost("/api/conversations/{conversationId}/attachments", async (string conversationId, IFormFile file, IAttachmentStore attachments, DocumentIngestionService ingestion, HttpContext http) =>
+        app.MapPost("/api/conversations/{conversationId}/attachments", async (string conversationId, IFormFile file, IAttachmentStore attachments, DocumentIngestionService ingestion, IGrainFactory grains, HttpContext http) =>
         {
             if (file is null || file.Length == 0)
             {
@@ -126,6 +126,14 @@ public static class AgentApi
             if (DocumentMediaTypes.IsSupported(contentType))
             {
                 var chunkCount = await ingestion.IngestAsync(ownerKey, file.FileName, contentType, bytes);
+                // Tell the grain the document exists (only when it yielded searchable text), so the
+                // model is made aware of it and calls search_documents — a document is otherwise
+                // invisible to the model (ADR 0007).
+                if (chunkCount > 0)
+                {
+                    await grains.GetGrain<IAgentGrain>(ownerKey).RegisterDocumentAsync(file.FileName);
+                }
+
                 // No id: a document is retrieval-only, never sent back as an attachment (ADR 0007).
                 return Results.Json(new DocumentUploadResult("document", file.FileName, contentType, chunkCount));
             }

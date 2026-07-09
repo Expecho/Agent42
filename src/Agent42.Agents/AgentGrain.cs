@@ -127,11 +127,29 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
                 Name = _state.State.AgentName ?? "Agent42",
                 ChatOptions = new ChatOptions
                 {
-                    Instructions = _state.State.SystemPrompt ?? Instructions,
+                    Instructions = WithDocumentAwareness(_state.State.SystemPrompt ?? Instructions),
                     Tools = [schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime, searchDocuments]
                 },
                 AIContextProviders = [skillsProvider],
             });
+    }
+
+    // Appends the conversation's ingested document names to the instructions so the model knows the
+    // documents exist and calls search_documents to answer questions about them. A document is
+    // ingest-only (ADR 0007), so without this the model has no signal a file was uploaded and would
+    // answer "I don't see a file". No documents → the base instructions are returned unchanged.
+    private string WithDocumentAwareness(string baseInstructions)
+    {
+        if (_state.State.DocumentNames.Count == 0)
+        {
+            return baseInstructions;
+        }
+
+        return baseInstructions
+            + "\n\nThe user has uploaded the following document(s) to this conversation: "
+            + string.Join(", ", _state.State.DocumentNames)
+            + ". When the user asks anything about \"this file\", \"the document\", or their contents, "
+            + "call the search_documents tool to retrieve the relevant passages and cite the file and page you used.";
     }
 
     public Task<string> GetSelectedModelAsync() => Task.FromResult(_deployment);
@@ -169,6 +187,27 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
         => Task.FromResult(_state.State.AgentId is { Length: > 0 } id
             ? new AgentBinding(id, _state.State.AgentName ?? "", _state.State.SystemPrompt ?? "", _deployment)
             : null);
+
+    public async Task RegisterDocumentAsync(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName) || _state.State.DocumentNames.Contains(fileName))
+        {
+            return;
+        }
+
+        _state.State.DocumentNames.Add(fileName);
+
+        // Rebuild the agent so the updated document list reaches the model as instructions —
+        // same snapshot→rebuild→restore shape as BindAgentAsync and the model-switch path.
+        var snapshot = await _agent.SerializeSessionAsync(_session);
+        _agent = BuildAgent(_deployment);
+        _session = await _agent.DeserializeSessionAsync(snapshot);
+
+        await _state.WriteStateAsync();
+
+        _logger.LogInformation("Agent grain {GrainKey} registered document '{FileName}' ({Count} total)",
+            this.GetPrimaryKeyString(), fileName, _state.State.DocumentNames.Count);
+    }
 
     public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null)
@@ -340,6 +379,7 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
         await _documentIndex.DeleteAsync(this.GetPrimaryKeyString());
 
         _state.State.ScheduledPrompts.Clear();
+        _state.State.DocumentNames.Clear();
         _state.State.SerializedSession = null;
         _state.State.DeploymentName = null;
         await _state.ClearStateAsync();
