@@ -40,6 +40,17 @@ public sealed class SpeechInputAssetsTests
     }
 
     [Fact]
+    public async Task AppJs_AccumulatesFinalTranscriptIncrementally()
+    {
+        var app = await _client.GetStringAsync("/app.js");
+        // Guards the continuous-mode accumulation fix: the result handler must fold in only
+        // the segments changed this event (from resultIndex), not rebuild from the whole
+        // results list — the latter stacks every interim snapshot ("HoeHoe laatHoe laat is…").
+        // Source-text heuristic; the runtime behaviour is the manual half of AC3/AC5.
+        Assert.Contains("resultIndex", app);
+    }
+
+    [Fact]
     public async Task AppJs_DrivesRecognitionLanguageFromDevice()
     {
         var app = await _client.GetStringAsync("/app.js");

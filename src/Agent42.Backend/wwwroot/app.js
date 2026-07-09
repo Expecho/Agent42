@@ -834,6 +834,10 @@
     // Text already in the box when dictation began; the transcript is appended to it so a
     // dictated phrase never clobbers what the user typed first.
     let baseText = "";
+    // Finalized transcript accumulated across result events. In continuous mode each phrase
+    // lands at its own result index, so finals must be folded in incrementally (once each) —
+    // rebuilding from the whole results list every event stacks every interim snapshot.
+    let finalTranscript = "";
     // True between start and end. Guards a late result fired after a stop from repopulating
     // an already-cleared textarea (see stopSpeech / send).
     let recognizing = false;
@@ -842,17 +846,18 @@
       micBtn.setAttribute("aria-pressed", on ? "true" : "false");
     }
 
-    // Rebuild the transcript from the full results list each event: finals accumulate,
-    // the trailing interim streams live. Flat by design (cognitive-complexity gate).
+    // Only walk the results changed in THIS event (from resultIndex): fold newly-finalized
+    // segments into finalTranscript once, and rebuild just the trailing interim live. Flat by
+    // design (cognitive-complexity gate).
     recognition.addEventListener("result", (event) => {
       if (!recognizing) return; // ignore trailing results after a stop
-      let final = "";
       let interim = "";
-      for (const res of event.results) {
-        if (res.isFinal) final += res[0].transcript;
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        if (res.isFinal) finalTranscript += res[0].transcript;
         else interim += res[0].transcript;
       }
-      input.value = baseText + final + interim;
+      input.value = baseText + finalTranscript + interim;
       autosize(); // programmatic value writes don't fire the "input" event
       input.selectionStart = input.selectionEnd = input.value.length; // caret at end
     });
@@ -884,6 +889,7 @@
         return;
       }
       baseText = input.value; // append to whatever is already in the box
+      finalTranscript = ""; // fresh session — don't carry a prior dictation's finals
       input.placeholder = defaultPlaceholder; // clear any stale "mic blocked" hint
       // Read the cached profile at start (no re-fetch); fall back to the device language.
       recognition.lang = profile.preferredLanguage || navigator.language;
