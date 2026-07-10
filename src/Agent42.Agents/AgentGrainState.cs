@@ -55,10 +55,11 @@ public sealed class AgentGrainState
     public List<List<AttachmentRef>> TurnAttachments { get; set; } = [];
 
     /// <summary>
-    /// Distinct file names of the documents ingested for this conversation (ADR 0007). A document
-    /// is otherwise invisible to the model (it reaches the model only via the <c>search_documents</c>
-    /// tool), so this list is folded into the agent's instructions to tell the model the documents
-    /// exist. Old Cosmos state deserializes this as an empty list.
+    /// Distinct file names of the documents ingested for this conversation (ADR 0007). A document is
+    /// otherwise invisible to the model (it reaches the model only as auto-injected retrieval excerpts —
+    /// ADR 0008), so this list is folded into the agent's instructions to tell the model the documents
+    /// exist and it also gates the always-on retrieval provider. Old Cosmos state deserializes this as an
+    /// empty list.
     /// </summary>
     [Id(7)]
     public List<string> DocumentNames { get; set; } = [];

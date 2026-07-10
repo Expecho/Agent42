@@ -44,10 +44,10 @@ public interface IAgentGrain : IGrainWithStringKey
     Task<AgentBinding?> GetAgentBindingAsync();
 
     /// <summary>
-    /// Records that a document (by file name) has been ingested for this conversation, so the
-    /// model is told the document exists and reliably calls <c>search_documents</c> to answer
-    /// questions about it (documents are ingest-only and otherwise invisible to the model — ADR
-    /// 0007). Idempotent per file name; called by the upload endpoint after a successful ingest.
+    /// Records that a document (by file name) has been ingested for this conversation, so the model is
+    /// told the document exists and the always-on retrieval provider is attached to answer questions
+    /// about it (ADR 0008; documents are ingest-only and otherwise invisible to the model — ADR 0007).
+    /// Idempotent per file name; called by the upload endpoint after a successful ingest.
     /// </summary>
     [Alias("RegisterDocumentAsync")]
     Task RegisterDocumentAsync(string fileName);

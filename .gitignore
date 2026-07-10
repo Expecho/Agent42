@@ -27,3 +27,6 @@ Thumbs.db
 *.log
 
 # Secrets — User Secrets live in %APPDATA%\Microsoft\UserSecrets, not the repo
+
+# Test coverage output (dotnet test --collect)
+TestResults/

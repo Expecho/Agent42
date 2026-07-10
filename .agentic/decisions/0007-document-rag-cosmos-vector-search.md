@@ -3,9 +3,18 @@ id: 0007
 date: 2026-07-09
 status: accepted
 tags: [rag, documents, cosmos, vector-search, retrieval, multimodal]
+superseded_by: 0008   # partial — only the retrieval mechanism (agentic search_documents tool); storage/ingest/scoping remain authoritative
 ---
 
 # Document Q&A via Cosmos vector search and an agentic search_documents tool
+
+> **Superseded-by (partial): ADR 0008.** The *retrieval mechanism* below — the agentic
+> `search_documents` tool and its "call the tool" instruction wording — is replaced by an always-on
+> Microsoft Agent Framework `TextSearchProvider` (`BeforeAIInvoke`), gated on `DocumentNames.Count > 0`.
+> Everything else in this ADR (ingest-only documents, the owner-scoped Cosmos NoSQL vector container with
+> no create-on-use, extraction/chunking/embedding, prod-only vector path, `DocumentNames` awareness)
+> **remains authoritative and accepted**. See ADR 0008 for the rationale that rebuts the "Always-on
+> AIContextProvider auto-injection" alternative rejected below.
 
 ## Context
 Users upload a document (PDF / Office / text) to a conversation and ask questions grounded in
