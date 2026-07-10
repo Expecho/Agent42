@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
 namespace Agent42.Tests;
@@ -27,7 +28,8 @@ public sealed class FakeChatClient : IChatClient
             ? new List<AIContent> { call }
             : new List<AIContent>
             {
-                new TextContent(InstructionsEcho(messages, options) + ImageEcho(messages) + string.Concat(ReplyChunks)),
+                new TextContent(InstructionsEcho(messages, options) + ContextEcho(messages)
+                    + ImageEcho(messages) + string.Concat(ReplyChunks)),
             };
 
         return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, contents)));
@@ -44,7 +46,7 @@ public sealed class FakeChatClient : IChatClient
             yield break;
         }
 
-        var echo = InstructionsEcho(messages, options) + ImageEcho(messages);
+        var echo = InstructionsEcho(messages, options) + ContextEcho(messages) + ImageEcho(messages);
         if (echo.Length > 0)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, echo);
@@ -86,6 +88,23 @@ public sealed class FakeChatClient : IChatClient
         return count > 0 ? $"[img:{count}] " : "";
     }
 
+    // Surfaces the text of any document context the TextSearchProvider auto-injected before this
+    // invocation (ADR 0008), so a test can assert retrieval reached the model. The injected excerpt
+    // arrives as a ChatRole.User message tagged AgentRequestMessageSourceType.AIContextProvider (verified
+    // by the Step 1 spike) — the source attribution, not the role, is what distinguishes it from the real
+    // user turn. Empty when no context was injected (e.g. a document-free conversation).
+    private static string ContextEcho(IEnumerable<ChatMessage> messages)
+    {
+        var injected = messages.FirstOrDefault(m =>
+            m.AdditionalProperties is not null
+            && m.AdditionalProperties.TryGetValue(
+                AgentRequestMessageSourceAttribution.AdditionalPropertiesKey, out var value)
+            && value is AgentRequestMessageSourceAttribution attribution
+            && attribution.SourceType == AgentRequestMessageSourceType.AIContextProvider);
+
+        return injected is { Text: { Length: > 0 } text } ? $"[ctx:{text}] " : "";
+    }
+
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
 
     public void Dispose()
@@ -109,14 +128,6 @@ public sealed class FakeChatClient : IChatClient
 
     private static FunctionCallContent BuildCancelAllCall() =>
         new("cancel-all-call-1", "cancel_all_scheduled_prompts", new Dictionary<string, object?>());
-
-    // Passes the user's text through as the search query, so the deterministic embedding generator
-    // retrieves the chunk that shares its words (see DeterministicEmbeddingGenerator).
-    private static FunctionCallContent BuildSearchDocumentsCall(string query) =>
-        new("search-docs-call-1", "search_documents", new Dictionary<string, object?>
-        {
-            ["query"] = query,
-        });
 
     // Picks the tool call (if any) the model should make for the current user turn.
     private static FunctionCallContent? SelectToolCall(IEnumerable<ChatMessage> messages)
@@ -142,13 +153,6 @@ public sealed class FakeChatClient : IChatClient
         }
 
         var text = list[lastUserIndex].Text ?? "";
-
-        // A message mentioning a document triggers the retrieval tool. Independent of the
-        // reminder branches below.
-        if (text.Contains("document", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildSearchDocumentsCall(text);
-        }
 
         // Ordering is load-bearing: "reminder" contains the substring "remind", so the cancel
         // checks MUST precede the schedule check — do not reorder these branches.

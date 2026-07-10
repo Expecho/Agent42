@@ -8,8 +8,8 @@ namespace Agent42.Backend;
 /// embed → upsert into the conversation's <see cref="IDocumentIndex"/>. Runs inside the upload
 /// request at per-conversation, small-document scale; background/streaming ingestion is out of
 /// scope. Documents are ingest-only — the raw bytes are never stored as a chat attachment, so they
-/// never reach the model via the image <c>UriContent</c> path, only via the <c>search_documents</c>
-/// tool.
+/// never reach the model via the image <c>UriContent</c> path, only as excerpts auto-injected by the
+/// always-on document retrieval provider (ADR 0008).
 /// </summary>
 public sealed class DocumentIngestionService(
     IDocumentTextExtractor extractor,

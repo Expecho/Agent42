@@ -20,9 +20,9 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
     private const string Instructions = """
         You are Agent 42, a friendly and helpful assistant.
         Answer the user's questions concisely and accurately.
-        When a question may be answered by a document the user uploaded to this conversation,
-        call the search_documents tool and ground your answer in the returned excerpts, citing
-        the source file and page (or chunk index) you used.
+        When the user has uploaded documents to this conversation, relevant excerpts are retrieved
+        and added to your context automatically before you answer — ground your answer in those
+        excerpts and cite the source file and page (or chunk index) shown with each.
         """;
 
     private readonly IPersistentState<AgentGrainState> _state;
@@ -100,14 +100,6 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
             description: "Cancel every scheduled reminder for this conversation at once. Use " +
                 "this only when the user wants to clear all of their reminders, not a single one.");
 
-        var searchDocuments = AIFunctionFactory.Create(
-            SearchDocumentsAsync,
-            name: "search_documents",
-            description: "Search the documents the user uploaded to THIS conversation for passages " +
-                "relevant to a question. Returns matching excerpts, each with its source file name " +
-                "and page number (or chunk index when the format has no pages). Use it whenever a " +
-                "question might be answered by an uploaded document, then cite the file and page.");
-
         // Agent Skills: markdown skills discovered on disk from Skills/<name>/SKILL.md.
         // The provider advertises each skill's name + description in the system prompt and
         // exposes a `load_skill` tool so the agent pulls the full guidance only when a task
@@ -128,16 +120,73 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
                 ChatOptions = new ChatOptions
                 {
                     Instructions = WithDocumentAwareness(_state.State.SystemPrompt ?? Instructions),
-                    Tools = [schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime, searchDocuments]
+                    Tools = [schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime]
                 },
-                AIContextProviders = [skillsProvider],
+                // Automatic document retrieval (ADR 0008): a TextSearchProvider runs before every model
+                // call and injects the top matching excerpts — but ONLY for conversations that actually
+                // have an ingested document. Document-free chats keep exactly the skills provider and
+                // make zero embedding calls, which is what makes the always-on switch safe (it confines
+                // the per-turn embedding round-trip ADR 0007 feared to document conversations).
+                AIContextProviders = _state.State.DocumentNames.Count > 0
+                    ? [skillsProvider, BuildDocumentSearchProvider()]
+                    : [skillsProvider],
+                // The provider injects retrieval as a ChatRole.User message tagged
+                // AgentRequestMessageSourceType.AIContextProvider. Left in the default history store it
+                // would be persisted into the serialized session — and it carries an attribution struct
+                // the default serializer can't handle, so SerializeSessionAsync would throw every turn
+                // (Step 1 spike). Excluding AIContextProvider (and ChatHistory) messages from storage
+                // keeps the session serializable and small (ADR 0004); retrieval still reaches the model.
+                ChatHistoryProvider = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
+                {
+                    StorageInputRequestMessageFilter = ExcludeInjectedContextMessages,
+                }),
             });
     }
 
+    // Builds the always-on document-retrieval context provider (ADR 0008). Its search callback embeds
+    // the query and asks the owner-scoped IDocumentIndex for the top matches — the same path the removed
+    // agentic search tool used — mapping each chunk to a cited TextSearchResult. RecentMessageMemoryLimit
+    // carries a few recent user turns into the search input so vague follow-ups ("what about the budget?")
+    // still retrieve. Only constructed when the conversation has documents (see AIContextProviders above).
+    private TextSearchProvider BuildDocumentSearchProvider() =>
+        new(
+            SearchDocumentContextAsync,
+            new TextSearchProviderOptions
+            {
+                SearchTime = TextSearchProviderOptions.TextSearchBehavior.BeforeAIInvoke,
+                RecentMessageMemoryLimit = 5,
+                CitationsPrompt = "When you use an excerpt, cite the source file and the page or chunk "
+                    + "shown with it.",
+            },
+            loggerFactory: null);
+
+    // Keeps only messages that should be persisted to chat history: excludes the excerpts the
+    // TextSearchProvider injects (AgentRequestMessageSourceType.AIContextProvider) and messages replayed
+    // from history (ChatHistory) — the framework's own default only excludes the latter. See ChatHistoryProvider
+    // wiring in BuildAgent and the Step 1 spike for why persisting the injected excerpts breaks serialization.
+    private static readonly Func<IEnumerable<ChatMessage>, IEnumerable<ChatMessage>> ExcludeInjectedContextMessages =
+        messages => messages.Where(m => !IsInjectedOrReplayed(m));
+
+    private static bool IsInjectedOrReplayed(ChatMessage message)
+    {
+        if (message.AdditionalProperties is not null
+            && message.AdditionalProperties.TryGetValue(
+                AgentRequestMessageSourceAttribution.AdditionalPropertiesKey, out var value)
+            && value is AgentRequestMessageSourceAttribution attribution)
+        {
+            return attribution.SourceType == AgentRequestMessageSourceType.AIContextProvider
+                || attribution.SourceType == AgentRequestMessageSourceType.ChatHistory;
+        }
+
+        return false;
+    }
+
     // Appends the conversation's ingested document names to the instructions so the model knows the
-    // documents exist and calls search_documents to answer questions about them. A document is
-    // ingest-only (ADR 0007), so without this the model has no signal a file was uploaded and would
-    // answer "I don't see a file". No documents → the base instructions are returned unchanged.
+    // documents exist. A document is ingest-only (ADR 0007), so without this the model has no signal a
+    // file was uploaded and would answer "I don't see a file". Retrieval itself is automatic (ADR 0008:
+    // the TextSearchProvider injects excerpts before each reply), but the filename list still answers
+    // meta questions ("what did I upload?") that vector search answers poorly. No documents → the base
+    // instructions are returned unchanged.
     private string WithDocumentAwareness(string baseInstructions)
     {
         if (_state.State.DocumentNames.Count == 0)
@@ -148,8 +197,8 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
         return baseInstructions
             + "\n\nThe user has uploaded the following document(s) to this conversation: "
             + string.Join(", ", _state.State.DocumentNames)
-            + ". When the user asks anything about \"this file\", \"the document\", or their contents, "
-            + "call the search_documents tool to retrieve the relevant passages and cite the file and page you used.";
+            + ". Relevant excerpts from them are retrieved and added to your context automatically before "
+            + "each reply; ground answers about their contents in those excerpts and cite the file and page you used.";
     }
 
     public Task<string> GetSelectedModelAsync() => Task.FromResult(_deployment);
@@ -393,30 +442,36 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
     private static DateTime GetDate() => DateTime.Now;
 
     /// <summary>
-    /// Agent tool: retrieves the passages most relevant to <paramref name="query"/> from the
-    /// documents uploaded to THIS conversation (ADR 0007). Embeds the query with the same generator
-    /// used at ingestion, then asks the owner-scoped <see cref="IDocumentIndex"/> for the top matches.
-    /// Scoped by the grain key (<c>{userId}/{conversationId}</c>), so it can only ever see this
-    /// conversation's documents. Returns each excerpt with its citation metadata (file, page/chunk).
+    /// Search callback for the always-on document <see cref="TextSearchProvider"/> (ADR 0008). Runs before
+    /// every model call in a document conversation: embeds <paramref name="query"/> with the same generator
+    /// used at ingestion, asks the owner-scoped <see cref="IDocumentIndex"/> for the top matches, and maps
+    /// each chunk to a cited <see cref="TextSearchProvider.TextSearchResult"/>. Scoped by the grain key
+    /// (<c>{userId}/{conversationId}</c>), so it can only ever see this conversation's documents.
     /// </summary>
-    private async Task<IReadOnlyList<DocumentChunk>> SearchDocumentsAsync(
-        [Description("The question or keywords to search the uploaded documents for.")] string query,
-        [Description("Maximum number of excerpts to return. Defaults to 5.")] int maxResults = 5)
+    private async Task<IEnumerable<TextSearchProvider.TextSearchResult>> SearchDocumentContextAsync(
+        string query, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
             return [];
         }
 
-        var generated = await _embeddings.GenerateAsync([query]);
+        var generated = await _embeddings.GenerateAsync([query], cancellationToken: cancellationToken);
         var results = await _documentIndex.SearchAsync(
-            this.GetPrimaryKeyString(), generated[0].Vector, maxResults > 0 ? maxResults : 5);
+            this.GetPrimaryKeyString(), generated[0].Vector, topK: 5, cancellationToken);
 
         _logger.LogInformation(
-            "Agent grain {GrainKey} searched documents for '{Query}' → {Count} excerpt(s)",
-            this.GetPrimaryKeyString(), query, results.Count);
+            "Agent grain {GrainKey} retrieved {Count} document excerpt(s) for the current turn",
+            this.GetPrimaryKeyString(), results.Count);
 
-        return results;
+        return results.Select(chunk => new TextSearchProvider.TextSearchResult
+        {
+            Text = chunk.Text,
+            SourceName = chunk.Page is int page
+                ? $"{chunk.FileName}, p.{page}"
+                : $"{chunk.FileName}, chunk {chunk.ChunkIndex}",
+            RawRepresentation = chunk,
+        });
     }
 
     /// <summary>
