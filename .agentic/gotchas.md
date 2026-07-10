@@ -49,6 +49,23 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   upstream precedent: `react-speech-recognition` `RecognitionManager.js`
 - **Verified:** 2026-07-09
 
+### A browser's upload Content-Type is unreliable for documents — resolve by extension
+
+- **Claim:** the document-upload handler must NOT trust `IFormFile.ContentType` alone. Windows has
+  no registered MIME type for many document extensions, so browsers send `application/octet-stream`
+  (or an empty type) for `.docx`/`.pptx`/`.xlsx`/`.md` and even `.txt`, and OOXML files sometimes
+  arrive as `application/zip`. Branching straight on the raw content type rejected real documents as
+  "unsupported" (HTTP 400); the frontend swallows a non-OK upload silently (`if (!res.ok) continue;`
+  in `handleFiles`), so the user saw no chip and the grain was never told the document existed — the
+  model stayed unaware. Resolve the effective type via `DocumentMediaTypes.ResolveMediaType(fileName,
+  contentType)` (extension fallback) before the image/document branch, and feed the *resolved* type
+  into ingestion so the extractor's switch matches. `.pdf` usually reports correctly, so a PDF-only
+  test does not catch this — cover a generic/empty content type.
+- **Evidence:** `src/Agent42.Backend/AgentApi.cs` (`ResolveMediaType` call before branching),
+  `src/Agent42.Agents/DocumentMediaTypes.cs`,
+  `tests/Agent42.Tests/DocumentMediaTypesTests.cs`
+- **Verified:** 2026-07-10
+
 ### Cosmos containers must be pre-declared in Bicep
 
 - **Claim:** the Cosmos account has `disableLocalAuth: true` and AAD data-plane RBAC cannot create databases/containers — only ARM can. Any new container must be added to `infra/modules/cosmos.bicep`; Orleans providers run with `IsResourceCreationEnabled = false`, so runtime auto-create silently isn't there to save you.

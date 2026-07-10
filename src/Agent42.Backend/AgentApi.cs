@@ -108,7 +108,10 @@ public static class AgentApi
                 return Results.BadRequest($"Upload exceeds the {MaxAttachmentBytes / (1024 * 1024)} MB limit.");
             }
 
-            var contentType = file.ContentType ?? "";
+            // The browser's content type is unreliable for documents (Windows sends octet-stream or
+            // nothing for .docx/.pptx/.xlsx/.md), so resolve it against the file extension before
+            // branching — otherwise a real document is rejected as "unsupported" (ADR 0007).
+            var contentType = DocumentMediaTypes.ResolveMediaType(file.FileName, file.ContentType);
             var ownerKey = AgentKey(http.GetUserId(), conversationId);
 
             using var buffer = new MemoryStream();
