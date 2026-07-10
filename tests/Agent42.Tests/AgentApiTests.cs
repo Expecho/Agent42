@@ -305,6 +305,31 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.All(hits, h => Assert.Equal("guide.pdf", h.FileName));
     }
 
+    // Regression: Windows browsers frequently send application/octet-stream (or no type) for a
+    // document, which used to be rejected as "unsupported" — the upload 400'd, the frontend silently
+    // dropped it, no chip appeared and the grain never learned the document existed. The handler now
+    // resolves the type from the file extension, so the same bytes ingest as a document.
+    [Fact]
+    public async Task Upload_Document_WithGenericContentType_IsResolvedByExtensionAndIngested()
+    {
+        const string convId = "doc-octet-stream-conversation";
+
+        using var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(TestDocuments.SampleTwoPagePdf());
+        // The generic type a browser sends when the OS has no MIME registration for the extension.
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        form.Add(fileContent, "file", "guide.pdf");
+
+        var response = await _client.PostAsync($"/api/conversations/{convId}/attachments", form);
+
+        response.EnsureSuccessStatusCode();
+        var result = JsonSerializer.Deserialize<DocumentUploadResult>(
+            await response.Content.ReadAsStringAsync(), JsonSerializerOptions.Web);
+        Assert.NotNull(result);
+        Assert.Equal("document", result!.Kind);
+        Assert.True(result.ChunkCount > 0, "the PDF should have produced at least one indexed chunk");
+    }
+
     private async Task PutProfileAsAsync(string principalId, string language)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, "/api/profile")
