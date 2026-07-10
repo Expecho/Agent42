@@ -49,7 +49,7 @@
   let pendingAttachments = [];
 
   // Documents uploaded to this conversation: {kind, fileName, chunkCount}. Display-only — a
-  // document is ingest-only (indexed server-side for the search_documents tool, ADR 0007), so it
+  // document is ingest-only (indexed server-side for automatic retrieval, ADR 0007/0008), so it
   // is NEVER sent back as an attachmentId. The chip is a "just indexed" indicator.
   let pendingDocuments = [];
 

@@ -130,8 +130,8 @@ public static class AgentApi
             {
                 var chunkCount = await ingestion.IngestAsync(ownerKey, file.FileName, contentType, bytes);
                 // Tell the grain the document exists (only when it yielded searchable text), so the
-                // model is made aware of it and calls search_documents — a document is otherwise
-                // invisible to the model (ADR 0007).
+                // model is made aware of it and automatic retrieval is enabled for the conversation
+                // (ADR 0008) — a document is otherwise invisible to the model (ADR 0007).
                 if (chunkCount > 0)
                 {
                     await grains.GetGrain<IAgentGrain>(ownerKey).RegisterDocumentAsync(file.FileName);

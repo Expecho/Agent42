@@ -431,31 +431,97 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Equal("react-1", Assert.Single(userTurn.Attachments!).Id);
     }
 
-    // AC5: asked about an uploaded document, the agent calls search_documents and the tool result
-    // carries citations (source file + page). The chunk is seeded into the process-global in-memory
-    // index under the conversation's grain key; the FakeChatClient calls the tool for any message
-    // mentioning a document, and the deterministic embedder makes the "magrathea" chunk rank.
+    // AC1+AC2: asked about an uploaded document, the top excerpt is retrieved and auto-injected into the
+    // model context BEFORE the call (ADR 0008 — no agentic search-tool call), carrying its citation
+    // metadata (file + page). The chunk is seeded into the process-global in-memory index under the
+    // conversation's grain key; registering a document attaches the TextSearchProvider (the gate), and the
+    // deterministic embedder makes the "magrathea" chunk rank. The FakeChatClient echoes any injected
+    // AIContextProvider message as [ctx:…], so this asserts the excerpt + citation reached the model.
     [Fact]
-    public async Task AgentChat_UsesDocumentSearch_WithCitations()
+    public async Task AgentChat_InjectsDocumentContext_BeforeInvocation()
     {
         const string key = "docsearch-conversation";
         await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
 
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.RegisterDocumentAsync("guide.pdf");
+
         var events = new List<AgentStreamEvent>();
         await foreach (var evt in agent.ChatAsync("what does the document say about magrathea", null))
         {
             events.Add(evt);
         }
 
-        var start = Assert.Single(events, e => e.Type == AgentStreamEventType.ToolCallStart);
-        Assert.Equal("search_documents", start.ToolName);
+        var answer = string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
 
-        var end = Assert.Single(events, e =>
-            e.Type == AgentStreamEventType.ToolCallEnd && e.ToolCallId == start.ToolCallId);
-        // The tool result carries the citation: the source file name and the excerpt text.
-        Assert.Contains("guide.pdf", end.ToolResult ?? "");
-        Assert.Contains("Magrathea", end.ToolResult ?? "");
+        // Retrieval was auto-injected (not tool-called): the excerpt text (AC1) and its file+page
+        // citation (AC2) both reached the model, surfaced by the fake's [ctx:…] echo.
+        Assert.Contains("[ctx:", answer);
+        Assert.Contains("Magrathea is a legendary planet", answer);
+        Assert.Contains("guide.pdf, p.2", answer);
+        // No agentic search tool is involved any more.
+        Assert.DoesNotContain(events, e => e.Type == AgentStreamEventType.ToolCallStart);
+    }
+
+    // AC3: a document-free conversation makes NO retrieval/embedding call and replies normally. A chunk is
+    // seeded under the conversation key but no document is registered, so the TextSearchProvider is gated
+    // off (DocumentNames.Count == 0) — proving the gate: the seeded chunk is never retrieved or injected.
+    [Fact]
+    public async Task AgentChat_NoDocuments_NoRetrieval()
+    {
+        const string key = "no-docs-conversation";
+        await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
+
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("tell me about magrathea", null))
+        {
+            events.Add(evt);
+        }
+
+        var answer = string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
+        Assert.False(string.IsNullOrWhiteSpace(answer), "A document-free chat should still reply.");
+        // The provider was never attached: no context was injected and no seeded chunk leaked through.
+        Assert.DoesNotContain("[ctx:", answer);
+        Assert.DoesNotContain("Magrathea is a legendary planet", answer);
+    }
+
+    // AC4: the auto-injected excerpt text is not persisted into the session across turns. Running three
+    // turns also proves the 2 MB-safety storage filter works end-to-end: without it, the injected
+    // AIContextProvider message (carrying an un-serializable attribution struct) would either crash
+    // SerializeSessionAsync on turn 1 or accumulate the excerpt text turn-over-turn (ADR 0004 / Step 1 spike).
+    [Fact]
+    public async Task AgentChat_DoesNotPersistInjectedResultText()
+    {
+        const string key = "docpersist-conversation";
+        await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
+
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.RegisterDocumentAsync("guide.pdf");
+
+        for (var i = 1; i <= 3; i++)
+        {
+            await foreach (var _ in agent.ChatAsync($"question {i} about the planet", null))
+            {
+            }
+        }
+
+        // Force a reactivation so the persisted session round-trips through DeserializeSessionAsync with the
+        // document provider attached — proving the serialized blob is valid and free of the injected message.
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        var history = await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        var userTurns = history.Where(t => t.Role == "user").ToList();
+
+        // Exactly the three real user turns survive — none of the auto-injected context messages leaked into
+        // stored history (they are ChatRole.User too, so a leak would show up here).
+        Assert.Equal(3, userTurns.Count);
+        Assert.All(userTurns, t => Assert.DoesNotContain("Additional Context", t.Text));
+        Assert.All(userTurns, t => Assert.DoesNotContain("Magrathea is a legendary planet", t.Text));
     }
 
     // Registering an ingested document folds its name into the model's instructions, so the model
@@ -496,7 +562,7 @@ public sealed class AgentGrainTests : IAsyncLifetime
     }
 
     // Seeds one embedded chunk into the process-global in-memory index under an owner key, using the
-    // same deterministic embedder the grain uses — so the grain's retrieval tool sees it.
+    // same deterministic embedder the grain uses — so the grain's retrieval provider sees it.
     private static async Task<(InMemoryDocumentIndex Index, ReadOnlyMemory<float> Embedding)> SeedChunkAsync(
         string ownerKey, DocumentChunk chunk)
     {
