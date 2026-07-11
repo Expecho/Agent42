@@ -6,6 +6,7 @@ using Azure.ResourceManager;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.AI;
+using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Trace;
 
 const string OtelSourceName = "Agent42.Backend";
@@ -15,7 +16,22 @@ var builder = WebApplication.CreateBuilder(args);
 // OTel logging, metrics and tracing (OTLP exporter) via Aspire service defaults.
 builder.AddServiceDefaults();
 builder.Services.AddOpenTelemetry()
-    .WithTracing(tracing => tracing.AddSource(OtelSourceName));
+    .WithTracing(tracing => tracing
+        .AddSource(OtelSourceName)
+        // Carry the user.* identity to downstream/in-grain spans (ADR 0010): the processor stamps
+        // every started span from the identity a request-scoped middleware writes into Orleans
+        // RequestContext (see app.Use below). Complements — does not replace — the server-span
+        // EnrichWithHttpRequest above, which owns the one span that starts before that middleware.
+        .AddProcessor(new UserTelemetrySpanProcessor()));
+
+// Stamp OTel semantic-convention user.* attributes onto the ASP.NET Core server span of every
+// authenticated request (ADR 0009). The Easy-Auth-specific extraction lives in CurrentUser here in
+// the Backend, keeping the shared ServiceDefaults generic (ADR 0002). This Configure delegate
+// composes with the AddAspNetCoreInstrumentation Filter set in ServiceDefaults — both run, they set
+// different options properties, so neither overwrites the other.
+builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(options =>
+    options.EnrichWithHttpRequest = (activity, request) =>
+        activity.ApplyUserTelemetryTags(request.Headers));
 
 // CosmosClient wired from the Aspire-provided "cosmos" connection.
 builder.AddAzureCosmosClient("cosmos");
@@ -156,6 +172,14 @@ var app = builder.Build();
 // Construct the default chat client now (no network I/O) so configuration mistakes
 // surface at startup instead of failing the first grain activation.
 _ = app.Services.GetRequiredService<IChatClientFactory>().GetClient(null);
+
+// First in the pipeline: extract the request's identity once and publish it into Orleans
+// RequestContext, so it propagates to every downstream span — in-request HttpClient spans and,
+// across the grain call, the in-grain chat-completion span (ADR 0010). RequestContext is an
+// in-cluster channel (never an outbound HTTP header), so no user PII leaks to Azure OpenAI —
+// the reason this is RequestContext and deliberately not Activity.Baggage. Runs after the server
+// span has already started, which is why that span stays enriched via EnrichWithHttpRequest above.
+app.Use(UserTelemetryMiddleware.InvokeAsync);
 
 app.MapDefaultEndpoints();
 

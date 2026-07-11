@@ -2,7 +2,7 @@
 name: plan
 description: Create an implementation plan for a nontrivial task and persist it to .agentic/specs/ for execution by /execute-plan.
 user-invocable: true
-disable-model-invocation: true
+disable-model-invocation: false
 argument-hint: "<task>"
 model: opus
 ---

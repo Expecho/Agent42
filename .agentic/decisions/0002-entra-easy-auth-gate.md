@@ -15,9 +15,11 @@ minimal app code (commit 57790a1, 2026-07-05).
 ## Decision
 Use Container Apps built-in authentication (Easy Auth) with Entra ID. Access is
 restricted twice: assignment-required on the `agent42-easyauth` enterprise app AND
-an `allowedPrincipals` allowlist in the auth config. The app itself only reads
-`X-MS-CLIENT-PRINCIPAL-ID` (`CurrentUser.cs`) — the ingress strips inbound
-`X-MS-CLIENT-*` headers, so the value is trustworthy.
+an `allowedPrincipals` allowlist in the auth config. The app reads the injected
+`X-MS-CLIENT-*` headers in `CurrentUser.cs` — `X-MS-CLIENT-PRINCIPAL-ID` for grain
+keying, and additionally `-NAME`, `-IDP` and the `X-MS-CLIENT-PRINCIPAL` claims blob
+for telemetry enrichment (ADR 0009) — the ingress strips inbound `X-MS-CLIENT-*`
+headers, so the values are trustworthy.
 
 ## Alternatives considered
 - **ASP.NET Core OIDC middleware in-app** — more code and config to maintain for a
