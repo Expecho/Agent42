@@ -2,26 +2,17 @@
 name: execute-plan
 description: Execute a plan from .agentic/specs/ with per-step test gating, evidence-based quality gates, and spec lifecycle handling through to an MR.
 user-invocable: true
-disable-model-invocation: true
+disable-model-invocation: false
 argument-hint: "[plan file — defaults to most recently modified plan-*.md in .agentic/specs/]"
 ---
 
 # Execute a plan
 
-Model routing: no model pin here — a skill-level pin lasts one turn and this skill
-spans many. The cost lever is `step-implementer` (pinned to the `sonnet` tier in
-its frontmatter): implementers do the bulk build work cheaply, while this
-orchestrating session keeps the session model for the judgment calls (quality
-gates, critic findings, knowledge-file edits). Best invoked in a fresh session
-(`/clear` after plan approval) — the spec file is the complete handoff.
-
 ## Step 0 — Branch
 
 Start from the plan's base, not from wherever the session happens to sit: switch
-to the branch named in the spec's `planned-against:` header (normally the repo's
-default branch; something else only when the plan deliberately stacks on in-flight
-work), pull it, then create `feature/<plan-slug>` from there. Never build on a
-protected branch (the `protect-main` hook blocks it anyway) — and never on an
+to the branch named in the spec's `planned-against:` header, pull it, then create `feature/<plan-slug>` from there. 
+Never build on a protected branch (the `protect-main` hook blocks it anyway) — and never on an
 unrelated feature branch: that silently merges its in-flight work into this
 plan's diff. If `feature/<plan-slug>` already exists, you're resuming — switch
 to it and continue.
@@ -29,8 +20,7 @@ to it and continue.
 ## Step 1 — Load & announce
 
 Load the plan from `.agentic/specs/`. Read its **Context & constraints** and
-**Review** sections first — they carry the planning session's findings, the user's
-scope calls, and critic findings already adjudicated; do not re-litigate a rejected
+**Review** sections first. Do not re-litigate a rejected
 finding without new evidence.
 
 **Drift check:** compare the spec's `planned-against:` ref with HEAD. If they
@@ -56,8 +46,7 @@ For every step:
    mapping table. Tests are part of the step, never a trailing phase.
 
 **Parallel subagents:** dispatch parallelizable steps to `step-implementer`
-subagents (`.claude/agents/step-implementer.md`) — they carry this per-step
-discipline in their system prompt; a plain subagent does not. Dispatching ≥2
+subagents (`.claude/agents/step-implementer.md`). Dispatching ≥2
 write-capable subagents concurrently requires worktree isolation
 (`isolation: "worktree"`) or sequentialize — parallel writers in one checkout
 corrupt each other's edits. They report `/decide`/`/gotcha`/doc-debt candidates
