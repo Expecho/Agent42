@@ -9,10 +9,7 @@ model: opus
 
 # Plan a nontrivial change
 
-Model routing: planning is judgment-dense, so the frontmatter pins `model: opus`
-(alias, resolved at invocation — never a pinned model ID; the override lasts the
-current turn only). If the session already runs a stronger model, delete the pin —
-it would downgrade, not upgrade.
+If the session already runs a stronger model, delete the model pin.
 
 ## Step 1 — Sync & understand
 
@@ -22,17 +19,15 @@ it would downgrade, not upgrade.
   residue from long sessions. No mechanism can do this automatically; say it,
   then stop and wait.
 - Start from the right base: check `git branch --show-current`. If the session
-  sits on a feature branch, offer to switch to the repo's default branch first —
-  a pull alone just gives you an up-to-date *wrong* base, and the plan silently
-  bakes that branch's in-flight state into every file/line claim. Then offer
-  `git pull` (plans against stale code are wrong on arrival). Deliberately
+  sits on a feature branch, offer to switch to the repo's default branch first. Then offer
+  `git pull`. Deliberately
   planning on top of an in-flight branch (stacked work) is allowed — but it's
   the user's explicit call, and the spec header must record that base.
 - Read `.agentic/gotchas.md` entries and the exemplars for the affected area.
 - Grep `.agentic/decisions/` for active ADRs touching this area — a plan that
   contradicts an ADR needs `/decide` (supersession) as an explicit plan step.
 - Investigate the code itself; use parallel `scout` subagents
-  (`.claude/agents/scout.md` — cheap tier, read-only) for breadth, and keep the
+  (`.claude/agents/scout.md` ) for breadth, and keep the
   design thinking in the main session. Native plan mode is welcome — this skill
   governs the *artifact*, not how you think.
 
@@ -69,14 +64,10 @@ file is lost.
 
 ## Step 4 — Adversarial review, then approval
 
-- Dispatch a `critic` subagent (`.claude/agents/critic.md` — fresh context, took
-  no part in writing the plan) on the written spec. Fix legitimate findings in the
+- Dispatch a `critic` subagent (`.claude/agents/critic.md`. Fix legitimate findings in the
   plan; record rejected findings in a **Review** section of the spec itself, each
-  with the rejection reason — a fresh executor will independently re-raise exactly
-  these, and the answer must travel with the file, not the conversation.
+  with the rejection reason.
 - Present the plan — including the critic's verdict and how findings were
   handled — and get explicit user approval before any execution. On approval,
   hand off to `/execute-plan` — and suggest running it in a fresh session
-  (`/clear` first): the spec file carries everything execution needs, and a clean
-  context executes the plan as written rather than what this session remembers
-  debating. Do not start implementing inside this skill.
+  (`/clear` first). Do not start implementing inside this skill.
