@@ -6,6 +6,7 @@ using Azure.ResourceManager;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.AI;
+using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Trace;
 
 const string OtelSourceName = "Agent42.Backend";
@@ -16,6 +17,15 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddSource(OtelSourceName));
+
+// Stamp OTel semantic-convention user.* attributes onto the ASP.NET Core server span of every
+// authenticated request (ADR 0009). The Easy-Auth-specific extraction lives in CurrentUser here in
+// the Backend, keeping the shared ServiceDefaults generic (ADR 0002). This Configure delegate
+// composes with the AddAspNetCoreInstrumentation Filter set in ServiceDefaults — both run, they set
+// different options properties, so neither overwrites the other.
+builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(options =>
+    options.EnrichWithHttpRequest = (activity, request) =>
+        activity.ApplyUserTelemetryTags(request.Headers));
 
 // CosmosClient wired from the Aspire-provided "cosmos" connection.
 builder.AddAzureCosmosClient("cosmos");
