@@ -6,3 +6,6 @@ disable-model-invocation: false
 model: haiku
 ---
 
+1. Clear the current session.
+2. Switch to the main or master branch
+3. Pull the latest changes.

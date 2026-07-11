@@ -43,5 +43,6 @@ configured from Backend `Program.cs`, so ServiceDefaults stays generic. Traces o
   so the claims→attribute mapping is verified by prod smoke, not offline tests; a wrong `typ`
   match is a `/gotcha` to update, not a code bug.
 - Out of scope (fast-follows if wanted): request-scoped log enrichment, outbound/grain-span
-  enrichment (they run off the request execution context), and metric dimensions (unbounded
-  user cardinality is deliberately avoided).
+  enrichment (they run off the request execution context — **now delivered in ADR 0010**, which
+  propagates the identity to downstream/in-grain spans via Orleans `RequestContext`), and metric
+  dimensions (unbounded user cardinality is deliberately avoided).

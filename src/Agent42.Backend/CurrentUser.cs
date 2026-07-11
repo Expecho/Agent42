@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Agent42.Agents;
 
 namespace Agent42.Backend;
 
@@ -20,14 +21,8 @@ public static class CurrentUser
     private const string PrincipalIdpHeader = "X-MS-CLIENT-PRINCIPAL-IDP";
     private const string PrincipalBlobHeader = "X-MS-CLIENT-PRINCIPAL";
 
-    // OpenTelemetry semantic-convention user.* attribute keys. user.idp is a deliberate
-    // deviation — there is no semconv key for the identity provider (ADR 0009).
-    private const string UserIdTag = "user.id";
-    private const string UserNameTag = "user.name";
-    private const string UserEmailTag = "user.email";
-    private const string UserFullNameTag = "user.full_name";
-    private const string UserRolesTag = "user.roles";
-    private const string UserIdpTag = "user.idp";
+    // The user.* attribute-key constants now live on UserTelemetryContext (the carrier), so the
+    // header→carrier→tags path is the single source of the key shape (ADR 0009/0010).
 
     // Local development (DevHost, standalone runs) has no Easy Auth in front,
     // so every request maps to this single pseudo-user.
@@ -65,51 +60,44 @@ public static class CurrentUser
         => http.Request.Headers.ResolveUserId();
 
     /// <summary>
-    /// The OpenTelemetry <c>user.*</c> attributes for a request, extracted from the Easy Auth
-    /// headers. Receives <see cref="IHeaderDictionary"/> rather than <see cref="HttpContext"/>
-    /// (the shape <see cref="GetUserId"/> uses) so it is trivially unit-testable with a plain
-    /// <c>HeaderDictionary</c> and reusable from an enrichment callback that only holds the
-    /// request headers — do not "align" it back to an HttpContext receiver. Each tag is emitted
-    /// only when its value is present; parsing the principal blob never throws (see
-    /// <see cref="ParsePrincipalClaims"/>).
+    /// The signed-in user's identity as a serializable <see cref="UserTelemetryContext"/>, extracted
+    /// from the Easy Auth headers. This is the <b>single</b> extraction path: the ASP.NET Core
+    /// server-span enrichment (<see cref="GetUserTelemetryTags"/>) and the downstream-span propagation
+    /// middleware (<see cref="UserTelemetrySpanProcessor"/>, via <c>RequestContext</c>) both flow
+    /// through it, so the header/claims parse runs once and can never drift between the two. Receives
+    /// <see cref="IHeaderDictionary"/> rather than <see cref="HttpContext"/> so it is trivially
+    /// unit-testable with a plain <c>HeaderDictionary</c>. Each optional field is <c>null</c> when
+    /// absent; parsing the principal blob never throws (see <see cref="ParsePrincipalClaims"/>).
+    /// </summary>
+    public static UserTelemetryContext GetUserTelemetryContext(this IHeaderDictionary headers)
+    {
+        var name = TryGetHeader(headers, PrincipalNameHeader, out var rawName) ? rawName : null;
+        var idp = TryGetHeader(headers, PrincipalIdpHeader, out var rawIdp) ? rawIdp : null;
+
+        string? email = null;
+        string? fullName = null;
+        string[]? roles = null;
+
+        if (ParsePrincipalClaims(headers) is { } claims)
+        {
+            email = FindClaim(claims, EmailClaimTypes);
+            fullName = FindClaim(claims, FullNameClaimTypes);
+            // Multi-value (array) attribute: SetTag accepts string[] and OTLP exports it as an array.
+            var found = FindAllClaims(claims, RoleClaimTypes);
+            roles = found.Length > 0 ? found : null;
+        }
+
+        return new UserTelemetryContext(headers.ResolveUserId(), name, email, fullName, roles, idp);
+    }
+
+    /// <summary>
+    /// The OpenTelemetry <c>user.*</c> attributes for a request, extracted from the Easy Auth headers.
+    /// A thin projection of <see cref="GetUserTelemetryContext"/> — kept as the enrichment callback's
+    /// entry point (the server-span <c>EnrichWithHttpRequest</c> path) while the carrier is the single
+    /// parse. Each tag is emitted only when its value is present.
     /// </summary>
     public static IEnumerable<KeyValuePair<string, object>> GetUserTelemetryTags(this IHeaderDictionary headers)
-    {
-        yield return new(UserIdTag, headers.ResolveUserId());
-
-        if (TryGetHeader(headers, PrincipalNameHeader, out var name))
-        {
-            yield return new(UserNameTag, name);
-        }
-
-        if (TryGetHeader(headers, PrincipalIdpHeader, out var idp))
-        {
-            yield return new(UserIdpTag, idp);
-        }
-
-        var claims = ParsePrincipalClaims(headers);
-        if (claims is null)
-        {
-            yield break;
-        }
-
-        if (FindClaim(claims, EmailClaimTypes) is { } email)
-        {
-            yield return new(UserEmailTag, email);
-        }
-
-        if (FindClaim(claims, FullNameClaimTypes) is { } fullName)
-        {
-            yield return new(UserFullNameTag, fullName);
-        }
-
-        // Multi-value (array) attribute: SetTag accepts string[] and OTLP exports it as an array.
-        var roles = FindAllClaims(claims, RoleClaimTypes);
-        if (roles.Length > 0)
-        {
-            yield return new(UserRolesTag, roles);
-        }
-    }
+        => headers.GetUserTelemetryContext().ToTags();
 
     /// <summary>
     /// Stamps the <c>user.*</c> attributes onto <paramref name="activity"/> via <c>SetTag</c>.
