@@ -5,6 +5,8 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ServiceDiscovery;
 using OpenTelemetry;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
@@ -17,6 +19,8 @@ public static class Extensions
 {
     private const string HealthEndpointPath = "/health";
     private const string AlivenessEndpointPath = "/alive";
+    private const string LocalCollectorEndpointKey = "Otel:LocalCollector:Endpoint";
+    private const string LocalCollectorHeadersKey = "Otel:LocalCollector:Headers";
 
     public static TBuilder AddServiceDefaults<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
@@ -80,11 +84,51 @@ public static class Extensions
 
     private static TBuilder AddOpenTelemetryExporters<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
-        var useOtlpExporter = !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
+        // Endpoint 1: the env-var endpoint (Aspire dashboard locally, the Bicep otlpEndpoint in prod).
+        // AddOtlpExporter() with no options reads the standard OTEL_EXPORTER_OTLP_* env vars — the same
+        // source the previous UseOtlpExporter() used — so this endpoint behaves exactly as before.
+        var hasEnvEndpoint = !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
 
-        if (useOtlpExporter)
+        // Endpoint 2: an optional secondary OTLP/gRPC collector, exported to ALONGSIDE endpoint 1 and
+        // driven entirely from config (endpoint + optional headers). Added only when
+        // Otel:LocalCollector:Endpoint is set, so it's absent in prod unless deliberately configured —
+        // the dev values live in appsettings.Development.json, which the Production environment never loads.
+        var localEndpoint = builder.Configuration[LocalCollectorEndpointKey];
+        var localHeaders = builder.Configuration[LocalCollectorHeadersKey];
+        var addLocalCollector = !string.IsNullOrWhiteSpace(localEndpoint);
+
+        // OTLP headers are a comma-separated "key=value" string; omitted when none configured.
+        void ConfigureLocalCollector(OtlpExporterOptions options)
         {
-            builder.Services.AddOpenTelemetry().UseOtlpExporter();
+            options.Endpoint = new Uri(localEndpoint!);
+            options.Protocol = OtlpExportProtocol.Grpc;
+            if (!string.IsNullOrWhiteSpace(localHeaders))
+            {
+                options.Headers = localHeaders;
+            }
+        }
+
+        // Two endpoints means per-signal AddOtlpExporter(): UseOtlpExporter() is one-shot and throws
+        // NotSupportedException if combined with any signal-specific AddOtlpExporter().
+        if (hasEnvEndpoint || addLocalCollector)
+        {
+            builder.Logging.AddOpenTelemetry(logging =>
+            {
+                if (hasEnvEndpoint) logging.AddOtlpExporter();
+                if (addLocalCollector) logging.AddOtlpExporter(ConfigureLocalCollector);
+            });
+
+            builder.Services.AddOpenTelemetry()
+                .WithMetrics(metrics =>
+                {
+                    if (hasEnvEndpoint) metrics.AddOtlpExporter();
+                    if (addLocalCollector) metrics.AddOtlpExporter(ConfigureLocalCollector);
+                })
+                .WithTracing(tracing =>
+                {
+                    if (hasEnvEndpoint) tracing.AddOtlpExporter();
+                    if (addLocalCollector) tracing.AddOtlpExporter(ConfigureLocalCollector);
+                });
         }
 
         // Uncomment the following lines to enable the Azure Monitor exporter (requires the Azure.Monitor.OpenTelemetry.AspNetCore package)

@@ -162,6 +162,10 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             { name: 'AzureOpenAI__AccountName', value: azureOpenAIAccountName }
             { name: 'OTEL_SERVICE_NAME', value: containerAppName }
             { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', value: otlpEndpoint }
+            // Pin the OTLP wire protocol: the collector listens on the gRPC port (4317), so a default
+            // of http/protobuf would silently send to the wrong format. Harmless when otlpEndpoint is
+            // empty — no exporter is registered in that case (see ServiceDefaults AddOpenTelemetryExporters).
+            { name: 'OTEL_EXPORTER_OTLP_PROTOCOL', value: 'grpc' }
           ]
         }
       ]
