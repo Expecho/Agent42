@@ -78,6 +78,7 @@ jobs:
               acrAdminPassword="$acr_password" \
               authClientSecret="${{ secrets.AAD_CLIENT_SECRET }}" \
               cosmosLocation="northeurope" \
+              otlpEndpoint="http://home.peterbons.nl:4317" \
             --query properties.outputs.containerAppPrincipalId.value -o tsv)
           echo "principal-id=$principal_id" >> "$GITHUB_OUTPUT"
 
