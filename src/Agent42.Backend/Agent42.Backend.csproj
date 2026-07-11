@@ -16,6 +16,9 @@
     <PackageReference Include="Microsoft.Orleans.Server" />
     <PackageReference Include="Microsoft.Orleans.Persistence.Cosmos" />
     <PackageReference Include="Microsoft.Orleans.Reminders.Cosmos" />
+    <!-- Direct reference (transitive via ServiceDefaults) so AspNetCoreTraceInstrumentationOptions
+         is unambiguously in scope for the user.* trace enrichment; version is centrally pinned. -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

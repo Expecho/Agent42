@@ -1,6 +1,8 @@
 using System.Runtime.CompilerServices;
+using Agent42.Agents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Orleans.Runtime;
 
 namespace Agent42.Tests;
 
@@ -28,8 +30,8 @@ public sealed class FakeChatClient : IChatClient
             ? new List<AIContent> { call }
             : new List<AIContent>
             {
-                new TextContent(InstructionsEcho(messages, options) + ContextEcho(messages)
-                    + ImageEcho(messages) + string.Concat(ReplyChunks)),
+                new TextContent(RequestContextEcho() + InstructionsEcho(messages, options)
+                    + ContextEcho(messages) + ImageEcho(messages) + string.Concat(ReplyChunks)),
             };
 
         return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, contents)));
@@ -46,7 +48,8 @@ public sealed class FakeChatClient : IChatClient
             yield break;
         }
 
-        var echo = InstructionsEcho(messages, options) + ContextEcho(messages) + ImageEcho(messages);
+        var echo = RequestContextEcho() + InstructionsEcho(messages, options)
+            + ContextEcho(messages) + ImageEcho(messages);
         if (echo.Length > 0)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, echo);
@@ -59,6 +62,16 @@ public sealed class FakeChatClient : IChatClient
             await Task.Yield();
         }
     }
+
+    // Surfaces the Orleans RequestContext identity seen at this terminal chat-client call site as a
+    // [uctx:<user.id>] marker — this client runs *inside* the grain's streaming iteration, so the
+    // marker proves user identity set before grain.ChatAsync propagated across the grain call into
+    // the exact context where the production chat-completion span is created (ADR 0010). Empty when
+    // no identity is in RequestContext (mirrors the [sys:…]/[ctx:…] echoes).
+    private static string RequestContextEcho()
+        => RequestContext.Get(UserTelemetryContext.RequestContextKey) is UserTelemetryContext ctx
+            ? $"[uctx:{ctx.Id}] "
+            : "";
 
     // Surfaces the instructions the terminal client received so a test can assert the bound
     // system prompt was delivered. Prefers options.Instructions (how AF 1.13 carries it) and

@@ -10,9 +10,11 @@ argument-hint: "[plan file — defaults to most recently modified plan-*.md in .
 
 ## Step 0 — Branch
 
-Start from the plan's base, not from wherever the session happens to sit: switch
+- Fresh context first: if this session already carries a long unrelated
+  conversation, suggest the user `/clear` (or open a new session) and re-invoke
+- Start from the plan's base, not from wherever the session happens to sit: switch
 to the branch named in the spec's `planned-against:` header, pull it, then create `feature/<plan-slug>` from there. 
-Never build on a protected branch (the `protect-main` hook blocks it anyway) — and never on an
+- Never build on a protected branch (the `protect-main` hook blocks it anyway) — and never on an
 unrelated feature branch: that silently merges its in-flight work into this
 plan's diff. If `feature/<plan-slug>` already exists, you're resuming — switch
 to it and continue.

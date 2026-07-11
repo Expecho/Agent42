@@ -66,6 +66,40 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/DocumentMediaTypesTests.cs`
 - **Verified:** 2026-07-10
 
+### Easy Auth claim `typ` spellings for `user.*` telemetry are a prod-only fact
+
+- **Claim:** the `user.email`/`user.full_name`/`user.roles` trace attributes (ADR 0009) are pulled
+  from the `X-MS-CLIENT-PRINCIPAL` claims blob by matching each claim's `typ` against a **candidate
+  list** in `CurrentUser.cs` (AAD v1/v2 and Easy Auth's own mapping spell them differently). Easy
+  Auth is **absent locally** (ADR 0002 — DevHost doesn't even call `AddServiceDefaults`), so the
+  real blob shape and `typ` spellings **cannot be verified offline**: the unit tests use a synthetic
+  base64 blob built from the candidate `typ` values, which proves the parser, not the prod mapping.
+  If an attribute is missing on a real trace at the collector after deploy, the claim `typ` is wrong
+  for the tenant — add the observed spelling to the candidate list here; that is a config fact, not a
+  code bug. `user.id`/`user.name`/`user.idp` come from plain headers and are not affected. Parsing is
+  defensive: a missing/non-base64/non-JSON blob never throws — header attributes still emit.
+- **Evidence:** `src/Agent42.Backend/CurrentUser.cs` (`EmailClaimTypes`/`FullNameClaimTypes`/`RoleClaimTypes`, `ParsePrincipalClaims`), `tests/Agent42.Tests/UserTelemetryTests.cs`, `.agentic/decisions/0009-user-identity-telemetry-attributes.md`
+- **Verified:** 2026-07-11
+
+### User identity reaches downstream/grain spans via Orleans RequestContext, never Activity.Baggage
+
+- **Claim:** downstream `user.*` span attribution (ADR 0010) propagates the identity to the grain-side
+  chat-completion span through **Orleans `RequestContext`** (`UserTelemetryMiddleware` sets a serializable
+  `UserTelemetryContext` first in the pipeline; `UserTelemetrySpanProcessor.OnStart` stamps every started
+  span from it). It must **never** be `Activity.Baggage`: the default `DistributedContextPropagator`
+  injects a W3C `baggage` request header on outbound HttpClient calls, which would ship user PII
+  (name/email/roles) to **Azure OpenAI** in headers. `RequestContext` is an in-cluster channel (Orleans'
+  own protocol, never an external HTTP header), so identity reaches the grain without leaking outward —
+  the load-bearing reason for the design. This is the **one** `RequestContext` use in the repo.
+  `NoBaggageWriteApi_IsUsedInTelemetryPath` guards against `SetBaggage`/`AddBaggage` creeping in.
+- **Load-bearing behaviour:** Orleans 10.2 propagates `RequestContext` into the *streaming* `ChatAsync`
+  grain path by default. That is **not** self-evident and is guarded by `RequestContextPropagationTests`
+  (a `FakeChatClient` `[uctx:…]` echo read at the in-grain chat-client call site). If an Orleans upgrade
+  flips that default, that test fails first — restore propagation (silo config or a grain-call-filter
+  pair) before shipping. The actual OTel stamp on a real in-grain span is prod-smoke (no OTel host offline).
+- **Evidence:** `src/Agent42.Backend/UserTelemetryMiddleware.cs`, `src/Agent42.Backend/UserTelemetrySpanProcessor.cs`, `src/Agent42.Agents/UserTelemetryContext.cs`, `tests/Agent42.Tests/RequestContextPropagationTests.cs`, `.agentic/decisions/0010-downstream-user-telemetry-via-requestcontext.md`
+- **Verified:** 2026-07-11
+
 ### Cosmos containers must be pre-declared in Bicep
 
 - **Claim:** the Cosmos account has `disableLocalAuth: true` and AAD data-plane RBAC cannot create databases/containers — only ARM can. Any new container must be added to `infra/modules/cosmos.bicep`; Orleans providers run with `IsResourceCreationEnabled = false`, so runtime auto-create silently isn't there to save you.
