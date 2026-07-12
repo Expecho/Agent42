@@ -40,6 +40,11 @@ builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, Det
 builder.Services.AddSingleton<IDocumentIndex, InMemoryDocumentIndex>();
 builder.Services.AddSingleton<DocumentIngestionService>();
 
+// Web tools offline (ADR 0011): canned search results and canned page text, so the web_search /
+// fetch_web_page tool path renders end to end with no SearXNG sidecar, no Docker and no network.
+builder.Services.AddSingleton<IWebSearch, InMemoryWebSearch>();
+builder.Services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
+
 builder.UseOrleans(silo =>
 {
     silo.UseLocalhostClustering();

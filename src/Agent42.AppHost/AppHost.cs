@@ -26,11 +26,25 @@ var blobs = builder.AddAzureStorage("storage")
 var orleans = builder.AddOrleans("orleans")
     .WithDevelopmentClustering();
 
+// Self-hosted SearXNG backs the web_search tool (ADR 0011). In production it is a sidecar container
+// in the same Container App, reached over localhost; here it is its own container, so the backend gets
+// its address through configuration rather than assuming localhost. Port 8888, not SearXNG's default
+// 8080, which the backend's own ingress already owns in prod — kept identical here so local and prod
+// agree. The image is the same thin Dockerfile that is built and pushed by the deploy workflow.
+var searxng = builder.AddDockerfile("searxng", "../../infra/searxng")
+    .WithHttpEndpoint(targetPort: 8888, name: "http")
+    .WithEnvironment("SEARXNG_PORT", "8888")
+    // The container's entrypoint reads the port from SEARXNG_PORT (server.port in settings.yml is
+    // inert for the bind), and refuses to start without a secret.
+    .WithEnvironment("SEARXNG_SECRET", "local-dev-only-not-a-real-secret");
+
 builder.AddProject<Projects.Agent42_Backend>("backend")
     .WithReference(orleans)
     .WithReference(cosmos)
     .WithReference(blobs)
+    .WithEnvironment("WebSearch__Endpoint", searxng.GetEndpoint("http"))
     .WaitFor(cosmos)
-    .WaitFor(blobs);
+    .WaitFor(blobs)
+    .WaitFor(searxng);
 
 builder.Build().Run();
