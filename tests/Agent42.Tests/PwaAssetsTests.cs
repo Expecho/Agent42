@@ -84,6 +84,22 @@ public sealed class PwaAssetsTests
     }
 
     [Fact]
+    public async Task Frontend_WarnsWhenUploadedDocumentYieldedNoText()
+    {
+        // A document upload with chunkCount 0 (e.g. a scanned PDF) is NOT registered with the grain
+        // server-side, so the assistant stays unaware of it. The frontend must therefore flag it
+        // instead of drawing a normal "just indexed" chip that invites an unanswerable question.
+        // Source-text heuristic (the repo has no JS test runner by design) — proves the warning
+        // branch and its style hook exist, not their runtime behaviour.
+        var app = await _client.GetStringAsync("/app.js");
+        Assert.Contains("chunkCount > 0", app);
+        Assert.Contains("attach-chip--warn", app);
+
+        var styles = await _client.GetStringAsync("/styles.css");
+        Assert.Contains(".attach-chip--warn", styles);
+    }
+
+    [Fact]
     public async Task IndexHtml_LinksManifest_AndAppRegistersServiceWorker()
     {
         var index = await _client.GetStringAsync("/");
