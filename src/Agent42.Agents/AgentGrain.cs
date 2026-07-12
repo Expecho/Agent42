@@ -120,7 +120,7 @@ public sealed class AgentGrain : Grain, IAgentGrain, IRemindable
                 ChatOptions = new ChatOptions
                 {
                     Instructions = WithDocumentAwareness(_state.State.SystemPrompt ?? Instructions),
-                    Tools = [schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime, new HostedWebSearchTool(), new HostedCodeInterpreterTool()]
+                    Tools = [schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime]
                 },
                 // Automatic document retrieval (ADR 0008): a TextSearchProvider runs before every model
                 // call and injects the top matching excerpts — but ONLY for conversations that actually
