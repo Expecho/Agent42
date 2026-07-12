@@ -1,0 +1,42 @@
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - bing
+      - wikipedia
+
+general:
+  instance_name: "Agent 42 search"
+  debug: false
+  enable_metrics: false
+
+server:
+  # secret_key is injected at runtime as SEARXNG_SECRET — never baked into the image.
+  #
+  # The listening port is NOT set here: the image's entrypoint does
+  #   export GRANIAN_PORT="${SEARXNG_PORT:-$GRANIAN_PORT}"
+  # so `server.port` is inert for the bind and the container would still listen on 8080 —
+  # which collides with the backend's ingress targetPort (containers in one Container App
+  # share a network namespace). The port move to 8888 is the SEARXNG_PORT env var, set in
+  # container-app.bicep and AppHost.cs.
+  #
+  # The rate limiter is bot protection for public instances. The only client here is our own
+  # backend over localhost, and leaving it on makes the API return 429s.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  # The JSON API is OFF by default (only `html` is active). Without `json` listed here every
+  # ?format=json request returns HTTP 403 — which reads like an auth failure and is the most
+  # likely way this integration "mysteriously" breaks.
+  formats:
+    - html
+    - json
+  safe_search: 1
+  autocomplete: ""
+  default_lang: "en"
+
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 10.0

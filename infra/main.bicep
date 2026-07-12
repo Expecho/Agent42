@@ -25,6 +25,17 @@ param imageName string = 'agent42-backend'
 @description('Tag of the image to deploy, e.g. a git commit SHA.')
 param imageTag string = 'latest'
 
+@description('Repository name of the SearXNG sidecar image (without registry host or tag) — ADR 0011.')
+param searxngImageName string = 'agent42-searxng'
+
+@description('Tag of the SearXNG sidecar image to deploy, e.g. a git commit SHA.')
+param searxngImageTag string = 'latest'
+
+@secure()
+@minLength(16)
+@description('Secret key SearXNG signs its state with (the SEARXNG_SECRET GitHub Actions secret — any long random string). A manual prerequisite. @minLength is load-bearing: an absent GitHub secret expands to an EMPTY string, which would crash-loop the sidecar — and because Container Apps gates revision health on every container in the replica, that would take the BACKEND down with it. Failing here, at deployment validation, beats a dead revision in production.')
+param searxngSecret string
+
 @secure()
 @description('Admin username for the Azure Container Registry (used for image pull).')
 param acrAdminUsername string
@@ -97,11 +108,22 @@ param authAllowedUserObjectIds array = [
   '4e85e5fd-1130-4498-a29f-d02cad7ca43b' // msn@2000miles.nl
 ]
 
-@description('CPU cores allocated to the container.')
+// Container Apps bills the PER-REPLICA total, and the sum across all containers in the replica must
+// land on an allowed CPU/memory combination (CPU in 0.25 steps, memory = 2 GiB per CPU). Backend
+// 0.5/1Gi + SearXNG 0.5/1Gi = 1.0 CPU / 2Gi per replica — an allowed pair, and roughly double the
+// app's previous compute cost. Replicas stay pinned at 1 (Orleans localhost clustering), so there is
+// exactly one SearXNG per deployment.
+@description('CPU cores allocated to the backend container.')
 param containerCpu string = '0.5'
 
-@description('Memory allocated to the container.')
+@description('Memory allocated to the backend container.')
 param containerMemory string = '1Gi'
+
+@description('CPU cores allocated to the SearXNG sidecar. Must keep the replica total (backend + sidecar) on an allowed CPU/memory combination.')
+param searxngCpu string = '0.5'
+
+@description('Memory allocated to the SearXNG sidecar. Must keep the replica total (backend + sidecar) on an allowed CPU/memory combination.')
+param searxngMemory string = '1Gi'
 
 @description('Minimum replica count. Orleans localhost clustering (this deployment does not provision a distributed clustering provider) only supports a single instance.')
 @minValue(1)
@@ -125,6 +147,7 @@ param tags object = {
 }
 
 var containerImage = '${containerRegistryName}.azurecr.io/${imageName}:${imageTag}'
+var searxngImage = '${containerRegistryName}.azurecr.io/${searxngImageName}:${searxngImageTag}'
 
 module cosmos 'modules/cosmos.bicep' = {
   name: 'agent42-cosmos'
@@ -160,6 +183,10 @@ module containerApp 'modules/container-app.bicep' = {
     registryUsername: acrAdminUsername
     registryPassword: acrAdminPassword
     containerImage: containerImage
+    searxngImage: searxngImage
+    searxngCpu: searxngCpu
+    searxngMemory: searxngMemory
+    searxngSecret: searxngSecret
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint

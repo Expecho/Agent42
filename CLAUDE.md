@@ -95,4 +95,18 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   in the `Agent42` AI Foundry account (needs no new RBAC — the existing OpenAI User grant covers it),
   and the Cosmos vector path is prod-only (offline/AppHost use an in-memory index). See gotchas before
   touching the vector container or embedding config.
+- Web search (ADR 0011): two model-invoked tools — `web_search` and `fetch_web_page` — over a
+  **self-hosted SearXNG sidecar** in the backend's Container App, reached over `localhost:8888`
+  (8080 is the backend's own ingress). Agent Framework's `HostedWebSearchTool` does **not** work
+  here: our client is Chat Completions, which rejects `web_search_options` with HTTP 400 (that is
+  what `f14de0e`/`81b2f93` were about). The sidecar image is `infra/searxng/` (thin image over a
+  pinned upstream tag, config baked in). Self-hosted ≠ private: SearXNG is a *meta*search engine and
+  forwards every query to DuckDuckGo/Bing — what it buys is no API key, no bill, no per-user
+  attribution. A **`SEARXNG_SECRET` GitHub Actions secret is a manual prerequisite** (any long random
+  string): the sidecar won't start without it, and since ACA gates revision health on *every*
+  container in the replica, a crash-looping sidecar takes the **backend** down too. Three things to
+  read before touching this: a tool's *return value* is persisted into the 2 MB session;
+  `fetch_web_page` is an SSRF sink **and** a prompt-injection exfiltration channel (its allowlist pins
+  whole URLs, not hosts — a host allowlist is bypassable); and a named `HttpClient` silently inherits
+  `AddServiceDefaults`' retry pipeline. All three are in gotchas.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

@@ -83,6 +83,12 @@ public sealed class CannedChatClient : IChatClient
     private static FunctionCallContent BuildCancelAllCall() =>
         new("canned-cancel-all-1", "cancel_all_scheduled_prompts", new Dictionary<string, object?>());
 
+    private static FunctionCallContent BuildWebSearchCall(string query) =>
+        new("canned-search-1", "web_search", new Dictionary<string, object?>
+        {
+            ["query"] = query,
+        });
+
     private static UsageContent BuildUsage(long input, long output) =>
         new(new UsageDetails
         {
@@ -131,6 +137,14 @@ public sealed class CannedChatClient : IChatClient
         if (text.Contains("remind", StringComparison.OrdinalIgnoreCase))
         {
             return BuildReminderCall();
+        }
+
+        // "look up …" drives the web_search tool against the in-memory search (no SearXNG offline),
+        // so the tool chip renders with no Docker and no network. Chosen because it cannot collide
+        // with the cancel/remind branches above.
+        if (text.Contains("look up", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildWebSearchCall(text);
         }
 
         return null;
