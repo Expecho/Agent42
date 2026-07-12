@@ -50,7 +50,9 @@
 
   // Documents uploaded to this conversation: {kind, fileName, chunkCount}. Display-only — a
   // document is ingest-only (indexed server-side for automatic retrieval, ADR 0007/0008), so it
-  // is NEVER sent back as an attachmentId. The chip is a "just indexed" indicator.
+  // is NEVER sent back as an attachmentId. The chip is a "just indexed" indicator; a chunkCount of
+  // 0 means no text could be extracted (e.g. a scanned PDF), so it renders as a warning instead —
+  // the server did NOT register that document with the grain, so the agent stays unaware of it.
   let pendingDocuments = [];
 
   let agents = [];
@@ -470,13 +472,21 @@
     attachmentPreview.innerHTML = "";
     attachmentPreview.hidden = pendingAttachments.length === 0 && pendingDocuments.length === 0;
     pendingDocuments.forEach((doc) => {
+      // chunkCount 0 = no extractable text, so the server never registered it with the grain and
+      // the agent won't see it. Warn clearly rather than showing a "just indexed" chip that invites
+      // a question the agent can't answer.
+      const indexed = doc.chunkCount > 0;
       const chip = document.createElement("div");
-      chip.className = "attach-chip attach-chip--doc";
-      chip.title = `${doc.fileName} — ${doc.chunkCount} passage(s) indexed. Ask a question about it.`;
+      chip.className = indexed
+        ? "attach-chip attach-chip--doc"
+        : "attach-chip attach-chip--doc attach-chip--warn";
+      chip.title = indexed
+        ? `${doc.fileName} — ${doc.chunkCount} passage(s) indexed. Ask a question about it.`
+        : `${doc.fileName} — no readable text found (a scanned image?). It was NOT indexed, so the assistant can't answer questions about it.`;
 
       const label = document.createElement("span");
       label.className = "attach-chip__doc";
-      label.textContent = `📄 ${doc.fileName}`;
+      label.textContent = indexed ? `📄 ${doc.fileName}` : `⚠️ ${doc.fileName} — not indexed`;
 
       const remove = document.createElement("button");
       remove.type = "button";

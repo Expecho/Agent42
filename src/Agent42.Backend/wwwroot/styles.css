@@ -917,6 +917,18 @@ body {
   text-overflow: ellipsis;
 }
 
+/* A document that yielded no extractable text (chunkCount 0) — it was NOT indexed, so flag it
+   in amber rather than letting it pass as a normal chip (ADR 0007: no OCR for scanned PDFs). */
+.attach-chip--warn {
+  border: 1px solid var(--amber);
+  max-width: 320px;
+}
+
+.attach-chip--warn .attach-chip__doc {
+  color: var(--amber);
+  white-space: normal;
+}
+
 .composer__footer {
   display: flex;
   align-items: center;
