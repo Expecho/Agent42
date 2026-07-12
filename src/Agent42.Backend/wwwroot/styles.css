@@ -929,6 +929,18 @@ body {
   white-space: normal;
 }
 
+/* A rejected or failed upload (unsupported type, oversize, or a server error) — flag it in red so
+   the user knows the file did NOT attach, rather than silently swallowing the failure. */
+.attach-chip--error {
+  border: 1px solid var(--red);
+  max-width: 320px;
+}
+
+.attach-chip--error .attach-chip__doc {
+  color: var(--red);
+  white-space: normal;
+}
+
 .composer__footer {
   display: flex;
   align-items: center;

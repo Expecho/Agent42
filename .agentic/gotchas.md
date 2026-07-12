@@ -55,9 +55,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   no registered MIME type for many document extensions, so browsers send `application/octet-stream`
   (or an empty type) for `.docx`/`.pptx`/`.xlsx`/`.md` and even `.txt`, and OOXML files sometimes
   arrive as `application/zip`. Branching straight on the raw content type rejected real documents as
-  "unsupported" (HTTP 400); the frontend swallows a non-OK upload silently (`if (!res.ok) continue;`
-  in `handleFiles`), so the user saw no chip and the grain was never told the document existed — the
-  model stayed unaware. Resolve the effective type via `DocumentMediaTypes.ResolveMediaType(fileName,
+  "unsupported" (HTTP 400) — and the grain was never told the document existed, so the model stayed
+  unaware. (`handleFiles` used to swallow the non-OK response silently; it now surfaces it as an
+  `attach-chip--error` chip, so a wrongly-rejected document is at least visible — but the fix is to
+  not misclassify it in the first place.) Resolve the effective type via `DocumentMediaTypes.ResolveMediaType(fileName,
   contentType)` (extension fallback) before the image/document branch, and feed the *resolved* type
   into ingestion so the extractor's switch matches. `.pdf` usually reports correctly, so a PDF-only
   test does not catch this — cover a generic/empty content type.
