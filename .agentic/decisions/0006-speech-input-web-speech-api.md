@@ -18,7 +18,7 @@ implication because raw audio has to reach a speech engine.
 
 ## Decision
 Use the browser-native **Web Speech API** (`SpeechRecognition` / `webkitSpeechRecognition`),
-wired entirely in `wwwroot/app.js` — feature-detect and build one recognition instance
+wired entirely in `src/Agent42.Backend/wwwroot/app.js` — feature-detect and build one recognition instance
 (`continuous`, `interimResults`), set `recognition.lang = profile.preferredLanguage ||
 navigator.language` at start, render interim+final text live into the textarea, and stop
 recognition when a send begins. The feature is **frontend-only**: no endpoint, grain, Bicep,

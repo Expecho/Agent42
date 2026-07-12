@@ -24,4 +24,18 @@ internal static class TestServiceRegistration
         services.AddSingleton<DocumentIngestionService>();
         return services;
     }
+
+    /// <summary>
+    /// Registers the offline web-tool stand-ins (ADR 0011) the grain resolves for <c>web_search</c> and
+    /// <c>fetch_web_page</c>: canned results and canned page text, so the tool path runs with no SearXNG
+    /// sidecar and no network. Every silo configurator that hosts an <see cref="AgentGrain"/> needs this
+    /// — a grain dependency missing from one configurator fails that host's activations only, which is
+    /// why it lives here rather than being repeated per configurator.
+    /// </summary>
+    public static IServiceCollection AddWebToolFakes(this IServiceCollection services)
+    {
+        services.AddSingleton<IWebSearch, InMemoryWebSearch>();
+        services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
+        return services;
+    }
 }

@@ -70,11 +70,24 @@ param authTenantId string
 @description('Object ids of the only Entra ID users allowed to sign in. Defense-in-depth next to the assignment requirement on the enterprise app.')
 param authAllowedUserObjectIds array
 
-@description('CPU cores allocated to the container, e.g. 0.5.')
+@description('CPU cores allocated to the backend container, e.g. 0.5.')
 param cpu string
 
-@description('Memory allocated to the container, e.g. 1Gi.')
+@description('Memory allocated to the backend container, e.g. 1Gi.')
 param memory string
+
+@description('Full SearXNG sidecar image reference, e.g. myregistry.azurecr.io/agent42-searxng:latest (ADR 0011).')
+param searxngImage string
+
+@description('CPU cores allocated to the SearXNG sidecar, e.g. 0.5. Container Apps bills the per-replica total, and the sum across containers must land on an allowed CPU/memory combination.')
+param searxngCpu string
+
+@description('Memory allocated to the SearXNG sidecar, e.g. 1Gi. Must pair with searxngCpu so the replica total is an allowed combination.')
+param searxngMemory string
+
+@secure()
+@description('Secret key SearXNG signs its state with. Any long random string; supplied as the SEARXNG_SECRET GitHub Actions secret. The container refuses to start without it.')
+param searxngSecret string
 
 @description('Minimum replica count. Orleans localhost clustering (used by this single-instance deployment) only supports one instance.')
 param minReplicas int
@@ -137,6 +150,10 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           name: 'microsoft-provider-authentication-secret'
           value: authClientSecret
         }
+        {
+          name: 'searxng-secret'
+          value: searxngSecret
+        }
       ]
     }
     template: {
@@ -166,6 +183,31 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             // of http/protobuf would silently send to the wrong format. Harmless when otlpEndpoint is
             // empty — no exporter is registered in that case (see ServiceDefaults AddOpenTelemetryExporters).
             { name: 'OTEL_EXPORTER_OTLP_PROTOCOL', value: 'grpc' }
+            // The SearXNG sidecar below. Containers in one Container App share a network namespace,
+            // so it is reached over localhost and is unreachable from outside by construction — no
+            // second ingress, and Easy Auth still fronts the only exposed port (ADR 0002).
+            { name: 'WebSearch__Endpoint', value: 'http://localhost:8888' }
+          ]
+        }
+        // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume, no API
+        // key, and no query leaves our infrastructure. A thin image over upstream SearXNG with our
+        // settings.yml baked in (infra/searxng) — `search.formats` must include `json` or the API
+        // answers 403.
+        {
+          name: 'searxng'
+          image: searxngImage
+          resources: {
+            cpu: json(searxngCpu)
+            memory: searxngMemory
+          }
+          env: [
+            // NOT SearXNG's default 8080: that is the backend's ingress targetPort, and the two
+            // containers share a network namespace. The image's entrypoint takes the listening port
+            // from this variable (server.port in settings.yml is inert for the bind).
+            { name: 'SEARXNG_PORT', value: '8888' }
+            { name: 'SEARXNG_BIND_ADDRESS', value: '0.0.0.0' }
+            { name: 'SEARXNG_BASE_URL', value: 'http://localhost:8888/' }
+            { name: 'SEARXNG_SECRET', secretRef: 'searxng-secret' }
           ]
         }
       ]

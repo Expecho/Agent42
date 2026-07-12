@@ -65,4 +65,4 @@ retrieval results are **excluded from session storage** (see Consequences).
 - **Deletes** the `search_documents` `AIFunction` and its `search_documents` naming across product/test
   comments. Retrieval no longer surfaces a tool-call chip in the UI (it is silent/automatic) — accepted.
 - Builds on ADR 0004 (2 MB session cap — the storage filter defends it) and partially supersedes ADR 0007
-  (its retrieval decision only). Implemented under `.agentic/specs/plan-rag-textsearchprovider.md`.
+  (its retrieval decision only). Implemented under `.agentic/specs/completed/plan-rag-textsearchprovider.md`.

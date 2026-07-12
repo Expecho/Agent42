@@ -26,6 +26,9 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             // Document ingestion + retrieval stand-ins (ADR 0007): the grain resolves these to
             // search uploaded documents.
             services.AddDocumentRagFakes();
+            // Web tools (ADR 0011): canned search + fetch, so the grain's tool path runs with no
+            // SearXNG sidecar and no network.
+            services.AddWebToolFakes();
         });
     }
 }
