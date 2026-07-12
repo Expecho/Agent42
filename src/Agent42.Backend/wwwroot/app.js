@@ -55,6 +55,11 @@
   // the server did NOT register that document with the grain, so the agent stays unaware of it.
   let pendingDocuments = [];
 
+  // Non-OK uploads for the turn being composed: {fileName, message}. Rendered as dismissible error
+  // chips so a rejected/failed upload is surfaced truthfully instead of silently swallowed. Reset
+  // on conversation switch, like the other pending arrays.
+  let pendingNotices = [];
+
   let agents = [];
   // The agent id to *bind*, sent on the wire only on the first turn of a freshly started
   // agent chat, then cleared. Kept distinct from activeAgentId so a resumed agent chat never
@@ -444,16 +449,30 @@
   // Uploads each picked file to the current conversation. The server branches on media type: an
   // image comes back as {id,...} and is sent as an attachmentId on the next turn; a document comes
   // back as {kind:"document",...}, is indexed for retrieval server-side, and is shown as a chip but
-  // never sent back (ADR 0007). Unsupported types get a non-OK response and are skipped.
+  // never sent back (ADR 0007). A non-OK response (unsupported type, oversize, or a server error)
+  // is surfaced as a dismissible error chip rather than silently dropped.
   async function handleFiles(files) {
     if (streaming) return;
+    // Pin the results to the conversation the upload was started in: the fetch stores bytes under
+    // uploadId, so a mid-upload conversation switch must NOT apply the chip/attachment to the new
+    // one. After every await we bail via break (not return) so the fileInput reset below still runs
+    // and the same file can be re-picked.
+    const uploadId = activeId;
     for (const file of files) {
       try {
         const body = new FormData();
         body.append("file", file, file.name);
-        const res = await fetch(attachmentsUrl(activeId), { method: "POST", body });
-        if (!res.ok) continue;
+        const res = await fetch(attachmentsUrl(uploadId), { method: "POST", body });
+        if (activeId !== uploadId) break; // user moved on — discard this result
+        if (!res.ok) {
+          const message = (await res.text()).trim() || "Upload failed.";
+          if (activeId !== uploadId) break;
+          pendingNotices.push({ fileName: file.name, message });
+          renderAttachmentPreview();
+          continue;
+        }
         const meta = await res.json();
+        if (activeId !== uploadId) break;
         if (meta.kind === "document") {
           pendingDocuments.push(meta);
         } else {
@@ -470,7 +489,33 @@
 
   function renderAttachmentPreview() {
     attachmentPreview.innerHTML = "";
-    attachmentPreview.hidden = pendingAttachments.length === 0 && pendingDocuments.length === 0;
+    attachmentPreview.hidden =
+      pendingAttachments.length === 0 && pendingDocuments.length === 0 && pendingNotices.length === 0;
+    pendingNotices.forEach((notice) => {
+      // A rejected/failed upload — surface it as a dismissible error chip (the server never stored
+      // anything, so dismissing only clears the notice). Reuses the doc-chip shape; the --error
+      // variant paints it red (styles.css).
+      const chip = document.createElement("div");
+      chip.className = "attach-chip attach-chip--doc attach-chip--error";
+      chip.title = notice.message;
+
+      const label = document.createElement("span");
+      label.className = "attach-chip__doc";
+      label.textContent = `⚠️ ${notice.fileName} — upload failed`;
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "attach-chip__remove";
+      remove.setAttribute("aria-label", `Dismiss ${notice.fileName}`);
+      remove.textContent = "×";
+      remove.addEventListener("click", () => {
+        pendingNotices = pendingNotices.filter((n) => n !== notice);
+        renderAttachmentPreview();
+      });
+
+      chip.append(label, remove);
+      attachmentPreview.appendChild(chip);
+    });
     pendingDocuments.forEach((doc) => {
       // chunkCount 0 = no extractable text, so the server never registered it with the grain and
       // the agent won't see it. Warn clearly rather than showing a "just indexed" chip that invites
@@ -530,6 +575,7 @@
   function clearPendingAttachments() {
     pendingAttachments = [];
     pendingDocuments = [];
+    pendingNotices = [];
     renderAttachmentPreview();
   }
 

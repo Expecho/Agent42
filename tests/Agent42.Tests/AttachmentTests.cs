@@ -113,6 +113,10 @@ public sealed class AttachmentTests : IAsyncLifetime
     // AC2: an unsupported media type or an oversize upload is rejected with 400. Documents
     // (PDF/Office/text) are no longer rejected — they take the ingestion path (ADR 0007) — so this
     // now asserts rejection of a genuinely unsupported binary type.
+    //
+    // The rejection body is text/plain with the raw, unquoted message (NOT Results.BadRequest, which
+    // JSON-encodes the string into "quote-wrapped" text): the client reads res.text() straight into
+    // its error chip, so a JSON-encoded body would show literal quotes to the user.
     [Fact]
     public async Task Upload_RejectsUnsupportedTypeAndOversize()
     {
@@ -120,11 +124,17 @@ public sealed class AttachmentTests : IAsyncLifetime
             "/api/conversations/ac2-conversation/attachments",
             ImageForm([1, 2, 3], "application/octet-stream", "blob.bin"));
         Assert.Equal(HttpStatusCode.BadRequest, unsupported.StatusCode);
+        Assert.Equal("text/plain", unsupported.Content.Headers.ContentType?.MediaType);
+        var unsupportedBody = await unsupported.Content.ReadAsStringAsync();
+        Assert.Equal("Only image and document (PDF, Office, text) attachments are supported.", unsupportedBody);
+        Assert.DoesNotContain("\"", unsupportedBody); // not JSON-encoded — no surrounding quotes
 
         var oversize = await _client.PostAsync(
             "/api/conversations/ac2-conversation/attachments",
             ImageForm(new byte[(11 * 1024 * 1024)], "image/png", "big.png"));
         Assert.Equal(HttpStatusCode.BadRequest, oversize.StatusCode);
+        Assert.Equal("text/plain", oversize.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("Upload exceeds the 10 MB limit.", await oversize.Content.ReadAsStringAsync());
     }
 
     // AC4: history for an image turn includes the attachment ref (endpoint → grain path over the

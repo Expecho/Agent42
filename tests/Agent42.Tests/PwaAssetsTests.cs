@@ -100,6 +100,33 @@ public sealed class PwaAssetsTests
     }
 
     [Fact]
+    public async Task Frontend_GuardsUploadResultAgainstMidUploadConversationSwitch()
+    {
+        // Mode B: an upload is keyed to the conversation it started in, but its result lands
+        // whenever the await resolves — a mid-upload switch would inject the chip into the wrong
+        // conversation. handleFiles must pin uploadId at entry and bail when activeId moves on.
+        // Source-text heuristic (no JS test runner by design) — proves the guard exists.
+        var app = await _client.GetStringAsync("/app.js");
+        Assert.Contains("uploadId", app);
+        Assert.Contains("activeId !== uploadId", app);
+    }
+
+    [Fact]
+    public async Task Frontend_SurfacesFailedUploadAsErrorChip()
+    {
+        // Mode A: a non-OK upload used to be silently dropped (if (!res.ok) continue;). It must now
+        // render a dismissible error chip so the user knows the file did not attach. Source-text
+        // heuristic (no JS test runner by design) — asserts the observable render, not the specific
+        // body-read call, and that the bare swallow is gone.
+        var app = await _client.GetStringAsync("/app.js");
+        Assert.Contains("attach-chip--error", app);
+        Assert.DoesNotContain("if (!res.ok) continue;", app);
+
+        var styles = await _client.GetStringAsync("/styles.css");
+        Assert.Contains(".attach-chip--error", styles);
+    }
+
+    [Fact]
     public async Task IndexHtml_LinksManifest_AndAppRegistersServiceWorker()
     {
         var index = await _client.GetStringAsync("/");

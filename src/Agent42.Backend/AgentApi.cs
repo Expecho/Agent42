@@ -100,12 +100,14 @@ public static class AgentApi
         {
             if (file is null || file.Length == 0)
             {
-                return Results.BadRequest("No file was uploaded.");
+                // text/plain (not Results.BadRequest, which JSON-encodes the string) so the client
+                // can read res.text() as a clean, unquoted message for its error chip.
+                return Results.Text("No file was uploaded.", "text/plain", statusCode: StatusCodes.Status400BadRequest);
             }
 
             if (file.Length > MaxAttachmentBytes)
             {
-                return Results.BadRequest($"Upload exceeds the {MaxAttachmentBytes / (1024 * 1024)} MB limit.");
+                return Results.Text($"Upload exceeds the {MaxAttachmentBytes / (1024 * 1024)} MB limit.", "text/plain", statusCode: StatusCodes.Status400BadRequest);
             }
 
             // The browser's content type is unreliable for documents (Windows sends octet-stream or
@@ -141,7 +143,7 @@ public static class AgentApi
                 return Results.Json(new DocumentUploadResult("document", file.FileName, contentType, chunkCount));
             }
 
-            return Results.BadRequest("Only image and document (PDF, Office, text) attachments are supported.");
+            return Results.Text("Only image and document (PDF, Office, text) attachments are supported.", "text/plain", statusCode: StatusCodes.Status400BadRequest);
         }).DisableAntiforgery();
 
         // Streams a stored attachment's bytes to the browser. First-party proxy (authenticated by
