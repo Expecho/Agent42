@@ -38,8 +38,9 @@ in the existing `ca-agent42-backend` Container App, reached over `localhost:8888
 
 ## What "self-hosted" does and does not buy (read this before repeating it)
 It is tempting — and wrong — to say the queries never leave our infrastructure. **SearXNG is a
-*meta*search engine**: it forwards every query to upstream engines (we enable DuckDuckGo, Bing and
-Wikipedia in `infra/searxng/settings.yml`). Queries *do* leave.
+*meta*search engine**: it forwards every query to the upstream engines enabled in
+`infra/searxng/settings.yml` (the `keep_only:` list — DuckDuckGo and Bing at the time of this decision;
+read the file for what is enabled now). Queries *do* leave.
 
 What self-hosting actually buys: **no API key, no per-query bill, no contract, and no per-user
 attribution** — queries arrive at the upstream engines unauthenticated, from the container's IP, not

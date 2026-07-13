@@ -28,7 +28,12 @@ public sealed class SearxngWebSearch(HttpClient httpClient, ILogger<SearxngWebSe
         }
 
         var take = Math.Clamp(maxResults, 1, WebToolLimits.MaxSearchResults);
-        var requestUri = $"search?q={Uri.EscapeDataString(query)}&format=json&safesearch=1";
+
+        // Deliberately NO &safesearch= parameter: a per-request value OVERRIDES the instance setting,
+        // so hardcoding one here made `search.safe_search` in infra/searxng/settings.yml dead config —
+        // the file could say "off" while every actual query asked for "on". The instance owns the
+        // policy; change it there.
+        var requestUri = $"search?q={Uri.EscapeDataString(query)}&format=json";
 
         using var response = await httpClient.GetAsync(requestUri, cancellationToken);
 

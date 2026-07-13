@@ -27,15 +27,19 @@ internal static class TestServiceRegistration
 
     /// <summary>
     /// Registers the offline web-tool stand-ins (ADR 0011) the grain resolves for <c>web_search</c> and
-    /// <c>fetch_web_page</c>: canned results and canned page text, so the tool path runs with no SearXNG
-    /// sidecar and no network. Every silo configurator that hosts an <see cref="AgentGrain"/> needs this
-    /// — a grain dependency missing from one configurator fails that host's activations only, which is
-    /// why it lives here rather than being repeated per configurator.
+    /// <c>fetch_web_page</c>, plus the <see cref="IGeocoder"/> behind <c>get_current_location</c>
+    /// (ADR 0012): canned results, canned page text and one canned address, so the tool paths run with no
+    /// SearXNG sidecar, no Google API key and no network. Every silo configurator that hosts an
+    /// <see cref="AgentGrain"/> needs this — a grain dependency missing from one configurator fails that
+    /// host's activations only, which is why it lives here rather than being repeated per configurator.
+    /// (<see cref="CapSizedFetcherSiloConfigurator"/> is the exception that proves it: it registers its
+    /// deps inline so it can swap the fetcher, so anything added here must be added there too.)
     /// </summary>
     public static IServiceCollection AddWebToolFakes(this IServiceCollection services)
     {
         services.AddSingleton<IWebSearch, InMemoryWebSearch>();
         services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
+        services.AddSingleton<IGeocoder, FakeGeocoder>();
         return services;
     }
 }

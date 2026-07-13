@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Agent42.Agents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -712,11 +714,15 @@ public sealed class AgentGrainTests : IAsyncLifetime
         const string Key = "web-session-budget-conversation";
         var agent = cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
 
-        // Five worst-case turns: each fetch returns a full-size (capped) page into the session.
+        // Five worst-case turns: each fetch returns a full-size (capped) page into the session. Each
+        // round also runs the location tool (ADR 0012), whose return value is persisted into the very
+        // same item — a new tool that returned Google's raw geocoding response, rather than the budgeted
+        // record, would show up here.
         for (var turn = 0; turn < 5; turn++)
         {
             await Chat(agent, "look up the orleans framework");
             await Chat(agent, "read the first result");
+            await ChatAt(agent, "where am i", Dam());
         }
 
         var storage = cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress)
@@ -734,6 +740,170 @@ public sealed class AgentGrainTests : IAsyncLifetime
         // Cosmos hard-caps the item at 2 MB. Five capped fetches (~40 KB of page text) must stay far
         // inside it; 256 KB catches an unbudgeted tool result long before production would.
         Assert.InRange(bytes, 1, 256 * 1024);
+    }
+
+    // ---- User location (ADR 0012) ----
+
+    // A fix on the Dam in Amsterdam. FakeGeocoder resolves any valid fix to one canned address.
+    private static UserLocation Dam(DateTimeOffset? capturedAt = null) =>
+        new(52.3676, 4.9041, AccuracyMetres: 12, CapturedAt: capturedAt ?? DateTimeOffset.UtcNow);
+
+    // AC1 — a turn that carries a position lets the tool report BOTH the coordinates and the
+    // reverse-geocoded address, and both reach the model (the fake echoes tool results as [tool:…] —
+    // the same discipline as the web-search test: a tool that ran proves plumbing, not delivery).
+    [Fact]
+    public async Task GetCurrentLocation_ReturnsAddress_WhenTurnCarriesPosition()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("location-conversation");
+
+        var events = await ChatAt(agent, "where am i", Dam());
+
+        var call = events.SingleOrDefault(e => e.Type == AgentStreamEventType.ToolCallStart);
+        Assert.NotNull(call);
+        Assert.Equal("get_current_location", call!.ToolName);
+
+        var answer = Answer(events);
+        Assert.Contains("[tool:", answer);
+        Assert.Contains(FakeGeocoder.Address, answer);
+        Assert.Contains("52.3676", answer);
+    }
+
+    // AC2 — with no position on the turn, the tool must SAY SO rather than invent one, and must tell the
+    // model to ask the user to share it. The tool is the only thing that knows; nothing else in the turn
+    // can surface it.
+    //
+    // The assertion anchors on an apostrophe- and quote-free phrase on purpose: a tool result is
+    // JSON-serialized on its way to the model, which escapes both — an assertion containing "don't" or
+    // a quoted "Share my location" would pass vacuously (see the fetch-allowlist gotcha).
+    [Fact]
+    public async Task GetCurrentLocation_WhenNotShared_TellsModelToAskTheUser()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("no-location-conversation");
+
+        var answer = Answer(await Chat(agent, "where am i"));
+
+        Assert.Contains("has not shared their location", answer);
+        Assert.DoesNotContain(FakeGeocoder.Address, answer);
+    }
+
+    // AC3 — the position is turn-scoped. A later turn WITHOUT one must not see the earlier turn's fix:
+    // the field lives for the ACTIVATION, not the call, so without the explicit clear this second turn
+    // would still confidently answer "Damrak 1".
+    //
+    // Both assertions are made on the turn's OWN ToolCallEnd result, not on the reply text. That is not
+    // fussiness: the fake echoes every tool result it can see, and by turn 2 the model legitimately sees
+    // turn 1's result replayed from history — so the reply text contains the old address no matter what
+    // the grain does, and an assertion on it would be testing the fake, not the field.
+    [Fact]
+    public async Task Location_IsTurnScoped_AndNotPersisted()
+    {
+        const string Key = "turn-scoped-location-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        // Turn 1 carries a fix and resolves an address.
+        Assert.Contains(FakeGeocoder.Address, ToolResult(await ChatAt(agent, "where am i", Dam())));
+
+        // Turn 2, on the same warm activation, carries none.
+        var second = ToolResult(await Chat(agent, "where am i"));
+        Assert.Contains("has not shared their location", second);
+        Assert.DoesNotContain(FakeGeocoder.Address, second);
+
+        // The position is never grain STATE. What IS persisted is the tool's return value, which carries
+        // the address and the coordinates into chat history — that is the user's explicit choice (full
+        // precision, persisted, re-sent every later turn) and ADR 0012 records it. What must never exist
+        // is a location field on AgentGrainState: that would outlive the turn it was captured for, and a
+        // fix from last week would be re-sent as if it were current.
+        Assert.DoesNotContain(
+            typeof(AgentGrainState).GetProperties(),
+            p => p.PropertyType == typeof(UserLocation)
+                || p.Name.Contains("Location", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // AC4 — the reminder path never claims to know where the user is. This is the bug the plan's first
+    // draft contained: _turnLocation lives for the ACTIVATION, so a reminder firing on the same
+    // activation as a located chat turn would still see that turn's fix and announce the user's position
+    // hours later, somewhere else. The reminder's own prompt asks "where am i" (see FakeChatClient), so
+    // the tool really is invoked on that path — an assertion that never reached the tool would prove
+    // nothing.
+    [Fact]
+    public async Task ReceiveReminder_HasNoUserLocation()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-location-conversation");
+
+        // A located turn that also schedules a reminder whose prompt asks where the user is. The
+        // activation now holds a fix.
+        await ChatAt(agent, "schedule a location check", Dam());
+
+        // Fire it on that same warm activation.
+        await agent.AsReference<IRemindable>().ReceiveReminder("location-check", default);
+
+        var history = await agent.GetHistoryAsync();
+        var reply = history.Last(t => t.Role == "assistant").Text;
+
+        Assert.Contains("has not shared their location", reply);
+        Assert.DoesNotContain(FakeGeocoder.Address, reply);
+    }
+
+    // AC10 (the behavioural half) — with NO API key configured, the app still runs and the tool still
+    // works: it reports the coordinates and says plainly that no street address could be resolved. That
+    // is the whole "a missing key degrades the feature, it does not take the app down" claim of ADR 0012,
+    // and it needs a test on a silo running the REAL CoordinatesOnlyGeocoder — every other grain test
+    // uses FakeGeocoder, which always resolves, so this path never executes there.
+    [Fact]
+    public async Task GetCurrentLocation_WithoutAGeocodingKey_ReturnsCoordinatesWithoutAnAddress()
+    {
+        await using var cluster = await NewClusterAsync<CoordinatesOnlyGeocoderSiloConfigurator>();
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("no-geocoder-conversation");
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("where am i", null, null, Dam()))
+        {
+            events.Add(evt);
+        }
+
+        var result = ToolResult(events);
+
+        // The coordinates are there…
+        Assert.Contains("52.3676", result);
+        Assert.Contains("4.9041", result);
+        // …the tool did not throw, did not claim the user is unknown, and did not invent a street.
+        Assert.DoesNotContain("has not shared their location", result);
+        Assert.Contains("no street address could be resolved", result);
+        Assert.DoesNotContain(FakeGeocoder.Address, result);
+    }
+
+    // AC13 — the tool exposes NO parameters to the model, and that is a security property, not a style
+    // choice: it is half of why the outbound geocode call is not an SSRF sink (the other half is the
+    // config-pinned host). A later contributor adding a `[Description("address")] string` parameter
+    // would silently turn it into one — with the reassuring "not an SSRF sink" comment still sitting
+    // above it. So the shape is pinned here rather than trusted to a comment.
+    //
+    // Asserts on the JSON SCHEMA the model actually sees — not the CLR signature — because the schema is
+    // what the security property is actually about. (The method does take a CancellationToken;
+    // AIFunctionFactory supplies that from the invocation context and keeps it out of the schema, so the
+    // model can neither see nor set it. Asserting on the signature would therefore fail for a parameter
+    // that is not a parameter as far as the model is concerned.) Built from the very method the grain
+    // registers; an uninitialized instance is enough, since building an AIFunction reads the signature
+    // rather than invoking it.
+    [Fact]
+    public void GetCurrentLocation_ExposesNoParameters()
+    {
+        var method = typeof(AgentGrain).GetMethod(
+            "GetCurrentLocationAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        // Nothing the model could put a host, a path, or an address into.
+        Assert.All(
+            method!.GetParameters(),
+            p => Assert.Equal(typeof(CancellationToken), p.ParameterType));
+
+        var function = AIFunctionFactory.Create(
+            method, RuntimeHelpers.GetUninitializedObject(typeof(AgentGrain)));
+
+        Assert.False(
+            function.JsonSchema.TryGetProperty("properties", out var properties)
+                && properties.EnumerateObject().Any(),
+            "get_current_location must expose no parameters to the model (ADR 0012).");
     }
 
     private static async Task<TestCluster> NewClusterAsync<TConfigurator>()
@@ -791,6 +961,27 @@ public sealed class AgentGrainTests : IAsyncLifetime
 
         return events;
     }
+
+    // Same, but the turn carries the user's position — the shape a located chat request takes (ADR 0012).
+    private static async Task<List<AgentStreamEvent>> ChatAt(
+        IAgentGrain agent, string message, UserLocation location)
+    {
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync(message, null, null, location))
+        {
+            events.Add(evt);
+        }
+
+        return events;
+    }
+
+    // The tool result produced by THIS turn, straight off the stream. Use it instead of the reply text
+    // whenever a test needs to isolate one turn: the fake echoes every tool result the model can see,
+    // and results from earlier turns are replayed to it from history.
+    private static string ToolResult(IEnumerable<AgentStreamEvent> events) =>
+        string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.ToolCallEnd)
+            .Select(e => e.ToolResult));
 
     private static string Answer(IEnumerable<AgentStreamEvent> events) =>
         string.Concat(events
