@@ -1021,6 +1021,39 @@ body {
   background: var(--amber-glow);
 }
 
+/* "Share my location" — a one-time grant control (ADR 0012), hidden once the browser has
+   authorized us. Deliberately quiet: it is an affordance, not a call to action. */
+
+.composer__location {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  cursor: pointer;
+  font: 500 11.5px var(--mono);
+  letter-spacing: 0.03em;
+  color: var(--ink-dim);
+  padding: 5px 11px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.composer__location:hover:not(:disabled) {
+  color: var(--amber);
+  border-color: var(--amber-deep);
+}
+
+.composer__location:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.composer__location[hidden] {
+  display: none;
+}
+
 /* ————— agent form dialog ————— */
 
 .agent-dialog {

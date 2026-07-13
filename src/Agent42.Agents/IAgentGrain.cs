@@ -15,10 +15,15 @@ public interface IAgentGrain : IGrainWithStringKey
     /// that model for this and subsequent turns; null keeps the current model.
     /// <paramref name="attachments"/> are images to send alongside the text as a multimodal
     /// turn; null or empty is a plain text turn. The default keeps existing 2-arg callers working.
+    /// <paramref name="location"/> is the browser's current position, if it has one and the user has
+    /// authorized sharing it — see <see cref="UserLocation"/> for why a position has to ride the chat
+    /// request rather than be fetched by the tool. It is <b>turn-scoped</b>: the grain never persists
+    /// it, so a later turn without one does not inherit this turn's fix (ADR 0012).
     /// </summary>
     [Alias("ChatAsync")]
     IAsyncEnumerable<AgentStreamEvent> ChatAsync(
-        string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null);
+        string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
+        UserLocation? location = null);
 
     /// <summary>
     /// Returns the model deployment this conversation is currently using, so the UI can

@@ -89,6 +89,10 @@ param searxngMemory string
 @description('Secret key SearXNG signs its state with. Any long random string; supplied as the SEARXNG_SECRET GitHub Actions secret. The container refuses to start without it.')
 param searxngSecret string
 
+@secure()
+@description('Google Cloud API key with the Geocoding API enabled (ADR 0012). OPTIONAL: when empty, neither the secret nor the env var below is emitted at all, and the app degrades to coordinates-only reverse geocoding rather than failing to deploy. An empty-valued Container App secret is not a thing worth risking for a feature that is not on the availability path.')
+param googleMapsApiKey string = ''
+
 @description('Minimum replica count. Orleans localhost clustering (used by this single-instance deployment) only supports one instance.')
 param minReplicas int
 
@@ -141,20 +145,32 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           passwordSecretRef: 'registry-password'
         }
       ]
-      secrets: [
-        {
-          name: 'registry-password'
-          value: registryPassword
-        }
-        {
-          name: 'microsoft-provider-authentication-secret'
-          value: authClientSecret
-        }
-        {
-          name: 'searxng-secret'
-          value: searxngSecret
-        }
-      ]
+      // The geocoding key is appended only when one was supplied — an absent key must not fail the
+      // deployment (ADR 0012), and a secret with an empty value is not worth finding out about in prod.
+      secrets: concat(
+        [
+          {
+            name: 'registry-password'
+            value: registryPassword
+          }
+          {
+            name: 'microsoft-provider-authentication-secret'
+            value: authClientSecret
+          }
+          {
+            name: 'searxng-secret'
+            value: searxngSecret
+          }
+        ],
+        empty(googleMapsApiKey)
+          ? []
+          : [
+              {
+                name: 'google-maps-api-key'
+                value: googleMapsApiKey
+              }
+            ]
+      )
     }
     template: {
       containers: [
@@ -165,7 +181,7 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             cpu: json(cpu)
             memory: memory
           }
-          env: [
+          env: concat([
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'ConnectionStrings__cosmos', value: cosmosAccountEndpoint }
             { name: 'Storage__BlobEndpoint', value: blobEndpoint }
@@ -187,12 +203,18 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             // so it is reached over localhost and is unreachable from outside by construction — no
             // second ingress, and Easy Auth still fronts the only exposed port (ADR 0002).
             { name: 'WebSearch__Endpoint', value: 'http://localhost:8888' }
-          ]
+          ],
+          // Reverse geocoding for get_current_location (ADR 0012). Emitted only when a key was
+          // supplied: with no key the backend registers CoordinatesOnlyGeocoder and starts normally.
+          empty(googleMapsApiKey)
+            ? []
+            : [{ name: 'Geocoding__GoogleApiKey', secretRef: 'google-maps-api-key' }])
         }
-        // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume, no API
-        // key, and no query leaves our infrastructure. A thin image over upstream SearXNG with our
-        // settings.yml baked in (infra/searxng) — `search.formats` must include `json` or the API
-        // answers 403.
+        // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume and no API
+        // key. NOT private, though — SearXNG is a *meta*search engine and forwards every query on to
+        // DuckDuckGo/Bing; what self-hosting buys is no key, no bill and no per-user attribution, not
+        // confidentiality. A thin image over upstream SearXNG with our settings.yml baked in
+        // (infra/searxng) — `search.formats` must include `json` or the API answers 403.
         {
           name: 'searxng'
           image: searxngImage

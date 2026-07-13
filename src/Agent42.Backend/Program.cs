@@ -180,6 +180,40 @@ builder.Services.AddSingleton<IWebSearch>(sp => new SearxngWebSearch(
 builder.Services.AddSingleton<IWebPageFetcher>(sp => new WebPageFetcher(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient(WebPageFetcher.HttpClientName)));
 
+// User location (ADR 0012): reverse-geocoding for the get_current_location tool.
+//
+// Unlike the embedding deployment above, a missing key is NOT eager-validated into a startup throw —
+// it degrades. Without a key the tool still works and still reports the user's coordinates; it just
+// cannot name the street. That is why this branch exists rather than a null check at the call site.
+var googleApiKey = builder.Configuration["Geocoding:GoogleApiKey"];
+if (!string.IsNullOrWhiteSpace(googleApiKey))
+{
+    var geocodingBaseAddress =
+        builder.Configuration["Geocoding:BaseAddress"] ?? GoogleGeocoder.DefaultBaseAddress;
+
+    // Same explicit-timeout / no-retry discipline as the web clients above, and for the same reason:
+    // AgentGrain is non-reentrant, so a retried geocode multiplies the stall on the user's turn. 5s,
+    // because the user's turn is blocked on it — and a geocode that hasn't answered by then is not
+    // worth the wait (the tool degrades to coordinates).
+#pragma warning disable EXTEXP0001
+    builder.Services.AddHttpClient(GoogleGeocoder.HttpClientName, http =>
+    {
+        http.BaseAddress = new Uri(geocodingBaseAddress);
+        http.Timeout = TimeSpan.FromSeconds(5);
+    })
+        .RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
+
+    builder.Services.AddSingleton<IGeocoder>(sp => new GoogleGeocoder(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(GoogleGeocoder.HttpClientName),
+        googleApiKey,
+        sp.GetRequiredService<ILogger<GoogleGeocoder>>()));
+}
+else
+{
+    builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
+}
+
 // Live catalog of the deployed models, queried through the Azure Resource Manager SDK.
 builder.Services.AddSingleton(new ArmClient(credential));
 builder.Services.AddSingleton<IModelCatalog>(sp => new AzureModelCatalog(
@@ -229,6 +263,16 @@ var app = builder.Build();
 // Construct the default chat client now (no network I/O) so configuration mistakes
 // surface at startup instead of failing the first grain activation.
 _ = app.Services.GetRequiredService<IChatClientFactory>().GetClient(null);
+
+// Say so once, loudly enough to find, when the location tool is running without reverse geocoding —
+// otherwise "it only ever gives me coordinates" is a silent mystery (ADR 0012). Not a throw: an absent
+// key degrades the feature, it does not take the app down.
+if (app.Services.GetRequiredService<IGeocoder>() is CoordinatesOnlyGeocoder)
+{
+    app.Logger.LogInformation(
+        "Geocoding:GoogleApiKey is not configured — get_current_location will report coordinates " +
+        "without a street address. Set Geocoding__GoogleApiKey to enable reverse geocoding.");
+}
 
 // First in the pipeline: extract the request's identity once and publish it into Orleans
 // RequestContext, so it propagates to every downstream span — in-request HttpClient spans and,

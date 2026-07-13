@@ -37,6 +37,10 @@ param searxngImageTag string = 'latest'
 param searxngSecret string
 
 @secure()
+@description('Google Cloud API key with the Geocoding API enabled, for reverse-geocoding the user\'s position (ADR 0012 — the GOOGLE_MAPS_API_KEY GitHub Actions secret). A manual prerequisite, but deliberately OPTIONAL: unlike searxngSecret there is no @minLength guard and the default is empty, because an absent key must NOT fail the deployment. It is not on the availability path — the app starts fine without it and get_current_location simply reports coordinates with no street address.')
+param googleMapsApiKey string = ''
+
+@secure()
 @description('Admin username for the Azure Container Registry (used for image pull).')
 param acrAdminUsername string
 
@@ -187,6 +191,7 @@ module containerApp 'modules/container-app.bicep' = {
     searxngCpu: searxngCpu
     searxngMemory: searxngMemory
     searxngSecret: searxngSecret
+    googleMapsApiKey: googleMapsApiKey
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint

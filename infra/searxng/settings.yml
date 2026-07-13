@@ -1,9 +1,9 @@
 use_default_settings:
   engines:
     keep_only:
+      - google
       - duckduckgo
       - bing
-      - wikipedia
 
 general:
   instance_name: "Agent 42 search"
@@ -31,9 +31,9 @@ search:
   # ?format=json request returns HTTP 403 — which reads like an auth failure and is the most
   # likely way this integration "mysteriously" breaks.
   formats:
-    - html
     - json
-  safe_search: 1
+    - html
+  safe_search: 0
   autocomplete: ""
   default_lang: "en"
 

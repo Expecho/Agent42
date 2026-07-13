@@ -89,6 +89,42 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.Contains(turns!, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
     }
 
+    // AC9 — a valid position on the request reaches the grain, and the tool resolves it to an address.
+    // Asserted end-to-end on the NDJSON stream (the address is FakeGeocoder's canned one), because the
+    // whole point of this step is the hand-off from HTTP request to grain call.
+    [Fact]
+    public async Task Chat_ForwardsLocation()
+    {
+        using var chat = await _client.PostAsJsonAsync(
+            "/api/chat/api-location-conversation",
+            new ChatRequest("where am i", null, null, null, new UserLocation(52.3676, 4.9041, 12)));
+
+        chat.EnsureSuccessStatusCode();
+        var body = await chat.Content.ReadAsStringAsync();
+
+        Assert.Contains(FakeGeocoder.Address, body);
+    }
+
+    // AC9 — an out-of-range fix is DROPPED, not rejected. A bad position must cost the user their
+    // location for this turn, never their turn: the request still succeeds and the tool simply reports
+    // the position as unknown. (A hand-rolled body is the only way to get here — the browser cannot
+    // produce a latitude of 999.)
+    [Theory]
+    [InlineData(999, 4.9041)]
+    [InlineData(52.3676, 999)]
+    public async Task Chat_DropsOutOfRangeLocation(double latitude, double longitude)
+    {
+        using var chat = await _client.PostAsJsonAsync(
+            $"/api/chat/api-bad-location-{latitude}-{longitude}",
+            new ChatRequest("where am i", null, null, null, new UserLocation(latitude, longitude)));
+
+        chat.EnsureSuccessStatusCode();
+        var body = await chat.Content.ReadAsStringAsync();
+
+        Assert.Contains("has not shared their location", body);
+        Assert.DoesNotContain(FakeGeocoder.Address, body);
+    }
+
     [Fact]
     public async Task DeleteConversation_RemovesItFromTheListAndClearsHistory()
     {

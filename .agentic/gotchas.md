@@ -176,14 +176,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   pipeline (resilience + service discovery + the guarded primary handler) is assembled in `Program.cs` and
   is not what the unit tests construct, so no test will catch this for you.
 - **Evidence:** `src/Agent42.ServiceDefaults/Extensions.cs` (`ConfigureHttpClientDefaults`),
-  `src/Agent42.Backend/Program.cs` (`RemoveAllResilienceHandlers` on both web clients)
-- **Verified:** 2026-07-12
+  `src/Agent42.Backend/Program.cs` (`RemoveAllResilienceHandlers` on all three named clients — the two
+  web tools and the geocoding client, ADR 0012; every new named client needs it)
+- **Verified:** 2026-07-13
 
 ### SearXNG is self-hosted, NOT private — it forwards every query to DuckDuckGo/Bing
 
 - **Claim:** "self-hosted search" reads like "the query never leaves our infrastructure". It does leave.
   SearXNG is a ***meta*search** engine: it forwards each query to the upstream engines enabled in
-  `infra/searxng/settings.yml` (`duckduckgo`, `bing`, `wikipedia`). What self-hosting actually buys is
+  `infra/searxng/settings.yml` (currently `google`, `duckduckgo`, `bing` — read the `keep_only:` list,
+  it changes). What self-hosting actually buys is
   **no API key, no per-query bill, and no per-user attribution** — queries arrive at the upstream engines
   unauthenticated from the container's IP. That is the claim to make; the privacy one is false, and it
   was wrong in five places in the first draft of this feature (including in the `websearch` SKILL.md,
@@ -210,10 +212,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   namespace and talk over localhost). The port move lives in `container-app.bicep` / `AppHost.cs`, not in
   the config file. Upstream ships rolling date tags, so the Dockerfile pins an immutable one, never
   `latest`.
+  (3) **A per-request `&safesearch=` parameter silently OVERRIDES the instance's `search.safe_search`.**
+  `SearxngWebSearch` used to hardcode `&safesearch=1` on every query, which made `safe_search:` in
+  `settings.yml` **dead config** — the file could say `0` while every actual query asked for `1`, and
+  nothing said so. The client now sends no `safesearch` parameter at all, so the instance owns the policy
+  and the config file means what it says. Same trap shape as `server.port` above: a setting that looks
+  authoritative but is overridden elsewhere. (Current instance policy: `safe_search: 0`.)
 - **Evidence:** `infra/searxng/settings.yml`, `infra/searxng/Dockerfile`,
   `infra/modules/container-app.bicep` (`SEARXNG_PORT`), `src/Agent42.Backend/SearxngWebSearch.cs`
-  (the 403 message names the cause)
-- **Verified:** 2026-07-12
+  (the 403 message names the cause; no `safesearch` on the query string)
+- **Verified:** 2026-07-13
 
 ### Container Apps bills the per-replica total across ALL containers in the replica
 
@@ -228,6 +236,84 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `infra/main.bicep` (`containerCpu`/`containerMemory` + `searxngCpu`/`searxngMemory`),
   `infra/modules/container-app.bicep` (two containers in `template.containers`)
 - **Verified:** 2026-07-12
+
+### A grain's turn-scoped field lives for the ACTIVATION — clear it explicitly, or a reminder reuses it
+
+- **Claim:** `AgentGrain._turnLocation` holds the user's position for the turn being processed (ADR 0012),
+  and it reads like per-call state. **It is not: a private field lives for the grain *activation*.** So
+  "the reminder path just leaves it null" is *false* — `ReceiveReminder` is a separate call on the same
+  activation, and after any located chat turn the field is still populated. Left alone, a scheduled prompt
+  would confidently announce where the user was hours ago, from somewhere else. **Non-reentrancy is not the
+  argument that makes it safe** either — `ChatAsync` is an `IAsyncEnumerable` method that suspends between
+  `yield return`s. The only thing that makes it safe is clearing it explicitly, and it is cleared in *two*
+  places: a `finally` in `ChatAsync` (which also runs when a client abandons the stream, on the
+  enumerator's disposal) and an assignment to null on entry to `ReceiveReminder`. Each masks the other, so
+  neither is individually load-bearing in the happy path — but remove **both** and
+  `ReceiveReminder_HasNoUserLocation` fails (verified by mutation). Any future per-turn field on this grain
+  inherits this trap; PII especially should not sit in memory between turns.
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`_turnLocation`, the `finally` in `ChatAsync`, the
+  clear in `ReceiveReminder`), `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`ReceiveReminder_HasNoUserLocation`, `Location_IsTurnScoped_AndNotPersisted`),
+  `.agentic/decisions/0012-user-location-google-geocoding.md`
+- **Verified:** 2026-07-13
+
+### `get_current_location` is NOT an SSRF sink — and exactly two properties keep it that way
+
+- **Claim:** it makes an outbound HTTP call from the same container whose managed identity IMDS will mint
+  Cosmos/Storage/OpenAI tokens for — the setup that made `fetch_web_page` dangerous — yet it deliberately
+  has **no `PrivateAddressGuard`**, and adding one to "fix the asymmetry" would be cargo cult. The claim
+  rests on two properties, and **both are load-bearing**: (1) the host is **fixed** (`maps.googleapis.com`,
+  config-pinned, never model-supplied), and (2) the tool takes **zero model-supplied parameters** — the
+  only variable input is a lat/lon pair from the *browser*, range-validated server-side, and a `double`
+  cannot inject a host. The failure mode is a later contributor dissolving property (2) without noticing:
+  adding a `[Description("address to look up")] string` parameter turns this into a genuine SSRF sink
+  **while the reassuring comment still sits above it**. A comment cannot defend itself, so the shape is
+  pinned by `GetCurrentLocation_ExposesNoParameters`, which asserts the JSON schema the model actually sees
+  has no properties. If you ever need the model to name a place, that is *forward* geocoding — a different
+  tool, and it needs the guard.
+- **Evidence:** `src/Agent42.Backend/GoogleGeocoder.cs`, `src/Agent42.Agents/AgentGrain.cs`
+  (`GetCurrentLocationAsync`), `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`GetCurrentLocation_ExposesNoParameters`), `.agentic/decisions/0012-user-location-google-geocoding.md`
+- **Verified:** 2026-07-13
+
+### WebKit has no geolocation Permissions API — gating on `state === "granted"` is dead on iOS
+
+- **Claim:** `navigator.permissions.query({name: "geolocation"})` is **not supported in WebKit** — every
+  browser on iOS/iPadOS — where it **rejects** rather than reporting a state. So the obvious design for
+  "auto-attach the position once the user has granted permission" — gate purely on `state === "granted"` —
+  is **silently dead on every iPhone**: the user taps grant, no fix is ever attached, and the grant button
+  never hides. The authorization gate is therefore **two-legged**: the Permissions API where it exists
+  (Chrome/Edge/Firefox, desktop + Android), and otherwise a `localStorage` flag set **only after a
+  `getCurrentPosition()` actually succeeded** (an already-granted permission resolves without re-prompting,
+  so capture under the flag never ambushes the user), cleared on a `PERMISSION_DENIED` (code 1) from any
+  later capture — which is how a revocation in site settings gets noticed. Related and separate: the send
+  path must **never** call `getCurrentPosition()` or await a fix — an awaited high-accuracy acquisition adds
+  seconds to *every* message once the cached fix goes stale, so the fix is refreshed out of band and the
+  send path reads the cache synchronously. The C# asset tests are source-text heuristics (no JS runner in
+  the repo), so they cannot catch an engine deviation: **retest on a real iOS device** — same class of trap
+  as the Chrome-on-Android speech gotcha.
+- **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (`isCaptureAuthorized`, `currentLocationForSend`,
+  `handlePositionError`), `tests/Agent42.Tests/LocationAssetsTests.cs`,
+  `.agentic/decisions/0012-user-location-google-geocoding.md`
+- **Verified:** 2026-07-13
+
+### OTel redacts an HttpClient span's query string by default — and one env var un-redacts it
+
+- **Claim:** `AddServiceDefaults` turns on `AddHttpClientInstrumentation()`, and `UserTelemetrySpanProcessor`
+  stamps `user.email`/`user.full_name`/`user.roles` onto **every** span started under a request identity
+  (ADR 0010) — so an outbound span joins *a named human* to whatever is in that request's URL. For the
+  geocode call that URL's query string carries **the Google API key and the user's exact coordinates**. A
+  spike settled the actual behaviour rather than trusting it: **OpenTelemetry.Instrumentation.Http 1.15.1
+  redacts the query string by default**, recording `url.full` as `http://…/maps/api/geocode/json?*`. So no
+  scrubbing is needed today — but this is a **library default, not a guarantee we own**: setting
+  `OTEL_DOTNET_EXPERIMENTAL_HTTPCLIENT_DISABLE_URL_QUERY_REDACTION=true` (or an instrumentation upgrade that
+  changes the default) would immediately start shipping the key and the user's position to the OTLP
+  collector, attributed to them by name. If you enable that flag, scrub or filter `url.full` for the
+  geocoding client first. Note this cuts the other way too: any *new* named client whose query string holds
+  a secret is protected only by the same default.
+- **Evidence:** `src/Agent42.ServiceDefaults/Extensions.cs` (`AddHttpClientInstrumentation`),
+  `src/Agent42.Backend/UserTelemetrySpanProcessor.cs`, `src/Agent42.Backend/GoogleGeocoder.cs`
+- **Verified:** 2026-07-13
 
 ### Cosmos containers must be pre-declared in Bicep
 

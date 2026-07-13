@@ -72,8 +72,13 @@ public static class AgentApi
                 model = null;
             }
 
+            // A bad fix is dropped, not rejected: the browser is the only source of a position, and a
+            // nonsense one (or a hand-rolled request body) must cost the user their location for this
+            // turn — not their whole turn. The grain then simply reports the position as unknown.
+            var location = request.Location is { IsValid: true } fix ? fix : null;
+
             http.Response.ContentType = "application/x-ndjson";
-            await foreach (var evt in agent.ChatAsync(request.Message, model, attachmentRefs))
+            await foreach (var evt in agent.ChatAsync(request.Message, model, attachmentRefs, location))
             {
                 await http.Response.WriteAsync(JsonSerializer.Serialize(evt, StreamEventJson) + "\n");
                 await http.Response.Body.FlushAsync();
@@ -244,10 +249,13 @@ public static class AgentApi
 }
 
 // AgentId is the stored agent to bind on the first turn of an agent chat; AttachmentIds are
-// the ids returned by the upload endpoint for images to send with this turn. Both are trailing
-// defaults so existing positional callers (new ChatRequest("hi", null)) keep compiling.
+// the ids returned by the upload endpoint for images to send with this turn; Location is the
+// browser's current position, when the user has authorized sharing it (ADR 0012) — it rides the
+// chat request because a server-side tool cannot ask the browser for a fix mid-turn. All are
+// trailing defaults so existing positional callers (new ChatRequest("hi", null)) keep compiling.
 public record ChatRequest(
-    string Message, string? Model, string? AgentId = null, IReadOnlyList<string>? AttachmentIds = null);
+    string Message, string? Model, string? AgentId = null, IReadOnlyList<string>? AttachmentIds = null,
+    UserLocation? Location = null);
 
 // What the upload endpoint returns for an image: the id to send back on the next turn plus the
 // metadata needed to render a preview. The internal blob path is deliberately omitted.

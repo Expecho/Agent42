@@ -45,6 +45,11 @@ builder.Services.AddSingleton<DocumentIngestionService>();
 builder.Services.AddSingleton<IWebSearch, InMemoryWebSearch>();
 builder.Services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
 
+// Location offline (ADR 0012): the get_current_location tool path runs end to end — the browser's real
+// fix rides the chat request — but nothing is reverse-geocoded, so no Google API key is needed and no
+// request leaves the machine. The tool reports coordinates without a street address.
+builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
+
 builder.UseOrleans(silo =>
 {
     silo.UseLocalhostClustering();
