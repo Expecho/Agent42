@@ -179,6 +179,25 @@ public sealed class FakeChatClient : IChatClient
             ["url"] = "https://example.com/result-1",
         });
 
+    // The location tool takes NO arguments — the model cannot supply coordinates (ADR 0012), so the
+    // call carries an empty argument dictionary. ToolResultEcho then surfaces whatever the grain
+    // returned into the reply text, which is what the location tests assert on.
+    private static FunctionCallContent BuildGetCurrentLocationCall() =>
+        new("location-call-1", "get_current_location", new Dictionary<string, object?>());
+
+    // Schedules a reminder whose PROMPT asks where the user is. When it later fires, that prompt comes
+    // back in as a user message and this client answers it with a get_current_location call — which is
+    // what lets ReceiveReminder_HasNoUserLocation observe the tool on the reminder path. Without it,
+    // nothing on that path would ever call the tool, and a stale turn-scoped fix would go unnoticed.
+    private static FunctionCallContent BuildLocationReminderCall() =>
+        new("location-reminder-call-1", "schedule_prompt", new Dictionary<string, object?>
+        {
+            ["name"] = "location-check",
+            ["prompt"] = "where am i",
+            ["dueInMinutes"] = 1.0,
+            ["repeatEveryMinutes"] = 60.0,
+        });
+
     // Simulates a prompt-injected model: a URL the user never wrote and no search ever returned, with
     // the conversation's contents in the query string. The exfiltration channel FetchableUrls exists
     // to close, so the grain must refuse it.
@@ -277,6 +296,18 @@ public sealed class FakeChatClient : IChatClient
         if (text.Contains("look up", StringComparison.OrdinalIgnoreCase))
         {
             return BuildWebSearchCall(text);
+        }
+
+        // Location (ADR 0012). Neither trigger collides with the cancel/remind branches above —
+        // "schedule a location check" contains neither "cancel" nor "remind".
+        if (text.Contains("schedule a location check", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildLocationReminderCall();
+        }
+
+        if (text.Contains("where am i", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildGetCurrentLocationCall();
         }
 
         return null;

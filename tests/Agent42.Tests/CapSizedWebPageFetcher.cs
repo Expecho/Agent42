@@ -42,8 +42,12 @@ public sealed class CapSizedFetcherSiloConfigurator : ISiloConfigurator
                 new SingleChatClientFactory(sp.GetRequiredService<IChatClient>(), "fake-model"));
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             services.AddDocumentRagFakes();
+            // Deliberately NOT AddWebToolFakes(): this silo swaps in the cap-sized fetcher. That makes it
+            // the one configurator where a new grain dependency has to be added by hand — miss it and
+            // every activation on THIS silo fails (which is where the session-budget test runs).
             services.AddSingleton<IWebSearch, InMemoryWebSearch>();
             services.AddSingleton<IWebPageFetcher, CapSizedWebPageFetcher>();
+            services.AddSingleton<IGeocoder, FakeGeocoder>();
         });
     }
 }

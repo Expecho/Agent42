@@ -109,4 +109,18 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   `fetch_web_page` is an SSRF sink **and** a prompt-injection exfiltration channel (its allowlist pins
   whole URLs, not hosts — a host allowlist is bypassable); and a named `HttpClient` silently inherits
   `AddServiceDefaults`' retry pipeline. All three are in gotchas.
+- User location (ADR 0012): a `get_current_location` tool returning the user's coordinates and a
+  reverse-geocoded street address. `navigator.geolocation` is a *browser* API and tools run server-side,
+  and the chat path is a one-way NDJSON stream — so a tool cannot ask the browser for a fix mid-turn. The
+  position therefore **rides the chat request** (`ChatRequest.Location` → `ChatAsync(…, location)`) into a
+  **turn-scoped grain field that must be cleared explicitly** (it lives for the *activation*, not the call
+  — see gotchas; that is the bug the reminder-path test exists to catch). A **`GOOGLE_MAPS_API_KEY` GitHub
+  Actions secret is a manual prerequisite** — a Google Cloud key with the **Geocoding API** enabled and
+  restricted to it — but unlike `SEARXNG_SECRET` it is deliberately **not on the availability path**: with
+  no key the app starts normally and the tool reports coordinates without an address. Three things to read
+  before touching this: the tool is **not** an SSRF sink and must not grow a `PrivateAddressGuard` (two
+  narrow properties keep that true, and a test pins them); the browser's authorization gate is
+  **two-legged** because WebKit/iOS has no geolocation Permissions API; and this feature puts the user's
+  **street address** into a conversation that the ADR 0011 exfiltration channel can still drain — the
+  `websearch` skill only *mitigates* that. All three are in gotchas.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

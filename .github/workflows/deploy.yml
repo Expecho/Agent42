@@ -93,6 +93,7 @@ jobs:
               acrAdminPassword="$acr_password" \
               authClientSecret="${{ secrets.AAD_CLIENT_SECRET }}" \
               searxngSecret="${{ secrets.SEARXNG_SECRET }}" \
+              googleMapsApiKey="${{ secrets.GOOGLE_MAPS_API_KEY }}" \
               cosmosLocation="northeurope" \
               otlpEndpoint="http://home.peterbons.nl:4317" \
             --query properties.outputs.containerAppPrincipalId.value -o tsv)
