@@ -315,6 +315,118 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/UserTelemetrySpanProcessor.cs`, `src/Agent42.Backend/GoogleGeocoder.cs`
 - **Verified:** 2026-07-13
 
+### A GitHub model id contains a `/`, so the provider separator is `:` — and the split is on the FIRST colon
+
+- **Claim:** the obvious separator for a qualified model id is `/`, and it is **wrong**: GitHub Models'
+  *own* ids are `publisher/name` (`openai/gpt-4o-mini`), so `provider/model` cannot be split
+  unambiguously. Ids are **`<provider>:<model>`, split on the FIRST colon**; everything after it is the
+  provider's opaque string and is never parsed further (an Ollama tag like `ollama:llama3.1:8b` survives
+  intact). The load-bearing consequence is the *other* branch: an id with **no** colon is a **legacy** id
+  and resolves against the default provider — that is the entire reason ADR 0013 needed **no state
+  migration**, because every conversation persisted before it holds a bare `gpt-4o`. Related, and easy to
+  get wrong in the same breath: `AgentGrainState.DeploymentName` **keeps its name and its `[Id(2)]`** even
+  though it now holds a qualified id. Which serializer the Cosmos grain-storage provider actually uses
+  (Orleans binary field-ids vs. JSON property names) is **unverified**, and if it is JSON, renaming the
+  property silently orphans the model on every existing conversation.
+- **Evidence:** `src/Agent42.Backend/ModelProviderOptions.cs` (`ModelId.Parse`),
+  `src/Agent42.Agents/AgentGrainState.cs` (`DeploymentName` + its comment),
+  `tests/Agent42.Tests/ModelIdTests.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`LegacyPersistedModel_StillResolves`), `.agentic/decisions/0013-multi-provider-model-catalog.md`
+- **Verified:** 2026-07-14
+
+### `AgentSkillsProvider` is a TOOL — a no-tools model must drop it too, and the RAG provider must NOT be dropped
+
+- **Claim:** gating a model with `SupportsTools: false` looks like it means "pass `Tools = []`". It does
+  not: `AgentSkillsProvider` exposes a **`load_skill` function** to the model, and it is registered as an
+  `AIContextProvider`, not in the `Tools` list — so dropping the seven `AIFunctionFactory` tools while
+  leaving the skills provider on still hands the model a function schema it cannot handle (on GitHub
+  Models, `microsoft/phi-4` answers a tools request with a flat **HTTP 400**). The two context providers
+  are therefore gated **differently, on purpose**: the skills provider goes when tools go, while the
+  document `TextSearchProvider` (ADR 0008) is **not** a tool — it *injects* excerpts before the call — and
+  must stay on regardless, or a document conversation silently loses retrieval the moment it moves to a
+  text-only model. The asymmetry is invisible in the types; both are just `AIContextProviders` entries.
+  `FakeChatClient` echoes the tool schemas it is handed **by name** (`[tools:a,b,c]`) rather than a count,
+  precisely so the "and no `load_skill`" half is assertable.
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent`'s `AIContextProviders` switch),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`NoToolModel_RegistersNoTools_AndNoSkillsProvider`,
+  `NoToolModel_StillGetsDocumentRetrieval`), `tests/Agent42.Tests/FakeChatClient.cs` (`ToolsEcho`)
+- **Verified:** 2026-07-14
+
+### Withholding images from a no-vision model must cover HISTORY, not just the new turn
+
+- **Claim:** "don't attach the image when the model can't see it" is only half the gate, and the missing
+  half is the one that leaks. Prior turns' image parts **live on in the serialized session** and are
+  replayed to the model on every later turn (which is also why `RehydrateAttachmentUrlsAsync` exists at
+  all) — so a conversation that switches to a text-only model would still ship **every earlier image URL**
+  to it. That URL is a **SAS into our private `attachments` container** (ADR 0004), and a third-party
+  model's host really does fetch what it is given (ADR 0013 spike confirmed it against GitHub Models) — so
+  this hands a live credential-bearing URL to an endpoint outside the tenant, for an image it cannot even
+  read. The withholding is done in the rehydrate pass and is **reversible**: it reads `TurnAttachments`
+  (the durable per-turn record) rather than deleting parts, so switching back to a vision model
+  *restores* them. A destructive strip would blind the conversation's history forever after one visit to
+  a text-only model. Note the test marker: `[img:N]` counts only the **last** user message, so it cannot
+  see this bug — `[allimg:N]`, which counts image parts across the whole request, is the one that can.
+- **And stripping the parts is not enough: an IMAGE-ONLY turn is left EMPTY.** The composer deliberately
+  allows a blank-text turn with a photo attached, so that message's *only* content part is the image.
+  Remove it and the message has **zero** content parts — which OpenAI-compatible endpoints reject
+  outright, bricking the conversation on precisely the third-party model this feature exists for. It gets
+  a **placeholder `TextContent`** instead. (`StripToolHistory` can simply drop an emptied message; this
+  cannot — the `TurnAttachments`↔user-turn join is **positional**, so dropping a turn misaligns every
+  image after it.) A `FakeChatClient` cannot reject an empty message the way the real service does, so
+  the test for this would pass vacuously — hence the `[emptymsg:N]` echo, which makes the property
+  observable. Mutation-checked: remove the placeholder and `NoVisionModel_ImageOnlyTurn_StillReplies`
+  fails.
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`RehydrateAttachmentUrlsAsync(bool includeImages)`,
+  `StripImageParts`, `WithheldImagePlaceholder`), `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`NoVisionModel_SendsNoImageContent`, `NoVisionModel_ImageOnlyTurn_StillReplies_AndSendsNoImage`),
+  `tests/Agent42.Tests/FakeChatClient.cs` (`AllImagesEcho`, `EmptyMessageEcho`)
+- **Verified:** 2026-07-14
+
+### The Foundry provider's endpoint + ARM coordinates are INHERITED — never copy them into `Models:`
+
+- **Claim:** the `foundry` provider in `appsettings.json` deliberately declares **none** of `Endpoint`,
+  `SubscriptionId`, `ResourceGroup`, `AccountName`, and that emptiness is load-bearing rather than an
+  omission: all four fall back to the top-level **`AzureOpenAI:*`** keys, which Bicep threads in as env
+  vars (`AzureOpenAI__Endpoint`) and which the **embedding client** — explicitly out of scope for
+  multi-provider — also reads. Copying the endpoint into `Models:Providers:foundry:Endpoint` creates a
+  second source of truth, and prod then silently talks to whatever appsettings says while the Bicep param
+  points somewhere else. Declaring all four is exactly how a **second** Foundry account is added (and it
+  must be all four: `AzureModelCatalog` is constructed **per discovering provider** with *its own*
+  coordinates — a single shared catalog reading the three global keys would make account #2 enumerate
+  account #1's deployments and label them as its own, which is silently wrong rather than a failure).
+  Two things a second account does **not** get for free: embeddings stay on the primary account, and its
+  managed-identity *Cognitive Services OpenAI User* grant is a manual step.
+- **The same rule governs `Models:Default`, and it is easy to miss.** `AzureOpenAI:DeploymentName` is
+  threaded in by Bicep (`AzureOpenAI__DeploymentName`), so `Models:Default` is left **empty** in
+  appsettings and derived as `foundry:<AzureOpenAI:DeploymentName>`. Hardcoding `"foundry:gpt-4o"` there
+  — which the first draft did — silently overrides the env var and turns the Bicep param into **dead
+  config**: it looks authoritative and changes nothing. Exactly the trap shape as SearXNG's inert
+  `server.port` below.
+- **Evidence:** `src/Agent42.Backend/ModelProviderOptions.cs` (`ProviderSettings.ResolveFoundry`),
+  `src/Agent42.Backend/ModelProviderBuilder.cs`, `src/Agent42.Backend/Program.cs` (the `Models:Default`
+  fallback), `src/Agent42.Backend/appsettings.json` (the `"//Default"` and `foundry` comments),
+  `tests/Agent42.Tests/ModelProviderTests.cs`
+  (`TwoFoundryProviders_ResolveOwnCoordinates_AndInheritWhenAbsent`)
+- **Verified:** 2026-07-14
+
+### GitHub Models: the context-limit error is a 413, and the caps are small enough to matter here
+
+- **Claim:** two traps, both measured against the real service. (1) A request over the model's input cap
+  fails with **HTTP 413** and `{"error":{"code":"tokens_limit_reached", … "Max size: N tokens."}}` — **not**
+  the 400 a context-length overflow returns on Azure OpenAI, so any handling or messaging keyed on 400/429
+  sails straight past it. (2) The caps are **per request** and small: **16,000** input tokens for
+  `openai/gpt-4o` / `openai/gpt-4.1`, **8,000** for the `-mini` models, **4,000** for `openai/o4-mini` —
+  and enabling **pay-as-you-go billing and a budget did not lift them** (measured before and after).
+  That is tight for *this* app specifically, because the session replays an 8 KB fetched page, search
+  snippets and RAG excerpts on **every** turn (see "an agent tool's RETURN value is persisted"), so a
+  web- or document-heavy conversation hits 413 on a GitHub model long before it would on Foundry. Also
+  worth knowing when re-verifying: tool support is **per model, not per provider** (`microsoft/phi-4`
+  400s on a tools request; `deepseek/DeepSeek-V3-0324` never calls one), which is why the flags are
+  config, and they were measured rather than assumed.
+- **Evidence:** `src/Agent42.Backend/appsettings.json` (the `github` provider's `"//"` comment),
+  `.agentic/decisions/0013-multi-provider-model-catalog.md` (spike results)
+- **Verified:** 2026-07-14
+
 ### Cosmos containers must be pre-declared in Bicep
 
 - **Claim:** the Cosmos account has `disableLocalAuth: true` and AAD data-plane RBAC cannot create databases/containers — only ARM can. Any new container must be added to `infra/modules/cosmos.bicep`; Orleans providers run with `IsResourceCreationEnabled = false`, so runtime auto-create silently isn't there to save you.

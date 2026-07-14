@@ -19,8 +19,17 @@ public sealed class AgentGrainState
     public Dictionary<string, ReminderInfo> ScheduledPrompts { get; set; } = [];
 
     /// <summary>
-    /// The model deployment this conversation is currently using. Null means the
-    /// conversation hasn't picked one yet and falls back to the configured default.
+    /// The model this conversation is currently using — a <b>qualified id</b> since ADR 0013
+    /// (<c>provider:model</c>, e.g. <c>foundry:gpt-4o</c> or <c>github:openai/gpt-4o-mini</c>). Null means
+    /// the conversation hasn't picked one yet and falls back to the configured default.
+    ///
+    /// <para><b>The name is deliberately NOT `ModelId`, and this property must not be renamed.</b> It is
+    /// persisted state: conversations written before ADR 0013 hold a bare, unqualified deployment name
+    /// here (<c>gpt-4o</c>), which still resolves because an id with no colon falls back to the default
+    /// provider. Which serializer the Cosmos grain-storage provider actually uses — Orleans' binary
+    /// field-ids (in which case <c>[Id(2)]</c> is what matters) or JSON property names (in which case the
+    /// NAME is what matters) — is <b>unverified</b>. If it is JSON, renaming this silently orphans the
+    /// model on every existing conversation. The value it carries changed; the property did not.</para>
     /// </summary>
     [Id(2)]
     public string? DeploymentName { get; set; }

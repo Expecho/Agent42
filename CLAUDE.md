@@ -123,4 +123,21 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   **two-legged** because WebKit/iOS has no geolocation Permissions API; and this feature puts the user's
   **street address** into a conversation that the ADR 0011 exfiltration channel can still drain — the
   `websearch` skill only *mitigates* that. All three are in gotchas.
+- Model providers (ADR 0013): a conversation can run on **any OpenAI-compatible endpoint**, not just Azure
+  Foundry. The `Models:` config section maps provider keys to either an `AzureOpenAI` provider (managed
+  identity) or an `OpenAICompatible` one (API key) — **GitHub Models** is wired in prod; Ollama/vLLM work
+  by config alone. A model is named by a **qualified `provider:model` id split on the FIRST colon**
+  (GitHub's own ids contain a `/`); a bare id is legacy and resolves against the default provider, which
+  is why this needed no state migration. A **`GH_MODELS_TOKEN` GitHub Actions secret is a manual
+  prerequisite** — a PAT with the `models:read` scope, and note the name: `GITHUB_*` is a **reserved
+  prefix** Actions will not let you create. Like `GOOGLE_MAPS_API_KEY` and unlike `SEARXNG_SECRET`, it is
+  **not on the availability path**: with no token the provider is skipped with a warning and the app
+  serves on Foundry alone. **The headline consequence: picking a third-party model sends the conversation
+  — document excerpts, image SAS URLs, the user's street address — outside the Entra tenant.** That is why
+  the default stays Foundry and the pick is explicit. Four things to read before touching this: the
+  first-colon split and why `DeploymentName` keeps its name; `AgentSkillsProvider` is a **tool** (a
+  no-tools model must drop it, while the RAG provider must stay); the vision gate must cover **history**,
+  not just the new turn, or old image SAS URLs still leak; and the Foundry provider's endpoint/ARM
+  coordinates are **inherited** from `AzureOpenAI:*`, never copied. All four are in gotchas — along with
+  the measured GitHub caps (16k/8k input tokens, failing with an **HTTP 413**, not a 400).
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

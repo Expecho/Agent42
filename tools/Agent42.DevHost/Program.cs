@@ -15,16 +15,30 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     WebRootPath = webRoot,
 });
 
-// The canned client ignores the model, but a factory + static catalog let the model
-// picker be exercised offline without any Azure environment.
+// The canned client ignores the model, but a factory + static catalog let the model picker be
+// exercised offline without any Azure environment. The catalog uses QUALIFIED ids (ADR 0013) and
+// spans two providers, so the picker's per-provider grouping is exercisable by hand.
+//
+// "github:text-only-demo" is deliberately not-capable: it is the only way to drive the degraded paths
+// (no tools, no load_skill, images withheld) in a browser rather than only in tests.
+const string DefaultModel = "foundry:gpt-4o";
+const string TextOnlyModel = "github:text-only-demo";
+
 builder.Services.AddSingleton<IChatClient, CannedChatClient>();
 builder.Services.AddSingleton<IChatClientFactory>(sp =>
-    new SingleChatClientFactory(sp.GetRequiredService<IChatClient>(), "gpt-4o"));
-builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("gpt-4o",
+    new SingleChatClientFactory(
+        sp.GetRequiredService<IChatClient>(),
+        DefaultModel,
+        capabilities: modelId => modelId == TextOnlyModel
+            ? new ModelCapabilities(SupportsTools: false, SupportsVision: false)
+            : ModelCapabilities.Full));
+
+builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel,
 [
-    new ModelInfo("gpt-4o", "gpt-4o", "2024-08-06"),
-    new ModelInfo("gpt-4o-mini", "gpt-4o-mini", "2024-07-18"),
-    new ModelInfo("o3-mini", "o3-mini", "2025-01-31"),
+    new ModelInfo("foundry:gpt-4o", "foundry", "GPT-4o", "gpt-4o", "2024-08-06", true, true),
+    new ModelInfo("foundry:gpt-4o-mini", "foundry", "GPT-4o mini", "gpt-4o-mini", "2024-07-18", true, true),
+    new ModelInfo("foundry:o3-mini", "foundry", "o3-mini", "o3-mini", "2025-01-31", true, false),
+    new ModelInfo(TextOnlyModel, "github", "Text-only demo (no tools, no vision)", "text-only-demo", null, false, false),
 ]));
 
 // In-memory attachment store: no Azure Storage offline. The canned client ignores image

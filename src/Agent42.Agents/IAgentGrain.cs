@@ -11,8 +11,9 @@ public interface IAgentGrain : IGrainWithStringKey
     /// Sends a message to the agent and streams the turn back as typed events:
     /// reply-text deltas, tool-call start/end notifications, and a closing
     /// <see cref="AgentStreamEventType.Done"/> event with the turn's token usage.
-    /// When <paramref name="model"/> is a deployment name it switches the conversation to
-    /// that model for this and subsequent turns; null keeps the current model.
+    /// When <paramref name="model"/> is a qualified model id (<c>provider:model</c>, ADR 0013) it
+    /// switches the conversation to that model for this and subsequent turns; null keeps the current
+    /// model. A bare, unqualified id is a legacy one and resolves against the default provider.
     /// <paramref name="attachments"/> are images to send alongside the text as a multimodal
     /// turn; null or empty is a plain text turn. The default keeps existing 2-arg callers working.
     /// <paramref name="location"/> is the browser's current position, if it has one and the user has
@@ -26,7 +27,7 @@ public interface IAgentGrain : IGrainWithStringKey
         UserLocation? location = null);
 
     /// <summary>
-    /// Returns the model deployment this conversation is currently using, so the UI can
+    /// Returns the qualified model id this conversation is currently using, so the UI can
     /// restore the picker to the right selection when a conversation is reopened.
     /// </summary>
     [Alias("GetSelectedModelAsync")]
