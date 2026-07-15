@@ -87,10 +87,12 @@ model keeps a `web_search` (now server-side) and gains `code_interpreter`.
   that specific channel is gone (no `fetch_web_page`); the hosted `web_search` runs server-side at OpenAI.
   Net exposure is not obviously worse, but it is *different* — worth a fresh look before making Responses
   the default.
-- **Runtime behaviour of the hosted tools is unverified end-to-end.** The unit tests prove the grain
-  *registers* the right tools per wire API (via the fake's `[tools:…]` echo). They do **not** prove
-  gpt-4o on Foundry Responses actually *invokes* the server-side web search / code interpreter and streams
-  usable content — that needs a live call, the same kind of manual gate ADR 0014's Step-1 spike was.
-  Ships off in prod, so this is acceptable now; verify before enabling the flag on a live account.
+- **Runtime behaviour of the hosted tools — VERIFIED (operator-confirmed, 2026-07-15).** The unit tests
+  prove the grain *registers* the right tools per wire API (via the fake's `[tools:…]` echo) but not that
+  the service invokes them. A live gate (`scratchpad/hosted-tools-spike.cs`) ran against the **prod**
+  endpoint `agent42.services.ai.azure.com/openai/v1` (not the `openai.azure.com` host ADR 0014's Step-1
+  spike used) and confirmed: bearer `/openai/v1` works there, the service **accepts and fires** hosted
+  `web_search` and `code_interpreter`, and `store=false` holds on the wire. The flag was then enabled on
+  the shipped `foundry` provider (`appsettings.json`). Re-run that spike if the account/endpoint changes.
 - **Default is unchanged.** With `UseResponsesApi` off (prod), no model reports `SupportsHostedTools`, so
   every conversation keeps the SearXNG shims exactly as before. This change is inert until the flag is on.
