@@ -75,8 +75,8 @@ model keeps a `web_search` (now server-side) and gains `code_interpreter`.
 - **`HostedWebSearchTool.Name == "web_search"` is a trap.** It collides with the shim's name (recorded as
   a gotcha). Anyone re-adding a web tool on the Responses path must account for it, or the model gets a
   duplicate-named tool.
-- **The `websearch` skill actively misguides on hosted models.** `Skills/websearch/SKILL.md` is still
-  advertised (the skills provider stays on for tools-capable models) and its `load_skill` guidance instructs
+- **The `websearch` skill actively misguides on hosted models.** `src/Agent42.Agents/Skills/websearch/SKILL.md`
+  is still advertised (the skills provider stays on for tools-capable models) and its `load_skill` guidance instructs
   the model to follow `web_search` with `fetch_web_page` (the shim's exact-URL, SSRF-guarded fetch, ADR
   0011). On a hosted model `web_search` still exists (now server-side) but `fetch_web_page` **does not** — so
   the model can be told to call a tool that is not registered, i.e. a **failed tool call**, not merely a
@@ -89,7 +89,7 @@ model keeps a `web_search` (now server-side) and gains `code_interpreter`.
   the default.
 - **Runtime behaviour of the hosted tools — VERIFIED (operator-confirmed, 2026-07-15).** The unit tests
   prove the grain *registers* the right tools per wire API (via the fake's `[tools:…]` echo) but not that
-  the service invokes them. A live gate (`scratchpad/hosted-tools-spike.cs`) ran against the **prod**
+  the service invokes them. A live gate (a gitignored `scratchpad/` spike harness) ran against the **prod**
   endpoint `agent42.services.ai.azure.com/openai/v1` (not the `openai.azure.com` host ADR 0014's Step-1
   spike used) and confirmed: bearer `/openai/v1` works there, the service **accepts and fires** hosted
   `web_search` and `code_interpreter`, and `store=false` holds on the wire. The flag was then enabled on

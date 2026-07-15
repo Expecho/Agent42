@@ -127,7 +127,7 @@ response client.
   (`Provider` is public for the same reason — the repo has no `InternalsVisibleTo`). The live exchange
   itself remains the manual Step-1 gate (AC1); this test covers only the mapping logic.
 - **Runtime confirmation — DONE (Step-1 gate, 2026-07-15, ✅ green** against `agent42.openai.azure.com`
-  / gpt-4o). `scratchpad/responses-spike.cs` confirmed at the pinned versions: bearer auth works on the
+  / gpt-4o). The Step-1 spike (a gitignored `scratchpad/` harness) confirmed at the pinned versions: bearer auth works on the
   v1 surface; `store=false` is observed on the wire (the `/responses` body carries `"store":false`); the
   stateless adapter serializes full history into the session blob (4 messages, 866 bytes); a Chat
   session blob cross-deserializes onto a Responses agent **and vice versa** (so mixing a Chat provider
