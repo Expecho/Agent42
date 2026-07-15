@@ -202,7 +202,7 @@ public static class AgentApi
         {
             var created = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition("", request.Name, request.Description, request.Model, request.SystemPrompt,
-                    default, default));
+                    default, default, request.Continuous));
             return Results.Json(created);
         });
 
@@ -211,7 +211,7 @@ public static class AgentApi
         {
             var updated = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition(id, request.Name, request.Description, request.Model, request.SystemPrompt,
-                    default, default));
+                    default, default, request.Continuous));
             return Results.Json(updated);
         });
 
@@ -268,7 +268,10 @@ public record DocumentUploadResult(string Kind, string FileName, string MediaTyp
 
 // Client payload for creating (POST) or updating (PUT) a stored agent. The id and
 // timestamps are owned by the registry grain, so they aren't part of the request.
-public record AgentUpsertRequest(string Name, string Description, string Model, string SystemPrompt);
+// Continuous is the history-mode flag (ADR 0016); a trailing default so an old-shape
+// client that omits it stores false = per-chat.
+public record AgentUpsertRequest(string Name, string Description, string Model, string SystemPrompt,
+    bool Continuous = false);
 
 // Client payload for PUT /api/profile: the preferred-language BCP-47 tag the user picked
 // ("" = use the device default). More preference fields will be added here as the profile grows.

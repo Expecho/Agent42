@@ -156,4 +156,14 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   `web_search`/`fetch_web_page` shims and registering `HostedWebSearchTool` + `HostedCodeInterpreterTool`.
   It's a swap, not an add, because `HostedWebSearchTool.Name` is literally `web_search` and would collide
   with the shim (see that gotcha). SearXNG stays for every Chat model, so it is **not** retired here.
+- Per-agent history mode (ADR 0016): a stored agent carries a `Continuous` flag (trailing `[Id(7)]` on
+  `AgentDefinition`, default `false`). Per-chat (default) mints a fresh `crypto.randomUUID()` per start, as
+  before; **continuous** derives a **deterministic** conversation id `` `agent-${agent.id}` `` in the client, so
+  every start collapses onto the one grain `{userId}/agent-{agentId}` and shares one ongoing history (a
+  re-entry resumes it via `selectConversation`, not a blank thread). The flag is read **client-side and never
+  snapshotted into `AgentBinding`** — it's routing, not persona — so a user can flip it for *future* starts
+  without disturbing existing chats (ADR 0003), but the flip is inert on a continuous agent's already-bound
+  grain. Trailing default = no migration. **The headline consequence: continuous funnels every chat into one
+  unbounded grain, so it will eventually hit the 2 MB session cap (ADR 0004) and brick the conversation in
+  prod — `DELETE /api/conversations/agent-{agentId}` (delete-to-reset) is the only escape hatch.** See gotchas.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

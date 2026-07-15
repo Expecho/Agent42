@@ -31,6 +31,7 @@
   const agentDescriptionInput = document.getElementById("agentDescription");
   const agentModelSelect = document.getElementById("agentModelSelect");
   const agentSystemPromptInput = document.getElementById("agentSystemPrompt");
+  const agentContinuousInput = document.getElementById("agentContinuous");
   const agentCancelBtn = document.getElementById("agentCancelBtn");
 
   const openProfileBtn = document.getElementById("openProfileBtn");
@@ -334,7 +335,19 @@
   function startAgentChat(agent) {
     closeDrawer();
     if (streaming) return;
-    activeId = crypto.randomUUID();
+    // Continuous agents route every start onto one deterministic conversation id
+    // (`agent-<id>`), so all their chats share one ongoing history (ADR 0016); per-chat
+    // agents get a fresh random id. crypto.randomUUID() never emits the `agent-` prefix,
+    // so the two id spaces never collide.
+    const convId = agent.continuous ? `agent-${agent.id}` : crypto.randomUUID();
+    // Resume an existing continuous conversation instead of showing a blank thread over a
+    // grain that already has history — delegate to selectConversation, which loads the
+    // messages/model/binding and locks the picker.
+    if (agent.continuous && conversations.some((c) => c.id === convId)) {
+      selectConversation(convId);
+      return;
+    }
+    activeId = convId;
     activeAgentId = agent.id;
     pendingAgentId = agent.id;
     clearPendingAttachments();
@@ -352,6 +365,7 @@
     agentNameInput.value = agent?.name ?? "";
     agentDescriptionInput.value = agent?.description ?? "";
     agentSystemPromptInput.value = agent?.systemPrompt ?? "";
+    agentContinuousInput.checked = agent?.continuous ?? false;
     fillModelOptions(agentModelSelect);
     // Preselect the agent's model when editing, otherwise the server default. Uses the same helper as
     // the composer picker rather than a second copy of the append-if-missing logic.
@@ -366,6 +380,7 @@
       description: agentDescriptionInput.value.trim(),
       model: agentModelSelect.value,
       systemPrompt: agentSystemPromptInput.value.trim(),
+      continuous: agentContinuousInput.checked,
     };
     if (!payload.name || !payload.systemPrompt || !payload.model) return;
 

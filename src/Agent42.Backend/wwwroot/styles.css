@@ -1105,6 +1105,22 @@ body {
   color: var(--ink-faint);
 }
 
+/* A checkbox field lays its box and label on one row, unlike the stacked text fields. */
+.agent-form__field--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.agent-form__checkbox {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--amber-deep);
+  cursor: pointer;
+}
+
 .agent-form__label {
   font-size: 10.5px;
   letter-spacing: 0.14em;
