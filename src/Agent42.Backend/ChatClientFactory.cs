@@ -67,7 +67,11 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         // SupportsVision: true wrongly hands a third party a SAS URL into our private container.
         if (provider.Options.Kind == ProviderKind.AzureOpenAI)
         {
-            return ModelCapabilities.Full;
+            // Hosted server-side tools (web search, code interpreter) ride the Responses API only —
+            // Chat Completions 400s on them (ADR 0011/0014) — so a Foundry provider advertises them
+            // exactly when it runs Responses. Tools/vision stay Full either way (they are orthogonal
+            // to the wire API); only the hosted-tools bit tracks the Responses switch.
+            return ModelCapabilities.Full with { SupportsHostedTools = Provider.UseResponses(provider.Options) };
         }
 
         var configured = provider.Options.Models

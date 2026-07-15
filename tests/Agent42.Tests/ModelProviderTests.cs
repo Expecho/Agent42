@@ -177,13 +177,22 @@ public class ModelProviderTests
         Assert.DoesNotContain("/openai/v1", chatUri);      // the plain Foundry endpoint (Chat Completions)
     }
 
-    [Fact] // AC5 — the flag selects the wire API only; a Foundry provider still reports Full capabilities.
-    public void ResponsesProvider_CapabilitiesUnchanged()
+    [Fact] // AC5 — tools/vision stay Full on the Responses flag (orthogonal to the wire API); only the
+           // hosted-tools bit tracks it: ON for a Responses Foundry provider, OFF for a plain one.
+    public void ResponsesProvider_ReportsHostedTools_ToolsAndVisionUnchanged()
     {
-        var capabilities = ResponsesFactory().GetCapabilities("foundry:gpt-4o");
+        var responses = ResponsesFactory().GetCapabilities("foundry:gpt-4o");
+        Assert.True(responses.SupportsTools);
+        Assert.True(responses.SupportsVision);
+        Assert.True(responses.SupportsHostedTools);
 
-        Assert.True(capabilities.SupportsTools);
-        Assert.True(capabilities.SupportsVision);
+        // A plain (Chat Completions) Foundry provider does NOT advertise hosted tools — they 400 there.
+        var chat = Factory().GetCapabilities("foundry:gpt-4o");
+        Assert.True(chat.SupportsTools);
+        Assert.False(chat.SupportsHostedTools);
+
+        // And an OpenAI-compatible model never gets them either (GitHub Models has no Responses surface).
+        Assert.False(Factory().GetCapabilities("github:openai/gpt-4o-mini").SupportsHostedTools);
     }
 
     [Fact] // AC1 (the unit-testable slice) — the bearer bridge maps an Azure token onto a Bearer

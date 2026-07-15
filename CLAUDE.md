@@ -149,4 +149,11 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   client-side (ADR 0004) — so the build uses `AsIChatClientWithStoredOutputDisabled`, and
   `includeReasoningEncryptedContent` is forced **`false`** (its `true` default 400s non-reasoning models like
   gpt-4o). Read the "Responses API is stateful by default" gotcha before touching `Provider.Foundry`.
+- Hosted tools on the Responses path (ADR 0015): a Responses Foundry model reaches OpenAI's **native**
+  server-side `web_search` + `code_interpreter` (Chat Completions 400s on them — the reason the SearXNG
+  sidecar exists, ADR 0011). The signal is a new `ModelCapabilities.SupportsHostedTools` bit (true only when
+  the provider runs Responses); `AgentGrain.BuildAgent` then **swaps** — dropping the SearXNG
+  `web_search`/`fetch_web_page` shims and registering `HostedWebSearchTool` + `HostedCodeInterpreterTool`.
+  It's a swap, not an add, because `HostedWebSearchTool.Name` is literally `web_search` and would collide
+  with the shim (see that gotcha). SearXNG stays for every Chat model, so it is **not** retired here.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

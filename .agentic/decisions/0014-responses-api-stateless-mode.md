@@ -98,7 +98,8 @@ response client.
   spike gates on this.
 - **Unblocks hosted tools later.** With a Responses client in place, the OpenAI-family hosted
   `web_search`/file-search tools become reachable — a future path to retiring the SearXNG sidecar
-  (ADR 0011) for Foundry. That is follow-up, not part of this change.
+  (ADR 0011) for Foundry. **This is now done for web search + code interpreter — see ADR 0015**, which
+  swaps the SearXNG shims for `HostedWebSearchTool`/`HostedCodeInterpreterTool` on the Responses path.
 - **A bearer policy replaces the API-key credential on this path.** The stable `OpenAIClient` normally
   takes an `ApiKeyCredential`; here it is built with an auth policy that injects the managed-identity
   `TokenCredential`'s bearer token (scope `https://cognitiveservices.azure.com/.default`). The
