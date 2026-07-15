@@ -427,6 +427,49 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0013-multi-provider-model-catalog.md` (spike results)
 - **Verified:** 2026-07-14
 
+### The Responses API is stateful by default — three non-obvious traps on the Foundry Responses path
+
+- **Claim:** the `UseResponsesApi` Foundry path (ADR 0014) hides three traps the compiler and the method
+  names do **not** make obvious. (1) **Stateless is mandatory, not a preference.** The Responses API
+  stores each response server-side by default and later turns reference it by id — which would break the
+  client-side-history invariant the whole grain is built on (it holds all history and replays it via
+  `TryGetInMemoryChatHistory`, ADR 0004). So the build MUST use
+  `AsIChatClientWithStoredOutputDisabled`, **never** the plain `AsIChatClient()` on the response client —
+  the plain one silently stores and looks identical at the call site. (2) **`includeReasoningEncryptedContent`
+  must be passed `false`.** The helper **defaults it `true`**, which sends
+  `include:["reasoning.encrypted_content"]`; **non-reasoning models (gpt-4o, the shipped default) reject
+  that with HTTP 400** (`Encrypted content is not supported with this model`) — measured on the wire by the
+  Step-1 spike, invisible in the signature. `true` is only wanted for a *reasoning* Foundry model (to
+  carry reasoning items across turns without server storage), and those are deferred. (3) **Two distinct
+  experimental suppressions are needed, not one.** `GetResponsesClient()` / the
+  `OpenAIClient(AuthenticationPolicy, options)` ctor are `[Experimental("OPENAI001")]`, but
+  `AsIChatClientWithStoredOutputDisabled` is `[Experimental("MAAI001")]` (Microsoft.Agents.AI, a
+  **different** id) — `OPENAI001` alone does not build. Scope both `#pragma`s to the branch; do not
+  blanket-suppress.
+- **Evidence:** `src/Agent42.Backend/ChatClientFactory.cs` (`Provider.Foundry`, the `UseResponses`
+  branch), `.agentic/decisions/0014-responses-api-stateless-mode.md`
+- **Verified:** 2026-07-15
+
+### `HostedWebSearchTool.Name` is `web_search` — it collides with the SearXNG shim, so hosted models SWAP
+
+- **Claim:** on the Responses path (ADR 0015) the grain does not just *add* `HostedWebSearchTool` /
+  `HostedCodeInterpreterTool` alongside the existing SearXNG `web_search` / `fetch_web_page` shims — it
+  **replaces** them, and that is forced, not a preference. In the agent pipeline `HostedWebSearchTool`
+  surfaces under the protocol name **`web_search`** — the *same* name the shim (`AIFunctionFactory.Create(…,
+  name: "web_search")`) uses — and `HostedCodeInterpreterTool` under `code_interpreter`. Registering both
+  hands the model **two tools named `web_search`**. So `BuildAgent` swaps on `SupportsHostedTools`: shims
+  out, hosted pair in. Two testing corollaries that bite: (a) the tool `.Name` is **not** the type name
+  (`new HostedWebSearchTool().Name` reads `"web_search"`, not `"HostedWebSearchTool"`), so assert on the
+  protocol names; and (b) `web_search` is ambiguous across both paths — the reliable discriminators are
+  `code_interpreter` (hosted-only) and `fetch_web_page` (shim-only). (c) Absence assertions on the fake's
+  echo must scope to the `[tools:…]` marker, because the `websearch` skill's description (injected into the
+  system prompt) literally names `web_search`/`fetch_web_page`, so those substrings appear in the answer
+  even when the tools do not.
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent`, the `SupportsHostedTools` swap),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`HostedToolsModel_SwapsWebShimsForHostedTools`, `ToolNames`),
+  `.agentic/decisions/0015-hosted-tools-on-responses-path.md`
+- **Verified:** 2026-07-15
+
 ### Cosmos containers must be pre-declared in Bicep
 
 - **Claim:** the Cosmos account has `disableLocalAuth: true` and AAD data-plane RBAC cannot create databases/containers — only ARM can. Any new container must be added to `infra/modules/cosmos.bicep`; Orleans providers run with `IsResourceCreationEnabled = false`, so runtime auto-create silently isn't there to save you.

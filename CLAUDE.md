@@ -140,4 +140,20 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   not just the new turn, or old image SAS URLs still leak; and the Foundry provider's endpoint/ARM
   coordinates are **inherited** from `AzureOpenAI:*`, never copied. All four are in gotchas — along with
   the measured GitHub caps (16k/8k input tokens, failing with an **HTTP 413**, not a 400).
+- Responses API on Foundry (ADR 0014): a provider-level `UseResponsesApi` flag routes **every** model of a
+  Foundry provider through the OpenAI **Responses** API run **statelessly** (`store=false`) instead of Chat
+  Completions — reached with **no package change** via the stable `OpenAI 2.12.0` client pointed at
+  `{endpoint}/openai/v1` with a managed-identity **bearer** policy (not an API key). It ships **off** in prod
+  (default stays Chat Completions; turning it on is a separate, deliberate change) and is a server-side
+  transport choice, **not** user-selectable. Stateless is **mandatory** — the grain holds all history
+  client-side (ADR 0004) — so the build uses `AsIChatClientWithStoredOutputDisabled`, and
+  `includeReasoningEncryptedContent` is forced **`false`** (its `true` default 400s non-reasoning models like
+  gpt-4o). Read the "Responses API is stateful by default" gotcha before touching `Provider.Foundry`.
+- Hosted tools on the Responses path (ADR 0015): a Responses Foundry model reaches OpenAI's **native**
+  server-side `web_search` + `code_interpreter` (Chat Completions 400s on them — the reason the SearXNG
+  sidecar exists, ADR 0011). The signal is a new `ModelCapabilities.SupportsHostedTools` bit (true only when
+  the provider runs Responses); `AgentGrain.BuildAgent` then **swaps** — dropping the SearXNG
+  `web_search`/`fetch_web_page` shims and registering `HostedWebSearchTool` + `HostedCodeInterpreterTool`.
+  It's a swap, not an add, because `HostedWebSearchTool.Name` is literally `web_search` and would collide
+  with the shim (see that gotcha). SearXNG stays for every Chat model, so it is **not** retired here.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

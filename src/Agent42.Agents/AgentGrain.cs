@@ -179,6 +179,27 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             Path.Combine(AppContext.BaseDirectory, "Skills"),
             options: new AgentSkillsProviderOptions { DisableLoadSkillApproval = true });
 
+        // The web tools depend on the WIRE API, not just on tool support. On Chat Completions the model
+        // reaches the web through our self-hosted SearXNG shims web_search/fetch_web_page (ADR 0011),
+        // because Chat Completions 400s on OpenAI's hosted tools. A model running the Responses API
+        // (ADR 0014, signalled by SupportsHostedTools) reaches those hosted server-side tools natively,
+        // so it gets HostedWebSearchTool + HostedCodeInterpreterTool INSTEAD — the SearXNG shims are
+        // dropped, or the model would carry two overlapping web-search tools.
+        List<AITool> tools =
+        [
+            schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime, getCurrentLocation,
+        ];
+        if (capabilities.SupportsHostedTools)
+        {
+            tools.Add(new HostedWebSearchTool());
+            tools.Add(new HostedCodeInterpreterTool());
+        }
+        else
+        {
+            tools.Add(webSearch);
+            tools.Add(fetchWebPage);
+        }
+
         // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
         // state at bind time; a normal chat falls back to the default Agent 42 persona.
         // Old Cosmos state has null persona fields, so existing chats fall back too.
@@ -190,13 +211,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 ChatOptions = new ChatOptions
                 {
                     Instructions = WithDocumentAwareness(_state.State.SystemPrompt ?? Instructions),
-                    Tools = capabilities.SupportsTools
-                        ?
-                        [
-                            schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime,
-                            webSearch, fetchWebPage, getCurrentLocation,
-                        ]
-                        : [],
+                    // A model that can't do function tools at all (ADR 0013) gets NO schema — including
+                    // the hosted ones — even if it somehow reported SupportsHostedTools.
+                    Tools = capabilities.SupportsTools ? tools : [],
                 },
                 // Automatic document retrieval (ADR 0008): a TextSearchProvider runs before every model
                 // call and injects the top matching excerpts — but ONLY for conversations that actually
