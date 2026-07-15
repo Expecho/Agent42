@@ -1,6 +1,7 @@
 using Agent42.Agents;
 using Agent42.Backend;
 using Azure.Core;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -135,9 +136,88 @@ public class ModelProviderTests
         Assert.Equal("account-2", declared.AccountName);
     }
 
+    [Fact] // AC4 — assert the SEAM, not client identity: a Responses-flagged provider selects Responses.
+    public void Seam_SelectsResponsesForFlaggedProvider()
+    {
+        var flagged = new ProviderOptions { Kind = ProviderKind.AzureOpenAI, UseResponsesApi = true };
+        Assert.True(MultiProviderChatClientFactory.Provider.UseResponses(flagged));
+
+        // Responses is Foundry-only: an OpenAI-compatible provider ignores the flag — GitHub Models has
+        // no Responses surface, so the ProviderKind gate is part of the decision, not just the caller's.
+        var compat = new ProviderOptions { Kind = ProviderKind.OpenAICompatible, UseResponsesApi = true };
+        Assert.False(MultiProviderChatClientFactory.Provider.UseResponses(compat));
+    }
+
+    [Fact] // AC6 — an unflagged Foundry provider still selects Chat.
+    public void Seam_SelectsChatForUnflaggedFoundry()
+    {
+        var unflagged = new ProviderOptions { Kind = ProviderKind.AzureOpenAI, UseResponsesApi = false };
+        Assert.False(MultiProviderChatClientFactory.Provider.UseResponses(unflagged));
+    }
+
+    [Fact] // AC3 — a Responses-flagged Foundry provider builds a valid IChatClient with no network I/O.
+    public void ResponsesProvider_BuildsClient()
+    {
+        Assert.NotNull(ResponsesFactory().GetClient("foundry:gpt-4o"));
+    }
+
+    [Fact] // AC4 — the built client is WIRED to the Responses path, so a dead or inverted Provider.Foundry
+           // branch fails HERE even though the pure-helper seam test stays green (critic MEDIUM-2). The
+           // handle is the Step-1 no-I/O ChatClientMetadata.ProviderUri: /openai/v1 on Responses, plain on Chat.
+    public void ResponsesProvider_WiresResponsesEndpoint()
+    {
+        var responsesUri = ResponsesFactory().GetClient("foundry:gpt-4o")
+            .GetService<ChatClientMetadata>()?.ProviderUri?.AbsoluteUri;
+        var chatUri = Factory().GetClient("foundry:gpt-4o")
+            .GetService<ChatClientMetadata>()?.ProviderUri?.AbsoluteUri;
+
+        Assert.NotNull(responsesUri);
+        Assert.NotNull(chatUri);
+        Assert.EndsWith("/openai/v1", responsesUri);      // the OpenAI-compatible surface (ADR 0014)
+        Assert.DoesNotContain("/openai/v1", chatUri);      // the plain Foundry endpoint (Chat Completions)
+    }
+
+    [Fact] // AC5 — the flag selects the wire API only; a Foundry provider still reports Full capabilities.
+    public void ResponsesProvider_CapabilitiesUnchanged()
+    {
+        var capabilities = ResponsesFactory().GetCapabilities("foundry:gpt-4o");
+
+        Assert.True(capabilities.SupportsTools);
+        Assert.True(capabilities.SupportsVision);
+    }
+
+    [Fact] // AC1 (the unit-testable slice) — the bearer bridge maps an Azure token onto a Bearer
+           // AuthenticationToken with no network I/O; the LIVE token exchange is the Step-1 manual gate.
+    public async Task BearerBridge_MapsAzureTokenToBearer()
+    {
+        var provider = new MultiProviderChatClientFactory.AzureIdentityTokenProvider(
+            new StaticTokenCredential(), ["https://cognitiveservices.azure.com/.default"]);
+        var options = provider.CreateTokenOptions(new Dictionary<string, object>())!;
+
+        var sync = provider.GetToken(options, default);
+        var async = await provider.GetTokenAsync(options, default);
+
+        // StaticTokenCredential hands back "token"; the bridge must relabel it as a Bearer token, both paths.
+        Assert.Equal("token", sync.TokenValue);
+        Assert.Equal("Bearer", sync.TokenType);
+        Assert.Equal("token", async.TokenValue);
+        Assert.Equal("Bearer", async.TokenType);
+    }
+
     private static MultiProviderChatClientFactory Factory()
     {
         var setup = ModelProviderBuilder.Build(Options(), Configuration(), Credential());
+        return new MultiProviderChatClientFactory(
+            setup.Providers, "foundry:gpt-4o", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
+    }
+
+    // A factory whose shipped `foundry` provider runs Responses (ADR 0014). Constructing the client does
+    // no network I/O, same as the plain factory — the /openai/v1 OpenAIClient asks for no token at build.
+    private static MultiProviderChatClientFactory ResponsesFactory()
+    {
+        var options = Options();
+        options.Providers["foundry"].UseResponsesApi = true;
+        var setup = ModelProviderBuilder.Build(options, Configuration(), Credential());
         return new MultiProviderChatClientFactory(
             setup.Providers, "foundry:gpt-4o", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
     }

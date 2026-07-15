@@ -140,4 +140,13 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   not just the new turn, or old image SAS URLs still leak; and the Foundry provider's endpoint/ARM
   coordinates are **inherited** from `AzureOpenAI:*`, never copied. All four are in gotchas — along with
   the measured GitHub caps (16k/8k input tokens, failing with an **HTTP 413**, not a 400).
+- Responses API on Foundry (ADR 0014): a provider-level `UseResponsesApi` flag routes **every** model of a
+  Foundry provider through the OpenAI **Responses** API run **statelessly** (`store=false`) instead of Chat
+  Completions — reached with **no package change** via the stable `OpenAI 2.12.0` client pointed at
+  `{endpoint}/openai/v1` with a managed-identity **bearer** policy (not an API key). It ships **off** in prod
+  (default stays Chat Completions; turning it on is a separate, deliberate change) and is a server-side
+  transport choice, **not** user-selectable. Stateless is **mandatory** — the grain holds all history
+  client-side (ADR 0004) — so the build uses `AsIChatClientWithStoredOutputDisabled`, and
+  `includeReasoningEncryptedContent` is forced **`false`** (its `true` default 400s non-reasoning models like
+  gpt-4o). Read the "Responses API is stateful by default" gotcha before touching `Provider.Foundry`.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

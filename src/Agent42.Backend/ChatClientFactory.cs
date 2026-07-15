@@ -1,10 +1,12 @@
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using System.Collections.Concurrent;
 using Agent42.Agents;
 using Azure.AI.OpenAI;
 using Azure.Core;
 using Microsoft.Extensions.AI;
 using OpenAI;
+using OpenAI.Responses;
 
 namespace Agent42.Backend;
 
@@ -117,9 +119,54 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
 
         public Func<string, IChatClient> Client { get; } = client;
 
+        /// <summary>
+        /// Whether this provider's models are built through the OpenAI <b>Responses</b> API (ADR 0014)
+        /// instead of Chat Completions. Pure and <b>public</b> on purpose: a unit test asserts WHICH path
+        /// a flagged provider takes without a network call (two distinct qualified ids are always distinct
+        /// clients regardless of API, so a caching assertion alone cannot prove the branch fired). Responses
+        /// is Foundry-only — an OpenAI-compatible provider ignores the flag (GitHub Models has no Responses
+        /// surface), so the <see cref="ProviderKind"/> gate is part of the decision, not just the caller's.
+        /// </summary>
+        public static bool UseResponses(ProviderOptions options) =>
+            options.Kind == ProviderKind.AzureOpenAI && options.UseResponsesApi;
+
         /// <summary>An Azure AI Foundry provider, reached with the app's managed identity.</summary>
         public static Provider Foundry(ProviderOptions options, Uri endpoint, TokenCredential credential)
         {
+            if (UseResponses(options))
+            {
+                // ADR 0014: reach Foundry's GA Responses surface on the STABLE OpenAI client via the
+                // OpenAI-compatible /openai/v1 base URL, authenticated by the managed identity's bearer
+                // token — no API key, no prerelease Azure.AI.OpenAI. BearerTokenPolicy handles token
+                // acquisition + refresh, so no static-token staleness; reuse the credential already
+                // flowing in rather than a named HttpClient, whose AddServiceDefaults retry pipeline would
+                // multiply the stall on a non-reentrant AgentGrain turn (see gotchas, and OpenAICompatible
+                // below). The endpoint still comes only from config — SSRF invariant intact (ADR 0013).
+                //
+                // The scoped suppressions cover BOTH the OpenAIClient(AuthenticationPolicy, options) ctor
+                // and GetResponsesClient() ([Experimental("OPENAI001")]) plus the stateless adapter
+                // ([Experimental("MAAI001")] — a DISTINCT id; OPENAI001 alone does not build, Step-1 spike).
+#pragma warning disable OPENAI001
+#pragma warning disable MAAI001
+                string[] scopes = ["https://cognitiveservices.azure.com/.default"];
+                var v1 = new Uri(endpoint.AbsoluteUri.TrimEnd('/') + "/openai/v1");
+                var authPolicy = new BearerTokenPolicy(
+                    new AzureIdentityTokenProvider(credential, scopes), scopes[0]);
+                var responsesClient = new OpenAIClient(authPolicy, new OpenAIClientOptions { Endpoint = v1 });
+
+                // Stateless is MANDATORY, not a default to override: the grain holds all history
+                // client-side (ADR 0004) and reads it back via TryGetInMemoryChatHistory, which the
+                // Responses stateful default (store server-side) would break. includeReasoningEncryptedContent
+                // must be false — the helper defaults it true, sending include:["reasoning.encrypted_content"],
+                // which non-reasoning models (gpt-4o, the shipped default) reject with HTTP 400 (Step-1 spike);
+                // a reasoning Foundry model would want true, but those are deferred (ADR 0014, spec LOW-5).
+                return new Provider(options, model => responsesClient
+                    .GetResponsesClient()
+                    .AsIChatClientWithStoredOutputDisabled(model, includeReasoningEncryptedContent: false));
+#pragma warning restore MAAI001
+#pragma warning restore OPENAI001
+            }
+
             var client = new AzureOpenAIClient(endpoint, credential);
             return new Provider(options, model => client.GetChatClient(model).AsIChatClient());
         }
@@ -136,6 +183,36 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
             var client = new OpenAIClient(
                 new ApiKeyCredential(apiKey), new OpenAIClientOptions { Endpoint = endpoint });
             return new Provider(options, model => client.GetChatClient(model).AsIChatClient());
+        }
+    }
+
+    /// <summary>
+    /// Bridges Azure's <see cref="TokenCredential"/> (the container app's managed identity) to
+    /// System.ClientModel's <see cref="AuthenticationTokenProvider"/>, so a stable <c>OpenAIClient</c>
+    /// built with a <see cref="BearerTokenPolicy"/> authenticates the Foundry <c>/openai/v1</c> Responses
+    /// surface with a bearer token instead of an API key (ADR 0014). Verified to compile and authenticate
+    /// at the pinned versions by the Step-1 gate (ADR 0014 Consequences; the plan's Step-1 results table —
+    /// the spike harness itself is gitignored). Public for the same reason <see cref="Provider"/> is — the
+    /// repo has no <c>InternalsVisibleTo</c>, so the token→<c>AuthenticationToken</c> mapping is
+    /// unit-testable only if reachable from the test project.
+    /// </summary>
+    public sealed class AzureIdentityTokenProvider(TokenCredential credential, string[] scopes)
+        : AuthenticationTokenProvider
+    {
+        public override GetTokenOptions? CreateTokenOptions(IReadOnlyDictionary<string, object> properties) =>
+            new(properties);
+
+        public override AuthenticationToken GetToken(GetTokenOptions options, CancellationToken cancellationToken)
+        {
+            var token = credential.GetToken(new TokenRequestContext(scopes), cancellationToken);
+            return new AuthenticationToken(token.Token, "Bearer", token.ExpiresOn, token.RefreshOn);
+        }
+
+        public override async ValueTask<AuthenticationToken> GetTokenAsync(
+            GetTokenOptions options, CancellationToken cancellationToken)
+        {
+            var token = await credential.GetTokenAsync(new TokenRequestContext(scopes), cancellationToken);
+            return new AuthenticationToken(token.Token, "Bearer", token.ExpiresOn, token.RefreshOn);
         }
     }
 }

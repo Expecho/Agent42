@@ -427,6 +427,29 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0013-multi-provider-model-catalog.md` (spike results)
 - **Verified:** 2026-07-14
 
+### The Responses API is stateful by default — three non-obvious traps on the Foundry Responses path
+
+- **Claim:** the `UseResponsesApi` Foundry path (ADR 0014) hides three traps the compiler and the method
+  names do **not** make obvious. (1) **Stateless is mandatory, not a preference.** The Responses API
+  stores each response server-side by default and later turns reference it by id — which would break the
+  client-side-history invariant the whole grain is built on (it holds all history and replays it via
+  `TryGetInMemoryChatHistory`, ADR 0004). So the build MUST use
+  `AsIChatClientWithStoredOutputDisabled`, **never** the plain `AsIChatClient()` on the response client —
+  the plain one silently stores and looks identical at the call site. (2) **`includeReasoningEncryptedContent`
+  must be passed `false`.** The helper **defaults it `true`**, which sends
+  `include:["reasoning.encrypted_content"]`; **non-reasoning models (gpt-4o, the shipped default) reject
+  that with HTTP 400** (`Encrypted content is not supported with this model`) — measured on the wire by the
+  Step-1 spike, invisible in the signature. `true` is only wanted for a *reasoning* Foundry model (to
+  carry reasoning items across turns without server storage), and those are deferred. (3) **Two distinct
+  experimental suppressions are needed, not one.** `GetResponsesClient()` / the
+  `OpenAIClient(AuthenticationPolicy, options)` ctor are `[Experimental("OPENAI001")]`, but
+  `AsIChatClientWithStoredOutputDisabled` is `[Experimental("MAAI001")]` (Microsoft.Agents.AI, a
+  **different** id) — `OPENAI001` alone does not build. Scope both `#pragma`s to the branch; do not
+  blanket-suppress.
+- **Evidence:** `src/Agent42.Backend/ChatClientFactory.cs` (`Provider.Foundry`, the `UseResponses`
+  branch), `.agentic/decisions/0014-responses-api-stateless-mode.md`
+- **Verified:** 2026-07-15
+
 ### Cosmos containers must be pre-declared in Bicep
 
 - **Claim:** the Cosmos account has `disableLocalAuth: true` and AAD data-plane RBAC cannot create databases/containers — only ARM can. Any new container must be added to `infra/modules/cosmos.bicep`; Orleans providers run with `IsResourceCreationEnabled = false`, so runtime auto-create silently isn't there to save you.
