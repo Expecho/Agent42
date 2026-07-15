@@ -1,55 +1,67 @@
-using Azure.Core;
 using Azure.ResourceManager;
 using Azure.ResourceManager.CognitiveServices;
 
 namespace Agent42.Backend;
 
-/// <summary>One model deployment available in the Azure AI Foundry environment.</summary>
-public record ModelInfo(string Deployment, string? Model, string? Version);
+/// <summary>
+/// One model the picker can choose. <see cref="Id"/> is the QUALIFIED id (<c>provider:model</c>) —
+/// the string a conversation is pinned to — because a bare model name is no longer unique: the same
+/// deployment name can exist on two Foundry accounts, and GitHub's ids are a namespace of their own.
+/// </summary>
+public record ModelInfo(
+    string Id,
+    string Provider,
+    string? DisplayName,
+    string? Model,
+    string? Version,
+    bool SupportsTools,
+    bool SupportsVision);
 
-/// <summary>The deployments the picker can choose from, plus the current default.</summary>
+/// <summary>The models the picker can choose from, plus the current default.</summary>
 public record ModelCatalogResult(string Default, IReadOnlyList<ModelInfo> Models);
 
-/// <summary>Lists the model deployments available to the agent, queried live.</summary>
+/// <summary>Lists the models available to the agent.</summary>
 public interface IModelCatalog
 {
     Task<ModelCatalogResult> GetAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>
-/// Live-queries the configured Azure AI Foundry (Cognitive Services) account for its
-/// chat-capable model deployments via the Azure Resource Manager SDK. There is no caching:
-/// each call reflects the deployments as they exist right now, so a model added or removed
-/// in the portal shows up in the picker without redeploying the app.
+/// Live-queries ONE Azure AI Foundry (Cognitive Services) account for its chat-capable model
+/// deployments via the Azure Resource Manager SDK. There is no caching: each call reflects the
+/// deployments as they exist right now, so a model added or removed in the portal shows up in the
+/// picker without redeploying the app.
+///
+/// <para>The account coordinates are constructor arguments, NOT read from IConfiguration — there is
+/// one instance of this per discovering Foundry provider (ADR 0013), and reading three global
+/// <c>AzureOpenAI:*</c> keys would make a second Foundry account enumerate the FIRST account's
+/// deployments and label them as its own: silently wrong rather than a failure.</para>
 /// </summary>
 public sealed class AzureModelCatalog(
     ArmClient armClient,
-    IConfiguration configuration,
-    string defaultDeployment,
+    string providerKey,
+    FoundrySettings settings,
+    string defaultModelId,
     ILogger<AzureModelCatalog> logger) : IModelCatalog
 {
     public async Task<ModelCatalogResult> GetAsync(CancellationToken cancellationToken = default)
     {
-        var subscriptionId = configuration["AzureOpenAI:SubscriptionId"];
-        var resourceGroup = configuration["AzureOpenAI:ResourceGroup"];
-        var accountName = configuration["AzureOpenAI:AccountName"];
-
-        // Without the account coordinates we can't enumerate deployments; fall back to a
-        // single-entry catalog so the picker still shows the model the agent is using.
-        if (string.IsNullOrWhiteSpace(subscriptionId)
-            || string.IsNullOrWhiteSpace(resourceGroup)
-            || string.IsNullOrWhiteSpace(accountName))
+        // Without the account coordinates we can't enumerate deployments; contribute nothing and let
+        // the composite fall back — it always offers the default model.
+        if (string.IsNullOrWhiteSpace(settings.SubscriptionId)
+            || string.IsNullOrWhiteSpace(settings.ResourceGroup)
+            || string.IsNullOrWhiteSpace(settings.AccountName))
         {
             logger.LogWarning(
-                "AzureOpenAI:SubscriptionId/ResourceGroup/AccountName not fully configured; "
-                + "the model picker will only offer the default deployment '{Default}'.", defaultDeployment);
-            return DefaultOnly();
+                "Provider '{Provider}': SubscriptionId/ResourceGroup/AccountName not fully configured "
+                + "(nor inherited from AzureOpenAI:*); its models will not appear in the picker.", providerKey);
+            return new ModelCatalogResult(defaultModelId, []);
         }
 
         try
         {
             var accountId = CognitiveServicesAccountResource.CreateResourceIdentifier(
-                subscriptionId, resourceGroup, accountName);
+                settings.SubscriptionId, settings.ResourceGroup, settings.AccountName);
             var account = armClient.GetCognitiveServicesAccountResource(accountId);
 
             var models = new List<ModelInfo>();
@@ -62,29 +74,28 @@ public sealed class AzureModelCatalog(
                     continue;
                 }
 
-                models.Add(new ModelInfo(deployment.Data.Name, props.Model?.Name, props.Model?.Version));
+                // A discovered Foundry deployment is assumed fully capable — the same assumption the
+                // app made before it could talk to anywhere else.
+                models.Add(new ModelInfo(
+                    Id: ModelId.Qualify(providerKey, deployment.Data.Name),
+                    Provider: providerKey,
+                    DisplayName: deployment.Data.Name,
+                    Model: props.Model?.Name,
+                    Version: props.Model?.Version,
+                    SupportsTools: true,
+                    SupportsVision: true));
             }
 
-            if (models.Count == 0)
-            {
-                return DefaultOnly();
-            }
-
-            // Default first, then alphabetical, so the picker opens on the active model.
-            var ordered = models
-                .OrderByDescending(m => string.Equals(m.Deployment, defaultDeployment, StringComparison.OrdinalIgnoreCase))
-                .ThenBy(m => m.Deployment, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            return new ModelCatalogResult(defaultDeployment, ordered);
+            return new ModelCatalogResult(defaultModelId, models);
         }
         catch (Exception ex)
         {
-            // A missing role assignment or transient ARM error shouldn't break chat; the UI
-            // degrades to the default model. See README/deploy notes for the required RBAC.
-            logger.LogWarning(ex, "Live model query failed; falling back to the default deployment '{Default}'.",
-                defaultDeployment);
-            return DefaultOnly();
+            // A missing role assignment or transient ARM error shouldn't break chat; this provider
+            // contributes nothing and the picker degrades to whatever the others offer.
+            logger.LogWarning(ex,
+                "Provider '{Provider}': live model query failed; its models will not appear in the picker.",
+                providerKey);
+            return new ModelCatalogResult(defaultModelId, []);
         }
     }
 
@@ -109,17 +120,65 @@ public sealed class AzureModelCatalog(
         return caps.TryGetValue("chatCompletion", out var chat)
             && string.Equals(chat, "true", StringComparison.OrdinalIgnoreCase);
     }
+}
 
-    private ModelCatalogResult DefaultOnly() =>
-        new(defaultDeployment, [new ModelInfo(defaultDeployment, defaultDeployment, null)]);
+/// <summary>
+/// The catalog the API actually serves: fans out over every configured provider (ADR 0013) —
+/// discovering Foundry accounts via ARM, and OpenAI-compatible providers from their declared model
+/// list, since those are not discovered (a deliberate scope decision, not a limitation of the shape).
+///
+/// <para>A provider that fails contributes nothing rather than failing the whole catalog — the
+/// per-provider version of the degradation the single-account catalog already had. The default model
+/// is always offered, even if every provider came back empty, so the picker is never blank.</para>
+/// </summary>
+public sealed class CompositeModelCatalog(
+    IReadOnlyList<IModelCatalog> discovering,
+    IReadOnlyList<ModelInfo> declared,
+    string defaultModelId,
+    ILogger<CompositeModelCatalog> logger) : IModelCatalog
+{
+    public async Task<ModelCatalogResult> GetAsync(CancellationToken cancellationToken = default)
+    {
+        var models = new List<ModelInfo>(declared);
+
+        foreach (var catalog in discovering)
+        {
+            try
+            {
+                var result = await catalog.GetAsync(cancellationToken);
+                models.AddRange(result.Models);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "A model provider failed to list its models; skipping it.");
+            }
+        }
+
+        if (models.Count == 0)
+        {
+            models.Add(new ModelInfo(
+                defaultModelId, ModelId.Parse(defaultModelId, "").Provider, defaultModelId,
+                defaultModelId, null, SupportsTools: true, SupportsVision: true));
+        }
+
+        // Default first, then grouped by provider and alphabetical within it, so the picker opens on
+        // the active model.
+        var ordered = models
+            .OrderByDescending(m => string.Equals(m.Id, defaultModelId, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(m => m.Provider, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(m => m.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new ModelCatalogResult(defaultModelId, ordered);
+    }
 }
 
 /// <summary>
 /// A fixed catalog for local development (DevHost), where no Azure environment exists.
 /// Lets the picker be exercised offline against the canned chat client.
 /// </summary>
-public sealed class StaticModelCatalog(string defaultDeployment, IReadOnlyList<ModelInfo> models) : IModelCatalog
+public sealed class StaticModelCatalog(string defaultModelId, IReadOnlyList<ModelInfo> models) : IModelCatalog
 {
     public Task<ModelCatalogResult> GetAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(new ModelCatalogResult(defaultDeployment, models));
+        => Task.FromResult(new ModelCatalogResult(defaultModelId, models));
 }
