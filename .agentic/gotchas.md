@@ -121,6 +121,28 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0004-attachments-in-blob.md`
 - **Verified:** 2026-07-12
 
+### A continuous agent funnels every chat into one unbounded grain — it will eventually brick
+
+- **Claim:** an agent with `Continuous = true` (ADR 0016) routes **every** start onto one deterministic
+  conversation id `` `agent-${agent.id}` `` → one grain `{userId}/agent-{agentId}`. That grain never rotates:
+  it re-serializes its whole session into a single `agent-state` Cosmos item every turn, hard-capped at 2 MB
+  (see the "an agent tool's RETURN value is persisted" gotcha above). Per-chat agents bound each conversation;
+  a continuous one grows without bound (text + tool results + image refs + RAG excerpts, replayed every turn)
+  and will eventually fail `WriteStateAsync` *after* the model has already answered — bricking the conversation,
+  silently, **in prod only** (the in-memory test store has no 2 MB limit). **The only escape hatch is
+  delete-to-reset:** `DELETE /api/conversations/agent-{agentId}` purges the grain and the next start recreates
+  it fresh at the same id. No code cap is in scope. Two further non-obvious traps: (1) the flag is read
+  **client-side at chat-start and is never snapshotted into `AgentBinding`** (it's routing, not persona), so
+  editing a continuous agent's system prompt or model has **zero effect** on its ongoing conversation until the
+  grain is deleted — ADR 0003's "start a new chat to apply the edit" remedy does not work for a continuous
+  agent. (2) `crypto.randomUUID()` never emits the `agent-` prefix, so the deterministic and random id spaces
+  never collide — do not "fix" the derivation to hash or encode the id.
+- **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (`startAgentChat`),
+  `src/Agent42.Agents/AgentDefinition.cs` (`Continuous`), `src/Agent42.Backend/AgentApi.cs` (`AgentKey`),
+  `.agentic/decisions/0016-per-agent-history-mode-deterministic-conversation-id.md`,
+  `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0003-snapshot-agent-persona-into-conversation.md`
+- **Verified:** 2026-07-15
+
 ### A model-chosen fetch URL is an SSRF sink — validate at connect time, not before
 
 - **Claim:** `fetch_web_page` dials a URL the **model** picked, from inside a container whose
