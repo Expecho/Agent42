@@ -26,14 +26,17 @@ public sealed class AgentRegistryGrainTests : IAsyncLifetime
         var registry = _cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
 
         // Create: an empty id means insert; the grain assigns the id + timestamps.
+        // Continuous: true exercises the history-mode flag (ADR 0016) through the whole
+        // create → get → update → reactivate cycle.
         var created = await registry.SaveAsync(new AgentDefinition(
             Id: "", Name: "Marvin", Description: "A paranoid android",
             Model: "gpt-4o", SystemPrompt: "You are perpetually depressed.",
-            CreatedAt: default, UpdatedAt: default));
+            CreatedAt: default, UpdatedAt: default, Continuous: true));
 
         Assert.False(string.IsNullOrEmpty(created.Id), "SaveAsync should assign an id on insert.");
         Assert.NotEqual(default, created.CreatedAt);
         Assert.Equal(created.CreatedAt, created.UpdatedAt);
+        Assert.True(created.Continuous, "the history-mode flag should persist on insert.");
 
         // List + get.
         Assert.Equal(created, Assert.Single(await registry.GetAllAsync()));
@@ -56,7 +59,9 @@ public sealed class AgentRegistryGrainTests : IAsyncLifetime
         await registry.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
         var reactivated = _cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
-        Assert.Equal(updated, await reactivated.GetAsync(updated.Id));
+        var afterReactivation = await reactivated.GetAsync(updated.Id);
+        Assert.Equal(updated, afterReactivation);
+        Assert.True(afterReactivation!.Continuous, "the history-mode flag should survive reactivation.");
 
         // Delete.
         await reactivated.DeleteAsync(updated.Id);

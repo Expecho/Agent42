@@ -160,23 +160,41 @@ public sealed class AgentApiTests : IAsyncLifetime
     public async Task AgentsEndpoints_CrudRoundTrip_AsJson()
     {
         var createRes = await _client.PostAsJsonAsync("/api/agents",
-            new AgentUpsertRequest("Marvin", "Paranoid android", "gpt-4o", "You are perpetually depressed."));
+            new AgentUpsertRequest("Marvin", "Paranoid android", "gpt-4o", "You are perpetually depressed.",
+                Continuous: true));
         createRes.EnsureSuccessStatusCode();
         Assert.Equal("application/json", createRes.Content.Headers.ContentType?.MediaType);
         var created = await createRes.Content.ReadFromJsonAsync<AgentDefinition>();
         Assert.NotNull(created);
         Assert.False(string.IsNullOrEmpty(created!.Id));
         Assert.Equal("Marvin", created.Name);
+        // AC2: POST echoes the history-mode flag.
+        Assert.True(created.Continuous);
 
         var list = await _client.GetFromJsonAsync<List<AgentDefinition>>("/api/agents");
-        Assert.Contains(list!, a => a.Id == created.Id && a.Name == "Marvin");
+        // AC2: GET carries it too.
+        Assert.Contains(list!, a => a.Id == created.Id && a.Name == "Marvin" && a.Continuous);
 
+        // AC2: PUT accepts and echoes a flipped flag.
         var updateRes = await _client.PutAsJsonAsync($"/api/agents/{created.Id}",
-            new AgentUpsertRequest("Marvin II", "Still paranoid", "gpt-4o", "You are brilliant but morose."));
+            new AgentUpsertRequest("Marvin II", "Still paranoid", "gpt-4o", "You are brilliant but morose.",
+                Continuous: false));
         updateRes.EnsureSuccessStatusCode();
         var updated = await updateRes.Content.ReadFromJsonAsync<AgentDefinition>();
         Assert.Equal(created.Id, updated!.Id);
         Assert.Equal("Marvin II", updated.Name);
+        Assert.False(updated.Continuous);
+
+        // AC3: an old-shape client that OMITS `continuous` entirely stores false (per-chat) — the
+        // real "old data defaults to per-chat" property, asserted at the JSON layer (not the ctor).
+        // An anonymous payload without the field, so it is genuinely absent on the wire.
+        var oldShapeRes = await _client.PostAsJsonAsync("/api/agents",
+            new { name = "Legacy", description = "no flag", model = "gpt-4o", systemPrompt = "You are old." });
+        oldShapeRes.EnsureSuccessStatusCode();
+        var legacy = await oldShapeRes.Content.ReadFromJsonAsync<AgentDefinition>();
+        Assert.NotNull(legacy);
+        Assert.False(legacy!.Continuous, "an omitted `continuous` must default to false (per-chat).");
+        await _client.DeleteAsync($"/api/agents/{legacy.Id}");
 
         var deleteRes = await _client.DeleteAsync($"/api/agents/{created.Id}");
         Assert.Equal(HttpStatusCode.NoContent, deleteRes.StatusCode);
