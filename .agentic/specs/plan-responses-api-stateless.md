@@ -1,9 +1,11 @@
 # Plan: Responses API support (stateless) for OpenAI-compatible providers
 
-planned-against: claude/responses-api-support-s34w64 @ 7e79e2d
+planned-against: claude/responses-api-support-s34w64 @ e0af5ee
 
-> Base note: planned on the designated feature branch (not `main`); it currently
-> carries only ADR 0014. Executor branches from here.
+> Base note: planned on the designated feature branch (not `main`). Base commit
+> `e0af5ee` carries ADR 0014 and this spec (both committed); the code diff (commit
+> `7e79e2d`) is the multi-provider baseline. Executor branches from `e0af5ee` so
+> ADR 0014 is present in the checkout.
 
 ## Overview
 Add a per-model `UseResponsesApi` option (ADR 0014). A model with the flag set is built
@@ -44,7 +46,18 @@ force a prerelease `Azure.AI.OpenAI` (see ADR 0014).
 - **Stateless is mandatory, not a default to override.** `AsIChatClientWithStoredOutputDisabled`
   (`includeReasoningEncryptedContent: true`) — never the plain `AsIChatClient()` on the response
   client, which stores server-side and breaks the `TryGetInMemoryChatHistory` invariant the grain
-  is built on and egresses content outside the tenant (ADR 0014 Consequences).
+  is built on and egresses content outside the tenant (ADR 0014 Consequences). **Evidence the
+  method exists and sets `store=false`:** Microsoft Learn API ref for
+  `OpenAI.Responses.OpenAIResponseClientExtensions.AsIChatClientWithStoredOutputDisabled`
+  (assembly `Microsoft.Agents.AI.OpenAI.dll`, package `Microsoft.Agents.AI.OpenAI v1.13.0` — the
+  repo's pin; transitive `Microsoft.Extensions.AI.OpenAI` supplies `AsIChatClient(ResponsesClient)`).
+  Its doc remark: "This corresponds to setting the 'store' property in the JSON representation to
+  false." Step 1 still confirms this at runtime, not just from the doc.
+- **The per-model API choice must be a testable seam, not only a lambda.** Extract the
+  Chat-vs-Responses decision for a given `ConfiguredModel?` into a small pure helper (e.g. an
+  internal method/enum on the factory) so a unit test can assert *which path a flagged model
+  takes* without a network call — two distinct qualified ids are always distinct+cached regardless
+  of API, so caching/identity assertions alone cannot prove the branch fired (critic HIGH-1).
 - **The adapter is `[Experimental("OPENAI001")]`.** Scope a `#pragma warning disable OPENAI001`
   to the call site (or a targeted `NoWarn`); do not blanket-suppress.
 - **SSRF invariant holds unchanged:** the endpoint still comes only from config
@@ -67,43 +80,64 @@ target OpenAI-compatible provider). Confirm the three facts the offline spike co
    vice versa (the model-switch rehost path, `AgentGrain.ChatCoreAsync:394-398`).
 3. Streamed updates carry `TextContent` / `FunctionCallContent` / `FunctionResultContent` /
    `UsageContent` (what `ChatCoreAsync`'s `switch` at :511-532 depends on).
-**Gate:** if (1) or (3) fails, stop — the design premise is wrong, re-open ADR 0014. If (2) fails,
-narrow scope: forbid switching an existing conversation between a Chat and a Responses model
-(document as a constraint + a grain-level guard), and record a gotcha. Steps 2–4 proceed only
-after this gate. *Verify:* the spike prints all four content types true and both round-trips OK.
+4. **Statelessness is observed, not assumed** (critic HIGH-2): confirm the adapter method
+   resolves at the pinned version AND that `store=false` actually took effect — e.g. the outbound
+   request carries `store:false`, or the returned response id is **not** retrievable server-side
+   afterwards. A single round-trip passing (1)–(3) does not by itself prove nothing was stored.
+5. **Capture the distinguishing handle** for the two adapters (concrete inner type behind the OTel
+   wrapper, or `GetService<ChatClientMetadata>()` fields) so Step 4's seam test has something
+   concrete to assert against if the pure-helper seam alone is deemed insufficient.
+**Gate:** if (1), (3), or (4) fails, stop — the design premise is wrong, re-open ADR 0014. If (2)
+fails, narrow scope: forbid switching an existing conversation between a Chat and a Responses model
+(document as a constraint + a grain-level guard), and record a gotcha. Steps 2–5 proceed only
+after this gate. *Verify:* the spike prints all four content types true, both round-trips OK, and
+`store=false` confirmed; record the results (and the distinguishing handle) inline in the spec.
 
 ### Step 2 — Add the config flag — `ModelProviderOptions.cs`
 Add `public bool UseResponsesApi { get; set; }` to `ConfiguredModel`, XML-doc'd (points at ADR
 0014; states stateless/OpenAI-compatible-only). *Verify:* `dotnet build Agent42.slnx`.
 
-### Step 3 — Branch the client build — `ChatClientFactory.cs`
-In `Provider.OpenAICompatible`'s lambda, look up the `ConfiguredModel` by id (case-insensitive,
-as `GetCapabilities` already does at :71-72) and choose the Responses vs Chat client. Add the
-scoped `OPENAI001` pragma. Foundry lambda unchanged. *Verify:* Step 4 tests.
+### Step 3 — Branch the client build via a testable seam — `ChatClientFactory.cs`
+Extract the per-model API decision into a small pure helper (e.g.
+`internal static bool UseResponses(ConfiguredModel? model)` or an enum-returning method) and call
+it from `Provider.OpenAICompatible`'s lambda: look up the `ConfiguredModel` by id
+(case-insensitive, as `GetCapabilities` does at :71-72), then build the Responses vs Chat client
+accordingly. Add the scoped `OPENAI001` pragma at the Responses call site only. Foundry lambda
+unchanged. The seam is what makes the branch unit-testable without a network call (critic HIGH-1).
+*Verify:* Step 4 tests.
 
 ### Step 4 — Tests — `ModelProviderTests.cs`
-Add a Responses-enabled model to the `github` provider in `Options()` and assert: a
-Responses-flagged model builds a client (non-null, no network); it is **distinct** from and
-**cached** independently of the same provider's Chat-Completions model; capability flags are still
-read per the model's own entry (orthogonality). Mirror the no-I/O construction style of the file.
-*Verify:* `dotnet test Agent42.slnx --filter ModelProviderTests`.
+Assert on the **seam**, not just client identity: a Responses-flagged `ConfiguredModel` selects the
+Responses path and an unflagged one selects Chat — a test that **fails if the branch is inverted or
+dead** (this is the AC4 fix; identity/caching assertions alone cannot prove it). Add a
+Responses-enabled model to the `github` provider in `Options()` and additionally assert: it builds
+a non-null client with no network; capability flags are still read per the model's own entry
+(orthogonality, AC5). If Step 1 found a runtime handle that distinguishes the built adapters
+(metadata/type), add that assertion too; otherwise state in the test comment that adapter selection
+beyond the seam is covered only by the Step 1 spike. Mirror the no-I/O construction style of the
+file. *Verify:* `dotnet test Agent42.slnx --filter ModelProviderTests`.
 
 ### Step 5 — Docs (same MR) — `/sync-docs`
-Add gotchas anchored to the shipped code: (a) Responses is stateful-by-default → must use
-`AsIChatClientWithStoredOutputDisabled` (evidence: `ChatClientFactory.cs`); (b) no stable
-`Azure.AI.OpenAI` exposes the Responses accessor, so Foundry Responses is deferred (evidence: ADR
-0014). Update the CLAUDE.md ADR-0013 note to mention 0014 if warranted. Fold in any Step-1 gate
-finding. *Verify:* doc-path integrity (`/audit-docs` spot check).
+Add **one** gotcha anchored to shipped code: Responses is stateful-by-default → must use
+`AsIChatClientWithStoredOutputDisabled` (evidence: `ChatClientFactory.cs`). Do **not** add a gotcha
+for "no stable `Azure.AI.OpenAI` exposes the accessor" — that is version rationale already recorded
+in ADR 0014 and would be the paraphrase/drift pattern gotchas.md:5-11 warns against (critic LOW-4).
+Update the CLAUDE.md ADR-0013 note to mention 0014 if warranted. Fold in any Step-1 gate finding.
+*Verify:* doc-path integrity (`/audit-docs` spot check).
 
 ## Acceptance criteria → test mapping
-| # | Acceptance criterion | Test | File |
+| # | Acceptance criterion | Verification | Where |
 |---|---|---|---|
-| AC1 | Runtime facts confirmed (history serializes; content types present) | Step 1 spike run (recorded) | `scratchpad/responses-spike.cs` |
-| AC2 | Cross-deserialize outcome known; design gated on it | Step 1 spike run (recorded) | `scratchpad/responses-spike.cs` |
+| AC1 | Runtime facts confirmed (history serializes; content types present; **store=false observed**) | Manual gate (recorded in spec) | `scratchpad/responses-spike.cs` |
+| AC2 | Cross-deserialize outcome known; design gated on it | Manual gate (recorded in spec) | `scratchpad/responses-spike.cs` |
 | AC3 | A `UseResponsesApi` model builds a valid `IChatClient`, no network | `ResponsesModel_BuildsClient` | `ModelProviderTests.cs` |
-| AC4 | Responses & Chat models on one provider are distinct + cached separately | `ResponsesAndChat_AreDistinctCachedClients` | `ModelProviderTests.cs` |
+| AC4 | The seam **selects Responses** for a flagged model and **Chat** for an unflagged one (fails if branch inverted/dead) | `Seam_SelectsResponsesForFlaggedModel` | `ModelProviderTests.cs` |
 | AC5 | Capability flags still per-model, independent of the API flag | `ResponsesModel_CapabilitiesFromConfig` | `ModelProviderTests.cs` |
-| AC6 | Foundry path unchanged (still Chat Completions) | existing `Factory_CachesOneClientPerQualifiedId` still green | `ModelProviderTests.cs` |
+| AC6 | Foundry path unchanged (seam returns Chat for AzureOpenAI-kind models) | `Seam_SelectsChatForFoundry` + existing `Factory_CachesOneClientPerQualifiedId` green | `ModelProviderTests.cs` |
+
+> AC1/AC2 are **manual gates**, not automated tests: `responses-spike.cs` is not in the test
+> project and never runs under `dotnet test`/CI. Their results must be pasted into this spec at
+> Step 1 so the cold-handoff reader sees them (critic LOW-5).
 
 ## Quality gate checklist (from `.agentic/quality-gates.yaml` @ plan time)
 - new_issues: 0 · new_security_issues: 0
@@ -120,4 +154,20 @@ finding. *Verify:* doc-path integrity (`/audit-docs` spot check).
   decision; retiring the SearXNG sidecar (ADR 0011) is not touched here.
 - **Stored (`store=true`) mode** — rejected in ADR 0014.
 - **UI/picker changes** — `UseResponsesApi` is a server-side transport choice, not user-selectable.
+
+## Review (critic pass, 2026-07-15)
+Verdict: withhold approval until the two HIGH findings and MEDIUM-3 are addressed. All five findings
+accepted and folded in:
+- **HIGH-1** (tests can't prove the branch fires — identity/caching is API-agnostic): Step 3 now
+  extracts a pure seam; Step 4/AC4/AC6 assert on the seam so an inverted/dead branch fails.
+- **HIGH-2** (mechanism asserted without evidence; gate didn't verify statelessness): added the
+  Microsoft Learn evidence for `AsIChatClientWithStoredOutputDisabled` + its `store=false` contract
+  to Constraints; added Step 1 gate criterion (4) that observes `store=false` at runtime, and (5) to
+  capture the adapter-distinguishing handle.
+- **MEDIUM-3** (base ref/ADR uncommitted): ADR 0014 + this spec committed at `e0af5ee`; header and
+  base note corrected to branch from there.
+- **LOW-4** (gotcha (b) duplicates ADR): dropped; only the code-anchored gotcha (a) remains.
+- **LOW-5** (AC1/AC2 mislabelled "Test"): relabelled manual gates, with a note that results are
+  recorded in-spec at Step 1.
+No finding was rejected.
 ```
