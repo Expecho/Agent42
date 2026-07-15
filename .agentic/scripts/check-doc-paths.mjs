@@ -20,8 +20,16 @@ for (const dir of [join(".agentic", "gotchas"), join(".agentic", "decisions")]) 
 // dot-extension; ROOT_RE additionally catches root-level files (`lefthook.yml`,
 // `Directory.Packages.props`) but only on evidence lines and table rows, where a
 // bare filename is a claim rather than prose. Skip URLs, globs, and placeholders.
-const PATH_RE = /`([^`\s]+\/[^`\s]+\.[a-z0-9]{1,10})`/gi;
-const ROOT_RE = /`([^`\s/\\]+\.[a-z0-9]{1,10})`/gi;
+//
+// The extension must START WITH A LOWERCASE LETTER (then lowercase letters/digits).
+// Real file extensions are lowercase (`.cs`, `.md`, `.mjs`, `.props`, `.yaml`); this
+// deliberately excludes two non-path shapes that are legitimately backticked in these
+// docs and were being misread as missing paths: `Type.Member` refs (`ModelId.Parse`,
+// `Provider.Foundry` — a PascalCase "extension") and `publisher/model.version` ids
+// (`openai/gpt-4.1` — a numeric "extension"). The regexes are case-sensitive (no `i`)
+// so the extension test is meaningful; base names keep uppercase via the negated class.
+const PATH_RE = /`([^`\s]+\/[^`\s]+\.[a-z][a-z0-9]{0,9})`/g;
+const ROOT_RE = /`([^`\s/\\]+\.[a-z][a-z0-9]{0,9})`/g;
 const SKIP = /^(https?:|.*(\*|\{|<|TODO|EXAMPLE))/i;
 
 let missing = 0;

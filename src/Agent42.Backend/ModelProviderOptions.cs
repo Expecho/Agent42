@@ -73,6 +73,19 @@ public sealed class ProviderOptions
     public string? AccountName { get; set; }
 
     public List<ConfiguredModel> Models { get; set; } = [];
+
+    /// <summary>
+    /// When set on a <see cref="ProviderKind.AzureOpenAI"/> (Foundry) provider, EVERY model of that
+    /// provider is reached through the OpenAI <b>Responses</b> API run <b>statelessly</b>
+    /// (<c>store=false</c>) instead of Chat Completions — ADR 0014. Provider-level and all-or-nothing:
+    /// Foundry models are ARM-discovered, not declared, so there is no per-model seam to hang it on.
+    /// Reached with no package change — a stable <c>OpenAIClient</c> pointed at <c>{endpoint}/openai/v1</c>
+    /// with a managed-identity bearer policy — and stateless is mandatory, never overridable, because the
+    /// grain holds all history client-side (ADR 0004). Ignored on <see cref="ProviderKind.OpenAICompatible"/>
+    /// providers (GitHub Models does not support Responses). Ships <b>off</b> in prod; turning it on is a
+    /// separate, deliberate change.
+    /// </summary>
+    public bool UseResponsesApi { get; set; }
 }
 
 /// <summary>The <c>Models:</c> config section (ADR 0013).</summary>

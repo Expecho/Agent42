@@ -8,7 +8,15 @@ namespace Agent42.Agents;
 /// request that declares tools at all (ADR 0013) — so the grain gates on this rather than
 /// assuming the Azure OpenAI feature set.
 /// </summary>
-public record ModelCapabilities(bool SupportsTools, bool SupportsVision)
+/// <param name="SupportsTools">Whether the model accepts a function-tool schema at all.</param>
+/// <param name="SupportsVision">Whether the model can read an image supplied as a URL.</param>
+/// <param name="SupportsHostedTools">
+/// Whether the model reaches OpenAI's <b>hosted</b> server-side tools (web search, code interpreter).
+/// True only for a Foundry provider running the <b>Responses</b> API (ADR 0014) — Chat Completions
+/// 400s on them, which is the whole reason the self-hosted SearXNG shims exist (ADR 0011). When set,
+/// the grain swaps its <c>web_search</c>/<c>fetch_web_page</c> shims for the native hosted tools.
+/// </param>
+public record ModelCapabilities(bool SupportsTools, bool SupportsVision, bool SupportsHostedTools = false)
 {
     /// <summary>A model with no known restrictions — the assumption for a discovered Foundry deployment.</summary>
     public static ModelCapabilities Full => new(SupportsTools: true, SupportsVision: true);

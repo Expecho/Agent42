@@ -21,6 +21,9 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
     /// <summary>A tools-capable model that cannot see images, so the two gates can be told apart.</summary>
     public const string NoVisionModel = "fake:blind";
 
+    /// <summary>A model on the Responses API (ADR 0014): reaches OpenAI's hosted server-side tools.</summary>
+    public const string HostedToolsModel = "fake:responses";
+
     /// <summary>
     /// This is the ONLY IChatClientFactory the grain tests get, so the capability predicate lives here:
     /// without it every model would report itself fully capable and the grain's degraded paths (no
@@ -30,6 +33,7 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
     {
         NoToolsNoVisionModel => new ModelCapabilities(SupportsTools: false, SupportsVision: false),
         NoVisionModel => new ModelCapabilities(SupportsTools: true, SupportsVision: false),
+        HostedToolsModel => ModelCapabilities.Full with { SupportsHostedTools = true },
         _ => ModelCapabilities.Full,
     };
 

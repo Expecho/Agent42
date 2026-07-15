@@ -30,3 +30,6 @@ Thumbs.db
 
 # Test coverage output (dotnet test --collect)
 TestResults/
+
+# Throwaway runtime spikes (referenced by .agentic/specs, never committed)
+scratchpad/

@@ -1001,6 +1001,13 @@ public sealed class AgentGrainTests : IAsyncLifetime
             .Where(e => e.Type == AgentStreamEventType.TextDelta)
             .Select(e => e.Text));
 
+    // The fake echoes the REGISTERED tool names inside a [tools:a,b,c] marker (see FakeChatClient).
+    // Absence assertions must scope to this marker, NOT the whole answer: the skills provider injects
+    // each skill's description into the system prompt, and the `websearch` skill's text names
+    // web_search/fetch_web_page — so those substrings appear in the answer even when the tools don't.
+    private static string ToolNames(string answer) =>
+        System.Text.RegularExpressions.Regex.Match(answer, @"\[tools:([^\]]*)\]").Groups[1].Value;
+
     // ---- Model capabilities (ADR 0013) ----------------------------------------------------------
     //
     // Every assertion below reads the fake's [tools:N] / [img:N] echoes, which are built from what the
@@ -1038,6 +1045,36 @@ public sealed class AgentGrainTests : IAsyncLifetime
         })
         {
             Assert.Contains(tool, answer);
+        }
+
+        // The default (Chat Completions) model has NO hosted tool: code_interpreter comes only from
+        // HostedCodeInterpreterTool, so its absence from the tool list proves no hosted tools rode here.
+        Assert.DoesNotContain("code_interpreter", ToolNames(answer));
+    }
+
+    // A Responses-API model (ADR 0014) reaches OpenAI's hosted server-side tools, so the grain swaps its
+    // self-hosted SearXNG shims for the native ones: web_search now comes from HostedWebSearchTool and
+    // code_interpreter from HostedCodeInterpreterTool; the SearXNG web_search + fetch_web_page shims drop
+    // (no double web search). The other local tools and load_skill stay.
+    [Fact]
+    public async Task HostedToolsModel_SwapsWebShimsForHostedTools()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("hosted-tools-conversation");
+
+        var events = await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.HostedToolsModel));
+
+        var registered = ToolNames(Answer(events));
+        // The hosted pair is present. HostedWebSearchTool surfaces under the protocol name `web_search`
+        // (the same name the shim used), and HostedCodeInterpreterTool under `code_interpreter`.
+        Assert.Contains("web_search", registered);
+        Assert.Contains("code_interpreter", registered);
+        // The SearXNG shims are dropped. fetch_web_page is UNIQUE to them, so its absence proves the
+        // swap — web_search alone can't, since the hosted tool reuses that exact name.
+        Assert.DoesNotContain("fetch_web_page", registered);
+        // The non-web tools and the skills provider are untouched by the swap.
+        foreach (var tool in new[] { "schedule_prompt", "get_date", "get_current_location", "load_skill" })
+        {
+            Assert.Contains(tool, registered);
         }
     }
 
