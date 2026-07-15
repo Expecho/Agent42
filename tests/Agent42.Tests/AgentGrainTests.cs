@@ -962,6 +962,19 @@ public sealed class AgentGrainTests : IAsyncLifetime
         return events;
     }
 
+    // Drains an already-built chat stream. Chat/ChatAt above cover the common turns; the model-capability
+    // tests (ADR 0013) need to pass a model id and attachments together, so they build the call themselves.
+    private static async Task<List<AgentStreamEvent>> CollectAsync(IAsyncEnumerable<AgentStreamEvent> stream)
+    {
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in stream)
+        {
+            events.Add(evt);
+        }
+
+        return events;
+    }
+
     // Same, but the turn carries the user's position — the shape a located chat request takes (ADR 0012).
     private static async Task<List<AgentStreamEvent>> ChatAt(
         IAgentGrain agent, string message, UserLocation location)
@@ -987,6 +1000,198 @@ public sealed class AgentGrainTests : IAsyncLifetime
         string.Concat(events
             .Where(e => e.Type == AgentStreamEventType.TextDelta)
             .Select(e => e.Text));
+
+    // ---- Model capabilities (ADR 0013) ----------------------------------------------------------
+    //
+    // Every assertion below reads the fake's [tools:N] / [img:N] echoes, which are built from what the
+    // TERMINAL chat client actually received. That matters: asserting on the grain's intent would pass
+    // even if the capability gate never reached the model.
+
+    // AC7: a no-tools model gets ZERO function schemas — and that must include load_skill, which
+    // AgentSkillsProvider contributes. Dropping the seven AIFunctionFactory tools but leaving the
+    // skills provider on would still hand the model a function schema it cannot handle.
+    [Fact]
+    public async Task NoToolModel_RegistersNoTools_AndNoSkillsProvider()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("no-tools-conversation");
+
+        var events = await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.NoToolsNoVisionModel));
+
+        var answer = Answer(events);
+        Assert.Contains("[tools:]", answer);
+        Assert.DoesNotContain("load_skill", answer);
+    }
+
+    // AC8: the tools-capable path is unchanged — all seven tools, plus the skills provider's load_skill.
+    [Fact]
+    public async Task ToolModel_StillRegistersAllTools()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-conversation");
+
+        var events = await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel));
+
+        var answer = Answer(events);
+        foreach (var tool in new[]
+        {
+            "schedule_prompt", "cancel_scheduled_prompt", "cancel_all_scheduled_prompts", "get_date",
+            "web_search", "fetch_web_page", "get_current_location", "load_skill",
+        })
+        {
+            Assert.Contains(tool, answer);
+        }
+    }
+
+    // AC9: the document TextSearchProvider is NOT a tool — it injects excerpts before the call — so a
+    // document conversation keeps working on a no-tools model. This is the asymmetry with the skills
+    // provider above, and the reason the two are gated differently.
+    [Fact]
+    public async Task NoToolModel_StillGetsDocumentRetrieval()
+    {
+        const string key = "no-tools-doc-conversation";
+        await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
+
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.RegisterDocumentAsync("guide.pdf");
+
+        var events = await CollectAsync(
+            agent.ChatAsync("what does the document say about magrathea", TestSiloConfigurator.NoToolsNoVisionModel));
+
+        var answer = Answer(events);
+        Assert.Contains("[tools:]", answer);
+        Assert.Contains("Magrathea is a legendary planet", answer);
+    }
+
+    // AC10: switching a conversation that has ALREADY called tools onto a no-tools model must not
+    // replay FunctionCallContent/FunctionResultContent in a request that declares no tools. GitHub
+    // Models tolerates that today (ADR 0013 spike), but many OpenAI-compatible endpoints 400 on it and
+    // the conversation would be stuck. The strip is what keeps it answerable.
+    [Fact]
+    public async Task SwitchToNoToolModel_StripsToolHistory_AndStillReplies()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("downgrade-conversation");
+
+        // Turn 1, on the fully-capable model: actually call a tool, so history carries tool content.
+        var first = await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
+        Assert.Contains(first, e => e.Type == AgentStreamEventType.ToolCallStart);
+
+        // Turn 2: the same conversation, now on a model with no tools.
+        var second = await CollectAsync(agent.ChatAsync("hello again", TestSiloConfigurator.NoToolsNoVisionModel));
+
+        var answer = Answer(second);
+        Assert.Contains("[tools:]", answer);
+
+        // The fake echoes every tool result still visible to the model. Turn 1's result was stripped,
+        // so it must not come back — and the conversation still answers.
+        Assert.DoesNotContain("[tool:", answer);
+        Assert.Equal(AgentStreamEventType.Done, second[^1].Type);
+    }
+
+    // AC11: a model that cannot see images receives NO image content — not the new turn's, and (the
+    // half that is easy to miss) not prior turns' either, since those live on in the session and would
+    // be replayed. An image reaches the model as a SAS URL into our PRIVATE attachments container, so
+    // this is a leak of a credential-bearing URL, not merely a wasted turn.
+    [Fact]
+    public async Task NoVisionModel_SendsNoImageContent()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("no-vision-conversation");
+        var reference = new AttachmentRef("nv-1", "k/nv-1", "image/png", "pic.png");
+
+        // Turn 1 on a vision model: the image reaches the model.
+        var first = await CollectAsync(agent.ChatAsync("what is in this picture", null, [reference]));
+        Assert.Contains("[img:1]", Answer(first));
+
+        // Turn 2, same conversation, on a tools-capable but BLIND model, carrying another image.
+        var second = new AttachmentRef("nv-2", "k/nv-2", "image/png", "pic2.png");
+        var events = await CollectAsync(
+            agent.ChatAsync("and this one", TestSiloConfigurator.NoVisionModel, [second]));
+
+        var answer = Answer(events);
+
+        // [allimg:0] is the assertion that matters, and [img:0] would not be enough: it counts image
+        // parts across the WHOLE request, so it proves turn 1's image was withheld from this model too —
+        // not merely that the new attachment was. A single surviving history part would hand a SAS URL
+        // for our private container to an endpoint that cannot even read it.
+        Assert.Contains("[allimg:0]", answer);
+        Assert.Contains("cannot see images", answer);
+
+        // Turn 3, back on the vision model: the withholding was REVERSIBLE. TurnAttachments is the
+        // durable record of each turn's images, so both are restored to the model's view rather than
+        // lost forever by one visit to a text-only model.
+        var third = await CollectAsync(agent.ChatAsync("describe them again", TestSiloConfigurator.DefaultModel));
+        Assert.Contains("[allimg:2]", Answer(third));
+    }
+
+    // AC11, the case the first implementation got wrong: an IMAGE-ONLY turn (blank text, one photo — a
+    // shape the composer deliberately allows) has nothing but image parts. Withholding them leaves the
+    // message with ZERO content parts, and an empty message is rejected outright by OpenAI-compatible
+    // endpoints — bricking the conversation on exactly the third-party model this feature is for. The
+    // stripped turn must keep a placeholder instead.
+    [Fact]
+    public async Task NoVisionModel_ImageOnlyTurn_StillReplies_AndSendsNoImage()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("no-vision-imageonly-conversation");
+        var reference = new AttachmentRef("io-1", "k/io-1", "image/png", "pic.png");
+
+        // Turn 1 on a vision model: blank text, image only.
+        await CollectAsync(agent.ChatAsync("", null, [reference]));
+
+        // Turn 2 on a blind model: turn 1's message is now image-only-with-images-removed.
+        var events = await CollectAsync(agent.ChatAsync("what did I send?", TestSiloConfigurator.NoVisionModel));
+
+        var answer = Answer(events);
+        Assert.Contains("[allimg:0]", answer);
+
+        // The load-bearing assertion. Stripping turn 1's only content part would leave an EMPTY user
+        // message, which a real OpenAI-compatible endpoint rejects — the fake would answer it happily,
+        // so without this marker the test would pass while the conversation was bricked in production.
+        Assert.Contains("[emptymsg:0]", answer);
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+
+        // The turn is still in history and still joined to its image, so the UI renders it and switching
+        // back to a vision model restores it.
+        var userTurns = (await agent.GetHistoryAsync()).Where(t => t.Role == "user").ToList();
+        Assert.Contains(userTurns, t => t.Attachments is { Count: 1 });
+    }
+
+    // The picker is not the only path that changes a conversation's model: BindAgentAsync is the other,
+    // and an agent's Model is a qualified id since ADR 0013 — so it can name a no-tools model.
+    [Fact]
+    public async Task BindingToNoToolModel_RegistersNoTools()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("bind-no-tools-conversation");
+
+        await agent.BindAgentAsync(new AgentBinding(
+            "agent-1", "Terse", "You are terse.", TestSiloConfigurator.NoToolsNoVisionModel));
+
+        var events = await CollectAsync(agent.ChatAsync("hi", null));
+
+        var answer = Answer(events);
+        Assert.Contains("[tools:]", answer);
+        Assert.DoesNotContain("load_skill", answer);
+    }
+
+    // AC12: a conversation persisted with a bare, unqualified model id — every conversation that
+    // existed before ADR 0013 — still opens and chats. This is the no-migration promise.
+    [Fact]
+    public async Task LegacyPersistedModel_StillResolves()
+    {
+        const string key = "legacy-model-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        // "gpt-4o" carries no provider prefix, exactly like the state written before this change.
+        await foreach (var _ in agent.ChatAsync("hi", "gpt-4o"))
+        {
+        }
+
+        Assert.Equal("gpt-4o", await agent.GetSelectedModelAsync());
+
+        // Reopen it: activation resolves the legacy id from persisted state and the chat still works.
+        await agent.Cast<IGrainManagementExtension>().DeactivateOnIdle();
+        var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        var events = await CollectAsync(reactivated.ChatAsync("still there?", null));
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+    }
 
     // Reads the grain's persisted state straight out of the memory storage provider the test silo
     // uses, so a test can assert on what was actually written (the session blob, the host allowlist)

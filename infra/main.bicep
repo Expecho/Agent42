@@ -41,6 +41,10 @@ param searxngSecret string
 param googleMapsApiKey string = ''
 
 @secure()
+@description('GitHub PAT with the models:read scope, authorizing the GitHub Models provider (ADR 0013 — the GH_MODELS_TOKEN GitHub Actions secret; GITHUB_* is a reserved prefix Actions will not let you create). A manual prerequisite, and OPTIONAL for the same reason as googleMapsApiKey: no @minLength, empty default. With no token the backend skips the provider with a warning and serves on Azure Foundry alone, so an expired PAT cannot take the app down.')
+param githubModelsToken string = ''
+
+@secure()
 @description('Admin username for the Azure Container Registry (used for image pull).')
 param acrAdminUsername string
 
@@ -192,6 +196,7 @@ module containerApp 'modules/container-app.bicep' = {
     searxngMemory: searxngMemory
     searxngSecret: searxngSecret
     googleMapsApiKey: googleMapsApiKey
+    githubModelsToken: githubModelsToken
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint

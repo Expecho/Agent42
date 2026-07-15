@@ -11,6 +11,11 @@ using OpenTelemetry.Trace;
 
 const string OtelSourceName = "Agent42.Backend";
 
+// The provider key the Azure AI Foundry account is configured under in appsettings' Models:Providers
+// map. Only used to qualify the inherited default model (see below); providers are otherwise
+// discovered from config, never named in code.
+const string FoundryProviderKey = "foundry";
+
 var builder = WebApplication.CreateBuilder(args);
 
 // OTel logging, metrics and tracing (OTLP exporter) via Aspire service defaults.
@@ -58,11 +63,46 @@ var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
     TenantId = builder.Configuration["AzureOpenAI:TenantId"],
 });
 
-// Resolves an OTel-instrumented chat client per model deployment, so a conversation can
-// switch between the models deployed in Azure AI Foundry.
-builder.Services.AddSingleton<IChatClientFactory>(
-    new AzureOpenAIChatClientFactory(
-        new Uri(azureOpenAIEndpoint), credential, defaultDeployment, OtelSourceName));
+// Model providers (ADR 0013). A conversation can run on any configured provider — Azure AI Foundry
+// with the managed identity, or any OpenAI-compatible endpoint with an API key (GitHub Models in
+// prod; an Ollama or vLLM endpoint works by config alone, with no code change).
+//
+// The default stays a FOUNDRY model, and that is a deliberate security position, not a default that
+// happened: a third-party model is opt-in per conversation, because picking one sends the session —
+// document excerpts (ADR 0008), image SAS URLs (ADR 0004) and the user's street address (ADR 0012) —
+// outside the Entra tenant.
+var modelOptions = builder.Configuration.GetSection(ModelProvidersOptions.SectionName)
+    .Get<ModelProvidersOptions>() ?? new ModelProvidersOptions();
+
+// The default model INHERITS AzureOpenAI:DeploymentName (which Bicep threads in) rather than being
+// hardcoded in appsettings — otherwise that env var would look authoritative and change nothing, the
+// same dead-config trap the SearXNG server.port gotcha describes. Setting Models:Default explicitly is
+// supported, and is the only way to default to a non-Foundry model — which would mean defaulting the
+// whole app to a third-party endpoint, so ADR 0013 keeps Foundry the default deliberately.
+if (string.IsNullOrWhiteSpace(modelOptions.Default))
+{
+    modelOptions.Default = ModelId.Qualify(FoundryProviderKey, defaultDeployment);
+}
+
+builder.Services.AddSingleton(new ArmClient(credential));
+
+// The rules — which providers are skipped, what a Foundry provider inherits, what a declared model
+// contributes — live in ModelProviderBuilder, not here: nothing in the test suite runs Program.cs.
+var models = ModelProviderBuilder.Build(modelOptions, builder.Configuration, credential);
+
+builder.Services.AddSingleton<IChatClientFactory>(sp => new MultiProviderChatClientFactory(
+    models.Providers,
+    modelOptions.Default,
+    OtelSourceName,
+    sp.GetRequiredService<ILogger<MultiProviderChatClientFactory>>()));
+
+builder.Services.AddSingleton<IModelCatalog>(sp => new CompositeModelCatalog(
+    [.. models.Discovering.Select(d => new AzureModelCatalog(
+        sp.GetRequiredService<ArmClient>(), d.Key, d.Settings, modelOptions.Default,
+        sp.GetRequiredService<ILogger<AzureModelCatalog>>()))],
+    models.DeclaredModels,
+    modelOptions.Default,
+    sp.GetRequiredService<ILogger<CompositeModelCatalog>>()));
 
 // Blob-backed attachment store (ADR 0004): durable image bytes live in blob storage, never in
 // the serialized session. Prefer an Aspire-provided connection (Azurite under the AppHost);
@@ -214,14 +254,6 @@ else
     builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
 }
 
-// Live catalog of the deployed models, queried through the Azure Resource Manager SDK.
-builder.Services.AddSingleton(new ArmClient(credential));
-builder.Services.AddSingleton<IModelCatalog>(sp => new AzureModelCatalog(
-    sp.GetRequiredService<ArmClient>(),
-    sp.GetRequiredService<IConfiguration>(),
-    defaultDeployment,
-    sp.GetRequiredService<ILogger<AzureModelCatalog>>()));
-
 // Orleans silo: clustering comes from the Aspire Orleans resource when running
 // under Aspire orchestration; localhost clustering is the fallback for a single
 // standalone instance (e.g. one Container App replica with no Aspire AppHost).
@@ -263,6 +295,16 @@ var app = builder.Build();
 // Construct the default chat client now (no network I/O) so configuration mistakes
 // surface at startup instead of failing the first grain activation.
 _ = app.Services.GetRequiredService<IChatClientFactory>().GetClient(null);
+
+// Say so once, loudly enough to find, when a provider was dropped for want of a key — otherwise
+// "the GitHub models aren't in the picker" is a silent mystery. Deliberately NOT a throw (ADR 0013):
+// the app must keep serving on Foundry when a third-party token is missing or has expired.
+foreach (var skipped in models.SkippedProviders)
+{
+    app.Logger.LogWarning(
+        "Model provider '{Provider}' has no ApiKey and was skipped; its models will not appear in the "
+        + "picker. Set Models__Providers__{Provider}__ApiKey to enable it.", skipped, skipped);
+}
 
 // Say so once, loudly enough to find, when the location tool is running without reverse geocoding —
 // otherwise "it only ever gives me coordinates" is a silent mystery (ADR 0012). Not a throw: an absent

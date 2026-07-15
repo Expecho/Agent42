@@ -25,13 +25,14 @@ public sealed class FakeChatClient : IChatClient
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
-        var call = SelectToolCall(messages);
+        var call = SelectToolCall(messages, options);
         var contents = call is not null
             ? new List<AIContent> { call }
             : new List<AIContent>
             {
                 new TextContent(RequestContextEcho() + InstructionsEcho(messages, options)
-                    + ContextEcho(messages) + ImageEcho(messages) + ToolResultEcho(messages)
+                    + ToolsEcho(options) + ContextEcho(messages) + ImageEcho(messages)
+                    + AllImagesEcho(messages) + EmptyMessageEcho(messages) + ToolResultEcho(messages)
                     + string.Concat(ReplyChunks)),
             };
 
@@ -42,15 +43,16 @@ public sealed class FakeChatClient : IChatClient
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var call = SelectToolCall(messages);
+        var call = SelectToolCall(messages, options);
         if (call is not null)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent> { call });
             yield break;
         }
 
-        var echo = RequestContextEcho() + InstructionsEcho(messages, options)
-            + ContextEcho(messages) + ImageEcho(messages) + ToolResultEcho(messages);
+        var echo = ToolsEcho(options) + RequestContextEcho() + InstructionsEcho(messages, options)
+            + ContextEcho(messages) + ImageEcho(messages) + AllImagesEcho(messages)
+            + EmptyMessageEcho(messages) + ToolResultEcho(messages);
         if (echo.Length > 0)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, echo);
@@ -90,6 +92,31 @@ public sealed class FakeChatClient : IChatClient
 
         return string.IsNullOrWhiteSpace(instructions) ? "" : $"[sys:{instructions}] ";
     }
+
+    // Surfaces the function schemas the terminal client was handed, BY NAME, as a [tools:a,b,c] marker.
+    // Names rather than a count, because the assertion that matters on a no-tools model (ADR 0013) is
+    // that load_skill is gone too — AgentSkillsProvider contributes its tools through this same list, so
+    // a count alone would make the test depend on how many tools that provider happens to ship.
+    // Same discipline as the [sys:…]/[img:…] echoes: the fake proves delivery, not merely that the grain
+    // intended it. Always emitted — a bare [tools:] is the assertion the degraded path needs.
+    private static string ToolsEcho(ChatOptions? options)
+        => $"[tools:{string.Join(",", options?.Tools?.Select(t => t.Name) ?? [])}] ";
+
+    // Surfaces how many messages in the request carry NO content parts at all, as an [emptymsg:N] marker.
+    // A real OpenAI-compatible endpoint rejects an empty message outright; a fake cannot, so without this
+    // marker a test for "withholding images doesn't brick an image-only turn" would pass vacuously —
+    // the fake would happily answer a request the real service would 400. This is the property, made
+    // observable: [emptymsg:0] on every turn.
+    private static string EmptyMessageEcho(IEnumerable<ChatMessage> messages)
+        => $"[emptymsg:{messages.Count(m => m.Contents.Count == 0)}] ";
+
+    // Surfaces the number of image parts visible ANYWHERE in the request, not just on the last user
+    // turn — prior turns' images live on in the session and are replayed to the model every turn. That
+    // makes this, and not [img:N], the marker that can prove a no-vision model receives no image URL at
+    // all (ADR 0013): an image is a SAS URL into a private container, so one surviving in history would
+    // still hand it to a third-party endpoint.
+    private static string AllImagesEcho(IEnumerable<ChatMessage> messages)
+        => $"[allimg:{messages.SelectMany(m => m.Contents).Count(c => c is UriContent or DataContent)}] ";
 
     // Surfaces the number of image content parts on the last user message as an [img:N] marker,
     // so a test can assert an attachment actually reached the model — a storage round-trip proves
@@ -218,8 +245,16 @@ public sealed class FakeChatClient : IChatClient
         });
 
     // Picks the tool call (if any) the model should make for the current user turn.
-    private static FunctionCallContent? SelectToolCall(IEnumerable<ChatMessage> messages)
+    private static FunctionCallContent? SelectToolCall(IEnumerable<ChatMessage> messages, ChatOptions? options)
     {
+        // A model cannot call a tool it was never given. Without this the fake would happily emit a
+        // FunctionCallContent on a no-tools model (ADR 0013) — inventing a capability the real thing
+        // does not have, and hiding the very bug the capability gate exists to prevent.
+        if (options?.Tools is not { Count: > 0 })
+        {
+            return null;
+        }
+
         var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
 
         var lastUserIndex = LastUserIndex(list);

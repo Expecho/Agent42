@@ -93,6 +93,10 @@ param searxngSecret string
 @description('Google Cloud API key with the Geocoding API enabled (ADR 0012). OPTIONAL: when empty, neither the secret nor the env var below is emitted at all, and the app degrades to coordinates-only reverse geocoding rather than failing to deploy. An empty-valued Container App secret is not a thing worth risking for a feature that is not on the availability path.')
 param googleMapsApiKey string = ''
 
+@secure()
+@description('GitHub PAT with the models:read scope, authorizing the GitHub Models provider (ADR 0013). OPTIONAL, exactly like googleMapsApiKey and deliberately unlike searxngSecret: when empty, neither the secret nor the env var is emitted, the backend skips the provider with a warning and serves on Azure Foundry alone. A third-party token expiring must never take the app down.')
+param githubModelsToken string = ''
+
 @description('Minimum replica count. Orleans localhost clustering (used by this single-instance deployment) only supports one instance.')
 param minReplicas int
 
@@ -169,6 +173,14 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
                 name: 'google-maps-api-key'
                 value: googleMapsApiKey
               }
+            ],
+        empty(githubModelsToken)
+          ? []
+          : [
+              {
+                name: 'github-models-token'
+                value: githubModelsToken
+              }
             ]
       )
     }
@@ -208,7 +220,14 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           // supplied: with no key the backend registers CoordinatesOnlyGeocoder and starts normally.
           empty(googleMapsApiKey)
             ? []
-            : [{ name: 'Geocoding__GoogleApiKey', secretRef: 'google-maps-api-key' }])
+            : [{ name: 'Geocoding__GoogleApiKey', secretRef: 'google-maps-api-key' }],
+          // The GitHub Models provider's API key (ADR 0013). Emitted only when a token was supplied:
+          // with none, the backend skips that provider with a warning and serves on Foundry alone. The
+          // double underscore is the config-binder's section separator — this lands as
+          // Models:Providers:github:ApiKey, i.e. the `github` key in appsettings' Models:Providers map.
+          empty(githubModelsToken)
+            ? []
+            : [{ name: 'Models__Providers__github__ApiKey', secretRef: 'github-models-token' }])
         }
         // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume and no API
         // key. NOT private, though — SearXNG is a *meta*search engine and forwards every query on to

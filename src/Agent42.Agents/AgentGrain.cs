@@ -46,7 +46,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private AIAgent _agent = null!;
     private AgentSession _session = null!;
-    private string _deployment = null!;
+    private string _modelId = null!;
 
     /// <summary>
     /// The user's position for the turn currently being processed, or null (ADR 0012). Set at the top
@@ -90,8 +90,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        _deployment = _state.State.DeploymentName ?? _chatClientFactory.DefaultDeployment;
-        _agent = BuildAgent(_deployment);
+        _modelId = _state.State.DeploymentName ?? _chatClientFactory.DefaultModelId;
+        _agent = BuildAgent(_modelId);
 
         _session = _state.State.SerializedSession is { Length: > 0 } serialized
             ? await _agent.DeserializeSessionAsync(
@@ -99,15 +99,20 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             : await _agent.CreateSessionAsync(cancellationToken);
 
         _logger.LogInformation("Agent grain {GrainKey} activated on model {Model} (existing session: {HasSession})",
-            this.GetPrimaryKeyString(), _deployment, _state.State.SerializedSession is not null);
+            this.GetPrimaryKeyString(), _modelId, _state.State.SerializedSession is not null);
 
         await base.OnActivateAsync(cancellationToken);
     }
 
-    // Builds the Agent Framework agent bound to a specific model deployment. Called on
-    // activation and again whenever the conversation switches models.
-    private AIAgent BuildAgent(string deployment)
+    // Builds the Agent Framework agent bound to a specific model. Called on activation and again
+    // whenever the conversation switches models.
+    private AIAgent BuildAgent(string modelId)
     {
+        // Not every model does function calling (ADR 0013): on GitHub Models the OpenAI-published
+        // models do, while microsoft/phi-4 rejects a tools request outright. A model that can't must
+        // get NO function schema at all.
+        var capabilities = _chatClientFactory.GetCapabilities(modelId);
+
         // The agent's tools. Each is bound to this grain instance, so a tool can reach
         // Orleans (grain factory, reminders, state) directly through `this`.
         var getDateTime = AIFunctionFactory.Create(
@@ -178,27 +183,40 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // state at bind time; a normal chat falls back to the default Agent 42 persona.
         // Old Cosmos state has null persona fields, so existing chats fall back too.
         return new ChatClientAgent(
-            _chatClientFactory.GetClient(deployment),
+            _chatClientFactory.GetClient(modelId),
             new ChatClientAgentOptions
             {
                 Name = _state.State.AgentName ?? "Agent42",
                 ChatOptions = new ChatOptions
                 {
                     Instructions = WithDocumentAwareness(_state.State.SystemPrompt ?? Instructions),
-                    Tools =
-                    [
-                        schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime,
-                        webSearch, fetchWebPage, getCurrentLocation,
-                    ]
+                    Tools = capabilities.SupportsTools
+                        ?
+                        [
+                            schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime,
+                            webSearch, fetchWebPage, getCurrentLocation,
+                        ]
+                        : [],
                 },
                 // Automatic document retrieval (ADR 0008): a TextSearchProvider runs before every model
                 // call and injects the top matching excerpts — but ONLY for conversations that actually
-                // have an ingested document. Document-free chats keep exactly the skills provider and
-                // make zero embedding calls, which is what makes the always-on switch safe (it confines
-                // the per-turn embedding round-trip ADR 0007 feared to document conversations).
-                AIContextProviders = _state.State.DocumentNames.Count > 0
-                    ? [skillsProvider, BuildDocumentSearchProvider()]
-                    : [skillsProvider],
+                // have an ingested document. Document-free chats make zero embedding calls, which is
+                // what makes the always-on switch safe (it confines the per-turn embedding round-trip
+                // ADR 0007 feared to document conversations).
+                //
+                // The two providers are gated DIFFERENTLY on a no-tools model, and the asymmetry is the
+                // point (ADR 0013): AgentSkillsProvider IS a tool — it exposes load_skill to the model —
+                // so it must be dropped alongside the seven AIFunctionFactory tools above, or the model
+                // still receives a function schema it cannot handle. The TextSearchProvider is NOT a
+                // tool: it injects excerpts before the call, so it stays on regardless of capability, and
+                // a document conversation keeps working on a no-tools model.
+                AIContextProviders = (capabilities.SupportsTools, _state.State.DocumentNames.Count > 0) switch
+                {
+                    (true, true) => [skillsProvider, BuildDocumentSearchProvider()],
+                    (true, false) => [skillsProvider],
+                    (false, true) => [BuildDocumentSearchProvider()],
+                    (false, false) => [],
+                },
                 // The provider injects retrieval as a ChatRole.User message tagged
                 // AgentRequestMessageSourceType.AIContextProvider. Left in the default history store it
                 // would be persisted into the serialized session — and it carries an attribution struct
@@ -270,7 +288,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             + "each reply; ground answers about their contents in those excerpts and cite the file and page you used.";
     }
 
-    public Task<string> GetSelectedModelAsync() => Task.FromResult(_deployment);
+    public Task<string> GetSelectedModelAsync() => Task.FromResult(_modelId);
 
     public async Task BindAgentAsync(AgentBinding binding)
     {
@@ -291,9 +309,20 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // runs on a brand-new empty session, but copying that shape keeps the rebuild path
         // uniform and avoids relying on an empty session being portable across instances.
         var snapshot = await _agent.SerializeSessionAsync(_session);
-        _deployment = binding.Model;
+        _modelId = binding.Model;
         _agent = BuildAgent(binding.Model);
         _session = await _agent.DeserializeSessionAsync(snapshot);
+
+        // This is the SECOND path that changes the conversation's model, so it needs the same downgrade
+        // strip as the picker path in ChatCoreAsync — an agent's Model is a qualified id since ADR 0013
+        // and may name a no-tools model. The comment above says binding runs on an empty session, and
+        // today it does (the client binds on a new conversation's first send), but that is an assumption
+        // about a caller, not an invariant of this grain — and if it ever stops holding, the failure is a
+        // conversation that cannot be reopened. The strip is a no-op on an empty session.
+        if (!_chatClientFactory.GetCapabilities(binding.Model).SupportsTools)
+        {
+            StripToolHistory();
+        }
 
         await _state.WriteStateAsync();
 
@@ -303,7 +332,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public Task<AgentBinding?> GetAgentBindingAsync()
         => Task.FromResult(_state.State.AgentId is { Length: > 0 } id
-            ? new AgentBinding(id, _state.State.AgentName ?? "", _state.State.SystemPrompt ?? "", _deployment)
+            ? new AgentBinding(id, _state.State.AgentName ?? "", _state.State.SystemPrompt ?? "", _modelId)
             : null);
 
     public async Task RegisterDocumentAsync(string fileName)
@@ -318,7 +347,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // Rebuild the agent so the updated document list reaches the model as instructions —
         // same snapshot→rebuild→restore shape as BindAgentAsync and the model-switch path.
         var snapshot = await _agent.SerializeSessionAsync(_session);
-        _agent = BuildAgent(_deployment);
+        _agent = BuildAgent(_modelId);
         _session = await _agent.DeserializeSessionAsync(snapshot);
 
         await _state.WriteStateAsync();
@@ -357,26 +386,45 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s), location: {HasLocation})",
             this.GetPrimaryKeyString(), message.Length, attachments?.Count ?? 0, _turnLocation is not null);
 
-        if (!string.IsNullOrWhiteSpace(model) && model != _deployment)
+        if (!string.IsNullOrWhiteSpace(model) && model != _modelId)
         {
             // Rehost the existing conversation on the newly picked model: snapshot the
             // session, rebuild the agent against the new client, then restore the session
             // so history carries over.
             var snapshot = await _agent.SerializeSessionAsync(_session);
-            _deployment = model;
+            _modelId = model;
             _state.State.DeploymentName = model;
             _agent = BuildAgent(model);
             _session = await _agent.DeserializeSessionAsync(snapshot);
+
+            // A DOWNGRADE — tools-capable conversation onto a model that has none — would replay this
+            // conversation's FunctionCallContent/FunctionResultContent in a request that declares no
+            // tools. GitHub Models accepts that today (ADR 0013 spike), but that is a service behaviour
+            // we don't control and OpenAI-compatible endpoints commonly reject it; the failure mode is
+            // a conversation that can never be reopened on this model. Cheap to prevent, so we do.
+            if (!_chatClientFactory.GetCapabilities(model).SupportsTools)
+            {
+                StripToolHistory();
+            }
 
             _logger.LogInformation("Agent grain {GrainKey} switched to model {Model}",
                 this.GetPrimaryKeyString(), model);
         }
 
+        // Images are gated on the model's VISION capability, and this gate is not merely about a turn
+        // that would fail anyway (ADR 0013). An image reaches the model as a SAS URL into our PRIVATE
+        // attachments container (ADR 0004), and the model's host really does fetch that URL server-side
+        // (the ADR 0013 spike confirmed it) — so handing it to a third-party endpoint that cannot even
+        // read images leaks a live credential-bearing URL for nothing. Gate it HERE, in the grain, not
+        // only in the UI: the UI is not a security boundary.
+        var canSeeImages = _chatClientFactory.GetCapabilities(_modelId).SupportsVision;
+
         // Refresh the image URLs on PRIOR turns before this model call. Azure OpenAI re-fetches
         // a prior turn's image URL on every subsequent turn (Step 1 spike), and a blob SAS is
         // short-lived — but a warm grain serves many turns without reactivating, so this must run
         // per turn, not only on activation, or a long-lived conversation 400s once a SAS expires.
-        await RehydrateAttachmentUrlsAsync();
+        // It also applies the vision gate to history — see the method.
+        await RehydrateAttachmentUrlsAsync(canSeeImages);
 
         // Build the user turn. Images ride alongside the text as UriContent parts pointing at
         // a store-provided URL (a blob SAS in prod, a placeholder offline) — never raw bytes,
@@ -393,21 +441,43 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             RememberFetchableUrlsInUserText(message);
         }
 
+        // The attachment still lands in TurnAttachments even when withheld, so history renders it and
+        // the image is not lost — switching back to a vision model restores it to the model's view too
+        // (see RehydrateAttachmentUrlsAsync).
+        var skippedImages = 0;
+
         var turnRefs = new List<AttachmentRef>();
         if (attachments is { Count: > 0 })
         {
             foreach (var attachment in attachments)
             {
+                if (!canSeeImages)
+                {
+                    skippedImages++;
+                    turnRefs.Add(attachment);
+                    continue;
+                }
+
                 var url = await _attachments.GetReadUrlAsync(attachment);
                 contents.Add(new UriContent(url, attachment.MediaType));
                 turnRefs.Add(attachment);
             }
         }
 
-        // Never send a message with no content parts (an empty text-only turn keeps a TextContent).
+        if (skippedImages > 0)
+        {
+            _logger.LogInformation(
+                "Agent grain {GrainKey} withheld {Count} image(s) from model {Model}: no vision support",
+                this.GetPrimaryKeyString(), skippedImages, _modelId);
+        }
+
+        // Never send a message with no content parts (an empty text-only turn keeps a TextContent). An
+        // image-only turn on a no-vision model lands here too — every part it had was withheld — and it
+        // gets the placeholder rather than an empty string, so the model can see that something was
+        // omitted rather than receiving a blank turn.
         if (contents.Count == 0)
         {
-            contents.Add(new TextContent(string.Empty));
+            contents.Add(new TextContent(skippedImages > 0 ? WithheldImagePlaceholder : string.Empty));
         }
 
         // Keep TurnAttachments 1:1 with the user turns already in history before appending this
@@ -417,6 +487,18 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _state.State.TurnAttachments.Add(turnRefs);
 
         var userMessage = new ChatMessage(ChatRole.User, contents);
+
+        // Tell the user their image was withheld, rather than letting the model silently ignore it.
+        // This is streamed to the CLIENT and never added to the user's message: a note pushed into
+        // `contents` would be concatenated into that turn's text by GetHistoryAsync and render inside
+        // the user's own chat bubble on every later reload.
+        if (skippedImages > 0)
+        {
+            yield return new AgentStreamEvent(
+                AgentStreamEventType.TextDelta,
+                Text: $"_The selected model cannot see images, so {skippedImages} attachment(s) were "
+                    + "not sent to it. Switch to a vision-capable model to ask about them._\n\n");
+        }
 
         // Token usage arrives as UsageContent updates, one per LLM turn (a tool-calling
         // run has several); accumulate them and report the totals on the Done event.
@@ -949,7 +1031,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         // Refresh prior turns' image URLs before this model call too (a reminder can fire on a
         // long-warm grain whose SAS URLs have since expired) — same reason as ChatAsync.
-        await RehydrateAttachmentUrlsAsync();
+        await RehydrateAttachmentUrlsAsync(
+            _chatClientFactory.GetCapabilities(_modelId).SupportsVision);
 
         // A reminder-fired turn is a user turn too, so it must push a (always empty) attachment
         // entry to keep TurnAttachments aligned 1:1 with user turns by index (constraint 11).
@@ -989,10 +1072,21 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // model call (not just on activation), because a warm grain serves many turns per activation.
     // Each user turn's UriContent parts are matched, in order, to that turn's stored attachment
     // refs. Prod re-mints a fresh SAS; the in-memory store returns its stable placeholder (a no-op).
-    private async Task RehydrateAttachmentUrlsAsync()
+    //
+    // <paramref name="includeImages"/> is the VISION gate applied to HISTORY, and it is the other half
+    // of the gate in ChatCoreAsync (ADR 0013). Withholding images only from the new turn would be a hole:
+    // prior turns' UriContent parts live on in the session and would be replayed to the newly picked
+    // model anyway — handing a third-party endpoint a SAS URL into our private attachments container
+    // (ADR 0004) precisely when it cannot even read it.
+    //
+    // The withholding is REVERSIBLE, and that is why this reads from TurnAttachments rather than just
+    // deleting parts: TurnAttachments is the durable record of a turn's images, so a stripped part is
+    // reconstructed from it the moment the conversation switches back to a vision-capable model. A
+    // destructive strip would silently blind the conversation's history forever after one visit to a
+    // text-only model.
+    private async Task RehydrateAttachmentUrlsAsync(bool includeImages)
     {
-        if (_state.State.TurnAttachments.Count == 0
-            || !_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
+        if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
         {
             return;
         }
@@ -1010,16 +1104,96 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 : null;
             userTurnIndex++;
 
+            if (!includeImages)
+            {
+                // Strip on the MESSAGE's own parts, not on `refs` — a conversation from before
+                // TurnAttachments existed deserializes that list empty (ADR 0004 gotcha) while its
+                // session still holds image parts. Keying the strip off `refs` would skip those and
+                // leak them to the model this gate exists to withhold them from.
+                StripImageParts(message);
+                continue;
+            }
+
             if (refs is not { Count: > 0 })
             {
                 continue;
             }
 
             var uriParts = message.Contents.OfType<UriContent>().ToList();
-            for (var i = 0; i < uriParts.Count && i < refs.Count; i++)
+            for (var i = 0; i < refs.Count; i++)
             {
-                uriParts[i].Uri = await _attachments.GetReadUrlAsync(refs[i]);
+                var url = await _attachments.GetReadUrlAsync(refs[i]);
+
+                if (i < uriParts.Count)
+                {
+                    uriParts[i].Uri = url;
+                }
+                else
+                {
+                    // Restoring a part a previous no-vision turn withheld.
+                    message.Contents.Add(new UriContent(url, refs[i].MediaType));
+                }
+            }
+
+            // Undo the placeholder below, so a restored turn reads as the user wrote it.
+            for (var i = message.Contents.Count - 1; i >= 0; i--)
+            {
+                if (message.Contents[i] is TextContent { Text: WithheldImagePlaceholder })
+                {
+                    message.Contents.RemoveAt(i);
+                }
             }
         }
+    }
+
+    // What a user turn says once its images are withheld. An IMAGE-ONLY turn (blank text, one photo — a
+    // shape the composer deliberately allows) would otherwise be left with ZERO content parts, and an
+    // empty message is rejected outright by OpenAI-compatible endpoints: the conversation could then
+    // never be reopened on that model, which is the exact failure this whole gate exists to prevent.
+    // StripToolHistory can just drop an emptied message; this cannot — the TurnAttachments↔user-turn
+    // index join is positional, so a dropped turn would misalign every image after it.
+    private const string WithheldImagePlaceholder = "[image omitted: the selected model cannot read images]";
+
+    private static void StripImageParts(ChatMessage message)
+    {
+        var removed = 0;
+        for (var i = message.Contents.Count - 1; i >= 0; i--)
+        {
+            if (message.Contents[i] is UriContent)
+            {
+                message.Contents.RemoveAt(i);
+                removed++;
+            }
+        }
+
+        if (removed > 0 && message.Contents.Count == 0)
+        {
+            message.Contents.Add(new TextContent(WithheldImagePlaceholder));
+        }
+    }
+
+    // Drops function-call and function-result content from the session (ADR 0013). Used when the
+    // conversation moves onto a model that declares no tools: replaying tool content in a request that
+    // carries no tool schema is rejected by many OpenAI-compatible endpoints, and the conversation
+    // would be stuck there. Assistant messages left with nothing but a tool call are dropped whole.
+    private void StripToolHistory()
+    {
+        if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
+        {
+            return;
+        }
+
+        foreach (var message in messages)
+        {
+            for (var i = message.Contents.Count - 1; i >= 0; i--)
+            {
+                if (message.Contents[i] is FunctionCallContent or FunctionResultContent)
+                {
+                    message.Contents.RemoveAt(i);
+                }
+            }
+        }
+
+        messages.RemoveAll(m => m.Contents.Count == 0);
     }
 }

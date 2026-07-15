@@ -33,8 +33,14 @@ public sealed class AgentApiTests : IAsyncLifetime
         appBuilder.WebHost.UseTestServer();
         appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
         // Registered so the /api/models endpoint's parameter is resolved as a service
-        // (otherwise minimal-API metadata inference treats it as a body and fails to map).
-        appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
+        // (otherwise minimal-API metadata inference treats it as a body and fails to map). Two
+        // providers, so the endpoint's qualified-id contract (ADR 0013) is assertable.
+        appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("foundry:gpt-4o",
+        [
+            new ModelInfo("foundry:gpt-4o", "foundry", "GPT-4o", "gpt-4o", "2024-08-06", true, true),
+            new ModelInfo("github:openai/gpt-4o-mini", "github", "GPT-4o mini", "openai/gpt-4o-mini",
+                null, SupportsTools: true, SupportsVision: false),
+        ]));
         // The chat endpoint resolves attachments through the store; the in-memory store is
         // process-global, so it is the same instance the silo grain sees (constraint 10).
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
@@ -384,5 +390,27 @@ public sealed class AgentApiTests : IAsyncLifetime
         using var response = await _client.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<UserProfile>())!;
+    }
+
+    // AC13: the picker reads this payload, so the wire contract is the qualified id plus the provider
+    // and the capability flags — in camelCase, which is what the frontend indexes by (ADR 0013).
+    [Fact]
+    public async Task ModelsEndpoint_ReturnsQualifiedIdsWithProvider()
+    {
+        var json = await _client.GetStringAsync("/api/models");
+
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal("foundry:gpt-4o", doc.RootElement.GetProperty("default").GetString());
+
+        var models = doc.RootElement.GetProperty("models").EnumerateArray().ToList();
+
+        var github = models.Single(m => m.GetProperty("provider").GetString() == "github");
+        Assert.Equal("github:openai/gpt-4o-mini", github.GetProperty("id").GetString());
+        Assert.Equal("GPT-4o mini", github.GetProperty("displayName").GetString());
+        Assert.True(github.GetProperty("supportsTools").GetBoolean());
+        Assert.False(github.GetProperty("supportsVision").GetBoolean());
+
+        var foundry = models.Single(m => m.GetProperty("provider").GetString() == "foundry");
+        Assert.Equal("foundry:gpt-4o", foundry.GetProperty("id").GetString());
     }
 }

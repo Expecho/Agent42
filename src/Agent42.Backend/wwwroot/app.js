@@ -132,29 +132,64 @@
     } catch { /* leave the picker disabled; chat still uses the server's default model */ }
   }
 
-  // Fills a <select> with the available model deployments (composer picker + agent form).
+  // A model is named by a qualified id — "provider:model", split on the FIRST colon (a provider's own
+  // model name can contain a "/", e.g. github:openai/gpt-4o-mini). A legacy id has no colon at all and
+  // belongs to the default provider; conversations created before multi-provider hold those.
+  function modelLabel(id) {
+    if (!id) return "";
+    const known = (modelsData.models ?? []).find((m) => m.id === id);
+    if (known?.displayName) return known.displayName;
+    const colon = id.indexOf(":");
+    return colon < 0 ? id : id.slice(colon + 1);
+  }
+
+  // Fills a <select> with the available models, grouped by provider. Shared by the composer picker AND
+  // the agent dialog — both get the grouping, and neither hand-rolls its own option list.
   function fillModelOptions(select) {
     select.innerHTML = "";
+    const groups = new Map();
     for (const m of modelsData.models ?? []) {
+      const provider = m.provider ?? "";
+      if (!groups.has(provider)) {
+        const group = document.createElement("optgroup");
+        group.label = provider || "Models";
+        groups.set(provider, group);
+        select.appendChild(group);
+      }
+
       const opt = document.createElement("option");
-      opt.value = m.deployment;
-      opt.textContent = m.deployment;
-      if (m.version) opt.title = `${m.model ?? m.deployment} · ${m.version}`;
-      select.appendChild(opt);
+      opt.value = m.id;
+      opt.textContent = m.displayName ?? m.id;
+      if (m.version) opt.title = `${m.model ?? m.id} · ${m.version}`;
+      groups.get(provider).appendChild(opt);
     }
   }
 
-  // Select a deployment, adding it as an option first if the list doesn't have it
-  // (e.g. a conversation pinned to a model that has since been removed).
-  function setModel(deployment) {
-    if (!deployment) return;
-    if (![...modelSelect.options].some((o) => o.value === deployment)) {
+  // Selects a model in a <select>, adding it first if the list doesn't have it — a conversation pinned
+  // to a model that has since been removed from config, or whose provider was dropped. It goes into its
+  // own optgroup rather than as a bare <option>: appended straight to a select that already has
+  // optgroups, it would render as their sibling and read as if it belonged to the last group.
+  function selectModel(select, id) {
+    if (!id) return;
+    if (![...select.options].some((o) => o.value === id)) {
+      let unknown = select.querySelector("optgroup[data-unknown]");
+      if (!unknown) {
+        unknown = document.createElement("optgroup");
+        unknown.label = "Unavailable";
+        unknown.setAttribute("data-unknown", "");
+        select.appendChild(unknown);
+      }
+
       const opt = document.createElement("option");
-      opt.value = deployment;
-      opt.textContent = deployment;
-      modelSelect.appendChild(opt);
+      opt.value = id;
+      opt.textContent = modelLabel(id);
+      unknown.appendChild(opt);
     }
-    modelSelect.value = deployment;
+    select.value = id;
+  }
+
+  function setModel(id) {
+    selectModel(modelSelect, id);
   }
 
   /* ————— sidebar ————— */
@@ -263,7 +298,9 @@
 
       const model = document.createElement("span");
       model.className = "agent__model";
-      model.textContent = agent.model;
+      // The stored value is a qualified id; show the friendly name, not "github:openai/gpt-4o-mini".
+      model.textContent = modelLabel(agent.model);
+      model.title = agent.model;
 
       btn.append(name, model);
 
@@ -316,17 +353,9 @@
     agentDescriptionInput.value = agent?.description ?? "";
     agentSystemPromptInput.value = agent?.systemPrompt ?? "";
     fillModelOptions(agentModelSelect);
-    // Preselect the agent's model when editing, otherwise the server default.
-    const preferred = agent?.model ?? defaultModel;
-    if (preferred) {
-      if (![...agentModelSelect.options].some((o) => o.value === preferred)) {
-        const opt = document.createElement("option");
-        opt.value = preferred;
-        opt.textContent = preferred;
-        agentModelSelect.appendChild(opt);
-      }
-      agentModelSelect.value = preferred;
-    }
+    // Preselect the agent's model when editing, otherwise the server default. Uses the same helper as
+    // the composer picker rather than a second copy of the append-if-missing logic.
+    selectModel(agentModelSelect, agent?.model ?? defaultModel);
     agentDialog.showModal();
     agentNameInput.focus();
   }
@@ -372,7 +401,7 @@
   function lockPicker(name, model) {
     modelField.hidden = true;
     agentLabel.hidden = false;
-    agentLabel.textContent = `⛓ ${name} · ${model}`;
+    agentLabel.textContent = `⛓ ${name} · ${modelLabel(model)}`;
   }
 
   function unlockPicker() {
