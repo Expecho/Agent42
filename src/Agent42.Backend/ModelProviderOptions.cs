@@ -3,7 +3,12 @@ namespace Agent42.Backend;
 /// <summary>How a provider is reached: an Azure AI Foundry account, or any OpenAI-compatible endpoint.</summary>
 public enum ProviderKind
 {
-    /// <summary>Azure AI Foundry, reached with a <c>TokenCredential</c> (the container app's managed identity).</summary>
+    /// <summary>
+    /// Azure AI Foundry, reached with an Azure OpenAI <b>API key</b> (ADR 0017, superseding the
+    /// managed-identity credential of ADR 0013/0014). The key authenticates the Chat Completions path
+    /// (the SDK's <c>api-key</c> header) and the Responses <c>/openai/v1</c> path (a custom
+    /// <c>api-key</c>-header policy). It is the availability path, so a blank key is fatal at startup.
+    /// </summary>
     AzureOpenAI,
 
     /// <summary>Any OpenAI-compatible endpoint reached with an API key — GitHub Models, Ollama, vLLM.</summary>
@@ -11,12 +16,13 @@ public enum ProviderKind
 }
 
 /// <summary>
-/// One model a provider offers, declared in config. Only <see cref="ProviderKind.OpenAICompatible"/>
-/// providers declare models; a Foundry provider discovers them from ARM instead.
+/// One model a provider offers, declared in config. Declared by <see cref="ProviderKind.OpenAICompatible"/>
+/// providers, and by a <see cref="ProviderKind.AzureOpenAI"/> (Foundry) provider that has discovery off
+/// (ADR 0017) — a key-based Foundry provider cannot ARM-discover, so it declares its deployments here.
 /// </summary>
 public sealed class ConfiguredModel
 {
-    /// <summary>The provider's own model string, unqualified — e.g. <c>openai/gpt-4o-mini</c>.</summary>
+    /// <summary>The provider's own model string, unqualified — e.g. <c>openai/gpt-4o-mini</c> or <c>gpt-5.4</c>.</summary>
     public string Id { get; set; } = "";
 
     public string? DisplayName { get; set; }
@@ -53,10 +59,15 @@ public sealed class ProviderOptions
     public string? Endpoint { get; set; }
 
     /// <summary>
-    /// A SECRET for <see cref="ProviderKind.OpenAICompatible"/> providers; never committed — it arrives
-    /// as <c>Models__Providers__&lt;key&gt;__ApiKey</c>. Blank is a SUPPORTED state: the provider is
-    /// skipped with a warning and the app boots on the others (ADR 0012's degrade precedent, not ADR
-    /// 0011's fail-the-deploy one — an expired token must not take the app down).
+    /// A SECRET; never committed — it arrives as <c>Models__Providers__&lt;key&gt;__ApiKey</c>.
+    /// <para>For <see cref="ProviderKind.OpenAICompatible"/> providers this is the endpoint's API key, and
+    /// blank is a SUPPORTED state: the provider is skipped with a warning and the app boots on the others
+    /// (ADR 0012's degrade precedent, not ADR 0011's fail-the-deploy one — an expired token must not take
+    /// the app down).</para>
+    /// <para>For <see cref="ProviderKind.AzureOpenAI"/> (Foundry) providers this is a provider-level
+    /// OVERRIDE of the Azure OpenAI key (ADR 0017); left blank it inherits <c>AzureOpenAI:ApiKey</c> — see
+    /// <see cref="ProviderSettings.ResolveFoundry"/>. Unlike a third-party key, a Foundry key on the
+    /// availability path that resolves blank is FATAL, not skipped (<see cref="ModelProviderBuilder"/>).</para>
     /// </summary>
     public string? ApiKey { get; set; }
 
@@ -80,7 +91,8 @@ public sealed class ProviderOptions
     /// (<c>store=false</c>) instead of Chat Completions — ADR 0014. Provider-level and all-or-nothing:
     /// Foundry models are ARM-discovered, not declared, so there is no per-model seam to hang it on.
     /// Reached with no package change — a stable <c>OpenAIClient</c> pointed at <c>{endpoint}/openai/v1</c>
-    /// with a managed-identity bearer policy — and stateless is mandatory, never overridable, because the
+    /// with an <c>api-key</c>-header policy carrying the Azure OpenAI key (ADR 0017, superseding ADR 0014's
+    /// managed-identity bearer policy) — and stateless is mandatory, never overridable, because the
     /// grain holds all history client-side (ADR 0004). Ignored on <see cref="ProviderKind.OpenAICompatible"/>
     /// providers (GitHub Models does not support Responses). Ships <b>off</b> in prod; turning it on is a
     /// separate, deliberate change.
@@ -100,9 +112,9 @@ public sealed class ModelProvidersOptions
         new(StringComparer.OrdinalIgnoreCase);
 }
 
-/// <summary>The endpoint + ARM coordinates a Foundry provider actually uses, after inheritance.</summary>
+/// <summary>The endpoint, API key, and ARM coordinates a Foundry provider actually uses, after inheritance.</summary>
 public sealed record FoundrySettings(
-    string? Endpoint, string? SubscriptionId, string? ResourceGroup, string? AccountName);
+    string? Endpoint, string? ApiKey, string? SubscriptionId, string? ResourceGroup, string? AccountName);
 
 /// <summary>
 /// Qualified model ids: <c>provider:model</c>.
@@ -149,6 +161,10 @@ public static class ProviderSettings
     public static FoundrySettings ResolveFoundry(ProviderOptions provider, IConfiguration configuration) =>
         new(
             Inherit(provider.Endpoint, configuration["AzureOpenAI:Endpoint"]),
+            // The Azure OpenAI key (ADR 0017): a provider-level ApiKey overrides, else the top-level
+            // AzureOpenAI:ApiKey — the SAME single source the embedding client reads, so there is never a
+            // second copy of the key (the endpoint-inheritance invariant, extended to the key).
+            Inherit(provider.ApiKey, configuration["AzureOpenAI:ApiKey"]),
             Inherit(provider.SubscriptionId, configuration["AzureOpenAI:SubscriptionId"]),
             Inherit(provider.ResourceGroup, configuration["AzureOpenAI:ResourceGroup"]),
             Inherit(provider.AccountName, configuration["AzureOpenAI:AccountName"]));

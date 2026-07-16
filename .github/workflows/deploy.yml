@@ -93,6 +93,7 @@ jobs:
               acrAdminPassword="$acr_password" \
               authClientSecret="${{ secrets.AAD_CLIENT_SECRET }}" \
               searxngSecret="${{ secrets.SEARXNG_SECRET }}" \
+              azureOpenAIApiKey="${{ secrets.AZURE_OPENAI_API_KEY }}" \
               googleMapsApiKey="${{ secrets.GOOGLE_MAPS_API_KEY }}" \
               githubModelsToken="${{ secrets.GH_MODELS_TOKEN }}" \
               cosmosLocation="northeurope" \

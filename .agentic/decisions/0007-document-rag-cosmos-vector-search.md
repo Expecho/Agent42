@@ -16,6 +16,12 @@ superseded_by: 0008   # partial — only the retrieval mechanism (agentic search
 > **remains authoritative and accepted**. See ADR 0008 for the rationale that rebuts the "Always-on
 > AIContextProvider auto-injection" alternative rejected below.
 
+> **Amended by [ADR 0017](0017-foundry-provider-api-key-auth.md) (2026-07-16) — embedding credential only.**
+> Where this ADR says the embedding client authenticates with the managed identity's *Cognitive Services
+> OpenAI User* grant ("no new RBAC"), it now uses the Azure OpenAI **API key** (`AzureOpenAI:ApiKey`, the
+> same key as chat) — no RBAC grant at all. The rest (embedding model, chunking, vector storage) is
+> unchanged.
+
 ## Context
 Users upload a document (PDF / Office / text) to a conversation and ask questions grounded in
 it. This is the "document RAG" that ADR 0004 explicitly deferred as "a separate future plan".

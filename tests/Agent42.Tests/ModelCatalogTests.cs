@@ -89,7 +89,8 @@ public class ModelCatalogTests
             // The subscription id must be a real GUID: ResourceIdentifier validates it and throws
             // FormatException otherwise — which AzureModelCatalog catches, so a typo'd subscription in
             // config degrades to "this provider lists nothing" rather than failing loudly.
-            new FoundrySettings("https://sweden.openai.azure.com", SecondSubscription, "rg-2", "account-2"),
+            // ApiKey (2nd field) is irrelevant to ARM discovery — the ARM catalog reads only endpoint/coords.
+            new FoundrySettings("https://sweden.openai.azure.com", null, SecondSubscription, "rg-2", "account-2"),
             "foundry:gpt-4o",
             NullLogger<AzureModelCatalog>.Instance);
 
@@ -116,7 +117,7 @@ public class ModelCatalogTests
         var catalog = new AzureModelCatalog(
             new ArmClient(new StaticTokenCredential()),
             "foundry",
-            new FoundrySettings("https://example.openai.azure.com", null, null, null),
+            new FoundrySettings("https://example.openai.azure.com", null, null, null, null),
             "foundry:gpt-4o",
             NullLogger<AzureModelCatalog>.Instance);
 
