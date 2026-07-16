@@ -84,16 +84,17 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   provisioned in `infra/modules/storage.bicep`); bytes stay out of the 2 MB Cosmos session
   item (ADR 0004). Its Storage Blob Data Contributor grant is now in Bicep
   (`infra/modules/storage-role-assignment.bicep`), which works only because the deploy SP holds
-  RBAC Administrator on `rg-agent42` (a one-time manual elevation — see gotchas). The OpenAI
-  grant stays manual (different RG).
+  RBAC Administrator on `rg-agent42` (a one-time manual elevation — see gotchas). The OpenAI managed-identity
+  grant is **no longer required** (ADR 0017 — Foundry chat/embeddings authenticate by API key); leaving any
+  existing grant is harmless.
 - Document RAG (ADR 0007 + 0008): uploaded documents (PDF/Office/text) are **ingest-only** — extracted,
   chunked, embedded (`text-embedding-3-large`) and stored in a Cosmos NoSQL **vector** container
   (`doc-chunks`), retrieved by an **always-on `TextSearchProvider`** (Agent Framework) that auto-injects
   the top excerpts before each reply — attached only when the conversation has an ingested document
   (ADR 0008 replaced the earlier agentic search tool); they never become chat
   attachments (off the image `UriContent` path). The embedding deployment is a **manual prerequisite**
-  in the `Agent42` AI Foundry account (needs no new RBAC — the existing OpenAI User grant covers it),
-  and the Cosmos vector path is prod-only (offline/AppHost use an in-memory index). See gotchas before
+  in the `Agent42` AI Foundry account (authenticated by the same `AzureOpenAI:ApiKey` as chat — ADR 0017,
+  no RBAC), and the Cosmos vector path is prod-only (offline/AppHost use an in-memory index). See gotchas before
   touching the vector container or embedding config.
 - Web search (ADR 0011): two model-invoked tools — `web_search` and `fetch_web_page` — over a
   **self-hosted SearXNG sidecar** in the backend's Container App, reached over `localhost:8888`
@@ -123,10 +124,11 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   **two-legged** because WebKit/iOS has no geolocation Permissions API; and this feature puts the user's
   **street address** into a conversation that the ADR 0011 exfiltration channel can still drain — the
   `websearch` skill only *mitigates* that. All three are in gotchas.
-- Model providers (ADR 0013): a conversation can run on **any OpenAI-compatible endpoint**, not just Azure
-  Foundry. The `Models:` config section maps provider keys to either an `AzureOpenAI` provider (managed
-  identity) or an `OpenAICompatible` one (API key) — **GitHub Models** is wired in prod; Ollama/vLLM work
-  by config alone. A model is named by a **qualified `provider:model` id split on the FIRST colon**
+- Model providers (ADR 0013, credential mechanism amended by ADR 0017): a conversation can run on **any
+  OpenAI-compatible endpoint**, not just Azure Foundry. The `Models:` config section maps provider keys to
+  either an `AzureOpenAI` (Foundry) provider or an `OpenAICompatible` one — **both now reached with an API
+  key** (ADR 0017 replaced Foundry's managed identity with an Azure OpenAI key). **GitHub Models** is wired
+  in prod; Ollama/vLLM work by config alone. A model is named by a **qualified `provider:model` id split on the FIRST colon**
   (GitHub's own ids contain a `/`); a bare id is legacy and resolves against the default provider, which
   is why this needed no state migration. A **`GH_MODELS_TOKEN` GitHub Actions secret is a manual
   prerequisite** — a PAT with the `models:read` scope, and note the name: `GITHUB_*` is a **reserved
@@ -137,18 +139,25 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   the default stays Foundry and the pick is explicit. Four things to read before touching this: the
   first-colon split and why `DeploymentName` keeps its name; `AgentSkillsProvider` is a **tool** (a
   no-tools model must drop it, while the RAG provider must stay); the vision gate must cover **history**,
-  not just the new turn, or old image SAS URLs still leak; and the Foundry provider's endpoint/ARM
-  coordinates are **inherited** from `AzureOpenAI:*`, never copied. All four are in gotchas — along with
-  the measured GitHub caps (16k/8k input tokens, failing with an **HTTP 413**, not a 400).
-- Responses API on Foundry (ADR 0014): a provider-level `UseResponsesApi` flag routes **every** model of a
-  Foundry provider through the OpenAI **Responses** API run **statelessly** (`store=false`) instead of Chat
-  Completions — reached with **no package change** via the stable `OpenAI 2.12.0` client pointed at
-  `{endpoint}/openai/v1` with a managed-identity **bearer** policy (not an API key). It ships **off** in prod
-  (default stays Chat Completions; turning it on is a separate, deliberate change) and is a server-side
-  transport choice, **not** user-selectable. Stateless is **mandatory** — the grain holds all history
-  client-side (ADR 0004) — so the build uses `AsIChatClientWithStoredOutputDisabled`, and
+  not just the new turn, or old image SAS URLs still leak; and the Foundry provider's endpoint, **API key**
+  and ARM coordinates are **inherited** from `AzureOpenAI:*`, never copied. All four are in gotchas — along
+  with the measured GitHub caps (16k/8k input tokens, failing with an **HTTP 413**, not a 400). **ADR 0017
+  changes for Foundry:** it authenticates by Azure OpenAI **API key** (a blank one is **fatal** — Foundry is
+  the availability path, unlike a third-party key), ARM **discovery is off** (a data-plane key can't reach
+  ARM, so the provider **declares** its deployments), and the default deployment is **`gpt-5.4`** (`gpt-4o`
+  is not deployed in the account).
+- Responses API on Foundry (ADR 0014; credential mechanism amended by ADR 0017): a provider-level
+  `UseResponsesApi` flag routes **every** model of a Foundry provider through the OpenAI **Responses** API run
+  **statelessly** (`store=false`) instead of Chat Completions — reached with **no package change** via the
+  stable `OpenAI 2.12.0` client pointed at `{endpoint}/openai/v1` with an **`api-key`-header** policy carrying
+  the Azure OpenAI key (ADR 0017 replaced ADR 0014's managed-identity bearer policy; the resource key
+  authenticates `/openai/v1` via the `api-key` header — spike-confirmed 2026-07-16). It ships **on** in prod
+  (`appsettings.json` sets `UseResponsesApi: true`; turning it off reverts to Chat Completions + SearXNG) and
+  is a server-side transport choice, **not** user-selectable. Stateless is **mandatory** — the grain holds all
+  history client-side (ADR 0004) — so the build uses `AsIChatClientWithStoredOutputDisabled`, and
   `includeReasoningEncryptedContent` is forced **`false`** (its `true` default 400s non-reasoning models like
-  gpt-4o). Read the "Responses API is stateful by default" gotcha before touching `Provider.Foundry`.
+  the default `gpt-5.4`). Read the "Responses API is stateful by default" gotcha before touching
+  `Provider.Foundry`.
 - Hosted tools on the Responses path (ADR 0015): a Responses Foundry model reaches OpenAI's **native**
   server-side `web_search` + `code_interpreter` (Chat Completions 400s on them — the reason the SearXNG
   sidecar exists, ADR 0011). The signal is a new `ModelCapabilities.SupportsHostedTools` bit (true only when

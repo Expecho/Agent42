@@ -7,6 +7,14 @@ tags: [models, providers, responses-api, chat-completions, openai, foundry, api-
 
 # Support the OpenAI Responses API on the Foundry provider, run statelessly
 
+> **Amended by [ADR 0017](0017-foundry-provider-api-key-auth.md) (2026-07-16) — credential mechanism
+> only.** The Responses `/openai/v1` path no longer authenticates with the managed-identity **bearer
+> policy** described below; it now carries the Azure OpenAI **API key** via a custom `api-key`-header
+> policy (0017's Step-1 spike found Azure reads the resource key from the `api-key` header there). The
+> `AzureIdentityTokenProvider` bearer bridge is deleted. Everything else here stays authoritative:
+> stateless-mandatory, the two experimental suppressions, `includeReasoningEncryptedContent: false`. This
+> ADR keeps `status: accepted` on purpose — see 0017's supersession note.
+
 > **Revised 2026-07-15** (same day, pre-implementation). The first draft scoped Responses to
 > OpenAI-compatible (API-key) providers and deferred Foundry on the belief that Foundry Responses
 > forces a prerelease `Azure.AI.OpenAI`. Two facts overturned that before any code landed: the only

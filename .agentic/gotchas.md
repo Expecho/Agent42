@@ -407,17 +407,19 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 ### The Foundry provider's endpoint + ARM coordinates are INHERITED — never copy them into `Models:`
 
 - **Claim:** the `foundry` provider in `appsettings.json` deliberately declares **none** of `Endpoint`,
-  `SubscriptionId`, `ResourceGroup`, `AccountName`, and that emptiness is load-bearing rather than an
-  omission: all four fall back to the top-level **`AzureOpenAI:*`** keys, which Bicep threads in as env
-  vars (`AzureOpenAI__Endpoint`) and which the **embedding client** — explicitly out of scope for
-  multi-provider — also reads. Copying the endpoint into `Models:Providers:foundry:Endpoint` creates a
+  `ApiKey` (ADR 0017), `SubscriptionId`, `ResourceGroup`, `AccountName`, and that emptiness is load-bearing
+  rather than an omission: all fall back to the top-level **`AzureOpenAI:*`** keys, which Bicep threads in
+  as env vars (`AzureOpenAI__Endpoint`, `AzureOpenAI__ApiKey`) and which the **embedding client** — out of
+  scope for multi-provider — also reads (the key especially: one `AzureOpenAI__ApiKey`, never a second
+  `Models__Providers__foundry__ApiKey`). Copying the endpoint into `Models:Providers:foundry:Endpoint` creates a
   second source of truth, and prod then silently talks to whatever appsettings says while the Bicep param
   points somewhere else. Declaring all four is exactly how a **second** Foundry account is added (and it
   must be all four: `AzureModelCatalog` is constructed **per discovering provider** with *its own*
   coordinates — a single shared catalog reading the three global keys would make account #2 enumerate
   account #1's deployments and label them as its own, which is silently wrong rather than a failure).
-  Two things a second account does **not** get for free: embeddings stay on the primary account, and its
-  managed-identity *Cognitive Services OpenAI User* grant is a manual step.
+  Two things a second account does **not** get for free: embeddings stay on the primary account, and it
+  must declare its **own `ApiKey`** (ADR 0017 — a key-based Foundry provider authenticates by key, not an
+  MI grant; the *Cognitive Services OpenAI User* grant is no longer the mechanism).
 - **The same rule governs `Models:Default`, and it is easy to miss.** `AzureOpenAI:DeploymentName` is
   threaded in by Bicep (`AzureOpenAI__DeploymentName`), so `Models:Default` is left **empty** in
   appsettings and derived as `foundry:<AzureOpenAI:DeploymentName>`. Hardcoding `"foundry:gpt-4o"` there
@@ -428,8 +430,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/ModelProviderBuilder.cs`, `src/Agent42.Backend/Program.cs` (the `Models:Default`
   fallback), `src/Agent42.Backend/appsettings.json` (the `"//Default"` and `foundry` comments),
   `tests/Agent42.Tests/ModelProviderTests.cs`
-  (`TwoFoundryProviders_ResolveOwnCoordinates_AndInheritWhenAbsent`)
-- **Verified:** 2026-07-14
+  (`TwoFoundryProviders_ResolveOwnCoordinates_AndInheritWhenAbsent`),
+  `.agentic/decisions/0017-foundry-provider-api-key-auth.md` (the `ApiKey` inheritance)
+- **Verified:** 2026-07-16
 
 ### GitHub Models: the context-limit error is a 413, and the caps are small enough to matter here
 
@@ -459,18 +462,54 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `AsIChatClientWithStoredOutputDisabled`, **never** the plain `AsIChatClient()` on the response client —
   the plain one silently stores and looks identical at the call site. (2) **`includeReasoningEncryptedContent`
   must be passed `false`.** The helper **defaults it `true`**, which sends
-  `include:["reasoning.encrypted_content"]`; **non-reasoning models (gpt-4o, the shipped default) reject
+  `include:["reasoning.encrypted_content"]`; **non-reasoning models (gpt-5.4, the shipped default) reject
   that with HTTP 400** (`Encrypted content is not supported with this model`) — measured on the wire by the
-  Step-1 spike, invisible in the signature. `true` is only wanted for a *reasoning* Foundry model (to
+  Step-1 spikes, invisible in the signature. `true` is only wanted for a *reasoning* Foundry model (to
   carry reasoning items across turns without server storage), and those are deferred. (3) **Two distinct
   experimental suppressions are needed, not one.** `GetResponsesClient()` / the
   `OpenAIClient(AuthenticationPolicy, options)` ctor are `[Experimental("OPENAI001")]`, but
   `AsIChatClientWithStoredOutputDisabled` is `[Experimental("MAAI001")]` (Microsoft.Agents.AI, a
   **different** id) — `OPENAI001` alone does not build. Scope both `#pragma`s to the branch; do not
-  blanket-suppress.
+  blanket-suppress. **Auth note (ADR 0017):** that `AuthenticationPolicy` ctor argument is now the
+  `api-key`-header policy carrying the Azure OpenAI key, not the deleted managed-identity bearer bridge —
+  see the "Azure's `/openai/v1` authenticates the resource key via the `api-key` header" gotcha below.
 - **Evidence:** `src/Agent42.Backend/ChatClientFactory.cs` (`Provider.Foundry`, the `UseResponses`
-  branch), `.agentic/decisions/0014-responses-api-stateless-mode.md`
-- **Verified:** 2026-07-15
+  branch), `.agentic/decisions/0014-responses-api-stateless-mode.md`, `.agentic/decisions/0017-foundry-provider-api-key-auth.md`
+- **Verified:** 2026-07-16
+
+### Azure's `/openai/v1` authenticates the resource key via the `api-key` header — three Foundry-key traps
+
+- **Claim:** the Foundry provider authenticates with an Azure OpenAI **API key** (ADR 0017), and three
+  things trip an agent that assumes otherwise. (1) **On the Responses `/openai/v1` path, use a custom
+  `api-key`-header `AuthenticationPolicy`, NOT the OpenAI SDK's `ApiKeyCredential`.** `ApiKeyCredential`
+  sends `Authorization: Bearer <key>` — Azure's `/openai/v1` reads the resource key from the **`api-key`
+  request header**. The 2026-07-16 Step-1 spike found the correct key gets *past auth* on **both** header
+  positions (a wrong key 401s on both), but `api-key` is Azure's documented mechanism, so that is what
+  ships; do not "simplify" it to `ApiKeyCredential` (undocumented Bearer that could regress). The Chat
+  path is fine — `AzureOpenAIClient(endpoint, AzureKeyCredential)` sends `api-key` itself. (2) **The
+  Foundry key is on the AVAILABILITY PATH — a blank one is FATAL, unlike a third-party provider key.**
+  `ModelProviderBuilder.Build` throws when the resolved Foundry key is blank (mirrored in Bicep by a
+  `@secure() @minLength(32)` param following the **`searxngSecret` shape** — unconditional secret + env +
+  a `@minLength`, though `searxngSecret` itself uses 16); a *third-party* provider with no key is merely
+  skipped. Resolution is `Models:Providers:<key>:ApiKey` ?? `AzureOpenAI:ApiKey`, and the embedding client
+  reads the same `AzureOpenAI:ApiKey` — **one** env var (`AzureOpenAI__ApiKey`), never a second
+  `Models__Providers__foundry__ApiKey`. (3) **ARM discovery is OFF for a key-based Foundry provider, and
+  `gpt-4o` is not deployed.** A data-plane key can't authenticate ARM, so the shipped `foundry` provider
+  sets `Discover: false` and **declares** its deployments in `appsettings`; the picker offers **exactly**
+  those, and the **default deployment must be one of them** — `CompositeModelCatalog` only synthesizes the
+  default when *nothing* is declared (`ModelCatalog.cs`, `if (models.Count == 0)`), so a default missing
+  from a non-empty declared list silently **vanishes from the picker**. Keep `AzureOpenAI:DeploymentName`
+  (Bicep `azureOpenAIDeploymentName`) in sync with the `Models` list — the same single-source trap the
+  "endpoint is INHERITED" gotcha guards for `Models:Default`, now reappearing for the model *list* under
+  dropped discovery. The spike found the account has **no `gpt-4o` deployment** (it has `gpt-5.4`,
+  `gpt-4.1`, `gpt-5.1`, `o3`, `model-router`, `claude-*`), so the default deployment is **`gpt-5.4`**, not
+  `gpt-4o` — with discovery off, a wrong default 404s every turn.
+- **Evidence:** `src/Agent42.Backend/ChatClientFactory.cs` (`ApiKeyHeaderPolicy`, `Provider.Foundry`),
+  `src/Agent42.Backend/ModelProviderBuilder.cs` (fatal-key throw), `src/Agent42.Backend/Program.cs`
+  (eager `AzureOpenAI:ApiKey` check + embedding client), `src/Agent42.Backend/appsettings.json`
+  (`foundry` `Discover:false` + `Models`, `DeploymentName: gpt-5.4`), `infra/main.bicep`
+  (`azureOpenAIApiKey` `@minLength`), `.agentic/decisions/0017-foundry-provider-api-key-auth.md`
+- **Verified:** 2026-07-16
 
 ### `HostedWebSearchTool.Name` is `web_search` — it collides with the SearXNG shim, so hosted models SWAP
 
@@ -637,11 +676,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   RG `agent42`, the same reason the OpenAI role grant stays a manual step. The user must create the
   deployment and its name must match `AzureOpenAI:EmbeddingDeploymentName` (default
   `text-embedding-3-large`, eager-validated at startup — a missing value throws before the first
-  upload, not on it). **No new role assignment is required:** the container app identity's existing
-  *Cognitive Services OpenAI User* grant already authorizes embeddings on that account, so the
-  embedding client reuses the same endpoint + `DefaultAzureCredential` as the chat client.
-- **Evidence:** `src/Agent42.Backend/Program.cs` (embedding-generator registration + eager check), `src/Agent42.Backend/appsettings.json`, `.agentic/decisions/0007-document-rag-cosmos-vector-search.md`
-- **Verified:** 2026-07-09
+  upload, not on it). **No new role assignment is required:** as of ADR 0017 the embedding client reuses
+  the same endpoint + **`AzureKeyCredential` (from `AzureOpenAI:ApiKey`)** as the Foundry chat provider —
+  one key, one source of truth — so the key that authorizes chat authorizes embeddings on the same
+  account. (Before 0017 this was `DefaultAzureCredential` + the identity's *Cognitive Services OpenAI
+  User* grant; that grant is no longer needed for embeddings.)
+- **Evidence:** `src/Agent42.Backend/Program.cs` (embedding-generator registration + `AzureOpenAI:ApiKey` eager check), `src/Agent42.Backend/appsettings.json`, `.agentic/decisions/0017-foundry-provider-api-key-auth.md`, `.agentic/decisions/0007-document-rag-cosmos-vector-search.md`
+- **Verified:** 2026-07-16
 
 ### Cosmos vector search is prod-only: capability + pre-created container + no create-on-use
 

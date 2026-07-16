@@ -1,6 +1,6 @@
+using System.ClientModel.Primitives;
 using Agent42.Agents;
 using Agent42.Backend;
-using Azure.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,7 +42,7 @@ public class ModelProviderTests
         var options = Options();
         options.Providers["github"].ApiKey = "";
 
-        var setup = ModelProviderBuilder.Build(options, Configuration(), Credential());
+        var setup = ModelProviderBuilder.Build(options, Configuration());
 
         // Skipped, not fatal: an expired third-party token must never take the app down, because
         // Foundry is the availability path.
@@ -117,7 +117,7 @@ public class ModelProviderTests
             AccountName = "account-2",
         };
 
-        var setup = ModelProviderBuilder.Build(options, Configuration(), Credential());
+        var setup = ModelProviderBuilder.Build(options, Configuration());
 
         var inherited = setup.Discovering.Single(d => d.Key == "foundry").Settings;
         var declared = setup.Discovering.Single(d => d.Key == "foundry-swe").Settings;
@@ -195,27 +195,91 @@ public class ModelProviderTests
         Assert.False(Factory().GetCapabilities("github:openai/gpt-4o-mini").SupportsHostedTools);
     }
 
-    [Fact] // AC1 (the unit-testable slice) — the bearer bridge maps an Azure token onto a Bearer
-           // AuthenticationToken with no network I/O; the LIVE token exchange is the Step-1 manual gate.
-    public async Task BearerBridge_MapsAzureTokenToBearer()
+    [Fact] // AC1 — a Foundry provider builds a working Chat client from the inherited API key (no I/O).
+    public void FoundryProvider_BuildsChatClientFromApiKey()
     {
-        var provider = new MultiProviderChatClientFactory.AzureIdentityTokenProvider(
-            new StaticTokenCredential(), ["https://cognitiveservices.azure.com/.default"]);
-        var options = provider.CreateTokenOptions(new Dictionary<string, object>())!;
+        // Factory()'s `foundry` provider declares no key; it inherits AzureOpenAI:ApiKey via ResolveFoundry
+        // (ADR 0017). Constructing the AzureOpenAIClient with an AzureKeyCredential does no network I/O.
+        Assert.NotNull(Factory().GetClient("foundry:gpt-4o"));
+    }
 
-        var sync = provider.GetToken(options, default);
-        var async = await provider.GetTokenAsync(options, default);
+    [Theory] // AC1 — the Responses auth policy sets Azure's `api-key` header (not the SDK's default
+             // Authorization: Bearer), with no I/O, on BOTH the sync and async pipeline paths (production
+             // drives the async one). The LIVE /openai/v1 exchange is the Step-1 manual gate.
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ApiKeyHeaderPolicy_SetsApiKeyHeader_NotBearer(bool async)
+    {
+        var policy = new MultiProviderChatClientFactory.ApiKeyHeaderPolicy("secret-key");
+        var message = ClientPipeline.Create().CreateMessage();
+        message.Request.Method = "POST";
+        message.Request.Uri = new Uri("https://example.openai.azure.com/openai/v1/responses");
 
-        // StaticTokenCredential hands back "token"; the bridge must relabel it as a Bearer token, both paths.
-        Assert.Equal("token", sync.TokenValue);
-        Assert.Equal("Bearer", sync.TokenType);
-        Assert.Equal("token", async.TokenValue);
-        Assert.Equal("Bearer", async.TokenType);
+        // Index 0 is the policy; a terminal no-op at index 1 stops ProcessNext before any transport.
+        IReadOnlyList<PipelinePolicy> pipeline = [policy, new TerminalPolicy()];
+        if (async)
+        {
+            await policy.ProcessAsync(message, pipeline, 0);
+        }
+        else
+        {
+            policy.Process(message, pipeline, 0);
+        }
+
+        Assert.True(message.Request.Headers.TryGetValue("api-key", out var apiKey));
+        Assert.Equal("secret-key", apiKey);
+        // The point of the custom policy (ADR 0017): Azure reads the key from `api-key`, not Bearer.
+        Assert.False(message.Request.Headers.TryGetValue("Authorization", out _));
+    }
+
+    [Fact] // AC3 — the Foundry key is the availability path: blank at BOTH the provider level and
+           // AzureOpenAI:ApiKey is FATAL at build, not a silent skip like a third-party key.
+    public void BlankFoundryKey_IsFatal()
+    {
+        var options = Options();
+        // The `foundry` provider declares no key, so with AzureOpenAI:ApiKey also absent it resolves blank.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AzureOpenAI:Endpoint"] = Endpoint,
+                // No AzureOpenAI:ApiKey — the Foundry provider has nothing to inherit.
+                ["AzureOpenAI:SubscriptionId"] = "sub-1",
+                ["AzureOpenAI:ResourceGroup"] = "rg-1",
+                ["AzureOpenAI:AccountName"] = "account-1",
+            })
+            .Build();
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => ModelProviderBuilder.Build(options, configuration));
+        Assert.Contains("no API key", ex.Message);
+    }
+
+    [Fact] // AC4 — a non-discovering Foundry provider (ADR 0017: no ARM discovery under a key) contributes
+           // the deployments it DECLARES, so they reach the picker instead of only the default.
+    public void NonDiscoveringFoundry_ContributesDeclaredModels()
+    {
+        var options = Options();
+        var foundry = options.Providers["foundry"];
+        foundry.Discover = false;
+        foundry.Models =
+        [
+            new ConfiguredModel { Id = "gpt-5.4", DisplayName = "GPT-5.4", SupportsTools = true, SupportsVision = true },
+        ];
+
+        var setup = ModelProviderBuilder.Build(options, Configuration());
+
+        var declared = Assert.Single(setup.DeclaredModels, m => m.Provider == "foundry");
+        Assert.Equal("foundry:gpt-5.4", declared.Id);
+        Assert.True(declared.SupportsTools);
+        Assert.True(declared.SupportsVision);
+
+        // A non-discovering provider does NOT appear in the ARM discovery list.
+        Assert.DoesNotContain(setup.Discovering, d => d.Key == "foundry");
     }
 
     private static MultiProviderChatClientFactory Factory()
     {
-        var setup = ModelProviderBuilder.Build(Options(), Configuration(), Credential());
+        var setup = ModelProviderBuilder.Build(Options(), Configuration());
         return new MultiProviderChatClientFactory(
             setup.Providers, "foundry:gpt-4o", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
     }
@@ -226,7 +290,7 @@ public class ModelProviderTests
     {
         var options = Options();
         options.Providers["foundry"].UseResponsesApi = true;
-        var setup = ModelProviderBuilder.Build(options, Configuration(), Credential());
+        var setup = ModelProviderBuilder.Build(options, Configuration());
         return new MultiProviderChatClientFactory(
             setup.Providers, "foundry:gpt-4o", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
     }
@@ -263,12 +327,22 @@ public class ModelProviderTests
         .AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["AzureOpenAI:Endpoint"] = Endpoint,
+            // The Foundry availability-path key (ADR 0017). Both keyless Foundry providers in these
+            // fixtures — `foundry` in Options() and `foundry-swe` — inherit it, so Build does not throw
+            // the fatal-blank-key error. BlankFoundryKey_IsFatal deliberately omits it.
+            ["AzureOpenAI:ApiKey"] = "azure-key",
             ["AzureOpenAI:SubscriptionId"] = "sub-1",
             ["AzureOpenAI:ResourceGroup"] = "rg-1",
             ["AzureOpenAI:AccountName"] = "account-1",
         })
         .Build();
 
-    // No network: an AzureOpenAIClient never asks for a token at construction time.
-    private static TokenCredential Credential() => new StaticTokenCredential();
+    // A terminal pipeline stage: does nothing, so ProcessNext stops here instead of attempting transport.
+    private sealed class TerminalPolicy : PipelinePolicy
+    {
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index) { }
+
+        public override ValueTask ProcessAsync(
+            PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index) => ValueTask.CompletedTask;
+    }
 }

@@ -79,10 +79,15 @@ param attachmentsContainerName string = 'attachments'
 @description('Endpoint of the existing Azure AI Foundry / Azure OpenAI resource.')
 param azureOpenAIEndpoint string = 'https://agent42.services.ai.azure.com'
 
-@description('Model deployment name used for chat completions.')
-param azureOpenAIDeploymentName string = 'gpt-4o'
+@secure()
+@minLength(32)
+@description('Azure OpenAI resource API key (ADR 0017 — the AZURE_OPENAI_API_KEY GitHub Actions secret). A manual prerequisite. It authenticates BOTH the Foundry chat/Responses provider and the embedding client, replacing the managed identity for the Foundry data plane. @minLength is load-bearing exactly like searxngSecret: an absent GitHub secret expands to an EMPTY string, and because this key is now the availability path (the backend throws at startup without it), failing here at deployment validation beats a crash-looping revision in production. Not optional like githubModelsToken/googleMapsApiKey — Foundry is where the app serves from.')
+param azureOpenAIApiKey string
 
-@description('Embedding model deployment name used for document RAG (ADR 0007). Must exist in the AI Foundry account (a manual prerequisite the user creates); the container app identity\'s existing Cognitive Services OpenAI User grant already authorizes it.')
+@description('Model deployment name used for chat completions. Must be a deployment that exists in the AI Foundry account (gpt-4o is not deployed there; ADR 0017 spike, 2026-07-16).')
+param azureOpenAIDeploymentName string = 'gpt-5.4'
+
+@description('Embedding model deployment name used for document RAG (ADR 0007). Must exist in the AI Foundry account (a manual prerequisite the user creates); it is authenticated by the same azureOpenAIApiKey as chat (ADR 0017), no RBAC grant.')
 param azureOpenAIEmbeddingDeploymentName string = 'text-embedding-3-large'
 
 @description('Entra ID tenant id used for DefaultAzureCredential when calling Azure OpenAI.')
@@ -200,6 +205,7 @@ module containerApp 'modules/container-app.bicep' = {
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint
+    azureOpenAIApiKey: azureOpenAIApiKey
     azureOpenAIDeploymentName: azureOpenAIDeploymentName
     azureOpenAIEmbeddingDeploymentName: azureOpenAIEmbeddingDeploymentName
     cosmosDocChunksContainerName: cosmosDocChunksContainerName
@@ -248,7 +254,7 @@ module storageRoleAssignment 'modules/storage-role-assignment.bicep' = {
 @description('The URL of the deployed Agent 42 backend.')
 output backendUrl string = 'https://${containerApp.outputs.fqdn}'
 
-@description('Principal id of the system-assigned managed identity of the Container App. After the first deployment (or any deploy that creates a new identity), grant it two roles on the Agent 42 AI Foundry account (subscriptions/{sub}/resourceGroups/agent42/providers/Microsoft.CognitiveServices/accounts/Agent42): "Cognitive Services OpenAI User" (to call the model) and "Reader" (so the live model picker can list deployments via the management plane). These stay manual because the AI Foundry account is in a different RG where a cross-RG Bicep role module fails. The attachments Storage Blob Data Contributor grant is now handled in Bicep (modules/storage-role-assignment.bicep).')
+@description('Principal id of the system-assigned managed identity of the Container App. As of ADR 0017 the Foundry data plane (chat, Responses, embeddings) authenticates with azureOpenAIApiKey, and ARM model discovery is off, so the AI Foundry account grants "Cognitive Services OpenAI User" and "Reader" are NO LONGER REQUIRED for the app to function (leaving any existing grants is harmless). The identity is still used for blob storage (Storage Blob Data Contributor, handled in Bicep — modules/storage-role-assignment.bicep) and Cosmos (cosmos-role-assignment.bicep).')
 output containerAppPrincipalId string = containerApp.outputs.principalId
 
 @description('Name of the Cosmos DB account created for grain state.')
