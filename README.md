@@ -40,8 +40,9 @@ dotnet run --project src/Agent42.AppHost
 ```
 
 Running `src/Agent42.Backend` standalone requires a real Azure OpenAI endpoint
-(`AzureOpenAI:Endpoint`) and an identity with the `Cognitive Services OpenAI User` role;
-locally `DefaultAzureCredential` picks up your `az login`.
+(`AzureOpenAI:Endpoint`) and the Azure OpenAI resource **API key** (`AzureOpenAI:ApiKey`, put it in
+user secrets) — ADR 0017; chat and embeddings authenticate by key, not your `az login` identity. (The
+managed identity is still used for blob storage locally via `DefaultAzureCredential`.)
 
 ## Test
 

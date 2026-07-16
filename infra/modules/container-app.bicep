@@ -33,6 +33,10 @@ param blobEndpoint string
 @description('Endpoint of the Azure AI Foundry / Azure OpenAI resource used by the agent.')
 param azureOpenAIEndpoint string
 
+@secure()
+@description('Azure OpenAI resource API key (ADR 0017). Authenticates the Foundry chat/Responses provider and the embedding client, replacing the managed identity. UNCONDITIONAL, unlike googleMapsApiKey/githubModelsToken: it is the availability path (the backend throws without it), so it is always emitted as a secret + env var — the searxngSecret shape, not the optional one. main.bicep enforces @minLength.')
+param azureOpenAIApiKey string
+
 @description('Model deployment name used for chat completions.')
 param azureOpenAIDeploymentName string
 
@@ -165,6 +169,10 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             name: 'searxng-secret'
             value: searxngSecret
           }
+          {
+            name: 'azure-openai-api-key'
+            value: azureOpenAIApiKey
+          }
         ],
         empty(googleMapsApiKey)
           ? []
@@ -198,6 +206,9 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             { name: 'ConnectionStrings__cosmos', value: cosmosAccountEndpoint }
             { name: 'Storage__BlobEndpoint', value: blobEndpoint }
             { name: 'AzureOpenAI__Endpoint', value: azureOpenAIEndpoint }
+            // The Azure OpenAI key (ADR 0017), UNCONDITIONAL — both the Foundry provider (which inherits
+            // AzureOpenAI:ApiKey) and the embedding client read it; a single env var, one source of truth.
+            { name: 'AzureOpenAI__ApiKey', secretRef: 'azure-openai-api-key' }
             { name: 'AzureOpenAI__DeploymentName', value: azureOpenAIDeploymentName }
             { name: 'AzureOpenAI__EmbeddingDeploymentName', value: azureOpenAIEmbeddingDeploymentName }
             { name: 'Cosmos__DocChunksContainerName', value: cosmosDocChunksContainerName }

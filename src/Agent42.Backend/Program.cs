@@ -1,5 +1,6 @@
 using Agent42.Agents;
 using Agent42.Backend;
+using Azure;
 using Azure.AI.OpenAI;
 using Azure.Identity;
 using Azure.ResourceManager;
@@ -53,11 +54,25 @@ if (string.IsNullOrWhiteSpace(azureOpenAIEndpoint))
         "(e.g. https://<your-resource>.services.ai.azure.com).");
 }
 
-var defaultDeployment = builder.Configuration["AzureOpenAI:DeploymentName"] ?? "gpt-4o";
+// The Azure OpenAI API key (ADR 0017): the SINGLE source that authenticates both the Foundry chat/
+// Responses provider (which inherits it, see ModelProviderBuilder) and the embedding client below.
+// It is the availability path, so a blank key fails at startup — same discipline as the endpoint above,
+// and mirrored by the Bicep @minLength guard. (ModelProviderBuilder also throws for the provider, but the
+// embedding client reads this key directly and never sees the Models: section, so validate it here too.)
+var azureOpenAIApiKey = builder.Configuration["AzureOpenAI:ApiKey"];
+if (string.IsNullOrWhiteSpace(azureOpenAIApiKey))
+{
+    throw new InvalidOperationException(
+        "AzureOpenAI:ApiKey is not configured. Set it in user secrets or the AzureOpenAI__ApiKey " +
+        "environment variable (the Azure OpenAI resource key; ADR 0017 replaced managed identity for the " +
+        "Foundry data plane). It is a secret and must never be committed.");
+}
 
-// One credential drives both the data plane (chat inference) and the management plane
-// (listing the account's model deployments), so the container app's managed identity is
-// used for both.
+var defaultDeployment = builder.Configuration["AzureOpenAI:DeploymentName"] ?? "gpt-5.4";
+
+// The managed identity still drives the services that are NOT Azure OpenAI and cannot use the key:
+// blob storage (user-delegation SAS) and — kept for a future discovering provider — the ARM management
+// plane. Foundry inference/embeddings moved to the API key (ADR 0017).
 var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
 {
     TenantId = builder.Configuration["AzureOpenAI:TenantId"],
@@ -88,7 +103,7 @@ builder.Services.AddSingleton(new ArmClient(credential));
 
 // The rules — which providers are skipped, what a Foundry provider inherits, what a declared model
 // contributes — live in ModelProviderBuilder, not here: nothing in the test suite runs Program.cs.
-var models = ModelProviderBuilder.Build(modelOptions, builder.Configuration, credential);
+var models = ModelProviderBuilder.Build(modelOptions, builder.Configuration);
 
 builder.Services.AddSingleton<IChatClientFactory>(sp => new MultiProviderChatClientFactory(
     models.Providers,
@@ -137,9 +152,9 @@ if (string.IsNullOrWhiteSpace(embeddingDeployment))
         "(the name of a text-embedding-3-large deployment in the AI Foundry account).");
 }
 
-// Reuse the same endpoint + managed identity as the chat client; the identity's existing
-// Cognitive Services OpenAI User grant already authorizes embeddings (no new RBAC).
-var azureOpenAIClient = new AzureOpenAIClient(new Uri(azureOpenAIEndpoint), credential);
+// Reuse the same endpoint + API key as the Foundry chat provider (ADR 0017): one source of truth for
+// the key, exactly like the endpoint. The key authorizes embeddings on the same account (no RBAC).
+var azureOpenAIClient = new AzureOpenAIClient(new Uri(azureOpenAIEndpoint), new AzureKeyCredential(azureOpenAIApiKey));
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
     azureOpenAIClient.GetEmbeddingClient(embeddingDeployment).AsIEmbeddingGenerator());
 

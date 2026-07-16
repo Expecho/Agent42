@@ -7,6 +7,14 @@ tags: [models, providers, github-models, openai-compatible, config, security, da
 
 # A provider/model catalog: any OpenAI-compatible endpoint, named by a qualified `provider:model` id
 
+> **Amended by [ADR 0017](0017-foundry-provider-api-key-auth.md) (2026-07-16) — credential mechanism
+> only.** The `AzureOpenAI` provider kind is no longer reached with the managed identity: it now
+> authenticates with an Azure OpenAI **API key** (fatal if blank — Foundry is the availability path),
+> and ARM model **discovery** is dropped (a data-plane key can't authenticate ARM), so a key-based
+> Foundry provider **declares** its deployments instead. Everything else here stays authoritative: the
+> qualified-id split, capability flags, and the cross-tenant egress position. `status: accepted` on
+> purpose — see 0017's supersession note.
+
 ## Context
 The app could only talk to one place. `AzureOpenAIChatClientFactory` was hardwired to a single Azure AI
 Foundry endpoint with `DefaultAzureCredential`, and a model was named by a bare deployment string

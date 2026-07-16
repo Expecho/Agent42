@@ -2,8 +2,8 @@ using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Concurrent;
 using Agent42.Agents;
+using Azure;
 using Azure.AI.OpenAI;
-using Azure.Core;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Responses;
@@ -15,10 +15,12 @@ namespace Agent42.Backend;
 /// one per qualified <c>provider:model</c> id. Clients are cached, so switching a conversation
 /// between models doesn't rebuild the underlying HTTP pipeline each turn.
 ///
-/// <para>Two credential shapes, and they are the reason this type exists: an Azure AI Foundry
-/// provider is reached with a <see cref="TokenCredential"/> (the container app's managed identity),
-/// and any OpenAI-compatible provider — GitHub Models, Ollama, vLLM — with an
-/// <see cref="ApiKeyCredential"/> against a configured endpoint.</para>
+/// <para>Every provider is now reached with an <b>API key</b> (ADR 0017, superseding ADR 0013/0014's
+/// managed identity for Foundry): a Foundry provider with an Azure OpenAI key, and any OpenAI-compatible
+/// provider — GitHub Models, Ollama, vLLM — with its endpoint's key. What still differs is the auth
+/// HEADER: the Azure SDK sends Azure's <c>api-key</c> header on the Chat path, while the Responses
+/// <c>/openai/v1</c> path needs a custom <c>api-key</c>-header policy because the OpenAI SDK's default is
+/// <c>Authorization: Bearer</c> (Step-1 spike, ADR 0017).</para>
 ///
 /// <para>The endpoint always comes from CONFIG and never from the model or a request. That is what
 /// keeps this off the SSRF path that <c>fetch_web_page</c> is on (ADR 0011), and it must stay true:
@@ -134,36 +136,37 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         public static bool UseResponses(ProviderOptions options) =>
             options.Kind == ProviderKind.AzureOpenAI && options.UseResponsesApi;
 
-        /// <summary>An Azure AI Foundry provider, reached with the app's managed identity.</summary>
-        public static Provider Foundry(ProviderOptions options, Uri endpoint, TokenCredential credential)
+        /// <summary>An Azure AI Foundry provider, reached with an Azure OpenAI API key (ADR 0017).</summary>
+        public static Provider Foundry(ProviderOptions options, Uri endpoint, string apiKey)
         {
             if (UseResponses(options))
             {
-                // ADR 0014: reach Foundry's GA Responses surface on the STABLE OpenAI client via the
-                // OpenAI-compatible /openai/v1 base URL, authenticated by the managed identity's bearer
-                // token — no API key, no prerelease Azure.AI.OpenAI. BearerTokenPolicy handles token
-                // acquisition + refresh, so no static-token staleness; reuse the credential already
-                // flowing in rather than a named HttpClient, whose AddServiceDefaults retry pipeline would
-                // multiply the stall on a non-reentrant AgentGrain turn (see gotchas, and OpenAICompatible
-                // below). The endpoint still comes only from config — SSRF invariant intact (ADR 0013).
+                // ADR 0014/0017: reach Foundry's GA Responses surface on the STABLE OpenAI client via the
+                // OpenAI-compatible /openai/v1 base URL. Auth is the Azure OpenAI resource KEY, but the
+                // OpenAI SDK's ApiKeyCredential would send `Authorization: Bearer <key>`, whereas Azure's
+                // /openai/v1 authenticates the resource key through the `api-key` REQUEST HEADER — so a
+                // custom AuthenticationPolicy sets that header instead (Step-1 spike, 2026-07-16: correct
+                // key past auth on both header positions, wrong key 401; `api-key` is Azure's documented
+                // mechanism). No named HttpClient — its AddServiceDefaults retry pipeline would multiply the
+                // stall on a non-reentrant AgentGrain turn (see gotchas, and OpenAICompatible below). The
+                // endpoint still comes only from config — SSRF invariant intact (ADR 0013).
                 //
                 // The scoped suppressions cover BOTH the OpenAIClient(AuthenticationPolicy, options) ctor
                 // and GetResponsesClient() ([Experimental("OPENAI001")]) plus the stateless adapter
                 // ([Experimental("MAAI001")] — a DISTINCT id; OPENAI001 alone does not build, Step-1 spike).
 #pragma warning disable OPENAI001
 #pragma warning disable MAAI001
-                string[] scopes = ["https://cognitiveservices.azure.com/.default"];
                 var v1 = new Uri(endpoint.AbsoluteUri.TrimEnd('/') + "/openai/v1");
-                var authPolicy = new BearerTokenPolicy(
-                    new AzureIdentityTokenProvider(credential, scopes), scopes[0]);
-                var responsesClient = new OpenAIClient(authPolicy, new OpenAIClientOptions { Endpoint = v1 });
+                var responsesClient = new OpenAIClient(
+                    new ApiKeyHeaderPolicy(apiKey), new OpenAIClientOptions { Endpoint = v1 });
 
                 // Stateless is MANDATORY, not a default to override: the grain holds all history
                 // client-side (ADR 0004) and reads it back via TryGetInMemoryChatHistory, which the
                 // Responses stateful default (store server-side) would break. includeReasoningEncryptedContent
                 // must be false — the helper defaults it true, sending include:["reasoning.encrypted_content"],
-                // which non-reasoning models (gpt-4o, the shipped default) reject with HTTP 400 (Step-1 spike);
-                // a reasoning Foundry model would want true, but those are deferred (ADR 0014, spec LOW-5).
+                // which non-reasoning models reject with HTTP 400; false verified on the shipped default
+                // gpt-5.4 (Step-1 spike). A reasoning Foundry model would want true, but those are deferred
+                // (ADR 0014, spec LOW-5).
                 return new Provider(options, model => responsesClient
                     .GetResponsesClient()
                     .AsIChatClientWithStoredOutputDisabled(model, includeReasoningEncryptedContent: false));
@@ -171,7 +174,9 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
 #pragma warning restore OPENAI001
             }
 
-            var client = new AzureOpenAIClient(endpoint, credential);
+            // Chat Completions: the Azure SDK client sends Azure's `api-key` header itself — no custom
+            // policy needed (Step-1 spike: streamed a completion under the key).
+            var client = new AzureOpenAIClient(endpoint, new AzureKeyCredential(apiKey));
             return new Provider(options, model => client.GetChatClient(model).AsIChatClient());
         }
 
@@ -191,32 +196,30 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
     }
 
     /// <summary>
-    /// Bridges Azure's <see cref="TokenCredential"/> (the container app's managed identity) to
-    /// System.ClientModel's <see cref="AuthenticationTokenProvider"/>, so a stable <c>OpenAIClient</c>
-    /// built with a <see cref="BearerTokenPolicy"/> authenticates the Foundry <c>/openai/v1</c> Responses
-    /// surface with a bearer token instead of an API key (ADR 0014). Verified to compile and authenticate
-    /// at the pinned versions by the Step-1 gate (ADR 0014 Consequences; the plan's Step-1 results table —
-    /// the spike harness itself is gitignored). Public for the same reason <see cref="Provider"/> is — the
-    /// repo has no <c>InternalsVisibleTo</c>, so the token→<c>AuthenticationToken</c> mapping is
-    /// unit-testable only if reachable from the test project.
+    /// Sets Azure's <c>api-key</c> request header on the stable <c>OpenAIClient</c> so it authenticates the
+    /// Foundry <c>/openai/v1</c> Responses surface with the Azure OpenAI resource key (ADR 0017, superseding
+    /// ADR 0014's managed-identity bearer bridge). The OpenAI SDK's own <see cref="ApiKeyCredential"/> would
+    /// send <c>Authorization: Bearer &lt;key&gt;</c> — Azure's <c>/openai/v1</c> reads the resource key from
+    /// the <c>api-key</c> header (the Step-1 spike, 2026-07-16, confirmed the key gets past auth here and a
+    /// wrong key 401s). This is an <see cref="AuthenticationPolicy"/> so it slots into the
+    /// <c>OpenAIClient(AuthenticationPolicy, options)</c> ctor, REPLACING the SDK's default auth rather than
+    /// layering on top of it. Public for the same reason <see cref="Provider"/> is — the repo has no
+    /// <c>InternalsVisibleTo</c>, so the header-setting is unit-testable (no I/O) only if reachable from the
+    /// test project; the LIVE auth against <c>/openai/v1</c> is the Step-1 manual gate (ADR 0017).
     /// </summary>
-    public sealed class AzureIdentityTokenProvider(TokenCredential credential, string[] scopes)
-        : AuthenticationTokenProvider
+    public sealed class ApiKeyHeaderPolicy(string apiKey) : AuthenticationPolicy
     {
-        public override GetTokenOptions? CreateTokenOptions(IReadOnlyDictionary<string, object> properties) =>
-            new(properties);
-
-        public override AuthenticationToken GetToken(GetTokenOptions options, CancellationToken cancellationToken)
+        public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
         {
-            var token = credential.GetToken(new TokenRequestContext(scopes), cancellationToken);
-            return new AuthenticationToken(token.Token, "Bearer", token.ExpiresOn, token.RefreshOn);
+            message.Request.Headers.Set("api-key", apiKey);
+            ProcessNext(message, pipeline, index);
         }
 
-        public override async ValueTask<AuthenticationToken> GetTokenAsync(
-            GetTokenOptions options, CancellationToken cancellationToken)
+        public override async ValueTask ProcessAsync(
+            PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int index)
         {
-            var token = await credential.GetTokenAsync(new TokenRequestContext(scopes), cancellationToken);
-            return new AuthenticationToken(token.Token, "Bearer", token.ExpiresOn, token.RefreshOn);
+            message.Request.Headers.Set("api-key", apiKey);
+            await ProcessNextAsync(message, pipeline, index);
         }
     }
 }
