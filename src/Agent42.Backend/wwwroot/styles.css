@@ -1198,6 +1198,119 @@ body {
 
 .agent-form__btn--primary:hover { background: rgba(255, 177, 61, 0.28); }
 
+/* model providers (ADR 0018) — reuses the agent-form styling; a few list/row specifics below. */
+.providers__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.providers__list,
+.providers__modellist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.providers__empty {
+  color: var(--ink-faint);
+  font: 400 11.5px var(--mono);
+  padding: 4px 2px;
+}
+
+.provider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-inset);
+}
+
+.provider-row__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.provider-row__name {
+  font: 500 12.5px var(--mono);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-row__sub {
+  font-size: 10.5px;
+  color: var(--amber-deep);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-row__action {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.provider-row__action:hover { background: var(--line-soft); color: var(--amber); }
+
+.provider-model-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.provider-model-row__id,
+.provider-model-row__display { flex: 1 1 130px; min-width: 0; padding: 7px 9px; }
+
+.provider-model-row__flag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font: 400 10.5px var(--mono);
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.provider-model-row__remove {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.provider-model-row__remove:hover { color: var(--amber); border-color: var(--amber-deep); }
+
+.agent-form__error {
+  margin: 0;
+  font: 400 11.5px var(--mono);
+  color: var(--red);
+}
+
 kbd {
   font-family: var(--mono);
   border: 1px solid var(--line);

@@ -187,9 +187,79 @@
         <p class="agent-form__note">Used as the default for future speech input. It doesn't translate the interface.</p>
       </section>
 
+      <section class="agent-form__section">
+        <div class="providers__head">
+          <span class="agent-form__label">// model providers</span>
+          <button class="agent-form__btn" type="button" id="addProviderBtn">Add provider</button>
+        </div>
+        <ul class="providers__list" id="providerList"></ul>
+        <p class="agent-form__note">Add an OpenAI-compatible endpoint (Ollama, vLLM…) or another Foundry account. Changes take effect on your next new chat — no restart. Picking a third-party model sends your conversation outside the tenant.</p>
+      </section>
+
       <div class="agent-form__actions">
         <button class="agent-form__btn" type="button" id="profileCancelBtn">Cancel</button>
         <button class="agent-form__btn agent-form__btn--primary" type="submit" id="profileSaveBtn">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Add / edit one model provider (ADR 0018). Reuses the agent-dialog/agent-form styling. The API
+       key is WRITE-ONLY: it is never sent back, so the field is left blank on edit and "blank = keep". -->
+  <dialog class="agent-dialog" id="providerDialog">
+    <form class="agent-form" id="providerForm">
+      <h2 class="agent-form__title" id="providerFormTitle">New provider</h2>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// key</span>
+        <input class="agent-form__input" type="text" id="providerKey" maxlength="40"
+               placeholder="e.g. ollama (qualifies models as key:model)" required />
+      </label>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// kind</span>
+        <select class="agent-form__input agent-form__select" id="providerKind">
+          <option value="OpenAICompatible">OpenAI-compatible (Ollama, vLLM, GitHub…)</option>
+          <option value="AzureOpenAI">Azure AI Foundry</option>
+        </select>
+      </label>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// display name</span>
+        <input class="agent-form__input" type="text" id="providerDisplayName" maxlength="60"
+               placeholder="Shown as the picker group heading" />
+      </label>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// endpoint</span>
+        <input class="agent-form__input" type="url" id="providerEndpoint"
+               placeholder="http://localhost:11434/v1" required />
+      </label>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// api key</span>
+        <input class="agent-form__input" type="password" id="providerApiKey" autocomplete="off"
+               placeholder="leave blank to keep the stored key" />
+      </label>
+
+      <label class="agent-form__field agent-form__field--check" id="providerResponsesField" hidden>
+        <input class="agent-form__checkbox" type="checkbox" id="providerResponsesApi" />
+        <span class="agent-form__label">// use Responses API (Foundry only)</span>
+      </label>
+
+      <section class="agent-form__section">
+        <div class="providers__head">
+          <span class="agent-form__label">// models</span>
+          <button class="agent-form__btn" type="button" id="addModelRowBtn">Add model</button>
+        </div>
+        <ul class="providers__modellist" id="providerModelList"></ul>
+        <p class="agent-form__note">Declare the models this provider offers — each appears in the picker as key:model. Tools/vision gate what the model is sent; leave them off if unsure.</p>
+      </section>
+
+      <p class="agent-form__error" id="providerError" hidden></p>
+
+      <div class="agent-form__actions">
+        <button class="agent-form__btn" type="button" id="providerCancelBtn">Cancel</button>
+        <button class="agent-form__btn agent-form__btn--primary" type="submit" id="providerSaveBtn">Save</button>
       </div>
     </form>
   </dialog>

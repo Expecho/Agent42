@@ -9,6 +9,32 @@ public sealed record ModelProviderSetup(
     IReadOnlyList<ModelInfo> DeclaredModels,
     IReadOnlyList<string> SkippedProviders);
 
+/// <summary>How one provider's build turned out.</summary>
+public enum ProviderBuildStatus
+{
+    /// <summary>Built into a usable <see cref="MultiProviderChatClientFactory.Provider"/>.</summary>
+    Built,
+
+    /// <summary>Deliberately skipped — an OpenAI-compatible provider with no API key. Not an error.</summary>
+    Skipped,
+
+    /// <summary>
+    /// Invalid config (a Foundry provider with no endpoint or no key; an OpenAI-compatible provider
+    /// with no endpoint). <b>Fatal for the operator baseline</b> (<see cref="Build"/> throws — the
+    /// blank-Foundry-key rule, ADR 0017), but a <b>per-user overlay override falls back to the baseline
+    /// entry</b> instead of throwing (ADR 0018). <see cref="ProviderBuildResult.Error"/> carries why.
+    /// </summary>
+    Invalid,
+}
+
+/// <summary>The outcome of building one provider entry (ADR 0018 — the per-provider seam the resolver reuses).</summary>
+public sealed record ProviderBuildResult(
+    ProviderBuildStatus Status,
+    MultiProviderChatClientFactory.Provider? Provider = null,
+    (string Key, FoundrySettings Settings)? Discovering = null,
+    IReadOnlyList<ModelInfo>? DeclaredModels = null,
+    string? Error = null);
+
 /// <summary>
 /// Turns the bound <c>Models:</c> options into the provider clients and catalog inputs (ADR 0013).
 ///
@@ -16,6 +42,12 @@ public sealed record ModelProviderSetup(
 /// leaving the rules here — which providers are skipped, what a Foundry provider inherits, what a
 /// declared model contributes — inline in startup would make them untestable, and they are exactly the
 /// rules worth pinning.</para>
+///
+/// <para><see cref="TryBuildProvider"/> is the <b>single</b> home of those rules, per provider. The
+/// startup baseline (<see cref="Build"/>) and the per-user resolver (<c>UserProviderResolver</c>,
+/// ADR 0018) both call it, so the Foundry inheritance / skip / fatal logic is never duplicated
+/// (the single-source-of-truth gotcha). The difference between them is only what they do with an
+/// <see cref="ProviderBuildStatus.Invalid"/> result: the baseline throws, the overlay falls back.</para>
 /// </summary>
 public static class ModelProviderBuilder
 {
@@ -30,79 +62,114 @@ public static class ModelProviderBuilder
 
         foreach (var (key, provider) in options.Providers)
         {
-            if (provider.Kind == ProviderKind.AzureOpenAI)
+            var result = TryBuildProvider(key, provider, configuration);
+            switch (result.Status)
             {
-                // Endpoint, API key and ARM coordinates fall back to the AzureOpenAI:* keys when this
-                // provider doesn't declare them (the shipped `foundry` provider declares none) — one
-                // source of truth, shared with Bicep's env vars and the embedding client. Declaring the
-                // endpoint (+ its own key) is how a SECOND Foundry account is configured, with no code change.
-                var settings = ProviderSettings.ResolveFoundry(provider, configuration);
-                if (string.IsNullOrWhiteSpace(settings.Endpoint))
-                {
-                    throw new InvalidOperationException(
-                        $"Model provider '{key}' is an AzureOpenAI provider with no endpoint: it declares "
-                        + "none, and AzureOpenAI:Endpoint is not set either.");
-                }
+                case ProviderBuildStatus.Invalid:
+                    // The baseline is the availability path (ADR 0017), so an invalid provider is FATAL
+                    // here — the blank-Foundry-key throw and the missing-endpoint throw both surface as
+                    // this. A per-user overlay does not reach this branch: it catches Invalid and keeps
+                    // the baseline entry (ADR 0018).
+                    throw new InvalidOperationException(result.Error);
 
-                // A blank Foundry key is FATAL, the deliberate reversal of the third-party skip below
-                // (ADR 0017): Foundry is the availability path itself, so a missing key must fail at
-                // startup — like the eager endpoint check and SEARXNG_SECRET's @minLength guard — rather
-                // than silently degrade. This throw is what the Bicep @minLength on the key mirrors.
-                if (string.IsNullOrWhiteSpace(settings.ApiKey))
-                {
-                    throw new InvalidOperationException(
-                        $"Foundry provider '{key}' has no API key: set Models:Providers:{key}:ApiKey or "
-                        + "AzureOpenAI:ApiKey (ADR 0017 — the Foundry key is the availability path).");
-                }
+                case ProviderBuildStatus.Skipped:
+                    skipped.Add(key);
+                    break;
 
-                providers[key] = MultiProviderChatClientFactory.Provider.Foundry(
-                    provider, new Uri(settings.Endpoint), settings.ApiKey);
+                default:
+                    providers[key] = result.Provider!;
+                    if (result.Discovering is { } d)
+                    {
+                        discovering.Add(d);
+                    }
 
-                if (provider.Discover)
-                {
-                    // Carries THIS provider's coordinates. A single shared ARM catalog would make a
-                    // second Foundry account enumerate the first account's deployments and label them
-                    // as its own — silently wrong rather than a failure.
-                    discovering.Add((key, settings));
-                }
-                else
-                {
-                    // Discovery off (ADR 0017: a data-plane key can't authenticate ARM) — so a Foundry
-                    // provider contributes the deployments it DECLARES, exactly like an OpenAI-compatible
-                    // one below. Without this the picker would show only the default and every other
-                    // deployment would be unreachable through the UI.
-                    declared.AddRange(DeclaredModels(key, provider));
-                }
+                    if (result.DeclaredModels is { Count: > 0 } dm)
+                    {
+                        declared.AddRange(dm);
+                    }
 
-                continue;
+                    break;
             }
-
-            // An OpenAI-compatible provider with no API key is SKIPPED, not fatal — contrast
-            // SEARXNG_SECRET, which fails the deploy because a crash-looping sidecar takes the backend
-            // down with it. A GitHub token that expires must never take the app down: Foundry is the
-            // availability path, and a third-party provider is a convenience on top of it.
-            if (string.IsNullOrWhiteSpace(provider.ApiKey))
-            {
-                skipped.Add(key);
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(provider.Endpoint))
-            {
-                throw new InvalidOperationException(
-                    $"Model provider '{key}' is an OpenAICompatible provider and must declare an Endpoint.");
-            }
-
-            providers[key] = MultiProviderChatClientFactory.Provider.OpenAICompatible(
-                provider, new Uri(provider.Endpoint), provider.ApiKey);
-
-            // OpenAI-compatible providers are not discovered (a scope decision): their models are the
-            // ones declared in config, with the capability flags declared alongside them.
-            declared.AddRange(DeclaredModels(key, provider));
         }
 
         return new ModelProviderSetup(providers, discovering, declared, skipped);
     }
+
+    /// <summary>
+    /// Builds one provider entry, applying the Foundry inheritance / skip / fatal rules exactly once
+    /// (ADR 0013/0017). Never throws: an invalid provider comes back as
+    /// <see cref="ProviderBuildStatus.Invalid"/> with a message, so the caller chooses whether that is
+    /// fatal (baseline) or a fall-back (overlay, ADR 0018).
+    /// </summary>
+    public static ProviderBuildResult TryBuildProvider(
+        string key, ProviderOptions provider, IConfiguration configuration)
+    {
+        if (provider.Kind == ProviderKind.AzureOpenAI)
+        {
+            // Endpoint, API key and ARM coordinates fall back to the AzureOpenAI:* keys when this
+            // provider doesn't declare them (the shipped `foundry` provider declares none) — one
+            // source of truth, shared with Bicep's env vars and the embedding client. Declaring the
+            // endpoint (+ its own key) is how a SECOND Foundry account is configured, with no code change.
+            var settings = ProviderSettings.ResolveFoundry(provider, configuration);
+            if (string.IsNullOrWhiteSpace(settings.Endpoint))
+            {
+                return Invalid(
+                    $"Model provider '{key}' is an AzureOpenAI provider with no endpoint: it declares "
+                    + "none, and AzureOpenAI:Endpoint is not set either.");
+            }
+
+            // A blank Foundry key is FATAL for the baseline, the deliberate reversal of the third-party
+            // skip below (ADR 0017): Foundry is the availability path itself, so a missing key must fail
+            // at startup — like the eager endpoint check and SEARXNG_SECRET's @minLength guard — rather
+            // than silently degrade. This Invalid is what the Bicep @minLength on the key mirrors. (A
+            // per-user overlay treats the same Invalid as a fall-back to the baseline, not a throw.)
+            if (string.IsNullOrWhiteSpace(settings.ApiKey))
+            {
+                return Invalid(
+                    $"Foundry provider '{key}' has no API key: set Models:Providers:{key}:ApiKey or "
+                    + "AzureOpenAI:ApiKey (ADR 0017 — the Foundry key is the availability path).");
+            }
+
+            var foundry = MultiProviderChatClientFactory.Provider.Foundry(
+                provider, new Uri(settings.Endpoint), settings.ApiKey);
+
+            // A discovering provider carries THIS provider's coordinates. A single shared ARM catalog
+            // would make a second Foundry account enumerate the first account's deployments and label
+            // them as its own — silently wrong rather than a failure. Discovery off (ADR 0017: a
+            // data-plane key can't authenticate ARM) → the provider contributes the deployments it
+            // DECLARES, exactly like an OpenAI-compatible one below.
+            return provider.Discover
+                ? new ProviderBuildResult(ProviderBuildStatus.Built, foundry, (key, settings), [])
+                : new ProviderBuildResult(
+                    ProviderBuildStatus.Built, foundry, null, [.. DeclaredModels(key, provider)]);
+        }
+
+        // An OpenAI-compatible provider with no API key is SKIPPED, not fatal — contrast
+        // SEARXNG_SECRET, which fails the deploy because a crash-looping sidecar takes the backend
+        // down with it. A GitHub token that expires must never take the app down: Foundry is the
+        // availability path, and a third-party provider is a convenience on top of it.
+        if (string.IsNullOrWhiteSpace(provider.ApiKey))
+        {
+            return new ProviderBuildResult(ProviderBuildStatus.Skipped);
+        }
+
+        if (string.IsNullOrWhiteSpace(provider.Endpoint))
+        {
+            return Invalid(
+                $"Model provider '{key}' is an OpenAICompatible provider and must declare an Endpoint.");
+        }
+
+        var compat = MultiProviderChatClientFactory.Provider.OpenAICompatible(
+            provider, new Uri(provider.Endpoint), provider.ApiKey);
+
+        // OpenAI-compatible providers are not discovered (a scope decision): their models are the
+        // ones declared in config, with the capability flags declared alongside them.
+        return new ProviderBuildResult(
+            ProviderBuildStatus.Built, compat, null, [.. DeclaredModels(key, provider)]);
+    }
+
+    private static ProviderBuildResult Invalid(string error) =>
+        new(ProviderBuildStatus.Invalid, Error: error);
 
     // The config-declared models of a non-discovering provider, qualified under its key — used by both
     // an OpenAI-compatible provider and a non-discovering (key-based) Foundry provider (ADR 0017).

@@ -8,6 +8,14 @@ supersedes: 0013, 0014 (credential mechanism only)
 
 # Authenticate the Foundry provider with an Azure OpenAI API key, not managed identity
 
+> **Amended by [ADR 0018](0018-user-configurable-model-providers.md) (2026-07-16) — secret-source
+> scope only.** Baseline secrets still come from **operator-managed env** (one source of truth for
+> the baseline Foundry key + embeddings), and a blank **baseline** Foundry key is still fatal at
+> startup. ADR 0018 adds a **second, per-user** secret source: a signed-in user's overlay keys,
+> persisted **encrypted** and best-effort (a user override that resolves blank falls back to the
+> baseline — never fatal). Everything else here stays authoritative. `status: accepted` on purpose
+> — see 0018's "Partial supersession" note.
+
 ## Context
 The Azure AI Foundry provider (ADR 0013) reached the model data plane with the container app's
 managed identity — a `TokenCredential` on the Chat path, and a managed-identity **bearer policy** on

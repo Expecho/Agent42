@@ -4,9 +4,11 @@ using System.Net.Http.Json;
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Orleans.TestingHost;
 
 namespace Agent42.Tests;
@@ -35,6 +37,12 @@ public sealed class AttachmentTests : IAsyncLifetime
         appBuilder.WebHost.UseTestServer();
         appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
         appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
+        // /api/models is user-scoped (ADR 0018); the single static catalog stands in for every user.
+        appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
+            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
+        // /api/providers encrypts keys, so the protector must resolve for the route matcher (ADR 0018).
+        appBuilder.Services.AddSingleton<IProviderSecretProtector>(
+            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         // The upload endpoint resolves the ingestion service even on the image path (ADR 0007).
         appBuilder.Services.AddDocumentRagFakes();
