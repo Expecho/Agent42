@@ -1185,7 +1185,7 @@
     if (userProviders.length === 0) {
       const li = document.createElement("li");
       li.className = "providers__empty";
-      li.textContent = "no providers added — the built-in ones still apply";
+      li.textContent = "no providers added";
       providerList.appendChild(li);
       return;
     }
