@@ -20,13 +20,18 @@ public sealed class LocationAssetsTests
     public LocationAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
 
     [Fact]
-    public async Task ShareLocationButton_IsPresent()
+    public async Task LocationControl_IsInPreferences_AndComposerButtonRemoved()
     {
         var index = await _client.GetStringAsync("/");
 
-        Assert.Contains("id=\"locationBtn\"", index);
-        // Ships hidden: it is shown only when we could capture but are not yet authorized.
-        Assert.Matches(@"id=""locationBtn""[^>]*hidden", index);
+        // The grant now lives in Preferences → General as an Enable button + status line.
+        Assert.Contains("id=\"locationEnableBtn\"", index);
+        Assert.Contains("id=\"locationStatus\"", index);
+
+        // The old composer button (and its CSS hook) is gone — location is granted only from Preferences.
+        Assert.DoesNotContain("id=\"locationBtn\"", index);
+        var styles = await _client.GetStringAsync("/styles.css");
+        Assert.DoesNotContain("composer__location", styles);
     }
 
     // AC11 — the send path must never call getCurrentPosition, and never await a fix. An awaited

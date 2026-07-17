@@ -167,6 +167,22 @@ public sealed class PwaAssetsTests
         // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
         // stale assets — sw.js serves the shell cache-first with background revalidate.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v3", sw);
+        Assert.Contains("agent42-shell-v4", sw);
+    }
+
+    // The Preferences dialog is split into General + Model providers tabs (source-text heuristic).
+    // Tab switching / keyboard nav is verified by driving the DevHost UI, not asserted here.
+    [Fact]
+    public async Task Preferences_HasGeneralAndProvidersTabs()
+    {
+        var index = await _client.GetStringAsync("/");
+
+        Assert.Contains("role=\"tablist\"", index);
+        Assert.Contains("id=\"tabGeneral\"", index);
+        Assert.Contains("id=\"tabProviders\"", index);
+        // Two panels, one per tab; the inactive (providers) ships hidden.
+        Assert.Contains("id=\"panelGeneral\"", index);
+        Assert.Contains("id=\"panelProviders\"", index);
+        Assert.Matches(@"role=""tabpanel""", index);
     }
 }
