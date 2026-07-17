@@ -25,6 +25,15 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
     public const string HostedToolsModel = "fake:responses";
 
     /// <summary>
+    /// An image-generation model (ADR 0020): picking it produces an image, not a chat reply. Declared
+    /// tools-capable ONLY so AC9 can interleave a real tool turn before the image turn without the switch-to-
+    /// image-model strip collapsing it — a real image provider declares no tools, but the id-keyed strip/restore
+    /// under test is orthogonal to tool-stripping, and a preserved non-1:1 assistant structure is what makes
+    /// that test non-vacuous. Not vision-capable: an image model consumes images via the edit API, not a URL.
+    /// </summary>
+    public const string ImageModel = "fake:image";
+
+    /// <summary>
     /// This is the ONLY IChatClientFactory the grain tests get, so the capability predicate lives here:
     /// without it every model would report itself fully capable and the grain's degraded paths (no
     /// tools, no load_skill, images withheld) would be untestable.
@@ -34,6 +43,8 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
         NoToolsNoVisionModel => new ModelCapabilities(SupportsTools: false, SupportsVision: false),
         NoVisionModel => new ModelCapabilities(SupportsTools: true, SupportsVision: false),
         HostedToolsModel => ModelCapabilities.Full with { SupportsHostedTools = true },
+        ImageModel => new ModelCapabilities(
+            SupportsTools: true, SupportsVision: false, SupportsImageGeneration: true),
         _ => ModelCapabilities.Full,
     };
 
@@ -44,11 +55,16 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
         siloBuilder.ConfigureServices(services =>
         {
             services.AddSingleton<IChatClient, FakeChatClient>();
+            // The image generator (ADR 0020) the ImageModel resolves to: echoes the edit input back and
+            // returns a large recognizable PNG for text-to-image, so a test can tell the branches apart and
+            // prove the bytes never enter the session.
+            services.AddSingleton<IImageGenerationService, ProbeImageGenerator>();
             services.AddSingleton<IChatClientFactory>(sp =>
                 new SingleChatClientFactory(
                     sp.GetRequiredService<IChatClient>(),
                     DefaultModel,
-                    capabilities: Capabilities));
+                    capabilities: Capabilities,
+                    imageGenerator: sp.GetRequiredService<IImageGenerationService>()));
             // The grain resolves its factory through the per-user seam (ADR 0018); offline/tests have no
             // overlay store, so the single fake factory stands in for every user.
             services.AddSingleton<IUserChatClientFactoryProvider>(sp =>

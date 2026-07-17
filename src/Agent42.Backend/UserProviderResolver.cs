@@ -166,6 +166,7 @@ public sealed class UserProviderResolver : IUserProviderResolver
             DisplayName = m.DisplayName,
             SupportsTools = m.SupportsTools,
             SupportsVision = m.SupportsVision,
+            SupportsImageGeneration = m.SupportsImageGeneration,
         })],
     };
 }

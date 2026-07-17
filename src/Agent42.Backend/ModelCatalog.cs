@@ -15,7 +15,10 @@ public record ModelInfo(
     string? Model,
     string? Version,
     bool SupportsTools,
-    bool SupportsVision);
+    bool SupportsVision,
+    // Trailing default so existing constructions stay valid; true only for a declared image-generation
+    // model (ADR 0020). A discovered Foundry deployment is chat, so it never sets this.
+    bool SupportsImageGeneration = false);
 
 /// <summary>The models the picker can choose from, plus the current default.</summary>
 public record ModelCatalogResult(string Default, IReadOnlyList<ModelInfo> Models);

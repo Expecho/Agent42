@@ -16,7 +16,14 @@ namespace Agent42.Agents;
 /// 400s on them, which is the whole reason the self-hosted SearXNG shims exist (ADR 0011). When set,
 /// the grain swaps its <c>web_search</c>/<c>fetch_web_page</c> shims for the native hosted tools.
 /// </param>
-public record ModelCapabilities(bool SupportsTools, bool SupportsVision, bool SupportsHostedTools = false)
+/// <param name="SupportsImageGeneration">
+/// Whether picking this model turns a turn into <b>image generation</b> instead of a chat reply (ADR 0020):
+/// a text-to-image / image-to-image model (an OpenAI-compatible <c>/v1/images</c> endpoint). Opt-in and
+/// declared per model — <see cref="Full"/> stays chat-only, and a discovered Foundry deployment is chat
+/// (<c>false</c>) — because it is orthogonal to chat: an image model runs a different grain path entirely.
+/// </param>
+public record ModelCapabilities(
+    bool SupportsTools, bool SupportsVision, bool SupportsHostedTools = false, bool SupportsImageGeneration = false)
 {
     /// <summary>A model with no known restrictions — the assumption for a discovered Foundry deployment.</summary>
     public static ModelCapabilities Full => new(SupportsTools: true, SupportsVision: true);
@@ -47,6 +54,14 @@ public interface IChatClientFactory
 
     /// <summary>Capabilities of <paramref name="modelId"/>, or of the default model when null/blank.</summary>
     ModelCapabilities GetCapabilities(string? modelId);
+
+    /// <summary>
+    /// The image generator for <paramref name="modelId"/> (ADR 0020), or <c>null</c> when that model is not an
+    /// image-generation model (<see cref="ModelCapabilities.SupportsImageGeneration"/> is false). Non-null only
+    /// for a declared OpenAI-compatible image model; a chat model, a Foundry deployment, and the no-provider
+    /// state all return <c>null</c>. This is how the grain decides a turn produces an image, not a chat reply.
+    /// </summary>
+    IImageGenerationService? GetImageGenerationService(string? modelId);
 }
 
 /// <summary>
@@ -61,7 +76,8 @@ public interface IChatClientFactory
 public sealed class SingleChatClientFactory(
     IChatClient client,
     string defaultModelId = "default",
-    Func<string?, ModelCapabilities>? capabilities = null) : IChatClientFactory
+    Func<string?, ModelCapabilities>? capabilities = null,
+    IImageGenerationService? imageGenerator = null) : IChatClientFactory
 {
     public string DefaultModelId { get; } = defaultModelId;
 
@@ -69,4 +85,10 @@ public sealed class SingleChatClientFactory(
 
     public ModelCapabilities GetCapabilities(string? modelId)
         => capabilities?.Invoke(modelId) ?? ModelCapabilities.Full;
+
+    // The injected generator is handed back only for a model the capabilities func flags as image-generation
+    // (ADR 0020) — so DevHost/tests select an image model to reach it, and a chat model gets null, exactly
+    // like the multi-provider factory. Null generator (the default) → always null.
+    public IImageGenerationService? GetImageGenerationService(string? modelId)
+        => GetCapabilities(modelId).SupportsImageGeneration ? imageGenerator : null;
 }

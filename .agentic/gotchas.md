@@ -404,6 +404,38 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/FakeChatClient.cs` (`AllImagesEcho`, `EmptyMessageEcho`)
 - **Verified:** 2026-07-14
 
+### An assistant generated image is id-keyed (message-level prop), never joined by assistant-message position
+
+- **Claim:** a generated image (ADR 0020) is the *assistant* twin of a user attachment, but the two must NOT
+  share the positional join. User images work because there is **exactly one `ChatRole.User` message per
+  turn**, so `TurnAttachments[userTurnIndex]` aligns. The **assistant side is not 1:1 with turns**: a
+  tool-calling turn emits a *standalone* `FunctionCallContent` assistant message **plus** a separate text
+  assistant message (true even offline — `FakeChatClient` emits both), so any list keyed on assistant-**message
+  index** drifts by one for every prior tool turn — misaligning the image against the wrong bubble AND the
+  vision-gate strip/restore. So generated images are stored **id-keyed** in `AgentGrainState.GeneratedImages`
+  (`Dictionary<string, AttachmentRef>`), and the link from the session's assistant message to its ref is an
+  **`assistantImageId` in the message's MESSAGE-LEVEL `AdditionalProperties`** — not the content-level prop,
+  because the Step-0 spike proved the message-level id survives BOTH session serialize/deserialize AND the
+  image-strip (the content-level `UriContent` is removed when withholding from a no-vision model, so an id
+  living only on the `UriContent` would be lost). History, the most-recent-image walk (edit input), and the
+  strip/restore all look up by that id. Two more traps: (1) the image-gen branch runs in `ChatCoreAsync`
+  **before** the chat vision-gate — an image model *consumes* images (it edits them), so it must not be routed
+  through the withhold-from-a-no-vision-model gate; (2) `AgentGrain`'s own image abstraction is
+  **`IImageGenerationService`, not `IImageGenerator`** — M.E.AI 1.13 ships `Microsoft.Extensions.AI.IImageGenerator`,
+  and a same-named type is an ambiguous reference (CS0104) in any Backend file importing both namespaces (the
+  spike hit this on `ImageGenerationOptions`). The offline harness cannot reach a real `/v1/images` endpoint
+  (`InMemoryImageGenerator` returns a canned PNG), so the prod `OpenAIImageGenerator` is prod-smoke only; the
+  id-keyed correctness IS testable — `NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn`
+  interleaves a tool turn **before** the image turn so a positional bug would surface (a clean single-turn test
+  would pass vacuously).
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`GenerateImageTurnAsync`, `RecordImageTurnAsync`,
+  `AssistantImageRef`, `FindMostRecentImageRef`, `RehydrateAssistantImageAsync`, `AssistantImageIdKey`),
+  `src/Agent42.Agents/AgentGrainState.cs` (`GeneratedImages`),
+  `src/Agent42.Agents/IImageGenerationService.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn`, `History_IncludesAssistantGeneratedImage`),
+  `.agentic/decisions/0020-image-generation-model-capability.md`
+- **Verified:** 2026-07-17
+
 ### The Foundry provider's endpoint + ARM coordinates are INHERITED — never copy them into `Models:`
 
 > **Amended by ADR 0019 (2026-07-17):** the app **no longer ships a baseline `foundry` chat provider** —

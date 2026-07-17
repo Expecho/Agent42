@@ -14,6 +14,13 @@ public enum AgentStreamEventType
     /// <summary>A tool finished and returned its result to the model.</summary>
     ToolCallEnd,
 
+    /// <summary>
+    /// The assistant produced a generated image (ADR 0020). Image generation is not token-streamed —
+    /// one <see cref="Image"/> event carrying the stored attachment id + media type, then <see cref="Done"/>.
+    /// The client renders it through the attachment proxy (by id), exactly like a user-uploaded image.
+    /// </summary>
+    Image,
+
     /// <summary>The turn finished; carries the aggregated token usage.</summary>
     Done,
 }
@@ -34,4 +41,8 @@ public sealed record AgentStreamEvent(
     [property: Id(5)] string? ToolResult = null,
     [property: Id(6)] long? InputTokens = null,
     [property: Id(7)] long? OutputTokens = null,
-    [property: Id(8)] long? CachedTokens = null);
+    [property: Id(8)] long? CachedTokens = null,
+    // Set on an Image event (ADR 0020): the stored attachment id the browser fetches via the proxy, plus
+    // its media type. Trailing defaults so every existing positional construction keeps compiling.
+    [property: Id(9)] string? AttachmentId = null,
+    [property: Id(10)] string? MediaType = null);
