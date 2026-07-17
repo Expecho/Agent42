@@ -23,6 +23,9 @@ public sealed class UserProfileGrain : Grain, IUserProfileGrain
     // BCP-47 tags are short; the curated dropdown is the real gate, this is defense-in-depth.
     private const int MaxLanguageTagLength = 35;
 
+    // The only valid theme choices; anything else (including legacy null) clamps to "system".
+    private static readonly string[] ValidThemes = ["system", "light", "dark"];
+
     private readonly IPersistentState<UserProfileState> _state;
 
     public UserProfileGrain(
@@ -41,7 +44,13 @@ public sealed class UserProfileGrain : Grain, IUserProfileGrain
             language = language[..MaxLanguageTagLength];
         }
 
-        var stored = profile with { PreferredLanguage = language };
+        var theme = (profile.Theme ?? "").Trim().ToLowerInvariant();
+        if (!ValidThemes.Contains(theme))
+        {
+            theme = "system";
+        }
+
+        var stored = profile with { PreferredLanguage = language, Theme = theme };
         _state.State.Profile = stored;
         await _state.WriteStateAsync();
         return stored;

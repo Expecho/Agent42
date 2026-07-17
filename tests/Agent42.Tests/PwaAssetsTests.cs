@@ -136,4 +136,37 @@ public sealed class PwaAssetsTests
         var app = await _client.GetStringAsync("/app.js");
         Assert.Contains("serviceWorker.register", app);
     }
+
+    // Theme feature (light/dark/system) invariants that silently regress with no JS test runner
+    // (source-text heuristic, like the failed-upload chip test above). Behavior — live preview,
+    // revert-on-cancel, OS-follow — is verified by driving the DevHost UI, not asserted here.
+    [Fact]
+    public async Task Frontend_ShipsThemeSelector_NoFoucScript_AndLightPalette()
+    {
+        var index = await _client.GetStringAsync("/");
+        // The theme <select> and the pre-paint no-FOUC head script (reads the localStorage cache
+        // and sets data-theme before app.js). Both must exist or the picker/anti-flash break.
+        Assert.Contains("id=\"profileTheme\"", index);
+        Assert.Contains("agent42.theme", index);
+        Assert.Contains("data-theme", index);
+
+        var app = await _client.GetStringAsync("/app.js");
+        Assert.Contains("THEME_KEY", app);
+        Assert.Contains("applyTheme", app);
+        // The staged commit sends theme in the profile PUT payload; the OS-follow listener backs "system".
+        Assert.Contains("theme: profileTheme.value", app);
+        Assert.Contains("prefers-color-scheme: dark", app);
+
+        var styles = await _client.GetStringAsync("/styles.css");
+        Assert.Contains("[data-theme=\"light\"]", styles);
+    }
+
+    [Fact]
+    public async Task ServiceWorker_CacheNameIsCurrent()
+    {
+        // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
+        // stale assets — sw.js serves the shell cache-first with background revalidate.
+        var sw = await _client.GetStringAsync("/sw.js");
+        Assert.Contains("agent42-shell-v3", sw);
+    }
 }
