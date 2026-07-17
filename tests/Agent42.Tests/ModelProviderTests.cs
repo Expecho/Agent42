@@ -277,6 +277,49 @@ public class ModelProviderTests
         Assert.DoesNotContain(setup.Discovering, d => d.Key == "foundry");
     }
 
+    [Fact] // AC1 — an empty provider set constructs a factory (no throw) with an empty default (ADR 0019):
+           // a user who configured no chat provider gets an empty picker, not a startup crash.
+    public void EmptyProviders_ConstructsWithNoDefault()
+    {
+        var factory = new MultiProviderChatClientFactory(
+            new Dictionary<string, MultiProviderChatClientFactory.Provider>(),
+            "", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
+
+        Assert.Equal("", factory.DefaultModelId);
+
+        // Nothing is capable of anything — and this returns without hitting Resolve, which assumes a
+        // provider exists.
+        var capabilities = factory.GetCapabilities(null);
+        Assert.False(capabilities.SupportsTools);
+        Assert.False(capabilities.SupportsVision);
+    }
+
+    [Fact] // AC2 — the empty factory's GetClient hands out the no-op NoModelChatClient: never null (the
+           // grain builds a valid agent from it), and running it throws a CLEAR message, not a cryptic
+           // KeyNotFoundException from resolving a "" id against an empty provider dict.
+    public async Task EmptyProviders_GetClient_ReturnsNoModelClient_ThrowsOnRun()
+    {
+        var factory = new MultiProviderChatClientFactory(
+            new Dictionary<string, MultiProviderChatClientFactory.Provider>(),
+            "", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
+
+        var client = factory.GetClient(null);
+        Assert.NotNull(client);
+
+        var streaming = Assert.Throws<InvalidOperationException>(
+            () => client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "hi")]));
+        Assert.Contains("No model provider is configured", streaming.Message);
+
+        var response = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.GetResponseAsync([new ChatMessage(ChatRole.User, "hi")]));
+        Assert.Contains("No model provider is configured", response.Message);
+
+        // The rest of the IChatClient contract the grain relies on while building an agent: GetService
+        // returns null and Dispose is a harmless no-op (the shared instance must survive disposal).
+        Assert.Null(client.GetService(typeof(ChatClientMetadata)));
+        client.Dispose();
+    }
+
     private static MultiProviderChatClientFactory Factory()
     {
         var setup = ModelProviderBuilder.Build(Options(), Configuration());

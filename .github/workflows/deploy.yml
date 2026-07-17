@@ -95,7 +95,6 @@ jobs:
               searxngSecret="${{ secrets.SEARXNG_SECRET }}" \
               azureOpenAIApiKey="${{ secrets.AZURE_OPENAI_API_KEY }}" \
               googleMapsApiKey="${{ secrets.GOOGLE_MAPS_API_KEY }}" \
-              githubModelsToken="${{ secrets.GH_MODELS_TOKEN }}" \
               cosmosLocation="northeurope" \
               otlpEndpoint="http://home.peterbons.nl:4317" \
             --query properties.outputs.containerAppPrincipalId.value -o tsv)

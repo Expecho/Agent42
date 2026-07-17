@@ -124,17 +124,26 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   **two-legged** because WebKit/iOS has no geolocation Permissions API; and this feature puts the user's
   **street address** into a conversation that the ADR 0011 exfiltration channel can still drain — the
   `websearch` skill only *mitigates* that. All three are in gotchas.
-- Model providers (ADR 0013, credential mechanism amended by ADR 0017): a conversation can run on **any
+- Model providers (ADR 0013, credential mechanism amended by ADR 0017, **baseline removed by ADR 0019**):
+  **Read this override first.** As of ADR 0019 the app ships **NO baseline chat provider** — `Models:Providers`
+  is `{}`, chat is **entirely per-user** (ADR 0018), and there is **no operator default model**. So in the
+  bullet below: "the default stays Foundry", "serves on Foundry alone", the **`GH_MODELS_TOKEN`** prerequisite
+  and its wiring, the "blank Foundry key is **fatal** — Foundry is the availability path" rule, and the shipped
+  `foundry` provider's `Discover:false`/`gpt-5.4`/`AzureOpenAI:DeploymentName` details are all **superseded** —
+  the availability path narrowed to the **embedding** key (`AzureOpenAI:ApiKey`, still fatal-if-blank), and a
+  Foundry chat model is now something a **user** adds. A user with no provider gets an empty picker + gated
+  composer; the grain stays valid via a no-op `NoModelChatClient`. The mechanism facts below still hold. A
+  conversation can run on **any
   OpenAI-compatible endpoint**, not just Azure Foundry. The `Models:` config section maps provider keys to
   either an `AzureOpenAI` (Foundry) provider or an `OpenAICompatible` one — **both now reached with an API
-  key** (ADR 0017 replaced Foundry's managed identity with an Azure OpenAI key). **GitHub Models** is wired
-  in prod; Ollama/vLLM work by config alone. A model is named by a **qualified `provider:model` id split on the FIRST colon**
+  key** (ADR 0017 replaced Foundry's managed identity with an Azure OpenAI key). ~~**GitHub Models** is wired
+  in prod~~ (ADR 0019: GitHub Models is now a **user-added** provider, not a baseline one); Ollama/vLLM work
+  by config alone. A model is named by a **qualified `provider:model` id split on the FIRST colon**
   (GitHub's own ids contain a `/`); a bare id is legacy and resolves against the default provider, which
-  is why this needed no state migration. A **`GH_MODELS_TOKEN` GitHub Actions secret is a manual
-  prerequisite** — a PAT with the `models:read` scope, and note the name: `GITHUB_*` is a **reserved
-  prefix** Actions will not let you create. Like `GOOGLE_MAPS_API_KEY` and unlike `SEARXNG_SECRET`, it is
-  **not on the availability path**: with no token the provider is skipped with a warning and the app
-  serves on Foundry alone. **The headline consequence: picking a third-party model sends the conversation
+  is why this needed no state migration. ~~A `GH_MODELS_TOKEN` GitHub Actions secret is a manual
+  prerequisite~~ (ADR 0019 removed the baseline `github` provider **and** its `GH_MODELS_TOKEN` →
+  `Models__Providers__github__ApiKey` wiring — a user supplies their own PAT per-provider now). **The
+  headline consequence: picking a third-party model sends the conversation
   — document excerpts, image SAS URLs, the user's street address — outside the Entra tenant.** That is why
   the default stays Foundry and the pick is explicit. Four things to read before touching this: the
   first-colon split and why `DeploymentName` keeps its name; `AgentSkillsProvider` is a **tool** (a
@@ -146,11 +155,14 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   the availability path, unlike a third-party key), ARM **discovery is off** (a data-plane key can't reach
   ARM, so the provider **declares** its deployments), and the default deployment is **`gpt-5.4`** (`gpt-4o`
   is not deployed in the account).
-- User-configurable providers (ADR 0018, amends 0013 + 0017): a signed-in user adds/edits/deletes their own
+- User-configurable providers (ADR 0018, amends 0013 + 0017; **availability floor removed by ADR 0019**):
+  a signed-in user adds/edits/deletes their own
   model providers — **including Foundry** — from the web UI (Preferences → model providers), per-user, with
   API keys persisted **encrypted**, and changes taking effect **without a restart**. The model is
-  **baseline ⊕ per-user overlay**: the env/`appsettings` set stays the boot-time **availability floor**
-  (0017's "blank *baseline* Foundry key is fatal" still holds), a `UserProviderConfigGrain` holds the
+  **baseline ⊕ per-user overlay**, but as of ADR 0019 the **baseline chat set ships EMPTY**, so chat is
+  effectively the overlay alone (a provider must declare **≥1 model**; the resolver's effective default is a
+  valid overlay default → the first declared model → `""`). ~~the env/`appsettings` set stays the boot-time
+  **availability floor**~~ (only the **embedding** key is a floor now); a `UserProviderConfigGrain` holds the
   overlay, and `UserProviderResolver` merges them — reused by both a per-user chat-client factory (resolved
   on `AgentGrain` activation, cached by overlay **version**) and a per-user `/api/models` catalog. **A user
   override that resolves invalid falls back to baseline — overlays are best-effort, never fatal.** The

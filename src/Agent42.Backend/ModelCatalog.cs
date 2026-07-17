@@ -154,7 +154,10 @@ public sealed class CompositeModelCatalog(
             }
         }
 
-        if (models.Count == 0)
+        // Synthesize the default only when there IS one. An empty default (ADR 0019: the user has
+        // configured no chat provider) must yield an EMPTY catalog, not a bogus "" model — the picker
+        // stays empty and the composer gates on it.
+        if (models.Count == 0 && !string.IsNullOrEmpty(defaultModelId))
         {
             models.Add(new ModelInfo(
                 defaultModelId, ModelId.Parse(defaultModelId, "").Provider, defaultModelId,

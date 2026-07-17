@@ -406,6 +406,15 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ### The Foundry provider's endpoint + ARM coordinates are INHERITED — never copy them into `Models:`
 
+> **Amended by ADR 0019 (2026-07-17):** the app **no longer ships a baseline `foundry` chat provider** —
+> `Models:Providers` is now `{}` and chat is fully per-user (ADR 0018). The inheritance MECHANISM below
+> (`ResolveFoundry` falling back to `AzureOpenAI:*`) still exists in code and would apply to a baseline
+> Foundry provider re-added to `appsettings`, but no shipped provider exercises it. Two concrete claims
+> below are now dead: the `Models:Default` derivation is **gone** (Default stays `""`; there is no operator
+> default), and `AzureOpenAI:DeploymentName`/`SubscriptionId`/`ResourceGroup`/`AccountName` (+ their Bicep
+> params/env vars) were **removed**. Only `AzureOpenAI:Endpoint`/`ApiKey`/`EmbeddingDeploymentName`/`TenantId`
+> remain, and the key now authenticates **embeddings** only. See the "Chat is fully per-user" gotcha.
+
 - **Claim:** the `foundry` provider in `appsettings.json` deliberately declares **none** of `Endpoint`,
   `ApiKey` (ADR 0017), `SubscriptionId`, `ResourceGroup`, `AccountName`, and that emptiness is load-bearing
   rather than an omission: all fall back to the top-level **`AzureOpenAI:*`** keys, which Bicep threads in
@@ -426,24 +435,35 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   — which the first draft did — silently overrides the env var and turns the Bicep param into **dead
   config**: it looks authoritative and changes nothing. Exactly the trap shape as SearXNG's inert
   `server.port` below.
-- **Evidence:** `src/Agent42.Backend/ModelProviderOptions.cs` (`ProviderSettings.ResolveFoundry`),
-  `src/Agent42.Backend/ModelProviderBuilder.cs`, `src/Agent42.Backend/Program.cs` (the `Models:Default`
-  fallback), `src/Agent42.Backend/appsettings.json` (the `"//Default"` and `foundry` comments),
+- **Evidence:** `src/Agent42.Backend/ModelProviderOptions.cs` (`ProviderSettings.ResolveFoundry` — the
+  inheritance mechanism, still live for a re-added baseline Foundry provider),
+  `src/Agent42.Backend/ModelProviderBuilder.cs`, `src/Agent42.Backend/appsettings.json` (the `"//Default"`
+  comment; the `foundry` block was removed by ADR 0019),
   `tests/Agent42.Tests/ModelProviderTests.cs`
   (`TwoFoundryProviders_ResolveOwnCoordinates_AndInheritWhenAbsent`),
-  `.agentic/decisions/0017-foundry-provider-api-key-auth.md` (the `ApiKey` inheritance)
+  `.agentic/decisions/0017-foundry-provider-api-key-auth.md` (the `ApiKey` inheritance),
+  `.agentic/decisions/0019-remove-baseline-chat-providers.md` (baseline removed)
 - **Verified:** 2026-07-16
 
 ### A user provider overlay is best-effort (baseline wins) and its endpoint is deliberately NOT SSRF-guarded
 
+> **Amended by ADR 0019 (2026-07-17):** the baseline chat set now ships **EMPTY** (`Models:Providers: {}`),
+> so "baseline wins" is **vacuous for chat** — there is no baseline chat entry to fall back to. The
+> best-effort merge rule (an `Invalid`/`Skipped` overlay build keeps the baseline entry **if one exists,
+> else skips**) is unchanged in code, but with an empty baseline "else skips" is the only branch that ever
+> fires for chat. A user with no valid provider ends up with **zero** providers and an empty picker (the
+> grain then stays valid via a no-op client — see the "Chat is fully per-user" gotcha). Only the **embedding**
+> `AzureOpenAI:*` key is still an availability floor. The SSRF-guard-free endpoint claim below is unchanged.
+
 - **Claim:** a signed-in user can add/override providers (ADR 0018), but that overlay is layered **after**
-  boot and must **never** brick the app. The operator env/`appsettings` set stays the boot-time
-  availability floor: `ModelProviderBuilder.Build` still **throws** on a blank *baseline* Foundry key
-  (ADR 0017). The per-user path is different — `UserProviderResolver.Merge` calls the **same**
-  `ModelProviderBuilder.TryBuildProvider` per provider (one home for the Foundry inheritance / skip / fatal
-  rules — do not duplicate them), but on an `Invalid`/`Skipped` result it **keeps the baseline-built entry
-  if one exists, else skips** — it never throws. So a Foundry override with a blanked key falls back to the
-  baseline Foundry provider, not an outage. Two more consequences that are easy to get wrong: (1) user
+  boot and must **never** brick the app. ~~The operator env/`appsettings` set stays the boot-time
+  availability floor~~ (ADR 0019: the **chat** baseline is now empty; only embeddings remain a floor):
+  `ModelProviderBuilder.Build` still **throws** on a blank *baseline* Foundry key when one is configured
+  (ADR 0017), but no baseline chat provider ships. The per-user path — `UserProviderResolver.Merge` calls the
+  **same** `ModelProviderBuilder.TryBuildProvider` per provider (one home for the Foundry inheritance / skip /
+  fatal rules — do not duplicate them), but on an `Invalid`/`Skipped` result it **keeps the baseline-built
+  entry if one exists, else skips** — never throws. With the baseline now empty, a bad override simply leaves
+  the user with fewer (often zero) providers. Two more consequences that are easy to get wrong: (1) user
   overlay providers do **NOT** inherit the operator `AzureOpenAI:*` secrets — the resolver builds them with
   an **empty** `IConfiguration` (`NoInheritance`), both so the operator key never reaches a user-chosen
   endpoint and so a blanked user Foundry key genuinely resolves `Invalid` (otherwise it would silently
@@ -495,20 +515,70 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **user-scoped** `_chatClientFactory` **once** in `OnActivateAsync` — from the userId parsed off its grain
   key (everything before the **first** `/` of `{userId}/{conversationId}`; a userId is an opaque Easy-Auth
   principal id with no `/`). **Hard ordering constraint:** the `await …GetForUserAsync(userId)` assignment
-  MUST run **before** the first dereference of `_chatClientFactory` (the `_state.State.DeploymentName ??
-  _chatClientFactory.DefaultModelId` line and the `BuildAgent` call right after) — resolving it later NREs.
-  The sync `IChatClientFactory` interface and its ~8 in-grain call sites are unchanged; only the resolution
-  moved. Ripple to remember: every host that registers `IChatClientFactory` for a grain (the four silo
-  configurators + DevHost) must also register `IUserChatClientFactoryProvider` — the
-  `SingleUserChatClientFactoryProvider` adapter is the one-line stand-in offline/in tests. The backend
-  impl caches the built factory by **(userId, overlay version)**, so a save (which bumps the grain's
-  version) is picked up on the next activation with no restart — full live-reload of active grains is out
-  of scope.
+  MUST run **before** the first dereference of `_chatClientFactory` (the `_modelId` assignment and the
+  `BuildAgent` call right after) — resolving it later NREs. The sync `IChatClientFactory` interface and its
+  ~8 in-grain call sites are unchanged; only the resolution moved. Ripple to remember: every host that
+  registers `IChatClientFactory` for a grain (the four silo configurators + DevHost) must also register
+  `IUserChatClientFactoryProvider` — the `SingleUserChatClientFactoryProvider` adapter is the one-line
+  stand-in offline/in tests. The backend impl caches the built factory by **(userId, overlay version)**, so
+  a save (which bumps the grain's version) is picked up on the next activation with no restart — full
+  live-reload of active grains is out of scope.
+- **Amended by ADR 0019 (2026-07-17): the `_modelId` assignment is now conditional, and the factory is
+  re-resolved on the no-model path.** With the baseline chat set empty, activation can resolve a factory
+  with **zero** providers (`DefaultModelId == ""`). `_modelId` is then set to `""` **regardless of a
+  persisted `DeploymentName`** (`_modelId = string.IsNullOrEmpty(factory.DefaultModelId) ? "" :
+  (_state.State.DeploymentName ?? factory.DefaultModelId)`), and `BuildAgent` runs against the no-op
+  `NoModelChatClient` so `_agent`/`_session` stay valid. Because the factory is captured **once per
+  activation**, a user who adds their first provider on an already-activated grain would keep the empty
+  factory — so `_userId` is now a **retained field** and `ChatCoreAsync`/`ReceiveReminder` **re-resolve**
+  `GetForUserAsync(_userId)` on the no-model path and rebind (`RebindModelAsync`) if a model became
+  available. See the "Chat is fully per-user" gotcha.
 - **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`OnActivateAsync`, `UserIdFromGrainKey`),
   `src/Agent42.Agents/IUserChatClientFactoryProvider.cs`,
   `src/Agent42.Backend/UserChatClientFactoryProvider.cs`,
   `tests/Agent42.Tests/UserChatClientFactoryProviderTests.cs` (`VersionBump_ReturnsFreshFactory`)
 - **Verified:** 2026-07-16
+
+### Chat is fully per-user — the app ships NO baseline chat provider, and the grain stays valid via a no-op client
+
+- **Claim:** ADR 0019 removed the baseline chat availability floor. `Models:Providers` in `appsettings.json`
+  is `{}`, so the app boots with **zero** chat providers; chat is **only** the per-user overlay (ADR 0018).
+  A user with none configured sees an **empty picker** and a **gated composer** (the frontend disables send
+  + the input and shows a hint when `/api/models` is empty). The **only** fixed model left is the
+  **embedding** endpoint/key (`AzureOpenAI:Endpoint`/`ApiKey`/`EmbeddingDeploymentName`) for document RAG —
+  it is the sole remaining availability path, still **fatal-if-blank** at startup and Bicep-`@minLength(32)`
+  guarded. The chat-only `AzureOpenAI:*` keys (`DeploymentName`/`SubscriptionId`/`ResourceGroup`/`AccountName`)
+  and their Bicep params/env vars, plus the whole `githubModelsToken`/`GH_MODELS_TOKEN` →
+  `Models__Providers__github__ApiKey` wiring, were **removed** — leaving that wiring in place would
+  resurrect a broken baseline `github` provider (`ProviderKind` defaults to `AzureOpenAI`, so a keyed-but-
+  blockless config node becomes a Foundry provider on the Azure endpoint with a GitHub PAT), re-breaking
+  the empty-baseline invariant.
+- **The load-bearing design: a no-op `NoModelChatClient` keeps `_agent`/`_session` valid with no model.**
+  `AgentGrain.BuildAgent` only **wraps** the client — `ChatClientAgent` construction and every session
+  serialize/deserialize/create op never invoke inference — so an empty
+  `MultiProviderChatClientFactory` (ctor no longer throws on `providers.Count == 0`; `GetClient` returns the
+  shared `NoModelChatClient`, `GetCapabilities` returns `(false,false)`, `DefaultModelId == ""`) lets the
+  grain build a valid agent even with no model. **Do NOT scatter null-guards across the ~6 `_agent`/`_session`
+  deref sites** (history/bind/register/reminder/rehydrate/build) — that was the rejected alternative; the
+  no-op client is why they all stay non-null. Only the two sites that actually **run** the model act on the
+  no-model signal (`string.IsNullOrEmpty(_chatClientFactory.DefaultModelId)`): `ChatCoreAsync` re-resolves +
+  rebinds (or yields a `TextDelta` notice + `Done`, never persisted), `ReceiveReminder` re-resolves + rebinds
+  (or logs + returns). A provider must declare **≥1 model** (`ValidateProvider`, 400) so "factory has
+  providers ⟺ a usable default exists" — no keyed-but-modelless gap.
+- **Evidence:** `src/Agent42.Backend/NoModelChatClient.cs`, `src/Agent42.Backend/ChatClientFactory.cs`
+  (empty-tolerant ctor + `GetClient`/`GetCapabilities` guards), `src/Agent42.Agents/AgentGrain.cs`
+  (`_modelId` conditional, `ChatCoreAsync` no-model block, `RebindModelAsync`, `ReceiveReminder` guard),
+  `src/Agent42.Backend/UserProviderResolver.cs` (`EffectiveDefault` → first declared model → `""`),
+  `src/Agent42.Backend/ModelCatalog.cs` (empty-default ⇒ empty catalog), `src/Agent42.Backend/AgentApi.cs`
+  (`ValidateProvider` ≥1-model rule), `src/Agent42.Backend/appsettings.json` (`Models:Providers: {}`),
+  `src/Agent42.Backend/Program.cs` (no default derivation, no eager `GetClient(null)`), `infra/main.bicep`
+  + `infra/modules/container-app.bicep` (removed chat-only params/env vars + githubModelsToken),
+  `src/Agent42.Backend/wwwroot/app.js` (`applyModelAvailability`),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`NoModel_YieldsNotice_AndHistoryDoesNotThrow`,
+  `NoModelThenProviderAdded_ReResolvesAndReplies`, `RebindAfterRegainingModel_PreservesHistory`),
+  `tests/Agent42.Tests/ProvidersApiTests.cs` (`RejectsProviderWithNoModels`),
+  `.agentic/decisions/0019-remove-baseline-chat-providers.md`
+- **Verified:** 2026-07-17
 
 ### GitHub Models: the context-limit error is a 413, and the caps are small enough to matter here
 
@@ -523,9 +593,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   web- or document-heavy conversation hits 413 on a GitHub model long before it would on Foundry. Also
   worth knowing when re-verifying: tool support is **per model, not per provider** (`microsoft/phi-4`
   400s on a tools request; `deepseek/DeepSeek-V3-0324` never calls one), which is why the flags are
-  config, and they were measured rather than assumed.
-- **Evidence:** `src/Agent42.Backend/appsettings.json` (the `github` provider's `"//"` comment),
-  `.agentic/decisions/0013-multi-provider-model-catalog.md` (spike results)
+  config, and they were measured rather than assumed. **As of ADR 0019 GitHub Models is no longer a
+  baseline `appsettings` provider — it is a user-added `OpenAICompatible` provider (ADR 0018)** with the
+  same per-model caps; the measured numbers below are unchanged.
+- **Evidence:** `.agentic/decisions/0013-multi-provider-model-catalog.md` (spike results — the caps + the
+  413 behaviour), `.agentic/decisions/0019-remove-baseline-chat-providers.md` (github is now per-user)
 - **Verified:** 2026-07-14
 
 ### The Responses API is stateful by default — three non-obvious traps on the Foundry Responses path
@@ -554,6 +626,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Verified:** 2026-07-16
 
 ### Azure's `/openai/v1` authenticates the resource key via the `api-key` header — three Foundry-key traps
+
+> **Amended by ADR 0019 (2026-07-17):** the app no longer ships a baseline Foundry **chat** provider, so
+> trap (2)'s "the **Foundry** key is on the availability path" narrows to "the **embedding** key is on the
+> availability path" — the same `AzureOpenAI:ApiKey` now authenticates the embedding client only, still
+> fatal-if-blank (Program.cs + Bicep `@minLength(32)`). Trap (3)'s shipped-`foundry`-provider details
+> (`Discover:false`, declared `gpt-5.4`, `AzureOpenAI:DeploymentName`/`azureOpenAIDeploymentName`) are
+> **gone with the baseline provider** — a Foundry chat model is now a per-user provider (ADR 0018), which
+> declares its own deployments and its own key (no inheritance). Trap (1) (the `api-key`-header policy) is
+> unchanged and still applies to any Foundry provider a user configures with Responses on.
+> See the "Chat is fully per-user" gotcha.
 
 - **Claim:** the Foundry provider authenticates with an Azure OpenAI **API key** (ADR 0017), and three
   things trip an agent that assumes otherwise. (1) **On the Responses `/openai/v1` path, use a custom

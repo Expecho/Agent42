@@ -75,6 +75,19 @@ public class ModelCatalogTests
         Assert.Equal("foundry:gpt-4o", Assert.Single(result.Models).Id);
     }
 
+    [Fact] // AC4 (ADR 0019) — an EMPTY default (the user has configured no chat provider) yields an EMPTY
+           // catalog, NOT a synthesized "" model: the picker stays empty so the composer gates on it.
+    public async Task EmptyDefault_ReturnsNoModels()
+    {
+        var catalog = new CompositeModelCatalog(
+            [], [], "", NullLogger<CompositeModelCatalog>.Instance);
+
+        var result = await catalog.GetAsync();
+
+        Assert.Empty(result.Models);
+        Assert.Equal("", result.Default);
+    }
+
     // The REAL ARM query path, driven by a canned transport — the composite tests above use a static
     // stand-in, which proves the composition but never the ARM→ModelInfo mapping. This is the mapping
     // that has to be right for a second Foundry account to work at all.
