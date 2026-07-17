@@ -20,7 +20,12 @@ namespace Agent42.Agents;
 [Alias("Agent42.Agents.UserProfile")]
 public sealed record UserProfile(
     [property: Id(0)] string PreferredLanguage,
-    [property: Id(1)] IReadOnlyList<string>? EnabledTools = null)
+    // UI theme choice: "system" | "light" | "dark". Client-side render concern, but stored
+    // server-side per ADR 0005 so it follows the user across devices; localStorage is only a
+    // pre-paint cache. Legacy state (saved before this field) deserializes Theme as null —
+    // the grain and the client both treat null/blank/unknown as "system".
+    [property: Id(1)] string Theme = "system",
+    [property: Id(2)] IReadOnlyList<string>? EnabledTools = null)
 {
     /// <summary>
     /// The canonical default profile: no preferences set yet. Returns a fresh instance on
@@ -29,5 +34,5 @@ public sealed record UserProfile(
     /// mutation across every grain that started from it. <see cref="EnabledTools"/> defaults to
     /// null (all selectable tools).
     /// </summary>
-    public static UserProfile Empty => new("");
+    public static UserProfile Empty => new("", "system", null);
 }

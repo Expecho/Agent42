@@ -256,10 +256,12 @@ public static class AgentApi
             Results.Json(await grains.GetGrain<IUserProfileGrain>(http.GetUserId()).GetAsync()));
 
         // Saves the signed-in user's profile and returns the stored value (as JSON). READ-MODIFY-WRITE with
-        // absent-means-keep (ADR 0021): the profile record holds several independent preferences now
-        // (language, EnabledTools), and each has its own endpoint/dialog. A null field on the request means
-        // "leave it as stored", so a language-only save never wipes the tool default and vice-versa —
-        // the UI never sends null to mean "reset". Tool keys are sanitized server-side.
+        // absent-means-keep (ADR 0021 + ADR 0005): the profile record holds several independent preferences
+        // now (language, Theme, EnabledTools), and each has its own endpoint/dialog. A null field on the
+        // request means "leave it as stored", so a language-only save never wipes the theme or the tool
+        // default and vice-versa — the UI never sends null to mean "reset" (a stale client with old cached
+        // app.js in a second tab that PUTs a language-only save must not reset the saved theme). Tool keys
+        // are sanitized server-side.
         app.MapPut("/api/profile", async (ProfileUpdateRequest request, IGrainFactory grains, HttpContext http) =>
         {
             var grain = grains.GetGrain<IUserProfileGrain>(http.GetUserId());
@@ -267,6 +269,7 @@ public static class AgentApi
             var saved = await grain.SaveAsync(current with
             {
                 PreferredLanguage = request.PreferredLanguage ?? current.PreferredLanguage,
+                Theme = request.Theme ?? current.Theme,
                 EnabledTools = request.EnabledTools is null ? current.EnabledTools : ToolCatalog.Sanitize(request.EnabledTools),
             });
             return Results.Json(saved);
@@ -419,10 +422,11 @@ public record AgentUpsertRequest(string Name, string Description, string Model, 
     bool Continuous = false, IReadOnlyList<string>? EnabledTools = null);
 
 // Client payload for PUT /api/profile. Every field is nullable-absent because the handler does
-// read-modify-write with absent-means-keep (ADR 0021): PreferredLanguage is the BCP-47 tag ("" = device
-// default, null = keep stored); EnabledTools is the user's default selectable-tools set (list of
-// ToolCatalog keys, null = keep stored). The UI never sends null to mean "reset".
-public record ProfileUpdateRequest(string? PreferredLanguage = null, IReadOnlyList<string>? EnabledTools = null);
+// read-modify-write with absent-means-keep (ADR 0021 + ADR 0005): PreferredLanguage is the BCP-47 tag
+// ("" = device default, null = keep stored); Theme is "system"|"light"|"dark" (null = keep stored);
+// EnabledTools is the user's default selectable-tools set (list of ToolCatalog keys, null = keep stored).
+// The UI never sends null to mean "reset".
+public record ProfileUpdateRequest(string? PreferredLanguage = null, string? Theme = null, IReadOnlyList<string>? EnabledTools = null);
 
 // Client payload for PUT /api/conversations/{id}/tools: the per-conversation tool override (ADR 0021), a
 // list of ToolCatalog keys. The UI always sends an explicit list (never null); unknown keys are dropped

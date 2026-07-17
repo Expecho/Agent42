@@ -151,8 +151,14 @@ which `AddServiceDefaults`' standard handler would silently add three retries an
 "Auto-attach whenever the browser has already granted permission" (the user's decision — no
 per-conversation toggle; the browser's own site setting is the off switch) still needs a *first-time*
 affordance: a permission that is never requested is never granted, and firing `getCurrentPosition()` on an
-ordinary send would ambush the user with a browser prompt. Hence a one-tap **"Share my location"** control
-— a *grant* button, not a toggle, hidden once authorized.
+ordinary send would ambush the user with a browser prompt. Hence a one-tap grant control — a *grant*
+button, not a toggle, hidden once authorized.
+
+> **Amendment (2026-07-17, `plan-preferences-tabs-location`):** the grant control moved from the
+> composer toolbar ("Share my location") into **Preferences → General** (an `Enable` button + status
+> line), at the user's request. This is a *placement* change only — the two-legged authorization, the
+> gesture-only prompt, the out-of-band cache warming, and the never-block-send accessor below are all
+> unchanged. The composer no longer carries a location affordance.
 
 The trap: **`navigator.permissions.query({name: "geolocation"})` is not supported in WebKit** — i.e. every
 browser on iOS/iPadOS — where it **rejects**. A design that gates auto-attach purely on

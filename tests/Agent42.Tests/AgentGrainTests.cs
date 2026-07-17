@@ -943,6 +943,9 @@ public sealed class AgentGrainTests : IAsyncLifetime
         var answer = Answer(await Chat(agent, "where am i"));
 
         Assert.Contains("has not shared their location", answer);
+        // Points the user at the grant control's real home (Preferences) — quote-free so it can't pass
+        // vacuously through JSON escaping, and it caught the composer-button copy going stale once already.
+        Assert.Contains("Preferences", answer);
         Assert.DoesNotContain(FakeGeocoder.Address, answer);
     }
 
@@ -1481,7 +1484,7 @@ public sealed class AgentGrainTests : IAsyncLifetime
     {
         const string user = "tools-userdefault";
         await _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user)
-            .SaveAsync(new UserProfile("", [ToolCatalog.WebSearch]));
+            .SaveAsync(new UserProfile("", "system", [ToolCatalog.WebSearch]));
 
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
         var answer = Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel)));
@@ -1499,7 +1502,7 @@ public sealed class AgentGrainTests : IAsyncLifetime
     {
         const string user = "tools-override-beats-default";
         await _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user)
-            .SaveAsync(new UserProfile("", [ToolCatalog.WebSearch]));
+            .SaveAsync(new UserProfile("", "system", [ToolCatalog.WebSearch]));
 
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
         await agent.SetEnabledToolsAsync([ToolCatalog.Scheduling]);

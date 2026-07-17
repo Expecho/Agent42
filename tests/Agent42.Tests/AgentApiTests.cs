@@ -322,6 +322,36 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.Equal("nl-NL", getBack!.PreferredLanguage);
     }
 
+    // Theme (ADR 0005 field #2) persists through PUT and is reflected by the next GET.
+    [Fact]
+    public async Task ProfileEndpoint_PersistsTheme()
+    {
+        var putRes = await _client.PutAsJsonAsync("/api/profile", new ProfileUpdateRequest("en-US", "dark"));
+        putRes.EnsureSuccessStatusCode();
+        Assert.Equal("dark", (await putRes.Content.ReadFromJsonAsync<UserProfile>())!.Theme);
+
+        var getBack = await _client.GetFromJsonAsync<UserProfile>("/api/profile");
+        Assert.Equal("dark", getBack!.Theme);
+    }
+
+    // Regression: a stale client (old cached app.js) that PUTs a language-only body — the Theme
+    // field entirely absent — must NOT reset a previously saved theme. The endpoint merges onto
+    // the stored profile, so an omitted field keeps its stored value.
+    [Fact]
+    public async Task ProfileEndpoint_OmittedTheme_KeepsStoredTheme()
+    {
+        var seed = await _client.PutAsJsonAsync("/api/profile", new ProfileUpdateRequest("en-US", "dark"));
+        seed.EnsureSuccessStatusCode();
+
+        // Body without any Theme key, as a pre-theme client would send.
+        var staleSave = await _client.PutAsJsonAsync("/api/profile", new { preferredLanguage = "fr-FR" });
+        staleSave.EnsureSuccessStatusCode();
+
+        var saved = await staleSave.Content.ReadFromJsonAsync<UserProfile>();
+        Assert.Equal("fr-FR", saved!.PreferredLanguage);
+        Assert.Equal("dark", saved.Theme); // kept, not silently reset to "system"
+    }
+
     // AC4: the profile is isolated per user (the Entra object id). The shared _client sends no
     // principal header (→ "local-dev"), so this builds explicit requests carrying distinct
     // X-MS-CLIENT-PRINCIPAL-ID values; TestServer has no ingress stripping X-MS-CLIENT-* headers.

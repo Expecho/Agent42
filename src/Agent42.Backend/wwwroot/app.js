@@ -12,7 +12,6 @@
   const sendBtn = document.getElementById("sendBtn");
   const attachBtn = document.getElementById("attachBtn");
   const micBtn = document.getElementById("micBtn");
-  const locationBtn = document.getElementById("locationBtn");
   const fileInput = document.getElementById("fileInput");
   const attachmentPreview = document.getElementById("attachmentPreview");
   const modelSelect = document.getElementById("modelSelect");
@@ -39,7 +38,15 @@
   const profileDialog = document.getElementById("profileDialog");
   const profileForm = document.getElementById("profileForm");
   const profileLanguage = document.getElementById("profileLanguage");
+  const profileTheme = document.getElementById("profileTheme");
   const profileCancelBtn = document.getElementById("profileCancelBtn");
+  const locationEnableBtn = document.getElementById("locationEnableBtn");
+  const locationStatus = document.getElementById("locationStatus");
+  // Preferences tabs: [tab button, its panel] pairs, in tablist order.
+  const profileTabs = [
+    [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
+    [document.getElementById("tabProviders"), document.getElementById("panelProviders")],
+  ];
 
   const providerList = document.getElementById("providerList");
   const addProviderBtn = document.getElementById("addProviderBtn");
@@ -105,7 +112,15 @@
 
   // The last profile fetched from the server. The server is the source of truth; this is
   // only a render cache, always reconciled against a fresh GET/PUT response.
-  let profile = { preferredLanguage: "" };
+  let profile = { preferredLanguage: "", theme: "system" };
+
+  // Theme engine (ADR 0005 field #2). The server profile is the source of truth; THEME_KEY is
+  // only a pre-paint cache the inline head script reads to avoid a dark flash. applyTheme resolves
+  // "system" via matchMedia and, only for "system", keeps a live OS-follow listener registered.
+  const THEME_KEY = "agent42.theme";
+  let systemThemeMedia = null;      // the (prefers-color-scheme: dark) MediaQueryList, when following
+  let onSystemThemeChange = null;   // its change handler, so it can be removed on an explicit choice
+  let profileSaved = false;         // set by saveProfile so the dialog's close handler skips the revert
 
   // The selectable-tools catalog (ADR 0021), fetched once from /api/tools: [{key,label,requiresHostedTools}].
   let toolCatalog = [];
@@ -1005,16 +1020,25 @@
     return lastFix;
   }
 
-  // The grant button is visible exactly when we could capture but are not yet allowed to.
+  // Reflects the location state in Preferences → General: status text + the Enable button, which
+  // shows exactly when we could capture but are not yet allowed to. Safe to call while the dialog
+  // is closed (updates hidden nodes) — driven on open and from the Permissions 'change' handler.
   async function updateLocationControl() {
-    if (!locationBtn) return;
-    locationBtn.hidden = !geolocationSupported || (await isCaptureAuthorized());
+    if (!locationStatus || !locationEnableBtn) return;
+    if (!geolocationSupported) {
+      locationStatus.textContent = "Not available in this browser";
+      locationEnableBtn.hidden = true;
+      return;
+    }
+    const authorized = await isCaptureAuthorized();
+    locationStatus.textContent = authorized ? "Sharing on" : "Off";
+    locationEnableBtn.hidden = authorized;
   }
 
   // The one place a browser permission prompt is ever triggered — on an explicit tap.
   async function requestLocationGrant() {
     if (!geolocationSupported) return;
-    locationBtn.disabled = true;
+    locationEnableBtn.disabled = true;
     try {
       lastFix = toFix(await readPosition());
       setStoredGrant(true); // Leg 2: only ever set after a capture actually succeeded.
@@ -1022,18 +1046,18 @@
     } catch (error) {
       handlePositionError(error);
     } finally {
-      locationBtn.disabled = false;
+      locationEnableBtn.disabled = false;
       await updateLocationControl();
     }
   }
 
   async function initLocation() {
     if (!geolocationSupported) {
-      if (locationBtn) locationBtn.hidden = true;
+      await updateLocationControl(); // paint "Not available" — do NOT gate this behind the early return
       return;
     }
 
-    locationBtn?.addEventListener("click", requestLocationGrant);
+    locationEnableBtn?.addEventListener("click", requestLocationGrant);
 
     // Leg 1 browsers tell us when the permission changes (granted in site settings, or revoked).
     const status = await geolocationPermissionStatus();
@@ -1168,6 +1192,49 @@
 
   /* ————— profile / preferences ————— */
 
+  // Paint an already-resolved theme ("light"|"dark"): set data-theme on <html> and sync the
+  // mobile browser-chrome color. Kept separate so the OS-follow listener can repaint cheaply.
+  function paintTheme(resolved) {
+    document.documentElement.dataset.theme = resolved;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = resolved === "dark" ? "#100f0d" : "#f4efe4";
+  }
+
+  // Resolve a stored choice to the explicit theme actually painted.
+  function resolveTheme(choice) {
+    if (choice === "light" || choice === "dark") return choice;
+    return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  // Apply a theme choice ("system"|"light"|"dark"): paint it, write the pre-paint cache, and —
+  // only for "system" — (re)register a live OS-follow listener (removed for an explicit choice).
+  function applyTheme(choice) {
+    const c = choice === "light" || choice === "dark" || choice === "system" ? choice : "system";
+    paintTheme(resolveTheme(c));
+    try { localStorage.setItem(THEME_KEY, c); } catch { /* private mode — cache is best-effort */ }
+
+    if (systemThemeMedia && onSystemThemeChange) {
+      systemThemeMedia.removeEventListener("change", onSystemThemeChange);
+      systemThemeMedia = null;
+      onSystemThemeChange = null;
+    }
+    if (c === "system") {
+      systemThemeMedia = matchMedia("(prefers-color-scheme: dark)");
+      onSystemThemeChange = () => paintTheme(resolveTheme("system"));
+      systemThemeMedia.addEventListener("change", onSystemThemeChange);
+    }
+  }
+
+  // Boot the theme: re-apply the cached choice (the head script painted it but registered no
+  // OS-follow listener), then reconcile against the server profile, which wins (ADR 0005).
+  async function initTheme() {
+    let cached = "system";
+    try { cached = localStorage.getItem(THEME_KEY) ?? "system"; } catch { /* private mode */ }
+    applyTheme(cached);
+    await loadProfile();
+    if (profile && profile.theme) applyTheme(profile.theme);
+  }
+
   // GET the server-stored profile (the source of truth). Silent on failure — the panel still
   // opens with the device-language default.
   async function loadProfile() {
@@ -1197,22 +1264,54 @@
     select.value = selectedTag ?? "";
   }
 
+  // Activate the tab at profileTabs[index]: toggle aria-selected + roving tabindex on the tabs and
+  // `hidden` on the panels. `focus` moves keyboard focus to the newly selected tab (arrow-key nav).
+  function selectProfileTab(index, focus = false) {
+    profileTabs.forEach(([tab, panel], i) => {
+      const active = i === index;
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+      tab.tabIndex = active ? 0 : -1;
+      panel.hidden = !active;
+      if (active && focus) tab.focus();
+    });
+  }
+
+  profileTabs.forEach(([tab], i) => {
+    tab.addEventListener("click", () => selectProfileTab(i));
+    tab.addEventListener("keydown", (e) => {
+      const last = profileTabs.length - 1;
+      let next = null;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") next = i === last ? 0 : i + 1;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = i === 0 ? last : i - 1;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = last;
+      if (next !== null) {
+        e.preventDefault();
+        selectProfileTab(next, true);
+      }
+    });
+  });
+
   async function openProfileDialog() {
     await loadProfile(); // reconcile against the server before showing the current value
     fillLanguageOptions(profileLanguage, profile.preferredLanguage ?? "");
     // Null enabledTools (never saved, or saved before ADR 0021) means "all selectable tools".
     renderToolChecks(profileToolChecks, profile.enabledTools ?? allToolKeys());
+    profileTheme.value = profile.theme ?? "system";
+    profileSaved = false; // fresh edit session; the close handler reverts a preview unless we save
+    selectProfileTab(0); // always open on General
+    updateLocationControl(); // refresh the location status/button for the current grant state
     loadProviders(); // refresh the user's providers list alongside the profile
     profileDialog.showModal();
     profileLanguage.focus();
   }
 
   async function saveProfile() {
-    // The endpoint does read-modify-write (absent-means-keep), so sending both fields never wipes either.
-    // enabledTools is the full explicit list — "all" is every key (ADR 0021) — but ONLY when the catalog
-    // loaded: if /api/tools failed, toolCatalog is [] and sending [] would wipe the default to "none".
-    // Omitting it then leaves the stored default untouched (absent-means-keep).
-    const payload = { preferredLanguage: profileLanguage.value };
+    // The endpoint does read-modify-write (absent-means-keep), so sending these fields never wipes the
+    // others. enabledTools is the full explicit list — "all" is every key (ADR 0021) — but ONLY when the
+    // catalog loaded: if /api/tools failed, toolCatalog is [] and sending [] would wipe the default to
+    // "none". Omitting it then leaves the stored default untouched (absent-means-keep).
+    const payload = { preferredLanguage: profileLanguage.value, theme: profileTheme.value };
     if (toolCatalog.length > 0) payload.enabledTools = readToolChecks(profileToolChecks);
     try {
       const res = await fetch("/api/profile", {
@@ -1221,14 +1320,23 @@
         body: JSON.stringify(payload),
       });
       if (!res.ok) return;
-      profile = await res.json(); // reconcile: the server trims/caps the tag
+      profile = await res.json(); // reconcile: the server trims/caps the tag and normalizes theme
     } catch { return; /* silo may be unreachable; leave the dialog open */ }
 
+    applyTheme(profile.theme ?? "system"); // commit the server-normalized value (paint + cache)
+    profileSaved = true;
     profileDialog.close();
   }
 
   openProfileBtn.addEventListener("click", () => openProfileDialog());
   profileCancelBtn.addEventListener("click", () => profileDialog.close());
+  // Live-preview the theme as the user changes the select (staged: not persisted until Save).
+  profileTheme.addEventListener("change", () => applyTheme(profileTheme.value));
+  // Revert an unsaved preview when the dialog closes via Cancel, Esc, or backdrop.
+  profileDialog.addEventListener("close", () => {
+    if (!profileSaved) applyTheme(profile.theme ?? "system");
+    profileSaved = false;
+  });
   profileForm.addEventListener("submit", (e) => {
     e.preventDefault();
     saveProfile();
@@ -1659,7 +1767,7 @@
   loadModels();
   refreshConversations();
   loadAgents();
-  loadProfile();
+  initTheme(); // loads the profile and reconciles the theme (server wins over the pre-paint cache)
   loadTools();
   // The initial state is a fresh regular chat, so the per-chat tools button is available (ADR 0021).
   toolsBtn.hidden = false;

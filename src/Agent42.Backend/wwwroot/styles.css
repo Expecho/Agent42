@@ -17,9 +17,36 @@
   --amber-glow: rgba(255, 177, 61, 0.14);
   --green: #9ac06d;
   --red: #e06c5f;
+  /* Theme-sensitive surfaces (flip in the light block below); the amber/green accent
+     glows stay literal — they sit over amber/green elements and read on both themes. */
+  --backdrop: rgba(6, 5, 4, 0.6);      /* modal / mobile scrim */
+  --shadow: rgba(0, 0, 0, 0.6);        /* raised-dialog drop shadow */
+  --chip-btn-bg: rgba(11, 10, 9, 0.82); /* attachment "remove" button scrim (holds a --ink glyph) */
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --serif: "Newsreader", Georgia, "Times New Roman", serif;
   --radius: 10px;
+}
+
+/* Light theme — warm-paper mirror of the amber-phosphor identity. JS resolves the user's
+   choice (incl. "system" via matchMedia) to an explicit data-theme on <html>, so this block
+   never needs a prefers-color-scheme query; the dark :root above is the default/fallback. */
+:root[data-theme="light"] {
+  --bg: #f4efe4;
+  --bg-raised: #fbf7ee;
+  --bg-inset: #e9e2d2;
+  --line: #d6cdb8;
+  --line-soft: #e2dac7;
+  --ink: #2a2620;
+  --ink-dim: #5c5647;
+  --ink-faint: #8a8270;
+  --amber: #a86611;        /* darkened — #ffb13d fails AA contrast on pale bg */
+  --amber-deep: #7f4e0a;
+  --amber-glow: rgba(168, 102, 17, 0.12);
+  --green: #5a7d3a;
+  --red: #bf3c30;
+  --backdrop: rgba(60, 54, 44, 0.4);   /* warm, lighter scrim */
+  --shadow: rgba(60, 48, 30, 0.22);    /* softer paper shadow */
+  --chip-btn-bg: rgba(251, 247, 238, 0.85); /* light scrim so the dark --ink glyph stays legible */
 }
 
 * { box-sizing: border-box; }
@@ -891,7 +918,7 @@ body {
   place-items: center;
   border: 0;
   border-radius: 50%;
-  background: rgba(11, 10, 9, 0.82);
+  background: var(--chip-btn-bg);
   color: var(--ink);
   font: 400 14px/1 var(--mono);
   cursor: pointer;
@@ -1078,39 +1105,6 @@ body {
   cursor: pointer;
 }
 
-/* "Share my location" — a one-time grant control (ADR 0012), hidden once the browser has
-   authorized us. Deliberately quiet: it is an affordance, not a call to action. */
-
-.composer__location {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  cursor: pointer;
-  font: 500 11.5px var(--mono);
-  letter-spacing: 0.03em;
-  color: var(--ink-dim);
-  padding: 5px 11px;
-  border: 1px dashed var(--line);
-  border-radius: 6px;
-  background: transparent;
-  transition: color 0.15s ease, border-color 0.15s ease;
-}
-
-.composer__location:hover:not(:disabled) {
-  color: var(--amber);
-  border-color: var(--amber-deep);
-}
-
-.composer__location:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.composer__location[hidden] {
-  display: none;
-}
-
 /* ————— agent form dialog ————— */
 
 .agent-dialog {
@@ -1120,11 +1114,11 @@ body {
   color: var(--ink);
   padding: 0;
   width: min(520px, 92vw);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 24px 80px var(--shadow);
 }
 
 .agent-dialog::backdrop {
-  background: rgba(6, 5, 4, 0.6);
+  background: var(--backdrop);
 }
 
 .agent-form {
@@ -1142,7 +1136,63 @@ body {
   color: var(--ink);
 }
 
-/* Groups related fields so the profile dialog can grow section-by-section. */
+/* Tabs split the profile dialog into General / Model providers. Real tabs (role=tablist/tab/
+   tabpanel in the markup); this is only their look — an amber underline marks the active one. */
+.agent-form__tablist {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 2px;
+}
+
+.agent-form__tab {
+  font: 500 12px var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.agent-form__tab:hover { color: var(--ink-dim); }
+
+.agent-form__tab[aria-selected="true"] {
+  color: var(--amber);
+  border-bottom-color: var(--amber-deep);
+}
+
+.agent-form__tab:focus-visible {
+  outline: none;
+  color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber-deep), 0 0 18px var(--amber-glow);
+  border-radius: 4px;
+}
+
+/* A tab's content. Stacks its sections like the form used to; the inactive one is [hidden]. */
+.agent-form__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The location grant row: status text on the left, the Enable button on the right. */
+.location-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.location-row__status {
+  font: 500 12.5px var(--mono);
+  color: var(--ink-dim);
+}
+
+/* Groups related fields so a tab panel can grow section-by-section. */
 .agent-form__section {
   display: flex;
   flex-direction: column;
@@ -1497,7 +1547,7 @@ kbd {
     position: fixed;
     inset: 0;
     z-index: 20;
-    background: rgba(6, 5, 4, 0.6);
+    background: var(--backdrop);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.25s ease;
