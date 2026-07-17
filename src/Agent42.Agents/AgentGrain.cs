@@ -491,6 +491,21 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 this.GetPrimaryKeyString(), model);
         }
 
+        // Image-generation model (ADR 0020): the turn produces an IMAGE, not a chat reply. Branch BEFORE the
+        // chat vision-gate below — an image model CONSUMES images (it edits them), so the "withhold from a
+        // no-vision model" gate must not fire here, and it runs a different API entirely
+        // (IImageGenerationService, not the model's IChatClient). The no-op NoModelChatClient path never
+        // reaches here: _modelId is non-empty by now (guarded above).
+        if (_chatClientFactory.GetCapabilities(_modelId).SupportsImageGeneration)
+        {
+            await foreach (var evt in GenerateImageTurnAsync(message, attachments))
+            {
+                yield return evt;
+            }
+
+            yield break;
+        }
+
         // Images are gated on the model's VISION capability, and this gate is not merely about a turn
         // that would fail anyway (ADR 0013). An image reaches the model as a SAS URL into our PRIVATE
         // attachments container (ADR 0004), and the model's host really does fetch that URL server-side
@@ -629,6 +644,200 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private static string? SerializeOrNull(object? value) =>
         value is not null ? JsonSerializer.Serialize(value) : null;
 
+    // The message-level key linking an assistant image message to its durable AttachmentRef in
+    // GeneratedImages (ADR 0020). Written into ChatMessage.AdditionalProperties, it survives session
+    // serialize/deserialize AND an image-strip (Step-0 spike) — so the strip/restore stays reversible by id,
+    // NOT by a fragile assistant-message position (assistant messages are not 1:1 with turns — a tool turn
+    // emits a standalone FunctionCallContent message plus a separate text message).
+    private const string AssistantImageIdKey = "assistantImageId";
+
+    // Runs an image-generation turn (ADR 0020): resolve the input image (this turn's attachment, else the most
+    // recent image in the conversation, else none → text-to-image), generate it, store the BYTES in blob
+    // storage, and record a user+assistant turn into the session so it renders in history and drives later
+    // edits. Bytes go to blob storage only; the session holds a short UriContent reference + the id (ADR 0004).
+    private async IAsyncEnumerable<AgentStreamEvent> GenerateImageTurnAsync(
+        string message, IReadOnlyList<AttachmentRef>? attachments)
+    {
+        var ownerKey = this.GetPrimaryKeyString();
+
+        // The generator for this image model. The caller only branches here when GetCapabilities reports
+        // image generation, and every wired factory returns a generator in that case — but guard rather than
+        // `!`-deref, so a misconfigured factory (a test/DevHost declaring the capability without injecting a
+        // generator) yields a clear notice instead of an NRE mid-turn (critic Minor-2).
+        var generator = _chatClientFactory.GetImageGenerationService(_modelId);
+        if (generator is null)
+        {
+            _logger.LogError(
+                "Agent grain {GrainKey}: model {Model} reports image generation but no generator was resolved",
+                this.GetPrimaryKeyString(), _modelId);
+            yield return new AgentStreamEvent(
+                AgentStreamEventType.TextDelta, Text: "_Image generation is unavailable for the selected model._\n\n");
+            yield return new AgentStreamEvent(AgentStreamEventType.Done);
+            yield break;
+        }
+
+        // Input image: this turn's attachment wins; else the most recent image already in the conversation
+        // (user-uploaded or previously generated); else none (text-to-image). Bytes are read fresh from the
+        // owner-scoped store — never from a session URL.
+        var inputRef = attachments?.FirstOrDefault(
+                a => a.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            ?? FindMostRecentImageRef();
+        ImageInput? input = null;
+        if (inputRef is not null)
+        {
+            var content = await _attachments.OpenReadAsync(ownerKey, inputRef.Id);
+            if (content is not null)
+            {
+                input = new ImageInput(content.Bytes, content.MediaType);
+            }
+        }
+
+        var generated = await generator.GenerateAsync(message, input);
+
+        // Store the bytes OUT of the session (ADR 0004) and keep the durable ref by id.
+        var reference = await _attachments.SaveAsync(
+            ownerKey, "generated" + ImageMediaTypes.ExtensionFor(generated.MediaType),
+            generated.MediaType, generated.Bytes);
+        _state.State.GeneratedImages[reference.Id] = reference;
+
+        _logger.LogInformation(
+            "Agent grain {GrainKey} generated an image ({Mode}) and stored it as {AttachmentId}",
+            this.GetPrimaryKeyString(), input is null ? "text-to-image" : "image-to-image", reference.Id);
+
+        // Build the USER turn for history: the prompt text + THIS turn's uploaded image(s), for display. Record
+        // its refs in TurnAttachments, 1:1 with user turns, exactly like a chat turn — so the input image
+        // rehydrates and rides the vision gate on any LATER chat turn.
+        var userContents = new List<AIContent>();
+        if (!string.IsNullOrEmpty(message))
+        {
+            userContents.Add(new TextContent(message));
+        }
+
+        var turnRefs = new List<AttachmentRef>();
+        if (attachments is { Count: > 0 })
+        {
+            foreach (var attachment in attachments)
+            {
+                var url = await _attachments.GetReadUrlAsync(attachment);
+                userContents.Add(new UriContent(url, attachment.MediaType));
+                turnRefs.Add(attachment);
+            }
+        }
+
+        // Never a content-less user message (rejected by OpenAI-compatible endpoints on a later replay).
+        if (userContents.Count == 0)
+        {
+            userContents.Add(new TextContent(string.Empty));
+        }
+
+        AlignTurnAttachmentsToHistory();
+        _state.State.TurnAttachments.Add(turnRefs);
+
+        // The ASSISTANT turn: a short UriContent reference to the generated image (a blob SAS), never bytes.
+        var assistantUrl = await _attachments.GetReadUrlAsync(reference);
+        var assistantContents = new List<AIContent> { new UriContent(assistantUrl, reference.MediaType) };
+
+        await RecordImageTurnAsync(new ChatMessage(ChatRole.User, userContents), assistantContents, reference.Id);
+
+        var serializedSession = await _agent.SerializeSessionAsync(_session);
+        _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
+        await _state.WriteStateAsync();
+
+        _logger.LogInformation("Agent grain {GrainKey} completed an image-generation turn and persisted it",
+            this.GetPrimaryKeyString());
+
+        yield return new AgentStreamEvent(
+            AgentStreamEventType.Image, AttachmentId: reference.Id, MediaType: reference.MediaType);
+        yield return new AgentStreamEvent(AgentStreamEventType.Done);
+    }
+
+    // Records a user + assistant(image) turn into the session via the one-shot ImageGenerationChatClient
+    // adapter, then stamps the assistant message with its assistantImageId. AF 1.13 has no
+    // append-without-inference (Step-0 spike), so the turn is recorded by RUNNING the adapter: snapshot the
+    // real session → rebuild the agent onto the adapter → run → restore, the SAME dance as a model switch.
+    // _agent (bound to the image model's chat client) is used ONLY to serialize/deserialize the session here —
+    // never to run inference (calling chat on an image endpoint would 400).
+    private async Task RecordImageTurnAsync(
+        ChatMessage userMessage, IReadOnlyList<AIContent> assistantContents, string attachmentId)
+    {
+        var snapshot = await _agent.SerializeSessionAsync(_session);
+
+        var adapter = new ChatClientAgent(
+            new ImageGenerationChatClient(assistantContents),
+            new ChatClientAgentOptions
+            {
+                ChatHistoryProvider = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
+                {
+                    StorageInputRequestMessageFilter = ExcludeInjectedContextMessages,
+                }),
+            });
+
+        var adapterSession = await adapter.DeserializeSessionAsync(snapshot);
+        await adapter.RunAsync([userMessage], adapterSession);
+
+        // Stamp the just-recorded assistant message with the durable link to its ref. By post-run mutation
+        // (not on the returned message) because that is the shape the Step-0 spike proved round-trips.
+        if (adapterSession.TryGetInMemoryChatHistory(out var messages) && messages is not null)
+        {
+            var lastAssistant = messages.LastOrDefault(m => m.Role == ChatRole.Assistant);
+            if (lastAssistant is not null)
+            {
+                (lastAssistant.AdditionalProperties ??= [])[AssistantImageIdKey] = attachmentId;
+            }
+        }
+
+        var newSnapshot = await adapter.SerializeSessionAsync(adapterSession);
+        _session = await _agent.DeserializeSessionAsync(newSnapshot);
+    }
+
+    // Walks the session in order and returns the LAST image reference in the conversation — a user-uploaded
+    // image (via TurnAttachments, positional per user turn) or a previously generated one (via the assistant
+    // message's assistantImageId → GeneratedImages). The image-to-image input when the current turn has no
+    // attachment (ADR 0020). Id-keyed for the assistant side — never a positional assistant join (C1).
+    private AttachmentRef? FindMostRecentImageRef()
+    {
+        if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
+        {
+            return null;
+        }
+
+        AttachmentRef? found = null;
+        var userTurnIndex = 0;
+        foreach (var message in messages)
+        {
+            if (message.Role == ChatRole.User)
+            {
+                var refs = userTurnIndex < _state.State.TurnAttachments.Count
+                    ? _state.State.TurnAttachments[userTurnIndex]
+                    : null;
+                userTurnIndex++;
+
+                var image = refs?.LastOrDefault(
+                    r => r.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase));
+                if (image is not null)
+                {
+                    found = image;
+                }
+            }
+            else if (message.Role == ChatRole.Assistant && AssistantImageRef(message) is { } generated)
+            {
+                found = generated;
+            }
+        }
+
+        return found;
+    }
+
+    // The durable AttachmentRef for an assistant message's generated image, or null. Read by the message-level
+    // assistantImageId (ADR 0020) — present even after the image UriContent was stripped for a no-vision model,
+    // which is what makes the strip reversible and history render an image-only assistant turn.
+    private AttachmentRef? AssistantImageRef(ChatMessage message)
+        => message.AdditionalProperties?.TryGetValue(AssistantImageIdKey, out var value) == true
+            && value?.ToString() is { Length: > 0 } id
+            && _state.State.GeneratedImages.TryGetValue(id, out var reference)
+            ? reference
+            : null;
+
     public Task<IReadOnlyList<ChatTurn>> GetHistoryAsync()
     {
         if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
@@ -660,9 +869,20 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 turns.Add(new ChatTurn(
                     message.Role.Value, message.Text ?? "", hasAttachments ? refs : null));
             }
-            else if (message.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(message.Text))
+            else if (message.Role == ChatRole.Assistant)
             {
-                turns.Add(new ChatTurn(message.Role.Value, message.Text));
+                // A generated-image turn (ADR 0020) is typically blank-text; retain it by its ref, looked up
+                // by the message-level assistantImageId — id-keyed, so it survives interleaved tool-call
+                // assistant messages (the old filter dropped any blank-text assistant message, hiding it).
+                var generated = AssistantImageRef(message);
+                var hasImage = generated is not null;
+                if (string.IsNullOrWhiteSpace(message.Text) && !hasImage)
+                {
+                    continue;
+                }
+
+                turns.Add(new ChatTurn(
+                    message.Role.Value, message.Text ?? "", hasImage ? [generated!] : null));
             }
         }
 
@@ -1191,6 +1411,20 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         var userTurnIndex = 0;
         foreach (var message in messages)
         {
+            // Assistant generated images (ADR 0020) ride the SAME vision gate: a generated image is a
+            // private-container SAS too, so it must be withheld from a no-vision chat model and restored on
+            // switch-back. Reversible by the message-level assistantImageId (survives the strip), NOT by a
+            // positional assistant join (assistant messages are not 1:1 with turns — C1).
+            if (message.Role == ChatRole.Assistant)
+            {
+                if (AssistantImageRef(message) is { } generated)
+                {
+                    await RehydrateAssistantImageAsync(message, generated, includeImages);
+                }
+
+                continue;
+            }
+
             if (message.Role != ChatRole.User)
             {
                 continue;
@@ -1266,6 +1500,48 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         if (removed > 0 && message.Contents.Count == 0)
         {
             message.Contents.Add(new TextContent(WithheldImagePlaceholder));
+        }
+    }
+
+    // Applies the vision gate to ONE assistant generated-image message (ADR 0020), reversibly. The link to the
+    // ref is the message-level assistantImageId (stamped in RecordImageTurnAsync), which survives both the
+    // strip and session serialization — so this needs no positional bookkeeping.
+    //   - no-vision: drop the image UriContent(s); the id stays in AdditionalProperties for a later restore.
+    //     A content-less assistant message is rejected by OpenAI-compatible endpoints on replay, so an emptied
+    //     one keeps an empty TextContent (mirrors the user-side WithheldImagePlaceholder shape).
+    //   - vision: ensure exactly one image UriContent with a FRESH url (re-mint the SAS, or re-add it if a
+    //     previous no-vision turn stripped it).
+    private async Task RehydrateAssistantImageAsync(ChatMessage message, AttachmentRef generated, bool includeImages)
+    {
+        if (!includeImages)
+        {
+            var removed = 0;
+            for (var i = message.Contents.Count - 1; i >= 0; i--)
+            {
+                if (message.Contents[i] is UriContent)
+                {
+                    message.Contents.RemoveAt(i);
+                    removed++;
+                }
+            }
+
+            if (removed > 0 && message.Contents.Count == 0)
+            {
+                message.Contents.Add(new TextContent(string.Empty));
+            }
+
+            return;
+        }
+
+        var url = await _attachments.GetReadUrlAsync(generated);
+        var existing = message.Contents.OfType<UriContent>().FirstOrDefault();
+        if (existing is not null)
+        {
+            existing.Uri = url;
+        }
+        else
+        {
+            message.Contents.Add(new UriContent(url, generated.MediaType));
         }
     }
 

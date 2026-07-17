@@ -88,6 +88,30 @@ public class ModelCatalogTests
         Assert.Equal("", result.Default);
     }
 
+    [Fact] // AC2 (ADR 0020) — the catalog carries a declared image model's SupportsImageGeneration flag
+           // through to /api/models, so the picker knows which model produces images; a chat model does not.
+    public async Task Catalog_IncludesImageGenerationFlag()
+    {
+        var catalog = new CompositeModelCatalog(
+            [],
+            [
+                new ModelInfo("images:gpt-image-1", "images", "GPT Image 1", "gpt-image-1", null,
+                    SupportsTools: false, SupportsVision: false, SupportsImageGeneration: true),
+                new ModelInfo("github:openai/gpt-4o-mini", "github", "GPT-4o mini", "openai/gpt-4o-mini",
+                    null, SupportsTools: true, SupportsVision: true),
+            ],
+            "images:gpt-image-1",
+            NullLogger<CompositeModelCatalog>.Instance);
+
+        var result = await catalog.GetAsync();
+
+        var image = Assert.Single(result.Models, m => m.Id == "images:gpt-image-1");
+        Assert.True(image.SupportsImageGeneration);
+
+        var chat = Assert.Single(result.Models, m => m.Id == "github:openai/gpt-4o-mini");
+        Assert.False(chat.SupportsImageGeneration);
+    }
+
     // The REAL ARM query path, driven by a canned transport — the composite tests above use a static
     // stand-in, which proves the composition but never the ARM→ModelInfo mapping. This is the mapping
     // that has to be right for a second Foundry account to work at all.

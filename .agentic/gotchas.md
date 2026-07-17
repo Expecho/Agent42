@@ -404,6 +404,72 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/FakeChatClient.cs` (`AllImagesEcho`, `EmptyMessageEcho`)
 - **Verified:** 2026-07-14
 
+### An assistant generated image is id-keyed (message-level prop), never joined by assistant-message position
+
+- **Claim:** a generated image (ADR 0020) is the *assistant* twin of a user attachment, but the two must NOT
+  share the positional join. User images work because there is **exactly one `ChatRole.User` message per
+  turn**, so `TurnAttachments[userTurnIndex]` aligns. The **assistant side is not 1:1 with turns**: a
+  tool-calling turn emits a *standalone* `FunctionCallContent` assistant message **plus** a separate text
+  assistant message (true even offline — `FakeChatClient` emits both), so any list keyed on assistant-**message
+  index** drifts by one for every prior tool turn — misaligning the image against the wrong bubble AND the
+  vision-gate strip/restore. So generated images are stored **id-keyed** in `AgentGrainState.GeneratedImages`
+  (`Dictionary<string, AttachmentRef>`), and the link from the session's assistant message to its ref is an
+  **`assistantImageId` in the message's MESSAGE-LEVEL `AdditionalProperties`** — not the content-level prop,
+  because the Step-0 spike proved the message-level id survives BOTH session serialize/deserialize AND the
+  image-strip (the content-level `UriContent` is removed when withholding from a no-vision model, so an id
+  living only on the `UriContent` would be lost). History, the most-recent-image walk (edit input), and the
+  strip/restore all look up by that id. Two more traps: (1) the image-gen branch runs in `ChatCoreAsync`
+  **before** the chat vision-gate — an image model *consumes* images (it edits them), so it must not be routed
+  through the withhold-from-a-no-vision-model gate; (2) `AgentGrain`'s own image abstraction is
+  **`IImageGenerationService`, not `IImageGenerator`** — M.E.AI 1.13 ships `Microsoft.Extensions.AI.IImageGenerator`,
+  and a same-named type is an ambiguous reference (CS0104) in any Backend file importing both namespaces (the
+  spike hit this on `ImageGenerationOptions`). The offline harness cannot reach a real `/v1/images` endpoint
+  (`InMemoryImageGenerator` returns a canned PNG), so the prod `OpenAIImageGenerator` is prod-smoke only; the
+  id-keyed correctness IS testable — `NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn`
+  interleaves a tool turn **before** the image turn so a positional bug would surface (a clean single-turn test
+  would pass vacuously).
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`GenerateImageTurnAsync`, `RecordImageTurnAsync`,
+  `AssistantImageRef`, `FindMostRecentImageRef`, `RehydrateAssistantImageAsync`, `AssistantImageIdKey`),
+  `src/Agent42.Agents/AgentGrainState.cs` (`GeneratedImages`),
+  `src/Agent42.Agents/IImageGenerationService.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn`, `History_IncludesAssistantGeneratedImage`),
+  `.agentic/decisions/0020-image-generation-model-capability.md`
+- **Verified:** 2026-07-17
+
+### Image request shape: send NO `response_format` (gpt-image-1 400s), and NO `api-version` (Azure won't work)
+
+- **`response_format` must NOT be sent.** The current OpenAI image model **`gpt-image-1` rejects
+  `response_format` with `HTTP 400 unknown_parameter`** ("Unknown parameter: 'response_format'") — it always
+  returns base64 — while the older `dall-e-*` models accept it and otherwise default to a hosted **URL**. The
+  first cut of `OpenAIImageGenerator` set `ResponseFormat = GeneratedImageFormat.Bytes` unconditionally, which
+  **broke every `gpt-image-1` endpoint** (observed on the wire, HTTP 400). The fix: send an empty
+  `ImageGenerationOptions()`/`ImageEditOptions()` (no `response_format`) and resolve the result **either way** —
+  prefer inline `ImageBytes` (`gpt-image-1`), else download `ImageUri` (`dall-e`, via a plain static
+  `HttpClient` — not a named/DI one, so it dodges the retry-pipeline gotcha; the URL is the user's own
+  configured provider's, so it stays off the SSRF path per ADR 0018). Don't "restore" `ResponseFormat` to
+  force bytes — it regresses `gpt-image-1`.
+- **The image path also sends NO `api-version` — so an Azure/Foundry image endpoint won't work as OpenAICompatible.**
+- **Claim:** image generation (ADR 0020) rides `Provider.OpenAICompatible`'s plain `OpenAIClient`
+  (`OpenAIClient(...).GetImageClient(model)`), the SAME client shape as the OpenAI-compatible *chat* path —
+  **not** the Azure SDK. A spike against the pinned `OpenAI 2.12.0` (capturing the outbound request URI with
+  a short-circuiting pipeline policy) confirmed the requests are exactly `POST {endpoint}/images/generations`
+  and `POST {endpoint}/images/edits` with **no `api-version` query parameter** (with `endpoint` ending
+  `/v1`, that is `/v1/images/generations`). `api-version` is an **Azure-ism** added only by
+  `AzureOpenAIClient`, which is used solely on the Foundry *chat* path — never here. Consequence: a real
+  OpenAI-compatible image endpoint (OpenAI itself, or a self-hosted vLLM/Ollama-style server implementing the
+  `/images/generations` + `/images/edits` shape) works with no `api-version`, which is correct for it — but an
+  **Azure OpenAI / Foundry image deployment configured as an `OpenAICompatible` provider will fail**, because
+  Azure requires BOTH `?api-version=…` AND a different URL shape
+  (`/openai/deployments/{deployment}/images/generations`). This is why ADR 0020 scopes image gen to
+  OpenAI-compatible endpoints and puts Foundry image gen out of scope. Adding Azure image support later means
+  a Foundry-flavored image path (an `api-version` policy + the deployment URL), analogous to how the Responses
+  chat path already does its `api-key`-header + `/openai/v1` handling (ADR 0014/0017) — not a config tweak.
+- **Evidence:** `src/Agent42.Backend/OpenAIImageGenerator.cs` (no `ResponseFormat`; `ResolveBytesAsync`
+  bytes-or-URL fallback; the SDK `ImageClient` calls),
+  `src/Agent42.Backend/ChatClientFactory.cs` (`Provider.OpenAICompatible` builds the client image gen reuses),
+  `.agentic/decisions/0020-image-generation-model-capability.md` (Foundry image gen out of scope)
+- **Verified:** 2026-07-17
+
 ### The Foundry provider's endpoint + ARM coordinates are INHERITED — never copy them into `Models:`
 
 > **Amended by ADR 0019 (2026-07-17):** the app **no longer ships a baseline `foundry` chat provider** —

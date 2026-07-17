@@ -434,6 +434,157 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Equal("react-1", Assert.Single(userTurn.Attachments!).Id);
     }
 
+    // ---- Image generation (ADR 0020) ------------------------------------------------------------
+
+    // AC4: picking an image model + a prompt generates an image and stores it (text-to-image). The turn emits
+    // a single Image event carrying the stored id (image gen is not token-streamed), and the bytes land in the
+    // attachment store under the conversation's owner key.
+    [Fact]
+    public async Task ImageModel_TextPrompt_GeneratesAndStoresImage()
+    {
+        const string key = "image-t2i-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        var events = await CollectAsync(agent.ChatAsync("draw a cat", TestSiloConfigurator.ImageModel));
+
+        var image = Assert.Single(events, e => e.Type == AgentStreamEventType.Image);
+        Assert.False(string.IsNullOrEmpty(image.AttachmentId));
+        Assert.Equal("image/png", image.MediaType);
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+        // Image gen produces no reply text — one Image event, then Done.
+        Assert.DoesNotContain(events, e => e.Type == AgentStreamEventType.TextDelta);
+
+        // The (text-to-image marker) bytes are in blob storage under the owner key.
+        var stored = await new InMemoryAttachmentStore().OpenReadAsync(key, image.AttachmentId!);
+        Assert.NotNull(stored);
+        Assert.Equal(ProbeImageGenerator.TextToImageBytes, stored!.Bytes);
+    }
+
+    // AC5: an attached image on an image-model turn drives image-to-image — the grain reads the attachment's
+    // bytes from the owner-scoped store (unlike the chat path, which only mints a URL) and feeds them to the
+    // edit. The probe echoes the input back, so the stored result proves exactly which bytes drove the edit.
+    [Fact]
+    public async Task ImageModel_WithAttachment_RunsEdit()
+    {
+        const string key = "image-edit-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        var store = new InMemoryAttachmentStore();
+        var inputBytes = new byte[] { 10, 20, 30, 40, 50 };
+        var inputRef = await store.SaveAsync(key, "in.png", "image/png", inputBytes);
+
+        var events = await CollectAsync(
+            agent.ChatAsync("make it blue", TestSiloConfigurator.ImageModel, [inputRef]));
+
+        var image = Assert.Single(events, e => e.Type == AgentStreamEventType.Image);
+        var stored = await store.OpenReadAsync(key, image.AttachmentId!);
+        // The edit echoed the INPUT back — so the attachment's bytes drove the edit, not text-to-image.
+        Assert.Equal(inputBytes, stored!.Bytes);
+    }
+
+    // AC6: with no attachment, the edit input is the MOST RECENT image already in the conversation — here a
+    // user-uploaded image from a prior chat turn.
+    [Fact]
+    public async Task ImageModel_NoAttachment_UsesMostRecentImage()
+    {
+        const string key = "image-most-recent-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        var store = new InMemoryAttachmentStore();
+        var priorBytes = new byte[] { 7, 7, 7, 42 };
+        var priorRef = await store.SaveAsync(key, "prior.png", "image/png", priorBytes);
+        // A vision chat turn puts the uploaded image into the conversation (records its ref).
+        await CollectAsync(agent.ChatAsync("here is a picture", TestSiloConfigurator.DefaultModel, [priorRef]));
+
+        // An image-gen turn with NO attachment must edit the most recent image (the prior upload).
+        var events = await CollectAsync(agent.ChatAsync("now edit it", TestSiloConfigurator.ImageModel));
+
+        var image = Assert.Single(events, e => e.Type == AgentStreamEventType.Image);
+        var stored = await store.OpenReadAsync(key, image.AttachmentId!);
+        Assert.Equal(priorBytes, stored!.Bytes);
+    }
+
+    // AC7: an assistant generated image round-trips through history — on the same activation and after a
+    // deactivation/reactivation (the ref is durable grain state; the id lives on the assistant message).
+    [Fact]
+    public async Task History_IncludesAssistantGeneratedImage()
+    {
+        const string key = "image-history-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        var events = await CollectAsync(agent.ChatAsync("draw a dog", TestSiloConfigurator.ImageModel));
+        var generatedId = Assert.Single(events, e => e.Type == AgentStreamEventType.Image).AttachmentId;
+
+        var history = await agent.GetHistoryAsync();
+        Assert.Contains(history, t => t.Role == "user" && t.Text == "draw a dog");
+        var assistant = Assert.Single(history, t => t.Role == "assistant" && t.Attachments is { Count: > 0 });
+        Assert.Equal(generatedId, Assert.Single(assistant.Attachments!).Id);
+
+        // ...and it survives reactivation (durable, id-keyed state).
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+        var reopened = await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        var reAssistant = Assert.Single(reopened, t => t.Role == "assistant" && t.Attachments is { Count: > 0 });
+        Assert.Equal(generatedId, Assert.Single(reAssistant.Attachments!).Id);
+    }
+
+    // AC8: an image-gen turn keeps the serialized session small — the (large) image bytes go to blob storage,
+    // never inlined into the 2 MB Cosmos item (ADR 0004). Mirrors ToolResults_DoNotBlowTheSessionSizeBudget.
+    [Fact]
+    public async Task ImageTurn_DoesNotBlowTheSessionSizeBudget()
+    {
+        const string key = "image-session-budget-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        // Five image-gen turns, each generating the 256 KB text-to-image blob.
+        for (var turn = 0; turn < 5; turn++)
+        {
+            await CollectAsync(agent.ChatAsync("draw a scene", TestSiloConfigurator.ImageModel));
+        }
+
+        var storage = _cluster.GetSiloServiceProvider(_cluster.Primary.SiloAddress)
+            .GetRequiredKeyedService<IGrainStorage>(AgentGrain.StorageProviderName);
+        var state = new GrainState<AgentGrainState>(new AgentGrainState());
+        await storage.ReadStateAsync("agent", agent.GetGrainId(), state);
+
+        var bytes = System.Text.Encoding.UTF8.GetByteCount(state.State.SerializedSession ?? "");
+
+        // Sanity: five 256 KB images inlined would be > 1 MB, so the ceiling is a real constraint.
+        Assert.True(ProbeImageGenerator.TextToImageBytes.Length * 5 > 256 * 1024,
+            "the generated images should dwarf the ceiling, or this test proves nothing");
+        // Only short UriContent references + ids are persisted — far under the 2 MB cap.
+        Assert.InRange(bytes, 1, 64 * 1024);
+    }
+
+    // AC9: switching to a no-vision chat model strips the assistant image from the MODEL's view, and switching
+    // back restores it — WITH a tool-calling turn interleaved BEFORE the image turn, so assistant messages are
+    // not 1:1 with turns. That is what proves the strip/restore is keyed by the durable assistantImageId, not a
+    // fragile assistant-message position (C1) — a positional join would drift past the standalone tool message.
+    [Fact]
+    public async Task NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn()
+    {
+        const string key = "image-vision-gate-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        // Turn 1 — a tool turn on a chat model: a standalone FunctionCall assistant message PLUS a separate
+        // text assistant message, so the assistant side is no longer 1:1 with turns.
+        var toolTurn = await CollectAsync(
+            agent.ChatAsync("please remind me to drink water", TestSiloConfigurator.DefaultModel));
+        Assert.Contains(toolTurn, e => e.Type == AgentStreamEventType.ToolCallStart);
+
+        // Turn 2 — the image turn. Switching to the (tools-capable) image model does NOT strip the tool turn,
+        // so the image assistant message lands AFTER the extra tool message (positional drift bait).
+        await CollectAsync(agent.ChatAsync("draw a cat", TestSiloConfigurator.ImageModel));
+
+        // Turn 3 — a no-vision chat model: the generated image (a private-container SAS) must be withheld.
+        var withheld = await CollectAsync(agent.ChatAsync("hello there", TestSiloConfigurator.NoVisionModel));
+        Assert.Contains("[allimg:0]", Answer(withheld));
+
+        // Turn 4 — back to a vision model: the image is restored to the model's view, found by its id despite
+        // the interleaved tool message.
+        var restored = await CollectAsync(agent.ChatAsync("hi again", TestSiloConfigurator.DefaultModel));
+        Assert.Contains("[allimg:1]", Answer(restored));
+    }
+
     // AC1+AC2: asked about an uploaded document, the top excerpt is retrieved and auto-injected into the
     // model context BEFORE the call (ADR 0008 — no agentic search-tool call), carrying its citation
     // metadata (file + page). The chunk is seeded into the process-global in-memory index under the

@@ -24,15 +24,25 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 // (no tools, no load_skill, images withheld) in a browser rather than only in tests.
 const string DefaultModel = "foundry:gpt-4o";
 const string TextOnlyModel = "github:text-only-demo";
+// An image-generation model (ADR 0020): selecting it makes a turn produce an image via the in-memory
+// generator (a canned PNG) — so the generate/store/display/history flow is exercisable in a browser offline.
+const string ImageModel = "images:image-demo";
 
 builder.Services.AddSingleton<IChatClient, CannedChatClient>();
+// The offline image generator returns a canned PNG (no real /v1/images endpoint offline — ADR 0020).
+builder.Services.AddSingleton<IImageGenerationService, InMemoryImageGenerator>();
 builder.Services.AddSingleton<IChatClientFactory>(sp =>
     new SingleChatClientFactory(
         sp.GetRequiredService<IChatClient>(),
         DefaultModel,
-        capabilities: modelId => modelId == TextOnlyModel
-            ? new ModelCapabilities(SupportsTools: false, SupportsVision: false)
-            : ModelCapabilities.Full));
+        capabilities: modelId => modelId switch
+        {
+            TextOnlyModel => new ModelCapabilities(SupportsTools: false, SupportsVision: false),
+            ImageModel => new ModelCapabilities(
+                SupportsTools: false, SupportsVision: false, SupportsImageGeneration: true),
+            _ => ModelCapabilities.Full,
+        },
+        imageGenerator: sp.GetRequiredService<IImageGenerationService>()));
 
 // No per-user overlay store offline (ADR 0018): the single canned factory stands in for every user.
 builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
@@ -44,6 +54,8 @@ builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel
     new ModelInfo("foundry:gpt-4o-mini", "foundry", "GPT-4o mini", "gpt-4o-mini", "2024-07-18", true, true),
     new ModelInfo("foundry:o3-mini", "foundry", "o3-mini", "o3-mini", "2025-01-31", true, false),
     new ModelInfo(TextOnlyModel, "github", "Text-only demo (no tools, no vision)", "text-only-demo", null, false, false),
+    new ModelInfo(ImageModel, "images", "Image generator (demo)", "image-demo", null,
+        SupportsTools: false, SupportsVision: false, SupportsImageGeneration: true),
 ]));
 
 // No per-user overlay store offline (ADR 0018): the single static catalog stands in for every user.

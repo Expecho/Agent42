@@ -89,7 +89,24 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
 
         return configured is null
             ? new ModelCapabilities(SupportsTools: false, SupportsVision: false)
-            : new ModelCapabilities(configured.SupportsTools, configured.SupportsVision);
+            : new ModelCapabilities(
+                configured.SupportsTools, configured.SupportsVision,
+                SupportsImageGeneration: configured.SupportsImageGeneration);
+    }
+
+    public IImageGenerationService? GetImageGenerationService(string? modelId)
+    {
+        // No providers, or the resolved model is not an image model → no generator. GetCapabilities carries
+        // the same no-provider / non-declared-model guards, so the gate stays in one place (ADR 0020).
+        if (_providers.Count == 0 || !GetCapabilities(modelId).SupportsImageGeneration)
+        {
+            return null;
+        }
+
+        var (provider, model, _) = Resolve(modelId);
+        // Only an OpenAI-compatible provider carries an ImageService func (Foundry image gen is out of scope,
+        // ADR 0020) — and only such a model can report SupportsImageGeneration, so this is never null here.
+        return provider.ImageService?.Invoke(model);
     }
 
     // Maps a (possibly legacy, possibly stale) id onto a provider that actually exists.
@@ -127,11 +144,22 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
     }
 
     /// <summary>One configured provider: its options plus the underlying SDK client it hands out models from.</summary>
-    public sealed class Provider(ProviderOptions options, Func<string, IChatClient> client)
+    public sealed class Provider(
+        ProviderOptions options,
+        Func<string, IChatClient> client,
+        Func<string, IImageGenerationService>? imageService = null)
     {
         public ProviderOptions Options { get; } = options;
 
         public Func<string, IChatClient> Client { get; } = client;
+
+        /// <summary>
+        /// Builds an <see cref="IImageGenerationService"/> for a model of this provider (ADR 0020), or null for
+        /// a provider that does no image generation (every Foundry provider — image gen is OpenAI-compatible
+        /// only). Set once for an OpenAI-compatible provider, mirroring <see cref="Client"/>; the per-model gate
+        /// is <see cref="GetImageGenerationService"/> (only a model flagged <c>SupportsImageGeneration</c> reaches it).
+        /// </summary>
+        public Func<string, IImageGenerationService>? ImageService { get; } = imageService;
 
         /// <summary>
         /// Whether this provider's models are built through the OpenAI <b>Responses</b> API (ADR 0014)
@@ -199,7 +227,13 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         {
             var client = new OpenAIClient(
                 new ApiKeyCredential(apiKey), new OpenAIClientOptions { Endpoint = endpoint });
-            return new Provider(options, model => client.GetChatClient(model).AsIChatClient());
+            // The SAME OpenAIClient hands out both chat and image clients — one transport, no IHttpClientFactory
+            // (ADR 0020). GetImageClient does no I/O; the per-model gate in GetImageGenerationService decides
+            // whether an image model actually reaches this func, so building it for every model here is free.
+            return new Provider(
+                options,
+                model => client.GetChatClient(model).AsIChatClient(),
+                model => new OpenAIImageGenerator(client.GetImageClient(model)));
         }
     }
 

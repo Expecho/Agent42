@@ -206,4 +206,17 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   grain. Trailing default = no migration. **The headline consequence: continuous funnels every chat into one
   unbounded grain, so it will eventually hit the 2 MB session cap (ADR 0004) and brick the conversation in
   prod — `DELETE /api/conversations/agent-{agentId}` (delete-to-reset) is the only escape hatch.** See gotchas.
+- Image generation (ADR 0020): a new per-model capability bit `SupportsImageGeneration`, declared on an
+  OpenAI-compatible model (a user-added provider, ADR 0018), makes a picked model **produce an image
+  instead of a chat reply** — text-to-image, or image-to-image (edit) against this turn's attachment, else
+  the most recent image in the conversation. It is a **dedicated model, not a tool** the text model calls.
+  Generated images reuse the `attachments` blob container on the **assistant** side (extends ADR 0004 —
+  **no new container/Bicep**) and re-appear on reload. Four things to read before touching this: image gen
+  runs a **different API** (`IImageGenerationService` over the SDK `ImageClient`, not the chat client) via an
+  **adapter run** (`ImageGenerationChatClient`) because AF 1.13 has no append-without-inference; the assistant
+  image is **id-keyed** (message-level `assistantImageId`), never joined by assistant-message position (they
+  are not 1:1 with turns); the branch runs **before** the vision gate (an image model *consumes* images); and
+  the interface is **`IImageGenerationService`** because M.E.AI 1.13 ships a colliding `IImageGenerator`. All
+  in the "assistant generated image is id-keyed" gotcha. **Headline consequence:** generating sends the prompt
+  — and for edits the **input image bytes** — outside the Entra tenant (extends ADR 0013's egress).
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

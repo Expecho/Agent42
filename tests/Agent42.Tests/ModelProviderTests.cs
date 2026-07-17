@@ -277,6 +277,70 @@ public class ModelProviderTests
         Assert.DoesNotContain(setup.Discovering, d => d.Key == "foundry");
     }
 
+    [Fact] // AC1 (ADR 0020) — a declared image-generation model surfaces SupportsImageGeneration in
+           // capabilities; a chat model and a discovered Foundry deployment do not.
+    public void GetCapabilities_ImageModel_ReportsImageGeneration()
+    {
+        var options = Options();
+        options.Providers["images"] = new ProviderOptions
+        {
+            Kind = ProviderKind.OpenAICompatible,
+            Endpoint = "https://images.example/v1",
+            ApiKey = "k",
+            Models = [new ConfiguredModel { Id = "gpt-image-1", SupportsImageGeneration = true }],
+        };
+        var setup = ModelProviderBuilder.Build(options, Configuration());
+        var factory = new MultiProviderChatClientFactory(
+            setup.Providers, "foundry:gpt-4o", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
+
+        var image = factory.GetCapabilities("images:gpt-image-1");
+        Assert.True(image.SupportsImageGeneration);
+        // A dedicated image model is not also a tools/vision chat model — the flag is orthogonal, opt-in.
+        Assert.False(image.SupportsTools);
+        Assert.False(image.SupportsVision);
+
+        // A chat model, and a discovered Foundry deployment (ModelCapabilities.Full), never report it.
+        Assert.False(factory.GetCapabilities("github:openai/gpt-4o-mini").SupportsImageGeneration);
+        Assert.False(factory.GetCapabilities("foundry:gpt-4o").SupportsImageGeneration);
+    }
+
+    [Fact] // AC3 (ADR 0020) — the factory yields an IImageGenerationService for an image model, and null for
+           // a chat model / a Foundry model / an unknown model. The generator is what turns a turn into an image.
+    public void Factory_ImageModel_YieldsGenerator()
+    {
+        var options = Options();
+        options.Providers["images"] = new ProviderOptions
+        {
+            Kind = ProviderKind.OpenAICompatible,
+            Endpoint = "https://images.example/v1",
+            ApiKey = "k",
+            Models = [new ConfiguredModel { Id = "gpt-image-1", SupportsImageGeneration = true }],
+        };
+        var setup = ModelProviderBuilder.Build(options, Configuration());
+        var factory = new MultiProviderChatClientFactory(
+            setup.Providers, "foundry:gpt-4o", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
+
+        // An image model yields a generator (built with no network I/O, like the chat client).
+        Assert.NotNull(factory.GetImageGenerationService("images:gpt-image-1"));
+
+        // A chat model, a Foundry deployment, and an unknown model all yield null — only an image model runs
+        // the image path.
+        Assert.Null(factory.GetImageGenerationService("github:openai/gpt-4o-mini"));
+        Assert.Null(factory.GetImageGenerationService("foundry:gpt-4o"));
+        Assert.Null(factory.GetImageGenerationService("images:not-declared"));
+    }
+
+    [Fact] // AC3 — the empty (no-provider) factory yields no generator, without hitting Resolve.
+    public void EmptyProviders_YieldsNoImageGenerator()
+    {
+        var factory = new MultiProviderChatClientFactory(
+            new Dictionary<string, MultiProviderChatClientFactory.Provider>(),
+            "", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
+
+        Assert.Null(factory.GetImageGenerationService(null));
+        Assert.Null(factory.GetImageGenerationService("images:gpt-image-1"));
+    }
+
     [Fact] // AC1 — an empty provider set constructs a factory (no throw) with an empty default (ADR 0019):
            // a user who configured no chat provider gets an empty picker, not a startup crash.
     public void EmptyProviders_ConstructsWithNoDefault()

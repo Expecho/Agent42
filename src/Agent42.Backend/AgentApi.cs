@@ -343,7 +343,7 @@ public static class AgentApi
             Endpoint: request.Endpoint,
             ApiKeyCiphertext: string.IsNullOrWhiteSpace(request.ApiKey) ? null : protector.Protect(request.ApiKey),
             Models: [.. (request.Models ?? []).Select(m =>
-                new StoredModel(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision))],
+                new StoredModel(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision, m.SupportsImageGeneration))],
             UseResponsesApi: request.UseResponsesApi);
 
     // Never returns the key — only whether one is stored (hasKey). The ciphertext stays server-side.
@@ -352,7 +352,7 @@ public static class AgentApi
             p.Key, p.Kind, p.DisplayName, p.Endpoint,
             HasKey: !string.IsNullOrEmpty(p.ApiKeyCiphertext),
             Models: [.. p.Models.Select(m =>
-                new ProviderModelResponse(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision))],
+                new ProviderModelResponse(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision, m.SupportsImageGeneration))],
             p.UseResponsesApi);
 
     // Agent grains are keyed per user, so a conversation id sent by one user can
@@ -397,7 +397,10 @@ public record ProviderUpsertRequest(
     string Key, string Kind, string? DisplayName, string? Endpoint, string? ApiKey,
     IReadOnlyList<ProviderModelRequest>? Models = null, bool UseResponsesApi = false);
 
-public record ProviderModelRequest(string Id, string? DisplayName, bool SupportsTools, bool SupportsVision);
+// SupportsImageGeneration (ADR 0020) is a trailing default so an old-shape client body still binds — an
+// image model is one that produces images instead of chat replies.
+public record ProviderModelRequest(
+    string Id, string? DisplayName, bool SupportsTools, bool SupportsVision, bool SupportsImageGeneration = false);
 
 // What GET/POST/PUT return for a provider: everything EXCEPT the key, which is masked to HasKey so the
 // ciphertext (and the plaintext) never reach the client (ADR 0018).
@@ -405,7 +408,8 @@ public record ProviderResponse(
     string Key, string Kind, string? DisplayName, string? Endpoint, bool HasKey,
     IReadOnlyList<ProviderModelResponse> Models, bool UseResponsesApi);
 
-public record ProviderModelResponse(string Id, string? DisplayName, bool SupportsTools, bool SupportsVision);
+public record ProviderModelResponse(
+    string Id, string? DisplayName, bool SupportsTools, bool SupportsVision, bool SupportsImageGeneration = false);
 
 // The GET /api/providers payload: the user's overlay providers (masked) plus their optional default.
 public record ProvidersResponse(IReadOnlyList<ProviderResponse> Providers, string? Default);

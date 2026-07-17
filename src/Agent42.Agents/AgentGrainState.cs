@@ -97,4 +97,20 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(8)]
     public List<string> FetchableUrls { get; set; } = [];
+
+    /// <summary>
+    /// Assistant-generated images (ADR 0020), keyed by <see cref="AttachmentRef.Id"/> — NOT a positional
+    /// per-assistant-turn list. Assistant messages are <b>not</b> 1:1 with turns (a tool-calling turn emits a
+    /// standalone <c>FunctionCallContent</c> message and then a separate text message), so a positional join
+    /// keyed on assistant-message index drifts by one for every prior tool turn and would misalign a generated
+    /// image against the wrong bubble. The link is instead carried by an <c>assistantImageId</c> written into
+    /// the assistant message's <see cref="Microsoft.Extensions.AI.ChatMessage.AdditionalProperties"/> (which
+    /// survives session serialize/deserialize AND an image-strip — Step-0 spike), looked up here by id.
+    ///
+    /// <para>Like every other durable list on this state, the bytes live in blob storage (ADR 0004) and only
+    /// the short <see cref="AttachmentRef"/> is kept here — a generated image never inflates the 2 MB session.
+    /// Old Cosmos state deserializes this empty.</para>
+    /// </summary>
+    [Id(9)]
+    public Dictionary<string, AttachmentRef> GeneratedImages { get; set; } = [];
 }
