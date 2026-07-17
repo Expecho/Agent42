@@ -15,6 +15,14 @@ tags: [models, providers, github-models, openai-compatible, config, security, da
 > qualified-id split, capability flags, and the cross-tenant egress position. `status: accepted` on
 > purpose — see 0017's supersession note.
 
+> **Amended by [ADR 0018](0018-user-configurable-model-providers.md) (2026-07-16) — SSRF-source
+> scope only.** The endpoint may now also come from an **authenticated user's own persisted
+> per-user config**, not just `appsettings`/env — but still **never** from a model or a live
+> request, so this stays off the `fetch_web_page` SSRF path and still carries **no
+> `PrivateAddressGuard`** (a user endpoint deliberately accepts `localhost`/private hosts). The
+> operator env provider set remains the boot-time availability floor. Everything else here stays
+> authoritative. `status: accepted` on purpose — see 0018's "Partial supersession" note.
+
 ## Context
 The app could only talk to one place. `AzureOpenAIChatClientFactory` was hardwired to a single Azure AI
 Foundry endpoint with `DefaultAzureCredential`, and a model was named by a bare deployment string

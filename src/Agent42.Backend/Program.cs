@@ -5,6 +5,7 @@ using Azure.AI.OpenAI;
 using Azure.Identity;
 using Azure.ResourceManager;
 using Azure.Storage.Blobs;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.AI;
 using OpenTelemetry.Instrumentation.AspNetCore;
@@ -105,9 +106,26 @@ builder.Services.AddSingleton(new ArmClient(credential));
 // contributes — live in ModelProviderBuilder, not here: nothing in the test suite runs Program.cs.
 var models = ModelProviderBuilder.Build(modelOptions, builder.Configuration);
 
+// The BASELINE factory (the operator env providers). Still the availability floor and the eager
+// startup check below; the agent grain no longer consumes it directly — it goes through the per-user
+// layer (ADR 0018), which uses this same baseline as its input.
 builder.Services.AddSingleton<IChatClientFactory>(sp => new MultiProviderChatClientFactory(
     models.Providers,
     modelOptions.Default,
+    OtelSourceName,
+    sp.GetRequiredService<ILogger<MultiProviderChatClientFactory>>()));
+
+// Per-user providers (ADR 0018): the resolver merges the baseline with the signed-in user's overlay,
+// and the factory provider hands the agent grain a user-scoped factory (resolved on activation, cached
+// by the overlay's version). IProviderSecretProtector is registered further down (DI is lazy).
+builder.Services.AddSingleton<IUserProviderResolver>(sp => new UserProviderResolver(
+    sp.GetRequiredService<IGrainFactory>(),
+    sp.GetRequiredService<IProviderSecretProtector>(),
+    models,
+    modelOptions.Default));
+
+builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp => new UserChatClientFactoryProvider(
+    sp.GetRequiredService<IUserProviderResolver>(),
     OtelSourceName,
     sp.GetRequiredService<ILogger<MultiProviderChatClientFactory>>()));
 
@@ -118,6 +136,13 @@ builder.Services.AddSingleton<IModelCatalog>(sp => new CompositeModelCatalog(
     models.DeclaredModels,
     modelOptions.Default,
     sp.GetRequiredService<ILogger<CompositeModelCatalog>>()));
+
+// Per-user model catalog (ADR 0018): /api/models is user-scoped, built from the same resolver as the
+// per-user factory so an added provider's models appear in the picker without a restart.
+builder.Services.AddSingleton<IUserModelCatalogProvider>(sp => new UserModelCatalogProvider(
+    sp.GetRequiredService<IUserProviderResolver>(),
+    sp.GetRequiredService<ArmClient>(),
+    sp.GetRequiredService<ILoggerFactory>()));
 
 // Blob-backed attachment store (ADR 0004): durable image bytes live in blob storage, never in
 // the serialized session. Prefer an Aspire-provided connection (Azurite under the AppHost);
@@ -138,6 +163,25 @@ else
 }
 
 builder.Services.AddSingleton<IAttachmentStore, BlobAttachmentStore>();
+
+// Data Protection (ADR 0018): encrypts the API keys of user-configured providers. In prod the key
+// ring MUST be persisted out-of-process — an ephemeral ring rotates on restart and orphans every
+// stored secret. Gate on the PROD branch (Storage:BlobEndpoint set, and NOT the Azurite/AppHost
+// GetConnectionString("blobs") path) and use the MI PersistKeysToAzureBlobStorage(BlobClient) overload:
+// shared-key auth is disabled on the account, so the connection-string overload cannot work. The
+// master key itself is protected only by Storage SSE + RBAC (no ProtectKeysWith…) — the user secrets
+// it encrypts are DP-encrypted on top. DevHost/tests fall through to the default ephemeral ring (fine —
+// nothing persisted there).
+var dataProtection = builder.Services.AddDataProtection();
+var dataProtectionBlobEndpoint = builder.Configuration["Storage:BlobEndpoint"];
+if (string.IsNullOrWhiteSpace(blobConnection) && !string.IsNullOrWhiteSpace(dataProtectionBlobEndpoint))
+{
+    var keyRingBlob = new BlobClient(
+        new Uri(dataProtectionBlobEndpoint.TrimEnd('/') + "/dataprotection/keys.xml"), credential);
+    dataProtection.PersistKeysToAzureBlobStorage(keyRingBlob);
+}
+
+builder.Services.AddSingleton<IProviderSecretProtector, ProviderSecretProtector>();
 
 // Document RAG (ADR 0007). The embedding deployment is a manual prerequisite the user owns (a
 // text-embedding-3-large deployment in the AI Foundry account, RG agent42 — the same account the

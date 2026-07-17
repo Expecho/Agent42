@@ -47,5 +47,22 @@ resource container 'Microsoft.Storage/storageAccounts/blobServices/containers@20
   }
 }
 
+// The Data Protection key ring (ADR 0018): the app persists the master key here so a restart does
+// not rotate it and orphan every user's encrypted provider secret. Same privacy posture as the
+// attachments container — reached only by the app MI's Storage Blob Data Contributor grant (no
+// shared key). The master key itself is protected by Storage SSE + RBAC only (no ProtectKeysWith…);
+// the user secrets it encrypts are DP-encrypted on top, and Cosmos at-rest encryption covers the
+// persisted ciphertext.
+// The name is a fixed literal (NOT a param) so there is ONE source of truth with the app, which
+// hardcodes the same "dataprotection" path when it points the DP key ring at this container
+// (Program.cs). A param here would be a second knob that could drift from the code.
+resource dataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'dataprotection'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 output accountName string = account.name
 output blobEndpoint string = account.properties.primaryEndpoints.blob

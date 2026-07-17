@@ -5,9 +5,11 @@ using System.Text.Json;
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Orleans.TestingHost;
 
 namespace Agent42.Tests;
@@ -41,6 +43,12 @@ public sealed class AgentApiTests : IAsyncLifetime
             new ModelInfo("github:openai/gpt-4o-mini", "github", "GPT-4o mini", "openai/gpt-4o-mini",
                 null, SupportsTools: true, SupportsVision: false),
         ]));
+        // /api/models is user-scoped (ADR 0018); the single static catalog stands in for every user.
+        appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
+            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
+        // /api/providers encrypts keys, so the protector must resolve for the route matcher (ADR 0018).
+        appBuilder.Services.AddSingleton<IProviderSecretProtector>(
+            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
         // The chat endpoint resolves attachments through the store; the in-memory store is
         // process-global, so it is the same instance the silo grain sees (constraint 10).
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();

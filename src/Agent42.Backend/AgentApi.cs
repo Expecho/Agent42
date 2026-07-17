@@ -188,8 +188,10 @@ public static class AgentApi
             return Results.NoContent();
         });
 
-        // Live list of the model deployments available in the configured AI Foundry account.
-        app.MapGet("/api/models", (IModelCatalog catalog, CancellationToken ct) => catalog.GetAsync(ct));
+        // The models available to the SIGNED-IN USER: their effective (baseline ⊕ overlay) provider set
+        // (ADR 0018), so a provider they added shows up here without an app restart.
+        app.MapGet("/api/models", async (IUserModelCatalogProvider catalogs, HttpContext http, CancellationToken ct) =>
+            await (await catalogs.GetForUserAsync(http.GetUserId(), ct)).GetAsync(ct));
 
         // ————— stored agents (per-user personas) —————
 
@@ -239,8 +241,110 @@ public static class AgentApi
             return Results.Json(saved);
         });
 
+        // ————— model providers (per-user overlay, ADR 0018) —————
+
+        // The signed-in user's OWN configured providers (their overlay — not the operator baseline).
+        // Keys are MASKED to a hasKey flag: the ciphertext never leaves the server, and the plaintext
+        // never existed here.
+        app.MapGet("/api/providers", async (IGrainFactory grains, HttpContext http) =>
+        {
+            var overlay = await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).GetAsync();
+            return Results.Json(new ProvidersResponse(
+                [.. overlay.Providers.Select(Mask)], overlay.Default));
+        });
+
+        // Creates or updates a provider by key. The key is user-chosen and identifies the provider, so
+        // POST upserts (like the grain's SaveAsync). The API ENCRYPTS the key here — the grain only ever
+        // stores ciphertext (ADR 0018). A blank ApiKey on a new provider means "no key" (a supported,
+        // skipped state for an OpenAI-compatible provider).
+        app.MapPost("/api/providers", async (ProviderUpsertRequest request, IProviderSecretProtector protector, IGrainFactory grains, HttpContext http) =>
+        {
+            var error = ValidateProvider(request.Key, request.Kind, request.Endpoint);
+            if (error is not null)
+            {
+                return Results.Text(error, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var stored = await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId())
+                .SaveAsync(ToStored(request, protector));
+            return Results.Json(Mask(stored));
+        });
+
+        // Updates the provider named by the route key. A BLANK ApiKey means "keep the stored key" (the
+        // field is write-only in the UI), so the user needn't re-enter a secret to edit other fields —
+        // ToStored maps blank to a null ciphertext, which the grain reads as "keep".
+        app.MapPut("/api/providers/{key}", async (string key, ProviderUpsertRequest request, IProviderSecretProtector protector, IGrainFactory grains, HttpContext http) =>
+        {
+            var error = ValidateProvider(key, request.Kind, request.Endpoint);
+            if (error is not null)
+            {
+                return Results.Text(error, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var stored = await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId())
+                .SaveAsync(ToStored(request with { Key = key }, protector));
+            return Results.Json(Mask(stored));
+        });
+
+        // Deletes a provider from the user's overlay. A conversation pinned to it degrades to the default
+        // (ADR 0018/0013), so this never disturbs a conversation.
+        app.MapDelete("/api/providers/{key}", async (string key, IGrainFactory grains, HttpContext http) =>
+        {
+            await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).DeleteAsync(key);
+            return Results.NoContent();
+        });
+
         return app;
     }
+
+    // A user provider must be self-contained (it does NOT inherit the operator AzureOpenAI:* config —
+    // ADR 0018), so both kinds require an absolute http/https endpoint. localhost/private hosts are
+    // ACCEPTED on purpose — an Ollama endpoint is a supported target, and this stays off the SSRF path
+    // because the endpoint comes from the authenticated user's own config, not a model or a request
+    // (ADR 0013). Deliberately NO PrivateAddressGuard. Returns an error message, or null when valid.
+    private static string? ValidateProvider(string key, string kind, string? endpoint)
+    {
+        if (string.IsNullOrWhiteSpace(key) || key.Contains(':'))
+        {
+            return "Provider key must be non-empty and contain no ':' (it qualifies model ids as key:model).";
+        }
+
+        if (!Enum.TryParse<ProviderKind>(kind, ignoreCase: true, out _))
+        {
+            return $"Unknown provider kind '{kind}'. Use 'AzureOpenAI' or 'OpenAICompatible'.";
+        }
+
+        if (string.IsNullOrWhiteSpace(endpoint)
+            || !Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return "Endpoint must be an absolute http or https URL.";
+        }
+
+        return null;
+    }
+
+    // Maps the request into the stored shape, encrypting the key. A blank ApiKey becomes a null
+    // ciphertext: on create that is "no key", on update the grain reads it as "keep the stored key".
+    private static StoredProvider ToStored(ProviderUpsertRequest request, IProviderSecretProtector protector) =>
+        new(
+            Key: request.Key.Trim(),
+            Kind: request.Kind,
+            DisplayName: request.DisplayName,
+            Endpoint: request.Endpoint,
+            ApiKeyCiphertext: string.IsNullOrWhiteSpace(request.ApiKey) ? null : protector.Protect(request.ApiKey),
+            Models: [.. (request.Models ?? []).Select(m =>
+                new StoredModel(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision))],
+            UseResponsesApi: request.UseResponsesApi);
+
+    // Never returns the key — only whether one is stored (hasKey). The ciphertext stays server-side.
+    private static ProviderResponse Mask(StoredProvider p) =>
+        new(
+            p.Key, p.Kind, p.DisplayName, p.Endpoint,
+            HasKey: !string.IsNullOrEmpty(p.ApiKeyCiphertext),
+            Models: [.. p.Models.Select(m =>
+                new ProviderModelResponse(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision))],
+            p.UseResponsesApi);
 
     // Agent grains are keyed per user, so a conversation id sent by one user can
     // never resolve to another user's chat.
@@ -276,3 +380,23 @@ public record AgentUpsertRequest(string Name, string Description, string Model, 
 // Client payload for PUT /api/profile: the preferred-language BCP-47 tag the user picked
 // ("" = use the device default). More preference fields will be added here as the profile grows.
 public record ProfileUpdateRequest(string PreferredLanguage);
+
+// Client payload for creating/updating a user provider (ADR 0018). ApiKey is WRITE-ONLY — it is
+// encrypted server-side and never echoed back; blank on an update means "keep the stored key". Kind is
+// "AzureOpenAI" or "OpenAICompatible". Models/UseResponsesApi are trailing defaults so a minimal body works.
+public record ProviderUpsertRequest(
+    string Key, string Kind, string? DisplayName, string? Endpoint, string? ApiKey,
+    IReadOnlyList<ProviderModelRequest>? Models = null, bool UseResponsesApi = false);
+
+public record ProviderModelRequest(string Id, string? DisplayName, bool SupportsTools, bool SupportsVision);
+
+// What GET/POST/PUT return for a provider: everything EXCEPT the key, which is masked to HasKey so the
+// ciphertext (and the plaintext) never reach the client (ADR 0018).
+public record ProviderResponse(
+    string Key, string Kind, string? DisplayName, string? Endpoint, bool HasKey,
+    IReadOnlyList<ProviderModelResponse> Models, bool UseResponsesApi);
+
+public record ProviderModelResponse(string Id, string? DisplayName, bool SupportsTools, bool SupportsVision);
+
+// The GET /api/providers payload: the user's overlay providers (masked) plus their optional default.
+public record ProvidersResponse(IReadOnlyList<ProviderResponse> Providers, string? Default);

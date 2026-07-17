@@ -40,6 +40,23 @@
   const profileLanguage = document.getElementById("profileLanguage");
   const profileCancelBtn = document.getElementById("profileCancelBtn");
 
+  const providerList = document.getElementById("providerList");
+  const addProviderBtn = document.getElementById("addProviderBtn");
+  const providerDialog = document.getElementById("providerDialog");
+  const providerForm = document.getElementById("providerForm");
+  const providerFormTitle = document.getElementById("providerFormTitle");
+  const providerKeyInput = document.getElementById("providerKey");
+  const providerKindSelect = document.getElementById("providerKind");
+  const providerDisplayNameInput = document.getElementById("providerDisplayName");
+  const providerEndpointInput = document.getElementById("providerEndpoint");
+  const providerApiKeyInput = document.getElementById("providerApiKey");
+  const providerResponsesField = document.getElementById("providerResponsesField");
+  const providerResponsesApi = document.getElementById("providerResponsesApi");
+  const providerModelList = document.getElementById("providerModelList");
+  const addModelRowBtn = document.getElementById("addModelRowBtn");
+  const providerError = document.getElementById("providerError");
+  const providerCancelBtn = document.getElementById("providerCancelBtn");
+
   let conversations = [];
   let activeId = crypto.randomUUID();
   let streaming = false;
@@ -63,6 +80,11 @@
   let pendingNotices = [];
 
   let agents = [];
+  // The user's own configured providers (their overlay — ADR 0018), fetched masked (hasKey, never the
+  // key). Rendered in Preferences; edited through the provider dialog. The key of the one being edited,
+  // or null when adding a new provider.
+  let userProviders = [];
+  let editingProviderKey = null;
   // The agent id to *bind*, sent on the wire only on the first turn of a freshly started
   // agent chat, then cleared. Kept distinct from activeAgentId so a resumed agent chat never
   // re-resolves (and rebinds against) a possibly-deleted agent.
@@ -1102,6 +1124,7 @@
   async function openProfileDialog() {
     await loadProfile(); // reconcile against the server before showing the current value
     fillLanguageOptions(profileLanguage, profile.preferredLanguage ?? "");
+    loadProviders(); // refresh the user's providers list alongside the profile
     profileDialog.showModal();
     profileLanguage.focus();
   }
@@ -1126,6 +1149,200 @@
   profileForm.addEventListener("submit", (e) => {
     e.preventDefault();
     saveProfile();
+  });
+
+  /* ————— model providers (per-user overlay, ADR 0018) ————— */
+
+  async function loadProviders() {
+    try {
+      const res = await fetch("/api/providers");
+      if (!res.ok) return;
+      const data = await res.json();
+      userProviders = data.providers ?? [];
+      renderProviders();
+    } catch { /* silo may be unreachable; the list refreshes on next open */ }
+  }
+
+  function renderProviders() {
+    providerList.innerHTML = "";
+    if (userProviders.length === 0) {
+      const li = document.createElement("li");
+      li.className = "providers__empty";
+      li.textContent = "no providers added — the built-in ones still apply";
+      providerList.appendChild(li);
+      return;
+    }
+    for (const provider of userProviders) {
+      const li = document.createElement("li");
+      li.className = "provider-row";
+
+      const meta = document.createElement("div");
+      meta.className = "provider-row__meta";
+      const name = document.createElement("span");
+      name.className = "provider-row__name";
+      name.textContent = provider.displayName || provider.key;
+      const sub = document.createElement("span");
+      sub.className = "provider-row__sub";
+      // Endpoint plus a lock glyph when a key is stored — never the key itself (it is never returned).
+      sub.textContent = `${provider.key} · ${provider.endpoint ?? ""}${provider.hasKey ? " · 🔑" : ""}`;
+      sub.title = provider.endpoint ?? "";
+      meta.append(name, sub);
+
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "provider-row__action";
+      edit.setAttribute("aria-label", `Edit provider: ${provider.key}`);
+      edit.textContent = "✎";
+      edit.addEventListener("click", () => openProviderDialog(provider));
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "provider-row__action";
+      del.setAttribute("aria-label", `Delete provider: ${provider.key}`);
+      del.textContent = "🗑";
+      del.addEventListener("click", () => deleteProvider(provider.key));
+
+      li.append(meta, edit, del);
+      providerList.appendChild(li);
+    }
+  }
+
+  // The Responses-API toggle is Foundry-only (ADR 0014) — an OpenAI-compatible provider ignores it.
+  function syncProviderKindUi() {
+    providerResponsesField.hidden = providerKindSelect.value !== "AzureOpenAI";
+  }
+
+  // Appends one editable model row. tools/vision gate what is sent to the model (ADR 0013), so they
+  // default OFF for a new row — the unsafe direction is a wrong "true".
+  function addModelRow(model) {
+    const li = document.createElement("li");
+    li.className = "provider-model-row";
+
+    const id = document.createElement("input");
+    id.type = "text";
+    id.className = "agent-form__input provider-model-row__id";
+    id.placeholder = "model id (e.g. llama3.1)";
+    id.value = model?.id ?? "";
+
+    const display = document.createElement("input");
+    display.type = "text";
+    display.className = "agent-form__input provider-model-row__display";
+    display.placeholder = "display name (optional)";
+    display.value = model?.displayName ?? "";
+
+    const tools = document.createElement("label");
+    tools.className = "provider-model-row__flag";
+    const toolsBox = document.createElement("input");
+    toolsBox.type = "checkbox";
+    toolsBox.className = "agent-form__checkbox";
+    toolsBox.checked = model?.supportsTools ?? false;
+    tools.append(toolsBox, document.createTextNode("tools"));
+
+    const vision = document.createElement("label");
+    vision.className = "provider-model-row__flag";
+    const visionBox = document.createElement("input");
+    visionBox.type = "checkbox";
+    visionBox.className = "agent-form__checkbox";
+    visionBox.checked = model?.supportsVision ?? false;
+    vision.append(visionBox, document.createTextNode("vision"));
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "provider-model-row__remove";
+    remove.setAttribute("aria-label", "Remove model");
+    remove.textContent = "×";
+    remove.addEventListener("click", () => li.remove());
+
+    li.append(id, display, tools, vision, remove);
+    providerModelList.appendChild(li);
+  }
+
+  function collectModels() {
+    const models = [];
+    for (const row of providerModelList.querySelectorAll(".provider-model-row")) {
+      const id = row.querySelector(".provider-model-row__id").value.trim();
+      if (!id) continue; // an empty row is dropped, not sent
+      const [tools, vision] = row.querySelectorAll(".agent-form__checkbox");
+      const display = row.querySelector(".provider-model-row__display").value.trim();
+      models.push({ id, displayName: display || null, supportsTools: tools.checked, supportsVision: vision.checked });
+    }
+    return models;
+  }
+
+  function openProviderDialog(provider) {
+    editingProviderKey = provider?.key ?? null;
+    providerFormTitle.textContent = provider ? "Edit provider" : "New provider";
+    providerError.hidden = true;
+    providerKeyInput.value = provider?.key ?? "";
+    // The key is the identity — changing it would be a new provider, so it is read-only when editing.
+    providerKeyInput.readOnly = Boolean(provider);
+    providerKindSelect.value = provider?.kind ?? "OpenAICompatible";
+    providerDisplayNameInput.value = provider?.displayName ?? "";
+    providerEndpointInput.value = provider?.endpoint ?? "";
+    providerApiKeyInput.value = ""; // never prefilled — the key is write-only (blank = keep on edit)
+    providerResponsesApi.checked = provider?.useResponsesApi ?? false;
+    syncProviderKindUi();
+
+    providerModelList.innerHTML = "";
+    for (const model of provider?.models ?? []) addModelRow(model);
+
+    providerDialog.showModal();
+    providerKeyInput.focus();
+  }
+
+  async function saveProvider() {
+    const payload = {
+      key: providerKeyInput.value.trim(),
+      kind: providerKindSelect.value,
+      displayName: providerDisplayNameInput.value.trim() || null,
+      endpoint: providerEndpointInput.value.trim(),
+      // Blank means "keep the stored key" on edit, or "no key" on create — the server maps both.
+      apiKey: providerApiKeyInput.value,
+      models: collectModels(),
+      useResponsesApi: providerResponsesApi.checked,
+    };
+    if (!payload.key || !payload.endpoint) return;
+
+    const url = editingProviderKey
+      ? `/api/providers/${encodeURIComponent(editingProviderKey)}`
+      : "/api/providers";
+    const method = editingProviderKey ? "PUT" : "POST";
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        // The endpoint returns a plain-text reason for a 400 (bad endpoint/kind) — surface it.
+        providerError.textContent = (await res.text()) || "Could not save the provider.";
+        providerError.hidden = false;
+        return;
+      }
+    } catch { return; /* silo may be unreachable; leave the dialog open */ }
+
+    providerDialog.close();
+    await loadProviders();
+    loadModels(); // the picker reflects the change immediately — no restart (ADR 0018)
+  }
+
+  async function deleteProvider(key) {
+    try {
+      const res = await fetch(`/api/providers/${encodeURIComponent(key)}`, { method: "DELETE" });
+      if (!res.ok) return;
+    } catch { return; }
+    userProviders = userProviders.filter((p) => p.key !== key);
+    renderProviders();
+    loadModels();
+  }
+
+  addProviderBtn.addEventListener("click", () => openProviderDialog(null));
+  addModelRowBtn.addEventListener("click", () => addModelRow(null));
+  providerKindSelect.addEventListener("change", syncProviderKindUi);
+  providerCancelBtn.addEventListener("click", () => providerDialog.close());
+  providerForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveProvider();
   });
 
   input.addEventListener("input", autosize);

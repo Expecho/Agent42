@@ -49,6 +49,10 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
                     sp.GetRequiredService<IChatClient>(),
                     DefaultModel,
                     capabilities: Capabilities));
+            // The grain resolves its factory through the per-user seam (ADR 0018); offline/tests have no
+            // overlay store, so the single fake factory stands in for every user.
+            services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
+                new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>()));
             // Process-global in-memory stores, shared with the endpoint DI container (constraint 10).
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             // Document ingestion + retrieval stand-ins (ADR 0007): the grain resolves these to

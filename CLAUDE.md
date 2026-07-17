@@ -146,6 +146,25 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   the availability path, unlike a third-party key), ARM **discovery is off** (a data-plane key can't reach
   ARM, so the provider **declares** its deployments), and the default deployment is **`gpt-5.4`** (`gpt-4o`
   is not deployed in the account).
+- User-configurable providers (ADR 0018, amends 0013 + 0017): a signed-in user adds/edits/deletes their own
+  model providers — **including Foundry** — from the web UI (Preferences → model providers), per-user, with
+  API keys persisted **encrypted**, and changes taking effect **without a restart**. The model is
+  **baseline ⊕ per-user overlay**: the env/`appsettings` set stays the boot-time **availability floor**
+  (0017's "blank *baseline* Foundry key is fatal" still holds), a `UserProviderConfigGrain` holds the
+  overlay, and `UserProviderResolver` merges them — reused by both a per-user chat-client factory (resolved
+  on `AgentGrain` activation, cached by overlay **version**) and a per-user `/api/models` catalog. **A user
+  override that resolves invalid falls back to baseline — overlays are best-effort, never fatal.** The
+  headline consequence is 0013's, now reachable from an endpoint the **user** added: picking a third-party
+  model still sends the conversation outside the Entra tenant, so the default stays Foundry. **A
+  `dataprotection` blob container is a new prerequisite** (added to `storage.bicep`; the app MI already holds
+  the grant). Traps to read before touching this: the overlay is best-effort / baseline wins (and user
+  providers do **not** inherit `AzureOpenAI:*`) — and, in the same gotcha, a user endpoint is deliberately
+  **not** SSRF-guarded (config, not a model/request — so `localhost` is accepted); secrets are DP-encrypted,
+  never echoed, and the DP key ring **must persist** out-of-process in prod (else a restart orphans every
+  secret); the per-user factory is resolved on activation **before** its first use, not injected (and every
+  grain host must register `IUserChatClientFactoryProvider`). All are in gotchas. Offline (DevHost/tests) uses
+  single-user adapters, so the providers **CRUD/UI** is exercisable there but overlay→picker reflection is
+  only wired in prod (unit-tested via `UserModelCatalogTests`).
 - Responses API on Foundry (ADR 0014; credential mechanism amended by ADR 0017): a provider-level
   `UseResponsesApi` flag routes **every** model of a Foundry provider through the OpenAI **Responses** API run
   **statelessly** (`store=false`) instead of Chat Completions — reached with **no package change** via the

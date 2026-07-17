@@ -4,6 +4,7 @@
 using Agent42.Agents;
 using Agent42.Backend;
 using Agent42.DevHost;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.AI;
 
 var webRoot = Path.GetFullPath(Path.Combine(
@@ -33,6 +34,10 @@ builder.Services.AddSingleton<IChatClientFactory>(sp =>
             ? new ModelCapabilities(SupportsTools: false, SupportsVision: false)
             : ModelCapabilities.Full));
 
+// No per-user overlay store offline (ADR 0018): the single canned factory stands in for every user.
+builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
+    new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>()));
+
 builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel,
 [
     new ModelInfo("foundry:gpt-4o", "foundry", "GPT-4o", "gpt-4o", "2024-08-06", true, true),
@@ -40,6 +45,16 @@ builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel
     new ModelInfo("foundry:o3-mini", "foundry", "o3-mini", "o3-mini", "2025-01-31", true, false),
     new ModelInfo(TextOnlyModel, "github", "Text-only demo (no tools, no vision)", "text-only-demo", null, false, false),
 ]));
+
+// No per-user overlay store offline (ADR 0018): the single static catalog stands in for every user.
+builder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
+    new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
+
+// Provider secret encryption (ADR 0018): the /api/providers endpoint encrypts keys before the grain.
+// Offline uses the default EPHEMERAL key ring — nothing is persisted, so no blob store is needed. The
+// per-user overlay grain still works (in-memory storage below), so the providers UI is exercisable here.
+builder.Services.AddDataProtection();
+builder.Services.AddSingleton<IProviderSecretProtector, ProviderSecretProtector>();
 
 // In-memory attachment store: no Azure Storage offline. The canned client ignores image
 // content, so uploads still round-trip for the display proxy and history rendering.
