@@ -386,6 +386,59 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Equal("only-1", att.Id);
     }
 
+    // AC8: the background (agent-run) run path (ADR 0022) runs a prompt and persists the turn. OneWay
+    // returns to the caller immediately, but the grain is non-reentrant, so a following GetHistoryAsync
+    // is processed only after the enqueued turn completes — no polling needed in-process.
+    [Fact]
+    public async Task EnqueuePrompt_RunsAndPersistsTurn()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("enqueue-conversation");
+
+        await agent.EnqueuePromptAsync("hi", null);
+
+        // OneWay returns before the grain runs the turn, so poll history for the persisted result.
+        var history = await PollHistoryAsync(agent, h => h.Any(t => t.Role == "assistant"));
+        Assert.Contains(history, t => t.Role == "user" && t.Text == "hi");
+        Assert.Contains(history, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
+    }
+
+    // Polls GetHistoryAsync until <paramref name="until"/> holds or a bound elapses — the OneWay
+    // agent-run path returns before the background turn persists (ADR 0022).
+    private static async Task<IReadOnlyList<ChatTurn>> PollHistoryAsync(
+        IAgentGrain agent, Func<IReadOnlyList<ChatTurn>, bool> until)
+    {
+        IReadOnlyList<ChatTurn> history = [];
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            history = await agent.GetHistoryAsync();
+            if (until(history))
+            {
+                return history;
+            }
+
+            await Task.Delay(100);
+        }
+
+        return history;
+    }
+
+    // AC9 (grain level): an image handed to the background run rides the same AttachmentRef path as a
+    // browser turn — it lands on the user turn in history (draining ChatCoreAsync gives the vision path
+    // for free, so an image model would even edit it; here the turn just records the attachment).
+    [Fact]
+    public async Task EnqueuePrompt_WithImage_RecordsAttachmentOnTurn()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("enqueue-image-conversation");
+        var reference = new AttachmentRef("run-1", "k/run-1", "image/png", "pic.png");
+
+        await agent.EnqueuePromptAsync("what is in this picture", [reference]);
+
+        var history = await PollHistoryAsync(agent, h => h.Any(t => t.Role == "assistant"));
+        var userTurn = Assert.Single(history, t => t.Role == "user");
+        Assert.NotNull(userTurn.Attachments);
+        Assert.Equal("run-1", Assert.Single(userTurn.Attachments!).Id);
+    }
+
     // AC4b: refs stay joined to the correct turn across a text → schedule → reminder-fired → image
     // sequence. The reminder-fired turn is a user turn too, so it must push an empty entry or the
     // index join drifts and the image lands on the wrong turn (constraint 11).

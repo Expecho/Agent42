@@ -232,4 +232,22 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   `null == all` sentinel and the **user-default-fetch-before-first-`BuildAgent`** ordering hazard (both in
   the "Selectable tools" gotcha); and that disabling `skills` must **drop the `AgentSkillsProvider`** (it is
   a tool), while RAG must stay (the "`AgentSkillsProvider` is a TOOL" gotcha).
+- Per-agent API key + async run (ADR 0022): each stored agent has a **per-agent API key** (minted on
+  create, **shown once**, only its **SHA-256 hash** stored on `AgentDefinition [Id(9)]`, **regenerate**-on-edit)
+  and a fire-and-forget **`POST /api/agent-run`** — `multipart/form-data` (a `prompt` field + optional `file`
+  parts) + `X-Api-Key` header — that lets external automation (webhook/cron/n8n) run a **specific** agent with
+  no browser session. The **key alone** identifies the agent via a global **key-hash → `(userId, agentId)`
+  directory grain** (`IAgentKeyDirectoryGrain`, the one cross-user structure; rides `agent-state`, no new
+  container); it responds **202** and runs in the **background** (`[OneWay] EnqueuePromptAsync`) into a new
+  *listed* conversation the owner opens later. Files reuse the browser pipelines (images → `IAttachmentStore`;
+  documents → `DocumentIngestionService` + RAG); a batch with any bad file is **rejected whole (400)**. A new
+  **`excludedPaths: ['/api/agent-run']`** Easy-Auth carve-out (`container-app.bicep`, **amends ADR 0002**) is
+  the **only** infra change — no new secret. Four things to read before touching this: the directory must be
+  kept in sync **per-operation** (regenerate deregisters the OLD hash first) or a revoked key stays live; an
+  `excludedPaths` endpoint is **publicly reachable** and must self-enforce + fail closed (userId from the
+  directory, **never** `GetUserId`); the background run **drains `ChatCoreAsync`** (not the attachment-blind
+  reminder path) so images/image-gen/RAG work — tests **poll** because it's `[OneWay]`; and **`ApiKey`** is
+  the single place that generates *and* hashes. All in gotchas. **Headline consequence:** `/api/agent-run` is
+  a new **inbound** vector for ADR 0013's egress — a key holder can push a prompt, **image bytes** and
+  **document content** that, on a third-party model, leave the Entra tenant.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

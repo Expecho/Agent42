@@ -116,7 +116,9 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
 
         using (var doc = JsonDocument.Parse(await scoped.Content.ReadAsStringAsync()))
         {
-            var tools = doc.RootElement.GetProperty("enabledTools").EnumerateArray().Select(e => e.GetString()).ToArray();
+            // The create body is now AgentSaveResponse { agent, apiKey } (ADR 0022) — the definition is nested.
+            var tools = doc.RootElement.GetProperty("agent").GetProperty("enabledTools")
+                .EnumerateArray().Select(e => e.GetString()).ToArray();
             Assert.Equal(new[] { "web_search", "scheduling" }, tools);
         }
 
@@ -131,7 +133,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         full.EnsureSuccessStatusCode();
         using (var doc = JsonDocument.Parse(await full.Content.ReadAsStringAsync()))
         {
-            Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("enabledTools").ValueKind);
+            Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("agent").GetProperty("enabledTools").ValueKind);
         }
 
         // GET /api/agents carries the round-tripped set for the scoped agent.
@@ -156,7 +158,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         using var editDoc = JsonDocument.Parse(await edit.Content.ReadAsStringAsync());
         Assert.Equal(
             new[] { "location" },
-            editDoc.RootElement.GetProperty("enabledTools").EnumerateArray().Select(e => e.GetString()).ToArray());
+            editDoc.RootElement.GetProperty("agent").GetProperty("enabledTools").EnumerateArray().Select(e => e.GetString()).ToArray());
     }
 
     // AC13: PUT /api/conversations/{id}/tools then GET returns the same set. Unknown keys are dropped.

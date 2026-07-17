@@ -172,10 +172,15 @@ public sealed class AgentApiTests : IAsyncLifetime
                 Continuous: true));
         createRes.EnsureSuccessStatusCode();
         Assert.Equal("application/json", createRes.Content.Headers.ContentType?.MediaType);
-        var created = await createRes.Content.ReadFromJsonAsync<AgentDefinition>();
-        Assert.NotNull(created);
-        Assert.False(string.IsNullOrEmpty(created!.Id));
+        // The create/update body is now AgentSaveResponse { agent, apiKey } (ADR 0022), not a bare
+        // AgentDefinition — read the wrapper and use .Agent.
+        var createBody = await createRes.Content.ReadFromJsonAsync<AgentSaveResponse>();
+        Assert.NotNull(createBody);
+        var created = createBody!.Agent;
+        Assert.False(string.IsNullOrEmpty(created.Id));
         Assert.Equal("Marvin", created.Name);
+        // AC1: creating an agent returns a raw key ONCE.
+        Assert.False(string.IsNullOrEmpty(createBody.ApiKey), "create should mint an API key.");
         // AC2: POST echoes the history-mode flag.
         Assert.True(created.Continuous);
 
@@ -188,10 +193,13 @@ public sealed class AgentApiTests : IAsyncLifetime
             new AgentUpsertRequest("Marvin II", "Still paranoid", "gpt-4o", "You are brilliant but morose.",
                 Continuous: false));
         updateRes.EnsureSuccessStatusCode();
-        var updated = await updateRes.Content.ReadFromJsonAsync<AgentDefinition>();
-        Assert.Equal(created.Id, updated!.Id);
+        var updateBody = await updateRes.Content.ReadFromJsonAsync<AgentSaveResponse>();
+        var updated = updateBody!.Agent;
+        Assert.Equal(created.Id, updated.Id);
         Assert.Equal("Marvin II", updated.Name);
         Assert.False(updated.Continuous);
+        // A plain update (no regenerate) mints no key.
+        Assert.Null(updateBody.ApiKey);
 
         // AC3: an old-shape client that OMITS `continuous` entirely stores false (per-chat) — the
         // real "old data defaults to per-chat" property, asserted at the JSON layer (not the ctor).
@@ -199,9 +207,9 @@ public sealed class AgentApiTests : IAsyncLifetime
         var oldShapeRes = await _client.PostAsJsonAsync("/api/agents",
             new { name = "Legacy", description = "no flag", model = "gpt-4o", systemPrompt = "You are old." });
         oldShapeRes.EnsureSuccessStatusCode();
-        var legacy = await oldShapeRes.Content.ReadFromJsonAsync<AgentDefinition>();
+        var legacy = (await oldShapeRes.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
         Assert.NotNull(legacy);
-        Assert.False(legacy!.Continuous, "an omitted `continuous` must default to false (per-chat).");
+        Assert.False(legacy.Continuous, "an omitted `continuous` must default to false (per-chat).");
         await _client.DeleteAsync($"/api/agents/{legacy.Id}");
 
         var deleteRes = await _client.DeleteAsync($"/api/agents/{created.Id}");
@@ -217,9 +225,9 @@ public sealed class AgentApiTests : IAsyncLifetime
     public async Task ChatWithAgentId_BindsAgent_AndReportsIt()
     {
         const string convId = "api-agent-chat";
-        var created = await (await _client.PostAsJsonAsync("/api/agents",
+        var created = (await (await _client.PostAsJsonAsync("/api/agents",
             new AgentUpsertRequest("Zaphod", "Two heads", "zaphod-model", "You are Zaphod.")))
-            .Content.ReadFromJsonAsync<AgentDefinition>();
+            .Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
 
         using (var chat = await _client.PostAsJsonAsync($"/api/chat/{convId}",
             new ChatRequest("hi", null, created!.Id)))
@@ -265,9 +273,9 @@ public sealed class AgentApiTests : IAsyncLifetime
     public async Task ChatAfterAgentDeleted_StillUsesPinnedPersona_NoError()
     {
         const string convId = "api-agent-deleted-chat";
-        var created = await (await _client.PostAsJsonAsync("/api/agents",
+        var created = (await (await _client.PostAsJsonAsync("/api/agents",
             new AgentUpsertRequest("Trillian", "", "trillian-model", "You are Trillian.")))
-            .Content.ReadFromJsonAsync<AgentDefinition>();
+            .Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
 
         using (var chat = await _client.PostAsJsonAsync($"/api/chat/{convId}",
             new ChatRequest("hi", null, created!.Id)))
@@ -468,5 +476,179 @@ public sealed class AgentApiTests : IAsyncLifetime
 
         var foundry = models.Single(m => m.GetProperty("provider").GetString() == "foundry");
         Assert.Equal("foundry:gpt-4o", foundry.GetProperty("id").GetString());
+    }
+
+    // ————— per-agent API key + async run endpoint (ADR 0022) —————
+
+    // AC2: GET /api/agents never returns a raw key (its prefix must not appear anywhere in the body).
+    [Fact]
+    public async Task GetAgents_NeverReturnsARawKey()
+    {
+        var (_, apiKey) = await CreateAgentAsync("SecretHolder");
+
+        var listRaw = await _client.GetStringAsync("/api/agents");
+        Assert.DoesNotContain(apiKey, listRaw);
+        Assert.DoesNotContain("sk_agent_", listRaw);
+    }
+
+    // AC3 + AC4: a valid key → 202 with a Location + conversationId; the background run persists the
+    // prompt + an assistant reply into a new conversation bound to the agent's persona.
+    [Fact]
+    public async Task AgentRun_ValidKey_Returns202_AndRunsInBackground()
+    {
+        var (agentId, apiKey) = await CreateAgentAsync();
+
+        using var res = await AgentRunAsync(apiKey, "hello agent");
+        Assert.Equal(HttpStatusCode.Accepted, res.StatusCode);
+
+        var convId = (await res.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("conversationId").GetString();
+        Assert.False(string.IsNullOrEmpty(convId));
+        Assert.Equal($"/api/conversations/{convId}/messages", res.Headers.Location?.ToString());
+
+        var turns = await PollMessagesAsync(convId!, t => t.Any(x => x.Role == "assistant"));
+        Assert.Contains(turns, t => t.Role == "user" && t.Text == "hello agent");
+        Assert.Contains(turns, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
+
+        // The conversation is bound to the agent persona (ADR 0003).
+        var binding = await (await _client.GetAsync($"/api/conversations/{convId}/agent"))
+            .Content.ReadFromJsonAsync<AgentBinding>();
+        Assert.NotNull(binding);
+        Assert.Equal(agentId, binding!.AgentId);
+    }
+
+    // AC5: missing or unknown X-Api-Key → 401 (fail closed).
+    [Fact]
+    public async Task AgentRun_MissingOrUnknownKey_Returns401()
+    {
+        using var noKey = await AgentRunAsync(apiKey: null, "hi");
+        Assert.Equal(HttpStatusCode.Unauthorized, noKey.StatusCode);
+
+        using var badKey = await AgentRunAsync("sk_agent_not-a-real-key", "hi");
+        Assert.Equal(HttpStatusCode.Unauthorized, badKey.StatusCode);
+    }
+
+    // AC6: regenerating a key invalidates the old one — the new key runs (202), the old key → 401.
+    [Fact]
+    public async Task AgentRun_RegeneratedKey_Works_OldKeyRejected()
+    {
+        var (agentId, oldKey) = await CreateAgentAsync();
+
+        var regenerated = (await (await _client.PutAsJsonAsync($"/api/agents/{agentId}",
+            new AgentUpsertRequest("Runner", "", "gpt-4o", "You are a runner.", RegenerateKey: true)))
+            .Content.ReadFromJsonAsync<AgentSaveResponse>())!;
+        var newKey = regenerated.ApiKey;
+        Assert.False(string.IsNullOrEmpty(newKey));
+        Assert.NotEqual(oldKey, newKey);
+
+        using var withNew = await AgentRunAsync(newKey!, "hi");
+        Assert.Equal(HttpStatusCode.Accepted, withNew.StatusCode);
+
+        using var withOld = await AgentRunAsync(oldKey, "hi");
+        Assert.Equal(HttpStatusCode.Unauthorized, withOld.StatusCode);
+    }
+
+    // AC9: an image handed to agent-run rides the run and lands on the user turn in the new conversation.
+    [Fact]
+    public async Task AgentRun_WithImage_AttachesToTurn()
+    {
+        var (_, apiKey) = await CreateAgentAsync();
+
+        using var res = await AgentRunAsync(apiKey, "describe this",
+            (new byte[] { 1, 2, 3, 4 }, "image/png", "pic.png"));
+        Assert.Equal(HttpStatusCode.Accepted, res.StatusCode);
+        var convId = (await res.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("conversationId").GetString()!;
+
+        var turns = await PollMessagesAsync(convId, t => t.Any(x => x.Role == "assistant"));
+        var userTurn = Assert.Single(turns, t => t.Role == "user");
+        Assert.NotNull(userTurn.Attachments);
+        Assert.Contains(userTurn.Attachments!, a => a.FileName == "pic.png");
+    }
+
+    // AC10: a supported document handed to agent-run → 202, and its text is ingested for retrieval
+    // under the run's conversation owner key (the same process-global in-memory index the grain queries).
+    [Fact]
+    public async Task AgentRun_WithDocument_RegistersForRag()
+    {
+        var (_, apiKey) = await CreateAgentAsync();
+
+        using var res = await AgentRunAsync(apiKey, "what does the doc say",
+            (TestDocuments.SampleTwoPagePdf(), DocumentMediaTypes.Pdf, "guide.pdf"));
+        Assert.Equal(HttpStatusCode.Accepted, res.StatusCode);
+        var convId = (await res.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("conversationId").GetString()!;
+
+        // Ingestion runs synchronously in the request (before the 202), so the chunk is indexed now.
+        var index = new InMemoryDocumentIndex();
+        var query = (await new DeterministicEmbeddingGenerator().GenerateAsync(["magrathea"]))[0].Vector;
+        var hits = await index.SearchAsync($"local-dev/{convId}", query, topK: 3);
+        Assert.Contains(hits, h => h.FileName == "guide.pdf");
+    }
+
+    // AC11: a batch with an unsupported (or oversize) file is rejected WHOLE (400) and no conversation
+    // is created (constraint 13) — automation retries cleanly rather than getting a half-processed run.
+    [Fact]
+    public async Task AgentRun_BadFile_Rejects400_NoConversation()
+    {
+        var (_, apiKey) = await CreateAgentAsync();
+        var before = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!.Count;
+
+        using var res = await AgentRunAsync(apiKey, "hi",
+            (new byte[] { 1, 2, 3 }, "application/octet-stream", "malware.exe"));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+
+        var after = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!.Count;
+        Assert.Equal(before, after);
+    }
+
+    // Creates an agent and returns its id + the once-shown raw API key.
+    private async Task<(string Id, string ApiKey)> CreateAgentAsync(string name = "Runner")
+    {
+        var body = (await (await _client.PostAsJsonAsync("/api/agents",
+            new AgentUpsertRequest(name, "", "gpt-4o", "You are a runner.")))
+            .Content.ReadFromJsonAsync<AgentSaveResponse>())!;
+        return (body.Agent.Id, body.ApiKey!);
+    }
+
+    // POSTs multipart/form-data to /api/agent-run: a 'prompt' field, an optional X-Api-Key header, and
+    // zero or more 'file' parts. Mirrors how external automation calls the endpoint.
+    private async Task<HttpResponseMessage> AgentRunAsync(
+        string? apiKey, string prompt, params (byte[] Bytes, string ContentType, string FileName)[] files)
+    {
+        var form = new MultipartFormDataContent { { new StringContent(prompt), "prompt" } };
+        foreach (var (bytes, contentType, fileName) in files)
+        {
+            var part = new ByteArrayContent(bytes);
+            part.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+            form.Add(part, "file", fileName);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agent-run") { Content = form };
+        if (apiKey is not null)
+        {
+            request.Headers.Add("X-Api-Key", apiKey);
+        }
+
+        return await _client.SendAsync(request);
+    }
+
+    // Polls a conversation's history until <paramref name="until"/> holds or a bound elapses — the
+    // agent-run turn runs in the background (OneWay), so the reply is not present the instant 202 returns.
+    private async Task<List<ChatTurn>> PollMessagesAsync(string convId, Func<List<ChatTurn>, bool> until)
+    {
+        List<ChatTurn> turns = [];
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            turns = (await _client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{convId}/messages"))!;
+            if (until(turns))
+            {
+                return turns;
+            }
+
+            await Task.Delay(100);
+        }
+
+        return turns;
     }
 }

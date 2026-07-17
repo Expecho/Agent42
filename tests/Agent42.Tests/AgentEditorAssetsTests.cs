@@ -32,6 +32,22 @@ public sealed class AgentEditorAssetsTests
         Assert.Contains("continuous: agentContinuousInput.checked", app);
     }
 
+    [Fact] // ADR 0022 — the editor exposes a regenerate control and reveals the once-shown key on save.
+    public async Task AgentEditor_HasApiKeyRegenerateAndReveal()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _client.GetStringAsync("/app.js");
+
+        // The key section, regenerate button and reveal target exist in the agent form.
+        Assert.Contains("id=\"agentKeySection\"", html);
+        Assert.Contains("id=\"agentRegenerateKeyBtn\"", html);
+        Assert.Contains("id=\"agentKeyValue\"", html);
+
+        // The regenerate control sends the regenerate flag, and saveAgent reveals a returned raw key once.
+        Assert.Contains("payload.regenerateKey = true", app);
+        Assert.Contains("body.apiKey", app);
+    }
+
     [Fact] // AC5 — continuous starts route onto a deterministic id AND resume the existing history.
     public async Task AgentEditor_ContinuousRoutesToDeterministicConversationId_AndResumes()
     {
