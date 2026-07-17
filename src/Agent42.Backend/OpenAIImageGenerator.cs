@@ -5,9 +5,15 @@ namespace Agent42.Backend;
 
 /// <summary>
 /// Production <see cref="IImageGenerationService"/> (ADR 0020) over the OpenAI SDK <see cref="ImageClient"/>:
-/// text-to-image via <c>GenerateImageAsync</c>, image-to-image via <c>GenerateImageEditAsync</c>, both asking
-/// for raw bytes (<c>ResponseFormat = GeneratedImageFormat.Bytes</c>) so the grain can persist them to blob
-/// storage and never inline them into the 2 MB session (ADR 0004).
+/// text-to-image via <c>GenerateImageAsync</c>, image-to-image via <c>GenerateImageEditAsync</c>. The grain
+/// persists the returned BYTES to blob storage and never inlines them into the 2 MB session (ADR 0004).
+///
+/// <para><b>Do NOT set <c>ResponseFormat</c>.</b> The current OpenAI image model <c>gpt-image-1</c> REJECTS a
+/// <c>response_format</c> parameter with <c>HTTP 400 unknown_parameter</c> (it always returns base64), while
+/// the older <c>dall-e-*</c> models default to a hosted URL. So we send no <c>response_format</c> and resolve
+/// the result either way in <see cref="ResolveBytesAsync"/>: prefer the inline bytes (<c>gpt-image-1</c>), else
+/// download the URL (<c>dall-e</c>). Sending <c>response_format</c> unconditionally broke every <c>gpt-image-1</c>
+/// endpoint (observed on the wire).</para>
 ///
 /// <para>The <see cref="ImageClient"/> is built the SAME transport way as
 /// <see cref="MultiProviderChatClientFactory.Provider.OpenAICompatible"/> — the SDK's own
@@ -22,32 +28,55 @@ namespace Agent42.Backend;
 /// </summary>
 public sealed class OpenAIImageGenerator(ImageClient client) : IImageGenerationService
 {
+    // Shared, for the URL-response fallback only (dall-e-style models return a short-lived hosted URL, not
+    // inline bytes). A plain static HttpClient — NOT a named/DI one — so it does not inherit the
+    // AddServiceDefaults retry pipeline (gotcha) and does not exhaust sockets. Plain GET, no auth header, so it
+    // never carries the app's managed identity. The URL comes from the user's OWN configured image provider
+    // (config, not a model/request choice), so it stays off the fetch_web_page SSRF path (ADR 0018).
+    private static readonly HttpClient Http = new();
+
     public async Task<Agent42.Agents.GeneratedImage> GenerateAsync(
         string prompt, ImageInput? input, CancellationToken cancellationToken = default)
     {
+        OpenAI.Images.GeneratedImage image;
         if (input is null)
         {
-            // Text-to-image. Bytes, not a URL: the grain owns storage, and a provider URL would be a second,
-            // short-lived source we'd have to re-fetch (contrast the model-fetched chat image URL, ADR 0004).
-            var result = await client.GenerateImageAsync(
-                prompt,
-                new ImageGenerationOptions { ResponseFormat = GeneratedImageFormat.Bytes },
-                cancellationToken);
-            var bytes = result.Value.ImageBytes.ToArray();
-            return new Agent42.Agents.GeneratedImage(bytes, ImageMediaTypes.DetectMediaType(bytes));
+            // Text-to-image. No ResponseFormat (see the class remarks — gpt-image-1 400s on it).
+            var result = await client.GenerateImageAsync(prompt, new ImageGenerationOptions(), cancellationToken);
+            image = result.Value;
+        }
+        else
+        {
+            // Image-to-image (edit): the SDK wants a stream + a filename (media type is inferred from it).
+            using var stream = new MemoryStream(input.Bytes);
+            var edited = await client.GenerateImageEditAsync(
+                stream, "input" + ImageMediaTypes.ExtensionFor(input.MediaType), prompt,
+                new ImageEditOptions(), cancellationToken);
+            image = edited.Value;
         }
 
-        // Image-to-image (edit): the SDK wants a stream + a filename (media type is inferred from it).
-        using var stream = new MemoryStream(input.Bytes);
-        var edited = await client.GenerateImageEditAsync(
-            stream,
-            "input" + ImageMediaTypes.ExtensionFor(input.MediaType),
-            prompt,
-            new ImageEditOptions { ResponseFormat = GeneratedImageFormat.Bytes },
-            cancellationToken);
-        var editedBytes = edited.Value.ImageBytes.ToArray();
-        // Sniff the RETURNED format rather than assuming PNG: a non-OpenAI OpenAI-compatible endpoint may
-        // return JPEG/WebP, and a wrong Content-Type would then be stored + served (critic Minor-1).
-        return new Agent42.Agents.GeneratedImage(editedBytes, ImageMediaTypes.DetectMediaType(editedBytes));
+        var bytes = await ResolveBytesAsync(image, cancellationToken);
+        // Sniff the RETURNED format rather than assuming PNG: an OpenAI-compatible endpoint may return
+        // JPEG/WebP, and a wrong Content-Type would then be stored + served (critic Minor-1).
+        return new Agent42.Agents.GeneratedImage(bytes, ImageMediaTypes.DetectMediaType(bytes));
+    }
+
+    // gpt-image-1 returns inline b64 bytes; dall-e defaults to a hosted URL. Prefer bytes; else download the
+    // URL (see the class remarks for why no ResponseFormat is sent, which is what makes both shapes possible).
+    private static async Task<byte[]> ResolveBytesAsync(
+        OpenAI.Images.GeneratedImage image, CancellationToken cancellationToken)
+    {
+        if (image.ImageBytes is not null)
+        {
+            return image.ImageBytes.ToArray();
+        }
+
+        if (image.ImageUri is not null)
+        {
+            return await Http.GetByteArrayAsync(image.ImageUri, cancellationToken);
+        }
+
+        throw new InvalidOperationException(
+            "The image endpoint returned neither inline image bytes nor a URL.");
     }
 }

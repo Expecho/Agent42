@@ -2,7 +2,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 // Cosmos DB backs the agent grain state (emulator when running locally).
 var cosmos = builder.AddAzureCosmosDB("cosmos")
-    .RunAsEmulator();
+    .RunAsEmulator(e => e.WithLifetime(ContainerLifetime.Persistent));
 
 // Seed the emulator with the same database and containers that infra/modules/cosmos.bicep
 // pre-creates in prod. Both Orleans providers run with IsResourceCreationEnabled = false

@@ -28,9 +28,12 @@ inpainting masks, and image generation on the Foundry/Responses hosted-tools pat
 ## Step-0 spike (pinned OpenAI 2.12.0 + Microsoft.Agents.AI 1.13 — what it established)
 A throwaway file-based app (`dotnet run`, repo-pinned versions) settled four facts that decided the
 mechanism, mirroring how ADR 0013/0014 recorded their spikes:
-1. **Text-to-image returns bytes.** `OpenAIClient.GetImageClient(model).GenerateImageAsync(prompt,
-   new ImageGenerationOptions { ResponseFormat = GeneratedImageFormat.Bytes }, ct)` → a
-   `GeneratedImage` with `BinaryData ImageBytes`.
+1. **Text-to-image returns bytes.** `OpenAIClient.GetImageClient(model).GenerateImageAsync(prompt, options,
+   ct)` → a `GeneratedImage` with `BinaryData ImageBytes`. **Runtime correction (post-merge, observed on the
+   wire):** do **NOT** set `ResponseFormat` — `gpt-image-1` rejects `response_format` with `HTTP 400
+   unknown_parameter` (it always returns base64), while `dall-e-*` defaults to a hosted URL. The generator
+   therefore sends no `response_format` and resolves inline bytes **or** downloads the URL. See the
+   "Image request shape" gotcha.
 2. **Edit surface.** `GenerateImageEditAsync(Stream image, string imageFilename, string prompt,
    ImageEditOptions options, ct)` — input is a **stream + filename** (media type inferred), the
    image-to-image path.

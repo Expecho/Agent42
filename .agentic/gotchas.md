@@ -436,8 +436,19 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0020-image-generation-model-capability.md`
 - **Verified:** 2026-07-17
 
-### The image path sends NO `api-version` — so an Azure/Foundry image endpoint won't work as OpenAICompatible
+### Image request shape: send NO `response_format` (gpt-image-1 400s), and NO `api-version` (Azure won't work)
 
+- **`response_format` must NOT be sent.** The current OpenAI image model **`gpt-image-1` rejects
+  `response_format` with `HTTP 400 unknown_parameter`** ("Unknown parameter: 'response_format'") — it always
+  returns base64 — while the older `dall-e-*` models accept it and otherwise default to a hosted **URL**. The
+  first cut of `OpenAIImageGenerator` set `ResponseFormat = GeneratedImageFormat.Bytes` unconditionally, which
+  **broke every `gpt-image-1` endpoint** (observed on the wire, HTTP 400). The fix: send an empty
+  `ImageGenerationOptions()`/`ImageEditOptions()` (no `response_format`) and resolve the result **either way** —
+  prefer inline `ImageBytes` (`gpt-image-1`), else download `ImageUri` (`dall-e`, via a plain static
+  `HttpClient` — not a named/DI one, so it dodges the retry-pipeline gotcha; the URL is the user's own
+  configured provider's, so it stays off the SSRF path per ADR 0018). Don't "restore" `ResponseFormat` to
+  force bytes — it regresses `gpt-image-1`.
+- **The image path also sends NO `api-version` — so an Azure/Foundry image endpoint won't work as OpenAICompatible.**
 - **Claim:** image generation (ADR 0020) rides `Provider.OpenAICompatible`'s plain `OpenAIClient`
   (`OpenAIClient(...).GetImageClient(model)`), the SAME client shape as the OpenAI-compatible *chat* path —
   **not** the Azure SDK. A spike against the pinned `OpenAI 2.12.0` (capturing the outbound request URI with
@@ -453,7 +464,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   OpenAI-compatible endpoints and puts Foundry image gen out of scope. Adding Azure image support later means
   a Foundry-flavored image path (an `api-version` policy + the deployment URL), analogous to how the Responses
   chat path already does its `api-key`-header + `/openai/v1` handling (ADR 0014/0017) — not a config tweak.
-- **Evidence:** `src/Agent42.Backend/OpenAIImageGenerator.cs` (the SDK `ImageClient` calls),
+- **Evidence:** `src/Agent42.Backend/OpenAIImageGenerator.cs` (no `ResponseFormat`; `ResolveBytesAsync`
+  bytes-or-URL fallback; the SDK `ImageClient` calls),
   `src/Agent42.Backend/ChatClientFactory.cs` (`Provider.OpenAICompatible` builds the client image gen reuses),
   `.agentic/decisions/0020-image-generation-model-capability.md` (Foundry image gen out of scope)
 - **Verified:** 2026-07-17
