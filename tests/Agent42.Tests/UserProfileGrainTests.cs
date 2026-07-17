@@ -39,6 +39,26 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
         Assert.Equal("nl-NL", (await reactivated.GetAsync()).PreferredLanguage);
     }
 
+    // AC11 (ADR 0021): the user's default selectable-tools set persists and survives reactivation, and
+    // language + EnabledTools are independent (saving one preserves the other via the record `with`).
+    [Fact]
+    public async Task UserProfile_RoundTripsEnabledTools_AndSurvivesReactivation()
+    {
+        const string user = "profile-tools-user";
+        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
+
+        var saved = await profile.SaveAsync(new UserProfile("de-DE", "system", [ToolCatalog.WebSearch, ToolCatalog.Scheduling]));
+        Assert.Equal("de-DE", saved.PreferredLanguage);
+        Assert.Equal(new[] { ToolCatalog.WebSearch, ToolCatalog.Scheduling }, saved.EnabledTools);
+
+        await profile.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        var reactivated = _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
+        var reread = await reactivated.GetAsync();
+        Assert.Equal("de-DE", reread.PreferredLanguage);
+        Assert.Equal(new[] { ToolCatalog.WebSearch, ToolCatalog.Scheduling }, reread.EnabledTools);
+    }
+
     [Fact]
     public async Task UserProfile_TrimsAndCapsLanguageTag()
     {

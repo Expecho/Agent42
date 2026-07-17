@@ -129,6 +129,10 @@
             <select class="model__select" id="modelSelect" aria-label="Model" disabled></select>
           </label>
           <span class="agent-lock" id="agentLabel" hidden></span>
+          <!-- Per-conversation tool selection (ADR 0021). Shown only on a regular chat — an agent chat's
+               tools come from its snapshot, so the button hides under the same lock as the model picker. -->
+          <button class="model__tools" id="toolsBtn" type="button" hidden
+                  title="Choose which tools the assistant may use in this conversation">// tools</button>
           <!-- Location is granted from Preferences → General now (ADR 0012 amended), not the composer. -->
           <p class="composer__hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</p>
         </div>
@@ -176,6 +180,12 @@
         <span class="agent-form__label">// continuous chat</span>
       </label>
       <p class="agent-form__note">All chats started from this agent share one ongoing history.</p>
+
+      <section class="agent-form__section">
+        <span class="agent-form__label">// tools</span>
+        <div class="tools-checks" id="agentToolChecks"></div>
+        <p class="agent-form__note">Which tools chats started from this agent may use. The model still only receives a tool it supports.</p>
+      </section>
 
       <div class="agent-form__actions">
         <button class="agent-form__btn" type="button" id="agentCancelBtn">Cancel</button>
@@ -227,6 +237,12 @@
           </div>
           <p class="agent-form__note">Lets Agent 42 answer questions about where you are. Granted per device from your browser; turn it off in your browser's site settings.</p>
         </section>
+
+        <section class="agent-form__section">
+          <span class="agent-form__label">// default tools</span>
+          <div class="tools-checks" id="profileToolChecks"></div>
+          <p class="agent-form__note">The default tools for every new regular chat. You can still change tools inside a chat.</p>
+        </section>
       </div>
 
       <div class="agent-form__panel" role="tabpanel" id="panelProviders" aria-labelledby="tabProviders" hidden>
@@ -243,6 +259,21 @@
       <div class="agent-form__actions">
         <button class="agent-form__btn" type="button" id="profileCancelBtn">Cancel</button>
         <button class="agent-form__btn agent-form__btn--primary" type="submit" id="profileSaveBtn">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Per-conversation tool selection (ADR 0021). Changes apply live (a PUT on every toggle); scoped to
+       non-agent chats — an agent chat's tools come from its bind snapshot. Reuses agent-dialog styling. -->
+  <dialog class="agent-dialog" id="toolsDialog">
+    <form class="agent-form" id="toolsForm">
+      <h2 class="agent-form__title">Tools for this chat</h2>
+      <section class="agent-form__section">
+        <div class="tools-checks" id="chatToolChecks"></div>
+        <p class="agent-form__note">Turn tools on or off for this conversation. The model is still only sent a tool it supports; code interpreter needs a Responses-API model.</p>
+      </section>
+      <div class="agent-form__actions">
+        <button class="agent-form__btn agent-form__btn--primary" type="button" id="toolsDoneBtn">Done</button>
       </div>
     </form>
   </dialog>

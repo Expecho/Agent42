@@ -219,4 +219,17 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   the interface is **`IImageGenerationService`** because M.E.AI 1.13 ships a colliding `IImageGenerator`. All
   in the "assistant generated image is id-keyed" gotcha. **Headline consequence:** generating sends the prompt
   — and for edits the **input image bytes** — outside the Entra tenant (extends ADR 0013's egress).
+- Selectable tools (ADR 0021): a user chooses **which tools** an assistant may use, remembered at three
+  layers — a **user default** (Preferences → default tools, every new regular chat), a **per-conversation
+  override** (composer "Tools" popover, non-agent chats only), and a **per-agent** set (agent editor,
+  snapshotted into the conversation like ADR 0003). The selectable set is a curated catalog of **keys**
+  (`ToolCatalog`, the single source of truth, exposed via `GET /api/tools`): `web_search`, `location`,
+  `scheduling`, `skills`, `code_interpreter`; `get_date` and document RAG stay always-on. `EnabledTools`
+  is a nullable list of keys on `UserProfile`/`AgentDefinition`/`AgentBinding`/`AgentGrainState` where
+  **`null == all`** (no migration); the grain resolves **override ?? user-default ?? all** and then
+  **intersects with model capability** — selection can only *narrow*, never grant (a text-only model still
+  gets none; `code_interpreter` still needs a hosted model). Two things to read before touching this: the
+  `null == all` sentinel and the **user-default-fetch-before-first-`BuildAgent`** ordering hazard (both in
+  the "Selectable tools" gotcha); and that disabling `skills` must **drop the `AgentSkillsProvider`** (it is
+  a tool), while RAG must stay (the "`AgentSkillsProvider` is a TOOL" gotcha).
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

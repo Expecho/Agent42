@@ -59,6 +59,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // to pick it up without waiting for a reactivation.
     private string _userId = null!;
 
+    // The user's DEFAULT selectable-tools set (ADR 0021), read ONCE on activation from IUserProfileGrain —
+    // null means "all selectable tools" (the null==all sentinel). It is the middle layer of the resolution
+    // override ?? default ?? all (see EffectiveEnabledTools): a per-conversation override or an agent snapshot
+    // in _state.State.EnabledTools beats it. Read on activation (before the first BuildAgent), mirroring how
+    // the default model resolves on activation — so a Preferences change reflects in a warm regular chat only
+    // on its next activation (accepted staleness, ADR 0021).
+    private IReadOnlyList<string>? _userDefaultEnabledTools;
+
     /// <summary>
     /// The user's position for the turn currently being processed, or null (ADR 0012). Set at the top
     /// of <see cref="ChatAsync"/> from the position the browser sent with the request.
@@ -116,6 +124,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _modelId = string.IsNullOrEmpty(_chatClientFactory.DefaultModelId)
             ? ""
             : (_state.State.DeploymentName ?? _chatClientFactory.DefaultModelId);
+
+        // Resolve the user's DEFAULT selectable-tools set (ADR 0021) BEFORE the first BuildAgent below —
+        // BuildAgent reads it (via EffectiveEnabledTools) and ReceiveReminder reuses that same _agent, so
+        // fetching it later would have the first chat turn AND every reminder turn on this activation
+        // silently register all tools and ignore the user's default. Same ordering hazard the
+        // _chatClientFactory resolution above guards against for a different field.
+        _userDefaultEnabledTools = (await GrainFactory.GetGrain<IUserProfileGrain>(_userId).GetAsync()).EnabledTools;
+
         _agent = BuildAgent(_modelId);
 
         _session = _state.State.SerializedSession is { Length: > 0 } serialized
@@ -235,6 +251,22 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             tools.Add(fetchWebPage);
         }
 
+        // User selection layer (ADR 0021): keep only the tools whose catalog key is in the effective set
+        // (override ?? user-default ?? all). This runs AFTER the ADR 0015 hosted swap — HostedWebSearchTool
+        // and HostedCodeInterpreterTool are named `web_search`/`code_interpreter`, so they filter by the same
+        // keys as the shims. get_date is always kept (it has no key). This is INTERSECTED with capability
+        // below (Tools = SupportsTools ? … : []) — a text-only model still gets none, and code_interpreter
+        // only survives on a hosted model where it was added at all. The skills provider is filtered in the
+        // AIContextProviders switch, not here (it is a context provider, not in this list).
+        var enabled = EffectiveEnabledTools().ToHashSet(StringComparer.Ordinal);
+        tools = [.. tools.Where(t => ToolCatalog.IsToolEnabled(t.Name, enabled))];
+
+        // AgentSkillsProvider IS a tool (it exposes load_skill), so a user disabling `skills` must DROP the
+        // provider, not just hide a label — leaving it on hands the model a load_skill schema it can't use,
+        // the same trap the no-tools gate closes. It is gated by BOTH capability and selection; the RAG
+        // TextSearchProvider is NOT a tool and stays on whenever documents are present, regardless of either.
+        var skillsEnabled = capabilities.SupportsTools && enabled.Contains(ToolCatalog.Skills);
+
         // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
         // state at bind time; a normal chat falls back to the default Agent 42 persona.
         // Old Cosmos state has null persona fields, so existing chats fall back too.
@@ -262,7 +294,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 // still receives a function schema it cannot handle. The TextSearchProvider is NOT a
                 // tool: it injects excerpts before the call, so it stays on regardless of capability, and
                 // a document conversation keeps working on a no-tools model.
-                AIContextProviders = (capabilities.SupportsTools, _state.State.DocumentNames.Count > 0) switch
+                AIContextProviders = (skillsEnabled, _state.State.DocumentNames.Count > 0) switch
                 {
                     (true, true) => [skillsProvider, BuildDocumentSearchProvider()],
                     (true, false) => [skillsProvider],
@@ -281,6 +313,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 }),
             });
     }
+
+    // The tools this conversation may use, resolved three-layer (ADR 0021): a per-conversation override or an
+    // agent snapshot (_state.State.EnabledTools) wins; else the user's default read on activation; else all
+    // selectable tools (the null==all sentinel, today's behaviour). This is INTENT only — BuildAgent still
+    // intersects it with model capability, which stays the authoritative security gate (ADR 0013/0015).
+    private IReadOnlyList<string> EffectiveEnabledTools()
+        => _state.State.EnabledTools
+            ?? _userDefaultEnabledTools
+            ?? ToolCatalog.AllSelectableToolKeys;
 
     // Builds the always-on document-retrieval context provider (ADR 0008). Its search callback embeds
     // the query and asks the owner-scoped IDocumentIndex for the top matches — the same path the removed
@@ -356,6 +397,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _state.State.SystemPrompt = binding.SystemPrompt;
         _state.State.DeploymentName = binding.Model;
 
+        // Snapshot the agent's tools as a CONCRETE set (ADR 0021/0003): a null binding materializes to
+        // all-selectable, so the persona is self-contained and never inherits the USER's per-chat default.
+        // Sanitized so a stale/garbage key stored on an old agent can't reach state.
+        _state.State.EnabledTools =
+            [.. ToolCatalog.Sanitize(binding.EnabledTools ?? ToolCatalog.AllSelectableToolKeys)!];
+
         // Rebuild the agent so the pinned persona + model take effect, mirroring the
         // model-switch path in ChatAsync: snapshot the session, rebuild, restore. Binding
         // runs on a brand-new empty session, but copying that shape keeps the rebuild path
@@ -384,8 +431,32 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public Task<AgentBinding?> GetAgentBindingAsync()
         => Task.FromResult(_state.State.AgentId is { Length: > 0 } id
-            ? new AgentBinding(id, _state.State.AgentName ?? "", _state.State.SystemPrompt ?? "", _modelId)
+            ? new AgentBinding(
+                id, _state.State.AgentName ?? "", _state.State.SystemPrompt ?? "", _modelId,
+                _state.State.EnabledTools)
             : null);
+
+    public async Task SetEnabledToolsAsync(IReadOnlyList<string>? tools)
+    {
+        // Server-side authority: drop unknown/invented keys before persisting; null stays null (inherit).
+        _state.State.EnabledTools = ToolCatalog.Sanitize(tools)?.ToList();
+
+        // Rebuild the agent so the new selection reaches the model from the next turn — same
+        // snapshot→rebuild→restore→write shape as RegisterDocumentAsync and BindAgentAsync. Do NOT invent a
+        // new rebuild path. A no-op on an empty session; the write is what makes it survive deactivation.
+        var snapshot = await _agent.SerializeSessionAsync(_session);
+        _agent = BuildAgent(_modelId);
+        _session = await _agent.DeserializeSessionAsync(snapshot);
+
+        await _state.WriteStateAsync();
+
+        _logger.LogInformation(
+            "Agent grain {GrainKey} set enabled tools to [{Tools}]",
+            this.GetPrimaryKeyString(), _state.State.EnabledTools is null ? "all" : string.Join(",", _state.State.EnabledTools));
+    }
+
+    public Task<IReadOnlyList<string>> GetEnabledToolsAsync()
+        => Task.FromResult<IReadOnlyList<string>>([.. EffectiveEnabledTools()]);
 
     public async Task RegisterDocumentAsync(string fileName)
     {

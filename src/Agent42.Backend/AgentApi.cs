@@ -66,7 +66,8 @@ public static class AgentApi
                 if (definition is not null)
                 {
                     await agent.BindAgentAsync(new AgentBinding(
-                        definition.Id, definition.Name, definition.SystemPrompt, definition.Model));
+                        definition.Id, definition.Name, definition.SystemPrompt, definition.Model,
+                        definition.EnabledTools));
                 }
 
                 model = null;
@@ -193,6 +194,27 @@ public static class AgentApi
         app.MapGet("/api/models", async (IUserModelCatalogProvider catalogs, HttpContext http, CancellationToken ct) =>
             await (await catalogs.GetForUserAsync(http.GetUserId(), ct)).GetAsync(ct));
 
+        // The selectable-tools catalog (ADR 0021): the curated keys the UI renders as checkbox groups in
+        // Preferences, the agent editor and the composer popover. A static catalog (no user scope) — the
+        // single source of truth lives in ToolCatalog, capability gating still happens server-side.
+        app.MapGet("/api/tools", () => Results.Json(ToolCatalog.Descriptors));
+
+        // The EFFECTIVE tools for one conversation (override ?? user-default ?? all), so the composer popover
+        // can restore its checkboxes when the conversation is reopened.
+        app.MapGet("/api/conversations/{conversationId}/tools", async (string conversationId, IGrainFactory grains, HttpContext http) =>
+            Results.Json(await grains.GetGrain<IAgentGrain>(AgentKey(http.GetUserId(), conversationId)).GetEnabledToolsAsync()));
+
+        // Sets the per-conversation tool override (ADR 0021) and returns the resulting effective set. The
+        // grain sanitizes unknown keys; the UI represents "all" as the full explicit list (never null), so a
+        // PUT is always an explicit selection. Scoped to non-agent chats in the UI — an agent chat's tools
+        // come from the bind snapshot, which would clobber a pre-first-turn override.
+        app.MapPut("/api/conversations/{conversationId}/tools", async (string conversationId, ToolSelectionRequest request, IGrainFactory grains, HttpContext http) =>
+        {
+            var agent = grains.GetGrain<IAgentGrain>(AgentKey(http.GetUserId(), conversationId));
+            await agent.SetEnabledToolsAsync(request.Tools);
+            return Results.Json(await agent.GetEnabledToolsAsync());
+        });
+
         // ————— stored agents (per-user personas) —————
 
         // The signed-in user's stored agents, most recently updated first.
@@ -204,7 +226,7 @@ public static class AgentApi
         {
             var created = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition("", request.Name, request.Description, request.Model, request.SystemPrompt,
-                    default, default, request.Continuous));
+                    default, default, request.Continuous, request.EnabledTools));
             return Results.Json(created);
         });
 
@@ -213,7 +235,7 @@ public static class AgentApi
         {
             var updated = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition(id, request.Name, request.Description, request.Model, request.SystemPrompt,
-                    default, default, request.Continuous));
+                    default, default, request.Continuous, request.EnabledTools));
             return Results.Json(updated);
         });
 
@@ -233,17 +255,22 @@ public static class AgentApi
         app.MapGet("/api/profile", async (IGrainFactory grains, HttpContext http) =>
             Results.Json(await grains.GetGrain<IUserProfileGrain>(http.GetUserId()).GetAsync()));
 
-        // Saves the signed-in user's profile and returns the stored value (as JSON). Merges onto the
-        // stored profile so an OMITTED field keeps its current value — a stale client (old cached
-        // app.js in a second tab) that PUTs a language-only save must not reset the saved theme.
+        // Saves the signed-in user's profile and returns the stored value (as JSON). READ-MODIFY-WRITE with
+        // absent-means-keep (ADR 0021 + ADR 0005): the profile record holds several independent preferences
+        // now (language, Theme, EnabledTools), and each has its own endpoint/dialog. A null field on the
+        // request means "leave it as stored", so a language-only save never wipes the theme or the tool
+        // default and vice-versa — the UI never sends null to mean "reset" (a stale client with old cached
+        // app.js in a second tab that PUTs a language-only save must not reset the saved theme). Tool keys
+        // are sanitized server-side.
         app.MapPut("/api/profile", async (ProfileUpdateRequest request, IGrainFactory grains, HttpContext http) =>
         {
             var grain = grains.GetGrain<IUserProfileGrain>(http.GetUserId());
             var current = await grain.GetAsync();
             var saved = await grain.SaveAsync(current with
             {
-                PreferredLanguage = request.PreferredLanguage,
+                PreferredLanguage = request.PreferredLanguage ?? current.PreferredLanguage,
                 Theme = request.Theme ?? current.Theme,
+                EnabledTools = request.EnabledTools is null ? current.EnabledTools : ToolCatalog.Sanitize(request.EnabledTools),
             });
             return Results.Json(saved);
         });
@@ -388,16 +415,23 @@ public record DocumentUploadResult(string Kind, string FileName, string MediaTyp
 
 // Client payload for creating (POST) or updating (PUT) a stored agent. The id and
 // timestamps are owned by the registry grain, so they aren't part of the request.
-// Continuous is the history-mode flag (ADR 0016); a trailing default so an old-shape
-// client that omits it stores false = per-chat.
+// Continuous is the history-mode flag (ADR 0016); EnabledTools is the agent's selectable-tools
+// set (ADR 0021, a list of ToolCatalog keys, null = all). Both are trailing defaults so an
+// old-shape client that omits them stores false = per-chat, null = all tools.
 public record AgentUpsertRequest(string Name, string Description, string Model, string SystemPrompt,
-    bool Continuous = false);
+    bool Continuous = false, IReadOnlyList<string>? EnabledTools = null);
 
-// Client payload for PUT /api/profile: the preferred-language BCP-47 tag the user picked
-// ("" = use the device default). More preference fields will be added here as the profile grows.
-// Theme is nullable: absent in the JSON body → keep the stored value (see the PUT /api/profile
-// merge). The current frontend always sends a concrete choice; only a stale client omits it.
-public record ProfileUpdateRequest(string PreferredLanguage, string? Theme = null);
+// Client payload for PUT /api/profile. Every field is nullable-absent because the handler does
+// read-modify-write with absent-means-keep (ADR 0021 + ADR 0005): PreferredLanguage is the BCP-47 tag
+// ("" = device default, null = keep stored); Theme is "system"|"light"|"dark" (null = keep stored);
+// EnabledTools is the user's default selectable-tools set (list of ToolCatalog keys, null = keep stored).
+// The UI never sends null to mean "reset".
+public record ProfileUpdateRequest(string? PreferredLanguage = null, string? Theme = null, IReadOnlyList<string>? EnabledTools = null);
+
+// Client payload for PUT /api/conversations/{id}/tools: the per-conversation tool override (ADR 0021), a
+// list of ToolCatalog keys. The UI always sends an explicit list (never null); unknown keys are dropped
+// server-side by the grain.
+public record ToolSelectionRequest(IReadOnlyList<string>? Tools);
 
 // Client payload for creating/updating a user provider (ADR 0018). ApiKey is WRITE-ONLY — it is
 // encrypted server-side and never echoed back; blank on an update means "keep the stored key". Kind is
