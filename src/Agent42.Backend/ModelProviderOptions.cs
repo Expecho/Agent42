@@ -41,6 +41,16 @@ public sealed class ConfiguredModel
     /// <c>true</c> here hands that URL to an endpoint outside the tenant for nothing.
     /// </summary>
     public bool SupportsVision { get; set; }
+
+    /// <summary>
+    /// Whether this is an <b>image-generation</b> model (ADR 0020): picking it makes a turn produce an
+    /// image (text-to-image, or image-to-image when the turn/conversation has an input image) via an
+    /// OpenAI-compatible <c>/v1/images</c> endpoint, instead of a chat reply. Default <c>false</c> — a
+    /// declared model is a chat model unless it says otherwise, and a discovered Foundry deployment is chat.
+    /// Egress note (ADR 0013): generating sends the prompt — and for edits the input image bytes — outside
+    /// the tenant, so this is opt-in per model.
+    /// </summary>
+    public bool SupportsImageGeneration { get; set; }
 }
 
 /// <summary>One configured provider.</summary>

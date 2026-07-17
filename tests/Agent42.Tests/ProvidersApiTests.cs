@@ -175,6 +175,39 @@ public sealed class ProvidersApiTests : IAsyncLifetime
         Assert.True(provider.GetProperty("hasKey").GetBoolean()); // key survived the keyless edit
     }
 
+    // AC10 (ADR 0020): a provider declaring an image-generation model is accepted, round-trips the
+    // supportsImageGeneration flag through GET, and still masks the key to hasKey.
+    [Fact]
+    public async Task Providers_AcceptImageModel_MaskKey()
+    {
+        var post = await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-img", new
+        {
+            key = "images",
+            kind = "OpenAICompatible",
+            displayName = "Image Provider",
+            endpoint = "https://images.example/v1",
+            apiKey = "img-secret",
+            models = new[]
+            {
+                new { id = "gpt-image-1", displayName = "GPT Image 1", supportsTools = false, supportsVision = false, supportsImageGeneration = true },
+            },
+            useResponsesApi = false,
+        }));
+        post.EnsureSuccessStatusCode();
+
+        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-img"));
+        var raw = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("img-secret", raw);
+
+        using var doc = JsonDocument.Parse(raw);
+        var provider = doc.RootElement.GetProperty("providers").EnumerateArray().Single();
+        Assert.True(provider.GetProperty("hasKey").GetBoolean());
+        var model = provider.GetProperty("models").EnumerateArray().Single();
+        Assert.Equal("gpt-image-1", model.GetProperty("id").GetString());
+        Assert.True(model.GetProperty("supportsImageGeneration").GetBoolean());
+        Assert.False(model.GetProperty("supportsVision").GetBoolean());
+    }
+
     // AC8: CRUD is per-user — one user cannot see another's providers, and delete only affects the owner.
     [Fact]
     public async Task Crud_IsPerUser()

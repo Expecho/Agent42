@@ -181,5 +181,6 @@ public static class ModelProviderBuilder
             Model: m.Id,
             Version: null,
             SupportsTools: m.SupportsTools,
-            SupportsVision: m.SupportsVision));
+            SupportsVision: m.SupportsVision,
+            SupportsImageGeneration: m.SupportsImageGeneration));
 }

@@ -11,7 +11,10 @@ public sealed record StoredModel(
     [property: Id(0)] string Id,
     [property: Id(1)] string? DisplayName,
     [property: Id(2)] bool SupportsTools,
-    [property: Id(3)] bool SupportsVision);
+    [property: Id(3)] bool SupportsVision,
+    // Trailing [Id(4)] with a default so an existing overlay (persisted before ADR 0020) deserializes it
+    // false with no migration — an image-generation model (ADR 0020), false = a chat model.
+    [property: Id(4)] bool SupportsImageGeneration = false);
 
 /// <summary>
 /// One provider in a user's overlay (ADR 0018). Mirrors the Backend's <c>ProviderOptions</c>, but:

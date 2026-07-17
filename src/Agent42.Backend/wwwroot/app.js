@@ -527,6 +527,25 @@
   const attachmentUrl = (convId, attachmentId) =>
     `/api/conversations/${encodeURIComponent(convId)}/attachments/${encodeURIComponent(attachmentId)}`;
 
+  // Adds a generated image (ADR 0020) to an assistant bubble, ABOVE its prose. Fetched through the same
+  // first-party display proxy by id as user images, so a live image stream event and a reloaded assistant
+  // turn render through one path — the page never holds a blob URL.
+  function addAgentImage(msg, convId, attachmentId, fileName) {
+    const bubble = msg.querySelector(".msg__bubble");
+    let gallery = bubble.querySelector(".msg__images");
+    if (!gallery) {
+      gallery = document.createElement("div");
+      gallery.className = "msg__images";
+      bubble.insertBefore(gallery, bubble.firstChild); // above the prose
+    }
+    const img = document.createElement("img");
+    img.className = "msg__image";
+    img.loading = "lazy";
+    img.alt = fileName || "generated image";
+    img.src = attachmentUrl(convId, attachmentId);
+    gallery.appendChild(img);
+  }
+
   /* ————— attachments (compose) ————— */
 
   // Uploads each picked file to the current conversation. The server branches on media type: an
@@ -762,8 +781,13 @@
       const turns = await msgRes.json();
       for (const turn of turns) {
         const msg = addMessage(turn.role === "user" ? "user" : "agent");
-        if (turn.role === "user") fillUserBubble(msg, turn.text, turn.attachments, id);
-        else setAgentMarkdown(msg, turn.text);
+        if (turn.role === "user") {
+          fillUserBubble(msg, turn.text, turn.attachments, id);
+        } else {
+          setAgentMarkdown(msg, turn.text);
+          // An assistant turn may carry a generated image (ADR 0020); re-render it above the prose.
+          for (const att of turn.attachments ?? []) addAgentImage(msg, id, att.id, att.fileName);
+        }
       }
       scrollToBottom();
       // Restore the model picker only after the history is on screen, so a failure
@@ -1076,6 +1100,10 @@
             addToolCall(agentMsg, chunk);
           } else if (chunk.type === "toolCallEnd") {
             completeToolCall(agentMsg, chunk);
+          } else if (chunk.type === "image") {
+            // An image-generation model produced an image (ADR 0020): render it live in the assistant
+            // bubble via the display proxy, exactly like it will re-render on reload.
+            addAgentImage(agentMsg, activeId, chunk.attachmentId);
           } else if (chunk.type === "done") {
             showUsage(agentMsg, chunk);
           }
@@ -1263,6 +1291,16 @@
     visionBox.checked = model?.supportsVision ?? false;
     vision.append(visionBox, document.createTextNode("vision"));
 
+    // Image generation (ADR 0020): picking this model produces an image instead of a chat reply. Off by
+    // default — a declared model is a chat model unless it says otherwise.
+    const image = document.createElement("label");
+    image.className = "provider-model-row__flag";
+    const imageBox = document.createElement("input");
+    imageBox.type = "checkbox";
+    imageBox.className = "agent-form__checkbox";
+    imageBox.checked = model?.supportsImageGeneration ?? false;
+    image.append(imageBox, document.createTextNode("image gen"));
+
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "provider-model-row__remove";
@@ -1270,7 +1308,7 @@
     remove.textContent = "×";
     remove.addEventListener("click", () => li.remove());
 
-    li.append(id, display, tools, vision, remove);
+    li.append(id, display, tools, vision, image, remove);
     providerModelList.appendChild(li);
   }
 
@@ -1279,9 +1317,15 @@
     for (const row of providerModelList.querySelectorAll(".provider-model-row")) {
       const id = row.querySelector(".provider-model-row__id").value.trim();
       if (!id) continue; // an empty row is dropped, not sent
-      const [tools, vision] = row.querySelectorAll(".agent-form__checkbox");
+      const [tools, vision, image] = row.querySelectorAll(".agent-form__checkbox");
       const display = row.querySelector(".provider-model-row__display").value.trim();
-      models.push({ id, displayName: display || null, supportsTools: tools.checked, supportsVision: vision.checked });
+      models.push({
+        id,
+        displayName: display || null,
+        supportsTools: tools.checked,
+        supportsVision: vision.checked,
+        supportsImageGeneration: image.checked,
+      });
     }
     return models;
   }
