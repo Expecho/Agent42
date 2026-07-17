@@ -436,6 +436,28 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0020-image-generation-model-capability.md`
 - **Verified:** 2026-07-17
 
+### The image path sends NO `api-version` — so an Azure/Foundry image endpoint won't work as OpenAICompatible
+
+- **Claim:** image generation (ADR 0020) rides `Provider.OpenAICompatible`'s plain `OpenAIClient`
+  (`OpenAIClient(...).GetImageClient(model)`), the SAME client shape as the OpenAI-compatible *chat* path —
+  **not** the Azure SDK. A spike against the pinned `OpenAI 2.12.0` (capturing the outbound request URI with
+  a short-circuiting pipeline policy) confirmed the requests are exactly `POST {endpoint}/images/generations`
+  and `POST {endpoint}/images/edits` with **no `api-version` query parameter** (with `endpoint` ending
+  `/v1`, that is `/v1/images/generations`). `api-version` is an **Azure-ism** added only by
+  `AzureOpenAIClient`, which is used solely on the Foundry *chat* path — never here. Consequence: a real
+  OpenAI-compatible image endpoint (OpenAI itself, or a self-hosted vLLM/Ollama-style server implementing the
+  `/images/generations` + `/images/edits` shape) works with no `api-version`, which is correct for it — but an
+  **Azure OpenAI / Foundry image deployment configured as an `OpenAICompatible` provider will fail**, because
+  Azure requires BOTH `?api-version=…` AND a different URL shape
+  (`/openai/deployments/{deployment}/images/generations`). This is why ADR 0020 scopes image gen to
+  OpenAI-compatible endpoints and puts Foundry image gen out of scope. Adding Azure image support later means
+  a Foundry-flavored image path (an `api-version` policy + the deployment URL), analogous to how the Responses
+  chat path already does its `api-key`-header + `/openai/v1` handling (ADR 0014/0017) — not a config tweak.
+- **Evidence:** `src/Agent42.Backend/OpenAIImageGenerator.cs` (the SDK `ImageClient` calls),
+  `src/Agent42.Backend/ChatClientFactory.cs` (`Provider.OpenAICompatible` builds the client image gen reuses),
+  `.agentic/decisions/0020-image-generation-model-capability.md` (Foundry image gen out of scope)
+- **Verified:** 2026-07-17
+
 ### The Foundry provider's endpoint + ARM coordinates are INHERITED — never copy them into `Models:`
 
 > **Amended by ADR 0019 (2026-07-17):** the app **no longer ships a baseline `foundry` chat provider** —
