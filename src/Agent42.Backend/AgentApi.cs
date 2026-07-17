@@ -233,11 +233,18 @@ public static class AgentApi
         app.MapGet("/api/profile", async (IGrainFactory grains, HttpContext http) =>
             Results.Json(await grains.GetGrain<IUserProfileGrain>(http.GetUserId()).GetAsync()));
 
-        // Saves the signed-in user's profile and returns the stored value (as JSON).
+        // Saves the signed-in user's profile and returns the stored value (as JSON). Merges onto the
+        // stored profile so an OMITTED field keeps its current value — a stale client (old cached
+        // app.js in a second tab) that PUTs a language-only save must not reset the saved theme.
         app.MapPut("/api/profile", async (ProfileUpdateRequest request, IGrainFactory grains, HttpContext http) =>
         {
-            var saved = await grains.GetGrain<IUserProfileGrain>(http.GetUserId())
-                .SaveAsync(new UserProfile(request.PreferredLanguage));
+            var grain = grains.GetGrain<IUserProfileGrain>(http.GetUserId());
+            var current = await grain.GetAsync();
+            var saved = await grain.SaveAsync(current with
+            {
+                PreferredLanguage = request.PreferredLanguage,
+                Theme = request.Theme ?? current.Theme,
+            });
             return Results.Json(saved);
         });
 
@@ -388,7 +395,9 @@ public record AgentUpsertRequest(string Name, string Description, string Model, 
 
 // Client payload for PUT /api/profile: the preferred-language BCP-47 tag the user picked
 // ("" = use the device default). More preference fields will be added here as the profile grows.
-public record ProfileUpdateRequest(string PreferredLanguage);
+// Theme is nullable: absent in the JSON body → keep the stored value (see the PUT /api/profile
+// merge). The current frontend always sends a concrete choice; only a stale client omits it.
+public record ProfileUpdateRequest(string PreferredLanguage, string? Theme = null);
 
 // Client payload for creating/updating a user provider (ADR 0018). ApiKey is WRITE-ONLY — it is
 // encrypted server-side and never echoed back; blank on an update means "keep the stored key". Kind is
