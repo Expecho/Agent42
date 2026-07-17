@@ -39,6 +39,7 @@
   const profileDialog = document.getElementById("profileDialog");
   const profileForm = document.getElementById("profileForm");
   const profileLanguage = document.getElementById("profileLanguage");
+  const profileTheme = document.getElementById("profileTheme");
   const profileCancelBtn = document.getElementById("profileCancelBtn");
 
   const providerList = document.getElementById("providerList");
@@ -97,7 +98,15 @@
 
   // The last profile fetched from the server. The server is the source of truth; this is
   // only a render cache, always reconciled against a fresh GET/PUT response.
-  let profile = { preferredLanguage: "" };
+  let profile = { preferredLanguage: "", theme: "system" };
+
+  // Theme engine (ADR 0005 field #2). The server profile is the source of truth; THEME_KEY is
+  // only a pre-paint cache the inline head script reads to avoid a dark flash. applyTheme resolves
+  // "system" via matchMedia and, only for "system", keeps a live OS-follow listener registered.
+  const THEME_KEY = "agent42.theme";
+  let systemThemeMedia = null;      // the (prefers-color-scheme: dark) MediaQueryList, when following
+  let onSystemThemeChange = null;   // its change handler, so it can be removed on an explicit choice
+  let profileSaved = false;         // set by saveProfile so the dialog's close handler skips the revert
 
   // Stops live speech dictation. Reassigned by the speech-input wiring below when the Web
   // Speech API is available; stays a no-op when it isn't (e.g. Firefox). Called at the top
@@ -1137,6 +1146,49 @@
 
   /* ————— profile / preferences ————— */
 
+  // Paint an already-resolved theme ("light"|"dark"): set data-theme on <html> and sync the
+  // mobile browser-chrome color. Kept separate so the OS-follow listener can repaint cheaply.
+  function paintTheme(resolved) {
+    document.documentElement.dataset.theme = resolved;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = resolved === "dark" ? "#100f0d" : "#f4efe4";
+  }
+
+  // Resolve a stored choice to the explicit theme actually painted.
+  function resolveTheme(choice) {
+    if (choice === "light" || choice === "dark") return choice;
+    return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  // Apply a theme choice ("system"|"light"|"dark"): paint it, write the pre-paint cache, and —
+  // only for "system" — (re)register a live OS-follow listener (removed for an explicit choice).
+  function applyTheme(choice) {
+    const c = choice === "light" || choice === "dark" || choice === "system" ? choice : "system";
+    paintTheme(resolveTheme(c));
+    try { localStorage.setItem(THEME_KEY, c); } catch { /* private mode — cache is best-effort */ }
+
+    if (systemThemeMedia && onSystemThemeChange) {
+      systemThemeMedia.removeEventListener("change", onSystemThemeChange);
+      systemThemeMedia = null;
+      onSystemThemeChange = null;
+    }
+    if (c === "system") {
+      systemThemeMedia = matchMedia("(prefers-color-scheme: dark)");
+      onSystemThemeChange = () => paintTheme(resolveTheme("system"));
+      systemThemeMedia.addEventListener("change", onSystemThemeChange);
+    }
+  }
+
+  // Boot the theme: re-apply the cached choice (the head script painted it but registered no
+  // OS-follow listener), then reconcile against the server profile, which wins (ADR 0005).
+  async function initTheme() {
+    let cached = "system";
+    try { cached = localStorage.getItem(THEME_KEY) ?? "system"; } catch { /* private mode */ }
+    applyTheme(cached);
+    await loadProfile();
+    if (profile && profile.theme) applyTheme(profile.theme);
+  }
+
   // GET the server-stored profile (the source of truth). Silent on failure — the panel still
   // opens with the device-language default.
   async function loadProfile() {
@@ -1169,13 +1221,15 @@
   async function openProfileDialog() {
     await loadProfile(); // reconcile against the server before showing the current value
     fillLanguageOptions(profileLanguage, profile.preferredLanguage ?? "");
+    profileTheme.value = profile.theme ?? "system";
+    profileSaved = false; // fresh edit session; the close handler reverts a preview unless we save
     loadProviders(); // refresh the user's providers list alongside the profile
     profileDialog.showModal();
     profileLanguage.focus();
   }
 
   async function saveProfile() {
-    const payload = { preferredLanguage: profileLanguage.value };
+    const payload = { preferredLanguage: profileLanguage.value, theme: profileTheme.value };
     try {
       const res = await fetch("/api/profile", {
         method: "PUT",
@@ -1183,14 +1237,23 @@
         body: JSON.stringify(payload),
       });
       if (!res.ok) return;
-      profile = await res.json(); // reconcile: the server trims/caps the tag
+      profile = await res.json(); // reconcile: the server trims/caps the tag and normalizes theme
     } catch { return; /* silo may be unreachable; leave the dialog open */ }
 
+    applyTheme(profile.theme ?? "system"); // commit the server-normalized value (paint + cache)
+    profileSaved = true;
     profileDialog.close();
   }
 
   openProfileBtn.addEventListener("click", () => openProfileDialog());
   profileCancelBtn.addEventListener("click", () => profileDialog.close());
+  // Live-preview the theme as the user changes the select (staged: not persisted until Save).
+  profileTheme.addEventListener("change", () => applyTheme(profileTheme.value));
+  // Revert an unsaved preview when the dialog closes via Cancel, Esc, or backdrop.
+  profileDialog.addEventListener("close", () => {
+    if (!profileSaved) applyTheme(profile.theme ?? "system");
+    profileSaved = false;
+  });
   profileForm.addEventListener("submit", (e) => {
     e.preventDefault();
     saveProfile();
@@ -1561,7 +1624,7 @@
   loadModels();
   refreshConversations();
   loadAgents();
-  loadProfile();
+  initTheme(); // loads the profile and reconciles the theme (server wins over the pre-paint cache)
   initLocation();
   input.focus();
 })();

@@ -16,6 +16,23 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Agent 42" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <script>
+    // No-FOUC: resolve the theme to an explicit data-theme on <html> BEFORE first paint, so the
+    // page never flashes dark before app.js runs. Source of truth is the server profile (ADR 0005);
+    // this localStorage value is only a pre-paint cache — app.js reconciles it against the profile
+    // on load. Kept tiny and inline on purpose (an external file is another round-trip = a flash).
+    (function () {
+      try {
+        var choice = localStorage.getItem("agent42.theme") || "system";
+        var dark = choice === "dark" ||
+          (choice === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        var theme = dark ? "dark" : "light";
+        document.documentElement.dataset.theme = theme;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = theme === "dark" ? "#100f0d" : "#f4efe4";
+      } catch (e) { /* localStorage/matchMedia unavailable → CSS dark default stands */ }
+    })();
+  </script>
 </head>
 <body>
   <div class="app">
@@ -190,6 +207,18 @@
           <select class="agent-form__input agent-form__select" id="profileLanguage"></select>
         </label>
         <p class="agent-form__note">Used as the default for future speech input. It doesn't translate the interface.</p>
+      </section>
+
+      <section class="agent-form__section">
+        <label class="agent-form__field">
+          <span class="agent-form__label">// theme</span>
+          <select class="agent-form__input agent-form__select" id="profileTheme">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+        <p class="agent-form__note">System follows your device. Applied instantly as a preview; Cancel reverts, Save keeps it across your devices.</p>
       </section>
 
       <section class="agent-form__section">

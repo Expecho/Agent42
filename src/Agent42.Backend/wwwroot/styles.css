@@ -17,9 +17,36 @@
   --amber-glow: rgba(255, 177, 61, 0.14);
   --green: #9ac06d;
   --red: #e06c5f;
+  /* Theme-sensitive surfaces (flip in the light block below); the amber/green accent
+     glows stay literal — they sit over amber/green elements and read on both themes. */
+  --backdrop: rgba(6, 5, 4, 0.6);      /* modal / mobile scrim */
+  --shadow: rgba(0, 0, 0, 0.6);        /* raised-dialog drop shadow */
+  --chip-btn-bg: rgba(11, 10, 9, 0.82); /* attachment "remove" button scrim (holds a --ink glyph) */
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --serif: "Newsreader", Georgia, "Times New Roman", serif;
   --radius: 10px;
+}
+
+/* Light theme — warm-paper mirror of the amber-phosphor identity. JS resolves the user's
+   choice (incl. "system" via matchMedia) to an explicit data-theme on <html>, so this block
+   never needs a prefers-color-scheme query; the dark :root above is the default/fallback. */
+:root[data-theme="light"] {
+  --bg: #f4efe4;
+  --bg-raised: #fbf7ee;
+  --bg-inset: #e9e2d2;
+  --line: #d6cdb8;
+  --line-soft: #e2dac7;
+  --ink: #2a2620;
+  --ink-dim: #5c5647;
+  --ink-faint: #8a8270;
+  --amber: #a86611;        /* darkened — #ffb13d fails AA contrast on pale bg */
+  --amber-deep: #7f4e0a;
+  --amber-glow: rgba(168, 102, 17, 0.12);
+  --green: #5a7d3a;
+  --red: #bf3c30;
+  --backdrop: rgba(60, 54, 44, 0.4);   /* warm, lighter scrim */
+  --shadow: rgba(60, 48, 30, 0.22);    /* softer paper shadow */
+  --chip-btn-bg: rgba(251, 247, 238, 0.85); /* light scrim so the dark --ink glyph stays legible */
 }
 
 * { box-sizing: border-box; }
@@ -891,7 +918,7 @@ body {
   place-items: center;
   border: 0;
   border-radius: 50%;
-  background: rgba(11, 10, 9, 0.82);
+  background: var(--chip-btn-bg);
   color: var(--ink);
   font: 400 14px/1 var(--mono);
   cursor: pointer;
@@ -1072,11 +1099,11 @@ body {
   color: var(--ink);
   padding: 0;
   width: min(520px, 92vw);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 24px 80px var(--shadow);
 }
 
 .agent-dialog::backdrop {
-  background: rgba(6, 5, 4, 0.6);
+  background: var(--backdrop);
 }
 
 .agent-form {
@@ -1449,7 +1476,7 @@ kbd {
     position: fixed;
     inset: 0;
     z-index: 20;
-    background: rgba(6, 5, 4, 0.6);
+    background: var(--backdrop);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.25s ease;

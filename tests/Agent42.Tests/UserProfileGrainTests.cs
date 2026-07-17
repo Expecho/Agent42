@@ -60,6 +60,38 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
         Assert.NotSame(UserProfile.Empty, UserProfile.Empty);
     }
 
+    // Theme (ADR 0005 field #2): server-side source of truth. Valid choices round-trip;
+    // anything else — including the null a legacy pre-Theme profile deserializes as — clamps
+    // to "system", so the client never receives an unrenderable value.
+    [Theory]
+    [InlineData("light", "light")]
+    [InlineData("dark", "dark")]
+    [InlineData("system", "system")]
+    [InlineData("  LIGHT  ", "light")]   // trimmed + lowercased
+    [InlineData("neon", "system")]        // unknown → system
+    [InlineData("", "system")]            // blank → system
+    public async Task UserProfile_NormalizesTheme(string input, string expected)
+    {
+        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>($"profile-theme-{expected}-{input.Trim()}");
+
+        var saved = await profile.SaveAsync(new UserProfile("en-US", input));
+        Assert.Equal(expected, saved.Theme);
+        Assert.Equal(expected, (await profile.GetAsync()).Theme);
+    }
+
+    [Fact]
+    public async Task UserProfile_DefaultTheme_IsSystem()
+    {
+        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-theme-default");
+
+        // Never saved → empty default carries "system".
+        Assert.Equal("system", (await profile.GetAsync()).Theme);
+
+        // Saved without touching theme → still "system".
+        var saved = await profile.SaveAsync(new UserProfile("en-US"));
+        Assert.Equal("system", saved.Theme);
+    }
+
     [Fact]
     public async Task UserProfile_IsIsolatedPerUser()
     {

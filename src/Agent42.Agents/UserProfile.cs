@@ -12,7 +12,12 @@ namespace Agent42.Agents;
 [GenerateSerializer]
 [Alias("Agent42.Agents.UserProfile")]
 public sealed record UserProfile(
-    [property: Id(0)] string PreferredLanguage)
+    [property: Id(0)] string PreferredLanguage,
+    // UI theme choice: "system" | "light" | "dark". Client-side render concern, but stored
+    // server-side per ADR 0005 so it follows the user across devices; localStorage is only a
+    // pre-paint cache. Legacy state (saved before this field) deserializes Theme as null —
+    // the grain and the client both treat null/blank/unknown as "system".
+    [property: Id(1)] string Theme = "system")
 {
     /// <summary>
     /// The canonical default profile: no preferences set yet. Returns a fresh instance on
@@ -20,5 +25,5 @@ public sealed record UserProfile(
     /// can write into a grain-state instance, and a shared static default would leak that
     /// mutation across every grain that started from it.
     /// </summary>
-    public static UserProfile Empty => new("");
+    public static UserProfile Empty => new("", "system");
 }
