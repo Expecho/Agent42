@@ -273,16 +273,17 @@ Cleared by the critic (no change needed): the test-impact assessment (existing f
 Executed on `feature/remove-baseline-chat-providers` (base `main` @ 876a290). All 9 steps landed; the full
 suite is green (295 passed). Divergences and additions beyond the plan-as-written:
 
-1. **Removed the `githubModelsToken` / `GH_MODELS_TOKEN` infra wiring (beyond the plan's infra scope).**
+1. **Removed the operator-level GitHub Models token infra wiring (beyond the plan's infra scope).**
    The plan's infra section listed only the 4 chat-only `AzureOpenAI:*` params/env vars. But dropping the
-   `github` baseline provider from `appsettings.json` (Step 6) made the `githubModelsToken` →
-   `Models__Providers__github__ApiKey` wiring **actively harmful**, not merely dead: with no `github` block
-   declaring `Kind`/`Endpoint`, that env var would bind a `Models:Providers:github` node whose `Kind`
-   defaults to `AzureOpenAI` (enum 0) → `TryBuildProvider` builds it as a **Foundry** provider on the
-   inherited `AzureOpenAI:Endpoint` with the GitHub PAT as key → a non-empty, broken baseline provider,
-   re-breaking ADR 0019's empty-baseline invariant. So the whole `githubModelsToken` chain was removed from
-   `infra/main.bicep`, `infra/modules/container-app.bicep`, and `.github/workflows/deploy.yml`. GitHub Models
-   is now a per-user provider (ADR 0018). Captured in the new "Chat is fully per-user" gotcha.
+   `github` baseline provider from `appsettings.json` (Step 6) made the baseline GitHub Models token wiring
+   (a Bicep param → a Container App secret → its `Models__Providers__github__ApiKey` env var)
+   **actively harmful**, not merely dead: with no `github` block declaring `Kind`/`Endpoint`, that env var
+   would bind a `Models:Providers:github` node whose `Kind` defaults to `AzureOpenAI` (enum 0) →
+   `TryBuildProvider` builds it as a **Foundry** provider on the inherited `AzureOpenAI:Endpoint` with the
+   GitHub PAT as key → a non-empty, broken baseline provider, re-breaking ADR 0019's empty-baseline
+   invariant. So the whole token wiring was removed from `infra/main.bicep`,
+   `infra/modules/container-app.bicep`, and `.github/workflows/deploy.yml`. GitHub Models is now a per-user
+   provider (ADR 0018). Captured in the new "Chat is fully per-user" gotcha.
 
 2. **Extracted a shared `RebindModelAsync(modelId)` grain helper** rather than inlining the re-resolve
    rebind twice. Used by both the `ChatCoreAsync` no-model path and the `ReceiveReminder` guard; it does

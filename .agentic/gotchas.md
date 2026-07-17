@@ -548,9 +548,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **embedding** endpoint/key (`AzureOpenAI:Endpoint`/`ApiKey`/`EmbeddingDeploymentName`) for document RAG —
   it is the sole remaining availability path, still **fatal-if-blank** at startup and Bicep-`@minLength(32)`
   guarded. The chat-only `AzureOpenAI:*` keys (`DeploymentName`/`SubscriptionId`/`ResourceGroup`/`AccountName`)
-  and their Bicep params/env vars, plus the whole `githubModelsToken`/`GH_MODELS_TOKEN` →
-  `Models__Providers__github__ApiKey` wiring, were **removed** — leaving that wiring in place would
-  resurrect a broken baseline `github` provider (`ProviderKind` defaults to `AzureOpenAI`, so a keyed-but-
+  and their Bicep params/env vars, plus the whole operator-level GitHub Models token wiring (a Bicep param,
+  a Container App secret, and its `Models__Providers__github__ApiKey` env var), were **removed** — leaving
+  that wiring in place would resurrect a broken baseline `github` provider (`ProviderKind` defaults to
+  `AzureOpenAI`, so a keyed-but-
   blockless config node becomes a Foundry provider on the Azure endpoint with a GitHub PAT), re-breaking
   the empty-baseline invariant.
 - **The load-bearing design: a no-op `NoModelChatClient` keeps `_agent`/`_session` valid with no model.**
@@ -572,7 +573,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/ModelCatalog.cs` (empty-default ⇒ empty catalog), `src/Agent42.Backend/AgentApi.cs`
   (`ValidateProvider` ≥1-model rule), `src/Agent42.Backend/appsettings.json` (`Models:Providers: {}`),
   `src/Agent42.Backend/Program.cs` (no default derivation, no eager `GetClient(null)`), `infra/main.bicep`
-  + `infra/modules/container-app.bicep` (removed chat-only params/env vars + githubModelsToken),
+  + `infra/modules/container-app.bicep` (removed chat-only params/env vars + the operator GitHub Models token wiring),
   `src/Agent42.Backend/wwwroot/app.js` (`applyModelAvailability`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`NoModel_YieldsNotice_AndHistoryDoesNotThrow`,
   `NoModelThenProviderAdded_ReResolvesAndReplies`, `RebindAfterRegainingModel_PreservesHistory`),

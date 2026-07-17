@@ -127,8 +127,8 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
 - Model providers (ADR 0013, credential mechanism amended by ADR 0017, **baseline removed by ADR 0019**):
   **Read this override first.** As of ADR 0019 the app ships **NO baseline chat provider** — `Models:Providers`
   is `{}`, chat is **entirely per-user** (ADR 0018), and there is **no operator default model**. So in the
-  bullet below: "the default stays Foundry", "serves on Foundry alone", the **`GH_MODELS_TOKEN`** prerequisite
-  and its wiring, the "blank Foundry key is **fatal** — Foundry is the availability path" rule, and the shipped
+  bullet below: "the default stays Foundry", "serves on Foundry alone", the baseline GitHub Models secret
+  prerequisite and its wiring, the "blank Foundry key is **fatal** — Foundry is the availability path" rule, and the shipped
   `foundry` provider's `Discover:false`/`gpt-5.4`/`AzureOpenAI:DeploymentName` details are all **superseded** —
   the availability path narrowed to the **embedding** key (`AzureOpenAI:ApiKey`, still fatal-if-blank), and a
   Foundry chat model is now something a **user** adds. A user with no provider gets an empty picker + gated
@@ -140,9 +140,9 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   in prod~~ (ADR 0019: GitHub Models is now a **user-added** provider, not a baseline one); Ollama/vLLM work
   by config alone. A model is named by a **qualified `provider:model` id split on the FIRST colon**
   (GitHub's own ids contain a `/`); a bare id is legacy and resolves against the default provider, which
-  is why this needed no state migration. ~~A `GH_MODELS_TOKEN` GitHub Actions secret is a manual
-  prerequisite~~ (ADR 0019 removed the baseline `github` provider **and** its `GH_MODELS_TOKEN` →
-  `Models__Providers__github__ApiKey` wiring — a user supplies their own PAT per-provider now). **The
+  is why this needed no state migration. ~~A GitHub Actions secret for the baseline GitHub Models provider
+  was a manual prerequisite~~ (ADR 0019 removed the baseline `github` provider **and** its operator-level
+  token wiring — a user supplies their own PAT per-provider now). **The
   headline consequence: picking a third-party model sends the conversation
   — document excerpts, image SAS URLs, the user's street address — outside the Entra tenant.** That is why
   the default stays Foundry and the pick is explicit. Four things to read before touching this: the

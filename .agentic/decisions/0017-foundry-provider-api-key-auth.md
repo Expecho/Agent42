@@ -85,7 +85,7 @@ heavily-referenced ADRs from the active set (the same trap `0007`'s `# partial` 
   throw lives in `ModelProviderBuilder.Build` (testable — `BlankFoundryKey_IsFatal`), and the Bicep
   param follows the availability-path **shape** of `searxngSecret` — unconditional secret + unconditional
   env + a `@minLength` (here `@minLength(32)`; `searxngSecret` itself uses 16) — **not** the optional
-  `githubModelsToken`/`googleMapsApiKey` `empty(x) ? []` shape.
+  `googleMapsApiKey` `empty(x) ? []` shape.
 - **One key, one source of truth.** Both the Foundry provider (via inheritance) and the embedding client
   read `AzureOpenAI:ApiKey`, threaded as a single `AzureOpenAI__ApiKey` Container App secret/env var —
   no second `Models__Providers__foundry__ApiKey`. Extends the endpoint-inheritance invariant to the key.
