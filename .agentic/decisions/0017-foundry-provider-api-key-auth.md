@@ -15,6 +15,14 @@ supersedes: 0013, 0014 (credential mechanism only)
 > persisted **encrypted** and best-effort (a user override that resolves blank falls back to the
 > baseline — never fatal). Everything else here stays authoritative. `status: accepted` on purpose
 > — see 0018's "Partial supersession" note.
+>
+> **Amended by [ADR 0019](0019-remove-baseline-chat-providers.md) (2026-07-17) —
+> availability-path scope narrowed to embeddings.** The app no longer ships a baseline Foundry
+> **chat** provider, so "blank baseline Foundry key is fatal" no longer applies to chat. The same
+> `AzureOpenAI:ApiKey` still authenticates the **embedding** client, which **is** the availability
+> path: a blank key (and `EmbeddingDeploymentName`) is still fatal at startup, and the Bicep
+> `@minLength(32)` guard stays. Read every "the Foundry key is the availability path" line here as
+> "the embedding key is the availability path". `status: accepted` on purpose.
 
 ## Context
 The Azure AI Foundry provider (ADR 0013) reached the model data plane with the container app's
@@ -77,7 +85,7 @@ heavily-referenced ADRs from the active set (the same trap `0007`'s `# partial` 
   throw lives in `ModelProviderBuilder.Build` (testable — `BlankFoundryKey_IsFatal`), and the Bicep
   param follows the availability-path **shape** of `searxngSecret` — unconditional secret + unconditional
   env + a `@minLength` (here `@minLength(32)`; `searxngSecret` itself uses 16) — **not** the optional
-  `githubModelsToken`/`googleMapsApiKey` `empty(x) ? []` shape.
+  `googleMapsApiKey` `empty(x) ? []` shape.
 - **One key, one source of truth.** Both the Foundry provider (via inheritance) and the embedding client
   read `AzureOpenAI:ApiKey`, threaded as a single `AzureOpenAI__ApiKey` Container App secret/env var —
   no second `Models__Providers__foundry__ApiKey`. Extends the endpoint-inheritance invariant to the key.

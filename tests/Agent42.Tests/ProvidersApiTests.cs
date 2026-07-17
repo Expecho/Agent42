@@ -130,6 +130,25 @@ public sealed class ProvidersApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, badKind.StatusCode);
     }
 
+    // AC8 (ADR 0019): a provider that declares NO models is rejected with 400 — a keyed-but-modelless
+    // provider would count toward providers.Count yet contribute no default, breaking "providers ⟺ a
+    // usable default exists".
+    [Fact]
+    public async Task RejectsProviderWithNoModels()
+    {
+        var response = await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-d", new
+        {
+            key = "modelless",
+            kind = "OpenAICompatible",
+            endpoint = "http://localhost:11434/v1",
+            apiKey = "k",
+            models = Array.Empty<object>(),
+        }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("at least one model", await response.Content.ReadAsStringAsync());
+    }
+
     // AC5 (over HTTP): editing without re-entering the key keeps the stored key (blank ApiKey = keep).
     [Fact]
     public async Task Put_BlankKey_KeepsStoredKey()
@@ -137,7 +156,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
         (await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-c", OllamaBody("original-key"))))
             .EnsureSuccessStatusCode();
 
-        // Update the display name, sending NO key.
+        // Update the display name, sending NO key (but the required ≥1 model — ADR 0019).
         var put = await _client.SendAsync(Request(HttpMethod.Put, "/api/providers/ollama", "user-c", new
         {
             key = "ollama",
@@ -145,6 +164,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
             displayName = "Renamed",
             endpoint = "http://localhost:11434/v1",
             apiKey = (string?)null,
+            models = new[] { new { id = "llama3.1", displayName = "Llama 3.1", supportsTools = true, supportsVision = false } },
         }));
         put.EnsureSuccessStatusCode();
 

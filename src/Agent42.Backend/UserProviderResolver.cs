@@ -109,22 +109,44 @@ public sealed class UserProviderResolver : IUserProviderResolver
         }
 
         return new ResolvedProviderSet(
-            providers, discovering, declared, EffectiveDefault(overlay, providers), overlay.Version);
+            providers, discovering, declared, EffectiveDefault(overlay, providers, declared), overlay.Version);
     }
 
-    // The overlay may pin a default, but only honour it when it names a provider that actually built —
-    // otherwise the factory's Resolve would throw resolving the default against a missing provider.
+    // Picks the effective default model, honouring a pinned default only when it names a provider that
+    // actually built — otherwise the factory's Resolve would throw resolving it against a missing provider.
+    // Order (ADR 0019): a valid overlay default → a valid baseline default → the first resolved declared
+    // model → "". The baseline now ships empty (its default is ""), so the first-declared-model fallback is
+    // what gives a user with a single self-configured provider a sensible default without pinning one; a
+    // non-empty provider set always declares ≥1 model (the API's ≥1-model rule), so this yields "" only for
+    // genuinely zero providers — an empty picker, not a bogus "" model.
     private string EffectiveDefault(
         UserProviderConfig overlay,
-        IReadOnlyDictionary<string, MultiProviderChatClientFactory.Provider> providers)
+        IReadOnlyDictionary<string, MultiProviderChatClientFactory.Provider> providers,
+        IReadOnlyList<ModelInfo> declared)
     {
-        if (string.IsNullOrWhiteSpace(overlay.Default))
+        if (NamesBuiltProvider(overlay.Default, providers))
+        {
+            return overlay.Default!;
+        }
+
+        if (NamesBuiltProvider(_baselineDefault, providers))
         {
             return _baselineDefault;
         }
 
-        var (providerKey, _) = ModelId.Parse(overlay.Default, "");
-        return providers.ContainsKey(providerKey) ? overlay.Default : _baselineDefault;
+        return declared.Count > 0 ? declared[0].Id : "";
+    }
+
+    private static bool NamesBuiltProvider(
+        string? modelId, IReadOnlyDictionary<string, MultiProviderChatClientFactory.Provider> providers)
+    {
+        if (string.IsNullOrWhiteSpace(modelId))
+        {
+            return false;
+        }
+
+        var (providerKey, _) = ModelId.Parse(modelId, "");
+        return providers.ContainsKey(providerKey);
     }
 
     // A stored (overlay) provider → the same ProviderOptions shape the baseline uses, with the API key

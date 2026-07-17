@@ -13,11 +13,6 @@ using OpenTelemetry.Trace;
 
 const string OtelSourceName = "Agent42.Backend";
 
-// The provider key the Azure AI Foundry account is configured under in appsettings' Models:Providers
-// map. Only used to qualify the inherited default model (see below); providers are otherwise
-// discovered from config, never named in code.
-const string FoundryProviderKey = "foundry";
-
 var builder = WebApplication.CreateBuilder(args);
 
 // OTel logging, metrics and tracing (OTLP exporter) via Aspire service defaults.
@@ -55,21 +50,19 @@ if (string.IsNullOrWhiteSpace(azureOpenAIEndpoint))
         "(e.g. https://<your-resource>.services.ai.azure.com).");
 }
 
-// The Azure OpenAI API key (ADR 0017): the SINGLE source that authenticates both the Foundry chat/
-// Responses provider (which inherits it, see ModelProviderBuilder) and the embedding client below.
-// It is the availability path, so a blank key fails at startup — same discipline as the endpoint above,
-// and mirrored by the Bicep @minLength guard. (ModelProviderBuilder also throws for the provider, but the
-// embedding client reads this key directly and never sees the Models: section, so validate it here too.)
+// The Azure OpenAI API key (ADR 0017, narrowed by ADR 0019): the app ships no baseline Foundry CHAT
+// provider any more (chat is fully per-user), so this key is now the availability path for EMBEDDINGS
+// only — the embedding client below reads it directly and never sees the Models: section. A blank key
+// still fails at startup (embeddings are the one remaining fixed model), same discipline as the endpoint
+// above and mirrored by the Bicep @minLength guard.
 var azureOpenAIApiKey = builder.Configuration["AzureOpenAI:ApiKey"];
 if (string.IsNullOrWhiteSpace(azureOpenAIApiKey))
 {
     throw new InvalidOperationException(
         "AzureOpenAI:ApiKey is not configured. Set it in user secrets or the AzureOpenAI__ApiKey " +
-        "environment variable (the Azure OpenAI resource key; ADR 0017 replaced managed identity for the " +
-        "Foundry data plane). It is a secret and must never be committed.");
+        "environment variable (the Azure OpenAI resource key; ADR 0019 — it authenticates the embedding " +
+        "client, the app's one fixed model). It is a secret and must never be committed.");
 }
-
-var defaultDeployment = builder.Configuration["AzureOpenAI:DeploymentName"] ?? "gpt-5.4";
 
 // The managed identity still drives the services that are NOT Azure OpenAI and cannot use the key:
 // blob storage (user-delegation SAS) and — kept for a future discovering provider — the ARM management
@@ -79,26 +72,15 @@ var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
     TenantId = builder.Configuration["AzureOpenAI:TenantId"],
 });
 
-// Model providers (ADR 0013). A conversation can run on any configured provider — Azure AI Foundry
-// with the managed identity, or any OpenAI-compatible endpoint with an API key (GitHub Models in
-// prod; an Ollama or vLLM endpoint works by config alone, with no code change).
-//
-// The default stays a FOUNDRY model, and that is a deliberate security position, not a default that
-// happened: a third-party model is opt-in per conversation, because picking one sends the session —
-// document excerpts (ADR 0008), image SAS URLs (ADR 0004) and the user's street address (ADR 0012) —
-// outside the Entra tenant.
+// Model providers (ADR 0013, availability floor removed by ADR 0019). The app ships NO baseline chat
+// provider — Models:Providers is empty in appsettings — so chat is entirely the per-user overlay
+// (ADR 0018): a user with none configured gets an empty picker and a gated composer, and their grain
+// stays valid via the no-op NoModelChatClient. There is no operator default model; a user who picks a
+// third-party endpoint they added still sends the session — document excerpts (ADR 0008), image SAS URLs
+// (ADR 0004), the user's street address (ADR 0012) — outside the Entra tenant, which is why the pick is
+// explicit per conversation. The empty baseline's Default stays "".
 var modelOptions = builder.Configuration.GetSection(ModelProvidersOptions.SectionName)
     .Get<ModelProvidersOptions>() ?? new ModelProvidersOptions();
-
-// The default model INHERITS AzureOpenAI:DeploymentName (which Bicep threads in) rather than being
-// hardcoded in appsettings — otherwise that env var would look authoritative and change nothing, the
-// same dead-config trap the SearXNG server.port gotcha describes. Setting Models:Default explicitly is
-// supported, and is the only way to default to a non-Foundry model — which would mean defaulting the
-// whole app to a third-party endpoint, so ADR 0013 keeps Foundry the default deliberately.
-if (string.IsNullOrWhiteSpace(modelOptions.Default))
-{
-    modelOptions.Default = ModelId.Qualify(FoundryProviderKey, defaultDeployment);
-}
 
 builder.Services.AddSingleton(new ArmClient(credential));
 
@@ -106,9 +88,10 @@ builder.Services.AddSingleton(new ArmClient(credential));
 // contributes — live in ModelProviderBuilder, not here: nothing in the test suite runs Program.cs.
 var models = ModelProviderBuilder.Build(modelOptions, builder.Configuration);
 
-// The BASELINE factory (the operator env providers). Still the availability floor and the eager
-// startup check below; the agent grain no longer consumes it directly — it goes through the per-user
-// layer (ADR 0018), which uses this same baseline as its input.
+// The BASELINE factory (the operator env providers). Now ships EMPTY (ADR 0019 removed the baseline
+// chat availability floor), so it hands out the no-op NoModelChatClient with DefaultModelId "". The agent
+// grain never consumes it directly — it goes through the per-user layer (ADR 0018), which uses this same
+// baseline as its input; an empty baseline means the per-user set is the ONLY source of chat providers.
 builder.Services.AddSingleton<IChatClientFactory>(sp => new MultiProviderChatClientFactory(
     models.Providers,
     modelOptions.Default,
@@ -350,10 +333,6 @@ builder.UseOrleans(silo =>
 });
 
 var app = builder.Build();
-
-// Construct the default chat client now (no network I/O) so configuration mistakes
-// surface at startup instead of failing the first grain activation.
-_ = app.Services.GetRequiredService<IChatClientFactory>().GetClient(null);
 
 // Say so once, loudly enough to find, when a provider was dropped for want of a key — otherwise
 // "the GitHub models aren't in the picker" is a silent mystery. Deliberately NOT a throw (ADR 0013):

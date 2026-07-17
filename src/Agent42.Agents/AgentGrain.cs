@@ -53,6 +53,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // providers are per-user, so this cannot be a process singleton — it is resolved per activation.
     private IChatClientFactory _chatClientFactory = null!;
 
+    // This grain's userId, retained from OnActivateAsync (ADR 0019). The factory is resolved once per
+    // activation, so a user who added their FIRST provider after this grain activated would still hold the
+    // empty factory — the no-model path in ChatCoreAsync/ReceiveReminder re-resolves GetForUserAsync(_userId)
+    // to pick it up without waiting for a reactivation.
+    private string _userId = null!;
+
     /// <summary>
     /// The user's position for the turn currently being processed, or null (ADR 0012). Set at the top
     /// of <see cref="ChatAsync"/> from the position the browser sent with the request.
@@ -99,10 +105,17 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // _chatClientFactory below — the DefaultModelId read on the next line, BuildAgent, and the ~8
         // sync call sites — dereferences it, so resolving it later would NRE (m4). The userId is
         // everything before the first '/' of the grain key ({userId}/{conversationId}, see AgentApi.AgentKey).
-        var userId = UserIdFromGrainKey(this.GetPrimaryKeyString());
-        _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(userId, cancellationToken);
+        _userId = UserIdFromGrainKey(this.GetPrimaryKeyString());
+        _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId, cancellationToken);
 
-        _modelId = _state.State.DeploymentName ?? _chatClientFactory.DefaultModelId;
+        // An empty factory (the user has configured no chat provider — ADR 0019) has DefaultModelId "".
+        // _modelId then stays "" REGARDLESS of a persisted DeploymentName: with no providers there is no
+        // client to run, so the no-model guards in ChatCoreAsync/ReceiveReminder must fire. BuildAgent still
+        // runs — against the no-op NoModelChatClient — so _agent/_session are always valid and every
+        // non-inference path (history, bind, register, reminder, rehydrate) keeps working unguarded.
+        _modelId = string.IsNullOrEmpty(_chatClientFactory.DefaultModelId)
+            ? ""
+            : (_state.State.DeploymentName ?? _chatClientFactory.DefaultModelId);
         _agent = BuildAgent(_modelId);
 
         _session = _state.State.SerializedSession is { Length: > 0 } serialized
@@ -424,6 +437,34 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _logger.LogInformation(
             "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s), location: {HasLocation})",
             this.GetPrimaryKeyString(), message.Length, attachments?.Count ?? 0, _turnLocation is not null);
+
+        // No model configured (ADR 0019). The factory is resolved once per activation, so a user who added
+        // their FIRST provider after this grain activated still holds the empty factory here — re-resolve to
+        // pick it up without a reactivation. If a model is now available, rebind onto it (history preserved)
+        // and fall through to the normal turn; if still none, tell the user to configure one and stop —
+        // never running the no-op client.
+        if (string.IsNullOrEmpty(_modelId))
+        {
+            _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId);
+            if (string.IsNullOrEmpty(_chatClientFactory.DefaultModelId))
+            {
+                yield return new AgentStreamEvent(
+                    AgentStreamEventType.TextDelta,
+                    Text: "_No model provider is configured. Add one in Preferences → model providers to "
+                        + "start chatting._\n\n");
+                yield return new AgentStreamEvent(AgentStreamEventType.Done);
+                yield break;
+            }
+
+            // Honour a model the request picked (the same save could have populated the picker), else the
+            // newly-resolved default. Null out `model` so the switch branch below doesn't repeat the rebuild.
+            await RebindModelAsync(string.IsNullOrWhiteSpace(model) ? _chatClientFactory.DefaultModelId : model);
+            model = null;
+
+            _logger.LogInformation(
+                "Agent grain {GrainKey} bound to model {Model} after a provider was configured",
+                this.GetPrimaryKeyString(), _modelId);
+        }
 
         if (!string.IsNullOrWhiteSpace(model) && model != _modelId)
         {
@@ -1068,6 +1109,23 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             return;
         }
 
+        // No model configured (ADR 0019): re-resolve in case the user added a provider since activation,
+        // exactly like ChatCoreAsync. A reminder that still finds no model is SKIPPED — never run the no-op
+        // client — so it simply doesn't fire until a provider exists (the user sees nothing, which is right).
+        if (string.IsNullOrEmpty(_modelId))
+        {
+            _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId);
+            if (string.IsNullOrEmpty(_chatClientFactory.DefaultModelId))
+            {
+                _logger.LogInformation(
+                    "Reminder '{Reminder}' fired for conversation {GrainKey} but no model provider is "
+                    + "configured; skipping.", reminderName, this.GetPrimaryKeyString());
+                return;
+            }
+
+            await RebindModelAsync(_chatClientFactory.DefaultModelId);
+        }
+
         // Refresh prior turns' image URLs before this model call too (a reminder can fire on a
         // long-warm grain whose SAS URLs have since expired) — same reason as ChatAsync.
         await RehydrateAttachmentUrlsAsync(
@@ -1208,6 +1266,25 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         if (removed > 0 && message.Contents.Count == 0)
         {
             message.Contents.Add(new TextContent(WithheldImagePlaceholder));
+        }
+    }
+
+    // Rebinds the conversation onto <paramref name="modelId"/>: snapshot → rebuild the agent against the
+    // new client → restore history → strip tool history on a downgrade. This is the no-model→model rebind
+    // of ADR 0019 (a provider was configured while this grain was already activated); it mirrors the
+    // inline snapshot/rebuild/restore of the picker-switch and bind paths, and applies the same
+    // no-tools-downgrade strip (ADR 0013) so a rebind onto a no-tools model can't replay tool content.
+    private async Task RebindModelAsync(string modelId)
+    {
+        var snapshot = await _agent.SerializeSessionAsync(_session);
+        _modelId = modelId;
+        _state.State.DeploymentName = modelId;
+        _agent = BuildAgent(modelId);
+        _session = await _agent.DeserializeSessionAsync(snapshot);
+
+        if (!_chatClientFactory.GetCapabilities(modelId).SupportsTools)
+        {
+            StripToolHistory();
         }
     }
 

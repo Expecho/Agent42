@@ -41,10 +41,6 @@ param searxngSecret string
 param googleMapsApiKey string = ''
 
 @secure()
-@description('GitHub PAT with the models:read scope, authorizing the GitHub Models provider (ADR 0013 — the GH_MODELS_TOKEN GitHub Actions secret; GITHUB_* is a reserved prefix Actions will not let you create). A manual prerequisite, and OPTIONAL for the same reason as googleMapsApiKey: no @minLength, empty default. With no token the backend skips the provider with a warning and serves on Azure Foundry alone, so an expired PAT cannot take the app down.')
-param githubModelsToken string = ''
-
-@secure()
 @description('Admin username for the Azure Container Registry (used for image pull).')
 param acrAdminUsername string
 
@@ -81,26 +77,14 @@ param azureOpenAIEndpoint string = 'https://agent42.services.ai.azure.com'
 
 @secure()
 @minLength(32)
-@description('Azure OpenAI resource API key (ADR 0017 — the AZURE_OPENAI_API_KEY GitHub Actions secret). A manual prerequisite. It authenticates BOTH the Foundry chat/Responses provider and the embedding client, replacing the managed identity for the Foundry data plane. @minLength is load-bearing exactly like searxngSecret: an absent GitHub secret expands to an EMPTY string, and because this key is now the availability path (the backend throws at startup without it), failing here at deployment validation beats a crash-looping revision in production. Not optional like githubModelsToken/googleMapsApiKey — Foundry is where the app serves from.')
+@description('Azure OpenAI resource API key (ADR 0017, narrowed by ADR 0019 — the AZURE_OPENAI_API_KEY GitHub Actions secret). A manual prerequisite. Since ADR 0019 the app ships no baseline Foundry chat provider (chat is fully per-user, ADR 0018), so this key authenticates the EMBEDDING client only — the one remaining fixed model. @minLength is load-bearing exactly like searxngSecret: an absent GitHub secret expands to an EMPTY string, and because embeddings are the availability path (the backend throws at startup without this key), failing here at deployment validation beats a crash-looping revision in production. Not optional like googleMapsApiKey — the embedding client is where document RAG serves from.')
 param azureOpenAIApiKey string
 
-@description('Model deployment name used for chat completions. Must be a deployment that exists in the AI Foundry account (gpt-4o is not deployed there; ADR 0017 spike, 2026-07-16).')
-param azureOpenAIDeploymentName string = 'gpt-5.4'
-
-@description('Embedding model deployment name used for document RAG (ADR 0007). Must exist in the AI Foundry account (a manual prerequisite the user creates); it is authenticated by the same azureOpenAIApiKey as chat (ADR 0017), no RBAC grant.')
+@description('Embedding model deployment name used for document RAG (ADR 0007). Must exist in the AI Foundry account (a manual prerequisite the user creates); it is authenticated by the same azureOpenAIApiKey (ADR 0017/0019), no RBAC grant.')
 param azureOpenAIEmbeddingDeploymentName string = 'text-embedding-3-large'
 
 @description('Entra ID tenant id used for DefaultAzureCredential when calling Azure OpenAI.')
 param azureOpenAITenantId string = '2250fce3-5bc9-4ae7-a5e9-58c510a422ec'
-
-@description('Subscription id of the Azure AI Foundry account backing the live model picker. Defaults to this deployment\'s subscription.')
-param azureOpenAISubscriptionId string = subscription().subscriptionId
-
-@description('Resource group of the Azure AI Foundry account backing the live model picker.')
-param azureOpenAIResourceGroup string = 'agent42'
-
-@description('Name of the Azure AI Foundry account backing the live model picker.')
-param azureOpenAIAccountName string = 'Agent42'
 
 @description('OTLP endpoint for OpenTelemetry export. Leave empty to disable OTLP export.')
 param otlpEndpoint string = ''
@@ -201,18 +185,13 @@ module containerApp 'modules/container-app.bicep' = {
     searxngMemory: searxngMemory
     searxngSecret: searxngSecret
     googleMapsApiKey: googleMapsApiKey
-    githubModelsToken: githubModelsToken
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint
     azureOpenAIApiKey: azureOpenAIApiKey
-    azureOpenAIDeploymentName: azureOpenAIDeploymentName
     azureOpenAIEmbeddingDeploymentName: azureOpenAIEmbeddingDeploymentName
     cosmosDocChunksContainerName: cosmosDocChunksContainerName
     azureOpenAITenantId: azureOpenAITenantId
-    azureOpenAISubscriptionId: azureOpenAISubscriptionId
-    azureOpenAIResourceGroup: azureOpenAIResourceGroup
-    azureOpenAIAccountName: azureOpenAIAccountName
     otlpEndpoint: otlpEndpoint
     authClientId: authClientId
     authClientSecret: authClientSecret
