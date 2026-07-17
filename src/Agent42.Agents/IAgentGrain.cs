@@ -59,6 +59,24 @@ public interface IAgentGrain : IGrainWithStringKey
     Task RegisterDocumentAsync(string fileName);
 
     /// <summary>
+    /// Sets the tools this conversation may use (ADR 0021) as a list of <see cref="ToolCatalog"/> keys —
+    /// a per-conversation override that beats the user's default. <c>null</c> resets to inherit ("all
+    /// selectable tools" via the user default). Unknown keys are dropped server-side. Rebuilds the agent
+    /// so the change takes effect from the next turn and persists it, surviving deactivation.
+    /// </summary>
+    [Alias("SetEnabledToolsAsync")]
+    Task SetEnabledToolsAsync(IReadOnlyList<string>? tools);
+
+    /// <summary>
+    /// Returns the <b>effective</b> selectable-tools set for this conversation — the concrete list of
+    /// <see cref="ToolCatalog"/> keys after resolving override ?? user-default ?? all (ADR 0021). Never
+    /// null, so the UI can render the current selection directly. Capability still gates what actually
+    /// reaches the model; this is the user-intent layer only.
+    /// </summary>
+    [Alias("GetEnabledToolsAsync")]
+    Task<IReadOnlyList<string>> GetEnabledToolsAsync();
+
+    /// <summary>
     /// Returns the visible conversation history (user and assistant turns), so a
     /// client can resume a conversation later.
     /// </summary>

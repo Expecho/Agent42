@@ -1057,6 +1057,54 @@ body {
   background: var(--amber-glow);
 }
 
+/* per-conversation tools button (ADR 0021): sits next to the model picker in the composer footer */
+.model__tools {
+  flex-shrink: 0;
+  font: 500 11.5px var(--mono);
+  letter-spacing: 0.03em;
+  color: var(--amber);
+  background-color: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 11px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.model__tools:hover { border-color: var(--amber-deep); }
+
+.model__tools:focus-visible {
+  outline: 0;
+  border-color: var(--amber-deep);
+  box-shadow: 0 0 0 1px var(--amber-deep), 0 0 18px var(--amber-glow);
+}
+
+/* checkbox grid shared by the agent dialog, preferences, and the per-chat tools popover */
+.tools-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  font: 500 12px var(--mono);
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.tool-check input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--amber-deep);
+  cursor: pointer;
+}
+
 /* ————— agent form dialog ————— */
 
 .agent-dialog {
