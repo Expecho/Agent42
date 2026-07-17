@@ -12,7 +12,6 @@
   const sendBtn = document.getElementById("sendBtn");
   const attachBtn = document.getElementById("attachBtn");
   const micBtn = document.getElementById("micBtn");
-  const locationBtn = document.getElementById("locationBtn");
   const fileInput = document.getElementById("fileInput");
   const attachmentPreview = document.getElementById("attachmentPreview");
   const modelSelect = document.getElementById("modelSelect");
@@ -41,6 +40,13 @@
   const profileLanguage = document.getElementById("profileLanguage");
   const profileTheme = document.getElementById("profileTheme");
   const profileCancelBtn = document.getElementById("profileCancelBtn");
+  const locationEnableBtn = document.getElementById("locationEnableBtn");
+  const locationStatus = document.getElementById("locationStatus");
+  // Preferences tabs: [tab button, its panel] pairs, in tablist order.
+  const profileTabs = [
+    [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
+    [document.getElementById("tabProviders"), document.getElementById("panelProviders")],
+  ];
 
   const providerList = document.getElementById("providerList");
   const addProviderBtn = document.getElementById("addProviderBtn");
@@ -983,16 +989,25 @@
     return lastFix;
   }
 
-  // The grant button is visible exactly when we could capture but are not yet allowed to.
+  // Reflects the location state in Preferences → General: status text + the Enable button, which
+  // shows exactly when we could capture but are not yet allowed to. Safe to call while the dialog
+  // is closed (updates hidden nodes) — driven on open and from the Permissions 'change' handler.
   async function updateLocationControl() {
-    if (!locationBtn) return;
-    locationBtn.hidden = !geolocationSupported || (await isCaptureAuthorized());
+    if (!locationStatus || !locationEnableBtn) return;
+    if (!geolocationSupported) {
+      locationStatus.textContent = "Not available in this browser";
+      locationEnableBtn.hidden = true;
+      return;
+    }
+    const authorized = await isCaptureAuthorized();
+    locationStatus.textContent = authorized ? "Sharing on" : "Off";
+    locationEnableBtn.hidden = authorized;
   }
 
   // The one place a browser permission prompt is ever triggered — on an explicit tap.
   async function requestLocationGrant() {
     if (!geolocationSupported) return;
-    locationBtn.disabled = true;
+    locationEnableBtn.disabled = true;
     try {
       lastFix = toFix(await readPosition());
       setStoredGrant(true); // Leg 2: only ever set after a capture actually succeeded.
@@ -1000,18 +1015,18 @@
     } catch (error) {
       handlePositionError(error);
     } finally {
-      locationBtn.disabled = false;
+      locationEnableBtn.disabled = false;
       await updateLocationControl();
     }
   }
 
   async function initLocation() {
     if (!geolocationSupported) {
-      if (locationBtn) locationBtn.hidden = true;
+      await updateLocationControl(); // paint "Not available" — do NOT gate this behind the early return
       return;
     }
 
-    locationBtn?.addEventListener("click", requestLocationGrant);
+    locationEnableBtn?.addEventListener("click", requestLocationGrant);
 
     // Leg 1 browsers tell us when the permission changes (granted in site settings, or revoked).
     const status = await geolocationPermissionStatus();
@@ -1218,11 +1233,41 @@
     select.value = selectedTag ?? "";
   }
 
+  // Activate the tab at profileTabs[index]: toggle aria-selected + roving tabindex on the tabs and
+  // `hidden` on the panels. `focus` moves keyboard focus to the newly selected tab (arrow-key nav).
+  function selectProfileTab(index, focus = false) {
+    profileTabs.forEach(([tab, panel], i) => {
+      const active = i === index;
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+      tab.tabIndex = active ? 0 : -1;
+      panel.hidden = !active;
+      if (active && focus) tab.focus();
+    });
+  }
+
+  profileTabs.forEach(([tab], i) => {
+    tab.addEventListener("click", () => selectProfileTab(i));
+    tab.addEventListener("keydown", (e) => {
+      const last = profileTabs.length - 1;
+      let next = null;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") next = i === last ? 0 : i + 1;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = i === 0 ? last : i - 1;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = last;
+      if (next !== null) {
+        e.preventDefault();
+        selectProfileTab(next, true);
+      }
+    });
+  });
+
   async function openProfileDialog() {
     await loadProfile(); // reconcile against the server before showing the current value
     fillLanguageOptions(profileLanguage, profile.preferredLanguage ?? "");
     profileTheme.value = profile.theme ?? "system";
     profileSaved = false; // fresh edit session; the close handler reverts a preview unless we save
+    selectProfileTab(0); // always open on General
+    updateLocationControl(); // refresh the location status/button for the current grant state
     loadProviders(); // refresh the user's providers list alongside the profile
     profileDialog.showModal();
     profileLanguage.focus();
