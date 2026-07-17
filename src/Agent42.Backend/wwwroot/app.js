@@ -58,6 +58,14 @@
   const providerError = document.getElementById("providerError");
   const providerCancelBtn = document.getElementById("providerCancelBtn");
 
+  // Selectable tools (ADR 0021): checkbox groups in the agent + preferences dialogs, and a per-chat popover.
+  const agentToolChecks = document.getElementById("agentToolChecks");
+  const profileToolChecks = document.getElementById("profileToolChecks");
+  const toolsBtn = document.getElementById("toolsBtn");
+  const toolsDialog = document.getElementById("toolsDialog");
+  const chatToolChecks = document.getElementById("chatToolChecks");
+  const toolsDoneBtn = document.getElementById("toolsDoneBtn");
+
   let conversations = [];
   let activeId = crypto.randomUUID();
   let streaming = false;
@@ -98,6 +106,12 @@
   // The last profile fetched from the server. The server is the source of truth; this is
   // only a render cache, always reconciled against a fresh GET/PUT response.
   let profile = { preferredLanguage: "" };
+
+  // The selectable-tools catalog (ADR 0021), fetched once from /api/tools: [{key,label,requiresHostedTools}].
+  let toolCatalog = [];
+  // The current conversation's effective tool selection (list of keys). Set on new/select; the composer
+  // popover renders from it and PUTs changes. "All" is the full explicit list — never null (server: null==all).
+  let chatTools = [];
 
   // Stops live speech dictation. Reassigned by the speech-input wiring below when the Web
   // Speech API is available; stays a no-op when it isn't (e.g. Firefox). Called at the top
@@ -404,6 +418,8 @@
     agentDescriptionInput.value = agent?.description ?? "";
     agentSystemPromptInput.value = agent?.systemPrompt ?? "";
     agentContinuousInput.checked = agent?.continuous ?? false;
+    // Null enabledTools (a new agent, or one saved before ADR 0021) means "all selectable tools".
+    renderToolChecks(agentToolChecks, agent?.enabledTools ?? allToolKeys());
     fillModelOptions(agentModelSelect);
     // Preselect the agent's model when editing, otherwise the server default. Uses the same helper as
     // the composer picker rather than a second copy of the append-if-missing logic.
@@ -420,6 +436,11 @@
       systemPrompt: agentSystemPromptInput.value.trim(),
       continuous: agentContinuousInput.checked,
     };
+    // The full explicit list (never null) — "all selected" is the whole list, per ADR 0021. But ONLY
+    // when the catalog actually loaded: if /api/tools failed, toolCatalog is [] and readToolChecks would
+    // return [] (= none), silently disabling every tool. Omit the field so the server keeps the default
+    // (a create then stores null == all) rather than storing an accidental empty set.
+    if (toolCatalog.length > 0) payload.enabledTools = readToolChecks(agentToolChecks);
     if (!payload.name || !payload.systemPrompt || !payload.model) return;
 
     const url = editingAgentId ? `/api/agents/${encodeURIComponent(editingAgentId)}` : "/api/agents";
@@ -455,11 +476,15 @@
     modelField.hidden = true;
     agentLabel.hidden = false;
     agentLabel.textContent = `⛓ ${name} · ${modelLabel(model)}`;
+    // An agent chat's tools come from its bind snapshot (ADR 0021), so the per-chat popover is hidden —
+    // a PUT before the first agent turn would be clobbered by the bind anyway.
+    toolsBtn.hidden = true;
   }
 
   function unlockPicker() {
     modelField.hidden = false;
     agentLabel.hidden = true;
+    toolsBtn.hidden = false;
   }
 
   /* ————— thread rendering ————— */
@@ -772,10 +797,11 @@
     setEmptyVisible(true);
 
     try {
-      const [msgRes, modelRes, agentRes] = await Promise.all([
+      const [msgRes, modelRes, agentRes, toolsRes] = await Promise.all([
         fetch(`/api/conversations/${encodeURIComponent(id)}/messages`),
         fetch(`/api/conversations/${encodeURIComponent(id)}/model`),
         fetch(`/api/conversations/${encodeURIComponent(id)}/agent`),
+        fetch(`/api/conversations/${encodeURIComponent(id)}/tools`),
       ]);
       if (!msgRes.ok) return;
       const turns = await msgRes.json();
@@ -793,6 +819,9 @@
       // Restore the model picker only after the history is on screen, so a failure
       // here can never prevent the conversation itself from rendering.
       if (modelRes.ok) setModel(await modelRes.json());
+      // Restore this conversation's effective tool selection for the popover (ADR 0021). Hidden on an
+      // agent chat, but harmless to hold the snapshot's set.
+      if (toolsRes.ok) chatTools = await toolsRes.json();
       // Then apply the agent binding — after the render + setModel, for the same reason.
       // The binding is already snapshotted server-side, so leave pendingAgentId null: a
       // resumed agent chat must never re-resolve (and rebind against) a deleted agent.
@@ -816,6 +845,8 @@
     activeId = crypto.randomUUID();
     activeAgentId = null;
     pendingAgentId = null;
+    // A new regular chat starts from the user's default tool set (ADR 0021); null profile default = all.
+    chatTools = profile.enabledTools ?? allToolKeys();
     clearPendingAttachments();
     unlockPicker();
     clearThread();
@@ -1169,13 +1200,20 @@
   async function openProfileDialog() {
     await loadProfile(); // reconcile against the server before showing the current value
     fillLanguageOptions(profileLanguage, profile.preferredLanguage ?? "");
+    // Null enabledTools (never saved, or saved before ADR 0021) means "all selectable tools".
+    renderToolChecks(profileToolChecks, profile.enabledTools ?? allToolKeys());
     loadProviders(); // refresh the user's providers list alongside the profile
     profileDialog.showModal();
     profileLanguage.focus();
   }
 
   async function saveProfile() {
+    // The endpoint does read-modify-write (absent-means-keep), so sending both fields never wipes either.
+    // enabledTools is the full explicit list — "all" is every key (ADR 0021) — but ONLY when the catalog
+    // loaded: if /api/tools failed, toolCatalog is [] and sending [] would wipe the default to "none".
+    // Omitting it then leaves the stored default untouched (absent-means-keep).
     const payload = { preferredLanguage: profileLanguage.value };
+    if (toolCatalog.length > 0) payload.enabledTools = readToolChecks(profileToolChecks);
     try {
       const res = await fetch("/api/profile", {
         method: "PUT",
@@ -1195,6 +1233,66 @@
     e.preventDefault();
     saveProfile();
   });
+
+  /* ————— selectable tools (ADR 0021) ————— */
+
+  // The catalog is the single source of truth in the backend (ToolCatalog); fetch it once and drive
+  // every checkbox group off it, so a new tool group appears in all three surfaces with no UI change.
+  async function loadTools() {
+    try {
+      const res = await fetch("/api/tools");
+      if (!res.ok) return;
+      toolCatalog = await res.json();
+    } catch { /* silo may be unreachable; the catalog stays empty and no checkboxes render */ }
+  }
+
+  const allToolKeys = () => toolCatalog.map((t) => t.key);
+
+  // Renders one checkbox per catalog tool into `container`, checked when its key is in `selectedKeys`.
+  function renderToolChecks(container, selectedKeys) {
+    const selected = new Set(selectedKeys);
+    container.innerHTML = "";
+    for (const tool of toolCatalog) {
+      const label = document.createElement("label");
+      label.className = "tool-check";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = tool.key;
+      cb.checked = selected.has(tool.key);
+      const span = document.createElement("span");
+      span.textContent = tool.requiresHostedTools ? `${tool.label} (Responses)` : tool.label;
+      label.append(cb, span);
+      container.appendChild(label);
+    }
+  }
+
+  const readToolChecks = (container) =>
+    [...container.querySelectorAll("input[type=checkbox]")].filter((c) => c.checked).map((c) => c.value);
+
+  // The per-conversation popover. Renders from chatTools; each toggle PUTs the new set for the active
+  // conversation. The id is minted upfront (startNewConversation), so this persists an override even
+  // before the first message — the grain activates and stores it, and the first send reuses that grain.
+  function openToolsDialog() {
+    renderToolChecks(chatToolChecks, chatTools);
+    toolsDialog.showModal();
+  }
+
+  async function persistChatTools() {
+    chatTools = readToolChecks(chatToolChecks);
+    if (!activeId) return;
+    try {
+      const res = await fetch(`/api/conversations/${encodeURIComponent(activeId)}/tools`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tools: chatTools }),
+      });
+      if (res.ok) chatTools = await res.json(); // reconcile with the server-sanitized effective set
+    } catch { /* silo may be unreachable; keep the local selection, retried on the next toggle */ }
+  }
+
+  toolsBtn.addEventListener("click", openToolsDialog);
+  toolsDoneBtn.addEventListener("click", () => toolsDialog.close());
+  chatToolChecks.addEventListener("change", persistChatTools);
 
   /* ————— model providers (per-user overlay, ADR 0018) ————— */
 
@@ -1562,6 +1660,9 @@
   refreshConversations();
   loadAgents();
   loadProfile();
+  loadTools();
+  // The initial state is a fresh regular chat, so the per-chat tools button is available (ADR 0021).
+  toolsBtn.hidden = false;
   initLocation();
   input.focus();
 })();

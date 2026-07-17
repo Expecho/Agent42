@@ -258,7 +258,16 @@ public sealed class AgentGrainTests : IAsyncLifetime
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
         var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
-        Assert.Equal(binding, await reactivated.GetAgentBindingAsync());
+        // Compare field-wise, not by record equality: AgentBinding now carries EnabledTools (a list), and
+        // record structural equality compares that reference, so two equal-content lists across the
+        // reactivation boundary would spuriously differ. Assert.Equal on the sequence compares elements.
+        var rehydrated = await reactivated.GetAgentBindingAsync();
+        Assert.NotNull(rehydrated);
+        Assert.Equal(binding!.AgentId, rehydrated!.AgentId);
+        Assert.Equal(binding.Name, rehydrated.Name);
+        Assert.Equal(binding.SystemPrompt, rehydrated.SystemPrompt);
+        Assert.Equal(binding.Model, rehydrated.Model);
+        Assert.Equal(binding.EnabledTools, rehydrated.EnabledTools);
         Assert.Equal("persona-model", await reactivated.GetSelectedModelAsync());
     }
 
@@ -1356,6 +1365,219 @@ public sealed class AgentGrainTests : IAsyncLifetime
         var answer = Answer(events);
         Assert.Contains("[tools:]", answer);
         Assert.DoesNotContain("load_skill", answer);
+    }
+
+    // ---- Selectable tools (ADR 0021) -------------------------------------------------------------
+    //
+    // Every assertion reads the fake's [tools:…] echo (what the TERMINAL client received). Negative
+    // tool assertions scope to ToolNames(...), NOT the whole answer: the skills provider leaks tool
+    // names into the system prompt (see the ToolNames comment). load_skill is the one exception — it
+    // comes ONLY from the skills provider, so its presence/absence is asserted on the whole answer,
+    // mirroring ToolModel_StillRegistersAllTools / NoToolModel_RegistersNoTools_AndNoSkillsProvider.
+
+    // Step-2 guard: every tool the grain actually registers maps to a catalog key or is the always-on
+    // get_date. Reads the REAL registration off the fake's echo on both a Chat model and a hosted model
+    // (which adds code_interpreter), so a tool added later without a catalog entry fails here.
+    [Fact]
+    public async Task EveryRegisteredTool_MapsToACatalogKey_OrIsGetDate()
+    {
+        foreach (var model in new[] { TestSiloConfigurator.DefaultModel, TestSiloConfigurator.HostedToolsModel })
+        {
+            var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>($"catalog-guard-{model}");
+            var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", model))));
+
+            foreach (var name in registered.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                Assert.True(
+                    name == ToolCatalog.AlwaysOnDateTool || ToolCatalog.KeyFor(name) is not null,
+                    $"Registered tool '{name}' on model '{model}' maps to no catalog key and is not get_date.");
+            }
+        }
+    }
+
+    // AC2: a per-conversation override limits the registered tools to the selected key's tools (+ get_date).
+    [Fact]
+    public async Task Override_LimitsRegisteredTools()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-override-conversation");
+        await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch]);
+
+        var events = await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel));
+        var answer = Answer(events);
+        var registered = ToolNames(answer);
+
+        Assert.Contains("web_search", registered);
+        Assert.Contains("fetch_web_page", registered);
+        Assert.Contains("get_date", registered);            // always-on, never filtered
+        Assert.DoesNotContain("schedule_prompt", registered);
+        Assert.DoesNotContain("get_current_location", registered);
+        Assert.DoesNotContain("load_skill", answer);        // skills not selected → provider dropped
+    }
+
+    // AC3: disabling `skills` drops load_skill (the provider is a tool) but the document RAG provider is
+    // NOT a tool, so retrieval still injects excerpts — the asymmetry the two providers are gated on.
+    [Fact]
+    public async Task SkillsDisabled_DropsLoadSkill_KeepsRetrieval()
+    {
+        const string key = "tools-skills-disabled-conversation";
+        await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
+
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.RegisterDocumentAsync("guide.pdf");
+        // Everything EXCEPT skills.
+        await agent.SetEnabledToolsAsync(
+            [ToolCatalog.WebSearch, ToolCatalog.Location, ToolCatalog.Scheduling, ToolCatalog.CodeInterpreter]);
+
+        var answer = Answer(await CollectAsync(
+            agent.ChatAsync("what does the document say about magrathea", TestSiloConfigurator.DefaultModel)));
+
+        Assert.DoesNotContain("load_skill", answer);
+        Assert.Contains("web_search", ToolNames(answer));           // a non-skills tool still registers
+        Assert.Contains("Magrathea is a legendary planet", answer); // RAG stayed on
+    }
+
+    // AC4: code_interpreter reaches the model ONLY when the model is hosted AND the tool is selected — on a
+    // Chat model it is never built, and on a hosted model it is filtered out unless selected.
+    [Fact]
+    public async Task CodeInterpreter_OnlyOnHostedModelWhenSelected()
+    {
+        // Chat model, code_interpreter selected → still absent (the tool is never built off the hosted arm).
+        var chat = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-ci-chat-conversation");
+        await chat.SetEnabledToolsAsync([ToolCatalog.WebSearch, ToolCatalog.CodeInterpreter]);
+        var chatRegistered = ToolNames(Answer(await CollectAsync(chat.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+        Assert.DoesNotContain("code_interpreter", chatRegistered);
+
+        // Hosted model, code_interpreter NOT selected → filtered out.
+        var hostedOff = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-ci-hosted-off-conversation");
+        await hostedOff.SetEnabledToolsAsync([ToolCatalog.WebSearch]);
+        var offRegistered = ToolNames(Answer(await CollectAsync(hostedOff.ChatAsync("hi", TestSiloConfigurator.HostedToolsModel))));
+        Assert.Contains("web_search", offRegistered);
+        Assert.DoesNotContain("code_interpreter", offRegistered);
+
+        // Hosted model, code_interpreter selected → present.
+        var hostedOn = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-ci-hosted-on-conversation");
+        await hostedOn.SetEnabledToolsAsync([ToolCatalog.WebSearch, ToolCatalog.CodeInterpreter]);
+        var onRegistered = ToolNames(Answer(await CollectAsync(hostedOn.ChatAsync("hi", TestSiloConfigurator.HostedToolsModel))));
+        Assert.Contains("code_interpreter", onRegistered);
+    }
+
+    // AC5: capability is the outer gate — a selection on a no-tools model still registers NO tools.
+    [Fact]
+    public async Task SelectionOnNoToolModel_StillRegistersNoTools()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-notool-selection-conversation");
+        await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch, ToolCatalog.Scheduling]);
+
+        var answer = Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.NoToolsNoVisionModel)));
+
+        Assert.Contains("[tools:]", answer);
+        Assert.DoesNotContain("load_skill", answer);
+    }
+
+    // AC6: the user's default (from IUserProfileGrain, read on activation) applies to a chat with no override.
+    // The grain key has no '/', so the userId IS the whole key — the profile grain shares it.
+    [Fact]
+    public async Task UserDefault_AppliesWhenNoOverride()
+    {
+        const string user = "tools-userdefault";
+        await _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user)
+            .SaveAsync(new UserProfile("", [ToolCatalog.WebSearch]));
+
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+        var answer = Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel)));
+        var registered = ToolNames(answer);
+
+        Assert.Contains("web_search", registered);
+        Assert.DoesNotContain("schedule_prompt", registered);
+        Assert.DoesNotContain("get_current_location", registered);
+        Assert.DoesNotContain("load_skill", answer);
+    }
+
+    // AC7: a per-conversation override beats the user default.
+    [Fact]
+    public async Task Override_BeatsUserDefault()
+    {
+        const string user = "tools-override-beats-default";
+        await _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user)
+            .SaveAsync(new UserProfile("", [ToolCatalog.WebSearch]));
+
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+        await agent.SetEnabledToolsAsync([ToolCatalog.Scheduling]);
+
+        var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+
+        Assert.Contains("schedule_prompt", registered);
+        Assert.DoesNotContain("web_search", registered);   // the default was overridden
+    }
+
+    // AC8: SetEnabledToolsAsync persists — the selection survives a grain deactivation, and
+    // GetEnabledToolsAsync reports the effective set.
+    [Fact]
+    public async Task SetEnabledTools_PersistsAcrossDeactivation()
+    {
+        const string key = "tools-persist-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch]);
+
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+        var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        Assert.Equal(new[] { ToolCatalog.WebSearch }, await reactivated.GetEnabledToolsAsync());
+
+        var registered = ToolNames(Answer(await CollectAsync(reactivated.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+        Assert.Contains("web_search", registered);
+        Assert.DoesNotContain("schedule_prompt", registered);
+    }
+
+    // AC9: binding an agent snapshots its tools into the conversation (a null-tools agent pins all-selectable).
+    [Fact]
+    public async Task BindAgent_SnapshotsEnabledTools()
+    {
+        // Agent with an explicit tool set.
+        var scoped = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-bind-scoped-conversation");
+        await scoped.BindAgentAsync(new AgentBinding(
+            "agent-tools", "Scheduler", "You schedule.", TestSiloConfigurator.DefaultModel, [ToolCatalog.Scheduling]));
+
+        var scopedAnswer = Answer(await CollectAsync(scoped.ChatAsync("hi", null)));
+        Assert.Contains("schedule_prompt", ToolNames(scopedAnswer));
+        Assert.DoesNotContain("web_search", ToolNames(scopedAnswer));
+        Assert.DoesNotContain("load_skill", scopedAnswer);
+        Assert.Equal(new[] { ToolCatalog.Scheduling }, await scoped.GetEnabledToolsAsync());
+
+        // A null-tools agent materializes to ALL selectable tools on bind — never inherits the user default.
+        var full = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-bind-all-conversation");
+        await full.BindAgentAsync(new AgentBinding(
+            "agent-full", "Full", "You do everything.", TestSiloConfigurator.DefaultModel, null));
+        Assert.Equal(ToolCatalog.AllSelectableToolKeys, await full.GetEnabledToolsAsync());
+    }
+
+    // AC10: old-shape state (EnabledTools absent) deserializes to null, which resolves to ALL tools — the
+    // no-migration promise. A never-set conversation persists null and, after reactivation, still gets all.
+    [Fact]
+    public async Task LegacyState_NullEnabledTools_MeansAll()
+    {
+        const string key = "tools-legacy-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        // A first turn persists the session with EnabledTools still null (the old shape).
+        await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel));
+        Assert.Equal(ToolCatalog.AllSelectableToolKeys, await agent.GetEnabledToolsAsync());
+
+        // Reactivate: the persisted null deserializes to null → all tools on.
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+        var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var answer = Answer(await CollectAsync(reactivated.ChatAsync("again", TestSiloConfigurator.DefaultModel)));
+        var registered = ToolNames(answer);
+
+        foreach (var tool in new[]
+        {
+            "schedule_prompt", "get_date", "web_search", "fetch_web_page", "get_current_location",
+        })
+        {
+            Assert.Contains(tool, registered);
+        }
+
+        Assert.Contains("load_skill", answer);   // skills provider (all-on) contributes it
     }
 
     // AC12: a conversation persisted with a bare, unqualified model id — every conversation that

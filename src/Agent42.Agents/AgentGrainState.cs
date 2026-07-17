@@ -113,4 +113,18 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(9)]
     public Dictionary<string, AttachmentRef> GeneratedImages { get; set; } = [];
+
+    /// <summary>
+    /// The tools this conversation may use (ADR 0021), as a list of catalog keys (<see cref="ToolCatalog"/>).
+    /// This is the per-conversation override, or — for an agent chat — the snapshot of the agent's tools
+    /// pinned at bind time.
+    ///
+    /// <para><b><c>null</c> means "all selectable tools", not "none".</b> A regular chat leaves this null until
+    /// the user changes tools in it; an agent chat materializes it to a concrete set on bind (never null, so the
+    /// persona never inherits the user's per-chat default). Old Cosmos state deserializes this as null, so every
+    /// existing conversation keeps all tools with no migration. Resolution is override ?? user-default ?? all —
+    /// then intersected with model capability in <c>BuildAgent</c>.</para>
+    /// </summary>
+    [Id(10)]
+    public List<string>? EnabledTools { get; set; }
 }

@@ -368,11 +368,17 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   must stay on regardless, or a document conversation silently loses retrieval the moment it moves to a
   text-only model. The asymmetry is invisible in the types; both are just `AIContextProviders` entries.
   `FakeChatClient` echoes the tool schemas it is handed **by name** (`[tools:a,b,c]`) rather than a count,
-  precisely so the "and no `load_skill`" half is assertable.
+  precisely so the "and no `load_skill`" half is assertable. **Same rule for the ADR 0021 selection layer:**
+  a user disabling the `skills` key must drop the provider from that switch-arm, not merely hide a label —
+  the `skillsEnabled = SupportsTools && selected.Contains(skills)` guard, not a filter on the `Tools` list
+  (the provider's tools are never in it). And the provider surfaces **three** tools, not one —
+  `load_skill`, `read_skill_resource`, `run_skill_script` — so `ToolCatalog` maps all three to the `skills`
+  key (the key-coverage guard test found this).
 - **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent`'s `AIContextProviders` switch),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`NoToolModel_RegistersNoTools_AndNoSkillsProvider`,
-  `NoToolModel_StillGetsDocumentRetrieval`), `tests/Agent42.Tests/FakeChatClient.cs` (`ToolsEcho`)
-- **Verified:** 2026-07-14
+  `NoToolModel_StillGetsDocumentRetrieval`, `SkillsDisabled_DropsLoadSkill_KeepsRetrieval`),
+  `tests/Agent42.Tests/FakeChatClient.cs` (`ToolsEcho`)
+- **Verified:** 2026-07-17
 
 ### Withholding images from a no-vision model must cover HISTORY, not just the new turn
 
@@ -940,3 +946,25 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `IDocReader`/`IPageReader` are disposed. Fine at per-conversation, synchronous-ingestion scale.
 - **Evidence:** `src/Agent42.Agents/DocumentTextExtractor.cs` (`PdfLock`)
 - **Verified:** 2026-07-09
+
+### Selectable tools: `null == all`, and the user default must be fetched BEFORE the first `BuildAgent`
+
+- **Claim:** `EnabledTools` (ADR 0021) is a `List<string>?` on four types, and the type does **not** tell
+  you that **`null` means "all selectable tools"**, not "none". Two traps follow. **(1) Never represent
+  "all" as an empty list, and never default a new `EnabledTools` field to `[]`** — an empty list is "no
+  tools", so defaulting existing state to `[]` would silently strip every tool from every existing user /
+  agent / conversation. The `null == all` sentinel is the whole reason there is no migration; the UI
+  represents "all selected" as the **full explicit list**, never `null`. **(2) The user-default fetch in
+  `OnActivateAsync` must run BEFORE the first `BuildAgent(_modelId)` call.** `BuildAgent` reads
+  `_userDefaultEnabledTools` (via `EffectiveEnabledTools`), and `ReceiveReminder` reuses that same
+  `_agent` — so fetching the default *after* the build would have the first chat turn **and every reminder
+  turn on that activation** register all tools and silently ignore the user's default (the same ordering
+  hazard the `_chatClientFactory` resolution guards against for a different field). The default is read
+  **once on activation** (accepted staleness, mirrors default-model resolution) — a Preferences change
+  reflects in a warm regular chat only on its next activation.
+- **Evidence:** `src/Agent42.Agents/AgentGrainState.cs` (`[Id(10)] EnabledTools`),
+  `src/Agent42.Agents/ToolCatalog.cs` (`Sanitize`, `AllSelectableToolKeys`),
+  `src/Agent42.Agents/AgentGrain.cs` (`OnActivateAsync` fetch before `BuildAgent`, `EffectiveEnabledTools`),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
+  `UserDefault_AppliesWhenNoOverride`), `.agentic/decisions/0021-selectable-tools-three-layer.md`
+- **Verified:** 2026-07-17
