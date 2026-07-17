@@ -956,6 +956,15 @@ body {
   user-select: none;
 }
 
+/* Shown when no chat provider is configured (ADR 0019): the composer is gated until the user adds one. */
+.composer__nomodel {
+  margin: 8px 4px 0;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--amber);
+  user-select: none;
+}
+
 /* model picker */
 
 .model {

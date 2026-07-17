@@ -14,6 +14,14 @@ supersedes: 0013, 0017 (invariant scope only — see "Partial supersession")
 > request" and 0017's "secrets come from **operator-managed env**, one source of truth." Both
 > stay `status: accepted` and authoritative for the **operator baseline**; see "Partial
 > supersession" for exactly what moves.
+>
+> **Amended by [ADR 0019](0019-remove-baseline-chat-providers.md) (2026-07-17) —
+> availability-floor scope only.** The "boot-time availability floor" below is removed for
+> **chat**: the operator `Models:` set now ships **empty**, so the app boots with zero chat
+> providers and chat is **only** the per-user overlay. The best-effort "a user override that
+> resolves invalid falls back to baseline" rule still stands but is vacuous for chat (the baseline
+> is empty). The **embedding** endpoint/key remains the sole fixed availability path. Everything
+> else here stays authoritative. `status: accepted` on purpose — see 0019's "Partial supersession".
 
 ## Context
 The `Models:` provider catalog was bound once from `appsettings`/env at startup and frozen for

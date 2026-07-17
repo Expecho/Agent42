@@ -108,10 +108,42 @@ public class UserProviderResolverTests
         Assert.DoesNotContain(resolved.DeclaredModels, m => m.Provider == "ollama");
     }
 
+    // AC3 (ADR 0019): with the baseline chat set removed, a user who adds a single provider but pins no
+    // explicit default gets that provider's FIRST declared model — the first-declared-model fallback, since
+    // both the overlay default and the (now empty) baseline default are absent.
+    [Fact]
+    public void NoOverlayDefault_UsesFirstResolvedModel()
+    {
+        var overlay = OverlayWith(Ollama(_protector.Protect("k")));
+
+        var resolved = EmptyResolver().Merge(overlay);
+
+        Assert.Equal("ollama:llama3.1", resolved.DefaultModelId);
+    }
+
+    // AC4 (ADR 0019): genuinely zero providers (empty baseline + empty overlay) ⇒ an EMPTY default, so the
+    // picker is empty and the composer gates on it — not a bogus "" model.
+    [Fact]
+    public void NoProviders_EmptyDefault()
+    {
+        var resolved = EmptyResolver().Merge(UserProviderConfig.Empty);
+
+        Assert.Empty(resolved.Providers);
+        Assert.Empty(resolved.DeclaredModels);
+        Assert.Equal("", resolved.DefaultModelId);
+    }
+
     private UserProviderResolver Resolver() =>
         new(null!, _protector, Baseline(), BaselineDefault);
 
+    // A resolver whose baseline ships NO chat provider (ADR 0019) — the production shape.
+    private UserProviderResolver EmptyResolver() =>
+        new(null!, _protector, EmptyBaseline(), "");
+
     private static ModelProviderSetup Baseline() => ModelProviderBuilder.Build(Options(), Configuration());
+
+    private static ModelProviderSetup EmptyBaseline() =>
+        ModelProviderBuilder.Build(new ModelProvidersOptions { Default = "" }, Configuration());
 
     private static UserProviderConfig OverlayWith(StoredProvider provider) => new([provider], null, 1);
 

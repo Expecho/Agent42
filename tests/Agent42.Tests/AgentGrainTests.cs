@@ -906,10 +906,10 @@ public sealed class AgentGrainTests : IAsyncLifetime
             "get_current_location must expose no parameters to the model (ADR 0012).");
     }
 
-    private static async Task<TestCluster> NewClusterAsync<TConfigurator>()
+    private static async Task<TestCluster> NewClusterAsync<TConfigurator>(short initialSilosCount = 2)
         where TConfigurator : ISiloConfigurator, new()
     {
-        var builder = new TestClusterBuilder();
+        var builder = new TestClusterBuilder(initialSilosCount);
         builder.AddSiloBuilderConfigurator<TConfigurator>();
         var cluster = builder.Build();
         await cluster.DeployAsync();
@@ -1228,6 +1228,136 @@ public sealed class AgentGrainTests : IAsyncLifetime
 
         var events = await CollectAsync(reactivated.ChatAsync("still there?", null));
         Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+    }
+
+    // ---- No chat provider configured (ADR 0019) --------------------------------------------------
+    //
+    // These run on NoModelSiloConfigurator, whose switchable factory provider starts with NO chat
+    // provider configured. The grain must stay valid via the no-op NoModelChatClient — build, history and
+    // reminder never NRE — and only the two model-running sites act on the no-model signal.
+
+    // AC5: a grain with no model configured yields a one-line notice + Done and does not crash; querying
+    // its history returns (no NRE) — the whole point of the no-op-client design.
+    [Fact]
+    public async Task NoModel_YieldsNotice_AndHistoryDoesNotThrow()
+    {
+        await using var cluster = await NewClusterAsync<NoModelSiloConfigurator>(1);
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("no-model-conversation");
+
+        // The grain activates against the no-op client (HasModel is false): history must not throw.
+        Assert.Empty(await agent.GetHistoryAsync());
+
+        var events = await CollectAsync(agent.ChatAsync("hi", null));
+
+        // A one-line notice + Done. The no-op client was never run (it throws if it is).
+        Assert.Contains("No model provider is configured", Answer(events));
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+
+        // The notice is ephemeral — nothing was persisted, so history stays empty.
+        Assert.Empty(await agent.GetHistoryAsync());
+    }
+
+    // AC6: a user who adds their first provider on an ALREADY-activated grain can chat in that same
+    // activation — ChatCoreAsync re-resolves the factory, rebinds onto the new model, and replies. The
+    // factory-provider double flips empty→non-empty between the activation and the chat call.
+    [Fact]
+    public async Task NoModelThenProviderAdded_ReResolvesAndReplies()
+    {
+        await using var cluster = await NewClusterAsync<NoModelSiloConfigurator>(1);
+        var provider = cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress)
+            .GetRequiredService<SwitchableChatClientFactoryProvider>();
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("no-model-then-added-conversation");
+
+        // Activate the grain while no provider is configured, so the empty factory is captured and
+        // _modelId is "".
+        Assert.Empty(await agent.GetHistoryAsync());
+
+        // The user adds their first provider — on this SAME already-activated grain.
+        provider.HasModel = true;
+
+        var events = await CollectAsync(agent.ChatAsync("hi", null));
+
+        var answer = Answer(events);
+        Assert.False(string.IsNullOrWhiteSpace(answer));
+        Assert.DoesNotContain("No model provider is configured", answer);
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+
+        // The turn was persisted normally after the rebind.
+        var history = await agent.GetHistoryAsync();
+        Assert.Contains(history, t => t.Role == "user" && t.Text == "hi");
+        Assert.Contains(history, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
+    }
+
+    // AC7: rebinding onto a regained model preserves existing history. A conversation builds history on a
+    // model, loses every provider (reactivates empty, holding the persisted session), then regains one —
+    // the snapshot→rebuild→restore rebind must keep the earlier turns.
+    [Fact]
+    public async Task RebindAfterRegainingModel_PreservesHistory()
+    {
+        await using var cluster = await NewClusterAsync<NoModelSiloConfigurator>(1);
+        var provider = cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress)
+            .GetRequiredService<SwitchableChatClientFactoryProvider>();
+        const string key = "regain-model-conversation";
+
+        // Start WITH a model and build some history.
+        provider.HasModel = true;
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await CollectAsync(agent.ChatAsync("hi", null));
+
+        // The user removes every provider; force a reactivation so the grain comes up with no model,
+        // holding the persisted session.
+        provider.HasModel = false;
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+        agent = cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        // History survives activation against the no-op client — no loss, no NRE.
+        Assert.Contains(await agent.GetHistoryAsync(), t => t.Role == "user" && t.Text == "hi");
+
+        // The user re-adds a provider and chats again: the rebind snapshots→rebuilds→restores, so the
+        // earlier history is preserved alongside the new turn.
+        provider.HasModel = true;
+        await CollectAsync(agent.ChatAsync("still there?", null));
+
+        var history = await agent.GetHistoryAsync();
+        Assert.Contains(history, t => t.Role == "user" && t.Text == "hi");
+        Assert.Contains(history, t => t.Role == "user" && t.Text == "still there?");
+        Assert.True(history.Count(t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text)) >= 2);
+    }
+
+    // AC5-adjacent (ADR 0019): a reminder that fires while no model is configured is SKIPPED — the
+    // ReceiveReminder guard re-resolves, finds none, and returns without running the no-op client (no new
+    // turn, TimesFired unchanged). Once a provider is added, the same reminder rebinds and runs.
+    [Fact]
+    public async Task ReceiveReminder_NoModel_SkipsUntilProviderAdded()
+    {
+        await using var cluster = await NewClusterAsync<NoModelSiloConfigurator>(1);
+        var provider = cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress)
+            .GetRequiredService<SwitchableChatClientFactoryProvider>();
+        const string key = "reminder-no-model-conversation";
+
+        // With a model, schedule a real durable reminder.
+        provider.HasModel = true;
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
+        Assert.Single(await agent.GetScheduledPromptsAsync());
+
+        // Lose every provider; reactivate with no model, holding the persisted session + reminder.
+        provider.HasModel = false;
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+        agent = cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var historyBefore = (await agent.GetHistoryAsync()).Count;
+
+        // The reminder fires with no model → skipped: no new turn, TimesFired stays 0.
+        await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
+        Assert.Equal(historyBefore, (await agent.GetHistoryAsync()).Count);
+        Assert.Equal(0, (await agent.GetScheduledPromptsAsync()).Single().TimesFired);
+
+        // Add a provider; the same reminder now rebinds and runs, appending its prompt turn.
+        provider.HasModel = true;
+        await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
+        var history = await agent.GetHistoryAsync();
+        Assert.Contains(history, t => t.Role == "user" && t.Text == "Tell the user to drink some water.");
+        Assert.Equal(1, (await agent.GetScheduledPromptsAsync()).Single().TimesFired);
     }
 
     // Reads the grain's persisted state straight out of the memory storage provider the test silo

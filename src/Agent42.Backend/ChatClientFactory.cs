@@ -40,26 +40,34 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         string otelSourceName,
         ILogger<MultiProviderChatClientFactory> logger)
     {
-        if (providers.Count == 0)
-        {
-            throw new InvalidOperationException(
-                "No model providers are configured. The Models:Providers section must contain at "
-                + "least the Foundry provider — see appsettings.json.");
-        }
-
+        // An empty provider set is now a supported state, not a misconfiguration (ADR 0019): a user who
+        // has configured no chat provider gets an empty factory whose DefaultModelId is "" and whose
+        // GetClient hands out the no-op NoModelChatClient. The grain guards on DefaultModelId before ever
+        // running inference, so the no-op is never actually invoked. `_defaultProvider` is only read by
+        // Resolve, which the empty-guards below short-circuit past — so a "" default provider is harmless.
         _providers = providers;
         DefaultModelId = defaultModelId;
-        _defaultProvider = ModelId.Parse(defaultModelId, providers.Keys.First()).Provider;
+        _defaultProvider = providers.Count == 0
+            ? ""
+            : ModelId.Parse(defaultModelId, providers.Keys.First()).Provider;
         _otelSourceName = otelSourceName;
         _logger = logger;
     }
 
     public string DefaultModelId { get; }
 
-    public IChatClient GetClient(string? modelId) => _clients.GetOrAdd(Resolve(modelId).QualifiedId, Build);
+    public IChatClient GetClient(string? modelId) =>
+        _providers.Count == 0 ? NoModelChatClient.Instance : _clients.GetOrAdd(Resolve(modelId).QualifiedId, Build);
 
     public ModelCapabilities GetCapabilities(string? modelId)
     {
+        // No providers configured (ADR 0019): nothing is capable of anything. Return before Resolve,
+        // which assumes at least one provider exists (it dereferences _providers[defaultProviderKey]).
+        if (_providers.Count == 0)
+        {
+            return new ModelCapabilities(SupportsTools: false, SupportsVision: false);
+        }
+
         var (provider, model, _) = Resolve(modelId);
 
         // A Foundry deployment is discovered, not declared, so nothing lists its capabilities —

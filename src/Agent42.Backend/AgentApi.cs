@@ -259,7 +259,7 @@ public static class AgentApi
         // skipped state for an OpenAI-compatible provider).
         app.MapPost("/api/providers", async (ProviderUpsertRequest request, IProviderSecretProtector protector, IGrainFactory grains, HttpContext http) =>
         {
-            var error = ValidateProvider(request.Key, request.Kind, request.Endpoint);
+            var error = ValidateProvider(request.Key, request.Kind, request.Endpoint, request.Models);
             if (error is not null)
             {
                 return Results.Text(error, "text/plain", statusCode: StatusCodes.Status400BadRequest);
@@ -275,7 +275,7 @@ public static class AgentApi
         // ToStored maps blank to a null ciphertext, which the grain reads as "keep".
         app.MapPut("/api/providers/{key}", async (string key, ProviderUpsertRequest request, IProviderSecretProtector protector, IGrainFactory grains, HttpContext http) =>
         {
-            var error = ValidateProvider(key, request.Kind, request.Endpoint);
+            var error = ValidateProvider(key, request.Kind, request.Endpoint, request.Models);
             if (error is not null)
             {
                 return Results.Text(error, "text/plain", statusCode: StatusCodes.Status400BadRequest);
@@ -302,7 +302,8 @@ public static class AgentApi
     // ACCEPTED on purpose — an Ollama endpoint is a supported target, and this stays off the SSRF path
     // because the endpoint comes from the authenticated user's own config, not a model or a request
     // (ADR 0013). Deliberately NO PrivateAddressGuard. Returns an error message, or null when valid.
-    private static string? ValidateProvider(string key, string kind, string? endpoint)
+    private static string? ValidateProvider(
+        string key, string kind, string? endpoint, IReadOnlyList<ProviderModelRequest>? models)
     {
         if (string.IsNullOrWhiteSpace(key) || key.Contains(':'))
         {
@@ -319,6 +320,14 @@ public static class AgentApi
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
             return "Endpoint must be an absolute http or https URL.";
+        }
+
+        // A provider must declare ≥1 model (ADR 0019). A user provider never ARM-discovers (it always
+        // contributes only its declared Models), so a zero-model provider is keyed-but-modelless: it would
+        // count toward providers.Count yet contribute no default, breaking "providers ⟺ a usable default".
+        if (models is not { Count: > 0 })
+        {
+            return "A provider must declare at least one model.";
         }
 
         return null;

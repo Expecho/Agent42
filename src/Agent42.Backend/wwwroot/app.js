@@ -17,6 +17,7 @@
   const attachmentPreview = document.getElementById("attachmentPreview");
   const modelSelect = document.getElementById("modelSelect");
   const modelField = document.getElementById("modelField");
+  const noModelHint = document.getElementById("noModelHint");
   const agentLabel = document.getElementById("agentLabel");
   const menuToggle = document.getElementById("menuToggle");
   const backdrop = document.getElementById("backdrop");
@@ -152,7 +153,22 @@
       fillModelOptions(modelSelect);
       if (defaultModel) setModel(defaultModel);
       modelSelect.disabled = modelSelect.options.length === 0;
+      applyModelAvailability();
     } catch { /* leave the picker disabled; chat still uses the server's default model */ }
+  }
+
+  // Gates the composer on whether ANY chat provider is configured (ADR 0019). With none, /api/models is
+  // empty: disable send + the input and show the hint, so the user can't transmit into a grain that has no
+  // model (it would only answer with a "configure a provider" notice). Re-run after every loadModels() —
+  // including the one saveProvider() fires — so adding a provider re-enables the composer live, no restart.
+  // The streaming lock wins while a turn is in flight; send()'s finally re-applies this when it ends.
+  function applyModelAvailability() {
+    const hasModel = (modelsData.models ?? []).length > 0;
+    noModelHint.hidden = hasModel;
+    if (!streaming) {
+      sendBtn.disabled = !hasModel;
+      input.disabled = !hasModel;
+    }
   }
 
   // A model is named by a qualified id — "provider:model", split on the FIRST colon (a provider's own
@@ -1077,6 +1093,7 @@
       streaming = false;
       sendBtn.disabled = false;
       modelSelect.disabled = modelSelect.options.length === 0;
+      applyModelAvailability(); // keep the composer gated if there's still no model (ADR 0019)
       scrollToBottom();
       input.focus();
       refreshConversations();

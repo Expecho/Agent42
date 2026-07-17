@@ -126,6 +126,11 @@
           </button>
           <p class="composer__hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</p>
         </div>
+        <!-- Shown when no chat provider is configured (ADR 0019): the picker is empty and the composer
+             is gated, so tell the user how to start rather than letting them send into a modelless grain. -->
+        <p class="composer__nomodel" id="noModelHint" hidden>
+          No model configured. Add a model provider in Preferences to start chatting.
+        </p>
       </form>
     </main>
 
