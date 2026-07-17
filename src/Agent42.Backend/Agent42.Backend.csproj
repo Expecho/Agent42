@@ -11,6 +11,7 @@
     <PackageReference Include="AngleSharp" />
     <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" />
     <PackageReference Include="Azure.AI.OpenAI" />
+    <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />
     <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Azure.ResourceManager.CognitiveServices" />
     <PackageReference Include="Azure.Storage.Blobs" />

@@ -35,7 +35,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         """;
 
     private readonly IPersistentState<AgentGrainState> _state;
-    private readonly IChatClientFactory _chatClientFactory;
+    private readonly IUserChatClientFactoryProvider _chatClientFactoryProvider;
     private readonly IAttachmentStore _attachments;
     private readonly IDocumentIndex _documentIndex;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddings;
@@ -47,6 +47,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private AIAgent _agent = null!;
     private AgentSession _session = null!;
     private string _modelId = null!;
+
+    // The user's effective chat-client factory, resolved once in OnActivateAsync from this grain's
+    // userId (the overlay of ADR 0018). Not readonly and not ctor-injected: a user's configured
+    // providers are per-user, so this cannot be a process singleton — it is resolved per activation.
+    private IChatClientFactory _chatClientFactory = null!;
 
     /// <summary>
     /// The user's position for the turn currently being processed, or null (ADR 0012). Set at the top
@@ -68,7 +73,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public AgentGrain(
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
-        IChatClientFactory chatClientFactory,
+        IUserChatClientFactoryProvider chatClientFactoryProvider,
         IAttachmentStore attachments,
         IDocumentIndex documentIndex,
         IEmbeddingGenerator<string, Embedding<float>> embeddings,
@@ -78,7 +83,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         ILogger<AgentGrain> logger)
     {
         _state = state;
-        _chatClientFactory = chatClientFactory;
+        _chatClientFactoryProvider = chatClientFactoryProvider;
         _attachments = attachments;
         _documentIndex = documentIndex;
         _embeddings = embeddings;
@@ -90,6 +95,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
+        // Resolve THIS user's effective provider set (baseline ⊕ overlay, ADR 0018) FIRST: every use of
+        // _chatClientFactory below — the DefaultModelId read on the next line, BuildAgent, and the ~8
+        // sync call sites — dereferences it, so resolving it later would NRE (m4). The userId is
+        // everything before the first '/' of the grain key ({userId}/{conversationId}, see AgentApi.AgentKey).
+        var userId = UserIdFromGrainKey(this.GetPrimaryKeyString());
+        _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(userId, cancellationToken);
+
         _modelId = _state.State.DeploymentName ?? _chatClientFactory.DefaultModelId;
         _agent = BuildAgent(_modelId);
 
@@ -102,6 +114,16 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             this.GetPrimaryKeyString(), _modelId, _state.State.SerializedSession is not null);
 
         await base.OnActivateAsync(cancellationToken);
+    }
+
+    // The userId is everything before the FIRST '/' of the grain key ({userId}/{conversationId} — see
+    // AgentApi.AgentKey). The userId is an opaque Easy-Auth principal id with no '/', so a first-'/'
+    // split is safe even if a conversation id ever contained one. A key with no '/' (defensive) is
+    // treated wholly as the userId.
+    private static string UserIdFromGrainKey(string grainKey)
+    {
+        var slash = grainKey.IndexOf('/');
+        return slash < 0 ? grainKey : grainKey[..slash];
     }
 
     // Builds the Agent Framework agent bound to a specific model. Called on activation and again

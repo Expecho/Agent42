@@ -11,6 +11,7 @@
     <!-- Content parsing + Azure + AI -->
     <PackageVersion Include="AngleSharp" Version="1.5.2" />
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.3" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.ResourceManager.CognitiveServices" Version="1.5.2" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.1" />

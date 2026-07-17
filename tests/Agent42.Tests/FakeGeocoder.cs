@@ -46,6 +46,8 @@ public sealed class CoordinatesOnlyGeocoderSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IChatClient, FakeChatClient>();
             services.AddSingleton<IChatClientFactory>(sp =>
                 new SingleChatClientFactory(sp.GetRequiredService<IChatClient>(), "fake-model"));
+            services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
+                new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>()));
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             services.AddDocumentRagFakes();
             services.AddWebToolFakes();

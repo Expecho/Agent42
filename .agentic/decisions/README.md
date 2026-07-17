@@ -16,6 +16,11 @@ handles supersession. Never edit an accepted ADR's decision content; supersede i
 ## Finding decisions
 
 ```
-grep -rl "tags:.*<area>" .agentic/decisions/       # by area
-grep -rL "superseded_by" .agentic/decisions/*.md   # still-active decisions
+grep -rl "tags:.*<area>" .agentic/decisions/        # by area
+grep -rL "^superseded_by:" .agentic/decisions/*.md   # still-active decisions
 ```
+
+The still-active scan is anchored to the frontmatter key (`^superseded_by:`), NOT a bare
+`superseded_by` substring: several active ADRs mention the token in prose (explaining why a
+partial-supersession keeps `status: accepted` with no tag — e.g. 0017, 0018), and a bare-substring
+scan would wrongly drop them from the active set.

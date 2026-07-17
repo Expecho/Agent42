@@ -434,6 +434,82 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0017-foundry-provider-api-key-auth.md` (the `ApiKey` inheritance)
 - **Verified:** 2026-07-16
 
+### A user provider overlay is best-effort (baseline wins) and its endpoint is deliberately NOT SSRF-guarded
+
+- **Claim:** a signed-in user can add/override providers (ADR 0018), but that overlay is layered **after**
+  boot and must **never** brick the app. The operator env/`appsettings` set stays the boot-time
+  availability floor: `ModelProviderBuilder.Build` still **throws** on a blank *baseline* Foundry key
+  (ADR 0017). The per-user path is different — `UserProviderResolver.Merge` calls the **same**
+  `ModelProviderBuilder.TryBuildProvider` per provider (one home for the Foundry inheritance / skip / fatal
+  rules — do not duplicate them), but on an `Invalid`/`Skipped` result it **keeps the baseline-built entry
+  if one exists, else skips** — it never throws. So a Foundry override with a blanked key falls back to the
+  baseline Foundry provider, not an outage. Two more consequences that are easy to get wrong: (1) user
+  overlay providers do **NOT** inherit the operator `AzureOpenAI:*` secrets — the resolver builds them with
+  an **empty** `IConfiguration` (`NoInheritance`), both so the operator key never reaches a user-chosen
+  endpoint and so a blanked user Foundry key genuinely resolves `Invalid` (otherwise it would silently
+  re-inherit and the fall-back could never be tested); (2) the overlay default is honoured **only** when it
+  names a provider that actually built, else the baseline default stands — passing an unbuilt default to
+  `MultiProviderChatClientFactory` would throw in `Resolve`.
+- **The user endpoint is deliberately NOT SSRF-guarded — keep it that way.** It must accept
+  `http://localhost:11434` (Ollama) and other private hosts (a supported target), so it carries **no
+  `PrivateAddressGuard`**; validation is only absolute `http`/`https` + a parseable `Kind`. This is safe
+  **only** because the endpoint comes from the authenticated user's **own persisted config**, never from a
+  model or a live request, so it stays off the `fetch_web_page` SSRF path (ADR 0011/0013 re-scoped by 0018).
+  Do not add an address guard here, and do not let any future change accept a provider endpoint from a tool
+  argument or request body — that re-opens the very hole the `fetch_web_page` guard exists to close.
+- **Evidence:** `src/Agent42.Backend/UserProviderResolver.cs` (`Merge`, `NoInheritance`, `EffectiveDefault`),
+  `src/Agent42.Backend/ModelProviderBuilder.cs` (`TryBuildProvider` / `Build`),
+  `src/Agent42.Backend/AgentApi.cs` (`ValidateProvider` — no guard),
+  `tests/Agent42.Tests/UserProviderResolverTests.cs`
+  (`FoundryOverrideWithBlankKey_FallsBackToBaseline`, `OverlayDefault_NamingAMissingProvider_FallsBackToBaselineDefault`),
+  `tests/Agent42.Tests/ProvidersApiTests.cs` (`AcceptsLocalhost_RejectsMalformed`)
+- **Verified:** 2026-07-16
+
+### A user provider's API key is encrypted, never echoed — and its Data Protection key ring MUST persist
+
+- **Claim:** user provider secrets (ADR 0018) are encrypted with `IDataProtector` **before** they reach the
+  overlay grain (`ProviderSecretProtector`): the grain stores **ciphertext only**, `GET /api/providers`
+  masks to `hasKey: bool` (never the ciphertext, never plaintext), and the key rides a distinct
+  `"providers"` grain state — never the 2 MB session (ADR 0004). On update a **blank** `ApiKey` means
+  "keep the stored key" (the field is write-only in the UI), mapped as a null ciphertext the grain reads as
+  "keep". The load-bearing trap is **key-ring persistence**: in prod the ring MUST persist out-of-process,
+  or a restart rotates it and every stored secret becomes undecryptable. `Program.cs` gates that on the
+  **prod `Storage:BlobEndpoint` branch** (NOT `GetConnectionString("blobs")`, the Azurite/AppHost path) and
+  uses the **MI `PersistKeysToAzureBlobStorage(BlobClient)` overload** — the connection-string overload
+  cannot work because shared-key auth is disabled on the account. DevHost/tests use the default **ephemeral**
+  ring (nothing persisted there). **Precise posture:** the user secrets are DP-encrypted; the DP **master
+  key** itself sits in the `dataprotection` blob container protected only by **Storage SSE + RBAC** (no
+  `ProtectKeysWith…`) — not "encrypted at rest" in the envelope-key sense. `Unprotect` **swallows**
+  `CryptographicException` → null (a rotated ring degrades the provider to "no key", never throws).
+- **Evidence:** `src/Agent42.Backend/ProviderSecretProtector.cs`, `src/Agent42.Backend/Program.cs`
+  (the `AddDataProtection` block), `src/Agent42.Backend/AgentApi.cs` (`Mask`, `ToStored`),
+  `infra/modules/storage.bicep` (the `dataprotection` container),
+  `tests/Agent42.Tests/ProviderSecretProtectorTests.cs`, `tests/Agent42.Tests/ProvidersApiTests.cs`
+  (`Get_NeverReturnsKey`, `Put_BlankKey_KeepsStoredKey`)
+- **Verified:** 2026-07-16
+
+### The per-user chat-client factory is resolved on grain activation, not injected — order matters
+
+- **Claim:** because providers are now per-user (ADR 0018), `AgentGrain` can no longer take a singleton
+  `IChatClientFactory` in its constructor. It takes `IUserChatClientFactoryProvider` and resolves a
+  **user-scoped** `_chatClientFactory` **once** in `OnActivateAsync` — from the userId parsed off its grain
+  key (everything before the **first** `/` of `{userId}/{conversationId}`; a userId is an opaque Easy-Auth
+  principal id with no `/`). **Hard ordering constraint:** the `await …GetForUserAsync(userId)` assignment
+  MUST run **before** the first dereference of `_chatClientFactory` (the `_state.State.DeploymentName ??
+  _chatClientFactory.DefaultModelId` line and the `BuildAgent` call right after) — resolving it later NREs.
+  The sync `IChatClientFactory` interface and its ~8 in-grain call sites are unchanged; only the resolution
+  moved. Ripple to remember: every host that registers `IChatClientFactory` for a grain (the four silo
+  configurators + DevHost) must also register `IUserChatClientFactoryProvider` — the
+  `SingleUserChatClientFactoryProvider` adapter is the one-line stand-in offline/in tests. The backend
+  impl caches the built factory by **(userId, overlay version)**, so a save (which bumps the grain's
+  version) is picked up on the next activation with no restart — full live-reload of active grains is out
+  of scope.
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`OnActivateAsync`, `UserIdFromGrainKey`),
+  `src/Agent42.Agents/IUserChatClientFactoryProvider.cs`,
+  `src/Agent42.Backend/UserChatClientFactoryProvider.cs`,
+  `tests/Agent42.Tests/UserChatClientFactoryProviderTests.cs` (`VersionBump_ReturnsFreshFactory`)
+- **Verified:** 2026-07-16
+
 ### GitHub Models: the context-limit error is a 413, and the caps are small enough to matter here
 
 - **Claim:** two traps, both measured against the real service. (1) A request over the model's input cap
@@ -549,11 +625,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `infra/modules/container-app.bicep`
 - **Verified:** 2026-07-06
 
-### OpenAI role grant is a CLI step in the deploy workflow, not Bicep
+### A cross-RG role grant in RG `agent42` must be a CLI step in the deploy workflow, not Bicep
 
-- **Claim:** the AI Foundry account lives in RG `agent42`, where the deploy SP has only `Microsoft.Authorization/roleAssignments/write` scoped to that one account — not `Microsoft.Resources/deployments/write`. A cross-RG Bicep module therefore fails; the grant is an idempotent `az rest` PUT in the deploy workflow. Don't "clean it up" into Bicep.
-- **Evidence:** `.github/workflows/deploy.yml` (Grant Cognitive Services OpenAI User step + comment)
-- **Verified:** 2026-07-06
+- **Claim:** the AI Foundry account lives in RG `agent42`, where the deploy SP has only `Microsoft.Authorization/roleAssignments/write` scoped to that one account — not `Microsoft.Resources/deployments/write`. A cross-RG Bicep module therefore fails; any such grant must be an idempotent `az rest` PUT in the deploy workflow, not "cleaned up" into Bicep. This is the durable constraint.
+- **The specific grant the workflow still performs — "Cognitive Services OpenAI User" for the app MI — is itself NO LONGER REQUIRED (ADR 0017):** Foundry chat + embeddings authenticate by **API key**, so the app functions without any OpenAI data-plane RBAC. The `az rest` step in `deploy.yml` is now dead-but-harmless (idempotent, leaves a role that nothing reads). Keep it only as the live example of the CLI-not-Bicep pattern above; it is safe to remove.
+- **Evidence:** `.github/workflows/deploy.yml` (Grant Cognitive Services OpenAI User step, ~line 113 + comment),
+  `.agentic/decisions/0017-foundry-provider-api-key-auth.md` (the grant is no longer required),
+  `CLAUDE.md` (the "no longer required … leaving any existing grant is harmless" note)
+- **Verified:** 2026-07-16
 
 ### Deploy service principal uses a client secret, not OIDC
 
