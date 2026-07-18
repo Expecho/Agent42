@@ -47,11 +47,16 @@
   const profileCancelBtn = document.getElementById("profileCancelBtn");
   const locationEnableBtn = document.getElementById("locationEnableBtn");
   const locationStatus = document.getElementById("locationStatus");
-  // Preferences tabs: [tab button, its panel] pairs, in tablist order.
-  const profileTabs = [
+  // Preferences + agent dialog tabs. wireTabs (defined near openProfileDialog) takes [tab, panel]
+  // pairs in tablist order, attaches the click + keyboard nav, and returns a select(index, focus).
+  const profileTabs = wireTabs([
     [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
     [document.getElementById("tabProviders"), document.getElementById("panelProviders")],
-  ];
+  ]);
+  const agentTabs = wireTabs([
+    [document.getElementById("tabAgentGeneral"), document.getElementById("panelAgentGeneral")],
+    [document.getElementById("tabAgentTools"), document.getElementById("panelAgentTools")],
+  ]);
 
   const providerList = document.getElementById("providerList");
   const addProviderBtn = document.getElementById("addProviderBtn");
@@ -450,6 +455,7 @@
     // Preselect the agent's model when editing, otherwise the server default. Uses the same helper as
     // the composer picker rather than a second copy of the append-if-missing logic.
     selectModel(agentModelSelect, agent?.model ?? defaultModel);
+    agentTabs.select(0); // always open on the General tab, never a stale Tools tab
     agentDialog.showModal();
     agentNameInput.focus();
   }
@@ -497,6 +503,7 @@
     if (body && body.apiKey) {
       editingAgentId = body.agent.id;
       agentFormTitle.textContent = "Edit agent";
+      agentTabs.select(0); // the key lives in the General panel — show it even if Save came from Tools
       agentKeySection.hidden = false;
       agentKeyValue.textContent = body.apiKey;
       agentKeyReveal.hidden = false;
@@ -1297,33 +1304,37 @@
     select.value = selectedTag ?? "";
   }
 
-  // Activate the tab at profileTabs[index]: toggle aria-selected + roving tabindex on the tabs and
-  // `hidden` on the panels. `focus` moves keyboard focus to the newly selected tab (arrow-key nav).
-  function selectProfileTab(index, focus = false) {
-    profileTabs.forEach(([tab, panel], i) => {
-      const active = i === index;
-      tab.setAttribute("aria-selected", active ? "true" : "false");
-      tab.tabIndex = active ? 0 : -1;
-      panel.hidden = !active;
-      if (active && focus) tab.focus();
+  // Shared ARIA tablist controller. Given [tab, panel] pairs in tablist order, attaches each tab's
+  // click + arrow/Home/End keyboard nav and returns { select(index, focus) } — select toggles
+  // aria-selected + roving tabindex on the tabs and `hidden` on the panels; `focus` moves keyboard
+  // focus to the newly selected tab (arrow-key nav). Used by both the Preferences and agent dialogs.
+  function wireTabs(tabPairs) {
+    function select(index, focus = false) {
+      tabPairs.forEach(([tab, panel], i) => {
+        const active = i === index;
+        tab.setAttribute("aria-selected", active ? "true" : "false");
+        tab.tabIndex = active ? 0 : -1;
+        panel.hidden = !active;
+        if (active && focus) tab.focus();
+      });
+    }
+    tabPairs.forEach(([tab], i) => {
+      tab.addEventListener("click", () => select(i));
+      tab.addEventListener("keydown", (e) => {
+        const last = tabPairs.length - 1;
+        let next = null;
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") next = i === last ? 0 : i + 1;
+        else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = i === 0 ? last : i - 1;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = last;
+        if (next !== null) {
+          e.preventDefault();
+          select(next, true);
+        }
+      });
     });
+    return { select };
   }
-
-  profileTabs.forEach(([tab], i) => {
-    tab.addEventListener("click", () => selectProfileTab(i));
-    tab.addEventListener("keydown", (e) => {
-      const last = profileTabs.length - 1;
-      let next = null;
-      if (e.key === "ArrowRight" || e.key === "ArrowDown") next = i === last ? 0 : i + 1;
-      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = i === 0 ? last : i - 1;
-      else if (e.key === "Home") next = 0;
-      else if (e.key === "End") next = last;
-      if (next !== null) {
-        e.preventDefault();
-        selectProfileTab(next, true);
-      }
-    });
-  });
 
   async function openProfileDialog() {
     await loadProfile(); // reconcile against the server before showing the current value
@@ -1332,7 +1343,7 @@
     renderToolChecks(profileToolChecks, profile.enabledTools ?? allToolKeys());
     profileTheme.value = profile.theme ?? "system";
     profileSaved = false; // fresh edit session; the close handler reverts a preview unless we save
-    selectProfileTab(0); // always open on General
+    profileTabs.select(0); // always open on General
     updateLocationControl(); // refresh the location status/button for the current grant state
     loadProviders(); // refresh the user's providers list alongside the profile
     profileDialog.showModal();

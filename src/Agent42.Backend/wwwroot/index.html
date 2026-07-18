@@ -152,52 +152,66 @@
     <form class="agent-form" id="agentForm">
       <h2 class="agent-form__title" id="agentFormTitle">New agent</h2>
 
-      <label class="agent-form__field">
-        <span class="agent-form__label">// name</span>
-        <input class="agent-form__input" type="text" id="agentName" maxlength="60"
-               placeholder="e.g. Marvin" required />
-      </label>
+      <div class="agent-form__tablist" role="tablist" aria-label="Agent sections">
+        <button class="agent-form__tab" type="button" role="tab" id="tabAgentGeneral"
+                aria-selected="true" aria-controls="panelAgentGeneral" tabindex="0">General</button>
+        <button class="agent-form__tab" type="button" role="tab" id="tabAgentTools"
+                aria-selected="false" aria-controls="panelAgentTools" tabindex="-1">Tools</button>
+      </div>
 
-      <label class="agent-form__field">
-        <span class="agent-form__label">// description</span>
-        <input class="agent-form__input" type="text" id="agentDescription" maxlength="140"
-               placeholder="A short note about this persona" />
-      </label>
+      <!-- General panel: persona fields + the ADR 0022 per-agent API key (an agent-level access
+           control, not a selectable tool). Fields stay bare (not section-wrapped): the panel's gap
+           equals the form's old gap (both 14px), so their spacing is unchanged from the flat form. -->
+      <div class="agent-form__panel" role="tabpanel" id="panelAgentGeneral" aria-labelledby="tabAgentGeneral">
+        <label class="agent-form__field">
+          <span class="agent-form__label">// name</span>
+          <input class="agent-form__input" type="text" id="agentName" maxlength="60"
+                 placeholder="e.g. Marvin" required />
+        </label>
 
-      <label class="agent-form__field">
-        <span class="agent-form__label">// model</span>
-        <select class="agent-form__input agent-form__select" id="agentModelSelect" required></select>
-      </label>
+        <label class="agent-form__field">
+          <span class="agent-form__label">// description</span>
+          <input class="agent-form__input" type="text" id="agentDescription" maxlength="140"
+                 placeholder="A short note about this persona" />
+        </label>
 
-      <label class="agent-form__field">
-        <span class="agent-form__label">// system prompt</span>
-        <textarea class="agent-form__input agent-form__textarea" id="agentSystemPrompt" rows="6"
-                  placeholder="You are…" required></textarea>
-      </label>
+        <label class="agent-form__field">
+          <span class="agent-form__label">// model</span>
+          <select class="agent-form__input agent-form__select" id="agentModelSelect" required></select>
+        </label>
 
-      <label class="agent-form__field agent-form__field--check">
-        <input class="agent-form__checkbox" type="checkbox" id="agentContinuous" />
-        <span class="agent-form__label">// continuous chat</span>
-      </label>
-      <p class="agent-form__note">All chats started from this agent share one ongoing history.</p>
+        <label class="agent-form__field">
+          <span class="agent-form__label">// system prompt</span>
+          <textarea class="agent-form__input agent-form__textarea" id="agentSystemPrompt" rows="6"
+                    placeholder="You are…" required></textarea>
+        </label>
 
-      <section class="agent-form__section">
-        <span class="agent-form__label">// tools</span>
-        <div class="tools-checks" id="agentToolChecks"></div>
-        <p class="agent-form__note">Which tools chats started from this agent may use. The model still only receives a tool it supports.</p>
-      </section>
+        <label class="agent-form__field agent-form__field--check">
+          <input class="agent-form__checkbox" type="checkbox" id="agentContinuous" />
+          <span class="agent-form__label">// continuous chat</span>
+        </label>
+        <p class="agent-form__note">All chats started from this agent share one ongoing history.</p>
 
-      <!-- Per-agent API key (ADR 0022). Shown only for a saved agent. The raw key is revealed ONCE,
-           right after create or a regenerate; only its hash is stored, so it can never be shown again. -->
-      <section class="agent-form__section" id="agentKeySection" hidden>
-        <span class="agent-form__label">// api key</span>
-        <button class="agent-form__btn" type="button" id="agentRegenerateKeyBtn">Regenerate key</button>
-        <div class="agent-key" id="agentKeyReveal" hidden>
-          <code class="agent-key__value" id="agentKeyValue"></code>
-          <button class="agent-form__btn" type="button" id="agentKeyCopyBtn">Copy</button>
-          <p class="agent-form__note">Copy it now — it won't be shown again. Send it as the <code>X-Api-Key</code> header on <code>POST /api/agent-run</code> to run this agent from outside the browser.</p>
-        </div>
-      </section>
+        <!-- Per-agent API key (ADR 0022). Shown only for a saved agent. The raw key is revealed ONCE,
+             right after create or a regenerate; only its hash is stored, so it can never be shown again. -->
+        <section class="agent-form__section" id="agentKeySection" hidden>
+          <span class="agent-form__label">// api key</span>
+          <button class="agent-form__btn" type="button" id="agentRegenerateKeyBtn">Regenerate key</button>
+          <div class="agent-key" id="agentKeyReveal" hidden>
+            <code class="agent-key__value" id="agentKeyValue"></code>
+            <button class="agent-form__btn" type="button" id="agentKeyCopyBtn">Copy</button>
+            <p class="agent-form__note">Copy it now — it won't be shown again. Send it as the <code>X-Api-Key</code> header on <code>POST /api/agent-run</code> to run this agent from outside the browser.</p>
+          </div>
+        </section>
+      </div>
+
+      <div class="agent-form__panel" role="tabpanel" id="panelAgentTools" aria-labelledby="tabAgentTools" hidden>
+        <section class="agent-form__section">
+          <span class="agent-form__label">// tools</span>
+          <div class="tools-checks" id="agentToolChecks"></div>
+          <p class="agent-form__note">Which tools chats started from this agent may use. The model still only receives a tool it supports.</p>
+        </section>
+      </div>
 
       <div class="agent-form__actions">
         <button class="agent-form__btn" type="button" id="agentCancelBtn">Cancel</button>
