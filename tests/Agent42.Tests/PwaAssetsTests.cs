@@ -167,7 +167,7 @@ public sealed class PwaAssetsTests
         // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
         // stale assets — sw.js serves the shell cache-first with background revalidate.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v4", sw);
+        Assert.Contains("agent42-shell-v5", sw);
     }
 
     // The Preferences dialog is split into General + Model providers tabs (source-text heuristic).
@@ -184,5 +184,19 @@ public sealed class PwaAssetsTests
         Assert.Contains("id=\"panelGeneral\"", index);
         Assert.Contains("id=\"panelProviders\"", index);
         Assert.Matches(@"role=""tabpanel""", index);
+    }
+
+    // The agent setup dialog is split into General + Tools tabs, sharing the Preferences tab pattern
+    // (source-text heuristic). Tab switching / keyboard nav is verified by driving DevHost, not here.
+    [Fact]
+    public async Task AgentDialog_HasGeneralAndToolsTabs()
+    {
+        var index = await _client.GetStringAsync("/");
+
+        Assert.Contains("id=\"tabAgentGeneral\"", index);
+        Assert.Contains("id=\"tabAgentTools\"", index);
+        // Two panels, one per tab; the inactive (tools) ships hidden.
+        Assert.Contains("id=\"panelAgentGeneral\"", index);
+        Assert.Contains("id=\"panelAgentTools\"", index);
     }
 }
