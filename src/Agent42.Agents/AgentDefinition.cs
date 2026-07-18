@@ -17,6 +17,12 @@ namespace Agent42.Agents;
 /// agents persisted before it keep every tool with no migration). It is snapshotted into the
 /// conversation at bind time (materialized to a concrete set), so editing an agent's tools
 /// affects only <i>future</i> chats — consistent with ADR 0003.
+///
+/// <see cref="ApiKeyHash"/> is the SHA-256 hash of the agent's external run key (ADR 0022) — the
+/// digest only; the raw key is returned once at mint time and never persisted. Empty (the default)
+/// means no key has been minted, so agents persisted before ADR 0022 deserialize keyless with no
+/// migration and get a key on their next regenerate. Keyed as <c>[Id(9)]</c> because 7 and 8 are
+/// already taken (<see cref="Continuous"/>, <see cref="EnabledTools"/>).
 /// </remarks>
 [GenerateSerializer]
 [Alias("Agent42.Agents.AgentDefinition")]
@@ -29,4 +35,5 @@ public sealed record AgentDefinition(
     [property: Id(5)] DateTimeOffset CreatedAt,
     [property: Id(6)] DateTimeOffset UpdatedAt,
     [property: Id(7)] bool Continuous = false,
-    [property: Id(8)] IReadOnlyList<string>? EnabledTools = null);
+    [property: Id(8)] IReadOnlyList<string>? EnabledTools = null,
+    [property: Id(9)] string ApiKeyHash = "");

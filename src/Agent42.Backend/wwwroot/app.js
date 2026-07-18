@@ -32,6 +32,11 @@
   const agentModelSelect = document.getElementById("agentModelSelect");
   const agentSystemPromptInput = document.getElementById("agentSystemPrompt");
   const agentContinuousInput = document.getElementById("agentContinuous");
+  const agentKeySection = document.getElementById("agentKeySection");
+  const agentRegenerateKeyBtn = document.getElementById("agentRegenerateKeyBtn");
+  const agentKeyReveal = document.getElementById("agentKeyReveal");
+  const agentKeyValue = document.getElementById("agentKeyValue");
+  const agentKeyCopyBtn = document.getElementById("agentKeyCopyBtn");
   const agentCancelBtn = document.getElementById("agentCancelBtn");
 
   const openProfileBtn = document.getElementById("openProfileBtn");
@@ -433,6 +438,12 @@
     agentDescriptionInput.value = agent?.description ?? "";
     agentSystemPromptInput.value = agent?.systemPrompt ?? "";
     agentContinuousInput.checked = agent?.continuous ?? false;
+    // The key section (with Regenerate) is meaningful only for a SAVED agent; a new agent has no key
+    // yet — one is minted on create and revealed then. Always start with the raw key hidden (ADR 0022).
+    agentKeySection.hidden = !agent;
+    agentKeyReveal.hidden = true;
+    agentKeyValue.textContent = "";
+    pendingRegenerate = false;
     // Null enabledTools (a new agent, or one saved before ADR 0021) means "all selectable tools".
     renderToolChecks(agentToolChecks, agent?.enabledTools ?? allToolKeys());
     fillModelOptions(agentModelSelect);
@@ -442,6 +453,10 @@
     agentDialog.showModal();
     agentNameInput.focus();
   }
+
+  // Set by the Regenerate-key button so the next save rotates the key (ADR 0022). Reset on every
+  // dialog open and after each save, so a plain Save never regenerates.
+  let pendingRegenerate = false;
 
   async function saveAgent() {
     const payload = {
@@ -456,10 +471,13 @@
     // return [] (= none), silently disabling every tool. Omit the field so the server keeps the default
     // (a create then stores null == all) rather than storing an accidental empty set.
     if (toolCatalog.length > 0) payload.enabledTools = readToolChecks(agentToolChecks);
+    // Regenerate only on an existing agent (PUT) — a create always mints a fresh key anyway.
+    if (editingAgentId && pendingRegenerate) payload.regenerateKey = true;
     if (!payload.name || !payload.systemPrompt || !payload.model) return;
 
     const url = editingAgentId ? `/api/agents/${encodeURIComponent(editingAgentId)}` : "/api/agents";
     const method = editingAgentId ? "PUT" : "POST";
+    let body;
     try {
       const res = await fetch(url, {
         method,
@@ -467,10 +485,25 @@
         body: JSON.stringify(payload),
       });
       if (!res.ok) return;
+      body = await res.json().catch(() => null);
     } catch { return; /* silo may be unreachable; leave the dialog open */ }
 
-    agentDialog.close();
+    pendingRegenerate = false;
     loadAgents();
+
+    // The response is { agent, apiKey }. A non-null apiKey means one was just minted (create, or a
+    // regenerate) — reveal it ONCE and keep the dialog open (now in edit mode) so the user can copy it;
+    // it is never returned again. Otherwise this was a plain save, so just close.
+    if (body && body.apiKey) {
+      editingAgentId = body.agent.id;
+      agentFormTitle.textContent = "Edit agent";
+      agentKeySection.hidden = false;
+      agentKeyValue.textContent = body.apiKey;
+      agentKeyReveal.hidden = false;
+      agentKeyCopyBtn.textContent = "Copy";
+    } else {
+      agentDialog.close();
+    }
   }
 
   async function deleteAgent(id, name) {
@@ -1742,6 +1775,24 @@
   agentForm.addEventListener("submit", (e) => {
     e.preventDefault();
     saveAgent();
+  });
+
+  // Regenerate the agent's API key (ADR 0022): confirm (the current key stops working), then save with
+  // the regenerate flag so the new key comes back and gets revealed once.
+  agentRegenerateKeyBtn.addEventListener("click", () => {
+    if (!editingAgentId) return;
+    if (!confirm("Regenerate this agent's API key? The current key stops working immediately.")) return;
+    pendingRegenerate = true;
+    saveAgent();
+  });
+
+  agentKeyCopyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(agentKeyValue.textContent);
+      agentKeyCopyBtn.textContent = "Copied";
+    } catch {
+      /* clipboard blocked (insecure context / permission) — the key is visible to select manually */
+    }
   });
 
   menuToggle.addEventListener("click", toggleDrawer);
