@@ -1216,6 +1216,42 @@ body {
   color: var(--ink-faint);
 }
 
+/* Web Share Target destination picker (ADR 0023): a "New chat" default action + an agent list,
+   inside the shared agent-dialog/agent-form frame. Rows mirror the sidebar agent buttons. */
+.share-dest {
+  width: 100%;
+}
+
+.share-agents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.share-agent {
+  width: 100%;
+  text-align: left;
+  padding: 9px 14px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-dim);
+  font: 400 12.5px/1.4 var(--mono);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-agent:hover { background: var(--line-soft); color: var(--ink); border-left-color: var(--amber-deep); }
+
 /* The once-shown per-agent API key (ADR 0022): a monospace, selectable, wrapping value + a copy button. */
 .agent-key {
   display: flex;

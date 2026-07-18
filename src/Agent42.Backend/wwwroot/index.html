@@ -311,6 +311,25 @@
     </form>
   </dialog>
 
+  <!-- Web Share Target destination picker (Android PWA only). A payload shared into the app lands here;
+       the user picks a destination PER SHARE — a new regular chat, or a stored agent (regular or
+       continuous, ADR 0016). The content is then prefilled/attached for review and the user presses
+       Send — never auto-sent, so sending stays the user's explicit consent to any third-party egress
+       (ADR 0013). Reuses the agent-dialog/agent-form styling. -->
+  <dialog class="agent-dialog" id="shareDialog">
+    <form class="agent-form" id="shareForm" method="dialog">
+      <h2 class="agent-form__title">Share to Agent 42</h2>
+      <section class="agent-form__section">
+        <p class="agent-form__note">Pick where the shared content goes. It's prefilled for you to review — then press Send.</p>
+        <button class="agent-form__btn agent-form__btn--primary share-dest" type="button" id="shareNewChatBtn">New chat</button>
+        <ul class="share-agents" id="shareAgentList"></ul>
+      </section>
+      <div class="agent-form__actions">
+        <button class="agent-form__btn" type="button" id="shareCancelBtn">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Add / edit one model provider (ADR 0018). Reuses the agent-dialog/agent-form styling. The API
        key is WRITE-ONLY: it is never sent back, so the field is left blank on edit and "blank = keep". -->
   <dialog class="agent-dialog" id="providerDialog">

@@ -1025,3 +1025,26 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`EnqueuePrompt_RunsAndPersistsTurn`, `EnqueuePrompt_WithImage_RecordsAttachmentOnTurn` — both poll),
   `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
 - **Verified:** 2026-07-17
+
+### The Web Share Target `respondWith` must sit after the `/api` guard, and the share needs an active SW
+
+- **Claim:** the Web Share Target (ADR 0023) is handled entirely in `sw.js`: `POST /share` is intercepted
+  client-side, stashed in IndexedDB, and answered with a 303 to `/?share=1` — so the body never reaches
+  the network (a POST navigation to a protected path would 302 to the Easy Auth login and **lose the
+  body**, ADR 0002). Two traps invisible in the code: **(1) placement** — the share branch introduces the
+  *first* `event.respondWith` in the fetch handler, so it MUST sit **after** the `url.pathname.startsWith("/api")`
+  early-return (the ADR 0002 never-intercept-`/api` invariant, pinned by `ServiceWorker_BypassesApiBeforeCaching`
+  and `ServiceWorker_HandlesShareTarget` which both assert `startsWith("/api")` precedes the first
+  `respondWith`) and **after** the same-origin guard (else a cross-origin `POST /share` is handled), but
+  **before** the `if (req.method !== "GET") return;` line (a share is a POST, so that early-return moved
+  *below* the share branch). Putting the share `respondWith` above the `/api` guard silently breaks the
+  auth invariant *and* the test. **(2) the SW must be active and controlling** for any of this to fire
+  (true after install on Android). If it isn't, `POST /share` reaches the server, which has no `/share`
+  route, and the share fails ungracefully. This is **accepted** platform degradation — do NOT add a server
+  `POST /share` fallback: it reintroduces the Easy Auth body-loss problem the SW-stash exists to avoid.
+  Web Share *Target* is Android/Chromium-only regardless (iOS PWAs can't register as targets).
+- **Evidence:** `src/Agent42.Backend/wwwroot/sw.js` (`handleShare`, the ordered fetch handler),
+  `src/Agent42.Backend/wwwroot/manifest.webmanifest` (`share_target`),
+  `tests/Agent42.Tests/PwaAssetsTests.cs` (`ServiceWorker_HandlesShareTarget`, `Manifest_DeclaresShareTarget`),
+  `.agentic/decisions/0023-web-share-target-android-pwa.md`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
+- **Verified:** 2026-07-18
