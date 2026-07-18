@@ -289,8 +289,10 @@ public sealed class PwaAssetsTests
         Assert.Matches(@"role=""tabpanel""", index);
     }
 
-    // The agent setup dialog is split into General + Tools tabs, sharing the Preferences tab pattern
-    // (source-text heuristic). Tab switching / keyboard nav is verified by driving DevHost, not here.
+    // The agent setup dialog is split into General + Tools + API key tabs (ADR 0021 tabs; the API-key
+    // tab added later), sharing the Preferences tab pattern (source-text heuristic). This fact asserts
+    // only the two original tabs; AgentEditor_HasApiKeyTab_WithAlwaysVisibleRunUrl covers the third.
+    // Tab switching / keyboard nav is verified by driving DevHost, not here.
     [Fact]
     public async Task AgentDialog_HasGeneralAndToolsTabs()
     {
