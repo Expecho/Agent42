@@ -167,7 +167,35 @@ public sealed class PwaAssetsTests
         // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
         // stale assets — sw.js serves the shell cache-first with background revalidate.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v5", sw);
+        Assert.Contains("agent42-shell-v6", sw);
+    }
+
+    // The per-conversation tools control (ADR 0021) is an icon-only button inside the composer frame,
+    // next to the attach icon (source-text heuristic; the repo has no JS test runner by design).
+    // Assertions are mutation-observable — index.html already contains other aria-labels and a "// tools"
+    // agent-form label, so whole-file Contains checks would pass vacuously; these prove position + form.
+    [Fact]
+    public async Task Frontend_ToolsControlIsIconButtonInComposerFrame()
+    {
+        var index = await _client.GetStringAsync("/");
+
+        // Accessible name co-occurs on the target button's tag (icon-only ⇒ needs an aria-label).
+        Assert.Matches(@"class=""composer__tools""[^>]*aria-label", index);
+
+        // The tools button sits between the attach icon and the textarea — i.e. inside .composer__frame.
+        var tools = index.IndexOf("composer__tools", StringComparison.Ordinal);
+        var attach = index.IndexOf("attachBtn", StringComparison.Ordinal);
+        var input = index.IndexOf("id=\"promptInput\"", StringComparison.Ordinal);
+        Assert.True(attach >= 0 && tools >= 0 && input >= 0, "composer frame elements missing");
+        Assert.True(tools > attach, "tools button must follow the attach icon");
+        Assert.True(tools < input, "tools button must precede the prompt textarea (i.e. be in the frame)");
+
+        // The old text button is gone (icon-only conversion): target its removed class, not the
+        // surviving "// tools" agent-form label at index.html:~210.
+        Assert.DoesNotContain("model__tools", index);
+
+        var styles = await _client.GetStringAsync("/styles.css");
+        Assert.Contains(".composer__tools", styles);
     }
 
     // The Preferences dialog is split into General + Model providers tabs (source-text heuristic).

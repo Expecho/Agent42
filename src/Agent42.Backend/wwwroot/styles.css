@@ -1057,23 +1057,26 @@ body {
   background: var(--amber-glow);
 }
 
-/* per-conversation tools button (ADR 0021): sits next to the model picker in the composer footer */
-.model__tools {
+/* per-conversation tools button (ADR 0021): icon-only, sits in the composer frame next to attach.
+   Mirrors .composer__attach at rest. */
+.composer__tools {
   flex-shrink: 0;
-  font: 500 11.5px var(--mono);
-  letter-spacing: 0.03em;
-  color: var(--amber);
-  background-color: var(--bg-inset);
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px 11px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-dim);
   cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
-.model__tools:hover { border-color: var(--amber-deep); }
+.composer__tools:hover { background: var(--line-soft); color: var(--amber); border-color: var(--amber-deep); }
+.composer__tools:active { transform: translateY(1px); }
 
-.model__tools:focus-visible {
+.composer__tools:focus-visible {
   outline: 0;
   border-color: var(--amber-deep);
   box-shadow: 0 0 0 1px var(--amber-deep), 0 0 18px var(--amber-glow);
