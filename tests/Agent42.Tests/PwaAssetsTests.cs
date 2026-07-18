@@ -62,10 +62,11 @@ public sealed class PwaAssetsTests
         var apiGuard = source.IndexOf("startsWith(\"/api\")", StringComparison.Ordinal);
         Assert.True(apiGuard >= 0, "Service worker is missing the /api bypass guard");
 
-        // respondWith is the interception mechanism and appears only in the fetch handler,
+        // event.respondWith( is the interception mechanism and appears only in the fetch handler,
         // so the /api early-return preceding every respondWith is the invariant we want:
-        // /api requests are never intercepted or cached.
-        var firstRespond = source.IndexOf("respondWith", StringComparison.Ordinal);
+        // /api requests are never intercepted or cached. Anchor on the call form (not the bare word
+        // "respondWith", which also occurs in the /api-guard comment) so the position is the real one.
+        var firstRespond = source.IndexOf("event.respondWith(", StringComparison.Ordinal);
         Assert.True(firstRespond >= 0, "Service worker has no fetch handler (respondWith)");
         Assert.True(apiGuard < firstRespond, "The /api bypass must precede any respondWith");
     }
@@ -167,7 +168,81 @@ public sealed class PwaAssetsTests
         // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
         // stale assets — sw.js serves the shell cache-first with background revalidate.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v6", sw);
+        Assert.Contains("agent42-shell-v7", sw);
+    }
+
+    // Web Share Target for the Android PWA (ADR 0023): an installed app appears in the system share
+    // sheet and receives text/url/files. The three assets below carry the contract; behaviour (the
+    // destination picker, prefill, attach, review-then-send) is verified by driving DevHost, not here.
+
+    [Fact]
+    public async Task Manifest_DeclaresShareTarget()
+    {
+        // AC1: the manifest must declare a POST/multipart share_target at /share accepting text/url and
+        // files including images + PDFs, so Android offers Agent 42 as a share destination.
+        var manifest = await _client.GetStringAsync("/manifest.webmanifest");
+        using var doc = JsonDocument.Parse(manifest);
+        var share = doc.RootElement.GetProperty("share_target");
+
+        Assert.Equal("/share", share.GetProperty("action").GetString());
+        Assert.Equal("POST", share.GetProperty("method").GetString());
+        Assert.Equal("multipart/form-data", share.GetProperty("enctype").GetString());
+
+        var accept = share.GetProperty("params").GetProperty("files")[0]
+            .GetProperty("accept").EnumerateArray().Select(a => a.GetString()).ToList();
+        Assert.Contains("image/*", accept);
+        Assert.Contains("application/pdf", accept);
+    }
+
+    [Fact]
+    public async Task ServiceWorker_HandlesShareTarget()
+    {
+        // AC2: sw.js intercepts POST /share client-side (so the body never hits the network / Easy Auth,
+        // ADR 0002/0023). The new respondWith this introduces must sit AFTER the /api bypass, or the
+        // ADR-0002 invariant regresses. Source-text heuristic (no JS runner) — proves position, not logic.
+        var sw = await _client.GetStringAsync("/sw.js");
+
+        Assert.Contains("\"/share\"", sw);
+        Assert.Contains("handleShare", sw);
+
+        var apiGuard = sw.IndexOf("startsWith(\"/api\")", StringComparison.Ordinal);
+        // Anchor on the call form event.respondWith( — the bare word "respondWith" also occurs in the
+        // /api-guard comment, so measuring it would assert a comment position, not the real branch.
+        var firstRespond = sw.IndexOf("event.respondWith(", StringComparison.Ordinal);
+        Assert.True(apiGuard >= 0, "Service worker is missing the /api bypass guard");
+        Assert.True(firstRespond >= 0, "Service worker has no fetch handler (respondWith)");
+        Assert.True(apiGuard < firstRespond,
+            "The /api bypass must precede any respondWith, including the new share branch");
+    }
+
+    [Fact]
+    public async Task Frontend_ShipsShareDestinationPicker()
+    {
+        // AC4: the shell carries the per-share destination picker dialog + its agent list container.
+        var index = await _client.GetStringAsync("/");
+        Assert.Contains("id=\"shareDialog\"", index);
+        Assert.Contains("id=\"shareAgentList\"", index);
+    }
+
+    [Fact]
+    public async Task Frontend_WiresShareHandoffToHandleFiles()
+    {
+        // AC5 — structural/weak check (Critic): handleFiles pervades app.js, so this proves the share
+        // hand-off strings exist AND that applyShare routes the shared files through handleFiles
+        // (position-bounded, mutation-observable). The real proof is the manual DevHost drive (AC6).
+        var app = await _client.GetStringAsync("/app.js");
+
+        Assert.Contains("has(\"share\")", app);   // the /?share=1 load-time hand-off detection
+        Assert.Contains("readSharePayload", app); // reads the IndexedDB stash the SW wrote
+
+        // handleFiles must be called INSIDE applyShare, not merely present somewhere in the file.
+        var applyShare = app.IndexOf("function applyShare", StringComparison.Ordinal);
+        Assert.True(applyShare >= 0, "app.js is missing the applyShare share handler");
+        var boundary = app.IndexOf("function initShare", applyShare, StringComparison.Ordinal);
+        if (boundary < 0) boundary = app.Length;
+        var handleFilesInApply = app.IndexOf("handleFiles(", applyShare, StringComparison.Ordinal);
+        Assert.True(handleFilesInApply >= 0 && handleFilesInApply < boundary,
+            "applyShare must route the shared files through handleFiles");
     }
 
     // The per-conversation tools control (ADR 0021) is an icon-only button inside the composer frame,

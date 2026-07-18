@@ -250,4 +250,19 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   the single place that generates *and* hashes. All in gotchas. **Headline consequence:** `/api/agent-run` is
   a new **inbound** vector for ADR 0013's egress — a key holder can push a prompt, **image bytes** and
   **document content** that, on a third-party model, leave the Entra tenant.
+- Web Share Target (ADR 0023): an installed PWA appears in Android's system **Share sheet** and receives
+  shared text/URL/images/documents. **Android/Chromium only** — iOS PWAs can't register as share targets.
+  The manifest declares a `share_target` (`POST /share`, multipart), but there is **no server `/share`
+  route and no `excludedPaths`/Bicep change** — the deliberate contrast with ADR 0022. The **service
+  worker intercepts `POST /share` client-side**, stashes the payload in **IndexedDB**, and 303-redirects to
+  a GET landing (`/?share=1`); the POST never hits the network, so Easy Auth (ADR 0002, `RedirectToLoginPage`)
+  never sees it and can't drop the body on a login redirect. `app.js` reads the stash on load, opens a
+  **per-share destination picker** (new chat / an agent, incl. continuous — ADR 0016), prefills the composer
+  and runs shared files through the existing `handleFiles` upload path (images → attachments, documents →
+  RAG), then the user **reviews and presses Send — never auto-sent** (egress consent, ADR 0013). Two things
+  to read before touching this: the share `respondWith` must sit **after** the `/api` guard and **before**
+  the non-GET early-return, and the SW must be **active** for the share to work (else the POST reaches the
+  server and fails — accepted degradation, no server fallback). Both are in gotchas. **Headline consequence:**
+  sharing is a new **inbound** vector for ADR 0013's egress, and sharing a large file into a **continuous**
+  agent is a new low-friction path to the 2 MB grain brick (ADR 0016/0004).
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
