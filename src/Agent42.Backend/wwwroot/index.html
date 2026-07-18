@@ -164,6 +164,8 @@
                 aria-selected="true" aria-controls="panelAgentGeneral" tabindex="0">General</button>
         <button class="agent-form__tab" type="button" role="tab" id="tabAgentTools"
                 aria-selected="false" aria-controls="panelAgentTools" tabindex="-1">Tools</button>
+        <button class="agent-form__tab" type="button" role="tab" id="tabAgentApi"
+                aria-selected="false" aria-controls="panelAgentApi" tabindex="-1">API key</button>
       </div>
 
       <!-- General panel: persona fields + the ADR 0022 per-agent API key (an agent-level access
@@ -198,6 +200,29 @@
           <span class="agent-form__label">// continuous chat</span>
         </label>
         <p class="agent-form__note">All chats started from this agent share one ongoing history.</p>
+      </div>
+
+      <div class="agent-form__panel" role="tabpanel" id="panelAgentTools" aria-labelledby="tabAgentTools" hidden>
+        <section class="agent-form__section">
+          <span class="agent-form__label">// tools</span>
+          <div class="tools-checks" id="agentToolChecks"></div>
+          <p class="agent-form__note">Which tools chats started from this agent may use. The model still only receives a tool it supports.</p>
+        </section>
+      </div>
+
+      <!-- API-key panel (ADR 0022). The run endpoint URL is NOT a secret and is agent-independent
+           (the same /api/agent-run for every agent; the key alone identifies the agent), so it is shown
+           ALWAYS — including for a not-yet-saved agent — OUTSIDE #agentKeySection's saved-agent gate.
+           Only the raw key value stays revealed-once (moved here verbatim from the General panel). -->
+      <div class="agent-form__panel" role="tabpanel" id="panelAgentApi" aria-labelledby="tabAgentApi" hidden>
+        <section class="agent-form__section">
+          <span class="agent-form__label">// run endpoint</span>
+          <div class="agent-key">
+            <code class="agent-key__value" id="agentRunUrl"></code>
+            <button class="agent-form__btn" type="button" id="agentRunUrlCopyBtn">Copy</button>
+            <p class="agent-form__note">Send the agent's API key as the <code>X-Api-Key</code> header on <code>POST</code> to this URL to run this agent from outside the browser.</p>
+          </div>
+        </section>
 
         <!-- Per-agent API key (ADR 0022). Shown only for a saved agent. The raw key is revealed ONCE,
              right after create or a regenerate; only its hash is stored, so it can never be shown again. -->
@@ -209,14 +234,6 @@
             <button class="agent-form__btn" type="button" id="agentKeyCopyBtn">Copy</button>
             <p class="agent-form__note">Copy it now — it won't be shown again. Send it as the <code>X-Api-Key</code> header on <code>POST /api/agent-run</code> to run this agent from outside the browser.</p>
           </div>
-        </section>
-      </div>
-
-      <div class="agent-form__panel" role="tabpanel" id="panelAgentTools" aria-labelledby="tabAgentTools" hidden>
-        <section class="agent-form__section">
-          <span class="agent-form__label">// tools</span>
-          <div class="tools-checks" id="agentToolChecks"></div>
-          <p class="agent-form__note">Which tools chats started from this agent may use. The model still only receives a tool it supports.</p>
         </section>
       </div>
 

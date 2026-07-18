@@ -48,6 +48,24 @@ public sealed class AgentEditorAssetsTests
         Assert.Contains("body.apiKey", app);
     }
 
+    [Fact] // AC1/AC2/AC3 — a dedicated API-key tab whose run-endpoint URL shows always, key reveal lands here.
+    public async Task AgentEditor_HasApiKeyTab_WithAlwaysVisibleRunUrl()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _client.GetStringAsync("/app.js");
+
+        // The third tab + its panel exist (AC1).
+        Assert.Contains("id=\"tabAgentApi\"", html);
+        Assert.Contains("id=\"panelAgentApi\"", html);
+
+        // The always-visible run-endpoint URL element exists and is populated with the absolute URL (AC2).
+        Assert.Contains("id=\"agentRunUrl\"", html);
+        Assert.Contains("`${location.origin}/api/agent-run`", app);
+
+        // The post-save reveal switches to the API-key tab (index 2), where the key now lives (AC3).
+        Assert.Contains("agentTabs.select(2)", app);
+    }
+
     [Fact] // AC5 — continuous starts route onto a deterministic id AND resume the existing history.
     public async Task AgentEditor_ContinuousRoutesToDeterministicConversationId_AndResumes()
     {
