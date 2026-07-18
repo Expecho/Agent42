@@ -37,6 +37,8 @@
   const agentKeyReveal = document.getElementById("agentKeyReveal");
   const agentKeyValue = document.getElementById("agentKeyValue");
   const agentKeyCopyBtn = document.getElementById("agentKeyCopyBtn");
+  const agentRunUrl = document.getElementById("agentRunUrl");
+  const agentRunUrlCopyBtn = document.getElementById("agentRunUrlCopyBtn");
   const agentCancelBtn = document.getElementById("agentCancelBtn");
 
   const openProfileBtn = document.getElementById("openProfileBtn");
@@ -56,6 +58,7 @@
   const agentTabs = wireTabs([
     [document.getElementById("tabAgentGeneral"), document.getElementById("panelAgentGeneral")],
     [document.getElementById("tabAgentTools"), document.getElementById("panelAgentTools")],
+    [document.getElementById("tabAgentApi"), document.getElementById("panelAgentApi")],
   ]);
 
   const providerList = document.getElementById("providerList");
@@ -454,6 +457,10 @@
     agentKeySection.hidden = !agent;
     agentKeyReveal.hidden = true;
     agentKeyValue.textContent = "";
+    // The run endpoint is agent-independent and not a secret (ADR 0022: the key alone identifies the
+    // agent), so show its absolute URL ALWAYS — even for a not-yet-saved agent — for off-browser copy.
+    agentRunUrl.textContent = `${location.origin}/api/agent-run`;
+    agentRunUrlCopyBtn.textContent = "Copy"; // reset a stale "Copied" from a prior open (button is always visible)
     pendingRegenerate = false;
     // Null enabledTools (a new agent, or one saved before ADR 0021) means "all selectable tools".
     renderToolChecks(agentToolChecks, agent?.enabledTools ?? allToolKeys());
@@ -509,7 +516,7 @@
     if (body && body.apiKey) {
       editingAgentId = body.agent.id;
       agentFormTitle.textContent = "Edit agent";
-      agentTabs.select(0); // the key lives in the General panel — show it even if Save came from Tools
+      agentTabs.select(2); // the key lives in the API-key panel — show it even if Save came from another tab
       agentKeySection.hidden = false;
       agentKeyValue.textContent = body.apiKey;
       agentKeyReveal.hidden = false;
@@ -1809,6 +1816,15 @@
       agentKeyCopyBtn.textContent = "Copied";
     } catch {
       /* clipboard blocked (insecure context / permission) — the key is visible to select manually */
+    }
+  });
+
+  agentRunUrlCopyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(agentRunUrl.textContent);
+      agentRunUrlCopyBtn.textContent = "Copied";
+    } catch {
+      /* clipboard blocked (insecure context / permission) — the URL is visible to select manually */
     }
   });
 

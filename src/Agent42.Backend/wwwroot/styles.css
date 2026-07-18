@@ -1252,7 +1252,8 @@ body {
 
 .share-agent:hover { background: var(--line-soft); color: var(--ink); border-left-color: var(--amber-deep); }
 
-/* The once-shown per-agent API key (ADR 0022): a monospace, selectable, wrapping value + a copy button. */
+/* A monospace, selectable, wrapping value + a copy button (ADR 0022): the once-shown per-agent API key
+   and the always-visible run endpoint URL both use this layout. */
 .agent-key {
   display: flex;
   flex-direction: column;
