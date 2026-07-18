@@ -1,3 +1,5 @@
+using Orleans.Concurrency;
+
 namespace Agent42.Agents;
 
 /// <summary>
@@ -7,6 +9,19 @@ namespace Agent42.Agents;
 [Alias("Agent42.Agents.IAgentGrain")]
 public interface IAgentGrain : IGrainWithStringKey
 {
+    /// <summary>
+    /// Runs a prompt (with optional image attachments) against this conversation in the background and
+    /// persists the turn — the async run behind <c>POST /api/agent-run</c> (ADR 0022). <see cref="OneWay"/>:
+    /// it returns immediately and the grain processes the turn on its own, so the HTTP handler can answer
+    /// 202 without holding the connection. Best-effort — there is no caller to surface a failure to, so the
+    /// background run logs and swallows errors. Reuses the full chat turn path (vision gate, image
+    /// generation, document retrieval), so an image rides the same <see cref="AttachmentRef"/> path as a
+    /// browser turn; <paramref name="attachments"/> null/empty is a text-only turn.
+    /// </summary>
+    [Alias("EnqueuePromptAsync")]
+    [OneWay]
+    Task EnqueuePromptAsync(string message, IReadOnlyList<AttachmentRef>? attachments);
+
     /// <summary>
     /// Sends a message to the agent and streams the turn back as typed events:
     /// reply-text deltas, tool-call start/end notifications, and a closing

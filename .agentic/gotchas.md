@@ -968,3 +968,60 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
   `UserDefault_AppliesWhenNoOverride`), `.agentic/decisions/0021-selectable-tools-three-layer.md`
 - **Verified:** 2026-07-17
+
+### The API-key directory must be kept in sync per-operation, or a revoked key stays live
+
+- **Claim:** a per-agent API key (ADR 0022) authenticates by an **O(1) hash-keyed grain lookup** —
+  `IAgentKeyDirectoryGrain` (grain key = SHA-256 hash) → `(userId, agentId)` — because the run endpoint
+  has no signed-in user and no agent id in the request. The `AgentRegistryGrain` owns the hash and **must
+  pair every hash change with a directory update**, and there is **no single safe write order** — the
+  invariant is *"a revoked key must never keep resolving,"* which forces a **per-operation** order:
+  **create** writes the registry (new hash) then registers; **delete** removes from the registry then
+  deregisters; **regenerate deregisters the OLD hash FIRST**, then writes the new hash, then registers it.
+  Regenerate is the opposite of the other two on purpose: registry-write-first there would strand a live
+  `oldHash` entry that the stored (now `newHash`) can never clear — a **permanently live revoked key**.
+  A missed `DeregisterAsync` leaves a revoked/deleted key resolving; the endpoint's post-resolve
+  agent-existence re-check (401 on a null agent) is the delete backstop, not a licence to skip the
+  deregister. Keys are 256-bit random, so a single **SHA-256** (no salt, no bcrypt/PBKDF2, no
+  `FixedTimeEquals`) is correct — `ApiKey` is the one place that generates *and* hashes, so they can't
+  diverge.
+- **Evidence:** `src/Agent42.Agents/ApiKey.cs`, `src/Agent42.Agents/AgentKeyDirectoryGrain.cs`,
+  `src/Agent42.Agents/AgentRegistryGrain.cs` (`SaveAsync` per-operation ordering, `DeleteAsync`),
+  `tests/Agent42.Tests/AgentRegistryGrainTests.cs` (`AgentKey_Regenerate_InvalidatesOldKey`,
+  `AgentDelete_DeregistersKey`), `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
+- **Verified:** 2026-07-17
+
+### An Easy-Auth `excludedPaths` endpoint is publicly reachable and must self-enforce auth + fail closed
+
+- **Claim:** the whole app is behind Entra Easy Auth (ADR 0002), but `/api/agent-run` (ADR 0022) is added
+  to `container-app.bicep`'s `globalValidation.excludedPaths` so a key-only caller isn't redirected to
+  login. That makes the path **publicly reachable** — Easy Auth no longer gates it — so the handler is the
+  *only* auth boundary and must **self-enforce the key and fail closed** (missing/unknown key → 401,
+  deletion-race null agent → 401 not 404 so agent existence isn't disclosed). Two consequences a
+  contributor must not miss: **(1)** on an excluded path there is **no `X-MS-CLIENT-PRINCIPAL-ID`**, so
+  `GetUserId` returns `local-dev` — the endpoint must take the userId from the **directory resolution**,
+  never from `GetUserId`; **(2)** any new endpoint added under this exclusion inherits the same duty. This
+  is the single hole in the ADR 0002 gate; every browser surface stays fully Easy-Auth-gated. The ingress
+  `excludedPaths` behaviour itself is **not** unit-testable (TestServer has no Easy Auth) — verify at deploy.
+- **Evidence:** `infra/modules/container-app.bicep` (`globalValidation.excludedPaths`),
+  `src/Agent42.Backend/AgentApi.cs` (`/api/agent-run` — 401 branches, userId from `owner`, never `GetUserId`),
+  `tests/Agent42.Tests/AgentApiTests.cs` (`AgentRun_MissingOrUnknownKey_Returns401`),
+  `.agentic/decisions/0002-entra-easy-auth-gate.md`, `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
+- **Verified:** 2026-07-17
+
+### The background (agent-run) run must drain `ChatCoreAsync`, not the reminder path, or attachments vanish
+
+- **Claim:** the async run behind `POST /api/agent-run` (ADR 0022, `IAgentGrain.EnqueuePromptAsync`, `[OneWay]`)
+  runs its turn by **draining `ChatCoreAsync`** (`await foreach` over it, discarding the streamed events after
+  clearing `_turnLocation` like the reminder path). This is deliberate and load-bearing: `ChatCoreAsync` is
+  the *only* place that does the no-model guard, the **image-generation branch** (ADR 0020), the **vision
+  gate + attachment→`UriContent` materialization** (ADR 0013/0004) and document retrieval. The reminder path
+  (`ReceiveReminder`) pushes an **always-empty** attachment list and does none of that — so reusing *it* (the
+  spec's original plan) would make agent-run images **silently vanish** and an image-generation agent never
+  edit its input. Do not "simplify" `EnqueuePromptAsync` to a bare `_agent.RunAsync([msg], _session)`.
+  Because it's `[OneWay]`, callers/tests can't await the turn — **poll** history for the persisted result.
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`EnqueuePromptAsync` draining `ChatCoreAsync`; contrast
+  `ReceiveReminder`'s empty-attachment turn), `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`EnqueuePrompt_RunsAndPersistsTurn`, `EnqueuePrompt_WithImage_RecordsAttachmentOnTurn` — both poll),
+  `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
+- **Verified:** 2026-07-17

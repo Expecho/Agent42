@@ -502,6 +502,34 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
     }
 
+    public async Task EnqueuePromptAsync(string message, IReadOnlyList<AttachmentRef>? attachments)
+    {
+        // A background (agent-run) turn has no browser and no location — clear _turnLocation before
+        // running, exactly like the reminder path: the field lives for the ACTIVATION, so a prior chat
+        // turn's fix would otherwise leak into this one and have get_current_location report a stale place.
+        _turnLocation = null;
+
+        try
+        {
+            // Reuse the full chat turn core by DRAINING it. ChatCoreAsync already does the no-model guard,
+            // the image-generation branch (ADR 0020 — so an image model edits the attachment), the vision
+            // gate + attachment→UriContent materialization (ADR 0013/0004), document retrieval, the model
+            // run and the session persist — everything a browser turn does. The streamed events have no
+            // listener here (this is OneWay/202), so they are simply discarded; the side effects — the
+            // persisted turn — are the point. model: null keeps the bound/current model.
+            await foreach (var _ in ChatCoreAsync(message, model: null, attachments))
+            {
+            }
+        }
+        catch (Exception ex)
+        {
+            // Best-effort: no caller to surface this to (the 202 was already returned). Log and move on,
+            // rather than faulting a OneWay grain call into the void.
+            _logger.LogError(
+                ex, "Agent grain {GrainKey} failed a background (agent-run) turn", this.GetPrimaryKeyString());
+        }
+    }
+
     private async IAsyncEnumerable<AgentStreamEvent> ChatCoreAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments)
     {
