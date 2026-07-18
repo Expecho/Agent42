@@ -1136,8 +1136,9 @@ body {
   color: var(--ink);
 }
 
-/* Tabs split the profile dialog into General / Model providers. Real tabs (role=tablist/tab/
-   tabpanel in the markup); this is only their look — an amber underline marks the active one. */
+/* Tabs split the profile dialog (General / Model providers) and the agent dialog (General / Tools);
+   both share these rules. Real tabs (role=tablist/tab/tabpanel in the markup); this is only their
+   look — an amber underline marks the active one. */
 .agent-form__tablist {
   display: flex;
   gap: 4px;
