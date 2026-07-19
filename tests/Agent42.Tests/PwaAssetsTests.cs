@@ -273,19 +273,32 @@ public sealed class PwaAssetsTests
         Assert.Contains(".composer__tools", styles);
     }
 
-    // The Preferences dialog is split into General + Model providers tabs (source-text heuristic).
-    // Tab switching / keyboard nav is verified by driving the DevHost UI, not asserted here.
+    // The Preferences dialog is split into General + Tools + Model providers tabs (source-text
+    // heuristic). Tab switching / keyboard nav is verified by driving the DevHost UI, not asserted here.
     [Fact]
-    public async Task Preferences_HasGeneralAndProvidersTabs()
+    public async Task Preferences_HasGeneralToolsAndProvidersTabs()
     {
         var index = await _client.GetStringAsync("/");
 
         Assert.Contains("role=\"tablist\"", index);
         Assert.Contains("id=\"tabGeneral\"", index);
+        Assert.Contains("id=\"tabTools\"", index);
         Assert.Contains("id=\"tabProviders\"", index);
-        // Two panels, one per tab; the inactive (providers) ships hidden.
+        // Three panels, one per tab; the inactive (tools, providers) ship hidden.
         Assert.Contains("id=\"panelGeneral\"", index);
+        Assert.Contains("id=\"panelTools\"", index);
         Assert.Contains("id=\"panelProviders\"", index);
+        // The default-tools container now lives in the Tools panel, not General: pin its position
+        // between panelTools and panelProviders. Left in panelGeneral it would sort before panelTools.
+        Assert.Contains("id=\"profileToolChecks\"", index);
+        Assert.True(
+            index.IndexOf("id=\"panelTools\"", StringComparison.Ordinal)
+                < index.IndexOf("id=\"profileToolChecks\"", StringComparison.Ordinal),
+            "profileToolChecks must appear after panelTools (i.e. inside the Tools panel).");
+        Assert.True(
+            index.IndexOf("id=\"profileToolChecks\"", StringComparison.Ordinal)
+                < index.IndexOf("id=\"panelProviders\"", StringComparison.Ordinal),
+            "profileToolChecks must appear before panelProviders.");
         Assert.Matches(@"role=""tabpanel""", index);
     }
 
