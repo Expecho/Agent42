@@ -53,6 +53,7 @@
   // pairs in tablist order, attaches the click + keyboard nav, and returns a select(index, focus).
   const profileTabs = wireTabs([
     [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
+    [document.getElementById("tabTools"), document.getElementById("panelTools")],
     [document.getElementById("tabProviders"), document.getElementById("panelProviders")],
   ]);
   const agentTabs = wireTabs([
