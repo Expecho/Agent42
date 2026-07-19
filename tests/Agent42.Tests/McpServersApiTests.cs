@@ -40,6 +40,7 @@ public sealed class McpServersApiTests : IAsyncLifetime
         // key ring is fine for tests (no persisted secrets).
         appBuilder.Services.AddSingleton<IMcpSecretProtector>(
             new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
+        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
         // MapAgentApi maps every endpoint; the route matcher infers all of their parameters up front, so the
         // services the OTHER endpoints resolve as parameters must be present even though these tests only hit
         // /api/mcp-servers (otherwise minimal-API treats an unregistered service param as a body).
@@ -291,6 +292,26 @@ public sealed class McpServersApiTests : IAsyncLifetime
         var server = await SingleServer(await _client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", "user-cck")));
         Assert.Equal("Renamed CC", server.GetProperty("name").GetString());
         Assert.True(server.GetProperty("hasClientSecret").GetBoolean()); // secret survived the secretless edit
+    }
+
+    // Phase 3: an InteractiveOAuth server is accepted (structural validation only — endpoints are discovered
+    // and tokens obtained later via the Connect flow) and reports hasToken=false until connected.
+    [Fact]
+    public async Task InteractiveOAuth_IsAccepted_HasTokenFalseUntilConnected()
+    {
+        var post = await _client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-oauth", new
+        {
+            name = "OAuth server",
+            endpoint = "https://mcp.example.com/mcp",
+            auth = "InteractiveOAuth",
+            enabled = true,
+            clientId = "client-1",
+        }));
+        Assert.Equal(HttpStatusCode.OK, post.StatusCode);
+
+        var server = await SingleServer(await _client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", "user-oauth")));
+        Assert.Equal("InteractiveOAuth", server.GetProperty("auth").GetString());
+        Assert.False(server.GetProperty("hasToken").GetBoolean());
     }
 
     // CRUD is per-user — one user cannot see another's servers, and delete only affects the owner.

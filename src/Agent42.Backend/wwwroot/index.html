@@ -454,6 +454,7 @@
           <option value="None">None (public server)</option>
           <option value="Header">Static header (API key / bearer)</option>
           <option value="ClientCredentials">Entra ID client credentials (Dataverse)</option>
+          <option value="InteractiveOAuth">Interactive OAuth (sign in)</option>
         </select>
       </label>
 
@@ -492,6 +493,8 @@
         <input class="agent-form__input" type="text" id="mcpScopes"
                placeholder="https://org.crm4.dynamics.com/.default (space-separated)" />
       </label>
+
+      <p class="agent-form__note" id="mcpOAuthNote" hidden>Client id is optional (the server may register one for you). Save the server, then use <b>Connect</b> in the list to sign in — your conversation and its tool results then flow through this server.</p>
 
       <p class="agent-form__error" id="mcpError" hidden></p>
 

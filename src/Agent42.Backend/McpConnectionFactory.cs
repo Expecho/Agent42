@@ -13,10 +13,10 @@ public sealed record McpServerConnection(IReadOnlyList<AITool> Tools, IAsyncDisp
 
 /// <summary>
 /// The already-decrypted secrets a connection may need, unprotected by the caller (never the ciphertext).
-/// Phase 1: <see cref="HeaderValue"/>. Phase 2: <see cref="ClientSecret"/> (MSAL). Phase 3 will add the
-/// OAuth access token.
+/// Phase 1: <see cref="HeaderValue"/>. Phase 2: <see cref="ClientSecret"/> (MSAL). Phase 3:
+/// <see cref="OAuthAccessToken"/> — the current (connect-time-refreshed) access token for InteractiveOAuth.
 /// </summary>
-public sealed record McpConnectionSecrets(string? HeaderValue, string? ClientSecret);
+public sealed record McpConnectionSecrets(string? HeaderValue, string? ClientSecret, string? OAuthAccessToken = null);
 
 /// <summary>
 /// Connects to a single remote MCP server and returns its tools. A seam (not the concrete SDK types) so the
@@ -73,6 +73,17 @@ public sealed class McpConnectionFactory : IMcpConnectionFactory
             options.AdditionalHeaders = new Dictionary<string, string>
             {
                 [server.HeaderName] = secrets.HeaderValue,
+            };
+        }
+
+        // InteractiveOAuth mode: the provider already refreshed the access token at connect time (app-owned
+        // refresh), so it is a static Bearer for this connection's life — stamp it via AdditionalHeaders, no
+        // per-request handler. A mid-life expiry is picked up on the next activation (accepted staleness).
+        if (mode == McpAuthMode.InteractiveOAuth && !string.IsNullOrEmpty(secrets.OAuthAccessToken))
+        {
+            options.AdditionalHeaders = new Dictionary<string, string>
+            {
+                ["Authorization"] = $"Bearer {secrets.OAuthAccessToken}",
             };
         }
 

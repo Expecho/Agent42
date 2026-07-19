@@ -177,6 +177,10 @@ builder.Services.AddSingleton<IMcpSecretProtector, McpSecretProtector>();
 // gated by the ToolCatalog.Mcp key (ADR 0021).
 builder.Services.AddSingleton<IMcpConnectionFactory, McpConnectionFactory>();
 builder.Services.AddSingleton<IUserMcpToolProvider, UserMcpToolProvider>();
+// Drives the interactive-OAuth HTTP exchanges (PRM discovery, code→token, refresh — Phase 3) over a plain
+// HttpClient (not DI-resolved, so no AddServiceDefaults resilience inheritance). Used by the /api/mcp/oauth/*
+// endpoints and by the tool provider's connect-time token refresh.
+builder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
 
 // Document RAG (ADR 0007). The embedding deployment is a manual prerequisite the user owns (a
 // text-embedding-3-large deployment in the AI Foundry account, RG agent42 — the same account the

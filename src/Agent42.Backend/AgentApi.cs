@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Agent42.Agents;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Agent42.Backend;
 
@@ -509,6 +510,136 @@ public static class AgentApi
             return Results.NoContent();
         });
 
+        // ————— interactive OAuth for MCP servers (Phase 3) —————
+        //
+        // BOTH endpoints stay BEHIND Easy Auth (ADR 0002) — NEVER in excludedPaths — or GetUserId() would
+        // return the local-dev principal and the flow would bind tokens to the wrong (or no) user. The app
+        // drives auth-code + PKCE itself because the SDK's redirect delegate is BLOCKING and can't bridge a
+        // stateless two-request web flow (Step 0). The starting point is the user's OWN configured MCP endpoint
+        // (never a model/request); the authorization/token URLs are then DISCOVERED from that server's responses
+        // (response-controlled — accepted under the same "user's own server" rationale as ADR 0018; see the
+        // McpOAuthClient note), and an upstream token-exchange error is NEVER reflected into the redirect.
+
+        // Begins the flow: discover the server's authorization server, build the PKCE authorization URL, and
+        // 302-redirect the browser to it. State + verifier are persisted per-user for the callback.
+        app.MapGet("/api/mcp/oauth/start", async (string serverId, McpOAuthClient oauth, IGrainFactory grains, HttpContext http) =>
+        {
+            var userId = http.GetUserId();
+            var overlay = await grains.GetGrain<IUserMcpConfigGrain>(userId).GetAsync();
+            var server = overlay.Servers.FirstOrDefault(s => string.Equals(s.Id, serverId, StringComparison.OrdinalIgnoreCase));
+            if (server is null
+                || !Enum.TryParse<McpAuthMode>(server.Auth, ignoreCase: true, out var mode)
+                || mode != McpAuthMode.InteractiveOAuth)
+            {
+                return Results.Text("No InteractiveOAuth MCP server with that id.", "text/plain", statusCode: StatusCodes.Status404NotFound);
+            }
+
+            var mcpEndpoint = new Uri(server.Endpoint);
+            var redirectUri = new Uri($"{http.Request.Scheme}://{http.Request.Host}/api/mcp/oauth/callback");
+            try
+            {
+                var config = await oauth.DiscoverAsync(mcpEndpoint, http.RequestAborted);
+
+                // A pre-registered client id is preferred; otherwise register dynamically if the server allows it.
+                var clientId = server.ClientId;
+                if (string.IsNullOrWhiteSpace(clientId))
+                {
+                    if (config.RegistrationEndpoint is null)
+                    {
+                        return Results.Text(
+                            "This server needs a client id and does not support dynamic client registration. Set a client id on the server.",
+                            "text/plain", statusCode: StatusCodes.Status400BadRequest);
+                    }
+
+                    clientId = await oauth.RegisterClientAsync(config.RegistrationEndpoint, redirectUri, http.RequestAborted);
+                    // Persist the registered client id so a later Connect/Reconnect reuses it instead of
+                    // minting (and orphaning) a fresh registration each time.
+                    await grains.GetGrain<IUserMcpConfigGrain>(userId).SaveAsync(server with { ClientId = clientId });
+                }
+
+                var scopes = server.Scopes is { Count: > 0 } ? server.Scopes : config.ScopesSupported;
+                var verifier = McpPkce.NewVerifier();
+                var state = McpPkce.NewState();
+
+                await grains.GetGrain<IUserMcpOAuthPendingGrain>(userId).PutAsync(new McpOAuthPending(
+                    state, server.Id, verifier, clientId, config.TokenEndpoint.AbsoluteUri, redirectUri.AbsoluteUri, [.. scopes], mcpEndpoint.AbsoluteUri));
+
+                var parameters = new Dictionary<string, string?>
+                {
+                    ["response_type"] = "code",
+                    ["client_id"] = clientId,
+                    ["redirect_uri"] = redirectUri.AbsoluteUri,
+                    ["state"] = state,
+                    ["code_challenge"] = McpPkce.Challenge(verifier),
+                    ["code_challenge_method"] = "S256",
+                    ["resource"] = mcpEndpoint.AbsoluteUri, // RFC 8707 resource indicator
+                };
+                if (scopes.Count > 0)
+                {
+                    parameters["scope"] = string.Join(' ', scopes);
+                }
+
+                var authorizeUrl = QueryHelpers.AddQueryString(config.AuthorizationEndpoint.AbsoluteUri, parameters);
+                return Results.Redirect(authorizeUrl);
+            }
+            catch (Exception ex)
+            {
+                return Results.Text($"Could not start authorization: {ex.Message}", "text/plain", statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        // Completes the flow: validate state, exchange the code for tokens, persist them ENCRYPTED on the
+        // server, and redirect back to the app. A replayed callback finds no pending entry (one-time TakeAsync).
+        app.MapGet("/api/mcp/oauth/callback", async (McpOAuthClient oauth, IMcpSecretProtector protector, IGrainFactory grains, ILoggerFactory loggerFactory, HttpContext http) =>
+        {
+            var userId = http.GetUserId();
+            var query = http.Request.Query;
+            if (query.TryGetValue("error", out var error))
+            {
+                return Results.Redirect($"/?mcp_oauth=error&reason={Uri.EscapeDataString(error.ToString())}");
+            }
+
+            var code = query["code"].ToString();
+            var state = query["state"].ToString();
+            if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(state))
+            {
+                return Results.Redirect("/?mcp_oauth=error&reason=missing_code_or_state");
+            }
+
+            var pending = await grains.GetGrain<IUserMcpOAuthPendingGrain>(userId).TakeAsync(state);
+            if (pending is null)
+            {
+                return Results.Redirect("/?mcp_oauth=error&reason=unknown_state");
+            }
+
+            try
+            {
+                var tokens = await oauth.ExchangeCodeAsync(
+                    new Uri(pending.TokenEndpoint), pending.ClientId, code, pending.CodeVerifier,
+                    new Uri(pending.RedirectUri), new Uri(pending.Resource), pending.Scopes, http.RequestAborted);
+
+                var configGrain = grains.GetGrain<IUserMcpConfigGrain>(userId);
+                var server = (await configGrain.GetAsync()).Servers
+                    .FirstOrDefault(s => string.Equals(s.Id, pending.ServerId, StringComparison.OrdinalIgnoreCase));
+                if (server is null)
+                {
+                    return Results.Redirect("/?mcp_oauth=error&reason=server_deleted");
+                }
+
+                await configGrain.SaveAsync(server with { TokenCiphertext = protector.Protect(tokens.Serialize()) });
+                return Results.Redirect("/?mcp_oauth=connected");
+            }
+            catch (Exception ex)
+            {
+                // The token endpoint is DISCOVERED from the user's own MCP server (PRM), so its response body
+                // is response-controlled — never reflect it into the redirect. Log the detail server-side and
+                // hand the browser a generic reason.
+                loggerFactory.CreateLogger("Agent42.Mcp.OAuth").LogWarning(ex,
+                    "MCP OAuth code exchange failed for user {User}.", userId);
+                return Results.Redirect("/?mcp_oauth=error&reason=token_exchange_failed");
+            }
+        });
+
         return app;
     }
 
@@ -534,7 +665,7 @@ public static class AgentApi
 
         if (!Enum.TryParse<McpAuthMode>(request.Auth, ignoreCase: true, out var auth))
         {
-            return $"Unknown auth mode '{request.Auth}'. Use 'None', 'Header', or 'ClientCredentials'.";
+            return $"Unknown auth mode '{request.Auth}'. Use 'None', 'Header', 'ClientCredentials', or 'InteractiveOAuth'.";
         }
 
         return auth switch
@@ -543,6 +674,10 @@ public static class AgentApi
             McpAuthMode.Header when string.IsNullOrWhiteSpace(request.HeaderName)
                 => "Header auth requires a header name.",
             McpAuthMode.Header => null,
+            // InteractiveOAuth: nothing extra is required at save time — the endpoints are discovered (PRM),
+            // the client id is optional (dynamic registration otherwise), and tokens are obtained later via
+            // the Connect flow (/api/mcp/oauth/start). Validation is only structural (endpoint above).
+            McpAuthMode.InteractiveOAuth => null,
             // ClientCredentials (MSAL): the authority is an Entra login endpoint (absolute https); clientId
             // and ≥1 scope are required. The client secret is write-only (blank = keep on edit), so it is not
             // required at validation time — a missing secret degrades to a skipped server (best-effort).
@@ -585,7 +720,8 @@ public static class AgentApi
             Authority: s.Authority,
             ClientId: s.ClientId,
             Scopes: s.Scopes,
-            HasClientSecret: !string.IsNullOrEmpty(s.ClientSecretCiphertext));
+            HasClientSecret: !string.IsNullOrEmpty(s.ClientSecretCiphertext),
+            HasToken: !string.IsNullOrEmpty(s.TokenCiphertext));
 
     // A user provider must be self-contained (it does NOT inherit the operator AzureOpenAI:* config —
     // ADR 0018), so both kinds require an absolute http/https endpoint. localhost/private hosts are
@@ -735,7 +871,8 @@ public record McpServerUpsertRequest(
 // Scopes are non-secret and returned so the edit form can prefill them.
 public record McpServerResponse(
     string Id, string Name, string Endpoint, string Auth, bool Enabled, string? HeaderName, bool HasHeaderValue,
-    string? Authority = null, string? ClientId = null, IReadOnlyList<string>? Scopes = null, bool HasClientSecret = false);
+    string? Authority = null, string? ClientId = null, IReadOnlyList<string>? Scopes = null, bool HasClientSecret = false,
+    bool HasToken = false);
 
 // The GET /api/mcp-servers payload: the user's overlay servers (masked).
 public record McpServersResponse(IReadOnlyList<McpServerResponse> Servers);

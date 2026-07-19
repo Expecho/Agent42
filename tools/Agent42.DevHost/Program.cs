@@ -76,6 +76,9 @@ builder.Services.AddSingleton<IProviderSecretProtector, ProviderSecretProtector>
 // before the grain. Same ephemeral offline ring; the per-user MCP overlay grain still works, so the MCP
 // servers CRUD/UI is exercisable here (only overlay→tools reflection is prod-wired).
 builder.Services.AddSingleton<IMcpSecretProtector, McpSecretProtector>();
+// The interactive-OAuth HTTP client (Phase 3) — resolved by the /api/mcp/oauth/* endpoints, exercisable
+// against a real remote MCP server offline (the token is stored in the in-memory overlay grain).
+builder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
 
 // In-memory attachment store: no Azure Storage offline. The canned client ignores image
 // content, so uploads still round-trip for the display proxy and history rendering.

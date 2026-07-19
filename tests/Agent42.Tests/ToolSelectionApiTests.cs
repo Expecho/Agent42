@@ -46,6 +46,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
             new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
         appBuilder.Services.AddSingleton<IMcpSecretProtector>(
             new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
+        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
         appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
         appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
             new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
