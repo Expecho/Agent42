@@ -785,6 +785,32 @@
     }
   }
 
+  // Adds a hover-revealed copy button to the bottom of a finalized agent bubble. The raw markdown
+  // is captured by closure here — it is NOT recoverable from the DOM (the .prose div holds only
+  // rendered HTML). Mirrors the agent-key/run-URL clipboard buttons and the JS-created glyph
+  // actions (.conv__delete "×", .agent__action "✎"): swap the glyph to a check on success, revert
+  // after ~1.5s, swallow the catch. Skips empty/image-only replies (nothing to copy).
+  function addCopyButton(msg, rawText) {
+    if (!rawText || !rawText.trim()) return;
+    const bubble = msg.querySelector(".msg__bubble");
+    if (!bubble) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "msg__copy";
+    btn.setAttribute("aria-label", "Copy response");
+    btn.textContent = "⧉";
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(rawText);
+        btn.textContent = "✓";
+        setTimeout(() => { btn.textContent = "⧉"; }, 1500);
+      } catch {
+        /* clipboard blocked (insecure context / permission) — the reply is visible to select manually */
+      }
+    });
+    bubble.appendChild(btn);
+  }
+
   const scrollToBottom = () => { chatScroll.scrollTop = chatScroll.scrollHeight; };
 
   /* ————— tool calls & token usage ————— */
@@ -880,6 +906,8 @@
           fillUserBubble(msg, turn.text, turn.attachments, id);
         } else {
           setAgentMarkdown(msg, turn.text);
+          // History-restored reply: capture turn.text by closure so copy works after a reload too.
+          addCopyButton(msg, turn.text);
           // An assistant turn may carry a generated image (ADR 0020); re-render it above the prose.
           for (const att of turn.attachments ?? []) addAgentImage(msg, id, att.id, att.fileName);
         }
@@ -1220,6 +1248,8 @@
         }
       }
       setAgentMarkdown(agentMsg, answer);
+      // Live-streamed reply is final: capture the raw markdown accumulator by closure for copy.
+      addCopyButton(agentMsg, answer);
       // The persona is now bound server-side; don't resend agentId on later turns. Kept on
       // failure so a retry rebinds.
       pendingAgentId = null;

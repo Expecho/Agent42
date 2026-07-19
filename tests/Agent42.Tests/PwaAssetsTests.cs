@@ -168,7 +168,33 @@ public sealed class PwaAssetsTests
         // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
         // stale assets — sw.js serves the shell cache-first with background revalidate.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v7", sw);
+        Assert.Contains("agent42-shell-v8", sw);
+    }
+
+    // Copy-to-clipboard button on finalized agent replies: a hover/focus-revealed glyph button at the
+    // bottom of the bubble that puts the reply's raw markdown on the clipboard (source-text heuristic;
+    // the repo has no JS test runner by design). Behaviour — actual copy, glyph swap, hover reveal — is
+    // verified by driving DevHost, not asserted here. Assertions are mutation-observable.
+    [Fact]
+    public async Task Frontend_ShipsCopyResponseButton()
+    {
+        var styles = await _client.GetStringAsync("/styles.css");
+        // AC1: the reveal rule keys off .msg--agent hover / the button's focus, and the base rule
+        // hides the button at rest (opacity: 0 anchored INSIDE the .msg__copy block, not anywhere).
+        Assert.Contains(".msg--agent:hover .msg__copy", styles);
+        Assert.Matches(@"\.msg__copy\s*\{[^}]*opacity:\s*0", styles);
+
+        var app = await _client.GetStringAsync("/app.js");
+        // AC2: the helper writes the raw text to the clipboard and swaps the glyph to a check on success.
+        Assert.Contains("msg__copy", app);
+        Assert.Contains("navigator.clipboard.writeText", app);
+        Assert.Contains("✓", app); // ✓ confirmation glyph swap
+
+        // AC3: the helper is wired on BOTH finalize paths specifically, not merely referenced twice on
+        // one. The streaming site passes the raw `answer` accumulator; the reload site passes `turn.text`.
+        // Anchoring on the distinct argument proves the path, not a bare ≥2× count (critic M3).
+        Assert.Contains("addCopyButton(agentMsg, answer)", app);
+        Assert.Contains("addCopyButton(msg, turn.text)", app);
     }
 
     // Web Share Target for the Android PWA (ADR 0023): an installed app appears in the system share
