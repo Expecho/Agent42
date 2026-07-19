@@ -274,8 +274,9 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   `IMcpSecretProtector` (own DP purpose), masked to `hasHeaderValue` on read, blank-on-update = keep. A
   singleton `IUserMcpToolProvider` connects to the user's enabled servers (version-cached, best-effort with a
   timeout) and `AgentGrain` resolves the tools **once in `OnActivateAsync` before the first `BuildAgent`**,
-  gated by a single new `ToolCatalog` **`mcp` group key** (`SupportsTools && enabled.Contains(mcp)`,
-  intersected with capability). Auth is **staged by risk**, all shipped: None/Header (Phase 1), MSAL
+  gated **per server** (ADR 0026 amends this: was a single `mcp` group key) — each server kept when the
+  selection contains the `mcp` **wildcard** or the server's `mcp:{id}` key (`ToolCatalog.IsMcpServerEnabled`),
+  intersected with capability. Auth is **staged by risk**, all shipped: None/Header (Phase 1), MSAL
   ClientCredentials (Phase 2, the Entra ID → Dataverse path — a dynamic token stamped by an `AuthHeaderHandler`
   over a plain `HttpClient`), and **InteractiveOAuth (Phase 3, ADR 0025)** — an app-driven authorization-code +
   PKCE flow with **PRM discovery** across `GET /api/mcp/oauth/start` + `/callback` (both **behind Easy Auth**,
@@ -285,9 +286,18 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   `MapAgentApi` must register `IMcpSecretProtector`** (a route-matcher dependency) and every silo that
   activates `AgentGrain` must register `IUserMcpToolProvider`. Four things to read before touching this: the
   tool provider's cache holds **live sockets** so it is bounded (not the unbounded provider-cache copy); MCP
-  tools are the **group-gated exception** to the catalog-key guard (dynamic names, absent from the catalog
+  tools are the **per-server-gated exception** to the catalog-key guard (dynamic names, absent from the catalog
   map); the endpoint is deliberately **not SSRF-guarded** (config, not a request — may be `localhost`); and a
   tool's **return value is persisted** into the 2 MB session so each is truncation-wrapped (ADR 0004). All in
   gotchas. **Headline consequence:** an MCP server sees conversation content and its tool results are a new
   inbound prompt-injection channel — ADR 0013's egress, reached from a server the user added.
+- Per-MCP-server selectable tools (ADR 0026, amends 0024/0021): each management-enabled MCP server is
+  **individually selectable** in the ADR 0021 picker as an `mcp:{serverId}` key (was one all-or-none `mcp`
+  checkbox). The bare `mcp` key is repurposed into a **wildcard "all servers"** meta-key kept in
+  `AllSelectableToolKeys` (so `null == all` and legacy selections keep enabling every server — **zero
+  migration**) but dropped from `Descriptors`. `GET /api/tools` is now **per-user** for the MCP portion
+  (appends one descriptor per enabled server). Two traps: `GetEnabledToolsAsync` must **expand** the `mcp`
+  wildcard into `mcp:{id}` keys before the picker sees it (else a no-op Save silently disables every server —
+  the picker has no `mcp` checkbox), and the provider emits an **empty group per skipped server** so the
+  expansion id-list is complete. Both in the null==all gotcha.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

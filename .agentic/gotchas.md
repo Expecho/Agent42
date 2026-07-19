@@ -963,14 +963,30 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **once on activation** (accepted staleness, mirrors default-model resolution) — a Preferences change
   reflects in a warm regular chat only on its next activation. **`_mcpTools` (ADR 0024) is a THIRD field
   with the identical hazard** — it is resolved from `IUserMcpToolProvider` in `OnActivateAsync` before the
-  first `BuildAgent`, and `BuildAgent` merges it gated by the `mcp` group key; resolving it later would
-  omit the user's MCP tools from the first chat turn and every reminder turn on that activation.
+  first `BuildAgent`, and `BuildAgent` merges it gated per server; resolving it later would omit the user's
+  MCP tools from the first chat turn and every reminder turn on that activation.
+- **Per-server MCP wildcard (ADR 0026) — a THIRD null==all trap.** Individual MCP servers are now
+  selectable as `mcp:{id}` keys; the bare `mcp` key became a **wildcard "all servers"** meta-key that stays
+  in `AllSelectableToolKeys` (so `null == all` and legacy `"mcp"` selections keep enabling every server —
+  still no migration) but is **removed from `Descriptors`** (no checkbox). The trap: `GetEnabledToolsAsync`
+  returns `AllSelectableToolKeys` for a null selection, which carries the bare `mcp` and **no** `mcp:{id}`.
+  The picker renders only catalog keys, so `mcp` has no checkbox — a no-op Save would drop the wildcard and
+  add no per-server key, **silently disabling every MCP server**. So `GetEnabledToolsAsync` **expands** a
+  present `mcp` into `mcp:{serverId}` for each of `_mcpServers` before returning (a read-only client-facing
+  projection — the gate `EffectiveEnabledTools`/`IsMcpServerEnabled` still honours the raw wildcard), and
+  `renderToolChecks` treats a stored `mcp` as "all servers checked" for the editor surfaces. `Sanitize` must
+  **pass through** `mcp:{id}` keys (they are not in `AllSelectableToolKeys`), and the provider emits an
+  **empty group per skipped server** so the id list for expansion is complete.
 - **Evidence:** `src/Agent42.Agents/AgentGrainState.cs` (`[Id(10)] EnabledTools`),
-  `src/Agent42.Agents/ToolCatalog.cs` (`Sanitize`, `AllSelectableToolKeys`),
-  `src/Agent42.Agents/AgentGrain.cs` (`OnActivateAsync` fetch before `BuildAgent`, `EffectiveEnabledTools`,
-  `_mcpTools`), `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
-  `UserDefault_AppliesWhenNoOverride`, `McpTools_ResolvedBeforeFirstBuildAgent`),
-  `.agentic/decisions/0021-selectable-tools-three-layer.md`, `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`
+  `src/Agent42.Agents/ToolCatalog.cs` (`Sanitize`, `AllSelectableToolKeys`, `Mcp` wildcard,
+  `IsMcpServerEnabled`, `McpServerKey`), `src/Agent42.Agents/AgentGrain.cs` (`OnActivateAsync` fetch before
+  `BuildAgent`, `EffectiveEnabledTools`, `_mcpServers`, `ExpandMcpWildcard`, per-server `BuildAgent` gate),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
+  `UserDefault_AppliesWhenNoOverride`, `McpTools_ResolvedBeforeFirstBuildAgent`,
+  `PerServerSelection_EnablesOnlySelectedServer`, `GetEnabledTools_NullSelection_ExpandsWildcardToPerServerKeys`),
+  `tests/Agent42.Tests/ToolCatalogTests.cs`, `.agentic/decisions/0021-selectable-tools-three-layer.md`,
+  `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`,
+  `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`
 - **Verified:** 2026-07-19
 
 ### Remote MCP servers: a live-socket cache (bound it), a group-gated catalog exception, and a route-matcher trap
@@ -984,22 +1000,28 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   skipped tool — tolerated). Do **not** ship the unbounded copy. **(2) MCP tools are the documented exception
   to the "every registered tool maps to a catalog key" guard.** MCP tool names are user-defined and dynamic,
   so they are deliberately **absent** from `ToolCatalog.ToolNameToKey` — `IsToolEnabled` would keep an unmapped
-  name **unconditionally**, bypassing the picker. So the whole group is gated in `BuildAgent` by
-  `SupportsTools && enabled.Contains(ToolCatalog.Mcp)` (inserted **after** the `IsToolEnabled` filter, **before**
-  the `Tools = SupportsTools ? …` capability intersection), and the guard test carves MCP tools out by the
-  provider's set, never by name-guessing. **(3) Adding the `/api/mcp-servers` endpoints made
+  name **unconditionally**, bypassing the picker. So MCP tools are gated **per server** in `BuildAgent`
+  (ADR 0026, was one `mcp` group key in ADR 0024): a loop over `_mcpServers` keeping each server whose
+  `ToolCatalog.IsMcpServerEnabled(id, enabled)` is true — i.e. the selection contains the `mcp` **wildcard**
+  OR the server's `mcp:{id}` key — under `SupportsTools`, inserted **after** the `IsToolEnabled` filter and
+  **before** the `Tools = SupportsTools ? …` capability intersection. The guard test carves MCP tools out by
+  the provider's set, never by name-guessing. See the null==all gotcha for the wildcard-expansion trap.
+  **(3) Adding the `/api/mcp-servers` endpoints made
   `IMcpSecretProtector` a route-matcher dependency for the WHOLE host.** Minimal-API infers every endpoint's
   parameters up front, so an `IMcpSecretProtector` handler param that DI can't resolve is treated as a body and
   breaks routing for *every* endpoint (this bit all six `MapAgentApi` hosts — DevHost 500s + 39 test failures —
   until each registered it). The MCP **endpoint is deliberately NOT SSRF-guarded** (config, not a model/request
   — may be `localhost`), exactly like the user-provider endpoint (see that gotcha).
 - **Evidence:** `src/Agent42.Backend/UserMcpToolProvider.cs` (`RetainedVersionsPerUser`, `EvictBeyondAsync`),
-  `src/Agent42.Agents/ToolCatalog.cs` (`Mcp`, absent from `ToolNameToKey`),
-  `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent` `mcpEnabled` gate), `src/Agent42.Backend/Program.cs` +
+  `src/Agent42.Agents/ToolCatalog.cs` (`Mcp` wildcard + `IsMcpServerEnabled`, both absent from `ToolNameToKey`),
+  `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent` per-server MCP gate over `_mcpServers`),
+  `src/Agent42.Backend/Program.cs` +
   `tools/Agent42.DevHost/Program.cs` (`IMcpSecretProtector` registration),
   `tests/Agent42.Tests/UserMcpToolProviderTests.cs` (`OldVersions_AreEvicted_AndTheirConnectionsDisposed`),
-  `tests/Agent42.Tests/AgentGrainTests.cs` (`EveryRegisteredTool_MapsToACatalogKey_OrIsGetDate_OrIsAnMcpTool`),
-  `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`EveryRegisteredTool_MapsToACatalogKey_OrIsGetDate_OrIsAnMcpTool`,
+  `PerServerSelection_EnablesOnlySelectedServer`),
+  `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`,
+  `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`
 - **Verified:** 2026-07-19
 
 ### MCP interactive OAuth is hand-rolled: the SDK flow blocks, the callback must stay behind Easy Auth

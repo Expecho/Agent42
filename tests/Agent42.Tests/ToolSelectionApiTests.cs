@@ -83,8 +83,9 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         return [.. doc.RootElement.EnumerateArray().Select(e => e.GetString()!)];
     }
 
-    // AC12 (catalog): /api/tools returns exactly the selectable keys, with the hosted-tools flag. `mcp`
-    // (ADR 0024) joins the set — config-driven remote MCP servers as one group key.
+    // AC5 (catalog): /api/tools returns the static selectable keys, with the hosted-tools flag. The bare
+    // `mcp` wildcard is NO LONGER a catalog key (ADR 0026 — it is a selection sentinel, not a checkbox); a
+    // user with no MCP servers gets exactly the five static keys.
     [Fact]
     public async Task Tools_Catalog_ReturnsSelectableKeys()
     {
@@ -95,13 +96,55 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         var keys = doc.RootElement.EnumerateArray().Select(e => e.GetProperty("key").GetString()).ToArray();
 
         Assert.Equal(
-            new[] { "web_search", "location", "scheduling", "skills", "code_interpreter", "mcp" }.Order(),
+            new[] { "web_search", "location", "scheduling", "skills", "code_interpreter" }.Order(),
             keys.Order());
 
         // code_interpreter is the only one flagged as needing a hosted-tools model.
         var codeInterpreter = doc.RootElement.EnumerateArray()
             .Single(e => e.GetProperty("key").GetString() == "code_interpreter");
         Assert.True(codeInterpreter.GetProperty("requiresHostedTools").GetBoolean());
+    }
+
+    // AC5 (per-server, ADR 0026): a management-ENABLED MCP server appears in the catalog as an `mcp:{id}`
+    // descriptor labelled with the server name; a management-DISABLED server is excluded (no checkbox for a
+    // server that contributes no tools).
+    [Fact]
+    public async Task Tools_Catalog_IncludesEnabledMcpServers_ExcludesDisabled()
+    {
+        var on = await _client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-mcp-cat", new
+        {
+            name = "Weather",
+            endpoint = "https://weather.example.com/mcp",
+            auth = "None",
+            enabled = true,
+        }));
+        on.EnsureSuccessStatusCode();
+        var off = await _client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-mcp-cat", new
+        {
+            name = "Docs",
+            endpoint = "https://docs.example.com/mcp",
+            auth = "None",
+            enabled = false,
+        }));
+        off.EnsureSuccessStatusCode();
+
+        using var onDoc = JsonDocument.Parse(await on.Content.ReadAsStringAsync());
+        var enabledId = onDoc.RootElement.GetProperty("id").GetString();
+        using var offDoc = JsonDocument.Parse(await off.Content.ReadAsStringAsync());
+        var disabledId = offDoc.RootElement.GetProperty("id").GetString();
+
+        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-mcp-cat"));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var descriptors = doc.RootElement.EnumerateArray().ToArray();
+
+        var enabled = descriptors.SingleOrDefault(e => e.GetProperty("key").GetString() == $"mcp:{enabledId}");
+        Assert.Equal(JsonValueKind.Object, enabled.ValueKind); // present
+        Assert.Equal("Weather", enabled.GetProperty("label").GetString());
+        Assert.False(enabled.GetProperty("requiresHostedTools").GetBoolean());
+
+        Assert.DoesNotContain(descriptors, e => e.GetProperty("key").GetString() == $"mcp:{disabledId}");
+        Assert.DoesNotContain(descriptors, e => e.GetProperty("key").GetString() == "mcp"); // no bare wildcard
     }
 
     // AC12 (agent): POST /api/agents round-trips EnabledTools; a create that omits it stores null (= all).

@@ -1135,6 +1135,15 @@ body {
   cursor: pointer;
 }
 
+/* Subheading separating per-server MCP checkboxes from the built-in tools (ADR 0026). */
+.tool-check__heading {
+  margin-top: 4px;
+  font: 600 10px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
 /* ————— agent form dialog ————— */
 
 .agent-dialog {
