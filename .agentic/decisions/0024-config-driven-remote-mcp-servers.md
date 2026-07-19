@@ -7,6 +7,12 @@ tags: [mcp, tools, per-user, egress, security, agent-framework]
 
 # Title: Config-driven remote MCP servers — per-user, encrypted, gated by one `mcp` tool key
 
+> **Amended by [ADR 0026](0026-per-mcp-server-selectable-tools.md) (2026-07-19) — MCP gate scope
+> only.** The "gated as one whole `mcp` group key" decision below (title, Decision, and the
+> per-tool-catalog-entries alternative) is re-scoped to **per-server** gating: each server is
+> selectable as `mcp:{id}` and the bare `mcp` key becomes an all-servers **wildcard** (kept in
+> `AllSelectableToolKeys`, removed from `Descriptors`). Everything else here stays authoritative.
+
 ## Context
 Users want remote tool servers (Dataverse, GitHub-style) wired in without bespoke integration per
 server. Every MCP server exposes the same discovery interface, and its tools convert to `AITool`

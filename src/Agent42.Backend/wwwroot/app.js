@@ -1476,21 +1476,49 @@
 
   const allToolKeys = () => toolCatalog.map((t) => t.key);
 
+  // Re-fetch /api/tools after MCP CRUD (ADR 0026): the catalog is per-user for the MCP portion, so a newly
+  // added/removed/toggled server must appear/disappear in the pickers without a page reload. Re-render the
+  // Preferences Tools tab in place (preserving current checks) so it reflects the change even if it was
+  // already open; the composer popover and agent editor re-render on their next open.
+  async function refreshToolCatalog() {
+    await loadTools();
+    if (profileToolChecks.children.length > 0) {
+      renderToolChecks(profileToolChecks, readToolChecks(profileToolChecks));
+    }
+  }
+
   // Renders one checkbox per catalog tool into `container`, checked when its key is in `selectedKeys`.
+  // Per-server MCP keys (`mcp:{id}`, ADR 0026) render under an "MCP servers" subheading beneath the built-in
+  // tools. A stored/effective selection may carry the bare `mcp` wildcard (a null==all default that reached
+  // the client, or legacy state) — since it has no checkbox, treat it as "every MCP server checked" so a
+  // save re-emits explicit per-server keys instead of silently dropping the wildcard (the ADR 0026 hazard).
   function renderToolChecks(container, selectedKeys) {
     const selected = new Set(selectedKeys);
+    const mcpWildcard = selected.has("mcp");
     container.innerHTML = "";
-    for (const tool of toolCatalog) {
+    const builtins = toolCatalog.filter((t) => !t.key.startsWith("mcp:"));
+    const mcpServers = toolCatalog.filter((t) => t.key.startsWith("mcp:"));
+
+    const addCheck = (tool) => {
       const label = document.createElement("label");
       label.className = "tool-check";
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.value = tool.key;
-      cb.checked = selected.has(tool.key);
+      cb.checked = selected.has(tool.key) || (mcpWildcard && tool.key.startsWith("mcp:"));
       const span = document.createElement("span");
       span.textContent = tool.requiresHostedTools ? `${tool.label} (Responses)` : tool.label;
       label.append(cb, span);
       container.appendChild(label);
+    };
+
+    for (const tool of builtins) addCheck(tool);
+    if (mcpServers.length > 0) {
+      const heading = document.createElement("div");
+      heading.className = "tool-check__heading";
+      heading.textContent = "MCP servers";
+      container.appendChild(heading);
+      for (const tool of mcpServers) addCheck(tool);
     }
   }
 
@@ -1888,6 +1916,7 @@
 
     mcpDialog.close();
     await loadMcpServers();
+    await refreshToolCatalog(); // the added/edited server must (dis)appear in the tool pickers (ADR 0026)
   }
 
   async function deleteMcpServer(id) {
@@ -1897,6 +1926,7 @@
     } catch { return; }
     mcpServers = mcpServers.filter((s) => s.id !== id);
     renderMcpServers();
+    await refreshToolCatalog(); // the deleted server must drop out of the tool pickers (ADR 0026)
   }
 
   addMcpServerBtn.addEventListener("click", () => openMcpDialog(null));

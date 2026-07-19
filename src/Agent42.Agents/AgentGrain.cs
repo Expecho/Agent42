@@ -68,12 +68,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // on its next activation (accepted staleness, ADR 0021).
     private IReadOnlyList<string>? _userDefaultEnabledTools;
 
-    // This user's remote-MCP-server tools (config-driven remote MCP servers), resolved ONCE on activation
-    // from this grain's userId — BEFORE the first BuildAgent, the same ordering hazard as _chatClientFactory
-    // and _userDefaultEnabledTools. The provider is a singleton holding the live MCP connections these tools
-    // reference; it is version-cached and best-effort, so a dead server never breaks activation. A user's MCP
-    // config change is picked up on the next activation of each of their conversation grains.
-    private IReadOnlyList<AITool> _mcpTools = [];
+    // This user's remote-MCP-server tools grouped per server (config-driven remote MCP servers; per-server
+    // grouping added by ADR 0026), resolved ONCE on activation from this grain's userId — BEFORE the first
+    // BuildAgent, the same ordering hazard as _chatClientFactory and _userDefaultEnabledTools. Each group's
+    // id also feeds the `mcp` wildcard expansion in GetEnabledToolsAsync. The provider is a singleton holding
+    // the live MCP connections these tools reference; it is version-cached and best-effort, so a dead server
+    // never breaks activation. A user's MCP config change is picked up on the next activation of each of
+    // their conversation grains.
+    private IReadOnlyList<McpServerTools> _mcpServers = [];
 
     /// <summary>
     /// The user's position for the turn currently being processed, or null (ADR 0012). Set at the top
@@ -147,7 +149,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // connecting later would have the first chat turn AND every reminder turn on this activation silently
         // omit the user's MCP tools. Same ordering hazard the two resolutions above guard against. Best-effort:
         // the provider connects with a timeout and skips dead servers, so this never fails activation.
-        _mcpTools = (await _mcpToolProvider.GetForUserAsync(_userId, cancellationToken)).Tools;
+        _mcpServers = (await _mcpToolProvider.GetForUserAsync(_userId, cancellationToken)).Servers;
 
         _agent = BuildAgent(_modelId);
 
@@ -279,16 +281,23 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         tools = [.. tools.Where(t => ToolCatalog.IsToolEnabled(t.Name, enabled))];
 
         // Remote MCP-server tools (config-driven remote MCP servers) are added AFTER the per-tool
-        // IsToolEnabled filter and BEFORE the capability intersection below. They are gated as a WHOLE group,
-        // not per tool name: MCP tool names are user-defined and dynamic, so they are absent from the catalog
-        // map and IsToolEnabled would keep them UNCONDITIONALLY (the unmapped-name rule), bypassing the picker.
-        // So the group gate `SupportsTools && enabled.Contains(Mcp)` is applied here explicitly. A user with
-        // zero configured MCP servers has an empty _mcpTools regardless, so nothing is added. The tools were
-        // already truncation-wrapped by the provider (ADR 0004).
-        var mcpEnabled = capabilities.SupportsTools && enabled.Contains(ToolCatalog.Mcp);
-        if (mcpEnabled)
+        // IsToolEnabled filter and BEFORE the capability intersection below. They are gated PER SERVER
+        // (ADR 0026), not per tool name: MCP tool names are user-defined and dynamic, so they are absent from
+        // the catalog map and IsToolEnabled would keep them UNCONDITIONALLY (the unmapped-name rule), bypassing
+        // the picker. Each server is kept when the effective selection contains the `mcp` wildcard (null==all /
+        // legacy) OR the server's own `mcp:{id}` key — see ToolCatalog.IsMcpServerEnabled. A user with zero
+        // configured MCP servers has an empty _mcpServers, so nothing is added; a skipped/unreachable server is
+        // an empty group and contributes nothing either. The tools were already truncation-wrapped by the
+        // provider (ADR 0004). Capability (SupportsTools) is the outer gate, exactly as for the static keys.
+        if (capabilities.SupportsTools)
         {
-            tools.AddRange(_mcpTools);
+            foreach (var server in _mcpServers)
+            {
+                if (ToolCatalog.IsMcpServerEnabled(server.ServerId, enabled))
+                {
+                    tools.AddRange(server.Tools);
+                }
+            }
         }
 
         // AgentSkillsProvider IS a tool (it exposes load_skill), so a user disabling `skills` must DROP the
@@ -486,7 +495,32 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     }
 
     public Task<IReadOnlyList<string>> GetEnabledToolsAsync()
-        => Task.FromResult<IReadOnlyList<string>>([.. EffectiveEnabledTools()]);
+        => Task.FromResult(ExpandMcpWildcard(EffectiveEnabledTools()));
+
+    // Expands the bare `mcp` wildcard into a per-server key (mcp:{id}) for each of this user's servers before
+    // the effective selection reaches the picker (ADR 0026). WHY this is load-bearing: EffectiveEnabledTools
+    // materializes AllSelectableToolKeys (which carries the bare `mcp` wildcard, NOT any mcp:{id}) for every
+    // null/all conversation. The picker renders only keys present in the catalog, and `mcp` has no checkbox
+    // there — so a picker Save would drop the wildcard and add no per-server key, silently disabling EVERY MCP
+    // server. Expanding here means the client always receives explicit per-server keys that round-trip. The
+    // gate (EffectiveEnabledTools, via IsMcpServerEnabled) still honours the raw wildcard, so this is a
+    // read-only, client-facing projection — it never changes what is persisted. Non-wildcard selections pass
+    // through unchanged; a lone `mcp` for a user with zero servers simply drops (no servers to expand to).
+    private IReadOnlyList<string> ExpandMcpWildcard(IReadOnlyList<string> effective)
+    {
+        if (!effective.Contains(ToolCatalog.Mcp))
+        {
+            return [.. effective];
+        }
+
+        return
+        [
+            .. effective
+                .Where(k => k != ToolCatalog.Mcp)
+                .Concat(_mcpServers.Select(s => ToolCatalog.McpServerKey(s.ServerId)))
+                .Distinct(StringComparer.Ordinal),
+        ];
+    }
 
     public async Task RegisterDocumentAsync(string fileName)
     {

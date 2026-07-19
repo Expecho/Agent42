@@ -196,9 +196,18 @@ public static class AgentApi
             await (await catalogs.GetForUserAsync(http.GetUserId(), ct)).GetAsync(ct));
 
         // The selectable-tools catalog (ADR 0021): the curated keys the UI renders as checkbox groups in
-        // Preferences, the agent editor and the composer popover. A static catalog (no user scope) — the
-        // single source of truth lives in ToolCatalog, capability gating still happens server-side.
-        app.MapGet("/api/tools", () => Results.Json(ToolCatalog.Descriptors));
+        // Preferences, the agent editor and the composer popover. The static keys are the single source of
+        // truth in ToolCatalog; per-user MCP servers (ADR 0026) are appended as one `mcp:{id}` descriptor per
+        // MANAGEMENT-ENABLED server (a disabled server contributes no tools, so it gets no checkbox). Capability
+        // gating still happens server-side in BuildAgent.
+        app.MapGet("/api/tools", async (IGrainFactory grains, HttpContext http) =>
+        {
+            var overlay = await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId()).GetAsync();
+            var mcpDescriptors = overlay.Servers
+                .Where(s => s.Enabled)
+                .Select(s => new ToolDescriptor(ToolCatalog.McpServerKey(s.Id), s.Name, RequiresHostedTools: false));
+            return Results.Json<IReadOnlyList<ToolDescriptor>>([.. ToolCatalog.Descriptors, .. mcpDescriptors]);
+        });
 
         // The EFFECTIVE tools for one conversation (override ?? user-default ?? all), so the composer popover
         // can restore its checkboxes when the conversation is reopened.

@@ -54,8 +54,8 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
 
         var set = await NewProvider().GetForUserAsync("mcp-tp-load");
 
-        Assert.Single(set.Tools);
-        Assert.Equal("tool_a", set.Tools[0].Name);
+        Assert.Single(set.AllTools);
+        Assert.Equal("tool_a", set.AllTools[0].Name);
         Assert.Contains("top-secret", _connections.ObservedHeaderValues); // decrypted, not ciphertext
     }
 
@@ -67,7 +67,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
         await grain.SaveAsync(HeaderServer("a") with { Enabled = false });
 
         var set = await NewProvider().GetForUserAsync("mcp-tp-disabled");
-        Assert.Empty(set.Tools);
+        Assert.Empty(set.AllTools);
     }
 
     // AC8: a dead MCP server is skipped, not fatal — its healthy neighbour's tools still load.
@@ -81,8 +81,14 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
 
         var set = await NewProvider().GetForUserAsync("mcp-tp-dead");
 
-        Assert.Single(set.Tools);
-        Assert.Equal("tool_alive", set.Tools[0].Name);
+        Assert.Single(set.AllTools);
+        Assert.Equal("tool_alive", set.AllTools[0].Name);
+
+        // AC7 (ADR 0026): a skipped/dead server still appears as an EMPTY group — its id must survive so the
+        // grain can expand the `mcp` wildcard into the complete per-server key set. Both servers are present.
+        Assert.Equal(2, set.Servers.Count);
+        Assert.Empty(Assert.Single(set.Servers, s => s.ServerId == "dead").Tools);
+        Assert.Single(Assert.Single(set.Servers, s => s.ServerId == "alive").Tools);
     }
 
     // AC9: an oversized tool result is truncated to the budget, with the marker; a small one is untouched.
@@ -95,7 +101,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
             [AIFunctionFactory.Create(() => new string('a', McpToolLimits.MaxToolResultLength + 5_000), "tool_big")];
 
         var set = await NewProvider().GetForUserAsync("mcp-tp-trunc");
-        var tool = Assert.IsAssignableFrom<AIFunction>(Assert.Single(set.Tools));
+        var tool = Assert.IsAssignableFrom<AIFunction>(Assert.Single(set.AllTools));
 
         var result = (await tool.InvokeAsync(new AIFunctionArguments()))?.ToString() ?? "";
         Assert.EndsWith(McpToolLimits.TruncationMarker, result);
@@ -111,11 +117,11 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
 
         await grain.SaveAsync(HeaderServer("a"));
         var v1 = await provider.GetForUserAsync("mcp-tp-reload");
-        Assert.Single(v1.Tools);
+        Assert.Single(v1.AllTools);
 
         await grain.SaveAsync(HeaderServer("b"));
         var v2 = await provider.GetForUserAsync("mcp-tp-reload");
-        Assert.Equal(2, v2.Tools.Count);
+        Assert.Equal(2, v2.AllTools.Count);
         Assert.True(v2.Version > v1.Version);
     }
 
@@ -174,7 +180,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
             NullLogger<UserMcpToolProvider>.Instance);
 
         var set = await provider.GetForUserAsync("mcp-tp-real-dead");
-        Assert.Empty(set.Tools); // dead server skipped, no throw
+        Assert.Empty(set.AllTools); // dead server skipped, no throw
     }
 
     private StoredMcpServer OAuthServer(string id, McpOAuthTokens? tokens) => new(
@@ -197,7 +203,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
 
         var set = await NewProvider().GetForUserAsync("mcp-oauth-load");
 
-        Assert.Single(set.Tools);
+        Assert.Single(set.AllTools);
         Assert.Contains("access-abc", _connections.ObservedOAuthTokens);
     }
 
@@ -209,7 +215,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
         await grain.SaveAsync(OAuthServer("o1", tokens: null));
 
         var set = await NewProvider().GetForUserAsync("mcp-oauth-notoken");
-        Assert.Empty(set.Tools);
+        Assert.Empty(set.AllTools);
     }
 
     // A near-expiry token is refreshed at connect (app-owned) via a fake token endpoint, the refreshed bundle
@@ -228,7 +234,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
 
         var set = await provider.GetForUserAsync("mcp-oauth-refresh");
 
-        Assert.Single(set.Tools);
+        Assert.Single(set.AllTools);
         Assert.Contains("access-new", _connections.ObservedOAuthTokens); // refreshed token injected
         // The refreshed bundle was persisted (decrypting the stored ciphertext yields the new access token).
         var stored = Assert.Single((await grain.GetAsync()).Servers);
