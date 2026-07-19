@@ -245,7 +245,7 @@
   </dialog>
 
   <!-- User profile / preferences. Reuses the agent-dialog/agent-form styling. Grows by TAB now:
-       add fields to the matching <div role="tabpanel"> (General / Model providers). Every <button>
+       add fields to the matching <div role="tabpanel"> (General / Tools / Model providers). Every <button>
        here lives inside #profileForm, so each MUST carry type="button" or it submits + closes. -->
   <dialog class="agent-dialog" id="profileDialog">
     <form class="agent-form" id="profileForm">
@@ -254,6 +254,8 @@
       <div class="agent-form__tablist" role="tablist" aria-label="Preferences sections">
         <button class="agent-form__tab" type="button" role="tab" id="tabGeneral"
                 aria-selected="true" aria-controls="panelGeneral" tabindex="0">General</button>
+        <button class="agent-form__tab" type="button" role="tab" id="tabTools"
+                aria-selected="false" aria-controls="panelTools" tabindex="-1">Tools</button>
         <button class="agent-form__tab" type="button" role="tab" id="tabProviders"
                 aria-selected="false" aria-controls="panelProviders" tabindex="-1">Model providers</button>
       </div>
@@ -287,7 +289,9 @@
           </div>
           <p class="agent-form__note">Lets Agent 42 answer questions about where you are. Granted per device from your browser; turn it off in your browser's site settings.</p>
         </section>
+      </div>
 
+      <div class="agent-form__panel" role="tabpanel" id="panelTools" aria-labelledby="tabTools" hidden>
         <section class="agent-form__section">
           <span class="agent-form__label">// default tools</span>
           <div class="tools-checks" id="profileToolChecks"></div>
