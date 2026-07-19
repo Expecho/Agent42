@@ -181,6 +181,118 @@ public sealed class McpServersApiTests : IAsyncLifetime
         Assert.True(server.GetProperty("hasHeaderValue").GetBoolean()); // secret survived the secretless edit
     }
 
+    private static object ClientCredentialsBody(string? clientSecret = "cc-secret") => new
+    {
+        name = "Dataverse CC",
+        endpoint = "https://org.crm4.dynamics.com/mcp",
+        auth = "ClientCredentials",
+        enabled = true,
+        authority = "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000",
+        clientId = "11111111-1111-1111-1111-111111111111",
+        clientSecret,
+        scopes = new[] { "https://org.crm4.dynamics.com/.default" },
+    };
+
+    // AC11 (API): a ClientCredentials server round-trips authority/clientId/scopes and masks the secret to
+    // hasClientSecret — the ciphertext never leaves the server.
+    [Fact]
+    public async Task ClientCredentials_RoundTrips_MasksSecret()
+    {
+        (await _client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-cc", ClientCredentialsBody("super-cc-secret"))))
+            .EnsureSuccessStatusCode();
+
+        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", "user-cc"));
+        var raw = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("super-cc-secret", raw);
+
+        var server = await SingleServer(await _client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", "user-cc")));
+        Assert.Equal("ClientCredentials", server.GetProperty("auth").GetString());
+        Assert.Equal("https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000", server.GetProperty("authority").GetString());
+        Assert.Equal("11111111-1111-1111-1111-111111111111", server.GetProperty("clientId").GetString());
+        Assert.Equal("https://org.crm4.dynamics.com/.default", server.GetProperty("scopes").EnumerateArray().Single().GetString());
+        Assert.True(server.GetProperty("hasClientSecret").GetBoolean());
+        Assert.False(server.TryGetProperty("clientSecret", out _));
+    }
+
+    // AC11 (validation): ClientCredentials requires an https authority, a client id, and ≥1 scope.
+    [Fact]
+    public async Task ClientCredentials_Validation_RejectsMissingFields()
+    {
+        async Task<HttpStatusCode> Post(object body) =>
+            (await _client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-ccv", body))).StatusCode;
+
+        // No authority.
+        Assert.Equal(HttpStatusCode.BadRequest, await Post(new
+        {
+            name = "x",
+            endpoint = "https://org.crm4.dynamics.com/mcp",
+            auth = "ClientCredentials",
+            enabled = true,
+            clientId = "cid",
+            scopes = new[] { "s/.default" },
+        }));
+        // Non-https authority.
+        Assert.Equal(HttpStatusCode.BadRequest, await Post(new
+        {
+            name = "x",
+            endpoint = "https://org.crm4.dynamics.com/mcp",
+            auth = "ClientCredentials",
+            enabled = true,
+            authority = "http://login.microsoftonline.com/tenant",
+            clientId = "cid",
+            scopes = new[] { "s/.default" },
+        }));
+        // No client id.
+        Assert.Equal(HttpStatusCode.BadRequest, await Post(new
+        {
+            name = "x",
+            endpoint = "https://org.crm4.dynamics.com/mcp",
+            auth = "ClientCredentials",
+            enabled = true,
+            authority = "https://login.microsoftonline.com/tenant",
+            scopes = new[] { "s/.default" },
+        }));
+        // No scopes.
+        Assert.Equal(HttpStatusCode.BadRequest, await Post(new
+        {
+            name = "x",
+            endpoint = "https://org.crm4.dynamics.com/mcp",
+            auth = "ClientCredentials",
+            enabled = true,
+            authority = "https://login.microsoftonline.com/tenant",
+            clientId = "cid",
+        }));
+        // A complete ClientCredentials body is accepted.
+        Assert.Equal(HttpStatusCode.OK, await Post(ClientCredentialsBody()));
+    }
+
+    // AC11 (blank-keep): editing a ClientCredentials server without re-entering the secret keeps it.
+    [Fact]
+    public async Task ClientCredentials_Put_BlankSecret_KeepsStoredSecret()
+    {
+        (await _client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-cck", ClientCredentialsBody("original-cc"))))
+            .EnsureSuccessStatusCode();
+        var id = (await SingleServer(await _client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", "user-cck"))))
+            .GetProperty("id").GetString();
+
+        var put = await _client.SendAsync(Request(HttpMethod.Put, $"/api/mcp-servers/{id}", "user-cck", new
+        {
+            name = "Renamed CC",
+            endpoint = "https://org.crm4.dynamics.com/mcp",
+            auth = "ClientCredentials",
+            enabled = true,
+            authority = "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000",
+            clientId = "11111111-1111-1111-1111-111111111111",
+            clientSecret = (string?)null,
+            scopes = new[] { "https://org.crm4.dynamics.com/.default" },
+        }));
+        put.EnsureSuccessStatusCode();
+
+        var server = await SingleServer(await _client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", "user-cck")));
+        Assert.Equal("Renamed CC", server.GetProperty("name").GetString());
+        Assert.True(server.GetProperty("hasClientSecret").GetBoolean()); // secret survived the secretless edit
+    }
+
     // CRUD is per-user — one user cannot see another's servers, and delete only affects the owner.
     [Fact]
     public async Task Crud_IsPerUser()

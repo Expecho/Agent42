@@ -453,6 +453,7 @@
         <select class="agent-form__input agent-form__select" id="mcpAuth">
           <option value="None">None (public server)</option>
           <option value="Header">Static header (API key / bearer)</option>
+          <option value="ClientCredentials">Entra ID client credentials (Dataverse)</option>
         </select>
       </label>
 
@@ -466,6 +467,30 @@
         <span class="agent-form__label">// header value</span>
         <input class="agent-form__input" type="password" id="mcpHeaderValue" autocomplete="off"
                placeholder="leave blank to keep the stored value" />
+      </label>
+
+      <label class="agent-form__field" id="mcpAuthorityField" hidden>
+        <span class="agent-form__label">// authority</span>
+        <input class="agent-form__input" type="url" id="mcpAuthority"
+               placeholder="https://login.microsoftonline.com/{tenant}" />
+      </label>
+
+      <label class="agent-form__field" id="mcpClientIdField" hidden>
+        <span class="agent-form__label">// client id</span>
+        <input class="agent-form__input" type="text" id="mcpClientId" maxlength="80"
+               placeholder="app registration (client) id" />
+      </label>
+
+      <label class="agent-form__field" id="mcpClientSecretField" hidden>
+        <span class="agent-form__label">// client secret</span>
+        <input class="agent-form__input" type="password" id="mcpClientSecret" autocomplete="off"
+               placeholder="leave blank to keep the stored value" />
+      </label>
+
+      <label class="agent-form__field" id="mcpScopesField" hidden>
+        <span class="agent-form__label">// scopes</span>
+        <input class="agent-form__input" type="text" id="mcpScopes"
+               placeholder="https://org.crm4.dynamics.com/.default (space-separated)" />
       </label>
 
       <p class="agent-form__error" id="mcpError" hidden></p>
