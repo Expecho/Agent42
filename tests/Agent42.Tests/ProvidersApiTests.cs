@@ -42,6 +42,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
             new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
         appBuilder.Services.AddSingleton<IMcpSecretProtector>(
             new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
+        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
         // MapAgentApi maps every endpoint; the route matcher infers all of their parameters up front, so
         // the services the OTHER endpoints resolve as parameters must be present even though these tests
         // only hit /api/providers (otherwise minimal-API treats an unregistered service param as a body).

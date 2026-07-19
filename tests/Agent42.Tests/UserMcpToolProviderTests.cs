@@ -18,6 +18,9 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     private readonly FakeMcpConnectionFactory _connections = new();
     private readonly IMcpSecretProtector _protector =
         new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance);
+    // OAuth refresh is exercised only by the None/Header/ClientCredentials-free tests below; this client is
+    // never called for those, so a bare HttpClient stands in.
+    private readonly McpOAuthClient _oauth = new(new HttpClient());
 
     public async Task InitializeAsync()
     {
@@ -30,7 +33,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     public async Task DisposeAsync() => await _cluster.DisposeAsync();
 
     private UserMcpToolProvider NewProvider() =>
-        new(_cluster.GrainFactory, _connections, _protector, NullLogger<UserMcpToolProvider>.Instance);
+        new(_cluster.GrainFactory, _connections, _protector, _oauth, NullLogger<UserMcpToolProvider>.Instance);
 
     private StoredMcpServer HeaderServer(string id, string plaintextSecret = "plain-secret") => new(
         Id: id,
@@ -167,10 +170,81 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
             _cluster.GrainFactory,
             new McpConnectionFactory(NullLoggerFactory.Instance),
             _protector,
+            _oauth,
             NullLogger<UserMcpToolProvider>.Instance);
 
         var set = await provider.GetForUserAsync("mcp-tp-real-dead");
         Assert.Empty(set.Tools); // dead server skipped, no throw
+    }
+
+    private StoredMcpServer OAuthServer(string id, McpOAuthTokens? tokens) => new(
+        Id: id,
+        Name: $"oauth-{id}",
+        Endpoint: "https://mcp.example.com/mcp",
+        Auth: nameof(McpAuthMode.InteractiveOAuth),
+        Enabled: true,
+        TokenCiphertext: tokens is null ? null : _protector.Protect(tokens.Serialize()));
+
+    // An InteractiveOAuth server with a stored, unexpired token loads its tools, and the provider passes the
+    // decrypted access token to the connection.
+    [Fact]
+    public async Task OAuthServer_WithToken_LoadsTools_AndInjectsAccessToken()
+    {
+        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-load");
+        var tokens = new McpOAuthTokens("access-abc", "refresh-1", DateTimeOffset.UtcNow.AddHours(1),
+            "https://as.example.com/token", "client-1", ["mcp.read"]);
+        await grain.SaveAsync(OAuthServer("o1", tokens));
+
+        var set = await NewProvider().GetForUserAsync("mcp-oauth-load");
+
+        Assert.Single(set.Tools);
+        Assert.Contains("access-abc", _connections.ObservedOAuthTokens);
+    }
+
+    // An InteractiveOAuth server that has not completed the Connect flow (no token) is skipped, not fatal.
+    [Fact]
+    public async Task OAuthServer_WithoutToken_IsSkipped()
+    {
+        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-notoken");
+        await grain.SaveAsync(OAuthServer("o1", tokens: null));
+
+        var set = await NewProvider().GetForUserAsync("mcp-oauth-notoken");
+        Assert.Empty(set.Tools);
+    }
+
+    // A near-expiry token is refreshed at connect (app-owned) via a fake token endpoint, the refreshed bundle
+    // is persisted, and the connection sees the NEW access token.
+    [Fact]
+    public async Task OAuthServer_NearExpiry_RefreshesAndPersists()
+    {
+        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-refresh");
+        var expiring = new McpOAuthTokens("access-old", "refresh-1", DateTimeOffset.UtcNow.AddSeconds(10),
+            "https://as.example.com/token", "client-1", ["mcp.read"]);
+        await grain.SaveAsync(OAuthServer("o1", expiring));
+
+        var oauth = new McpOAuthClient(new HttpClient(new RefreshStubHandler()));
+        var provider = new UserMcpToolProvider(
+            _cluster.GrainFactory, _connections, _protector, oauth, NullLogger<UserMcpToolProvider>.Instance);
+
+        var set = await provider.GetForUserAsync("mcp-oauth-refresh");
+
+        Assert.Single(set.Tools);
+        Assert.Contains("access-new", _connections.ObservedOAuthTokens); // refreshed token injected
+        // The refreshed bundle was persisted (decrypting the stored ciphertext yields the new access token).
+        var stored = Assert.Single((await grain.GetAsync()).Servers);
+        var persisted = McpOAuthTokens.Deserialize(_protector.Unprotect(stored.TokenCiphertext));
+        Assert.Equal("access-new", persisted!.AccessToken);
+    }
+
+    private sealed class RefreshStubHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"access_token":"access-new","refresh_token":"refresh-2","expires_in":3600}""",
+                    System.Text.Encoding.UTF8, "application/json"),
+            });
     }
 
     private sealed class FakeMcpConnectionFactory : IMcpConnectionFactory
@@ -179,6 +253,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
         public Func<StoredMcpServer, IReadOnlyList<AITool>> ToolsFor { get; set; } =
             s => [AIFunctionFactory.Create(() => "ok", $"tool_{s.Id}")];
         public List<string?> ObservedHeaderValues { get; } = [];
+        public List<string?> ObservedOAuthTokens { get; } = [];
         public int ConnectCount { get; private set; }
         public TrackingDisposable? LastDisposable { get; private set; }
 
@@ -187,6 +262,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
         {
             ConnectCount++;
             ObservedHeaderValues.Add(secrets.HeaderValue);
+            ObservedOAuthTokens.Add(secrets.OAuthAccessToken);
             if (DeadServerIds.Contains(server.Id))
             {
                 throw new InvalidOperationException("simulated dead server");

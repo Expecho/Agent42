@@ -102,6 +102,7 @@
   const mcpClientSecretInput = document.getElementById("mcpClientSecret");
   const mcpScopesField = document.getElementById("mcpScopesField");
   const mcpScopesInput = document.getElementById("mcpScopes");
+  const mcpOAuthNote = document.getElementById("mcpOAuthNote");
   const mcpError = document.getElementById("mcpError");
   const mcpCancelBtn = document.getElementById("mcpCancelBtn");
 
@@ -1763,13 +1764,33 @@
       name.textContent = server.name;
       const sub = document.createElement("span");
       sub.className = "provider-row__sub";
-      // Endpoint + auth + a lock glyph when a secret is stored (never the secret) + a pause glyph when off.
+      // Endpoint + auth + a key glyph when a secret is stored (never the secret) + a pause glyph when off.
+      // For OAuth, a connection state (🔗 connected / not connected) instead of the key glyph.
+      const isOAuth = server.auth === "InteractiveOAuth";
       const bits = [server.endpoint, server.auth];
-      if (server.hasHeaderValue) bits.push("🔑");
+      if (server.hasHeaderValue || server.hasClientSecret) bits.push("🔑");
+      if (isOAuth) bits.push(server.hasToken ? "🔗 connected" : "not connected");
       if (!server.enabled) bits.push("⏸ off");
       sub.textContent = bits.join(" · ");
       sub.title = server.endpoint;
       meta.append(name, sub);
+
+      // Interactive-OAuth servers get a Connect (or Reconnect) action that starts the sign-in flow. Full
+      // navigation to /api/mcp/oauth/start — the server 302s to the identity provider and returns to /callback.
+      if (isOAuth) {
+        const connect = document.createElement("button");
+        connect.type = "button";
+        connect.className = "provider-row__action";
+        connect.setAttribute("aria-label", `${server.hasToken ? "Reconnect" : "Connect"} MCP server: ${server.name}`);
+        connect.textContent = "🔗";
+        connect.title = server.hasToken ? "Reconnect (sign in again)" : "Connect (sign in)";
+        connect.addEventListener("click", () => {
+          window.location.href = `/api/mcp/oauth/start?serverId=${encodeURIComponent(server.id)}`;
+        });
+        li.append(meta, connect);
+      } else {
+        li.appendChild(meta);
+      }
 
       const edit = document.createElement("button");
       edit.type = "button";
@@ -1785,22 +1806,25 @@
       del.textContent = "🗑";
       del.addEventListener("click", () => deleteMcpServer(server.id));
 
-      li.append(meta, edit, del);
+      li.append(edit, del);
       mcpServerList.appendChild(li);
     }
   }
 
   // Each auth mode reveals only the fields it needs: Header → header name/value; ClientCredentials →
-  // authority/clientId/clientSecret/scopes; None → nothing.
+  // authority/clientId/clientSecret/scopes; InteractiveOAuth → clientId (optional) + scopes, plus a note;
+  // None → nothing.
   function syncMcpAuthUi() {
     const isHeader = mcpAuthSelect.value === "Header";
     const isCc = mcpAuthSelect.value === "ClientCredentials";
+    const isOAuth = mcpAuthSelect.value === "InteractiveOAuth";
     mcpHeaderNameField.hidden = !isHeader;
     mcpHeaderValueField.hidden = !isHeader;
     mcpAuthorityField.hidden = !isCc;
-    mcpClientIdField.hidden = !isCc;
     mcpClientSecretField.hidden = !isCc;
-    mcpScopesField.hidden = !isCc;
+    mcpClientIdField.hidden = !(isCc || isOAuth);
+    mcpScopesField.hidden = !(isCc || isOAuth);
+    mcpOAuthNote.hidden = !isOAuth;
   }
 
   function openMcpDialog(server) {
@@ -1826,6 +1850,7 @@
   async function saveMcpServer() {
     const isHeader = mcpAuthSelect.value === "Header";
     const isCc = mcpAuthSelect.value === "ClientCredentials";
+    const isOAuth = mcpAuthSelect.value === "InteractiveOAuth";
     const payload = {
       name: mcpNameInput.value.trim(),
       endpoint: mcpEndpointInput.value.trim(),
@@ -1835,10 +1860,11 @@
       // Blank means "keep the stored value" on edit, or "no value" on create — the server maps both.
       headerValue: isHeader ? mcpHeaderValueInput.value : null,
       authority: isCc ? mcpAuthorityInput.value.trim() : null,
-      clientId: isCc ? mcpClientIdInput.value.trim() : null,
+      // clientId is shared by ClientCredentials and InteractiveOAuth (optional for OAuth — dynamic otherwise).
+      clientId: (isCc || isOAuth) ? mcpClientIdInput.value.trim() : null,
       clientSecret: isCc ? mcpClientSecretInput.value : null, // write-only, blank = keep
       // Scopes are space- or comma-separated in the UI; the API stores a list.
-      scopes: isCc ? mcpScopesInput.value.split(/[\s,]+/).filter(Boolean) : null,
+      scopes: (isCc || isOAuth) ? mcpScopesInput.value.split(/[\s,]+/).filter(Boolean) : null,
     };
     if (!payload.name || !payload.endpoint) return;
 
@@ -2137,6 +2163,20 @@
     shareDialog.showModal();
   }
 
+  // Run at init: the interactive-OAuth callback redirects back to /?mcp_oauth=connected|error. Strip the
+  // param (so a reload isn't a re-trigger) and open Preferences → MCP servers so the connection status shows.
+  async function initMcpOAuthReturn() {
+    const params = new URLSearchParams(location.search);
+    const result = params.get("mcp_oauth");
+    if (!result) return;
+    history.replaceState(null, "", location.pathname);
+    if (result === "error") {
+      alert(`Could not connect the MCP server: ${params.get("reason") || "unknown error"}`);
+    }
+    await openProfileDialog();
+    profileTabs.select(3); // the MCP servers tab
+  }
+
   /* ————— init ————— */
 
   loadModels();
@@ -2148,5 +2188,6 @@
   toolsBtn.hidden = false;
   initLocation();
   initShare(); // opens the destination picker when this load is an Android share hand-off
+  initMcpOAuthReturn(); // surfaces the result when this load is an OAuth callback return
   input.focus();
 })();

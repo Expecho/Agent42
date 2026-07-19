@@ -31,9 +31,13 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
     // connect + ListTools, then skip it. Belt-and-suspenders with the transport's own ConnectionTimeout.
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(10);
 
+    // Refresh an InteractiveOAuth access token at connect if it expires within this window (app-owned refresh).
+    private static readonly TimeSpan RefreshSkew = TimeSpan.FromMinutes(2);
+
     private readonly IGrainFactory _grains;
     private readonly IMcpConnectionFactory _connectionFactory;
     private readonly IMcpSecretProtector _protector;
+    private readonly McpOAuthClient _oauth;
     private readonly ILogger<UserMcpToolProvider> _logger;
 
     private readonly ConcurrentDictionary<string, UserCache> _caches = new(StringComparer.Ordinal);
@@ -42,11 +46,13 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
         IGrainFactory grains,
         IMcpConnectionFactory connectionFactory,
         IMcpSecretProtector protector,
+        McpOAuthClient oauth,
         ILogger<UserMcpToolProvider> logger)
     {
         _grains = grains;
         _connectionFactory = connectionFactory;
         _protector = protector;
+        _oauth = oauth;
         _logger = logger;
     }
 
@@ -87,10 +93,9 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
 
         foreach (var server in config.Servers.Where(s => s.Enabled))
         {
-            // None/Header (Phase 1) and ClientCredentials (Phase 2) connect; InteractiveOAuth (Phase 3) is
-            // skipped defensively (the API rejects it, so a stored server can only be a supported mode).
+            // None/Header (Phase 1), ClientCredentials (Phase 2), and InteractiveOAuth (Phase 3) connect.
             if (!Enum.TryParse<McpAuthMode>(server.Auth, ignoreCase: true, out var mode)
-                || mode is not (McpAuthMode.None or McpAuthMode.Header or McpAuthMode.ClientCredentials))
+                || mode is not (McpAuthMode.None or McpAuthMode.Header or McpAuthMode.ClientCredentials or McpAuthMode.InteractiveOAuth))
             {
                 _logger.LogInformation(
                     "Skipping MCP server {Server} for user {User}: auth mode {Mode} is not yet supported.",
@@ -98,10 +103,26 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 continue;
             }
 
+            // InteractiveOAuth: resolve the current access token (refreshing at connect if near expiry). A
+            // server that has not completed the Connect flow yet has no token — skip it (not connected).
+            string? oauthAccessToken = null;
+            if (mode == McpAuthMode.InteractiveOAuth)
+            {
+                oauthAccessToken = await ResolveOAuthAccessTokenAsync(userId, server, cancellationToken);
+                if (oauthAccessToken is null)
+                {
+                    _logger.LogInformation(
+                        "Skipping MCP server {Server} for user {User}: not connected (no OAuth token yet).",
+                        server.Name, userId);
+                    continue;
+                }
+            }
+
             // Decrypt every secret the mode might need, before the grain-free connection factory sees it.
             var secrets = new McpConnectionSecrets(
                 _protector.Unprotect(server.HeaderValueCiphertext),
-                _protector.Unprotect(server.ClientSecretCiphertext));
+                _protector.Unprotect(server.ClientSecretCiphertext),
+                oauthAccessToken);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(ConnectTimeout);
             try
@@ -122,6 +143,42 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
         }
 
         return (tools, connections);
+    }
+
+    // Resolves the current InteractiveOAuth access token for a server, refreshing it (app-owned) when it is
+    // within the skew of expiry and a refresh token is available, and persisting the refreshed bundle. Returns
+    // null when the server has no stored token (the Connect flow hasn't run) → the caller skips it.
+    private async Task<string?> ResolveOAuthAccessTokenAsync(string userId, StoredMcpServer server, CancellationToken cancellationToken)
+    {
+        var tokens = McpOAuthTokens.Deserialize(_protector.Unprotect(server.TokenCiphertext));
+        if (tokens is null)
+        {
+            return null; // not connected yet
+        }
+
+        var nearExpiry = tokens.ExpiresAt is { } expiresAt && expiresAt - DateTimeOffset.UtcNow <= RefreshSkew;
+        if (!nearExpiry || string.IsNullOrEmpty(tokens.RefreshToken))
+        {
+            return tokens.AccessToken;
+        }
+
+        try
+        {
+            var refreshed = await _oauth.RefreshAsync(tokens, new Uri(server.Endpoint), cancellationToken);
+            // Persist the refreshed bundle (bumps the overlay version, so the next activation re-reads it).
+            await _grains.GetGrain<IUserMcpConfigGrain>(userId)
+                .SaveAsync(server with { TokenCiphertext = _protector.Protect(refreshed.Serialize()) });
+            return refreshed.AccessToken;
+        }
+        catch (Exception ex)
+        {
+            // A failed refresh is best-effort: try the existing token (it may still be within skew), and if it
+            // too is rejected the connect fails and the server is skipped.
+            _logger.LogWarning(ex,
+                "MCP OAuth token refresh failed for server {Server} (user {User}); using the existing token.",
+                server.Name, userId);
+            return tokens.AccessToken;
+        }
     }
 
     // An MCP tool is an AIFunction (Step 0 spike), so it can be truncation-wrapped; anything else (there is

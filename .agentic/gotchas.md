@@ -1002,6 +1002,33 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`
 - **Verified:** 2026-07-19
 
+### MCP interactive OAuth is hand-rolled: the SDK flow blocks, the callback must stay behind Easy Auth
+
+- **Claim:** MCP InteractiveOAuth (ADR 0025) does NOT use the `ModelContextProtocol` SDK's OAuth. The SDK
+  drives authorization through a **blocking** `AuthorizationRedirectDelegate(authorizationUri, redirectUri,
+  ct) → Task<string>` that must open a browser and block until the code returns — a desktop/loopback
+  assumption that cannot bridge Agent 42's stateless two-request web flow (`/api/mcp/oauth/start` then a
+  separate `/callback`). So the app drives authorization-code + PKCE itself (PRM discovery → authz redirect →
+  token exchange). **Two traps.** (1) **Both endpoints must stay BEHIND Easy Auth — never in
+  `excludedPaths`** — or `GetUserId()` returns `local-dev` and the tokens bind to the wrong (or no) user; the
+  external identity provider redirects the *browser* to `/callback`, which re-enters through the same Easy
+  Auth session cookie, so `GetUserId()` works. Manual prereq: the redirect URI
+  `https://chat.agent42.nl/api/mcp/oauth/callback` must be registered in each provider's app registration,
+  and it is built from `Request.Scheme`/`Host` (relies on forwarded-headers being handled behind the proxy).
+  (2) **Refresh is connect-time, not per-request**, and persisting a refreshed token via `SaveAsync` **bumps
+  the overlay version**, so the next activation does one extra reconnect — accepted churn, not a bug (a
+  per-request `AuthHeaderHandler` refresh was deferred to avoid coupling grain-persist into the connection).
+  The whole token bundle (access + refresh + token endpoint + client id + scopes) rides the encrypted
+  `StoredMcpServer.TokenCiphertext` — no new schema field.
+- **Evidence:** `src/Agent42.Backend/McpOAuth.cs` (`McpOAuthClient` discovery/exchange/refresh, `McpPkce`),
+  `src/Agent42.Backend/AgentApi.cs` (`/api/mcp/oauth/start` + `/callback`, `GetUserId()`-scoped),
+  `src/Agent42.Agents/UserMcpOAuthPendingGrain.cs` (one-time `TakeAsync`),
+  `src/Agent42.Backend/UserMcpToolProvider.cs` (`ResolveOAuthAccessTokenAsync`),
+  `tests/Agent42.Tests/McpOAuthEndpointTests.cs` (`OAuthCallback_PersistsEncryptedTokens`),
+  `tests/Agent42.Tests/McpOAuthClientTests.cs` (`Pkce_Challenge_MatchesRfc7636Vector`),
+  `.agentic/decisions/0025-mcp-interactive-oauth-app-driven-pkce.md`
+- **Verified:** 2026-07-19
+
 ### The API-key directory must be kept in sync per-operation, or a revoked key stays live
 
 - **Claim:** a per-agent API key (ADR 0022) authenticates by an **O(1) hash-keyed grain lookup** —
