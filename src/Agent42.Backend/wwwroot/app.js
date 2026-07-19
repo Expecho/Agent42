@@ -55,6 +55,7 @@
     [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
     [document.getElementById("tabTools"), document.getElementById("panelTools")],
     [document.getElementById("tabProviders"), document.getElementById("panelProviders")],
+    [document.getElementById("tabMcp"), document.getElementById("panelMcp")],
   ]);
   const agentTabs = wireTabs([
     [document.getElementById("tabAgentGeneral"), document.getElementById("panelAgentGeneral")],
@@ -78,6 +79,23 @@
   const addModelRowBtn = document.getElementById("addModelRowBtn");
   const providerError = document.getElementById("providerError");
   const providerCancelBtn = document.getElementById("providerCancelBtn");
+
+  // Remote MCP servers (config-driven remote MCP servers) — mirrors the provider dialog.
+  const mcpServerList = document.getElementById("mcpServerList");
+  const addMcpServerBtn = document.getElementById("addMcpServerBtn");
+  const mcpDialog = document.getElementById("mcpDialog");
+  const mcpForm = document.getElementById("mcpForm");
+  const mcpFormTitle = document.getElementById("mcpFormTitle");
+  const mcpNameInput = document.getElementById("mcpName");
+  const mcpEndpointInput = document.getElementById("mcpEndpoint");
+  const mcpEnabledInput = document.getElementById("mcpEnabled");
+  const mcpAuthSelect = document.getElementById("mcpAuth");
+  const mcpHeaderNameField = document.getElementById("mcpHeaderNameField");
+  const mcpHeaderNameInput = document.getElementById("mcpHeaderName");
+  const mcpHeaderValueField = document.getElementById("mcpHeaderValueField");
+  const mcpHeaderValueInput = document.getElementById("mcpHeaderValue");
+  const mcpError = document.getElementById("mcpError");
+  const mcpCancelBtn = document.getElementById("mcpCancelBtn");
 
   // Selectable tools (ADR 0021): checkbox groups in the agent + preferences dialogs, and a per-chat popover.
   const agentToolChecks = document.getElementById("agentToolChecks");
@@ -121,6 +139,10 @@
   // or null when adding a new provider.
   let userProviders = [];
   let editingProviderKey = null;
+  // The user's own remote MCP servers (config-driven remote MCP servers), fetched masked (hasHeaderValue,
+  // never the secret). The id of the one being edited, or null when adding a new server.
+  let mcpServers = [];
+  let editingMcpId = null;
   // The agent id to *bind*, sent on the wire only on the first turn of a freshly started
   // agent chat, then cleared. Kept distinct from activeAgentId so a resumed agent chat never
   // re-resolves (and rebinds against) a possibly-deleted agent.
@@ -1390,6 +1412,7 @@
     profileTabs.select(0); // always open on General
     updateLocationControl(); // refresh the location status/button for the current grant state
     loadProviders(); // refresh the user's providers list alongside the profile
+    loadMcpServers(); // and their MCP servers (config-driven remote MCP servers)
     profileDialog.showModal();
     profileLanguage.focus();
   }
@@ -1698,6 +1721,139 @@
   providerForm.addEventListener("submit", (e) => {
     e.preventDefault();
     saveProvider();
+  });
+
+  /* ————— remote MCP servers (config-driven remote MCP servers) ————— */
+
+  async function loadMcpServers() {
+    try {
+      const res = await fetch("/api/mcp-servers");
+      if (!res.ok) return;
+      const data = await res.json();
+      mcpServers = data.servers ?? [];
+      renderMcpServers();
+    } catch { /* silo may be unreachable; the list refreshes on next open */ }
+  }
+
+  function renderMcpServers() {
+    mcpServerList.innerHTML = "";
+    if (mcpServers.length === 0) {
+      const li = document.createElement("li");
+      li.className = "providers__empty";
+      li.textContent = "no MCP servers added";
+      mcpServerList.appendChild(li);
+      return;
+    }
+    for (const server of mcpServers) {
+      const li = document.createElement("li");
+      li.className = "provider-row";
+
+      const meta = document.createElement("div");
+      meta.className = "provider-row__meta";
+      const name = document.createElement("span");
+      name.className = "provider-row__name";
+      name.textContent = server.name;
+      const sub = document.createElement("span");
+      sub.className = "provider-row__sub";
+      // Endpoint + auth + a lock glyph when a secret is stored (never the secret) + a pause glyph when off.
+      const bits = [server.endpoint, server.auth];
+      if (server.hasHeaderValue) bits.push("🔑");
+      if (!server.enabled) bits.push("⏸ off");
+      sub.textContent = bits.join(" · ");
+      sub.title = server.endpoint;
+      meta.append(name, sub);
+
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "provider-row__action";
+      edit.setAttribute("aria-label", `Edit MCP server: ${server.name}`);
+      edit.textContent = "✎";
+      edit.addEventListener("click", () => openMcpDialog(server));
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "provider-row__action";
+      del.setAttribute("aria-label", `Delete MCP server: ${server.name}`);
+      del.textContent = "🗑";
+      del.addEventListener("click", () => deleteMcpServer(server.id));
+
+      li.append(meta, edit, del);
+      mcpServerList.appendChild(li);
+    }
+  }
+
+  // Header mode is the only auth needing extra fields in Phase 1; None hides them.
+  function syncMcpAuthUi() {
+    const isHeader = mcpAuthSelect.value === "Header";
+    mcpHeaderNameField.hidden = !isHeader;
+    mcpHeaderValueField.hidden = !isHeader;
+  }
+
+  function openMcpDialog(server) {
+    editingMcpId = server?.id ?? null;
+    mcpFormTitle.textContent = server ? "Edit MCP server" : "New MCP server";
+    mcpError.hidden = true;
+    mcpNameInput.value = server?.name ?? "";
+    mcpEndpointInput.value = server?.endpoint ?? "";
+    mcpEnabledInput.checked = server?.enabled ?? true;
+    mcpAuthSelect.value = server?.auth ?? "None";
+    mcpHeaderNameInput.value = server?.headerName ?? "Authorization";
+    mcpHeaderValueInput.value = ""; // never prefilled — write-only (blank = keep on edit)
+    syncMcpAuthUi();
+
+    mcpDialog.showModal();
+    mcpNameInput.focus();
+  }
+
+  async function saveMcpServer() {
+    const payload = {
+      name: mcpNameInput.value.trim(),
+      endpoint: mcpEndpointInput.value.trim(),
+      auth: mcpAuthSelect.value,
+      enabled: mcpEnabledInput.checked,
+      headerName: mcpAuthSelect.value === "Header" ? mcpHeaderNameInput.value.trim() : null,
+      // Blank means "keep the stored value" on edit, or "no value" on create — the server maps both.
+      headerValue: mcpAuthSelect.value === "Header" ? mcpHeaderValueInput.value : null,
+    };
+    if (!payload.name || !payload.endpoint) return;
+
+    const url = editingMcpId
+      ? `/api/mcp-servers/${encodeURIComponent(editingMcpId)}`
+      : "/api/mcp-servers";
+    const method = editingMcpId ? "PUT" : "POST";
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        // The endpoint returns a plain-text reason for a 400 (bad endpoint/auth) — surface it.
+        mcpError.textContent = (await res.text()) || "Could not save the MCP server.";
+        mcpError.hidden = false;
+        return;
+      }
+    } catch { return; /* silo may be unreachable; leave the dialog open */ }
+
+    mcpDialog.close();
+    await loadMcpServers();
+  }
+
+  async function deleteMcpServer(id) {
+    try {
+      const res = await fetch(`/api/mcp-servers/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) return;
+    } catch { return; }
+    mcpServers = mcpServers.filter((s) => s.id !== id);
+    renderMcpServers();
+  }
+
+  addMcpServerBtn.addEventListener("click", () => openMcpDialog(null));
+  mcpAuthSelect.addEventListener("change", syncMcpAuthUi);
+  mcpCancelBtn.addEventListener("click", () => mcpDialog.close());
+  mcpForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveMcpServer();
   });
 
   input.addEventListener("input", autosize);

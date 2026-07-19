@@ -36,6 +36,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly IPersistentState<AgentGrainState> _state;
     private readonly IUserChatClientFactoryProvider _chatClientFactoryProvider;
+    private readonly IUserMcpToolProvider _mcpToolProvider;
     private readonly IAttachmentStore _attachments;
     private readonly IDocumentIndex _documentIndex;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddings;
@@ -67,6 +68,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // on its next activation (accepted staleness, ADR 0021).
     private IReadOnlyList<string>? _userDefaultEnabledTools;
 
+    // This user's remote-MCP-server tools (config-driven remote MCP servers), resolved ONCE on activation
+    // from this grain's userId — BEFORE the first BuildAgent, the same ordering hazard as _chatClientFactory
+    // and _userDefaultEnabledTools. The provider is a singleton holding the live MCP connections these tools
+    // reference; it is version-cached and best-effort, so a dead server never breaks activation. A user's MCP
+    // config change is picked up on the next activation of each of their conversation grains.
+    private IReadOnlyList<AITool> _mcpTools = [];
+
     /// <summary>
     /// The user's position for the turn currently being processed, or null (ADR 0012). Set at the top
     /// of <see cref="ChatAsync"/> from the position the browser sent with the request.
@@ -88,6 +96,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     public AgentGrain(
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
         IUserChatClientFactoryProvider chatClientFactoryProvider,
+        IUserMcpToolProvider mcpToolProvider,
         IAttachmentStore attachments,
         IDocumentIndex documentIndex,
         IEmbeddingGenerator<string, Embedding<float>> embeddings,
@@ -98,6 +107,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     {
         _state = state;
         _chatClientFactoryProvider = chatClientFactoryProvider;
+        _mcpToolProvider = mcpToolProvider;
         _attachments = attachments;
         _documentIndex = documentIndex;
         _embeddings = embeddings;
@@ -131,6 +141,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // silently register all tools and ignore the user's default. Same ordering hazard the
         // _chatClientFactory resolution above guards against for a different field.
         _userDefaultEnabledTools = (await GrainFactory.GetGrain<IUserProfileGrain>(_userId).GetAsync()).EnabledTools;
+
+        // Resolve this user's MCP-server tools (config-driven remote MCP servers) BEFORE the first BuildAgent
+        // below — BuildAgent merges them into its tool list, and ReceiveReminder reuses that same _agent, so
+        // connecting later would have the first chat turn AND every reminder turn on this activation silently
+        // omit the user's MCP tools. Same ordering hazard the two resolutions above guard against. Best-effort:
+        // the provider connects with a timeout and skips dead servers, so this never fails activation.
+        _mcpTools = (await _mcpToolProvider.GetForUserAsync(_userId, cancellationToken)).Tools;
 
         _agent = BuildAgent(_modelId);
 
@@ -260,6 +277,19 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // AIContextProviders switch, not here (it is a context provider, not in this list).
         var enabled = EffectiveEnabledTools().ToHashSet(StringComparer.Ordinal);
         tools = [.. tools.Where(t => ToolCatalog.IsToolEnabled(t.Name, enabled))];
+
+        // Remote MCP-server tools (config-driven remote MCP servers) are added AFTER the per-tool
+        // IsToolEnabled filter and BEFORE the capability intersection below. They are gated as a WHOLE group,
+        // not per tool name: MCP tool names are user-defined and dynamic, so they are absent from the catalog
+        // map and IsToolEnabled would keep them UNCONDITIONALLY (the unmapped-name rule), bypassing the picker.
+        // So the group gate `SupportsTools && enabled.Contains(Mcp)` is applied here explicitly. A user with
+        // zero configured MCP servers has an empty _mcpTools regardless, so nothing is added. The tools were
+        // already truncation-wrapped by the provider (ADR 0004).
+        var mcpEnabled = capabilities.SupportsTools && enabled.Contains(ToolCatalog.Mcp);
+        if (mcpEnabled)
+        {
+            tools.AddRange(_mcpTools);
+        }
 
         // AgentSkillsProvider IS a tool (it exposes load_skill), so a user disabling `skills` must DROP the
         // provider, not just hide a label — leaving it on hands the model a load_skill schema it can't use,

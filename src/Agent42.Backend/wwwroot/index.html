@@ -258,6 +258,8 @@
                 aria-selected="false" aria-controls="panelTools" tabindex="-1">Tools</button>
         <button class="agent-form__tab" type="button" role="tab" id="tabProviders"
                 aria-selected="false" aria-controls="panelProviders" tabindex="-1">Model providers</button>
+        <button class="agent-form__tab" type="button" role="tab" id="tabMcp"
+                aria-selected="false" aria-controls="panelMcp" tabindex="-1">MCP servers</button>
       </div>
 
       <div class="agent-form__panel" role="tabpanel" id="panelGeneral" aria-labelledby="tabGeneral">
@@ -307,6 +309,17 @@
           </div>
           <ul class="providers__list" id="providerList"></ul>
           <p class="agent-form__note">Add an OpenAI-compatible endpoint (Ollama, vLLM…) or another Foundry account. Changes take effect on your next new chat — no restart. Picking a third-party model sends your conversation outside the tenant.</p>
+        </section>
+      </div>
+
+      <div class="agent-form__panel" role="tabpanel" id="panelMcp" aria-labelledby="tabMcp" hidden>
+        <section class="agent-form__section">
+          <div class="providers__head">
+            <span class="agent-form__label">// MCP servers</span>
+            <button class="agent-form__btn" type="button" id="addMcpServerBtn">Add server</button>
+          </div>
+          <ul class="providers__list" id="mcpServerList"></ul>
+          <p class="agent-form__note">Add a remote MCP server to give the agent its tools. Enable the "MCP servers" tool to use them. Changes take effect on your next new chat — no restart. An MCP server sees your conversation and its tool results can inject instructions — add only servers you trust.</p>
         </section>
       </div>
 
@@ -408,6 +421,58 @@
       <div class="agent-form__actions">
         <button class="agent-form__btn" type="button" id="providerCancelBtn">Cancel</button>
         <button class="agent-form__btn agent-form__btn--primary" type="submit" id="providerSaveBtn">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Add / edit one remote MCP server (config-driven remote MCP servers). Reuses the agent-dialog/agent-form
+       styling. The Header secret is WRITE-ONLY: never sent back, left blank on edit, "blank = keep". -->
+  <dialog class="agent-dialog" id="mcpDialog">
+    <form class="agent-form" id="mcpForm">
+      <h2 class="agent-form__title" id="mcpFormTitle">New MCP server</h2>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// name</span>
+        <input class="agent-form__input" type="text" id="mcpName" maxlength="60"
+               placeholder="e.g. Dataverse" required />
+      </label>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// endpoint</span>
+        <input class="agent-form__input" type="url" id="mcpEndpoint"
+               placeholder="https://example.com/mcp" required />
+      </label>
+
+      <label class="agent-form__field agent-form__field--check">
+        <input class="agent-form__checkbox" type="checkbox" id="mcpEnabled" checked />
+        <span class="agent-form__label">// enabled</span>
+      </label>
+
+      <label class="agent-form__field">
+        <span class="agent-form__label">// auth</span>
+        <select class="agent-form__input agent-form__select" id="mcpAuth">
+          <option value="None">None (public server)</option>
+          <option value="Header">Static header (API key / bearer)</option>
+        </select>
+      </label>
+
+      <label class="agent-form__field" id="mcpHeaderNameField" hidden>
+        <span class="agent-form__label">// header name</span>
+        <input class="agent-form__input" type="text" id="mcpHeaderName" maxlength="80"
+               placeholder="Authorization" />
+      </label>
+
+      <label class="agent-form__field" id="mcpHeaderValueField" hidden>
+        <span class="agent-form__label">// header value</span>
+        <input class="agent-form__input" type="password" id="mcpHeaderValue" autocomplete="off"
+               placeholder="leave blank to keep the stored value" />
+      </label>
+
+      <p class="agent-form__error" id="mcpError" hidden></p>
+
+      <div class="agent-form__actions">
+        <button class="agent-form__btn" type="button" id="mcpCancelBtn">Cancel</button>
+        <button class="agent-form__btn agent-form__btn--primary" type="submit" id="mcpSaveBtn">Save</button>
       </div>
     </form>
   </dialog>

@@ -42,6 +42,7 @@ public sealed class CapSizedFetcherSiloConfigurator : ISiloConfigurator
                 new SingleChatClientFactory(sp.GetRequiredService<IChatClient>(), "fake-model"));
             services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
                 new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>()));
+            services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvider());
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             services.AddDocumentRagFakes();
             // Deliberately NOT AddWebToolFakes(): this silo swaps in the cap-sized fetcher. That makes it

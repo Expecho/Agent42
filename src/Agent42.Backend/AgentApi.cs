@@ -457,8 +457,114 @@ public static class AgentApi
             return Results.NoContent();
         });
 
+        // ————— remote MCP servers (per-user overlay, config-driven remote MCP servers) —————
+
+        // The signed-in user's OWN configured MCP servers. Secrets are MASKED to hasHeaderValue flags: the
+        // ciphertext never leaves the server, and the plaintext never existed here (the MCP analogue of
+        // GET /api/providers, ADR 0018).
+        app.MapGet("/api/mcp-servers", async (IGrainFactory grains, HttpContext http) =>
+        {
+            var overlay = await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId()).GetAsync();
+            return Results.Json(new McpServersResponse([.. overlay.Servers.Select(Mask)]));
+        });
+
+        // Creates an MCP server. The id is server-minted (unlike a provider key, a server name is not an
+        // identifier — a user may add two servers with the same name), so POST always inserts. The API
+        // ENCRYPTS the secret here — the grain only ever stores ciphertext.
+        app.MapPost("/api/mcp-servers", async (McpServerUpsertRequest request, IMcpSecretProtector protector, IGrainFactory grains, HttpContext http) =>
+        {
+            var error = ValidateMcpServer(request);
+            if (error is not null)
+            {
+                return Results.Text(error, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var id = Guid.NewGuid().ToString("n");
+            var stored = await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId())
+                .SaveAsync(ToStored(request, id, protector));
+            return Results.Json(Mask(stored));
+        });
+
+        // Updates the server named by the route id. A BLANK secret means "keep the stored secret" (the
+        // field is write-only in the UI) — ToStored maps blank to a null ciphertext, which the grain reads
+        // as "keep".
+        app.MapPut("/api/mcp-servers/{id}", async (string id, McpServerUpsertRequest request, IMcpSecretProtector protector, IGrainFactory grains, HttpContext http) =>
+        {
+            var error = ValidateMcpServer(request);
+            if (error is not null)
+            {
+                return Results.Text(error, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var stored = await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId())
+                .SaveAsync(ToStored(request, id, protector));
+            return Results.Json(Mask(stored));
+        });
+
+        // Deletes a server from the user's overlay. A warm conversation grain picks up the change on its
+        // next activation (the tool provider is version-cached), never mid-turn.
+        app.MapDelete("/api/mcp-servers/{id}", async (string id, IGrainFactory grains, HttpContext http) =>
+        {
+            await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId()).DeleteAsync(id);
+            return Results.NoContent();
+        });
+
         return app;
     }
+
+    // An MCP endpoint comes from the authenticated user's OWN persisted config, never a model or a live
+    // request — so, exactly like a user provider endpoint (ADR 0018), it carries NO PrivateAddressGuard
+    // and may be localhost (a self-hosted MCP server is a valid target). Validation is only structural:
+    // absolute http/https, a parseable auth mode, and the fields that mode needs. Phase 1 supports None
+    // and Header; ClientCredentials/InteractiveOAuth are staged (Phases 2/3) and rejected here for now.
+    // Returns an error message, or null when valid.
+    private static string? ValidateMcpServer(McpServerUpsertRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return "MCP server name must be non-empty.";
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Endpoint)
+            || !Uri.TryCreate(request.Endpoint, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return "Endpoint must be an absolute http or https URL.";
+        }
+
+        if (!Enum.TryParse<McpAuthMode>(request.Auth, ignoreCase: true, out var auth))
+        {
+            return $"Unknown auth mode '{request.Auth}'. Use 'None' or 'Header'.";
+        }
+
+        return auth switch
+        {
+            McpAuthMode.None => null,
+            McpAuthMode.Header when string.IsNullOrWhiteSpace(request.HeaderName)
+                => "Header auth requires a header name.",
+            McpAuthMode.Header => null,
+            _ => $"Auth mode '{auth}' is not yet supported.",
+        };
+    }
+
+    // Maps the request into the stored shape, encrypting the header secret. A blank HeaderValue becomes a
+    // null ciphertext: on create that is "no header value", on update the grain reads it as "keep the
+    // stored secret". The auth mode is normalized to its enum name so the tool provider parses it back.
+    private static StoredMcpServer ToStored(McpServerUpsertRequest request, string id, IMcpSecretProtector protector) =>
+        new(
+            Id: id,
+            Name: request.Name.Trim(),
+            Endpoint: request.Endpoint.Trim(),
+            Auth: Enum.Parse<McpAuthMode>(request.Auth, ignoreCase: true).ToString(),
+            Enabled: request.Enabled,
+            HeaderName: string.IsNullOrWhiteSpace(request.HeaderName) ? null : request.HeaderName.Trim(),
+            HeaderValueCiphertext: string.IsNullOrWhiteSpace(request.HeaderValue) ? null : protector.Protect(request.HeaderValue));
+
+    // Never returns a secret — only whether one is stored. The ciphertext stays server-side.
+    private static McpServerResponse Mask(StoredMcpServer s) =>
+        new(
+            s.Id, s.Name, s.Endpoint, s.Auth, s.Enabled, s.HeaderName,
+            HasHeaderValue: !string.IsNullOrEmpty(s.HeaderValueCiphertext));
 
     // A user provider must be self-contained (it does NOT inherit the operator AzureOpenAI:* config —
     // ADR 0018), so both kinds require an absolute http/https endpoint. localhost/private hosts are
@@ -592,3 +698,19 @@ public record ProviderModelResponse(
 
 // The GET /api/providers payload: the user's overlay providers (masked) plus their optional default.
 public record ProvidersResponse(IReadOnlyList<ProviderResponse> Providers, string? Default);
+
+// Client payload for creating (POST) or updating (PUT) a remote MCP server. HeaderValue is WRITE-ONLY —
+// it is encrypted server-side and never echoed back; blank on an update means "keep the stored secret".
+// Auth is "None" or "Header" (Phase 1). Enabled toggles the server without deleting it. Phase 2/3 add
+// the ClientCredentials/OAuth fields.
+public record McpServerUpsertRequest(
+    string Name, string Endpoint, string Auth, bool Enabled,
+    string? HeaderName = null, string? HeaderValue = null);
+
+// What GET/POST/PUT return for an MCP server: everything EXCEPT the secret, which is masked to
+// HasHeaderValue so the ciphertext (and the plaintext) never reach the client.
+public record McpServerResponse(
+    string Id, string Name, string Endpoint, string Auth, bool Enabled, string? HeaderName, bool HasHeaderValue);
+
+// The GET /api/mcp-servers payload: the user's overlay servers (masked).
+public record McpServersResponse(IReadOnlyList<McpServerResponse> Servers);

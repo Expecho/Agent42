@@ -961,13 +961,46 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   turn on that activation** register all tools and silently ignore the user's default (the same ordering
   hazard the `_chatClientFactory` resolution guards against for a different field). The default is read
   **once on activation** (accepted staleness, mirrors default-model resolution) — a Preferences change
-  reflects in a warm regular chat only on its next activation.
+  reflects in a warm regular chat only on its next activation. **`_mcpTools` (ADR 0024) is a THIRD field
+  with the identical hazard** — it is resolved from `IUserMcpToolProvider` in `OnActivateAsync` before the
+  first `BuildAgent`, and `BuildAgent` merges it gated by the `mcp` group key; resolving it later would
+  omit the user's MCP tools from the first chat turn and every reminder turn on that activation.
 - **Evidence:** `src/Agent42.Agents/AgentGrainState.cs` (`[Id(10)] EnabledTools`),
   `src/Agent42.Agents/ToolCatalog.cs` (`Sanitize`, `AllSelectableToolKeys`),
-  `src/Agent42.Agents/AgentGrain.cs` (`OnActivateAsync` fetch before `BuildAgent`, `EffectiveEnabledTools`),
-  `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
-  `UserDefault_AppliesWhenNoOverride`), `.agentic/decisions/0021-selectable-tools-three-layer.md`
-- **Verified:** 2026-07-17
+  `src/Agent42.Agents/AgentGrain.cs` (`OnActivateAsync` fetch before `BuildAgent`, `EffectiveEnabledTools`,
+  `_mcpTools`), `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
+  `UserDefault_AppliesWhenNoOverride`, `McpTools_ResolvedBeforeFirstBuildAgent`),
+  `.agentic/decisions/0021-selectable-tools-three-layer.md`, `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`
+- **Verified:** 2026-07-19
+
+### Remote MCP servers: a live-socket cache (bound it), a group-gated catalog exception, and a route-matcher trap
+
+- **Claim:** config-driven remote MCP servers (ADR 0024) copy the ADR 0018 provider-overlay shape, but three
+  things do **not** transfer and are invisible in the copied code. **(1) The tool provider's version cache
+  holds LIVE connections — bound it.** `UserChatClientFactoryProvider`'s cache is never evicted because a
+  chat-client factory is a cheap object; an `McpClient` is an open socket, so an unbounded `(userId, version)`
+  cache leaks one connection per config change. `UserMcpToolProvider` retains the most recent
+  **2** versions per user and disposes older on eviction (an in-flight grain then sees a disposed client as a
+  skipped tool — tolerated). Do **not** ship the unbounded copy. **(2) MCP tools are the documented exception
+  to the "every registered tool maps to a catalog key" guard.** MCP tool names are user-defined and dynamic,
+  so they are deliberately **absent** from `ToolCatalog.ToolNameToKey` — `IsToolEnabled` would keep an unmapped
+  name **unconditionally**, bypassing the picker. So the whole group is gated in `BuildAgent` by
+  `SupportsTools && enabled.Contains(ToolCatalog.Mcp)` (inserted **after** the `IsToolEnabled` filter, **before**
+  the `Tools = SupportsTools ? …` capability intersection), and the guard test carves MCP tools out by the
+  provider's set, never by name-guessing. **(3) Adding the `/api/mcp-servers` endpoints made
+  `IMcpSecretProtector` a route-matcher dependency for the WHOLE host.** Minimal-API infers every endpoint's
+  parameters up front, so an `IMcpSecretProtector` handler param that DI can't resolve is treated as a body and
+  breaks routing for *every* endpoint (this bit all six `MapAgentApi` hosts — DevHost 500s + 39 test failures —
+  until each registered it). The MCP **endpoint is deliberately NOT SSRF-guarded** (config, not a model/request
+  — may be `localhost`), exactly like the user-provider endpoint (see that gotcha).
+- **Evidence:** `src/Agent42.Backend/UserMcpToolProvider.cs` (`RetainedVersionsPerUser`, `EvictBeyondAsync`),
+  `src/Agent42.Agents/ToolCatalog.cs` (`Mcp`, absent from `ToolNameToKey`),
+  `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent` `mcpEnabled` gate), `src/Agent42.Backend/Program.cs` +
+  `tools/Agent42.DevHost/Program.cs` (`IMcpSecretProtector` registration),
+  `tests/Agent42.Tests/UserMcpToolProviderTests.cs` (`OldVersions_AreEvicted_AndTheirConnectionsDisposed`),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`EveryRegisteredTool_MapsToACatalogKey_OrIsGetDate_OrIsAnMcpTool`),
+  `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`
+- **Verified:** 2026-07-19
 
 ### The API-key directory must be kept in sync per-operation, or a revoked key stays live
 
