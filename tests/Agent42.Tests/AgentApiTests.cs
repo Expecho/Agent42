@@ -54,6 +54,7 @@ public sealed class AgentApiTests : IAsyncLifetime
         // treated as a body and break routing for the whole host).
         appBuilder.Services.AddSingleton<IMcpSecretProtector>(
             new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
+        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
         // The chat endpoint resolves attachments through the store; the in-memory store is
         // process-global, so it is the same instance the silo grain sees (constraint 10).
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();

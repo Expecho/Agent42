@@ -67,4 +67,4 @@ ClientCredentials (Phase 2), InteractiveOAuth (Phase 3, its own MR).
 - **Follow-up:** Phase 2 (MSAL ClientCredentials — the Dataverse path) and Phase 3 (InteractiveOAuth,
   a new inbound auth surface — re-run `critic`) are separate MRs. Offline (DevHost/tests) exercises the
   CRUD/UI via single-user adapters; overlay→tools reflection is prod-wired. Spec:
-  `.agentic/specs/plan-remote-mcp-servers.md` (stays active until Phase 3 lands, then moves to `completed/`).
+  `.agentic/specs/completed/plan-remote-mcp-servers.md` (stays active until Phase 3 lands, then moves to `completed/`).

@@ -56,6 +56,20 @@ public sealed class McpServersAssetsTests
     }
 
     [Fact]
+    public async Task McpDialog_HasInteractiveOAuthOptionAndConnectFlow()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _client.GetStringAsync("/app.js");
+
+        Assert.Contains("value=\"InteractiveOAuth\"", html);
+        Assert.Contains("id=\"mcpOAuthNote\"", html);
+        // The Connect button starts the sign-in flow, and the callback return is handled on load.
+        Assert.Contains("/api/mcp/oauth/start?serverId=", app);
+        Assert.Contains("function initMcpOAuthReturn()", app);
+        Assert.Contains("mcp_oauth", app);
+    }
+
+    [Fact]
     public async Task AppJs_WiresTheMcpCrudAgainstTheApi()
     {
         var app = await _client.GetStringAsync("/app.js");
