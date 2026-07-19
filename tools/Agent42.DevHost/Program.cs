@@ -48,6 +48,11 @@ builder.Services.AddSingleton<IChatClientFactory>(sp =>
 builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
     new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>()));
 
+// No per-user MCP store offline (config-driven remote MCP servers): the single-user adapter hands back an
+// empty tool set for every user. The MCP providers CRUD/UI is still exercisable; only overlay→tools
+// reflection is prod-wired.
+builder.Services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvider());
+
 builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel,
 [
     new ModelInfo("foundry:gpt-4o", "foundry", "GPT-4o", "gpt-4o", "2024-08-06", true, true),
@@ -67,6 +72,10 @@ builder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
 // per-user overlay grain still works (in-memory storage below), so the providers UI is exercisable here.
 builder.Services.AddDataProtection();
 builder.Services.AddSingleton<IProviderSecretProtector, ProviderSecretProtector>();
+// MCP secret encryption (config-driven remote MCP servers): /api/mcp-servers encrypts the header secret
+// before the grain. Same ephemeral offline ring; the per-user MCP overlay grain still works, so the MCP
+// servers CRUD/UI is exercisable here (only overlay→tools reflection is prod-wired).
+builder.Services.AddSingleton<IMcpSecretProtector, McpSecretProtector>();
 
 // In-memory attachment store: no Azure Storage offline. The canned client ignores image
 // content, so uploads still round-trip for the display proxy and history rendering.

@@ -23,6 +23,15 @@ public static class ToolCatalog
     public const string Skills = "skills";
     public const string CodeInterpreter = "code_interpreter";
 
+    /// <summary>
+    /// The remote-MCP-server group (config-driven remote MCP servers). Unlike every other key, this maps to
+    /// NO static tool names — an MCP server's tool names are user-defined and dynamic — so it is deliberately
+    /// absent from <see cref="ToolNameToKey"/> and gated as a WHOLE group in <c>BuildAgent</c>
+    /// (<c>SupportsTools &amp;&amp; enabled.Contains(Mcp)</c>), never per tool name. MCP tools are therefore the
+    /// documented group-gated exception to the "every registered tool maps to a catalog key" guard.
+    /// </summary>
+    public const string Mcp = "mcp";
+
     /// <summary>The always-on date tool that no selection can disable.</summary>
     public const string AlwaysOnDateTool = "get_date";
 
@@ -32,7 +41,7 @@ public static class ToolCatalog
     /// today's "every tool on" behaviour with no migration.
     /// </summary>
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-        [WebSearch, Location, Scheduling, Skills, CodeInterpreter];
+        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
     // web_search is intentionally the key for BOTH the SearXNG shims and HostedWebSearchTool — the hosted
@@ -65,6 +74,7 @@ public static class ToolCatalog
         new(Scheduling, "Scheduling", RequiresHostedTools: false),
         new(Skills, "Skills", RequiresHostedTools: false),
         new(CodeInterpreter, "Code interpreter", RequiresHostedTools: true),
+        new(Mcp, "MCP servers", RequiresHostedTools: false),
     ];
 
     /// <summary>The logical key for a registered tool name, or null (e.g. <c>get_date</c>, or an unmapped tool).</summary>

@@ -43,6 +43,9 @@ public sealed class AttachmentTests : IAsyncLifetime
         // /api/providers encrypts keys, so the protector must resolve for the route matcher (ADR 0018).
         appBuilder.Services.AddSingleton<IProviderSecretProtector>(
             new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
+        // /api/mcp-servers likewise encrypts secrets, so its protector must resolve for the route matcher too.
+        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
+            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         // The upload endpoint resolves the ingestion service even on the image path (ADR 0007).
         appBuilder.Services.AddDocumentRagFakes();

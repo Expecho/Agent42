@@ -49,6 +49,11 @@ public sealed class AgentApiTests : IAsyncLifetime
         // /api/providers encrypts keys, so the protector must resolve for the route matcher (ADR 0018).
         appBuilder.Services.AddSingleton<IProviderSecretProtector>(
             new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
+        // /api/mcp-servers encrypts secrets, so its protector must also resolve for the route matcher
+        // (minimal-API infers every endpoint's parameters up front — an unregistered service param would be
+        // treated as a body and break routing for the whole host).
+        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
+            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
         // The chat endpoint resolves attachments through the store; the in-memory store is
         // process-global, so it is the same instance the silo grain sees (constraint 10).
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
