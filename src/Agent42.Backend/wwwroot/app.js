@@ -94,6 +94,14 @@
   const mcpHeaderNameInput = document.getElementById("mcpHeaderName");
   const mcpHeaderValueField = document.getElementById("mcpHeaderValueField");
   const mcpHeaderValueInput = document.getElementById("mcpHeaderValue");
+  const mcpAuthorityField = document.getElementById("mcpAuthorityField");
+  const mcpAuthorityInput = document.getElementById("mcpAuthority");
+  const mcpClientIdField = document.getElementById("mcpClientIdField");
+  const mcpClientIdInput = document.getElementById("mcpClientId");
+  const mcpClientSecretField = document.getElementById("mcpClientSecretField");
+  const mcpClientSecretInput = document.getElementById("mcpClientSecret");
+  const mcpScopesField = document.getElementById("mcpScopesField");
+  const mcpScopesInput = document.getElementById("mcpScopes");
   const mcpError = document.getElementById("mcpError");
   const mcpCancelBtn = document.getElementById("mcpCancelBtn");
 
@@ -1782,11 +1790,17 @@
     }
   }
 
-  // Header mode is the only auth needing extra fields in Phase 1; None hides them.
+  // Each auth mode reveals only the fields it needs: Header → header name/value; ClientCredentials →
+  // authority/clientId/clientSecret/scopes; None → nothing.
   function syncMcpAuthUi() {
     const isHeader = mcpAuthSelect.value === "Header";
+    const isCc = mcpAuthSelect.value === "ClientCredentials";
     mcpHeaderNameField.hidden = !isHeader;
     mcpHeaderValueField.hidden = !isHeader;
+    mcpAuthorityField.hidden = !isCc;
+    mcpClientIdField.hidden = !isCc;
+    mcpClientSecretField.hidden = !isCc;
+    mcpScopesField.hidden = !isCc;
   }
 
   function openMcpDialog(server) {
@@ -1799,6 +1813,10 @@
     mcpAuthSelect.value = server?.auth ?? "None";
     mcpHeaderNameInput.value = server?.headerName ?? "Authorization";
     mcpHeaderValueInput.value = ""; // never prefilled — write-only (blank = keep on edit)
+    mcpAuthorityInput.value = server?.authority ?? "";
+    mcpClientIdInput.value = server?.clientId ?? "";
+    mcpClientSecretInput.value = ""; // never prefilled — write-only (blank = keep on edit)
+    mcpScopesInput.value = (server?.scopes ?? []).join(" ");
     syncMcpAuthUi();
 
     mcpDialog.showModal();
@@ -1806,14 +1824,21 @@
   }
 
   async function saveMcpServer() {
+    const isHeader = mcpAuthSelect.value === "Header";
+    const isCc = mcpAuthSelect.value === "ClientCredentials";
     const payload = {
       name: mcpNameInput.value.trim(),
       endpoint: mcpEndpointInput.value.trim(),
       auth: mcpAuthSelect.value,
       enabled: mcpEnabledInput.checked,
-      headerName: mcpAuthSelect.value === "Header" ? mcpHeaderNameInput.value.trim() : null,
+      headerName: isHeader ? mcpHeaderNameInput.value.trim() : null,
       // Blank means "keep the stored value" on edit, or "no value" on create — the server maps both.
-      headerValue: mcpAuthSelect.value === "Header" ? mcpHeaderValueInput.value : null,
+      headerValue: isHeader ? mcpHeaderValueInput.value : null,
+      authority: isCc ? mcpAuthorityInput.value.trim() : null,
+      clientId: isCc ? mcpClientIdInput.value.trim() : null,
+      clientSecret: isCc ? mcpClientSecretInput.value : null, // write-only, blank = keep
+      // Scopes are space- or comma-separated in the UI; the API stores a list.
+      scopes: isCc ? mcpScopesInput.value.split(/[\s,]+/).filter(Boolean) : null,
     };
     if (!payload.name || !payload.endpoint) return;
 

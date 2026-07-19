@@ -183,10 +183,10 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
         public TrackingDisposable? LastDisposable { get; private set; }
 
         public Task<McpServerConnection> ConnectAsync(
-            StoredMcpServer server, string? decryptedHeaderValue, CancellationToken cancellationToken)
+            StoredMcpServer server, McpConnectionSecrets secrets, CancellationToken cancellationToken)
         {
             ConnectCount++;
-            ObservedHeaderValues.Add(decryptedHeaderValue);
+            ObservedHeaderValues.Add(secrets.HeaderValue);
             if (DeadServerIds.Contains(server.Id))
             {
                 throw new InvalidOperationException("simulated dead server");

@@ -515,9 +515,9 @@ public static class AgentApi
     // An MCP endpoint comes from the authenticated user's OWN persisted config, never a model or a live
     // request — so, exactly like a user provider endpoint (ADR 0018), it carries NO PrivateAddressGuard
     // and may be localhost (a self-hosted MCP server is a valid target). Validation is only structural:
-    // absolute http/https, a parseable auth mode, and the fields that mode needs. Phase 1 supports None
-    // and Header; ClientCredentials/InteractiveOAuth are staged (Phases 2/3) and rejected here for now.
-    // Returns an error message, or null when valid.
+    // absolute http/https, a parseable auth mode, and the fields that mode needs. None/Header (Phase 1) and
+    // ClientCredentials (Phase 2) are supported; InteractiveOAuth is staged (Phase 3) and rejected here for
+    // now. Returns an error message, or null when valid.
     private static string? ValidateMcpServer(McpServerUpsertRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
@@ -534,7 +534,7 @@ public static class AgentApi
 
         if (!Enum.TryParse<McpAuthMode>(request.Auth, ignoreCase: true, out var auth))
         {
-            return $"Unknown auth mode '{request.Auth}'. Use 'None' or 'Header'.";
+            return $"Unknown auth mode '{request.Auth}'. Use 'None', 'Header', or 'ClientCredentials'.";
         }
 
         return auth switch
@@ -543,13 +543,25 @@ public static class AgentApi
             McpAuthMode.Header when string.IsNullOrWhiteSpace(request.HeaderName)
                 => "Header auth requires a header name.",
             McpAuthMode.Header => null,
+            // ClientCredentials (MSAL): the authority is an Entra login endpoint (absolute https); clientId
+            // and ≥1 scope are required. The client secret is write-only (blank = keep on edit), so it is not
+            // required at validation time — a missing secret degrades to a skipped server (best-effort).
+            McpAuthMode.ClientCredentials when string.IsNullOrWhiteSpace(request.Authority)
+                || !Uri.TryCreate(request.Authority, UriKind.Absolute, out var authUri)
+                || authUri.Scheme != Uri.UriSchemeHttps
+                => "ClientCredentials auth requires an absolute https authority (e.g. https://login.microsoftonline.com/{tenant}).",
+            McpAuthMode.ClientCredentials when string.IsNullOrWhiteSpace(request.ClientId)
+                => "ClientCredentials auth requires a client id.",
+            McpAuthMode.ClientCredentials when request.Scopes is not { Count: > 0 }
+                => "ClientCredentials auth requires at least one scope.",
+            McpAuthMode.ClientCredentials => null,
             _ => $"Auth mode '{auth}' is not yet supported.",
         };
     }
 
-    // Maps the request into the stored shape, encrypting the header secret. A blank HeaderValue becomes a
-    // null ciphertext: on create that is "no header value", on update the grain reads it as "keep the
-    // stored secret". The auth mode is normalized to its enum name so the tool provider parses it back.
+    // Maps the request into the stored shape, encrypting each secret. A blank secret becomes a null
+    // ciphertext: on create that is "no secret", on update the grain reads it as "keep the stored secret".
+    // The auth mode is normalized to its enum name so the tool provider parses it back.
     private static StoredMcpServer ToStored(McpServerUpsertRequest request, string id, IMcpSecretProtector protector) =>
         new(
             Id: id,
@@ -558,13 +570,22 @@ public static class AgentApi
             Auth: Enum.Parse<McpAuthMode>(request.Auth, ignoreCase: true).ToString(),
             Enabled: request.Enabled,
             HeaderName: string.IsNullOrWhiteSpace(request.HeaderName) ? null : request.HeaderName.Trim(),
-            HeaderValueCiphertext: string.IsNullOrWhiteSpace(request.HeaderValue) ? null : protector.Protect(request.HeaderValue));
+            HeaderValueCiphertext: string.IsNullOrWhiteSpace(request.HeaderValue) ? null : protector.Protect(request.HeaderValue),
+            Authority: string.IsNullOrWhiteSpace(request.Authority) ? null : request.Authority.Trim(),
+            ClientId: string.IsNullOrWhiteSpace(request.ClientId) ? null : request.ClientId.Trim(),
+            ClientSecretCiphertext: string.IsNullOrWhiteSpace(request.ClientSecret) ? null : protector.Protect(request.ClientSecret),
+            Scopes: request.Scopes is { Count: > 0 } ? [.. request.Scopes.Select(s => s.Trim()).Where(s => s.Length > 0)] : null);
 
-    // Never returns a secret — only whether one is stored. The ciphertext stays server-side.
+    // Never returns a secret — only whether one is stored. Authority/clientId/scopes are non-secret and are
+    // returned so the edit form can prefill them; the ciphertexts stay server-side.
     private static McpServerResponse Mask(StoredMcpServer s) =>
         new(
             s.Id, s.Name, s.Endpoint, s.Auth, s.Enabled, s.HeaderName,
-            HasHeaderValue: !string.IsNullOrEmpty(s.HeaderValueCiphertext));
+            HasHeaderValue: !string.IsNullOrEmpty(s.HeaderValueCiphertext),
+            Authority: s.Authority,
+            ClientId: s.ClientId,
+            Scopes: s.Scopes,
+            HasClientSecret: !string.IsNullOrEmpty(s.ClientSecretCiphertext));
 
     // A user provider must be self-contained (it does NOT inherit the operator AzureOpenAI:* config —
     // ADR 0018), so both kinds require an absolute http/https endpoint. localhost/private hosts are
@@ -699,18 +720,22 @@ public record ProviderModelResponse(
 // The GET /api/providers payload: the user's overlay providers (masked) plus their optional default.
 public record ProvidersResponse(IReadOnlyList<ProviderResponse> Providers, string? Default);
 
-// Client payload for creating (POST) or updating (PUT) a remote MCP server. HeaderValue is WRITE-ONLY —
-// it is encrypted server-side and never echoed back; blank on an update means "keep the stored secret".
-// Auth is "None" or "Header" (Phase 1). Enabled toggles the server without deleting it. Phase 2/3 add
-// the ClientCredentials/OAuth fields.
+// Client payload for creating (POST) or updating (PUT) a remote MCP server. HeaderValue and ClientSecret are
+// WRITE-ONLY — encrypted server-side and never echoed back; blank on an update means "keep the stored
+// secret". Auth is "None"/"Header" (Phase 1) or "ClientCredentials" (Phase 2, MSAL: Authority/ClientId/
+// ClientSecret/Scopes). Enabled toggles the server without deleting it. Phase 3 adds the OAuth fields.
 public record McpServerUpsertRequest(
     string Name, string Endpoint, string Auth, bool Enabled,
-    string? HeaderName = null, string? HeaderValue = null);
+    string? HeaderName = null, string? HeaderValue = null,
+    string? Authority = null, string? ClientId = null, string? ClientSecret = null,
+    IReadOnlyList<string>? Scopes = null);
 
-// What GET/POST/PUT return for an MCP server: everything EXCEPT the secret, which is masked to
-// HasHeaderValue so the ciphertext (and the plaintext) never reach the client.
+// What GET/POST/PUT return for an MCP server: everything EXCEPT the secrets, which are masked to
+// HasHeaderValue/HasClientSecret so no ciphertext (or plaintext) reaches the client. Authority/ClientId/
+// Scopes are non-secret and returned so the edit form can prefill them.
 public record McpServerResponse(
-    string Id, string Name, string Endpoint, string Auth, bool Enabled, string? HeaderName, bool HasHeaderValue);
+    string Id, string Name, string Endpoint, string Auth, bool Enabled, string? HeaderName, bool HasHeaderValue,
+    string? Authority = null, string? ClientId = null, IReadOnlyList<string>? Scopes = null, bool HasClientSecret = false);
 
 // The GET /api/mcp-servers payload: the user's overlay servers (masked).
 public record McpServersResponse(IReadOnlyList<McpServerResponse> Servers);

@@ -12,6 +12,13 @@ namespace Agent42.Backend;
 public sealed record McpServerConnection(IReadOnlyList<AITool> Tools, IAsyncDisposable Connection);
 
 /// <summary>
+/// The already-decrypted secrets a connection may need, unprotected by the caller (never the ciphertext).
+/// Phase 1: <see cref="HeaderValue"/>. Phase 2: <see cref="ClientSecret"/> (MSAL). Phase 3 will add the
+/// OAuth access token.
+/// </summary>
+public sealed record McpConnectionSecrets(string? HeaderValue, string? ClientSecret);
+
+/// <summary>
 /// Connects to a single remote MCP server and returns its tools. A seam (not the concrete SDK types) so the
 /// per-user tool provider's orchestration — version-cached, best-effort, bounded lifetime — is testable with
 /// a stub, while the real SDK path (proven by the Step 0 spike) is exercised in prod/DevHost.
@@ -19,21 +26,22 @@ public sealed record McpServerConnection(IReadOnlyList<AITool> Tools, IAsyncDisp
 public interface IMcpConnectionFactory
 {
     /// <summary>
-    /// Connects to <paramref name="server"/> and lists its tools. <paramref name="decryptedHeaderValue"/> is
-    /// the already-decrypted Header-mode secret, or null. Throws on any connect/list failure — the caller
-    /// treats a throw as "skip this server" (best-effort).
+    /// Connects to <paramref name="server"/> and lists its tools. <paramref name="secrets"/> carries the
+    /// already-decrypted values for the server's auth mode (never ciphertext). Throws on any connect/list
+    /// failure — the caller treats a throw as "skip this server" (best-effort).
     /// </summary>
-    Task<McpServerConnection> ConnectAsync(StoredMcpServer server, string? decryptedHeaderValue, CancellationToken cancellationToken);
+    Task<McpServerConnection> ConnectAsync(StoredMcpServer server, McpConnectionSecrets secrets, CancellationToken cancellationToken);
 }
 
 /// <summary>
 /// The real <see cref="IMcpConnectionFactory"/> over the <c>ModelContextProtocol</c> SDK (Streamable HTTP).
 ///
-/// <para>Phase 1 handles None and Header auth. Header uses the transport's <c>AdditionalHeaders</c> (Step 0
-/// spike) — a STATIC header needs no <c>DelegatingHandler</c> and no custom <see cref="HttpClient"/>, so the
-/// transport builds its own client and the <c>AddServiceDefaults</c> resilience pipeline is never inherited
-/// (the "named HttpClient inherits the retry pipeline" gotcha is avoided by construction). Phases 2/3
-/// (ClientCredentials/OAuth) will need a plain <c>new HttpClient</c> + auth handler for dynamic tokens.</para>
+/// <para>None and Header (Phase 1): Header uses the transport's <c>AdditionalHeaders</c> (Step 0 spike) — a
+/// STATIC header needs no <c>DelegatingHandler</c> and no custom <see cref="HttpClient"/>, so the transport
+/// builds its own client and the <c>AddServiceDefaults</c> resilience pipeline is never inherited (the "named
+/// HttpClient inherits the retry pipeline" gotcha is avoided by construction). ClientCredentials (Phase 2):
+/// the token is dynamic (MSAL refreshes per request), so it needs an <see cref="AuthHeaderHandler"/> over a
+/// <b>plain <c>new HttpClient</c></b> (not DI-resolved — so again no resilience inheritance).</para>
 /// </summary>
 public sealed class McpConnectionFactory : IMcpConnectionFactory
 {
@@ -46,7 +54,7 @@ public sealed class McpConnectionFactory : IMcpConnectionFactory
     public McpConnectionFactory(ILoggerFactory loggerFactory) => _loggerFactory = loggerFactory;
 
     public async Task<McpServerConnection> ConnectAsync(
-        StoredMcpServer server, string? decryptedHeaderValue, CancellationToken cancellationToken)
+        StoredMcpServer server, McpConnectionSecrets secrets, CancellationToken cancellationToken)
     {
         var options = new HttpClientTransportOptions
         {
@@ -55,20 +63,31 @@ public sealed class McpConnectionFactory : IMcpConnectionFactory
             ConnectionTimeout = ConnectionTimeout,
         };
 
-        // Header mode: stamp the static header via AdditionalHeaders. None mode adds nothing. Other modes
-        // never reach here in Phase 1 (the API rejects them and the provider skips them defensively).
-        if (Enum.TryParse<McpAuthMode>(server.Auth, ignoreCase: true, out var mode)
-            && mode == McpAuthMode.Header
+        Enum.TryParse<McpAuthMode>(server.Auth, ignoreCase: true, out var mode);
+
+        // Header mode: stamp the static header via AdditionalHeaders. None mode adds nothing.
+        if (mode == McpAuthMode.Header
             && !string.IsNullOrWhiteSpace(server.HeaderName)
-            && !string.IsNullOrEmpty(decryptedHeaderValue))
+            && !string.IsNullOrEmpty(secrets.HeaderValue))
         {
             options.AdditionalHeaders = new Dictionary<string, string>
             {
-                [server.HeaderName] = decryptedHeaderValue,
+                [server.HeaderName] = secrets.HeaderValue,
             };
         }
 
-        var transport = new HttpClientTransport(options, _loggerFactory);
+        // ClientCredentials mode: a dynamic MSAL token stamped per request by AuthHeaderHandler over a plain
+        // HttpClient the transport owns. The plain client is never DI-resolved, so no resilience inheritance.
+        var transport = mode == McpAuthMode.ClientCredentials
+            ? new HttpClientTransport(
+                options,
+                new HttpClient(new AuthHeaderHandler(new ClientCredentialsTokenProvider(
+                    server.Authority!, server.ClientId!, secrets.ClientSecret!, [.. server.Scopes ?? []]))
+                { InnerHandler = new SocketsHttpHandler() }),
+                _loggerFactory,
+                ownsHttpClient: true)
+            : new HttpClientTransport(options, _loggerFactory);
+
         var client = await McpClient.CreateAsync(transport, loggerFactory: _loggerFactory, cancellationToken: cancellationToken);
         try
         {

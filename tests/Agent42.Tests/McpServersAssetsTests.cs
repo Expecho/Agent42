@@ -43,6 +43,19 @@ public sealed class McpServersAssetsTests
     }
 
     [Fact]
+    public async Task McpDialog_HasClientCredentialsOptionAndFields()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+
+        // The ClientCredentials (MSAL) auth option and its fields (secret write-only).
+        Assert.Contains("value=\"ClientCredentials\"", html);
+        Assert.Contains("id=\"mcpAuthority\"", html);
+        Assert.Contains("id=\"mcpClientId\"", html);
+        Assert.Contains("id=\"mcpClientSecret\"", html);
+        Assert.Contains("id=\"mcpScopes\"", html);
+    }
+
+    [Fact]
     public async Task AppJs_WiresTheMcpCrudAgainstTheApi()
     {
         var app = await _client.GetStringAsync("/app.js");

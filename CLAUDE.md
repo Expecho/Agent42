@@ -275,8 +275,9 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   singleton `IUserMcpToolProvider` connects to the user's enabled servers (version-cached, best-effort with a
   timeout) and `AgentGrain` resolves the tools **once in `OnActivateAsync` before the first `BuildAgent`**,
   gated by a single new `ToolCatalog` **`mcp` group key** (`SupportsTools && enabled.Contains(mcp)`,
-  intersected with capability). Auth is **staged by risk**: None/Header shipped (Phase 1), MSAL
-  ClientCredentials (Phase 2) and InteractiveOAuth (Phase 3) are later MRs. **Every host that maps
+  intersected with capability). Auth is **staged by risk**: None/Header + MSAL ClientCredentials shipped
+  (Phases 1–2; ClientCredentials is the Entra ID → Dataverse path — a dynamic token stamped by an
+  `AuthHeaderHandler` over a plain `HttpClient`); InteractiveOAuth (Phase 3) is a later MR. **Every host that maps
   `MapAgentApi` must register `IMcpSecretProtector`** (a route-matcher dependency) and every silo that
   activates `AgentGrain` must register `IUserMcpToolProvider`. Four things to read before touching this: the
   tool provider's cache holds **live sockets** so it is bounded (not the unbounded provider-cache copy); MCP
