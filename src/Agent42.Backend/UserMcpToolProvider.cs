@@ -87,9 +87,10 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
 
         foreach (var server in config.Servers.Where(s => s.Enabled))
         {
-            // Phase 1 connects None/Header only; other modes are skipped defensively (the API rejects them).
+            // None/Header (Phase 1) and ClientCredentials (Phase 2) connect; InteractiveOAuth (Phase 3) is
+            // skipped defensively (the API rejects it, so a stored server can only be a supported mode).
             if (!Enum.TryParse<McpAuthMode>(server.Auth, ignoreCase: true, out var mode)
-                || mode is not (McpAuthMode.None or McpAuthMode.Header))
+                || mode is not (McpAuthMode.None or McpAuthMode.Header or McpAuthMode.ClientCredentials))
             {
                 _logger.LogInformation(
                     "Skipping MCP server {Server} for user {User}: auth mode {Mode} is not yet supported.",
@@ -97,12 +98,15 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 continue;
             }
 
-            var headerValue = _protector.Unprotect(server.HeaderValueCiphertext);
+            // Decrypt every secret the mode might need, before the grain-free connection factory sees it.
+            var secrets = new McpConnectionSecrets(
+                _protector.Unprotect(server.HeaderValueCiphertext),
+                _protector.Unprotect(server.ClientSecretCiphertext));
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(ConnectTimeout);
             try
             {
-                var connection = await _connectionFactory.ConnectAsync(server, headerValue, timeout.Token);
+                var connection = await _connectionFactory.ConnectAsync(server, secrets, timeout.Token);
                 // Wrap each tool so its persisted result is bounded (ADR 0004), preserving name + schema.
                 tools.AddRange(connection.Tools.Select(WrapForTruncation));
                 connections.Add(connection.Connection);

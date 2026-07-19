@@ -2,13 +2,19 @@
 
 planned-against: main @ 31d9500
 
-## Phase 1 status — DELIVERED (branch `feature/remote-mcp-servers`, ADR 0024)
+## Phase status (ADR 0024)
 
-Phase 1 (None/Header, Steps 0–7) is implemented, tested (394 tests green), and shipped as its own MR.
-Phases 2 (MSAL ClientCredentials) and 3 (InteractiveOAuth) remain and keep this spec **active** — it
-moves to `specs/completed/` only when Phase 3 lands.
+- **Phase 1 — DELIVERED** (None/Header, Steps 0–7), merged (#47).
+- **Phase 2 — DELIVERED** (MSAL ClientCredentials, Step 8, branch `feature/remote-mcp-servers-phase2`):
+  `McpAuthHeader.cs` (`IAuthHeaderProvider`/`AuthHeaderHandler`/`ClientCredentialsTokenProvider`), a
+  ClientCredentials branch in `McpConnectionFactory` over a plain `HttpClient` (no resilience inheritance),
+  the `IMcpConnectionFactory` seam generalized to an `McpConnectionSecrets` bundle, API DTO/validation/
+  mask + UI for authority/clientId/clientSecret(write-only)/scopes. AC11 (`ClientCredentials_StampsBearer`)
+  tests header-stamping against a fake token provider; the real Entra/Dataverse round-trip is deploy-smoke.
+- **Phase 3 — REMAINING** (InteractiveOAuth). This spec stays **active** until Phase 3 lands, then moves
+  to `specs/completed/`.
 
-**Where the implementation diverged from the plan (all sound, none rejected):**
+**Where the Phase-1 implementation diverged from the plan (all sound, none rejected):**
 - **Truncation moved to the provider, not the connection loader.** `McpConnectionFactory` returns RAW
   tools; `UserMcpToolProvider` applies the `TruncatingMcpTool` (`DelegatingAIFunction`) wrapper. This makes
   truncation uniform across servers and testable through a fake connection seam (AC9 via the provider).
@@ -297,7 +303,7 @@ one new inbound auth surface.
 | AC8 | A dead MCP server is skipped, not fatal | `DeadServer_IsSkipped_NotFatal` | `UserMcpToolProviderTests.cs` |
 | AC9 | An oversized tool result is truncated to budget | `ToolResult_Truncated_ToBudget` | `UserMcpToolProviderTests.cs` |
 | AC10 | Version bump reloads the tool set | `VersionBump_ReloadsTools` | `UserMcpToolProviderTests.cs` |
-| AC11 (P2) | ClientCredentials acquires a token and stamps the header | `ClientCredentials_StampsBearer` | `UserMcpToolProviderTests.cs` |
+| AC11 (P2) | ClientCredentials acquires a token and stamps the header | `ClientCredentials_StampsBearer` | `McpAuthTests.cs` (dedicated auth-mechanism file; the real Entra round-trip is deploy-smoke) |
 | AC12 (P3) | OAuth callback exchanges code and persists encrypted tokens | `OAuthCallback_PersistsEncryptedTokens` | `McpOAuthTests.cs` |
 
 ## Quality gate checklist (from `.agentic/quality-gates.yaml` @ plan time)
