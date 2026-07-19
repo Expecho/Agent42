@@ -1431,24 +1431,124 @@ public sealed class AgentGrainTests : IAsyncLifetime
     // comes ONLY from the skills provider, so its presence/absence is asserted on the whole answer,
     // mirroring ToolModel_StillRegistersAllTools / NoToolModel_RegistersNoTools_AndNoSkillsProvider.
 
-    // Step-2 guard: every tool the grain actually registers maps to a catalog key or is the always-on
-    // get_date. Reads the REAL registration off the fake's echo on both a Chat model and a hosted model
-    // (which adds code_interpreter), so a tool added later without a catalog entry fails here.
+    // Step-2 guard: every tool the grain actually registers maps to a catalog key, is the always-on
+    // get_date, OR is an MCP tool (config-driven remote MCP servers) — the documented group-gated exception,
+    // whose user-defined names deliberately map to NO catalog key. Reads the REAL registration off the fake's
+    // echo on both a Chat model and a hosted model (which adds code_interpreter), with an MCP tool injected —
+    // so a NON-MCP tool added later without a catalog entry still fails here. MCP tools are identified by the
+    // provider's set, never by name-guessing.
     [Fact]
-    public async Task EveryRegisteredTool_MapsToACatalogKey_OrIsGetDate()
+    public async Task EveryRegisteredTool_MapsToACatalogKey_OrIsGetDate_OrIsAnMcpTool()
     {
+        var mcpTool = FakeMcpTool();
+        await using var cluster = await NewClusterWithMcpToolsAsync(mcpTool);
+        var mcpNames = new HashSet<string>(StringComparer.Ordinal) { mcpTool.Name };
+
         foreach (var model in new[] { TestSiloConfigurator.DefaultModel, TestSiloConfigurator.HostedToolsModel })
         {
-            var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>($"catalog-guard-{model}");
+            var agent = cluster.GrainFactory.GetGrain<IAgentGrain>($"catalog-guard-{model}");
             var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", model))));
 
             foreach (var name in registered.Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
                 Assert.True(
-                    name == ToolCatalog.AlwaysOnDateTool || ToolCatalog.KeyFor(name) is not null,
-                    $"Registered tool '{name}' on model '{model}' maps to no catalog key and is not get_date.");
+                    name == ToolCatalog.AlwaysOnDateTool || ToolCatalog.KeyFor(name) is not null || mcpNames.Contains(name),
+                    $"Registered tool '{name}' on model '{model}' maps to no catalog key, is not get_date, and is not an MCP tool.");
             }
+
+            // The carve-out is non-vacuous: the MCP tool really was registered and really maps to no key.
+            Assert.Contains(mcpTool.Name, registered);
+            Assert.Null(ToolCatalog.KeyFor(mcpTool.Name));
         }
+    }
+
+    // A fake MCP tool with a user-defined name that maps to no catalog key — stands in for a remote MCP
+    // server's tool (config-driven remote MCP servers).
+    private static AIFunction FakeMcpTool(string name = "mcp_do_thing") =>
+        AIFunctionFactory.Create(() => "ok", name, "a remote MCP server tool");
+
+    // A fresh single-silo cluster whose per-user MCP seam hands back the given tools for every user — so an
+    // MCP-injecting test never contaminates the class-level _cluster (the provider singleton is per silo).
+    private static async Task<TestCluster> NewClusterWithMcpToolsAsync(params AITool[] tools)
+    {
+        var cluster = await NewClusterAsync<TestSiloConfigurator>(1);
+        cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress)
+            .GetRequiredService<SingleUserMcpToolProvider>().Tools = tools;
+        return cluster;
+    }
+
+    // AC1: an explicitly-enabled `mcp` selection on a tools-capable model reaches the model.
+    [Fact]
+    public async Task McpTools_ReachModel_WhenEnabledAndToolsCapable()
+    {
+        await using var cluster = await NewClusterWithMcpToolsAsync(FakeMcpTool());
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-enabled");
+        await agent.SetEnabledToolsAsync([ToolCatalog.Mcp]);
+
+        var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+
+        Assert.Contains("mcp_do_thing", registered);
+        Assert.DoesNotContain("web_search", registered); // only mcp selected
+    }
+
+    // AC2: disabling the `mcp` key (a selection without it) drops all MCP tools.
+    [Fact]
+    public async Task McpDisabled_DropsMcpTools()
+    {
+        await using var cluster = await NewClusterWithMcpToolsAsync(FakeMcpTool());
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-disabled");
+        await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch]); // mcp not selected
+
+        var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+
+        Assert.DoesNotContain("mcp_do_thing", registered);
+        Assert.Contains("web_search", registered); // the override itself works
+    }
+
+    // AC3: a no-tools model gets ZERO tools — including MCP tools — even with `mcp` enabled (capability is
+    // the outer gate; selection can only narrow, ADR 0013/0021).
+    [Fact]
+    public async Task NoToolModel_GetsNoMcpTools()
+    {
+        await using var cluster = await NewClusterWithMcpToolsAsync(FakeMcpTool());
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-notools");
+
+        var answer = Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.NoToolsNoVisionModel)));
+
+        Assert.Contains("[tools:]", answer);
+        Assert.DoesNotContain("mcp_do_thing", ToolNames(answer));
+    }
+
+    // AC4: MCP tools appear on the FIRST turn of a fresh activation (null == all default, no override, no
+    // model switch) — proving _mcpTools was resolved in OnActivateAsync BEFORE the first BuildAgent, not
+    // lazily on a later rebuild (the ordering hazard). Mirrors UserDefault_AppliesWhenNoOverride.
+    [Fact]
+    public async Task McpTools_ResolvedBeforeFirstBuildAgent()
+    {
+        await using var cluster = await NewClusterWithMcpToolsAsync(FakeMcpTool());
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-ordering");
+
+        var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+
+        Assert.Contains("mcp_do_thing", registered);
+    }
+
+    // AC4b: an existing user with an EXPLICIT default tool list (saved before `mcp` existed) has no `mcp` in
+    // it, so they get no MCP tools — the documented semi-breaking off-by-default for explicit tool-savers
+    // (ADR 0021), reached here through the user-default layer, not a per-conversation override.
+    [Fact]
+    public async Task ExplicitToolsWithoutMcp_DropsMcpTools()
+    {
+        const string user = "mcp-explicit-default";
+        await using var cluster = await NewClusterWithMcpToolsAsync(FakeMcpTool());
+        await cluster.GrainFactory.GetGrain<IUserProfileGrain>(user)
+            .SaveAsync(new UserProfile("", "system", [ToolCatalog.WebSearch])); // explicit, no mcp
+
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+        var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+
+        Assert.DoesNotContain("mcp_do_thing", registered);
+        Assert.Contains("web_search", registered);
     }
 
     // AC2: a per-conversation override limits the registered tools to the selected key's tools (+ get_date).

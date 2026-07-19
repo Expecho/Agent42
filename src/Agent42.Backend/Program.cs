@@ -166,6 +166,18 @@ if (string.IsNullOrWhiteSpace(blobConnection) && !string.IsNullOrWhiteSpace(data
 
 builder.Services.AddSingleton<IProviderSecretProtector, ProviderSecretProtector>();
 
+// Encrypts the secrets of user-configured MCP servers (config-driven remote MCP servers), on the same
+// DP key ring but a distinct protection scope (IMcpSecretProtector's own purpose) so MCP-secret rotation
+// is independent of model-provider keys. DevHost/tests fall through to the default ephemeral ring.
+builder.Services.AddSingleton<IMcpSecretProtector, McpSecretProtector>();
+
+// Per-user MCP tools (config-driven remote MCP servers): the provider connects to the signed-in user's
+// enabled MCP servers and hands the agent grain their tools (resolved on activation, version-cached,
+// best-effort, bounded connection lifetime). The agent grain merges them into BuildAgent's tool list,
+// gated by the ToolCatalog.Mcp key (ADR 0021).
+builder.Services.AddSingleton<IMcpConnectionFactory, McpConnectionFactory>();
+builder.Services.AddSingleton<IUserMcpToolProvider, UserMcpToolProvider>();
+
 // Document RAG (ADR 0007). The embedding deployment is a manual prerequisite the user owns (a
 // text-embedding-3-large deployment in the AI Foundry account, RG agent42 — the same account the
 // chat client uses, so no new RBAC). Validated eagerly so a missing deployment name fails at

@@ -43,6 +43,7 @@ public sealed class CountingStoreSiloConfigurator : ISiloConfigurator
                 new SingleChatClientFactory(sp.GetRequiredService<IChatClient>(), "fake-model"));
             services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
                 new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>()));
+            services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvider());
             services.AddSingleton<IAttachmentStore, CountingAttachmentStore>();
             // The grain resolves the document retrieval stand-ins (ADR 0007) and the web tools (ADR 0011).
             services.AddDocumentRagFakes();

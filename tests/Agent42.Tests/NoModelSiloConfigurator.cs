@@ -56,6 +56,7 @@ public sealed class NoModelSiloConfigurator : ISiloConfigurator
                 new SwitchableChatClientFactoryProvider(sp.GetRequiredService<IChatClient>()));
             services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
                 sp.GetRequiredService<SwitchableChatClientFactoryProvider>());
+            services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvider());
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             services.AddDocumentRagFakes();
             services.AddWebToolFakes();

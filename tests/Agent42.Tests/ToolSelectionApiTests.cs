@@ -44,6 +44,8 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         // unregistered service param as a body). Same set-up as ProvidersApiTests.
         appBuilder.Services.AddSingleton<IProviderSecretProtector>(
             new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
+        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
+            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
         appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
         appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
             new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
@@ -80,9 +82,10 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         return [.. doc.RootElement.EnumerateArray().Select(e => e.GetString()!)];
     }
 
-    // AC12 (catalog): /api/tools returns exactly the five selectable keys, with the hosted-tools flag.
+    // AC12 (catalog): /api/tools returns exactly the selectable keys, with the hosted-tools flag. `mcp`
+    // (ADR 0024) joins the set — config-driven remote MCP servers as one group key.
     [Fact]
-    public async Task Tools_Catalog_ReturnsFiveSelectableKeys()
+    public async Task Tools_Catalog_ReturnsSelectableKeys()
     {
         var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-cat"));
         response.EnsureSuccessStatusCode();
@@ -91,7 +94,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         var keys = doc.RootElement.EnumerateArray().Select(e => e.GetProperty("key").GetString()).ToArray();
 
         Assert.Equal(
-            new[] { "web_search", "location", "scheduling", "skills", "code_interpreter" }.Order(),
+            new[] { "web_search", "location", "scheduling", "skills", "code_interpreter", "mcp" }.Order(),
             keys.Order());
 
         // code_interpreter is the only one flagged as needing a hosted-tools model.

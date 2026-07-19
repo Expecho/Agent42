@@ -265,4 +265,24 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   server and fails — accepted degradation, no server fallback). Both are in gotchas. **Headline consequence:**
   sharing is a new **inbound** vector for ADR 0013's egress, and sharing a large file into a **continuous**
   agent is a new low-friction path to the 2 MB grain brick (ADR 0016/0004).
+- Config-driven remote MCP servers (ADR 0024): a signed-in user adds their own **remote HTTP MCP servers**
+  (Preferences → MCP servers) and their tools appear to the agent with **no per-server code** — every MCP
+  server speaks the same discovery protocol and its tools convert to `AITool` (`McpClientTool`), merging into
+  the `List<AITool>` `AgentGrain.BuildAgent` already builds. It is the MCP analogue of user-configurable
+  model providers (ADR 0018): a per-user overlay grain (`IUserMcpConfigGrain`, riding `agent-state` on a new
+  `mcp-servers` state — **no new Cosmos container**), secrets **encrypted** via a dedicated
+  `IMcpSecretProtector` (own DP purpose), masked to `hasHeaderValue` on read, blank-on-update = keep. A
+  singleton `IUserMcpToolProvider` connects to the user's enabled servers (version-cached, best-effort with a
+  timeout) and `AgentGrain` resolves the tools **once in `OnActivateAsync` before the first `BuildAgent`**,
+  gated by a single new `ToolCatalog` **`mcp` group key** (`SupportsTools && enabled.Contains(mcp)`,
+  intersected with capability). Auth is **staged by risk**: None/Header shipped (Phase 1), MSAL
+  ClientCredentials (Phase 2) and InteractiveOAuth (Phase 3) are later MRs. **Every host that maps
+  `MapAgentApi` must register `IMcpSecretProtector`** (a route-matcher dependency) and every silo that
+  activates `AgentGrain` must register `IUserMcpToolProvider`. Four things to read before touching this: the
+  tool provider's cache holds **live sockets** so it is bounded (not the unbounded provider-cache copy); MCP
+  tools are the **group-gated exception** to the catalog-key guard (dynamic names, absent from the catalog
+  map); the endpoint is deliberately **not SSRF-guarded** (config, not a request — may be `localhost`); and a
+  tool's **return value is persisted** into the 2 MB session so each is truncation-wrapped (ADR 0004). All in
+  gotchas. **Headline consequence:** an MCP server sees conversation content and its tool results are a new
+  inbound prompt-injection channel — ADR 0013's egress, reached from a server the user added.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

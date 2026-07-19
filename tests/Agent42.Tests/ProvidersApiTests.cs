@@ -40,6 +40,8 @@ public sealed class ProvidersApiTests : IAsyncLifetime
         // an ephemeral key ring is fine for tests (no persisted secrets).
         appBuilder.Services.AddSingleton<IProviderSecretProtector>(
             new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
+        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
+            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
         // MapAgentApi maps every endpoint; the route matcher infers all of their parameters up front, so
         // the services the OTHER endpoints resolve as parameters must be present even though these tests
         // only hit /api/providers (otherwise minimal-API treats an unregistered service param as a body).

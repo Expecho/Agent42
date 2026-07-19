@@ -69,6 +69,11 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             // overlay store, so the single fake factory stands in for every user.
             services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
                 new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>()));
+            // The grain resolves its MCP tools through the per-user seam (config-driven remote MCP servers).
+            // Registered as its concrete type too, so a test can fetch it from the silo container and set
+            // its Tools to exercise the mcp gate (mirrors SwitchableChatClientFactoryProvider).
+            services.AddSingleton<SingleUserMcpToolProvider>();
+            services.AddSingleton<IUserMcpToolProvider>(sp => sp.GetRequiredService<SingleUserMcpToolProvider>());
             // Process-global in-memory stores, shared with the endpoint DI container (constraint 10).
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             // Document ingestion + retrieval stand-ins (ADR 0007): the grain resolves these to
