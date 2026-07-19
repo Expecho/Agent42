@@ -1551,6 +1551,53 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Contains("web_search", registered);
     }
 
+    // A fresh single-silo cluster whose per-user MCP seam hands back the given per-server GROUPS (ADR 0026),
+    // so a test can exercise per-server gating with distinct server ids.
+    private static async Task<TestCluster> NewClusterWithMcpServersAsync(params McpServerTools[] servers)
+    {
+        var cluster = await NewClusterAsync<TestSiloConfigurator>(1);
+        cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress)
+            .GetRequiredService<SingleUserMcpToolProvider>().Servers = servers;
+        return cluster;
+    }
+
+    // AC1 (ADR 0026): a per-server selection (`mcp:{id}`) reaches ONLY that server's tools — the other
+    // enabled server's tools are dropped. This is the whole point of per-server selection over the old
+    // all-or-none `mcp` group key.
+    [Fact]
+    public async Task PerServerSelection_EnablesOnlySelectedServer()
+    {
+        await using var cluster = await NewClusterWithMcpServersAsync(
+            new McpServerTools("srv-a", [FakeMcpTool("mcp_tool_a")]),
+            new McpServerTools("srv-b", [FakeMcpTool("mcp_tool_b")]));
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-per-server");
+        await agent.SetEnabledToolsAsync([ToolCatalog.McpServerKey("srv-a")]); // only server A
+
+        var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+
+        Assert.Contains("mcp_tool_a", registered);
+        Assert.DoesNotContain("mcp_tool_b", registered);
+    }
+
+    // AC9 (the Finding-1 regression pin): a null (all) selection must be returned to the picker with the
+    // `mcp` wildcard EXPANDED into per-server keys, never as a bare `mcp`. Otherwise the picker — which has
+    // no `mcp` checkbox — would drop the wildcard on the next Save and silently disable every server.
+    [Fact]
+    public async Task GetEnabledTools_NullSelection_ExpandsWildcardToPerServerKeys()
+    {
+        await using var cluster = await NewClusterWithMcpServersAsync(
+            new McpServerTools("srv-a", [FakeMcpTool("mcp_tool_a")]),
+            new McpServerTools("srv-b", [FakeMcpTool("mcp_tool_b")]));
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-wildcard-expand");
+
+        var effective = await agent.GetEnabledToolsAsync(); // no override, no user default → null == all
+
+        Assert.DoesNotContain(ToolCatalog.Mcp, effective); // the bare wildcard never reaches the picker
+        Assert.Contains(ToolCatalog.McpServerKey("srv-a"), effective);
+        Assert.Contains(ToolCatalog.McpServerKey("srv-b"), effective);
+        Assert.Contains(ToolCatalog.WebSearch, effective); // the static keys are still there
+    }
+
     // AC2: a per-conversation override limits the registered tools to the selected key's tools (+ get_date).
     [Fact]
     public async Task Override_LimitsRegisteredTools()
@@ -1701,10 +1748,15 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Equal(new[] { ToolCatalog.Scheduling }, await scoped.GetEnabledToolsAsync());
 
         // A null-tools agent materializes to ALL selectable tools on bind — never inherits the user default.
+        // GetEnabledToolsAsync is the client-facing projection, so it strips the `mcp` wildcard and expands it
+        // into the user's per-server keys (ADR 0026) — here that user has zero MCP servers, so the wildcard
+        // simply drops and the static keys remain.
         var full = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-bind-all-conversation");
         await full.BindAgentAsync(new AgentBinding(
             "agent-full", "Full", "You do everything.", TestSiloConfigurator.DefaultModel, null));
-        Assert.Equal(ToolCatalog.AllSelectableToolKeys, await full.GetEnabledToolsAsync());
+        Assert.Equal(
+            ToolCatalog.AllSelectableToolKeys.Where(k => k != ToolCatalog.Mcp),
+            await full.GetEnabledToolsAsync());
     }
 
     // AC10: old-shape state (EnabledTools absent) deserializes to null, which resolves to ALL tools — the
@@ -1715,9 +1767,12 @@ public sealed class AgentGrainTests : IAsyncLifetime
         const string key = "tools-legacy-conversation";
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
-        // A first turn persists the session with EnabledTools still null (the old shape).
+        // A first turn persists the session with EnabledTools still null (the old shape). GetEnabledToolsAsync
+        // strips the `mcp` wildcard (ADR 0026) and this user has zero MCP servers, so the static keys remain.
         await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel));
-        Assert.Equal(ToolCatalog.AllSelectableToolKeys, await agent.GetEnabledToolsAsync());
+        Assert.Equal(
+            ToolCatalog.AllSelectableToolKeys.Where(k => k != ToolCatalog.Mcp),
+            await agent.GetEnabledToolsAsync());
 
         // Reactivate: the persisted null deserializes to null → all tools on.
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();

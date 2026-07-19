@@ -7,6 +7,12 @@ tags: [agents, tools, capabilities, user-preferences, agent-definition]
 
 # Selectable tools per chat, per user, and per agent
 
+> **Amended by [ADR 0026](0026-per-mcp-server-selectable-tools.md) (2026-07-19) —
+> static-catalog scope only.** `ToolCatalog` remains the authoritative source for the **static**
+> keys, but `GET /api/tools` is no longer fully static: it appends a per-user, per-server
+> `mcp:{id}` descriptor for each of the user's enabled MCP servers. The `null == all` sentinel and
+> three-layer model are unchanged.
+
 ## Context
 Every tool is unconditionally registered in `AgentGrain.BuildAgent`, gated only by model
 capability (ADR 0013/0015) — there is no user control over *which* tools an assistant may use. The

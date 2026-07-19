@@ -72,8 +72,8 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             }
 
             var config = await _grains.GetGrain<IUserMcpConfigGrain>(userId).GetAsync();
-            var (tools, connections) = await ConnectAllAsync(userId, config, cancellationToken);
-            var set = new McpToolSet(tools, version);
+            var (servers, connections) = await ConnectAllAsync(userId, config, cancellationToken);
+            var set = new McpToolSet(servers, version);
 
             cache.Store(version, set, connections);
             await cache.EvictBeyondAsync(RetainedVersionsPerUser, _logger);
@@ -85,21 +85,28 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
         }
     }
 
-    private async Task<(IReadOnlyList<AITool> Tools, List<IAsyncDisposable> Connections)> ConnectAllAsync(
+    private async Task<(IReadOnlyList<McpServerTools> Servers, List<IAsyncDisposable> Connections)> ConnectAllAsync(
         string userId, UserMcpConfig config, CancellationToken cancellationToken)
     {
-        var tools = new List<AITool>();
+        var servers = new List<McpServerTools>();
         var connections = new List<IAsyncDisposable>();
 
         foreach (var server in config.Servers.Where(s => s.Enabled))
         {
+            // Every management-enabled server yields a group, even when it contributes no tools: the grain
+            // needs the id to expand the `mcp` wildcard into the complete per-server key set (ADR 0026). A
+            // skipped/unreachable server is recorded as an empty group here (see the Skip local).
+            void Skip(string reason)
+            {
+                _logger.LogInformation("MCP server {Server} for user {User}: {Reason}", server.Name, userId, reason);
+                servers.Add(new McpServerTools(server.Id, []));
+            }
+
             // None/Header (Phase 1), ClientCredentials (Phase 2), and InteractiveOAuth (Phase 3) connect.
             if (!Enum.TryParse<McpAuthMode>(server.Auth, ignoreCase: true, out var mode)
                 || mode is not (McpAuthMode.None or McpAuthMode.Header or McpAuthMode.ClientCredentials or McpAuthMode.InteractiveOAuth))
             {
-                _logger.LogInformation(
-                    "Skipping MCP server {Server} for user {User}: auth mode {Mode} is not yet supported.",
-                    server.Name, userId, server.Auth);
+                Skip($"auth mode {server.Auth} is not yet supported");
                 continue;
             }
 
@@ -111,9 +118,7 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 oauthAccessToken = await ResolveOAuthAccessTokenAsync(userId, server, cancellationToken);
                 if (oauthAccessToken is null)
                 {
-                    _logger.LogInformation(
-                        "Skipping MCP server {Server} for user {User}: not connected (no OAuth token yet).",
-                        server.Name, userId);
+                    Skip("not connected (no OAuth token yet)");
                     continue;
                 }
             }
@@ -129,20 +134,22 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             {
                 var connection = await _connectionFactory.ConnectAsync(server, secrets, timeout.Token);
                 // Wrap each tool so its persisted result is bounded (ADR 0004), preserving name + schema.
-                tools.AddRange(connection.Tools.Select(WrapForTruncation));
+                servers.Add(new McpServerTools(server.Id, [.. connection.Tools.Select(WrapForTruncation)]));
                 connections.Add(connection.Connection);
             }
             catch (Exception ex)
             {
                 // Best-effort: a dead/slow/misconfigured server is skipped, never fatal to activation or the
-                // rest of the tool set (the overlay best-effort rule, ADR 0018).
+                // rest of the tool set (the overlay best-effort rule, ADR 0018). Still recorded as an empty
+                // group so its id survives for wildcard expansion.
                 _logger.LogWarning(ex,
                     "MCP server {Server} for user {User} could not be reached; skipping its tools.",
                     server.Name, userId);
+                servers.Add(new McpServerTools(server.Id, []));
             }
         }
 
-        return (tools, connections);
+        return (servers, connections);
     }
 
     // Resolves the current InteractiveOAuth access token for a server, refreshing it (app-owned) when it is
