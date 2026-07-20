@@ -467,6 +467,32 @@ public static class AgentApi
             return Results.NoContent();
         });
 
+        // Sets (or clears, with a blank body) the model new chats start on — the overlay default the
+        // resolver already prefers (ADR 0018). The path is NOT /api/providers/default: a provider key is
+        // USER-chosen, so a user may legitimately key a provider `default`, and ASP.NET Core routing gives
+        // the literal segment precedence over {key} regardless of mapping order — which would silently make
+        // that provider un-editable. GET stays on /api/providers (ProvidersResponse already carries Default).
+        //
+        // The id is NOT validated against the catalog here: a default naming a currently-unresolvable
+        // provider is legal and the resolver's read-time NamesBuiltProvider guard already falls through to
+        // the next candidate. Validating at write time would reject a temporarily-unresolvable id and put
+        // that rule in a second place. The 200-char cap is not validation either — it exists solely to keep
+        // unbounded text out of a persisted grain state; a qualified id is `provider:model` and both halves
+        // are bounded by their sources, so 200 is far above any real id.
+        app.MapPut("/api/default-model", async (DefaultModelRequest request, IGrainFactory grains, HttpContext http) =>
+        {
+            if (request.Default is { Length: > 200 })
+            {
+                return Results.Text(
+                    "Default model id must be at most 200 characters.",
+                    "text/plain",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).SetDefaultAsync(request.Default);
+            return Results.NoContent();
+        });
+
         // ————— remote MCP servers (per-user overlay, config-driven remote MCP servers) —————
 
         // The signed-in user's OWN configured MCP servers. Secrets are MASKED to hasHeaderValue flags: the
@@ -847,6 +873,11 @@ public record ToolSelectionRequest(IReadOnlyList<string>? Tools);
 public record ProviderUpsertRequest(
     string Key, string Kind, string? DisplayName, string? Endpoint, string? ApiKey,
     IReadOnlyList<ProviderModelRequest>? Models = null, bool UseResponsesApi = false);
+
+// Client payload for PUT /api/default-model: the qualified `provider:model` id new chats start on. Null or
+// blank clears it (the grain normalises blank to null), and the resolver then falls back to the first
+// declared model. The id is opaque here — never split past the first colon, never case-normalised.
+public record DefaultModelRequest(string? Default);
 
 // SupportsImageGeneration (ADR 0020) is a trailing default so an old-shape client body still binds — an
 // image model is one that produces images instead of chat replies.

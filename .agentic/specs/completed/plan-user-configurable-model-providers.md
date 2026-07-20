@@ -218,6 +218,8 @@ fixed). All 9 steps landed; full suite **286 green**, `dotnet format` clean, cov
    grain method, the resolver's guarded `EffectiveDefault` (honour the overlay default only when it names a
    built provider), and their tests exist; it is **not** yet exposed via the API/frontend (no AC required
    it) — future wiring is trivial.
+   > **Superseded** (by `specs/completed/plan-user-default-model.md`): the overlay default *is* now exposed —
+   > `PUT /api/default-model` plus a select in Preferences → model providers. The rest of this entry stands.
 
 5. **Ripple wider than the plan's M3.** The plan named `AgentApiTests`/`AttachmentTests`/DevHost as needing
    `IUserModelCatalogProvider` (the `/api/models` switch). The **new `/api/providers` endpoints** (Step 7)
