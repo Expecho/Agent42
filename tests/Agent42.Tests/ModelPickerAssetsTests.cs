@@ -6,8 +6,10 @@ namespace Agent42.Tests;
 /// source strings — the same shape as <see cref="LocationAssetsTests"/>.
 ///
 /// <para><b>Source-text heuristics.</b> The repo has no JS test runner by design, so these prove the
-/// code <i>says</i> the right thing, not that a browser renders two grouped pickers. Exercise both
-/// pickers by hand in DevHost — its static catalog spans two providers on purpose.</para>
+/// code <i>says</i> the right thing, not that a browser renders the grouped pickers. There are three of
+/// them — the composer, the agent dialog, and the preferences default-model select — and all three are fed
+/// by the same <c>fillModelOptions</c>/<c>selectModel</c> pair. Exercise them by hand in DevHost: its
+/// static catalog spans three providers (foundry/github/images) on purpose.</para>
 /// </summary>
 [Collection("StaticAssets")]
 public sealed class ModelPickerAssetsTests
@@ -38,6 +40,53 @@ public sealed class ModelPickerAssetsTests
         Assert.Contains("function selectModel(select, id)", app);
         Assert.Contains("selectModel(agentModelSelect,", app);
         Assert.Contains("selectModel(modelSelect, id)", app);
+    }
+
+    // AC7: the preferences default-model select PUTs to the endpoint and reuses the shared append-if-missing
+    // helper rather than hand-rolling a third picker (duplication_pct_max: 3).
+    [Fact]
+    public async Task DefaultModelPicker_PutsToTheEndpoint_AndSharesTheSelectHelper()
+    {
+        var app = await _client.GetStringAsync("/app.js");
+        var html = await _client.GetStringAsync("/index.html");
+
+        Assert.Contains("id=\"defaultModelSelect\"", html);
+        // The verb must be bound to THIS fetch: `method: "PUT"` alone appears on other calls too, so a
+        // bare Contains would pass whatever verb the default-model call actually used.
+        var fetchAt = app.IndexOf("fetch(\"/api/default-model\"", StringComparison.Ordinal);
+        Assert.True(fetchAt >= 0, "no fetch of /api/default-model in app.js");
+        Assert.Contains("method: \"PUT\"", app[fetchAt..(fetchAt + 120)]);
+        // The catalog fill and the append-if-missing selection are the SHARED helpers, not copies.
+        Assert.Contains("fillModelOptions(defaultModelSelect);", app);
+        Assert.Contains("selectModel(defaultModelSelect, userDefaultModel);", app);
+    }
+
+    // AC8: "New chat" re-points the composer picker at the default, so a new chat does not inherit the
+    // model the previously-opened conversation was pinned to.
+    [Fact]
+    public async Task StartNewConversation_ResetsPickerToTheDefault()
+    {
+        var app = await _client.GetStringAsync("/app.js");
+
+        var start = app.IndexOf("function startNewConversation()", StringComparison.Ordinal);
+        Assert.True(start >= 0, "startNewConversation() not found in app.js");
+        var body = app[start..app.IndexOf("\n  }", start, StringComparison.Ordinal)];
+
+        Assert.Contains("if (defaultModel) setModel(defaultModel);", body);
+    }
+
+    // AC10: changing the preference must NOT retarget the conversation the user has open — send()
+    // transmits modelSelect.value, so the post-PUT catalog refresh takes the pin:false opt-out.
+    [Fact]
+    public async Task DefaultModelChange_DoesNotRepinTheComposer()
+    {
+        var app = await _client.GetStringAsync("/app.js");
+
+        Assert.Contains("async function loadModels({ pin = true } = {})", app);
+        Assert.Contains("if (pin && defaultModel) setModel(defaultModel);", app);
+        Assert.Contains("loadModels({ pin: false });", app);
+        // One fetch path, not a cloned catalog request for the preference case.
+        Assert.Equal(1, app.Split("fetch(\"/api/models\")").Length - 1);
     }
 
     [Fact] // A raw "github:openai/gpt-4o-mini" is not a label a user should ever see.

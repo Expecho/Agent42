@@ -211,6 +211,97 @@ public sealed class ProvidersApiTests : IAsyncLifetime
         Assert.False(model.GetProperty("supportsVision").GetBoolean());
     }
 
+    // Reads the overlay default straight off GET /api/providers (ProvidersResponse.Default) — the read
+    // side of PUT /api/default-model, which deliberately has no GET of its own.
+    private async Task<string?> GetDefaultAsync(string principalId)
+    {
+        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", principalId));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return doc.RootElement.GetProperty("default").GetString();
+    }
+
+    // AC1: PUT /api/default-model persists the id and GET /api/providers echoes it back as `default`.
+    [Fact]
+    public async Task PutDefaultModel_PersistsAndIsReturnedByGet()
+    {
+        var put = await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-def", new
+        {
+            @default = "ollama:llama3.1",
+        }));
+
+        Assert.Equal(HttpStatusCode.NoContent, put.StatusCode);
+        Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-def"));
+    }
+
+    // AC2: a blank (or null) body clears the default back to null — the grain normalises blank to null.
+    [Fact]
+    public async Task PutDefaultModel_Blank_ClearsTheDefault()
+    {
+        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-clear", new { @default = "ollama:llama3.1" })))
+            .EnsureSuccessStatusCode();
+        Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-clear"));
+
+        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-clear", new { @default = "  " })))
+            .EnsureSuccessStatusCode();
+        Assert.Null(await GetDefaultAsync("user-clear"));
+
+        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-clear", new { @default = (string?)null })))
+            .EnsureSuccessStatusCode();
+        Assert.Null(await GetDefaultAsync("user-clear"));
+    }
+
+    // AC3: the default is per user — one user's default is invisible to another.
+    [Fact]
+    public async Task PutDefaultModel_IsPerUser()
+    {
+        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "dora", new { @default = "ollama:llama3.1" })))
+            .EnsureSuccessStatusCode();
+
+        Assert.Equal("ollama:llama3.1", await GetDefaultAsync("dora"));
+        Assert.Null(await GetDefaultAsync("eli"));
+    }
+
+    // AC4: provider CRUD PRESERVES the default — SaveAsync/DeleteAsync deliberately leave Default alone,
+    // so adding, editing and deleting a provider never silently drop the user's chosen default.
+    [Fact]
+    public async Task ProviderCrud_PreservesTheDefault()
+    {
+        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-crud", new { @default = "ollama:llama3.1" })))
+            .EnsureSuccessStatusCode();
+
+        (await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-crud", OllamaBody())))
+            .EnsureSuccessStatusCode();
+        Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-crud"));
+
+        (await _client.SendAsync(Request(HttpMethod.Put, "/api/providers/ollama", "user-crud", OllamaBody(null))))
+            .EnsureSuccessStatusCode();
+        Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-crud"));
+
+        (await _client.SendAsync(Request(HttpMethod.Delete, "/api/providers/ollama", "user-crud")))
+            .EnsureSuccessStatusCode();
+        Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-crud"));
+    }
+
+    // AC5: an over-long id is rejected with 400 and the stored default is left as it was. The cap keeps
+    // unbounded text out of a persisted grain state — it is NOT a validity check (that is the resolver's
+    // read-time job).
+    [Fact]
+    public async Task PutDefaultModel_TooLong_Rejected_AndLeavesStoredValue()
+    {
+        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-long", new { @default = "ollama:llama3.1" })))
+            .EnsureSuccessStatusCode();
+
+        var tooLong = await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-long", new
+        {
+            @default = new string('x', 201),
+        }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+        Assert.Contains("200 characters", await tooLong.Content.ReadAsStringAsync());
+        Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-long"));
+    }
+
     // AC8: CRUD is per-user — one user cannot see another's providers, and delete only affects the owner.
     [Fact]
     public async Task Crud_IsPerUser()

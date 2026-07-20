@@ -63,6 +63,7 @@
     [document.getElementById("tabAgentApi"), document.getElementById("panelAgentApi")],
   ]);
 
+  const defaultModelSelect = document.getElementById("defaultModelSelect");
   const providerList = document.getElementById("providerList");
   const addProviderBtn = document.getElementById("addProviderBtn");
   const providerDialog = document.getElementById("providerDialog");
@@ -148,6 +149,10 @@
   // or null when adding a new provider.
   let userProviders = [];
   let editingProviderKey = null;
+  // The user's STORED default-model preference (GET /api/providers `default`), as opposed to `defaultModel`
+  // above, which is the default the server actually RESOLVED (/api/models). They differ when the stored id
+  // names a provider that no longer resolves — the resolver falls through, but the preference is kept.
+  let userDefaultModel = null;
   // The user's own remote MCP servers (config-driven remote MCP servers), fetched masked (hasHeaderValue,
   // never the secret). The id of the one being edited, or null when adding a new server.
   let mcpServers = [];
@@ -223,7 +228,11 @@
   /* ————— model picker ————— */
 
   // Live-queried from Azure AI Foundry: the deployments the agent can run on.
-  async function loadModels() {
+  //
+  // pin:false skips re-pointing the composer at the default. The default-model preference handler needs
+  // the refreshed catalog but must NOT retarget the conversation the user currently has open — send()
+  // transmits modelSelect.value, so re-pinning here would silently move an open chat onto another model.
+  async function loadModels({ pin = true } = {}) {
     try {
       const res = await fetch("/api/models");
       if (!res.ok) return;
@@ -231,9 +240,10 @@
       defaultModel = modelsData.default ?? null;
 
       fillModelOptions(modelSelect);
-      if (defaultModel) setModel(defaultModel);
+      if (pin && defaultModel) setModel(defaultModel);
       modelSelect.disabled = modelSelect.options.length === 0;
       applyModelAvailability();
+      syncDefaultModelSelect();
     } catch { /* leave the picker disabled; chat still uses the server's default model */ }
   }
 
@@ -975,6 +985,9 @@
     pendingAgentId = null;
     // A new regular chat starts from the user's default tool set (ADR 0021); null profile default = all.
     chatTools = profile.enabledTools ?? allToolKeys();
+    // ...and from their default model, so the picker doesn't inherit whatever the last-opened
+    // conversation was pinned to. `defaultModel` is the server-RESOLVED default (/api/models).
+    if (defaultModel) setModel(defaultModel);
     clearPendingAttachments();
     unlockPicker();
     clearThread();
@@ -1558,8 +1571,44 @@
       if (!res.ok) return;
       const data = await res.json();
       userProviders = data.providers ?? [];
+      userDefaultModel = data.default ?? null;
       renderProviders();
+      syncDefaultModelSelect();
     } catch { /* silo may be unreachable; the list refreshes on next open */ }
+  }
+
+  // Repaints the default-model select from the CURRENT modelsData + stored preference. It is an idempotent
+  // repaint hooked into BOTH of the two loaders, because each owns only half the inputs and they are called
+  // in different combinations: preferences-open runs loadProviders() alone (which owns the stored value),
+  // deleteProvider() runs loadModels() alone (which owns the catalog), and saveProvider() runs both. Hooking
+  // either one alone would leave the select stale on the other's path. Reuses fillModelOptions/selectModel —
+  // a stored default whose provider is gone shows under "Unavailable" rather than silently resetting.
+  function syncDefaultModelSelect() {
+    fillModelOptions(defaultModelSelect);
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "First available";
+    defaultModelSelect.insertBefore(blank, defaultModelSelect.firstChild);
+    defaultModelSelect.value = "";
+    selectModel(defaultModelSelect, userDefaultModel);
+  }
+
+  // Persists the pick immediately (there is no Save button on this tab — the value lives in the provider
+  // overlay grain, not the profile). A blank selection clears the preference back to "first available".
+  // A failed save snaps the select BACK to the stored value: with no Save button there is no other signal,
+  // and leaving the rejected pick on screen would read as saved.
+  async function persistDefaultModel() {
+    const value = defaultModelSelect.value;
+    try {
+      const res = await fetch("/api/default-model", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ default: value || null }),
+      });
+      if (!res.ok) return syncDefaultModelSelect();
+    } catch { return syncDefaultModelSelect(); /* silo unreachable — don't show an unsaved value */ }
+    userDefaultModel = value || null;
+    loadModels({ pin: false }); // refresh the resolved default WITHOUT retargeting the open conversation
   }
 
   function renderProviders() {
@@ -1751,6 +1800,7 @@
     loadModels();
   }
 
+  defaultModelSelect.addEventListener("change", persistDefaultModel);
   addProviderBtn.addEventListener("click", () => openProviderDialog(null));
   addModelRowBtn.addEventListener("click", () => addModelRow(null));
   providerKindSelect.addEventListener("change", syncProviderKindUi);
