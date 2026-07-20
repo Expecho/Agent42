@@ -303,6 +303,16 @@
 
       <div class="agent-form__panel" role="tabpanel" id="panelProviders" aria-labelledby="tabProviders" hidden>
         <section class="agent-form__section">
+          <label class="agent-form__field">
+            <span class="agent-form__label">// default model</span>
+            <!-- Options (incl. the leading blank "First available") are built by syncDefaultModelSelect();
+                 fillModelOptions() clears innerHTML, so a static option here would be wiped on first paint. -->
+            <select class="agent-form__input agent-form__select" id="defaultModelSelect"></select>
+          </label>
+          <p class="agent-form__note">The model every new chat starts on. Saved as you pick it. Chats you already started keep the model they are on.</p>
+        </section>
+
+        <section class="agent-form__section">
           <div class="providers__head">
             <span class="agent-form__label">// model providers</span>
             <button class="agent-form__btn" type="button" id="addProviderBtn">Add provider</button>

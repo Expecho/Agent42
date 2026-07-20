@@ -176,7 +176,16 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   secret); the per-user factory is resolved on activation **before** its first use, not injected (and every
   grain host must register `IUserChatClientFactoryProvider`). All are in gotchas. Offline (DevHost/tests) uses
   single-user adapters, so the providers **CRUD/UI** is exercisable there but overlay→picker reflection is
-  only wired in prod (unit-tested via `UserModelCatalogTests`).
+  only wired in prod (unit-tested via `UserModelCatalogTests`). The overlay `Default` is now **user-settable**
+  from the same tab (a select above the provider list) via **`PUT /api/default-model`** — a distinct path, not
+  `/api/providers/default`, because a provider key is user-chosen and the literal segment would out-rank
+  `{key}`; the read side stays on `GET /api/providers` (`ProvidersResponse.Default`). The submitted id is
+  **not** validated against the catalog (the resolver's read-time `NamesBuiltProvider` guard is the single
+  place that rule lives; the 200-char cap only keeps unbounded text out of grain state), and **"New chat"
+  resets the composer picker to it**. Separately — and whether or not the composer is involved — changing the
+  default **retargets every conversation that has not yet bound a model**, because `AgentGrain` binds to
+  `_chatClientFactory.DefaultModelId`; that reaches `/api/agent-run` runs and pending reminders, which never
+  touch the composer at all. It is bounded: the first turn calls `RebindModelAsync` and pins the model.
 - Responses API on Foundry (ADR 0014; credential mechanism amended by ADR 0017): a provider-level
   `UseResponsesApi` flag routes **every** model of a Foundry provider through the OpenAI **Responses** API run
   **statelessly** (`store=false`) instead of Chat Completions — reached with **no package change** via the
