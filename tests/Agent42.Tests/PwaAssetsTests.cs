@@ -101,6 +101,22 @@ public sealed class PwaAssetsTests
     }
 
     [Fact]
+    public async Task Frontend_GroupsAgentConversationsCollapsibly()
+    {
+        // Agent-produced chats are grouped under a collapsible header keyed by conv.agentId, with
+        // expand state persisted to localStorage (groups start collapsed). Source-text heuristic (no
+        // JS test runner by design) — proves the grouping code and its style hooks shipped, not their runtime behaviour.
+        var app = await _client.GetStringAsync("/app.js");
+        Assert.Contains("buildAgentGroup", app);
+        Assert.Contains("conv.agentId", app);
+        Assert.Contains("EXPANDED_AGENTS_KEY", app);
+
+        var styles = await _client.GetStringAsync("/styles.css");
+        Assert.Contains(".conv-group", styles);
+        Assert.Contains(".conv-group.is-collapsed .conv-group__body", styles);
+    }
+
+    [Fact]
     public async Task Frontend_GuardsUploadResultAgainstMidUploadConversationSwitch()
     {
         // Mode B: an upload is keyed to the conversation it started in, but its result lands

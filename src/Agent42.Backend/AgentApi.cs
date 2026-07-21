@@ -48,22 +48,30 @@ public static class AgentApi
                 attachmentRefs = resolved;
             }
 
+            // The client sends AgentId only on the first turn of a freshly-started agent chat.
+            // Resolve the persona up front (before the index touch) so a new conversation can be
+            // recorded under the agent — the sidebar groups agent chats by this identity. A deleted
+            // agent resolves to null: no snapshot to record, and the already-pinned persona stands.
+            var definition = !string.IsNullOrEmpty(request.AgentId)
+                ? await grains.GetGrain<IAgentRegistryGrain>(userId).GetAsync(request.AgentId)
+                : null;
+
             // Title the conversation from the message; an image-only turn has no text, so fall
             // back to the first attachment's filename (or a placeholder) rather than a blank title.
             var title = !string.IsNullOrWhiteSpace(request.Message)
                 ? request.Message
                 : attachmentRefs?.FirstOrDefault()?.FileName ?? "Image";
-            await grains.GetGrain<IConversationIndexGrain>(userId).TouchAsync(conversationId, title);
+            await grains.GetGrain<IConversationIndexGrain>(userId)
+                .TouchAsync(conversationId, title, definition?.Id, definition?.Name);
 
-            // The client sends AgentId only on the first turn of a freshly-started agent chat.
-            // Snapshot that persona into the conversation before the turn runs (BindAgentAsync
-            // is idempotent — a retried turn no-ops). A deleted agent resolves to null: skip
-            // binding and let the grain's already-pinned persona stand, so a resumed turn never
-            // errors (ADR 0003). Binding pins the model, so pass null to keep it for this turn.
+            // Snapshot the persona into the conversation before the turn runs (BindAgentAsync
+            // is idempotent — a retried turn no-ops). A deleted agent skips binding and lets the
+            // grain's already-pinned persona stand, so a resumed turn never errors (ADR 0003).
+            // Binding pins the model, so pass null to keep it for this turn — and do so for ANY
+            // agent turn (even a just-deleted one) to preserve the original per-turn model source.
             var model = request.Model;
             if (!string.IsNullOrEmpty(request.AgentId))
             {
-                var definition = await grains.GetGrain<IAgentRegistryGrain>(userId).GetAsync(request.AgentId);
                 if (definition is not null)
                 {
                     await agent.BindAgentAsync(new AgentBinding(
@@ -367,7 +375,8 @@ public static class AgentApi
             var title = !string.IsNullOrWhiteSpace(prompt)
                 ? prompt
                 : files.FirstOrDefault()?.FileName ?? "Agent run";
-            await grains.GetGrain<IConversationIndexGrain>(owner.UserId).TouchAsync(conversationId, title);
+            await grains.GetGrain<IConversationIndexGrain>(owner.UserId)
+                .TouchAsync(conversationId, title, definition.Id, definition.Name);
 
             var agentGrain = grains.GetGrain<IAgentGrain>(ownerKey);
             // Snapshot the agent's persona into the conversation (ADR 0003): pins its model + tools for the run.

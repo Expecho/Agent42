@@ -96,6 +96,31 @@ public sealed class AgentGrainTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ConversationIndex_TouchWithAgent_StoresAndPreservesIdentity()
+    {
+        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("agent-index-user");
+
+        // A regular chat carries no agent identity.
+        await index.TouchAsync("plain", "Just a normal chat");
+        // An agent chat records the producing agent on creation…
+        await index.TouchAsync("botchat", "First agent turn", "agent-7", "Marvin");
+        // …and a later turn (which sends no agent args) preserves it, only bumping recency.
+        await index.TouchAsync("botchat", "Second agent turn");
+
+        var conversations = await index.GetConversationsAsync();
+
+        var plain = Assert.Single(conversations, c => c.Id == "plain");
+        Assert.Null(plain.AgentId);
+        Assert.Null(plain.AgentName);
+
+        var agentChat = Assert.Single(conversations, c => c.Id == "botchat");
+        Assert.Equal("agent-7", agentChat.AgentId);
+        Assert.Equal("Marvin", agentChat.AgentName);
+        // The preserving touch made it the most recently used.
+        Assert.Equal("botchat", conversations[0].Id);
+    }
+
+    [Fact]
     public async Task AskingToBeReminded_SchedulesAReminderViaTheTool()
     {
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-conversation");
