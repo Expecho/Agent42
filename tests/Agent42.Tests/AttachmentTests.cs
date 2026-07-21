@@ -50,6 +50,9 @@ public sealed class AttachmentTests : IAsyncLifetime
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         // The upload endpoint resolves the ingestion service even on the image path (ADR 0007).
         appBuilder.Services.AddDocumentRagFakes();
+        // /api/push/config injects PushConfig; MapAgentApi infers every endpoint's params up front, so it
+        // must resolve or routing breaks for the whole host (ADR 0028). This host does not test push.
+        appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
         _app = appBuilder.Build();
         _app.MapAgentApi();
         await _app.StartAsync();

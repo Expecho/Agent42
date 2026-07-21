@@ -1167,3 +1167,29 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/PwaAssetsTests.cs` (`ServiceWorker_HandlesShareTarget`, `Manifest_DeclaresShareTarget`),
   `.agentic/decisions/0023-web-share-target-android-pwa.md`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
 - **Verified:** 2026-07-18
+
+### The away-reply push belongs in the two async callers, never in `ChatCoreAsync`
+
+- **Claim:** the Web Push notification when an agent replies (ADR 0028) must be sent from the two
+  **async** callers — `EnqueuePromptAsync` (agent-run) and `ReceiveReminder` (scheduled prompt) — and
+  **never** from `ChatCoreAsync`, which all three paths share. `ChatCoreAsync` is the live interactive
+  path's body too, so a send there would notify a user who is actively watching their reply stream — the
+  exact opposite of "away". "Not online" is approximated by this placement alone; there is no
+  presence/heartbeat tracker (rejected, ADR 0028). Two further placement traps invisible in the code:
+  **(1)** in `EnqueuePromptAsync` the send sits **inside the `try`, after the drain loop** (a faulted turn
+  caught below must not notify) and is **gated on `!string.IsNullOrEmpty(_modelId)`** — the no-model path
+  drains ChatCoreAsync *normally* (it emits the "configure a provider" notice + `Done`), so an ungated
+  send would fire a false "your agent replied"; `_modelId` is set by ChatCoreAsync's re-resolve/rebind if
+  a provider appeared mid-flight. **(2)** in `ReceiveReminder` the send is **after `WriteStateAsync`** (so
+  a push only ever follows a durably-persisted reply) and needs **no** `_modelId` guard — the no-model
+  reminder already early-returned above. Separately, the send is a safe inline `await` on the
+  **non-reentrant** grain only because the sender is internally time-bounded (`SendBudget`) and its
+  `HttpClient` calls `RemoveAllResilienceHandlers()` (the same named-client retry trap as the web/geocoding
+  clients) — see the "web tool return value" / geocoder gotchas.
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`SendAwayReplyPushAsync`, the gated call in
+  `EnqueuePromptAsync`, the post-`WriteStateAsync` call in `ReceiveReminder`, and its absence from
+  `ChatCoreAsync`), `src/Agent42.Backend/WebPushNotificationSender.cs` (`SendBudget`),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`ReceiveReminder_SendsPush_WithAgentName`,
+  `EnqueuePrompt_SendsPush`, `ChatAsync_DoesNotSendPush`, `EnqueuePrompt_NoModel_DoesNotSendPush`),
+  `.agentic/decisions/0028-web-push-when-agent-replies-while-away.md`
+- **Verified:** 2026-07-21

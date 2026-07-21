@@ -45,6 +45,10 @@ param googleMapsApiKey string = ''
 param contextApiKey string = ''
 
 @secure()
+@description('VAPID private key for Web Push notifications (ADR 0028 — the VAPID_PRIVATE_KEY GitHub Actions secret). A manual prerequisite, but deliberately OPTIONAL like googleMapsApiKey/contextApiKey (no @minLength, empty default): an absent key must NOT fail the deployment. It is not on the availability path — the app starts fine without it and push simply stays disabled (the UI hides the toggle). The matching public key + subject are non-secret and committed in appsettings.json.')
+param vapidPrivateKey string = ''
+
+@secure()
 @description('Admin username for the Azure Container Registry (used for image pull).')
 param acrAdminUsername string
 
@@ -190,6 +194,7 @@ module containerApp 'modules/container-app.bicep' = {
     searxngSecret: searxngSecret
     googleMapsApiKey: googleMapsApiKey
     contextApiKey: contextApiKey
+    vapidPrivateKey: vapidPrivateKey
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint

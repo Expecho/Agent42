@@ -177,6 +177,92 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Equal(1, reminder.TimesFired);
     }
 
+    // ---- Away-reply push notifications (ADR 0028) ------------------------------------------------
+    //
+    // The two ASYNC reply paths (a fired reminder, an agent-run) push a notification titled with the
+    // agent's name so an away user learns their background agent replied; the live ChatAsync stream never
+    // does (the user is already watching). RecordingPushNotificationSender (registered in
+    // TestSiloConfigurator) captures the sends.
+
+    // Aggregates recorded sends across EVERY silo: RecordingPushNotificationSender is a per-silo singleton
+    // and the conversation grain may activate on any silo of the multi-silo default cluster, so reading only
+    // the primary's recorder would miss a send recorded on another silo (a placement-dependent flake).
+    private IReadOnlyList<(string UserId, PushMessage Message)> AllSends() =>
+        _cluster.Silos
+            .SelectMany(silo => _cluster.GetSiloServiceProvider(silo.SiloAddress)
+                .GetRequiredService<RecordingPushNotificationSender>().Sends)
+            .ToList();
+
+    // AC1: a fired reminder sends exactly one push titled with the bound agent's name. Binding first, then
+    // scheduling via chat (the live path, which pushes NOTHING), then firing — so the single recorded send
+    // is unambiguously the reminder's, and the userId/conversationId split off the grain key is exercised.
+    [Fact]
+    public async Task ReceiveReminder_SendsPush_WithAgentName()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("push-reminder-user/push-reminder-conv");
+        await agent.BindAgentAsync(new AgentBinding(
+            "agent-1", "Marvin", "You are Marvin.", TestSiloConfigurator.DefaultModel));
+        await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
+
+        await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
+
+        var send = Assert.Single(AllSends());
+        Assert.Equal("Marvin", send.Message.Title);
+        Assert.Equal("push-reminder-user", send.UserId);
+        Assert.Equal("push-reminder-conv", send.Message.ConversationId);
+    }
+
+    // AC2: an agent-run (EnqueuePromptAsync) reply sends a push. OneWay, so poll the recorder.
+    [Fact]
+    public async Task EnqueuePrompt_SendsPush()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("push-enqueue-user/push-enqueue-conv");
+
+        await agent.EnqueuePromptAsync("hi", null);
+
+        await PollUntilAsync(() => AllSends().Count >= 1);
+        var send = Assert.Single(AllSends());
+        Assert.Equal("push-enqueue-user", send.UserId);
+        Assert.Equal("push-enqueue-conv", send.Message.ConversationId);
+    }
+
+    // AC3: an interactive ChatAsync turn (the user is watching) sends NO push.
+    [Fact]
+    public async Task ChatAsync_DoesNotSendPush()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("push-live-user/push-live-conv");
+
+        await CollectAsync(agent.ChatAsync("hi", null));
+
+        Assert.Empty(AllSends());
+    }
+
+    // AC4: a reminder firing on a PLAIN conversation (no bound agent) falls back to the exact title
+    // "Agent 42" — the manifest product name (with a space), not the internal "Agent42" persona option.
+    [Fact]
+    public async Task ReceiveReminder_NoAgent_UsesFallbackTitle()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("push-plain-user/push-plain-conv");
+        await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
+
+        await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
+
+        var send = Assert.Single(AllSends());
+        Assert.Equal("Agent 42", send.Message.Title);
+    }
+
+    // Polls a condition until it holds or a bound elapses — for the OneWay agent-run push, which the
+    // sender records after EnqueuePromptAsync has already returned to the caller. The bound is generous
+    // (30s) because the background turn drains the whole ChatCoreAsync pipeline and runs far slower under
+    // coverage instrumentation + parallel test load; the loop exits the instant the condition holds.
+    private static async Task PollUntilAsync(Func<bool> condition)
+    {
+        for (var attempt = 0; attempt < 300 && !condition(); attempt++)
+        {
+            await Task.Delay(100);
+        }
+    }
+
     [Fact]
     public async Task AskingToCancel_RemovesTheReminderViaTheTool()
     {
@@ -1988,6 +2074,31 @@ public sealed class AgentGrainTests : IAsyncLifetime
         var history = await agent.GetHistoryAsync();
         Assert.Contains(history, t => t.Role == "user" && t.Text == "Tell the user to drink some water.");
         Assert.Equal(1, (await agent.GetScheduledPromptsAsync()).Single().TimesFired);
+    }
+
+    // AC9: an agent-run turn with NO model configured sends ZERO pushes — the _modelId gate suppresses it
+    // even though the no-model path drains ChatCoreAsync normally (notice + Done). Then a model is added and
+    // the SAME grain is enqueued again: it now pushes, proving the sender is wired — so the earlier zero was
+    // the gate, not a dead sender. The GetHistoryAsync between the two enqueues is a barrier (the grain is
+    // non-reentrant, so it completes after the first agent-run turn) so the first ran before the model flip.
+    [Fact]
+    public async Task EnqueuePrompt_NoModel_DoesNotSendPush()
+    {
+        await using var cluster = await NewClusterAsync<NoModelSiloConfigurator>(1);
+        var services = cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress);
+        var provider = services.GetRequiredService<SwitchableChatClientFactoryProvider>();
+        var recorder = services.GetRequiredService<RecordingPushNotificationSender>();
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("push-nomodel-user/push-nomodel-conv");
+
+        provider.HasModel = false;
+        await agent.EnqueuePromptAsync("hi", null);
+        await agent.GetHistoryAsync();
+        Assert.Empty(recorder.Sends);
+
+        provider.HasModel = true;
+        await agent.EnqueuePromptAsync("hello", null);
+        await PollUntilAsync(() => recorder.Sends.Count >= 1);
+        Assert.Single(recorder.Sends);
     }
 
     // Reads the grain's persisted state straight out of the memory storage provider the test silo

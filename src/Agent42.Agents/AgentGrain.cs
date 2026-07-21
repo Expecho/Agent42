@@ -43,6 +43,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private readonly IWebSearch _webSearch;
     private readonly IWebPageFetcher _webPageFetcher;
     private readonly IGeocoder _geocoder;
+    private readonly IPushNotificationSender _pushSender;
     private readonly ILogger<AgentGrain> _logger;
 
     private AIAgent _agent = null!;
@@ -105,6 +106,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         IWebSearch webSearch,
         IWebPageFetcher webPageFetcher,
         IGeocoder geocoder,
+        IPushNotificationSender pushSender,
         ILogger<AgentGrain> logger)
     {
         _state = state;
@@ -116,6 +118,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _webSearch = webSearch;
         _webPageFetcher = webPageFetcher;
         _geocoder = geocoder;
+        _pushSender = pushSender;
         _logger = logger;
     }
 
@@ -173,6 +176,29 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         var slash = grainKey.IndexOf('/');
         return slash < 0 ? grainKey : grainKey[..slash];
     }
+
+    // The conversationId is everything after the FIRST '/' of the grain key ({userId}/{conversationId}).
+    // A key with no '/' (defensive) has no conversation part, so returns the whole key — the push then
+    // opens "/" rather than a specific conversation, which is a harmless degradation.
+    private static string ConversationIdFromGrainKey(string grainKey)
+    {
+        var slash = grainKey.IndexOf('/');
+        return slash < 0 ? grainKey : grainKey[(slash + 1)..];
+    }
+
+    // Fires an away-reply push (ADR 0028) for a completed ASYNC-path reply — a fired reminder or an
+    // agent-run turn. Title is the bound agent's name, or "Agent 42" (the manifest product name, a
+    // user-facing display title — deliberately NOT the internal "Agent42" persona option) when the
+    // conversation has no bound agent, e.g. a scheduled prompt on a plain chat. The sender is best-effort
+    // and swallows all failures, so this is a safe inline await even on the non-reentrant grain (it is
+    // internally time-bounded). NEVER call this from ChatCoreAsync/ChatAsync — the live path must not push.
+    private Task SendAwayReplyPushAsync() =>
+        _pushSender.SendAsync(
+            _userId,
+            new PushMessage(
+                _state.State.AgentName ?? "Agent 42",
+                "Replied while you were away.",
+                ConversationIdFromGrainKey(this.GetPrimaryKeyString())));
 
     // Builds the Agent Framework agent bound to a specific model. Called on activation and again
     // whenever the conversation switches models.
@@ -589,6 +615,16 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             // persisted turn — are the point. model: null keeps the bound/current model.
             await foreach (var _ in ChatCoreAsync(message, model: null, attachments))
             {
+            }
+
+            // Away-reply push (ADR 0028): an agent-run turn completed with a real reply and no live client
+            // was watching. INSIDE the try, after the drain — so a faulted turn (caught below) never
+            // notifies. Gated on _modelId so the no-model path (which drains normally after emitting the
+            // "configure a provider" notice, ChatCoreAsync) does NOT fire a false "your agent replied";
+            // _modelId is set by ChatCoreAsync's re-resolve/rebind if a provider appeared mid-flight.
+            if (!string.IsNullOrEmpty(_modelId))
+            {
+                await SendAwayReplyPushAsync();
             }
         }
         catch (Exception ex)
@@ -1575,6 +1611,23 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _state.State.ScheduledPrompts[reminderName] = info with { TimesFired = info.TimesFired + 1 };
 
         await _state.WriteStateAsync();
+
+        // Away-reply push (ADR 0028): a scheduled prompt fired with no live client watching. After the
+        // persist, so a push only ever follows a durably-recorded reply. No _modelId guard needed — the
+        // no-model case already early-returned above (a reminder with no provider is skipped entirely).
+        // The sender's contract is "never throws", but the reminder's TimesFired is already persisted, so
+        // a defensive wrap keeps a future misbehaving sender from faulting an already-recorded reminder
+        // (EnqueuePromptAsync's send is likewise inside its own try).
+        try
+        {
+            await SendAwayReplyPushAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex, "Away-reply push failed after reminder {GrainKey}; the reply was already persisted.",
+                this.GetPrimaryKeyString());
+        }
     }
 
     // Pads TurnAttachments with empty entries so it has one entry per user turn already in the

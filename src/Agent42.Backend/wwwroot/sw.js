@@ -2,7 +2,7 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v8";
+const CACHE = "agent42-shell-v9";
 const SHELL = ["/", "/index.html", "/styles.css", "/app.js",
   "/lib/marked.min.js", "/lib/purify.min.js", "/manifest.webmanifest",
   "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png"];
@@ -91,4 +91,47 @@ self.addEventListener("fetch", (event) => {
       }).catch(() => cached);
       return cached || network;
     }));
+});
+
+/* ————— Web Push notifications (ADR 0028) —————
+   A push arrives when an agent replies on an ASYNC path (a fired reminder or an agent-run) while the
+   user is away. The payload is {title, body, conversationId}; the title is the agent's name.
+
+   We ALWAYS show the notification — deliberately NO "suppress if a client is focused" trick. Chromium's
+   userVisibleOnly:true contract requires a shown notification for every received push; skipping one burns
+   push budget and, once exhausted, Chrome shows its own generic "site updated in the background" notice and
+   can REVOKE the subscription — and that penalty lands in exactly the target case (a background reply
+   completing while the PWA happens to be open on this device). Away-ness is carried by "the server only
+   pushes on the two async paths" (AgentGrain), not by the service worker. */
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
+  const title = data.title || "Agent 42";
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || "",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { conversationId: data.conversationId || "" },
+    }));
+});
+
+/* Tapping the notification focuses an existing app window and tells app.js which conversation to open
+   (its `message` handler calls selectConversation), or opens a fresh window at "/" when none is open. */
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const conversationId = (event.notification.data && event.notification.data.conversationId) || "";
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of clients) {
+      if ("focus" in client) {
+        await client.focus();
+        client.postMessage({ type: "open-conversation", conversationId });
+        return;
+      }
+    }
+    if (self.clients.openWindow) {
+      await self.clients.openWindow("/");
+    }
+  })());
 });

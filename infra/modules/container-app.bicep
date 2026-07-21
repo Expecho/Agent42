@@ -89,6 +89,10 @@ param googleMapsApiKey string = ''
 @description('API key for the hosted context.dev page-scrape API behind fetch_web_page (ADR 0027). OPTIONAL, exactly like googleMapsApiKey: when empty, neither the secret nor the env var below is emitted, and fetch_web_page degrades to a per-call failure rather than failing to deploy. Not on the availability path.')
 param contextApiKey string = ''
 
+@secure()
+@description('VAPID private key for Web Push notifications (ADR 0028). OPTIONAL, exactly like googleMapsApiKey/contextApiKey: when empty, neither the secret nor the env var below is emitted, and push simply stays disabled (GET /api/push/config returns enabled:false, the UI hides the toggle) rather than failing to deploy. Not on the availability path. The matching public key + subject are non-secret and committed in appsettings.json.')
+param vapidPrivateKey string = ''
+
 @description('Minimum replica count. Orleans localhost clustering (used by this single-instance deployment) only supports one instance.')
 param minReplicas int
 
@@ -177,6 +181,14 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
                 name: 'context-api-key'
                 value: contextApiKey
               }
+            ],
+        empty(vapidPrivateKey)
+          ? []
+          : [
+              {
+                name: 'vapid-private-key'
+                value: vapidPrivateKey
+              }
             ]
       )
     }
@@ -221,7 +233,13 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           // availability path, so no empty-valued secret is risked.
           empty(contextApiKey)
             ? []
-            : [{ name: 'ContextScrape__ApiKey', secretRef: 'context-api-key' }])
+            : [{ name: 'ContextScrape__ApiKey', secretRef: 'context-api-key' }],
+          // The VAPID private key behind Web Push (ADR 0028). Emitted only when supplied: with no key
+          // push stays disabled and the app starts normally — not on the availability path, so no
+          // empty-valued secret is risked (the searxngSecret-vs-optional contrast, like the two above).
+          empty(vapidPrivateKey)
+            ? []
+            : [{ name: 'Push__VapidPrivateKey', secretRef: 'vapid-private-key' }])
         }
         // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume and no API
         // key. NOT private, though — SearXNG is a *meta*search engine and forwards every query on to
