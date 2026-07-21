@@ -314,6 +314,52 @@ else
     builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
 }
 
+// Web Push notifications (ADR 0028): a push when an agent replies on an async path (a fired reminder or an
+// agent-run) while the user is away.
+//
+// Like the geocoding and context.dev keys above, a missing key is NOT eager-validated into a startup throw —
+// the VAPID private key is the ONLY secret and is OPTIONAL / not on the availability path (copy the
+// contextApiKey/googleMapsApiKey shape, NOT searxngSecret): with no key the app starts, PushConfig reports
+// Enabled:false, GET /api/push/config returns enabled:false, the UI hides the toggle, and the no-op sender
+// does nothing. The public key + subject are non-secret (committed in appsettings.json); the browser fetches
+// the public key from GET /api/push/config. Enabled is the single source of the "push is on" fact — the same
+// signal that decides real-vs-null sender here and what the endpoint reports.
+var vapidPublicKey = builder.Configuration["Push:VapidPublicKey"] ?? "";
+var vapidPrivateKey = builder.Configuration["Push:VapidPrivateKey"] ?? "";
+var vapidSubject = builder.Configuration["Push:VapidSubject"] ?? "";
+// "Enabled" must mean "actually usable", so it requires BOTH the private key (the secret that lets us
+// send) AND the committed public key (which the browser needs to subscribe). Gating on the private key
+// alone would let a half-configured operator — secret set but public key not yet pasted — ship a visible
+// toggle whose Enable click calls pushManager.subscribe with an empty applicationServerKey and silently
+// fails. With either missing, push is simply off (the optional-secret degradation).
+var pushEnabled = !string.IsNullOrWhiteSpace(vapidPrivateKey) && !string.IsNullOrWhiteSpace(vapidPublicKey);
+
+builder.Services.AddSingleton(new PushConfig(pushEnabled, vapidPublicKey, vapidSubject));
+
+if (pushEnabled)
+{
+    // Same explicit-timeout / no-retry discipline as the web + geocoding clients above, and for the same
+    // reason: the send runs inside a NON-REENTRANT AgentGrain activation, so a retried send to a dead push
+    // endpoint would multiply the stall on the grain. The timeout matches the sender's whole-fan-out budget;
+    // RemoveAllResilienceHandlers is what actually opts out of the inherited 3-retry pipeline.
+#pragma warning disable EXTEXP0001
+    builder.Services.AddHttpClient(WebPushClientAdapter.HttpClientName, http =>
+    {
+        http.Timeout = WebPushNotificationSender.SendBudget;
+    })
+        .RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
+
+    builder.Services.AddSingleton<IWebPushClient>(sp => new WebPushClientAdapter(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(WebPushClientAdapter.HttpClientName),
+        vapidSubject, vapidPublicKey, vapidPrivateKey));
+    builder.Services.AddSingleton<IPushNotificationSender, WebPushNotificationSender>();
+}
+else
+{
+    builder.Services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
+}
+
 // Orleans silo: clustering comes from the Aspire Orleans resource when running
 // under Aspire orchestration; localhost clustering is the fallback for a single
 // standalone instance (e.g. one Container App replica with no Aspire AppHost).

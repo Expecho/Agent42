@@ -51,6 +51,9 @@ public sealed class McpServersApiTests : IAsyncLifetime
             new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         appBuilder.Services.AddDocumentRagFakes();
+        // /api/push/config injects PushConfig; MapAgentApi infers every endpoint's params up front, so it
+        // must resolve or routing breaks for the whole host (ADR 0028). This host does not test push.
+        appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
         _app = appBuilder.Build();
         _app.MapAgentApi();
         await _app.StartAsync();

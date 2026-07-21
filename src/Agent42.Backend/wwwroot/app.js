@@ -49,6 +49,9 @@
   const profileCancelBtn = document.getElementById("profileCancelBtn");
   const locationEnableBtn = document.getElementById("locationEnableBtn");
   const locationStatus = document.getElementById("locationStatus");
+  const pushSection = document.getElementById("pushSection");
+  const pushStatus = document.getElementById("pushStatus");
+  const pushToggleBtn = document.getElementById("pushToggleBtn");
   // Preferences + agent dialog tabs. wireTabs (defined near openProfileDialog) takes [tab, panel]
   // pairs in tablist order, attaches the click + keyboard nav, and returns a select(index, focus).
   const profileTabs = wireTabs([
@@ -1246,6 +1249,95 @@
     }
   }
 
+  /* ————— Web Push notifications (Preferences → General, ADR 0028) ————— */
+
+  // Filled from GET /api/push/config on init: whether the server enabled push and the VAPID public key
+  // the browser needs to subscribe. pushSupported also requires the browser APIs (feature detection).
+  let pushConfig = null;
+  const pushSupported =
+    "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+
+  // VAPID public keys are base64url; pushManager.subscribe wants a Uint8Array applicationServerKey.
+  function urlBase64ToUint8Array(base64) {
+    const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+    const normalized = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(normalized);
+    return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+  }
+
+  // Reflects the push state in Preferences → General. Safe to call while the dialog is closed. The whole
+  // section stays hidden unless the server enabled push AND this browser supports it (so unsupported
+  // browsers, including iOS-in-browser, simply never see the toggle).
+  async function updatePushControl() {
+    if (!pushSection) return;
+    if (!pushConfig || !pushConfig.enabled || !pushSupported) {
+      pushSection.hidden = true;
+      return;
+    }
+    pushSection.hidden = false;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      pushStatus.textContent = sub ? "On" : "Off";
+      pushToggleBtn.textContent = sub ? "Disable" : "Enable";
+    } catch {
+      pushStatus.textContent = "Off";
+      pushToggleBtn.textContent = "Enable";
+    }
+  }
+
+  // Subscribe (prompting for permission) or unsubscribe this device, then sync with the server. The only
+  // place a notification permission prompt is triggered — on an explicit tap.
+  async function togglePush() {
+    if (!pushConfig || !pushConfig.enabled || !pushSupported) return;
+    pushToggleBtn.disabled = true;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) {
+        await fetch("/api/push/subscriptions?endpoint=" + encodeURIComponent(existing.endpoint),
+          { method: "DELETE" });
+        await existing.unsubscribe();
+      } else {
+        if (await Notification.requestPermission() !== "granted") return;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(pushConfig.publicKey),
+        });
+        const keys = sub.toJSON().keys;
+        await fetch("/api/push/subscriptions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint, p256dh: keys.p256dh, auth: keys.auth }),
+        });
+      }
+    } catch (err) {
+      console.warn("Push toggle failed", err);
+    } finally {
+      pushToggleBtn.disabled = false;
+      await updatePushControl();
+    }
+  }
+
+  async function initPush() {
+    if (!pushSupported) return; // feature-detect: unsupported browsers keep the section hidden
+    try {
+      const res = await fetch("/api/push/config");
+      if (res.ok) pushConfig = await res.json();
+    } catch { /* config unreachable — leave push disabled */ }
+
+    pushToggleBtn?.addEventListener("click", togglePush);
+
+    // A notificationclick in the SW focuses this client and posts which conversation to open.
+    navigator.serviceWorker?.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "open-conversation" && event.data.conversationId) {
+        selectConversation(event.data.conversationId);
+      }
+    });
+
+    await updatePushControl();
+  }
+
   /* ————— sending & streaming ————— */
 
   async function send(prompt) {
@@ -1462,6 +1554,7 @@
     profileSaved = false; // fresh edit session; the close handler reverts a preview unless we save
     profileTabs.select(0); // always open on General
     updateLocationControl(); // refresh the location status/button for the current grant state
+    updatePushControl(); // and the push notifications status/button (ADR 0028)
     loadProviders(); // refresh the user's providers list alongside the profile
     loadMcpServers(); // and their MCP servers (config-driven remote MCP servers)
     profileDialog.showModal();
@@ -2296,6 +2389,7 @@
   // The initial state is a fresh regular chat, so the per-chat tools button is available (ADR 0021).
   toolsBtn.hidden = false;
   initLocation();
+  initPush(); // wires the push toggle + the SW open-conversation message handler (ADR 0028)
   initShare(); // opens the destination picker when this load is an Android share hand-off
   initMcpOAuthReturn(); // surfaces the result when this load is an OAuth callback return
   input.focus();

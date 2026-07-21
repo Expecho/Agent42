@@ -60,6 +60,9 @@ public sealed class AgentApiTests : IAsyncLifetime
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         // Document ingestion + retrieval stand-ins for the upload endpoint and grain (ADR 0007).
         appBuilder.Services.AddDocumentRagFakes();
+        // Web Push (ADR 0028): registered ENABLED with a known public key so GET /api/push/config is
+        // assertable, and so /api/push/config's PushConfig param resolves for the route matcher.
+        appBuilder.Services.AddSingleton(new PushConfig(Enabled: true, PublicKey: TestVapidPublicKey, Subject: "mailto:test@agent42"));
         _app = appBuilder.Build();
         _app.MapAgentApi();
         await _app.StartAsync();
@@ -656,5 +659,86 @@ public sealed class AgentApiTests : IAsyncLifetime
         }
 
         return turns;
+    }
+
+    // ---- Web Push subscription + config endpoints (ADR 0028) -------------------------------------
+
+    // A recognizable non-secret public key, registered in the host so GET /api/push/config is assertable.
+    private const string TestVapidPublicKey = "BTestVapidPublicKeyForConfigAssertion";
+
+    // With no principal header GetUserId falls back to this — the key the push grain is stored under.
+    private const string LocalDevUser = "local-dev";
+
+    // AC7: GET /api/push/config reflects the configured enabled state + public key.
+    [Fact]
+    public async Task PushConfig_ReflectsEnabled()
+    {
+        var response = await _client.GetAsync("/api/push/config");
+
+        response.EnsureSuccessStatusCode();
+        var config = await response.Content.ReadFromJsonAsync<PushConfigResponse>();
+        Assert.NotNull(config);
+        Assert.True(config!.Enabled);
+        Assert.Equal(TestVapidPublicKey, config.PublicKey);
+    }
+
+    // AC7: POST persists a subscription (visible via the grain) and DELETE removes it.
+    [Fact]
+    public async Task PushSubscriptionEndpoints_Crud()
+    {
+        var grain = _cluster.GrainFactory.GetGrain<IUserPushGrain>(LocalDevUser);
+
+        var post = await _client.PostAsJsonAsync(
+            "/api/push/subscriptions", new PushSubscriptionRequest("https://push/dev", "p256", "auth"));
+        Assert.Equal(HttpStatusCode.NoContent, post.StatusCode);
+        var stored = Assert.Single(await grain.GetAllAsync());
+        Assert.Equal("https://push/dev", stored.Endpoint);
+
+        var delete = await _client.DeleteAsync(
+            "/api/push/subscriptions?endpoint=" + Uri.EscapeDataString("https://push/dev"));
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+        Assert.Empty(await grain.GetAllAsync());
+    }
+
+    // A subscription missing a required field is rejected 400 (never persisted).
+    [Fact]
+    public async Task PushSubscription_Post_RejectsIncomplete()
+    {
+        var post = await _client.PostAsJsonAsync(
+            "/api/push/subscriptions", new PushSubscriptionRequest("https://push/x", "", "auth"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, post.StatusCode);
+        Assert.Empty(await _cluster.GrainFactory.GetGrain<IUserPushGrain>(LocalDevUser).GetAllAsync());
+    }
+
+    // AC8: with no VAPID private key configured the app still serves, and config reports disabled.
+    [Fact]
+    public async Task PushConfig_Disabled_WhenNoKey()
+    {
+        // A separate minimal host with push DISABLED — the shared host registers it enabled.
+        var appBuilder = WebApplication.CreateSlimBuilder();
+        appBuilder.WebHost.UseTestServer();
+        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
+        appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
+        appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
+            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
+        appBuilder.Services.AddSingleton<IProviderSecretProtector>(
+            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
+        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
+            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
+        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
+        appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
+        appBuilder.Services.AddDocumentRagFakes();
+        appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
+        await using var app = appBuilder.Build();
+        app.MapAgentApi();
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+
+        var config = await client.GetFromJsonAsync<PushConfigResponse>("/api/push/config");
+
+        Assert.NotNull(config);
+        Assert.False(config!.Enabled);
+        Assert.Equal("", config.PublicKey);
     }
 }
