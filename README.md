@@ -13,7 +13,9 @@ vanilla-JS frontend · Bicep + GitHub Actions → Azure Container Apps.
 
 ## Features
 
-Everything below is what you get as a signed-in user in the web app.
+Everything below is what you get as a signed-in user in the web app. For a developer
+walkthrough of each feature — how it works, how Agent Framework and Orleans fit in, with flow
+diagrams and code — see [`docs/features/`](docs/features/README.md).
 
 ### Chat
 
