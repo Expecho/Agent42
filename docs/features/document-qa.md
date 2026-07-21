@@ -14,6 +14,16 @@ conversation that has an ingested document.
 Uploaded documents are **ingest-only** — they never become chat attachments (they're off the
 image `UriContent` path).
 
+### Prerequisite: a default embedding model (ADR 0030)
+
+RAG needs an **embedding model**, and it is **per-user** — not an operator prerequisite. Add a model
+to a provider, tick **embeddings** on it, then pick it as your **default embedding model** in
+Preferences → Model providers. Until you do, the composer **blocks attaching documents** (images are
+unaffected). If you clear the embedding model on a conversation that already has documents, replies
+still work — retrieval just **degrades to empty context, never errors**. The model must produce
+**3072-dimension** vectors (the fixed `doc-chunks` container — ingest rejects a mismatch with a clear
+message); switching embedding models means **deleting and re-uploading** existing documents.
+
 ## How it works
 
 Ingestion (extract → chunk → embed → upsert) happens in the backend when you upload.
@@ -25,7 +35,7 @@ session.
 flowchart TD
     subgraph Ingest["Upload → DocumentIngestionService"]
       EX[Extract text: PDF/docx/pptx/xlsx/text] --> CH[Chunk 1000/overlap 200]
-      CH --> EMB["Embed (text-embedding-3-large)"]
+      CH --> EMB["Embed (your default embedding model — GetEmbeddingGenerator)"]
       EMB --> UP["Upsert → Cosmos vector container (doc-chunks)"]
     end
     UP --> REG["RegisterDocumentAsync → DocumentNames++ → rebuild agent"]
@@ -46,8 +56,19 @@ public async Task<int> IngestAsync(
     var chunks = chunker.Chunk(fileName, segments);
     if (chunks.Count == 0) { return 0; }
 
-    var generated = await embeddings.GenerateAsync(
+    // The OWNER's default embedding model (ADR 0030): userId from the ownerKey grain key, never GetUserId
+    // (the /api/agent-run path has no principal). No model → EmbeddingModelNotConfiguredException → 4xx.
+    var userId = UserIdFromOwnerKey(ownerKey);
+    var factory = await chatClientFactoryProvider.GetForUserAsync(userId, cancellationToken);
+    if (string.IsNullOrEmpty(factory.DefaultEmbeddingModelId)) { throw new EmbeddingModelNotConfiguredException(); }
+
+    var generated = await factory.GetEmbeddingGenerator().GenerateAsync(
         chunks.Select(c => c.Text), cancellationToken: cancellationToken);
+
+    // The prod container is fixed-dimension (3072) — reject a mismatch before any upsert (ADR 0007/0030).
+    if (index.ExpectedDimensions is int expected && generated.Count > 0 && generated[0].Vector.Length != expected)
+    { throw new EmbeddingDimensionMismatchException(expected, generated[0].Vector.Length); }
+
     var embedded = chunks
         .Zip(generated, (chunk, embedding) => new EmbeddedChunk(chunk, embedding.Vector)).ToList();
 
@@ -73,10 +94,15 @@ private TextSearchProvider BuildDocumentSearchProvider() =>
         loggerFactory: null);
 ```
 
-The search callback embeds the query, retrieves top-5, and maps to cited results:
+The search callback degrades to empty when no embedding model is configured (never throws), else
+embeds the query, retrieves top-5, and maps to cited results:
 
 ```csharp
-var generated = await _embeddings.GenerateAsync([query], cancellationToken: cancellationToken);
+// ADR 0030: no embedding model → empty context, never a thrown turn (the no-model-chat discipline).
+if (string.IsNullOrEmpty(_chatClientFactory.DefaultEmbeddingModelId)) { return []; }
+
+var generated = await _chatClientFactory.GetEmbeddingGenerator()
+    .GenerateAsync([query], cancellationToken: cancellationToken);
 var results = await _documentIndex.SearchAsync(
     this.GetPrimaryKeyString(), generated[0].Vector, topK: 5, cancellationToken);
 ...

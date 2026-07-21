@@ -65,6 +65,12 @@ public sealed class UserProviderConfigGrain : Grain, IUserProviderConfigGrain
         return BumpAsync(_state.State.Config with { Default = value });
     }
 
+    public Task SetEmbeddingDefaultAsync(string? embeddingModelId)
+    {
+        var value = string.IsNullOrWhiteSpace(embeddingModelId) ? null : embeddingModelId;
+        return BumpAsync(_state.State.Config with { EmbeddingDefault = value });
+    }
+
     public async Task DeleteAsync(string key)
     {
         var providers = _state.State.Config.Providers.ToList();

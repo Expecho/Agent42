@@ -9,7 +9,11 @@ public sealed record ResolvedProviderSet(
     IReadOnlyList<(string Key, FoundrySettings Settings)> Discovering,
     IReadOnlyList<ModelInfo> DeclaredModels,
     string DefaultModelId,
-    int Version);
+    int Version,
+    // The user's chosen default embedding model id (document RAG resolves its generator from this), or ""
+    // when none is configured or the pinned id no longer names a declared embedding-capable model. There is
+    // NO baseline fallback — the operator embedding floor was removed with the per-user embedding model.
+    string EmbeddingDefaultModelId = "");
 
 /// <summary>
 /// Resolves a user's effective (baseline ⊕ overlay) provider set (ADR 0018). An interface so the
@@ -109,7 +113,26 @@ public sealed class UserProviderResolver : IUserProviderResolver
         }
 
         return new ResolvedProviderSet(
-            providers, discovering, declared, EffectiveDefault(overlay, providers, declared), overlay.Version);
+            providers, discovering, declared, EffectiveDefault(overlay, providers, declared), overlay.Version,
+            EffectiveEmbeddingDefault(overlay, declared));
+    }
+
+    // The effective embedding default: the pinned id only when it names a declared EMBEDDING-capable model,
+    // else "". Unlike the chat default there is no baseline fallback (the operator embedding floor is gone)
+    // and no first-model fallback — an embedding model is an explicit, opt-in pick, and a chat-only model set
+    // must NOT silently become the embedding model. "" means "no embedding model" → RAG upload is blocked and
+    // retrieval degrades to empty (never throws).
+    private static string EffectiveEmbeddingDefault(UserProviderConfig overlay, IReadOnlyList<ModelInfo> declared)
+    {
+        if (string.IsNullOrWhiteSpace(overlay.EmbeddingDefault))
+        {
+            return "";
+        }
+
+        return declared.Any(m =>
+            m.SupportsEmbeddings && string.Equals(m.Id, overlay.EmbeddingDefault, StringComparison.OrdinalIgnoreCase))
+            ? overlay.EmbeddingDefault!
+            : "";
     }
 
     // Picks the effective default model, honouring a pinned default only when it names a provider that
@@ -167,6 +190,7 @@ public sealed class UserProviderResolver : IUserProviderResolver
             SupportsTools = m.SupportsTools,
             SupportsVision = m.SupportsVision,
             SupportsImageGeneration = m.SupportsImageGeneration,
+            SupportsEmbeddings = m.SupportsEmbeddings,
         })],
     };
 }

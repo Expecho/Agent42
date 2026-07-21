@@ -20,15 +20,10 @@ public sealed class ConfigHealthProbeTests
             .AddInMemoryCollection([new KeyValuePair<string, string?>("Geocoding:GoogleApiKey", googleKey)])
             .Build();
 
-    private static IServiceProvider Services(HttpMessageHandler handler, bool withEmbedder = true)
+    private static IServiceProvider Services(HttpMessageHandler handler)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHttpClientFactory>(new SingleClientFactory(handler));
-        if (withEmbedder)
-        {
-            services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(new FakeEmbedder());
-        }
-
         return services.BuildServiceProvider();
     }
 
@@ -94,23 +89,14 @@ public sealed class ConfigHealthProbeTests
         Assert.Equal(expected, (await probes.ContextScrape!(default)).Status);
     }
 
-    [Fact]
-    public async Task EmbeddingsProbe_Reachable_WhenGeneratorSucceeds()
-    {
-        var probes = ConfigHealthProbeSet.FromServices(Services(new CannedHandler(HttpStatusCode.OK)), Config());
-
-        Assert.Equal(ConfigHealth.Ok, (await probes.Embeddings!(default)).Status);
-    }
-
-    // With neither an IHttpClientFactory nor an embedder registered, every probe is null → the check stays
-    // skipped (the "unresolved client" path).
+    // With no IHttpClientFactory registered, every probe is null → the check stays skipped (the "unresolved
+    // client" path). Embeddings are no longer probed here — RAG is a per-user model now (ADR 0007/0018).
     [Fact]
     public void FromServices_AllNull_WhenNothingRegistered()
     {
         var probes = ConfigHealthProbeSet.FromServices(new ServiceCollection().BuildServiceProvider(), Config());
 
         Assert.Null(probes.SearXng);
-        Assert.Null(probes.Embeddings);
         Assert.Null(probes.Geocoding);
         Assert.Null(probes.ContextScrape);
     }
@@ -128,17 +114,5 @@ public sealed class ConfigHealthProbeTests
     {
         public HttpClient CreateClient(string name) =>
             new(handler, disposeHandler: false) { BaseAddress = new Uri("http://localhost/") };
-    }
-
-    private sealed class FakeEmbedder : IEmbeddingGenerator<string, Embedding<float>>
-    {
-        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
-            IEnumerable<string> values, EmbeddingGenerationOptions? options = null,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(new GeneratedEmbeddings<Embedding<float>>([new Embedding<float>(new float[] { 0f })]));
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-
-        public void Dispose() { }
     }
 }

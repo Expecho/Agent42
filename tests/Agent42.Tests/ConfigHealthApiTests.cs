@@ -60,7 +60,6 @@ public sealed class ConfigHealthApiTests : IAsyncLifetime
         // a probe=true call increments it once per probeable check.
         appBuilder.Services.AddSingleton(new ConfigHealthProbeSet(
             SearXng: _ => _counter.Bump(),
-            Embeddings: _ => _counter.Bump(),
             Geocoding: _ => _counter.Bump(),
             ContextScrape: _ => _counter.Bump()));
 

@@ -328,6 +328,16 @@
         </section>
 
         <section class="agent-form__section">
+          <label class="agent-form__field">
+            <span class="agent-form__label">// default embedding model</span>
+            <!-- Options are built by syncEmbeddingModelSelect() from the models a provider marks as embedding
+                 models. Empty until one is configured; without it you cannot attach documents. -->
+            <select class="agent-form__input agent-form__select" id="embeddingModelSelect"></select>
+          </label>
+          <p class="agent-form__note">The model that powers document Q&amp;A (RAG). Mark a model as an embedding model on its provider, then pick it here. Without one you cannot attach documents. Must produce 3072-dimension vectors; changing it means re-uploading existing documents.</p>
+        </section>
+
+        <section class="agent-form__section">
           <div class="providers__head">
             <span class="agent-form__label">// model providers</span>
             <button class="agent-form__btn" type="button" id="addProviderBtn">Add provider</button>

@@ -2,6 +2,7 @@ using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Agent42.Tests;
 
@@ -22,6 +23,15 @@ internal static class TestServiceRegistration
         services.AddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
         services.AddSingleton<DocumentChunker>();
         services.AddSingleton<DocumentIngestionService>();
+        // DocumentIngestionService resolves the owner's embedding generator through the per-user factory seam
+        // (ADR 0018). A silo registers its own provider (with the fake chat client + embeddings) BEFORE calling
+        // this, so TryAdd is a no-op there; an endpoint-only container (the upload endpoint) gets this
+        // embedding-capable stub — a no-op chat client (unused on the ingest path) + the deterministic generator.
+        services.TryAddSingleton<IUserChatClientFactoryProvider>(sp =>
+            new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(
+                NoModelChatClient.Instance,
+                embeddingGenerator: sp.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>(),
+                defaultEmbeddingModelId: "offline-embed")));
         return services;
     }
 

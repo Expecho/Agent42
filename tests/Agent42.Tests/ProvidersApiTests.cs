@@ -224,6 +224,45 @@ public sealed class ProvidersApiTests : IAsyncLifetime
         return doc.RootElement.GetProperty("default").GetString();
     }
 
+    // AC8: PUT /api/default-embedding-model persists the id, GET /api/providers echoes it as `embeddingDefault`,
+    // blank clears it, it is independent of the chat default, and the 200-char cap is enforced.
+    [Fact]
+    public async Task PutDefaultEmbeddingModel_PersistsClearsAndCaps()
+    {
+        var put = await _client.SendAsync(Request(HttpMethod.Put, "/api/default-embedding-model", "user-emb", new
+        {
+            embeddingDefault = "foundry:text-embedding-3-large",
+        }));
+        Assert.Equal(HttpStatusCode.NoContent, put.StatusCode);
+        Assert.Equal("foundry:text-embedding-3-large", await GetEmbeddingDefaultAsync("user-emb"));
+
+        // Independent of the chat default.
+        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-emb", new { @default = "ollama:llama3.1" })))
+            .EnsureSuccessStatusCode();
+        Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-emb"));
+        Assert.Equal("foundry:text-embedding-3-large", await GetEmbeddingDefaultAsync("user-emb"));
+
+        // Blank clears it back to null.
+        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-embedding-model", "user-emb", new { embeddingDefault = "  " })))
+            .EnsureSuccessStatusCode();
+        Assert.Null(await GetEmbeddingDefaultAsync("user-emb"));
+
+        // The 200-char cap is a 400.
+        var tooLong = await _client.SendAsync(Request(HttpMethod.Put, "/api/default-embedding-model", "user-emb", new
+        {
+            embeddingDefault = new string('x', 201),
+        }));
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+    }
+
+    private async Task<string?> GetEmbeddingDefaultAsync(string principalId)
+    {
+        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", principalId));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return doc.RootElement.GetProperty("embeddingDefault").GetString();
+    }
+
     // AC1: PUT /api/default-model persists the id and GET /api/providers echoes it back as `default`.
     [Fact]
     public async Task PutDefaultModel_PersistsAndIsReturnedByGet()

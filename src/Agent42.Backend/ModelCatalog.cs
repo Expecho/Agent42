@@ -18,7 +18,10 @@ public record ModelInfo(
     bool SupportsVision,
     // Trailing default so existing constructions stay valid; true only for a declared image-generation
     // model (ADR 0020). A discovered Foundry deployment is chat, so it never sets this.
-    bool SupportsImageGeneration = false);
+    bool SupportsImageGeneration = false,
+    // Trailing default so existing constructions stay valid; true only for a declared embedding model.
+    // Surfaced on /api/models so the Preferences "default embedding model" selector can filter to it.
+    bool SupportsEmbeddings = false);
 
 /// <summary>The models the picker can choose from, plus the current default.</summary>
 public record ModelCatalogResult(string Default, IReadOnlyList<ModelInfo> Models);

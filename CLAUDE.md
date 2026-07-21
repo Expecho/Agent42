@@ -92,10 +92,17 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   (`doc-chunks`), retrieved by an **always-on `TextSearchProvider`** (Agent Framework) that auto-injects
   the top excerpts before each reply — attached only when the conversation has an ingested document
   (ADR 0008 replaced the earlier agentic search tool); they never become chat
-  attachments (off the image `UriContent` path). The embedding deployment is a **manual prerequisite**
-  in the `Agent42` AI Foundry account (authenticated by the same `AzureOpenAI:ApiKey` as chat — ADR 0017,
-  no RBAC), and the Cosmos vector path is prod-only (offline/AppHost use an in-memory index). See gotchas before
-  touching the vector container or embedding config.
+  attachments (off the image `UriContent` path). **The embedding model is per-user (ADR 0030), not an
+  operator prerequisite:** a user declares an embedding model on a provider (`SupportsEmbeddings` opt-in) and
+  picks it as the **default embedding model** in Preferences (`PUT /api/default-embedding-model`); ingestion
+  and retrieval resolve it via **`IChatClientFactory.GetEmbeddingGenerator()`** (mirrors ADR 0020 image gen —
+  no new interface/host registration). With none configured the composer **blocks attaching documents** (images
+  still allowed) and retrieval **degrades to empty — never throws**. The vector model must produce **3072-dim**
+  vectors (ingest **validates-and-rejects** a mismatch); changing the embedding model is **delete-to-reingest**.
+  `AzureOpenAI:ApiKey`/`EmbeddingDeploymentName` and the `AZURE_OPENAI_API_KEY` secret are **gone** (0030 removed
+  the last operator floor 0019 kept; `AzureOpenAI:Endpoint`/`ApiKey` survive only as the dormant Foundry-inheritance
+  source, `TenantId` still binds `DefaultAzureCredential`). The Cosmos vector path is prod-only (offline/AppHost
+  use an in-memory index). See gotchas before touching the vector container or embedding config.
 - Web search (ADR 0011): two model-invoked tools — `web_search` and `fetch_web_page` — over a
   **self-hosted SearXNG sidecar** in the backend's Container App, reached over `localhost:8888`
   (8080 is the backend's own ingress). Agent Framework's `HostedWebSearchTool` does **not** work
@@ -138,14 +145,17 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   **two-legged** because WebKit/iOS has no geolocation Permissions API; and this feature puts the user's
   **street address** into a conversation that the ADR 0011 exfiltration channel can still drain — the
   `websearch` skill only *mitigates* that. All three are in gotchas.
-- Model providers (ADR 0013, credential mechanism amended by ADR 0017, **baseline removed by ADR 0019**):
+- Model providers (ADR 0013, credential mechanism amended by ADR 0017, **baseline removed by ADR 0019**,
+  **embedding floor removed by ADR 0030**):
   **Read this override first.** As of ADR 0019 the app ships **NO baseline chat provider** — `Models:Providers`
   is `{}`, chat is **entirely per-user** (ADR 0018), and there is **no operator default model**. So in the
   bullet below: "the default stays Foundry", "serves on Foundry alone", the baseline GitHub Models secret
   prerequisite and its wiring, the "blank Foundry key is **fatal** — Foundry is the availability path" rule, and the shipped
   `foundry` provider's `Discover:false`/`gpt-5.4`/`AzureOpenAI:DeploymentName` details are all **superseded** —
-  the availability path narrowed to the **embedding** key (`AzureOpenAI:ApiKey`, still fatal-if-blank), and a
-  Foundry chat model is now something a **user** adds. A user with no provider gets an empty picker + gated
+  and as of **ADR 0030** even the **embedding** floor is gone: there is now **no** operator model of any kind,
+  `AzureOpenAI:ApiKey` is **no longer fatal** (blank boots), and the embedding model is a **user-added** model
+  too (`SupportsEmbeddings` + a per-user default embedding model). A Foundry chat model is now something a
+  **user** adds. A user with no provider gets an empty picker + gated
   composer; the grain stays valid via a no-op `NoModelChatClient`. The mechanism facts below still hold. A
   conversation can run on **any
   OpenAI-compatible endpoint**, not just Azure Foundry. The `Models:` config section maps provider keys to

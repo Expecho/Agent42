@@ -38,35 +38,15 @@ builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(options =>
 // CosmosClient wired from the Aspire-provided "cosmos" connection.
 builder.AddAzureCosmosClient("cosmos");
 
-// The chat model backing the agent, wrapped with OTel instrumentation.
-// Validated eagerly below so a missing endpoint fails at startup, not on the
-// first grain activation.
-var azureOpenAIEndpoint = builder.Configuration["AzureOpenAI:Endpoint"];
-if (string.IsNullOrWhiteSpace(azureOpenAIEndpoint))
-{
-    throw new InvalidOperationException(
-        "AzureOpenAI:Endpoint is not configured. Set it in appsettings.json, " +
-        "user secrets, or the AzureOpenAI__Endpoint environment variable " +
-        "(e.g. https://<your-resource>.services.ai.azure.com).");
-}
+// No operator embedding floor any more: embeddings are a per-user model chosen in Preferences (the
+// document-RAG generator resolves from the user's overlay, ADR 0007/0018), so AzureOpenAI:Endpoint/ApiKey
+// are no longer eager-validated at startup. They remain readable ONLY by the dormant Foundry-provider
+// inheritance (ProviderSettings.ResolveFoundry) — baseline Models:Providers is empty (ADR 0019), so nothing
+// triggers it; a user's Foundry provider declares its own endpoint + key. The app now boots with no Azure
+// OpenAI config at all, like it already did with no chat provider.
 
-// The Azure OpenAI API key (ADR 0017, narrowed by ADR 0019): the app ships no baseline Foundry CHAT
-// provider any more (chat is fully per-user), so this key is now the availability path for EMBEDDINGS
-// only — the embedding client below reads it directly and never sees the Models: section. A blank key
-// still fails at startup (embeddings are the one remaining fixed model), same discipline as the endpoint
-// above and mirrored by the Bicep @minLength guard.
-var azureOpenAIApiKey = builder.Configuration["AzureOpenAI:ApiKey"];
-if (string.IsNullOrWhiteSpace(azureOpenAIApiKey))
-{
-    throw new InvalidOperationException(
-        "AzureOpenAI:ApiKey is not configured. Set it in user secrets or the AzureOpenAI__ApiKey " +
-        "environment variable (the Azure OpenAI resource key; ADR 0019 — it authenticates the embedding " +
-        "client, the app's one fixed model). It is a secret and must never be committed.");
-}
-
-// The managed identity still drives the services that are NOT Azure OpenAI and cannot use the key:
-// blob storage (user-delegation SAS) and — kept for a future discovering provider — the ARM management
-// plane. Foundry inference/embeddings moved to the API key (ADR 0017).
+// The managed identity drives the services that are NOT Azure OpenAI: blob storage (user-delegation SAS)
+// and — kept for a future discovering provider — the ARM management plane. TenantId still binds it.
 var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
 {
     TenantId = builder.Configuration["AzureOpenAI:TenantId"],
@@ -182,25 +162,11 @@ builder.Services.AddSingleton<IUserMcpToolProvider, UserMcpToolProvider>();
 // endpoints and by the tool provider's connect-time token refresh.
 builder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
 
-// Document RAG (ADR 0007). The embedding deployment is a manual prerequisite the user owns (a
-// text-embedding-3-large deployment in the AI Foundry account, RG agent42 — the same account the
-// chat client uses, so no new RBAC). Validated eagerly so a missing deployment name fails at
-// startup, not on the first upload.
-var embeddingDeployment = builder.Configuration["AzureOpenAI:EmbeddingDeploymentName"];
-if (string.IsNullOrWhiteSpace(embeddingDeployment))
-{
-    throw new InvalidOperationException(
-        "AzureOpenAI:EmbeddingDeploymentName is not configured. Set it in appsettings.json, " +
-        "user secrets, or the AzureOpenAI__EmbeddingDeploymentName environment variable " +
-        "(the name of a text-embedding-3-large deployment in the AI Foundry account).");
-}
-
-// Reuse the same endpoint + API key as the Foundry chat provider (ADR 0017): one source of truth for
-// the key, exactly like the endpoint. The key authorizes embeddings on the same account (no RBAC).
-var azureOpenAIClient = new AzureOpenAIClient(new Uri(azureOpenAIEndpoint), new AzureKeyCredential(azureOpenAIApiKey));
-builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
-    azureOpenAIClient.GetEmbeddingClient(embeddingDeployment).AsIEmbeddingGenerator());
-
+// Document RAG (ADR 0007/0018). There is NO operator embedding generator: the embedding model is
+// per-user (chosen in Preferences), so ingestion and retrieval resolve their generator from the user's
+// chat-client factory (IUserChatClientFactoryProvider.GetEmbeddingGenerator) — no fixed deployment, no
+// AzureOpenAI:EmbeddingDeploymentName prerequisite. A user with no embedding model configured cannot
+// attach documents (the composer gates it) and RAG retrieval degrades to empty.
 builder.Services.AddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
 builder.Services.AddSingleton<DocumentChunker>();
 builder.Services.AddSingleton<DocumentIngestionService>();
@@ -213,8 +179,12 @@ builder.Services.AddSingleton<DocumentIngestionService>();
 var docChunksContainer = builder.Configuration["Cosmos:DocChunksContainerName"];
 if (!string.IsNullOrWhiteSpace(docChunksContainer))
 {
+    // The container's vector policy dimension (Bicep-fixed at 3072 for text-embedding-3-large, ADR 0007).
+    // Threaded here so ingest can reject a user-chosen embedding model whose vectors don't fit, with a clear
+    // message instead of an opaque Cosmos error. Config-overridable only if the container is ever recreated.
+    var docChunksDimensions = builder.Configuration.GetValue<int?>("Cosmos:DocChunksDimensions") ?? 3072;
     builder.Services.AddSingleton<IDocumentIndex>(sp => new CosmosDocumentIndex(
-        sp.GetRequiredService<CosmosClient>(), "agent42", docChunksContainer));
+        sp.GetRequiredService<CosmosClient>(), "agent42", docChunksContainer, docChunksDimensions));
 }
 else
 {

@@ -19,10 +19,16 @@ namespace Agent42.Backend;
 /// test; it is covered by the Step 1 spike + a prod smoke (AC7), like the blob SAS behavior in
 /// ADR 0004.
 /// </summary>
-public sealed class CosmosDocumentIndex(CosmosClient cosmosClient, string databaseName, string containerName)
+public sealed class CosmosDocumentIndex(
+    CosmosClient cosmosClient, string databaseName, string containerName, int dimensions)
     : IDocumentIndex
 {
     private readonly Container _container = cosmosClient.GetContainer(databaseName, containerName);
+
+    // The container's vector policy dimension (Bicep-fixed, default 3072 for text-embedding-3-large). Ingest
+    // rejects a user-chosen embedding model whose vectors don't match — Cosmos would otherwise reject or
+    // misindex them. See ADR 0007's "Cosmos vector search is prod-only" constraint.
+    public int? ExpectedDimensions => dimensions;
 
     public async Task UpsertChunksAsync(
         string ownerKey, IReadOnlyList<EmbeddedChunk> chunks, CancellationToken cancellationToken = default)
