@@ -323,4 +323,32 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   wildcard into `mcp:{id}` keys before the picker sees it (else a no-op Save silently disables every server —
   the picker has no `mcp` checkbox), and the provider emits an **empty group per skipped server** so the
   expansion id-list is complete. Both in the null==all gotcha.
+- Web Push when an agent replies while away (ADR 0028): a **Web Push** notification titled with the
+  **agent's name** is delivered to the user's installed Android/Chromium PWA when an agent finishes a reply
+  on one of the two **asynchronous** paths — a fired reminder (`ReceiveReminder`) or an agent-run
+  (`EnqueuePromptAsync`, ADR 0022). "Not online" is approximated by **one fact — we send only on those two
+  async paths, never from `ChatCoreAsync`** (the live stream the user is already watching); a server-side
+  presence/heartbeat was considered and **rejected**. The send lives in the two async **callers** — inside
+  `EnqueuePromptAsync`'s `try` after the drain (gated on `_modelId` so the no-model notice path doesn't fire
+  a false push) and after `ReceiveReminder`'s `WriteStateAsync` — and the SW **always shows** the
+  notification on a received push (**no** suppress-if-focused: that violates Chromium's `userVisibleOnly`
+  budget contract and risks subscription revocation). Subscriptions live in a **dedicated per-user grain**
+  (`IUserPushGrain`, state `"push-subs"` on `agent-state` — **no new container**, not `UserProfile` which
+  ADR 0005 keeps scalar), stored **cleartext** (a device push capability usable only against our VAPID pair,
+  not a third-party credential — encryption deferred). The interface/impl split follows `IGeocoder`:
+  `IPushNotificationSender`/`PushMessage`/`NullPushNotificationSender` in Agents, `WebPushNotificationSender`
+  (over the `WebPush` package, isolated behind an `IWebPushClient` seam) in Backend. **Every AgentGrain host
+  must register `IPushNotificationSender`** (else activation fails) and **every host that maps `MapAgentApi`
+  must register the `PushConfig` singleton** (a route-matcher dependency, like `IMcpSecretProtector`). The
+  **VAPID private key is the only secret and is OPTIONAL** (the `contextApiKey`/`googleMapsApiKey` shape, not
+  `searxngSecret`: no key → app boots, `GET /api/push/config` returns `enabled:false`, UI hides the toggle) —
+  a `VAPID_PRIVATE_KEY` GitHub secret → `Push__VapidPrivateKey`; the public key + `mailto:` subject are
+  **non-secret and committed** in `appsettings.json`. Three things to read before touching this: the send
+  belongs in the two async callers, never `ChatCoreAsync` (the ADR 0028 gotcha); the sender bounds a
+  `SendBudget` timeout and calls `RemoveAllResilienceHandlers()` because `AgentGrain` is non-reentrant; and
+  the sender POSTs to the browser-supplied subscription endpoint — an **accepted blind-SSRF property** of
+  Web Push (authenticated, encrypted body, no response returned), deliberately **not** host-guarded.
+  **Headline consequence:** the notification transits a third-party push service (FCM/Mozilla/WNS), but the
+  payload is **RFC 8291 end-to-end encrypted** — a materially smaller egress than ADR 0013's, though the
+  title is the user-chosen agent name. Android/Chromium only; iOS-in-browser is feature-detected out.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

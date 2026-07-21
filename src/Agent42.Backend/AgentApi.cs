@@ -493,6 +493,49 @@ public static class AgentApi
             return Results.NoContent();
         });
 
+        // ————— Web Push subscriptions (ADR 0028) —————
+
+        // Whether push is enabled (a VAPID private key is configured on the server) and the non-secret
+        // PUBLIC key + subject the browser needs to subscribe. Behind Easy Auth like every other endpoint,
+        // but returns nothing sensitive — the private key never leaves the server. When disabled the UI
+        // hides the toggle (the optional-secret shape: no key → app runs, feature simply off).
+        app.MapGet("/api/push/config", (PushConfig config) =>
+            Results.Json(new PushConfigResponse(config.Enabled, config.PublicKey)));
+
+        // Registers (upserts by endpoint) the caller's push subscription for THIS device. The subscription
+        // is a device push capability, stored in cleartext in the per-user grain (ADR 0028).
+        app.MapPost("/api/push/subscriptions", async (PushSubscriptionRequest request, IGrainFactory grains, HttpContext http) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Endpoint)
+                || string.IsNullOrWhiteSpace(request.P256dh)
+                || string.IsNullOrWhiteSpace(request.Auth))
+            {
+                return Results.Text(
+                    "A push subscription requires endpoint, p256dh and auth.",
+                    "text/plain",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            await grains.GetGrain<IUserPushGrain>(http.GetUserId())
+                .AddAsync(new PushSubscription(request.Endpoint, request.P256dh, request.Auth));
+            return Results.NoContent();
+        });
+
+        // Removes the caller's subscription for this device (unsubscribe) — endpoint via query. The sender
+        // also prunes an endpoint the push service reports gone (404/410), so this is the explicit-opt-out
+        // half of the same operation.
+        app.MapDelete("/api/push/subscriptions", async (string? endpoint, IGrainFactory grains, HttpContext http) =>
+        {
+            if (string.IsNullOrWhiteSpace(endpoint))
+            {
+                return Results.Text(
+                    "endpoint is required.", "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            await grains.GetGrain<IUserPushGrain>(http.GetUserId()).RemoveAsync(endpoint);
+            return Results.NoContent();
+        });
+
         // ————— remote MCP servers (per-user overlay, config-driven remote MCP servers) —————
 
         // The signed-in user's OWN configured MCP servers. Secrets are MASKED to hasHeaderValue flags: the
@@ -916,3 +959,11 @@ public record McpServerResponse(
 
 // The GET /api/mcp-servers payload: the user's overlay servers (masked).
 public record McpServersResponse(IReadOnlyList<McpServerResponse> Servers);
+
+// The GET /api/push/config payload (ADR 0028): whether push is enabled (a VAPID private key is configured)
+// and the non-secret public key the browser passes to pushManager.subscribe. The private key is never here.
+public record PushConfigResponse(bool Enabled, string PublicKey);
+
+// Client payload to register a Web Push subscription (ADR 0028): the fields of a browser PushSubscription
+// the sender needs to deliver an RFC 8291-encrypted push. Endpoint is the dedup/prune key.
+public record PushSubscriptionRequest(string Endpoint, string P256dh, string Auth);

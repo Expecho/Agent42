@@ -168,7 +168,7 @@ public sealed class PwaAssetsTests
         // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
         // stale assets — sw.js serves the shell cache-first with background revalidate.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v8", sw);
+        Assert.Contains("agent42-shell-v9", sw);
     }
 
     // Copy-to-clipboard button on finalized agent replies: a hover/focus-revealed glyph button at the
@@ -239,6 +239,36 @@ public sealed class PwaAssetsTests
         Assert.True(firstRespond >= 0, "Service worker has no fetch handler (respondWith)");
         Assert.True(apiGuard < firstRespond,
             "The /api bypass must precede any respondWith, including the new share branch");
+    }
+
+    // AC10: sw.js registers the two Web Push handlers (ADR 0028) — `push` (always shows a notification,
+    // honouring Chromium's userVisibleOnly contract) and `notificationclick` (focus/open the conversation).
+    // Source-text heuristic (no JS runner) — proves the listeners exist; behaviour is verified on a device.
+    [Fact]
+    public async Task ServiceWorker_HandlesPush()
+    {
+        var sw = await _client.GetStringAsync("/sw.js");
+
+        Assert.Contains("addEventListener(\"push\"", sw);
+        Assert.Contains("addEventListener(\"notificationclick\"", sw);
+        Assert.Contains("showNotification", sw);
+        // The click handler tells app.js which conversation to open (its message handler → selectConversation).
+        Assert.Contains("open-conversation", sw);
+    }
+
+    // ADR 0028: the Preferences → General push toggle markup + the app.js subscribe/config wiring. Presence
+    // guard only (no JS runner) — the interactive subscribe flow is verified manually on a device.
+    [Fact]
+    public async Task Frontend_ShipsPushToggle()
+    {
+        var index = await _client.GetStringAsync("/");
+        Assert.Contains("id=\"pushSection\"", index);
+        Assert.Contains("id=\"pushToggleBtn\"", index);
+
+        var app = await _client.GetStringAsync("/app.js");
+        Assert.Contains("/api/push/config", app);
+        Assert.Contains("pushManager.subscribe", app);
+        Assert.Contains("open-conversation", app);
     }
 
     [Fact]

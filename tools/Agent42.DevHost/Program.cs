@@ -103,6 +103,13 @@ builder.Services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
 // request leaves the machine. The tool reports coordinates without a street address.
 builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
 
+// Web Push offline (ADR 0028): no VAPID keys, so the no-op sender — the async reply paths run end to end
+// but push nothing. Every AgentGrain host must register an IPushNotificationSender or activation fails, and
+// every host that maps MapAgentApi must register PushConfig or /api/push/config's param inference breaks
+// routing for the whole host. Enabled:false, so GET /api/push/config reports the feature off.
+builder.Services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
+builder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
+
 builder.UseOrleans(silo =>
 {
     silo.UseLocalhostClustering();
