@@ -366,6 +366,18 @@ else
 // the agent state is persisted with Microsoft.Orleans.Persistence.Cosmos.
 builder.UseOrleans(silo =>
 {
+    // Flow the W3C trace context (Activity.Current) across grain-call boundaries. Orleans does NOT
+    // propagate it by default — grain calls hop through the Orleans scheduler, which does not carry
+    // Activity.Current across the boundary — so without this, any span started INSIDE a grain (the
+    // HttpClient instrumentation span for the chat-completion / geocoding / web-fetch calls) begins as
+    // a new ROOT span, detached from the ASP.NET server span that triggered it. That is the "many
+    // traces have no parent" symptom. This is a DISTINCT mechanism from the user.* attribution channel
+    // (ADR 0010): identity rides Orleans RequestContext, which IS auto-propagated — trace-parent linkage
+    // is not. Registers both the incoming and outgoing grain-call filters (this process co-hosts the
+    // silo + client, so one call covers both directions). Async paths (fired reminders, agent-run) still
+    // begin fresh roots by design — they have no ambient inbound Activity. See gotchas.
+    silo.AddActivityPropagation();
+
     if (string.IsNullOrEmpty(builder.Configuration["Orleans:Clustering:ProviderType"]))
     {
         silo.UseLocalhostClustering();

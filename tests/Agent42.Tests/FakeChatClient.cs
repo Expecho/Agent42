@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Agent42.Agents;
 using Microsoft.Agents.AI;
@@ -50,7 +51,7 @@ public sealed class FakeChatClient : IChatClient
             yield break;
         }
 
-        var echo = ToolsEcho(options) + RequestContextEcho() + InstructionsEcho(messages, options)
+        var echo = ToolsEcho(options) + RequestContextEcho() + TraceEcho() + InstructionsEcho(messages, options)
             + ContextEcho(messages) + ImageEcho(messages) + AllImagesEcho(messages)
             + EmptyMessageEcho(messages) + ToolResultEcho(messages);
         if (echo.Length > 0)
@@ -75,6 +76,17 @@ public sealed class FakeChatClient : IChatClient
         => RequestContext.Get(UserTelemetryContext.RequestContextKey) is UserTelemetryContext ctx
             ? $"[uctx:{ctx.Id}] "
             : "";
+
+    // Surfaces the ambient Activity's trace id at this terminal chat-client call site as a
+    // [trace:<traceId>] marker — the trace-parent analogue of the [uctx:…] echo. This client runs
+    // *inside* the grain's streaming iteration, so a non-empty marker proves the W3C trace context
+    // propagated across the grain call (Orleans AddActivityPropagation), the exact linkage a
+    // production in-grain span needs to hang under the request's server span. Empty when there is no
+    // ambient Activity — which is the case for every test on a silo WITHOUT activity propagation
+    // (Orleans does not flow Activity.Current across the grain boundary otherwise), so this echo is
+    // inert everywhere except ActivityPropagationTests.
+    private static string TraceEcho()
+        => Activity.Current is { } activity ? $"[trace:{activity.TraceId}] " : "";
 
     // Surfaces the instructions the terminal client received so a test can assert the bound
     // system prompt was delivered. Prefers options.Instructions (how AF 1.13 carries it) and
