@@ -102,6 +102,30 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/UserTelemetryMiddleware.cs`, `src/Agent42.Backend/UserTelemetrySpanProcessor.cs`, `src/Agent42.Agents/UserTelemetryContext.cs`, `tests/Agent42.Tests/RequestContextPropagationTests.cs`, `.agentic/decisions/0010-downstream-user-telemetry-via-requestcontext.md`
 - **Verified:** 2026-07-11
 
+### Trace-parent linkage across a grain call needs `AddActivityPropagation` — RequestContext propagation is NOT it
+
+- **Claim:** Orleans propagates `RequestContext` across grain calls **by default** (the `user.*` identity
+  channel above relies on that), but it does **NOT** propagate the W3C trace context (`Activity.Current`)
+  unless the silo opts in with **`silo.AddActivityPropagation()`** (in `Program.cs`'s `UseOrleans`). These are
+  two different mechanisms — having the first does not give you the second. Grain calls hop through the
+  Orleans scheduler, which does not flow `Activity.Current` across the boundary, so **without** this call
+  every span started *inside* a grain (the `HttpClientInstrumentation` span for the chat-completion /
+  geocoding / web-fetch calls) begins as a **new root span** — the "many traces have no parent" symptom. The
+  symptom is easy to miss because the `user.*` attributes still land on those orphaned spans (they ride
+  RequestContext, not the trace parent).
+- **Load-bearing behaviour:** the backend **co-hosts** silo + client in one DI container, so the single
+  `silo.AddActivityPropagation()` registers **both** the incoming filter (starts the child span) and the
+  outgoing filter (injects `Activity.Current` on the call) — one call covers both directions. A `TestCluster`
+  splits client and silo into **separate** containers, so a test must configure **both**
+  (`AddSiloBuilderConfigurator` + `AddClientBuilderConfigurator`) to reproduce what co-hosting gives for free —
+  configuring only the silo makes the outgoing injection silently absent and the trace never propagates.
+  `ActivityPropagationTests` guards this: a positive (root trace reaches the in-grain chat-client site via the
+  `FakeChatClient` `[trace:…]` echo) and a negative (no propagation → no marker → the fix is load-bearing).
+  The async paths (fired reminders, agent-run — ADR 0022/0028) still begin fresh roots **by design**: they
+  have no ambient inbound Activity, so their rootlessness is correct, not this bug.
+- **Evidence:** `src/Agent42.Backend/Program.cs` (`silo.AddActivityPropagation()`), `tests/Agent42.Tests/ActivityPropagationTests.cs`, `tests/Agent42.Tests/FakeChatClient.cs` (`TraceEcho`)
+- **Verified:** 2026-07-21
+
 ### An agent tool's RETURN value is persisted, and counts against the 2 MB session cap
 
 - **Claim:** it is easy to see that chat messages are persisted and miss that **tool results are too**.
