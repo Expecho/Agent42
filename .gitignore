@@ -22,6 +22,7 @@ Thumbs.db
 # CLAUDE.md and .agentic/ reference); ignore only the per-developer local override.
 .claude/settings.local.json
 .playwright-cli/
+.claude/worktrees/
 
 # Local run logs
 *.log
@@ -33,3 +34,5 @@ TestResults/
 
 # Throwaway runtime spikes (referenced by .agentic/specs, never committed)
 scratchpad/
+
+
