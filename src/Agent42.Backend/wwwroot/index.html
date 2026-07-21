@@ -260,6 +260,10 @@
                 aria-selected="false" aria-controls="panelProviders" tabindex="-1">Model providers</button>
         <button class="agent-form__tab" type="button" role="tab" id="tabMcp"
                 aria-selected="false" aria-controls="panelMcp" tabindex="-1">MCP servers</button>
+        <!-- Appended LAST on purpose: the MCP-OAuth return deep-links to profileTabs.select(3), so this
+             tab must be index 4 — inserting it before MCP would break that return (app.js). -->
+        <button class="agent-form__tab" type="button" role="tab" id="tabConfig"
+                aria-selected="false" aria-controls="panelConfig" tabindex="-1">Configuration</button>
       </div>
 
       <div class="agent-form__panel" role="tabpanel" id="panelGeneral" aria-labelledby="tabGeneral">
@@ -341,6 +345,17 @@
           </div>
           <ul class="providers__list" id="mcpServerList"></ul>
           <p class="agent-form__note">Add a remote MCP server to give the agent its tools. Enable the "MCP servers" tool to use them. Changes take effect on your next new chat — no restart. An MCP server sees your conversation and its tool results can inject instructions — add only servers you trust.</p>
+        </section>
+      </div>
+
+      <div class="agent-form__panel" role="tabpanel" id="panelConfig" aria-labelledby="tabConfig" hidden>
+        <section class="agent-form__section">
+          <div class="providers__head">
+            <span class="agent-form__label">// configuration health</span>
+            <button class="agent-form__btn" type="button" id="runConfigProbesBtn">Run live checks (billable)</button>
+          </div>
+          <div class="config-health" id="configHealthList"></div>
+          <p class="agent-form__note">Which configuration inputs are set, malformed, or (with live checks) unreachable. Read-only, and never shows a secret value. Live checks for geocoding and page scraping cost a metered call, so they run only on demand.</p>
         </section>
       </div>
 

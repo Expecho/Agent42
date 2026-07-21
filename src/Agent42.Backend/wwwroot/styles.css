@@ -1494,6 +1494,65 @@ body {
   background: var(--bg-inset);
 }
 
+/* Configuration health (Preferences → Configuration): grouped status pills. Reuses the mono/inset look
+   of the provider list. */
+.config-health { display: flex; flex-direction: column; gap: 10px; }
+
+.config-health__env {
+  color: var(--ink-faint);
+  font: 400 11px var(--mono);
+  margin: 0;
+}
+
+.config-health__group {
+  font: 600 11px var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  margin: 6px 0 2px;
+}
+
+.config-health__checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.config-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-inset);
+}
+
+.config-check__pill {
+  flex: none;
+  min-width: 56px;
+  text-align: center;
+  text-transform: uppercase;
+  font: 600 10px var(--mono);
+  letter-spacing: 0.05em;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
+/* ok = calm, warning = amber, error = red, skipped/na = muted. */
+.config-check__pill--ok { color: #1a7f37; border-color: #1a7f3733; background: #1a7f3714; }
+.config-check__pill--warning { color: var(--amber-deep); border-color: var(--amber-glow); background: var(--amber-glow); }
+.config-check__pill--error { color: #b3261e; border-color: #b3261e33; background: #b3261e14; }
+.config-check__pill--skipped,
+.config-check__pill--na { color: var(--ink-faint); border-color: var(--line); background: transparent; }
+
+.config-check__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.config-check__key { font: 500 11.5px var(--mono); color: var(--ink); }
+.config-check__msg { font: 400 11px var(--mono); color: var(--ink-dim); }
+
 .provider-row__meta {
   flex: 1;
   min-width: 0;

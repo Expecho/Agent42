@@ -54,11 +54,15 @@
   const pushToggleBtn = document.getElementById("pushToggleBtn");
   // Preferences + agent dialog tabs. wireTabs (defined near openProfileDialog) takes [tab, panel]
   // pairs in tablist order, attaches the click + keyboard nav, and returns a select(index, focus).
+  // The Configuration tab is APPENDED LAST on purpose: initMcpOAuthReturn deep-links to select(3) (the
+  // MCP tab), so MCP must stay index 3 — a new tab inserted before it would shift MCP to 4 and break the
+  // OAuth return. Append → Configuration is index 4, MCP stays 3.
   const profileTabs = wireTabs([
     [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
     [document.getElementById("tabTools"), document.getElementById("panelTools")],
     [document.getElementById("tabProviders"), document.getElementById("panelProviders")],
     [document.getElementById("tabMcp"), document.getElementById("panelMcp")],
+    [document.getElementById("tabConfig"), document.getElementById("panelConfig")],
   ]);
   const agentTabs = wireTabs([
     [document.getElementById("tabAgentGeneral"), document.getElementById("panelAgentGeneral")],
@@ -87,6 +91,8 @@
   // Remote MCP servers (config-driven remote MCP servers) — mirrors the provider dialog.
   const mcpServerList = document.getElementById("mcpServerList");
   const addMcpServerBtn = document.getElementById("addMcpServerBtn");
+  const configHealthList = document.getElementById("configHealthList");
+  const runConfigProbesBtn = document.getElementById("runConfigProbesBtn");
   const mcpDialog = document.getElementById("mcpDialog");
   const mcpForm = document.getElementById("mcpForm");
   const mcpFormTitle = document.getElementById("mcpFormTitle");
@@ -1644,6 +1650,7 @@
     updatePushControl(); // and the push notifications status/button (ADR 0028)
     loadProviders(); // refresh the user's providers list alongside the profile
     loadMcpServers(); // and their MCP servers (config-driven remote MCP servers)
+    loadConfigHealth(); // and the STATIC configuration health (live probes are opt-in, on the button)
     profileDialog.showModal();
     profileLanguage.focus();
   }
@@ -1861,6 +1868,76 @@
 
       li.append(meta, edit, del);
       providerList.appendChild(li);
+    }
+  }
+
+  // ————— configuration health (Preferences → Configuration) —————
+
+  // Fetches the health report and renders it. probe=false (the default, on tab open) is the STATIC report
+  // and runs no metered calls; probe=true runs the opt-in live probes (button). Mirrors loadProviders.
+  async function loadConfigHealth(probe = false) {
+    try {
+      const res = await fetch(`/api/config-health${probe ? "?probe=true" : ""}`);
+      if (!res.ok) return;
+      renderConfigHealth(await res.json());
+    } catch { /* silo may be unreachable; the list refreshes on next open */ }
+  }
+
+  // Groups the checks by their Group label and renders each as a status pill + key + curated message. The
+  // report never carries a secret, so every field here is safe to paint verbatim.
+  function renderConfigHealth(report) {
+    configHealthList.innerHTML = "";
+    const checks = report.checks ?? [];
+    if (checks.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "providers__empty";
+      empty.textContent = "no checks";
+      configHealthList.appendChild(empty);
+      return;
+    }
+
+    const env = document.createElement("p");
+    env.className = "config-health__env";
+    env.textContent = `environment: ${report.environment ?? "?"}`;
+    configHealthList.appendChild(env);
+
+    const groups = [];
+    for (const check of checks) {
+      let group = groups.find((g) => g.name === check.group);
+      if (!group) { group = { name: check.group, items: [] }; groups.push(group); }
+      group.items.push(check);
+    }
+
+    for (const group of groups) {
+      const heading = document.createElement("h3");
+      heading.className = "config-health__group";
+      heading.textContent = group.name;
+      configHealthList.appendChild(heading);
+
+      const list = document.createElement("ul");
+      list.className = "config-health__checks";
+      for (const check of group.items) {
+        const li = document.createElement("li");
+        li.className = "config-check";
+
+        const pill = document.createElement("span");
+        pill.className = `config-check__pill config-check__pill--${check.status}`;
+        pill.textContent = check.status;
+
+        const body = document.createElement("div");
+        body.className = "config-check__body";
+        const key = document.createElement("span");
+        key.className = "config-check__key";
+        key.textContent = check.key + (check.billable ? " · billable" : "");
+        const msg = document.createElement("span");
+        msg.className = "config-check__msg";
+        msg.textContent = check.message ?? "";
+        body.append(key, msg);
+
+        li.append(pill, body);
+        list.appendChild(li);
+      }
+      configHealthList.appendChild(list);
     }
   }
 
@@ -2189,6 +2266,20 @@
   }
 
   addMcpServerBtn.addEventListener("click", () => openMcpDialog(null));
+
+  // Opt-in live checks (billable). Disable + relabel while probing so a double-click can't fire two runs,
+  // then repaint with the probed report.
+  runConfigProbesBtn.addEventListener("click", async () => {
+    runConfigProbesBtn.disabled = true;
+    const label = runConfigProbesBtn.textContent;
+    runConfigProbesBtn.textContent = "Running…";
+    try {
+      await loadConfigHealth(true);
+    } finally {
+      runConfigProbesBtn.textContent = label;
+      runConfigProbesBtn.disabled = false;
+    }
+  });
   mcpAuthSelect.addEventListener("change", syncMcpAuthUi);
   mcpCancelBtn.addEventListener("click", () => mcpDialog.close());
   mcpForm.addEventListener("submit", (e) => {
