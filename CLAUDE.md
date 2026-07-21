@@ -4,7 +4,7 @@
 > Agent Framework agents on Azure OpenAI, with a static web UI, deployed to Azure Container Apps.
 
 **Stack:** .NET 10 · Orleans 10.2 (grains, Cosmos persistence + reminders) · Microsoft Agent
-Framework 1.13 · ASP.NET Core minimal APIs · Aspire 13.3 (local orchestration) · vanilla-JS
+Framework 1.13 · ASP.NET Core minimal APIs · Aspire 13.4 (local orchestration) · vanilla-JS
 frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 
 ## Commands
