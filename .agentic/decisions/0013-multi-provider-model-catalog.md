@@ -18,8 +18,8 @@ tags: [models, providers, github-models, openai-compatible, config, security, da
 > **Amended by [ADR 0018](0018-user-configurable-model-providers.md) (2026-07-16) — SSRF-source
 > scope only.** The endpoint may now also come from an **authenticated user's own persisted
 > per-user config**, not just `appsettings`/env — but still **never** from a model or a live
-> request, so this stays off the `fetch_web_page` SSRF path and still carries **no
-> `PrivateAddressGuard`** (a user endpoint deliberately accepts `localhost`/private hosts). The
+> request, so this stays off the SSRF path and still carries **no SSRF address-guard** (a user
+> endpoint deliberately accepts `localhost`/private hosts). The
 > operator env provider set remains the boot-time availability floor. Everything else here stays
 > authoritative. `status: accepted` on purpose — see 0018's "Partial supersession" note.
 
@@ -125,7 +125,7 @@ free: **embeddings stay on the primary account**, and each additional account ne
 
 ### Not an SSRF sink — keep it that way
 The endpoint comes from **config**, never from the model or a request. That is what keeps this off the
-path `fetch_web_page` is on, and it is the reason there is no `PrivateAddressGuard` here. Do not let a
+path `fetch_web_page` is on, and it is the reason there is no SSRF address-guard here. Do not let a
 future change accept an endpoint from a tool argument or a request body.
 
 ## Alternatives rejected

@@ -9,15 +9,15 @@ namespace Agent42.Backend;
 /// <see cref="IGeocoder"/> over the Google Geocoding API (ADR 0012). Reverse-geocodes the browser's
 /// fix into a street address so <c>get_current_location</c> can tell the model where the user is.
 ///
-/// <para><b>This is not an SSRF sink, and the reason is narrow — do not "fix" the asymmetry with
-/// <c>fetch_web_page</c> by adding a <c>PrivateAddressGuard</c> here.</b> Two properties make the
-/// claim true: the host is <b>fixed</b> (config-pinned, never model-supplied), and the tool that
-/// reaches this class takes <b>zero model-supplied parameters</b> — the only variable input is a
-/// lat/lon pair that came from the <i>browser</i> and was range-validated server-side, and a
-/// <c>double</c> cannot inject a host. Both properties are load-bearing: adding, say, a
-/// <c>string address</c> parameter to the tool would turn this into an SSRF sink while this comment
-/// still sat here reassuring the reader. <c>GetCurrentLocation_ExposesNoParameters</c> pins the
-/// second property with a test rather than trusting the comment.</para>
+/// <para><b>This is not an SSRF sink, and the reason is narrow — do not add an address guard here on
+/// the theory that any outbound call needs one.</b> Two properties make the claim true: the host is
+/// <b>fixed</b> (config-pinned, never model-supplied), and the tool that reaches this class takes
+/// <b>zero model-supplied parameters</b> — the only variable input is a lat/lon pair that came from the
+/// <i>browser</i> and was range-validated server-side, and a <c>double</c> cannot inject a host. Both
+/// properties are load-bearing: adding, say, a <c>string address</c> parameter to the tool would turn
+/// this into an SSRF sink while this comment still sat here reassuring the reader.
+/// <c>GetCurrentLocation_ExposesNoParameters</c> pins the second property with a test rather than
+/// trusting the comment.</para>
 ///
 /// <para><b>Nothing here logs the coordinates or the key.</b> Do not copy
 /// <see cref="SearxngWebSearch"/>'s query logging — its query is a search term, this one is where a

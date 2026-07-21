@@ -8,7 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AngleSharp" />
     <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" />
     <PackageReference Include="Azure.AI.OpenAI" />
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />

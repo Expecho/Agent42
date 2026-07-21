@@ -43,6 +43,10 @@ builder.AddProject<Projects.Agent42_Backend>("backend")
     .WithReference(cosmos)
     .WithReference(blobs)
     .WithEnvironment("WebSearch__Endpoint", searxng.GetEndpoint("http"))
+    // Forward the context.dev scrape key (ADR 0027) from the AppHost's own config/user-secrets so a local
+    // full-stack run can exercise the real fetcher. Absent is fine — it degrades to a per-call failure,
+    // not a startup throw (it is deliberately NOT on the availability path, unlike SEARXNG_SECRET above).
+    .WithEnvironment("ContextScrape__ApiKey", builder.Configuration["ContextScrape:ApiKey"] ?? "")
     .WaitFor(cosmos)
     .WaitFor(blobs)
     .WaitFor(searxng);

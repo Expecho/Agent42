@@ -5,14 +5,16 @@ using System.Text;
 namespace Agent42.Tests;
 
 /// <summary>
-/// A minimal real HTTP server on a loopback TCP socket, for the tests that must open an actual
-/// connection.
+/// A minimal real HTTP server on a loopback TCP socket, for the tests that need to inspect the exact
+/// bytes a client actually sent.
 ///
-/// Why not the in-memory <c>TestServer</c> / a stub <c>HttpMessageHandler</c>: the thing under test is
-/// <c>SocketsHttpHandler.ConnectCallback</c>, which only runs when a socket is really dialled. A stub
-/// handler short-circuits the transport, so a test built on one would pass whether or not the SSRF
-/// guard existed at all. Raw <see cref="TcpListener"/> rather than <c>HttpListener</c> because the
-/// latter needs a URL ACL (elevation) for non-<c>localhost</c> prefixes on Windows.
+/// Why not a stub <c>HttpMessageHandler</c>: its consumers assert on the <b>outbound request line</b> —
+/// that the geocoder formats coordinates invariantly and never logs its key (<c>GoogleGeocoderTests</c>),
+/// and that the scrape client sends the right query parameters and dials followed links
+/// (<c>ContextWebPageFetcherTests</c>, ADR 0027). A stub can hand back canned responses, but only a real
+/// request head shows what was truly put on the wire. Raw <see cref="TcpListener"/> rather than
+/// <c>HttpListener</c> because the latter needs a URL ACL (elevation) for non-<c>localhost</c> prefixes
+/// on Windows.
 /// </summary>
 public sealed class TestHttpServer : IAsyncDisposable
 {

@@ -53,7 +53,7 @@ ClientCredentials (Phase 2), InteractiveOAuth (Phase 3, its own MR).
   by construction). Phase 2's dynamic MSAL tokens will need the handler + a plain `HttpClient`.
 - **SSRF-guard the MCP endpoint** — rejected: the endpoint comes from the authenticated user's own
   persisted config, never a model or a live request, so — exactly like a user provider endpoint
-  (ADR 0018) — it carries no `PrivateAddressGuard` and may be `localhost` (a self-hosted MCP server is a
+  (ADR 0018) — it carries no SSRF address-guard and may be `localhost` (a self-hosted MCP server is a
   valid target). It is never accepted from a tool argument or request body.
 - **Never-evict version cache** (the ADR 0018 exemplar's shape) — rejected: an `McpClient` is a live
   socket, so an unbounded cache leaks one connection per config change. The provider retains the most

@@ -897,6 +897,48 @@ public sealed class AgentGrainTests : IAsyncLifetime
     // DoesNotContain would pass vacuously and prove nothing.
     private const string RefusalAnchor = "came back from a web_search in this conversation";
 
+    // AC12 — a fetch that fails (the scrape API unreachable, ADR 0027) must come back to the model as a
+    // message, not throw the whole turn. The user pastes a URL the fake fetcher is rigged to fail on; the
+    // grain catches the failure and hands the model a plain "I couldn't read it" — and still answers.
+    [Fact]
+    public async Task FetchWebPage_ApiFailure_ReturnsMessageToModel()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-failure-conversation");
+
+        var events = await Chat(
+            agent, $"fetch the broken page https://example.com/{InMemoryWebPageFetcher.FailureTriggerUrlMarker}");
+
+        var call = events.Single(e => e.Type == AgentStreamEventType.ToolCallStart);
+        Assert.Equal("fetch_web_page", call.ToolName);
+
+        var result = events.Single(e => e.Type == AgentStreamEventType.ToolCallEnd).ToolResult;
+        Assert.NotNull(result);
+        // The failure reached the model as the tool's message, not as a thrown turn. Anchored on an
+        // apostrophe-free phrase (the surfaced exception text): "I couldn't read" JSON-escapes its
+        // apostrophe to ' on the way to the model, so that substring would never match.
+        Assert.Contains("Injected offline failure fetching", result!);
+        // The turn still completed with an answer — the failure did not brick it.
+        Assert.NotEmpty(Answer(events));
+    }
+
+    // AC13 — followed content is attacker-authored and allowlist-exempt (ADR 0027), so the payload handed
+    // to the model must label it as untrusted data. A fetch WITH a follow filter makes the fake return
+    // canned followed pages; the grain must wrap them under an explicit untrusted note.
+    [Fact]
+    public async Task FetchWebPage_LabelsFollowedContentAsUntrusted()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-follow-conversation");
+
+        var events = await Chat(agent, "fetch and follow https://example.com/listing");
+
+        var result = events.Single(e => e.Type == AgentStreamEventType.ToolCallEnd).ToolResult;
+        Assert.NotNull(result);
+        // The followed pages really came back...
+        Assert.Contains("Canned offline followed content", result!);
+        // ...under an untrusted label.
+        Assert.Contains("UNTRUSTED", result);
+    }
+
     // The other half of the decision (ADR 0011): a host the USER wrote is fetchable with no prior
     // search, so "read this link I pasted" still works.
     [Fact]
@@ -912,14 +954,18 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Contains("Canned offline page content", result!);
     }
 
-    // AC14 — the sharpest edge in this feature (ADR 0004): a tool result is persisted into the session,
-    // which is re-serialized into ONE 2 MB Cosmos item every turn.
+    // AC11 — the sharpest edge in this feature (ADR 0004): a tool result is persisted into the session,
+    // which is re-serialized into ONE 2 MB Cosmos item every turn. Following (ADR 0027) makes this
+    // sharper — one fetch now returns the root PLUS up to MaxFollowedLinks pages — so the budget that
+    // binds is MaxTotalPageTextLength, not MaxPageTextLength alone.
     //
     // The fetcher here is deliberately NOT the in-memory one: its canned page is ~50 characters, three
-    // orders of magnitude under the ceiling, so the assertion would hold even if the 8 KB cap were
-    // deleted — it would prove nothing. CapSizedWebPageFetcher returns the largest page the real
-    // fetcher is allowed to return, so this ceiling actually binds against WebToolLimits: raise the cap
-    // to 1 MB, or drop the truncation in WebPageFetcher, and this test goes red.
+    // orders of magnitude under the ceiling, so the assertion would hold even if the caps were
+    // deleted — it would prove nothing. CapSizedWebPageFetcher returns the largest result the real
+    // fetcher is allowed to return — root at the per-page cap plus MaxFollowedLinks followed pages sized
+    // to the total cap — so this ceiling actually binds against WebToolLimits: raise MaxPageTextLength,
+    // MaxTotalPageTextLength or MaxFollowedLinks, or drop the truncation in ContextWebPageFetcher, and
+    // this test goes red.
     [Fact]
     public async Task ToolResults_DoNotBlowTheSessionSizeBudget()
     {
