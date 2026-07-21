@@ -1217,3 +1217,34 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `EnqueuePrompt_SendsPush`, `ChatAsync_DoesNotSendPush`, `EnqueuePrompt_NoModel_DoesNotSendPush`),
   `.agentic/decisions/0028-web-push-when-agent-replies-while-away.md`
 - **Verified:** 2026-07-21
+
+### Config-health: the PROBE path is the leak channel, not the static one — and don't inject `IHttpClientFactory`
+
+- **Claim:** `GET /api/config-health` (ADR 0029) must never surface a secret, and the danger is the **live
+  probe** path, not the static presence check. The static builder (`ConfigHealth.BuildStatic`) only ever
+  emits fixed literal messages, so it is safe by construction. The trap is a probe: the Google geocoding
+  key **rides in the request query string** (`GoogleGeocoder`, `&key=…`), so a probe that put `ex.Message`/
+  `ex.ToString()` or the target URL into a `ConfigCheck.Message` would leak the key. Rule: `ProbeAsync`
+  wraps every probe in a `catch` that **discards the exception** and emits a curated constant
+  (`"unreachable"`), and each probe classifies a non-2xx by **status/marker**, never by echoing the
+  response body. Anyone adding a probe returns a curated `ProbeResult`, never text derived from `ex`/a
+  body/a URL. Three more traps in the same feature: **(1)** the endpoint injects **`IServiceProvider`,
+  deliberately NOT `IHttpClientFactory`** — the factory is unregistered in DevHost (no `AddServiceDefaults`),
+  and a minimal-API param the host can't resolve is treated as a body, breaking routing for the **whole**
+  host (the same trap the DevHost `PushConfig` registration guards); probe deps resolve optionally via
+  `sp.GetService<T>()` inside `ProbeAsync`, so the feature adds **no** new mandatory both-hosts
+  registration. **(2)** the geocoding probe is built **only when its key is present** — `CreateClient(
+  "google-geocoding")` with no key returns a client that **inherits** `AddServiceDefaults`' retry pipeline
+  (the conditional-registration named-client trap); embeddings have no named client (they use
+  `IEmbeddingGenerator`). **(3)** a SearXNG **403 is a HEALTHY sidecar** (JSON API off), not an auth
+  failure. A test-only `ConfigHealthProbeSet` (which `ProbeAsync` prefers over its `FromServices` factory)
+  is the seam that proves a static call runs **zero** probes.
+- **Evidence:** `src/Agent42.Backend/ConfigHealth.cs` (`ProbeAsync`'s catch; `ConfigHealthProbeSet.
+  FromServices` — geocoding-only-when-keyed, `ProbeSearxngAsync` 403→ok, no body in any message),
+  `src/Agent42.Backend/AgentApi.cs` (the `GET /api/config-health` endpoint — `IServiceProvider`, not
+  `IHttpClientFactory`), `tests/Agent42.Tests/ConfigHealthTests.cs` (`FailingProbe_NeverLeaksSecret`,
+  `Report_NeverContainsSecretValues`), `tests/Agent42.Tests/ConfigHealthProbeTests.cs`
+  (`GeocodingProbe_ClassifiesBody`, `SearxngProbe_ClassifiesStatus`, `GeocodingProbe_NullWhenKeyAbsent`),
+  `tests/Agent42.Tests/ConfigHealthApiTests.cs` (`Static_RunsNoProbes`),
+  `.agentic/decisions/0029-config-health-tab.md`
+- **Verified:** 2026-07-21

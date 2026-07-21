@@ -351,4 +351,24 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   **Headline consequence:** the notification transits a third-party push service (FCM/Mozilla/WNS), but the
   payload is **RFC 8291 end-to-end encrypted** — a materially smaller egress than ADR 0013's, though the
   title is the user-chosen agent name. Android/Chromium only; iOS-in-browser is feature-detected out.
+- Configuration health tab (ADR 0029): a read-only **Preferences → Configuration** tab, backed by
+  `GET /api/config-health`, that reports which config inputs are present/malformed/(opt-in) unreachable — so a
+  silently degraded feature (geocoding off, context.dev 401, Web Push off) is visible instead of mysterious.
+  **The load-bearing invariant: the report never contains a secret value** — only a status
+  (`ok`/`warning`/`error`/`skipped`/`na`) + a **curated** message per check, the same `Mask`/`hasKey`/
+  `PushConfig.Enabled` discipline. `ConfigHealth.BuildStatic` is a **pure function** of `IConfiguration` +
+  `IHostEnvironment` + `PushConfig` (no HTTP, no DI); live probes are a separate **opt-in** `ProbeAsync` path
+  (a "Run live checks" button — a geocoding/context.dev probe is **billable**), so a static call runs **zero**
+  probes. Behind Easy Auth like every `/api/*` read (never `excludedPaths`); all allowlisted users may view
+  (no role system). Four things to read before touching this: **the PROBE path is the real leak channel, not
+  the static one** — the geocoding key rides in the request query string (`GoogleGeocoder`), so `ProbeAsync`'s
+  catch **discards the exception** and every probe returns a curated constant, never `ex`/a body/a target URL;
+  the endpoint injects **`IServiceProvider`, deliberately NOT `IHttpClientFactory`** (unregistered in DevHost —
+  a minimal-API param it can't resolve breaks routing for the whole host) and resolves probe deps optionally,
+  adding **no new mandatory both-hosts registration**; the **geocoding probe is built only when its key is
+  present** (else `CreateClient` returns a retry-pipeline-inheriting client — the named-client trap) while
+  embeddings use `IEmbeddingGenerator` (no named client) and SearXNG/context.dev are unconditional; and a
+  **SearXNG 403 is a HEALTHY sidecar** (JSON API off), not an auth failure. The tab is **appended LAST** in the
+  Preferences tablist — the MCP-OAuth return deep-links to `profileTabs.select(3)`, so Configuration is index 4
+  and MCP stays 3.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

@@ -1,0 +1,144 @@
+using System.Net;
+using Agent42.Backend;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Agent42.Tests;
+
+/// <summary>
+/// The real live-probe classification logic built by <see cref="ConfigHealthProbeSet.FromServices"/> —
+/// exercised over a CANNED <see cref="HttpMessageHandler"/> and a fake embedder (not a live network, per
+/// the plan). Pins the load-bearing rule that a SearXNG <b>403 is a healthy sidecar</b> (the JSON API is
+/// off), and that auth-vs-reachability is curated correctly per endpoint. No probe message ever carries the
+/// response body — the geocoding key rides in the request, so a leak here would be the real hole.
+/// </summary>
+public sealed class ConfigHealthProbeTests
+{
+    private static IConfiguration Config(string? googleKey = null) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection([new KeyValuePair<string, string?>("Geocoding:GoogleApiKey", googleKey)])
+            .Build();
+
+    private static IServiceProvider Services(HttpMessageHandler handler, bool withEmbedder = true)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IHttpClientFactory>(new SingleClientFactory(handler));
+        if (withEmbedder)
+        {
+            services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(new FakeEmbedder());
+        }
+
+        return services.BuildServiceProvider();
+    }
+
+    // The whole point of the SearXNG probe: a 403 is a REACHABLE sidecar (json not in `search.formats`),
+    // not an auth failure — mislabelling it would send an operator hunting for a missing key that does not
+    // exist (the gotcha this rule encodes).
+    [Theory]
+    [InlineData(HttpStatusCode.OK, ConfigHealth.Ok)]
+    [InlineData(HttpStatusCode.Forbidden, ConfigHealth.Ok)]
+    [InlineData(HttpStatusCode.InternalServerError, ConfigHealth.Error)]
+    public async Task SearxngProbe_ClassifiesStatus(HttpStatusCode status, string expected)
+    {
+        var probes = ConfigHealthProbeSet.FromServices(Services(new CannedHandler(status)), Config());
+
+        var result = await probes.SearXng!(default);
+
+        Assert.Equal(expected, result.Status);
+    }
+
+    // Geocoding is built only when the key is present (else CreateClient would inherit the resilience
+    // pipeline — the trap the plan calls out). REQUEST_DENIED is an auth failure; a clean 200 is reachable.
+    [Fact]
+    public void GeocodingProbe_NullWhenKeyAbsent()
+    {
+        var probes = ConfigHealthProbeSet.FromServices(Services(new CannedHandler(HttpStatusCode.OK)), Config(googleKey: null));
+
+        Assert.Null(probes.Geocoding);
+    }
+
+    [Theory]
+    [InlineData("{ \"status\": \"OK\", \"results\": [] }", ConfigHealth.Ok)]
+    [InlineData("{ \"status\": \"REQUEST_DENIED\" }", ConfigHealth.Error)]
+    public async Task GeocodingProbe_ClassifiesBody(string body, string expected)
+    {
+        var probes = ConfigHealthProbeSet.FromServices(
+            Services(new CannedHandler(HttpStatusCode.OK, body)), Config(googleKey: "SECRET-google-key"));
+
+        var result = await probes.Geocoding!(default);
+
+        Assert.Equal(expected, result.Status);
+        // Curated only — the body (which can echo the key-bearing request) never reaches the message.
+        Assert.DoesNotContain("REQUEST_DENIED", result.Message);
+        Assert.DoesNotContain("SECRET-google-key", result.Message);
+    }
+
+    [Fact]
+    public async Task GeocodingProbe_NonSuccess_IsUnreachable()
+    {
+        var probes = ConfigHealthProbeSet.FromServices(
+            Services(new CannedHandler(HttpStatusCode.BadGateway)), Config(googleKey: "k"));
+
+        Assert.Equal(ConfigHealth.Error, (await probes.Geocoding!(default)).Status);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK, ConfigHealth.Ok)]
+    [InlineData(HttpStatusCode.Unauthorized, ConfigHealth.Error)]
+    [InlineData(HttpStatusCode.Forbidden, ConfigHealth.Error)]
+    public async Task ContextProbe_ClassifiesStatus(HttpStatusCode status, string expected)
+    {
+        var probes = ConfigHealthProbeSet.FromServices(Services(new CannedHandler(status)), Config());
+
+        Assert.Equal(expected, (await probes.ContextScrape!(default)).Status);
+    }
+
+    [Fact]
+    public async Task EmbeddingsProbe_Reachable_WhenGeneratorSucceeds()
+    {
+        var probes = ConfigHealthProbeSet.FromServices(Services(new CannedHandler(HttpStatusCode.OK)), Config());
+
+        Assert.Equal(ConfigHealth.Ok, (await probes.Embeddings!(default)).Status);
+    }
+
+    // With neither an IHttpClientFactory nor an embedder registered, every probe is null → the check stays
+    // skipped (the "unresolved client" path).
+    [Fact]
+    public void FromServices_AllNull_WhenNothingRegistered()
+    {
+        var probes = ConfigHealthProbeSet.FromServices(new ServiceCollection().BuildServiceProvider(), Config());
+
+        Assert.Null(probes.SearXng);
+        Assert.Null(probes.Embeddings);
+        Assert.Null(probes.Geocoding);
+        Assert.Null(probes.ContextScrape);
+    }
+
+    private sealed class CannedHandler(HttpStatusCode status, string body = "") : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
+    }
+
+    // Ignores the client name (the probe methods each ask for their own named client); every client routes
+    // through the one canned handler with a base address so relative probe URIs resolve.
+    private sealed class SingleClientFactory(HttpMessageHandler handler) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) =>
+            new(handler, disposeHandler: false) { BaseAddress = new Uri("http://localhost/") };
+    }
+
+    private sealed class FakeEmbedder : IEmbeddingGenerator<string, Embedding<float>>
+    {
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values, EmbeddingGenerationOptions? options = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new GeneratedEmbeddings<Embedding<float>>([new Embedding<float>(new float[] { 0f })]));
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose() { }
+    }
+}

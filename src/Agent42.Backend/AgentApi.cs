@@ -511,6 +511,31 @@ public static class AgentApi
         app.MapGet("/api/push/config", (PushConfig config) =>
             Results.Json(new PushConfigResponse(config.Enabled, config.PublicKey)));
 
+        // ————— configuration health (Preferences → Configuration) —————
+
+        // A read-only diagnostic of which config inputs are present/malformed/(opt-in) unreachable — so a
+        // silently degraded feature (geocoding off, push off, context.dev failing) is visible. Behind Easy
+        // Auth like every /api/* read; all allowlisted users may view (presence booleans are low-sensitivity,
+        // no role system). NEVER leaks a secret — ConfigHealth exposes a status + curated message only.
+        //
+        // Static by default; ?probe=true also runs the opt-in LIVE probes (a geocoding/context.dev probe
+        // costs a billable call, so the static call must run ZERO probes). Injects IServiceProvider (probe
+        // deps are resolved OPTIONALLY inside ProbeAsync) plus the both-hosts-registered IConfiguration /
+        // IHostEnvironment / PushConfig — deliberately NOT IHttpClientFactory as a parameter: it is not
+        // registered in DevHost, and a minimal-API param it can't resolve breaks routing for the whole host.
+        app.MapGet("/api/config-health", async (
+            bool? probe, IConfiguration configuration, IHostEnvironment environment, PushConfig push,
+            IServiceProvider services, CancellationToken cancellationToken) =>
+        {
+            var report = ConfigHealth.BuildStatic(configuration, environment, push);
+            if (probe == true)
+            {
+                report = await ConfigHealth.ProbeAsync(report, services, configuration, cancellationToken);
+            }
+
+            return Results.Json(report);
+        });
+
         // Registers (upserts by endpoint) the caller's push subscription for THIS device. The subscription
         // is a device push capability, stored in cleartext in the per-user grain (ADR 0028).
         app.MapPost("/api/push/subscriptions", async (PushSubscriptionRequest request, IGrainFactory grains, HttpContext http) =>
@@ -976,3 +1001,14 @@ public record PushConfigResponse(bool Enabled, string PublicKey);
 // Client payload to register a Web Push subscription (ADR 0028): the fields of a browser PushSubscription
 // the sender needs to deliver an RFC 8291-encrypted push. Endpoint is the dedup/prune key.
 public record PushSubscriptionRequest(string Endpoint, string P256dh, string Auth);
+
+// The GET /api/config-health payload (Preferences → Configuration): a diagnostic of which config inputs
+// are present/malformed/(opt-in) unreachable. Environment names the host environment (prod-only checks
+// render n-a in Development). NEVER carries a secret value — only a status + curated message per check
+// (built by ConfigHealth; the never-leak invariant lives there).
+public record ConfigHealthReport(string Environment, IReadOnlyList<ConfigCheck> Checks);
+
+// One configuration input's health. Status is ok|warning|error|skipped|na; Message is a CURATED string
+// (never an exception or a target URL — the probe path carries the key-bearing geocoding URL). Billable
+// flags a check whose live probe costs a metered call/credit, so the UI can label the button.
+public record ConfigCheck(string Group, string Key, string Status, string Message, bool Billable);
