@@ -107,9 +107,23 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   string): the sidecar won't start without it, and since ACA gates revision health on *every*
   container in the replica, a crash-looping sidecar takes the **backend** down too. Three things to
   read before touching this: a tool's *return value* is persisted into the 2 MB session;
-  `fetch_web_page` is an SSRF sink **and** a prompt-injection exfiltration channel (its allowlist pins
-  whole URLs, not hosts — a host allowlist is bypassable); and a named `HttpClient` silently inherits
+  `fetch_web_page`'s allowlist is a prompt-injection exfiltration control (it pins whole URLs, not
+  hosts — a host allowlist is bypassable); and a named `HttpClient` silently inherits
   `AddServiceDefaults`' retry pipeline. All three are in gotchas.
+- Hosted page scrape (ADR 0027, **supersedes ADR 0011's SSRF-guard mechanism only**): `fetch_web_page`
+  no longer dials the model's URL from our container — it calls the hosted **context.dev** scrape API,
+  which returns clean markdown, and can **follow depth-1 links** whose text matches a model-supplied
+  `followLinkFilter` (up to `WebToolLimits.MaxFollowedLinks`). Because the outbound request is context.dev's,
+  the old `PrivateAddressGuard`/`WebPageFetcher`/`AngleSharp` **SSRF sink is gone** (deleted); the whole-URL
+  **allowlist stays** (it is an exfiltration, not SSRF, control) and applies to the **root** URL only.
+  **The headline consequences:** (1) every fetched URL and its content now transit a third party outside
+  the Entra tenant (ADR 0013's egress shape); (2) followed links are **allowlist-exempt** — an accepted
+  residual risk the ADR records honestly (opt-in, hard-capped, credit-billed, labelled untrusted, logged —
+  none of which closes the channel). A **`CONTEXT_API_KEY` GitHub Actions secret is a manual prerequisite**,
+  but deliberately **not on the availability path** (like `GOOGLE_MAPS_API_KEY`, not `SEARXNG_SECRET`): with
+  no key the app starts and `fetch_web_page` fails per call. Read the two new gotchas (the sink is gone;
+  following is an accepted residual risk) and note the return budget is now `MaxTotalPageTextLength` across
+  root + followed, not `MaxPageTextLength` alone.
 - User location (ADR 0012): a `get_current_location` tool returning the user's coordinates and a
   reverse-geocoded street address. `navigator.geolocation` is a *browser* API and tools run server-side,
   and the chat path is a one-way NDJSON stream — so a tool cannot ask the browser for a fix mid-turn. The
@@ -119,7 +133,7 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   Actions secret is a manual prerequisite** — a Google Cloud key with the **Geocoding API** enabled and
   restricted to it — but unlike `SEARXNG_SECRET` it is deliberately **not on the availability path**: with
   no key the app starts normally and the tool reports coordinates without an address. Three things to read
-  before touching this: the tool is **not** an SSRF sink and must not grow a `PrivateAddressGuard` (two
+  before touching this: the tool is **not** an SSRF sink and must not grow an SSRF address-guard (two
   narrow properties keep that true, and a test pins them); the browser's authorization gate is
   **two-legged** because WebKit/iOS has no geolocation Permissions API; and this feature puts the user's
   **street address** into a conversation that the ADR 0011 exfiltration channel can still drain — the

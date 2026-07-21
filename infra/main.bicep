@@ -41,6 +41,10 @@ param searxngSecret string
 param googleMapsApiKey string = ''
 
 @secure()
+@description('API key for the hosted context.dev page-scrape API behind fetch_web_page (ADR 0027 — the CONTEXT_API_KEY GitHub Actions secret). A manual prerequisite, but deliberately OPTIONAL like googleMapsApiKey (no @minLength, empty default): an absent key must NOT fail the deployment. It is not on the availability path — the app starts fine without it and fetch_web_page simply fails per call, telling the model the page could not be read (unlike searxngSecret, whose absence crash-loops the sidecar and takes the backend down).')
+param contextApiKey string = ''
+
+@secure()
 @description('Admin username for the Azure Container Registry (used for image pull).')
 param acrAdminUsername string
 
@@ -185,6 +189,7 @@ module containerApp 'modules/container-app.bicep' = {
     searxngMemory: searxngMemory
     searxngSecret: searxngSecret
     googleMapsApiKey: googleMapsApiKey
+    contextApiKey: contextApiKey
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint

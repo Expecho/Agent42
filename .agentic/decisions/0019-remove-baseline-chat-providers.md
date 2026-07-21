@@ -50,7 +50,7 @@ The **embedding** endpoint/key (`AzureOpenAI:Endpoint`/`ApiKey`/`EmbeddingDeploy
   the baseline ⊕ overlay merge, the version-stamped per-user cache, the best-effort "a user
   override that resolves invalid falls back to baseline" rule (now vacuous for chat, since the
   baseline is empty), the no-inheritance rule, DP-encrypted secrets, and the re-scoped SSRF
-  invariant (a user endpoint is still not `PrivateAddressGuard`ed).
+  invariant (a user endpoint is still not SSRF-address-guarded).
 - **0017's "blank baseline Foundry key is fatal" narrows to embeddings.** There is no baseline
   Foundry **chat** provider to guard, so that rule is retired for chat. The **embedding** client
   reads `AzureOpenAI:ApiKey` directly and is the availability path, so the `Program.cs` fatal

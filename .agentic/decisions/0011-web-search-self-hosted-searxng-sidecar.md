@@ -89,6 +89,13 @@ returns **≤ 8 KB** of extracted text (with a truncation marker), and a search 
 number on purpose. The same values stream to the browser as a tool chip, so the caps protect the DOM too.
 
 ### `fetch_web_page` is an SSRF sink, and the guard must run at connect time
+> **Amended by ADR 0027 (2026-07-21) — this section's *mechanism* is superseded.** `fetch_web_page` no
+> longer dials the model's URL from inside our container; the hosted context.dev scrape API does. The
+> SSRF sink is therefore gone on this path, and `PrivateAddressGuard` / `WebPageFetcher.CreateHandler`
+> are removed. The rest of this ADR — `web_search`, `WebToolLimits`, the timeout/no-retry discipline,
+> and the whole-URL **allowlist** two sections below — is unchanged and still authoritative. The
+> paragraph below is retained for the historical rationale.
+
 The URL is chosen by the **model**, and the container app's managed identity holds Cosmos, Storage and
 Azure OpenAI rights that Azure's IMDS endpoint (`169.254.169.254`) will mint tokens for to anything able
 to issue an HTTP request from inside the container.

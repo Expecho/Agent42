@@ -28,7 +28,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/IAttachmentStore.cs`, `src/Agent42.Agents/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/BlobAttachmentStore.cs` | 2026-07-08 |
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
-| Guarded outbound HTTP (SSRF, connect-time)      | `src/Agent42.Backend/WebPageFetcher.cs`, `src/Agent42.Backend/PrivateAddressGuard.cs` | 2026-07-12 |
+| Keyed third-party HTTP client behind an Agents interface | `src/Agent42.Backend/ContextWebPageFetcher.cs`, `src/Agent42.Backend/GoogleGeocoder.cs` | 2026-07-21 |
 
 ## Constraints
 
@@ -112,14 +112,19 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   forever, is re-sent to the model on every later turn, and eventually makes `WriteStateAsync` fail
   *after* the model has already answered — bricking the conversation, silently, **in prod only** (the
   in-memory test store has no 2 MB limit). **Therefore every web tool budgets what it RETURNS**, in
-  `WebToolLimits`: a fetched page ≤ 8 KB of text, a search ≤ 5 results × ≤ 300-char snippets. Do not
-  conflate this with `WebPageFetcher.MaxDownloadBytes` (~1 MB) — that is a *transport* guard and is a
-  different number on purpose. Any new tool must count its return payload against this budget.
+  `WebToolLimits`: a search ≤ 5 results × ≤ 300-char snippets, and a fetched page ≤ 8 KB of text
+  (`MaxPageTextLength`). The **return** budget is separate from what a fetch pulls off the wire — the
+  distinction is load-bearing, but the anchor moved: the old `WebPageFetcher.MaxDownloadBytes` transport
+  cap is gone with the direct fetch (ADR 0027). Now context.dev renders the page and returns bounded
+  markdown, which we then truncate on the way back. **And following (ADR 0027) moved the return ceiling:**
+  one fetch can return the root *plus* up to `MaxFollowedLinks` pages, so the budget that binds is
+  `MaxTotalPageTextLength` (across root + followed), not `MaxPageTextLength` alone. Any new tool — or any
+  new page added to a fetch result — must count its return payload against this budget.
 - **Evidence:** `src/Agent42.Agents/WebToolLimits.cs`, `src/Agent42.Agents/AgentGrain.cs`
-  (`ExcludeInjectedContextMessages`, `ChatAsync`'s `SerializeSessionAsync`),
+  (`ExcludeInjectedContextMessages`, `ChatAsync`'s `SerializeSessionAsync`, `BuildFetchPayload`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ToolResults_DoNotBlowTheSessionSizeBudget`),
-  `.agentic/decisions/0004-attachments-in-blob.md`
-- **Verified:** 2026-07-12
+  `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0027-hosted-page-scrape-via-context-dev.md`
+- **Verified:** 2026-07-21
 
 ### A continuous agent funnels every chat into one unbounded grain — it will eventually brick
 
@@ -143,22 +148,50 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0003-snapshot-agent-persona-into-conversation.md`
 - **Verified:** 2026-07-15
 
-### A model-chosen fetch URL is an SSRF sink — validate at connect time, not before
+### `fetch_web_page` is NO LONGER an SSRF sink — the scrape is made by context.dev, not by us
 
-- **Claim:** `fetch_web_page` dials a URL the **model** picked, from inside a container whose
-  system-assigned identity holds Cosmos, Storage and Azure OpenAI rights — and Azure's IMDS endpoint
-  (`169.254.169.254`) mints tokens for that identity to anything that can make an HTTP request in
-  there. The non-obvious part is **where** the guard must run: resolving the hostname, checking the
-  answer, then handing the *hostname* to `HttpClient` is **TOCTOU-broken** — the socket resolves a
-  second time and the attacker's second answer is the address you just rejected. The check must run on
-  the address actually being dialled, in **`SocketsHttpHandler.ConnectCallback`**, connecting only to
-  vetted IPs; that also covers **every redirect hop** for free, which a check on the model's URL misses
-  entirely. A stub `HttpMessageHandler` short-circuits the transport, so a test built on one would pass
-  whether or not the guard existed — the fetcher tests dial a **real loopback socket** on purpose.
-- **Evidence:** `src/Agent42.Backend/WebPageFetcher.cs` (`CreateHandler`),
-  `src/Agent42.Backend/PrivateAddressGuard.cs`, `tests/Agent42.Tests/WebPageFetcherTests.cs`
-  (`Fetch_RedirectToPrivateAddress_IsBlocked`), `tests/Agent42.Tests/TestHttpServer.cs`
-- **Verified:** 2026-07-12
+- **Claim:** this used to be an SSRF sink and had a connect-time `PrivateAddressGuard` in
+  `SocketsHttpHandler.ConnectCallback`. **That is gone** (ADR 0027). `fetch_web_page` no longer opens a
+  socket to the model's URL — it hands the URL to the hosted **context.dev** scrape API, which makes the
+  outbound request. Our container never dials the model-chosen address, so there is no in-container SSRF
+  vector and no guard to place. The only call this path makes is to context.dev's **config-pinned** host
+  (`ContextWebPageFetcher.DefaultBaseAddress`), carrying the URL as a query parameter — an ordinary API
+  call. **Do not reintroduce a `PrivateAddressGuard` here** on the theory that a fetch tool needs one:
+  there is nothing to guard, because the request is not ours. (The allowlist below is a *different*
+  control and stays.) The old direct-fetch code, its guard, its `AngleSharp` HTML→text pass, and their
+  socket-dialling tests were all deleted.
+- **Evidence:** `src/Agent42.Backend/ContextWebPageFetcher.cs`, `src/Agent42.Backend/Program.cs`
+  (the fetch client has **no** `ConfigurePrimaryHttpMessageHandler`),
+  `.agentic/decisions/0027-hosted-page-scrape-via-context-dev.md`,
+  `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md` (amendment note)
+- **Verified:** 2026-07-21
+
+### Following links is exempt from the fetch allowlist — an accepted residual risk, opt-in and hard-capped
+
+- **Claim:** `fetch_web_page` can follow depth-1 links whose text matches a model-supplied
+  `followLinkFilter` (ADR 0027). Only the **root** URL is checked against `FetchableUrls`; a followed
+  link is extracted from the page and fetched **without** the allowlist — by construction it would never
+  be on it, so checking it would make following a permanent no-op. This is a **real exfiltration channel,
+  not a non-risk**: the filter is conversation-derived free text, substring-matched against
+  attacker-authored link text on an attacker-authored page, so a page with one link per character turns
+  the filter into a selection channel, repeatable across turns — the same class of hole the whole-URL
+  allowlist closes, reached through a different door. The user accepted it. Its bounds limit the
+  *bandwidth*, they do **not** close the channel: (1) following is **opt-in** — no filter ⇒ no following,
+  and the default is pinned explicitly (this INVERTS the spike's null-means-follow-all rule; do not
+  "fix" it back); (2) `includeLinks` is forced **true** whenever following, or the links never survive
+  into the markdown and the feature is a silent no-op while every stub test still passes; (3)
+  `maxFollowedLinks` is clamped to `WebToolLimits.MaxFollowedLinks` — a **cost** bound too (context.dev
+  bills one credit per followed scrape) as much as a security one; (4) followed content is **labelled
+  untrusted** in the payload handed to the model (`AgentGrain.BuildFetchPayload`); (5) the filter and
+  follow count are **logged** so the channel is auditable. `useMainContentOnly` stays **true** on the
+  root — verified against the live API 2026-07-21 that it does not strip the motivating CTA link.
+- **Evidence:** `src/Agent42.Backend/ContextWebPageFetcher.cs` (`FetchAsync`, `ExtractLinks`),
+  `src/Agent42.Agents/AgentGrain.cs` (`FetchWebPageAsync`, `BuildFetchPayload`),
+  `src/Agent42.Agents/WebToolLimits.cs` (`MaxFollowedLinks`, `MaxTotalPageTextLength`),
+  `tests/Agent42.Tests/ContextWebPageFetcherTests.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`FetchWebPage_LabelsFollowedContentAsUntrusted`),
+  `.agentic/decisions/0027-hosted-page-scrape-via-context-dev.md`
+- **Verified:** 2026-07-21
 
 ### The fetch allowlist must pin whole URLs — a HOST allowlist is bypassable in one tool call
 
@@ -191,16 +224,18 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   so **every** `HttpClient` in the Backend — including one you just registered with `AddHttpClient("name")`
   — inherits 3 retries plus the handler's own per-attempt and total timeouts. Setting `HttpClient.Timeout`
   does **not** opt out: the retry pipeline still wraps the call. `RemoveAllResilienceHandlers()` is what
-  actually does. This bites twice for the web tools (ADR 0011): `AgentGrain` is **non-reentrant**, so a
-  retried call multiplies the stall on a conversation's turn by four; and worse, a `BlockedAddressException`
-  from the SSRF guard surfaces as an `HttpRequestException`, which the standard handler treats as
-  **transient** — so a URL refused on security grounds would be re-dialled three more times. Note the shipped
-  pipeline (resilience + service discovery + the guarded primary handler) is assembled in `Program.cs` and
-  is not what the unit tests construct, so no test will catch this for you.
+  actually does. This bites the web tools (ADR 0011/0027): `AgentGrain` is **non-reentrant**, so a
+  retried call multiplies the stall on a conversation's turn by four — and a context.dev scrape, which
+  renders the page (and, when following, does 1 + N of them, ADR 0027), is already the slowest thing on
+  the turn. (Before ADR 0027 there was a second reason — a `BlockedAddressException` from the direct-fetch
+  SSRF guard surfaced as a transient `HttpRequestException` and got re-dialled — but that guard and its
+  client are gone.) Note the shipped pipeline (resilience + service discovery) is assembled in `Program.cs`
+  and is not what the unit tests construct, so no test will catch this for you.
 - **Evidence:** `src/Agent42.ServiceDefaults/Extensions.cs` (`ConfigureHttpClientDefaults`),
-  `src/Agent42.Backend/Program.cs` (`RemoveAllResilienceHandlers` on all three named clients — the two
-  web tools and the geocoding client, ADR 0012; every new named client needs it)
-- **Verified:** 2026-07-13
+  `src/Agent42.Backend/Program.cs` (`RemoveAllResilienceHandlers` on all three named clients — SearXNG
+  search, the context.dev scrape client (ADR 0027) and the geocoding client (ADR 0012); every new named
+  client needs it)
+- **Verified:** 2026-07-21
 
 ### SearXNG is self-hosted, NOT private — it forwards every query to DuckDuckGo/Bing
 
@@ -282,8 +317,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 ### `get_current_location` is NOT an SSRF sink — and exactly two properties keep it that way
 
 - **Claim:** it makes an outbound HTTP call from the same container whose managed identity IMDS will mint
-  Cosmos/Storage/OpenAI tokens for — the setup that made `fetch_web_page` dangerous — yet it deliberately
-  has **no `PrivateAddressGuard`**, and adding one to "fix the asymmetry" would be cargo cult. The claim
+  Cosmos/Storage/OpenAI tokens for — the setup that once made a model-chosen fetch URL dangerous — yet it
+  deliberately has **no SSRF address-guard**, and adding one to "fix the asymmetry" would be cargo cult
+  (and there is no longer even a `fetch_web_page` guard to be asymmetric with — ADR 0027). The claim
   rests on two properties, and **both are load-bearing**: (1) the host is **fixed** (`maps.googleapis.com`,
   config-pinned, never model-supplied), and (2) the tool takes **zero model-supplied parameters** — the
   only variable input is a lat/lon pair from the *browser*, range-validated server-side, and a `double`
@@ -543,12 +579,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   names a provider that actually built, else the baseline default stands — passing an unbuilt default to
   `MultiProviderChatClientFactory` would throw in `Resolve`.
 - **The user endpoint is deliberately NOT SSRF-guarded — keep it that way.** It must accept
-  `http://localhost:11434` (Ollama) and other private hosts (a supported target), so it carries **no
-  `PrivateAddressGuard`**; validation is only absolute `http`/`https` + a parseable `Kind`. This is safe
-  **only** because the endpoint comes from the authenticated user's **own persisted config**, never from a
-  model or a live request, so it stays off the `fetch_web_page` SSRF path (ADR 0011/0013 re-scoped by 0018).
-  Do not add an address guard here, and do not let any future change accept a provider endpoint from a tool
-  argument or request body — that re-opens the very hole the `fetch_web_page` guard exists to close.
+  `http://localhost:11434` (Ollama) and other private hosts (a supported target), so it carries **no SSRF
+  address-guard**; validation is only absolute `http`/`https` + a parseable `Kind`. This is safe **only**
+  because the endpoint comes from the authenticated user's **own persisted config**, never from a model or
+  a live request — the property that distinguishes config from a model/request-supplied address (the
+  distinction ADR 0011's fetch guard once enforced, before ADR 0027 removed that path). Do not add an
+  address guard here, and do not let any future change accept a provider endpoint from a tool argument or
+  request body — that would make it a genuine SSRF sink.
 - **Evidence:** `src/Agent42.Backend/UserProviderResolver.cs` (`Merge`, `NoInheritance`, `EffectiveDefault`),
   `src/Agent42.Backend/ModelProviderBuilder.cs` (`TryBuildProvider` / `Build`),
   `src/Agent42.Backend/AgentApi.cs` (`ValidateProvider` — no guard),

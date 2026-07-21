@@ -212,6 +212,25 @@ public sealed class FakeChatClient : IChatClient
     private static FunctionCallContent BuildGetCurrentLocationCall() =>
         new("location-call-1", "get_current_location", new Dictionary<string, object?>());
 
+    // Fetches a URL that InMemoryWebPageFetcher is rigged to fail on (ADR 0027 / AC12), so a test can
+    // prove a fetch failure comes back to the model as a message rather than a thrown turn. The URL is a
+    // full one the user pasted, so it is allowlisted; the marker in its path is what makes the fake throw.
+    private static FunctionCallContent BuildFetchFailingCall() =>
+        new("fetch-fail-call-1", "fetch_web_page", new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com/" + InMemoryWebPageFetcher.FailureTriggerUrlMarker,
+        });
+
+    // Fetches a user-pasted URL WITH a follow filter (ADR 0027 / AC13), so the in-memory fetcher returns
+    // canned followed pages and a test can assert the grain labels that followed content as untrusted.
+    private static FunctionCallContent BuildFetchWithFollowCall() =>
+        new("fetch-follow-call-1", "fetch_web_page", new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com/listing",
+            ["followLinkFilter"] = "full report",
+            ["maxFollowedLinks"] = 2,
+        });
+
     // Schedules a reminder whose PROMPT asks where the user is. When it later fires, that prompt comes
     // back in as a user message and this client answers it with a get_current_location call — which is
     // what lets ReceiveReminder_HasNoUserLocation observe the tool on the reminder path. Without it,
@@ -321,6 +340,18 @@ public sealed class FakeChatClient : IChatClient
         if (text.Contains("leak to the attacker", StringComparison.OrdinalIgnoreCase))
         {
             return BuildExfiltrationCall();
+        }
+
+        // A fetch that follows links by filter (ADR 0027) — kept before the plain "read" branch so the
+        // more specific phrase wins.
+        if (text.Contains("fetch and follow", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildFetchWithFollowCall();
+        }
+
+        if (text.Contains("fetch the broken page", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildFetchFailingCall();
         }
 
         if (text.Contains("read the first result", StringComparison.OrdinalIgnoreCase))

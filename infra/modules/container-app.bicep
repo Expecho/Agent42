@@ -85,6 +85,10 @@ param searxngSecret string
 @description('Google Cloud API key with the Geocoding API enabled (ADR 0012). OPTIONAL: when empty, neither the secret nor the env var below is emitted at all, and the app degrades to coordinates-only reverse geocoding rather than failing to deploy. An empty-valued Container App secret is not a thing worth risking for a feature that is not on the availability path.')
 param googleMapsApiKey string = ''
 
+@secure()
+@description('API key for the hosted context.dev page-scrape API behind fetch_web_page (ADR 0027). OPTIONAL, exactly like googleMapsApiKey: when empty, neither the secret nor the env var below is emitted, and fetch_web_page degrades to a per-call failure rather than failing to deploy. Not on the availability path.')
+param contextApiKey string = ''
+
 @description('Minimum replica count. Orleans localhost clustering (used by this single-instance deployment) only supports one instance.')
 param minReplicas int
 
@@ -165,6 +169,14 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
                 name: 'google-maps-api-key'
                 value: googleMapsApiKey
               }
+            ],
+        empty(contextApiKey)
+          ? []
+          : [
+              {
+                name: 'context-api-key'
+                value: contextApiKey
+              }
             ]
       )
     }
@@ -203,7 +215,13 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           // supplied: with no key the backend registers CoordinatesOnlyGeocoder and starts normally.
           empty(googleMapsApiKey)
             ? []
-            : [{ name: 'Geocoding__GoogleApiKey', secretRef: 'google-maps-api-key' }])
+            : [{ name: 'Geocoding__GoogleApiKey', secretRef: 'google-maps-api-key' }],
+          // The context.dev scrape key behind fetch_web_page (ADR 0027). Emitted only when supplied:
+          // with no key the fetcher is still registered and simply fails per call — not on the
+          // availability path, so no empty-valued secret is risked.
+          empty(contextApiKey)
+            ? []
+            : [{ name: 'ContextScrape__ApiKey', secretRef: 'context-api-key' }])
         }
         // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume and no API
         // key. NOT private, though — SearXNG is a *meta*search engine and forwards every query on to

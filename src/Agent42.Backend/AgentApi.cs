@@ -679,8 +679,8 @@ public static class AgentApi
     }
 
     // An MCP endpoint comes from the authenticated user's OWN persisted config, never a model or a live
-    // request — so, exactly like a user provider endpoint (ADR 0018), it carries NO PrivateAddressGuard
-    // and may be localhost (a self-hosted MCP server is a valid target). Validation is only structural:
+    // request — so, exactly like a user provider endpoint (ADR 0018), it is deliberately NOT SSRF
+    // address-guarded and may be localhost (a self-hosted MCP server is a valid target). Validation is only structural:
     // absolute http/https, a parseable auth mode, and the fields that mode needs. None/Header (Phase 1) and
     // ClientCredentials (Phase 2) are supported; InteractiveOAuth is staged (Phase 3) and rejected here for
     // now. Returns an error message, or null when valid.
@@ -762,7 +762,7 @@ public static class AgentApi
     // ADR 0018), so both kinds require an absolute http/https endpoint. localhost/private hosts are
     // ACCEPTED on purpose — an Ollama endpoint is a supported target, and this stays off the SSRF path
     // because the endpoint comes from the authenticated user's own config, not a model or a request
-    // (ADR 0013). Deliberately NO PrivateAddressGuard. Returns an error message, or null when valid.
+    // (ADR 0013). Deliberately no SSRF address-guard. Returns an error message, or null when valid.
     private static string? ValidateProvider(
         string key, string kind, string? endpoint, IReadOnlyList<ProviderModelRequest>? models)
     {
