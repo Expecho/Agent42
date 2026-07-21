@@ -28,4 +28,22 @@ public static class WebToolLimits
 
     /// <summary>Appended to a page's text when it was cut off at <see cref="MaxPageTextLength"/>.</summary>
     public const string TruncationMarker = "\n\n[truncated]";
+
+    /// <summary>
+    /// Server-side hard ceiling on how many links one fetch may follow (ADR 0027). This is a cost bound
+    /// (context.dev bills one credit per followed scrape) as much as a security one (each followed page
+    /// is an attacker-authored page pulled in through the allowlist exemption). A model-supplied
+    /// <c>maxFollowedLinks</c> is clamped to this — selection can only narrow it, never raise it.
+    /// </summary>
+    public const int MaxFollowedLinks = 3;
+
+    /// <summary>
+    /// Total budget, in characters, across a fetch's root text <b>and</b> every followed page's text
+    /// (ADR 0027). Following turns one page into <c>1 + MaxFollowedLinks</c> pages, so
+    /// <see cref="MaxPageTextLength"/> alone is no longer the ceiling on what gets persisted into the
+    /// 2 MB session item (ADR 0004). Deliberately smaller than <c>(1 + MaxFollowedLinks) ×
+    /// MaxPageTextLength</c> so it actually binds: the root keeps its full per-page budget and followed
+    /// pages share whatever remains, truncated to fit.
+    /// </summary>
+    public const int MaxTotalPageTextLength = 24 * 1024;
 }

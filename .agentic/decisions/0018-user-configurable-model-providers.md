@@ -55,7 +55,7 @@ restart.
 - **0013's SSRF invariant is re-scoped, not dropped.** The endpoint may now come from an
   **authenticated user's own persisted config** — but still **never** from a model or a live
   request. That is what keeps it off the `fetch_web_page` SSRF path (ADR 0011). A user-configured
-  endpoint therefore has **no `PrivateAddressGuard`** and deliberately accepts `localhost`/private
+  endpoint therefore has **no SSRF address-guard** and deliberately accepts `localhost`/private
   hosts (`http://localhost:11434` — Ollama is a supported target). Validation is only: absolute
   `http`/`https`, valid `Kind`.
 - **0017's secret-source invariant gains a second, per-user source.** Baseline secrets still come

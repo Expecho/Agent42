@@ -239,17 +239,16 @@ if (string.IsNullOrWhiteSpace(webSearchEndpoint))
 // handler's own generous per-attempt/total timeouts. Both are wrong here, and RemoveAllResilienceHandlers
 // is what actually opts out (setting HttpClient.Timeout alone does not — the pipeline still wraps it):
 //   * AgentGrain is NON-REENTRANT, so a slow search→fetch chain serializes the conversation's turn and
-//     delays the user's first token — and a retry multiplies that stall by four.
-//   * Retrying is actively harmful for the fetch client: a BlockedAddressException from the SSRF guard
-//     surfaces as an HttpRequestException, which the standard handler treats as transient — so a URL we
-//     just refused on security grounds would be re-dialled three more times.
+//     delays the user's first token — and a retry multiplies that stall by four. The scrape client's
+//     timeout is higher than the search client's because a context.dev scrape renders the page (and, when
+//     following, does 1 + N of them) — but it is still bounded, for the same non-reentrancy reason.
 // A web lookup that hasn't answered within these timeouts is not worth the stall; the tools degrade by
 // telling the model the lookup failed.
 // EXTEXP0001: RemoveAllResilienceHandlers is still marked experimental, but it is the only supported way
 // to opt a named client out of the pipeline ConfigureHttpClientDefaults applied to it. Suppressed
-// deliberately and narrowly: the alternative — inheriting retries on the SSRF-guarded fetch client — is
-// a security and latency regression, not a style preference. If this API is ever removed, the fix is to
-// stop applying the standard handler by default in ServiceDefaults, not to accept the retries.
+// deliberately and narrowly: the alternative — inheriting retries that stall a non-reentrant grain — is a
+// latency regression, not a style preference. If this API is ever removed, the fix is to stop applying
+// the standard handler by default in ServiceDefaults, not to accept the retries.
 #pragma warning disable EXTEXP0001
 builder.Services.AddHttpClient(SearxngWebSearch.HttpClientName, http =>
 {
@@ -258,16 +257,18 @@ builder.Services.AddHttpClient(SearxngWebSearch.HttpClientName, http =>
 })
     .RemoveAllResilienceHandlers();
 
-builder.Services.AddHttpClient(WebPageFetcher.HttpClientName, http =>
+// fetch_web_page over the hosted context.dev scrape API (ADR 0027). Unlike the old WebPageFetcher this is
+// NOT an SSRF sink — our container never dials the model's URL, context.dev does — so there is NO
+// ConfigurePrimaryHttpMessageHandler / connect-time guard to install here; the host is fixed and ours.
+// A missing key is NOT eager-validated into a startup throw (unlike SEARXNG_SECRET, which is on the
+// availability path): with no key the client is still registered, calls 401, and the tool tells the model
+// the page could not be read. ConfigureClient carries the blank-key branch — a blank bearer value throws.
+var contextApiKey = builder.Configuration["ContextScrape:ApiKey"];
+builder.Services.AddHttpClient(ContextWebPageFetcher.HttpClientName, http =>
 {
-    http.Timeout = TimeSpan.FromSeconds(15);
+    ContextWebPageFetcher.ConfigureClient(http, contextApiKey);
+    http.Timeout = TimeSpan.FromSeconds(30);
 })
-    // The SSRF guard: fetch_web_page dials a URL the *model* chose, from inside a container whose
-    // managed identity can mint Cosmos/Storage/OpenAI tokens at the IMDS endpoint. The check runs in
-    // ConnectCallback, on the IP actually being dialled — a pre-resolve check would be TOCTOU-broken
-    // and would miss redirects (ADR 0011).
-    .ConfigurePrimaryHttpMessageHandler(
-        () => WebPageFetcher.CreateHandler(PrivateAddressGuard.IsPubliclyRoutable))
     .RemoveAllResilienceHandlers();
 #pragma warning restore EXTEXP0001
 
@@ -275,8 +276,9 @@ builder.Services.AddSingleton<IWebSearch>(sp => new SearxngWebSearch(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient(SearxngWebSearch.HttpClientName),
     sp.GetRequiredService<ILogger<SearxngWebSearch>>()));
 
-builder.Services.AddSingleton<IWebPageFetcher>(sp => new WebPageFetcher(
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient(WebPageFetcher.HttpClientName)));
+builder.Services.AddSingleton<IWebPageFetcher>(sp => new ContextWebPageFetcher(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient(ContextWebPageFetcher.HttpClientName),
+    sp.GetRequiredService<ILogger<ContextWebPageFetcher>>()));
 
 // User location (ADR 0012): reverse-geocoding for the get_current_location tool.
 //

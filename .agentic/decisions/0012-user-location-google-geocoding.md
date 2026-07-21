@@ -92,8 +92,9 @@ user is, and asserts the tool says it does not know — it fails if both clears 
 ### `get_current_location` is NOT an SSRF sink — and the reason is narrow, so it is pinned by a test
 It makes an outbound HTTP call from the same container whose managed identity IMDS will mint Cosmos,
 Storage and Azure OpenAI tokens for. That is precisely the setup that made `fetch_web_page` dangerous
-(ADR 0011). It is nevertheless **not** an SSRF sink, and must **not** grow a `PrivateAddressGuard` — the
-asymmetry with `fetch_web_page` is deliberate.
+(ADR 0011). It is nevertheless **not** an SSRF sink, and must **not** grow an SSRF address-guard — the reason is
+that the host is fixed and the tool takes no model-supplied parameters, not that some other tool is
+guarded (ADR 0027 later removed `fetch_web_page`'s guard entirely, so there is no asymmetry left).
 
 Two properties make the claim true, and **both are load-bearing**:
 
