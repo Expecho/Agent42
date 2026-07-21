@@ -733,7 +733,8 @@ body {
 
 .prose p { margin: 0.7em 0; }
 
-.prose a {
+.prose a,
+.msg__text a {
   color: var(--amber);
   text-decoration-color: var(--amber-deep);
   text-underline-offset: 3px;
