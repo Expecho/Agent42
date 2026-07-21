@@ -215,6 +215,34 @@
   const renderMarkdown = (text) =>
     DOMPurify.sanitize(marked.parse(text), { USE_PROFILES: { html: true } });
 
+  const escapeHtml = (text) =>
+    text.replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // Turns bare http(s) URLs in an otherwise-PLAIN user message into clickable links. The user's own
+  // text is not markdown (that would render their `# foo`/`*bar*` unexpectedly and open an XSS surface),
+  // so we escape the whole string first and then wrap only matched http(s) URLs in an anchor — the only
+  // HTML introduced is our own <a> over a validated http(s) href. Trailing sentence punctuation is left
+  // outside the link so "see https://example.com." doesn't swallow the full stop. rel guards tab-nabbing.
+  const linkifyPlainText = (text) => {
+    const urlPattern = /\bhttps?:\/\/[^\s<]+/g;
+    let html = "";
+    let lastIndex = 0;
+    for (let match; (match = urlPattern.exec(text)) !== null; ) {
+      html += escapeHtml(text.slice(lastIndex, match.index));
+      let url = match[0];
+      const trailing = url.match(/[.,;:!?)\]}'"]+$/);
+      const tail = trailing ? trailing[0] : "";
+      if (tail) url = url.slice(0, -tail.length);
+      const safeUrl = escapeHtml(url);
+      html += `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer nofollow">${safeUrl}</a>`;
+      html += escapeHtml(tail);
+      lastIndex = match.index + match[0].length;
+    }
+    html += escapeHtml(text.slice(lastIndex));
+    return html;
+  };
+
   const timeLabel = (iso) => {
     const d = new Date(iso);
     const today = new Date();
@@ -654,7 +682,8 @@
     if (text) {
       const body = document.createElement("div");
       body.className = "msg__text";
-      body.textContent = text;
+      // Plain text with bare http(s) URLs made clickable — not markdown (see linkifyPlainText).
+      body.innerHTML = linkifyPlainText(text);
       bubble.appendChild(body);
     }
   }
