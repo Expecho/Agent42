@@ -22,13 +22,15 @@ public sealed class ConversationIndexGrain : Grain, IConversationIndexGrain
         _state = state;
     }
 
-    public async Task TouchAsync(string conversationId, string firstPrompt)
+    public async Task TouchAsync(string conversationId, string firstPrompt, string? agentId = null, string? agentName = null)
     {
         var conversations = _state.State.Conversations;
         var existing = conversations.FindIndex(c => c.Id == conversationId);
 
         if (existing >= 0)
         {
+            // Preserve the recorded agent identity — only the first (creating) touch sets it,
+            // and later turns of an agent chat pass null.
             conversations[existing] = conversations[existing] with { UpdatedAt = DateTimeOffset.UtcNow };
         }
         else
@@ -39,7 +41,7 @@ public sealed class ConversationIndexGrain : Grain, IConversationIndexGrain
                 title = title[..MaxTitleLength] + "…";
             }
 
-            conversations.Add(new ConversationInfo(conversationId, title, DateTimeOffset.UtcNow));
+            conversations.Add(new ConversationInfo(conversationId, title, DateTimeOffset.UtcNow, agentId, agentName));
         }
 
         await _state.WriteStateAsync();

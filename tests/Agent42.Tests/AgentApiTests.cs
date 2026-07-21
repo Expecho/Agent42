@@ -258,6 +258,37 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.Equal("zaphod-model", model);
     }
 
+    // The conversation index records the producing agent so the sidebar can group agent chats
+    // under a collapsible header; a plain chat lists with no agent identity.
+    [Fact]
+    public async Task ChatWithAgentId_ListsConversationUnderAgent()
+    {
+        var created = (await (await _client.PostAsJsonAsync("/api/agents",
+            new AgentUpsertRequest("Slartibartfast", "Fjords", "fjord-model", "You design coastlines.")))
+            .Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+
+        using (var chat = await _client.PostAsJsonAsync("/api/chat/api-agent-grouped",
+            new ChatRequest("hi", null, created!.Id)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync();
+        }
+        using (var chat = await _client.PostAsJsonAsync("/api/chat/api-plain-grouped", new ChatRequest("hi", null)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync();
+        }
+
+        var conversations = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
+
+        var agentChat = Assert.Single(conversations, c => c.Id == "api-agent-grouped");
+        Assert.Equal(created.Id, agentChat.AgentId);
+        Assert.Equal("Slartibartfast", agentChat.AgentName);
+
+        var plain = Assert.Single(conversations, c => c.Id == "api-plain-grouped");
+        Assert.Null(plain.AgentId);
+    }
+
     // AC6 (negative): a normal chat reports no agent, as JSON null (honors the text/plain gotcha).
     [Fact]
     public async Task NormalChat_HasNoAgentBinding()
