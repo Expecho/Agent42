@@ -133,6 +133,52 @@ public class UserProviderResolverTests
         Assert.Equal("", resolved.DefaultModelId);
     }
 
+    // AC3 (embeddings): the embedding default resolves only when it names a declared EMBEDDING-capable model.
+    [Fact]
+    public void EmbeddingDefault_ResolvesToEmbeddingCapableModel()
+    {
+        var overlay = new UserProviderConfig(
+            [OllamaWithEmbedding(_protector.Protect("k"))],
+            Default: null, Version: 1, EmbeddingDefault: "ollama:nomic-embed");
+
+        Assert.Equal("ollama:nomic-embed", Resolver().Merge(overlay).EmbeddingDefaultModelId);
+    }
+
+    [Fact]
+    public void EmbeddingDefault_NamingANonEmbeddingModel_ResolvesEmpty()
+    {
+        // "ollama:llama3.1" is declared but NOT embedding-capable — it must not silently become the embedding
+        // model.
+        var overlay = new UserProviderConfig(
+            [OllamaWithEmbedding(_protector.Protect("k"))],
+            Default: null, Version: 1, EmbeddingDefault: "ollama:llama3.1");
+
+        Assert.Equal("", Resolver().Merge(overlay).EmbeddingDefaultModelId);
+    }
+
+    [Fact]
+    public void NoEmbeddingDefault_ResolvesEmpty()
+    {
+        var overlay = OverlayWith(OllamaWithEmbedding(_protector.Protect("k")));
+
+        Assert.Equal("", Resolver().Merge(overlay).EmbeddingDefaultModelId);
+    }
+
+    // An Ollama provider declaring a chat model AND an embedding-capable model.
+    private static StoredProvider OllamaWithEmbedding(string? apiKeyCiphertext) => new(
+        Key: "ollama",
+        Kind: "OpenAICompatible",
+        DisplayName: "Local Ollama",
+        Endpoint: "http://localhost:11434/v1",
+        ApiKeyCiphertext: apiKeyCiphertext,
+        Models:
+        [
+            new StoredModel("llama3.1", "Llama 3.1", SupportsTools: true, SupportsVision: false),
+            new StoredModel("nomic-embed", "Nomic Embed", SupportsTools: false, SupportsVision: false,
+                SupportsImageGeneration: false, SupportsEmbeddings: true),
+        ],
+        UseResponsesApi: false);
+
     private UserProviderResolver Resolver() =>
         new(null!, _protector, Baseline(), BaselineDefault);
 

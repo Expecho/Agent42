@@ -8,6 +8,13 @@ superseded_by: 0008   # partial — only the retrieval mechanism (agentic search
 
 # Document Q&A via Cosmos vector search and an agentic search_documents tool
 
+> **Amended by [ADR 0030](0030-user-configured-embedding-model.md) (2026-07-21) — embedding is no
+> longer an operator prerequisite.** The `text-embedding-3-large` deployment is no longer a fixed,
+> operator-owned model authenticated by `AzureOpenAI:ApiKey`/`EmbeddingDeploymentName`; it is now a
+> per-user model chosen in Preferences and resolved through the per-user chat-client factory. The
+> ingest/chunk/owner-scoped Cosmos vector container (fixed at 3072 dims — ingest now validates-and-rejects
+> a mismatch) is otherwise unchanged.
+
 > **Superseded-by (partial): ADR 0008.** The *retrieval mechanism* below — the agentic
 > `search_documents` tool and its "call the tool" instruction wording — is replaced by an always-on
 > Microsoft Agent Framework `TextSearchProvider` (`BeforeAIInvoke`), gated on `DocumentNames.Count > 0`.

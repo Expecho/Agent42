@@ -2029,6 +2029,31 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Contains(history, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
     }
 
+    // AC7 (embeddings): a document conversation with a chat model but NO embedding model must still answer —
+    // retrieval degrades to empty context, never throws (critic HIGH 2). The switchable provider's with-model
+    // factory has a chat client but no embedding generator (DefaultEmbeddingModelId == ""), so this is the
+    // "embedding default was cleared on a conversation that already has documents" case.
+    [Fact]
+    public async Task DocumentConversation_NoEmbeddingModel_AnswersWithEmptyContext()
+    {
+        await using var cluster = await NewClusterAsync<NoModelSiloConfigurator>(1);
+        var provider = cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress)
+            .GetRequiredService<SwitchableChatClientFactoryProvider>();
+        provider.HasModel = true;
+
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("no-embedding-doc-conversation");
+        // A registered document turns retrieval ON (DocumentNames.Count > 0), so SearchDocumentContextAsync
+        // runs before the model call — with no embedding model it must return empty, not throw the turn.
+        await agent.RegisterDocumentAsync("guide.pdf");
+
+        var events = await CollectAsync(agent.ChatAsync("what does the guide say?", null));
+
+        var answer = Answer(events);
+        Assert.False(string.IsNullOrWhiteSpace(answer));
+        Assert.DoesNotContain("No model provider is configured", answer);
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+    }
+
     // AC7: rebinding onto a regained model preserves existing history. A conversation builds history on a
     // model, loses every provider (reactivates empty, holding the persisted session), then regains one —
     // the snapshot→rebuild→restore rebind must keep the earlier turns.

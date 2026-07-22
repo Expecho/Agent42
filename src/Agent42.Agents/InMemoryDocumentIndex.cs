@@ -17,6 +17,10 @@ public sealed class InMemoryDocumentIndex : IDocumentIndex
 {
     private static readonly ConcurrentDictionary<string, List<EmbeddedChunk>> Store = new();
 
+    // Accepts any dimension: the offline deterministic generator is 128-dim, a real model is 3072, and the
+    // brute-force cosine scan tolerates whatever it is given — so there is no fixed-dimension wall to enforce.
+    public int? ExpectedDimensions => null;
+
     public Task UpsertChunksAsync(
         string ownerKey, IReadOnlyList<EmbeddedChunk> chunks, CancellationToken cancellationToken = default)
     {

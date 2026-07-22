@@ -12,6 +12,11 @@ stored **encrypted** (never echoed back), changes take effect **without a restar
 user picks the **default model** new chats start on. Until at least one provider is added,
 the composer stays gated and the model picker is empty.
 
+> **Embedding models (ADR 0030):** a model can also be marked **embeddings** — document Q&A (RAG)
+> uses whichever embedding model you pick as the **default embedding model** (a second selector on
+> this tab, `PUT /api/default-embedding-model`). It's the same per-user overlay machinery as the chat
+> default; without one, attaching documents is blocked. See [Document Q&A](document-qa.md).
+
 > **Egress note:** picking a third-party model sends that conversation's content (messages,
 > document excerpts, image links, location) to that provider — outside the sign-in tenant.
 > That is why the pick is always explicit and the default stays Foundry.

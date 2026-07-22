@@ -32,7 +32,6 @@ public sealed class ConfigHealthTests
     [
         ("AzureOpenAI:Endpoint", "https://acct.services.ai.azure.com"),
         ("AzureOpenAI:ApiKey", "SECRET-openai-key"),
-        ("AzureOpenAI:EmbeddingDeploymentName", "text-embedding-3-large"),
         ("AzureOpenAI:TenantId", "11111111-1111-1111-1111-111111111111"),
         ("WebSearch:Endpoint", "http://localhost:8888"),
         ("Storage:BlobEndpoint", "https://acct.blob.core.windows.net"),
@@ -49,8 +48,8 @@ public sealed class ConfigHealthTests
     {
         var report = ConfigHealth.BuildStatic(Config(AllSecretsSet), Env(), Push(enabled: true));
 
-        Assert.Equal(ConfigHealth.Ok, Find(report, "AzureOpenAI:Endpoint").Status);
-        Assert.Equal(ConfigHealth.Ok, Find(report, "AzureOpenAI:ApiKey").Status);
+        // Embeddings are no longer operator config (AzureOpenAI:ApiKey/EmbeddingDeploymentName floor removed —
+        // RAG is a per-user model now, ADR 0007/0018), so there is no AzureOpenAI Core check to assert here.
         Assert.Equal(ConfigHealth.Ok, Find(report, "WebSearch:Endpoint").Status);
         Assert.Equal(ConfigHealth.Ok, Find(report, "Geocoding:GoogleApiKey").Status);
         Assert.Equal(ConfigHealth.Ok, Find(report, "ContextScrape:ApiKey").Status);
@@ -71,10 +70,10 @@ public sealed class ConfigHealthTests
     [Fact]
     public void MalformedEndpoint_IsError()
     {
-        var entries = AllSecretsSet.Select(e => e.Key == "AzureOpenAI:Endpoint" ? (e.Key, "not-a-url") : e).ToArray();
+        var entries = AllSecretsSet.Select(e => e.Key == "WebSearch:Endpoint" ? (e.Key, "not-a-url") : e).ToArray();
         var report = ConfigHealth.BuildStatic(Config(entries), Env(), Push(enabled: true));
 
-        Assert.Equal(ConfigHealth.Error, Find(report, "AzureOpenAI:Endpoint").Status);
+        Assert.Equal(ConfigHealth.Error, Find(report, "WebSearch:Endpoint").Status);
     }
 
     // AC5: push status mirrors PushConfig.Enabled — never recomputed from raw keys.
@@ -126,7 +125,6 @@ public sealed class ConfigHealthTests
         var report = ConfigHealth.BuildStatic(Config(AllSecretsSet), Env(), Push(enabled: true));
         var probes = new ConfigHealthProbeSet(
             SearXng: null,
-            Embeddings: null,
             Geocoding: _ => throw new InvalidOperationException(
                 "GET https://maps.googleapis.com/maps/api/geocode/json?latlng=0,0&key=SECRET-google-key failed"),
             ContextScrape: null);
@@ -148,7 +146,6 @@ public sealed class ConfigHealthTests
         var report = ConfigHealth.BuildStatic(Config(AllSecretsSet), Env(), Push(enabled: true));
         var probes = new ConfigHealthProbeSet(
             SearXng: _ => Task.FromResult(new ProbeResult(ConfigHealth.Ok, "reachable")),
-            Embeddings: null,
             Geocoding: _ => Task.FromResult(new ProbeResult(ConfigHealth.Error, "auth failed")),
             ContextScrape: null);
         var services = new ServiceCollection().AddSingleton(probes).BuildServiceProvider();
@@ -165,13 +162,12 @@ public sealed class ConfigHealthTests
     public async Task UnresolvedProbeClient_IsSkipped()
     {
         var report = ConfigHealth.BuildStatic(Config(AllSecretsSet), Env(), Push(enabled: true));
-        var probes = new ConfigHealthProbeSet(null, null, null, null);
+        var probes = new ConfigHealthProbeSet(null, null, null);
         var services = new ServiceCollection().AddSingleton(probes).BuildServiceProvider();
 
         var probed = await ConfigHealth.ProbeAsync(report, services, Config(AllSecretsSet));
 
         Assert.Equal(ConfigHealth.Skipped, Find(probed, "probe:searxng").Status);
-        Assert.Equal(ConfigHealth.Skipped, Find(probed, "probe:embeddings").Status);
         Assert.Equal(ConfigHealth.Skipped, Find(probed, "probe:geocoding").Status);
         Assert.Equal(ConfigHealth.Skipped, Find(probed, "probe:context.dev").Status);
     }

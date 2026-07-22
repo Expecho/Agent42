@@ -80,18 +80,10 @@ param storageAccountName string = 'stagent42${uniqueString(resourceGroup().id)}'
 @description('Name of the private blob container that holds conversation image attachments.')
 param attachmentsContainerName string = 'attachments'
 
-@description('Endpoint of the existing Azure AI Foundry / Azure OpenAI resource.')
+@description('Endpoint of the existing Azure AI Foundry / Azure OpenAI resource. Kept only as the DORMANT Foundry-provider inheritance source (ProviderSettings.ResolveFoundry): baseline Models:Providers is empty (ADR 0019), so nothing reads it today; a user\'s Foundry provider declares its own. Non-secret; harmless if unused.')
 param azureOpenAIEndpoint string = 'https://agent42.services.ai.azure.com'
 
-@secure()
-@minLength(32)
-@description('Azure OpenAI resource API key (ADR 0017, narrowed by ADR 0019 — the AZURE_OPENAI_API_KEY GitHub Actions secret). A manual prerequisite. Since ADR 0019 the app ships no baseline Foundry chat provider (chat is fully per-user, ADR 0018), so this key authenticates the EMBEDDING client only — the one remaining fixed model. @minLength is load-bearing exactly like searxngSecret: an absent GitHub secret expands to an EMPTY string, and because embeddings are the availability path (the backend throws at startup without this key), failing here at deployment validation beats a crash-looping revision in production. Not optional like googleMapsApiKey — the embedding client is where document RAG serves from.')
-param azureOpenAIApiKey string
-
-@description('Embedding model deployment name used for document RAG (ADR 0007). Must exist in the AI Foundry account (a manual prerequisite the user creates); it is authenticated by the same azureOpenAIApiKey (ADR 0017/0019), no RBAC grant.')
-param azureOpenAIEmbeddingDeploymentName string = 'text-embedding-3-large'
-
-@description('Entra ID tenant id used for DefaultAzureCredential when calling Azure OpenAI.')
+@description('Entra ID tenant id bound to DefaultAzureCredential for blob storage (user-delegation SAS) and ARM. Still required.')
 param azureOpenAITenantId string = '2250fce3-5bc9-4ae7-a5e9-58c510a422ec'
 
 @description('OTLP endpoint for OpenTelemetry export. Leave empty to disable OTLP export.')
@@ -198,8 +190,6 @@ module containerApp 'modules/container-app.bicep' = {
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint
-    azureOpenAIApiKey: azureOpenAIApiKey
-    azureOpenAIEmbeddingDeploymentName: azureOpenAIEmbeddingDeploymentName
     cosmosDocChunksContainerName: cosmosDocChunksContainerName
     azureOpenAITenantId: azureOpenAITenantId
     otlpEndpoint: otlpEndpoint

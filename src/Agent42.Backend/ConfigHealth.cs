@@ -44,7 +44,6 @@ public static class ConfigHealth
 
     // Keys of the checks a live probe overrides. Stable so ProbeAsync can find them by key.
     private const string ProbeSearxng = "probe:searxng";
-    private const string ProbeEmbeddings = "probe:embeddings";
     private const string ProbeGeocoding = "probe:geocoding";
     private const string ProbeContext = "probe:context.dev";
 
@@ -59,14 +58,12 @@ public static class ConfigHealth
         var checks = new List<ConfigCheck>();
 
         // ————— Core (fatal — eager-validated at startup, so present on any booted app) —————
-        checks.Add(UriCheck(GroupCore, "AzureOpenAI:Endpoint", config["AzureOpenAI:Endpoint"], requireHttps: true));
-        checks.Add(PresenceCheck(GroupCore, "AzureOpenAI:ApiKey", config["AzureOpenAI:ApiKey"],
-            present: "configured", missing: "missing (embeddings would fail at startup)"));
-        checks.Add(PresenceCheck(GroupCore, "AzureOpenAI:EmbeddingDeploymentName",
-            config["AzureOpenAI:EmbeddingDeploymentName"], present: "configured", missing: "missing"));
+        // Embeddings are no longer operator config (the AzureOpenAI:ApiKey/EmbeddingDeploymentName floor was
+        // removed — embeddings are now a per-user model, ADR 0007/0018). There is nothing operator-level to
+        // health-check for RAG, and BuildStatic is pure (no grain I/O, ADR 0029) so it cannot see a user's
+        // per-user embedding pick anyway — that visibility lives in the Model providers tab's embedding
+        // selector, not here.
         checks.Add(UriCheck(GroupCore, "WebSearch:Endpoint", config["WebSearch:Endpoint"], requireHttps: false));
-        // Probed only on demand — an embed is a metered Azure OpenAI call, so it is billable.
-        checks.Add(NotProbed(GroupCore, ProbeEmbeddings, "Embeddings reachability", billable: true));
 
         // ————— Web search sidecar (things the backend genuinely cannot presence-check) —————
         checks.Add(new ConfigCheck(GroupWebSearch, "SEARXNG_SECRET", Skipped,
@@ -167,11 +164,6 @@ public static class ConfigHealth
             await RunAsync(ProbeSearxng, probes.SearXng, searxng);
         }
 
-        if (byKey.TryGetValue(ProbeEmbeddings, out var embeddings))
-        {
-            await RunAsync(ProbeEmbeddings, probes.Embeddings, embeddings);
-        }
-
         if (byKey.TryGetValue(ProbeGeocoding, out var geocoding))
         {
             await RunAsync(ProbeGeocoding, probes.Geocoding, geocoding);
@@ -240,7 +232,6 @@ public sealed record ProbeResult(string Status, string Message);
 /// </summary>
 public sealed record ConfigHealthProbeSet(
     Func<CancellationToken, Task<ProbeResult>>? SearXng,
-    Func<CancellationToken, Task<ProbeResult>>? Embeddings,
     Func<CancellationToken, Task<ProbeResult>>? Geocoding,
     Func<CancellationToken, Task<ProbeResult>>? ContextScrape)
 {
@@ -254,12 +245,10 @@ public sealed record ConfigHealthProbeSet(
     public static ConfigHealthProbeSet FromServices(IServiceProvider services, IConfiguration config)
     {
         var httpFactory = services.GetService<IHttpClientFactory>();
-        var embeddings = services.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
         var googleKey = config["Geocoding:GoogleApiKey"];
 
         return new ConfigHealthProbeSet(
             SearXng: httpFactory is null ? null : ct => ProbeSearxngAsync(httpFactory, ct),
-            Embeddings: embeddings is null ? null : ct => ProbeEmbeddingsAsync(embeddings, ct),
             // Only when the key is present — otherwise CreateClient returns a pipeline-inheriting client.
             Geocoding: httpFactory is null || string.IsNullOrWhiteSpace(googleKey)
                 ? null
@@ -279,13 +268,6 @@ public sealed record ConfigHealthProbeSet(
         }
 
         return new ProbeResult(ConfigHealth.Error, "unreachable");
-    }
-
-    private static async Task<ProbeResult> ProbeEmbeddingsAsync(
-        IEmbeddingGenerator<string, Embedding<float>> generator, CancellationToken ct)
-    {
-        await generator.GenerateAsync("ping", cancellationToken: ct);
-        return new ProbeResult(ConfigHealth.Ok, "reachable");
     }
 
     // The key rides in the query string; on any failure we return a curated message only (ProbeAsync's catch

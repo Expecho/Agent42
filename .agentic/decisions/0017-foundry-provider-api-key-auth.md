@@ -8,6 +8,13 @@ supersedes: 0013, 0014 (credential mechanism only)
 
 # Authenticate the Foundry provider with an Azure OpenAI API key, not managed identity
 
+> **Amended by [ADR 0030](0030-user-configured-embedding-model.md) (2026-07-21) — the key no longer
+> authenticates embeddings, and is no longer fatal.** ADR 0030 makes the embedding model per-user, so
+> `AzureOpenAI:ApiKey` no longer authenticates any embedding client and is no longer an availability path:
+> the app boots with it blank. It survives only as the **dormant** Foundry-provider inheritance source
+> (`ProviderSettings.ResolveFoundry`), read by nothing while baseline `Models:Providers` is empty. The
+> `AZURE_OPENAI_API_KEY` GitHub secret is removed.
+
 > **Amended by [ADR 0018](0018-user-configurable-model-providers.md) (2026-07-16) — secret-source
 > scope only.** Baseline secrets still come from **operator-managed env** (one source of truth for
 > the baseline Foundry key + embeddings), and a blank **baseline** Foundry key is still fatal at

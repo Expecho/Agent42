@@ -14,7 +14,12 @@ public sealed record StoredModel(
     [property: Id(3)] bool SupportsVision,
     // Trailing [Id(4)] with a default so an existing overlay (persisted before ADR 0020) deserializes it
     // false with no migration — an image-generation model (ADR 0020), false = a chat model.
-    [property: Id(4)] bool SupportsImageGeneration = false);
+    [property: Id(4)] bool SupportsImageGeneration = false,
+    // Trailing [Id(5)] with a default so an existing overlay deserializes it false with no migration —
+    // true only for a declared embedding model (the user picks it as the "default embedding model" in
+    // Preferences; document RAG resolves the generator from it). An embedding model is a distinct model
+    // KIND sharing the provider's endpoint + key, reached via GetEmbeddingClient not the chat client.
+    [property: Id(5)] bool SupportsEmbeddings = false);
 
 /// <summary>
 /// One provider in a user's overlay (ADR 0018). Mirrors the Backend's <c>ProviderOptions</c>, but:
@@ -49,11 +54,15 @@ public sealed record StoredProvider(
 public sealed record UserProviderConfig(
     [property: Id(0)] IReadOnlyList<StoredProvider> Providers,
     [property: Id(1)] string? Default,
-    [property: Id(2)] int Version)
+    [property: Id(2)] int Version,
+    // Trailing [Id(3)] with a default so an existing overlay deserializes it null with no migration —
+    // the user's chosen "default embedding model" id (qualified provider:model), null = none configured.
+    // Independent of Default (the chat default): embeddings and chat are separate model kinds.
+    [property: Id(3)] string? EmbeddingDefault = null)
 {
     /// <summary>
     /// A factory (fresh instance per access), never a cached singleton — a shared static default is
     /// mutated by Orleans' copier and leaks across grains (the same discipline as <c>UserProfile.Empty</c>).
     /// </summary>
-    public static UserProviderConfig Empty => new([], null, 0);
+    public static UserProviderConfig Empty => new([], null, 0, null);
 }

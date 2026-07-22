@@ -13,6 +13,14 @@ namespace Agent42.Agents;
 /// </summary>
 public interface IDocumentIndex
 {
+    /// <summary>
+    /// The exact vector dimension this store accepts, or <c>null</c> when it accepts any (the in-memory
+    /// index). The prod Cosmos container's vector policy is fixed (3072 for <c>text-embedding-3-large</c>,
+    /// ADR 0007), so ingest rejects a user-chosen embedding model whose vectors don't match, with a clear
+    /// message instead of an opaque Cosmos error.
+    /// </summary>
+    int? ExpectedDimensions { get; }
+
     /// <summary>Upserts a batch of embedded chunks under <paramref name="ownerKey"/>.</summary>
     Task UpsertChunksAsync(
         string ownerKey, IReadOnlyList<EmbeddedChunk> chunks, CancellationToken cancellationToken = default);

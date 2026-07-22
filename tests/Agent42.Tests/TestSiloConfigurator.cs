@@ -64,7 +64,11 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
                     sp.GetRequiredService<IChatClient>(),
                     DefaultModel,
                     capabilities: Capabilities,
-                    imageGenerator: sp.GetRequiredService<IImageGenerationService>()));
+                    imageGenerator: sp.GetRequiredService<IImageGenerationService>(),
+                    // The deterministic embedding generator + a stub id, so the grain's document retrieval
+                    // (which resolves its generator from this factory) round-trips offline (ADR 0007/0018).
+                    embeddingGenerator: sp.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>(),
+                    defaultEmbeddingModelId: "offline-embed"));
             // The grain resolves its factory through the per-user seam (ADR 0018); offline/tests have no
             // overlay store, so the single fake factory stands in for every user.
             services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
