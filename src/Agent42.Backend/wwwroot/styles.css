@@ -1612,6 +1612,43 @@ body {
   cursor: pointer;
 }
 
+/* Capabilities dropdown: a <details> whose summary is a small button and whose body floats over the row. */
+.provider-model-row__caps { position: relative; flex: none; }
+
+.provider-model-row__caps-summary {
+  list-style: none;
+  cursor: pointer;
+  white-space: nowrap;
+  font: 400 10.5px var(--mono);
+  color: var(--ink-dim);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 6px 9px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.provider-model-row__caps-summary::-webkit-details-marker { display: none; }
+.provider-model-row__caps-summary::after { content: " \25be"; color: var(--ink-faint); }
+.provider-model-row__caps[open] > .provider-model-row__caps-summary { color: var(--amber); border-color: var(--amber-deep); }
+.provider-model-row__caps[open] > .provider-model-row__caps-summary::after { content: " \25b4"; }
+
+.provider-model-row__caps-body {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px var(--shadow);
+}
+
 .provider-model-row__remove {
   flex: none;
   width: 24px;
