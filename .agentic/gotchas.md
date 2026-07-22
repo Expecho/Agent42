@@ -420,9 +420,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   riding `agent-state` on the `"usage-rollups"` state (the `UserPushGrain` pattern — no new container), which
   re-serializes into one ≤2 MB Cosmos item per write (ADR 0004). It **prunes on every write** (hourly ~48 h,
   daily ~92 d); `range=all` therefore means "the retained daily window", not all-time. Retention constants
-  live only in `UsageRetention` — a longer window or a new bucket dimension (a real per-agent `application`)
-  pushes state toward the cap; shard by day into per-date grains before that bites.
-- **Evidence:** `src/Agent42.Agents/UsageSpanProjector.cs` (the operation-name whitelist),
+  live only in `UsageRetention` — a longer window multiplies state toward the cap. The `application`
+  dimension is **per-agent** (the grain publishes the agent name into `RequestContext`
+  (`PublishUsageApplication`); `UserTelemetrySpanProcessor` stamps it as the `agent42.application` span tag
+  at OnStart — the ADR 0010 mechanism; the projector reads it, non-agent chats fall back to `"Agent42"`), so
+  many agents multiply the bucket rows — shard by day into per-date grains before that bites. **Do not add
+  the dimension by overriding `gen_ai.operation.name`** — that is set by the libraries per the OTel semconv
+  and is also exported (ADR 0009); a new dimension is always a NEW tag, never a rewrite of a semconv one.
+- **Evidence:** `src/Agent42.Agents/UsageSpanProjector.cs` (the operation-name whitelist; `ApplicationTag`),
+  `src/Agent42.Agents/AgentGrain.cs` (`PublishUsageApplication`),
+  `src/Agent42.Backend/UserTelemetrySpanProcessor.cs` (stamps `agent42.application`),
   `src/Agent42.Agents/UsageRollupState.cs` (`UsageRetention`, `Prune`), `src/Agent42.Agents/UsageRollupGrain.cs`,
   `src/Agent42.Backend/UsageSpanProcessor.cs` (`OnEnd`, best-effort enqueue),
   `tests/Agent42.Tests/UsageSpanProjectorTests.cs` (`AggregateSpan_IsNotCounted`),

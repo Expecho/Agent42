@@ -50,9 +50,15 @@ counter in `AgentGrain` — and stored in Cosmos **without a new container**.
 - **Cached-input and reasoning are wire-contract fields kept for reference parity but always 0** (the OTel
   pipeline emits neither). The UI shows the reference's tile/column layout with an honest note, rather than
   dropping them or tapping the grain's `UsageContent` (which would reverse the OTEL-only decision).
-- **The "application" dimension is the constant `"Agent42"`** — Agent42 is one service and no agent-name
-  attribute rides the span. Per-agent attribution is a future OTEL-native enhancement (stamp an agent tag on
-  the span), not a second tracking path.
+- **The "application" dimension is the agent name (per-agent), falling back to the constant `"Agent42"`.**
+  No agent-name attribute rides the span natively, so the grain publishes the bound agent's name into
+  Orleans `RequestContext` for the turn (`PublishUsageApplication`, in `ChatCoreAsync` + `ReceiveReminder`),
+  `UserTelemetrySpanProcessor` stamps it onto the in-grain spans as `agent42.application` at `OnStart` (the
+  same ADR 0010 identity mechanism — spike-confirmed that a value set inside the grain is visible at the
+  span's `OnStart` in the same async flow), and the projector reads the tag. A regular (non-agent) chat
+  leaves it unset and groups under `"Agent42"`. This is a span **tag**, not an override of
+  `gen_ai.operation.name` (overriding the semconv would corrupt the exported trace) — the correct lever for
+  a new dimension.
 
 ## Alternatives considered
 - **A manual token counter in `AgentGrain`** (record `UsageContent` totals to a grain/Meter). Rejected by

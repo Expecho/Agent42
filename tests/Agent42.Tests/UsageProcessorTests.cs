@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Threading.Channels;
 using Agent42.Agents;
 using Agent42.Backend;
+using Orleans.Runtime;
 
 namespace Agent42.Tests;
 
@@ -47,5 +48,34 @@ public sealed class UsageProcessorTests
         processor.OnEnd(new Activity("GET /api/whatever"));
 
         Assert.False(channel.Reader.TryRead(out _));
+    }
+
+    // End-to-end per-agent application (ADR 0031): the grain publishes the agent name into RequestContext;
+    // UserTelemetrySpanProcessor stamps it onto the span at OnStart; the usage processor projects it into
+    // the event's Application. Proves the whole RequestContext → stamp → project chain.
+    [Fact]
+    public void RequestContextApplication_FlowsThroughToEvent()
+    {
+        RequestContext.Set(UsageSpanProjector.ApplicationContextKey, "WeatherAgent");
+        try
+        {
+            var channel = Channel.CreateUnbounded<UsageEvent>();
+            var usage = new UsageSpanProcessor(channel.Writer, App);
+
+            var activity = new Activity("chat");
+            new UserTelemetrySpanProcessor().OnStart(activity); // stamps agent42.application from RequestContext
+            activity.SetTag("gen_ai.operation.name", "chat");
+            activity.SetTag("gen_ai.usage.input_tokens", 10);
+            activity.SetTag("gen_ai.usage.output_tokens", 2);
+
+            usage.OnEnd(activity);
+
+            Assert.True(channel.Reader.TryRead(out var e));
+            Assert.Equal("WeatherAgent", e!.Application);
+        }
+        finally
+        {
+            RequestContext.Clear();
+        }
     }
 }

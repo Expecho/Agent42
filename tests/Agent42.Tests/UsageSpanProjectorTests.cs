@@ -139,4 +139,27 @@ public sealed class UsageSpanProjectorTests
             Tags(("gen_ai.operation.name", "chat"), ("user.id", "oid-1")), When, false, App);
         Assert.Equal("oid-1", byId!.UserKey);
     }
+
+    // Per-agent application: a stamped agent42.application tag overrides the caller's default constant
+    // (for both token and tool events); its absence falls back to the default.
+    [Fact]
+    public void ApplicationTag_OverridesDefault_ElseFallsBack()
+    {
+        var withAgent = UsageSpanProjector.Project(
+            Tags(("gen_ai.operation.name", "chat"), ("agent42.application", "WeatherAgent"),
+                ("gen_ai.usage.input_tokens", 1), ("gen_ai.usage.output_tokens", 1)),
+            When, false, App);
+        Assert.Equal("WeatherAgent", withAgent!.Application);
+
+        var toolWithAgent = UsageSpanProjector.Project(
+            Tags(("gen_ai.operation.name", "execute_tool"), ("agent42.application", "WeatherAgent"),
+                ("gen_ai.tool.name", "web_search")),
+            When, false, App);
+        Assert.Equal("WeatherAgent", toolWithAgent!.Application);
+
+        var noAgent = UsageSpanProjector.Project(
+            Tags(("gen_ai.operation.name", "chat"), ("gen_ai.usage.input_tokens", 1), ("gen_ai.usage.output_tokens", 1)),
+            When, false, App);
+        Assert.Equal(App, noAgent!.Application);
+    }
 }

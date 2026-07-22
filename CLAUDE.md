@@ -395,6 +395,8 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   touching this: the projector must whitelist `chat`/`execute_tool` and drop `orchestrate_tools` (its usage is
   the SUM of child chats — double-count); cached/reasoning tokens are always 0 (OTel emits neither — the
   dashboard measures chat spend, **not** embedding spend); async paths land in an **unreported** user bucket;
-  and the global grain **prunes on every write** (hourly ~48 h / daily ~92 d) to hold the 2 MB item cap
+  the **`application` dimension is per-agent** (the grain publishes the agent name into `RequestContext`, the
+  identity span processor stamps it as the `agent42.application` tag — never override `gen_ai.operation.name`;
+  non-agent chats fall back to `"Agent42"`); and the global grain **prunes on every write** (hourly ~48 h / daily ~92 d) to hold the 2 MB item cap
   (ADR 0004), so `range=all` = the retained window. Empty offline (DevHost has no OTel pipeline).
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

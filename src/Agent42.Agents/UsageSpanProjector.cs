@@ -32,6 +32,14 @@ public static class UsageSpanProjector
     public const string ChatOperation = "chat";
     public const string ExecuteToolOperation = "execute_tool";
 
+    // The per-agent "application" dimension (ADR 0031). The grain publishes the agent name into Orleans
+    // RequestContext under <see cref="ApplicationContextKey"/> for the turn; the span processor stamps it
+    // onto the in-grain spans as <see cref="ApplicationTag"/> (the ADR 0010 identity mechanism); this
+    // projector reads the tag, falling back to the caller's default (the service constant) when a turn is
+    // not bound to an agent.
+    public const string ApplicationContextKey = "agent42.usage.application";
+    public const string ApplicationTag = "agent42.application";
+
     /// <summary>
     /// Projects a span's tags into a <see cref="UsageEvent"/>, or <c>null</c> when the span is
     /// neither a chat completion nor a tool execution (dropped, including
@@ -48,12 +56,19 @@ public static class UsageSpanProjector
             Str(tags, UserTelemetryContext.UserNameTag),
             Str(tags, UserTelemetryContext.UserIdTag));
 
+        // Per-agent application if the grain stamped one this turn, else the caller's default constant.
+        var app = FirstNonEmpty(Str(tags, ApplicationTag));
+        if (app.Length == 0)
+        {
+            app = application;
+        }
+
         switch (operation)
         {
             case ChatOperation:
                 var model = FirstNonEmpty(Str(tags, ResponseModelTag), Str(tags, RequestModelTag));
                 return new UsageEvent(
-                    UsageEventKind.Token, timestamp, application,
+                    UsageEventKind.Token, timestamp, app,
                     Provider: Str(tags, ProviderNameTag) ?? "",
                     Model: model,
                     UserKey: user,
@@ -66,7 +81,7 @@ public static class UsageSpanProjector
 
             case ExecuteToolOperation:
                 return new UsageEvent(
-                    UsageEventKind.Tool, timestamp, application,
+                    UsageEventKind.Tool, timestamp, app,
                     Provider: "", Model: "", UserKey: user,
                     ToolName: Str(tags, ToolNameTag) ?? "",
                     InputTokens: 0, OutputTokens: 0, CachedInputTokens: 0, ReasoningOutputTokens: 0,
