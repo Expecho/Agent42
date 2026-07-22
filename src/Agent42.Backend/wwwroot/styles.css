@@ -1997,6 +1997,15 @@ kbd {
   color: var(--ink);
 }
 
+/* Wide tables (up to 10 columns) scroll INSIDE the panel on narrow screens, so the page body
+   never scrolls sideways. Negative margin + padding lets the scroll region reach the panel edges. */
+.panel__scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -22px;
+  padding: 0 22px;
+}
+
 .grid {
   width: 100%;
   border-collapse: collapse;
@@ -2012,12 +2021,14 @@ kbd {
   color: var(--ink-faint);
   padding: 0 12px 10px 0;
   border-bottom: 1px solid var(--line);
+  white-space: nowrap;
 }
 
 .grid td {
   padding: 11px 12px 11px 0;
   border-bottom: 1px solid var(--line-soft);
   color: var(--ink-dim);
+  white-space: nowrap;
 }
 
 .grid tbody tr:last-child td { border-bottom: 0; }
@@ -2058,6 +2069,28 @@ kbd {
 }
 
 @media (max-width: 760px) {
-  .usage__head { padding: 16px; }
-  .usage__body { padding: 16px; }
+  /* Stack the header: title row, then full-width filter controls, then the close button. */
+  .usage__head {
+    padding: 16px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .usage__title { font-size: 20px; }
+  .usage__controls { gap: 12px; }
+  .usage__controls .field { flex: 1 1 130px; }
+  .usage__controls .select { min-width: 0; width: 100%; }
+  .usage__close { align-self: flex-start; }
+
+  .usage__body { padding: 16px; gap: 16px; }
+  .usage__note { margin-top: 0; }
+
+  /* Two tiles per row even on a ~320px screen. */
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; }
+  .tile { padding: 14px 14px 12px; }
+  .tile__value { font-size: 22px; }
+
+  .panel { padding: 16px 14px 4px; }
+  .panel__scroll { margin: 0 -14px; padding: 0 14px; }
+  .grid__bar { width: 96px; }
 }

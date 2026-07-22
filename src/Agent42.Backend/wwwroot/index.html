@@ -655,6 +655,7 @@
 
       <section class="panel" aria-labelledby="usageModelsHeading">
         <h2 class="panel__title" id="usageModelsHeading">Tokens by model</h2>
+        <div class="panel__scroll">
         <table class="grid">
           <thead>
             <tr>
@@ -672,6 +673,7 @@
           </thead>
           <tbody id="usageModelsBody"></tbody>
         </table>
+        </div>
         <p class="empty" id="usageModelsEmpty" hidden>No token usage in this window.</p>
       </section>
 
@@ -679,6 +681,7 @@
         <!-- Tool calls project from execute_tool spans, which carry no model attribute — there is
              deliberately no model dimension here. -->
         <h2 class="panel__title" id="usageToolsHeading">Tool calls by name</h2>
+        <div class="panel__scroll">
         <table class="grid">
           <thead>
             <tr>
@@ -691,12 +694,14 @@
           </thead>
           <tbody id="usageToolsBody"></tbody>
         </table>
+        </div>
         <p class="empty" id="usageToolsEmpty" hidden>No tool calls in this window.</p>
       </section>
 
       <section class="panel" aria-labelledby="usageUsersHeading">
         <!-- Cross-user by design (ADR 0031): any signed-in user sees every user's aggregates here. -->
         <h2 class="panel__title" id="usageUsersHeading">Usage by user</h2>
+        <div class="panel__scroll">
         <table class="grid">
           <thead>
             <tr>
@@ -713,6 +718,7 @@
           </thead>
           <tbody id="usageUsersBody"></tbody>
         </table>
+        </div>
         <p class="empty" id="usageUsersEmpty" hidden>No usage in this window.</p>
       </section>
     </div>
