@@ -24,6 +24,15 @@ public sealed class UserTelemetrySpanProcessor : BaseProcessor<Activity>
 {
     public override void OnStart(Activity activity)
     {
+        // Usage-dashboard "application" dimension (ADR 0031): the grain publishes the agent name into
+        // RequestContext for the turn; stamp it onto the in-grain chat/tool spans so the usage projector
+        // can read it. Same ambient-RequestContext-at-OnStart mechanism as the user.* identity below —
+        // a regular (non-agent) chat leaves it unset, and the projector falls back to the service constant.
+        if (RequestContext.Get(UsageSpanProjector.ApplicationContextKey) is string application)
+        {
+            activity.SetTag(UsageSpanProjector.ApplicationTag, application);
+        }
+
         if (RequestContext.Get(UserTelemetryContext.RequestContextKey) is not UserTelemetryContext identity)
         {
             return;

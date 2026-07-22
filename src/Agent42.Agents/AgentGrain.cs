@@ -633,9 +633,24 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
     }
 
+    // Publish this turn's usage-dashboard "application" dimension (ADR 0031). An agent chat groups under
+    // the agent's name; a regular chat leaves it unset so the ingestion span processor falls back to the
+    // service constant. Rides Orleans RequestContext like the user.* identity (ADR 0010) — the processor
+    // stamps it onto the in-grain chat/tool spans at OnStart. RequestContext is per-call, so this is
+    // naturally turn-scoped (no clear-on-exit hazard like _turnLocation).
+    private void PublishUsageApplication()
+    {
+        if (_state.State.AgentName is { Length: > 0 } name)
+        {
+            RequestContext.Set(UsageSpanProjector.ApplicationContextKey, name);
+        }
+    }
+
     private async IAsyncEnumerable<AgentStreamEvent> ChatCoreAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments)
     {
+        PublishUsageApplication();
+
         _logger.LogInformation(
             "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s), location: {HasLocation})",
             this.GetPrimaryKeyString(), message.Length, attachments?.Count ?? 0, _turnLocation is not null);
@@ -1571,6 +1586,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// </summary>
     public async Task ReceiveReminder(string reminderName, TickStatus status)
     {
+        PublishUsageApplication();
+
         // A scheduled prompt never knows where the user is. This is NOT a no-op: _turnLocation lives
         // for the activation, so without it a reminder firing after a located chat turn would still see
         // that turn's fix and have the model announce the user's position hours later, somewhere else.
