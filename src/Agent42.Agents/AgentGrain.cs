@@ -39,7 +39,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private readonly IUserMcpToolProvider _mcpToolProvider;
     private readonly IAttachmentStore _attachments;
     private readonly IDocumentIndex _documentIndex;
-    private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddings;
     private readonly IWebSearch _webSearch;
     private readonly IWebPageFetcher _webPageFetcher;
     private readonly IGeocoder _geocoder;
@@ -102,7 +101,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         IUserMcpToolProvider mcpToolProvider,
         IAttachmentStore attachments,
         IDocumentIndex documentIndex,
-        IEmbeddingGenerator<string, Embedding<float>> embeddings,
         IWebSearch webSearch,
         IWebPageFetcher webPageFetcher,
         IGeocoder geocoder,
@@ -114,7 +112,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _mcpToolProvider = mcpToolProvider;
         _attachments = attachments;
         _documentIndex = documentIndex;
-        _embeddings = embeddings;
         _webSearch = webSearch;
         _webPageFetcher = webPageFetcher;
         _geocoder = geocoder;
@@ -1141,7 +1138,17 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             return [];
         }
 
-        var generated = await _embeddings.GenerateAsync([query], cancellationToken: cancellationToken);
+        // Degrade to EMPTY context when no embedding model is configured — never throw (critic HIGH 2). This
+        // callback runs before every model call in a document conversation, so a throw here would brick the
+        // whole turn (not just an upload) if the embedding model was later cleared/changed. The no-model chat
+        // discipline (ADR 0019) extended to embeddings: the turn still answers, just without RAG excerpts.
+        if (string.IsNullOrEmpty(_chatClientFactory.DefaultEmbeddingModelId))
+        {
+            return [];
+        }
+
+        var generated = await _chatClientFactory.GetEmbeddingGenerator()
+            .GenerateAsync([query], cancellationToken: cancellationToken);
         var results = await _documentIndex.SearchAsync(
             this.GetPrimaryKeyString(), generated[0].Vector, topK: 5, cancellationToken);
 

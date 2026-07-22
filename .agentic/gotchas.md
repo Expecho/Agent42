@@ -544,8 +544,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 > Foundry provider re-added to `appsettings`, but no shipped provider exercises it. Two concrete claims
 > below are now dead: the `Models:Default` derivation is **gone** (Default stays `""`; there is no operator
 > default), and `AzureOpenAI:DeploymentName`/`SubscriptionId`/`ResourceGroup`/`AccountName` (+ their Bicep
-> params/env vars) were **removed**. Only `AzureOpenAI:Endpoint`/`ApiKey`/`EmbeddingDeploymentName`/`TenantId`
-> remain, and the key now authenticates **embeddings** only. See the "Chat is fully per-user" gotcha.
+> params/env vars) were **removed**. Only `AzureOpenAI:Endpoint`/`ApiKey`/`TenantId` remain (ADR 0030 removed
+> `EmbeddingDeploymentName` too), and the key now authenticates **nothing** operator-side — `Endpoint`/`ApiKey`
+> are the **dormant** Foundry-inheritance source and `TenantId` binds `DefaultAzureCredential`. See the "Chat is
+> fully per-user" and "Embeddings are a per-user model" gotchas.
 
 - **Claim:** the `foundry` provider in `appsettings.json` deliberately declares **none** of `Endpoint`,
   `ApiKey` (ADR 0017), `SubscriptionId`, `ResourceGroup`, `AccountName`, and that emptiness is load-bearing
@@ -677,10 +679,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Claim:** ADR 0019 removed the baseline chat availability floor. `Models:Providers` in `appsettings.json`
   is `{}`, so the app boots with **zero** chat providers; chat is **only** the per-user overlay (ADR 0018).
   A user with none configured sees an **empty picker** and a **gated composer** (the frontend disables send
-  + the input and shows a hint when `/api/models` is empty). The **only** fixed model left is the
-  **embedding** endpoint/key (`AzureOpenAI:Endpoint`/`ApiKey`/`EmbeddingDeploymentName`) for document RAG —
-  it is the sole remaining availability path, still **fatal-if-blank** at startup and Bicep-`@minLength(32)`
-  guarded. The chat-only `AzureOpenAI:*` keys (`DeploymentName`/`SubscriptionId`/`ResourceGroup`/`AccountName`)
+  + the input and shows a hint when `/api/models` is empty). **As of ADR 0030 there is NO fixed model left at
+  all:** embeddings are a per-user model too (chosen in Preferences, resolved via `GetEmbeddingGenerator`), so
+  the old "embedding endpoint/key is the sole remaining availability path, fatal-if-blank + `@minLength(32)`"
+  claim is **dead** — the `AzureOpenAI:ApiKey`/`EmbeddingDeploymentName` fatal checks, the `@minLength` Bicep
+  param, and the `AZURE_OPENAI_API_KEY` secret were all removed; the app boots with no Azure OpenAI config.
+  See the "Embeddings are a per-user model" gotcha. The chat-only `AzureOpenAI:*` keys (`DeploymentName`/`SubscriptionId`/`ResourceGroup`/`AccountName`)
   and their Bicep params/env vars, plus the whole operator-level GitHub Models token wiring (a Bicep param,
   a Container App secret, and its `Models__Providers__github__ApiKey` env var), were **removed** — leaving
   that wiring in place would resurrect a broken baseline `github` provider (`ProviderKind` defaults to
@@ -797,11 +801,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `gpt-4.1`, `gpt-5.1`, `o3`, `model-router`, `claude-*`), so the default deployment is **`gpt-5.4`**, not
   `gpt-4o` — with discovery off, a wrong default 404s every turn.
 - **Evidence:** `src/Agent42.Backend/ChatClientFactory.cs` (`ApiKeyHeaderPolicy`, `Provider.Foundry`),
-  `src/Agent42.Backend/ModelProviderBuilder.cs` (fatal-key throw), `src/Agent42.Backend/Program.cs`
-  (eager `AzureOpenAI:ApiKey` check + embedding client), `src/Agent42.Backend/appsettings.json`
-  (`foundry` `Discover:false` + `Models`, `DeploymentName: gpt-5.4`), `infra/main.bicep`
-  (`azureOpenAIApiKey` `@minLength`), `.agentic/decisions/0017-foundry-provider-api-key-auth.md`
-- **Verified:** 2026-07-16
+  `src/Agent42.Backend/ModelProviderBuilder.cs` (fatal-key throw), `src/Agent42.Backend/ModelProviderOptions.cs`
+  (`ProviderSettings.ResolveFoundry` — the dormant `AzureOpenAI:*` inheritance), `src/Agent42.Backend/appsettings.json`,
+  `.agentic/decisions/0017-foundry-provider-api-key-auth.md`. (NOTE: ADR 0030 removed the eager `AzureOpenAI:ApiKey`
+  check + embedding client from `Program.cs` and the `azureOpenAIApiKey` `@minLength` Bicep param — the
+  `api-key`-header auth claim itself is unchanged, but those two anchors no longer exist.)
+- **Verified:** 2026-07-21
 
 ### `HostedWebSearchTool.Name` is `web_search` — it collides with the SearXNG shim, so hosted models SWAP
 
@@ -964,27 +969,38 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `infra/modules/storage-role-assignment.bicep`, `infra/main.bicep` (`storageRoleAssignment` module), `infra/modules/storage.bicep`
 - **Verified:** 2026-07-08
 
-### Document RAG embedding deployment is a manual prerequisite — but needs no new RBAC
+### Embeddings are a per-user model, not an operator prerequisite (ADR 0030 — supersedes the old "manual deployment" gotcha)
 
-- **Claim:** the `text-embedding-3-large` deployment used for document RAG (ADR 0007) is **not**
-  provisioned by this repo's Bicep — it lives in the `Agent42` AI Foundry account in the *different*
-  RG `agent42`, the same reason the OpenAI role grant stays a manual step. The user must create the
-  deployment and its name must match `AzureOpenAI:EmbeddingDeploymentName` (default
-  `text-embedding-3-large`, eager-validated at startup — a missing value throws before the first
-  upload, not on it). **No new role assignment is required:** as of ADR 0017 the embedding client reuses
-  the same endpoint + **`AzureKeyCredential` (from `AzureOpenAI:ApiKey`)** as the Foundry chat provider —
-  one key, one source of truth — so the key that authorizes chat authorizes embeddings on the same
-  account. (Before 0017 this was `DefaultAzureCredential` + the identity's *Cognitive Services OpenAI
-  User* grant; that grant is no longer needed for embeddings.)
-- **Evidence:** `src/Agent42.Backend/Program.cs` (embedding-generator registration + `AzureOpenAI:ApiKey` eager check), `src/Agent42.Backend/appsettings.json`, `.agentic/decisions/0017-foundry-provider-api-key-auth.md`, `.agentic/decisions/0007-document-rag-cosmos-vector-search.md`
-- **Verified:** 2026-07-16
+- **Claim:** as of **ADR 0030** the embedding model is **per-user**, not a fixed operator deployment.
+  There is **no** `AzureOpenAI:EmbeddingDeploymentName`, **no** eager `AzureOpenAI:ApiKey` startup check,
+  and **no** operator `IEmbeddingGenerator` singleton — all removed. A user declares an embedding model on
+  a provider (the `SupportsEmbeddings` opt-in flag, like ADR 0020's image flag) and picks it as the
+  **default embedding model** in Preferences (`PUT /api/default-embedding-model`); ingestion and retrieval
+  resolve the generator via **`IChatClientFactory.GetEmbeddingGenerator()`** (a `Func` on `Provider`,
+  mirroring `GetImageGenerationService` — **no** new provider interface, **no** new every-host registration).
+  Two behaviours are load-bearing: **upload** of a document with no embedding model configured is rejected
+  (composer gates it client-side; server 4xx as defense-in-depth), while **retrieval** on an existing
+  document conversation with no embedding model **degrades to empty context — never throws** (guard on
+  `DefaultEmbeddingModelId == ""` before embedding; `NoEmbeddingGenerator.GenerateAsync` would throw, and
+  the retrieval path must not reach it — the ADR 0019 no-model-chat discipline extended to embeddings). The
+  `text-embedding-3-large` deployment is still an Azure resource a user's Foundry provider points at, but it
+  is **not** a repo prerequisite and needs no RBAC (API-key auth). `AzureOpenAI:Endpoint`/`ApiKey` survive
+  ONLY as the **dormant** Foundry-provider inheritance source; `AzureOpenAI:TenantId` still binds
+  `DefaultAzureCredential`. The `AZURE_OPENAI_API_KEY` GitHub secret + ACA secret are **removed**.
+- **Evidence:** `src/Agent42.Agents/IChatClientFactory.cs` (`GetEmbeddingGenerator`/`DefaultEmbeddingModelId`), `src/Agent42.Backend/ChatClientFactory.cs` (Foundry/OpenAICompatible embedding funcs), `src/Agent42.Agents/NoEmbeddingGenerator.cs`, `src/Agent42.Backend/DocumentIngestionService.cs`, `src/Agent42.Agents/AgentGrain.cs` (`SearchDocumentContextAsync` empty-id guard), `src/Agent42.Backend/UserProviderResolver.cs` (`EmbeddingDefaultModelId`), `.agentic/decisions/0030-user-configured-embedding-model.md`
+- **Verified:** 2026-07-21
 
 ### Cosmos vector search is prod-only: capability + pre-created container + no create-on-use
 
 - **Claim:** document retrieval (ADR 0007) needs the account-level `EnableNoSQLVectorSearch`
   capability **and** the `doc-chunks` container pre-created in Bicep with its vector policy
   (partition `/ownerKey`, vector path `/embedding` float32/cosine/3072, **`quantizedFlat`** index — a
-  `flat` index caps at 505 dims and can't hold a 3072-dim embedding). `CosmosDocumentIndex` uses the
+  `flat` index caps at 505 dims and can't hold a 3072-dim embedding). **The 3072 is now load-bearing at
+  ingest (ADR 0030):** the embedding model is user-chosen, so `IDocumentIndex.ExpectedDimensions`
+  (`CosmosDocumentIndex` reads `Cosmos:DocChunksDimensions`, default 3072; `InMemoryDocumentIndex` → null =
+  no check) is validated against the generated vector length and a mismatch throws
+  `EmbeddingDimensionMismatchException` → a clear 4xx, **before** any upsert — not an opaque Cosmos reject.
+  `CosmosDocumentIndex` uses the
   **raw `CosmosClient` and never creates on use** — the account is `disableLocalAuth: true`, so
   AAD data-plane RBAC can't create the container (same 403 wall as the Orleans providers); a vector
   *connector* that calls `EnsureCollectionExists` would fail here. The container schema in Bicep

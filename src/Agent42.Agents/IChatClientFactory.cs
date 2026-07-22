@@ -46,6 +46,14 @@ public interface IChatClientFactory
     string DefaultModelId { get; }
 
     /// <summary>
+    /// The qualified id of the user's default <b>embedding</b> model, or <c>""</c> when none is configured.
+    /// Document RAG (ADR 0007) resolves its generator from this. Callers MUST check for <c>""</c> before
+    /// embedding: an empty id means "no embedding model" — the upload path rejects the document, and the
+    /// retrieval path degrades to empty context (never throws).
+    /// </summary>
+    string DefaultEmbeddingModelId { get; }
+
+    /// <summary>
     /// Returns a chat client bound to <paramref name="modelId"/>, or to the default model when it
     /// is null or blank. An id naming an unknown provider falls back to the default rather than
     /// throwing — a conversation must never become unopenable because a provider left the config.
@@ -62,6 +70,14 @@ public interface IChatClientFactory
     /// state all return <c>null</c>. This is how the grain decides a turn produces an image, not a chat reply.
     /// </summary>
     IImageGenerationService? GetImageGenerationService(string? modelId);
+
+    /// <summary>
+    /// The embedding generator for the user's default embedding model (<see cref="DefaultEmbeddingModelId"/>),
+    /// or the no-op <c>NoEmbeddingGenerator</c> (throws on use) when none is configured. There is no per-turn
+    /// embedding-model choice — document RAG always uses the one default — so this takes no model id, mirroring
+    /// how <see cref="GetImageGenerationService"/> resolves a model's provider-level generator.
+    /// </summary>
+    IEmbeddingGenerator<string, Embedding<float>> GetEmbeddingGenerator();
 }
 
 /// <summary>
@@ -77,9 +93,16 @@ public sealed class SingleChatClientFactory(
     IChatClient client,
     string defaultModelId = "default",
     Func<string?, ModelCapabilities>? capabilities = null,
-    IImageGenerationService? imageGenerator = null) : IChatClientFactory
+    IImageGenerationService? imageGenerator = null,
+    IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
+    string defaultEmbeddingModelId = "") : IChatClientFactory
 {
     public string DefaultModelId { get; } = defaultModelId;
+
+    // Offline/tests: non-empty only when an embedding generator is supplied, so DevHost's RAG round-trips
+    // (a real deterministic generator + a stub id) while a factory without one reports "no embedding model".
+    public string DefaultEmbeddingModelId { get; } =
+        embeddingGenerator is null ? "" : (string.IsNullOrEmpty(defaultEmbeddingModelId) ? "offline-embed" : defaultEmbeddingModelId);
 
     public IChatClient GetClient(string? modelId) => client;
 
@@ -91,4 +114,9 @@ public sealed class SingleChatClientFactory(
     // like the multi-provider factory. Null generator (the default) → always null.
     public IImageGenerationService? GetImageGenerationService(string? modelId)
         => GetCapabilities(modelId).SupportsImageGeneration ? imageGenerator : null;
+
+    // The supplied deterministic generator (DevHost/tests) or the no-op when none — mirrors how the
+    // multi-provider factory returns NoEmbeddingGenerator for an unconfigured embedding model.
+    public IEmbeddingGenerator<string, Embedding<float>> GetEmbeddingGenerator()
+        => embeddingGenerator ?? NoEmbeddingGenerator.Instance;
 }

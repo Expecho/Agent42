@@ -384,6 +384,45 @@ public class ModelProviderTests
         client.Dispose();
     }
 
+    // AC4 — GetEmbeddingGenerator resolves the configured embedding model's provider generator; with no
+    // embedding model configured it hands back the no-op that throws a CLEAR, actionable error on use.
+    [Fact]
+    public async Task GetEmbeddingGenerator_ResolvesConfigured_AndNoOpWhenUnset()
+    {
+        var options = new ModelProvidersOptions
+        {
+            Default = "github:openai/gpt-4o-mini",
+            Providers =
+            {
+                ["github"] = new ProviderOptions
+                {
+                    Kind = ProviderKind.OpenAICompatible,
+                    Endpoint = "https://models.github.ai/inference",
+                    ApiKey = "pat",
+                    Models = [new ConfiguredModel { Id = "text-embedding-3-large", SupportsEmbeddings = true }],
+                },
+            },
+        };
+        var setup = ModelProviderBuilder.Build(options, Configuration());
+
+        // Configured: a real generator, not the no-op (building the OpenAI embedding client does no I/O).
+        var configured = new MultiProviderChatClientFactory(
+            setup.Providers, "github:openai/gpt-4o-mini", "test",
+            NullLogger<MultiProviderChatClientFactory>.Instance,
+            defaultEmbeddingModelId: "github:text-embedding-3-large");
+        Assert.Equal("github:text-embedding-3-large", configured.DefaultEmbeddingModelId);
+        Assert.IsNotType<NoEmbeddingGenerator>(configured.GetEmbeddingGenerator());
+
+        // Unset: DefaultEmbeddingModelId is "" and the generator throws a clear message on use.
+        var unset = new MultiProviderChatClientFactory(
+            setup.Providers, "github:openai/gpt-4o-mini", "test",
+            NullLogger<MultiProviderChatClientFactory>.Instance);
+        Assert.Equal("", unset.DefaultEmbeddingModelId);
+        var ex = await Assert.ThrowsAsync<EmbeddingModelNotConfiguredException>(
+            () => unset.GetEmbeddingGenerator().GenerateAsync(["hi"]));
+        Assert.Contains("embedding model", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static MultiProviderChatClientFactory Factory()
     {
         var setup = ModelProviderBuilder.Build(Options(), Configuration());

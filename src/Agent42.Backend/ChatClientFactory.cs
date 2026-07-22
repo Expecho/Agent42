@@ -38,7 +38,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         IReadOnlyDictionary<string, Provider> providers,
         string defaultModelId,
         string otelSourceName,
-        ILogger<MultiProviderChatClientFactory> logger)
+        ILogger<MultiProviderChatClientFactory> logger,
+        string defaultEmbeddingModelId = "")
     {
         // An empty provider set is now a supported state, not a misconfiguration (ADR 0019): a user who
         // has configured no chat provider gets an empty factory whose DefaultModelId is "" and whose
@@ -47,6 +48,9 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         // Resolve, which the empty-guards below short-circuit past — so a "" default provider is harmless.
         _providers = providers;
         DefaultModelId = defaultModelId;
+        // "" when no embedding model is configured (the resolver only sets a non-empty id when it names a
+        // declared embedding-capable model). Callers gate on this before embedding — see GetEmbeddingGenerator.
+        DefaultEmbeddingModelId = defaultEmbeddingModelId;
         _defaultProvider = providers.Count == 0
             ? ""
             : ModelId.Parse(defaultModelId, providers.Keys.First()).Provider;
@@ -55,6 +59,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
     }
 
     public string DefaultModelId { get; }
+
+    public string DefaultEmbeddingModelId { get; }
 
     public IChatClient GetClient(string? modelId) =>
         _providers.Count == 0 ? NoModelChatClient.Instance : _clients.GetOrAdd(Resolve(modelId).QualifiedId, Build);
@@ -109,6 +115,22 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         return provider.ImageService?.Invoke(model);
     }
 
+    public IEmbeddingGenerator<string, Embedding<float>> GetEmbeddingGenerator()
+    {
+        // No providers, or no embedding model configured (the resolver leaves the id "" unless it names a
+        // declared embedding-capable model) → the no-op that throws on use. Callers gate on
+        // DefaultEmbeddingModelId first: upload surfaces the error, retrieval skips embedding entirely.
+        if (_providers.Count == 0 || string.IsNullOrEmpty(DefaultEmbeddingModelId))
+        {
+            return NoEmbeddingGenerator.Instance;
+        }
+
+        // The embedding id names a provider in this set (the resolver validated it against the same set the
+        // factory was built from), so Resolve returns that provider's embedding model, not a chat fallback.
+        var (provider, model, _) = Resolve(DefaultEmbeddingModelId);
+        return provider.EmbeddingGenerator?.Invoke(model) ?? NoEmbeddingGenerator.Instance;
+    }
+
     // Maps a (possibly legacy, possibly stale) id onto a provider that actually exists.
     private (Provider Provider, string Model, string QualifiedId) Resolve(string? modelId)
     {
@@ -147,11 +169,20 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
     public sealed class Provider(
         ProviderOptions options,
         Func<string, IChatClient> client,
-        Func<string, IImageGenerationService>? imageService = null)
+        Func<string, IImageGenerationService>? imageService = null,
+        Func<string, IEmbeddingGenerator<string, Embedding<float>>>? embeddingGenerator = null)
     {
         public ProviderOptions Options { get; } = options;
 
         public Func<string, IChatClient> Client { get; } = client;
+
+        /// <summary>
+        /// Builds an <see cref="IEmbeddingGenerator{String, Single}"/> for an embedding model of this provider
+        /// (document RAG, ADR 0007) — via the Azure/OpenAI <c>GetEmbeddingClient</c>, NOT the chat/Responses
+        /// path. Set on every provider (both kinds do embeddings); the per-model gate is the resolver, which
+        /// only names a model marked <c>SupportsEmbeddings</c> as the default embedding model.
+        /// </summary>
+        public Func<string, IEmbeddingGenerator<string, Embedding<float>>>? EmbeddingGenerator { get; } = embeddingGenerator;
 
         /// <summary>
         /// Builds an <see cref="IImageGenerationService"/> for a model of this provider (ADR 0020), or null for
@@ -175,6 +206,13 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         /// <summary>An Azure AI Foundry provider, reached with an Azure OpenAI API key (ADR 0017).</summary>
         public static Provider Foundry(ProviderOptions options, Uri endpoint, string apiKey)
         {
+            // Embeddings ALWAYS go through the Azure OpenAI embedding client (there is no Responses embedding
+            // surface), whichever chat wire API the provider uses — so build one AzureOpenAIClient here and
+            // hang the embedding func off it for both branches below.
+            var azureClient = new AzureOpenAIClient(endpoint, new AzureKeyCredential(apiKey));
+            Func<string, IEmbeddingGenerator<string, Embedding<float>>> embeddings =
+                model => azureClient.GetEmbeddingClient(model).AsIEmbeddingGenerator();
+
             if (UseResponses(options))
             {
                 // ADR 0014/0017: reach Foundry's GA Responses surface on the STABLE OpenAI client via the
@@ -203,17 +241,22 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
                 // which non-reasoning models reject with HTTP 400; false verified on the shipped default
                 // gpt-5.4 (Step-1 spike). A reasoning Foundry model would want true, but those are deferred
                 // (ADR 0014, spec LOW-5).
-                return new Provider(options, model => responsesClient
-                    .GetResponsesClient()
-                    .AsIChatClientWithStoredOutputDisabled(model, includeReasoningEncryptedContent: false));
+                return new Provider(
+                    options,
+                    model => responsesClient
+                        .GetResponsesClient()
+                        .AsIChatClientWithStoredOutputDisabled(model, includeReasoningEncryptedContent: false),
+                    embeddingGenerator: embeddings);
 #pragma warning restore MAAI001
 #pragma warning restore OPENAI001
             }
 
             // Chat Completions: the Azure SDK client sends Azure's `api-key` header itself — no custom
             // policy needed (Step-1 spike: streamed a completion under the key).
-            var client = new AzureOpenAIClient(endpoint, new AzureKeyCredential(apiKey));
-            return new Provider(options, model => client.GetChatClient(model).AsIChatClient());
+            return new Provider(
+                options,
+                model => azureClient.GetChatClient(model).AsIChatClient(),
+                embeddingGenerator: embeddings);
         }
 
         /// <summary>
@@ -227,13 +270,15 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         {
             var client = new OpenAIClient(
                 new ApiKeyCredential(apiKey), new OpenAIClientOptions { Endpoint = endpoint });
-            // The SAME OpenAIClient hands out both chat and image clients — one transport, no IHttpClientFactory
-            // (ADR 0020). GetImageClient does no I/O; the per-model gate in GetImageGenerationService decides
-            // whether an image model actually reaches this func, so building it for every model here is free.
+            // The SAME OpenAIClient hands out chat, image AND embedding clients — one transport, no
+            // IHttpClientFactory (ADR 0020). GetImageClient/GetEmbeddingClient do no I/O; the per-model gates
+            // (GetImageGenerationService, the resolver's embedding pick) decide which func a model reaches, so
+            // building them for every model here is free.
             return new Provider(
                 options,
                 model => client.GetChatClient(model).AsIChatClient(),
-                model => new OpenAIImageGenerator(client.GetImageClient(model)));
+                model => new OpenAIImageGenerator(client.GetImageClient(model)),
+                model => client.GetEmbeddingClient(model).AsIEmbeddingGenerator());
         }
     }
 

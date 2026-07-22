@@ -82,11 +82,14 @@ present (else `CreateClient` would return a retry-pipeline-inheriting client):
 ```csharp
 return new ConfigHealthProbeSet(
     SearXng: httpFactory is null ? null : ct => ProbeSearxngAsync(httpFactory, ct),
-    Embeddings: embeddings is null ? null : ct => ProbeEmbeddingsAsync(embeddings, ct),
     Geocoding: httpFactory is null || string.IsNullOrWhiteSpace(googleKey)
         ? null : ct => ProbeGeocodingAsync(httpFactory, googleKey, ct),
     ContextScrape: httpFactory is null ? null : ct => ProbeContextAsync(httpFactory, ct));
 ```
+
+> There is **no embeddings check** here (ADR 0030): embeddings are a **per-user** model now, not
+> operator config, and `BuildStatic` is pure (no grain I/O) so it can't see a user's pick. Whether an
+> embedding model is configured is surfaced by the Model providers tab's embedding selector instead.
 
 The geocoding probe classifies by marker and never echoes the body; a **SearXNG 403 is a
 healthy sidecar** (JSON API off), not an auth failure.
@@ -97,8 +100,7 @@ healthy sidecar** (JSON API off), not an auth failure.
 
 ## How the Agent Framework fits
 
-- None directly. The embeddings probe uses `Microsoft.Extensions.AI`'s `IEmbeddingGenerator` for
-  a tiny embed, but that's the AI abstraction, not the agent runtime.
+- None directly — the endpoint inspects config, env, and DI-registered clients only.
 
 ## How Orleans fits
 

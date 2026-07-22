@@ -71,6 +71,7 @@
   ]);
 
   const defaultModelSelect = document.getElementById("defaultModelSelect");
+  const embeddingModelSelect = document.getElementById("embeddingModelSelect");
   const providerList = document.getElementById("providerList");
   const addProviderBtn = document.getElementById("addProviderBtn");
   const providerDialog = document.getElementById("providerDialog");
@@ -162,6 +163,9 @@
   // above, which is the default the server actually RESOLVED (/api/models). They differ when the stored id
   // names a provider that no longer resolves — the resolver falls through, but the preference is kept.
   let userDefaultModel = null;
+  // The user's default embedding model id, or null when none is configured. When null, attaching documents
+  // is blocked in the composer (RAG needs an embedding model). Independent of userDefaultModel (chat).
+  let userDefaultEmbeddingModel = null;
   // The user's own remote MCP servers (config-driven remote MCP servers), fetched masked (hasHeaderValue,
   // never the secret). The id of the one being edited, or null when adding a new server.
   let mcpServers = [];
@@ -288,6 +292,7 @@
       modelSelect.disabled = modelSelect.options.length === 0;
       applyModelAvailability();
       syncDefaultModelSelect();
+      syncEmbeddingModelSelect();
     } catch { /* leave the picker disabled; chat still uses the server's default model */ }
   }
 
@@ -821,6 +826,20 @@
     // and the same file can be re-picked.
     const uploadId = activeId;
     for (const file of files) {
+      // Document-attach gate (ADR 0007/0018): a document needs an embedding model to be indexed for RAG, so
+      // block the attempt when none is configured — images never need embeddings and are always allowed. The
+      // server also rejects it (defense-in-depth); this just avoids a pointless upload + a cryptic error.
+      // Note: loadProviders() populates userDefaultEmbeddingModel fire-and-forget at init, so in the brief
+      // window before it resolves a configured user could see a transient false-negative here — the server
+      // would still accept the upload; the gate self-corrects once /api/providers returns.
+      if (!userDefaultEmbeddingModel && !file.type.startsWith("image/")) {
+        pendingNotices.push({
+          fileName: file.name,
+          message: "Add a model marked as an embedding model to a provider and pick it as the default embedding model in Preferences to attach documents.",
+        });
+        renderAttachmentPreview();
+        continue;
+      }
       try {
         const body = new FormData();
         body.append("file", file, file.name);
@@ -1788,8 +1807,10 @@
       const data = await res.json();
       userProviders = data.providers ?? [];
       userDefaultModel = data.default ?? null;
+      userDefaultEmbeddingModel = data.embeddingDefault ?? null;
       renderProviders();
       syncDefaultModelSelect();
+      syncEmbeddingModelSelect();
     } catch { /* silo may be unreachable; the list refreshes on next open */ }
   }
 
@@ -1825,6 +1846,53 @@
     } catch { return syncDefaultModelSelect(); /* silo unreachable — don't show an unsaved value */ }
     userDefaultModel = value || null;
     loadModels({ pin: false }); // refresh the resolved default WITHOUT retargeting the open conversation
+  }
+
+  // Repaints the embedding-model select from the models a provider marked as embedding models, plus a leading
+  // "None" option. Hooked into loadProviders() (owns the stored value) and loadModels() (owns the catalog),
+  // same idempotent-repaint reasoning as syncDefaultModelSelect(). A stored id whose model is gone shows under
+  // "Unavailable" via selectModel rather than silently resetting.
+  function syncEmbeddingModelSelect() {
+    if (!embeddingModelSelect) return;
+    embeddingModelSelect.innerHTML = "";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "None (document Q&A off)";
+    embeddingModelSelect.appendChild(none);
+
+    const groups = new Map();
+    for (const m of modelsData.models ?? []) {
+      if (!m.supportsEmbeddings) continue; // only embedding-capable models are pickable here
+      const provider = m.provider ?? "";
+      if (!groups.has(provider)) {
+        const group = document.createElement("optgroup");
+        group.label = provider || "Models";
+        groups.set(provider, group);
+        embeddingModelSelect.appendChild(group);
+      }
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.displayName ?? m.id;
+      groups.get(provider).appendChild(opt);
+    }
+
+    embeddingModelSelect.value = "";
+    selectModel(embeddingModelSelect, userDefaultEmbeddingModel);
+  }
+
+  // Persists the embedding-model pick immediately (no Save button — the value lives in the provider overlay
+  // grain). Blank clears it (document Q&A off). A failed save snaps the select back to the stored value.
+  async function persistEmbeddingModel() {
+    const value = embeddingModelSelect.value;
+    try {
+      const res = await fetch("/api/default-embedding-model", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ embeddingDefault: value || null }),
+      });
+      if (!res.ok) return syncEmbeddingModelSelect();
+    } catch { return syncEmbeddingModelSelect(); /* silo unreachable — don't show an unsaved value */ }
+    userDefaultEmbeddingModel = value || null;
   }
 
   function renderProviders() {
@@ -1990,6 +2058,16 @@
     imageBox.checked = model?.supportsImageGeneration ?? false;
     image.append(imageBox, document.createTextNode("image gen"));
 
+    // Embedding model (document RAG): pick it as the default embedding model above to power document Q&A.
+    // Off by default — a declared model is a chat model unless it says otherwise.
+    const embed = document.createElement("label");
+    embed.className = "provider-model-row__flag";
+    const embedBox = document.createElement("input");
+    embedBox.type = "checkbox";
+    embedBox.className = "agent-form__checkbox";
+    embedBox.checked = model?.supportsEmbeddings ?? false;
+    embed.append(embedBox, document.createTextNode("embeddings"));
+
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "provider-model-row__remove";
@@ -1997,7 +2075,7 @@
     remove.textContent = "×";
     remove.addEventListener("click", () => li.remove());
 
-    li.append(id, display, tools, vision, image, remove);
+    li.append(id, display, tools, vision, image, embed, remove);
     providerModelList.appendChild(li);
   }
 
@@ -2006,7 +2084,7 @@
     for (const row of providerModelList.querySelectorAll(".provider-model-row")) {
       const id = row.querySelector(".provider-model-row__id").value.trim();
       if (!id) continue; // an empty row is dropped, not sent
-      const [tools, vision, image] = row.querySelectorAll(".agent-form__checkbox");
+      const [tools, vision, image, embed] = row.querySelectorAll(".agent-form__checkbox");
       const display = row.querySelector(".provider-model-row__display").value.trim();
       models.push({
         id,
@@ -2014,6 +2092,7 @@
         supportsTools: tools.checked,
         supportsVision: vision.checked,
         supportsImageGeneration: image.checked,
+        supportsEmbeddings: embed.checked,
       });
     }
     return models;
@@ -2087,6 +2166,7 @@
   }
 
   defaultModelSelect.addEventListener("change", persistDefaultModel);
+  if (embeddingModelSelect) embeddingModelSelect.addEventListener("change", persistEmbeddingModel);
   addProviderBtn.addEventListener("click", () => openProviderDialog(null));
   addModelRowBtn.addEventListener("click", () => addModelRow(null));
   providerKindSelect.addEventListener("change", syncProviderKindUi);
@@ -2560,6 +2640,7 @@
   /* ————— init ————— */
 
   loadModels();
+  loadProviders(); // also sets userDefaultEmbeddingModel at startup, so the composer's document-attach gate works
   refreshConversations();
   loadAgents();
   initTheme(); // loads the profile and reconciles the theme (server wins over the pre-paint cache)

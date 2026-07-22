@@ -117,6 +117,27 @@ public sealed class UserProviderConfigGrainTests : IAsyncLifetime
         Assert.Null((await grain.GetAsync()).Default);
     }
 
+    // AC2: the embedding default round-trips, bumps the version, and clears on blank — independent of Default.
+    [Fact]
+    public async Task SetEmbeddingDefault_RoundTrips_AndBumpsVersion()
+    {
+        var grain = _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-embedding-default-user");
+
+        await grain.SetEmbeddingDefaultAsync("foundry:text-embedding-3-large");
+        Assert.Equal("foundry:text-embedding-3-large", (await grain.GetAsync()).EmbeddingDefault);
+        Assert.Equal(1, await grain.GetVersionAsync());
+
+        // Independent of the chat default.
+        await grain.SetDefaultAsync("ollama:llama3.1");
+        var config = await grain.GetAsync();
+        Assert.Equal("foundry:text-embedding-3-large", config.EmbeddingDefault);
+        Assert.Equal("ollama:llama3.1", config.Default);
+
+        // Blank clears it back to null.
+        await grain.SetEmbeddingDefaultAsync("  ");
+        Assert.Null((await grain.GetAsync()).EmbeddingDefault);
+    }
+
     [Fact]
     public async Task IsIsolatedPerUser()
     {

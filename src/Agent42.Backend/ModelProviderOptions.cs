@@ -51,6 +51,15 @@ public sealed class ConfiguredModel
     /// the tenant, so this is opt-in per model.
     /// </summary>
     public bool SupportsImageGeneration { get; set; }
+
+    /// <summary>
+    /// Whether this is an <b>embedding</b> model: the user picks it as the "default embedding model" in
+    /// Preferences and document RAG (ADR 0007) resolves its generator from the model's provider (endpoint +
+    /// key), reached via <c>GetEmbeddingClient</c> — a distinct model kind from chat. Default <c>false</c>.
+    /// The embedding model must produce vectors matching the <c>doc-chunks</c> container dimension (3072);
+    /// a mismatch is rejected at ingest.
+    /// </summary>
+    public bool SupportsEmbeddings { get; set; }
 }
 
 /// <summary>One configured provider.</summary>

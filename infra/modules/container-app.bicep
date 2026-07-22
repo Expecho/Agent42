@@ -30,20 +30,13 @@ param cosmosAccountEndpoint string
 @description('Blob service endpoint of the attachments storage account (identity-based auth, no key).')
 param blobEndpoint string
 
-@description('Endpoint of the Azure AI Foundry / Azure OpenAI resource used by the agent.')
+@description('Endpoint of the Azure AI Foundry / Azure OpenAI resource. Dormant Foundry-provider inheritance source only (ADR 0019 removed the baseline chat provider; the embedding model is per-user, ADR 0007/0018). Non-secret; harmless if unused.')
 param azureOpenAIEndpoint string
-
-@secure()
-@description('Azure OpenAI resource API key (ADR 0017, narrowed by ADR 0019). Since ADR 0019 the app ships no baseline Foundry chat provider (chat is fully per-user, ADR 0018), so this authenticates the embedding client only — the one fixed model. UNCONDITIONAL, unlike googleMapsApiKey: it is the availability path (the backend throws without it), so it is always emitted as a secret + env var — the searxngSecret shape, not the optional one. main.bicep enforces @minLength.')
-param azureOpenAIApiKey string
-
-@description('Embedding model deployment name used for document RAG (ADR 0007).')
-param azureOpenAIEmbeddingDeploymentName string
 
 @description('Cosmos DB container name for document RAG vector search (ADR 0007). Its presence switches the app onto the Cosmos document index.')
 param cosmosDocChunksContainerName string
 
-@description('Entra ID tenant id used for DefaultAzureCredential when calling Azure OpenAI.')
+@description('Entra ID tenant id used for DefaultAzureCredential (blob storage + ARM).')
 param azureOpenAITenantId string
 
 @description('OTLP endpoint for OpenTelemetry export. Leave empty to disable OTLP export.')
@@ -161,10 +154,6 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             name: 'searxng-secret'
             value: searxngSecret
           }
-          {
-            name: 'azure-openai-api-key'
-            value: azureOpenAIApiKey
-          }
         ],
         empty(googleMapsApiKey)
           ? []
@@ -205,11 +194,9 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'ConnectionStrings__cosmos', value: cosmosAccountEndpoint }
             { name: 'Storage__BlobEndpoint', value: blobEndpoint }
+            // Dormant Foundry-provider inheritance source only (ADR 0019/0018); no operator embedding key
+            // any more — the embedding model is per-user (ADR 0007/0018).
             { name: 'AzureOpenAI__Endpoint', value: azureOpenAIEndpoint }
-            // The Azure OpenAI key (ADR 0017, narrowed by ADR 0019), UNCONDITIONAL — the embedding client
-            // reads it (the app ships no baseline Foundry chat provider any more; chat is per-user, ADR 0018).
-            { name: 'AzureOpenAI__ApiKey', secretRef: 'azure-openai-api-key' }
-            { name: 'AzureOpenAI__EmbeddingDeploymentName', value: azureOpenAIEmbeddingDeploymentName }
             { name: 'Cosmos__DocChunksContainerName', value: cosmosDocChunksContainerName }
             { name: 'AzureOpenAI__TenantId', value: azureOpenAITenantId }
             { name: 'OTEL_SERVICE_NAME', value: containerAppName }

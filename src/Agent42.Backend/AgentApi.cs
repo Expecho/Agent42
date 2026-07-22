@@ -145,7 +145,18 @@ public static class AgentApi
 
             if (DocumentMediaTypes.IsSupported(contentType))
             {
-                var chunkCount = await ingestion.IngestAsync(ownerKey, file.FileName, contentType, bytes);
+                int chunkCount;
+                try
+                {
+                    chunkCount = await ingestion.IngestAsync(ownerKey, file.FileName, contentType, bytes);
+                }
+                catch (Exception ex) when (ex is EmbeddingModelNotConfiguredException or EmbeddingDimensionMismatchException)
+                {
+                    // No embedding model, or one whose vectors don't fit the store (ADR 0007). The composer
+                    // gates document attachment client-side (Step 9); this is defense-in-depth for the API.
+                    return Results.Text(ex.Message, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+                }
+
                 // Tell the grain the document exists (only when it yielded searchable text), so the
                 // model is made aware of it and automatic retrieval is enabled for the conversation
                 // (ADR 0008) — a document is otherwise invisible to the model (ADR 0007).
@@ -362,7 +373,18 @@ public static class AgentApi
                 }
                 else
                 {
-                    var chunkCount = await ingestion.IngestAsync(ownerKey, file.FileName, mediaType, bytes);
+                    int chunkCount;
+                    try
+                    {
+                        chunkCount = await ingestion.IngestAsync(ownerKey, file.FileName, mediaType, bytes);
+                    }
+                    catch (Exception ex) when (ex is EmbeddingModelNotConfiguredException or EmbeddingDimensionMismatchException)
+                    {
+                        // A bad document rejects the WHOLE batch (400) — the same all-or-nothing rule as an
+                        // unsupported file. The key holder gets a clear message; no partial run is enqueued.
+                        return Results.Text(ex.Message, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+                    }
+
                     if (chunkCount > 0)
                     {
                         documentNames.Add(file.FileName);
@@ -432,7 +454,7 @@ public static class AgentApi
         {
             var overlay = await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).GetAsync();
             return Results.Json(new ProvidersResponse(
-                [.. overlay.Providers.Select(Mask)], overlay.Default));
+                [.. overlay.Providers.Select(Mask)], overlay.Default, overlay.EmbeddingDefault));
         });
 
         // Creates or updates a provider by key. The key is user-chosen and identifies the provider, so
@@ -499,6 +521,27 @@ public static class AgentApi
             }
 
             await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).SetDefaultAsync(request.Default);
+            return Results.NoContent();
+        });
+
+        // Sets (or clears, with a blank body) the user's default EMBEDDING model — the one document RAG uses
+        // (ADR 0007/0018). Mirrors /api/default-model exactly: a distinct path (a provider key is user-chosen,
+        // so a literal segment under /api/providers would out-rank {key}); the id is NOT validated against the
+        // catalog here (the resolver's read-time EffectiveEmbeddingDefault guard is the single validation
+        // point — it only honours an id that names a declared embedding-capable model); the 200-char cap only
+        // keeps unbounded text out of the persisted grain state. GET stays on /api/providers (EmbeddingDefault).
+        app.MapPut("/api/default-embedding-model", async (DefaultEmbeddingModelRequest request, IGrainFactory grains, HttpContext http) =>
+        {
+            if (request.EmbeddingDefault is { Length: > 200 })
+            {
+                return Results.Text(
+                    "Default embedding model id must be at most 200 characters.",
+                    "text/plain",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId())
+                .SetEmbeddingDefaultAsync(request.EmbeddingDefault);
             return Results.NoContent();
         });
 
@@ -881,7 +924,8 @@ public static class AgentApi
             Endpoint: request.Endpoint,
             ApiKeyCiphertext: string.IsNullOrWhiteSpace(request.ApiKey) ? null : protector.Protect(request.ApiKey),
             Models: [.. (request.Models ?? []).Select(m =>
-                new StoredModel(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision, m.SupportsImageGeneration))],
+                new StoredModel(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision,
+                    m.SupportsImageGeneration, m.SupportsEmbeddings))],
             UseResponsesApi: request.UseResponsesApi);
 
     // Never returns the key — only whether one is stored (hasKey). The ciphertext stays server-side.
@@ -890,7 +934,8 @@ public static class AgentApi
             p.Key, p.Kind, p.DisplayName, p.Endpoint,
             HasKey: !string.IsNullOrEmpty(p.ApiKeyCiphertext),
             Models: [.. p.Models.Select(m =>
-                new ProviderModelResponse(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision, m.SupportsImageGeneration))],
+                new ProviderModelResponse(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision,
+                    m.SupportsImageGeneration, m.SupportsEmbeddings))],
             p.UseResponsesApi);
 
     // Agent grains are keyed per user, so a conversation id sent by one user can
@@ -956,10 +1001,17 @@ public record ProviderUpsertRequest(
 // declared model. The id is opaque here — never split past the first colon, never case-normalised.
 public record DefaultModelRequest(string? Default);
 
-// SupportsImageGeneration (ADR 0020) is a trailing default so an old-shape client body still binds — an
-// image model is one that produces images instead of chat replies.
+// The default EMBEDDING model id (document RAG, ADR 0007/0018). Blank clears it (the grain normalises blank
+// to null), and RAG is then unavailable until the user picks one. Not validated against the catalog here —
+// the resolver's EffectiveEmbeddingDefault is the single validation point (see /api/default-embedding-model).
+public record DefaultEmbeddingModelRequest(string? EmbeddingDefault);
+
+// SupportsImageGeneration (ADR 0020) and SupportsEmbeddings are trailing defaults so an old-shape client
+// body still binds — an image model produces images instead of chat replies; an embedding model is picked
+// as the "default embedding model" and feeds document RAG.
 public record ProviderModelRequest(
-    string Id, string? DisplayName, bool SupportsTools, bool SupportsVision, bool SupportsImageGeneration = false);
+    string Id, string? DisplayName, bool SupportsTools, bool SupportsVision,
+    bool SupportsImageGeneration = false, bool SupportsEmbeddings = false);
 
 // What GET/POST/PUT return for a provider: everything EXCEPT the key, which is masked to HasKey so the
 // ciphertext (and the plaintext) never reach the client (ADR 0018).
@@ -968,10 +1020,13 @@ public record ProviderResponse(
     IReadOnlyList<ProviderModelResponse> Models, bool UseResponsesApi);
 
 public record ProviderModelResponse(
-    string Id, string? DisplayName, bool SupportsTools, bool SupportsVision, bool SupportsImageGeneration = false);
+    string Id, string? DisplayName, bool SupportsTools, bool SupportsVision,
+    bool SupportsImageGeneration = false, bool SupportsEmbeddings = false);
 
-// The GET /api/providers payload: the user's overlay providers (masked) plus their optional default.
-public record ProvidersResponse(IReadOnlyList<ProviderResponse> Providers, string? Default);
+// The GET /api/providers payload: the user's overlay providers (masked), their optional chat default, and
+// their optional embedding default (the "default embedding model" id, null = none configured).
+public record ProvidersResponse(
+    IReadOnlyList<ProviderResponse> Providers, string? Default, string? EmbeddingDefault = null);
 
 // Client payload for creating (POST) or updating (PUT) a remote MCP server. HeaderValue and ClientSecret are
 // WRITE-ONLY — encrypted server-side and never echoed back; blank on an update means "keep the stored

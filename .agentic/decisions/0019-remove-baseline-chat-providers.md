@@ -8,6 +8,12 @@ supersedes: 0018 (availability-floor invariant only), 0017 (blank-baseline-Found
 
 # Chat providers are fully per-user — the app ships no baseline chat provider
 
+> **Amended by [ADR 0030](0030-user-configured-embedding-model.md) (2026-07-21) — the embedding floor
+> this ADR kept is now removed too.** This decision removed the availability floor for **chat** but
+> deliberately left **embeddings** as the one remaining operator floor (`AzureOpenAI:ApiKey`, fatal at
+> startup). ADR 0030 removes that last floor: embeddings become a per-user model as well, so the app now
+> ships **no** operator model of any kind and boots with no Azure OpenAI config required.
+
 > **Amends [ADR 0018](0018-user-configurable-model-providers.md) and narrows
 > [ADR 0017](0017-foundry-provider-api-key-auth.md).** ADR 0018 made the operator `Models:`
 > set the **boot-time availability floor** ("the app always starts on it"). This decision

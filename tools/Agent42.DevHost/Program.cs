@@ -27,6 +27,9 @@ const string TextOnlyModel = "github:text-only-demo";
 // An image-generation model (ADR 0020): selecting it makes a turn produce an image via the in-memory
 // generator (a canned PNG) — so the generate/store/display/history flow is exercisable in a browser offline.
 const string ImageModel = "images:image-demo";
+// A declared embedding model (document RAG, ADR 0007/0018) so the Preferences "default embedding model"
+// selector and the RAG round-trip are exercisable offline against the deterministic generator.
+const string EmbeddingModel = "foundry:text-embedding-3-large";
 
 builder.Services.AddSingleton<IChatClient, CannedChatClient>();
 // The offline image generator returns a canned PNG (no real /v1/images endpoint offline — ADR 0020).
@@ -42,7 +45,11 @@ builder.Services.AddSingleton<IChatClientFactory>(sp =>
                 SupportsTools: false, SupportsVision: false, SupportsImageGeneration: true),
             _ => ModelCapabilities.Full,
         },
-        imageGenerator: sp.GetRequiredService<IImageGenerationService>()));
+        imageGenerator: sp.GetRequiredService<IImageGenerationService>(),
+        // The deterministic embedding generator + a stub id, so a document upload → question round-trips
+        // offline with no Cosmos or Azure OpenAI (ADR 0007/0018) — the RAG retrieval resolves from here.
+        embeddingGenerator: sp.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>(),
+        defaultEmbeddingModelId: EmbeddingModel));
 
 // No per-user overlay store offline (ADR 0018): the single canned factory stands in for every user.
 builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
@@ -61,6 +68,8 @@ builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel
     new ModelInfo(TextOnlyModel, "github", "Text-only demo (no tools, no vision)", "text-only-demo", null, false, false),
     new ModelInfo(ImageModel, "images", "Image generator (demo)", "image-demo", null,
         SupportsTools: false, SupportsVision: false, SupportsImageGeneration: true),
+    new ModelInfo(EmbeddingModel, "foundry", "Text embedding (demo)", "text-embedding-3-large", null,
+        SupportsTools: false, SupportsVision: false, SupportsImageGeneration: false, SupportsEmbeddings: true),
 ]));
 
 // No per-user overlay store offline (ADR 0018): the single static catalog stands in for every user.

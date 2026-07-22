@@ -34,6 +34,14 @@ public interface IUserProviderConfigGrain : IGrainWithStringKey
     [Alias("SetDefaultAsync")]
     Task SetDefaultAsync(string? defaultModelId);
 
+    /// <summary>
+    /// Sets (or clears, with null/blank) the overlay's default <b>embedding</b> model id and bumps the
+    /// version. Independent of <see cref="SetDefaultAsync"/> (chat) — document RAG resolves its generator
+    /// from this id, null = no embedding model configured.
+    /// </summary>
+    [Alias("SetEmbeddingDefaultAsync")]
+    Task SetEmbeddingDefaultAsync(string? embeddingModelId);
+
     /// <summary>Removes the provider with <paramref name="key"/>, bumping the version only if one was removed.</summary>
     [Alias("DeleteAsync")]
     Task DeleteAsync(string key);
