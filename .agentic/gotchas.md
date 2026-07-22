@@ -397,6 +397,45 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/UserTelemetrySpanProcessor.cs`, `src/Agent42.Backend/GoogleGeocoder.cs`
 - **Verified:** 2026-07-13
 
+### The usage dashboard counts tokens from `chat` spans ONLY — `orchestrate_tools` is the summed parent
+
+- **Claim:** the usage dashboard (ADR 0031) is fed purely from the OTel gen_ai spans the chat client already
+  emits, projected by `UsageSpanProjector`. The load-bearing rule is invisible in the aggregate numbers and
+  easy to "fix" wrongly: a tool-calling turn emits **three** span kinds on the `Agent42.Backend` source —
+  `chat` (per model round-trip, carries `gen_ai.usage.input_tokens`/`output_tokens`), `execute_tool` (carries
+  `gen_ai.tool.name`, no tokens), and **`orchestrate_tools`, whose usage is the SUM of its child `chat`
+  spans**. A spike (2026-07-22, Microsoft.Agents.AI 1.13.0 / Microsoft.Extensions.AI 10.6.0) showed the
+  `orchestrate_tools` span carrying `input_tokens=140` = exactly the two child chats (100+40). So the
+  projector **whitelists `chat` for tokens and `execute_tool` for tool events and DROPS everything else** —
+  adding `orchestrate_tools` (or `invoke_agent`) to "capture more" double/triple-counts every multi-turn
+  conversation. Three more facts the same spike pinned, each a silent trap: (1) the emitter emits **only**
+  input/output tokens — **no cache-read, no reasoning** — so those dashboard fields are wire-contract parity
+  only and are always 0 (do not "wire them up" from the span; they aren't there — the grain's `UsageContent`
+  has cached, but that path is deliberately not used); (2) **all three span kinds are already on the
+  registered `Agent42.Backend` source and already OTLP-exported**, so the ingestion processor needs **no new
+  `AddSource`** and adds no new export/PII surface — it filters in `OnEnd`; (3) async paths (fired reminders,
+  agent-run) have no request identity in `RequestContext`, so their `chat` spans carry no `user.*` and their
+  tokens land in an **unreported** user bucket by design (correct total, no attribution).
+- **Load-bearing storage bound:** the rollups live in ONE global grain (`UsageRollupGrain`, key `"global"`)
+  riding `agent-state` on the `"usage-rollups"` state (the `UserPushGrain` pattern — no new container), which
+  re-serializes into one ≤2 MB Cosmos item per write (ADR 0004). It **prunes on every write** (hourly ~48 h,
+  daily ~92 d); `range=all` therefore means "the retained daily window", not all-time. Retention constants
+  live only in `UsageRetention` — a longer window multiplies state toward the cap. The `application`
+  dimension is **per-agent** (the grain publishes the agent name into `RequestContext`
+  (`PublishUsageApplication`); `UserTelemetrySpanProcessor` stamps it as the `agent42.application` span tag
+  at OnStart — the ADR 0010 mechanism; the projector reads it, non-agent chats fall back to `"Agent42"`), so
+  many agents multiply the bucket rows — shard by day into per-date grains before that bites. **Do not add
+  the dimension by overriding `gen_ai.operation.name`** — that is set by the libraries per the OTel semconv
+  and is also exported (ADR 0009); a new dimension is always a NEW tag, never a rewrite of a semconv one.
+- **Evidence:** `src/Agent42.Agents/UsageSpanProjector.cs` (the operation-name whitelist; `ApplicationTag`),
+  `src/Agent42.Agents/AgentGrain.cs` (`PublishUsageApplication`),
+  `src/Agent42.Backend/UserTelemetrySpanProcessor.cs` (stamps `agent42.application`),
+  `src/Agent42.Agents/UsageRollupState.cs` (`UsageRetention`, `Prune`), `src/Agent42.Agents/UsageRollupGrain.cs`,
+  `src/Agent42.Backend/UsageSpanProcessor.cs` (`OnEnd`, best-effort enqueue),
+  `tests/Agent42.Tests/UsageSpanProjectorTests.cs` (`AggregateSpan_IsNotCounted`),
+  `.agentic/decisions/0031-token-usage-dashboard.md`, `.agentic/decisions/0004-attachments-in-blob.md`
+- **Verified:** 2026-07-22
+
 ### A GitHub model id contains a `/`, so the provider separator is `:` — and the split is on the FIRST colon
 
 - **Claim:** the obvious separator for a qualified model id is `/`, and it is **wrong**: GitHub Models'

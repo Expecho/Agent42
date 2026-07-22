@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Agent42.Agents;
 using Agent42.Backend;
 using Azure;
@@ -13,7 +14,19 @@ using OpenTelemetry.Trace;
 
 const string OtelSourceName = "Agent42.Backend";
 
+// The application dimension of the usage dashboard (ADR 0031). Agent42 is one service and agent name
+// is not on the span, so this is a constant; per-agent attribution is a future OTEL-native add.
+const string UsageApplication = "Agent42";
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Usage-telemetry ingestion channel (ADR 0031): the span processor enqueues projected usage events
+// here (OnEnd, best-effort) and UsageIngestionService drains them into the global rollup grain.
+// Bounded + DropWrite so a slow grain can never back-pressure the OTel export path.
+var usageChannel = Channel.CreateBounded<UsageEvent>(
+    new BoundedChannelOptions(10_000) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
+builder.Services.AddSingleton(usageChannel.Reader);
+builder.Services.AddHostedService<UsageIngestionService>();
 
 // OTel logging, metrics and tracing (OTLP exporter) via Aspire service defaults.
 builder.AddServiceDefaults();
@@ -24,7 +37,10 @@ builder.Services.AddOpenTelemetry()
         // every started span from the identity a request-scoped middleware writes into Orleans
         // RequestContext (see app.Use below). Complements — does not replace — the server-span
         // EnrichWithHttpRequest above, which owns the one span that starts before that middleware.
-        .AddProcessor(new UserTelemetrySpanProcessor()));
+        .AddProcessor(new UserTelemetrySpanProcessor())
+        // Project the gen_ai chat/execute_tool spans (already on OtelSourceName) into the usage
+        // rollups (ADR 0031). OnEnd-only, non-blocking — enqueues to usageChannel.
+        .AddProcessor(new UsageSpanProcessor(usageChannel.Writer, UsageApplication)));
 
 // Stamp OTel semantic-convention user.* attributes onto the ASP.NET Core server span of every
 // authenticated request (ADR 0009). The Easy-Auth-specific extraction lives in CurrentUser here in
