@@ -2032,41 +2032,51 @@
     display.placeholder = "display name (optional)";
     display.value = model?.displayName ?? "";
 
-    const tools = document.createElement("label");
-    tools.className = "provider-model-row__flag";
-    const toolsBox = document.createElement("input");
-    toolsBox.type = "checkbox";
-    toolsBox.className = "agent-form__checkbox";
-    toolsBox.checked = model?.supportsTools ?? false;
-    tools.append(toolsBox, document.createTextNode("tools"));
+    // Capabilities as a compact dropdown (a <details> disclosure) rather than four inline checkboxes, so a
+    // model row stays short. Order is load-bearing: collectModels reads the .agent-form__checkbox inputs
+    // positionally (tools, vision, image gen, embeddings), so keep this list in that order.
+    // image gen (ADR 0020) turns a turn into an image; embeddings marks a document-RAG model (ADR 0030).
+    const caps = document.createElement("details");
+    caps.className = "provider-model-row__caps";
+    const capsSummary = document.createElement("summary");
+    capsSummary.className = "provider-model-row__caps-summary";
+    caps.appendChild(capsSummary);
 
-    const vision = document.createElement("label");
-    vision.className = "provider-model-row__flag";
-    const visionBox = document.createElement("input");
-    visionBox.type = "checkbox";
-    visionBox.className = "agent-form__checkbox";
-    visionBox.checked = model?.supportsVision ?? false;
-    vision.append(visionBox, document.createTextNode("vision"));
-
-    // Image generation (ADR 0020): picking this model produces an image instead of a chat reply. Off by
-    // default — a declared model is a chat model unless it says otherwise.
-    const image = document.createElement("label");
-    image.className = "provider-model-row__flag";
-    const imageBox = document.createElement("input");
-    imageBox.type = "checkbox";
-    imageBox.className = "agent-form__checkbox";
-    imageBox.checked = model?.supportsImageGeneration ?? false;
-    image.append(imageBox, document.createTextNode("image gen"));
-
-    // Embedding model (document RAG): pick it as the default embedding model above to power document Q&A.
-    // Off by default — a declared model is a chat model unless it says otherwise.
-    const embed = document.createElement("label");
-    embed.className = "provider-model-row__flag";
-    const embedBox = document.createElement("input");
-    embedBox.type = "checkbox";
-    embedBox.className = "agent-form__checkbox";
-    embedBox.checked = model?.supportsEmbeddings ?? false;
-    embed.append(embedBox, document.createTextNode("embeddings"));
+    const capsBody = document.createElement("div");
+    capsBody.className = "provider-model-row__caps-body";
+    const capDefs = [
+      { label: "tools", checked: model?.supportsTools ?? false },
+      { label: "vision", checked: model?.supportsVision ?? false },
+      { label: "image gen", checked: model?.supportsImageGeneration ?? false },
+      { label: "embeddings", checked: model?.supportsEmbeddings ?? false },
+    ];
+    const capBoxes = [];
+    const updateCapsSummary = () => {
+      const on = capBoxes.filter((c) => c.box.checked).map((c) => c.label);
+      capsSummary.textContent = on.length ? on.join(", ") : "capabilities";
+    };
+    for (const def of capDefs) {
+      const flag = document.createElement("label");
+      flag.className = "provider-model-row__flag";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.className = "agent-form__checkbox";
+      box.checked = def.checked;
+      box.addEventListener("change", updateCapsSummary);
+      flag.append(box, document.createTextNode(def.label));
+      capsBody.appendChild(flag);
+      capBoxes.push({ box, label: def.label });
+    }
+    caps.appendChild(capsBody);
+    updateCapsSummary();
+    // Close the dropdown on an outside click, like a normal menu.
+    caps.addEventListener("toggle", () => {
+      if (!caps.open) return;
+      const onDocClick = (e) => {
+        if (!caps.contains(e.target)) { caps.open = false; document.removeEventListener("click", onDocClick); }
+      };
+      document.addEventListener("click", onDocClick);
+    });
 
     const remove = document.createElement("button");
     remove.type = "button";
@@ -2075,7 +2085,7 @@
     remove.textContent = "×";
     remove.addEventListener("click", () => li.remove());
 
-    li.append(id, display, tools, vision, image, embed, remove);
+    li.append(id, display, caps, remove);
     providerModelList.appendChild(li);
   }
 
