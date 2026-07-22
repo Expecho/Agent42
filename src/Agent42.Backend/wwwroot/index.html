@@ -66,16 +66,29 @@
       </nav>
 
       <footer class="sidebar__footer">
-        <button class="sidebar__settings" id="openProfileBtn" type="button">
-          <span class="sidebar__gear" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="2.1" stroke="currentColor" stroke-width="1.3"/>
-              <path d="M8 1.4v1.6M8 13v1.6M14.6 8H13M3 8H1.4M12.66 3.34l-1.13 1.13M4.47 11.53l-1.13 1.13M12.66 12.66l-1.13-1.13M4.47 4.47 3.34 3.34"
-                    stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-            </svg>
-          </span>
-          Preferences
-        </button>
+        <div class="sidebar__footer-actions">
+          <button class="sidebar__settings" id="openProfileBtn" type="button">
+            <span class="sidebar__gear" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="2.1" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M8 1.4v1.6M8 13v1.6M14.6 8H13M3 8H1.4M12.66 3.34l-1.13 1.13M4.47 11.53l-1.13 1.13M12.66 12.66l-1.13-1.13M4.47 4.47 3.34 3.34"
+                      stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </span>
+            Preferences
+          </button>
+          <!-- Token-usage dashboard (ADR 0031): a dedicated full-page view, not a Preferences tab —
+               opened over the whole app via #usageView. -->
+          <button class="sidebar__settings" id="openUsageBtn" type="button">
+            <span class="sidebar__gear" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M2.5 13.5V9.2M6.6 13.5V4.6M10.7 13.5V7M14.8 13.5V2.5"
+                      stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
+            </span>
+            Usage
+          </button>
+        </div>
         <span class="dont-panic">DON'T&nbsp;PANIC</span>
       </footer>
     </aside>
@@ -550,6 +563,160 @@
       </div>
     </form>
   </dialog>
+
+  <!-- Token-usage dashboard (ADR 0031) — a dedicated FULL-PAGE overlay, not a Preferences tab
+       (roomy enough for the four regions, faithful to the sibling AI.Telemetry.Dashboard layout). A
+       fixed overlay so it never disturbs the .app flex layout underneath; toggled by #openUsageBtn /
+       #usageCloseBtn (app.js openUsage/closeUsage). Data is fed solely from OTEL GenAI spans — there is
+       deliberately no cost and no total-tokens field anywhere. Placed as the LAST markup block in
+       <body>, but still BEFORE the <script> tags below so app.js's element lookups can find it — a
+       script tag runs synchronously at the point it's parsed, so anything after it doesn't exist yet. -->
+  <section class="usage" id="usageView" hidden aria-label="Usage dashboard">
+    <header class="usage__head">
+      <h1 class="usage__title">Usage</h1>
+
+      <div class="usage__controls">
+        <label class="field">
+          <span class="field__label">Application</span>
+          <select id="usageApplication" class="select">
+            <option value="all">All applications</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span class="field__label">User</span>
+          <select id="usageUser" class="select">
+            <option value="all">All users</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Range</span>
+          <select id="usageRange" class="select">
+            <option value="24h">Last 24 hours</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d" selected>Last 30 days</option>
+            <option value="all">All time (retained window)</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Auto-refresh</span>
+          <select id="usageRefresh" class="select">
+            <option value="0" selected>Off</option>
+            <option value="5">Every 5 seconds</option>
+            <option value="15">Every 15 seconds</option>
+            <option value="30">Every 30 seconds</option>
+            <option value="60">Every minute</option>
+            <option value="300">Every 5 minutes</option>
+          </select>
+        </label>
+      </div>
+
+      <button class="usage__close" id="usageCloseBtn" type="button">Back to console</button>
+    </header>
+
+    <div class="usage__body">
+      <section class="tiles" aria-label="Totals">
+        <div class="tile">
+          <span class="tile__label">Tool calls</span>
+          <span class="tile__value" id="usageTileToolCalls">—</span>
+        </div>
+        <div class="tile">
+          <span class="tile__label">Input tokens</span>
+          <span class="tile__value" id="usageTileInput">—</span>
+        </div>
+        <div class="tile">
+          <span class="tile__label">Output tokens</span>
+          <span class="tile__value" id="usageTileOutput">—</span>
+        </div>
+        <div class="tile">
+          <!-- Cached input is a subset of input tokens, never an addition — its own tile, not folded
+               into a total that would then over-count (reference parity; no total-tokens anywhere). -->
+          <div class="tile__label">
+            Cached input
+            <span class="tile__hint" title="Cached input is a subset of input tokens, not an addition to them.">?</span>
+          </div>
+          <span class="tile__value" id="usageTileCached">—</span>
+        </div>
+        <div class="tile">
+          <span class="tile__label">LLM calls</span>
+          <span class="tile__value" id="usageTileCalls">—</span>
+        </div>
+        <div class="tile">
+          <span class="tile__label">Errors</span>
+          <span class="tile__value tile__value--warn" id="usageTileErrors">—</span>
+        </div>
+      </section>
+
+      <!-- Honest note (ADR 0031): the OTel-only ingestion path never sees cache-read/reasoning token
+           counts, so those columns/tile read 0 rather than silently misleading. -->
+      <p class="usage__note">Cached input and reasoning read 0 — the OTel telemetry pipeline emits only input/output token counts (ADR 0031).</p>
+
+      <section class="panel" aria-labelledby="usageModelsHeading">
+        <h2 class="panel__title" id="usageModelsHeading">Tokens by model</h2>
+        <table class="grid">
+          <thead>
+            <tr>
+              <th scope="col">Application</th>
+              <th scope="col">Model</th>
+              <th scope="col">Provider</th>
+              <th scope="col" class="grid__num">Input</th>
+              <th scope="col" class="grid__num">Output</th>
+              <th scope="col" class="grid__num">Cached input</th>
+              <th scope="col" class="grid__num">Reasoning</th>
+              <th scope="col" class="grid__num">Calls</th>
+              <th scope="col" class="grid__num">Errors</th>
+              <th scope="col" class="grid__bar">Share</th>
+            </tr>
+          </thead>
+          <tbody id="usageModelsBody"></tbody>
+        </table>
+        <p class="empty" id="usageModelsEmpty" hidden>No token usage in this window.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="usageToolsHeading">
+        <!-- Tool calls project from execute_tool spans, which carry no model attribute — there is
+             deliberately no model dimension here. -->
+        <h2 class="panel__title" id="usageToolsHeading">Tool calls by name</h2>
+        <table class="grid">
+          <thead>
+            <tr>
+              <th scope="col">Application</th>
+              <th scope="col">Tool</th>
+              <th scope="col" class="grid__num">Calls</th>
+              <th scope="col" class="grid__num">Errors</th>
+              <th scope="col" class="grid__bar">Share</th>
+            </tr>
+          </thead>
+          <tbody id="usageToolsBody"></tbody>
+        </table>
+        <p class="empty" id="usageToolsEmpty" hidden>No tool calls in this window.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="usageUsersHeading">
+        <!-- Cross-user by design (ADR 0031): any signed-in user sees every user's aggregates here. -->
+        <h2 class="panel__title" id="usageUsersHeading">Usage by user</h2>
+        <table class="grid">
+          <thead>
+            <tr>
+              <th scope="col">User</th>
+              <th scope="col" class="grid__num">Input</th>
+              <th scope="col" class="grid__num">Output</th>
+              <th scope="col" class="grid__num">Cached input</th>
+              <th scope="col" class="grid__num">Reasoning</th>
+              <th scope="col" class="grid__num">Calls</th>
+              <th scope="col" class="grid__num">Errors</th>
+              <th scope="col" class="grid__num">Tool calls</th>
+              <th scope="col" class="grid__bar">Share</th>
+            </tr>
+          </thead>
+          <tbody id="usageUsersBody"></tbody>
+        </table>
+        <p class="empty" id="usageUsersEmpty" hidden>No usage in this window.</p>
+      </section>
+    </div>
+  </section>
 
   <script src="lib/marked.min.js"></script>
   <script src="lib/purify.min.js"></script>

@@ -579,6 +579,38 @@ public static class AgentApi
             return Results.Json(report);
         });
 
+        // ————— usage dashboard (token telemetry, ADR 0031) —————
+
+        // Global, cross-user token/tool usage aggregated from OpenTelemetry gen_ai spans. Behind Easy
+        // Auth like every /api/* read; deliberately GLOBAL (no GetUserId scoping) so any signed-in user
+        // sees aggregate spend, matching the reference dashboard — an accepted cross-user exposure of
+        // other users' email/usage to the ~2 allowlisted users (no role system). range ∈ 24h|7d|30d|all
+        // (unknown → 400; omitted → 30d default; 24h reads hourly, else daily). application/user accept
+        // 'all' or omitted = no filter. Injects only IGrainFactory (both-hosts-resolvable — never the
+        // Backend-only ingestion channel, which would break DevHost route param inference).
+        app.MapGet("/api/usage", async (string? application, string? user, string? range, IGrainFactory grains) =>
+        {
+            var normalizedRange = string.IsNullOrWhiteSpace(range) ? "30d" : range.ToLowerInvariant();
+            if (normalizedRange is not ("24h" or "7d" or "30d" or "all"))
+            {
+                return Results.Text(
+                    $"unknown range '{range}' (expected 24h|7d|30d|all)", "text/plain",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var report = await grains.GetGrain<IUsageRollupGrain>(UsageRollupGrain.GlobalKey)
+                .QueryAsync(normalizedRange, NormalizeFilter(application), NormalizeFilter(user));
+            return Results.Json(report);
+        });
+
+        // Distinct application/user values for the filter dropdowns (kept separate so a dropdown doesn't
+        // reset when a filter narrows the main payload).
+        app.MapGet("/api/usage/applications", async (IGrainFactory grains) =>
+            Results.Json(await grains.GetGrain<IUsageRollupGrain>(UsageRollupGrain.GlobalKey).ListApplicationsAsync()));
+
+        app.MapGet("/api/usage/users", async (IGrainFactory grains) =>
+            Results.Json(await grains.GetGrain<IUsageRollupGrain>(UsageRollupGrain.GlobalKey).ListUsersAsync()));
+
         // Registers (upserts by endpoint) the caller's push subscription for THIS device. The subscription
         // is a device push capability, stored in cleartext in the per-user grain (ADR 0028).
         app.MapPost("/api/push/subscriptions", async (PushSubscriptionRequest request, IGrainFactory grains, HttpContext http) =>
@@ -942,6 +974,13 @@ public static class AgentApi
     // never resolve to another user's chat.
     private static string AgentKey(string userId, string conversationId)
         => $"{userId}/{conversationId}";
+
+    // A usage filter of null, blank, or "all" means "no filter" (ADR 0031) — collapse them so the
+    // grain query sees a single sentinel.
+    private static string? NormalizeFilter(string? value)
+        => string.IsNullOrWhiteSpace(value) || string.Equals(value, "all", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : value;
 }
 
 // AgentId is the stored agent to bind on the first turn of an agent chat; AttachmentIds are

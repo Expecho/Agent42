@@ -381,4 +381,20 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   **SearXNG 403 is a HEALTHY sidecar** (JSON API off), not an auth failure. The tab is **appended LAST** in the
   Preferences tablist — the MCP-OAuth return deep-links to `profileTabs.select(3)`, so Configuration is index 4
   and MCP stays 3.
+- Token-usage dashboard (ADR 0031): a **dedicated full-page usage view** (opened from the sidebar footer,
+  a fixed overlay — not a Preferences tab) that reproduces the sibling `AI.Telemetry.Dashboard` — headline
+  tiles + tokens-by-model + tool-calls-by-name + usage-by-user tables, with 24h/7d/30d/all filters +
+  auto-refresh, in Agent42's own amber/phosphor style. It is **GLOBAL / cross-user** (any signed-in user sees
+  aggregate spend incl. other users' email/usage — accepted for the ~2 allowlisted users, behind Easy Auth,
+  no role system) via `GET /api/usage` (+ `/usage/applications`, `/usage/users`). Data is fed **solely from
+  the OpenTelemetry gen_ai spans already emitted** (no manual counter in `AgentGrain`): a Backend
+  `UsageSpanProcessor` (`OnEnd`, non-blocking, bounded drop-on-full channel) projects finished spans and a
+  `UsageIngestionService` (≥30 s flush, Backend-only) batches them into a **single global `UsageRollupGrain`**
+  (well-known key `"global"`) riding `agent-state` on a `"usage-rollups"` state — **no new Cosmos container**,
+  the `UserPushGrain` pattern. Read the "usage dashboard counts tokens from `chat` spans ONLY" gotcha before
+  touching this: the projector must whitelist `chat`/`execute_tool` and drop `orchestrate_tools` (its usage is
+  the SUM of child chats — double-count); cached/reasoning tokens are always 0 (OTel emits neither — the
+  dashboard measures chat spend, **not** embedding spend); async paths land in an **unreported** user bucket;
+  and the global grain **prunes on every write** (hourly ~48 h / daily ~92 d) to hold the 2 MB item cap
+  (ADR 0004), so `range=all` = the retained window. Empty offline (DevHost has no OTel pipeline).
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
