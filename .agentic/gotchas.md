@@ -479,6 +479,25 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/FakeChatClient.cs` (`ToolsEcho`)
 - **Verified:** 2026-07-17
 
+### The boot chat is not created via `startNewConversation()` — seed its composer state explicitly
+
+- **Claim:** the fresh chat waiting on page load is **not** run through `startNewConversation()`. It exists
+  purely from module-load defaults (`activeId = crypto.randomUUID()`, `chatTools = []`), and the init block
+  only fires the loaders (`initTheme` → `loadProfile`, `loadTools`). So any per-chat composer state that
+  `startNewConversation()` seeds from a preference — today the ADR 0021 tool selection
+  (`chatTools = profile.enabledTools ?? allToolKeys()`) — is **skipped for the boot chat** unless seeded
+  separately. The trap is invisible because the manual "New chat" button *does* call
+  `startNewConversation()`, so it works everywhere except the one chat the user sees first. The seed must
+  wait for **both** `/api/profile` (for `enabledTools`) and `/api/tools` (for `allToolKeys()`) to resolve —
+  the loaders are async and un-awaited — and must be **guarded** (`activeId === bootChatId &&
+  activeAgentId === null`) so a share hand-off or an opened conversation that raced ahead isn't clobbered.
+  Note this is a **display** bug, not a wrong-tools bug: the grain already resolves
+  `override ?? user-default ?? all` and `send()` never PUTs `chatTools` — but leaving the popover showing an
+  empty set means a user who toggles one tool PUTs a near-empty override, silently discarding their default.
+- **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (init block's `Promise.all([profileReady, toolsReady])`
+  seed; `startNewConversation` line ~1157; `AgentGrain.EffectiveEnabledTools`)
+- **Verified:** 2026-07-24
+
 ### Withholding images from a no-vision model must cover HISTORY, not just the new turn
 
 - **Claim:** "don't attach the image when the model can't see it" is only half the gate, and the missing
