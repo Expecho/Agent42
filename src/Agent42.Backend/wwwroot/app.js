@@ -214,7 +214,7 @@
 
   // The last profile fetched from the server. The server is the source of truth; this is
   // only a render cache, always reconciled against a fresh GET/PUT response.
-  let profile = { preferredLanguage: "", theme: "system" };
+  let profile = { preferredLanguage: "", theme: "system", enabledTools: null };
 
   // Theme engine (ADR 0005 field #2). The server profile is the source of truth; THEME_KEY is
   // only a pre-paint cache the inline head script reads to avoid a dark flash. applyTheme resolves
@@ -2884,10 +2884,22 @@
   loadProviders(); // also sets userDefaultEmbeddingModel at startup, so the composer's document-attach gate works
   refreshConversations();
   loadAgents();
-  initTheme(); // loads the profile and reconciles the theme (server wins over the pre-paint cache)
-  loadTools();
+  const profileReady = initTheme(); // loads the profile and reconciles the theme (server wins over the pre-paint cache)
+  const toolsReady = loadTools();
   // The initial state is a fresh regular chat, so the per-chat tools button is available (ADR 0021).
   toolsBtn.hidden = false;
+  // The boot chat isn't created through startNewConversation(), so seed its composer tool selection
+  // from the user default once BOTH the profile (enabledTools) and the catalog (allToolKeys) have
+  // loaded — otherwise the Tools popover shows an empty set on startup instead of the saved default
+  // (ADR 0021). Guard on the chat still being the untouched boot chat with no agent, so a share
+  // hand-off (initShare → startNewConversation) or an opened conversation (selectConversation, which
+  // sets chatTools from the server) wins the race instead of being clobbered. null default = all.
+  const bootChatId = activeId;
+  Promise.all([profileReady, toolsReady]).then(() => {
+    if (activeId === bootChatId && activeAgentId === null) {
+      chatTools = profile.enabledTools ?? allToolKeys();
+    }
+  });
   initLocation();
   initPush(); // wires the push toggle + the SW open-conversation message handler (ADR 0028)
   initShare(); // opens the destination picker when this load is an Android share hand-off
