@@ -162,19 +162,41 @@ public class ModelProviderTests
     }
 
     [Fact] // AC4 — the built client is WIRED to the Responses path, so a dead or inverted Provider.Foundry
-           // branch fails HERE even though the pure-helper seam test stays green (critic MEDIUM-2). The
-           // handle is the Step-1 no-I/O ChatClientMetadata.ProviderUri: /openai/v1 on Responses, plain on Chat.
+           // branch fails HERE even though the pure-helper seam test stays green (critic MEDIUM-2). Both
+           // Foundry paths now share the /openai/v1 endpoint (the Chat path moved there to shed the classic
+           // api-version data plane — see FoundryChatProvider_UsesV1Surface), so ProviderUri can no longer
+           // discriminate them. The no-I/O handle is instead the underlying SDK client each path exposes via
+           // GetService: a ResponsesClient on the Responses path, a ChatClient on the Chat path (verified to
+           // survive the OTel wrapper) — so a dead/inverted branch exposes the wrong one and fails here.
     public void ResponsesProvider_WiresResponsesEndpoint()
     {
-        var responsesUri = ResponsesFactory().GetClient("foundry:gpt-4o")
-            .GetService<ChatClientMetadata>()?.ProviderUri?.AbsoluteUri;
+        var responses = ResponsesFactory().GetClient("foundry:gpt-4o");
+        var chat = Factory().GetClient("foundry:gpt-4o");
+
+        // ResponsesClient is [Experimental("OPENAI001")] — the type reference alone trips it, no I/O.
+        // Types are fully qualified: `using OpenAI.Chat` would make ChatMessage ambiguous elsewhere here.
+#pragma warning disable OPENAI001
+        // The Responses path is a ResponsesClient, and is NOT a plain ChatClient...
+        Assert.NotNull(responses.GetService(typeof(OpenAI.Responses.ResponsesClient)));
+        Assert.Null(responses.GetService(typeof(OpenAI.Chat.ChatClient)));
+
+        // ...while the Chat path is the mirror image: a ChatClient, not a ResponsesClient.
+        Assert.NotNull(chat.GetService(typeof(OpenAI.Chat.ChatClient)));
+        Assert.Null(chat.GetService(typeof(OpenAI.Responses.ResponsesClient)));
+#pragma warning restore OPENAI001
+    }
+
+    [Fact] // Regression: a plain (Chat Completions) Foundry provider reaches the GA /openai/v1 surface,
+           // which carries NO api-version — NOT the classic AzureOpenAIClient data plane whose stable-SDK
+           // api-version (capped at 2024-10-21) newer Foundry deployments reject with "api version not
+           // supported". The no-I/O handle is ChatClientMetadata.ProviderUri ending in /openai/v1.
+    public void FoundryChatProvider_UsesV1Surface_NoApiVersion()
+    {
         var chatUri = Factory().GetClient("foundry:gpt-4o")
             .GetService<ChatClientMetadata>()?.ProviderUri?.AbsoluteUri;
 
-        Assert.NotNull(responsesUri);
         Assert.NotNull(chatUri);
-        Assert.EndsWith("/openai/v1", responsesUri);      // the OpenAI-compatible surface (ADR 0014)
-        Assert.DoesNotContain("/openai/v1", chatUri);      // the plain Foundry endpoint (Chat Completions)
+        Assert.EndsWith("/openai/v1", chatUri);
     }
 
     [Fact] // AC5 — tools/vision stay Full on the Responses flag (orthogonal to the wire API); only the

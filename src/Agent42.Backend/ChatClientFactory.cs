@@ -17,10 +17,12 @@ namespace Agent42.Backend;
 ///
 /// <para>Every provider is now reached with an <b>API key</b> (ADR 0017, superseding ADR 0013/0014's
 /// managed identity for Foundry): a Foundry provider with an Azure OpenAI key, and any OpenAI-compatible
-/// provider — GitHub Models, Ollama, vLLM — with its endpoint's key. What still differs is the auth
-/// HEADER: the Azure SDK sends Azure's <c>api-key</c> header on the Chat path, while the Responses
-/// <c>/openai/v1</c> path needs a custom <c>api-key</c>-header policy because the OpenAI SDK's default is
-/// <c>Authorization: Bearer</c> (Step-1 spike, ADR 0017).</para>
+/// provider — GitHub Models, Ollama, vLLM — with its endpoint's key. Both Foundry chat wire paths —
+/// Chat Completions and Responses — run over Foundry's GA <c>/openai/v1</c> surface (no <c>api-version</c>)
+/// with a custom <c>api-key</c>-header policy, because the OpenAI SDK's default is
+/// <c>Authorization: Bearer</c> (ADR 0017). The Chat path used to go through <c>AzureOpenAIClient</c>'s
+/// classic <c>api-version</c> data plane, but the stable SDK caps that query at 2024-10-21, which newer
+/// Foundry deployments reject; only the embedding client still rides the Azure SDK's own header.</para>
 ///
 /// <para>The endpoint always comes from CONFIG and never from the model or a request. That is what
 /// keeps this off the SSRF path that <c>fetch_web_page</c> is on (ADR 0011), and it must stay true:
@@ -251,11 +253,27 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
 #pragma warning restore OPENAI001
             }
 
-            // Chat Completions: the Azure SDK client sends Azure's `api-key` header itself — no custom
-            // policy needed (Step-1 spike: streamed a completion under the key).
+            // Chat Completions on Foundry's GA "v1" surface ({endpoint}/openai/v1), NOT the classic
+            // api-version data plane. AzureOpenAIClient.GetChatClient targets
+            // /openai/deployments/{model}/chat/completions?api-version=…, and the stable Azure.AI.OpenAI
+            // 2.1.0 caps that query at its newest ServiceVersion (2024-10-21) — which newer Foundry
+            // deployments reject with "api version not supported". The v1 surface carries NO api-version
+            // (the same reason the Responses branch above uses it), so build the stable OpenAIClient at
+            // /openai/v1 with the `api-key`-header policy: Azure reads the resource key from the `api-key`
+            // request header there, exactly as on the Responses path (ADR 0017 — do NOT swap it for the
+            // OpenAI SDK's ApiKeyCredential, which would send an undocumented Authorization: Bearer).
+            // Embeddings stay on the AzureOpenAIClient above — a separate, opt-in path (ADR 0030) whose
+            // v1 surface is unverified here. No named HttpClient (its AddServiceDefaults retry pipeline
+            // would multiply the stall on a non-reentrant AgentGrain turn — see OpenAICompatible below).
+            // The endpoint still comes only from config — SSRF invariant intact (ADR 0013).
+#pragma warning disable OPENAI001
+            var v1Chat = new Uri(endpoint.AbsoluteUri.TrimEnd('/') + "/openai/v1");
+            var chatClient = new OpenAIClient(
+                new ApiKeyHeaderPolicy(apiKey), new OpenAIClientOptions { Endpoint = v1Chat });
+#pragma warning restore OPENAI001
             return new Provider(
                 options,
-                model => azureClient.GetChatClient(model).AsIChatClient(),
+                model => chatClient.GetChatClient(model).AsIChatClient(),
                 embeddingGenerator: embeddings);
         }
 

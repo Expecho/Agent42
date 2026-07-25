@@ -188,12 +188,16 @@ public IChatClient GetClient(string? modelId) =>
     _providers.Count == 0 ? NoModelChatClient.Instance : _clients.GetOrAdd(Resolve(modelId).QualifiedId, Build);
 ```
 
-The two provider kinds construct different SDK clients — Azure sends its own `api-key`
-header, OpenAI-compatible carries the key credential and can also expose an image generator:
+The two provider kinds construct different SDK clients. A Foundry provider reaches both chat wire
+paths over the GA `/openai/v1` surface (no `api-version`) with an `api-key`-header policy — the Chat
+path used to go through `AzureOpenAIClient`'s classic `api-version` data plane, but the stable SDK
+caps that at `2024-10-21`, which newer deployments reject (ADR 0033). OpenAI-compatible carries the
+key credential and can also expose an image generator:
 
 ```csharp
-// AzureOpenAI (Foundry) — Chat Completions
-var client = new AzureOpenAIClient(endpoint, new AzureKeyCredential(apiKey));
+// AzureOpenAI (Foundry) — Chat Completions over the /openai/v1 GA surface (ADR 0033)
+var v1 = new Uri(endpoint.AbsoluteUri.TrimEnd('/') + "/openai/v1");
+var client = new OpenAIClient(new ApiKeyHeaderPolicy(apiKey), new OpenAIClientOptions { Endpoint = v1 });
 return new Provider(options, model => client.GetChatClient(model).AsIChatClient());
 ```
 
