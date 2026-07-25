@@ -404,7 +404,13 @@
       if (!res.ok) return;
       conversations = await res.json();
       renderSidebar();
-    } catch { /* silo may still be starting; the list refreshes on next action */ }
+      cachePut("conversations", conversations); // mirror for offline (ADR 0032)
+    } catch {
+      // Offline/silo unreachable: fall back to the last cached list instead of an empty sidebar.
+      // Only when we have nothing yet, so a live list already on screen is never overwritten.
+      const cached = await cacheGet("conversations");
+      if (cached && conversations.length === 0) { conversations = cached; renderSidebar(); }
+    }
   }
 
   function loadExpandedAgents() {
@@ -541,6 +547,7 @@
     } catch { return; /* silo may be unreachable; leave the row in place */ }
 
     conversations = conversations.filter((c) => c.id !== id);
+    cacheDelete("messages:" + id); // drop the offline copy; refreshConversations re-caches the list
     if (id === activeId) startNewConversation();
     else renderSidebar();
     refreshConversations();
@@ -554,7 +561,12 @@
       if (!res.ok) return;
       agents = await res.json();
       renderAgents();
-    } catch { /* silo may still be starting; the list refreshes on next action */ }
+      cachePut("agents", agents); // mirror for offline (ADR 0032)
+    } catch {
+      // Offline/silo unreachable: fall back to the last cached agents instead of an empty list.
+      const cached = await cacheGet("agents");
+      if (cached && agents.length === 0) { agents = cached; renderAgents(); }
+    }
   }
 
   function renderAgents() {
@@ -1111,19 +1123,8 @@
       ]);
       if (!msgRes.ok) return;
       const turns = await msgRes.json();
-      for (const turn of turns) {
-        const msg = addMessage(turn.role === "user" ? "user" : "agent");
-        if (turn.role === "user") {
-          fillUserBubble(msg, turn.text, turn.attachments, id);
-        } else {
-          setAgentMarkdown(msg, turn.text);
-          // History-restored reply: capture turn.text by closure so copy works after a reload too.
-          addCopyButton(msg, turn.text);
-          // An assistant turn may carry a generated image (ADR 0020); re-render it above the prose.
-          for (const att of turn.attachments ?? []) addAgentImage(msg, id, att.id, att.fileName);
-        }
-      }
-      scrollToBottom();
+      renderTurns(id, turns);
+      cachePut("messages:" + id, turns); // mirror this history for offline viewing (ADR 0032)
       // Restore the model picker only after the history is on screen, so a failure
       // here can never prevent the conversation itself from rendering.
       if (modelRes.ok) setModel(await modelRes.json());
@@ -1144,7 +1145,30 @@
         pendingAgentId = null;
         unlockPicker();
       }
-    } catch { /* leave the empty state visible */ }
+    } catch {
+      // Offline: render this chat's history from the cache if it was opened while online before.
+      // The model/agent/tools siblings simply degrade — the composer can't send offline anyway.
+      const cached = await cacheGet("messages:" + id);
+      if (cached) renderTurns(id, cached);
+    }
+  }
+
+  // Render a history array (from the network or the offline cache) into the open thread. Extracted
+  // so the live path and the offline-cache fallback in selectConversation share one renderer.
+  function renderTurns(id, turns) {
+    for (const turn of turns) {
+      const msg = addMessage(turn.role === "user" ? "user" : "agent");
+      if (turn.role === "user") {
+        fillUserBubble(msg, turn.text, turn.attachments, id);
+      } else {
+        setAgentMarkdown(msg, turn.text);
+        // History-restored reply: capture turn.text by closure so copy works after a reload too.
+        addCopyButton(msg, turn.text);
+        // An assistant turn may carry a generated image (ADR 0020); re-render it above the prose.
+        for (const att of turn.attachments ?? []) addAgentImage(msg, id, att.id, att.fileName);
+      }
+    }
+    scrollToBottom();
   }
 
   function startNewConversation() {
@@ -2878,10 +2902,82 @@
     profileTabs.select(3); // the MCP servers tab
   }
 
+  /* ————— offline read cache (ADR 0032) ————— */
+
+  // Agents, conversations and previously-opened chat histories are mirrored into IndexedDB so the
+  // installed PWA can render the user's data offline. This is a client-side read cache ONLY — the
+  // service worker still never touches /api (ADR 0002); the server stays the source of truth and
+  // every successful fetch overwrites the mirror. Best-effort throughout: any IndexedDB error
+  // resolves to a no-op (private mode, quota) and never blocks a load. A single "kv" store keyed by
+  // "agents" / "conversations" / "messages:<id>".
+  const CACHE_DB = "agent42-cache";
+  const CACHE_STORE = "kv";
+
+  function cacheDb() {
+    return new Promise((resolve, reject) => {
+      const open = indexedDB.open(CACHE_DB, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore(CACHE_STORE);
+      open.onsuccess = () => resolve(open.result);
+      open.onerror = () => reject(open.error);
+    });
+  }
+
+  function cacheGet(key) {
+    return new Promise((resolve) => {
+      cacheDb().then((db) => {
+        const get = db.transaction(CACHE_STORE, "readonly").objectStore(CACHE_STORE).get(key);
+        get.onsuccess = () => resolve(get.result ?? null);
+        get.onerror = () => resolve(null);
+      }).catch(() => resolve(null));
+    });
+  }
+
+  function cachePut(key, value) {
+    return new Promise((resolve) => {
+      cacheDb().then((db) => {
+        const tx = db.transaction(CACHE_STORE, "readwrite");
+        tx.objectStore(CACHE_STORE).put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      }).catch(() => resolve());
+    });
+  }
+
+  function cacheDelete(key) {
+    return new Promise((resolve) => {
+      cacheDb().then((db) => {
+        const tx = db.transaction(CACHE_STORE, "readwrite");
+        tx.objectStore(CACHE_STORE).delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      }).catch(() => resolve());
+    });
+  }
+
+  // Paint the last-known agents + conversations from the cache at startup, so an offline (or slow)
+  // load shows the user's data before—or instead of—the network fetch resolving. The fire-and-forget
+  // loaders below overwrite both the arrays and the cache when the network succeeds; the length
+  // guards keep a cache paint from clobbering data the network already delivered (fast path wins).
+  async function hydrateFromCache() {
+    const [cachedConvs, cachedAgents] = await Promise.all([
+      cacheGet("conversations"),
+      cacheGet("agents"),
+    ]);
+    if (cachedConvs && conversations.length === 0) {
+      conversations = cachedConvs;
+      renderSidebar();
+    }
+    if (cachedAgents && agents.length === 0) {
+      agents = cachedAgents;
+      renderAgents();
+    }
+  }
+
   /* ————— init ————— */
 
   loadModels();
   loadProviders(); // also sets userDefaultEmbeddingModel at startup, so the composer's document-attach gate works
+  hydrateFromCache(); // paint cached agents + conversations first, so offline (or slow) loads aren't empty (ADR 0032)
   refreshConversations();
   loadAgents();
   const profileReady = initTheme(); // loads the profile and reconciles the theme (server wins over the pre-paint cache)

@@ -951,6 +951,22 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
 - **Verified:** 2026-07-06
 
+### Offline data for agents/chats lives in app.js IndexedDB, NEVER in the service worker
+
+- **Claim:** the PWA renders the user's agents and chats offline (ADR 0032) via a **client-side read
+  cache in `app.js`** — a `agent42-cache` IndexedDB store (`cacheGet`/`cachePut`/`cacheDelete`) that
+  mirrors `/api/agents`, `/api/conversations` and per-conversation `messages:<id>` on every successful
+  fetch and is replayed on failure / at startup (`hydrateFromCache`, `renderTurns`). Do **not** "fix"
+  an empty offline sidebar by caching `/api` in the service worker — that reintroduces the exact ADR
+  0002 failure the SW's `/api` early-return prevents (a stale-session login 302 masked, per-user
+  auth-bearing streaming responses staled/leaked) and trips
+  `PwaAssetsTests.ServiceWorker_BypassesApiBeforeCaching`. The SW stays shell-only; all read caching is
+  in `app.js`. Two properties to keep: the cache is **best-effort** (any IndexedDB error resolves to a
+  no-op — never throw into a load path), and a cache paint is **length-guarded** so the network
+  fast-path is never clobbered. A chat is viewable offline only if it was opened at least once online.
+- **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (`cacheGet`/`cachePut`/`hydrateFromCache`/`renderTurns`), `src/Agent42.Backend/wwwroot/sw.js`, `tests/Agent42.Tests/PwaAssetsTests.cs` (`Frontend_MirrorsAgentsAndChatsForOffline`), `.agentic/decisions/0032-offline-read-cache-indexeddb.md`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
+- **Verified:** 2026-07-25
+
 ### A shared static instance must never be a grain-state default (Orleans mutates it)
 
 - **Claim:** giving Orleans grain state a default that is a *cached static* instance
