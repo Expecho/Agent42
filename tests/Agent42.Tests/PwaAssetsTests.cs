@@ -184,7 +184,39 @@ public sealed class PwaAssetsTests
         // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
         // stale assets — sw.js serves the shell cache-first with background revalidate.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v9", sw);
+        Assert.Contains("agent42-shell-v10", sw);
+    }
+
+    // Offline read cache (ADR 0032): agents, conversations and previously-opened chat histories are
+    // mirrored into an IndexedDB "agent42-cache" store in app.js so the installed PWA can render the
+    // user's data offline. This lives entirely in app.js — the service worker still never touches /api
+    // (ADR 0002), so ServiceWorker_BypassesApiBeforeCaching stays the guard for that invariant.
+    // Source-text heuristic (no JS runner by design) — proves the wiring shipped, not runtime behaviour.
+    [Fact]
+    public async Task Frontend_MirrorsAgentsAndChatsForOffline()
+    {
+        var app = await _client.GetStringAsync("/app.js");
+
+        // The dedicated read-cache store + its best-effort helpers.
+        Assert.Contains("agent42-cache", app);
+        Assert.Contains("function cacheGet", app);
+        Assert.Contains("function cachePut", app);
+
+        // Startup paints the cached lists before/instead of the network fetch resolving.
+        Assert.Contains("function hydrateFromCache", app);
+        Assert.Contains("hydrateFromCache()", app);
+
+        // The two list loaders persist on success and fall back to the cache on failure.
+        Assert.Contains("cachePut(\"conversations\", conversations)", app);
+        Assert.Contains("cachePut(\"agents\", agents)", app);
+        Assert.Contains("cacheGet(\"conversations\")", app);
+        Assert.Contains("cacheGet(\"agents\")", app);
+
+        // A previously-opened chat's history is mirrored per id and re-rendered from the cache offline,
+        // through the same renderTurns() the live path uses.
+        Assert.Contains("cachePut(\"messages:\" + id, turns)", app);
+        Assert.Contains("cacheGet(\"messages:\" + id)", app);
+        Assert.Contains("function renderTurns", app);
     }
 
     // Copy-to-clipboard button on finalized agent replies: a hover/focus-revealed glyph button at the

@@ -37,13 +37,18 @@ public sealed class ImageGenerationAssetsTests
     }
 
     // AC11 — a reloaded assistant turn re-renders its generated image from history (turn.attachments).
+    // The render loop was extracted into renderTurns (shared by the live path and the offline-cache
+    // fallback, ADR 0032); selectConversation drives it, so assert the delegation AND the render.
     [Fact]
     public async Task SelectConversation_RendersAssistantImagesFromHistory()
     {
         var app = await _client.GetStringAsync("/app.js");
 
         var select = Body(app, "async function selectConversation(id)");
-        Assert.Contains("addAgentImage(msg, id, att.id", select);
+        Assert.Contains("renderTurns(id, turns)", select);
+
+        var renderTurns = Body(app, "function renderTurns(id, turns)");
+        Assert.Contains("addAgentImage(msg, id, att.id", renderTurns);
     }
 
     // AC11 — the providers UI lets a user flag a model as image-generation, and it is sent on save.
