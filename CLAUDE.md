@@ -399,4 +399,16 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   identity span processor stamps it as the `agent42.application` tag — never override `gen_ai.operation.name`;
   non-agent chats fall back to `"Agent42"`); and the global grain **prunes on every write** (hourly ~48 h / daily ~92 d) to hold the 2 MB item cap
   (ADR 0004), so `range=all` = the retained window. Empty offline (DevHost has no OTel pipeline).
+- Offline read cache (ADR 0032): the installed PWA renders the user's **agents and chats offline** via a
+  **client-side IndexedDB mirror in `app.js`** (DB `agent42-cache`, store `kv`, keys `agents` /
+  `conversations` / `messages:<id>`; helpers `cacheGet`/`cachePut`/`cacheDelete`). Every successful
+  `/api/agents` · `/api/conversations` · `.../messages` fetch writes the mirror; `hydrateFromCache()`
+  paints cached lists at startup (length-guarded so the network fast-path wins) and the loaders fall back
+  to the cache on failure — a chat is viewable offline only if it was opened at least once online
+  (`selectConversation` caches its history and replays it through the extracted `renderTurns`). **The SW
+  is deliberately NOT involved** — it stays shell-only and never touches `/api` (ADR 0002); "fixing" empty
+  offline lists by caching `/api` in the SW breaks that invariant (see the gotcha). Only infra-free change
+  beyond `app.js` is the shell version bump `agent42-shell-v9` → `-v10`. **Consequence:** conversation text
+  + agent definitions now persist **unencrypted** in origin IndexedDB (data-at-rest, cleared with site
+  data); no new egress. Image thumbnails don't load offline (separate attachment proxy) — text shows.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
