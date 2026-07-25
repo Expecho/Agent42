@@ -839,8 +839,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   sends `Authorization: Bearer <key>` — Azure's `/openai/v1` reads the resource key from the **`api-key`
   request header**. The 2026-07-16 Step-1 spike found the correct key gets *past auth* on **both** header
   positions (a wrong key 401s on both), but `api-key` is Azure's documented mechanism, so that is what
-  ships; do not "simplify" it to `ApiKeyCredential` (undocumented Bearer that could regress). The Chat
-  path is fine — `AzureOpenAIClient(endpoint, AzureKeyCredential)` sends `api-key` itself. (2) **The
+  ships; do not "simplify" it to `ApiKeyCredential` (undocumented Bearer that could regress). **As of
+  ADR 0033 the Chat Completions path uses this SAME `/openai/v1` + `api-key`-header policy** (it moved
+  off `AzureOpenAIClient`'s classic api-version data plane — see the "Foundry Chat Completions runs over
+  `/openai/v1`" gotcha below); only the **embedding** client still relies on
+  `AzureOpenAIClient(endpoint, AzureKeyCredential)` sending `api-key` itself. (2) **The
   Foundry key is on the AVAILABILITY PATH — a blank one is FATAL, unlike a third-party provider key.**
   `ModelProviderBuilder.Build` throws when the resolved Foundry key is blank (mirrored in Bicep by a
   `@secure() @minLength(32)` param following the **`searxngSecret` shape** — unconditional secret + env +
@@ -865,6 +868,30 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   check + embedding client from `Program.cs` and the `azureOpenAIApiKey` `@minLength` Bicep param — the
   `api-key`-header auth claim itself is unchanged, but those two anchors no longer exist.)
 - **Verified:** 2026-07-21
+
+### Foundry Chat Completions runs over `/openai/v1` — NOT `AzureOpenAIClient` (its api-version is capped at 2024-10-21)
+
+- **Claim:** a Foundry provider with `UseResponsesApi` **off** (Chat Completions) must **not** be built
+  through `AzureOpenAIClient.GetChatClient` — that targets the classic data plane
+  `/openai/deployments/{model}/chat/completions?**api-version**=…`, and the `api-version` is supplied by
+  the SDK from `AzureOpenAIClientOptions.ServiceVersion`, whose default is the **newest value the SDK
+  knows**. The pinned stable **`Azure.AI.OpenAI 2.1.0` caps that enum at `V2024_10_21`** (its whole set is
+  `{V2024_06_01, V2024_10_21}`) — there is nothing newer to select without a prerelease (hard-rule #4).
+  Newer Foundry deployments **reject `2024-10-21` with "api version not supported"**, breaking the entire
+  Chat path. The fix (ADR 0033): build the Chat path exactly like the Responses path — a stable
+  `OpenAIClient` at `{endpoint}/openai/v1` (the GA "v1" surface, **no api-version**) with the
+  `ApiKeyHeaderPolicy`, then `GetChatClient(model).AsIChatClient()`. **Two traps that bite:** (1) the Chat
+  path shares `/openai/v1` with Responses now, so `ChatClientMetadata.ProviderUri` **cannot** discriminate
+  them in a no-I/O test — the handle is instead `GetService(typeof(OpenAI.Chat.ChatClient))` (Chat) vs
+  `GetService(typeof(OpenAI.Responses.ResponsesClient))` (Responses), which survives the OTel wrapper the
+  factory applies. (2) the **embedding** generator is *deliberately* left on `AzureOpenAIClient`
+  (`GetEmbeddingClient`), so `AzureOpenAIClient` is still built in `Provider.Foundry` — it just no longer
+  serves chat; if a Foundry embedding model ever hits the same wall, give it the same `/openai/v1`
+  treatment (the v1-embeddings surface was not verified in ADR 0033).
+- **Evidence:** `src/Agent42.Backend/ChatClientFactory.cs` (`Provider.Foundry`, the non-`UseResponses`
+  branch), `tests/Agent42.Tests/ModelProviderTests.cs` (`FoundryChatProvider_UsesV1Surface_NoApiVersion`,
+  `ResponsesProvider_WiresResponsesEndpoint`), `.agentic/decisions/0033-foundry-chat-over-openai-v1.md`
+- **Verified:** 2026-07-25
 
 ### `HostedWebSearchTool.Name` is `web_search` — it collides with the SearXNG shim, so hosted models SWAP
 
