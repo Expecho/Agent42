@@ -1324,6 +1324,84 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Contains($"https://host{AgentGrain.MaxFetchableUrls + 9}.example.com/", state.FetchableUrls);
     }
 
+    // ---- Ephemeral / incognito chat (ADR 0034) --------------------------------------------------
+    //
+    // An ephemeral turn runs the model normally but never writes its session item, so the conversation
+    // leaves no trace in Cosmos (the API layer separately keeps it out of the sidebar index — see
+    // AgentApiTests). The flag rides the chat request into a turn-scoped, non-persisted grain field,
+    // exactly like the user's location (ADR 0012).
+
+    // The turn still answers, but nothing is persisted — a fresh grain that only ran an ephemeral turn
+    // has an unwritten (null) SerializedSession.
+    [Fact]
+    public async Task EphemeralChat_RunsTheTurn_ButPersistsNothing()
+    {
+        const string key = "ephemeral-nopersist-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        var events = await CollectAsync(agent.ChatAsync("hi", null, null, null, ephemeral: true));
+
+        Assert.False(string.IsNullOrWhiteSpace(Answer(events)), "an ephemeral turn should still answer.");
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+        // Nothing was written to storage — the incognito guarantee.
+        Assert.Null((await SessionStateOf(key)).SerializedSession);
+    }
+
+    // The whole point of ephemeral: after the grain idles out, a reopened conversation has NO history,
+    // because the session was never persisted. (A normal turn survives reactivation — History_SurvivesGrainReactivation.)
+    [Fact]
+    public async Task EphemeralChat_LeavesNoHistory_AfterReactivation()
+    {
+        const string key = "ephemeral-reactivation-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("this should vanish", null, null, null, ephemeral: true));
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        var history = await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        Assert.Empty(history);
+    }
+
+    // _ephemeral is activation-scoped and cleared in ChatAsync's finally (the location-bug family, gotchas):
+    // a NORMAL turn following an ephemeral one on the SAME activation must persist, or a warm grain would
+    // silently keep skipping its writes.
+    [Fact]
+    public async Task EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists()
+    {
+        const string key = "ephemeral-clearing-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        // Turn 1 — ephemeral: writes nothing.
+        await CollectAsync(agent.ChatAsync("incognito turn", null, null, null, ephemeral: true));
+        Assert.Null((await SessionStateOf(key)).SerializedSession);
+
+        // Turn 2 — normal, same activation: the flag must have been cleared, so this turn persists.
+        await CollectAsync(agent.ChatAsync("on the record now", null, null, null, ephemeral: false));
+
+        var persisted = (await SessionStateOf(key)).SerializedSession;
+        Assert.False(string.IsNullOrEmpty(persisted), "the normal turn after an ephemeral one must persist.");
+        Assert.Contains("on the record now", persisted);
+    }
+
+    // Scheduling is refused in an ephemeral chat (a durable reminder would fire the persisting/pushing
+    // reminder path): the tool is still called, but it registers NO reminder and returns a refusal.
+    [Fact]
+    public async Task EphemeralChat_SchedulingIsRefused_NoReminderRegistered()
+    {
+        const string key = "ephemeral-schedule-conversation";
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        var events = await CollectAsync(
+            agent.ChatAsync("please remind me to drink water", null, null, null, ephemeral: true));
+
+        // The model still tried to schedule…
+        var start = Assert.Single(events, e => e.Type == AgentStreamEventType.ToolCallStart);
+        Assert.Equal("schedule_prompt", start.ToolName);
+        // …but the tool refused, and nothing durable was created.
+        Assert.Contains("incognito", ToolResult(events), StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await agent.GetScheduledPromptsAsync());
+    }
+
     private static async Task<List<AgentStreamEvent>> Chat(IAgentGrain agent, string message)
     {
         var events = new List<AgentStreamEvent>();

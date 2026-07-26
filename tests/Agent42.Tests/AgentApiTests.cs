@@ -172,6 +172,34 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.Empty(history!);
     }
 
+    // Ephemeral / incognito chat (ADR 0034): a POST with ephemeral:true is not listed in the sidebar —
+    // the endpoint skips TouchAsync, so the conversation never enters /api/conversations. (Non-persistence
+    // of the session itself is the grain's job — see AgentGrainTests.EphemeralChat_LeavesNoHistory_AfterReactivation.)
+    // Contrast with a normal chat on the same run, which IS listed, so this proves the skip, not an empty index.
+    [Fact]
+    public async Task EphemeralChat_IsNotListedInTheSidebar()
+    {
+        const string ephemeralId = "api-ephemeral-conversation";
+        const string normalId = "api-normal-conversation";
+
+        using (var chat = await _client.PostAsJsonAsync(
+            $"/api/chat/{ephemeralId}", new ChatRequest("secret", null, null, null, null, Ephemeral: true)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync(); // drain the NDJSON stream
+        }
+
+        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{normalId}", new ChatRequest("hi", null)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync();
+        }
+
+        var conversations = await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
+        Assert.DoesNotContain(conversations!, c => c.Id == ephemeralId);
+        Assert.Contains(conversations!, c => c.Id == normalId);
+    }
+
     // AC5: agents CRUD is reachable over HTTP and returns JSON.
     [Fact]
     public async Task AgentsEndpoints_CrudRoundTrip_AsJson()

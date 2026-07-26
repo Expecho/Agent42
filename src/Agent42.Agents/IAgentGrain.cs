@@ -35,11 +35,14 @@ public interface IAgentGrain : IGrainWithStringKey
     /// authorized sharing it — see <see cref="UserLocation"/> for why a position has to ride the chat
     /// request rather than be fetched by the tool. It is <b>turn-scoped</b>: the grain never persists
     /// it, so a later turn without one does not inherit this turn's fix (ADR 0012).
+    /// <paramref name="ephemeral"/> is the incognito flag (ADR 0034): when true the turn skips its
+    /// session-state write, so the conversation leaves no trace in Cosmos. Like <paramref name="location"/>
+    /// it is turn-scoped and never persisted. The default keeps existing callers working.
     /// </summary>
     [Alias("ChatAsync")]
     IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
-        UserLocation? location = null);
+        UserLocation? location = null, bool ephemeral = false);
 
     /// <summary>
     /// Returns the qualified model id this conversation is currently using, so the UI can
