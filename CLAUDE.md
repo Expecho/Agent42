@@ -411,4 +411,18 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   beyond `app.js` is the shell version bump `agent42-shell-v9` → `-v10`. **Consequence:** conversation text
   + agent definitions now persist **unencrypted** in origin IndexedDB (data-at-rest, cleared with site
   data); no new egress. Image thumbnails don't load offline (separate attachment proxy) — text shows.
+- Ephemeral / incognito chat (ADR 0034): a composer **incognito toggle** starts a chat whose history is
+  **never persisted** (the grain skips its `WriteStateAsync`) and that **never appears in the sidebar** (the
+  `POST /api/chat/{id}` handler skips `ConversationIndexGrain.TouchAsync`). It reuses the non-persisted
+  `_turnLocation` pattern exactly: a trailing `bool Ephemeral` on `ChatRequest` → a trailing `bool ephemeral`
+  on `IAgentGrain.ChatAsync` → a turn-scoped **`_ephemeral`** field cleared in `ChatAsync`'s `finally` (and
+  reset on the two always-persisting async entrypoints). **Scope is session-only:** documents are **blocked
+  at the composer** (RAG ingestion writes durable Cosmos vector chunks), images stay allowed (their blob
+  bytes persist — accepted), and **scheduling is refused inside `SchedulePromptAsync`** (a durable reminder
+  would fire the persisting/pushing `ReceiveReminder`, ADR 0028). The toggle is fixed at chat creation
+  (settable only on a fresh empty regular chat, hidden under the picker lock on agent chats). No new grain,
+  no state migration, no new Cosmos surface. **The guarantee is "not persisted, not listed", not "not in
+  memory"** — a live activation still holds the chat; the trace-free property shows up on deactivation. Egress
+  (ADR 0013) is unchanged: incognito is about durability, not privacy from a third-party model. See the
+  ephemeral-chat gotcha before touching `_ephemeral` or the scheduling guard.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

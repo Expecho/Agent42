@@ -147,6 +147,7 @@
   const agentToolChecks = document.getElementById("agentToolChecks");
   const profileToolChecks = document.getElementById("profileToolChecks");
   const toolsBtn = document.getElementById("toolsBtn");
+  const incognitoBtn = document.getElementById("incognitoBtn");
   const toolsDialog = document.getElementById("toolsDialog");
   const chatToolChecks = document.getElementById("chatToolChecks");
   const toolsDoneBtn = document.getElementById("toolsDoneBtn");
@@ -159,6 +160,9 @@
 
   let conversations = [];
   let activeId = crypto.randomUUID();
+  // Incognito flag for the active chat (ADR 0034). Fixed at chat creation: settable only on a fresh,
+  // empty regular chat, then locked once the first message is sent (like the conversation id itself).
+  let ephemeral = false;
   let streaming = false;
   let defaultModel = null;
   let modelsData = { models: [], default: null };
@@ -754,14 +758,27 @@
     agentLabel.hidden = false;
     agentLabel.textContent = `⛓ ${name} · ${modelLabel(model)}`;
     // An agent chat's tools come from its bind snapshot (ADR 0021), so the per-chat popover is hidden —
-    // a PUT before the first agent turn would be clobbered by the bind anyway.
+    // a PUT before the first agent turn would be clobbered by the bind anyway. Incognito is likewise a
+    // regular-chat-only affordance (ADR 0034), so it hides under the same lock.
     toolsBtn.hidden = true;
+    incognitoBtn.hidden = true;
   }
 
   function unlockPicker() {
     modelField.hidden = false;
     agentLabel.hidden = true;
     toolsBtn.hidden = false;
+    incognitoBtn.hidden = false;
+  }
+
+  // Reflect the incognito flag onto the toggle and the empty-state hint (ADR 0034). `interactive` is
+  // false once a chat has a message or history — ephemerality is fixed at creation, so the button locks.
+  function setIncognito(on, interactive) {
+    ephemeral = on;
+    incognitoBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    incognitoBtn.classList.toggle("is-active", on);
+    if (interactive !== undefined) incognitoBtn.disabled = !interactive;
+    document.body.classList.toggle("is-incognito", on);
   }
 
   /* ————— thread rendering ————— */
@@ -864,6 +881,17 @@
     // and the same file can be re-picked.
     const uploadId = activeId;
     for (const file of files) {
+      // Incognito document gate (ADR 0034): RAG ingestion writes durable chunks to the Cosmos vector
+      // store, which would outlive an ephemeral chat — so block documents while incognito. Images are
+      // fine (session-only ephemerality). The server does not enforce this, so the gate lives here.
+      if (ephemeral && !file.type.startsWith("image/")) {
+        pendingNotices.push({
+          fileName: file.name,
+          message: "Documents can't be attached in an incognito chat — they'd be indexed and stored. Turn off incognito to attach documents.",
+        });
+        renderAttachmentPreview();
+        continue;
+      }
       // Document-attach gate (ADR 0007/0018): a document needs an embedding model to be indexed for RAG, so
       // block the attempt when none is configured — images never need embeddings and are always allowed. The
       // server also rejects it (defense-in-depth); this just avoids a pointless upload + a cryptic error.
@@ -1109,6 +1137,9 @@
     closeDrawer();
     if (streaming || id === activeId) return;
     activeId = id;
+    // An opened conversation is a persisted one (an ephemeral chat never gets a sidebar row), so
+    // incognito is off and locked here — it can only be chosen on a fresh chat (ADR 0034).
+    setIncognito(false, false);
     clearPendingAttachments();
     renderSidebar();
     clearThread();
@@ -1184,6 +1215,8 @@
     if (defaultModel) setModel(defaultModel);
     clearPendingAttachments();
     unlockPicker();
+    // A fresh chat is where incognito can be chosen — off by default, and interactive until first send.
+    setIncognito(false, true);
     clearThread();
     setEmptyVisible(true);
     renderSidebar();
@@ -1507,6 +1540,9 @@
     streaming = true;
     sendBtn.disabled = true;
     modelSelect.disabled = true;
+    // Ephemerality is fixed at creation (ADR 0034): once the first prompt goes out, lock the toggle
+    // for the life of this chat. "New chat" re-enables it.
+    incognitoBtn.disabled = true;
     input.value = "";
     autosize();
 
@@ -1539,6 +1575,10 @@
           // Whatever fix is already cached (ADR 0012) — read synchronously, never awaited. No
           // geolocation outcome (denied, timed out, unsupported, stale, absent) may delay a chat.
           location: currentLocationForSend(),
+          // Incognito (ADR 0034): the server skips this turn's session write and never lists the
+          // conversation, so it leaves no trace. Also keeps it out of the offline cache — an ephemeral
+          // chat is never TouchAsync'd, so refreshConversations()/cachePut never see it.
+          ephemeral,
         }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
@@ -1846,6 +1886,10 @@
 
   toolsBtn.addEventListener("click", openToolsDialog);
   toolsDoneBtn.addEventListener("click", () => toolsDialog.close());
+
+  // Flip incognito for the fresh chat (ADR 0034). The button is disabled once a chat has started, so
+  // this only ever fires while the flag is still settable.
+  incognitoBtn.addEventListener("click", () => setIncognito(!ephemeral));
   chatToolChecks.addEventListener("change", persistChatTools);
 
   /* ————— model providers (per-user overlay, ADR 0018) ————— */
@@ -2982,8 +3026,11 @@
   loadAgents();
   const profileReady = initTheme(); // loads the profile and reconciles the theme (server wins over the pre-paint cache)
   const toolsReady = loadTools();
-  // The initial state is a fresh regular chat, so the per-chat tools button is available (ADR 0021).
+  // The initial state is a fresh regular chat, so the per-chat tools button is available (ADR 0021),
+  // and incognito can be chosen — off and interactive until the first send (ADR 0034).
   toolsBtn.hidden = false;
+  incognitoBtn.hidden = false;
+  setIncognito(false, true);
   // The boot chat isn't created through startNewConversation(), so seed its composer tool selection
   // from the user default once BOTH the profile (enabledTools) and the catalog (allToolKeys) have
   // loaded — otherwise the Tools popover shows an empty set on startup instead of the saved default

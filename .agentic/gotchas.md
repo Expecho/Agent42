@@ -338,6 +338,36 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0012-user-location-google-geocoding.md`
 - **Verified:** 2026-07-13
 
+### Ephemeral chat: `_ephemeral` is the same turn-scoped trap, and scheduling must be refused inside the tool
+
+- **Claim:** the incognito flag (ADR 0034) is a second member of the `_turnLocation` family — a turn-scoped
+  `AgentGrain` field that **lives for the activation** and must be cleared explicitly, or a warm grain's
+  next (non-ephemeral) turn silently inherits it and **skips its own `WriteStateAsync`**, losing a chat the
+  user expected to keep. It is cleared in `ChatAsync`'s `finally` (with `_turnLocation`) and defensively
+  reset on entry to the two always-persisting async paths (`EnqueuePromptAsync`, `ReceiveReminder`).
+  `EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists` pins this. Two more traps in the same
+  feature: **(1)** scheduling is refused **inside `SchedulePromptAsync`** (an early `if (_ephemeral) return
+  …`), NOT by dropping the tool in `BuildAgent` — `BuildAgent` runs on activation *before* the first request
+  sets `_ephemeral` (the same ordering hazard as `_userDefaultEnabledTools`), so a per-turn tool-list rebuild
+  would be fragile; the in-tool guard has no ordering hazard and registers nothing durable (a reminder would
+  otherwise fire the persisting/pushing `ReceiveReminder`). **(2)** the guarantee is "not persisted, not
+  listed", **not** "not in memory": while the grain is activated its `_session` still holds the chat, so
+  `GET /messages` reflects it live — the trace-free property only shows up after deactivation (asserted via
+  `EphemeralChat_LeavesNoHistory_AfterReactivation`, not an empty `/messages`). Documents are blocked at the
+  composer (RAG writes durable chunks); images are allowed (blob bytes persist — accepted, session-only).
+- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`_ephemeral`; the `finally` in `ChatAsync`; the guards on
+  the two `WriteStateAsync` calls in `ChatCoreAsync`/`GenerateImageTurnAsync`; the refusal in
+  `SchedulePromptAsync`; the resets in `EnqueuePromptAsync`/`ReceiveReminder`),
+  `src/Agent42.Backend/AgentApi.cs` (`ChatRequest.Ephemeral`, the `TouchAsync` skip),
+  `src/Agent42.Backend/wwwroot/app.js` (`ephemeral`, `setIncognito`, the incognito document gate in
+  `handleFiles`), `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`EphemeralChat_RunsTheTurn_ButPersistsNothing`, `EphemeralChat_LeavesNoHistory_AfterReactivation`,
+  `EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists`,
+  `EphemeralChat_SchedulingIsRefused_NoReminderRegistered`),
+  `tests/Agent42.Tests/AgentApiTests.cs` (`EphemeralChat_IsNotListedInTheSidebar`),
+  `.agentic/decisions/0034-ephemeral-chat.md`
+- **Verified:** 2026-07-26
+
 ### `get_current_location` is NOT an SSRF sink — and exactly two properties keep it that way
 
 - **Claim:** it makes an outbound HTTP call from the same container whose managed identity IMDS will mint

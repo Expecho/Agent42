@@ -58,11 +58,16 @@ public static class AgentApi
 
             // Title the conversation from the message; an image-only turn has no text, so fall
             // back to the first attachment's filename (or a placeholder) rather than a blank title.
-            var title = !string.IsNullOrWhiteSpace(request.Message)
-                ? request.Message
-                : attachmentRefs?.FirstOrDefault()?.FileName ?? "Image";
-            await grains.GetGrain<IConversationIndexGrain>(userId)
-                .TouchAsync(conversationId, title, definition?.Id, definition?.Name);
+            // An ephemeral (incognito) chat is never touched into the index, so it never appears in the
+            // sidebar and — paired with the grain skipping its session write — leaves no trace (ADR 0034).
+            if (!request.Ephemeral)
+            {
+                var title = !string.IsNullOrWhiteSpace(request.Message)
+                    ? request.Message
+                    : attachmentRefs?.FirstOrDefault()?.FileName ?? "Image";
+                await grains.GetGrain<IConversationIndexGrain>(userId)
+                    .TouchAsync(conversationId, title, definition?.Id, definition?.Name);
+            }
 
             // Snapshot the persona into the conversation before the turn runs (BindAgentAsync
             // is idempotent — a retried turn no-ops). A deleted agent skips binding and lets the
@@ -88,7 +93,7 @@ public static class AgentApi
             var location = request.Location is { IsValid: true } fix ? fix : null;
 
             http.Response.ContentType = "application/x-ndjson";
-            await foreach (var evt in agent.ChatAsync(request.Message, model, attachmentRefs, location))
+            await foreach (var evt in agent.ChatAsync(request.Message, model, attachmentRefs, location, request.Ephemeral))
             {
                 await http.Response.WriteAsync(JsonSerializer.Serialize(evt, StreamEventJson) + "\n");
                 await http.Response.Body.FlushAsync();
@@ -986,11 +991,13 @@ public static class AgentApi
 // AgentId is the stored agent to bind on the first turn of an agent chat; AttachmentIds are
 // the ids returned by the upload endpoint for images to send with this turn; Location is the
 // browser's current position, when the user has authorized sharing it (ADR 0012) — it rides the
-// chat request because a server-side tool cannot ask the browser for a fix mid-turn. All are
-// trailing defaults so existing positional callers (new ChatRequest("hi", null)) keep compiling.
+// chat request because a server-side tool cannot ask the browser for a fix mid-turn. Ephemeral
+// is the incognito flag (ADR 0034): when set, the turn is neither persisted into the session
+// item nor listed in the sidebar. All are trailing defaults so existing positional callers
+// (new ChatRequest("hi", null)) keep compiling.
 public record ChatRequest(
     string Message, string? Model, string? AgentId = null, IReadOnlyList<string>? AttachmentIds = null,
-    UserLocation? Location = null);
+    UserLocation? Location = null, bool Ephemeral = false);
 
 // What the upload endpoint returns for an image: the id to send back on the next turn plus the
 // metadata needed to render a preview. The internal blob path is deliberately omitted.

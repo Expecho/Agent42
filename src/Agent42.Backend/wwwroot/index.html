@@ -132,6 +132,17 @@
               <circle cx="11.5" cy="11.5" r="1.6" stroke="currentColor" stroke-width="1.4"/>
             </svg>
           </button>
+          <!-- Ephemeral / incognito chat (ADR 0034): fixed at chat creation, so it's only interactive on a
+               fresh empty chat and hides under the same lock as the model picker (regular chats only). -->
+          <button class="composer__incognito" id="incognitoBtn" type="button" hidden aria-pressed="false"
+                  aria-label="Incognito chat" title="Incognito: don't save this chat or list it in the sidebar">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M2 9h12M5 9l.8-2.6a1.2 1.2 0 0 1 1.15-.9h2.1a1.2 1.2 0 0 1 1.15.9L11 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="4.6" cy="11" r="1.8" stroke="currentColor" stroke-width="1.4"/>
+              <circle cx="11.4" cy="11" r="1.8" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M6.4 11h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </button>
           <textarea id="promptInput" class="composer__input" rows="1"
             placeholder="Transmit a prompt…" aria-label="Prompt"></textarea>
           <button class="composer__mic" id="micBtn" type="button" aria-label="Dictate prompt" aria-pressed="false">
