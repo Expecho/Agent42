@@ -95,6 +95,17 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// </summary>
     private UserLocation? _turnLocation;
 
+    /// <summary>
+    /// True while an ephemeral (incognito) turn is being processed (ADR 0034). Set at the top of
+    /// <see cref="ChatAsync"/> from the flag the browser sent, it makes <see cref="ChatCoreAsync"/> and
+    /// <see cref="GenerateImageTurnAsync"/> skip their session-state writes, and makes
+    /// <see cref="SchedulePromptAsync"/> refuse (a durable reminder would fire the persisting/pushing
+    /// reminder path). <b>Like <see cref="_turnLocation"/>, this field lives for the grain ACTIVATION,
+    /// not the call, so it is cleared explicitly</b> — in the <c>finally</c> of <see cref="ChatAsync"/> —
+    /// or a warm activation's next (non-ephemeral) turn would silently inherit it and skip its own write.
+    /// </summary>
+    private bool _ephemeral;
+
     public AgentGrain(
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
         IUserChatClientFactoryProvider chatClientFactoryProvider,
@@ -574,13 +585,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
-        UserLocation? location = null)
+        UserLocation? location = null, bool ephemeral = false)
     {
-        // The position is turn-scoped and the field outlives the call (see _turnLocation), so the
-        // clear is explicit and in a finally: it must happen even if the caller abandons the stream
-        // half-way (the finally then runs on the enumerator's disposal), or the next turn — or a
-        // reminder firing on this same activation — would inherit this turn's fix.
+        // The position and the ephemeral flag are both turn-scoped, and the fields outlive the call
+        // (see _turnLocation / _ephemeral), so the clears are explicit and in a finally: they must
+        // happen even if the caller abandons the stream half-way (the finally then runs on the
+        // enumerator's disposal), or the next turn — or a reminder firing on this same activation —
+        // would inherit this turn's fix, or skip its own session write.
         _turnLocation = location is { IsValid: true } ? location : null;
+        _ephemeral = ephemeral;
 
         try
         {
@@ -592,6 +605,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         finally
         {
             _turnLocation = null;
+            _ephemeral = false;
         }
     }
 
@@ -600,7 +614,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // A background (agent-run) turn has no browser and no location — clear _turnLocation before
         // running, exactly like the reminder path: the field lives for the ACTIVATION, so a prior chat
         // turn's fix would otherwise leak into this one and have get_current_location report a stale place.
+        // Same reasoning for _ephemeral: an agent-run conversation is always listed and persisted (it is
+        // opened later by its owner), so a stale incognito flag must never make this turn skip its write.
         _turnLocation = null;
+        _ephemeral = false;
 
         try
         {
@@ -845,12 +862,22 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             }
         }
 
-        var serializedSession = await _agent.SerializeSessionAsync(_session);
-        _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
-        await _state.WriteStateAsync();
+        // An ephemeral turn (ADR 0034) runs the model but never writes its session item, so the
+        // conversation leaves no trace in Cosmos — the incognito guarantee. Skip the whole serialize.
+        if (!_ephemeral)
+        {
+            var serializedSession = await _agent.SerializeSessionAsync(_session);
+            _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
+            await _state.WriteStateAsync();
 
-        _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
-            this.GetPrimaryKeyString());
+            _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
+                this.GetPrimaryKeyString());
+        }
+        else
+        {
+            _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral turn (not persisted)",
+                this.GetPrimaryKeyString());
+        }
 
         yield return new AgentStreamEvent(AgentStreamEventType.Done,
             InputTokens: inputTokens > 0 ? inputTokens : null,
@@ -956,12 +983,23 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         await RecordImageTurnAsync(new ChatMessage(ChatRole.User, userContents), assistantContents, reference.Id);
 
-        var serializedSession = await _agent.SerializeSessionAsync(_session);
-        _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
-        await _state.WriteStateAsync();
+        // Ephemeral (ADR 0034): skip the session write. The generated image's bytes still land in the
+        // attachments blob container (session-only ephemerality — an accepted, documented limitation),
+        // but the conversation itself leaves no trace in Cosmos.
+        if (!_ephemeral)
+        {
+            var serializedSession = await _agent.SerializeSessionAsync(_session);
+            _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
+            await _state.WriteStateAsync();
 
-        _logger.LogInformation("Agent grain {GrainKey} completed an image-generation turn and persisted it",
-            this.GetPrimaryKeyString());
+            _logger.LogInformation("Agent grain {GrainKey} completed an image-generation turn and persisted it",
+                this.GetPrimaryKeyString());
+        }
+        else
+        {
+            _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral image-generation turn (not persisted)",
+                this.GetPrimaryKeyString());
+        }
 
         yield return new AgentStreamEvent(
             AgentStreamEventType.Image, AttachmentId: reference.Id, MediaType: reference.MediaType);
@@ -1191,6 +1229,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         [Description("Minutes from now until the reminder first fires. Must be at least 1.")] double dueInMinutes,
         [Description("Minutes between repeats after the first firing. Must be at least 1.")] double repeatEveryMinutes)
     {
+        // Scheduling is unavailable in an ephemeral chat (ADR 0034): a durable Orleans reminder would fire
+        // ReceiveReminder, which persists the session and sends the away-reply Web Push (ADR 0028) — both
+        // break the incognito guarantee. Refuse before registering anything, so nothing durable is created.
+        if (_ephemeral)
+        {
+            return "Scheduling isn't available in an ephemeral (incognito) chat, because a reminder would " +
+                "have to persist this conversation to fire. Turn off incognito to schedule reminders.";
+        }
+
         if (string.IsNullOrWhiteSpace(name))
         {
             return "The reminder needs a short name.";
@@ -1591,7 +1638,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // A scheduled prompt never knows where the user is. This is NOT a no-op: _turnLocation lives
         // for the activation, so without it a reminder firing after a located chat turn would still see
         // that turn's fix and have the model announce the user's position hours later, somewhere else.
+        // _ephemeral is cleared for the same activation-scoped reason: a fired reminder always persists.
         _turnLocation = null;
+        _ephemeral = false;
 
         if (!_state.State.ScheduledPrompts.TryGetValue(reminderName, out var info))
         {
