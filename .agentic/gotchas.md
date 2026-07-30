@@ -1290,14 +1290,39 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   deletion-race null agent → 401 not 404 so agent existence isn't disclosed). Two consequences a
   contributor must not miss: **(1)** on an excluded path there is **no `X-MS-CLIENT-PRINCIPAL-ID`**, so
   `GetUserId` returns `local-dev` — the endpoint must take the userId from the **directory resolution**,
-  never from `GetUserId`; **(2)** any new endpoint added under this exclusion inherits the same duty. This
-  is the single hole in the ADR 0002 gate; every browser surface stays fully Easy-Auth-gated. The ingress
-  `excludedPaths` behaviour itself is **not** unit-testable (TestServer has no Easy Auth) — verify at deploy.
+  never from `GetUserId`; **(2)** any new endpoint added under this exclusion inherits the same duty. There
+  are now **three** holes in the ADR 0002 gate — `/api/agent-run` (ADR 0022, fails closed **401**),
+  `/api/share` (ADR 0035, the read-only view; fails closed **404** because it is a browser-visitable link,
+  and userId+conversation come from the share directory), and `/shared` (ADR 0035, the static viewer page,
+  self-contained so it carries no data) — every other browser surface stays fully Easy-Auth-gated. The
+  ingress `excludedPaths` behaviour itself is **not** unit-testable (TestServer has no Easy Auth) — verify at
+  deploy.
 - **Evidence:** `infra/modules/container-app.bicep` (`globalValidation.excludedPaths`),
-  `src/Agent42.Backend/AgentApi.cs` (`/api/agent-run` — 401 branches, userId from `owner`, never `GetUserId`),
-  `tests/Agent42.Tests/AgentApiTests.cs` (`AgentRun_MissingOrUnknownKey_Returns401`),
-  `.agentic/decisions/0002-entra-easy-auth-gate.md`, `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
-- **Verified:** 2026-07-17
+  `src/Agent42.Backend/AgentApi.cs` (`/api/agent-run` — 401 branches; `/api/share/{token}` — 404 branches,
+  userId from the directory, never `GetUserId`),
+  `tests/Agent42.Tests/AgentApiTests.cs` (`AgentRun_MissingOrUnknownKey_Returns401`, `ShareLink_UnknownToken_Returns404`),
+  `.agentic/decisions/0002-entra-easy-auth-gate.md`, `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`,
+  `.agentic/decisions/0035-read-only-share-links.md`
+- **Verified:** 2026-07-30
+
+### A read-only share link stores the RAW token and revokes by deregistering the directory FIRST
+
+- **Claim:** the share-link grains (ADR 0035) mirror the ADR 0022 key directory with **two deliberate
+  inversions**. **(1)** `UserShareLinksGrain` persists the **raw** `shr_` token, not just its hash (contrast
+  `AgentDefinition.ApiKeyHash`): the owner re-displays and copies the link repeatedly, and it is a
+  low-sensitivity, single-conversation, read-only capability — so there is no once-shown secret to protect.
+  **(2)** Revoke **deregisters the global `ShareLinkDirectoryGrain` FIRST**, then drops the list entry — the
+  *opposite* order to an agent-key delete. An agent-key delete removes the registry entry first because the
+  run endpoint re-checks the agent exists and 401s on a mid-failure orphan; **unsharing does not delete the
+  conversation**, so there is no such backstop — deregistering first makes a crash leave the link **dead**,
+  never a live revoked link. Deleting a conversation also revokes its link (belt-and-braces). `ShareToken`
+  is the one place that generates *and* hashes (like `ApiKey`).
+- **Evidence:** `src/Agent42.Agents/UserShareLinksGrain.cs` (raw token stored; `RemoveAsync` deregisters
+  before dropping the entry), `src/Agent42.Agents/ShareToken.cs`, `src/Agent42.Agents/AgentRegistryGrain.cs`
+  (the opposite delete order, for contrast),
+  `tests/Agent42.Tests/ShareLinkGrainTests.cs` (`UserGrain_Revoke_DeregistersTheDirectory_SoTheLinkGoesDead`),
+  `.agentic/decisions/0035-read-only-share-links.md`
+- **Verified:** 2026-07-30
 
 ### The background (agent-run) run must drain `ChatCoreAsync`, not the reminder path, or attachments vanish
 

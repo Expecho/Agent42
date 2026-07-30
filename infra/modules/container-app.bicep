@@ -274,11 +274,17 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
     globalValidation: {
       unauthenticatedClientAction: 'RedirectToLoginPage'
       redirectToProvider: 'azureactivedirectory'
-      // The per-agent async run endpoint (ADR 0022) authenticates by a per-agent API key, not an Entra
-      // session, so it must bypass the Easy Auth login redirect. It self-enforces the key and fails closed
-      // (401). This is the ONLY hole in the ADR 0002 gate — every browser surface stays fully Easy-Auth-gated.
+      // The only holes in the ADR 0002 gate — every other browser surface stays fully Easy-Auth-gated. Each
+      // excluded path bypasses the Easy Auth login redirect and therefore SELF-ENFORCES access and fails closed:
+      //   • /api/agent-run  — per-agent API key, not an Entra session (ADR 0022); fails closed 401.
+      //   • /api/share      — read-only share view (ADR 0035): the token is the sole credential; owner + chat
+      //                       come from the directory grain (never GetUserId); fails closed 404.
+      //   • /shared         — the static read-only viewer page (+ its self-contained assets) an unauthenticated
+      //                       recipient opens; it carries no data itself and calls /api/share for content.
       excludedPaths: [
         '/api/agent-run'
+        '/api/share'
+        '/shared'
       ]
     }
     identityProviders: {

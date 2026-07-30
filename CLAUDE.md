@@ -425,4 +425,20 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   memory"** — a live activation still holds the chat; the trace-free property shows up on deactivation. Egress
   (ADR 0013) is unchanged: incognito is about durability, not privacy from a third-party model. See the
   ephemeral-chat gotcha before touching `_ephemeral` or the scheduling guard.
+- Read-only share links (ADR 0035): an owner mints a **public, no-login** link to any conversation (regular
+  or agent chat) from a **↗ Share** action on each sidebar row (`buildConvRow`) → `#shareLinkDialog`
+  (create/copy/revoke). It mirrors the ADR 0022 two-grain split: **`ShareToken`** (copy of `ApiKey`, `shr_`
+  prefix) → a global hash-keyed **`ShareLinkDirectoryGrain`** (token hash → `(userId, conversationId)`) for
+  O(1) public resolution, plus a per-user **`UserShareLinksGrain`** (state `"share-links"`) for
+  list/create/revoke — both ride `agent-state`, **no new Cosmos container/secret/DI**. Owner routes
+  `POST/GET/DELETE /api/conversations/{id}/share` (Easy Auth); public routes `GET /api/share/{token}` and
+  `/api/share/{token}/attachments/{attachmentId}` are on **`excludedPaths`** (with `/shared`, the
+  self-contained static viewer under `wwwroot/shared/`), **self-enforce** the token, take userId+conversation
+  from the directory (**never `GetUserId`**), and **fail closed → 404**. **Two deliberate inversions of ADR
+  0022** (see the share-link gotcha): the **raw** token is stored (owner re-copies it repeatedly; low
+  sensitivity), and revoke **deregisters the directory FIRST** (unsharing has no conversation-deletion
+  backstop, so fail-toward-dead). **Headline consequence (extends ADR 0013):** a token exposes the
+  conversation's **full current live history** — text, images, the user's street address (ADR 0012),
+  document/web content — to anyone holding the link, outside the Entra tenant; the view is live until revoked,
+  and **revocation is the only control** (deleting the conversation also revokes it).
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
