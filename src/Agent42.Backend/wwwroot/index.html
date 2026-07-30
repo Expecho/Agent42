@@ -434,6 +434,38 @@
     </form>
   </dialog>
 
+  <!-- Read-only share link (ADR 0035): mint / copy / revoke a PUBLIC, no-login link to ONE conversation.
+       Distinct from #shareDialog above (ADR 0023 Web Share Target, which shares INTO the app). Reuses the
+       agent-dialog/agent-form styling. -->
+  <dialog class="agent-dialog" id="shareLinkDialog">
+    <form class="agent-form" id="shareLinkForm" method="dialog">
+      <h2 class="agent-form__title">Share read-only link</h2>
+      <section class="agent-form__section">
+        <p class="agent-form__note" id="shareLinkConvTitle"></p>
+        <p class="agent-form__note">Anyone with this link can view this conversation — including its images —
+          <strong>without signing in</strong>. It's read-only and stays live until you revoke it.</p>
+
+        <!-- Unshared state: a single create button (nothing is minted until pressed). -->
+        <button class="agent-form__btn agent-form__btn--primary" type="button" id="shareLinkCreateBtn">Create link</button>
+
+        <!-- Shared state: the URL + copy/revoke, revealed once a link exists. -->
+        <div class="share-link" id="shareLinkResult" hidden>
+          <label class="agent-form__field">
+            <span class="agent-form__label">// link</span>
+            <input class="agent-form__input" type="text" id="shareLinkUrl" readonly />
+          </label>
+          <div class="share-link__actions">
+            <button class="agent-form__btn agent-form__btn--primary" type="button" id="shareLinkCopyBtn">Copy</button>
+            <button class="agent-form__btn share-link__revoke" type="button" id="shareLinkRevokeBtn">Revoke</button>
+          </div>
+        </div>
+      </section>
+      <div class="agent-form__actions">
+        <button class="agent-form__btn" type="button" id="shareLinkCloseBtn">Close</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Add / edit one model provider (ADR 0018). Reuses the agent-dialog/agent-form styling. The API
        key is WRITE-ONLY: it is never sent back, so the field is left blank on edit and "blank = keep". -->
   <dialog class="agent-dialog" id="providerDialog">
