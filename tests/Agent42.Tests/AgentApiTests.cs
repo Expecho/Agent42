@@ -800,4 +800,133 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.False(config!.Enabled);
         Assert.Equal("", config.PublicKey);
     }
+
+    // ---- read-only share links (ADR 0035) ----------------------------------------------------------
+    //
+    // NOTE: these run behind NO Easy Auth (TestServer has none), so GetUserId is local-dev on every call —
+    // owner and public routes share one identity here. The excludedPaths ingress carve-out that makes the
+    // public routes reachable WITHOUT a login is a deploy-time property, not unit-testable.
+
+    // Extracts the raw token from a share URL (…/shared/#<token>).
+    private static string TokenFromShareUrl(string url) => url.Split('#', 2)[1];
+
+    // Create → the public endpoint resolves the same history; revoke → it 404s and the owner sees no link.
+    [Fact]
+    public async Task ShareLink_CreateResolveRevoke()
+    {
+        const string id = "share-lifecycle-conversation";
+        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("share me", null)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync(); // drain so the turn persists
+        }
+
+        // Not shared yet.
+        var before = await _client.GetFromJsonAsync<ShareLinkResponse>($"/api/conversations/{id}/share");
+        Assert.Null(before!.Url);
+
+        // Create → a URL carrying the token in the fragment.
+        var created = await (await _client.PostAsync($"/api/conversations/{id}/share", null))
+            .Content.ReadFromJsonAsync<ShareLinkResponse>();
+        Assert.False(string.IsNullOrEmpty(created!.Url));
+        Assert.Contains("/shared/#shr_", created.Url);
+        var token = TokenFromShareUrl(created.Url!);
+
+        // Idempotent — a second create returns the same stable, re-copyable link.
+        var again = await (await _client.PostAsync($"/api/conversations/{id}/share", null))
+            .Content.ReadFromJsonAsync<ShareLinkResponse>();
+        Assert.Equal(created.Url, again!.Url);
+
+        // The public endpoint resolves the conversation's history.
+        var shared = await _client.GetFromJsonAsync<SharedConversationResponse>($"/api/share/{token}");
+        Assert.NotNull(shared);
+        Assert.Contains(shared!.Turns, t => t.Role == "user" && t.Text == "share me");
+
+        // Revoke → the public endpoint 404s and the owner sees no link.
+        var del = await _client.DeleteAsync($"/api/conversations/{id}/share");
+        Assert.Equal(HttpStatusCode.NoContent, del.StatusCode);
+
+        var afterPublic = await _client.GetAsync($"/api/share/{token}");
+        Assert.Equal(HttpStatusCode.NotFound, afterPublic.StatusCode);
+
+        var afterOwner = await _client.GetFromJsonAsync<ShareLinkResponse>($"/api/conversations/{id}/share");
+        Assert.Null(afterOwner!.Url);
+    }
+
+    // An unknown/garbage token fails closed → 404 (never discloses existence), on both public routes.
+    [Fact]
+    public async Task ShareLink_UnknownToken_Returns404()
+    {
+        var view = await _client.GetAsync("/api/share/shr_not-a-real-token");
+        Assert.Equal(HttpStatusCode.NotFound, view.StatusCode);
+
+        var att = await _client.GetAsync("/api/share/shr_not-a-real-token/attachments/whatever");
+        Assert.Equal(HttpStatusCode.NotFound, att.StatusCode);
+    }
+
+    // Deleting a shared conversation also revokes its link (a still-live link must not resurrect it).
+    [Fact]
+    public async Task ShareLink_RevokedWhenConversationDeleted()
+    {
+        const string id = "share-then-delete-conversation";
+        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("bye", null)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync();
+        }
+
+        var token = TokenFromShareUrl((await (await _client.PostAsync($"/api/conversations/{id}/share", null))
+            .Content.ReadFromJsonAsync<ShareLinkResponse>())!.Url!);
+
+        var del = await _client.DeleteAsync($"/api/conversations/{id}");
+        Assert.Equal(HttpStatusCode.NoContent, del.StatusCode);
+
+        var gone = await _client.GetAsync($"/api/share/{token}");
+        Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
+    }
+
+    // A shared conversation's images are readable through the token-scoped proxy — and stop resolving on revoke.
+    [Fact]
+    public async Task ShareLink_ServesImageThroughTokenScopedProxy()
+    {
+        const string id = "share-image-conversation";
+        var attId = await UploadImageAsync(id, [1, 2, 3, 4], "pic.png");
+        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{id}",
+            new ChatRequest("look", null, null, [attId])))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync();
+        }
+
+        var token = TokenFromShareUrl((await (await _client.PostAsync($"/api/conversations/{id}/share", null))
+            .Content.ReadFromJsonAsync<ShareLinkResponse>())!.Url!);
+
+        // The public history carries the attachment id (never a blob path).
+        var shared = await _client.GetFromJsonAsync<SharedConversationResponse>($"/api/share/{token}");
+        var userTurn = Assert.Single(shared!.Turns, t => t.Role == "user");
+        var att = Assert.Single(userTurn.Attachments!);
+        Assert.Equal("pic.png", att.FileName);
+
+        // The token-scoped byte proxy returns the image without any auth.
+        var img = await _client.GetAsync($"/api/share/{token}/attachments/{att.Id}");
+        Assert.Equal(HttpStatusCode.OK, img.StatusCode);
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, await img.Content.ReadAsByteArrayAsync());
+
+        // After revoke, the image proxy 404s too.
+        await _client.DeleteAsync($"/api/conversations/{id}/share");
+        var goneImg = await _client.GetAsync($"/api/share/{token}/attachments/{att.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, goneImg.StatusCode);
+    }
+
+    // Uploads an image to a conversation and returns its attachment id (mirrors the browser two-phase upload).
+    private async Task<string> UploadImageAsync(string convId, byte[] bytes, string fileName)
+    {
+        var form = new MultipartFormDataContent();
+        var part = new ByteArrayContent(bytes);
+        part.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        form.Add(part, "file", fileName);
+        var res = await _client.PostAsync($"/api/conversations/{convId}/attachments", form);
+        res.EnsureSuccessStatusCode();
+        return (await res.Content.ReadFromJsonAsync<AttachmentMetadata>())!.Id;
+    }
 }

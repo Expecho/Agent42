@@ -211,6 +211,36 @@ public static class AgentApi
             var userId = http.GetUserId();
             await grains.GetGrain<IAgentGrain>(AgentKey(userId, conversationId)).PurgeAsync();
             await grains.GetGrain<IConversationIndexGrain>(userId).RemoveAsync(conversationId);
+            // Revoke any read-only share link too, so a deleted conversation can't be resurrected through a
+            // still-live public link (ADR 0035). No-op when the conversation was never shared.
+            await grains.GetGrain<IUserShareLinksGrain>(userId).RemoveAsync(conversationId);
+            return Results.NoContent();
+        });
+
+        // ————— read-only share links (ADR 0035) —————
+
+        // The share link for this conversation, or { url: null } when it is not shared. Behind Easy Auth,
+        // user-scoped by GetUserId — only the owner ever sees or manages their own links.
+        app.MapGet("/api/conversations/{conversationId}/share", async (string conversationId, IGrainFactory grains, HttpContext http) =>
+        {
+            var link = await grains.GetGrain<IUserShareLinksGrain>(http.GetUserId()).GetAsync(conversationId);
+            return Results.Json(new ShareLinkResponse(link is null ? null : ShareUrl(http, link.Token)));
+        });
+
+        // Mints (or returns the existing) read-only public link for this conversation and registers the global
+        // directory so an unauthenticated recipient can resolve it. Idempotent — one stable, re-copyable link
+        // per conversation. Scoped to the caller's own key, so a user can only ever share their own chat.
+        app.MapPost("/api/conversations/{conversationId}/share", async (string conversationId, IGrainFactory grains, HttpContext http) =>
+        {
+            var link = await grains.GetGrain<IUserShareLinksGrain>(http.GetUserId()).CreateOrGetAsync(conversationId);
+            return Results.Json(new ShareLinkResponse(ShareUrl(http, link.Token)));
+        });
+
+        // Revokes the link (deregisters the global directory), so the public URL stops resolving. No-op if the
+        // conversation was never shared.
+        app.MapDelete("/api/conversations/{conversationId}/share", async (string conversationId, IGrainFactory grains, HttpContext http) =>
+        {
+            await grains.GetGrain<IUserShareLinksGrain>(http.GetUserId()).RemoveAsync(conversationId);
             return Results.NoContent();
         });
 
@@ -421,6 +451,47 @@ public static class AgentApi
 
             return Results.Accepted($"/api/conversations/{conversationId}/messages", new { conversationId });
         }).DisableAntiforgery();
+
+        // ————— public read-only share view (ADR 0035) —————
+        //
+        // Easy Auth EXCLUDES the /api/share/* paths (container-app.bicep globalValidation.excludedPaths), so an
+        // unauthenticated recipient can open a shared conversation. Like /api/agent-run these SELF-ENFORCE: the
+        // token is the only credential, the owner + conversation come from the DIRECTORY resolution (NEVER
+        // GetUserId — there is no Easy Auth principal on an excluded path, so it would be local-dev), and both
+        // fail CLOSED. A browser-visitable link fails to 404 ("not found or revoked"), not 401.
+
+        // The shared conversation's title, optional agent name, and full CURRENT history (a live read-only view:
+        // future turns appear until the owner revokes). Reuses the ChatTurn/AttachmentRef DTOs the authenticated
+        // /messages route returns (AttachmentRef.BlobPath stays [JsonIgnore] — the page only ever gets ids).
+        app.MapGet("/api/share/{token}", async (string token, IGrainFactory grains) =>
+        {
+            var target = await grains.GetGrain<IShareLinkDirectoryGrain>(ShareToken.Hash(token)).ResolveAsync();
+            if (target is null)
+            {
+                return Results.NotFound();
+            }
+
+            var turns = await grains.GetGrain<IAgentGrain>(AgentKey(target.UserId, target.ConversationId)).GetHistoryAsync();
+            var info = (await grains.GetGrain<IConversationIndexGrain>(target.UserId).GetConversationsAsync())
+                .FirstOrDefault(c => c.Id == target.ConversationId);
+            return Results.Json(new SharedConversationResponse(info?.Title ?? "Shared conversation", info?.AgentName, turns));
+        });
+
+        // Streams a shared attachment's bytes to an unauthenticated viewer. Token-scoped analogue of the
+        // user-scoped /api/conversations/{id}/attachments/{id} proxy: the owner + conversation come from the
+        // directory (never GetUserId), so the page never holds a blob SAS and can only read blobs under the
+        // shared conversation's own key. Fails closed → 404.
+        app.MapGet("/api/share/{token}/attachments/{attachmentId}", async (string token, string attachmentId, IAttachmentStore attachments, IGrainFactory grains) =>
+        {
+            var target = await grains.GetGrain<IShareLinkDirectoryGrain>(ShareToken.Hash(token)).ResolveAsync();
+            if (target is null)
+            {
+                return Results.NotFound();
+            }
+
+            var content = await attachments.OpenReadAsync(AgentKey(target.UserId, target.ConversationId), attachmentId);
+            return content is null ? Results.NotFound() : Results.File(content.Bytes, content.MediaType);
+        });
 
         // ————— user profile (per-user preferences) —————
 
@@ -980,6 +1051,12 @@ public static class AgentApi
     private static string AgentKey(string userId, string conversationId)
         => $"{userId}/{conversationId}";
 
+    // The public share URL for a token (ADR 0035): the token rides the URL FRAGMENT so it stays out of the
+    // page-navigation access log and the Referer header (the follow-up /api/share/{token} call still carries
+    // it — unavoidable). The static /shared/ viewer reads it from location.hash.
+    private static string ShareUrl(HttpContext http, string token)
+        => $"{http.Request.Scheme}://{http.Request.Host}/shared/#{token}";
+
     // A usage filter of null, blank, or "all" means "no filter" (ADR 0031) — collapse them so the
     // grain query sees a single sentinel.
     private static string? NormalizeFilter(string? value)
@@ -1002,6 +1079,16 @@ public record ChatRequest(
 // What the upload endpoint returns for an image: the id to send back on the next turn plus the
 // metadata needed to render a preview. The internal blob path is deliberately omitted.
 public record AttachmentMetadata(string Id, string MediaType, string FileName);
+
+// What GET/POST /api/conversations/{id}/share return (ADR 0035): the public read-only URL, or null when the
+// conversation is not shared. The raw token rides the URL fragment; only the owner (behind Easy Auth) ever
+// sees this.
+public record ShareLinkResponse(string? Url);
+
+// The public GET /api/share/{token} payload (ADR 0035): the conversation title, the agent name when it is an
+// agent chat (else null), and the full current read-only history (the same ChatTurn shape the authenticated
+// /messages route returns).
+public record SharedConversationResponse(string Title, string? AgentName, IReadOnlyList<ChatTurn> Turns);
 
 // What the upload endpoint returns for a document: a kind marker (so the client renders a chip and
 // never sends it back as an attachmentId — documents are retrieval-only, ADR 0007), the filename,

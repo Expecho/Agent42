@@ -1,0 +1,297 @@
+/* ————————————————————————————————————————————————
+   Agent 42 · public read-only conversation viewer (ADR 0035)
+   Self-contained: the theme tokens + message/prose styles are copied from styles.css so the
+   public page depends on nothing behind Easy Auth. Keep visually in sync with styles.css.
+   ———————————————————————————————————————————————— */
+
+:root {
+  --bg: #100f0d;
+  --bg-raised: #171512;
+  --bg-inset: #0b0a09;
+  --line: #2a2620;
+  --line-soft: #201d18;
+  --ink: #e9e2d3;
+  --ink-dim: #a89f8c;
+  --ink-faint: #6d6555;
+  --amber: #ffb13d;
+  --amber-deep: #c97f1b;
+  --amber-glow: rgba(255, 177, 61, 0.14);
+  --red: #e06c5f;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+}
+
+:root[data-theme="light"] {
+  --bg: #f4efe4;
+  --bg-raised: #fbf7ee;
+  --bg-inset: #e9e2d2;
+  --line: #d6cdb8;
+  --line-soft: #e2dac7;
+  --ink: #2a2620;
+  --ink-dim: #5c5647;
+  --ink-faint: #8a8270;
+  --amber: #a86611;
+  --amber-deep: #7f4e0a;
+  --amber-glow: rgba(168, 102, 17, 0.12);
+  --red: #bf3c30;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body { margin: 0; height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.5;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 70% -10%, rgba(255, 177, 61, 0.05), transparent);
+}
+
+.viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.viewer__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px dashed var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
+}
+
+.viewer__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  font-size: 13px;
+}
+
+.viewer__mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--amber-deep);
+  border-radius: 6px;
+  color: var(--amber);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -1px;
+  background: linear-gradient(160deg, var(--amber-glow), transparent 65%);
+}
+
+.viewer__badge {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.viewer__scroll {
+  flex: 1;
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+
+.viewer__head {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.viewer__title {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 22px;
+  margin: 0;
+  color: var(--ink);
+}
+
+.viewer__agent {
+  margin: 6px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--amber-deep);
+}
+
+.viewer__thread {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.viewer__state {
+  margin-top: 40px;
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+/* ————— messages (copied from styles.css) ————— */
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.msg__meta {
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  color: var(--ink-faint);
+  user-select: none;
+}
+
+.msg--user { align-items: flex-end; }
+
+.msg--user .msg__bubble {
+  max-width: 60ch;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 14px 14px 4px 14px;
+  padding: 12px 16px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.msg__images { display: flex; flex-wrap: wrap; gap: 8px; }
+.msg__images + .msg__text { margin-top: 10px; }
+
+.msg__image {
+  max-width: 260px;
+  max-height: 260px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  display: block;
+}
+
+.msg--agent .msg__meta { color: var(--amber-deep); }
+
+.msg--agent .msg__bubble {
+  border-left: 2px solid var(--amber-deep);
+  padding: 2px 0 2px 20px;
+}
+
+/* ————— prose (assistant markdown, copied from styles.css) ————— */
+
+.prose {
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+
+.prose > :first-child { margin-top: 0; }
+.prose > :last-child { margin-bottom: 0; }
+
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  font-family: var(--serif);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.4em 0 0.5em;
+}
+
+.prose h1 { font-size: 1.5em; }
+.prose h2 { font-size: 1.3em; }
+.prose h3 { font-size: 1.15em; }
+.prose p { margin: 0.7em 0; }
+
+.prose a,
+.msg__text a {
+  color: var(--amber);
+  text-decoration-color: var(--amber-deep);
+  text-underline-offset: 3px;
+}
+
+.prose strong { font-weight: 600; }
+
+.prose ul, .prose ol { padding-left: 1.4em; margin: 0.7em 0; }
+.prose li { margin: 0.3em 0; }
+.prose li::marker { color: var(--amber-deep); }
+
+.prose blockquote {
+  margin: 1em 0;
+  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--ink-faint);
+  color: var(--ink-dim);
+  font-style: italic;
+}
+
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.78em;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  color: var(--amber);
+}
+
+.prose pre {
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.prose pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.prose table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.85em;
+  display: block;
+  overflow-x: auto;
+}
+
+.prose th, .prose td {
+  border: 1px solid var(--line);
+  padding: 7px 12px;
+  text-align: left;
+}
+
+.prose th {
+  font-family: var(--mono);
+  font-size: 0.75em;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  background: var(--bg-raised);
+}
+
+.prose hr {
+  border: 0;
+  border-top: 1px dashed var(--line);
+  margin: 1.5em 0;
+}
