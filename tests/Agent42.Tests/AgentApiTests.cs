@@ -428,6 +428,37 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.Equal("dark", saved.Theme); // kept, not silently reset to "system"
     }
 
+    // Follow-up suggestions preference persists through PUT and is reflected by the next GET.
+    [Fact]
+    public async Task ProfileEndpoint_PersistsSuggestFollowUps()
+    {
+        var putRes = await _client.PutAsJsonAsync(
+            "/api/profile", new ProfileUpdateRequest(PreferredLanguage: "en-US", SuggestFollowUps: false));
+        putRes.EnsureSuccessStatusCode();
+        Assert.False((await putRes.Content.ReadFromJsonAsync<UserProfile>())!.SuggestFollowUps);
+
+        var getBack = await _client.GetFromJsonAsync<UserProfile>("/api/profile");
+        Assert.False(getBack!.SuggestFollowUps);
+    }
+
+    // Regression: a body that omits suggestFollowUps must NOT reset a previously saved choice — the
+    // endpoint merges onto the stored profile (absent-means-keep), like Theme/EnabledTools.
+    [Fact]
+    public async Task ProfileEndpoint_OmittedSuggestFollowUps_KeepsStored()
+    {
+        var seed = await _client.PutAsJsonAsync(
+            "/api/profile", new ProfileUpdateRequest(PreferredLanguage: "en-US", SuggestFollowUps: false));
+        seed.EnsureSuccessStatusCode();
+
+        // Body without any suggestFollowUps key.
+        var staleSave = await _client.PutAsJsonAsync("/api/profile", new { preferredLanguage = "fr-FR" });
+        staleSave.EnsureSuccessStatusCode();
+
+        var saved = await staleSave.Content.ReadFromJsonAsync<UserProfile>();
+        Assert.Equal("fr-FR", saved!.PreferredLanguage);
+        Assert.False(saved.SuggestFollowUps); // kept, not reset to the null default (ON)
+    }
+
     // AC4: the profile is isolated per user (the Entra object id). The shared _client sends no
     // principal header (→ "local-dev"), so this builds explicit requests carrying distinct
     // X-MS-CLIENT-PRINCIPAL-ID values; TestServer has no ingress stripping X-MS-CLIENT-* headers.

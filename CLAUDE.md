@@ -441,4 +441,16 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   conversation's **full current live history** — text, images, the user's street address (ADR 0012),
   document/web content — to anyone holding the link, outside the Entra tenant; the view is live until revoked,
   and **revocation is the only control** (deleting the conversation also revokes it).
+- Follow-up suggestion prompts (ADR 0036): after an **interactive** reply, `AgentGrain` makes one extra
+  non-streaming `IChatClient.GetResponseAsync` call (`GenerateFollowUpsAsync`) to produce up to 3 short
+  follow-up prompts, streamed as a new **`AgentStreamEventType.Suggestions`** event (`[Id(11)]`) before
+  `Done`; the browser renders them as chips that **send on click**. Gated to the live path by a turn-scoped
+  `_interactiveTurn` flag (OFF on the agent-run/reminder drains of the same `ChatCoreAsync` — no wasted call),
+  **best-effort** (its `try/catch` returns null on failure; the reply/`Done` are never affected) and
+  **session-free** (a throwaway message list, never `_session`, no state write). Controlled by a **default-ON
+  Preferences toggle** — `UserProfile.SuggestFollowUps` is a **null-sentinel `bool?`** (`null`/`true` = ON,
+  `false` = OFF; legacy state stays ON, zero migration), read once on activation into
+  `_suggestFollowUpsEnabled` and settable via `PUT /api/profile`. **Headline consequence:** it spends an extra
+  small model call and re-sends recent conversation text to the model per interactive turn (ADR 0013 egress) —
+  which is why it is opt-out. Chips are live-only (not replayed by `renderTurns`; cleared on the next `send`).
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

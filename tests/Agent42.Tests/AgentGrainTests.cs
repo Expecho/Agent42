@@ -41,6 +41,70 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
     }
 
+    // Follow-up suggestions: the agent's own turns stream through GetStreamingResponseAsync, so the ONLY
+    // caller of the fake's GetResponseAsync is the suggestion helper — summing FakeChatClient.SuggestionCalls
+    // across every silo (the grain may activate on any) counts exactly the suggestion-generation calls.
+    private int TotalSuggestionCalls() =>
+        _cluster.Silos.Sum(silo => _cluster.GetSiloServiceProvider(silo.SiloAddress)
+            .GetRequiredService<FakeChatClient>().SuggestionCalls);
+
+    [Fact]
+    public async Task ChatAsync_WhenSuggestionsEnabled_EmitsUpToThreeFollowUps()
+    {
+        // Default profile → suggestions ON (null-sentinel). The interactive path generates them.
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("suggest-on-user/conv");
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("hi", null))
+        {
+            events.Add(evt);
+        }
+
+        var suggestions = Assert.Single(events, e => e.Type == AgentStreamEventType.Suggestions);
+        Assert.NotNull(suggestions.Suggestions);
+        Assert.InRange(suggestions.Suggestions!.Count, 1, 3);
+        // Streamed after the reply and before the closing Done event.
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+        Assert.True(events.IndexOf(suggestions) < events.Count - 1);
+        Assert.Equal(1, TotalSuggestionCalls());
+    }
+
+    [Fact]
+    public async Task ChatAsync_WhenSuggestionsDisabled_EmitsNoFollowUps()
+    {
+        // The preference is read on grain activation, so persist it BEFORE the first turn activates the grain.
+        await _cluster.GrainFactory.GetGrain<IUserProfileGrain>("suggest-off-user")
+            .SaveAsync(UserProfile.Empty with { SuggestFollowUps = false });
+
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("suggest-off-user/conv");
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync("hi", null))
+        {
+            events.Add(evt);
+        }
+
+        Assert.DoesNotContain(events, e => e.Type == AgentStreamEventType.Suggestions);
+        // The reply and the closing Done event are unaffected — only the extra call is skipped.
+        Assert.Contains(events, e => e.Type == AgentStreamEventType.TextDelta);
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+        Assert.Equal(0, TotalSuggestionCalls());
+    }
+
+    [Fact]
+    public async Task EnqueuePrompt_DoesNotGenerateFollowUps()
+    {
+        // An agent-run (background) turn has no live client watching the stream, so generating follow-ups
+        // would be a wasted model call for a discarded event — the interactive gate must keep it off.
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("suggest-enqueue-user/conv");
+
+        await agent.EnqueuePromptAsync("hi", null);
+
+        // OneWay returns before the grain runs the turn; wait for the persisted result, then assert no call.
+        await PollHistoryAsync(agent, h => h.Any(t => t.Role == "assistant"));
+        Assert.Equal(0, TotalSuggestionCalls());
+    }
+
     [Fact]
     public async Task History_ContainsUserAndAssistantTurns_SoAConversationCanBeResumed()
     {

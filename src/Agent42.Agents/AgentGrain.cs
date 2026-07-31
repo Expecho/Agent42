@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Agents.AI;
@@ -68,6 +69,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // on its next activation (accepted staleness, ADR 0021).
     private IReadOnlyList<string>? _userDefaultEnabledTools;
 
+    // Whether follow-up suggestion prompts are enabled for this user, read ONCE on activation from the same
+    // IUserProfileGrain fetch as _userDefaultEnabledTools (null-sentinel: null/true = ON, false = OFF). A
+    // Preferences change reflects in a warm chat only on its next activation — accepted staleness, matching
+    // _userDefaultEnabledTools and the default-model resolution.
+    private bool _suggestFollowUpsEnabled;
+
     // This user's remote-MCP-server tools grouped per server (config-driven remote MCP servers; per-server
     // grouping added by ADR 0026), resolved ONCE on activation from this grain's userId — BEFORE the first
     // BuildAgent, the same ordering hazard as _chatClientFactory and _userDefaultEnabledTools. Each group's
@@ -105,6 +112,16 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// or a warm activation's next (non-ephemeral) turn would silently inherit it and skip its own write.
     /// </summary>
     private bool _ephemeral;
+
+    /// <summary>
+    /// True while an INTERACTIVE (browser-streamed) turn is being processed. Gates the extra follow-up
+    /// suggestion model call to the live path only: <see cref="EnqueuePromptAsync"/> (agent-run) and
+    /// <see cref="ReceiveReminder"/> drain the same <see cref="ChatCoreAsync"/>, but their streamed events
+    /// have no listener, so generating suggestions there would be a wasted call for a discarded event.
+    /// Defaults OFF and is set ON only in <see cref="ChatAsync"/>; like <see cref="_ephemeral"/> it lives
+    /// for the ACTIVATION, so it is cleared in that method's <c>finally</c>.
+    /// </summary>
+    private bool _interactiveTurn;
 
     public AgentGrain(
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
@@ -153,7 +170,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // fetching it later would have the first chat turn AND every reminder turn on this activation
         // silently register all tools and ignore the user's default. Same ordering hazard the
         // _chatClientFactory resolution above guards against for a different field.
-        _userDefaultEnabledTools = (await GrainFactory.GetGrain<IUserProfileGrain>(_userId).GetAsync()).EnabledTools;
+        var profile = await GrainFactory.GetGrain<IUserProfileGrain>(_userId).GetAsync();
+        _userDefaultEnabledTools = profile.EnabledTools;
+        // Null-sentinel: null (never saved / legacy) and true both mean ON; only an explicit false disables.
+        _suggestFollowUpsEnabled = profile.SuggestFollowUps != false;
 
         // Resolve this user's MCP-server tools (config-driven remote MCP servers) BEFORE the first BuildAgent
         // below — BuildAgent merges them into its tool list, and ReceiveReminder reuses that same _agent, so
@@ -594,6 +614,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // would inherit this turn's fix, or skip its own session write.
         _turnLocation = location is { IsValid: true } ? location : null;
         _ephemeral = ephemeral;
+        // This is the live browser-streamed path, so follow-up suggestions may be generated (gated further
+        // by the user preference). Turn-scoped like the two above; cleared in the finally.
+        _interactiveTurn = true;
 
         try
         {
@@ -606,6 +629,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         {
             _turnLocation = null;
             _ephemeral = false;
+            _interactiveTurn = false;
         }
     }
 
@@ -618,6 +642,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // opened later by its owner), so a stale incognito flag must never make this turn skip its write.
         _turnLocation = null;
         _ephemeral = false;
+        // A background (agent-run) turn has no live client watching the stream, so follow-up suggestions
+        // would be a wasted model call for a discarded event — keep the interactive gate OFF.
+        _interactiveTurn = false;
 
         try
         {
@@ -833,6 +860,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // run has several); accumulate them and report the totals on the Done event.
         long inputTokens = 0, outputTokens = 0, cachedTokens = 0;
 
+        // Accumulate the reply text (only) so we can feed the last exchange to the follow-up
+        // suggestion call after the turn — cheaper than re-reading the serialized session.
+        var reply = new StringBuilder();
+
         await foreach (AgentResponseUpdate update in _agent.RunStreamingAsync([userMessage], _session))
         {
             foreach (AIContent content in update.Contents)
@@ -840,6 +871,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 switch (content)
                 {
                     case TextContent text when !string.IsNullOrEmpty(text.Text):
+                        reply.Append(text.Text);
                         yield return new AgentStreamEvent(AgentStreamEventType.TextDelta, Text: text.Text);
                         break;
 
@@ -879,11 +911,76 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 this.GetPrimaryKeyString());
         }
 
+        // Follow-up suggestions (interactive path only, opt-out via Preferences). Best-effort: the helper
+        // owns its try/catch and returns null on any failure, so a slow/failing suggestion call never breaks
+        // the turn. Emitted BEFORE Done, after the reply is fully streamed. Skipped on the agent-run/reminder
+        // drain (_interactiveTurn is false there) and on an empty reply. The generator uses a throwaway
+        // message list and never touches _session, so nothing is persisted.
+        if (_interactiveTurn && _suggestFollowUpsEnabled && reply.Length > 0)
+        {
+            var suggestions = await GenerateFollowUpsAsync(message, reply.ToString());
+            if (suggestions is { Count: > 0 })
+            {
+                yield return new AgentStreamEvent(AgentStreamEventType.Suggestions, Suggestions: suggestions);
+            }
+        }
+
         yield return new AgentStreamEvent(AgentStreamEventType.Done,
             InputTokens: inputTokens > 0 ? inputTokens : null,
             OutputTokens: outputTokens > 0 ? outputTokens : null,
             CachedTokens: cachedTokens > 0 ? cachedTokens : null);
     }
+
+    // Generates up to 3 short follow-up prompts the user might click to continue, via a second, non-streaming
+    // model call on this conversation's model. BEST-EFFORT and side-effect-free: it builds a THROWAWAY message
+    // list (never _session), writes no state, and swallows every failure into null so the surrounding turn is
+    // never affected. The try/catch lives here — not in the iterator ChatCoreAsync — because C# forbids
+    // `yield` inside a try with a catch.
+    private async Task<IReadOnlyList<string>?> GenerateFollowUpsAsync(string userMessage, string replyText)
+    {
+        try
+        {
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System,
+                    "You suggest what the user might ask next. Given the last exchange, propose up to 3 short, "
+                    + "distinct follow-up questions or requests the USER could send to continue. Write each on "
+                    + "its own line, phrased in the user's voice, with no numbering, bullets, or quotes. Output "
+                    + "only the lines."),
+                new(ChatRole.User,
+                    $"User asked:\n{userMessage}\n\nAssistant replied:\n{replyText}\n\nSuggest the follow-ups:"),
+            };
+
+            var response = await _chatClientFactory.GetClient(_modelId)
+                .GetResponseAsync(messages, new ChatOptions { MaxOutputTokens = 200 });
+
+            var picks = (response.Text ?? "")
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(StripLeadingListMarker)
+                .Where(line => line.Length > 0)
+                .Take(3)
+                .ToArray();
+
+            return picks.Length > 0 ? picks : null;
+        }
+        catch (Exception ex)
+        {
+            // Never fatal — the reply already streamed. Log at debug and drop the suggestions for this turn.
+            _logger.LogDebug(ex, "Agent grain {GrainKey} could not generate follow-up suggestions", this.GetPrimaryKeyString());
+            return null;
+        }
+    }
+
+    // Strips a leading list marker a model may add despite the instruction ("- ", "* ", "1. ", "1) ") and
+    // any surrounding quotes, so a suggestion renders clean in the composer.
+    private static string StripLeadingListMarker(string line)
+    {
+        line = FollowUpMarkerRegex().Replace(line.Trim(), "");
+        return line.Trim().Trim('"').Trim();
+    }
+
+    [GeneratedRegex(@"^\s*(?:[-*•]|\d+[.)])\s+")]
+    private static partial Regex FollowUpMarkerRegex();
 
     private static string? SerializeOrNull(object? value) =>
         value is not null ? JsonSerializer.Serialize(value) : null;
