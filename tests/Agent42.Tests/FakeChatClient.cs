@@ -23,9 +23,27 @@ public sealed class FakeChatClient : IChatClient
 {
     private static readonly string[] ReplyChunks = ["Hello! ", "How can I ", "help you today?"];
 
+    // The system-prompt marker the grain's follow-up-suggestion helper opens with. The agent's own turns
+    // stream through GetStreamingResponseAsync, so the ONLY caller of GetResponseAsync is that helper — a
+    // marker match here counts a suggestion-generation call, which the gating tests assert on per silo.
+    private const string SuggestionSystemMarker = "You suggest what the user might ask next";
+
+    private int _suggestionCalls;
+
+    /// <summary>Number of follow-up-suggestion generation calls this (per-silo) client has served.</summary>
+    public int SuggestionCalls => Volatile.Read(ref _suggestionCalls);
+
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
+        var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
+        if (list.Any(m => m.Role == ChatRole.System
+            && (m.Text ?? "").Contains(SuggestionSystemMarker, StringComparison.Ordinal)))
+        {
+            Interlocked.Increment(ref _suggestionCalls);
+        }
+
+        messages = list;
         var call = SelectToolCall(messages, options);
         var contents = call is not null
             ? new List<AIContent> { call }

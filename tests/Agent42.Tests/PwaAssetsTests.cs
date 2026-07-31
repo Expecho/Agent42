@@ -184,7 +184,7 @@ public sealed class PwaAssetsTests
         // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
         // stale assets — sw.js serves the shell cache-first with background revalidate.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v10", sw);
+        Assert.Contains("agent42-shell-v11", sw);
     }
 
     // Offline read cache (ADR 0032): agents, conversations and previously-opened chat histories are
@@ -217,6 +217,25 @@ public sealed class PwaAssetsTests
         Assert.Contains("cachePut(\"messages:\" + id, turns)", app);
         Assert.Contains("cacheGet(\"messages:\" + id)", app);
         Assert.Contains("function renderTurns", app);
+    }
+
+    // Follow-up suggestion chips: the NDJSON "suggestions" event renders up to 3 clickable chips under the
+    // reply, clicking one sends it, and a Preferences toggle (default ON) controls the feature. Source-text
+    // heuristic (no JS runner by design); behaviour is verified by driving DevHost.
+    [Fact]
+    public async Task Frontend_ShipsFollowUpSuggestions()
+    {
+        var app = await _client.GetStringAsync("/app.js");
+        Assert.Contains("chunk.type === \"suggestions\"", app);
+        Assert.Contains("function renderSuggestions", app);
+        Assert.Contains("function clearSuggestions", app);
+        Assert.Contains("suggestFollowUps", app); // load + save the preference
+
+        var indexHtml = await _client.GetStringAsync("/index.html");
+        Assert.Contains("id=\"profileSuggest\"", indexHtml);
+
+        var styles = await _client.GetStringAsync("/styles.css");
+        Assert.Contains(".suggestion-chip", styles);
     }
 
     // Copy-to-clipboard button on finalized agent replies: a hover/focus-revealed glyph button at the
