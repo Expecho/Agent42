@@ -72,6 +72,7 @@
   const profileForm = document.getElementById("profileForm");
   const profileLanguage = document.getElementById("profileLanguage");
   const profileTheme = document.getElementById("profileTheme");
+  const profileSuggest = document.getElementById("profileSuggest");
   const profileCancelBtn = document.getElementById("profileCancelBtn");
   const locationEnableBtn = document.getElementById("locationEnableBtn");
   const locationStatus = document.getElementById("locationStatus");
@@ -230,7 +231,7 @@
 
   // The last profile fetched from the server. The server is the source of truth; this is
   // only a render cache, always reconciled against a fresh GET/PUT response.
-  let profile = { preferredLanguage: "", theme: "system", enabledTools: null };
+  let profile = { preferredLanguage: "", theme: "system", enabledTools: null, suggestFollowUps: true };
 
   // Theme engine (ADR 0005 field #2). The server profile is the source of truth; THEME_KEY is
   // only a pre-paint cache the inline head script reads to avoid a dark flash. applyTheme resolves
@@ -1149,6 +1150,32 @@
     bubble.appendChild(btn);
   }
 
+  // Follow-up suggestion chips (up to 3) under a reply. Clicking one sends it immediately as the next
+  // message — a click is explicit intent — guarded so it never fires mid-stream. Live-only: not replayed
+  // by renderTurns, so they exist only under the freshly streamed turn and are cleared when the next turn
+  // starts (clearSuggestions in send()).
+  function renderSuggestions(msg, items) {
+    if (!Array.isArray(items) || items.length === 0) return;
+    const bubble = msg.querySelector(".msg__bubble");
+    if (!bubble) return;
+    const row = document.createElement("div");
+    row.className = "msg__suggestions";
+    for (const text of items.slice(0, 3)) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "suggestion-chip";
+      chip.textContent = text;
+      chip.addEventListener("click", () => { if (!streaming) send(text); });
+      row.appendChild(chip);
+    }
+    bubble.appendChild(row);
+  }
+
+  // Removes any suggestion chips currently in the thread (only the newest turn should carry them).
+  function clearSuggestions() {
+    thread.querySelectorAll(".msg__suggestions").forEach((el) => el.remove());
+  }
+
   const scrollToBottom = () => { chatScroll.scrollTop = chatScroll.scrollHeight; };
 
   /* ————— tool calls & token usage ————— */
@@ -1639,6 +1666,10 @@
     const convId = activeId;
     clearPendingAttachments();
 
+    // Follow-up suggestion chips are live-only and belong to the newest turn: drop any left over from
+    // the previous reply before this turn appends its own.
+    clearSuggestions();
+
     const userMsg = addMessage("user");
     fillUserBubble(userMsg, prompt, turnAttachments, convId);
     const agentMsg = addMessage("agent");
@@ -1695,6 +1726,9 @@
             // An image-generation model produced an image (ADR 0020): render it live in the assistant
             // bubble via the display proxy, exactly like it will re-render on reload.
             addAgentImage(agentMsg, activeId, chunk.attachmentId);
+          } else if (chunk.type === "suggestions") {
+            // Up to 3 clickable follow-up prompts under the reply; clicking one sends it immediately.
+            renderSuggestions(agentMsg, chunk.suggestions);
           } else if (chunk.type === "done") {
             showUsage(agentMsg, chunk);
           }
@@ -1840,6 +1874,8 @@
     // Null enabledTools (never saved, or saved before ADR 0021) means "all selectable tools".
     renderToolChecks(profileToolChecks, profile.enabledTools ?? allToolKeys());
     profileTheme.value = profile.theme ?? "system";
+    // Null-sentinel: null (never saved) and true both mean ON; only an explicit false is unchecked.
+    profileSuggest.checked = profile.suggestFollowUps !== false;
     profileSaved = false; // fresh edit session; the close handler reverts a preview unless we save
     profileTabs.select(0); // always open on General
     updateLocationControl(); // refresh the location status/button for the current grant state
@@ -1856,7 +1892,11 @@
     // others. enabledTools is the full explicit list — "all" is every key (ADR 0021) — but ONLY when the
     // catalog loaded: if /api/tools failed, toolCatalog is [] and sending [] would wipe the default to
     // "none". Omitting it then leaves the stored default untouched (absent-means-keep).
-    const payload = { preferredLanguage: profileLanguage.value, theme: profileTheme.value };
+    const payload = {
+      preferredLanguage: profileLanguage.value,
+      theme: profileTheme.value,
+      suggestFollowUps: profileSuggest.checked,
+    };
     if (toolCatalog.length > 0) payload.enabledTools = readToolChecks(profileToolChecks);
     try {
       const res = await fetch("/api/profile", {

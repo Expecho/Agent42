@@ -112,6 +112,39 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
         Assert.Equal("system", saved.Theme);
     }
 
+    // Follow-up suggestions preference: null-sentinel (null = ON default). It round-trips, survives
+    // reactivation, and is independent of the other fields (record `with`), like Theme/EnabledTools.
+    [Fact]
+    public async Task UserProfile_RoundTripsSuggestFollowUps_AndSurvivesReactivation()
+    {
+        const string user = "profile-suggest-user";
+        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
+
+        // Never saved → null (treated as ON wherever the flag is read).
+        Assert.Null((await profile.GetAsync()).SuggestFollowUps);
+
+        var saved = await profile.SaveAsync(
+            UserProfile.Empty with { PreferredLanguage = "en-US", SuggestFollowUps = false });
+        Assert.False(saved.SuggestFollowUps);
+        Assert.Equal("en-US", saved.PreferredLanguage);
+
+        await profile.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        var reread = await _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user).GetAsync();
+        Assert.False(reread.SuggestFollowUps);
+    }
+
+    [Fact]
+    public async Task UserProfile_DefaultSuggestFollowUps_IsNull_MeaningOn()
+    {
+        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-suggest-default");
+
+        // Never saved → empty default carries null (ON). Saving without touching it preserves null.
+        Assert.Null((await profile.GetAsync()).SuggestFollowUps);
+        var saved = await profile.SaveAsync(new UserProfile("en-US"));
+        Assert.Null(saved.SuggestFollowUps);
+    }
+
     [Fact]
     public async Task UserProfile_IsIsolatedPerUser()
     {

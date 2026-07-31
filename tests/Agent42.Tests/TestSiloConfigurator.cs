@@ -54,7 +54,10 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
         siloBuilder.UseInMemoryReminderService();
         siloBuilder.ConfigureServices(services =>
         {
-            services.AddSingleton<IChatClient, FakeChatClient>();
+            // Registered as its concrete type too (single instance) so a suggestion-gating test can read
+            // FakeChatClient.SuggestionCalls from each silo's container — mirrors RecordingPushNotificationSender.
+            services.AddSingleton<FakeChatClient>();
+            services.AddSingleton<IChatClient>(sp => sp.GetRequiredService<FakeChatClient>());
             // The image generator (ADR 0020) the ImageModel resolves to: echoes the edit input back and
             // returns a large recognizable PNG for text-to-image, so a test can tell the branches apart and
             // prove the bytes never enter the session.

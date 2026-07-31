@@ -23,6 +23,13 @@ public enum AgentStreamEventType
 
     /// <summary>The turn finished; carries the aggregated token usage.</summary>
     Done,
+
+    /// <summary>
+    /// Up to 3 suggested follow-up prompts the user can click to continue the conversation. Generated
+    /// best-effort by a second, non-streaming model call after the reply (interactive path only), streamed
+    /// just before <see cref="Done"/>. The list rides on <see cref="AgentStreamEvent.Suggestions"/>.
+    /// </summary>
+    Suggestions,
 }
 
 /// <summary>
@@ -45,4 +52,7 @@ public sealed record AgentStreamEvent(
     // Set on an Image event (ADR 0020): the stored attachment id the browser fetches via the proxy, plus
     // its media type. Trailing defaults so every existing positional construction keeps compiling.
     [property: Id(9)] string? AttachmentId = null,
-    [property: Id(10)] string? MediaType = null);
+    [property: Id(10)] string? MediaType = null,
+    // Set on a Suggestions event: up to 3 short follow-up prompts. Trailing default so every existing
+    // positional construction keeps compiling.
+    [property: Id(11)] IReadOnlyList<string>? Suggestions = null);
