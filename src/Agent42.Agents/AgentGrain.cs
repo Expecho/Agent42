@@ -931,11 +931,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             CachedTokens: cachedTokens > 0 ? cachedTokens : null);
     }
 
-    // Generates up to 3 short follow-up prompts the user might click to continue, via a second, non-streaming
-    // model call on this conversation's model. BEST-EFFORT and side-effect-free: it builds a THROWAWAY message
-    // list (never _session), writes no state, and swallows every failure into null so the surrounding turn is
-    // never affected. The try/catch lives here — not in the iterator ChatCoreAsync — because C# forbids
-    // `yield` inside a try with a catch.
+    // Generates up to 3 short follow-up prompts the user might click to continue, via a second model call on
+    // this conversation's model. It STREAMS (GetStreamingResponseAsync) and aggregates the text — the same
+    // path the reply already uses on the SAME cached client instance (ChatClientFactory GetOrAdd). This is
+    // deliberate: the non-streaming GetResponseAsync is otherwise unexercised on the Foundry Responses adapter
+    // (ADR 0014), where it was returning nothing in prod; streaming behaves exactly like the reply that works.
+    // BEST-EFFORT and side-effect-free: it builds a THROWAWAY message list (never _session), writes no state,
+    // and swallows every failure into null so the surrounding turn is never affected. The try/catch lives here
+    // — not in the iterator ChatCoreAsync — because C# forbids `yield` inside a try with a catch.
     private async Task<IReadOnlyList<string>?> GenerateFollowUpsAsync(string userMessage, string replyText)
     {
         try
@@ -951,25 +954,61 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                     $"User asked:\n{userMessage}\n\nAssistant replied:\n{replyText}\n\nSuggest the follow-ups:"),
             };
 
-            var response = await _chatClientFactory.GetClient(_modelId)
-                .GetResponseAsync(messages, new ChatOptions { MaxOutputTokens = 200 });
+            var text = new StringBuilder();
+            await foreach (var update in _chatClientFactory.GetClient(_modelId)
+                .GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = 400 }))
+            {
+                foreach (var content in update.Contents)
+                {
+                    if (content is TextContent { Text: { Length: > 0 } chunk })
+                    {
+                        text.Append(chunk);
+                    }
+                }
+            }
 
-            var picks = (response.Text ?? "")
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(StripLeadingListMarker)
-                .Where(line => line.Length > 0)
-                .Take(3)
-                .ToArray();
+            var picks = ParseFollowUps(text.ToString());
 
-            return picks.Length > 0 ? picks : null;
+            _logger.LogInformation(
+                "Agent grain {GrainKey} follow-up suggestions: {TextLength} chars of model output → {Count} prompt(s)",
+                this.GetPrimaryKeyString(), text.Length, picks.Count);
+
+            return picks.Count > 0 ? picks : null;
         }
         catch (Exception ex)
         {
-            // Never fatal — the reply already streamed. Log at debug and drop the suggestions for this turn.
-            _logger.LogDebug(ex, "Agent grain {GrainKey} could not generate follow-up suggestions", this.GetPrimaryKeyString());
+            // Never fatal — the reply already streamed. Warn (not debug) so a Responses-path failure is
+            // visible in prod telemetry rather than silently dropping the suggestions for the turn.
+            _logger.LogWarning(ex, "Agent grain {GrainKey} could not generate follow-up suggestions", this.GetPrimaryKeyString());
             return null;
         }
     }
+
+    // Turns the model's raw suggestion output into up to 3 clean prompts. One-per-line is the instructed
+    // shape; if a model ignores that and returns a single blob, fall back to splitting on sentence
+    // terminators so non-empty output still yields at least one chip.
+    private static IReadOnlyList<string> ParseFollowUps(string text)
+    {
+        var lines = SplitAndClean(text, '\n');
+        if (lines.Count == 0 && !string.IsNullOrWhiteSpace(text))
+        {
+            // Blob response: split on sentence terminators (kept via a lookbehind-style regex).
+            lines = FollowUpSentenceSplit()
+                .Split(text)
+                .Select(StripLeadingListMarker)
+                .Where(line => line.Length > 0)
+                .ToList();
+        }
+
+        return lines.Take(3).ToArray();
+    }
+
+    private static List<string> SplitAndClean(string text, char separator)
+        => text
+            .Split(separator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(StripLeadingListMarker)
+            .Where(line => line.Length > 0)
+            .ToList();
 
     // Strips a leading list marker a model may add despite the instruction ("- ", "* ", "1. ", "1) ") and
     // any surrounding quotes, so a suggestion renders clean in the composer.
@@ -981,6 +1020,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     [GeneratedRegex(@"^\s*(?:[-*•]|\d+[.)])\s+")]
     private static partial Regex FollowUpMarkerRegex();
+
+    // Splits a single-blob suggestion response into candidate lines at sentence terminators (?/!) or a
+    // question mark run, keeping the terminator with its sentence.
+    [GeneratedRegex(@"(?<=[?!])\s+")]
+    private static partial Regex FollowUpSentenceSplit();
 
     private static string? SerializeOrNull(object? value) =>
         value is not null ? JsonSerializer.Serialize(value) : null;
