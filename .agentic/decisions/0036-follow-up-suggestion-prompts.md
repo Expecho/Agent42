@@ -24,8 +24,9 @@ Two facts frame the design:
   from `IUserProfileGrain`. The gate and the preference reuse both shapes.
 
 ## Decision
-After a reply completes on the **interactive** path, the grain makes **one extra, non-streaming
-`IChatClient.GetResponseAsync` call** on the conversation's own model to produce up to 3 short follow-up
+After a reply completes on the **interactive** path, the grain makes **one extra model call** on the
+conversation's own model — streamed via `IChatClient.GetStreamingResponseAsync` and aggregated, the same
+path (and same cached client instance) the reply itself uses — to produce up to 3 short follow-up
 prompts, and streams them as a new **`AgentStreamEventType.Suggestions`** event (carrying `[Id(11)]
 IReadOnlyList<string>? Suggestions`) just **before** `Done`. The browser renders them as clickable chips
 under the newest assistant bubble; **clicking one sends it immediately** as the next message (a click is
@@ -76,3 +77,8 @@ streamed turn and are cleared when the next turn starts (`clearSuggestions` in `
   default-tools and default-model reads.
 - **Async paths are unaffected.** Agent-run and reminder replies never generate suggestions (no live client),
   the correct behaviour.
+- **The call streams, deliberately.** An initial version used the non-streaming `GetResponseAsync`, which
+  returned nothing on the prod Foundry **Responses** adapter (ADR 0014) — the reply path only ever exercises
+  the streaming surface, so the non-streaming one was untested there. Streaming and aggregating makes the
+  suggestion call behave exactly like the working reply. The failure was invisible because the helper logged
+  at Debug; it now logs at **Warning** so a silent degrade surfaces in telemetry.

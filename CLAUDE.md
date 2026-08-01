@@ -442,7 +442,9 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   document/web content — to anyone holding the link, outside the Entra tenant; the view is live until revoked,
   and **revocation is the only control** (deleting the conversation also revokes it).
 - Follow-up suggestion prompts (ADR 0036): after an **interactive** reply, `AgentGrain` makes one extra
-  non-streaming `IChatClient.GetResponseAsync` call (`GenerateFollowUpsAsync`) to produce up to 3 short
+  model call (`GenerateFollowUpsAsync`) — **streamed via `GetStreamingResponseAsync` and aggregated, the same
+  path/cached client the reply uses** (the non-streaming `GetResponseAsync` returned nothing on the Foundry
+  Responses adapter, ADR 0014) — to produce up to 3 short
   follow-up prompts, streamed as a new **`AgentStreamEventType.Suggestions`** event (`[Id(11)]`) before
   `Done`; the browser renders them as chips that **send on click**. Gated to the live path by a turn-scoped
   `_interactiveTurn` flag (OFF on the agent-run/reminder drains of the same `ChatCoreAsync` — no wasted call),
