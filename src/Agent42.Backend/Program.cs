@@ -110,7 +110,7 @@ builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp => new UserChat
 
 builder.Services.AddSingleton<IModelCatalog>(sp => new CompositeModelCatalog(
     [.. models.Discovering.Select(d => new AzureModelCatalog(
-        sp.GetRequiredService<ArmClient>(), d.Key, d.Settings, modelOptions.Default,
+        sp.GetRequiredService<ArmClient>(), d.Key, d.DisplayName, d.Settings, modelOptions.Default,
         sp.GetRequiredService<ILogger<AzureModelCatalog>>()))],
     models.DeclaredModels,
     modelOptions.Default,

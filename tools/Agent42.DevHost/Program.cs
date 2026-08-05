@@ -62,14 +62,20 @@ builder.Services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvide
 
 builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel,
 [
-    new ModelInfo("foundry:gpt-4o", "foundry", "GPT-4o", "gpt-4o", "2024-08-06", true, true),
-    new ModelInfo("foundry:gpt-4o-mini", "foundry", "GPT-4o mini", "gpt-4o-mini", "2024-07-18", true, true),
-    new ModelInfo("foundry:o3-mini", "foundry", "o3-mini", "o3-mini", "2025-01-31", true, false),
-    new ModelInfo(TextOnlyModel, "github", "Text-only demo (no tools, no vision)", "text-only-demo", null, false, false),
+    new ModelInfo("foundry:gpt-4o", "foundry", "GPT-4o", "gpt-4o", "2024-08-06", true, true,
+        ProviderDisplayName: "Azure AI Foundry"),
+    new ModelInfo("foundry:gpt-4o-mini", "foundry", "GPT-4o mini", "gpt-4o-mini", "2024-07-18", true, true,
+        ProviderDisplayName: "Azure AI Foundry"),
+    new ModelInfo("foundry:o3-mini", "foundry", "o3-mini", "o3-mini", "2025-01-31", true, false,
+        ProviderDisplayName: "Azure AI Foundry"),
+    new ModelInfo(TextOnlyModel, "github", "Text-only demo (no tools, no vision)", "text-only-demo", null, false, false,
+        ProviderDisplayName: "GitHub Models"),
     new ModelInfo(ImageModel, "images", "Image generator (demo)", "image-demo", null,
-        SupportsTools: false, SupportsVision: false, SupportsImageGeneration: true),
+        SupportsTools: false, SupportsVision: false, SupportsImageGeneration: true,
+        ProviderDisplayName: "Image models"),
     new ModelInfo(EmbeddingModel, "foundry", "Text embedding (demo)", "text-embedding-3-large", null,
-        SupportsTools: false, SupportsVision: false, SupportsImageGeneration: false, SupportsEmbeddings: true),
+        SupportsTools: false, SupportsVision: false, SupportsImageGeneration: false, SupportsEmbeddings: true,
+        ProviderDisplayName: "Azure AI Foundry"),
 ]));
 
 // No per-user overlay store offline (ADR 0018): the single static catalog stands in for every user.

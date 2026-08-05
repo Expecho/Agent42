@@ -299,6 +299,39 @@ public class ModelProviderTests
         Assert.DoesNotContain(setup.Discovering, d => d.Key == "foundry");
     }
 
+    [Fact] // The provider's DisplayName rides its declared models (and its discovery entry) so /api/models
+           // can LABEL each picker optgroup with it; a provider with none leaves ProviderDisplayName null and
+           // the frontend falls back to the key.
+    public void ProviderDisplayName_RidesDeclaredModelsAndDiscovery()
+    {
+        var options = Options();
+        options.Providers["github"].DisplayName = "GitHub Models";
+        // A second, discovering Foundry account with a display name — proves the discovery tuple carries it too.
+        options.Providers["foundry-swe"] = new ProviderOptions
+        {
+            Kind = ProviderKind.AzureOpenAI,
+            Discover = true,
+            DisplayName = "Foundry (Sweden)",
+            Endpoint = "https://sweden.openai.azure.com",
+            SubscriptionId = "sub-2",
+            ResourceGroup = "rg-2",
+            AccountName = "account-2",
+        };
+
+        var setup = ModelProviderBuilder.Build(options, Configuration());
+
+        // Every declared GitHub model carries the provider display name.
+        var githubModels = setup.DeclaredModels.Where(m => m.Provider == "github").ToList();
+        Assert.NotEmpty(githubModels);
+        Assert.All(githubModels, m => Assert.Equal("GitHub Models", m.ProviderDisplayName));
+
+        // The discovery entry carries it, so AzureModelCatalog can stamp it on each discovered deployment.
+        Assert.Equal("Foundry (Sweden)", setup.Discovering.Single(d => d.Key == "foundry-swe").DisplayName);
+
+        // The shipped `foundry` provider declares no display name → null → frontend falls back to the key.
+        Assert.Null(setup.Discovering.Single(d => d.Key == "foundry").DisplayName);
+    }
+
     [Fact] // AC1 (ADR 0020) — a declared image-generation model surfaces SupportsImageGeneration in
            // capabilities; a chat model and a discovered Foundry deployment do not.
     public void GetCapabilities_ImageModel_ReportsImageGeneration()

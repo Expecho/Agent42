@@ -364,6 +364,13 @@
     return colon < 0 ? id : id.slice(colon + 1);
   }
 
+  // The label for a provider's optgroup. Models are GROUPED by provider key (ids are qualified by it),
+  // but the group is LABELLED with the provider's display name when it has one — falling back to the raw
+  // key, then to "Models" for the unkeyed synthesized default. Shared by every provider-grouped select.
+  function providerGroupLabel(m) {
+    return (m.providerDisplayName ?? m.provider) || "Models";
+  }
+
   // Fills a <select> with the available models, grouped by provider. Shared by the composer picker AND
   // the agent dialog — both get the grouping, and neither hand-rolls its own option list.
   function fillModelOptions(select) {
@@ -373,7 +380,7 @@
       const provider = m.provider ?? "";
       if (!groups.has(provider)) {
         const group = document.createElement("optgroup");
-        group.label = provider || "Models";
+        group.label = providerGroupLabel(m);
         groups.set(provider, group);
         select.appendChild(group);
       }
@@ -2087,7 +2094,7 @@
       const provider = m.provider ?? "";
       if (!groups.has(provider)) {
         const group = document.createElement("optgroup");
-        group.label = provider || "Models";
+        group.label = providerGroupLabel(m);
         groups.set(provider, group);
         embeddingModelSelect.appendChild(group);
       }
