@@ -123,6 +123,7 @@ public class ModelCatalogTests
         var catalog = new AzureModelCatalog(
             Arm(transport),
             "foundry-swe",
+            "Foundry (Sweden)",
             // The subscription id must be a real GUID: ResourceIdentifier validates it and throws
             // FormatException otherwise — which AzureModelCatalog catches, so a typo'd subscription in
             // config degrades to "this provider lists nothing" rather than failing loudly.
@@ -138,6 +139,8 @@ public class ModelCatalogTests
         Assert.Equal(["foundry-swe:gpt-4o", "foundry-swe:gpt-4o-mini"], result.Models.Select(m => m.Id));
         Assert.All(result.Models, m => Assert.Equal("foundry-swe", m.Provider));
         Assert.All(result.Models, m => Assert.True(m.SupportsTools && m.SupportsVision));
+        // The provider's display name rides every discovered deployment, so the picker can label the group.
+        Assert.All(result.Models, m => Assert.Equal("Foundry (Sweden)", m.ProviderDisplayName));
         Assert.Equal("2024-08-06", result.Models[0].Version);
 
         // ...and it queried ITS OWN account, not the one in the global AzureOpenAI:* keys.
@@ -154,6 +157,7 @@ public class ModelCatalogTests
         var catalog = new AzureModelCatalog(
             new ArmClient(new StaticTokenCredential()),
             "foundry",
+            null,
             new FoundrySettings("https://example.openai.azure.com", null, null, null, null),
             "foundry:gpt-4o",
             NullLogger<AzureModelCatalog>.Instance);

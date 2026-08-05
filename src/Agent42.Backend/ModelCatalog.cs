@@ -21,7 +21,12 @@ public record ModelInfo(
     bool SupportsImageGeneration = false,
     // Trailing default so existing constructions stay valid; true only for a declared embedding model.
     // Surfaced on /api/models so the Preferences "default embedding model" selector can filter to it.
-    bool SupportsEmbeddings = false);
+    bool SupportsEmbeddings = false,
+    // Trailing default so existing constructions stay valid; the human-facing name of the model's PROVIDER
+    // (StoredProvider/ProviderOptions.DisplayName), surfaced on /api/models so the picker can LABEL each
+    // provider optgroup with it. null → the frontend falls back to the provider key. Distinct from
+    // <see cref="DisplayName"/>, which names the MODEL; this names the group the model sits under.
+    string? ProviderDisplayName = null);
 
 /// <summary>The models the picker can choose from, plus the current default.</summary>
 public record ModelCatalogResult(string Default, IReadOnlyList<ModelInfo> Models);
@@ -46,6 +51,7 @@ public interface IModelCatalog
 public sealed class AzureModelCatalog(
     ArmClient armClient,
     string providerKey,
+    string? providerDisplayName,
     FoundrySettings settings,
     string defaultModelId,
     ILogger<AzureModelCatalog> logger) : IModelCatalog
@@ -89,7 +95,8 @@ public sealed class AzureModelCatalog(
                     Model: props.Model?.Name,
                     Version: props.Model?.Version,
                     SupportsTools: true,
-                    SupportsVision: true));
+                    SupportsVision: true,
+                    ProviderDisplayName: providerDisplayName));
             }
 
             return new ModelCatalogResult(defaultModelId, models);

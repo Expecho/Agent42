@@ -5,7 +5,7 @@ namespace Agent42.Backend;
 /// <summary>What the <c>Models:</c> section turns into: the clients, the catalogs, and what was dropped.</summary>
 public sealed record ModelProviderSetup(
     IReadOnlyDictionary<string, MultiProviderChatClientFactory.Provider> Providers,
-    IReadOnlyList<(string Key, FoundrySettings Settings)> Discovering,
+    IReadOnlyList<(string Key, string? DisplayName, FoundrySettings Settings)> Discovering,
     IReadOnlyList<ModelInfo> DeclaredModels,
     IReadOnlyList<string> SkippedProviders);
 
@@ -31,7 +31,7 @@ public enum ProviderBuildStatus
 public sealed record ProviderBuildResult(
     ProviderBuildStatus Status,
     MultiProviderChatClientFactory.Provider? Provider = null,
-    (string Key, FoundrySettings Settings)? Discovering = null,
+    (string Key, string? DisplayName, FoundrySettings Settings)? Discovering = null,
     IReadOnlyList<ModelInfo>? DeclaredModels = null,
     string? Error = null);
 
@@ -56,7 +56,7 @@ public static class ModelProviderBuilder
     {
         var providers = new Dictionary<string, MultiProviderChatClientFactory.Provider>(
             StringComparer.OrdinalIgnoreCase);
-        var discovering = new List<(string Key, FoundrySettings Settings)>();
+        var discovering = new List<(string Key, string? DisplayName, FoundrySettings Settings)>();
         var declared = new List<ModelInfo>();
         var skipped = new List<string>();
 
@@ -139,7 +139,7 @@ public static class ModelProviderBuilder
             // data-plane key can't authenticate ARM) → the provider contributes the deployments it
             // DECLARES, exactly like an OpenAI-compatible one below.
             return provider.Discover
-                ? new ProviderBuildResult(ProviderBuildStatus.Built, foundry, (key, settings), [])
+                ? new ProviderBuildResult(ProviderBuildStatus.Built, foundry, (key, provider.DisplayName, settings), [])
                 : new ProviderBuildResult(
                     ProviderBuildStatus.Built, foundry, null, [.. DeclaredModels(key, provider)]);
         }
@@ -183,5 +183,6 @@ public static class ModelProviderBuilder
             SupportsTools: m.SupportsTools,
             SupportsVision: m.SupportsVision,
             SupportsImageGeneration: m.SupportsImageGeneration,
-            SupportsEmbeddings: m.SupportsEmbeddings));
+            SupportsEmbeddings: m.SupportsEmbeddings,
+            ProviderDisplayName: provider.DisplayName));
 }
