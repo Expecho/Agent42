@@ -1047,6 +1047,37 @@ body {
   animation: pulse 1.4s ease-in-out infinite;
 }
 
+/* hands-free voice conversation control (ADR 0037) — same resting shape as the mic; its
+   data-state drives the live feedback: pulsing while listening, steady glow while thinking,
+   faster pulse while the assistant speaks. */
+
+.composer__voice {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.composer__voice:hover { background: var(--line-soft); color: var(--amber); border-color: var(--amber-deep); }
+.composer__voice:active { transform: translateY(1px); }
+
+.composer__voice[aria-pressed="true"] {
+  color: var(--amber);
+  border-color: var(--amber-deep);
+  background: var(--amber-glow);
+}
+
+.composer__voice[data-state="listening"] { animation: pulse 1.4s ease-in-out infinite; }
+.composer__voice[data-state="thinking"] { opacity: 0.85; }
+.composer__voice[data-state="speaking"] { animation: pulse 0.7s ease-in-out infinite; }
+
 .composer__previews {
   display: flex;
   flex-wrap: wrap;
