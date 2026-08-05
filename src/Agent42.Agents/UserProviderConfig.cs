@@ -19,7 +19,12 @@ public sealed record StoredModel(
     // true only for a declared embedding model (the user picks it as the "default embedding model" in
     // Preferences; document RAG resolves the generator from it). An embedding model is a distinct model
     // KIND sharing the provider's endpoint + key, reached via GetEmbeddingClient not the chat client.
-    [property: Id(5)] bool SupportsEmbeddings = false);
+    [property: Id(5)] bool SupportsEmbeddings = false,
+    // Trailing [Id(6)] with a default so an existing overlay deserializes it false with no migration —
+    // true only for a declared speech (text-to-speech) model (ADR 0038; the user picks it as the "default
+    // speech model" in Preferences; the voice reply is synthesized from it). Like embeddings it is a
+    // distinct model KIND sharing the provider's endpoint + key, reached via GetAudioClient not the chat client.
+    [property: Id(6)] bool SupportsSpeech = false);
 
 /// <summary>
 /// One provider in a user's overlay (ADR 0018). Mirrors the Backend's <c>ProviderOptions</c>, but:
@@ -58,11 +63,15 @@ public sealed record UserProviderConfig(
     // Trailing [Id(3)] with a default so an existing overlay deserializes it null with no migration —
     // the user's chosen "default embedding model" id (qualified provider:model), null = none configured.
     // Independent of Default (the chat default): embeddings and chat are separate model kinds.
-    [property: Id(3)] string? EmbeddingDefault = null)
+    [property: Id(3)] string? EmbeddingDefault = null,
+    // Trailing [Id(4)] with a default so an existing overlay deserializes it null with no migration —
+    // the user's chosen "default speech model" id (ADR 0038), null = none configured (voice falls back to
+    // the browser's speechSynthesis, ADR 0037). Independent of Default/EmbeddingDefault — a distinct kind.
+    [property: Id(4)] string? SpeechDefault = null)
 {
     /// <summary>
     /// A factory (fresh instance per access), never a cached singleton — a shared static default is
     /// mutated by Orleans' copier and leaks across grains (the same discipline as <c>UserProfile.Empty</c>).
     /// </summary>
-    public static UserProviderConfig Empty => new([], null, 0, null);
+    public static UserProviderConfig Empty => new([], null, 0, null, null);
 }

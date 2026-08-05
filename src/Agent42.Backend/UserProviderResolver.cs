@@ -13,7 +13,11 @@ public sealed record ResolvedProviderSet(
     // The user's chosen default embedding model id (document RAG resolves its generator from this), or ""
     // when none is configured or the pinned id no longer names a declared embedding-capable model. There is
     // NO baseline fallback — the operator embedding floor was removed with the per-user embedding model.
-    string EmbeddingDefaultModelId = "");
+    string EmbeddingDefaultModelId = "",
+    // The user's chosen default speech model id (ADR 0038; the voice reply is synthesized from this), or ""
+    // when none is configured or the pinned id no longer names a declared speech-capable model. No baseline
+    // fallback — an opt-in pick, exactly like the embedding default.
+    string SpeechDefaultModelId = "");
 
 /// <summary>
 /// Resolves a user's effective (baseline ⊕ overlay) provider set (ADR 0018). An interface so the
@@ -114,7 +118,8 @@ public sealed class UserProviderResolver : IUserProviderResolver
 
         return new ResolvedProviderSet(
             providers, discovering, declared, EffectiveDefault(overlay, providers, declared), overlay.Version,
-            EffectiveEmbeddingDefault(overlay, declared));
+            EffectiveEmbeddingDefault(overlay, declared),
+            EffectiveSpeechDefault(overlay, declared));
     }
 
     // The effective embedding default: the pinned id only when it names a declared EMBEDDING-capable model,
@@ -132,6 +137,22 @@ public sealed class UserProviderResolver : IUserProviderResolver
         return declared.Any(m =>
             m.SupportsEmbeddings && string.Equals(m.Id, overlay.EmbeddingDefault, StringComparison.OrdinalIgnoreCase))
             ? overlay.EmbeddingDefault!
+            : "";
+    }
+
+    // The effective speech default (ADR 0038): the pinned id only when it names a declared SPEECH-capable
+    // model, else "". Same discipline as the embedding default — no baseline/first-model fallback (an opt-in
+    // pick), "" means "no speech model" → /api/speech 409s and the browser voice (ADR 0037) stays in use.
+    private static string EffectiveSpeechDefault(UserProviderConfig overlay, IReadOnlyList<ModelInfo> declared)
+    {
+        if (string.IsNullOrWhiteSpace(overlay.SpeechDefault))
+        {
+            return "";
+        }
+
+        return declared.Any(m =>
+            m.SupportsSpeech && string.Equals(m.Id, overlay.SpeechDefault, StringComparison.OrdinalIgnoreCase))
+            ? overlay.SpeechDefault!
             : "";
     }
 
@@ -191,6 +212,7 @@ public sealed class UserProviderResolver : IUserProviderResolver
             SupportsVision = m.SupportsVision,
             SupportsImageGeneration = m.SupportsImageGeneration,
             SupportsEmbeddings = m.SupportsEmbeddings,
+            SupportsSpeech = m.SupportsSpeech,
         })],
     };
 }
