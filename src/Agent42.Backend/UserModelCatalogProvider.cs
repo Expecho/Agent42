@@ -39,7 +39,7 @@ public sealed class UserModelCatalogProvider : IUserModelCatalogProvider
 
         var discovering = resolved.Discovering
             .Select(d => (IModelCatalog)new AzureModelCatalog(
-                _armClient, d.Key, d.Settings, resolved.DefaultModelId,
+                _armClient, d.Key, d.DisplayName, d.Settings, resolved.DefaultModelId,
                 _loggerFactory.CreateLogger<AzureModelCatalog>()))
             .ToList();
 

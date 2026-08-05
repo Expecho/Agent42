@@ -32,6 +32,22 @@ public sealed class ModelPickerAssetsTests
         Assert.Contains("m.provider", app);
     }
 
+    [Fact] // The optgroup is grouped by provider KEY but LABELLED with the provider's display name when it
+           // has one, falling back to the key. One shared helper feeds every provider-grouped select.
+    public async Task ModelPicker_LabelsGroupWithProviderDisplayName_FallingBackToKey()
+    {
+        var app = await _client.GetStringAsync("/app.js");
+
+        // The single source of the group label: display name ?? key, then "Models" for the unkeyed default.
+        Assert.Contains("function providerGroupLabel(m)", app);
+        Assert.Contains("(m.providerDisplayName ?? m.provider) || \"Models\"", app);
+
+        // Both provider-grouped selects use the shared helper rather than the bare key, and neither
+        // hand-rolls `provider || "Models"` any more.
+        Assert.Contains("group.label = providerGroupLabel(m);", app);
+        Assert.DoesNotContain("group.label = provider || \"Models\";", app);
+    }
+
     [Fact] // AC14 — one append-if-missing helper, not one per picker (duplication_pct_max: 3).
     public async Task BothPickers_ShareTheSameSelectHelper()
     {

@@ -95,8 +95,12 @@ app.MapGet("/api/models", async (IUserModelCatalogProvider catalogs, HttpContext
     await (await catalogs.GetForUserAsync(http.GetUserId(), ct)).GetAsync(ct));
 ```
 
-The browser fills a grouped `<select>` (one `optgroup` per provider); an **agent chat** sends
-`model: null` (pinned server-side at bind time) while a normal chat sends the picker's value.
+The browser fills a grouped `<select>` (one `optgroup` per provider). Models are **grouped by
+provider key** (ids are qualified by it), but each group is **labelled with the provider's display
+name** (`ModelInfo.ProviderDisplayName`, from `StoredProvider`/`ProviderOptions.DisplayName`),
+falling back to the raw key when a provider declares none — one shared `providerGroupLabel(m)` helper
+feeds every provider-grouped select. An **agent chat** sends `model: null` (pinned server-side at
+bind time) while a normal chat sends the picker's value.
 
 ## How the Agent Framework fits
 

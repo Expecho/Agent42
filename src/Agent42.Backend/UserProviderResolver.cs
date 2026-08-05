@@ -6,7 +6,7 @@ namespace Agent42.Backend;
 /// <summary>A user's effective provider set: baseline ⊕ overlay, already built (ADR 0018).</summary>
 public sealed record ResolvedProviderSet(
     IReadOnlyDictionary<string, MultiProviderChatClientFactory.Provider> Providers,
-    IReadOnlyList<(string Key, FoundrySettings Settings)> Discovering,
+    IReadOnlyList<(string Key, string? DisplayName, FoundrySettings Settings)> Discovering,
     IReadOnlyList<ModelInfo> DeclaredModels,
     string DefaultModelId,
     int Version,
