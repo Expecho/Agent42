@@ -184,7 +184,7 @@ public sealed class PwaAssetsTests
         // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
         // stale assets — sw.js serves the shell cache-first with background revalidate.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v11", sw);
+        Assert.Contains("agent42-shell-v12", sw);
     }
 
     // Offline read cache (ADR 0032): agents, conversations and previously-opened chat histories are
