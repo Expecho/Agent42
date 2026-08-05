@@ -60,6 +60,15 @@ public sealed class ConfiguredModel
     /// a mismatch is rejected at ingest.
     /// </summary>
     public bool SupportsEmbeddings { get; set; }
+
+    /// <summary>
+    /// Whether this is a <b>speech</b> (text-to-speech) model (ADR 0038): the user picks it as the "default
+    /// speech model" in Preferences and the hands-free voice conversation (ADR 0037) synthesizes its reply
+    /// from the model's provider (endpoint + key), reached via <c>GetAudioClient</c> — a distinct model kind
+    /// from chat. Default <c>false</c>. Egress note (ADR 0013): synthesizing sends the reply text outside the
+    /// tenant, so this is opt-in per model and the browser voice stays the default until it is picked.
+    /// </summary>
+    public bool SupportsSpeech { get; set; }
 }
 
 /// <summary>One configured provider.</summary>

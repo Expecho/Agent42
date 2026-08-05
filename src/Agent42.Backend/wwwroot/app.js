@@ -100,6 +100,7 @@
 
   const defaultModelSelect = document.getElementById("defaultModelSelect");
   const embeddingModelSelect = document.getElementById("embeddingModelSelect");
+  const speechModelSelect = document.getElementById("speechModelSelect");
   const providerList = document.getElementById("providerList");
   const addProviderBtn = document.getElementById("addProviderBtn");
   const providerDialog = document.getElementById("providerDialog");
@@ -210,6 +211,10 @@
   // The user's default embedding model id, or null when none is configured. When null, attaching documents
   // is blocked in the composer (RAG needs an embedding model). Independent of userDefaultModel (chat).
   let userDefaultEmbeddingModel = null;
+  // The user's default speech (TTS) model id, or null when none is configured (ADR 0038). When set, the
+  // hands-free voice conversation (ADR 0037) speaks its reply via server-side /api/speech; when null it
+  // falls back to the browser's speechSynthesis. Independent of userDefaultModel (chat).
+  let userDefaultSpeechModel = null;
   // The user's own remote MCP servers (config-driven remote MCP servers), fetched masked (hasHeaderValue,
   // never the secret). The id of the one being edited, or null when adding a new server.
   let mcpServers = [];
@@ -347,6 +352,7 @@
       applyModelAvailability();
       syncDefaultModelSelect();
       syncEmbeddingModelSelect();
+      syncSpeechModelSelect();
     } catch { /* leave the picker disabled; chat still uses the server's default model */ }
   }
 
@@ -2064,9 +2070,11 @@
       userProviders = data.providers ?? [];
       userDefaultModel = data.default ?? null;
       userDefaultEmbeddingModel = data.embeddingDefault ?? null;
+      userDefaultSpeechModel = data.speechDefault ?? null;
       renderProviders();
       syncDefaultModelSelect();
       syncEmbeddingModelSelect();
+      syncSpeechModelSelect();
     } catch { /* silo may be unreachable; the list refreshes on next open */ }
   }
 
@@ -2149,6 +2157,52 @@
       if (!res.ok) return syncEmbeddingModelSelect();
     } catch { return syncEmbeddingModelSelect(); /* silo unreachable — don't show an unsaved value */ }
     userDefaultEmbeddingModel = value || null;
+  }
+
+  // Repaints the speech-model select from the models a provider marked as speech models, plus a leading
+  // "None" option (ADR 0038). Same idempotent-repaint reasoning as syncEmbeddingModelSelect(); a stored id
+  // whose model is gone shows under "Unavailable" via selectModel rather than silently resetting.
+  function syncSpeechModelSelect() {
+    if (!speechModelSelect) return;
+    speechModelSelect.innerHTML = "";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "None (browser voice)";
+    speechModelSelect.appendChild(none);
+
+    const groups = new Map();
+    for (const m of modelsData.models ?? []) {
+      if (!m.supportsSpeech) continue; // only speech-capable models are pickable here
+      const provider = m.provider ?? "";
+      if (!groups.has(provider)) {
+        const group = document.createElement("optgroup");
+        group.label = providerGroupLabel(m);
+        groups.set(provider, group);
+        speechModelSelect.appendChild(group);
+      }
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.displayName ?? m.id;
+      groups.get(provider).appendChild(opt);
+    }
+
+    speechModelSelect.value = "";
+    selectModel(speechModelSelect, userDefaultSpeechModel);
+  }
+
+  // Persists the speech-model pick immediately (no Save button — the value lives in the provider overlay
+  // grain). Blank clears it (browser voice). A failed save snaps the select back to the stored value.
+  async function persistSpeechModel() {
+    const value = speechModelSelect.value;
+    try {
+      const res = await fetch("/api/default-speech-model", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ speechDefault: value || null }),
+      });
+      if (!res.ok) return syncSpeechModelSelect();
+    } catch { return syncSpeechModelSelect(); /* silo unreachable — don't show an unsaved value */ }
+    userDefaultSpeechModel = value || null;
   }
 
   function renderProviders() {
@@ -2305,6 +2359,7 @@
       { label: "vision", checked: model?.supportsVision ?? false },
       { label: "image gen", checked: model?.supportsImageGeneration ?? false },
       { label: "embeddings", checked: model?.supportsEmbeddings ?? false },
+      { label: "speech", checked: model?.supportsSpeech ?? false },
     ];
     const capBoxes = [];
     const updateCapsSummary = () => {
@@ -2350,7 +2405,7 @@
     for (const row of providerModelList.querySelectorAll(".provider-model-row")) {
       const id = row.querySelector(".provider-model-row__id").value.trim();
       if (!id) continue; // an empty row is dropped, not sent
-      const [tools, vision, image, embed] = row.querySelectorAll(".agent-form__checkbox");
+      const [tools, vision, image, embed, speech] = row.querySelectorAll(".agent-form__checkbox");
       const display = row.querySelector(".provider-model-row__display").value.trim();
       models.push({
         id,
@@ -2359,6 +2414,7 @@
         supportsVision: vision.checked,
         supportsImageGeneration: image.checked,
         supportsEmbeddings: embed.checked,
+        supportsSpeech: speech.checked,
       });
     }
     return models;
@@ -2433,6 +2489,7 @@
 
   defaultModelSelect.addEventListener("change", persistDefaultModel);
   if (embeddingModelSelect) embeddingModelSelect.addEventListener("change", persistEmbeddingModel);
+  if (speechModelSelect) speechModelSelect.addEventListener("change", persistSpeechModel);
   addProviderBtn.addEventListener("click", () => openProviderDialog(null));
   addModelRowBtn.addEventListener("click", () => addModelRow(null));
   providerKindSelect.addEventListener("change", syncProviderKindUi);
@@ -2970,6 +3027,12 @@
   // (graceful degradation, mirroring the mic). speechSynthesis output is a new egress-free path:
   // the reply text never leaves the browser (ADR 0013 unchanged); recognition still uses the
   // vendor's cloud like dictation (ADR 0006's accepted residual).
+  //
+  // Server-side voice (ADR 0038): when the user has picked a default speech model
+  // (userDefaultSpeechModel), the reply is spoken by POSTing each sentence to /api/speech and playing
+  // the returned audio (a natural Azure/OpenAI neural voice) instead of speechSynthesis — which DOES
+  // send the reply text outside the tenant (ADR 0013 egress), the reason it is opt-in. With none set,
+  // or on any /api/speech failure, it falls back to the browser voice. Barge-in works either way.
   if (!SpeechRecognition || !window.speechSynthesis) {
     voiceBtn.hidden = true;
   } else {
@@ -2988,6 +3051,16 @@
     let spokenText = "";            // reply text already handed to synthesis this turn (echo ref)
     let lastSubmitted = "";         // last auto-sent utterance (so its trailing result ≠ barge-in)
     let interrupted = false;        // set by barge-in so the aborted turn's tail is not spoken
+
+    // Server-side TTS playback (ADR 0038). speechAbort cancels in-flight /api/speech fetches on barge-in;
+    // speechGen invalidates any playback from a superseded turn; audioQueue holds ordered pending sentences
+    // (each a Promise resolving to a playable item), so fetches pipeline while playback stays sequential.
+    let speechAbort = null;
+    let speechGen = 0;
+    const audioQueue = [];
+    let audioBusy = false;          // the playback pump loop is running
+    let audioEl = null;             // the HTMLAudioElement currently playing, if any
+    let audioResolve = null;        // resolver of the current chunk's playback promise (so cancel can end it)
 
     // Voices load asynchronously; refresh the cache on change and pick the best lang match.
     let voices = synth.getVoices();
@@ -3029,18 +3102,43 @@
       setUi();
     }
 
+    // True while anything is (or is about to be) speaking — browser synth OR the server-audio pump/queue.
+    function isSpeaking() {
+      return synth.speaking || synth.pending || audioBusy || audioQueue.length > 0;
+    }
+
     // Re-arm the mic for the next turn once the reply has fully finished speaking.
     function maybeArmListening() {
       if (!active || state === "listening") return;
-      if (synth.speaking || synth.pending || streaming) return;
+      if (streaming || isSpeaking()) return;
       armListening();
     }
 
+    // Cancels all speech NOW — server audio (abort in-flight fetches, drop the queue, stop playback) and
+    // browser synth — and bumps speechGen so any superseded playback bails. Called on barge-in, teardown,
+    // and at each turn start (a fresh epoch). Re-arms speechAbort for the next turn's fetches.
+    function cancelSpeech() {
+      speechGen++;
+      if (speechAbort) { try { speechAbort.abort(); } catch { /* already aborted */ } }
+      speechAbort = new AbortController();
+      audioQueue.length = 0;
+      if (audioEl) { try { audioEl.pause(); } catch { /* nothing playing */ } audioEl = null; }
+      try { synth.cancel(); } catch { /* nothing speaking */ }
+      if (audioResolve) { const r = audioResolve; audioResolve = null; r(); }
+    }
+
+    // Speak one sentence. Server-side (ADR 0038) when a speech model is picked, else the browser voice.
     function speak(text) {
       const clean = stripMarkdown(text);
       if (!clean) return;
-      spokenText += " " + clean;
-      const u = new SpeechSynthesisUtterance(clean);
+      spokenText += " " + clean; // echo reference — populated before playback so a barge-in can compare
+      if (userDefaultSpeechModel) { serverSpeak(clean); return; }
+      browserSpeak(clean);
+    }
+
+    // Browser-voice path (no speech model): a self-contained utterance that re-arms on its own end.
+    function browserSpeak(text) {
+      const u = new SpeechSynthesisUtterance(text);
       u.lang = vr.lang || navigator.language;
       const v = pickVoice(u.lang);
       if (v) u.voice = v;
@@ -3048,6 +3146,80 @@
       u.addEventListener("end", maybeArmListening);
       u.addEventListener("error", maybeArmListening);
       synth.speak(u);
+    }
+
+    // Server-voice path: start the fetch NOW (fetches pipeline), enqueue it for in-order playback, pump.
+    function serverSpeak(text) {
+      audioQueue.push(fetchSpeech(text, speechAbort));
+      pump();
+    }
+
+    // Fetch synthesized audio for one sentence. Resolves to a playable item: {url} on success, {fallback}
+    // on a server/HTTP error (→ browser voice for this sentence), or null when aborted (barge-in).
+    async function fetchSpeech(text, abort) {
+      try {
+        const res = await fetch("/api/speech", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+          signal: abort ? abort.signal : undefined,
+        });
+        if (!res.ok) return { fallback: text }; // 409 (no model) or error → browser voice
+        return { url: URL.createObjectURL(await res.blob()) };
+      } catch (e) {
+        return e.name === "AbortError" ? null : { fallback: text };
+      }
+    }
+
+    // Plays the queued sentences strictly in order. One pump loop at a time; a superseded turn (speechGen
+    // changed) or a stop bails. Arms listening when the queue drains.
+    function pump() {
+      if (audioBusy) return;
+      audioBusy = true;
+      const gen = speechGen;
+      (async () => {
+        while (audioQueue.length && gen === speechGen && active) {
+          const item = await audioQueue.shift();
+          if (gen !== speechGen || !active || !item) continue;
+          state = "speaking"; setUi();
+          await (item.fallback != null ? synthPlay(item.fallback) : playUrl(item.url));
+        }
+        audioBusy = false;
+        maybeArmListening();
+      })();
+    }
+
+    // Plays one audio URL, resolving on end/error (or when cancelSpeech resolves it). Revokes the blob URL.
+    function playUrl(url) {
+      return new Promise((resolve) => {
+        const el = new Audio(url);
+        audioEl = el;
+        audioResolve = resolve;
+        const done = () => {
+          try { URL.revokeObjectURL(url); } catch { /* already revoked */ }
+          if (audioEl === el) audioEl = null;
+          if (audioResolve === resolve) audioResolve = null;
+          resolve();
+        };
+        el.addEventListener("ended", done);
+        el.addEventListener("error", done);
+        el.play().catch(done); // autoplay policy / decode failure — move on rather than stall
+      });
+    }
+
+    // Browser-voice fallback for one sentence INSIDE the pump — a promise so playback stays sequential.
+    function synthPlay(text) {
+      return new Promise((resolve) => {
+        audioResolve = resolve;
+        const finish = () => { if (audioResolve === resolve) audioResolve = null; resolve(); };
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = vr.lang || navigator.language;
+        const v = pickVoice(u.lang);
+        if (v) u.voice = v;
+        u.addEventListener("end", finish);
+        u.addEventListener("error", finish);
+        synth.speak(u);
+      });
     }
 
     // Flush complete sentences from the delta buffer (or everything, at stream end) so speech
@@ -3083,7 +3255,7 @@
 
     function bargeIn(heard) {
       interrupted = true;
-      try { synth.cancel(); } catch { /* nothing speaking */ }
+      cancelSpeech(); // stop the reply mid-word — browser voice or server audio
       if (sendAbort) sendAbort.abort(); // stop generation mid-stream
       state = "listening";
       resetTurn();
@@ -3109,6 +3281,7 @@
       interrupted = false;
       state = "thinking";
       resetTurn();
+      cancelSpeech(); // fresh speech epoch for this turn (clears any lingering audio)
       setUi();
       send(t); // fire-and-forget: onDelta speaks it, onStreamEnd flushes the tail
     }
@@ -3147,6 +3320,7 @@
       if (active) return;
       stopSpeech(); // dictation and voice mode share the one mic — never both at once
       active = true;
+      cancelSpeech(); // initialize speechAbort and clear any stale audio state
       vr.lang = profile.preferredLanguage || navigator.language;
       armListening();
       try { vr.start(); } catch { /* start() throws if already started */ }
@@ -3157,7 +3331,7 @@
       active = false;
       state = "idle";
       clearTimeout(silenceTimer);
-      try { synth.cancel(); } catch { /* nothing speaking */ }
+      cancelSpeech(); // stop browser voice AND server audio
       if (sendAbort) sendAbort.abort();
       try { vr.stop(); } catch { /* not started */ }
       resetTurn();

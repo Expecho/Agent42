@@ -164,6 +164,51 @@ public class UserProviderResolverTests
         Assert.Equal("", Resolver().Merge(overlay).EmbeddingDefaultModelId);
     }
 
+    // ADR 0038 (speech): the speech default resolves only when it names a declared SPEECH-capable model.
+    [Fact]
+    public void SpeechDefault_ResolvesToSpeechCapableModel()
+    {
+        var overlay = new UserProviderConfig(
+            [OllamaWithSpeech(_protector.Protect("k"))],
+            Default: null, Version: 1, EmbeddingDefault: null, SpeechDefault: "ollama:tts-1");
+
+        Assert.Equal("ollama:tts-1", Resolver().Merge(overlay).SpeechDefaultModelId);
+    }
+
+    [Fact]
+    public void SpeechDefault_NamingANonSpeechModel_ResolvesEmpty()
+    {
+        // "ollama:llama3.1" is declared but NOT speech-capable — it must not silently become the speech model.
+        var overlay = new UserProviderConfig(
+            [OllamaWithSpeech(_protector.Protect("k"))],
+            Default: null, Version: 1, EmbeddingDefault: null, SpeechDefault: "ollama:llama3.1");
+
+        Assert.Equal("", Resolver().Merge(overlay).SpeechDefaultModelId);
+    }
+
+    [Fact]
+    public void NoSpeechDefault_ResolvesEmpty()
+    {
+        var overlay = OverlayWith(OllamaWithSpeech(_protector.Protect("k")));
+
+        Assert.Equal("", Resolver().Merge(overlay).SpeechDefaultModelId);
+    }
+
+    // An Ollama provider declaring a chat model AND a speech-capable model.
+    private static StoredProvider OllamaWithSpeech(string? apiKeyCiphertext) => new(
+        Key: "ollama",
+        Kind: "OpenAICompatible",
+        DisplayName: "Local Ollama",
+        Endpoint: "http://localhost:11434/v1",
+        ApiKeyCiphertext: apiKeyCiphertext,
+        Models:
+        [
+            new StoredModel("llama3.1", "Llama 3.1", SupportsTools: true, SupportsVision: false),
+            new StoredModel("tts-1", "TTS 1", SupportsTools: false, SupportsVision: false,
+                SupportsImageGeneration: false, SupportsEmbeddings: false, SupportsSpeech: true),
+        ],
+        UseResponsesApi: false);
+
     // An Ollama provider declaring a chat model AND an embedding-capable model.
     private static StoredProvider OllamaWithEmbedding(string? apiKeyCiphertext) => new(
         Key: "ollama",

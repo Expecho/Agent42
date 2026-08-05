@@ -531,7 +531,7 @@ public static class AgentApi
         {
             var overlay = await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).GetAsync();
             return Results.Json(new ProvidersResponse(
-                [.. overlay.Providers.Select(Mask)], overlay.Default, overlay.EmbeddingDefault));
+                [.. overlay.Providers.Select(Mask)], overlay.Default, overlay.EmbeddingDefault, overlay.SpeechDefault));
         });
 
         // Creates or updates a provider by key. The key is user-chosen and identifies the provider, so
@@ -621,6 +621,56 @@ public static class AgentApi
                 .SetEmbeddingDefaultAsync(request.EmbeddingDefault);
             return Results.NoContent();
         });
+
+        // Sets (or clears, with a blank body) the user's default SPEECH (text-to-speech) model — the one the
+        // hands-free voice conversation synthesizes its reply from (ADR 0037/0038). Mirrors
+        // /api/default-embedding-model exactly: a distinct path (a provider key is user-chosen, so a literal
+        // segment under /api/providers would out-rank {key}); the id is NOT validated against the catalog here
+        // (the resolver's read-time EffectiveSpeechDefault guard is the single validation point — it only
+        // honours an id that names a declared speech-capable model); the 200-char cap only keeps unbounded text
+        // out of the persisted grain state. GET stays on /api/providers (SpeechDefault).
+        app.MapPut("/api/default-speech-model", async (DefaultSpeechModelRequest request, IGrainFactory grains, HttpContext http) =>
+        {
+            if (request.SpeechDefault is { Length: > 200 })
+            {
+                return Results.Text(
+                    "Default speech model id must be at most 200 characters.",
+                    "text/plain",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId())
+                .SetSpeechDefaultAsync(request.SpeechDefault);
+            return Results.NoContent();
+        });
+
+        // Synthesizes speech audio for the given text via the user's default speech model (ADR 0038), so the
+        // voice conversation (ADR 0037) can speak the reply with a server-side neural voice instead of the
+        // browser's speechSynthesis. Resolves the per-user factory (like the grain does) and returns the audio
+        // bytes; 409 when no speech model is configured, so the browser falls back. Conversation-independent —
+        // it only synthesizes text, so it takes no conversationId. DisableAntiforgery: the app is Easy-Auth
+        // gated, not cookie/forms (same as the attachment upload).
+        // IServiceProvider (NOT IUserChatClientFactoryProvider) is injected deliberately, mirroring
+        // /api/config-health: MapAgentApi infers every endpoint's params up front, and a param a host does not
+        // register would be treated as a body and break routing for the WHOLE host — some test hosts don't
+        // register the factory provider. Resolving it optionally 409s cleanly where it is absent instead.
+        app.MapPost("/api/speech", async (SpeechRequest request, IServiceProvider services, HttpContext http, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Text))
+            {
+                return Results.Text("No text to synthesize.", "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var factories = services.GetService<IUserChatClientFactoryProvider>();
+            var speech = factories is null ? null : (await factories.GetForUserAsync(http.GetUserId(), ct)).GetSpeechService();
+            if (speech is null)
+            {
+                return Results.Text("No speech model configured.", "text/plain", statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var audio = await speech.SynthesizeAsync(request.Text, ct);
+            return Results.File(audio.Bytes, audio.MediaType);
+        }).DisableAntiforgery();
 
         // ————— Web Push subscriptions (ADR 0028) —————
 
@@ -1034,7 +1084,7 @@ public static class AgentApi
             ApiKeyCiphertext: string.IsNullOrWhiteSpace(request.ApiKey) ? null : protector.Protect(request.ApiKey),
             Models: [.. (request.Models ?? []).Select(m =>
                 new StoredModel(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision,
-                    m.SupportsImageGeneration, m.SupportsEmbeddings))],
+                    m.SupportsImageGeneration, m.SupportsEmbeddings, m.SupportsSpeech))],
             UseResponsesApi: request.UseResponsesApi);
 
     // Never returns the key — only whether one is stored (hasKey). The ciphertext stays server-side.
@@ -1044,7 +1094,7 @@ public static class AgentApi
             HasKey: !string.IsNullOrEmpty(p.ApiKeyCiphertext),
             Models: [.. p.Models.Select(m =>
                 new ProviderModelResponse(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision,
-                    m.SupportsImageGeneration, m.SupportsEmbeddings))],
+                    m.SupportsImageGeneration, m.SupportsEmbeddings, m.SupportsSpeech))],
             p.UseResponsesApi);
 
     // Agent grains are keyed per user, so a conversation id sent by one user can
@@ -1143,12 +1193,22 @@ public record DefaultModelRequest(string? Default);
 // the resolver's EffectiveEmbeddingDefault is the single validation point (see /api/default-embedding-model).
 public record DefaultEmbeddingModelRequest(string? EmbeddingDefault);
 
-// SupportsImageGeneration (ADR 0020) and SupportsEmbeddings are trailing defaults so an old-shape client
-// body still binds — an image model produces images instead of chat replies; an embedding model is picked
-// as the "default embedding model" and feeds document RAG.
+// The default SPEECH model id (voice reply TTS, ADR 0037/0038). Blank clears it (the grain normalises blank
+// to null), and the voice reply then falls back to the browser's speechSynthesis. Not validated against the
+// catalog here — the resolver's EffectiveSpeechDefault is the single validation point.
+public record DefaultSpeechModelRequest(string? SpeechDefault);
+
+// Client payload for POST /api/speech (ADR 0038): the text to synthesize into audio via the user's default
+// speech model. One sentence per call in practice (the voice controller speaks sentence-by-sentence).
+public record SpeechRequest(string Text);
+
+// SupportsImageGeneration (ADR 0020), SupportsEmbeddings and SupportsSpeech (ADR 0038) are trailing defaults
+// so an old-shape client body still binds — an image model produces images instead of chat replies; an
+// embedding model is picked as the "default embedding model" and feeds document RAG; a speech model is picked
+// as the "default speech model" and synthesizes the voice reply.
 public record ProviderModelRequest(
     string Id, string? DisplayName, bool SupportsTools, bool SupportsVision,
-    bool SupportsImageGeneration = false, bool SupportsEmbeddings = false);
+    bool SupportsImageGeneration = false, bool SupportsEmbeddings = false, bool SupportsSpeech = false);
 
 // What GET/POST/PUT return for a provider: everything EXCEPT the key, which is masked to HasKey so the
 // ciphertext (and the plaintext) never reach the client (ADR 0018).
@@ -1158,12 +1218,14 @@ public record ProviderResponse(
 
 public record ProviderModelResponse(
     string Id, string? DisplayName, bool SupportsTools, bool SupportsVision,
-    bool SupportsImageGeneration = false, bool SupportsEmbeddings = false);
+    bool SupportsImageGeneration = false, bool SupportsEmbeddings = false, bool SupportsSpeech = false);
 
-// The GET /api/providers payload: the user's overlay providers (masked), their optional chat default, and
-// their optional embedding default (the "default embedding model" id, null = none configured).
+// The GET /api/providers payload: the user's overlay providers (masked), their optional chat default, their
+// optional embedding default (the "default embedding model" id), and their optional speech default (the
+// "default speech model" id, ADR 0038, null = none configured → the browser voice is used).
 public record ProvidersResponse(
-    IReadOnlyList<ProviderResponse> Providers, string? Default, string? EmbeddingDefault = null);
+    IReadOnlyList<ProviderResponse> Providers, string? Default, string? EmbeddingDefault = null,
+    string? SpeechDefault = null);
 
 // Client payload for creating (POST) or updating (PUT) a remote MCP server. HeaderValue and ClientSecret are
 // WRITE-ONLY — encrypted server-side and never echoed back; blank on an update means "keep the stored
