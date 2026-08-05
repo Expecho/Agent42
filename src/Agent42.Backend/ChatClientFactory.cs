@@ -41,7 +41,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         string defaultModelId,
         string otelSourceName,
         ILogger<MultiProviderChatClientFactory> logger,
-        string defaultEmbeddingModelId = "")
+        string defaultEmbeddingModelId = "",
+        string defaultSpeechModelId = "")
     {
         // An empty provider set is now a supported state, not a misconfiguration (ADR 0019): a user who
         // has configured no chat provider gets an empty factory whose DefaultModelId is "" and whose
@@ -53,6 +54,9 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         // "" when no embedding model is configured (the resolver only sets a non-empty id when it names a
         // declared embedding-capable model). Callers gate on this before embedding — see GetEmbeddingGenerator.
         DefaultEmbeddingModelId = defaultEmbeddingModelId;
+        // "" when no speech model is configured (resolver sets a non-empty id only for a declared speech model,
+        // ADR 0038). The /api/speech endpoint gates on GetSpeechService() being non-null — see GetSpeechService.
+        DefaultSpeechModelId = defaultSpeechModelId;
         _defaultProvider = providers.Count == 0
             ? ""
             : ModelId.Parse(defaultModelId, providers.Keys.First()).Provider;
@@ -63,6 +67,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
     public string DefaultModelId { get; }
 
     public string DefaultEmbeddingModelId { get; }
+
+    public string DefaultSpeechModelId { get; }
 
     public IChatClient GetClient(string? modelId) =>
         _providers.Count == 0 ? NoModelChatClient.Instance : _clients.GetOrAdd(Resolve(modelId).QualifiedId, Build);
@@ -133,6 +139,20 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         return provider.EmbeddingGenerator?.Invoke(model) ?? NoEmbeddingGenerator.Instance;
     }
 
+    public ISpeechService? GetSpeechService()
+    {
+        // No providers, or no speech model configured (the resolver leaves the id "" unless it names a declared
+        // speech-capable model) → null. The /api/speech endpoint turns null into a 409 and the browser voice
+        // (ADR 0037) stays in use. Mirrors GetEmbeddingGenerator's default-id resolution (ADR 0038).
+        if (_providers.Count == 0 || string.IsNullOrEmpty(DefaultSpeechModelId))
+        {
+            return null;
+        }
+
+        var (provider, model, _) = Resolve(DefaultSpeechModelId);
+        return provider.SpeechService?.Invoke(model);
+    }
+
     // Maps a (possibly legacy, possibly stale) id onto a provider that actually exists.
     private (Provider Provider, string Model, string QualifiedId) Resolve(string? modelId)
     {
@@ -172,11 +192,20 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         ProviderOptions options,
         Func<string, IChatClient> client,
         Func<string, IImageGenerationService>? imageService = null,
-        Func<string, IEmbeddingGenerator<string, Embedding<float>>>? embeddingGenerator = null)
+        Func<string, IEmbeddingGenerator<string, Embedding<float>>>? embeddingGenerator = null,
+        Func<string, ISpeechService>? speechService = null)
     {
         public ProviderOptions Options { get; } = options;
 
         public Func<string, IChatClient> Client { get; } = client;
+
+        /// <summary>
+        /// Builds an <see cref="ISpeechService"/> for a speech (text-to-speech) model of this provider
+        /// (ADR 0038) — via the Azure/OpenAI <c>GetAudioClient</c>, NOT the chat path. Set on every provider
+        /// (both kinds do audio); the per-model gate is the resolver, which only names a model marked
+        /// <c>SupportsSpeech</c> as the default speech model.
+        /// </summary>
+        public Func<string, ISpeechService>? SpeechService { get; } = speechService;
 
         /// <summary>
         /// Builds an <see cref="IEmbeddingGenerator{String, Single}"/> for an embedding model of this provider
@@ -243,12 +272,17 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
                 // which non-reasoning models reject with HTTP 400; false verified on the shipped default
                 // gpt-5.4 (Step-1 spike). A reasoning Foundry model would want true, but those are deferred
                 // (ADR 0014, spec LOW-5).
+                // Speech synthesis (ADR 0038) rides the SAME GA /openai/v1 client — NOT the classic
+                // api-version data plane the embedding client uses (which the stable Azure SDK caps at
+                // 2024-10-21, rejected by newer TTS deployments). Set on every Foundry provider; the
+                // resolver's default-speech pick is the per-model gate.
                 return new Provider(
                     options,
                     model => responsesClient
                         .GetResponsesClient()
                         .AsIChatClientWithStoredOutputDisabled(model, includeReasoningEncryptedContent: false),
-                    embeddingGenerator: embeddings);
+                    embeddingGenerator: embeddings,
+                    speechService: model => new OpenAISpeechService(responsesClient.GetAudioClient(model)));
 #pragma warning restore MAAI001
 #pragma warning restore OPENAI001
             }
@@ -274,7 +308,9 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
             return new Provider(
                 options,
                 model => chatClient.GetChatClient(model).AsIChatClient(),
-                embeddingGenerator: embeddings);
+                embeddingGenerator: embeddings,
+                // Speech (ADR 0038) rides the same /openai/v1 client as chat (see the Responses branch note).
+                speechService: model => new OpenAISpeechService(chatClient.GetAudioClient(model)));
         }
 
         /// <summary>
@@ -296,7 +332,10 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
                 options,
                 model => client.GetChatClient(model).AsIChatClient(),
                 model => new OpenAIImageGenerator(client.GetImageClient(model)),
-                model => client.GetEmbeddingClient(model).AsIEmbeddingGenerator());
+                model => client.GetEmbeddingClient(model).AsIEmbeddingGenerator(),
+                // Speech synthesis (ADR 0038) off the same OpenAIClient — GetAudioClient does no I/O, and the
+                // resolver's default-speech pick is the per-model gate, so building it for every model is free.
+                model => new OpenAISpeechService(client.GetAudioClient(model)));
         }
     }
 

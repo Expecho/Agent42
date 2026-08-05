@@ -380,6 +380,16 @@
         </section>
 
         <section class="agent-form__section">
+          <label class="agent-form__field">
+            <span class="agent-form__label">// default speech model</span>
+            <!-- Options are built by syncSpeechModelSelect() from the models a provider marks as speech
+                 models (ADR 0038). Empty until one is configured; with none, voice replies use the browser voice. -->
+            <select class="agent-form__input agent-form__select" id="speechModelSelect"></select>
+          </label>
+          <p class="agent-form__note">The voice that speaks replies in hands-free voice mode. Mark a text-to-speech model as a speech model on its provider, then pick it here. Without one, the browser's own voice is used. Picking one sends the reply text outside the tenant.</p>
+        </section>
+
+        <section class="agent-form__section">
           <div class="providers__head">
             <span class="agent-form__label">// model providers</span>
             <button class="agent-form__btn" type="button" id="addProviderBtn">Add provider</button>

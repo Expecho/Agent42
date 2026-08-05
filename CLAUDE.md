@@ -475,4 +475,27 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   is an **accepted residual** — mitigated by a best-effort word-overlap heuristic (`isSelfOrEcho`, ≥ 0.6) but
   **headphones are the clean guarantee**. No runtime test (speech APIs can't run headlessly) —
   `VoiceConversationAssetsTests` guards the wiring by source-text, behaviour verified manually in DevHost.
+- Server-side voice / speech model (ADR 0038, **amends ADR 0006/0037, extends 0013/0018/0020/0030**): when a
+  user picks a **default speech model** in Preferences, the hands-free voice reply (ADR 0037) is spoken by an
+  Azure/OpenAI **text-to-speech** model instead of the browser's `speechSynthesis`; with none set (or on any
+  failure) it **falls back to the browser voice**. Scope is **assistant voice (TTS) only** — the user still
+  speaks through the browser recognizer. It **mirrors the per-user embedding model (ADR 0030) almost exactly**:
+  a per-model **`SupportsSpeech`** flag threaded through the five model representations
+  (`StoredModel [Id(6)]`/`ConfiguredModel`/`ModelInfo`/DTOs/resolver) that **only filters the picker** —
+  deliberately **NOT** on `ModelCapabilities` (like embeddings; sidesteps the Foundry `GetCapabilities→Full`
+  shortcut) — plus a **`UserProviderConfig.SpeechDefault [Id(4)]`** set via **`PUT /api/default-speech-model`**
+  (read on `GET /api/providers`), validated once by the resolver's **`EffectiveSpeechDefault`** →
+  `ResolvedProviderSet.SpeechDefaultModelId` (no baseline/first-model fallback). The service seam is
+  **`ISpeechService.SynthesizeAsync` → `IChatClientFactory.GetSpeechService()`/`DefaultSpeechModelId`** (the
+  `GetEmbeddingGenerator()` shape); prod **`OpenAISpeechService`** wraps the SDK **`AudioClient`**
+  (`GenerateSpeechAsync`, voice `Alloy`, MP3), built off the **same** provider client as chat — Foundry over
+  **`/openai/v1` + `api-key` header** (NOT the api-version data plane the embedding client uses, which caps at
+  2024-10-21), never a named `HttpClient`, endpoint from config only. **`POST /api/speech`** (text→audio)
+  resolves the factory **optionally via `IServiceProvider`** (the `/api/config-health` pattern — no new
+  mandatory both-hosts registration) and **409s when unconfigured**. The voice controller plays `/api/speech`
+  audio through an **ordered queue** (fetches pipeline, playback sequential) with a dedicated **`speechAbort`**
+  for barge-in; **`ISpeechService` is named to dodge M.E.AI's `ISpeechToTextClient`** (the `IImageGenerationService`
+  CS0104 trap). **Headline consequence:** picking a speech model sends the **reply text** outside the tenant
+  (ADR 0013 egress) — the reason it is opt-in and the browser voice stays default. Offline can't reach a real
+  TTS endpoint (like image gen, ADR 0020); the Foundry audio wire path is spike-informed, prod-smoke verified.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

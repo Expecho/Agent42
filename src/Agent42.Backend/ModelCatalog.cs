@@ -22,6 +22,9 @@ public record ModelInfo(
     // Trailing default so existing constructions stay valid; true only for a declared embedding model.
     // Surfaced on /api/models so the Preferences "default embedding model" selector can filter to it.
     bool SupportsEmbeddings = false,
+    // Trailing default so existing constructions stay valid; true only for a declared speech model (ADR 0038).
+    // Surfaced on /api/models so the Preferences "default speech model" selector can filter to it.
+    bool SupportsSpeech = false,
     // Trailing default so existing constructions stay valid; the human-facing name of the model's PROVIDER
     // (StoredProvider/ProviderOptions.DisplayName), surfaced on /api/models so the picker can LABEL each
     // provider optgroup with it. null → the frontend falls back to the provider key. Distinct from

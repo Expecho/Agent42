@@ -71,6 +71,12 @@ public sealed class UserProviderConfigGrain : Grain, IUserProviderConfigGrain
         return BumpAsync(_state.State.Config with { EmbeddingDefault = value });
     }
 
+    public Task SetSpeechDefaultAsync(string? speechModelId)
+    {
+        var value = string.IsNullOrWhiteSpace(speechModelId) ? null : speechModelId;
+        return BumpAsync(_state.State.Config with { SpeechDefault = value });
+    }
+
     public async Task DeleteAsync(string key)
     {
         var providers = _state.State.Config.Providers.ToList();

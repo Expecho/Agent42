@@ -78,6 +78,22 @@ public interface IChatClientFactory
     /// how <see cref="GetImageGenerationService"/> resolves a model's provider-level generator.
     /// </summary>
     IEmbeddingGenerator<string, Embedding<float>> GetEmbeddingGenerator();
+
+    /// <summary>
+    /// The qualified id of the user's default <b>speech</b> (text-to-speech) model, or <c>""</c> when none is
+    /// configured (ADR 0038). The hands-free voice conversation (ADR 0037) speaks its reply server-side via
+    /// <see cref="GetSpeechService"/> when this is set, and falls back to the browser's <c>speechSynthesis</c>
+    /// when it is <c>""</c>.
+    /// </summary>
+    string DefaultSpeechModelId { get; }
+
+    /// <summary>
+    /// The speech synthesizer for the user's default speech model (<see cref="DefaultSpeechModelId"/>), or
+    /// <c>null</c> when none is configured. Like <see cref="GetEmbeddingGenerator"/> there is no per-turn
+    /// speech-model choice — the voice reply always uses the one default — so this takes no model id. The
+    /// <c>/api/speech</c> endpoint returns 409 when this is <c>null</c>, and the browser falls back.
+    /// </summary>
+    ISpeechService? GetSpeechService();
 }
 
 /// <summary>
@@ -95,7 +111,9 @@ public sealed class SingleChatClientFactory(
     Func<string?, ModelCapabilities>? capabilities = null,
     IImageGenerationService? imageGenerator = null,
     IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
-    string defaultEmbeddingModelId = "") : IChatClientFactory
+    string defaultEmbeddingModelId = "",
+    ISpeechService? speechGenerator = null,
+    string defaultSpeechModelId = "") : IChatClientFactory
 {
     public string DefaultModelId { get; } = defaultModelId;
 
@@ -103,6 +121,11 @@ public sealed class SingleChatClientFactory(
     // (a real deterministic generator + a stub id) while a factory without one reports "no embedding model".
     public string DefaultEmbeddingModelId { get; } =
         embeddingGenerator is null ? "" : (string.IsNullOrEmpty(defaultEmbeddingModelId) ? "offline-embed" : defaultEmbeddingModelId);
+
+    // Offline/tests: non-empty only when a speech generator is supplied — a factory without one reports
+    // "no speech model", so the /api/speech endpoint 409s and the browser voice (ADR 0037) stays in use.
+    public string DefaultSpeechModelId { get; } =
+        speechGenerator is null ? "" : (string.IsNullOrEmpty(defaultSpeechModelId) ? "offline-speech" : defaultSpeechModelId);
 
     public IChatClient GetClient(string? modelId) => client;
 
@@ -119,4 +142,8 @@ public sealed class SingleChatClientFactory(
     // multi-provider factory returns NoEmbeddingGenerator for an unconfigured embedding model.
     public IEmbeddingGenerator<string, Embedding<float>> GetEmbeddingGenerator()
         => embeddingGenerator ?? NoEmbeddingGenerator.Instance;
+
+    // The injected synthesizer (tests) or null when none — the null gate is the endpoint's 409, mirroring
+    // how the multi-provider factory returns null for an unconfigured speech model.
+    public ISpeechService? GetSpeechService() => speechGenerator;
 }

@@ -53,4 +53,23 @@ public sealed class VoiceConversationAssetsTests
         // special-case AbortError so it doesn't paint the error state over the partial reply.
         Assert.Contains("AbortError", app);
     }
+
+    [Fact]
+    public async Task Index_ShipsSpeechModelSelector()
+    {
+        var index = await _client.GetStringAsync("/");
+        // ADR 0038: Preferences → model providers gains a "default speech model" select, populated by JS
+        // from the models a provider marks as speech models.
+        Assert.Contains("id=\"speechModelSelect\"", index);
+    }
+
+    [Fact]
+    public async Task AppJs_SynthesizesReplyServerSideWhenSpeechModelSet()
+    {
+        var app = await _client.GetStringAsync("/app.js");
+        // ADR 0038: when a default speech model is configured the voice reply is spoken by POSTing each
+        // sentence to /api/speech and playing the returned audio, else it falls back to speechSynthesis.
+        Assert.Contains("/api/speech", app);
+        Assert.Contains("userDefaultSpeechModel", app);
+    }
 }

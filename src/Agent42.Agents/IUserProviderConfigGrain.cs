@@ -42,6 +42,14 @@ public interface IUserProviderConfigGrain : IGrainWithStringKey
     [Alias("SetEmbeddingDefaultAsync")]
     Task SetEmbeddingDefaultAsync(string? embeddingModelId);
 
+    /// <summary>
+    /// Sets (or clears, with null/blank) the overlay's default <b>speech</b> (text-to-speech) model id and
+    /// bumps the version (ADR 0038). Independent of the chat/embedding defaults — the voice reply is
+    /// synthesized from this id server-side, null = fall back to the browser voice (ADR 0037).
+    /// </summary>
+    [Alias("SetSpeechDefaultAsync")]
+    Task SetSpeechDefaultAsync(string? speechModelId);
+
     /// <summary>Removes the provider with <paramref name="key"/>, bumping the version only if one was removed.</summary>
     [Alias("DeleteAsync")]
     Task DeleteAsync(string key);
