@@ -455,4 +455,24 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   `_suggestFollowUpsEnabled` and settable via `PUT /api/profile`. **Headline consequence:** it spends an extra
   small model call and re-sends recent conversation text to the model per interactive turn (ADR 0013 egress) —
   which is why it is opt-out. Chips are live-only (not replayed by `renderTurns`; cleared on the next `send`).
+- Hands-free voice conversation (ADR 0037, **extends ADR 0006**): a dedicated composer `#voiceBtn` (distinct
+  from `#micBtn` dictation) starts a **hands-free loop** — auto-listen → auto-send → **speak the reply** →
+  **talk over it to interrupt** → re-listen — with **no buttons between turns**. Browser-native and
+  **frontend-only** (all in `wwwroot/app.js` + `index.html` + `styles.css`; no endpoint/grain/Bicep/Azure/JS
+  dependency, exactly like ADR 0006): `SpeechRecognition` to listen + **`speechSynthesis` to speak** (the new
+  output half — ADR 0006 was input-only). A **dedicated second `SpeechRecognition` instance** drives voice mode
+  so the dictation instance's Android accumulation fixes stay untouched; the two mic uses are mutually exclusive
+  (`startVoice()` calls `stopSpeech()`). A controller runs a state machine `idle → listening → thinking →
+  speaking → listening`: recognition runs continuously (restarted on Chrome's silence `end`), a **~1.2 s silence
+  debounce** ends the utterance and auto-sends, and the reply is spoken **sentence-by-sentence as it streams**
+  (fed from `send()`'s `textDelta` chunks, markdown-stripped) so speech starts early; the last utterance's `end`
+  re-arms listening. **Barge-in** keeps the mic **live while speaking** — a genuine result cancels TTS and
+  **aborts generation mid-stream** via a new `AbortController` on `send()`'s `fetch` (`sendAbort`); an
+  `AbortError` is a clean interruption, **not** a "Transmission failed" (the `catch` special-cases it). The
+  button is hidden unless **both** speech APIs exist (Firefox/older iOS degrade out), mirroring ADR 0006. Two
+  things to know: **egress (ADR 0013) is unchanged** — TTS output never leaves the browser, and recognition
+  reuses ADR 0006's already-accepted vendor-cloud residual (no new one); and the **assistant-hears-itself echo**
+  is an **accepted residual** — mitigated by a best-effort word-overlap heuristic (`isSelfOrEcho`, ≥ 0.6) but
+  **headphones are the clean guarantee**. No runtime test (speech APIs can't run headlessly) —
+  `VoiceConversationAssetsTests` guards the wiring by source-text, behaviour verified manually in DevHost.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).

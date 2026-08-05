@@ -12,6 +12,7 @@
   const sendBtn = document.getElementById("sendBtn");
   const attachBtn = document.getElementById("attachBtn");
   const micBtn = document.getElementById("micBtn");
+  const voiceBtn = document.getElementById("voiceBtn");
   const fileInput = document.getElementById("fileInput");
   const attachmentPreview = document.getElementById("attachmentPreview");
   const modelSelect = document.getElementById("modelSelect");
@@ -251,6 +252,16 @@
   // Speech API is available; stays a no-op when it isn't (e.g. Firefox). Called at the top
   // of send() so a late recognition result can't repopulate the just-cleared textarea.
   let stopSpeech = () => {};
+
+  // Aborts the in-flight chat fetch. Set for the life of a send() (its AbortController),
+  // null otherwise. Barge-in (ADR 0037) and teardown call sendAbort?.abort() to stop
+  // generation mid-stream; an AbortError is treated as a clean interruption, not a failure.
+  let sendAbort = null;
+
+  // Hands-free voice conversation controller (ADR 0037). Reassigned by the voice wiring below
+  // when SpeechRecognition + speechSynthesis are both available; stays inert otherwise. send()
+  // feeds it stream deltas so the reply can be spoken sentence-by-sentence as it arrives.
+  let voice = { active: false, onDelta: () => {}, onStreamEnd: () => {}, stop: () => {} };
 
   // Curated BCP-47 tag → display name for the preferred-language picker. This selects the
   // *preferred language value* (seeds future speech input); it does not translate the UI.
@@ -1257,6 +1268,7 @@
   async function selectConversation(id) {
     closeDrawer();
     if (streaming || id === activeId) return;
+    voice.stop(); // exit hands-free mode when switching chats (ADR 0037)
     activeId = id;
     // An opened conversation is a persisted one (an ephemeral chat never gets a sidebar row), so
     // incognito is off and locked here — it can only be chosen on a fresh chat (ADR 0034).
@@ -1326,6 +1338,7 @@
   function startNewConversation() {
     closeDrawer();
     if (streaming) return;
+    voice.stop(); // exit hands-free mode when switching chats (ADR 0037)
     activeId = crypto.randomUUID();
     activeAgentId = null;
     pendingAgentId = null;
@@ -1689,8 +1702,12 @@
       // switch the conversation off the agent's model). agentId is sent only on the first
       // turn of a freshly started agent chat (pendingAgentId), never on resumes.
       const isAgentChat = activeAgentId != null;
+      // Barge-in (ADR 0037): an AbortController lets voice mode (or teardown) stop generation
+      // mid-stream the instant the user talks over the reply.
+      sendAbort = new AbortController();
       const res = await fetch(`/api/chat/${encodeURIComponent(activeId)}`, {
         method: "POST",
+        signal: sendAbort.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: prompt,
@@ -1725,6 +1742,7 @@
           if (chunk.type === "textDelta") {
             answer += chunk.text;
             setAgentMarkdown(agentMsg, answer, { caret: true });
+            voice.onDelta(chunk.text); // speak the reply as it streams (ADR 0037); no-op when voice mode is off
           } else if (chunk.type === "toolCallStart") {
             addToolCall(agentMsg, chunk);
           } else if (chunk.type === "toolCallEnd") {
@@ -1745,13 +1763,23 @@
       setAgentMarkdown(agentMsg, answer);
       // Live-streamed reply is final: capture the raw markdown accumulator by closure for copy.
       addCopyButton(agentMsg, answer);
+      voice.onStreamEnd(); // speak any buffered tail (ADR 0037); no-op when voice mode is off
       // The persona is now bound server-side; don't resend agentId on later turns. Kept on
       // failure so a retry rebinds.
       pendingAgentId = null;
     } catch (err) {
-      agentMsg.classList.add("is-error");
-      setAgentMarkdown(agentMsg, `**Transmission failed.** ${err.message ?? err}`);
+      // Barge-in (ADR 0037): an aborted turn is a deliberate interruption, not a failure —
+      // leave the partial reply as-is, don't paint the error state. voice mode drives what
+      // happens next (it speaks the tail / captures the interrupting utterance).
+      if (err.name === "AbortError") {
+        setAgentMarkdown(agentMsg, answer);
+        voice.onStreamEnd();
+      } else {
+        agentMsg.classList.add("is-error");
+        setAgentMarkdown(agentMsg, `**Transmission failed.** ${err.message ?? err}`);
+      }
     } finally {
+      sendAbort = null;
       streaming = false;
       sendBtn.disabled = false;
       modelSelect.disabled = modelSelect.options.length === 0;
@@ -2930,6 +2958,225 @@
       if (!recognizing) return;
       recognizing = false;
       recognition.stop();
+    };
+  }
+
+  /* ————— hands-free voice conversation (browser-native, with barge-in) (ADR 0037) ————— */
+
+  // Extends dictation (ADR 0006): SpeechRecognition to listen + speechSynthesis to speak, in a
+  // hands-free loop (listen → auto-send → speak → interrupt). A DEDICATED recognition instance —
+  // never the dictation one above — so its delicate accumulation logic stays untouched; the two
+  // mic uses are mutually exclusive. Needs both APIs; where either is absent the button is hidden
+  // (graceful degradation, mirroring the mic). speechSynthesis output is a new egress-free path:
+  // the reply text never leaves the browser (ADR 0013 unchanged); recognition still uses the
+  // vendor's cloud like dictation (ADR 0006's accepted residual).
+  if (!SpeechRecognition || !window.speechSynthesis) {
+    voiceBtn.hidden = true;
+  } else {
+    const SILENCE_MS = 1200; // end-of-utterance debounce: auto-send this long after speech stops
+    const synth = window.speechSynthesis;
+    const vr = new SpeechRecognition();
+    vr.continuous = true;
+    vr.interimResults = true;
+
+    let active = false;             // voice mode on/off
+    let state = "idle";             // idle | listening | thinking | speaking
+    let finalText = "";             // finalized transcript of the in-progress listening utterance
+    let finalBuf = "";              // finalText + trailing interim, the candidate to auto-send
+    let silenceTimer = null;
+    let speakBuf = "";              // reply text not yet flushed to a complete-sentence utterance
+    let spokenText = "";            // reply text already handed to synthesis this turn (echo ref)
+    let lastSubmitted = "";         // last auto-sent utterance (so its trailing result ≠ barge-in)
+    let interrupted = false;        // set by barge-in so the aborted turn's tail is not spoken
+
+    // Voices load asynchronously; refresh the cache on change and pick the best lang match.
+    let voices = synth.getVoices();
+    synth.addEventListener("voiceschanged", () => { voices = synth.getVoices(); });
+    function pickVoice(lang) {
+      const l = (lang || "").toLowerCase();
+      if (!voices.length || !l) return null;
+      return voices.find((v) => (v.lang || "").toLowerCase() === l)
+        || voices.find((v) => (v.lang || "").toLowerCase().startsWith(l.slice(0, 2)))
+        || null;
+    }
+
+    // Strip the common markdown marks so TTS never reads "asterisk asterisk" / a URL aloud.
+    function stripMarkdown(s) {
+      return s
+        .replace(/```[\s\S]*?```/g, " ")
+        .replace(/`([^`]+)`/g, "$1")
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+        .replace(/[*_#>~]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function setUi() {
+      voiceBtn.setAttribute("aria-pressed", active ? "true" : "false");
+      if (active) voiceBtn.dataset.state = state; else delete voiceBtn.dataset.state;
+    }
+
+    function resetTurn() {
+      finalText = ""; finalBuf = "";
+      speakBuf = ""; spokenText = "";
+      clearTimeout(silenceTimer);
+    }
+
+    function armListening() {
+      state = "listening";
+      resetTurn();
+      setUi();
+    }
+
+    // Re-arm the mic for the next turn once the reply has fully finished speaking.
+    function maybeArmListening() {
+      if (!active || state === "listening") return;
+      if (synth.speaking || synth.pending || streaming) return;
+      armListening();
+    }
+
+    function speak(text) {
+      const clean = stripMarkdown(text);
+      if (!clean) return;
+      spokenText += " " + clean;
+      const u = new SpeechSynthesisUtterance(clean);
+      u.lang = vr.lang || navigator.language;
+      const v = pickVoice(u.lang);
+      if (v) u.voice = v;
+      u.addEventListener("start", () => { if (active) { state = "speaking"; setUi(); } });
+      u.addEventListener("end", maybeArmListening);
+      u.addEventListener("error", maybeArmListening);
+      synth.speak(u);
+    }
+
+    // Flush complete sentences from the delta buffer (or everything, at stream end) so speech
+    // starts before the whole reply has arrived. Splits on the last sentence terminator.
+    function flush(all) {
+      if (all) {
+        const rest = speakBuf; speakBuf = "";
+        speak(rest);
+        return;
+      }
+      let cut = -1;
+      for (let i = 0; i < speakBuf.length; i++) {
+        const c = speakBuf[i];
+        if (c === "." || c === "!" || c === "?" || c === "\n") cut = i;
+      }
+      if (cut < 0) return;
+      const chunk = speakBuf.slice(0, cut + 1);
+      speakBuf = speakBuf.slice(cut + 1);
+      speak(chunk);
+    }
+
+    // A recognition result while the assistant is (or was just) talking is usually the mic
+    // hearing the TTS, or the trailing final of what we just sent — not a real interruption.
+    // Treat it as self/echo when most of its words already appear in what we're speaking or
+    // just submitted. Best-effort: headphones remain the clean guarantee (ADR 0037).
+    function isSelfOrEcho(text) {
+      const words = text.toLowerCase().match(/\p{L}+/gu) || [];
+      if (!words.length) return true;
+      const ref = (spokenText + " " + lastSubmitted).toLowerCase();
+      const hits = words.filter((w) => ref.includes(w)).length;
+      return hits / words.length >= 0.6;
+    }
+
+    function bargeIn(heard) {
+      interrupted = true;
+      try { synth.cancel(); } catch { /* nothing speaking */ }
+      if (sendAbort) sendAbort.abort(); // stop generation mid-stream
+      state = "listening";
+      resetTurn();
+      finalText = heard;
+      finalBuf = heard.trim();
+      setUi();
+      restartSilence();
+    }
+
+    function restartSilence() {
+      clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(trySubmit, SILENCE_MS);
+    }
+
+    // Auto-send the accumulated utterance. Defers while a turn is still unwinding (a barge-in
+    // aborts the previous fetch; send()'s finally clears `streaming` a tick later).
+    function trySubmit() {
+      if (!active || state !== "listening") return;
+      const t = finalBuf.trim();
+      if (!t) return;
+      if (streaming) { setTimeout(trySubmit, 150); return; }
+      lastSubmitted = t;
+      interrupted = false;
+      state = "thinking";
+      resetTurn();
+      setUi();
+      send(t); // fire-and-forget: onDelta speaks it, onStreamEnd flushes the tail
+    }
+
+    vr.addEventListener("result", (event) => {
+      if (!active) return;
+      let finals = "", interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const r = event.results[i];
+        if (r.isFinal) finals += r[0].transcript; else interim += r[0].transcript;
+      }
+      const heard = (finals + interim).trim();
+      if (!heard) return;
+      if (state === "speaking" || state === "thinking") {
+        if (!isSelfOrEcho(heard)) bargeIn(heard); // genuine interruption
+        return;
+      }
+      // listening: accumulate and restart the end-of-utterance countdown
+      finalText += finals;
+      finalBuf = (finalText + interim).trim();
+      restartSilence();
+    });
+
+    // Chrome ends continuous recognition on silence/timeout; keep the mic alive while active.
+    vr.addEventListener("end", () => { if (active) { try { vr.start(); } catch { /* race */ } } });
+
+    vr.addEventListener("error", (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        stopVoice();
+        input.placeholder = "Microphone access blocked — check browser permissions.";
+      }
+      // transient errors (no-speech, network): the 'end' handler restarts if still active
+    });
+
+    function startVoice() {
+      if (active) return;
+      stopSpeech(); // dictation and voice mode share the one mic — never both at once
+      active = true;
+      vr.lang = profile.preferredLanguage || navigator.language;
+      armListening();
+      try { vr.start(); } catch { /* start() throws if already started */ }
+    }
+
+    function stopVoice() {
+      if (!active) return;
+      active = false;
+      state = "idle";
+      clearTimeout(silenceTimer);
+      try { synth.cancel(); } catch { /* nothing speaking */ }
+      if (sendAbort) sendAbort.abort();
+      try { vr.stop(); } catch { /* not started */ }
+      resetTurn();
+      setUi();
+    }
+
+    voiceBtn.addEventListener("click", () => { if (active) stopVoice(); else startVoice(); });
+
+    // Expose the hooks send() calls each turn (no-ops until a turn is in flight).
+    voice = {
+      get active() { return active; },
+      onDelta(text) { if (active) { speakBuf += text; flush(false); } },
+      onStreamEnd() {
+        if (!active) return;
+        if (interrupted) { interrupted = false; return; } // aborted turn: don't speak its tail
+        flush(true);
+        setTimeout(maybeArmListening, 60); // empty/silent reply → re-arm without an utterance
+      },
+      stop: stopVoice,
     };
   }
 
