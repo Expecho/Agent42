@@ -3042,6 +3042,12 @@
     vr.continuous = true;
     vr.interimResults = true;
 
+    // Chrome on Android flags every interim growth stage isFinal: true while reporting confidence: 0;
+    // trusting the flag re-appends each stage to finalText ("Hoe" + "Hoe laat" + …), the double-output
+    // bug — here it duplicates the AUTO-SENT prompt. Distrust unscored finals THERE ONLY (desktop engines
+    // can report confidence 0 on a genuine final). Same fix as the dictation instance (ADR 0006).
+    const distrustZeroConfidenceFinals = /android/i.test(navigator.userAgent);
+
     let active = false;             // voice mode on/off
     let state = "idle";             // idle | listening | thinking | speaking
     let finalText = "";             // finalized transcript of the in-progress listening utterance
@@ -3291,7 +3297,11 @@
       let finals = "", interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const r = event.results[i];
-        if (r.isFinal) finals += r[0].transcript; else interim += r[0].transcript;
+        // A final is trusted only when the engine actually scored it (confidence > 0) on Android — an
+        // unscored "final" is really an interim growth stage, so it falls through to the self-correcting
+        // interim branch instead of stacking onto finalText (the Android double-output bug, ADR 0006).
+        const trustworthyFinal = r.isFinal && (!distrustZeroConfidenceFinals || (r[0].confidence ?? 0) > 0);
+        if (trustworthyFinal) finals += r[0].transcript; else interim += r[0].transcript;
       }
       const heard = (finals + interim).trim();
       if (!heard) return;
