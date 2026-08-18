@@ -14,6 +14,7 @@ using Agent42.Agents.Mcp;
 using Agent42.Agents.Models;
 using Agent42.Agents.Push;
 using Agent42.Agents.Web;
+using Agent42.Agents.Conversations;
 
 var webRoot = Path.GetFullPath(Path.Combine(
     AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Agent42.Backend", "wwwroot"));

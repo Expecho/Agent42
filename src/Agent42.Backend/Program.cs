@@ -19,6 +19,7 @@ using Agent42.Agents.Models;
 using Agent42.Agents.Push;
 using Agent42.Agents.Telemetry;
 using Agent42.Agents.Web;
+using Agent42.Agents.Conversations;
 
 const string OtelSourceName = "Agent42.Backend";
 

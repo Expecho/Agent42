@@ -1,4 +1,5 @@
 using Orleans.Runtime;
+using Agent42.Agents.Conversations;
 
 namespace Agent42.Agents.Models;
 
