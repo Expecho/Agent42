@@ -91,7 +91,7 @@ new(CodeInterpreter, "Code interpreter", RequiresHostedTools: true),
 
 | Concern | File |
 |---------|------|
-| Capability record | `src/Agent42.Agents/IChatClientFactory.cs` |
-| Swap + gate | `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent`) |
-| Catalog descriptor | `src/Agent42.Agents/ToolCatalog.cs` |
+| Capability record | `src/Agent42.Agents/Models/IChatClientFactory.cs` |
+| Swap + gate | `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent`) |
+| Catalog descriptor | `src/Agent42.Agents/Tools/ToolCatalog.cs` |
 | Capability source | `src/Agent42.Backend/ChatClientFactory.cs` |

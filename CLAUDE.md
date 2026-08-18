@@ -458,7 +458,7 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
 - Hands-free voice conversation (ADR 0037, **extends ADR 0006**): a dedicated composer `#voiceBtn` (distinct
   from `#micBtn` dictation) starts a **hands-free loop** — auto-listen → auto-send → **speak the reply** →
   **talk over it to interrupt** → re-listen — with **no buttons between turns**. Browser-native and
-  **frontend-only** (all in `wwwroot/app.js` + `index.html` + `styles.css`; no endpoint/grain/Bicep/Azure/JS
+  **frontend-only** (all in `src/Agent42.Backend/wwwroot/app.js` + `index.html` + `styles.css`; no endpoint/grain/Bicep/Azure/JS
   dependency, exactly like ADR 0006): `SpeechRecognition` to listen + **`speechSynthesis` to speak** (the new
   output half — ADR 0006 was input-only). A **dedicated second `SpeechRecognition` instance** drives voice mode
   so the dictation instance's Android accumulation fixes stay untouched; the two mic uses are mutually exclusive
@@ -499,3 +499,19 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   (ADR 0013 egress) — the reason it is opt-in and the browser voice stays default. Offline can't reach a real
   TTS endpoint (like image gen, ADR 0020); the Foundry audio wire path is spike-informed, prod-smoke verified.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
+- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **16 top-level feature folders**
+  (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …), and `AgentGrain` is split into
+  **10 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`
+  namespace — folders and namespaces deliberately DISAGREE, and that is load-bearing, not sloppiness.**
+  Orleans Cosmos grain storage uses `JsonGrainStorageSerializer`, which writes the full CLR type name
+  into every document (`"$type":"Agent42.Agents.AgentGrainState, Agent42.Agents"`), so giving a
+  persisted type a folder-matching namespace makes **every existing document unreadable** — it throws on
+  the root type, taking out every conversation, agent, profile and setting at once. That is not
+  hypothetical: the folder-matching-namespace version of this refactor was fully built and passed the
+  entire suite, lint, an adversarial review and CI before the flaw was found, because the serialization
+  test exercised Orleans' *binary* serializer, which Cosmos does not use. `.editorconfig` disables
+  IDE0130 so the IDE stops suggesting the change, and `ProjectLayoutTests` +
+  `GrainStorageSerializerTests` catch it if made by hand. `[Alias]` is a **separate** mechanism (the
+  binary path) and is **not** what protects data at rest. `ReceiveReminder` stays in the core `AgentGrain`
+  part beside `ChatAsync` (the `_turnLocation`/`_ephemeral` clears must be read together); `Skills/` does
+  not move (csproj `Content` glob); `Agent42.Backend` and `Agent42.Tests` stay flat on purpose.

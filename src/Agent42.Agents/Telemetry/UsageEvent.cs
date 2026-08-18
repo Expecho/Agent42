@@ -7,6 +7,7 @@ namespace Agent42.Agents;
 /// to avoid double counting.
 /// </summary>
 [GenerateSerializer]
+[Alias("Agent42.Agents.UsageEventKind")]
 public enum UsageEventKind
 {
     /// <summary>A <c>chat</c> completion span: carries input/output tokens, model, provider.</summary>

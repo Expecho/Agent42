@@ -134,8 +134,8 @@ self.addEventListener("push", (event) => {
 
 | Concern | File |
 |---------|------|
-| Sender interface | `src/Agent42.Agents/IPushNotificationSender.cs`, `NullPushNotificationSender.cs` |
-| Subscription grain | `src/Agent42.Agents/UserPushGrain.cs` |
+| Sender interface | `src/Agent42.Agents/Push/IPushNotificationSender.cs`, `NullPushNotificationSender.cs` |
+| Subscription grain | `src/Agent42.Agents/Push/UserPushGrain.cs` |
 | Web Push sender | `src/Agent42.Backend/WebPushNotificationSender.cs`, `WebPushClientAdapter.cs` |
-| Send call sites | `src/Agent42.Agents/AgentGrain.cs` (`SendAwayReplyPushAsync`) |
+| Send call sites | `src/Agent42.Agents/Push/AgentGrain.Push.cs` (`SendAwayReplyPushAsync`) |
 | Endpoints / SW | `src/Agent42.Backend/AgentApi.cs`, `wwwroot/sw.js`, `wwwroot/app.js` |

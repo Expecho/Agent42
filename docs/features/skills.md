@@ -107,7 +107,7 @@ key-coverage guard stays green:
 
 | Concern | File |
 |---------|------|
-| Construction + gate | `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent`) |
+| Construction + gate | `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent`) |
 | Copy rule | `src/Agent42.Agents/Agent42.Agents.csproj` |
 | Shipped skills | `src/Agent42.Agents/Skills/websearch/SKILL.md`, `.../scheduledprompt/SKILL.md` |
-| Catalog mapping | `src/Agent42.Agents/ToolCatalog.cs` |
+| Catalog mapping | `src/Agent42.Agents/Tools/ToolCatalog.cs` |
