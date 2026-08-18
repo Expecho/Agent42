@@ -4,6 +4,7 @@ using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Agent42.Agents.Documents;
 
 namespace Agent42.Tests;
 

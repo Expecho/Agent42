@@ -4,6 +4,8 @@ using Agent42.Agents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Orleans.Runtime;
+using Agent42.Agents.Telemetry;
+using Agent42.Agents.Web;
 
 namespace Agent42.Tests;
 

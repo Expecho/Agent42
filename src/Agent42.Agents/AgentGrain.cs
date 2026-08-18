@@ -7,6 +7,20 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
+using Agent42.Agents.Attachments;
+using Agent42.Agents.Conversations;
+using Agent42.Agents.Documents;
+using Agent42.Agents.Location;
+using Agent42.Agents.Mcp;
+using Agent42.Agents.Models;
+using Agent42.Agents.Push;
+using Agent42.Agents.Scheduling;
+using Agent42.Agents.StoredAgents;
+using Agent42.Agents.Web;
+using Agent42.Agents.ImageGeneration;
+using Agent42.Agents.Telemetry;
+using Agent42.Agents.Tools;
+using Agent42.Agents.Users;
 
 namespace Agent42.Agents;
 

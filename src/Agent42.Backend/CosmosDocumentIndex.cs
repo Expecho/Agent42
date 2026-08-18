@@ -1,5 +1,6 @@
 using Agent42.Agents;
 using Microsoft.Azure.Cosmos;
+using Agent42.Agents.Documents;
 
 namespace Agent42.Backend;
 

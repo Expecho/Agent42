@@ -3,6 +3,7 @@ using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orleans.TestingHost;
+using Agent42.Agents.Telemetry;
 
 namespace Agent42.Tests;
 

@@ -1,5 +1,6 @@
 using Agent42.Agents;
 using Orleans.TestingHost;
+using Agent42.Agents.Mcp;
 
 namespace Agent42.Tests;
 

@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 using Agent42.Agents;
+using Agent42.Agents.Location;
 
 namespace Agent42.Backend;
 

@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orleans.TestingHost;
+using Agent42.Agents.Attachments;
+using Agent42.Agents.Conversations;
 
 namespace Agent42.Tests;
 

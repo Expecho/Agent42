@@ -1,5 +1,6 @@
 using Agent42.Agents;
 using OpenAI.Images;
+using Agent42.Agents.ImageGeneration;
 
 namespace Agent42.Backend;
 
@@ -35,7 +36,7 @@ public sealed class OpenAIImageGenerator(ImageClient client) : IImageGenerationS
     // (config, not a model/request choice), so it stays off the fetch_web_page SSRF path (ADR 0018).
     private static readonly HttpClient Http = new();
 
-    public async Task<Agent42.Agents.GeneratedImage> GenerateAsync(
+    public async Task<Agent42.Agents.ImageGeneration.GeneratedImage> GenerateAsync(
         string prompt, ImageInput? input, CancellationToken cancellationToken = default)
     {
         OpenAI.Images.GeneratedImage image;
@@ -58,7 +59,7 @@ public sealed class OpenAIImageGenerator(ImageClient client) : IImageGenerationS
         var bytes = await ResolveBytesAsync(image, cancellationToken);
         // Sniff the RETURNED format rather than assuming PNG: an OpenAI-compatible endpoint may return
         // JPEG/WebP, and a wrong Content-Type would then be stored + served (critic Minor-1).
-        return new Agent42.Agents.GeneratedImage(bytes, ImageMediaTypes.DetectMediaType(bytes));
+        return new Agent42.Agents.ImageGeneration.GeneratedImage(bytes, ImageMediaTypes.DetectMediaType(bytes));
     }
 
     // gpt-image-1 returns inline b64 bytes; dall-e defaults to a hosted URL. Prefer bytes; else download the

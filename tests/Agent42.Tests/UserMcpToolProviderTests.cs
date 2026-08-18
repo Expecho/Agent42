@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orleans.TestingHost;
+using Agent42.Agents.Mcp;
 
 namespace Agent42.Tests;
 

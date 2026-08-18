@@ -1,5 +1,6 @@
 using Agent42.Agents;
 using Microsoft.Extensions.Configuration;
+using Agent42.Agents.Models;
 
 namespace Agent42.Backend;
 

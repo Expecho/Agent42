@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Agent42.Agents;
+using Agent42.Agents.Web;
 
 namespace Agent42.Backend;
 

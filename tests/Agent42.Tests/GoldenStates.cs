@@ -1,4 +1,14 @@
 using Agent42.Agents;
+using Agent42.Agents.Conversations;
+using Agent42.Agents.Mcp;
+using Agent42.Agents.Models;
+using Agent42.Agents.Push;
+using Agent42.Agents.Sharing;
+using Agent42.Agents.StoredAgents;
+using Agent42.Agents.Telemetry;
+using Agent42.Agents.Users;
+using Agent42.Agents.Attachments;
+using Agent42.Agents.Scheduling;
 
 namespace Agent42.Tests;
 

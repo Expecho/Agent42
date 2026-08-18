@@ -1,6 +1,7 @@
 using Agent42.Agents;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
+using Agent42.Agents.Mcp;
 
 namespace Agent42.Backend;
 

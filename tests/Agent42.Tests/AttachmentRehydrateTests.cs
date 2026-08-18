@@ -3,6 +3,11 @@ using Agent42.Agents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.TestingHost;
+using Agent42.Agents.Attachments;
+using Agent42.Agents.Conversations;
+using Agent42.Agents.Mcp;
+using Agent42.Agents.Models;
+using Agent42.Agents.Push;
 
 namespace Agent42.Tests;
 

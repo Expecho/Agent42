@@ -11,6 +11,14 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.AI;
 using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Trace;
+using Agent42.Agents.Attachments;
+using Agent42.Agents.Documents;
+using Agent42.Agents.Location;
+using Agent42.Agents.Mcp;
+using Agent42.Agents.Models;
+using Agent42.Agents.Push;
+using Agent42.Agents.Telemetry;
+using Agent42.Agents.Web;
 
 const string OtelSourceName = "Agent42.Backend";
 

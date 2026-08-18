@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using Agent42.Agents;
 using Agent42.Backend;
 using WebPush;
-using PushSubscription = Agent42.Agents.PushSubscription;
+using PushSubscription = Agent42.Agents.Push.PushSubscription;
 
 namespace Agent42.Tests;
 

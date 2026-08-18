@@ -1,5 +1,6 @@
 using Agent42.Agents;
 using Orleans.Runtime;
+using Agent42.Agents.Telemetry;
 
 namespace Agent42.Backend;
 

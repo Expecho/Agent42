@@ -1,6 +1,8 @@
 using System.Text;
 using Agent42.Agents;
 using Agent42.Backend;
+using Agent42.Agents.Documents;
+using Agent42.Agents.Models;
 
 namespace Agent42.Tests;
 

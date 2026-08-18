@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Agent42.Agents;
+using Agent42.Agents.Telemetry;
 
 namespace Agent42.Backend;
 

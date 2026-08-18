@@ -1,4 +1,5 @@
 using Agent42.Agents;
+using Agent42.Agents.StoredAgents;
 
 namespace Agent42.Tests;
 

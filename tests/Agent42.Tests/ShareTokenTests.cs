@@ -1,4 +1,5 @@
 using Agent42.Agents;
+using Agent42.Agents.Sharing;
 
 namespace Agent42.Tests;
 

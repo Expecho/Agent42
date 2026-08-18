@@ -1,6 +1,7 @@
 using Agent42.Agents;
 using Orleans.Core.Internal;
 using Orleans.TestingHost;
+using Agent42.Agents.StoredAgents;
 
 namespace Agent42.Tests;
 

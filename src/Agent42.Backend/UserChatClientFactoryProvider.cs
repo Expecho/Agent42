@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Agent42.Agents;
+using Agent42.Agents.Models;
 
 namespace Agent42.Backend;
 
