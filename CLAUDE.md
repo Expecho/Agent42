@@ -458,7 +458,7 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
 - Hands-free voice conversation (ADR 0037, **extends ADR 0006**): a dedicated composer `#voiceBtn` (distinct
   from `#micBtn` dictation) starts a **hands-free loop** — auto-listen → auto-send → **speak the reply** →
   **talk over it to interrupt** → re-listen — with **no buttons between turns**. Browser-native and
-  **frontend-only** (all in `wwwroot/app.js` + `index.html` + `styles.css`; no endpoint/grain/Bicep/Azure/JS
+  **frontend-only** (all in `src/Agent42.Backend/wwwroot/app.js` + `index.html` + `styles.css`; no endpoint/grain/Bicep/Azure/JS
   dependency, exactly like ADR 0006): `SpeechRecognition` to listen + **`speechSynthesis` to speak** (the new
   output half — ADR 0006 was input-only). A **dedicated second `SpeechRecognition` instance** drives voice mode
   so the dictation instance's Android accumulation fixes stay untouched; the two mic uses are mutually exclusive
