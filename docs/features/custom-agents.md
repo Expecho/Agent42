@@ -161,8 +161,8 @@ _state.State.EnabledTools =
 
 | Concern | File |
 |---------|------|
-| Definition / binding | `src/Agent42.Agents/AgentDefinition.cs`, `AgentBinding.cs` |
-| Key gen/hash | `src/Agent42.Agents/ApiKey.cs` |
-| Registry / directory grains | `src/Agent42.Agents/AgentRegistryGrain.cs`, `AgentKeyDirectoryGrain.cs` |
+| Definition / binding | `src/Agent42.Agents/StoredAgents/AgentDefinition.cs`, `AgentBinding.cs` |
+| Key gen/hash | `src/Agent42.Agents/StoredAgents/ApiKey.cs` |
+| Registry / directory grains | `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs`, `AgentKeyDirectoryGrain.cs` |
 | Endpoints | `src/Agent42.Backend/AgentApi.cs` (`/api/agents`, `/api/agent-run`) |
-| Background run / bind | `src/Agent42.Agents/AgentGrain.cs` (`EnqueuePromptAsync`, `BindAgentAsync`) |
+| Background run / bind | `src/Agent42.Agents/Conversations/AgentGrain.cs` (`EnqueuePromptAsync`, `BindAgentAsync`) |

@@ -499,3 +499,18 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   (ADR 0013 egress) — the reason it is opt-in and the browser voice stays default. Offline can't reach a real
   TTS endpoint (like image gen, ADR 0020); the Foundry audio wire path is spike-informed, prod-smoke verified.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
+- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **15 top-level feature folders**
+  (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …) with **folder-matching
+  namespaces** (`Agent42.Agents.Web`), enforced by an IDE0130 rule in the root `.editorconfig` that is
+  **scoped to `[src/Agent42.Agents/**.cs]`** — never widen it to `[*.cs]`, because
+  `src/Agent42.ServiceDefaults/Extensions.cs` declares `Microsoft.Extensions.Hosting` by the Aspire
+  convention and "fixing" it breaks three hosts. `AgentGrain` is split into **10 `partial` files that
+  live in their feature folders** but all declare `namespace Agent42.Agents.Conversations;` (a partial
+  class is one namespace — hence the second, deliberate `AgentGrain.*.cs` IDE0130 exception).
+  `ReceiveReminder` stays in the **core** part beside `ChatAsync`: the `_turnLocation`/`_ephemeral`
+  invariants rest on two clears that must be read together. `Skills/` does not move (its csproj
+  `Content` glob). **The headline trap: the 54 `[Alias("Agent42.Agents.*")]` strings are FROZEN and
+  deliberately no longer mirror the namespaces — "correcting" one orphans persisted state, and
+  mutation testing confirmed neither the compiler nor the suite will stop you.** What actually keys a
+  Cosmos document is `{GrainType}/{key}`, pinned by `GrainIdentityTests`. `Agent42.Backend` and
+  `Agent42.Tests` stay flat on purpose.

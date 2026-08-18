@@ -18,14 +18,15 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 | Shape                                          | Exemplar                                          | Verified   |
 |------------------------------------------------|---------------------------------------------------|------------|
-| Orleans grain (state + reminders + agent tools) | `src/Agent42.Agents/AgentGrain.cs`                | 2026-07-07 |
-| Per-user registry grain (list-in-state)         | `src/Agent42.Agents/AgentRegistryGrain.cs`        | 2026-07-07 |
-| Per-user singleton-preference grain (get/save)  | `src/Agent42.Agents/UserProfileGrain.cs`          | 2026-07-08 |
+| Orleans grain (state + reminders + agent tools) | `src/Agent42.Agents/Conversations/AgentGrain.cs` | 2026-08-18 |
+| Feature-sliced partial of a large grain          | `src/Agent42.Agents/Web/AgentGrain.WebTools.cs`   | 2026-08-18 |
+| Per-user registry grain (list-in-state)         | `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs`        | 2026-07-07 |
+| Per-user singleton-preference grain (get/save)  | `src/Agent42.Agents/Users/UserProfileGrain.cs`          | 2026-07-08 |
 | Minimal-API endpoint group                      | `src/Agent42.Backend/AgentApi.cs`                 | 2026-07-07 |
 | Grain test (Orleans TestCluster + fake client)  | `tests/Agent42.Tests/AgentGrainTests.cs`          | 2026-07-07 |
 | Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-07-06 |
 | Frontend logic (vanilla JS, no framework)       | `src/Agent42.Backend/wwwroot/app.js`              | 2026-07-07 |
-| Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/IAttachmentStore.cs`, `src/Agent42.Agents/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/BlobAttachmentStore.cs` | 2026-07-08 |
+| Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/Attachments/IAttachmentStore.cs`, `src/Agent42.Agents/Attachments/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/BlobAttachmentStore.cs` | 2026-07-08 |
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
 | Keyed third-party HTTP client behind an Agents interface | `src/Agent42.Backend/ContextWebPageFetcher.cs`, `src/Agent42.Backend/GoogleGeocoder.cs` | 2026-07-21 |
@@ -64,7 +65,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   into ingestion so the extractor's switch matches. `.pdf` usually reports correctly, so a PDF-only
   test does not catch this — cover a generic/empty content type.
 - **Evidence:** `src/Agent42.Backend/AgentApi.cs` (`ResolveMediaType` call before branching),
-  `src/Agent42.Agents/DocumentMediaTypes.cs`,
+  `src/Agent42.Agents/Documents/DocumentMediaTypes.cs`,
   `tests/Agent42.Tests/DocumentMediaTypesTests.cs`
 - **Verified:** 2026-07-10
 
@@ -99,7 +100,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (a `FakeChatClient` `[uctx:…]` echo read at the in-grain chat-client call site). If an Orleans upgrade
   flips that default, that test fails first — restore propagation (silo config or a grain-call-filter
   pair) before shipping. The actual OTel stamp on a real in-grain span is prod-smoke (no OTel host offline).
-- **Evidence:** `src/Agent42.Backend/UserTelemetryMiddleware.cs`, `src/Agent42.Backend/UserTelemetrySpanProcessor.cs`, `src/Agent42.Agents/UserTelemetryContext.cs`, `tests/Agent42.Tests/RequestContextPropagationTests.cs`, `.agentic/decisions/0010-downstream-user-telemetry-via-requestcontext.md`
+- **Evidence:** `src/Agent42.Backend/UserTelemetryMiddleware.cs`, `src/Agent42.Backend/UserTelemetrySpanProcessor.cs`, `src/Agent42.Agents/Telemetry/UserTelemetryContext.cs`, `tests/Agent42.Tests/RequestContextPropagationTests.cs`, `.agentic/decisions/0010-downstream-user-telemetry-via-requestcontext.md`
 - **Verified:** 2026-07-11
 
 ### Trace-parent linkage across a grain call needs `AddActivityPropagation` — RequestContext propagation is NOT it
@@ -144,7 +145,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   one fetch can return the root *plus* up to `MaxFollowedLinks` pages, so the budget that binds is
   `MaxTotalPageTextLength` (across root + followed), not `MaxPageTextLength` alone. Any new tool — or any
   new page added to a fetch result — must count its return payload against this budget.
-- **Evidence:** `src/Agent42.Agents/WebToolLimits.cs`, `src/Agent42.Agents/AgentGrain.cs`
+- **Evidence:** `src/Agent42.Agents/Web/WebToolLimits.cs`, `src/Agent42.Agents/Web/AgentGrain.WebTools.cs`
   (`ExcludeInjectedContextMessages`, `ChatAsync`'s `SerializeSessionAsync`, `BuildFetchPayload`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ToolResults_DoNotBlowTheSessionSizeBudget`),
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0027-hosted-page-scrape-via-context-dev.md`
@@ -167,7 +168,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   agent. (2) `crypto.randomUUID()` never emits the `agent-` prefix, so the deterministic and random id spaces
   never collide — do not "fix" the derivation to hash or encode the id.
 - **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (`startAgentChat`),
-  `src/Agent42.Agents/AgentDefinition.cs` (`Continuous`), `src/Agent42.Backend/AgentApi.cs` (`AgentKey`),
+  `src/Agent42.Agents/StoredAgents/AgentDefinition.cs` (`Continuous`), `src/Agent42.Backend/AgentApi.cs` (`AgentKey`),
   `.agentic/decisions/0016-per-agent-history-mode-deterministic-conversation-id.md`,
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0003-snapshot-agent-persona-into-conversation.md`
 - **Verified:** 2026-07-15
@@ -210,8 +211,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   follow count are **logged** so the channel is auditable. `useMainContentOnly` stays **true** on the
   root — verified against the live API 2026-07-21 that it does not strip the motivating CTA link.
 - **Evidence:** `src/Agent42.Backend/ContextWebPageFetcher.cs` (`FetchAsync`, `ExtractLinks`),
-  `src/Agent42.Agents/AgentGrain.cs` (`FetchWebPageAsync`, `BuildFetchPayload`),
-  `src/Agent42.Agents/WebToolLimits.cs` (`MaxFollowedLinks`, `MaxTotalPageTextLength`),
+  `src/Agent42.Agents/Web/AgentGrain.WebTools.cs` (`FetchWebPageAsync`, `BuildFetchPayload`),
+  `src/Agent42.Agents/Web/WebToolLimits.cs` (`MaxFollowedLinks`, `MaxTotalPageTextLength`),
   `tests/Agent42.Tests/ContextWebPageFetcherTests.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
   (`FetchWebPage_LabelsFollowedContentAsUntrusted`),
   `.agentic/decisions/0027-hosted-page-scrape-via-context-dev.md`
@@ -236,8 +237,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   the model, which escapes apostrophes (`won't`), so a test asserting on the refusal text must anchor on
   an apostrophe-free phrase or it passes vacuously. The offline `InMemoryWebSearch` deliberately returns
   a queried-for host as its first result **because** the regression test needs to express that attack.
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`FetchWebPageAsync`, `RememberFetchableUrlsInUserText`),
-  `src/Agent42.Agents/AgentGrainState.cs` (`FetchableUrls`),
+- **Evidence:** `src/Agent42.Agents/Web/AgentGrain.WebTools.cs` (`FetchWebPageAsync`, `RememberFetchableUrlsInUserText`),
+  `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`FetchableUrls`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`FetchWebPage_RefusesAttackerUrlWhoseHostItsOwnSearchSurfaced`),
   `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`
 - **Verified:** 2026-07-12
@@ -275,7 +276,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   allowlist does **not** cover — a prompt-injected page could put conversation text in a query. The skill
   instructs the model never to do that; it is mitigation, not prevention (ADR 0011).
 - **Evidence:** `infra/searxng/settings.yml` (`keep_only:` engine list),
-  `src/Agent42.Agents/Skills/websearch/SKILL.md`, `src/Agent42.Agents/IWebSearch.cs`,
+  `src/Agent42.Agents/Skills/websearch/SKILL.md`, `src/Agent42.Agents/Web/IWebSearch.cs`,
   `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`
 - **Verified:** 2026-07-12
 
@@ -332,7 +333,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   neither is individually load-bearing in the happy path — but remove **both** and
   `ReceiveReminder_HasNoUserLocation` fails (verified by mutation). Any future per-turn field on this grain
   inherits this trap; PII especially should not sit in memory between turns.
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`_turnLocation`, the `finally` in `ChatAsync`, the
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_turnLocation`, the `finally` in `ChatAsync`, the
   clear in `ReceiveReminder`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`ReceiveReminder_HasNoUserLocation`, `Location_IsTurnScoped_AndNotPersisted`),
   `.agentic/decisions/0012-user-location-google-geocoding.md`
@@ -355,9 +356,15 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `GET /messages` reflects it live — the trace-free property only shows up after deactivation (asserted via
   `EphemeralChat_LeavesNoHistory_AfterReactivation`, not an empty `/messages`). Documents are blocked at the
   composer (RAG writes durable chunks); images are allowed (blob bytes persist — accepted, session-only).
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`_ephemeral`; the `finally` in `ChatAsync`; the guards on
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_ephemeral`; the `finally` in `ChatAsync`; the guards on
   the two `WriteStateAsync` calls in `ChatCoreAsync`/`GenerateImageTurnAsync`; the refusal in
-  `SchedulePromptAsync`; the resets in `EnqueuePromptAsync`/`ReceiveReminder`),
+  `SchedulePromptAsync`). **The flag is now split across part files (ADR 0039):** it is declared and
+  cleared in `src/Agent42.Agents/Conversations/AgentGrain.cs`, but the write-skip it guards in
+  `GenerateImageTurnAsync` lives in `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`, and
+  the `SchedulePromptAsync` refusal in
+  `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs` — read all three before changing any one.
+  Also: `src/Agent42.Agents/Conversations/AgentGrain.cs` (the resets in
+  `EnqueuePromptAsync`/`ReceiveReminder`),
   `src/Agent42.Backend/AgentApi.cs` (`ChatRequest.Ephemeral`, the `TouchAsync` skip),
   `src/Agent42.Backend/wwwroot/app.js` (`ephemeral`, `setIncognito`, the incognito document gate in
   `handleFiles`), `tests/Agent42.Tests/AgentGrainTests.cs`
@@ -383,7 +390,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   pinned by `GetCurrentLocation_ExposesNoParameters`, which asserts the JSON schema the model actually sees
   has no properties. If you ever need the model to name a place, that is *forward* geocoding — a different
   tool, and it needs the guard.
-- **Evidence:** `src/Agent42.Backend/GoogleGeocoder.cs`, `src/Agent42.Agents/AgentGrain.cs`
+- **Evidence:** `src/Agent42.Backend/GoogleGeocoder.cs`, `src/Agent42.Agents/Location/AgentGrain.LocationTool.cs`
   (`GetCurrentLocationAsync`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`GetCurrentLocation_ExposesNoParameters`), `.agentic/decisions/0012-user-location-google-geocoding.md`
 - **Verified:** 2026-07-13
@@ -457,10 +464,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   many agents multiply the bucket rows — shard by day into per-date grains before that bites. **Do not add
   the dimension by overriding `gen_ai.operation.name`** — that is set by the libraries per the OTel semconv
   and is also exported (ADR 0009); a new dimension is always a NEW tag, never a rewrite of a semconv one.
-- **Evidence:** `src/Agent42.Agents/UsageSpanProjector.cs` (the operation-name whitelist; `ApplicationTag`),
-  `src/Agent42.Agents/AgentGrain.cs` (`PublishUsageApplication`),
+- **Evidence:** `src/Agent42.Agents/Telemetry/UsageSpanProjector.cs` (the operation-name whitelist; `ApplicationTag`),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`PublishUsageApplication`),
   `src/Agent42.Backend/UserTelemetrySpanProcessor.cs` (stamps `agent42.application`),
-  `src/Agent42.Agents/UsageRollupState.cs` (`UsageRetention`, `Prune`), `src/Agent42.Agents/UsageRollupGrain.cs`,
+  `src/Agent42.Agents/Telemetry/UsageRollupState.cs` (`UsageRetention`, `Prune`), `src/Agent42.Agents/Telemetry/UsageRollupGrain.cs`,
   `src/Agent42.Backend/UsageSpanProcessor.cs` (`OnEnd`, best-effort enqueue),
   `tests/Agent42.Tests/UsageSpanProjectorTests.cs` (`AggregateSpan_IsNotCounted`),
   `.agentic/decisions/0031-token-usage-dashboard.md`, `.agentic/decisions/0004-attachments-in-blob.md`
@@ -480,7 +487,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (Orleans binary field-ids vs. JSON property names) is **unverified**, and if it is JSON, renaming the
   property silently orphans the model on every existing conversation.
 - **Evidence:** `src/Agent42.Backend/ModelProviderOptions.cs` (`ModelId.Parse`),
-  `src/Agent42.Agents/AgentGrainState.cs` (`DeploymentName` + its comment),
+  `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`DeploymentName` + its comment),
   `tests/Agent42.Tests/ModelIdTests.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
   (`LegacyPersistedModel_StillResolves`), `.agentic/decisions/0013-multi-provider-model-catalog.md`
 - **Verified:** 2026-07-14
@@ -503,7 +510,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (the provider's tools are never in it). And the provider surfaces **three** tools, not one —
   `load_skill`, `read_skill_resource`, `run_skill_script` — so `ToolCatalog` maps all three to the `skills`
   key (the key-coverage guard test found this).
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent`'s `AIContextProviders` switch),
+- **Evidence:** `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent`'s `AIContextProviders` switch),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`NoToolModel_RegistersNoTools_AndNoSkillsProvider`,
   `NoToolModel_StillGetsDocumentRetrieval`, `SkillsDisabled_DropsLoadSkill_KeepsRetrieval`),
   `tests/Agent42.Tests/FakeChatClient.cs` (`ToolsEcho`)
@@ -552,7 +559,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   the test for this would pass vacuously — hence the `[emptymsg:N]` echo, which makes the property
   observable. Mutation-checked: remove the placeholder and `NoVisionModel_ImageOnlyTurn_StillReplies`
   fails.
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`RehydrateAttachmentUrlsAsync(bool includeImages)`,
+- **Evidence:** `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs` (`RehydrateAttachmentUrlsAsync(bool includeImages)`,
   `StripImageParts`, `WithheldImagePlaceholder`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`NoVisionModel_SendsNoImageContent`, `NoVisionModel_ImageOnlyTurn_StillReplies_AndSendsNoImage`),
   `tests/Agent42.Tests/FakeChatClient.cs` (`AllImagesEcho`, `EmptyMessageEcho`)
@@ -582,10 +589,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   id-keyed correctness IS testable — `NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn`
   interleaves a tool turn **before** the image turn so a positional bug would surface (a clean single-turn test
   would pass vacuously).
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`GenerateImageTurnAsync`, `RecordImageTurnAsync`,
+- **Evidence:** `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs` (`GenerateImageTurnAsync`, `RecordImageTurnAsync`,
   `AssistantImageRef`, `FindMostRecentImageRef`, `RehydrateAssistantImageAsync`, `AssistantImageIdKey`),
-  `src/Agent42.Agents/AgentGrainState.cs` (`GeneratedImages`),
-  `src/Agent42.Agents/IImageGenerationService.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
+  `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`GeneratedImages`),
+  `src/Agent42.Agents/ImageGeneration/IImageGenerationService.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
   (`NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn`, `History_IncludesAssistantGeneratedImage`),
   `.agentic/decisions/0020-image-generation-model-capability.md`
 - **Verified:** 2026-07-17
@@ -756,8 +763,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   factory — so `_userId` is now a **retained field** and `ChatCoreAsync`/`ReceiveReminder` **re-resolve**
   `GetForUserAsync(_userId)` on the no-model path and rebind (`RebindModelAsync`) if a model became
   available. See the "Chat is fully per-user" gotcha.
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`OnActivateAsync`, `UserIdFromGrainKey`),
-  `src/Agent42.Agents/IUserChatClientFactoryProvider.cs`,
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`OnActivateAsync`, `UserIdFromGrainKey`),
+  `src/Agent42.Agents/Models/IUserChatClientFactoryProvider.cs`,
   `src/Agent42.Backend/UserChatClientFactoryProvider.cs`,
   `tests/Agent42.Tests/UserChatClientFactoryProviderTests.cs` (`VersionBump_ReturnsFreshFactory`)
 - **Verified:** 2026-07-16
@@ -792,7 +799,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (or logs + returns). A provider must declare **≥1 model** (`ValidateProvider`, 400) so "factory has
   providers ⟺ a usable default exists" — no keyed-but-modelless gap.
 - **Evidence:** `src/Agent42.Backend/NoModelChatClient.cs`, `src/Agent42.Backend/ChatClientFactory.cs`
-  (empty-tolerant ctor + `GetClient`/`GetCapabilities` guards), `src/Agent42.Agents/AgentGrain.cs`
+  (empty-tolerant ctor + `GetClient`/`GetCapabilities` guards), `src/Agent42.Agents/Conversations/AgentGrain.cs`
   (`_modelId` conditional, `ChatCoreAsync` no-model block, `RebindModelAsync`, `ReceiveReminder` guard),
   `src/Agent42.Backend/UserProviderResolver.cs` (`EffectiveDefault` → first declared model → `""`),
   `src/Agent42.Backend/ModelCatalog.cs` (empty-default ⇒ empty catalog), `src/Agent42.Backend/AgentApi.cs`
@@ -938,7 +945,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   echo must scope to the `[tools:…]` marker, because the `websearch` skill's description (injected into the
   system prompt) literally names `web_search`/`fetch_web_page`, so those substrings appear in the answer
   even when the tools do not.
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent`, the `SupportsHostedTools` swap),
+- **Evidence:** `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent`, the `SupportsHostedTools` swap),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`HostedToolsModel_SwapsWebShimsForHostedTools`, `ToolNames`),
   `.agentic/decisions/0015-hosted-tools-on-responses-path.md`
 - **Verified:** 2026-07-15
@@ -1035,13 +1042,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   another's data. Make the default a **factory** (`public static T Empty => new(...)`, a fresh
   instance per access) or initialize the field with `new(...)` directly — never a `{ get; } =`
   singleton. Same discipline as the list defaults (`= []`) elsewhere.
-- **Evidence:** `src/Agent42.Agents/UserProfile.cs` (`Empty` is `=> new("")`), `src/Agent42.Agents/UserProfileGrain.cs` (its UserProfileState.Profile property), `tests/Agent42.Tests/UserProfileGrainTests.cs` (`UserProfile_Empty_IsAFreshInstance_NotASharedSingleton` deterministically guards the factory property; `UserProfile_IsIsolatedPerUser` originally surfaced the leak in-cluster)
+- **Evidence:** `src/Agent42.Agents/Users/UserProfile.cs` (`Empty` is `=> new("")`), `src/Agent42.Agents/Users/UserProfileGrain.cs` (its UserProfileState.Profile property), `tests/Agent42.Tests/UserProfileGrainTests.cs` (`UserProfile_Empty_IsAFreshInstance_NotASharedSingleton` deterministically guards the factory property; `UserProfile_IsIsolatedPerUser` originally surfaced the leak in-cluster)
 - **Verified:** 2026-07-08
 
 ### Agent Framework 1.13 session API differs from older samples
 
 - **Claim:** it's `AgentSession` with `CreateSessionAsync` / `SerializeSessionAsync` / `DeserializeSessionAsync` — the `AgentThread` / `GetNewThread()` API from pre-1.13 samples (and model training data) no longer exists. Copy `AgentGrain.cs`, not blog posts.
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs`
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs`
 - **Verified:** 2026-07-06
 
 ### Testing that a bound persona reaches the model needs the fake to echo its instructions
@@ -1077,7 +1084,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   including an empty entry on the reminder path) so history joins turns to images by index.
   Don't "simplify" back to `DataContent`, and don't drop the rehydrate step. This is a prod-blob
   property the offline harness can't test (the in-memory store returns non-expiring URLs).
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`RehydrateAttachmentUrlsAsync`, `ChatAsync`, `AlignTurnAttachmentsToHistory`), `src/Agent42.Backend/BlobAttachmentStore.cs`, `.agentic/decisions/0004-attachments-in-blob.md`
+- **Evidence:** `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs` (`RehydrateAttachmentUrlsAsync`, `ChatAsync`, `AlignTurnAttachmentsToHistory`), `src/Agent42.Backend/BlobAttachmentStore.cs`, `.agentic/decisions/0004-attachments-in-blob.md`
 - **Verified:** 2026-07-08
 
 ### Attachments Storage RBAC is in Bicep — but only because the deploy SP was elevated once
@@ -1118,7 +1125,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   is **not** a repo prerequisite and needs no RBAC (API-key auth). `AzureOpenAI:Endpoint`/`ApiKey` survive
   ONLY as the **dormant** Foundry-provider inheritance source; `AzureOpenAI:TenantId` still binds
   `DefaultAzureCredential`. The `AZURE_OPENAI_API_KEY` GitHub secret + ACA secret are **removed**.
-- **Evidence:** `src/Agent42.Agents/IChatClientFactory.cs` (`GetEmbeddingGenerator`/`DefaultEmbeddingModelId`), `src/Agent42.Backend/ChatClientFactory.cs` (Foundry/OpenAICompatible embedding funcs), `src/Agent42.Agents/NoEmbeddingGenerator.cs`, `src/Agent42.Backend/DocumentIngestionService.cs`, `src/Agent42.Agents/AgentGrain.cs` (`SearchDocumentContextAsync` empty-id guard), `src/Agent42.Backend/UserProviderResolver.cs` (`EmbeddingDefaultModelId`), `.agentic/decisions/0030-user-configured-embedding-model.md`
+- **Evidence:** `src/Agent42.Agents/Models/IChatClientFactory.cs` (`GetEmbeddingGenerator`/`DefaultEmbeddingModelId`), `src/Agent42.Backend/ChatClientFactory.cs` (Foundry/OpenAICompatible embedding funcs), `src/Agent42.Agents/Documents/NoEmbeddingGenerator.cs`, `src/Agent42.Backend/DocumentIngestionService.cs`, `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`SearchDocumentContextAsync` empty-id guard), `src/Agent42.Backend/UserProviderResolver.cs` (`EmbeddingDefaultModelId`), `.agentic/decisions/0030-user-configured-embedding-model.md`
 - **Verified:** 2026-07-21
 
 ### Cosmos vector search is prod-only: capability + pre-created container + no create-on-use
@@ -1152,7 +1159,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `DocumentTextExtractor` serializes every PDF extraction through a single static lock. Do not
   dispose `DocLib.Instance` per call (it frees the native library for the whole process); only the
   `IDocReader`/`IPageReader` are disposed. Fine at per-conversation, synchronous-ingestion scale.
-- **Evidence:** `src/Agent42.Agents/DocumentTextExtractor.cs` (`PdfLock`)
+- **Evidence:** `src/Agent42.Agents/Documents/DocumentTextExtractor.cs` (`PdfLock`)
 - **Verified:** 2026-07-09
 
 ### Selectable tools: `null == all`, and the user default must be fetched BEFORE the first `BuildAgent`
@@ -1185,9 +1192,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `renderToolChecks` treats a stored `mcp` as "all servers checked" for the editor surfaces. `Sanitize` must
   **pass through** `mcp:{id}` keys (they are not in `AllSelectableToolKeys`), and the provider emits an
   **empty group per skipped server** so the id list for expansion is complete.
-- **Evidence:** `src/Agent42.Agents/AgentGrainState.cs` (`[Id(10)] EnabledTools`),
-  `src/Agent42.Agents/ToolCatalog.cs` (`Sanitize`, `AllSelectableToolKeys`, `Mcp` wildcard,
-  `IsMcpServerEnabled`, `McpServerKey`), `src/Agent42.Agents/AgentGrain.cs` (`OnActivateAsync` fetch before
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`[Id(10)] EnabledTools`),
+  `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Sanitize`, `AllSelectableToolKeys`, `Mcp` wildcard,
+  `IsMcpServerEnabled`, `McpServerKey`), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`OnActivateAsync` fetch before
   `BuildAgent`, `EffectiveEnabledTools`, `_mcpServers`, `ExpandMcpWildcard`, per-server `BuildAgent` gate),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
   `UserDefault_AppliesWhenNoOverride`, `McpTools_ResolvedBeforeFirstBuildAgent`,
@@ -1221,8 +1228,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   until each registered it). The MCP **endpoint is deliberately NOT SSRF-guarded** (config, not a model/request
   — may be `localhost`), exactly like the user-provider endpoint (see that gotcha).
 - **Evidence:** `src/Agent42.Backend/UserMcpToolProvider.cs` (`RetainedVersionsPerUser`, `EvictBeyondAsync`),
-  `src/Agent42.Agents/ToolCatalog.cs` (`Mcp` wildcard + `IsMcpServerEnabled`, both absent from `ToolNameToKey`),
-  `src/Agent42.Agents/AgentGrain.cs` (`BuildAgent` per-server MCP gate over `_mcpServers`),
+  `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Mcp` wildcard + `IsMcpServerEnabled`, both absent from `ToolNameToKey`),
+  `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent` per-server MCP gate over `_mcpServers`),
   `src/Agent42.Backend/Program.cs` +
   `tools/Agent42.DevHost/Program.cs` (`IMcpSecretProtector` registration),
   `tests/Agent42.Tests/UserMcpToolProviderTests.cs` (`OldVersions_AreEvicted_AndTheirConnectionsDisposed`),
@@ -1252,7 +1259,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `StoredMcpServer.TokenCiphertext` — no new schema field.
 - **Evidence:** `src/Agent42.Backend/McpOAuth.cs` (`McpOAuthClient` discovery/exchange/refresh, `McpPkce`),
   `src/Agent42.Backend/AgentApi.cs` (`/api/mcp/oauth/start` + `/callback`, `GetUserId()`-scoped),
-  `src/Agent42.Agents/UserMcpOAuthPendingGrain.cs` (one-time `TakeAsync`),
+  `src/Agent42.Agents/Mcp/UserMcpOAuthPendingGrain.cs` (one-time `TakeAsync`),
   `src/Agent42.Backend/UserMcpToolProvider.cs` (`ResolveOAuthAccessTokenAsync`),
   `tests/Agent42.Tests/McpOAuthEndpointTests.cs` (`OAuthCallback_PersistsEncryptedTokens`),
   `tests/Agent42.Tests/McpOAuthClientTests.cs` (`Pkce_Challenge_MatchesRfc7636Vector`),
@@ -1275,8 +1282,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   deregister. Keys are 256-bit random, so a single **SHA-256** (no salt, no bcrypt/PBKDF2, no
   `FixedTimeEquals`) is correct — `ApiKey` is the one place that generates *and* hashes, so they can't
   diverge.
-- **Evidence:** `src/Agent42.Agents/ApiKey.cs`, `src/Agent42.Agents/AgentKeyDirectoryGrain.cs`,
-  `src/Agent42.Agents/AgentRegistryGrain.cs` (`SaveAsync` per-operation ordering, `DeleteAsync`),
+- **Evidence:** `src/Agent42.Agents/StoredAgents/ApiKey.cs`, `src/Agent42.Agents/StoredAgents/AgentKeyDirectoryGrain.cs`,
+  `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs` (`SaveAsync` per-operation ordering, `DeleteAsync`),
   `tests/Agent42.Tests/AgentRegistryGrainTests.cs` (`AgentKey_Regenerate_InvalidatesOldKey`,
   `AgentDelete_DeregistersKey`), `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
 - **Verified:** 2026-07-17
@@ -1317,8 +1324,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   conversation**, so there is no such backstop — deregistering first makes a crash leave the link **dead**,
   never a live revoked link. Deleting a conversation also revokes its link (belt-and-braces). `ShareToken`
   is the one place that generates *and* hashes (like `ApiKey`).
-- **Evidence:** `src/Agent42.Agents/UserShareLinksGrain.cs` (raw token stored; `RemoveAsync` deregisters
-  before dropping the entry), `src/Agent42.Agents/ShareToken.cs`, `src/Agent42.Agents/AgentRegistryGrain.cs`
+- **Evidence:** `src/Agent42.Agents/Sharing/UserShareLinksGrain.cs` (raw token stored; `RemoveAsync` deregisters
+  before dropping the entry), `src/Agent42.Agents/Sharing/ShareToken.cs`, `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs`
   (the opposite delete order, for contrast),
   `tests/Agent42.Tests/ShareLinkGrainTests.cs` (`UserGrain_Revoke_DeregistersTheDirectory_SoTheLinkGoesDead`),
   `.agentic/decisions/0035-read-only-share-links.md`
@@ -1335,7 +1342,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   spec's original plan) would make agent-run images **silently vanish** and an image-generation agent never
   edit its input. Do not "simplify" `EnqueuePromptAsync` to a bare `_agent.RunAsync([msg], _session)`.
   Because it's `[OneWay]`, callers/tests can't await the turn — **poll** history for the persisted result.
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`EnqueuePromptAsync` draining `ChatCoreAsync`; contrast
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`EnqueuePromptAsync` draining `ChatCoreAsync`; contrast
   `ReceiveReminder`'s empty-attachment turn), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`EnqueuePrompt_RunsAndPersistsTurn`, `EnqueuePrompt_WithImage_RecordsAttachmentOnTurn` — both poll),
   `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
@@ -1382,7 +1389,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **non-reentrant** grain only because the sender is internally time-bounded (`SendBudget`) and its
   `HttpClient` calls `RemoveAllResilienceHandlers()` (the same named-client retry trap as the web/geocoding
   clients) — see the "web tool return value" / geocoder gotchas.
-- **Evidence:** `src/Agent42.Agents/AgentGrain.cs` (`SendAwayReplyPushAsync`, the gated call in
+- **Evidence:** `src/Agent42.Agents/Push/AgentGrain.Push.cs` (`SendAwayReplyPushAsync`, the gated call in
   `EnqueuePromptAsync`, the post-`WriteStateAsync` call in `ReceiveReminder`, and its absence from
   `ChatCoreAsync`), `src/Agent42.Backend/WebPushNotificationSender.cs` (`SendBudget`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ReceiveReminder_SendsPush_WithAgentName`,
@@ -1420,3 +1427,30 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ConfigHealthApiTests.cs` (`Static_RunsNoProbes`),
   `.agentic/decisions/0029-config-health-tab.md`
 - **Verified:** 2026-07-21
+
+### `[Alias("Agent42.Agents.*")]` strings are frozen and no longer mirror the namespace
+
+- **Claim:** every serializable and grain-interface type in `Agent42.Agents` carries an explicit literal
+  `[Alias("Agent42.Agents.X")]` — 54 of them. After the ADR 0039 feature-folder move these strings no
+  longer match the real namespace (e.g. `src/Agent42.Agents/Conversations/AgentGrainState.cs` declares
+  `namespace Agent42.Agents.Conversations;` but is still aliased `"Agent42.Agents.AgentGrainState"`).
+  **That mismatch is correct and required. Do not "fix" it.** The alias is a free-form identity token
+  that persisted state and cross-version grain calls are matched on; rewriting one to match its new
+  namespace is the single edit in that refactor that could orphan live conversations in Cosmos. The same
+  rule applies to any future move: rename the folder, never the alias.
+- **What is and is not measured.** Three mutations were run against the golden blobs before the move
+  (`SerializationCompatibilityTests`): renumbering an `[Id(n)]` was **caught**; changing an `[Alias]`
+  was **not**; moving a type to another namespace was **not**. So neither the blobs nor the compiler will
+  stop you — the guard is this entry plus the comment on `AgentGrainState`. Note the blobs visibly contain
+  strings like ``ReadOnlyListInterfaceCodec`1[[Agent42.Agents.StoredMcpServer]]`` for interface-typed
+  members; that token looks alias-derived but is demonstrably not load-bearing on the read path, so do not
+  infer safety from a green suite.
+- **The mechanism that actually keys a Cosmos document is different.** The item id is
+  `{GrainType}/{key}`, and no grain declares `[GrainType]` — all 12 fall through to Orleans' naming
+  convention, which is class-name based. The namespace mutation above confirms the move is inert there.
+  That is what `GrainIdentityTests` pins, with hard-coded literals; it, not the alias, is the safety net.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrainState.cs` (the alias + its comment),
+  `tests/Agent42.Tests/GrainIdentityTests.cs` (12 grain types + the full `agent/{user}/{conv}` id),
+  `tests/Agent42.Tests/SerializationCompatibilityTests.cs` (the recorded mutation results),
+  `.agentic/decisions/0039-feature-folders-in-agents-project.md`
+- **Verified:** 2026-08-18

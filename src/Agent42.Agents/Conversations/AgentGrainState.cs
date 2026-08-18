@@ -7,6 +7,11 @@ namespace Agent42.Agents.Conversations;
 /// Persisted state of an <see cref="AgentGrain"/>: the serialized Agent Framework
 /// conversation session, so a conversation survives grain deactivation.
 /// </summary>
+// ADR 0039: this alias string is FROZEN and deliberately no longer mirrors the namespace above
+// (the type lives in Agent42.Agents.Conversations now). The alias is a free-form identity token that
+// persisted state is matched on, not a mirror of the namespace — "correcting" it to
+// "Agent42.Agents.Conversations.AgentGrainState" would orphan every conversation already in Cosmos.
+// The same holds for all 54 aliases in this project. See the frozen-alias entry in .agentic/gotchas.md.
 [GenerateSerializer]
 [Alias("Agent42.Agents.AgentGrainState")]
 public sealed class AgentGrainState

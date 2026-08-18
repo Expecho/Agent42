@@ -137,7 +137,7 @@ every server — the picker has no bare `mcp` checkbox.
 
 | Concern | File |
 |---------|------|
-| Catalog (source of truth) | `src/Agent42.Agents/ToolCatalog.cs` |
-| Resolution + gate | `src/Agent42.Agents/AgentGrain.cs` (`EffectiveEnabledTools`, `BuildAgent`) |
+| Catalog (source of truth) | `src/Agent42.Agents/Tools/ToolCatalog.cs` |
+| Resolution + gate | `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`EffectiveEnabledTools`, `BuildAgent`) |
 | Endpoints | `src/Agent42.Backend/AgentApi.cs` (`/api/tools`, `/api/conversations/{id}/tools`, `/api/profile`) |
-| State | `src/Agent42.Agents/AgentGrainState.cs`, `UserProfile.cs` |
+| State | `src/Agent42.Agents/Conversations/AgentGrainState.cs`, `UserProfile.cs` |

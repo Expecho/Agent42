@@ -116,7 +116,7 @@ else message.Contents.Add(new UriContent(url, refs[i].MediaType));   // re-add o
 
 | Concern | File |
 |---------|------|
-| Store abstraction | `src/Agent42.Agents/IAttachmentStore.cs`, `AttachmentRef.cs` |
+| Store abstraction | `src/Agent42.Agents/Attachments/IAttachmentStore.cs`, `AttachmentRef.cs` |
 | Blob store | `src/Agent42.Backend/BlobAttachmentStore.cs` |
 | Endpoints | `src/Agent42.Backend/AgentApi.cs` |
-| Vision gate | `src/Agent42.Agents/AgentGrain.cs` (`RehydrateAttachmentUrlsAsync`) |
+| Vision gate | `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs` (`RehydrateAttachmentUrlsAsync`) |

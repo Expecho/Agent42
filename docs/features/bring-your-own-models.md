@@ -247,8 +247,8 @@ public static Provider OpenAICompatible(ProviderOptions options, Uri endpoint, s
 
 | Concern | File |
 |---------|------|
-| Stored overlay shapes | `src/Agent42.Agents/UserProviderConfig.cs` |
-| Overlay grain | `src/Agent42.Agents/UserProviderConfigGrain.cs` |
+| Stored overlay shapes | `src/Agent42.Agents/Models/UserProviderConfig.cs` |
+| Overlay grain | `src/Agent42.Agents/Models/UserProviderConfigGrain.cs` |
 | Baseline ⊕ overlay merge | `src/Agent42.Backend/UserProviderResolver.cs` |
 | Per-provider build rules | `src/Agent42.Backend/ModelProviderBuilder.cs` |
 | Provider/model options + id parsing | `src/Agent42.Backend/ModelProviderOptions.cs` |
