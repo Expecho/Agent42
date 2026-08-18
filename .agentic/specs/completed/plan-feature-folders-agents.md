@@ -368,3 +368,77 @@ state roots, the alias inventory (53 aliases; `UsageEventKind` the sole gap), th
 values, step 0's reproduction, and the absence of any other namespace-encoding mechanism
 (Dockerfile, `.slnx`, deploy workflow, OTel source names, log filters, DI scanning, JSON
 discriminators).
+
+## Execution notes — where the implementation diverged from the plan
+
+Executed 2026-08-18 on `refactor/feature-folders-agents`, five commits. All eight steps done.
+The plan held up well; the divergences below are the honest record.
+
+**1. Step 4 removed the empty `Feature/` dirs, as written — they were present.**
+`src/Agent42.Agents/Feature/Telemetry` and `.../Feature/Web` existed, untracked and empty, and were
+deleted. The plan's "if present" hedge was the right call.
+
+**2. Step 2's negative control passed, so the fallback was never needed.**
+The plan allowed for `dotnet format` having no IDE0130 fixer, in which case AC4's enforcement claim
+would be false and the layout test would be the sole guard. It does fire: a wrong-namespace file under
+`src/Agent42.Agents/Tmp/` makes `dotnet format --verify-no-changes` exit 2 with `error IDE0130`. The
+`AgentGrain.*.cs` exception glob was verified in the same way (exit 0 with a deliberately
+wrong-namespace `AgentGrain.NegControl.cs`). Both temporary files were reverted.
+
+**3. Step 3's mutation check came back mostly NEGATIVE, and the plan's own hedge was correct.**
+Three mutations, not the two the plan named:
+
+| Mutation | Result |
+|---|---|
+| Renumber one `[Id(n)]` (`StoredModel.SupportsSpeech` 6 → 7) | **caught** |
+| Change an `[Alias]` string (`StoredMcpServer`) | **not caught** |
+| Move a serialized type + its grain to another namespace | **not caught** |
+
+The plan predicted the alias mutation might not fail; it did not. The namespace mutation was added
+because it is the one this refactor actually performs — and its negative result is the reassuring
+one. So the blobs guard `[Id(n)]`/member drift only, `GrainIdentityTests` is the real safety net, and
+both the class doc and ADR 0039 say exactly that rather than the stronger claim.
+
+One trap surfaced that the plan did not anticipate: the blobs visibly contain
+``ReadOnlyListInterfaceCodec`1[[Agent42.Agents.StoredMcpServer]]`` for interface-typed members, which
+*looks* alias-derived. The alias mutation proves it is not load-bearing on the read path — do not
+infer alias safety from a green suite. This is recorded in the gotcha entry.
+
+**4. A fixture improvement the plan did not call for.** `StoredModel`'s five capability bits were
+initially all `true`, which would have made a renumbering that swaps two adjacent bools undetectable.
+They now alternate. That change is what made mutation 1 detectable at all — "populate with non-default
+values" is not sufficient for adjacent same-typed fields; they must be *distinguishable*.
+
+**5. Step 6's verification criterion was not achievable and was replaced with a stronger one.**
+The plan asked that `git diff -M -C --numstat` show every part as a rename or copy of `AgentGrain.cs`.
+It does not, and cannot: splitting one 2084-line file into ten leaves no part above git's 50%
+similarity threshold (the largest, the core part, is ~40%). Git reports them as additions. Instead the
+"no logic edits" property was verified by **reconstruction**: the 1805 non-blank member lines of the
+pre-split file and the 1805 of the ten parts are identical as a multiset (`diff` exit 0). That is
+direct evidence of content identity rather than a similarity heuristic, so it is strictly stronger.
+
+**6. Step 6 also moved `AgentGrain.cs` itself.** The plan left it at the project root through steps 4
+and 5 (a valid intermediate state — root namespace matches root folder) and it moved as part of the
+split. Worth noting because it means the `AgentGrain.StorageProviderName` using-coupling the plan
+predicted only appeared at step 6, not step 4.
+
+**7. `docs/features/scheduled-reminders.md` gained a row rather than having one repointed.**
+Its single "Tools + `ReceiveReminder`" row named one file that is now two — the schedule/cancel tools
+in `Scheduling/` and the callback in the core part. Splitting the row is the point of the exercise, so
+it became two rows with the reason recorded inline.
+
+**8. The `_ephemeral` cross-file pointer names THREE files, not two.** The plan anticipated the
+`GenerateImageTurnAsync` write-skip landing in `ImageGeneration/`. The `SchedulePromptAsync` refusal
+also moved, to `Scheduling/`. The gotcha entry names all three.
+
+**9. Test-suite flakiness observed under load (not a regression).** Two of the full-suite runs during
+execution aborted with Orleans TestCluster `TimeoutException`s and a silo-membership
+"I have been told I am dead" host crash, while runs on an otherwise idle machine were fully green.
+The failing runs took 21-23 minutes against ~6 minutes idle, and the failures were in different tests
+each time — machine load, not this diff. Recorded here so a future reader does not chase it as a
+regression of this MR.
+
+**Not diverged:** the 15-folder target table was exact; the four hand-qualified references were
+exactly the four named; the 12 state roots and 12 grains were exactly right; `SerializeOrNull` did
+belong in core by call site; `ReceiveReminder` staying in core was the right call; and no `[Alias]`
+string was touched.
