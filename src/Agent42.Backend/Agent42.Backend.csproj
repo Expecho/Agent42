@@ -14,6 +14,8 @@
     <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Azure.ResourceManager.CognitiveServices" />
     <PackageReference Include="Azure.Storage.Blobs" />
+    <!-- Transitive security pin only (see Directory.Packages.props); no code references this. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
     <PackageReference Include="Microsoft.Identity.Client" />
     <PackageReference Include="Microsoft.Orleans.Server" />

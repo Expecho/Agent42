@@ -442,3 +442,23 @@ regression of this MR.
 exactly the four named; the 12 state roots and 12 grains were exactly right; `SerializeOrNull` did
 belong in core by call site; `ReceiveReminder` staying in core was the right call; and no `[Alias]`
 string was touched.
+
+**10. One out-of-plan change: a transitive security pin.** The `vulnerable_packages: 0` hard gate
+failed on `System.Security.Cryptography.Xml` 10.0.7 (four high-severity advisories), reached via
+`Azure.Extensions.AspNetCore.DataProtection.Blobs` → `Microsoft.AspNetCore.DataProtection` — so it is
+a **production** dependency (the ADR 0018 DP key ring), not a test-only one. It was **pre-existing**:
+`git diff main...HEAD` over `Directory.Packages.props`, every `.csproj` and `Agent42.slnx` was empty,
+so the restore graph was byte-identical to `main` and `main` fails the same gate today. On the user's
+instruction it was fixed here rather than deferred, by pinning 10.0.11 (resolved from the feed, hard
+rule 4) as a direct `PackageReference` in `Agent42.Backend` — Central Package Management does not
+override a transitive version from a `PackageVersion` entry alone. `dotnet list package --vulnerable
+--include-transitive` now reports all six projects clean. The pin carries a comment saying it is a
+security pin, not a feature dependency, and when to drop it.
+
+**11. Two gates cannot be measured in this repo and were reported as SKIPPED, not estimated.**
+`duplication_pct_max` has no tool at all; `cognitive_complexity_max` has none that measures *cognitive*
+complexity (the Roslyn `Metrics` target is not wired up, and `lizard` needs Python, which is not
+installed). Cyclomatic complexity was measured instead, from the coverlet cobertura report: 22 methods
+exceed 15, all pre-existing and — by the reconstruction check — unchanged by this MR. Per the working
+agreement these two gates should be deleted from `quality-gates.yaml`; the user chose to leave them
+and have the situation flagged rather than edit the gate file inside a refactor MR.
