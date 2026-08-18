@@ -135,7 +135,7 @@ if (mode == McpAuthMode.Header && ...)
 
 | Concern | File |
 |---------|------|
-| Stored config + grain | `src/Agent42.Agents/UserMcpConfig.cs`, `UserMcpConfigGrain.cs` |
+| Stored config + grain | `src/Agent42.Agents/Mcp/UserMcpConfig.cs`, `UserMcpConfigGrain.cs` |
 | Tool provider | `src/Agent42.Backend/UserMcpToolProvider.cs`, `McpConnectionFactory.cs` |
 | Encryption | `src/Agent42.Backend/McpSecretProtector.cs` |
 | Auth | `src/Agent42.Backend/McpAuthHeader.cs`, `McpOAuth.cs` |

@@ -127,7 +127,8 @@ silo.UseCosmosReminderService(options =>
 
 | Concern | File |
 |---------|------|
-| Tools + `ReceiveReminder` | `src/Agent42.Agents/AgentGrain.cs` |
-| Reminder metadata | `src/Agent42.Agents/ReminderInfo.cs` |
+| Schedule/cancel tools | `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs` |
+| `ReceiveReminder` callback | `src/Agent42.Agents/Conversations/AgentGrain.cs` — kept beside `ChatAsync` on purpose: the two turn-scoped-field clears must be read together |
+| Reminder metadata | `src/Agent42.Agents/Scheduling/ReminderInfo.cs` |
 | Cosmos reminder service | `src/Agent42.Backend/Program.cs`, `src/Agent42.AppHost/AppHost.cs` |
 | Skill guidance | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` |

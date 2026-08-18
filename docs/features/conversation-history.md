@@ -164,9 +164,9 @@ for (const [agentId, group] of groups) group.placeholder.replaceWith(buildAgentG
 
 | Concern | File |
 |---------|------|
-| Index grain | `src/Agent42.Agents/ConversationIndexGrain.cs` |
-| Index contract | `src/Agent42.Agents/IConversationIndexGrain.cs` |
-| History / purge | `src/Agent42.Agents/AgentGrain.cs` (`GetHistoryAsync`, `PurgeAsync`) |
+| Index grain | `src/Agent42.Agents/Conversations/ConversationIndexGrain.cs` |
+| Index contract | `src/Agent42.Agents/Conversations/IConversationIndexGrain.cs` |
+| History / purge | `src/Agent42.Agents/Conversations/AgentGrain.cs` (`GetHistoryAsync`, `PurgeAsync`) |
 | Endpoints | `src/Agent42.Backend/AgentApi.cs` |
 | Cosmos wiring | `src/Agent42.Backend/Program.cs` |
 | Frontend | `src/Agent42.Backend/wwwroot/app.js` |

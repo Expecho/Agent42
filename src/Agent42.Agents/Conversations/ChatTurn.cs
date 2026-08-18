@@ -1,3 +1,4 @@
+
 namespace Agent42.Agents;
 
 /// <summary>
