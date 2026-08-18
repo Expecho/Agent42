@@ -119,7 +119,7 @@ if (AssistantImageRef(message) is { } generated)
 | Concern | File |
 |---------|------|
 | Service abstraction | `src/Agent42.Agents/ImageGeneration/IImageGenerationService.cs` |
-| Prod generator | `src/Agent42.Backend/OpenAIImageGenerator.cs` |
+| Prod generator | `src/Agent42.Backend/ImageGeneration/OpenAIImageGenerator.cs` |
 | One-shot adapter | `src/Agent42.Agents/ImageGeneration/ImageGenerationChatClient.cs` |
 | Turn branch + recording | `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs` (`GenerateImageTurnAsync`, `RecordImageTurnAsync`) |
-| Capability wiring | `src/Agent42.Backend/ChatClientFactory.cs` |
+| Capability wiring | `src/Agent42.Backend/Models/ChatClientFactory.cs` |
