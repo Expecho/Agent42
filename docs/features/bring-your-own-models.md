@@ -249,12 +249,12 @@ public static Provider OpenAICompatible(ProviderOptions options, Uri endpoint, s
 |---------|------|
 | Stored overlay shapes | `src/Agent42.Agents/Models/UserProviderConfig.cs` |
 | Overlay grain | `src/Agent42.Agents/Models/UserProviderConfigGrain.cs` |
-| Baseline ⊕ overlay merge | `src/Agent42.Backend/UserProviderResolver.cs` |
-| Per-provider build rules | `src/Agent42.Backend/ModelProviderBuilder.cs` |
-| Provider/model options + id parsing | `src/Agent42.Backend/ModelProviderOptions.cs` |
-| Version-cached factory | `src/Agent42.Backend/UserChatClientFactoryProvider.cs` |
-| Client construction | `src/Agent42.Backend/ChatClientFactory.cs` |
-| No-op client | `src/Agent42.Backend/NoModelChatClient.cs` |
-| Encryption seam | `src/Agent42.Backend/ProviderSecretProtector.cs` |
-| HTTP API | `src/Agent42.Backend/AgentApi.cs` |
+| Baseline ⊕ overlay merge | `src/Agent42.Backend/Models/UserProviderResolver.cs` |
+| Per-provider build rules | `src/Agent42.Backend/Models/ModelProviderBuilder.cs` |
+| Provider/model options + id parsing | `src/Agent42.Backend/Models/ModelProviderOptions.cs` |
+| Version-cached factory | `src/Agent42.Backend/Models/UserChatClientFactoryProvider.cs` |
+| Client construction | `src/Agent42.Backend/Models/ChatClientFactory.cs` |
+| No-op client | `src/Agent42.Backend/Models/NoModelChatClient.cs` |
+| Encryption seam | `src/Agent42.Backend/Models/ProviderSecretProtector.cs` |
+| HTTP API | `src/Agent42.Backend/Models/AgentApi.Models.cs` |
 | Frontend UI | `src/Agent42.Backend/wwwroot/app.js` |
