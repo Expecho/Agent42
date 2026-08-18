@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Agent42.Agents.Sharing;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Generates and hashes read-only conversation share tokens (ADR 0035). The single home of both

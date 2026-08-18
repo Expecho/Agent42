@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Telemetry;
+namespace Agent42.Agents;
 
 // The usage dashboard wire contract (ADR 0031), matching the sibling AI.Telemetry.Dashboard shapes.
 // These records both cross the grain boundary (returned by IUsageRollupGrain) AND serialize to the

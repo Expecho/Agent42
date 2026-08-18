@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Web;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The budget the web tools' <b>return values</b> must fit in. These are not transport limits

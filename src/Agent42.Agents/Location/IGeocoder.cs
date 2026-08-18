@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Location;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Turns a <see cref="UserLocation"/> into a human-readable place (ADR 0012). Used by the

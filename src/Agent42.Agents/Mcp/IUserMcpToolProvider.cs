@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace Agent42.Agents.Mcp;
+namespace Agent42.Agents;
 
 /// <summary>
 /// One management-enabled MCP server's contribution to a user's tool set (ADR 0026): the server's

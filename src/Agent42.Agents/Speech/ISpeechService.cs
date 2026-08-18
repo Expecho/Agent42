@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Speech;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Synthesizes speech audio from text (ADR 0038): the server-side text-to-speech path the hands-free

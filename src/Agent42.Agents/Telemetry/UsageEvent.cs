@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Telemetry;
+namespace Agent42.Agents;
 
 /// <summary>
 /// What a projected span contributes to the usage rollups. Token-bearing <c>chat</c> spans and

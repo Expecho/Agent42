@@ -500,17 +500,18 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   TTS endpoint (like image gen, ADR 0020); the Foundry audio wire path is spike-informed, prod-smoke verified.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
 - Project layout (ADR 0039): `src/Agent42.Agents` is organised into **16 top-level feature folders**
-  (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …) with **folder-matching
-  namespaces** (`Agent42.Agents.Web`), enforced by an IDE0130 rule in the root `.editorconfig` that is
-  **scoped to `[src/Agent42.Agents/**.cs]`** — never widen it to `[*.cs]`, because
-  `src/Agent42.ServiceDefaults/Extensions.cs` declares `Microsoft.Extensions.Hosting` by the Aspire
-  convention and "fixing" it breaks three hosts. `AgentGrain` is split into **10 `partial` files that
-  live in their feature folders** but all declare `namespace Agent42.Agents.Conversations;` (a partial
-  class is one namespace — hence the second, deliberate `AgentGrain.*.cs` IDE0130 exception).
-  `ReceiveReminder` stays in the **core** part beside `ChatAsync`: the `_turnLocation`/`_ephemeral`
-  invariants rest on two clears that must be read together. `Skills/` does not move (its csproj
-  `Content` glob). **The headline trap: the 54 `[Alias("Agent42.Agents.*")]` strings are FROZEN and
-  deliberately no longer mirror the namespaces — "correcting" one orphans persisted state, and
-  mutation testing confirmed neither the compiler nor the suite will stop you.** What actually keys a
-  Cosmos document is `{GrainType}/{key}`, pinned by `GrainIdentityTests`. `Agent42.Backend` and
-  `Agent42.Tests` stay flat on purpose.
+  (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …), and `AgentGrain` is split into
+  **10 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`
+  namespace — folders and namespaces deliberately DISAGREE, and that is load-bearing, not sloppiness.**
+  Orleans Cosmos grain storage uses `JsonGrainStorageSerializer`, which writes the full CLR type name
+  into every document (`"$type":"Agent42.Agents.AgentGrainState, Agent42.Agents"`), so giving a
+  persisted type a folder-matching namespace makes **every existing document unreadable** — it throws on
+  the root type, taking out every conversation, agent, profile and setting at once. That is not
+  hypothetical: the folder-matching-namespace version of this refactor was fully built and passed the
+  entire suite, lint, an adversarial review and CI before the flaw was found, because the serialization
+  test exercised Orleans' *binary* serializer, which Cosmos does not use. `.editorconfig` disables
+  IDE0130 so the IDE stops suggesting the change, and `ProjectLayoutTests` +
+  `GrainStorageSerializerTests` catch it if made by hand. `[Alias]` is a **separate** mechanism (the
+  binary path) and is **not** what protects data at rest. `ReceiveReminder` stays in the core `AgentGrain`
+  part beside `ChatAsync` (the `_turnLocation`/`_ephemeral` clears must be read together); `Skills/` does
+  not move (csproj `Content` glob); `Agent42.Backend` and `Agent42.Tests` stay flat on purpose.

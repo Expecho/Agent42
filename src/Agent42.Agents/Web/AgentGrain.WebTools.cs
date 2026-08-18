@@ -2,9 +2,8 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
-using Agent42.Agents.Web;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The web tool shims (ADR 0011, fetch mechanism amended by ADR 0027): <c>web_search</c> over the

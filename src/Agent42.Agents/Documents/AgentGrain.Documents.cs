@@ -2,7 +2,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Document RAG (ADR 0007 + 0008): registers an ingested document on the conversation and serves the

@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Mcp;
+namespace Agent42.Agents;
 
 /// <summary>
 /// How a remote MCP server authenticates (config-driven remote MCP servers). Stored on

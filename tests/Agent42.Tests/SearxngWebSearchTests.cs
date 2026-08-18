@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using Agent42.Backend;
 using Microsoft.Extensions.Logging.Abstractions;
-using Agent42.Agents.Web;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 

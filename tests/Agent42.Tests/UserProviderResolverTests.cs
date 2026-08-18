@@ -2,7 +2,7 @@ using Agent42.Backend;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using Agent42.Agents.Models;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 

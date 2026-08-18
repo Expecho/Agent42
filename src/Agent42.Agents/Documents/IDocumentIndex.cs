@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Documents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Stores a conversation's document chunks and their embeddings, and answers nearest-neighbour

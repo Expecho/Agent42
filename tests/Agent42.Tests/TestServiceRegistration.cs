@@ -2,10 +2,7 @@ using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Agent42.Agents.Documents;
-using Agent42.Agents.Location;
-using Agent42.Agents.Models;
-using Agent42.Agents.Web;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 

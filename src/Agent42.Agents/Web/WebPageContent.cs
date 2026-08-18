@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Web;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The readable text of one fetched web page, plus any pages reached by opt-in depth-1 link following

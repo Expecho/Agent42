@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Models;
+namespace Agent42.Agents;
 
 /// <summary>
 /// One model a user-configured provider declares. Mirrors the Backend's <c>ConfiguredModel</c>

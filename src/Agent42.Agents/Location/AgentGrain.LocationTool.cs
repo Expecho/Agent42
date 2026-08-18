@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The <c>get_current_location</c> tool (ADR 0012). It reads the turn-scoped <c>_turnLocation</c>

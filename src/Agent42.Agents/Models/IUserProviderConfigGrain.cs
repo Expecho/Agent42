@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Models;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Stores a signed-in user's model-provider overlay (ADR 0018). The grain key is the user id, like

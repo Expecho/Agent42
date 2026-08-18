@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Models;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Resolves the <see cref="IChatClientFactory"/> a specific user's conversations run on (ADR 0018).

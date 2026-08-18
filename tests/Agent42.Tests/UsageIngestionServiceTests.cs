@@ -2,7 +2,7 @@ using System.Threading.Channels;
 using Agent42.Backend;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orleans.TestingHost;
-using Agent42.Agents.Telemetry;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 

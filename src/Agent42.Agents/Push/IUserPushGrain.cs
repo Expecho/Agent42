@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Push;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Stores a signed-in user's Web Push subscriptions (ADR 0028) — one entry per subscribed device.

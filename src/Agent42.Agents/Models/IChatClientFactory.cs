@@ -1,9 +1,6 @@
 using Microsoft.Extensions.AI;
-using Agent42.Agents.ImageGeneration;
-using Agent42.Agents.Speech;
-using Agent42.Agents.Documents;
 
-namespace Agent42.Agents.Models;
+namespace Agent42.Agents;
 
 /// <summary>
 /// What a model can be asked to do. Not every model behind every provider supports the same

@@ -1,9 +1,8 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Agent42.Agents.Tools;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Agent construction and tool selection (ADR 0021): builds the <see cref="AIAgent"/> for a model and

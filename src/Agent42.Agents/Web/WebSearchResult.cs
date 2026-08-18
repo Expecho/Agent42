@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Web;
+namespace Agent42.Agents;
 
 /// <summary>
 /// One ranked web search result. Deliberately three short strings: this record is handed to the

@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Attachments;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Stores the durable bytes of a conversation attachment (an image, this phase) outside

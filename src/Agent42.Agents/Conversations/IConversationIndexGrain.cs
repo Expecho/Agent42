@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Summary of a conversation shown in the conversation list.

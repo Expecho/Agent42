@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Web;
+namespace Agent42.Agents;
 
 /// <summary>
 /// In-memory <see cref="IWebPageFetcher"/> for local dev (DevHost) and tests: returns canned markdown

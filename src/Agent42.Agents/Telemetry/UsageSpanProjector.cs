@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Agent42.Agents.Telemetry;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Pure projection of an OpenTelemetry gen_ai span into a <see cref="UsageEvent"/> (ADR 0031). The

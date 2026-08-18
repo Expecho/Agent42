@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Agent42.Agents.Web;
+namespace Agent42.Agents;
 
 /// <summary>
 /// In-memory <see cref="IWebSearch"/> for local dev (DevHost) and tests, where there is no SearXNG

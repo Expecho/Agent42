@@ -1,6 +1,5 @@
-using Agent42.Agents.Web;
 
-namespace Agent42.Agents.Location;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The budget the <c>get_current_location</c> tool's <b>return value</b> must fit in — the same

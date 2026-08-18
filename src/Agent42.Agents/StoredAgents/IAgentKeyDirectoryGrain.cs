@@ -1,4 +1,4 @@
-namespace Agent42.Agents.StoredAgents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The owner an API-key hash resolves to: which user's registry holds the agent, and which agent

@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Scheduling;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Metadata about a reminder scheduled for a conversation. It is persisted alongside

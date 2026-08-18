@@ -1,7 +1,6 @@
 using Orleans.Runtime;
-using Agent42.Agents.Conversations;
 
-namespace Agent42.Agents.Telemetry;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The single global usage rollup grain (ADR 0031). Thin persistence wrapper over the pure

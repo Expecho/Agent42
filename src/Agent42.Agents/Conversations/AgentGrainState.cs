@@ -1,17 +1,24 @@
-using Agent42.Agents.Attachments;
-using Agent42.Agents.Scheduling;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Persisted state of an <see cref="AgentGrain"/>: the serialized Agent Framework
 /// conversation session, so a conversation survives grain deactivation.
 /// </summary>
-// ADR 0039: this alias string is FROZEN and deliberately no longer mirrors the namespace above
-// (the type lives in Agent42.Agents.Conversations now). The alias is a free-form identity token that
-// persisted state is matched on, not a mirror of the namespace — "correcting" it to
-// "Agent42.Agents.Conversations.AgentGrainState" would orphan every conversation already in Cosmos.
-// The same holds for all 54 aliases in this project. See the frozen-alias entry in .agentic/gotchas.md.
+// ADR 0039: THIS TYPE'S NAMESPACE IS FROZEN. It sits in the Conversations/ folder but stays in the
+// flat `Agent42.Agents` namespace, and that mismatch is deliberate.
+//
+// Orleans Cosmos grain storage serializes with JsonGrainStorageSerializer, which writes the full CLR
+// type name into every stored document:
+//     {"$id":"1","$type":"Agent42.Agents.AgentGrainState, Agent42.Agents", ...}
+// Moving this type to `Agent42.Agents.Conversations` changes that string, and every conversation
+// already in Cosmos then fails to load with "Error resolving type specified in JSON". It throws on
+// the ROOT type, so nothing is recoverable. Verified by
+// GrainStorageSerializerTests.DocumentWrittenByAnEarlierDeployment_StillDeserializes.
+//
+// The [Alias] below is a DIFFERENT mechanism: it names the type for Orleans' BINARY serializer, which
+// carries grain-to-grain calls, not what Cosmos stores. Keep it stable too, but do not confuse the two
+// — the alias is not what protects the data at rest. See the two entries in .agentic/gotchas.md.
 [GenerateSerializer]
 [Alias("Agent42.Agents.AgentGrainState")]
 public sealed class AgentGrainState

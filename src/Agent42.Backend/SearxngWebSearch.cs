@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text.Json;
-using Agent42.Agents.Web;
+using Agent42.Agents;
 
 namespace Agent42.Backend;
 

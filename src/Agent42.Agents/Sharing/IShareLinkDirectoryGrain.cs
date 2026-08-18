@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Sharing;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The conversation a share token resolves to: which user owns it and which conversation to render

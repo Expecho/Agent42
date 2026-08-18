@@ -1,6 +1,5 @@
-using Agent42.Agents.Push;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Web Push on an away reply (ADR 0028). Called only from the two ASYNCHRONOUS reply paths — a fired

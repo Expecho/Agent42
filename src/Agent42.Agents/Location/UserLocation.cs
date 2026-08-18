@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Location;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The user's position for a single turn, captured by the browser's <c>navigator.geolocation</c>

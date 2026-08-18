@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Orleans.Hosting;
 using Orleans.TestingHost;
-using Agent42.Agents.Conversations;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 

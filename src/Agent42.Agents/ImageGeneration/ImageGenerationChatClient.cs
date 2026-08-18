@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace Agent42.Agents.ImageGeneration;
+namespace Agent42.Agents;
 
 /// <summary>
 /// A one-shot <see cref="IChatClient"/> adapter that returns a pre-built assistant message, ignoring the

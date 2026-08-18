@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Telemetry;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The single GLOBAL usage rollup grain (ADR 0031) — one well-known key

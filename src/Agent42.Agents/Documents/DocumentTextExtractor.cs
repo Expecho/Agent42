@@ -5,7 +5,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using A = DocumentFormat.OpenXml.Drawing;
 
-namespace Agent42.Agents.Documents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Local-library <see cref="IDocumentTextExtractor"/>: Docnet.Core (PDFium) for PDF with real

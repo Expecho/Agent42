@@ -1,7 +1,6 @@
 using Orleans.Runtime;
-using Agent42.Agents.Conversations;
 
-namespace Agent42.Agents.Sharing;
+namespace Agent42.Agents;
 
 [GenerateSerializer]
 [Alias("Agent42.Agents.UserShareLinksState")]

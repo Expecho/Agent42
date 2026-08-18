@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Agent42.Agents.Documents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Splits extracted <see cref="DocumentSegment"/>s into overlapping <see cref="DocumentChunk"/>s

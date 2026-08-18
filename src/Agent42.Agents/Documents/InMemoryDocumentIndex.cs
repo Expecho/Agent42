@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace Agent42.Agents.Documents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// In-memory <see cref="IDocumentIndex"/> for local dev (DevHost) and tests, where no Cosmos

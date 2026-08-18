@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Sharing;
+namespace Agent42.Agents;
 
 /// <summary>
 /// A read-only share link the owner minted for one of their conversations (ADR 0035). Unlike an agent API

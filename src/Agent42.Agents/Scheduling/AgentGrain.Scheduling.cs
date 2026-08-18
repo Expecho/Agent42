@@ -1,8 +1,7 @@
 using System.ComponentModel;
 using Microsoft.Extensions.Logging;
-using Agent42.Agents.Scheduling;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The scheduling tools (<c>schedule_prompt</c> and its cancels), which register durable Orleans

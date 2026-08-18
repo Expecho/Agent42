@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Follow-up suggestion prompts (ADR 0036): one extra, best-effort model call after an

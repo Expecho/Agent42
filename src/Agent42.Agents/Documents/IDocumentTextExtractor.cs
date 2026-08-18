@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Documents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Extracts ordered text segments from an uploaded document so it can be chunked, embedded and

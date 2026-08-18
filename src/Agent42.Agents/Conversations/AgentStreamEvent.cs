@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The kind of event streamed back while the agent works on a turn.

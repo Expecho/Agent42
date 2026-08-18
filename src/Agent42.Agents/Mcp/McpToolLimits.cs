@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Mcp;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The budget an MCP tool's <b>return value</b> must fit in (mirrors <see cref="WebToolLimits"/>).

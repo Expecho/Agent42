@@ -4,7 +4,7 @@ using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 using S = DocumentFormat.OpenXml.Spreadsheet;
 using W = DocumentFormat.OpenXml.Wordprocessing;
-using Agent42.Agents.Documents;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 

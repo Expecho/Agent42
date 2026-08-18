@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Web;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Runs a web search and returns ranked results for the model to read (ADR 0011). Backed by a

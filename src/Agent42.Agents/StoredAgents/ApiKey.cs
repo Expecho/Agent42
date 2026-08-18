@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Agent42.Agents.StoredAgents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Generates and hashes per-agent API keys (ADR 0022). The single home of both operations, so a

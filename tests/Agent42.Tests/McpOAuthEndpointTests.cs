@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orleans.TestingHost;
-using Agent42.Agents.Attachments;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 

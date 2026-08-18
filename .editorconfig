@@ -1,20 +1,24 @@
 # Deliberately minimal: NO whitespace/formatting rules. `dotnet format` is a CI gate
 # (.github/workflows/pr-checks.yml), so any style key added here reformats the whole
-# repo on the next run. Only the folder/namespace invariant of ADR 0039 lives here.
+# repo on the next run. Only the namespace rule of ADR 0039 lives here.
 root = true
 
-# ADR 0039: every file under src/Agent42.Agents declares a namespace matching its folder.
-# SCOPED ON PURPOSE — never widen this to [*.cs]. src/Agent42.ServiceDefaults/Extensions.cs
-# declares `namespace Microsoft.Extensions.Hosting;` by the Aspire shared-project convention,
-# which is why Backend/AppHost/DevHost call AddServiceDefaults() with no `using
-# Agent42.ServiceDefaults;`. A repo-wide rule would flag that file, and "fixing" it would
-# break all three hosts.
+# ADR 0039: src/Agent42.Agents is organised into feature FOLDERS, but every type stays in the
+# single flat `Agent42.Agents` namespace. That mismatch is intentional and load-bearing.
+#
+# Orleans Cosmos grain storage serializes with `Orleans.Storage.JsonGrainStorageSerializer`,
+# which stamps the full CLR type name into every stored document:
+#
+#     {"$id":"1","$type":"Agent42.Agents.AgentGrainState, Agent42.Agents", ...}
+#
+# Moving a persisted type into a folder-matching namespace changes that string, and every
+# document already in Cosmos then fails to load with
+# `JsonSerializationException: Error resolving type specified in JSON`. It throws on the ROOT
+# type, so nothing is recoverable — every conversation, agent, profile and setting is bricked.
+#
+# IDE0130 is therefore turned OFF here on purpose. Visual Studio and Rider suggest
+# "move to namespace matching folder" by default; accepting that suggestion is a production
+# outage. This setting is what stops the IDE offering it.
 [src/Agent42.Agents/**.cs]
-dotnet_style_namespace_match_folder = true
-dotnet_diagnostic.IDE0130.severity = error
-
-# The AgentGrain partials (ADR 0039) live in their feature folders but must all declare the
-# ONE namespace of the class they complete, Agent42.Agents.Conversations — a partial class
-# cannot span namespaces. This is the deliberate exception to the rule above, not an oversight.
-[src/Agent42.Agents/**/AgentGrain.*.cs]
+dotnet_style_namespace_match_folder = false
 dotnet_diagnostic.IDE0130.severity = none

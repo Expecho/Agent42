@@ -1,6 +1,5 @@
-using Agent42.Agents.Attachments;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// A single message in a conversation, as exposed to clients. A user turn may carry image

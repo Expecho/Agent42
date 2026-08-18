@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Tools;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The curated catalog of user-selectable tool groups (ADR 0021). One logical <b>key</b> maps to one or

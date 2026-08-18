@@ -6,10 +6,7 @@ using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Responses;
-using Agent42.Agents.ImageGeneration;
-using Agent42.Agents.Models;
-using Agent42.Agents.Speech;
-using Agent42.Agents.Documents;
+using Agent42.Agents;
 
 namespace Agent42.Backend;
 

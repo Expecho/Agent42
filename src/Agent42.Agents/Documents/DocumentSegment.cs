@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Documents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// One ordered piece of a document's extracted text, with the page it came from when the

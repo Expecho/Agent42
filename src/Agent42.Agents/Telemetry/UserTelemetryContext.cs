@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Telemetry;
+namespace Agent42.Agents;
 
 /// <summary>
 /// A serializable snapshot of the signed-in user's identity, extracted once from the Easy Auth

@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Documents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// A retrievable slice of an ingested document plus the metadata needed to cite it:

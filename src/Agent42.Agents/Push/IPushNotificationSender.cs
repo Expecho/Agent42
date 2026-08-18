@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Push;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Delivers a Web Push notification to every device a user has subscribed (ADR 0028). Injected into

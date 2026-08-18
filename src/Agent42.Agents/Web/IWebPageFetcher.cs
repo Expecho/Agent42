@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Web;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Fetches one web page and reduces it to readable markdown for the model (ADR 0011, mechanism replaced

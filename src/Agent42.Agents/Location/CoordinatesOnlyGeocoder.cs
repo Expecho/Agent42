@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Location;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The offline <see cref="IGeocoder"/>: resolves no address at all. Used by DevHost, the AppHost and

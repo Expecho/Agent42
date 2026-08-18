@@ -65,36 +65,29 @@ public sealed class ProjectLayoutTests
         Assert.Equal(ExpectedFolders, actual);
     }
 
-    // AC5(b): folder and namespace agree. AgentGrain.*.cs is the one documented exception — a partial
-    // class cannot span namespaces, so every part declares Agent42.Agents.Conversations wherever it sits.
-    // That exception is asserted positively below rather than merely skipped here.
+    // AC5(b): every file stays in the FLAT Agent42.Agents namespace, however deep its folder.
+    //
+    // This is the inverse of the usual convention, and it is load-bearing rather than stylistic.
+    // Orleans Cosmos grain storage serializes through JsonGrainStorageSerializer, which writes the
+    // full CLR type name into every document ("$type":"Agent42.Agents.AgentGrainState, Agent42.Agents").
+    // Giving a persisted type a folder-matching namespace changes that string and every document
+    // already in Cosmos fails to load — it throws on the ROOT type, so nothing is recoverable.
+    // The .editorconfig turns IDE0130 off so the IDE stops offering exactly that change; this test is
+    // what catches it if someone makes it by hand anyway.
     [Fact]
-    public void EveryFileDeclaresTheNamespaceOfItsFolder()
+    public void EveryFileStaysInTheFlatNamespace()
     {
-        var root = AgentsProjectDir();
-        var mismatches = new List<string>();
-
-        foreach (var file in AgentsSourceFiles())
-        {
-            var name = Path.GetFileName(file);
-            if (name.StartsWith("AgentGrain.", StringComparison.Ordinal) || name == "AgentGrain.cs")
-            {
-                continue;
-            }
-
-            var folders = Path.GetRelativePath(root, file).Split(Path.DirectorySeparatorChar)[..^1];
-            var expected = string.Join('.', new[] { "Agent42", "Agents" }.Concat(folders));
-            var declared = DeclaredNamespace(file);
-
-            if (declared != expected)
-            {
-                mismatches.Add($"{name}: declares '{declared}', folder implies '{expected}'");
-            }
-        }
+        var offenders = AgentsSourceFiles()
+            .Select(file => (Name: Path.GetFileName(file), Declared: DeclaredNamespace(file)))
+            .Where(x => x.Declared != "Agent42.Agents")
+            .Select(x => $"{x.Name} declares '{x.Declared}'")
+            .ToList();
 
         Assert.True(
-            mismatches.Count == 0,
-            "Namespace must match folder (ADR 0039): " + string.Join("; ", mismatches));
+            offenders.Count == 0,
+            "Every type in Agent42.Agents must stay in the flat 'Agent42.Agents' namespace — a "
+                + "folder-matching namespace changes the $type in every stored Cosmos document and "
+                + "bricks existing data (ADR 0039). Offenders: " + string.Join("; ", offenders));
     }
 
     /// <summary>The ten parts of <c>AgentGrain</c> and the folder each belongs to (ADR 0039).</summary>
@@ -112,16 +105,15 @@ public sealed class ProjectLayoutTests
         "Push/AgentGrain.Push.cs",
     ];
 
-    // AC6(c): each part exists where planned, and all of them declare the ONE namespace of the class
-    // they complete — the deliberate IDE0130 exception, checked here so it stays deliberate.
+    // AC6(c): each part exists where planned and really is a part of the one AgentGrain class.
     [Theory]
     [MemberData(nameof(AgentGrainParts))]
-    public void AgentGrainPart_ExistsAndDeclaresTheConversationsNamespace(string relativePath)
+    public void AgentGrainPart_ExistsAndIsAPartialOfTheSameClass(string relativePath)
     {
         var file = Path.Combine(AgentsProjectDir(), relativePath.Replace('/', Path.DirectorySeparatorChar));
 
         Assert.True(File.Exists(file), $"Missing AgentGrain part (ADR 0039): {relativePath}");
-        Assert.Equal("Agent42.Agents.Conversations", DeclaredNamespace(file));
+        Assert.Equal("Agent42.Agents", DeclaredNamespace(file));
         Assert.Contains("partial class AgentGrain", File.ReadAllText(file), StringComparison.Ordinal);
     }
 

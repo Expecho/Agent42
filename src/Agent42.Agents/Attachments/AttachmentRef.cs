@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Agent42.Agents.Attachments;
+namespace Agent42.Agents;
 
 /// <summary>
 /// A reference to a stored attachment: enough to fetch its bytes (blob path), address it

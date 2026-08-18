@@ -1,7 +1,6 @@
 using Orleans.Runtime;
-using Agent42.Agents.Conversations;
 
-namespace Agent42.Agents.Push;
+namespace Agent42.Agents;
 
 /// <summary>
 /// One Web Push subscription for one device (ADR 0028). Stored in cleartext — a device push capability

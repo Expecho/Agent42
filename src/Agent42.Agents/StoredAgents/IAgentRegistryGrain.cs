@@ -1,4 +1,4 @@
-namespace Agent42.Agents.StoredAgents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Stores the agent personas of a user (the grain key), so the UI can list them and

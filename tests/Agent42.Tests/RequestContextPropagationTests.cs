@@ -1,7 +1,6 @@
 using Orleans.Runtime;
 using Orleans.TestingHost;
-using Agent42.Agents.Conversations;
-using Agent42.Agents.Telemetry;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 

@@ -1,7 +1,7 @@
 using System.Globalization;
 using Agent42.Backend;
 using Microsoft.Extensions.Logging;
-using Agent42.Agents.Location;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 

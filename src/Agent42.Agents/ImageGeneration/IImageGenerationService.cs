@@ -1,4 +1,4 @@
-namespace Agent42.Agents.ImageGeneration;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Generates an image from a prompt (ADR 0020): text-to-image when <paramref name="input"/> is null,

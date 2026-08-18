@@ -1,5 +1,5 @@
 using WebPush;
-using PushSubscription = Agent42.Agents.Push.PushSubscription;
+using PushSubscription = Agent42.Agents.PushSubscription;
 
 namespace Agent42.Backend;
 

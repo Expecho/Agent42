@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Documents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The document MIME types the ingestion path accepts. The upload handler branches on this: an

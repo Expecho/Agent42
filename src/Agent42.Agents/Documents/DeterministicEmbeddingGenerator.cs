@@ -1,7 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.AI;
 
-namespace Agent42.Agents.Documents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Offline/test <see cref="IEmbeddingGenerator{String, Single}"/>: turns text into a stable

@@ -1,4 +1,4 @@
-namespace Agent42.Agents.StoredAgents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// A persona snapshot bound into a conversation: the source agent's id plus the name,

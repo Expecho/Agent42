@@ -1,7 +1,6 @@
 using Orleans.Runtime;
-using Agent42.Agents.Conversations;
 
-namespace Agent42.Agents.Mcp;
+namespace Agent42.Agents;
 
 /// <summary>
 /// One in-flight interactive-OAuth authorization (config-driven remote MCP servers, Phase 3), persisted

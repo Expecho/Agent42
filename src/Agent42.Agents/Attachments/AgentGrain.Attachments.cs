@@ -1,8 +1,7 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using Agent42.Agents.Attachments;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Attachment rehydration (ADR 0004): image bytes live in blob storage, never in the session item, so

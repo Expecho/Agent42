@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Mcp;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Stores a signed-in user's remote-MCP-server overlay (config-driven remote MCP servers — the MCP

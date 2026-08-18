@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Push;
+namespace Agent42.Agents;
 
 /// <summary>
 /// No-op <see cref="IPushNotificationSender"/> (ADR 0028). Registered offline (DevHost/tests without the

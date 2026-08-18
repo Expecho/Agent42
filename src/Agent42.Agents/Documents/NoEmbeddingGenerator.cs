@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace Agent42.Agents.Documents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Thrown when document RAG needs to embed text but the user has configured no default embedding model.

@@ -1,5 +1,5 @@
 using OpenAI.Audio;
-using Agent42.Agents.Speech;
+using Agent42.Agents;
 
 namespace Agent42.Backend;
 

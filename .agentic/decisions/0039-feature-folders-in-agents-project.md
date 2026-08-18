@@ -8,7 +8,7 @@ amends: []
 extends: []
 ---
 
-# Feature folders and folder-matching namespaces in `Agent42.Agents`, with `AgentGrain` split into partials
+# Feature folders in `Agent42.Agents` — files move, namespaces deliberately do not
 
 ## Context
 `src/Agent42.Agents` had absorbed roughly twenty ADRs' worth of features onto a completely flat
@@ -17,49 +17,65 @@ layout: 73 `.cs` files in one directory, all in `namespace Agent42.Agents;`, plu
 tool or the image-generation turn meant knowing a line range rather than opening a file, and the next
 feature would have made that worse rather than better.
 
-Nothing here is a behaviour change. It is a move, a namespace change, and a `partial` split, with the
-documentation debt paid in the same MR (hard rule 2).
+Nothing here is a behaviour change. It is a file move and a `partial` split, with the documentation
+debt paid in the same MR (hard rule 2).
 
-The load-bearing question was not aesthetics but **whether the move is inert for persisted state**,
-since this project has live conversations in Cosmos. That question is answered by measurement below,
-not by assumption.
+The load-bearing question was never aesthetics but **whether the reorganisation is inert for persisted
+state**, since this project has live conversations, agents and settings in Cosmos. It turned out that
+the obvious version of this refactor — folders *and* matching namespaces — is **not** inert: it
+destroys all of it. That discovery, and the reason every green signal missed it, is the substance of
+this ADR and is recorded in full rather than quietly corrected.
 
 ## Decision
 
-### 1. Sixteen top-level feature folders, with namespaces that match
+### 1. Sixteen top-level feature folders, in a single flat namespace
 `StoredAgents/`, `Attachments/`, `Conversations/`, `Documents/`, `ImageGeneration/`, `Location/`,
 `Mcp/`, `Models/`, `Push/`, `Scheduling/`, `Sharing/`, `Speech/`, `Telemetry/`, `Tools/`, `Users/`,
-`Web/` — folder-matching namespaces (`Agent42.Agents.Web`), not folders alone. `Skills/` does not
-move: its csproj `Content Include="Skills\**\*"` glob must keep resolving next to the built assembly.
+`Web/`. `Skills/` does not move: its csproj `Content Include="Skills\**\*"` glob must keep resolving
+next to the built assembly.
+
+**Every type stays in `namespace Agent42.Agents;`.** Folders organise the files; they do not shape the
+namespace. This is the opposite of the usual convention and it is not a style preference — see
+"The namespace question" below, which is the whole substance of this ADR.
 
 The stored-agent folder is `StoredAgents/`, not `Agents/`, which would have produced the absurd
-`Agent42.Agents.Agents`.
+`Agent42.Agents.Agents` had namespaces followed folders.
 
-Cost accepted: 79 files across `Agent42.Backend`, `Agent42.DevHost` and `Agent42.Tests` get `using`
-line changes. Four references were qualified rather than `using`-based and were re-qualified by hand
-(`OpenAIImageGenerator`'s two `Agent42.Agents.GeneratedImage` mentions, qualified to dodge
-`OpenAI.Images.GeneratedImage`; and the `using PushSubscription = ...` alias in `WebPushClientAdapter`
-and its test).
+Because the namespace is unchanged, **no consuming file needed a `using` change**: `Agent42.Backend`,
+`Agent42.DevHost` and `Agent42.Tests` are untouched apart from the `AgentGrain` split's own effects.
 
-### 2. The invariant is enforced by tooling, not by discipline
-A new root `.editorconfig` sets `dotnet_style_namespace_match_folder = true` and
-`dotnet_diagnostic.IDE0130.severity = error`, **scoped to `[src/Agent42.Agents/**.cs]`**, plus a
-`ProjectLayoutTests` source-tree walk as a second, tool-independent guard.
+### 2. The namespace question — why folders and namespaces deliberately disagree
+`AddCosmosGrainStorage` (`src/Agent42.Backend/Program.cs`) configures no serializer, so grain state is
+persisted by Orleans' default `IGrainStorageSerializer`: **`Orleans.Storage.JsonGrainStorageSerializer`**,
+Newtonsoft JSON with type discriminators. Every document in the `agent-state` container looks like:
 
-The scoping is not tidiness — a repo-wide `[*.cs]` rule breaks the build. `src/Agent42.ServiceDefaults/Extensions.cs`
-declares `namespace Microsoft.Extensions.Hosting;` on purpose (the Aspire shared-project convention),
-which is exactly why Backend, AppHost and DevHost call `AddServiceDefaults()` with no
-`using Agent42.ServiceDefaults;`. A repo-wide rule flags that file, and auto-fixing it breaks three
-projects. The `.editorconfig` records this reason inline so nobody "simplifies" the glob later.
+```json
+{"$id":"1","$type":"Agent42.Agents.AgentGrainState, Agent42.Agents","SerializedSession":"…"}
+```
 
-The `.editorconfig` is deliberately free of whitespace/formatting keys: `dotnet format` is a CI gate,
-so any style key added there reformats the whole repo on the next run.
+The **namespace of every persisted type is part of the on-disk format**. Moving `AgentGrainState` into
+`Agent42.Agents.Conversations` changes that string, and every document already in Cosmos fails with
+`JsonSerializationException: Error resolving type specified in JSON`. It throws on the **root** type, so
+the read fails whole — every conversation, stored agent, user profile, provider config, MCP server, push
+subscription, share link and usage rollup, all at once.
 
-**Enforcement was verified in both directions, not asserted.** On the untouched tree
-`dotnet format --verify-no-changes` exits 0; with a deliberate wrong-namespace file under
-`src/Agent42.Agents/Tmp/` it exits 2 with `error IDE0130`. (The fallback path in the plan — "if
-IDE0130 has no fixer, rely on the layout test alone" — was not needed.) Note `dotnet build` will not
-catch this: no project sets `EnforceCodeStyleInBuild`.
+So the folders ship and the namespaces do not.
+
+Two mechanisms enforce this, because the IDE actively pushes the other way:
+- **`.editorconfig` sets `dotnet_style_namespace_match_folder = false` and `IDE0130` to `none`** for
+  `src/Agent42.Agents/**.cs`, with the reason inline. Visual Studio and Rider offer "move to namespace
+  matching folder" by default; accepting that suggestion is a production outage. This setting is what
+  stops it being offered.
+- **`ProjectLayoutTests.EveryFileStaysInTheFlatNamespace`** catches it if someone does it by hand.
+
+Note the rule here is scoped to `src/Agent42.Agents/**.cs` rather than `[*.cs]` for a second, unrelated
+reason: `src/Agent42.ServiceDefaults/Extensions.cs` declares `namespace Microsoft.Extensions.Hosting;`
+on purpose (the Aspire shared-project convention), which is why Backend, AppHost and DevHost call
+`AddServiceDefaults()` with no `using Agent42.ServiceDefaults;`. A repo-wide rule would flag it, and
+auto-fixing it would break three projects.
+
+The `.editorconfig` is deliberately free of whitespace/formatting keys: `dotnet format` is a CI gate, so
+any style key added there reformats the whole repo on the next run.
 
 ### 3. `AgentGrain` splits into ten partials that live in their feature folders
 `src/Agent42.Agents/Conversations/AgentGrain.cs` (core) plus
@@ -73,9 +89,8 @@ catch this: no project sets `EnforceCodeStyleInBuild`.
 `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs` and
 `src/Agent42.Agents/Push/AgentGrain.Push.cs`.
 
-A partial class is one namespace, so every part declares `namespace Agent42.Agents.Conversations;`
-regardless of the folder it sits in. That is the second, deliberate `.editorconfig` exception: the
-`[src/Agent42.Agents/**/AgentGrain.*.cs]` glob sets IDE0130 to `none`.
+Every part declares `namespace Agent42.Agents;`, like every other file in the project — the split is
+purely about which file a member lives in.
 
 Rules that shaped the split:
 - **All instance fields stay in the core part** — every dependency and every turn-scoped flag. Three
@@ -95,23 +110,21 @@ Rules that shaped the split:
   sites are in `ChatCoreAsync`.
 
 ### 4. Scope stops at this project
-`Agent42.Backend` (34 flat files) and `Agent42.Tests` (81 flat files) keep their layout; only their
-`using` lines change. Each is its own follow-up MR if wanted.
+`Agent42.Backend` (34 flat files) and `Agent42.Tests` (81 flat files) keep their layout. Because the
+namespace did not change, they needed no `using` sweep at all — the only edits outside
+`src/Agent42.Agents` are the ones the `AgentGrain` split itself required. Reorganising either is its
+own follow-up MR.
 
-## Measurements that justify calling this inert
+## Measurements — including the one that was wrong
 
-Two guards were authored **before** anything moved, so they are genuine before-pictures.
+**Grain identity — how a document is FOUND.** The persisted item id is `{GrainType}/{key}`, and no grain
+declares `[GrainType]`, so all twelve fall through to Orleans' naming convention. `GrainIdentityTests`
+pins all twelve type tokens plus the full `agent/{userId}/{conversationId}` id, with **hard-coded
+literal** expectations — computing them from the type would make the test move with the code it guards.
+Unchanged by this work.
 
-**Grain identity — the mechanism that actually keys a Cosmos document.** The persisted item id is
-`{GrainType}/{key}`, and **no grain in this repo declares `[GrainType]`**; all twelve fall through to
-Orleans' naming convention. `GrainIdentityTests` pins all twelve type tokens plus the full
-`agent/{userId}/{conversationId}` id, with **hard-coded literal** expectations — computing them from
-the type would make the test move with the code it guards. Values are unchanged after the move.
-
-**Serialization — measured by mutation, and the results are mixed.** Golden blobs for all twelve
-persisted state roots were generated on the old layout by a throwaway generator and committed
-verbatim (a test that writes its own fixture when absent would pass by construction). Three mutations
-were then run:
+**Binary serialization — measured by mutation.** Golden blobs for all twelve persisted state roots were
+generated before the move and committed verbatim. Three mutations:
 
 | Mutation | Caught by the golden blobs? |
 |---|---|
@@ -119,50 +132,82 @@ were then run:
 | Change an `[Alias]` string (`StoredMcpServer`) | no |
 | Move a serialized type + its grain to another namespace | no |
 
-So the blobs guard `[Id(n)]` numbering and member drift, and nothing else — the class doc says exactly
-that. The third row is the one that matters here: **the move is inert for serialization, measured
-rather than hoped**, and grain identity is the real safety net.
+**The mistake, recorded because it is the most useful thing in this ADR.** That third row was read as
+"the namespace move is inert — measured rather than hoped," and the folder-matching-namespace version of
+this refactor was built, reviewed and opened as a PR on that basis. It passed the full 596-test suite,
+`dotnet format`, an adversarial `critic` review, and CI.
 
-A trap this exposed: the blobs visibly contain strings like
-``ReadOnlyListInterfaceCodec`1[[Agent42.Agents.StoredMcpServer]]`` for interface-typed members. That
-token looks alias-derived, but the alias mutation proves it is not load-bearing on the read path.
-Do not infer alias safety from a green suite.
+It was wrong. `SerializationCompatibilityTests` builds a `Serializer<T>` — Orleans' **binary**
+serializer, which carries grain-to-grain calls. **Cosmos grain storage does not use it.** Resolving the
+real `IGrainStorageSerializer` from a live silo gives `JsonGrainStorageSerializer`, and feeding it a
+pre-move document produces:
 
-A fixture detail worth keeping: `StoredModel`'s five capability bits **alternate** rather than all
-being `true`. Five adjacent same-typed `[Id]`s are exactly where a renumbering swaps two values
-silently, and an all-true fixture could not tell a swap from a correct read — that choice is what
-made the first mutation detectable at all.
+```
+JsonSerializationException: Error resolving type specified in JSON
+'Agent42.Agents.AgentGrainState, Agent42.Agents'. Path '$type', line 1, position 67.
+```
+
+The plan had listed "which serializer does Cosmos actually use" as **out of scope**, inherited from an
+open question in ADR 0013. That deferral was the whole failure: the one unmeasured mechanism was the one
+that mattered, and every other green signal was measuring something else. The lesson is not "test more"
+— it is that a test proves a property of *the path it exercises*, and "we verified serialization" is
+meaningless until you say which serializer.
+
+**What now covers it.** `GrainStorageSerializerTests` exercises the real configured
+`IGrainStorageSerializer`: it pins the JSON-with-`$type` format, pins all twelve state-root type names
+as literals, and deserializes a **committed real pre-move payload** to prove a document written by an
+earlier deployment still loads. Its negative control reproduces the exact production exception.
 
 ## Consequences
 
-- **The 54 `[Alias("Agent42.Agents.*")]` strings are now frozen and deliberately out of step with the
-  real namespaces.** "Correcting" one orphans persisted state, and — per the table above — neither the
-  compiler nor the test suite will stop you. This is booked as a gotcha entry and a comment on
-  `AgentGrainState`, not just a line in this ADR, because the trap spans 54 attributes.
-- `AgentGrain.StorageProviderName` is consumed by eleven `[PersistentState(...)]` attributes spread
-  across seven feature folders, so most feature namespaces now carry `using Agent42.Agents.Conversations;`
-  for that one const. Deliberately **not** relocated: one storage provider genuinely is shared, and
-  moving the const buys a tidier using-block at the cost of churn.
-- Every part file carries only the `using` lines it needs, established by removing each candidate and
-  rebuilding rather than by eye.
+- **The namespace of every persisted type is now a frozen part of the on-disk format**, and the folder
+  layout permanently disagrees with it. That is unusual enough that it needs two active guards
+  (`.editorconfig` turning IDE0130 off, `ProjectLayoutTests` catching a hand edit) plus a gotcha entry
+  and a comment at `AgentGrainState`, because every IDE will keep suggesting the change that breaks it.
+- **The 54 `[Alias("Agent42.Agents.*")]` strings stay frozen too**, but for a different and lesser
+  reason: they name types for the binary path used by grain-to-grain calls. They are **not** what
+  protects data at rest. The gotchas now say this explicitly, since conflating the two is what produced
+  the mistake above.
+- `AgentGrain.StorageProviderName` is consumed by eleven `[PersistentState(...)]` attributes across
+  seven folders. With a flat namespace this costs nothing — no `using` at all — which is one small,
+  incidental benefit of the outcome we landed on.
+- **The reviewability benefit is fully retained.** Feature folders and the ten-file `AgentGrain` split
+  are what make an ADR's grain surface an openable file; the namespace was never what delivered that.
+- **What was lost:** compiler-enforced folder/namespace agreement. `ProjectLayoutTests` still asserts the
+  folder set by name and that nothing sits in the project root, so the layout is guarded — but a file in
+  the wrong folder is now a review question, not a build error. Accepted deliberately: the enforcement
+  was worth strictly less than the data.
 
 ## Alternatives considered
 
-- **Folders without namespace changes.** Cheapest (no `using` churn anywhere), but the folder/namespace
-  relationship then has no enforcement and drifts back within a few features. Rejected: the point was a
-  structure tooling can hold, not a one-time tidy.
+- **Folder-matching namespaces (`Agent42.Agents.Web`), enforced by IDE0130.** This was the original
+  decision, and it was fully built: 16 folders, 82 namespaces changed, a 79-file `using` sweep, the
+  enforcement rule verified in both directions. **Rejected on discovering it destroys all existing
+  production data** — see the measurements section. Reverting it also removed the entire `using` sweep,
+  which shrank the diff considerably.
+- **Keep the namespaces and add a Newtonsoft `SerializationBinder`** mapping the ~54 old flat type names
+  onto the new namespaced types. Workable and a well-known pattern, but it is a permanent compatibility
+  shim that every grain host must register — the same must-register-on-every-host failure mode this repo
+  already has several gotchas about — and it can never be deleted while any un-rewritten document
+  exists. Rejected: a permanent runtime shim is too high a price for namespace tidiness.
+- **Keep the namespaces and migrate the data**, rewriting `$type` in every `agent-state` document.
+  Rejected: it needs a write pass over production Cosmos, a deployment window in which old and new code
+  must not overlap, and a rollback plan — real operational risk in exchange for no behaviour change.
 - **A `Feature/` prefix directory.** Rejected as a redundant level; the project *is* the feature set.
-- **Extracting the `AgentGrain` slices into separate collaborator classes.** This is the real
-  decoupling, and it remains open — but it moves turn-scoped state across object boundaries, which is a
-  behavioural change. A partial split is deliberately the non-behavioural step, and keeps this MR
-  reviewable as a pure move.
-- **Reorganising Backend and Tests in the same MR.** Rejected as scope; a 153-file diff is already at
-  the limit of what is reviewable.
+- **Extracting the `AgentGrain` slices into separate collaborator classes.** The real decoupling, still
+  open — but it moves turn-scoped state across object boundaries, which is a behavioural change. A
+  partial split is deliberately the non-behavioural step.
+- **Reorganising Backend and Tests in the same MR.** Rejected as scope.
 
-## What this explicitly does NOT settle
+## What this settles, and what it does not
 
-**Which serializer the Cosmos grain-storage provider actually uses.** A hand-built `Serializer<T>` is
-not the `IGrainStorageSerializer` that `AddCosmosGrainStorage` installs in
-`src/Agent42.Backend/Program.cs`. That open question (raised on `AgentGrainState.DeploymentName`,
-ADR 0013) needs a test against the configured serializer, which nothing here builds. Do not cite
-`SerializationCompatibilityTests` for it.
+**Settled:** which serializer Cosmos grain storage uses. It is `JsonGrainStorageSerializer` (JSON with
+`$type` discriminators), resolved from the default `IGrainStorageSerializer` because
+`AddCosmosGrainStorage` configures none. This closes the open question ADR 0013 raised on
+`AgentGrainState.DeploymentName` — and answers it in the direction ADR 0013 feared: **property names
+and type names are both load-bearing**, so `DeploymentName` must not be renamed either.
+
+**Not settled:** whether any document currently in production carries a `$type` written by an older
+Orleans version with different settings. The analysis here is from the configured serializer in this
+repo at this commit, not from reading a production document. Anyone planning a type rename should look
+at a real document first.

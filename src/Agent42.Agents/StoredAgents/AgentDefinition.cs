@@ -1,4 +1,4 @@
-namespace Agent42.Agents.StoredAgents;
+namespace Agent42.Agents;
 
 /// <summary>
 /// A stored, user-defined agent persona: a reusable name, description, model, and

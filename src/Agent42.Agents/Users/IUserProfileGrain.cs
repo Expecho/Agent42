@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Users;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Stores the durable per-user profile (the grain key is the user id, like

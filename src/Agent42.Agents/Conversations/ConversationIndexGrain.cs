@@ -1,6 +1,6 @@
 using Orleans.Runtime;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 [GenerateSerializer]
 [Alias("Agent42.Agents.ConversationIndexState")]

@@ -1,10 +1,6 @@
 using Orleans.Concurrency;
-using Agent42.Agents.Attachments;
-using Agent42.Agents.Location;
-using Agent42.Agents.Scheduling;
-using Agent42.Agents.StoredAgents;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// A conversational AI agent hosted as an Orleans grain.

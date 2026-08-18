@@ -2,10 +2,8 @@ using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using Agent42.Agents.Attachments;
-using Agent42.Agents.ImageGeneration;
 
-namespace Agent42.Agents.Conversations;
+namespace Agent42.Agents;
 
 /// <summary>
 /// The image-generation turn (ADR 0020): a picked image model produces an image instead of a chat

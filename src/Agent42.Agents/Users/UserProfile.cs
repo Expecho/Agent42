@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Users;
+namespace Agent42.Agents;
 
 /// <summary>
 /// A user's durable, cross-device preferences (the grain key is the user id). The first

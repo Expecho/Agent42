@@ -1437,33 +1437,51 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0029-config-health-tab.md`
 - **Verified:** 2026-07-21
 
-### `[Alias("Agent42.Agents.*")]` strings are frozen and no longer mirror the namespace
+### Cosmos grain storage is JSON with `$type` — a persisted type's NAMESPACE is part of the on-disk format
 
-- **Claim:** every serializable and grain-interface type in `Agent42.Agents` carries an explicit literal
-  `[Alias("Agent42.Agents.X")]` — 54 of them. After the ADR 0039 feature-folder move these strings no
-  longer match the real namespace (e.g. `src/Agent42.Agents/Conversations/AgentGrainState.cs` declares
-  `namespace Agent42.Agents.Conversations;` but is still aliased `"Agent42.Agents.AgentGrainState"`).
-  **That mismatch is correct and required. Do not "fix" it.** The alias is a free-form identity token
-  that persisted state and cross-version grain calls are matched on; rewriting one to match its new
-  namespace is the single edit in that refactor that could orphan live conversations in Cosmos. The same
-  rule applies to any future move: rename the folder, never the alias.
-- **What is and is not measured.** Three mutations were run against the golden blobs before the move
-  (`SerializationCompatibilityTests`): renumbering an `[Id(n)]` was **caught**; changing an `[Alias]`
-  was **not**; moving a type to another namespace was **not**. So neither the blobs nor the compiler will
-  stop you — the guard is this entry plus the comment on `AgentGrainState`. Note the blobs visibly contain
-  strings like ``ReadOnlyListInterfaceCodec`1[[Agent42.Agents.StoredMcpServer]]`` for interface-typed
-  members; that token looks alias-derived but is demonstrably not load-bearing on the read path, so do not
-  infer safety from a green suite.
-- **The mechanism that actually keys a Cosmos document is different.** The item id is
-  `{GrainType}/{key}`, and no grain declares `[GrainType]` — all 12 fall through to Orleans' naming
-  convention, which is class-name based. **Do not cite the namespace mutation above as evidence for
-  this** — that mutation was run against the golden blobs, which guard `[Id(n)]` and member drift and
-  nothing else; a green blob after a namespace move says nothing about grain-type resolution. What
-  actually establishes grain-id inertness is `GrainIdentityTests` returning the same hard-coded
-  tokens before and after the move.
-  It, not the alias, is the safety net for this refactor.
-- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrainState.cs` (the alias + its comment),
-  `tests/Agent42.Tests/GrainIdentityTests.cs` (12 grain types + the full `agent/{user}/{conv}` id),
-  `tests/Agent42.Tests/SerializationCompatibilityTests.cs` (the recorded mutation results),
+- **Claim:** `AddCosmosGrainStorage` (`src/Agent42.Backend/Program.cs`) configures no serializer, so it
+  falls through to Orleans' default `IGrainStorageSerializer`, which is
+  **`Orleans.Storage.JsonGrainStorageSerializer`** — Newtonsoft JSON with type discriminators. Every
+  document in the `agent-state` container therefore begins:
+  `{"$id":"1","$type":"Agent42.Agents.AgentGrainState, Agent42.Agents",...}`, and nested values
+  (`ReminderInfo`, `AttachmentRef`, every `Dictionary`/`List`) carry their own `$type` too.
+  **Renaming or re-namespacing any persisted type breaks every existing document.** It throws on the
+  ROOT type — `JsonSerializationException: Error resolving type specified in JSON` — so the read fails
+  whole; there is no partial recovery, and it would take out every conversation, stored agent, user
+  profile, provider config, MCP server, push subscription, share link and usage rollup at once.
+- **This nearly shipped.** ADR 0039 moved the 73 flat files of `Agent42.Agents` into feature folders and
+  gave each a folder-matching namespace. It passed the full suite, `dotnet format`, and an adversarial
+  review, because the serialization test in the branch used a hand-built `Serializer<T>` — Orleans'
+  **binary** serializer, the one that carries grain-to-grain calls. Cosmos does not use it. The move was
+  reported as "measured inert" on the strength of a test that could not see the failure. The namespaces
+  were reverted to flat and only the folders kept.
+- **Consequences to hold on to:** (1) `src/Agent42.Agents` is organised into folders whose namespaces
+  deliberately do NOT match — `.editorconfig` turns IDE0130 off so the IDE stops suggesting the change,
+  and `ProjectLayoutTests.EveryFileStaysInTheFlatNamespace` catches it if made by hand. (2) `[Alias]`
+  is a **different** mechanism governing the binary path; it is not what protects data at rest, so a
+  green `SerializationCompatibilityTests` says nothing here. (3) If you ever do need to move one, the
+  options are a Newtonsoft `SerializationBinder` mapping old names to new, or a migration pass
+  rewriting `$type` in every document — both were considered and declined as not worth it for tidiness.
+- **Evidence:** `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
+  (`GrainState_IsPersistedAsJson_WithAssemblyQualifiedTypeNames` pins the format;
+  `DocumentWrittenByAnEarlierDeployment_StillDeserializes` reads a real committed pre-move payload;
+  `PersistedTypeName_StillResolves` pins all 12 state-root type names as literals),
+  `src/Agent42.Agents/Conversations/AgentGrainState.cs` (the comment at the type),
+  `.editorconfig`, `.agentic/decisions/0039-feature-folders-in-agents-project.md`
+- **Verified:** 2026-08-18
+
+### `[Alias("Agent42.Agents.*")]` governs the BINARY path, not what Cosmos stores
+
+- **Claim:** every serializable and grain-interface type carries an explicit literal
+  `[Alias("Agent42.Agents.X")]` (54 of them). These name types for **Orleans' binary serializer** — the
+  one used for grain-to-grain calls and `Serializer<T>` — and should stay stable so a rolling deployment
+  with mixed versions keeps interoperating. Keep them frozen.
+- **But do not mistake them for the data-at-rest guard.** Mutation testing showed the golden blobs in
+  `SerializationCompatibilityTests` do **not** fail when an `[Alias]` string changes, nor when a type's
+  namespace changes; only an `[Id(n)]` renumber is caught. What actually protects stored state is the
+  JSON `$type` discriminator — see the entry above. Reasoning about persistence from the alias is what
+  produced a nearly-shipped data-loss bug in ADR 0039.
+- **Evidence:** `tests/Agent42.Tests/SerializationCompatibilityTests.cs` (the recorded mutation results
+  in its class doc), `src/Agent42.Agents/Conversations/AgentGrainState.cs`,
   `.agentic/decisions/0039-feature-folders-in-agents-project.md`
 - **Verified:** 2026-08-18

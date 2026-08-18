@@ -1,4 +1,4 @@
-namespace Agent42.Agents.Telemetry;
+namespace Agent42.Agents;
 
 /// <summary>
 /// Retention bounds for the single global rollup grain (ADR 0031). The grain serializes its whole

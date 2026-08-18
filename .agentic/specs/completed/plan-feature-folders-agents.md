@@ -462,3 +462,64 @@ installed). Cyclomatic complexity was measured instead, from the coverlet cobert
 exceed 15, all pre-existing and — by the reconstruction check — unchanged by this MR. Per the working
 agreement these two gates should be deleted from `quality-gates.yaml`; the user chose to leave them
 and have the situation flagged rather than edit the gate file inside a refactor MR.
+
+## Post-execution correction — the plan's central premise was wrong
+
+Added 2026-08-18, after the branch had been fully built, reviewed and opened as PR #77.
+
+**The plan's biggest divergence is not in the list above: it is that the plan was wrong about the
+thing it cared most about.**
+
+The plan asked "is this move inert for persisted state?", answered it with `GrainIdentityTests` and
+golden serialization blobs, and explicitly listed *"Settling ADR 0013's open question about which
+serializer Cosmos grain storage uses"* under **Out of scope**. Divergence note 3 above then recorded
+the namespace mutation as "not caught" and called that "the reassuring result".
+
+It was not reassuring. It was the test looking in the wrong place.
+
+`AddCosmosGrainStorage` configures no serializer, so grain state is persisted by Orleans' default
+`IGrainStorageSerializer` — `JsonGrainStorageSerializer`, Newtonsoft JSON with `$type` discriminators
+carrying the **full CLR type name**:
+
+```
+{"$id":"1","$type":"Agent42.Agents.AgentGrainState, Agent42.Agents", ...}
+```
+
+Feeding a pre-move document to the post-move code throws
+`JsonSerializationException: Error resolving type specified in JSON`, **on the root type**, so the read
+fails whole. Shipping the folder-matching-namespace version would have made every conversation, stored
+agent, user profile, provider config, MCP server, push subscription, share link and usage rollup
+unreadable in one deploy.
+
+**Why nothing caught it.** `SerializationCompatibilityTests` builds a `Serializer<T>` — Orleans'
+*binary* serializer, used for grain-to-grain calls. Cosmos does not use it. The suite (596 green), the
+lint gate, the `critic` review and CI were all measuring a path that was genuinely unaffected. The
+critic even confirmed "the move is purely mechanical", which was true and beside the point.
+
+**The generalisable lesson:** a passing test proves a property of *the path it exercises*. "We verified
+serialization" was a meaningless sentence until it said **which serializer**. The plan's own "Out of
+scope" line named the exact gap and it was still carried forward, because the gap was framed as an
+unrelated open question rather than as a precondition of the plan's central claim. When a plan defers a
+question, check whether its main conclusion depends on the answer.
+
+**What changed as a result** (user chose "keep folders, drop the namespace change"):
+- All 82 files reverted to `namespace Agent42.Agents;`. The 16 feature folders and the 10-file
+  `AgentGrain` split are **kept** — they deliver the reviewability benefit; the namespace never did.
+- The 79-file `using` sweep is gone entirely, so `Agent42.Backend`, `Agent42.DevHost` and
+  `Agent42.Tests` are untouched except for the split's own effects. The diff shrank substantially.
+- `.editorconfig` is **inverted**: it now sets `dotnet_style_namespace_match_folder = false` and
+  IDE0130 to `none`, so the IDE stops offering the change that breaks production. What was an
+  enforcement rule is now a guardrail against the trap.
+- `ProjectLayoutTests.EveryFileDeclaresTheNamespaceOfItsFolder` became
+  `EveryFileStaysInTheFlatNamespace` — the inverse assertion.
+- New `GrainStorageSerializerTests` covers the real `IGrainStorageSerializer`: it pins the JSON+`$type`
+  format, pins all 12 state-root type names as literals, and deserializes a committed real pre-move
+  payload. Negative control reproduces the production exception exactly.
+- Two gotcha entries replace the single frozen-alias one: the `$type` mechanism (the important one),
+  and a corrected alias entry saying plainly that `[Alias]` governs the binary path and is **not** what
+  protects data at rest — conflating the two is what caused this.
+- ADR 0013's open question is now **settled** and recorded in ADR 0039: property names and type names
+  are both load-bearing, so `AgentGrainState.DeploymentName` must not be renamed either.
+
+**Still unverified:** no production document was read. The analysis is from the configured serializer
+in this repo at this commit. Anyone planning a type rename should inspect a real document first.

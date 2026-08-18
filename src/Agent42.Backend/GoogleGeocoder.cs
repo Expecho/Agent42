@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
-using Agent42.Agents.Location;
+using Agent42.Agents;
 
 namespace Agent42.Backend;
 

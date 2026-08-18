@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using Agent42.Agents.Push;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 
