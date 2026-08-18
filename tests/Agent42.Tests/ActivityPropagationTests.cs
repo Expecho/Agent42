@@ -1,8 +1,8 @@
 using System.Diagnostics;
+using Agent42.Agents;
 using Microsoft.Extensions.Configuration;
 using Orleans.Hosting;
 using Orleans.TestingHost;
-using Agent42.Agents;
 
 namespace Agent42.Tests;
 

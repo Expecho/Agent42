@@ -1,12 +1,12 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Concurrent;
+using Agent42.Agents;
 using Azure;
 using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Responses;
-using Agent42.Agents;
 
 namespace Agent42.Backend;
 

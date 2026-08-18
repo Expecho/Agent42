@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Agent42.Agents;
 using Agent42.Backend;
 using Azure;
 using Azure.AI.OpenAI;
@@ -10,7 +11,6 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.AI;
 using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Trace;
-using Agent42.Agents;
 
 const string OtelSourceName = "Agent42.Backend";
 

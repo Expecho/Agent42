@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
+using Agent42.Agents;
 using Agent42.Backend;
 using WebPush;
 using PushSubscription = Agent42.Agents.PushSubscription;

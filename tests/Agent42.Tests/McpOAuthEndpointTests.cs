@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
@@ -11,7 +12,6 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orleans.TestingHost;
-using Agent42.Agents;
 
 namespace Agent42.Tests;
 

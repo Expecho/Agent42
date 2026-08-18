@@ -1,3 +1,4 @@
+using Agent42.Agents;
 
 namespace Agent42.Backend;
 

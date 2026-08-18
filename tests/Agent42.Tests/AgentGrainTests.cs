@@ -1,11 +1,11 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using Agent42.Agents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Core.Internal;
 using Orleans.Storage;
 using Orleans.TestingHost;
-using Agent42.Agents;
 
 namespace Agent42.Tests;
 

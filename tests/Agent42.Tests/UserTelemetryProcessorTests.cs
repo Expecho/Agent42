@@ -1,8 +1,8 @@
 using System.Diagnostics;
+using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.Http;
 using Orleans.Runtime;
-using Agent42.Agents;
 
 namespace Agent42.Tests;
 

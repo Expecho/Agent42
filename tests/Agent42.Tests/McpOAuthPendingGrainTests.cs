@@ -1,5 +1,5 @@
-using Orleans.TestingHost;
 using Agent42.Agents;
+using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 

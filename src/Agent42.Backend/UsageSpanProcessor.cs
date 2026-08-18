@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Threading.Channels;
-using OpenTelemetry;
 using Agent42.Agents;
+using OpenTelemetry;
 
 namespace Agent42.Backend;
 

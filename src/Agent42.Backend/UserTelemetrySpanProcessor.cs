@@ -1,7 +1,7 @@
 using System.Diagnostics;
+using Agent42.Agents;
 using OpenTelemetry;
 using Orleans.Runtime;
-using Agent42.Agents;
 
 namespace Agent42.Backend;
 

@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Agent42.Agents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Orleans.Runtime;
-using Agent42.Agents;
 
 namespace Agent42.Tests;
 

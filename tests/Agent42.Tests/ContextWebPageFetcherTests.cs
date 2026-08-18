@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.Extensions.Logging.Abstractions;
-using Agent42.Agents;
 
 namespace Agent42.Tests;
 

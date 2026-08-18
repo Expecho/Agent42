@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
+using Agent42.Agents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.TestingHost;
-using Agent42.Agents;
 
 namespace Agent42.Tests;
 

@@ -1,9 +1,9 @@
+using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orleans.TestingHost;
-using Agent42.Agents;
 
 namespace Agent42.Tests;
 
