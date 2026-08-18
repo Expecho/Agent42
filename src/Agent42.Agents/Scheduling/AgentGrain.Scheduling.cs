@@ -10,6 +10,11 @@ namespace Agent42.Agents.Conversations;
 /// alongside <c>ChatAsync</c>, because the two turn-scoped-field clears must be read together.
 /// Scheduling is refused for an ephemeral chat (ADR 0034) — a durable reminder would later fire the
 /// persisting, pushing reminder path.
+///
+/// <para><b>Cross-file invariant.</b> That refusal reads the turn-scoped <c>_ephemeral</c> flag, which is
+/// declared AND cleared in the core part (<c>Conversations/AgentGrain.cs</c>); the other half of the same
+/// flag guards a state write in <c>ImageGeneration/AgentGrain.ImageTurn.cs</c>. Read the ephemeral-chat
+/// entry in <c>.agentic/gotchas.md</c> — it names all three files — before changing any one of them.</para>
 /// </summary>
 public sealed partial class AgentGrain
 {

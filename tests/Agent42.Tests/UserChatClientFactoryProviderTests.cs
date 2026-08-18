@@ -1,4 +1,3 @@
-using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.Extensions.Logging.Abstractions;
 

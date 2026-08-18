@@ -1,4 +1,3 @@
-using Agent42.Agents;
 using Agent42.Agents.Documents;
 
 namespace Agent42.Tests;

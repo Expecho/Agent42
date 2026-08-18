@@ -1,4 +1,3 @@
-using Agent42.Agents;
 using Microsoft.Extensions.AI;
 using Agent42.Agents.Documents;
 using Agent42.Agents.Models;

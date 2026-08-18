@@ -1,4 +1,3 @@
-using Agent42.Agents;
 using Microsoft.Extensions.Configuration;
 using Agent42.Agents.Models;
 

@@ -1,4 +1,3 @@
-using Agent42.Agents;
 using Agent42.Agents.Conversations;
 using Agent42.Agents.Mcp;
 using Agent42.Agents.Models;

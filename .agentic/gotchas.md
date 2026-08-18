@@ -145,8 +145,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   one fetch can return the root *plus* up to `MaxFollowedLinks` pages, so the budget that binds is
   `MaxTotalPageTextLength` (across root + followed), not `MaxPageTextLength` alone. Any new tool — or any
   new page added to a fetch result — must count its return payload against this budget.
-- **Evidence:** `src/Agent42.Agents/Web/WebToolLimits.cs`, `src/Agent42.Agents/Web/AgentGrain.WebTools.cs`
-  (`ExcludeInjectedContextMessages`, `ChatAsync`'s `SerializeSessionAsync`, `BuildFetchPayload`),
+- **Evidence:** `src/Agent42.Agents/Web/WebToolLimits.cs`,
+  `src/Agent42.Agents/Web/AgentGrain.WebTools.cs` (`BuildFetchPayload`),
+  `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`ExcludeInjectedContextMessages`),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`, and `ChatCoreAsync`'s
+  `SerializeSessionAsync`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ToolResults_DoNotBlowTheSessionSizeBudget`),
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0027-hosted-page-scrape-via-context-dev.md`
 - **Verified:** 2026-07-21
@@ -590,7 +593,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   interleaves a tool turn **before** the image turn so a positional bug would surface (a clean single-turn test
   would pass vacuously).
 - **Evidence:** `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs` (`GenerateImageTurnAsync`, `RecordImageTurnAsync`,
-  `AssistantImageRef`, `FindMostRecentImageRef`, `RehydrateAssistantImageAsync`, `AssistantImageIdKey`),
+  `AssistantImageRef`, `FindMostRecentImageRef`, `AssistantImageIdKey`),
+  `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs` (`RehydrateAssistantImageAsync`),
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`GeneratedImages`),
   `src/Agent42.Agents/ImageGeneration/IImageGenerationService.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
   (`NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn`, `History_IncludesAssistantGeneratedImage`),
@@ -1084,7 +1088,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   including an empty entry on the reminder path) so history joins turns to images by index.
   Don't "simplify" back to `DataContent`, and don't drop the rehydrate step. This is a prod-blob
   property the offline harness can't test (the in-memory store returns non-expiring URLs).
-- **Evidence:** `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs` (`RehydrateAttachmentUrlsAsync`, `ChatAsync`, `AlignTurnAttachmentsToHistory`), `src/Agent42.Backend/BlobAttachmentStore.cs`, `.agentic/decisions/0004-attachments-in-blob.md`
+- **Evidence:** `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs` (`RehydrateAttachmentUrlsAsync`, `AlignTurnAttachmentsToHistory`), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`), `src/Agent42.Backend/BlobAttachmentStore.cs`, `.agentic/decisions/0004-attachments-in-blob.md`
 - **Verified:** 2026-07-08
 
 ### Attachments Storage RBAC is in Bicep — but only because the deploy SP was elevated once
@@ -1194,8 +1198,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **empty group per skipped server** so the id list for expansion is complete.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`[Id(10)] EnabledTools`),
   `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Sanitize`, `AllSelectableToolKeys`, `Mcp` wildcard,
-  `IsMcpServerEnabled`, `McpServerKey`), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`OnActivateAsync` fetch before
-  `BuildAgent`, `EffectiveEnabledTools`, `_mcpServers`, `ExpandMcpWildcard`, per-server `BuildAgent` gate),
+  `IsMcpServerEnabled`, `McpServerKey`),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`OnActivateAsync` fetch before the first
+  `BuildAgent`, and the `_mcpServers` field),
+  `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`EffectiveEnabledTools`, `ExpandMcpWildcard`,
+  the per-server MCP gate in `BuildAgent`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
   `UserDefault_AppliesWhenNoOverride`, `McpTools_ResolvedBeforeFirstBuildAgent`,
   `PerServerSelection_EnablesOnlySelectedServer`, `GetEnabledTools_NullSelection_ExpandsWildcardToPerServerKeys`),
@@ -1389,8 +1396,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **non-reentrant** grain only because the sender is internally time-bounded (`SendBudget`) and its
   `HttpClient` calls `RemoveAllResilienceHandlers()` (the same named-client retry trap as the web/geocoding
   clients) — see the "web tool return value" / geocoder gotchas.
-- **Evidence:** `src/Agent42.Agents/Push/AgentGrain.Push.cs` (`SendAwayReplyPushAsync`, the gated call in
-  `EnqueuePromptAsync`, the post-`WriteStateAsync` call in `ReceiveReminder`, and its absence from
+- **Evidence:** `src/Agent42.Agents/Push/AgentGrain.Push.cs` (`SendAwayReplyPushAsync` itself — but
+  note the three facts this gotcha is about are all CALL SITES, which live in the core part:
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` has the gated call in `EnqueuePromptAsync`, the
+  post-`WriteStateAsync` call in `ReceiveReminder`, and the deliberate ABSENCE of any call from
   `ChatCoreAsync`), `src/Agent42.Backend/WebPushNotificationSender.cs` (`SendBudget`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ReceiveReminder_SendsPush_WithAgentName`,
   `EnqueuePrompt_SendsPush`, `ChatAsync_DoesNotSendPush`, `EnqueuePrompt_NoModel_DoesNotSendPush`),
@@ -1447,8 +1456,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   infer safety from a green suite.
 - **The mechanism that actually keys a Cosmos document is different.** The item id is
   `{GrainType}/{key}`, and no grain declares `[GrainType]` — all 12 fall through to Orleans' naming
-  convention, which is class-name based. The namespace mutation above confirms the move is inert there.
-  That is what `GrainIdentityTests` pins, with hard-coded literals; it, not the alias, is the safety net.
+  convention, which is class-name based. **Do not cite the namespace mutation above as evidence for
+  this** — that mutation was run against the golden blobs, which guard `[Id(n)]` and member drift and
+  nothing else; a green blob after a namespace move says nothing about grain-type resolution. What
+  actually establishes grain-id inertness is `GrainIdentityTests` returning the same hard-coded
+  tokens before and after the move.
+  It, not the alias, is the safety net for this refactor.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrainState.cs` (the alias + its comment),
   `tests/Agent42.Tests/GrainIdentityTests.cs` (12 grain types + the full `agent/{user}/{conv}` id),
   `tests/Agent42.Tests/SerializationCompatibilityTests.cs` (the recorded mutation results),

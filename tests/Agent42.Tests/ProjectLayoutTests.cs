@@ -37,6 +37,34 @@ public sealed class ProjectLayoutTests
                 + string.Join(", ", strays.Select(Path.GetFileName)));
     }
 
+    /// <summary>
+    /// The feature folders of ADR 0039, plus <c>Skills/</c>, which is content rather than a feature
+    /// namespace and must not move (its csproj <c>Content</c> glob resolves next to the assembly).
+    /// </summary>
+    private static readonly string[] ExpectedFolders =
+    [
+        "Attachments", "Conversations", "Documents", "ImageGeneration", "Location", "Mcp", "Models",
+        "Push", "Scheduling", "Sharing", "Skills", "Speech", "StoredAgents", "Telemetry", "Tools",
+        "Users", "Web",
+    ];
+
+    // AC5: the folder set is exactly what ADR 0039 and CLAUDE.md describe. Asserted by name rather than
+    // by count because prose that says "sixteen folders" next to a list of seventeen is how the docs
+    // drifted in the first place — a reader who adds a folder has to update this list, and therefore
+    // the docs it mirrors.
+    [Fact]
+    public void FeatureFolderSet_IsExactlyWhatTheAdrDescribes()
+    {
+        var actual = Directory
+            .EnumerateDirectories(AgentsProjectDir())
+            .Select(Path.GetFileName)
+            .Where(name => name is not ("bin" or "obj"))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(ExpectedFolders, actual);
+    }
+
     // AC5(b): folder and namespace agree. AgentGrain.*.cs is the one documented exception — a partial
     // class cannot span namespaces, so every part declares Agent42.Agents.Conversations wherever it sits.
     // That exception is asserted positively below rather than merely skipped here.

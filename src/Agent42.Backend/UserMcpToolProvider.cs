@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using Agent42.Agents;
 using Microsoft.Extensions.AI;
 using Agent42.Agents.Mcp;
 

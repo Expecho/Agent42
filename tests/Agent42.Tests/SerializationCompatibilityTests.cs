@@ -1,4 +1,3 @@
-using Agent42.Agents;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Serialization;
 using Agent42.Agents.Telemetry;

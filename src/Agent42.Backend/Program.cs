@@ -1,5 +1,4 @@
 using System.Threading.Channels;
-using Agent42.Agents;
 using Agent42.Backend;
 using Azure;
 using Azure.AI.OpenAI;

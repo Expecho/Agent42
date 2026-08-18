@@ -1,4 +1,3 @@
-using Agent42.Agents;
 using OpenAI.Images;
 using Agent42.Agents.ImageGeneration;
 

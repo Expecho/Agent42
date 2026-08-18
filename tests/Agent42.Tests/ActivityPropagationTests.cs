@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Agent42.Agents;
 using Microsoft.Extensions.Configuration;
 using Orleans.Hosting;
 using Orleans.TestingHost;

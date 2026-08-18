@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Threading.Channels;
-using Agent42.Agents;
 using OpenTelemetry;
 using Agent42.Agents.Telemetry;
 

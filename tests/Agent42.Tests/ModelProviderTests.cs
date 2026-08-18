@@ -1,5 +1,4 @@
 using System.ClientModel.Primitives;
-using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;

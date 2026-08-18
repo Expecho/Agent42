@@ -499,7 +499,7 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   (ADR 0013 egress) — the reason it is opt-in and the browser voice stays default. Offline can't reach a real
   TTS endpoint (like image gen, ADR 0020); the Foundry audio wire path is spike-informed, prod-smoke verified.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
-- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **15 top-level feature folders**
+- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **16 top-level feature folders**
   (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …) with **folder-matching
   namespaces** (`Agent42.Agents.Web`), enforced by an IDE0130 rule in the root `.editorconfig` that is
   **scoped to `[src/Agent42.Agents/**.cs]`** — never widen it to `[*.cs]`, because

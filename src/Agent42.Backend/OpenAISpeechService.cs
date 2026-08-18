@@ -1,4 +1,3 @@
-using Agent42.Agents;
 using OpenAI.Audio;
 using Agent42.Agents.Speech;
 

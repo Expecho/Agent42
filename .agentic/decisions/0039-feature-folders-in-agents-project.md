@@ -26,7 +26,7 @@ not by assumption.
 
 ## Decision
 
-### 1. Fifteen top-level feature folders, with namespaces that match
+### 1. Sixteen top-level feature folders, with namespaces that match
 `StoredAgents/`, `Attachments/`, `Conversations/`, `Documents/`, `ImageGeneration/`, `Location/`,
 `Mcp/`, `Models/`, `Push/`, `Scheduling/`, `Sharing/`, `Speech/`, `Telemetry/`, `Tools/`, `Users/`,
 `Web/` — folder-matching namespaces (`Agent42.Agents.Web`), not folders alone. `Skills/` does not
@@ -86,11 +86,11 @@ Rules that shaped the split:
   clears that must be read together — the `finally` in `ChatAsync` and the nulling on entry to
   `ReceiveReminder` — and both gotchas exist precisely to prevent reading one without the other.
   Only the schedule/cancel tool methods moved.
-- **One residual split of a documented invariant was unavoidable:** `_ephemeral`'s write-skip in
+- **Two residual splits of a documented invariant were unavoidable:** `_ephemeral`'s write-skip in
   `GenerateImageTurnAsync` now lives in `ImageGeneration/`, and its `SchedulePromptAsync` refusal in
   `Scheduling/`, while the flag and its clear stay in core. The gotcha entry names all three files
-  explicitly, the `ImageTurn` part carries a cross-file pointer, and four named regression tests cover
-  the behaviour.
+  explicitly, both the `ImageTurn` and `Scheduling` parts carry a cross-file pointer, and four named
+  regression tests cover the behaviour.
 - **No logic edits in the split commit.** `SerializeOrNull` stayed in core because its only two call
   sites are in `ChatCoreAsync`.
 

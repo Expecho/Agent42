@@ -1,4 +1,3 @@
-using Agent42.Agents;
 using Agent42.Agents.Push;
 
 namespace Agent42.Backend;

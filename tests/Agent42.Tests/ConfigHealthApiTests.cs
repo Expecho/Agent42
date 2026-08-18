@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using System.Threading;
-using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
