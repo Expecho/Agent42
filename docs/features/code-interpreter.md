@@ -94,4 +94,4 @@ new(CodeInterpreter, "Code interpreter", RequiresHostedTools: true),
 | Capability record | `src/Agent42.Agents/Models/IChatClientFactory.cs` |
 | Swap + gate | `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent`) |
 | Catalog descriptor | `src/Agent42.Agents/Tools/ToolCatalog.cs` |
-| Capability source | `src/Agent42.Backend/ChatClientFactory.cs` |
+| Capability source | `src/Agent42.Backend/Models/ChatClientFactory.cs` |

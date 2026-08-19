@@ -123,6 +123,6 @@ builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
 |---------|------|
 | Tool + turn field | `src/Agent42.Agents/Location/AgentGrain.LocationTool.cs` (`GetCurrentLocationAsync`, `_turnLocation`) |
 | Location type | `src/Agent42.Agents/Location/UserLocation.cs` |
-| Geocoder | `src/Agent42.Backend/GoogleGeocoder.cs`, `src/Agent42.Agents/Location/CoordinatesOnlyGeocoder.cs` |
-| Request DTO / endpoint | `src/Agent42.Backend/AgentApi.cs` (`ChatRequest.Location`) |
+| Geocoder | `src/Agent42.Backend/Location/GoogleGeocoder.cs`, `src/Agent42.Agents/Location/CoordinatesOnlyGeocoder.cs` |
+| Request DTO / endpoint | `src/Agent42.Backend/Conversations/ChatContracts.cs` (`ChatRequest.Location`) |
 | DI | `src/Agent42.Backend/Program.cs` |

@@ -159,7 +159,7 @@ builder.Services.AddHttpClient(ContextWebPageFetcher.HttpClientName, http => {
 | Concern | File |
 |---------|------|
 | Tool defs + allowlist | `src/Agent42.Agents/Web/AgentGrain.WebTools.cs` (`WebSearchAsync`, `FetchWebPageAsync`) |
-| SearXNG client | `src/Agent42.Backend/SearxngWebSearch.cs` |
-| context.dev fetcher | `src/Agent42.Backend/ContextWebPageFetcher.cs` |
+| SearXNG client | `src/Agent42.Backend/Web/SearxngWebSearch.cs` |
+| context.dev fetcher | `src/Agent42.Backend/Web/ContextWebPageFetcher.cs` |
 | Limits | `src/Agent42.Agents/Web/WebToolLimits.cs` |
 | DI + sidecar | `src/Agent42.Backend/Program.cs`, `src/Agent42.AppHost/AppHost.cs` |

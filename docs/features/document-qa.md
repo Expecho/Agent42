@@ -163,8 +163,8 @@ else
 
 | Concern | File |
 |---------|------|
-| Ingestion | `src/Agent42.Backend/DocumentIngestionService.cs` |
+| Ingestion | `src/Agent42.Backend/Documents/DocumentIngestionService.cs` |
 | Extract / chunk | `src/Agent42.Agents/Documents/DocumentTextExtractor.cs`, `DocumentChunker.cs` |
 | Retrieval provider | `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`BuildDocumentSearchProvider`, `SearchDocumentContextAsync`) |
-| Vector store | `src/Agent42.Backend/CosmosDocumentIndex.cs`, `src/Agent42.Agents/Documents/InMemoryDocumentIndex.cs` |
+| Vector store | `src/Agent42.Backend/Documents/CosmosDocumentIndex.cs`, `src/Agent42.Agents/Documents/InMemoryDocumentIndex.cs` |
 | Wiring | `src/Agent42.Backend/Program.cs` |

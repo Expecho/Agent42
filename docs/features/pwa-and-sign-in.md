@@ -98,4 +98,4 @@ stay **behind** Easy Auth (an `excludedPaths` carve-out would bind to `local-dev
 | Manifest | `src/Agent42.Backend/wwwroot/manifest.webmanifest` |
 | Service worker | `src/Agent42.Backend/wwwroot/sw.js` |
 | SW registration | `src/Agent42.Backend/wwwroot/app.js` |
-| Identity | `src/Agent42.Backend/CurrentUser.cs` |
+| Identity | `src/Agent42.Backend/Api/CurrentUser.cs` |

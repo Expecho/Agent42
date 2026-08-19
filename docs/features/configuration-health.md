@@ -112,6 +112,6 @@ healthy sidecar** (JSON API off), not an auth failure.
 
 | Concern | File |
 |---------|------|
-| Report + probes | `src/Agent42.Backend/ConfigHealth.cs` |
-| Endpoint | `src/Agent42.Backend/AgentApi.cs` (`/api/config-health`) |
+| Report + probes | `src/Agent42.Backend/Configuration/ConfigHealth.cs` |
+| Endpoint | `src/Agent42.Backend/Configuration/AgentApi.Configuration.cs` (`/api/config-health`) |
 | Frontend | `src/Agent42.Backend/wwwroot/app.js` (`loadConfigHealth`, `renderConfigHealth`) |
