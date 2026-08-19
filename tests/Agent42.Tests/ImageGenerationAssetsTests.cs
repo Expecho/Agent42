@@ -9,18 +9,23 @@ namespace Agent42.Tests;
 [Collection("StaticAssets")]
 public sealed class ImageGenerationAssetsTests
 {
+    private readonly StaticAssetsServerFixture _fixture;
     private readonly HttpClient _client;
 
-    public ImageGenerationAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
+    public ImageGenerationAssetsTests(StaticAssetsServerFixture fixture)
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     // AC11 — an assistant-generated image renders through the SAME first-party display proxy (by id) as a
     // user image, so a live stream event and a reloaded turn share one path and the page never holds a blob URL.
     [Fact]
     public async Task AssistantImage_RendersThroughTheAttachmentProxy()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
-        var addAgentImage = Body(app, "function addAgentImage(");
+        var addAgentImage = StaticAssetsServerFixture.Body(app, "function addAgentImage(");
         Assert.Contains("attachmentUrl(convId, attachmentId)", addAgentImage);
     }
 
@@ -29,9 +34,9 @@ public sealed class ImageGenerationAssetsTests
     [Fact]
     public async Task Send_HandlesTheImageStreamEvent()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
-        var send = Body(app, "async function send(prompt)");
+        var send = StaticAssetsServerFixture.Body(app, "async function send(prompt)");
         Assert.Contains("chunk.type === \"image\"", send);
         Assert.Contains("addAgentImage(agentMsg, activeId, chunk.attachmentId)", send);
     }
@@ -42,12 +47,12 @@ public sealed class ImageGenerationAssetsTests
     [Fact]
     public async Task SelectConversation_RendersAssistantImagesFromHistory()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
-        var select = Body(app, "async function selectConversation(id)");
+        var select = StaticAssetsServerFixture.Body(app, "async function selectConversation(id)");
         Assert.Contains("renderTurns(id, turns)", select);
 
-        var renderTurns = Body(app, "function renderTurns(id, turns)");
+        var renderTurns = StaticAssetsServerFixture.Body(app, "function renderTurns(id, turns)");
         Assert.Contains("addAgentImage(msg, id, att.id", renderTurns);
     }
 
@@ -55,36 +60,15 @@ public sealed class ImageGenerationAssetsTests
     [Fact]
     public async Task ProvidersForm_HasImageGenerationFlag()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // The editable model row offers the checkbox…
-        var addModelRow = Body(app, "function addModelRow(model)");
+        var addModelRow = StaticAssetsServerFixture.Body(app, "function addModelRow(model)");
         Assert.Contains("model?.supportsImageGeneration", addModelRow);
         Assert.Contains("image gen", addModelRow);
 
         // …and its state is sent on save.
-        var collectModels = Body(app, "function collectModels()");
+        var collectModels = StaticAssetsServerFixture.Body(app, "function collectModels()");
         Assert.Contains("supportsImageGeneration: image.checked", collectModels);
-    }
-
-    // The source text of one function, declaration to its matching closing brace — so an assertion can say
-    // "this function does X" rather than "the file contains X somewhere". Copied from LocationAssetsTests.
-    private static string Body(string source, string declaration)
-    {
-        var start = source.IndexOf(declaration, StringComparison.Ordinal);
-        Assert.True(start >= 0, $"'{declaration}' not found in app.js — did it get renamed?");
-
-        var open = source.IndexOf('{', start);
-        Assert.True(open >= 0, $"no body found for '{declaration}'");
-
-        var depth = 0;
-        for (var i = open; i < source.Length; i++)
-        {
-            if (source[i] == '{') depth++;
-            else if (source[i] == '}' && --depth == 0) return source[start..(i + 1)];
-        }
-
-        Assert.Fail($"unbalanced braces after '{declaration}'");
-        return string.Empty;
     }
 }

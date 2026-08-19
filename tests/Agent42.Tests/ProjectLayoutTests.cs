@@ -203,6 +203,190 @@ public sealed class ProjectLayoutTests
         Assert.Matches($@"private\s+[^;\r\n]*\s{Regex.Escape(field)}\s*;", File.ReadAllText(core));
     }
 
+    /* ————— frontend: the ES-module split of app.js (ADR 0041) ————— */
+
+    private static string JsDir() => Path.Combine(ProjectDir("Agent42.Backend"), "wwwroot", "js");
+
+    private static string[] JsModules() =>
+        Directory.EnumerateFiles(JsDir(), "*.js").Select(Path.GetFileName).Order(StringComparer.Ordinal).ToArray()!;
+
+    // All four specifier forms — a module reachable only by a side-effect `import "./x.js"` must not read
+    // as an orphan. Same expression as StaticAssetsServerFixture's walker, deliberately: the corpus the
+    // asset guards read and the graph this test calls complete are the same graph.
+    private static readonly Regex JsSpecifier =
+        new("""(?:\bfrom\s*|\bimport\s*)["']\./([^"']+)["']""", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Every feature module and the entry point it must expose to <c>main.js</c>. A NAME table, not a
+    /// directory scan: a scan passes trivially if a module drops its <c>wire*()</c> and registers its
+    /// listeners at top level again — the very thing the composition root exists to prevent. Same
+    /// reasoning as <see cref="FeatureFolderSet_IsExactlyWhatTheAdrDescribes"/>.
+    /// </summary>
+    public static TheoryData<string, string> FrontEndWiredModules() => new()
+    {
+        { "agents.js", "wireAgents" },
+        { "attachments.js", "wireAttachments" },
+        { "composer.js", "wireComposer" },
+        { "confighealth.js", "wireConfigHealth" },
+        { "conversations.js", "wireConversations" },
+        { "drawer.js", "wireDrawer" },
+        { "location.js", "initLocation" },
+        { "mcp.js", "wireMcp" },
+        // mcp.js has TWO entry points, and both need a row. Dropping the initMcpOAuthReturn() call
+        // silently kills the ADR 0025 interactive-OAuth return — and with it the profileTabs.select(3)
+        // deep-link that ADR 0029's "Configuration tab is appended LAST" invariant exists to protect.
+        { "mcp.js", "initMcpOAuthReturn" },
+        { "profile.js", "wireProfile" },
+        { "providers.js", "wireProviders" },
+        { "push.js", "initPush" },
+        { "pwa.js", "wirePwa" },
+        { "send.js", "wireSend" },
+        { "sharelinks.js", "wireShareLinks" },
+        { "sharetarget.js", "initShare" },
+        { "speech.js", "wireSpeech" },
+        { "theme.js", "initTheme" },
+        { "tools.js", "wireTools" },
+        { "usage.js", "wireUsage" },
+        { "voice.js", "wireVoice" },
+    };
+
+    // The frontend analogue of AgentApiPart_ExistsAndIsRegisteredFromTheCompositionRoot (ADR 0040): a
+    // module whose wire*() is never called from main.js loads fine, throws nothing, and silently attaches
+    // no listeners — that feature's buttons just do nothing, and no build, lint or type check sees it.
+    [Theory]
+    [MemberData(nameof(FrontEndWiredModules))]
+    public void FrontEndModule_ExportsItsEntryPoint_AndIsCalledFromTheCompositionRoot(string file, string entryPoint)
+    {
+        var path = Path.Combine(JsDir(), file);
+        Assert.True(File.Exists(path), $"Missing front-end module: wwwroot/js/{file}");
+
+        var module = File.ReadAllText(path);
+        Assert.Matches($@"export\s+(async\s+)?function\s+{Regex.Escape(entryPoint)}\s*\(", module);
+
+        // The full statement, not just the name followed by "(" — matching the ADR 0040 exemplar this
+        // mirrors (`Assert.Contains($"{mapMethod}(app);", …)`). A bare name+"(" is satisfied by a
+        // commented-out call, and main.js's own header comment discusses wire*() in prose.
+        var main = File.ReadAllText(Path.Combine(JsDir(), "main.js"));
+        Assert.Contains($"{entryPoint}();", main, StringComparison.Ordinal);
+    }
+
+    // The service worker's SHELL must equal the module directory EXACTLY — both directions.
+    //
+    // sw.js installs with cache.addAll(SHELL), which is all-or-nothing, so each direction fails
+    // differently and both are invisible online:
+    //   missing entry → the module isn't cached → the installed PWA breaks OFFLINE only, and ADR 0032's
+    //                   IndexedDB mirror happily paints cached conversations into a shell whose JS failed;
+    //   stale entry   → addAll rejects → the SW never activates AT ALL, taking down the offline read
+    //                   cache (ADR 0032), the Web Share Target (ADR 0023) and Web Push (ADR 0028).
+    [Fact]
+    public void ServiceWorkerShell_ListsExactlyTheModuleDirectory()
+    {
+        var sw = File.ReadAllText(Path.Combine(ProjectDir("Agent42.Backend"), "wwwroot", "sw.js"));
+        var shell = Regex.Match(sw, @"const SHELL = \[(.*?)\];", RegexOptions.Singleline);
+        Assert.True(shell.Success, "sw.js no longer declares a SHELL array");
+
+        var listed = Regex.Matches(shell.Groups[1].Value, @"""/js/([^""]+)""")
+            .Select(m => m.Groups[1].Value)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(JsModules(), listed);
+    }
+
+    // No orphans: every module under wwwroot/js is reachable from main.js. An unreferenced module is dead
+    // code that is also invisible to the asset guards — StaticAssetsServerFixture.GetAppScriptAsync()
+    // walks this same import graph, so a file outside it contributes nothing to their corpus.
+    [Fact]
+    public void EveryFrontEndModule_IsReachableFromTheEntryPoint()
+    {
+        var reachable = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<string>(["main.js"]);
+        while (pending.Count > 0)
+        {
+            var file = pending.Pop();
+            if (!reachable.Add(file))
+            {
+                continue;
+            }
+
+            foreach (Match match in JsSpecifier.Matches(File.ReadAllText(Path.Combine(JsDir(), file))))
+            {
+                pending.Push(match.Groups[1].Value);
+            }
+        }
+
+        Assert.Equal(JsModules(), reachable.Order(StringComparer.Ordinal).ToArray());
+    }
+
+    // Every named import must actually be exported by its target module.
+    //
+    // This is the one static error that produces a BLANK app rather than a degraded one: the browser
+    // throws "SyntaxError: The requested module './x.js' does not provide an export named 'y'", module
+    // evaluation aborts, and nothing wires at all. Nothing else catches it — there is no JS build step,
+    // and a per-file linter validates each module in isolation, never the edges between them. It caught
+    // two real cases (`renderAgents`, `loadTools`) during the ADR 0041 split itself.
+    [Fact]
+    public void EveryNamedImport_IsActuallyExportedByItsTargetModule()
+    {
+        var exported = JsModules().ToDictionary(
+            file => file,
+            file => ExportedNames(File.ReadAllText(Path.Combine(JsDir(), file))),
+            StringComparer.Ordinal);
+
+        var broken = new List<string>();
+        foreach (var file in JsModules())
+        {
+            var source = File.ReadAllText(Path.Combine(JsDir(), file));
+            foreach (Match import in Regex.Matches(source, @"import\s*\{([^}]*)\}\s*from\s*[""']\./([^""']+)[""']"))
+            {
+                var target = import.Groups[2].Value;
+                if (!exported.TryGetValue(target, out var names))
+                {
+                    broken.Add($"{file} imports from ./{target}, which does not exist");
+                    continue;
+                }
+
+                foreach (var name in import.Groups[1].Value
+                             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                             .Select(entry => entry.Split(" as ")[0].Trim())
+                             .Where(name => name.Length > 0 && !names.Contains(name)))
+                {
+                    broken.Add($"{file} imports {{ {name} }} from ./{target}, which does not export it");
+                }
+            }
+        }
+
+        Assert.True(broken.Count == 0, string.Join("\n", broken));
+    }
+
+    private static HashSet<string> ExportedNames(string source)
+    {
+        var names = Regex
+            .Matches(source, @"^export\s+(?:async\s+)?(?:function|const|let|class)\s+([A-Za-z_$][\w$]*)", RegexOptions.Multiline)
+            .Select(match => match.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // `export { a, b as c }` — the exported name is what follows `as`, when there is one.
+        foreach (Match list in Regex.Matches(source, @"^export\s*\{([^}]*)\}", RegexOptions.Multiline))
+        {
+            foreach (var entry in list.Groups[1].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                names.Add(entry.Split(" as ")[^1].Trim());
+            }
+        }
+
+        return names;
+    }
+
+    // The monolith is gone and cannot creep back: app.js was deleted, and every doc reference repointed.
+    [Fact]
+    public void TheMonolithicAppScript_IsGone()
+    {
+        Assert.False(
+            File.Exists(Path.Combine(ProjectDir("Agent42.Backend"), "wwwroot", "app.js")),
+            "wwwroot/app.js is back — the frontend lives in wwwroot/js/*.js (ADR 0041)");
+    }
+
     private static string DeclaredNamespace(string file)
     {
         var match = Regex.Match(File.ReadAllText(file), @"^namespace\s+([A-Za-z0-9_.]+)\s*;", RegexOptions.Multiline);

@@ -1,0 +1,169 @@
+/* Agent 42 — element handles — every getElementById lookup, in one place. Split out of app.js (ADR 0041). */
+
+import { wireTabs } from "./tabs.js";
+
+export const conversationList = document.getElementById("conversationList");
+export const newChatBtn = document.getElementById("newChatBtn");
+export const thread = document.getElementById("thread");
+export const chatScroll = document.getElementById("chatScroll");
+export const emptyState = document.getElementById("emptyState");
+export const form = document.getElementById("composerForm");
+export const input = document.getElementById("promptInput");
+export const sendBtn = document.getElementById("sendBtn");
+export const attachBtn = document.getElementById("attachBtn");
+export const micBtn = document.getElementById("micBtn");
+export const voiceBtn = document.getElementById("voiceBtn");
+export const fileInput = document.getElementById("fileInput");
+export const attachmentPreview = document.getElementById("attachmentPreview");
+export const modelSelect = document.getElementById("modelSelect");
+export const modelField = document.getElementById("modelField");
+export const noModelHint = document.getElementById("noModelHint");
+export const agentLabel = document.getElementById("agentLabel");
+export const menuToggle = document.getElementById("menuToggle");
+export const backdrop = document.getElementById("backdrop");
+export const app = document.querySelector(".app");
+
+// Token-usage dashboard (ADR 0031) — a dedicated full-page overlay, opened from the sidebar footer.
+export const openUsageBtn = document.getElementById("openUsageBtn");
+export const usageView = document.getElementById("usageView");
+export const usageCloseBtn = document.getElementById("usageCloseBtn");
+export const usageApplication = document.getElementById("usageApplication");
+export const usageUser = document.getElementById("usageUser");
+export const usageRange = document.getElementById("usageRange");
+export const usageRefresh = document.getElementById("usageRefresh");
+export const usageTiles = {
+  toolCalls: document.getElementById("usageTileToolCalls"),
+  input: document.getElementById("usageTileInput"),
+  output: document.getElementById("usageTileOutput"),
+  cached: document.getElementById("usageTileCached"),
+  calls: document.getElementById("usageTileCalls"),
+  errors: document.getElementById("usageTileErrors"),
+};
+export const usageModelsBody = document.getElementById("usageModelsBody");
+export const usageModelsEmpty = document.getElementById("usageModelsEmpty");
+export const usageToolsBody = document.getElementById("usageToolsBody");
+export const usageToolsEmpty = document.getElementById("usageToolsEmpty");
+export const usageUsersBody = document.getElementById("usageUsersBody");
+export const usageUsersEmpty = document.getElementById("usageUsersEmpty");
+export const agentList = document.getElementById("agentList");
+export const addAgentBtn = document.getElementById("addAgentBtn");
+export const agentDialog = document.getElementById("agentDialog");
+export const agentForm = document.getElementById("agentForm");
+export const agentFormTitle = document.getElementById("agentFormTitle");
+export const agentNameInput = document.getElementById("agentName");
+export const agentDescriptionInput = document.getElementById("agentDescription");
+export const agentModelSelect = document.getElementById("agentModelSelect");
+export const agentSystemPromptInput = document.getElementById("agentSystemPrompt");
+export const agentContinuousInput = document.getElementById("agentContinuous");
+export const agentKeySection = document.getElementById("agentKeySection");
+export const agentRegenerateKeyBtn = document.getElementById("agentRegenerateKeyBtn");
+export const agentKeyReveal = document.getElementById("agentKeyReveal");
+export const agentKeyValue = document.getElementById("agentKeyValue");
+export const agentKeyCopyBtn = document.getElementById("agentKeyCopyBtn");
+export const agentRunUrl = document.getElementById("agentRunUrl");
+export const agentRunUrlCopyBtn = document.getElementById("agentRunUrlCopyBtn");
+export const agentCancelBtn = document.getElementById("agentCancelBtn");
+
+export const openProfileBtn = document.getElementById("openProfileBtn");
+export const profileDialog = document.getElementById("profileDialog");
+export const profileForm = document.getElementById("profileForm");
+export const profileLanguage = document.getElementById("profileLanguage");
+export const profileTheme = document.getElementById("profileTheme");
+export const profileSuggest = document.getElementById("profileSuggest");
+export const profileCancelBtn = document.getElementById("profileCancelBtn");
+export const locationEnableBtn = document.getElementById("locationEnableBtn");
+export const locationStatus = document.getElementById("locationStatus");
+export const pushSection = document.getElementById("pushSection");
+export const pushStatus = document.getElementById("pushStatus");
+export const pushToggleBtn = document.getElementById("pushToggleBtn");
+// Preferences + agent dialog tabs. wireTabs (defined near openProfileDialog) takes [tab, panel]
+// pairs in tablist order, attaches the click + keyboard nav, and returns a select(index, focus).
+// The Configuration tab is APPENDED LAST on purpose: initMcpOAuthReturn deep-links to select(3) (the
+// MCP tab), so MCP must stay index 3 — a new tab inserted before it would shift MCP to 4 and break the
+// OAuth return. Append → Configuration is index 4, MCP stays 3.
+export const profileTabs = wireTabs([
+  [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
+  [document.getElementById("tabTools"), document.getElementById("panelTools")],
+  [document.getElementById("tabProviders"), document.getElementById("panelProviders")],
+  [document.getElementById("tabMcp"), document.getElementById("panelMcp")],
+  [document.getElementById("tabConfig"), document.getElementById("panelConfig")],
+]);
+export const agentTabs = wireTabs([
+  [document.getElementById("tabAgentGeneral"), document.getElementById("panelAgentGeneral")],
+  [document.getElementById("tabAgentTools"), document.getElementById("panelAgentTools")],
+  [document.getElementById("tabAgentApi"), document.getElementById("panelAgentApi")],
+]);
+
+export const defaultModelSelect = document.getElementById("defaultModelSelect");
+export const embeddingModelSelect = document.getElementById("embeddingModelSelect");
+export const speechModelSelect = document.getElementById("speechModelSelect");
+export const providerList = document.getElementById("providerList");
+export const addProviderBtn = document.getElementById("addProviderBtn");
+export const providerDialog = document.getElementById("providerDialog");
+export const providerForm = document.getElementById("providerForm");
+export const providerFormTitle = document.getElementById("providerFormTitle");
+export const providerKeyInput = document.getElementById("providerKey");
+export const providerKindSelect = document.getElementById("providerKind");
+export const providerDisplayNameInput = document.getElementById("providerDisplayName");
+export const providerEndpointInput = document.getElementById("providerEndpoint");
+export const providerApiKeyInput = document.getElementById("providerApiKey");
+export const providerResponsesField = document.getElementById("providerResponsesField");
+export const providerResponsesApi = document.getElementById("providerResponsesApi");
+export const providerModelList = document.getElementById("providerModelList");
+export const addModelRowBtn = document.getElementById("addModelRowBtn");
+export const providerError = document.getElementById("providerError");
+export const providerCancelBtn = document.getElementById("providerCancelBtn");
+
+// Remote MCP servers (config-driven remote MCP servers) — mirrors the provider dialog.
+export const mcpServerList = document.getElementById("mcpServerList");
+export const addMcpServerBtn = document.getElementById("addMcpServerBtn");
+export const configHealthList = document.getElementById("configHealthList");
+export const runConfigProbesBtn = document.getElementById("runConfigProbesBtn");
+export const mcpDialog = document.getElementById("mcpDialog");
+export const mcpForm = document.getElementById("mcpForm");
+export const mcpFormTitle = document.getElementById("mcpFormTitle");
+export const mcpNameInput = document.getElementById("mcpName");
+export const mcpEndpointInput = document.getElementById("mcpEndpoint");
+export const mcpEnabledInput = document.getElementById("mcpEnabled");
+export const mcpAuthSelect = document.getElementById("mcpAuth");
+export const mcpHeaderNameField = document.getElementById("mcpHeaderNameField");
+export const mcpHeaderNameInput = document.getElementById("mcpHeaderName");
+export const mcpHeaderValueField = document.getElementById("mcpHeaderValueField");
+export const mcpHeaderValueInput = document.getElementById("mcpHeaderValue");
+export const mcpAuthorityField = document.getElementById("mcpAuthorityField");
+export const mcpAuthorityInput = document.getElementById("mcpAuthority");
+export const mcpClientIdField = document.getElementById("mcpClientIdField");
+export const mcpClientIdInput = document.getElementById("mcpClientId");
+export const mcpClientSecretField = document.getElementById("mcpClientSecretField");
+export const mcpClientSecretInput = document.getElementById("mcpClientSecret");
+export const mcpScopesField = document.getElementById("mcpScopesField");
+export const mcpScopesInput = document.getElementById("mcpScopes");
+export const mcpOAuthNote = document.getElementById("mcpOAuthNote");
+export const mcpError = document.getElementById("mcpError");
+export const mcpCancelBtn = document.getElementById("mcpCancelBtn");
+
+// Selectable tools (ADR 0021): checkbox groups in the agent + preferences dialogs, and a per-chat popover.
+export const agentToolChecks = document.getElementById("agentToolChecks");
+export const profileToolChecks = document.getElementById("profileToolChecks");
+export const toolsBtn = document.getElementById("toolsBtn");
+export const incognitoBtn = document.getElementById("incognitoBtn");
+export const toolsDialog = document.getElementById("toolsDialog");
+export const chatToolChecks = document.getElementById("chatToolChecks");
+export const toolsDoneBtn = document.getElementById("toolsDoneBtn");
+
+// Web Share Target picker (Android PWA, ADR 0023): a shared payload lands on a /?share=1 load.
+export const shareDialog = document.getElementById("shareDialog");
+export const shareAgentList = document.getElementById("shareAgentList");
+export const shareNewChatBtn = document.getElementById("shareNewChatBtn");
+export const shareCancelBtn = document.getElementById("shareCancelBtn");
+
+// Read-only share link (ADR 0035): mint/copy/revoke a public, no-login link to one conversation.
+// Distinct from the ADR 0023 Web Share Target above (which shares INTO the app).
+export const shareLinkDialog = document.getElementById("shareLinkDialog");
+export const shareLinkConvTitle = document.getElementById("shareLinkConvTitle");
+export const shareLinkCreateBtn = document.getElementById("shareLinkCreateBtn");
+export const shareLinkResult = document.getElementById("shareLinkResult");
+export const shareLinkUrl = document.getElementById("shareLinkUrl");
+export const shareLinkCopyBtn = document.getElementById("shareLinkCopyBtn");
+export const shareLinkRevokeBtn = document.getElementById("shareLinkRevokeBtn");
+export const shareLinkCloseBtn = document.getElementById("shareLinkCloseBtn");

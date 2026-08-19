@@ -29,7 +29,7 @@ Add a **frontend-only** hands-free mode, an extension of ADR 0006, wired entirel
 - **Entry point: a dedicated `#voiceBtn`** beside `#micBtn` (which stays plain dictation). One
   tap starts the loop — unavoidable, since browsers gate mic access behind a user gesture;
   everything after is voice. Tap again (or switch chats) to exit.
-- **The loop** is a small controller in `app.js` with a state machine
+- **The loop** is a small controller in `src/Agent42.Backend/wwwroot/js/voice.js` (ADR 0041; a single `app.js` when this was written) with a state machine
   `idle → listening → thinking → speaking → listening`. Recognition runs continuously (kept
   alive by restarting on Chrome's silence auto-`end`); a **~1.2 s silence debounce** marks
   end-of-utterance and auto-sends. The reply is spoken **sentence-by-sentence as it streams**

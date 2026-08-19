@@ -36,7 +36,7 @@ worker**, then reuse the existing chat/upload machinery.
   never-intercept-`/api` invariant, guarded by `ServiceWorker_BypassesApiBeforeCaching`) and **after**
   the same-origin guard, but **before** the non-GET early-return (a share is a POST). The non-GET
   return moved below the share branch.
-- **Per-share picker, review-then-send.** On the `/?share=1` load, `app.js` reads+clears the stash,
+- **Per-share picker, review-then-send.** On the `/?share=1` load, `src/Agent42.Backend/wwwroot/js/sharetarget.js` reads+clears the stash,
   rebuilds `File` objects, strips `?share=1` (`history.replaceState`), `await`s `loadAgents()` (so the
   list is populated before the picker opens), and shows a destination `<dialog>` (New chat / an agent).
   The choice calls the existing `startNewConversation()` / `startAgentChat(agent)` (which already
@@ -59,7 +59,7 @@ worker**, then reuse the existing chat/upload machinery.
 
 ## Consequences
 - **No backend or infra change.** No C# route, no `excludedPaths`, no Bicep — unlike ADR 0022. The
-  whole feature is manifest + `sw.js` + `index.html`/`app.js`/`styles.css` + PWA-asset tests. The SW
+  whole feature is manifest + `sw.js` + `index.html`/`sharetarget.js`/`styles.css` + PWA-asset tests. The SW
   shell cache bumps `agent42-shell-v6` → `-v7` so returning users pick up the new shell.
 - **Headline egress (extends ADR 0013), a new inbound vector.** A shared payload — a note, a URL, an
   image, a document — flows into the same pipeline that, on a third-party model, sends content outside

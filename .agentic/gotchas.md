@@ -26,7 +26,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Endpoint composition root (registers groups)     | `src/Agent42.Backend/Api/AgentApi.cs`             | 2026-08-18 |
 | Grain test (Orleans TestCluster + fake client)  | `tests/Agent42.Tests/AgentGrainTests.cs`          | 2026-07-07 |
 | Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-07-06 |
-| Frontend logic (vanilla JS, no framework)       | `src/Agent42.Backend/wwwroot/app.js`              | 2026-07-07 |
+| Frontend feature module (vanilla JS, no build)  | `src/Agent42.Backend/wwwroot/js/conversations.js` | 2026-08-19 |
+| Frontend composition root (wires every module)  | `src/Agent42.Backend/wwwroot/js/main.js`          | 2026-08-19 |
 | Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/Attachments/IAttachmentStore.cs`, `src/Agent42.Agents/Attachments/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` | 2026-07-08 |
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
@@ -48,7 +49,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   there silently drops the segment. The C# asset tests are source-text heuristics (no JS
   runner in repo), so they cannot catch an engine deviation — always retest dictation on a
   real Android PWA.
-- **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (`distrustZeroConfidenceFinals`);
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/speech.js` (`distrustZeroConfidenceFinals`);
   upstream precedent: `react-speech-recognition` `RecognitionManager.js`
 - **Verified:** 2026-07-09
 
@@ -171,7 +172,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   grain is deleted — ADR 0003's "start a new chat to apply the edit" remedy does not work for a continuous
   agent. (2) `crypto.randomUUID()` never emits the `agent-` prefix, so the deterministic and random id spaces
   never collide — do not "fix" the derivation to hash or encode the id.
-- **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (`startAgentChat`),
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/agents.js` (`startAgentChat`),
   `src/Agent42.Agents/StoredAgents/AgentDefinition.cs` (`Continuous`), `src/Agent42.Backend/Api/AgentApi.cs` (`AgentKey`),
   `.agentic/decisions/0016-per-agent-history-mode-deterministic-conversation-id.md`,
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0003-snapshot-agent-persona-into-conversation.md`
@@ -370,7 +371,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Also: `src/Agent42.Agents/Conversations/AgentGrain.cs` (the resets in
   `EnqueuePromptAsync`/`ReceiveReminder`),
   `src/Agent42.Backend/Conversations/ChatContracts.cs` (`ChatRequest.Ephemeral`, the `TouchAsync` skip),
-  `src/Agent42.Backend/wwwroot/app.js` (`ephemeral`, `setIncognito`, the incognito document gate in
+  `src/Agent42.Backend/wwwroot/js/agents.js` (`ephemeral`, `setIncognito`), `src/Agent42.Backend/wwwroot/js/attachments.js` (the incognito document gate in
   `handleFiles`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`EphemeralChat_RunsTheTurn_ButPersistsNothing`, `EphemeralChat_LeavesNoHistory_AfterReactivation`,
   `EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists`,
@@ -415,7 +416,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   send path reads the cache synchronously. The C# asset tests are source-text heuristics (no JS runner in
   the repo), so they cannot catch an engine deviation: **retest on a real iOS device** — same class of trap
   as the Chrome-on-Android speech gotcha.
-- **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (`isCaptureAuthorized`, `currentLocationForSend`,
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/location.js` (`isCaptureAuthorized`, `currentLocationForSend`,
   `handlePositionError`), `tests/Agent42.Tests/LocationAssetsTests.cs`,
   `.agentic/decisions/0012-user-location-google-geocoding.md`
 - **Verified:** 2026-07-13
@@ -535,8 +536,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Note this is a **display** bug, not a wrong-tools bug: the grain already resolves
   `override ?? user-default ?? all` and `send()` never PUTs `chatTools` — but leaving the popover showing an
   empty set means a user who toggles one tool PUTs a near-empty override, silently discarding their default.
-- **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (init block's `Promise.all([profileReady, toolsReady])`
-  seed; `startNewConversation` line ~1157; `AgentGrain.EffectiveEnabledTools`)
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/main.js` (init block's `Promise.all([profileReady, toolsReady])`
+  seed), `src/Agent42.Backend/wwwroot/js/conversations.js` (`startNewConversation`),
+  `AgentGrain.EffectiveEnabledTools`
 - **Verified:** 2026-07-24
 
 ### Withholding images from a no-vision model must cover HISTORY, not just the new turn
@@ -811,7 +813,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`ValidateProvider` ≥1-model rule), `src/Agent42.Backend/appsettings.json` (`Models:Providers: {}`),
   `src/Agent42.Backend/Program.cs` (no default derivation, no eager `GetClient(null)`), `infra/main.bicep`
   + `infra/modules/container-app.bicep` (removed chat-only params/env vars + the operator GitHub Models token wiring),
-  `src/Agent42.Backend/wwwroot/app.js` (`applyModelAvailability`),
+  `src/Agent42.Backend/wwwroot/js/models.js` (`applyModelAvailability`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`NoModel_YieldsNotice_AndHistoryDoesNotThrow`,
   `NoModelThenProviderAdded_ReResolvesAndReplies`, `RebindAfterRegainingModel_PreservesHistory`),
   `tests/Agent42.Tests/ProvidersApiTests.cs` (`RejectsProviderWithNoModels`),
@@ -1003,7 +1005,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   re-trips the same `response.json()` failure. Serialize explicitly for nullable payloads:
   `Results.Text(JsonSerializer.Serialize(value, JsonSerializerOptions.Web), "application/json")`
   so an absent value comes back as a real JSON `null`.
-- **Evidence:** `src/Agent42.Backend/Conversations/AgentApi.Conversations.cs` (`/model` and `/agent` endpoints), `src/Agent42.Backend/wwwroot/app.js` (`selectConversation`), `tests/Agent42.Tests/AgentApiTests.cs`
+- **Evidence:** `src/Agent42.Backend/Conversations/AgentApi.Conversations.cs` (`/model` and `/agent` endpoints), `src/Agent42.Backend/wwwroot/js/conversations.js` (`selectConversation`), `tests/Agent42.Tests/AgentApiTests.cs`
 - **Verified:** 2026-07-07
 
 ### Service worker must stay network-first for navigations and bypass /api
@@ -1020,20 +1022,20 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
 - **Verified:** 2026-07-06
 
-### Offline data for agents/chats lives in app.js IndexedDB, NEVER in the service worker
+### Offline data for agents/chats lives in an app-module IndexedDB store, NEVER in the service worker
 
 - **Claim:** the PWA renders the user's agents and chats offline (ADR 0032) via a **client-side read
-  cache in `app.js`** — a `agent42-cache` IndexedDB store (`cacheGet`/`cachePut`/`cacheDelete`) that
+  cache in `src/Agent42.Backend/wwwroot/js/cache.js`** — a `agent42-cache` IndexedDB store (`cacheGet`/`cachePut`/`cacheDelete`) that
   mirrors `/api/agents`, `/api/conversations` and per-conversation `messages:<id>` on every successful
   fetch and is replayed on failure / at startup (`hydrateFromCache`, `renderTurns`). Do **not** "fix"
   an empty offline sidebar by caching `/api` in the service worker — that reintroduces the exact ADR
   0002 failure the SW's `/api` early-return prevents (a stale-session login 302 masked, per-user
   auth-bearing streaming responses staled/leaked) and trips
   `PwaAssetsTests.ServiceWorker_BypassesApiBeforeCaching`. The SW stays shell-only; all read caching is
-  in `app.js`. Two properties to keep: the cache is **best-effort** (any IndexedDB error resolves to a
+  in the app modules. Two properties to keep: the cache is **best-effort** (any IndexedDB error resolves to a
   no-op — never throw into a load path), and a cache paint is **length-guarded** so the network
   fast-path is never clobbered. A chat is viewable offline only if it was opened at least once online.
-- **Evidence:** `src/Agent42.Backend/wwwroot/app.js` (`cacheGet`/`cachePut`/`hydrateFromCache`/`renderTurns`), `src/Agent42.Backend/wwwroot/sw.js`, `tests/Agent42.Tests/PwaAssetsTests.cs` (`Frontend_MirrorsAgentsAndChatsForOffline`), `.agentic/decisions/0032-offline-read-cache-indexeddb.md`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/cache.js` (`cacheGet`/`cachePut`), `src/Agent42.Backend/wwwroot/js/main.js` (`hydrateFromCache`), `src/Agent42.Backend/wwwroot/js/conversations.js` (`renderTurns`), `src/Agent42.Backend/wwwroot/sw.js`, `tests/Agent42.Tests/PwaAssetsTests.cs` (`Frontend_MirrorsAgentsAndChatsForOffline`), `.agentic/decisions/0032-offline-read-cache-indexeddb.md`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
 - **Verified:** 2026-07-25
 
 ### A shared static instance must never be a grain-state default (Orleans mutates it)
@@ -1486,3 +1488,65 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   in its class doc), `src/Agent42.Agents/Conversations/AgentGrainState.cs`,
   `.agentic/decisions/0039-feature-folders-in-agents-project.md`
 - **Verified:** 2026-08-18
+
+### The service worker's SHELL is all-or-nothing — a STALE entry is worse than a missing one
+
+- **Claim:** `sw.js` installs with `caches.open(CACHE).then((c) => c.addAll(SHELL))`, and `addAll`
+  **rejects the whole promise if any single entry is non-2xx**. Since ADR 0041 split `app.js` into
+  ~28 modules, SHELL went from 10 entries to 37, so both directions are now live hazards and both are
+  **invisible online**:
+  - **Missing entry** (a new module not added) → that module isn't cached → the installed PWA breaks
+    **offline only**. ADR 0032's IndexedDB mirror makes it worse, not better: it happily paints cached
+    conversations into a shell whose JS failed to load.
+  - **Stale entry** (a renamed/deleted module still listed) → `addAll` rejects → the `install`
+    `waitUntil` fails and **the service worker never activates at all**. That takes down the offline
+    read cache (ADR 0032), the Web Share Target (ADR 0023 — `POST /share` then reaches a server that
+    has no such route) and Web Push (ADR 0028 — no registration to subscribe against).
+- So the guard is **bidirectional**: the `/js/*` entries of SHELL must **equal** the directory
+  contents, not merely contain them.
+- **Evidence:** `src/Agent42.Backend/wwwroot/sw.js` (`SHELL`, `addAll`),
+  `tests/Agent42.Tests/ProjectLayoutTests.cs` (`ServiceWorkerShell_ListsExactlyTheModuleDirectory`),
+  `.agentic/decisions/0041-frontend-es-modules.md`
+- **Verified:** 2026-08-19
+
+### Every MR that touches `wwwroot/js/` must bump `CACHE` in sw.js — module version skew is a BLANK app
+
+- **Claim:** `sw.js` serves subresources **cache-first** (stale-while-revalidate) while navigations are
+  network-first. With one `app.js` a stale serve was self-consistent — you got yesterday's app, whole.
+  Across a ~28-module graph it is not: the window between a fresh `index.html` and the new service
+  worker activating can serve a **version-skewed mixture** of old and new modules, and a cross-module
+  export rename then throws `SyntaxError: The requested module './x.js' does not provide an export
+  named 'y'`. That is a **blank app**, not a degraded one — module evaluation aborts, so nothing wires.
+- Bumping `CACHE` is **necessary but not sufficient** (it does not close the window); it is what makes
+  the skew transient rather than sticky. `PwaAssetsTests.ServiceWorker_CacheNameIsCurrent` pins the
+  current value, so the bump cannot be forgotten silently — but the test only tells you it changed, it
+  cannot tell you the graph is consistent. This used to be a forgiving convention; it no longer is.
+- **Evidence:** `src/Agent42.Backend/wwwroot/sw.js` (`CACHE`, the stale-while-revalidate branch),
+  `tests/Agent42.Tests/PwaAssetsTests.cs` (`ServiceWorker_CacheNameIsCurrent`),
+  `.agentic/decisions/0041-frontend-es-modules.md`
+- **Verified:** 2026-08-19
+
+### A frontend module unreachable from `main.js` is invisible to all 47 source-text guards
+
+- **Claim:** the `*AssetsTests` classes no longer read one file. They call
+  `StaticAssetsServerFixture.GetAppScriptAsync()`, which starts at the served `main.js`, extracts relative
+  specifiers, fetches them **over HTTP** transitively with a visited-set, and concatenates the result.
+  Two consequences that are easy to get wrong:
+  - A new module only enters that corpus **once something imports it** (transitively from `main.js`).
+    Adding a module and asserting on its text without wiring it in gives you an assertion that passes
+    against code the browser never loads — which is why `ProjectLayoutTests` separately fails on any
+    orphan under `wwwroot/js/`, and why `main.js` must call each feature's `wire*()`/`init*()`.
+  - The specifier regex must handle **all four forms** — `import … from "./x.js"`, `import "./x.js"`,
+    `export … from "./x.js"`, `export * from "./x.js"`. Miss the side-effect form and a module drops
+    out of the corpus *and* is reported as an orphan.
+- Fetching over **HTTP rather than off disk** is deliberate: it keeps the original meaning of these
+  assertions, which is that the code is actually **served**, not merely present in the repo.
+- Related: assertions that slice a function body must count brace depth
+  (`StaticAssetsServerFixture.Body`), never scan for a fixed indent like `"\n  }"` — at module scope
+  bodies close at column 0, so an indentation-sensitive scan runs straight past the end.
+- **Evidence:** `tests/Agent42.Tests/StaticAssetsServerFixture.cs` (`GetAppScriptAsync`, `Body`),
+  `tests/Agent42.Tests/ProjectLayoutTests.cs`
+  (`EveryFrontEndModule_IsReachableFromTheEntryPoint`,
+  `FrontEndModule_ExportsItsEntryPoint_AndIsCalledFromTheCompositionRoot`),
+  `.agentic/decisions/0041-frontend-es-modules.md`
+- **Verified:** 2026-08-19

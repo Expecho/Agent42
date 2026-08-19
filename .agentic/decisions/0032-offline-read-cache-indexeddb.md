@@ -11,12 +11,12 @@ tags: [pwa, offline, indexeddb, service-worker, easy-auth, frontend, egress]
 The Agent 42 PWA is installable and the service worker caches the static **shell** (`sw.js`,
 `agent42-shell-v*`), so the app *opens* offline — but every list comes up **empty**. All data
 (`GET /api/agents`, `/api/conversations`, `.../messages`) is fetched fresh into in-memory arrays on
-each load, and the loaders swallow network errors silently (`app.js` `refreshConversations`,
+each load, and the loaders swallow network errors silently (`refreshConversations`,
 `loadAgents`, `selectConversation`). The user wants their agents and chats **visible offline** in the
 installed PWA.
 
 ## Decision
-Add a **client-side IndexedDB read cache in `app.js`** — the same tier where `agents`/`conversations`
+Add a **client-side IndexedDB read cache in the frontend** (`src/Agent42.Backend/wwwroot/js/cache.js` since ADR 0041; a single `app.js` when this was written) — the same tier where `agents`/`conversations`
 already live as render caches. The server stays the source of truth; the cache is a best-effort mirror.
 
 - **Store.** A dedicated DB `agent42-cache`, one object store `kv`, keyed by `"agents"`,
@@ -32,13 +32,13 @@ already live as render caches. The server stays the source of truth; the cache i
   previously-opened chat's history from the cache through the same extracted `renderTurns()` the live
   path uses.
 - **The SW is untouched apart from a shell version bump** (`-v9` → `-v10`, so returning clients pick
-  up the new `app.js`). The `/api` early-return and guard ordering stay exactly as-is.
+  up the new frontend). The `/api` early-return and guard ordering stay exactly as-is.
 
 ## Alternatives considered
 - **Cache `/api` GETs in the service worker** (network-first with a cache fallback) — rejected: it
   breaks the ADR 0002 Easy-Auth invariant. The SW deliberately never touches `/api` so a stale
   session's login 302 is never masked and per-user auth-bearing responses are never stale/leaked;
-  `ServiceWorker_BypassesApiBeforeCaching` guards that ordering. A client-side cache in `app.js` keeps
+  `ServiceWorker_BypassesApiBeforeCaching` guards that ordering. A client-side cache in the app modules keeps
   the SW invariant intact and the auth redirect visible.
 - **Pre-fetch every conversation's messages so all chats are viewable offline** — rejected for v1: a
   fan-out of `/api/.../messages` calls on every load. Instead a chat is viewable offline only if it
@@ -57,7 +57,7 @@ already live as render caches. The server stays the source of truth; the cache i
   (`/api/conversations/{id}/attachments/{aid}`) and won't render offline (broken thumbnails); message
   **text** shows. Sending is impossible offline — the composer already gates on model availability
   (ADR 0019), so no extra work there.
-- **No backend or infra change.** The whole feature is `app.js` + a one-line `sw.js` version bump +
+- **No backend or infra change.** The whole feature is frontend JS + a one-line `sw.js` version bump +
   PWA-asset tests. `ServiceWorker_CacheNameIsCurrent` moves to `agent42-shell-v10` in lockstep.
 - **Weak automated proof.** New logic is frontend JS (no JS test runner by design), covered by
   source-text heuristics (`Frontend_MirrorsAgentsAndChatsForOffline`) that prove the wiring's *shape* —

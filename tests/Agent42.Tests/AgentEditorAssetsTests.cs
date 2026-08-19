@@ -12,15 +12,20 @@ namespace Agent42.Tests;
 [Collection("StaticAssets")]
 public sealed class AgentEditorAssetsTests
 {
+    private readonly StaticAssetsServerFixture _fixture;
     private readonly HttpClient _client;
 
-    public AgentEditorAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
+    public AgentEditorAssetsTests(StaticAssetsServerFixture fixture)
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     [Fact] // AC4 — the editor exposes the toggle, reads it on open, and sends it on save.
     public async Task AgentEditor_HasContinuousToggle_AndRoundTripsIt()
     {
         var html = await _client.GetStringAsync("/index.html");
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // The checkbox exists in the agent form.
         Assert.Contains("id=\"agentContinuous\"", html);
@@ -36,7 +41,7 @@ public sealed class AgentEditorAssetsTests
     public async Task AgentEditor_HasApiKeyRegenerateAndReveal()
     {
         var html = await _client.GetStringAsync("/index.html");
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // The key section, regenerate button and reveal target exist in the agent form.
         Assert.Contains("id=\"agentKeySection\"", html);
@@ -52,7 +57,7 @@ public sealed class AgentEditorAssetsTests
     public async Task AgentEditor_HasApiKeyTab_WithAlwaysVisibleRunUrl()
     {
         var html = await _client.GetStringAsync("/index.html");
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // The third tab + its panel exist (AC1).
         Assert.Contains("id=\"tabAgentApi\"", html);
@@ -69,7 +74,7 @@ public sealed class AgentEditorAssetsTests
     [Fact] // AC5 — continuous starts route onto a deterministic id AND resume the existing history.
     public async Task AgentEditor_ContinuousRoutesToDeterministicConversationId_AndResumes()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // The deterministic `agent-<id>` conversation id (collapses every start onto one grain);
         // a per-chat agent still gets a random UUID.

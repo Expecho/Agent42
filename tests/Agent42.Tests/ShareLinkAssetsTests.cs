@@ -10,9 +10,14 @@ namespace Agent42.Tests;
 [Collection("StaticAssets")]
 public sealed class ShareLinkAssetsTests
 {
+    private readonly StaticAssetsServerFixture _fixture;
     private readonly HttpClient _client;
 
-    public ShareLinkAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
+    public ShareLinkAssetsTests(StaticAssetsServerFixture fixture)
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     // The owner-side dialog and its create/copy/revoke controls are present, with names distinct from the
     // ADR 0023 Web Share Target (#shareDialog) so the two don't collide.
@@ -32,13 +37,13 @@ public sealed class ShareLinkAssetsTests
     [Fact]
     public async Task ShareAction_WiredIntoConvRow_AndOwnerEndpoint()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
-        var row = Body(app, "function buildConvRow(conv)");
+        var row = StaticAssetsServerFixture.Body(app, "function buildConvRow(conv)");
         Assert.Contains("conv__share", row);
         Assert.Contains("openShareLink(conv.id", row);
 
-        var open = Body(app, "async function openShareLink(convId, title)");
+        var open = StaticAssetsServerFixture.Body(app, "async function openShareLink(convId, title)");
         Assert.Contains("/share", open);
     }
 
@@ -71,26 +76,5 @@ public sealed class ShareLinkAssetsTests
         // The copied libs actually resolve under /shared/lib.
         (await _client.GetAsync("/shared/lib/marked.min.js")).EnsureSuccessStatusCode();
         (await _client.GetAsync("/shared/lib/purify.min.js")).EnsureSuccessStatusCode();
-    }
-
-    // The source of one function, from its declaration to the brace that closes its body (copied from the
-    // sibling asset tests) so an assertion can scope to one function rather than the whole file.
-    private static string Body(string source, string declaration)
-    {
-        var start = source.IndexOf(declaration, StringComparison.Ordinal);
-        Assert.True(start >= 0, $"'{declaration}' not found in app.js — did it get renamed?");
-
-        var open = source.IndexOf('{', start);
-        Assert.True(open >= 0, $"no body found for '{declaration}'");
-
-        var depth = 0;
-        for (var i = open; i < source.Length; i++)
-        {
-            if (source[i] == '{') depth++;
-            else if (source[i] == '}' && --depth == 0) return source[start..(i + 1)];
-        }
-
-        Assert.Fail($"unbalanced braces after '{declaration}'");
-        return string.Empty;
     }
 }

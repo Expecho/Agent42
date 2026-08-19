@@ -15,9 +15,14 @@ namespace Agent42.Tests;
 [Collection("StaticAssets")]
 public sealed class LocationAssetsTests
 {
+    private readonly StaticAssetsServerFixture _fixture;
     private readonly HttpClient _client;
 
-    public LocationAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
+    public LocationAssetsTests(StaticAssetsServerFixture fixture)
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     [Fact]
     public async Task LocationControl_IsInPreferences_AndComposerButtonRemoved()
@@ -41,19 +46,19 @@ public sealed class LocationAssetsTests
     [Fact]
     public async Task App_NeverBlocksSendOnGeolocation()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // The send body attaches the cached fix through the synchronous accessor…
         Assert.Contains("location: currentLocationForSend()", app);
 
         // …and that accessor is neither async nor awaiting anything.
-        var accessor = Body(app, "function currentLocationForSend()");
+        var accessor = StaticAssetsServerFixture.Body(app, "function currentLocationForSend()");
         Assert.DoesNotContain("await", accessor);
         Assert.DoesNotContain("getCurrentPosition", accessor);
         Assert.DoesNotContain("async function currentLocationForSend", app);
 
         // The send function itself never asks the browser for a position.
-        var send = Body(app, "async function send(prompt)");
+        var send = StaticAssetsServerFixture.Body(app, "async function send(prompt)");
         Assert.DoesNotContain("getCurrentPosition", send);
     }
 
@@ -66,9 +71,9 @@ public sealed class LocationAssetsTests
     [Fact]
     public async Task App_AuthorizesCaptureOnBothLegs()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
-        var authorize = Body(app, "async function isCaptureAuthorized()");
+        var authorize = StaticAssetsServerFixture.Body(app, "async function isCaptureAuthorized()");
         // Leg 1: the Permissions API, when it exists.
         Assert.Contains("\"granted\"", authorize);
         // Leg 2: the stored grant, when it does not.
@@ -76,13 +81,13 @@ public sealed class LocationAssetsTests
 
         // The stored grant is only ever set after a capture actually SUCCEEDED — never merely because
         // the button was tapped, which would authorize us off a prompt the user then dismissed.
-        var grant = Body(app, "async function requestLocationGrant()");
+        var grant = StaticAssetsServerFixture.Body(app, "async function requestLocationGrant()");
         Assert.Contains("await readPosition()", grant);
         Assert.Contains("setStoredGrant(true)", grant);
 
         // …and a PERMISSION_DENIED (code 1) on any later capture clears it: the user revoked the
         // permission in site settings, so the flag is now a lie and the grant control comes back.
-        var onError = Body(app, "function handlePositionError(error)");
+        var onError = StaticAssetsServerFixture.Body(app, "function handlePositionError(error)");
         Assert.Contains("code === 1", onError);
         Assert.Contains("setStoredGrant(false)", onError);
     }
@@ -92,11 +97,11 @@ public sealed class LocationAssetsTests
     [Fact]
     public async Task App_DropsStaleFix()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         Assert.Contains("LOCATION_MAX_AGE_MS", app);
 
-        var accessor = Body(app, "function currentLocationForSend()");
+        var accessor = StaticAssetsServerFixture.Body(app, "function currentLocationForSend()");
         Assert.Contains("LOCATION_MAX_AGE_MS", accessor);
         Assert.Contains("return null", accessor);
     }
@@ -106,35 +111,10 @@ public sealed class LocationAssetsTests
     [Fact]
     public async Task App_RefreshesTheFixInTheBackground()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         Assert.Contains("visibilitychange", app);
         Assert.Contains("startBackgroundLocationRefresh", app);
         Assert.Contains("LOCATION_REFRESH_MS", app);
-    }
-
-    /// <summary>
-    /// The source text of one function, from its declaration to the closing brace at its own nesting
-    /// depth. Crude, but it is what lets an assertion say "<c>send()</c> does not call
-    /// <c>getCurrentPosition</c>" rather than the far weaker "the file contains the string somewhere" —
-    /// which would pass no matter where the call sat.
-    /// </summary>
-    private static string Body(string source, string declaration)
-    {
-        var start = source.IndexOf(declaration, StringComparison.Ordinal);
-        Assert.True(start >= 0, $"'{declaration}' not found in app.js — did it get renamed?");
-
-        var open = source.IndexOf('{', start);
-        Assert.True(open >= 0, $"no body found for '{declaration}'");
-
-        var depth = 0;
-        for (var i = open; i < source.Length; i++)
-        {
-            if (source[i] == '{') depth++;
-            else if (source[i] == '}' && --depth == 0) return source[start..(i + 1)];
-        }
-
-        Assert.Fail($"unbalanced braces after '{declaration}'");
-        return string.Empty;
     }
 }
