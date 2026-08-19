@@ -129,7 +129,7 @@ bind time) while a normal chat sends the picker's value.
 |---------|------|
 | Switch / rebind | `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatCoreAsync`, `RebindModelAsync`) |
 | Selected model state | `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`DeploymentName`) |
-| Id parsing | `src/Agent42.Backend/ModelProviderOptions.cs` |
-| Client resolution | `src/Agent42.Backend/ChatClientFactory.cs` |
-| Catalog | `src/Agent42.Backend/ModelCatalog.cs`, `UserModelCatalogProvider.cs` |
-| Endpoints / frontend | `src/Agent42.Backend/AgentApi.cs`, `wwwroot/app.js` |
+| Id parsing | `src/Agent42.Backend/Models/ModelProviderOptions.cs` |
+| Client resolution | `src/Agent42.Backend/Models/ChatClientFactory.cs` |
+| Catalog | `src/Agent42.Backend/Models/ModelCatalog.cs`, `UserModelCatalogProvider.cs` |
+| Endpoints / frontend | `src/Agent42.Backend/Models/AgentApi.Models.cs`, `wwwroot/app.js` |

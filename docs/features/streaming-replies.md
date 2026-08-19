@@ -158,7 +158,7 @@ for (;;) {
 
 | Concern | File |
 |---------|------|
-| Endpoint | `src/Agent42.Backend/AgentApi.cs` (`POST /api/chat/{conversationId}`) |
+| Endpoint | `src/Agent42.Backend/Conversations/AgentApi.Conversations.cs` (`POST /api/chat/{conversationId}`) |
 | Event DTO | `src/Agent42.Agents/Conversations/AgentStreamEvent.cs` |
 | Streaming core | `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatCoreAsync`) |
 | Grain contract | `src/Agent42.Agents/Conversations/IAgentGrain.cs` |

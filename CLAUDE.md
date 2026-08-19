@@ -514,4 +514,15 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   `GrainStorageSerializerTests` catch it if made by hand. `[Alias]` is a **separate** mechanism (the
   binary path) and is **not** what protects data at rest. `ReceiveReminder` stays in the core `AgentGrain`
   part beside `ChatAsync` (the `_turnLocation`/`_ephemeral` clears must be read together); `Skills/` does
-  not move (csproj `Content` glob); `Agent42.Backend` and `Agent42.Tests` stay flat on purpose.
+  not move (csproj `Content` glob); `Agent42.Tests` stays flat on purpose.
+- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **17
+  feature folders** mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
+  visibly with `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`), **flat `Agent42.Backend` namespace**, and
+  `Program.cs` alone at the project root. `MapAgentApi` is split into **12 per-feature partials**
+  (`src/Agent42.Backend/Mcp/AgentApi.Mcp.cs`, …) with `src/Agent42.Backend/Api/AgentApi.cs` reduced to a 50-line composition root, and the 25
+  request/response records live beside their feature as `*Contracts.cs`. Backend persists nothing, so
+  the flat namespace is **not** forced here as it is in Agents — it is kept flat for consistency and
+  because a type that later moves into a persisted position must not carry a folder-shaped namespace
+  with it. **The new trap this split introduces: an endpoint group that exists but is never called from
+  `MapAgentApi` compiles cleanly and silently deletes every endpoint in it** — guarded by
+  `ProjectLayoutTests.AgentApiPart_ExistsAndIsRegisteredFromTheCompositionRoot`.
