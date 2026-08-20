@@ -62,7 +62,9 @@ public sealed class ShareLinkAssetsTests
     }
 
     // Self-containment (ADR 0035): the viewer loads its libs from under /shared/, not the authenticated
-    // /lib — so the Easy Auth hole stays exactly /shared + /api/share.
+    // /lib — so the Easy Auth hole stays confined to the /shared and /api/share route families. The exact
+    // entries, and that they actually cover what this page requests, are asserted in EasyAuthExclusionTests
+    // (ADR 0042); this test is the complementary half — that the page does not request anything else.
     [Fact]
     public async Task Viewer_IsSelfContained_NoAuthenticatedAssets()
     {

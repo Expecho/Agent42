@@ -181,13 +181,5 @@ public static partial class AgentApi
 
             return Results.Accepted($"/api/conversations/{conversationId}/messages", new { conversationId });
         }).DisableAntiforgery();
-
-        // ————— public read-only share view (ADR 0035) —————
-        //
-        // Easy Auth EXCLUDES the /api/share/* paths (container-app.bicep globalValidation.excludedPaths), so an
-        // unauthenticated recipient can open a shared conversation. Like /api/agent-run these SELF-ENFORCE: the
-        // token is the only credential, the owner + conversation come from the DIRECTORY resolution (NEVER
-        // GetUserId — there is no Easy Auth principal on an excluded path, so it would be local-dev), and both
-        // fail CLOSED. A browser-visitable link fails to 404 ("not found or revoked"), not 401.
     }
 }

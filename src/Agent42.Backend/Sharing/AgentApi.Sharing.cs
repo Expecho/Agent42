@@ -36,6 +36,17 @@ public static partial class AgentApi
             return Results.NoContent();
         });
 
+        // ————— public read-only share view (ADR 0035) —————
+        //
+        // Easy Auth EXCLUDES the /api/share/* paths (container-app.bicep globalValidation.excludedPaths — the
+        // WILDCARD form is load-bearing, ADR 0042: a bare /api/share entry matches exactly and covers neither
+        // route below), so an unauthenticated recipient can open a shared conversation. Like /api/agent-run
+        // these SELF-ENFORCE: the token is the only credential, the owner + conversation come from the
+        // DIRECTORY resolution (NEVER GetUserId — there is no Easy Auth principal on an excluded path, so it
+        // would be local-dev), and both fail CLOSED. A browser-visitable link fails to 404 ("not found or
+        // revoked"), not 401. Anything added under /api/share/ from now on is PUBLIC by construction and
+        // inherits that duty.
+
         // The shared conversation's title, optional agent name, and full CURRENT history (a live read-only view:
         // future turns appear until the owner revokes). Reuses the ChatTurn/AttachmentRef DTOs the authenticated
         // /messages route returns (AttachmentRef.BlobPath stays [JsonIgnore] — the page only ever gets ids).

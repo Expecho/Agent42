@@ -7,11 +7,16 @@ tags: [auth, azure, container-apps]
 
 # Gate the Container App behind Entra ID Easy Auth instead of app-level auth
 
-> **Amended by [ADR 0022](0022-per-agent-api-key-and-async-run-endpoint.md) (2026-07-17) — one
-> carve-out.** `/api/agent-run` is on `globalValidation.excludedPaths`, so it is NOT ingress-gated
-> and DOES self-enforce auth in the handler (a per-agent API key, fail-closed 401). Every other
-> endpoint (all UI + API) stays fully Easy-Auth-gated; this is the single hole. So the "no auth code
-> in handlers" consequence below holds everywhere except that one key-gated path.
+> **Amended by [ADR 0022](0022-per-agent-api-key-and-async-run-endpoint.md) (2026-07-17),
+> [ADR 0035](0035-read-only-share-links.md) (2026-07-30) and
+> [ADR 0042](0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md) (2026-08-20) — four carve-outs.**
+> `globalValidation.excludedPaths` now holds `/api/agent-run`, `/api/share/*`, `/shared` and `/shared/*`.
+> Each is NOT ingress-gated and each therefore SELF-ENFORCES access in the handler and fails closed:
+> `/api/agent-run` on a per-agent API key (401), the share routes on the share token (404), and `/shared*`
+> is the static public viewer, which carries no data of its own. Every other endpoint (all UI + API) stays
+> fully Easy-Auth-gated, so the "no auth code in handlers" consequence below holds everywhere except those
+> self-enforcing paths. **The matching rule is exact-unless-`/*`** — see ADR 0042; assuming prefix matching
+> is what made ADR 0035 non-functional in production, and `EasyAuthExclusionTests` now guards the list.
 
 ## Context
 The API was fully open while being publicly reachable (chat.agent42.nl), exposing

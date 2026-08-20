@@ -7,6 +7,13 @@ tags: [agents, conversations, sharing, public-endpoint, easy-auth, excluded-path
 
 # Read-only share links for conversations
 
+> **Amended by [ADR 0042](0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md) (2026-08-20) — the
+> feature shipped non-functional.** The `excludedPaths` entries below were written as *prefixes*, but the
+> Easy Auth matcher treats a bare entry as an **exact** match, so `/shared/`, every viewer asset and both
+> public API routes were gated and every recipient hit the Entra login page. 0042 switches to the wildcard
+> form and pins the semantics in a test. It also makes `Request.Scheme` honest behind the ingress, so the
+> minted `ShareUrl` is `https://` rather than `http://`.
+
 ## Context
 Every conversation in Agent42 is private to its owner: the whole app sits behind Entra Easy Auth
 (ADR 0002), and every read route is user-scoped via `AgentKey(GetUserId(), conversationId)`. There was no
@@ -43,14 +50,19 @@ Mirror ADR 0022's two-grain split, plus a self-contained public viewer page.
     token-scoped analogue of the user-scoped image proxy (required because that one is Easy-Auth gated).
     Both resolve `(userId, conversationId)` from the directory and **fail closed → 404** ("not found or
     revoked" — a browser-visitable link, so 404 not the key-header 401).
-- **Infra**: two prefixes added to `container-app.bicep` `globalValidation.excludedPaths` — `/api/share`
-  (public data + bytes) and `/shared` (the static viewer page). Alongside `/api/agent-run`, these are the
-  only holes in the ADR 0002 gate.
+- **Infra**: entries added to `container-app.bicep` `globalValidation.excludedPaths` for the public data +
+  bytes route and the static viewer page. Alongside `/api/agent-run`, these are the only holes in the ADR
+  0002 gate. **Corrected by [ADR 0042](0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md):** these
+  shipped as the bare entries `/api/share` and `/shared`, which was wrong — `excludedPaths` matches a path
+  **exactly** unless the entry ends in `/*`, so every URL a recipient actually loads stayed behind the login
+  page and this feature was non-functional in production. The correct list is `/api/share/*`, `/shared` and
+  `/shared/*`.
 - **Public viewer** (`wwwroot/shared/`): a self-contained page (`index.html` + `viewer.js` + `viewer.css`
   + copies of `marked`/`purify` under `shared/lib/`) that reads the token from the URL **fragment**, calls
   `GET /api/share/{token}`, and renders turns with a trimmed copy of `renderTurns`. Self-contained on
   purpose so the public page loads nothing from the authenticated surface — the Easy Auth hole stays
-  exactly `/shared` + `/api/share`.
+  confined to the `/shared` and `/api/share` route families (ADR 0042 for the exact entries, and for the
+  test that now machine-checks this self-containment claim).
 - **Owner UI**: a hover-revealed **↗ Share** action on every sidebar conversation row (`buildConvRow`,
   shared by regular and agent chats) opens `#shareLinkDialog` — create / copy / revoke. Distinct names
   from the ADR 0023 Web Share Target (`#shareDialog`, `initShare`, …), which is inbound and unrelated.
@@ -70,8 +82,10 @@ Mirror ADR 0022's two-grain split, plus a self-contained public viewer page.
 - **Snapshot the conversation at share time.** Rejected: the live view is simpler (the directory points at
   the live grain) and revocation is the control; a frozen copy adds state and a staleness question.
 - **Widen `excludedPaths` to `/lib` + `/styles.css` and reuse them in the viewer.** Rejected: copying the
-  two vendored libs into `shared/lib/` keeps the auth hole to two tight prefixes and makes the public page
-  provably independent of the authenticated surface. Accepted cost: keep the copies in sync on upgrade.
+  two vendored libs into `shared/lib/` keeps the auth hole to two tight route families and makes the public
+  page provably independent of the authenticated surface. Accepted cost: keep the copies in sync on upgrade.
+  (ADR 0042 machine-checks that independence: every same-origin URL the viewer requests is run through the
+  measured `excludedPaths` matcher, so pointing it back at `/lib` or `/styles.css` now fails the build.)
 - **Expiry timestamps.** Deferred (non-goal): the user asked for revocable-without-expiry; expiry is an
   additive field on `ShareLink` + a check in the endpoint if ever wanted.
 
