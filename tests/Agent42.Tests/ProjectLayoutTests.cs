@@ -387,6 +387,46 @@ public sealed class ProjectLayoutTests
             "wwwroot/app.js is back — the frontend lives in wwwroot/js/*.js (ADR 0041)");
     }
 
+    // Nothing in the suite runs Program.cs, so the ordering that makes Request.Scheme trustworthy behind the
+    // ACA ingress (ADR 0042) can only be asserted on the source text — the *AssetsTests heuristic. It has to
+    // come before UserTelemetryMiddleware and, crucially, before UseDefaultFiles: the framework's own 301
+    // builds an absolute URL from the scheme, and that redirect is what exposed the bug.
+    [Fact]
+    public void Program_TrustsForwardedProtoBeforeAnyOtherMiddleware()
+    {
+        // Comment lines are stripped first: this file explains the `KnownNetworks = { }` trap in prose, and
+        // an assertion that cannot tell code from the comment warning about it is worse than no assertion.
+        var program = string.Join(
+            Environment.NewLine,
+            File.ReadAllLines(Path.Combine(ProjectDir("Agent42.Backend"), "Program.cs"))
+                .Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
+
+        var forwarded = program.IndexOf("app.UseForwardedHeaders(", StringComparison.Ordinal);
+        Assert.True(forwarded >= 0, "Program.cs no longer calls UseForwardedHeaders — share URLs revert to http://");
+
+        Assert.Contains("ForwardedHeaders = ForwardedHeaders.XForwardedProto", program, StringComparison.Ordinal);
+
+        // The trust lists must be emptied by CALLING Clear(). `KnownNetworks = { }` compiles (they are
+        // get-only, so that parses as a collection initializer adding nothing), reads as "cleared", and
+        // leaves the 127.0.0.0/8 + ::1 defaults in place — which makes the middleware inert behind a
+        // non-loopback ingress and silently reverts every minted URL to http://. Measured, not assumed.
+        Assert.Contains("KnownIPNetworks.Clear()", program, StringComparison.Ordinal);
+        Assert.Contains("KnownProxies.Clear()", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("KnownNetworks = {", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("KnownProxies = {", program, StringComparison.Ordinal);
+
+        // XForwardedFor/XForwardedHost would trust a strictly larger surface from an unidentified proxy, and
+        // no consumer in this app reads either.
+        Assert.DoesNotContain("XForwardedFor", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("XForwardedHost", program, StringComparison.Ordinal);
+
+        foreach (var later in new[] { "app.Use(UserTelemetryMiddleware.InvokeAsync)", "app.UseDefaultFiles()", "app.MapAgentApi()" })
+        {
+            var index = program.IndexOf(later, StringComparison.Ordinal);
+            Assert.True(index > forwarded, $"{later} runs before UseForwardedHeaders — the scheme is still http there.");
+        }
+    }
+
     private static string DeclaredNamespace(string file)
     {
         var match = Regex.Match(File.ReadAllText(file), @"^namespace\s+([A-Za-z0-9_.]+)\s*;", RegexOptions.Multiline);
