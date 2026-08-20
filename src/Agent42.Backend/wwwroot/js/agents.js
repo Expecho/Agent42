@@ -1,0 +1,283 @@
+/* Agent 42 — stored agents (ADR 0003/0016/0022) + incognito (ADR 0034). Split out of app.js (ADR 0041). */
+
+import { clearPendingAttachments } from "./attachments.js";
+import { cacheGet, cachePut } from "./cache.js";
+import { selectConversation, setActiveAgentId, setActiveId, setPendingAgentId } from "./conversations.js";
+import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentDescriptionInput, agentDialog, agentForm, agentFormTitle, agentKeyCopyBtn, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentModelSelect, agentNameInput, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
+import { closeDrawer } from "./drawer.js";
+import { defaultModel, fillModelOptions, modelLabel, selectModel, setModel } from "./models.js";
+import { streaming } from "./send.js";
+import { conversations, renderSidebar } from "./sidebar.js";
+import { clearThread, setEmptyVisible } from "./thread.js";
+import { allToolKeys, readToolChecks, renderToolChecks, toolCatalog } from "./tools.js";
+
+// Incognito flag for the active chat (ADR 0034). Fixed at chat creation: settable only on a fresh,
+// empty regular chat, then locked once the first message is sent (like the conversation id itself).
+export let ephemeral = false;
+export let agents = [];
+// The agent being edited in the dialog, or null when creating a new one.
+let editingAgentId = null;
+export async function loadAgents() {
+  try {
+    const res = await fetch("/api/agents");
+    if (!res.ok) return;
+    agents = await res.json();
+    renderAgents();
+    cachePut("agents", agents); // mirror for offline (ADR 0032)
+  } catch {
+    // Offline/silo unreachable: fall back to the last cached agents instead of an empty list.
+    const cached = await cacheGet("agents");
+    if (cached && agents.length === 0) { agents = cached; renderAgents(); }
+  }
+}
+
+export function renderAgents() {
+  agentList.innerHTML = "";
+  if (agents.length === 0) {
+    const li = document.createElement("li");
+    li.className = "agents__empty";
+    li.textContent = "no agents yet";
+    agentList.appendChild(li);
+    return;
+  }
+  for (const agent of agents) {
+    const li = document.createElement("li");
+    li.className = "agent-row";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "agent";
+    btn.title = agent.description || agent.name;
+    btn.addEventListener("click", () => startAgentChat(agent));
+
+    const name = document.createElement("span");
+    name.className = "agent__name";
+    name.textContent = agent.name;
+
+    const model = document.createElement("span");
+    model.className = "agent__model";
+    // The stored value is a qualified id; show the friendly name, not "github:openai/gpt-4o-mini".
+    model.textContent = modelLabel(agent.model);
+    model.title = agent.model;
+
+    btn.append(name, model);
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "agent__action";
+    edit.setAttribute("aria-label", `Edit agent: ${agent.name}`);
+    edit.textContent = "✎";
+    edit.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openAgentDialog(agent);
+    });
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "agent__action";
+    del.setAttribute("aria-label", `Delete agent: ${agent.name}`);
+    del.textContent = "🗑";
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteAgent(agent.id, agent.name);
+    });
+
+    li.append(btn, edit, del);
+    agentList.appendChild(li);
+  }
+}
+
+// Clicking an agent always starts a NEW chat seeded with that agent's persona. The model
+// is locked to the agent's; only pendingAgentId goes on the wire (bound on the first send).
+export function startAgentChat(agent) {
+  closeDrawer();
+  if (streaming) return;
+  // Continuous agents route every start onto one deterministic conversation id
+  // (`agent-<id>`), so all their chats share one ongoing history (ADR 0016); per-chat
+  // agents get a fresh random id. crypto.randomUUID() never emits the `agent-` prefix,
+  // so the two id spaces never collide.
+  const convId = agent.continuous ? `agent-${agent.id}` : crypto.randomUUID();
+  // Resume an existing continuous conversation instead of showing a blank thread over a
+  // grain that already has history — delegate to selectConversation, which loads the
+  // messages/model/binding and locks the picker.
+  if (agent.continuous && conversations.some((c) => c.id === convId)) {
+    selectConversation(convId);
+    return;
+  }
+  setActiveId(convId);
+  setActiveAgentId(agent.id);
+  setPendingAgentId(agent.id);
+  clearPendingAttachments();
+  clearThread();
+  setEmptyVisible(true);
+  setModel(agent.model);
+  lockPicker(agent.name, agent.model);
+  renderSidebar();
+  input.focus();
+}
+
+function openAgentDialog(agent) {
+  editingAgentId = agent?.id ?? null;
+  agentFormTitle.textContent = agent ? "Edit agent" : "New agent";
+  agentNameInput.value = agent?.name ?? "";
+  agentDescriptionInput.value = agent?.description ?? "";
+  agentSystemPromptInput.value = agent?.systemPrompt ?? "";
+  agentContinuousInput.checked = agent?.continuous ?? false;
+  // The key section (with Regenerate) is meaningful only for a SAVED agent; a new agent has no key
+  // yet — one is minted on create and revealed then. Always start with the raw key hidden (ADR 0022).
+  agentKeySection.hidden = !agent;
+  agentKeyReveal.hidden = true;
+  agentKeyValue.textContent = "";
+  // The run endpoint is agent-independent and not a secret (ADR 0022: the key alone identifies the
+  // agent), so show its absolute URL ALWAYS — even for a not-yet-saved agent — for off-browser copy.
+  agentRunUrl.textContent = `${location.origin}/api/agent-run`;
+  agentRunUrlCopyBtn.textContent = "Copy"; // reset a stale "Copied" from a prior open (button is always visible)
+  pendingRegenerate = false;
+  // Null enabledTools (a new agent, or one saved before ADR 0021) means "all selectable tools".
+  renderToolChecks(agentToolChecks, agent?.enabledTools ?? allToolKeys());
+  fillModelOptions(agentModelSelect);
+  // Preselect the agent's model when editing, otherwise the server default. Uses the same helper as
+  // the composer picker rather than a second copy of the append-if-missing logic.
+  selectModel(agentModelSelect, agent?.model ?? defaultModel);
+  agentTabs.select(0); // always open on the General tab, never a stale Tools tab
+  agentDialog.showModal();
+  agentNameInput.focus();
+}
+
+// Set by the Regenerate-key button so the next save rotates the key (ADR 0022). Reset on every
+// dialog open and after each save, so a plain Save never regenerates.
+let pendingRegenerate = false;
+
+async function saveAgent() {
+  const payload = {
+    name: agentNameInput.value.trim(),
+    description: agentDescriptionInput.value.trim(),
+    model: agentModelSelect.value,
+    systemPrompt: agentSystemPromptInput.value.trim(),
+    continuous: agentContinuousInput.checked,
+  };
+  // The full explicit list (never null) — "all selected" is the whole list, per ADR 0021. But ONLY
+  // when the catalog actually loaded: if /api/tools failed, toolCatalog is [] and readToolChecks would
+  // return [] (= none), silently disabling every tool. Omit the field so the server keeps the default
+  // (a create then stores null == all) rather than storing an accidental empty set.
+  if (toolCatalog.length > 0) payload.enabledTools = readToolChecks(agentToolChecks);
+  // Regenerate only on an existing agent (PUT) — a create always mints a fresh key anyway.
+  if (editingAgentId && pendingRegenerate) payload.regenerateKey = true;
+  if (!payload.name || !payload.systemPrompt || !payload.model) return;
+
+  const url = editingAgentId ? `/api/agents/${encodeURIComponent(editingAgentId)}` : "/api/agents";
+  const method = editingAgentId ? "PUT" : "POST";
+  let body;
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return;
+    body = await res.json().catch(() => null);
+  } catch { return; /* silo may be unreachable; leave the dialog open */ }
+
+  pendingRegenerate = false;
+  loadAgents();
+
+  // The response is { agent, apiKey }. A non-null apiKey means one was just minted (create, or a
+  // regenerate) — reveal it ONCE and keep the dialog open (now in edit mode) so the user can copy it;
+  // it is never returned again. Otherwise this was a plain save, so just close.
+  if (body && body.apiKey) {
+    editingAgentId = body.agent.id;
+    agentFormTitle.textContent = "Edit agent";
+    agentTabs.select(2); // the key lives in the API-key panel — show it even if Save came from another tab
+    agentKeySection.hidden = false;
+    agentKeyValue.textContent = body.apiKey;
+    agentKeyReveal.hidden = false;
+    agentKeyCopyBtn.textContent = "Copy";
+  } else {
+    agentDialog.close();
+  }
+}
+
+async function deleteAgent(id, name) {
+  if (!confirm(`Delete agent "${name}"? Existing chats keep their persona.`)) return;
+  try {
+    const res = await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) return;
+  } catch { return; /* silo may be unreachable; leave the row in place */ }
+
+  agents = agents.filter((a) => a.id !== id);
+  renderAgents();
+  loadAgents();
+}
+
+// In an agent chat the model is fixed to the agent's, so the picker is replaced by a
+// static "agent · model" label; a normal chat shows the live picker.
+export function lockPicker(name, model) {
+  modelField.hidden = true;
+  agentLabel.hidden = false;
+  agentLabel.textContent = `⛓ ${name} · ${modelLabel(model)}`;
+  // An agent chat's tools come from its bind snapshot (ADR 0021), so the per-chat popover is hidden —
+  // a PUT before the first agent turn would be clobbered by the bind anyway. Incognito is likewise a
+  // regular-chat-only affordance (ADR 0034), so it hides under the same lock.
+  toolsBtn.hidden = true;
+  incognitoBtn.hidden = true;
+}
+
+export function unlockPicker() {
+  modelField.hidden = false;
+  agentLabel.hidden = true;
+  toolsBtn.hidden = false;
+  incognitoBtn.hidden = false;
+}
+
+// Reflect the incognito flag onto the toggle and the empty-state hint (ADR 0034). `interactive` is
+// false once a chat has a message or history — ephemerality is fixed at creation, so the button locks.
+export function setIncognito(on, interactive) {
+  ephemeral = on;
+  incognitoBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  incognitoBtn.classList.toggle("is-active", on);
+  if (interactive !== undefined) incognitoBtn.disabled = !interactive;
+  document.body.classList.toggle("is-incognito", on);
+}
+
+export function wireAgents() {
+  // Flip incognito for the fresh chat (ADR 0034). The button is disabled once a chat has started, so
+  // this only ever fires while the flag is still settable.
+  incognitoBtn.addEventListener("click", () => setIncognito(!ephemeral));
+  addAgentBtn.addEventListener("click", () => openAgentDialog(null));
+  agentCancelBtn.addEventListener("click", () => agentDialog.close());
+  agentForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveAgent();
+  });
+
+  // Regenerate the agent's API key (ADR 0022): confirm (the current key stops working), then save with
+  // the regenerate flag so the new key comes back and gets revealed once.
+  agentRegenerateKeyBtn.addEventListener("click", () => {
+    if (!editingAgentId) return;
+    if (!confirm("Regenerate this agent's API key? The current key stops working immediately.")) return;
+    pendingRegenerate = true;
+    saveAgent();
+  });
+
+  agentKeyCopyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(agentKeyValue.textContent);
+      agentKeyCopyBtn.textContent = "Copied";
+    } catch {
+      /* clipboard blocked (insecure context / permission) — the key is visible to select manually */
+    }
+  });
+
+  agentRunUrlCopyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(agentRunUrl.textContent);
+      agentRunUrlCopyBtn.textContent = "Copied";
+    } catch {
+      /* clipboard blocked (insecure context / permission) — the URL is visible to select manually */
+    }
+  });
+}
+
+export function setAgents(value) {
+  agents = value;
+}

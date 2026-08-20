@@ -9,9 +9,14 @@ namespace Agent42.Tests;
 [Collection("StaticAssets")]
 public sealed class ConfigHealthAssetsTests
 {
+    private readonly StaticAssetsServerFixture _fixture;
     private readonly HttpClient _client;
 
-    public ConfigHealthAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
+    public ConfigHealthAssetsTests(StaticAssetsServerFixture fixture)
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     // AC8: the Configuration tab is present in the markup and its panel/probe button exist.
     [Fact]
@@ -30,7 +35,7 @@ public sealed class ConfigHealthAssetsTests
     [Fact]
     public async Task ConfigTab_IsWiredIntoPreferences_AppendedLast()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // The profileTabs = wireTabs([...]) array, from the call to its closing "]);".
         var start = app.IndexOf("const profileTabs = wireTabs(", StringComparison.Ordinal);
@@ -52,36 +57,15 @@ public sealed class ConfigHealthAssetsTests
     [Fact]
     public async Task ConfigHealth_FetchesStaticOnOpen_AndProbesOnDemand()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // Opened alongside the other loaders in openProfileDialog — the STATIC (no-probe) call.
-        var open = Body(app, "async function openProfileDialog()");
+        var open = StaticAssetsServerFixture.Body(app, "async function openProfileDialog()");
         Assert.Contains("loadConfigHealth()", open);
 
         // The loader hits /api/config-health, and only appends ?probe=true when explicitly asked.
-        var loader = Body(app, "async function loadConfigHealth(probe = false)");
+        var loader = StaticAssetsServerFixture.Body(app, "async function loadConfigHealth(probe = false)");
         Assert.Contains("/api/config-health", loader);
         Assert.Contains("?probe=true", loader);
-    }
-
-    // The source of one function, from its declaration to the brace that closes its body — copied from
-    // LocationAssetsTests.Body so an assertion can scope to one function rather than the whole file.
-    private static string Body(string source, string declaration)
-    {
-        var start = source.IndexOf(declaration, StringComparison.Ordinal);
-        Assert.True(start >= 0, $"'{declaration}' not found in app.js — did it get renamed?");
-
-        var open = source.IndexOf('{', start);
-        Assert.True(open >= 0, $"no body found for '{declaration}'");
-
-        var depth = 0;
-        for (var i = open; i < source.Length; i++)
-        {
-            if (source[i] == '{') depth++;
-            else if (source[i] == '}' && --depth == 0) return source[start..(i + 1)];
-        }
-
-        Assert.Fail($"unbalanced braces after '{declaration}'");
-        return string.Empty;
     }
 }

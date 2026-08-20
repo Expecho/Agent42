@@ -1,0 +1,215 @@
+/* Agent 42 — thread rendering — messages, tool calls, token usage. Split out of app.js (ADR 0041). */
+
+import { chatScroll, emptyState, thread } from "./dom.js";
+import { linkifyPlainText, renderMarkdown } from "./format.js";
+import { send, streaming } from "./send.js";
+
+export function clearThread() {
+  thread.querySelectorAll(".msg").forEach((el) => el.remove());
+}
+
+export function setEmptyVisible(visible) {
+  emptyState.style.display = visible ? "" : "none";
+}
+
+export function addMessage(role, options = {}) {
+  setEmptyVisible(false);
+  const msg = document.createElement("article");
+  msg.className = role === "user" ? "msg msg--user" : "msg msg--agent";
+  if (options.error) msg.classList.add("is-error");
+
+  const meta = document.createElement("div");
+  meta.className = "msg__meta";
+  meta.textContent = role === "user" ? "YOU" : "AGENT 42";
+
+  const bubble = document.createElement("div");
+  bubble.className = "msg__bubble";
+  if (role !== "user") {
+    const prose = document.createElement("div");
+    prose.className = "prose";
+    bubble.appendChild(prose);
+  }
+
+  msg.append(meta, bubble);
+  thread.appendChild(msg);
+  return msg;
+}
+
+// Fills a user bubble with its (optional) images followed by its text. Images are always
+// fetched through the first-party display proxy by id, so the same path renders a live send
+// and a reloaded turn — the page never holds a blob URL.
+export function fillUserBubble(msg, text, attachments, convId) {
+  const bubble = msg.querySelector(".msg__bubble");
+  bubble.textContent = "";
+
+  if (attachments && attachments.length) {
+    const gallery = document.createElement("div");
+    gallery.className = "msg__images";
+    for (const att of attachments) {
+      const img = document.createElement("img");
+      img.className = "msg__image";
+      img.loading = "lazy";
+      img.alt = att.fileName || "attachment";
+      img.src = attachmentUrl(convId, att.id);
+      gallery.appendChild(img);
+    }
+    bubble.appendChild(gallery);
+  }
+
+  if (text) {
+    const body = document.createElement("div");
+    body.className = "msg__text";
+    // Plain text with bare http(s) URLs made clickable — not markdown (see linkifyPlainText).
+    body.innerHTML = linkifyPlainText(text);
+    bubble.appendChild(body);
+  }
+}
+
+export const attachmentUrl = (convId, attachmentId) =>
+  `/api/conversations/${encodeURIComponent(convId)}/attachments/${encodeURIComponent(attachmentId)}`;
+
+// Adds a generated image (ADR 0020) to an assistant bubble, ABOVE its prose. Fetched through the same
+// first-party display proxy by id as user images, so a live image stream event and a reloaded assistant
+// turn render through one path — the page never holds a blob URL.
+export function addAgentImage(msg, convId, attachmentId, fileName) {
+  const bubble = msg.querySelector(".msg__bubble");
+  let gallery = bubble.querySelector(".msg__images");
+  if (!gallery) {
+    gallery = document.createElement("div");
+    gallery.className = "msg__images";
+    bubble.insertBefore(gallery, bubble.firstChild); // above the prose
+  }
+  const img = document.createElement("img");
+  img.className = "msg__image";
+  img.loading = "lazy";
+  img.alt = fileName || "generated image";
+  img.src = attachmentUrl(convId, attachmentId);
+  gallery.appendChild(img);
+}
+export function setAgentMarkdown(msg, text, { caret = false } = {}) {
+  const prose = msg.querySelector(".prose");
+  prose.innerHTML = renderMarkdown(text);
+  if (caret) {
+    const caretEl = document.createElement("span");
+    caretEl.className = "caret";
+    (prose.lastElementChild ?? prose).appendChild(caretEl);
+  }
+}
+
+// Adds a hover-revealed copy button to the bottom of a finalized agent bubble. The raw markdown
+// is captured by closure here — it is NOT recoverable from the DOM (the .prose div holds only
+// rendered HTML). Mirrors the agent-key/run-URL clipboard buttons and the JS-created glyph
+// actions (.conv__delete "×", .agent__action "✎"): swap the glyph to a check on success, revert
+// after ~1.5s, swallow the catch. Skips empty/image-only replies (nothing to copy).
+export function addCopyButton(msg, rawText) {
+  if (!rawText || !rawText.trim()) return;
+  const bubble = msg.querySelector(".msg__bubble");
+  if (!bubble) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "msg__copy";
+  btn.setAttribute("aria-label", "Copy response");
+  btn.textContent = "⧉";
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(rawText);
+      btn.textContent = "✓";
+      setTimeout(() => { btn.textContent = "⧉"; }, 1500);
+    } catch {
+      /* clipboard blocked (insecure context / permission) — the reply is visible to select manually */
+    }
+  });
+  bubble.appendChild(btn);
+}
+
+// Follow-up suggestion chips (up to 3) under a reply. Clicking one sends it immediately as the next
+// message — a click is explicit intent — guarded so it never fires mid-stream. Live-only: not replayed
+// by renderTurns, so they exist only under the freshly streamed turn and are cleared when the next turn
+// starts (clearSuggestions in send()).
+export function renderSuggestions(msg, items) {
+  if (!Array.isArray(items) || items.length === 0) return;
+  const bubble = msg.querySelector(".msg__bubble");
+  if (!bubble) return;
+  const row = document.createElement("div");
+  row.className = "msg__suggestions";
+  for (const text of items.slice(0, 3)) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "suggestion-chip";
+    chip.textContent = text;
+    chip.addEventListener("click", () => { if (!streaming) send(text); });
+    row.appendChild(chip);
+  }
+  bubble.appendChild(row);
+}
+
+// Removes any suggestion chips currently in the thread (only the newest turn should carry them).
+export function clearSuggestions() {
+  thread.querySelectorAll(".msg__suggestions").forEach((el) => el.remove());
+}
+
+export const scrollToBottom = () => { chatScroll.scrollTop = chatScroll.scrollHeight; };
+const prettyJson = (text) => {
+  try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
+};
+
+// Tool activity is shown as collapsible chips above the reply text, one per call.
+export function addToolCall(msg, { toolCallId, toolName, toolInput }) {
+  const bubble = msg.querySelector(".msg__bubble");
+  let tools = bubble.querySelector(".msg__tools");
+  if (!tools) {
+    tools = document.createElement("div");
+    tools.className = "msg__tools";
+    bubble.insertBefore(tools, bubble.querySelector(".prose"));
+  }
+
+  const item = document.createElement("details");
+  item.className = "tool-call is-running";
+  if (toolCallId) item.dataset.callId = toolCallId;
+
+  const summary = document.createElement("summary");
+  const status = document.createElement("span");
+  status.className = "tool-call__status";
+  const name = document.createElement("span");
+  name.className = "tool-call__name";
+  name.textContent = toolName ?? "tool";
+  summary.append(status, name);
+  item.appendChild(summary);
+
+  if (toolInput) appendToolIo(item, "input", toolInput);
+  tools.appendChild(item);
+}
+
+export function completeToolCall(msg, { toolCallId, toolResult }) {
+  const item =
+    (toolCallId && msg.querySelector(`.tool-call[data-call-id="${CSS.escape(toolCallId)}"]`)) ??
+    msg.querySelector(".tool-call.is-running");
+  if (!item) return;
+  item.classList.remove("is-running");
+  item.classList.add("is-done");
+  if (toolResult) appendToolIo(item, "result", toolResult);
+}
+
+function appendToolIo(item, label, json) {
+  const io = document.createElement("div");
+  io.className = "tool-call__io";
+  const lab = document.createElement("div");
+  lab.className = "tool-call__io-label";
+  lab.textContent = label;
+  const pre = document.createElement("pre");
+  pre.textContent = prettyJson(json);
+  io.append(lab, pre);
+  item.appendChild(io);
+}
+
+export function showUsage(msg, { inputTokens, outputTokens, cachedTokens }) {
+  if (inputTokens == null && outputTokens == null) return;
+  const parts = [];
+  if (inputTokens != null) parts.push(`${inputTokens.toLocaleString()} in`);
+  if (outputTokens != null) parts.push(`${outputTokens.toLocaleString()} out`);
+  if (cachedTokens != null) parts.push(`${cachedTokens.toLocaleString()} cached`);
+  const usage = document.createElement("div");
+  usage.className = "msg__usage";
+  usage.textContent = `tokens · ${parts.join(" · ")}`;
+  msg.appendChild(usage);
+}

@@ -21,8 +21,8 @@ public static partial class AgentApi
         // absent-means-keep (ADR 0021 + ADR 0005): the profile record holds several independent preferences
         // now (language, Theme, EnabledTools), and each has its own endpoint/dialog. A null field on the
         // request means "leave it as stored", so a language-only save never wipes the theme or the tool
-        // default and vice-versa — the UI never sends null to mean "reset" (a stale client with old cached
-        // app.js in a second tab that PUTs a language-only save must not reset the saved theme). Tool keys
+        // default and vice-versa — the UI never sends null to mean "reset" (a stale client with an old
+        // cached frontend in a second tab that PUTs a language-only save must not reset the saved theme). Tool keys
         // are sanitized server-side.
         app.MapPut("/api/profile", async (ProfileUpdateRequest request, IGrainFactory grains, HttpContext http) =>
         {

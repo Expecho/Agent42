@@ -12,9 +12,14 @@ namespace Agent42.Tests;
 [Collection("StaticAssets")]
 public sealed class McpServersAssetsTests
 {
+    private readonly StaticAssetsServerFixture _fixture;
     private readonly HttpClient _client;
 
-    public McpServersAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
+    public McpServersAssetsTests(StaticAssetsServerFixture fixture)
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     [Fact]
     public async Task Preferences_HasAnMcpServersTabAndPanel()
@@ -59,7 +64,7 @@ public sealed class McpServersAssetsTests
     public async Task McpDialog_HasInteractiveOAuthOptionAndConnectFlow()
     {
         var html = await _client.GetStringAsync("/index.html");
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         Assert.Contains("value=\"InteractiveOAuth\"", html);
         Assert.Contains("id=\"mcpOAuthNote\"", html);
@@ -72,7 +77,7 @@ public sealed class McpServersAssetsTests
     [Fact]
     public async Task AppJs_WiresTheMcpCrudAgainstTheApi()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // CRUD against /api/mcp-servers, and the tab is loaded when Preferences opens.
         Assert.Contains("/api/mcp-servers", app);

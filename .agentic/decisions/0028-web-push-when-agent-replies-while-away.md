@@ -115,7 +115,7 @@ stubbed `HttpMessageHandler` with a real VAPID + P-256 subscription keypair.
 ### Frontend is verified by offline run + manual device check, plus a source-text seam
 As with ADR 0023, real-device behaviour (subscribe, background reply, tap-to-open) is verified manually on
 Android Chrome. The repo's C# source-text guards (`PwaAssetsTests`) assert the SW registers the `push` +
-`notificationclick` listeners and that the `app.js` subscribe wiring is present; the interactive flow
+`notificationclick` listeners and that the `src/Agent42.Backend/wwwroot/js/push.js` subscribe wiring is present; the interactive flow
 itself stays manual-only.
 
 ### Out of scope

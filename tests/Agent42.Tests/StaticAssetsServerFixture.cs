@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -39,6 +41,79 @@ public sealed class StaticAssetsServerFixture : IAsyncLifetime
     {
         Client.Dispose();
         await _app.DisposeAsync();
+    }
+
+    /// <summary>
+    /// The whole front-end script as one string: <c>/js/main.js</c> plus every module reachable from
+    /// it, fetched over HTTP and concatenated. This is the seam the source-text asset guards read
+    /// (ADR 0041) — before the ES-module split they each did <c>GET /app.js</c>.
+    /// <para>
+    /// Fetching over HTTP (rather than reading <c>wwwroot</c> off disk) keeps the original meaning:
+    /// an assertion still fails if a module exists but is not actually SERVED. Walking the *import
+    /// graph* (rather than listing the directory) means an orphaned file — one no module imports —
+    /// is correctly excluded from the corpus rather than silently propping an assertion up; the
+    /// orphan itself is caught separately by <c>ProjectLayoutTests</c>.
+    /// </para>
+    /// </summary>
+    public async Task<string> GetAppScriptAsync()
+    {
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var script = new StringBuilder();
+        await AppendModuleAsync("main.js", visited, script);
+        return script.ToString();
+    }
+
+    // All four specifier forms, or a module reachable only by a side-effect import ("./pwa.js")
+    // would be dropped from the corpus AND flagged as an orphan by the layout guard:
+    //   import … from "./x.js"    import "./x.js"    export … from "./x.js"    export * from "./x.js"
+    private static readonly Regex Specifier =
+        new("""(?:\bfrom\s*|\bimport\s*)["'](\./[^"']+)["']""", RegexOptions.Compiled);
+
+    private async Task AppendModuleAsync(string file, HashSet<string> visited, StringBuilder script)
+    {
+        if (!visited.Add(file))
+        {
+            return;
+        }
+
+        var source = await Client.GetStringAsync("/js/" + file);
+
+        // Depth-first, so a module's dependencies land in the corpus before it does.
+        foreach (Match match in Specifier.Matches(source))
+        {
+            await AppendModuleAsync(match.Groups[1].Value[2..], visited, script);
+        }
+
+        script.Append(source).Append('\n');
+    }
+
+    /// <summary>
+    /// Returns the source text of one function, from its declaration to its matching closing brace,
+    /// by counting brace depth. Crude, but it is what lets an assertion say "<c>send()</c> does not
+    /// call <c>getCurrentPosition</c>" rather than the far weaker "the file contains the string
+    /// somewhere" — which would pass no matter where the call sat.
+    /// <para>
+    /// Depth-counting rather than scanning for a fixed-indent <c>"\n  }"</c>: module-scope bodies
+    /// close at column 0, and an indentation-sensitive scan would run straight past the end.
+    /// </para>
+    /// </summary>
+    public static string Body(string source, string declaration)
+    {
+        var start = source.IndexOf(declaration, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"'{declaration}' not found in the front-end script — did it get renamed?");
+
+        var open = source.IndexOf('{', start);
+        Assert.True(open >= 0, $"no body found for '{declaration}'");
+
+        var depth = 0;
+        for (var i = open; i < source.Length; i++)
+        {
+            if (source[i] == '{') depth++;
+            else if (source[i] == '}' && --depth == 0) return source[start..(i + 1)];
+        }
+
+        Assert.Fail($"unbalanced braces after '{declaration}'");
+        return string.Empty;
     }
 
     // Walk up from the test assembly location until the repo root (the directory holding

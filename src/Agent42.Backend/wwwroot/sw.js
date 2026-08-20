@@ -2,10 +2,15 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v12";
-const SHELL = ["/", "/index.html", "/styles.css", "/app.js",
-  "/lib/marked.min.js", "/lib/purify.min.js", "/manifest.webmanifest",
-  "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png"];
+const CACHE = "agent42-shell-v13";
+const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/attachments.js",
+  "/js/cache.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
+  "/js/drawer.js", "/js/format.js", "/js/location.js", "/js/main.js", "/js/mcp.js",
+  "/js/models.js", "/js/profile.js", "/js/providers.js", "/js/push.js", "/js/pwa.js",
+  "/js/send.js", "/js/sharelinks.js", "/js/sharetarget.js", "/js/sidebar.js", "/js/speech.js",
+  "/js/tabs.js", "/js/theme.js", "/js/thread.js", "/js/tools.js", "/js/usage.js", "/js/voice.js",
+  "/lib/marked.min.js", "/lib/purify.min.js", "/manifest.webmanifest", "/icons/icon-192.png",
+  "/icons/icon-512.png", "/icons/icon-maskable-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -24,9 +29,9 @@ self.addEventListener("activate", (event) => {
    landing (/?share=1). This is the auth pivot: a POST navigation to a protected path would 302 to
    the Easy Auth login and LOSE the body (ADR 0002); the SW-synthesized POST never leaves the
    client, so Easy Auth never sees it, and the payload survives the login round-trip in IndexedDB
-   (origin-scoped). app.js reads the stash on the /?share=1 load. Requires the SW to be active and
-   controlling (true after install on Android); if it isn't, the POST reaches the server and fails
-   ungracefully — an accepted platform limit, NOT a server /share route (that reintroduces the
+   (origin-scoped). js/sharetarget.js reads the stash on the /?share=1 load. Requires the SW to be
+   active and controlling (true after install on Android); if it isn't, the POST reaches the server
+   and fails ungracefully — an accepted platform limit, NOT a server /share route (that reintroduces the
    body-loss problem). See the ADR and gotchas entry. */
 const SHARE_DB = "agent42-share";
 const SHARE_STORE = "pending";
@@ -53,7 +58,7 @@ function sharePut(record) {
 async function handleShare(request) {
   const form = await request.formData();
   // File parts are Files (Blobs with a name); store the Blob directly — IndexedDB persists it and
-  // app.js rebuilds a File from it. Text-only shares carry no "file" part.
+  // js/sharetarget.js rebuilds a File from it. Text-only shares carry no "file" part.
   const files = form.getAll("file")
     .filter((f) => f instanceof Blob && f.name)
     .map((f) => ({ name: f.name, type: f.type, blob: f }));
@@ -116,8 +121,8 @@ self.addEventListener("push", (event) => {
     }));
 });
 
-/* Tapping the notification focuses an existing app window and tells app.js which conversation to open
-   (its `message` handler calls selectConversation), or opens a fresh window at "/" when none is open. */
+/* Tapping the notification focuses an existing app window and tells js/push.js which conversation to
+   open (its `message` handler calls selectConversation), or opens a fresh window at "/" when none is open. */
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const conversationId = (event.notification.data && event.notification.data.conversationId) || "";
