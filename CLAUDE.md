@@ -289,7 +289,7 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   route and no `excludedPaths`/Bicep change** — the deliberate contrast with ADR 0022. The **service
   worker intercepts `POST /share` client-side**, stashes the payload in **IndexedDB**, and 303-redirects to
   a GET landing (`/?share=1`); the POST never hits the network, so Easy Auth (ADR 0002, `RedirectToLoginPage`)
-  never sees it and can't drop the body on a login redirect. `app.js` reads the stash on load, opens a
+  never sees it and can't drop the body on a login redirect. `sharetarget.js` reads the stash on load, opens a
   **per-share destination picker** (new chat / an agent, incl. continuous — ADR 0016), prefills the composer
   and runs shared files through the existing `handleFiles` upload path (images → attachments, documents →
   RAG), then the user **reviews and presses Send — never auto-sent** (egress consent, ADR 0013). Two things
@@ -400,7 +400,7 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   non-agent chats fall back to `"Agent42"`); and the global grain **prunes on every write** (hourly ~48 h / daily ~92 d) to hold the 2 MB item cap
   (ADR 0004), so `range=all` = the retained window. Empty offline (DevHost has no OTel pipeline).
 - Offline read cache (ADR 0032): the installed PWA renders the user's **agents and chats offline** via a
-  **client-side IndexedDB mirror in `app.js`** (DB `agent42-cache`, store `kv`, keys `agents` /
+  **client-side IndexedDB mirror in `cache.js`** (DB `agent42-cache`, store `kv`, keys `agents` /
   `conversations` / `messages:<id>`; helpers `cacheGet`/`cachePut`/`cacheDelete`). Every successful
   `/api/agents` · `/api/conversations` · `.../messages` fetch writes the mirror; `hydrateFromCache()`
   paints cached lists at startup (length-guarded so the network fast-path wins) and the loaders fall back
@@ -408,7 +408,7 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   (`selectConversation` caches its history and replays it through the extracted `renderTurns`). **The SW
   is deliberately NOT involved** — it stays shell-only and never touches `/api` (ADR 0002); "fixing" empty
   offline lists by caching `/api` in the SW breaks that invariant (see the gotcha). Only infra-free change
-  beyond `app.js` is the shell version bump `agent42-shell-v9` → `-v10`. **Consequence:** conversation text
+  beyond the frontend JS is the shell version bump `agent42-shell-v9` → `-v10`. **Consequence:** conversation text
   + agent definitions now persist **unencrypted** in origin IndexedDB (data-at-rest, cleared with site
   data); no new egress. Image thumbnails don't load offline (separate attachment proxy) — text shows.
 - Ephemeral / incognito chat (ADR 0034): a composer **incognito toggle** starts a chat whose history is
@@ -458,7 +458,7 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
 - Hands-free voice conversation (ADR 0037, **extends ADR 0006**): a dedicated composer `#voiceBtn` (distinct
   from `#micBtn` dictation) starts a **hands-free loop** — auto-listen → auto-send → **speak the reply** →
   **talk over it to interrupt** → re-listen — with **no buttons between turns**. Browser-native and
-  **frontend-only** (all in `src/Agent42.Backend/wwwroot/app.js` + `index.html` + `styles.css`; no endpoint/grain/Bicep/Azure/JS
+  **frontend-only** (all in `src/Agent42.Backend/wwwroot/js/` + `index.html` + `styles.css`; no endpoint/grain/Bicep/Azure/JS
   dependency, exactly like ADR 0006): `SpeechRecognition` to listen + **`speechSynthesis` to speak** (the new
   output half — ADR 0006 was input-only). A **dedicated second `SpeechRecognition` instance** drives voice mode
   so the dictation instance's Android accumulation fixes stay untouched; the two mic uses are mutually exclusive
@@ -499,6 +499,24 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   (ADR 0013 egress) — the reason it is opt-in and the browser voice stays default. Offline can't reach a real
   TTS endpoint (like image gen, ADR 0020); the Foundry audio wire path is spike-informed, prod-smoke verified.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
+- Frontend layout (ADR 0041, the frontend instalment of 0039/0040): the 3616-line `app.js` IIFE is
+  **gone**, split into **28 native ES modules** in `src/Agent42.Backend/wwwroot/js/`, loaded by one
+  `<script type="module" src="js/main.js">`. Module names reuse the Agents/Backend feature vocabulary
+  (`src/Agent42.Backend/wwwroot/js/mcp.js` pairs with `src/Agent42.Backend/Mcp/`). **Native ES modules precisely because they need
+  no build step** — `marked`/`purify` stay classic scripts and execute first, so they remain globals.
+  **There is deliberately NO flat-namespace analogue to ADR 0039 here**: ES specifiers are file paths
+  the browser resolves at load time and are never persisted, so the Cosmos `$type` hazard has no
+  frontend counterpart. State is **per-module `export let`** owned by its single writer, never a shared
+  `state.js` — cross-module reads use the live binding (so read sites are byte-identical, which is what
+  kept six existing assertions intact), and the handful of cross-module writes go through exported
+  setters. `main.js` is the **composition root**: imported by nobody, the only caller of each
+  feature's `wire*()`/`init*()`. Three traps to read before touching this: `sw.js`'s `SHELL` is
+  **all-or-nothing** and now bidirectional (a *stale* entry kills the whole SW, not just one file);
+  **every MR touching `wwwroot/js/` must bump `CACHE`** (cache-first subresources + a renamed export =
+  `SyntaxError` and a blank app); and a module unreachable from `main.js` is **invisible to all 47
+  source-text asset guards** (the fixture's `GetAppScriptAsync()` walks the import graph over HTTP).
+  All three are in gotchas, and all three are asserted in `ProjectLayoutTests`/`PwaAssetsTests`.
+  `styles.css` and `index.html`'s markup are deliberately untouched — separate MRs.
 - Project layout (ADR 0039): `src/Agent42.Agents` is organised into **16 top-level feature folders**
   (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …), and `AgentGrain` is split into
   **10 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`

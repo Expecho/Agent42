@@ -97,7 +97,7 @@ the message). Anyone adding a probe must return a **curated** `ProbeResult`, nev
 or a URL.
 
 ### The tab is appended LAST in the Preferences tablist
-`app.js`'s MCP-OAuth return deep-links to `profileTabs.select(3)` (the MCP tab), so the Configuration pair
+`mcp.js`'s MCP-OAuth return deep-links to `profileTabs.select(3)` (the MCP tab), so the Configuration pair
 must sit **after** MCP in the `wireTabs` array — Configuration is index 4, MCP stays 3. Inserting it earlier
 would silently break the OAuth return. An asset test asserts the ordering and that `select(3)` is unchanged.
 

@@ -13,9 +13,14 @@ namespace Agent42.Tests;
 [Collection("StaticAssets")]
 public sealed class PwaAssetsTests
 {
+    private readonly StaticAssetsServerFixture _fixture;
     private readonly HttpClient _client;
 
-    public PwaAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
+    public PwaAssetsTests(StaticAssetsServerFixture fixture)
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     [Fact]
     public async Task Manifest_IsServed_WithInstallableFields()
@@ -47,6 +52,24 @@ public sealed class PwaAssetsTests
         response.EnsureSuccessStatusCode();
         var mediaType = response.Content.Headers.ContentType?.MediaType;
         Assert.Contains(mediaType, new[] { "text/javascript", "application/javascript" });
+    }
+
+    // ADR 0041 — the app's entry point is reachable. Since the split, every source-text guard enters the
+    // module graph at /js/main.js directly, so a broken, missing or type-less <script> tag in index.html
+    // would leave the whole suite green while the app is dead in a browser. Before the split that was
+    // guarded only implicitly, by every asset test doing GET /app.js.
+    [Fact]
+    public async Task EntryPointModule_IsServed_AsJavaScript()
+    {
+        var response = await _client.GetAsync("/js/main.js");
+
+        response.EnsureSuccessStatusCode();
+        var mediaType = response.Content.Headers.ContentType?.MediaType;
+        Assert.Contains(mediaType, new[] { "text/javascript", "application/javascript" });
+
+        // …and index.html actually loads it, as a module (a classic script would break every import).
+        var html = await _client.GetStringAsync("/index.html");
+        Assert.Contains("<script type=\"module\" src=\"js/main.js\"></script>", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -92,7 +115,7 @@ public sealed class PwaAssetsTests
         // instead of drawing a normal "just indexed" chip that invites an unanswerable question.
         // Source-text heuristic (the repo has no JS test runner by design) — proves the warning
         // branch and its style hook exist, not their runtime behaviour.
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         Assert.Contains("chunkCount > 0", app);
         Assert.Contains("attach-chip--warn", app);
 
@@ -106,7 +129,7 @@ public sealed class PwaAssetsTests
         // Agent-produced chats are grouped under a collapsible header keyed by conv.agentId, with
         // expand state persisted to localStorage (groups start collapsed). Source-text heuristic (no
         // JS test runner by design) — proves the grouping code and its style hooks shipped, not their runtime behaviour.
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         Assert.Contains("buildAgentGroup", app);
         Assert.Contains("conv.agentId", app);
         Assert.Contains("EXPANDED_AGENTS_KEY", app);
@@ -123,7 +146,7 @@ public sealed class PwaAssetsTests
         // whenever the await resolves — a mid-upload switch would inject the chip into the wrong
         // conversation. handleFiles must pin uploadId at entry and bail when activeId moves on.
         // Source-text heuristic (no JS test runner by design) — proves the guard exists.
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         Assert.Contains("uploadId", app);
         Assert.Contains("activeId !== uploadId", app);
     }
@@ -135,7 +158,7 @@ public sealed class PwaAssetsTests
         // render a dismissible error chip so the user knows the file did not attach. Source-text
         // heuristic (no JS test runner by design) — asserts the observable render, not the specific
         // body-read call, and that the bare swallow is gone.
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         Assert.Contains("attach-chip--error", app);
         Assert.DoesNotContain("if (!res.ok) continue;", app);
 
@@ -150,7 +173,7 @@ public sealed class PwaAssetsTests
         Assert.Contains("rel=\"manifest\"", index);
         Assert.Contains("theme-color", index);
 
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         Assert.Contains("serviceWorker.register", app);
     }
 
@@ -162,12 +185,12 @@ public sealed class PwaAssetsTests
     {
         var index = await _client.GetStringAsync("/");
         // The theme <select> and the pre-paint no-FOUC head script (reads the localStorage cache
-        // and sets data-theme before app.js). Both must exist or the picker/anti-flash break.
+        // and sets data-theme before js/main.js). Both must exist or the picker/anti-flash break.
         Assert.Contains("id=\"profileTheme\"", index);
         Assert.Contains("agent42.theme", index);
         Assert.Contains("data-theme", index);
 
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         Assert.Contains("THEME_KEY", app);
         Assert.Contains("applyTheme", app);
         // The staged commit sends theme in the profile PUT payload; the OS-follow listener backs "system".
@@ -181,21 +204,26 @@ public sealed class PwaAssetsTests
     [Fact]
     public async Task ServiceWorker_CacheNameIsCurrent()
     {
-        // Bumped whenever the cached shell (index/styles/app) changes, so returning users don't get
-        // stale assets — sw.js serves the shell cache-first with background revalidate.
+        // Bumped whenever the cached shell (index/styles/the js/ module graph) changes, so returning
+        // users don't get stale assets — sw.js serves the shell cache-first with background revalidate.
+        //
+        // Since ADR 0041 the bump is no longer merely hygienic: subresources are served cache-first, so
+        // the window between a network-first index.html and the new SW activating can serve a version-
+        // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
+        // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v12", sw);
+        Assert.Contains("agent42-shell-v13", sw);
     }
 
     // Offline read cache (ADR 0032): agents, conversations and previously-opened chat histories are
-    // mirrored into an IndexedDB "agent42-cache" store in app.js so the installed PWA can render the
-    // user's data offline. This lives entirely in app.js — the service worker still never touches /api
+    // mirrored into an IndexedDB "agent42-cache" store in js/cache.js so the installed PWA can render the
+    // user's data offline. This lives entirely in the app modules — the service worker still never touches /api
     // (ADR 0002), so ServiceWorker_BypassesApiBeforeCaching stays the guard for that invariant.
     // Source-text heuristic (no JS runner by design) — proves the wiring shipped, not runtime behaviour.
     [Fact]
     public async Task Frontend_MirrorsAgentsAndChatsForOffline()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // The dedicated read-cache store + its best-effort helpers.
         Assert.Contains("agent42-cache", app);
@@ -225,7 +253,7 @@ public sealed class PwaAssetsTests
     [Fact]
     public async Task Frontend_ShipsFollowUpSuggestions()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         Assert.Contains("chunk.type === \"suggestions\"", app);
         Assert.Contains("function renderSuggestions", app);
         Assert.Contains("function clearSuggestions", app);
@@ -251,7 +279,7 @@ public sealed class PwaAssetsTests
         Assert.Contains(".msg--agent:hover .msg__copy", styles);
         Assert.Matches(@"\.msg__copy\s*\{[^}]*opacity:\s*0", styles);
 
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         // AC2: the helper writes the raw text to the clipboard and swaps the glyph to a check on success.
         Assert.Contains("msg__copy", app);
         Assert.Contains("navigator.clipboard.writeText", app);
@@ -319,11 +347,11 @@ public sealed class PwaAssetsTests
         Assert.Contains("addEventListener(\"push\"", sw);
         Assert.Contains("addEventListener(\"notificationclick\"", sw);
         Assert.Contains("showNotification", sw);
-        // The click handler tells app.js which conversation to open (its message handler → selectConversation).
+        // The click handler tells js/push.js which conversation to open (its message handler → selectConversation).
         Assert.Contains("open-conversation", sw);
     }
 
-    // ADR 0028: the Preferences → General push toggle markup + the app.js subscribe/config wiring. Presence
+    // ADR 0028: the Preferences → General push toggle markup + the js/push.js subscribe/config wiring. Presence
     // guard only (no JS runner) — the interactive subscribe flow is verified manually on a device.
     [Fact]
     public async Task Frontend_ShipsPushToggle()
@@ -332,7 +360,7 @@ public sealed class PwaAssetsTests
         Assert.Contains("id=\"pushSection\"", index);
         Assert.Contains("id=\"pushToggleBtn\"", index);
 
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         Assert.Contains("/api/push/config", app);
         Assert.Contains("pushManager.subscribe", app);
         Assert.Contains("open-conversation", app);
@@ -350,17 +378,17 @@ public sealed class PwaAssetsTests
     [Fact]
     public async Task Frontend_WiresShareHandoffToHandleFiles()
     {
-        // AC5 — structural/weak check (Critic): handleFiles pervades app.js, so this proves the share
+        // AC5 — structural/weak check (Critic): handleFiles pervades the app modules, so this proves the share
         // hand-off strings exist AND that applyShare routes the shared files through handleFiles
         // (position-bounded, mutation-observable). The real proof is the manual DevHost drive (AC6).
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         Assert.Contains("has(\"share\")", app);   // the /?share=1 load-time hand-off detection
         Assert.Contains("readSharePayload", app); // reads the IndexedDB stash the SW wrote
 
         // handleFiles must be called INSIDE applyShare, not merely present somewhere in the file.
         var applyShare = app.IndexOf("function applyShare", StringComparison.Ordinal);
-        Assert.True(applyShare >= 0, "app.js is missing the applyShare share handler");
+        Assert.True(applyShare >= 0, "js/sharetarget.js is missing the applyShare share handler");
         var boundary = app.IndexOf("function initShare", applyShare, StringComparison.Ordinal);
         if (boundary < 0) boundary = app.Length;
         var handleFilesInApply = app.IndexOf("handleFiles(", applyShare, StringComparison.Ordinal);

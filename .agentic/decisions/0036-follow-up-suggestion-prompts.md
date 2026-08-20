@@ -11,7 +11,7 @@ tags: [agents, conversations, ux, suggestions, preferences, streaming, egress]
 After the assistant replies, there was no affordance to keep a conversation going except typing the next
 message. The user asked for **up to 3 suggested prompts they can click to continue an ongoing
 conversation** — the "suggested follow-ups" pattern. It was greenfield: no suggestion concept existed on
-either side (searches for `suggest`/`follow-up`/`starter` in `app.js` and `AgentGrain` returned nothing).
+either side (searches for `suggest`/`follow-up`/`starter` in the frontend and `AgentGrain` returned nothing).
 
 Two facts frame the design:
 

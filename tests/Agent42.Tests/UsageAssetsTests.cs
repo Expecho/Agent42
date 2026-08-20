@@ -11,9 +11,14 @@ namespace Agent42.Tests;
 [Collection("StaticAssets")]
 public sealed class UsageAssetsTests
 {
+    private readonly StaticAssetsServerFixture _fixture;
     private readonly HttpClient _client;
 
-    public UsageAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
+    public UsageAssetsTests(StaticAssetsServerFixture fixture)
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     // AC15: the dedicated view and its nav entry are present in the markup.
     [Fact]
@@ -34,7 +39,7 @@ public sealed class UsageAssetsTests
     [Fact]
     public async Task App_FetchesUsageEndpoint()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         Assert.Contains("fetch(`/api/usage?", app);
     }
@@ -45,13 +50,13 @@ public sealed class UsageAssetsTests
     [Fact]
     public async Task App_WiresAutoRefresh_AndClearsIntervalOnClose()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         Assert.Contains("usageRefresh", app);
         Assert.Contains("setInterval(loadUsage", app);
 
-        var closeUsage = Body(app, "function closeUsage()");
-        Assert.Contains("clearInterval", closeUsage + Body(app, "function stopUsageAutoRefresh()"));
+        var closeUsage = StaticAssetsServerFixture.Body(app, "function closeUsage()");
+        Assert.Contains("clearInterval", closeUsage + StaticAssetsServerFixture.Body(app, "function stopUsageAutoRefresh()"));
         Assert.Contains("stopUsageAutoRefresh()", closeUsage);
     }
 
@@ -59,10 +64,10 @@ public sealed class UsageAssetsTests
     [Fact]
     public async Task App_RendersShareBar()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         Assert.Contains("bar__fill", app);
-        var barCell = Body(app, "function usageBarCell(value, max)");
+        var barCell = StaticAssetsServerFixture.Body(app, "function usageBarCell(value, max)");
         Assert.Contains("* 100", barCell);
         Assert.Contains("fill.style.width", barCell);
     }
@@ -75,26 +80,5 @@ public sealed class UsageAssetsTests
 
         Assert.Contains(".usage {", styles);
         Assert.Contains(".bar__fill", styles);
-    }
-
-    // The source of one function, from its declaration to the brace that closes its body — copied
-    // from LocationAssetsTests.Body so an assertion can scope to one function rather than the whole file.
-    private static string Body(string source, string declaration)
-    {
-        var start = source.IndexOf(declaration, StringComparison.Ordinal);
-        Assert.True(start >= 0, $"'{declaration}' not found in app.js — did it get renamed?");
-
-        var open = source.IndexOf('{', start);
-        Assert.True(open >= 0, $"no body found for '{declaration}'");
-
-        var depth = 0;
-        for (var i = open; i < source.Length; i++)
-        {
-            if (source[i] == '{') depth++;
-            else if (source[i] == '}' && --depth == 0) return source[start..(i + 1)];
-        }
-
-        Assert.Fail($"unbalanced braces after '{declaration}'");
-        return string.Empty;
     }
 }

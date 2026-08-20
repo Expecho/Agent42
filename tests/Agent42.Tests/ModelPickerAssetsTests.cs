@@ -14,14 +14,19 @@ namespace Agent42.Tests;
 [Collection("StaticAssets")]
 public sealed class ModelPickerAssetsTests
 {
+    private readonly StaticAssetsServerFixture _fixture;
     private readonly HttpClient _client;
 
-    public ModelPickerAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
+    public ModelPickerAssetsTests(StaticAssetsServerFixture fixture)
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     [Fact] // AC14
     public async Task ModelPicker_ReadsQualifiedId_AndGroupsByProvider()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // The catalog's qualified id, not the old bare deployment name.
         Assert.Contains("opt.value = m.id;", app);
@@ -36,7 +41,7 @@ public sealed class ModelPickerAssetsTests
            // has one, falling back to the key. One shared helper feeds every provider-grouped select.
     public async Task ModelPicker_LabelsGroupWithProviderDisplayName_FallingBackToKey()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         // The single source of the group label: display name ?? key, then "Models" for the unkeyed default.
         Assert.Contains("function providerGroupLabel(m)", app);
@@ -51,7 +56,7 @@ public sealed class ModelPickerAssetsTests
     [Fact] // AC14 — one append-if-missing helper, not one per picker (duplication_pct_max: 3).
     public async Task BothPickers_ShareTheSameSelectHelper()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         Assert.Contains("function selectModel(select, id)", app);
         Assert.Contains("selectModel(agentModelSelect,", app);
@@ -63,14 +68,14 @@ public sealed class ModelPickerAssetsTests
     [Fact]
     public async Task DefaultModelPicker_PutsToTheEndpoint_AndSharesTheSelectHelper()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         var html = await _client.GetStringAsync("/index.html");
 
         Assert.Contains("id=\"defaultModelSelect\"", html);
         // The verb must be bound to THIS fetch: `method: "PUT"` alone appears on other calls too, so a
         // bare Contains would pass whatever verb the default-model call actually used.
         var fetchAt = app.IndexOf("fetch(\"/api/default-model\"", StringComparison.Ordinal);
-        Assert.True(fetchAt >= 0, "no fetch of /api/default-model in app.js");
+        Assert.True(fetchAt >= 0, "no fetch of /api/default-model in the front-end script");
         Assert.Contains("method: \"PUT\"", app[fetchAt..(fetchAt + 120)]);
         // The catalog fill and the append-if-missing selection are the SHARED helpers, not copies.
         Assert.Contains("fillModelOptions(defaultModelSelect);", app);
@@ -82,11 +87,11 @@ public sealed class ModelPickerAssetsTests
     [Fact]
     public async Task StartNewConversation_ResetsPickerToTheDefault()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
-        var start = app.IndexOf("function startNewConversation()", StringComparison.Ordinal);
-        Assert.True(start >= 0, "startNewConversation() not found in app.js");
-        var body = app[start..app.IndexOf("\n  }", start, StringComparison.Ordinal)];
+        // Depth-counted, not indentation-scanned: at module scope the body closes at column 0, so the
+        // old `IndexOf("\n  }")` would run straight past the end of the function (ADR 0041).
+        var body = StaticAssetsServerFixture.Body(app, "function startNewConversation()");
 
         Assert.Contains("if (defaultModel) setModel(defaultModel);", body);
     }
@@ -96,7 +101,7 @@ public sealed class ModelPickerAssetsTests
     [Fact]
     public async Task DefaultModelChange_DoesNotRepinTheComposer()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         Assert.Contains("async function loadModels({ pin = true } = {})", app);
         Assert.Contains("if (pin && defaultModel) setModel(defaultModel);", app);
@@ -108,7 +113,7 @@ public sealed class ModelPickerAssetsTests
     [Fact] // A raw "github:openai/gpt-4o-mini" is not a label a user should ever see.
     public async Task AgentChip_RendersADisplayName_NotARawQualifiedId()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
 
         Assert.Contains("function modelLabel(id)", app);
         Assert.Contains("model.textContent = modelLabel(agent.model);", app);

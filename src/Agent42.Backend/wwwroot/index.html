@@ -18,8 +18,8 @@
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <script>
     // No-FOUC: resolve the theme to an explicit data-theme on <html> BEFORE first paint, so the
-    // page never flashes dark before app.js runs. Source of truth is the server profile (ADR 0005);
-    // this localStorage value is only a pre-paint cache — app.js reconciles it against the profile
+    // page never flashes dark before js/theme.js runs. Source of truth is the server profile (ADR 0005);
+    // this localStorage value is only a pre-paint cache — js/theme.js reconciles it against the profile
     // on load. Kept tiny and inline on purpose (an external file is another round-trip = a flash).
     (function () {
       try {
@@ -295,7 +295,7 @@
         <button class="agent-form__tab" type="button" role="tab" id="tabMcp"
                 aria-selected="false" aria-controls="panelMcp" tabindex="-1">MCP servers</button>
         <!-- Appended LAST on purpose: the MCP-OAuth return deep-links to profileTabs.select(3), so this
-             tab must be index 4 — inserting it before MCP would break that return (app.js). -->
+             tab must be index 4 — inserting it before MCP would break that return (js/mcp.js). -->
         <button class="agent-form__tab" type="button" role="tab" id="tabConfig"
                 aria-selected="false" aria-controls="panelConfig" tabindex="-1">Configuration</button>
       </div>
@@ -638,10 +638,10 @@
   <!-- Token-usage dashboard (ADR 0031) — a dedicated FULL-PAGE overlay, not a Preferences tab
        (roomy enough for the four regions, faithful to the sibling AI.Telemetry.Dashboard layout). A
        fixed overlay so it never disturbs the .app flex layout underneath; toggled by #openUsageBtn /
-       #usageCloseBtn (app.js openUsage/closeUsage). Data is fed solely from OTEL GenAI spans — there is
-       deliberately no cost and no total-tokens field anywhere. Placed as the LAST markup block in
-       <body>, but still BEFORE the <script> tags below so app.js's element lookups can find it — a
-       script tag runs synchronously at the point it's parsed, so anything after it doesn't exist yet. -->
+       #usageCloseBtn (js/usage.js openUsage/closeUsage). Data is fed solely from OTEL GenAI spans — there
+       is deliberately no cost and no total-tokens field anywhere. Placed as the LAST markup block in
+       <body>. Ordering no longer depends on script position: js/main.js is a MODULE, which is deferred,
+       so js/dom.js's element lookups run after the whole document is parsed either way. -->
   <section class="usage" id="usageView" hidden aria-label="Usage dashboard">
     <header class="usage__head">
       <h1 class="usage__title">Usage</h1>
@@ -795,8 +795,10 @@
     </div>
   </section>
 
+  <!-- marked/purify stay CLASSIC scripts: they execute before the deferred module below, so
+       marked.setOptions in js/format.js is safe and both stay window globals. -->
   <script src="lib/marked.min.js"></script>
   <script src="lib/purify.min.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

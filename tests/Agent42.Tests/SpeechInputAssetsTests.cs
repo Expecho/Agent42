@@ -12,9 +12,14 @@ namespace Agent42.Tests;
 [Collection("StaticAssets")]
 public sealed class SpeechInputAssetsTests
 {
+    private readonly StaticAssetsServerFixture _fixture;
     private readonly HttpClient _client;
 
-    public SpeechInputAssetsTests(StaticAssetsServerFixture fixture) => _client = fixture.Client;
+    public SpeechInputAssetsTests(StaticAssetsServerFixture fixture)
+    {
+        _fixture = fixture;
+        _client = fixture.Client;
+    }
 
     [Fact]
     public async Task MicButton_IsPresent()
@@ -26,7 +31,7 @@ public sealed class SpeechInputAssetsTests
     [Fact]
     public async Task AppJs_FeatureDetectsSpeechRecognition()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         // Vendor-prefixed form is the one Chrome/Edge expose; its presence proves the
         // feature-detect guard exists (and thus the Firefox hide-the-button path).
         Assert.Contains("webkitSpeechRecognition", app);
@@ -35,14 +40,14 @@ public sealed class SpeechInputAssetsTests
     [Fact]
     public async Task AppJs_EnablesInterimResults()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         Assert.Contains("interimResults", app);
     }
 
     [Fact]
     public async Task AppJs_AccumulatesFinalTranscriptIncrementally()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         // Guards the continuous-mode accumulation fix: the result handler must fold in only
         // the segments changed this event (from resultIndex), not rebuild from the whole
         // results list — the latter stacks every interim snapshot ("HoeHoe laatHoe laat is…").
@@ -53,7 +58,7 @@ public sealed class SpeechInputAssetsTests
     [Fact]
     public async Task AppJs_DistrustsZeroConfidenceFinalsOnAndroid()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         // Guards the Android double-output fix: Chrome on Android flags interim growth stages
         // isFinal: true with confidence 0, so a final is only folded into the permanent
         // accumulator when the engine actually scored it — otherwise it stacks ("HoeHoe laat…").
@@ -66,7 +71,7 @@ public sealed class SpeechInputAssetsTests
     [Fact]
     public async Task AppJs_DrivesRecognitionLanguageFromDevice()
     {
-        var app = await _client.GetStringAsync("/app.js");
+        var app = await _fixture.GetAppScriptAsync();
         // navigator.language is the genuinely new token here (preferredLanguage already ships
         // with the profile feature, so it would prove nothing about speech wiring). The
         // ".lang =" assignment binds the language to the recognition instance; together they
