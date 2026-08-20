@@ -432,9 +432,17 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   O(1) public resolution, plus a per-user **`UserShareLinksGrain`** (state `"share-links"`) for
   list/create/revoke — both ride `agent-state`, **no new Cosmos container/secret/DI**. Owner routes
   `POST/GET/DELETE /api/conversations/{id}/share` (Easy Auth); public routes `GET /api/share/{token}` and
-  `/api/share/{token}/attachments/{attachmentId}` are on **`excludedPaths`** (with `/shared`, the
-  self-contained static viewer under `wwwroot/shared/`), **self-enforce** the token, take userId+conversation
-  from the directory (**never `GetUserId`**), and **fail closed → 404**. **Two deliberate inversions of ADR
+  `/api/share/{token}/attachments/{attachmentId}` are on **`excludedPaths`** (with the self-contained static
+  viewer under `wwwroot/shared/`), **self-enforce** the token, take userId+conversation
+  from the directory (**never `GetUserId`**), and **fail closed → 404**. **The four entries are
+  `/api/agent-run`, `/api/share/*`, `/shared`, `/shared/*` — corrected by ADR 0042, which is required
+  reading before editing that list:** `excludedPaths` matches a path **exactly** unless the entry ends in
+  `/*`, so the bare `/api/share` + `/shared` this feature originally shipped gated every URL a recipient
+  loads and made it **non-functional in production**; `EasyAuthExclusionTests` now pins the measured
+  semantics against the Bicep. ADR 0042 also adds `UseForwardedHeaders(XForwardedProto)` as the **first**
+  middleware in `Program.cs` — without it `Request.Scheme` is `http` behind the ACA ingress, so `ShareUrl`
+  (and the ADR 0025 MCP OAuth `redirect_uri`, whose persisted `ClientId` does **not** self-heal) minted
+  `http://` URLs. **Two deliberate inversions of ADR
   0022** (see the share-link gotcha): the **raw** token is stored (owner re-copies it repeatedly; low
   sensitivity), and revoke **deregisters the directory FIRST** (unsharing has no conversation-deletion
   backstop, so fail-toward-dead). **Headline consequence (extends ADR 0013):** a token exposes the

@@ -7,6 +7,7 @@ using Azure.Identity;
 using Azure.ResourceManager;
 using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.AI;
 using OpenTelemetry.Instrumentation.AspNetCore;
@@ -416,7 +417,34 @@ if (app.Services.GetRequiredService<IGeocoder>() is CoordinatesOnlyGeocoder)
         "without a street address. Set Geocoding__GoogleApiKey to enable reverse geocoding.");
 }
 
-// First in the pipeline: extract the request's identity once and publish it into Orleans
+// Ahead of everything else, because it rewrites the request itself rather than observing it: the ACA
+// ingress terminates TLS and forwards over plain HTTP, so without this Request.Scheme is "http" for every
+// request and two consumers mint http:// absolute URLs — the share link owners copy (ADR 0035/0042) and
+// the MCP interactive-OAuth redirect_uri (ADR 0025) — as does the framework's own UseDefaultFiles 301,
+// which is why this sits in front of the static-file middleware too.
+//
+// XForwardedProto ONLY: nothing here needs the client IP or host, and trusting those from an unidentified
+// proxy is a strictly larger surface for no consumer. ForwardLimit stays at its default of 1 — a single
+// ingress hop.
+//
+// The trust lists must be emptied with .Clear(), NOT with an `= { }` initializer: those properties are
+// get-only, so `KnownNetworks = { }` parses as a nested collection initializer that adds nothing and
+// leaves the framework defaults (127.0.0.0/8 and ::1) in place — it compiles, reads as "cleared", and
+// silently makes this whole middleware inert for any ingress that isn't loopback. Measured, not assumed
+// (ADR 0042). Emptying them is required because the ACA ingress's address is not knowable from inside the
+// container, which does mean a client can spoof X-Forwarded-Proto. Accepted: the blast radius is the
+// scheme of a minted URL, every external request arrives through the ingress that sets the header, and
+// the share token never rides the path anyway (it is in the fragment).
+var forwardedHeaders = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedProto,
+};
+forwardedHeaders.KnownIPNetworks.Clear();
+forwardedHeaders.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeaders);
+
+// First of our own middleware (the proxy fix-up above only corrects what the ingress obscured): extract
+// the request's identity once and publish it into Orleans
 // RequestContext, so it propagates to every downstream span — in-request HttpClient spans and,
 // across the grain call, the in-grain chat-completion span (ADR 0010). RequestContext is an
 // in-cluster channel (never an outbound HTTP header), so no user PII leaks to Azure OpenAI —

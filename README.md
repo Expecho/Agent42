@@ -166,9 +166,12 @@ dotnet build Agent42.slnx                       # type check
 
 ## HTTP API
 
-All routes sit behind Easy Auth (Entra ID) except the automation carve-out
-(`/api/agent-run`). In production the user is the Entra ID principal; locally everything
-maps to a single `local-dev` pseudo-user.
+All routes sit behind Easy Auth (Entra ID) except four carve-outs on
+`globalValidation.excludedPaths` — the automation endpoint (`/api/agent-run`, ADR 0022) and the
+read-only share surface (`/api/share/*`, `/shared`, `/shared/*`, ADR 0035/0042). Those are publicly
+reachable and self-enforce their own credential, failing closed. Note the matching rule: an entry is an
+**exact** match unless it ends in `/*` (ADR 0042). In production the user is the Entra ID principal;
+locally everything maps to a single `local-dev` pseudo-user.
 
 **Chat & conversations**
 

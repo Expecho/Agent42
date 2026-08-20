@@ -1308,19 +1308,83 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   contributor must not miss: **(1)** on an excluded path there is **no `X-MS-CLIENT-PRINCIPAL-ID`**, so
   `GetUserId` returns `local-dev` — the endpoint must take the userId from the **directory resolution**,
   never from `GetUserId`; **(2)** any new endpoint added under this exclusion inherits the same duty. There
-  are now **three** holes in the ADR 0002 gate — `/api/agent-run` (ADR 0022, fails closed **401**),
-  `/api/share` (ADR 0035, the read-only view; fails closed **404** because it is a browser-visitable link,
-  and userId+conversation come from the share directory), and `/shared` (ADR 0035, the static viewer page,
-  self-contained so it carries no data) — every other browser surface stays fully Easy-Auth-gated. The
-  ingress `excludedPaths` behaviour itself is **not** unit-testable (TestServer has no Easy Auth) — verify at
-  deploy.
+  are now **four** entries in the ADR 0002 gate's hole list — `/api/agent-run` (ADR 0022, fails closed
+  **401**), `/api/share/*` (ADR 0035, the read-only view; fails closed **404** because it is a
+  browser-visitable link, and userId+conversation come from the share directory), and `/shared` + `/shared/*`
+  (ADR 0035, the static viewer page and its assets, self-contained so they carry no data) — every other
+  browser surface stays fully Easy-Auth-gated.
+- **The matching rule (ADR 0042 — this is the trap that shipped a dead feature):** an entry is an **exact**
+  match unless it ends in `/*`. A bare `/api/share` does **not** cover `/api/share/{token}`, and a bare
+  `/shared` does not even cover `/shared/` — so ADR 0035 shipped with every recipient hitting the Entra
+  login page while the Bicep, the ADR and the whole suite all read as correct. A `/*` entry spans **any
+  number** of further segments, matches an **empty** remainder (`/shared/*` covers `/shared/`), and keeps the
+  trailing slash in its prefix, so it cannot bleed onto a name stem (`/api/sharezzz` stays gated). It is also
+  **not** a traversal bypass: `/api/share/../models` and `/api/share/..%2f..%2fmodels` both stay 401. All of
+  that was measured against the live app, not inferred — the ingress behaviour itself is still **not**
+  unit-testable (TestServer has no Easy Auth), so `EasyAuthExclusionTests` asserts the Bicep list against the
+  measured matcher and the real proof stays the post-deploy curl matrix. Verify at deploy — and the reason
+  this gotcha exists is that that verification was skipped.
 - **Evidence:** `infra/modules/container-app.bicep` (`globalValidation.excludedPaths`),
-  `src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs` (`/api/agent-run` — 401 branches; `/api/share/{token}` — 404 branches,
-  userId from the directory, never `GetUserId`),
+  `src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs` (`/api/agent-run` — 401 branches),
+  `src/Agent42.Backend/Sharing/AgentApi.Sharing.cs` (`/api/share/{token}` — 404 branches, userId from the
+  directory, never `GetUserId`),
   `tests/Agent42.Tests/AgentApiTests.cs` (`AgentRun_MissingOrUnknownKey_Returns401`, `ShareLink_UnknownToken_Returns404`),
+  `tests/Agent42.Tests/EasyAuthExclusionTests.cs` (the matcher and the four covered/uncovered assertions),
   `.agentic/decisions/0002-entra-easy-auth-gate.md`, `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`,
-  `.agentic/decisions/0035-read-only-share-links.md`
-- **Verified:** 2026-07-30
+  `.agentic/decisions/0035-read-only-share-links.md`,
+  `.agentic/decisions/0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md`
+- **Verified:** 2026-08-20
+
+### A scripted whole-file rewrite silently converts the checkout from CRLF to LF and `dotnet format` fails on every line
+
+- **Claim:** there is **no `.gitattributes`** in this repo and `core.autocrlf` is **`true`**, so files are
+  stored LF in git and checked out **CRLF** on Windows — and `dotnet format` (the CI lint gate) enforces
+  CRLF, reporting `error WHITESPACE: Fix whitespace formatting. Replace N characters with '
+…'` on
+  **every** line of a file whose endings were flipped. Any tool that reads a file in text mode and writes it
+  back — a `python -c` edit, a `sed -i`, most scripted doc rewrites — performs that flip **silently**: the
+  content edit is correct, but a 20-line change shows up as a whole-file diff and a wall of lint errors that
+  look nothing like their cause. `git diff --stat` is the tell (whole file rewritten), plus the
+  `warning: … LF will be replaced by CRLF the next time Git touches it` line git emits. Read and write
+  **binary**, or pass `newline=''` on **both** ends. Markdown files bite too — they just fail later, in
+  review rather than in lint.
+- **Evidence:** `git config core.autocrlf` → `true`; no `.gitattributes` in the tree;
+  `.github/workflows/pr-checks.yml` (the `dotnet format` gate);
+  `.agentic/specs/completed/plan-share-link-no-login.md` (divergence 5 — where this was hit)
+- **Verified:** 2026-08-20
+
+### `Request.Scheme` is `http` behind the ACA ingress unless `UseForwardedHeaders` runs first
+
+- **Claim:** the Container Apps ingress terminates TLS and forwards to the container over plain HTTP, so
+  without `UseForwardedHeaders` every request looks like `http` to ASP.NET Core — including a request that
+  arrived over TLS at `https://chat.agent42.nl`. Anything that mints an **absolute URL** from
+  `Request.Scheme` therefore emits `http://`. Two call sites depend on it and neither is obvious:
+  `src/Agent42.Backend/Sharing/AgentApi.Sharing.cs` (`ShareUrl` — the link an owner copies, ADR 0035) and
+  `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (the interactive-OAuth `redirect_uri`, ADR 0025) — plus the
+  framework's own `UseDefaultFiles` 301, which is how the bug was first observed (`GET https://…/shared`
+  → `301 → http://…/shared/`). **The MCP one does not self-heal:** when a server supports dynamic client
+  registration the minted `ClientId` is persisted on `StoredMcpServer` and reused forever (the code only
+  registers while `ClientId` is blank), so a client registered under an `http://` redirect URI keeps
+  rejecting the corrected `https://` request with `invalid_redirect_uri` until someone **clears that
+  server's stored client id** in Preferences → MCP servers. Two rules for the middleware itself: it must be
+  **first**, ahead of the static-file middleware (that 301 is built inside the framework), and the trust
+  lists must be **emptied** because the ingress IP is not knowable from inside the container — which means
+  `X-Forwarded-Proto` is spoofable. Accepted (ADR 0042): the blast radius is the scheme of a minted URL, and
+  only `XForwardedProto` is trusted (never `XForwardedFor`/`XForwardedHost`).
+- **Empty them with `.Clear()`, never `KnownNetworks = { }`.** Those properties are get-only, so the
+  initializer form parses as a nested *collection initializer* that adds nothing: it compiles, reads as
+  "cleared", and silently leaves the defaults (`127.0.0.0/8` and `::1`) in place — so behind a non-loopback
+  ingress the middleware ignores `X-Forwarded-Proto` altogether and every minted URL quietly stays `http://`.
+  Measured with a `dotnet run app.cs` spike, not assumed. Use `KnownIPNetworks.Clear()` — the legacy
+  `KnownNetworks` is the same backing list but raises `ASPDEPR005` on .NET 10. Nothing in the suite runs
+  `Program.cs`, so the guard is a source-text assertion that strips comment lines first (this file's own
+  prose names the bad form) and checks the `.Clear()` calls, the ordering, and the absence of `= {`.
+- **Evidence:** `src/Agent42.Backend/Program.cs` (`app.UseForwardedHeaders`, ahead of
+  `UserTelemetryMiddleware` and `UseDefaultFiles`), `src/Agent42.Backend/Sharing/AgentApi.Sharing.cs`
+  (`ShareUrl`), `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (`redirect_uri`, persisted `ClientId`),
+  `tests/Agent42.Tests/ProjectLayoutTests.cs` (`Program_TrustsForwardedProtoBeforeAnyOtherMiddleware`),
+  `.agentic/decisions/0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md`
+- **Verified:** 2026-08-20
 
 ### A read-only share link stores the RAW token and revokes by deregistering the directory FIRST
 

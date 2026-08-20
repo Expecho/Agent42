@@ -47,8 +47,12 @@
   </div>
 
   <!-- Self-contained on purpose: the public viewer loads NOTHING from the authenticated app surface, so the
-       Easy Auth hole stays exactly /shared + /api/share (marked/purify are copied under /shared/lib — keep
-       them in sync with /lib on upgrade). -->
+       Easy Auth hole stays confined to /shared/* + /api/share/* (marked/purify are copied under /shared/lib
+       — keep them in sync with /lib on upgrade). Point any subresource here back at the authenticated app's
+       own lib folder or stylesheet and recipients get a 401 instead of the page. Two tests hold this from
+       opposite ends: ShareLinkAssetsTests checks this page asks for nothing off-limits, and (since ADR 0042)
+       EasyAuthExclusionTests parses the src/href attributes below plus viewer.js's API templates and runs
+       each through the measured excludedPaths matcher, so what it does ask for is provably carved out. -->
   <script src="lib/marked.min.js"></script>
   <script src="lib/purify.min.js"></script>
   <script src="viewer.js"></script>

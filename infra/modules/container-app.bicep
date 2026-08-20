@@ -275,16 +275,26 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
       unauthenticatedClientAction: 'RedirectToLoginPage'
       redirectToProvider: 'azureactivedirectory'
       // The only holes in the ADR 0002 gate — every other browser surface stays fully Easy-Auth-gated. Each
-      // excluded path bypasses the Easy Auth login redirect and therefore SELF-ENFORCES access and fails closed:
+      // excluded path bypasses the Easy Auth login redirect and therefore SELF-ENFORCES access and fails closed.
+      //
+      // MATCHING RULE (measured against this app on 2026-08-20, ADR 0042 — do NOT assume prefix matching):
+      // a bare entry matches the path EXACTLY and does not cover its sub-paths; an entry ending in '/*'
+      // spans sub-paths across multiple segments, matches an empty remainder ('/shared/*' covers '/shared/'),
+      // and keeps the trailing slash in its prefix — so '/api/share/*' does not match '/api/sharezzz'.
+      // This is why '/api/share' and '/shared' alone left every recipient at the login page.
       //   • /api/agent-run  — per-agent API key, not an Entra session (ADR 0022); fails closed 401.
-      //   • /api/share      — read-only share view (ADR 0035): the token is the sole credential; owner + chat
-      //                       come from the directory grain (never GetUserId); fails closed 404.
-      //   • /shared         — the static read-only viewer page (+ its self-contained assets) an unauthenticated
+      //   • /api/share/*    — read-only share view (ADR 0035): the token is the sole credential; owner + chat
+      //                       come from the directory grain (never GetUserId); fails closed 404. The wildcard
+      //                       is required for both the token route and the multi-segment attachment route.
+      //                       No bare '/api/share' entry: nothing is routed there.
+      //   • /shared         — courtesy exact match so a hand-typed URL without the trailing slash gets the 301.
+      //   • /shared/*       — the static read-only viewer page and its self-contained assets an unauthenticated
       //                       recipient opens; it carries no data itself and calls /api/share for content.
       excludedPaths: [
         '/api/agent-run'
-        '/api/share'
+        '/api/share/*'
         '/shared'
+        '/shared/*'
       ]
     }
     identityProviders: {
