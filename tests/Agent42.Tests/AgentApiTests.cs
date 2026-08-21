@@ -172,6 +172,71 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.Empty(history!);
     }
 
+    // Pinned conversations (ADR 0045). The listing is shared across this class's tests, so these assert the
+    // RELATIVE order of their own two ids rather than an absolute index — an unrelated pinned chat left by a
+    // sibling test must not decide the outcome.
+    [Fact]
+    public async Task PinConversation_HoistsItInTheListing()
+    {
+        const string olderId = "api-pin-older";
+        const string newerId = "api-pin-newer";
+
+        await StartConversationAsync(olderId, "the older chat");
+        await StartConversationAsync(newerId, "the newer chat");
+
+        var pin = await _client.PutAsJsonAsync($"/api/conversations/{olderId}/pin", new PinConversationRequest(true));
+        Assert.Equal(HttpStatusCode.NoContent, pin.StatusCode);
+
+        var conversations = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
+
+        Assert.True(conversations.FindIndex(c => c.Id == olderId) < conversations.FindIndex(c => c.Id == newerId));
+        Assert.True(Assert.Single(conversations, c => c.Id == olderId).Pinned);
+        Assert.False(Assert.Single(conversations, c => c.Id == newerId).Pinned);
+    }
+
+    [Fact]
+    public async Task PinConversation_Unpin_RestoresRecencyOrder()
+    {
+        const string olderId = "api-unpin-older";
+        const string newerId = "api-unpin-newer";
+
+        await StartConversationAsync(olderId, "the older chat");
+        // UtcNow is coarse on Windows and OrderByDescending is stable, so two touches inside one clock
+        // tick would keep insertion order — the opposite of the recency claim this test makes.
+        await Task.Delay(20);
+        await StartConversationAsync(newerId, "the newer chat");
+
+        await _client.PutAsJsonAsync($"/api/conversations/{olderId}/pin", new PinConversationRequest(true));
+        var unpin = await _client.PutAsJsonAsync($"/api/conversations/{olderId}/pin", new PinConversationRequest(false));
+        Assert.Equal(HttpStatusCode.NoContent, unpin.StatusCode);
+
+        var conversations = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
+
+        Assert.True(conversations.FindIndex(c => c.Id == newerId) < conversations.FindIndex(c => c.Id == olderId));
+        Assert.False(Assert.Single(conversations, c => c.Id == olderId).Pinned);
+    }
+
+    [Fact]
+    public async Task PinConversation_UnknownId_Returns204()
+    {
+        // Idempotent silent no-op: an unlisted id must not be distinguishable from a listed one.
+        var pin = await _client.PutAsJsonAsync(
+            "/api/conversations/api-pin-does-not-exist/pin", new PinConversationRequest(true));
+
+        Assert.Equal(HttpStatusCode.NoContent, pin.StatusCode);
+
+        var conversations = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
+        Assert.DoesNotContain(conversations, c => c.Id == "api-pin-does-not-exist");
+    }
+
+    // Runs one turn so the conversation is listed in the index, draining the NDJSON stream.
+    private async Task StartConversationAsync(string conversationId, string prompt)
+    {
+        using var chat = await _client.PostAsJsonAsync($"/api/chat/{conversationId}", new ChatRequest(prompt, null));
+        chat.EnsureSuccessStatusCode();
+        await chat.Content.ReadAsStringAsync();
+    }
+
     // Ephemeral / incognito chat (ADR 0034): a POST with ephemeral:true is not listed in the sidebar —
     // the endpoint skips TouchAsync, so the conversation never enters /api/conversations. (Non-persistence
     // of the session itself is the grain's job — see AgentGrainTests.EphemeralChat_LeavesNoHistory_AfterReactivation.)

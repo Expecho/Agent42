@@ -110,6 +110,41 @@ public sealed class GrainStorageSerializerTests : IAsyncLifetime
         Assert.Equal("gen-1", generated.Value.Id);
     }
 
+    // The pin flag (ADR 0045) appended a trailing [Id(5)] member to the POSITIONAL record ConversationInfo,
+    // and every conversation-index document already in Cosmos was written without it. The mechanism at risk
+    // is Newtonsoft constructor-binding a MISSING property onto a positional record — which only this path
+    // exercises. SerializationCompatibilityTests cannot answer it: those blobs go through Orleans' BINARY
+    // serializer, which Cosmos does not use.
+    [Fact]
+    public void ConversationIndexDocument_WrittenBeforePinning_StillDeserializes_AsUnpinned()
+    {
+        var restored = Serializer().Deserialize<ConversationIndexState>(new BinaryData(PrePinConversationIndexStateJson));
+
+        Assert.Equal(2, restored.Conversations.Count);
+
+        var agentChat = Assert.Single(restored.Conversations, c => c.Id == "conv-1");
+        Assert.Equal("A golden chat", agentChat.Title);
+        Assert.Equal("agent-golden", agentChat.AgentId);
+        Assert.Equal("Golden", agentChat.AgentName);
+        // The whole point: an absent "Pinned" key must bind to the constructor default, not throw and not
+        // strand the document. Every existing conversation reads as unpinned — zero state migration.
+        Assert.False(agentChat.Pinned);
+
+        var plainChat = Assert.Single(restored.Conversations, c => c.Id == "conv-2");
+        Assert.Null(plainChat.AgentId);
+        Assert.False(plainChat.Pinned);
+    }
+
+    /// <summary>
+    /// A <c>conversations</c> payload in the shape written before ADR 0045 — note the total absence of a
+    /// <c>Pinned</c> key on either entry. Committed rather than generated at run time, for the same reason
+    /// as <see cref="StoredAgentGrainStateJson"/>: a fixture the test writes for itself would agree with
+    /// whatever the code currently does and could never fail.
+    /// </summary>
+    private const string PrePinConversationIndexStateJson = """
+        {"$id":"1","$type":"Agent42.Agents.ConversationIndexState, Agent42.Agents","Conversations":{"$type":"System.Collections.Generic.List`1[[Agent42.Agents.ConversationInfo, Agent42.Agents]], System.Private.CoreLib","$values":[{"$id":"2","$type":"Agent42.Agents.ConversationInfo, Agent42.Agents","Id":"conv-1","Title":"A golden chat","UpdatedAt":"2026-06-07T08:09:10+00:00","AgentId":"agent-golden","AgentName":"Golden"},{"$id":"3","$type":"Agent42.Agents.ConversationInfo, Agent42.Agents","Id":"conv-2","Title":"A plain chat","UpdatedAt":"2026-06-06T08:09:10+00:00","AgentId":null,"AgentName":null}]}}
+        """;
+
     /// <summary>
     /// A real <c>agent-state</c> payload, captured verbatim from the configured serializer. Committed
     /// rather than generated at run time: a fixture the test writes for itself would agree with whatever

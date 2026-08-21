@@ -151,6 +151,10 @@ public sealed class SerializationCompatibilityTests
         var actual = Restore<ConversationIndexState>(ConversationIndexStateBlob);
 
         Assert.Equal(GoldenStates.ConversationIndex().Conversations, actual.Conversations);
+        // ADR 0045 appended a trailing Pinned member; the blob predates it and must still read as unpinned.
+        // Secondary evidence only — this is the BINARY path, not the one Cosmos writes. The data-at-rest
+        // guard is GrainStorageSerializerTests.ConversationIndexDocument_WrittenBeforePinning_*.
+        Assert.False(actual.Conversations[0].Pinned);
     }
 
     // AC2: the public share-token directory (ADR 0035) — the resolve path for an unauthenticated caller.

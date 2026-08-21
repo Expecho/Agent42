@@ -246,6 +246,77 @@ public sealed class AgentGrainTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ConversationIndex_SetPinned_HoistsTheConversationAboveMoreRecentOnes()
+    {
+        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-hoist-user");
+
+        await index.TouchAsync("conv-old", "The older chat");
+        await index.TouchAsync("conv-new", "The newer chat");
+
+        await index.SetPinnedAsync("conv-old", true);
+
+        var conversations = await index.GetConversationsAsync();
+
+        Assert.Equal("conv-old", conversations[0].Id);
+        Assert.True(conversations[0].Pinned);
+        Assert.Equal("conv-new", conversations[1].Id);
+        Assert.False(conversations[1].Pinned);
+    }
+
+    [Fact]
+    public async Task ConversationIndex_PinnedChats_SortAmongThemselvesByRecency()
+    {
+        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-recency-user");
+
+        await index.TouchAsync("conv-a", "First pinned chat");
+        // OrderByDescending is stable and TouchAsync stamps DateTimeOffset.UtcNow, so two
+        // touches in the same clock tick would keep insertion order — the opposite of what
+        // this test asserts. Force the timestamps apart so the ordering is unambiguous.
+        await Task.Delay(20);
+        await index.TouchAsync("conv-b", "Second pinned chat");
+
+        await index.SetPinnedAsync("conv-a", true);
+        await index.SetPinnedAsync("conv-b", true);
+
+        var conversations = await index.GetConversationsAsync();
+
+        Assert.Equal("conv-b", conversations[0].Id);
+        Assert.Equal("conv-a", conversations[1].Id);
+    }
+
+    [Fact]
+    public async Task ConversationIndex_Touch_PreservesThePinnedFlag()
+    {
+        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-touch-user");
+
+        await index.TouchAsync("conv-1", "A chat worth keeping");
+        await index.SetPinnedAsync("conv-1", true);
+
+        // TouchAsync updates the entry with a `with` expression, which carries Pinned
+        // forward for free. A later refactor to an explicit `new ConversationInfo(...)`
+        // would silently unpin every chat on its next turn — this is that regression test.
+        await index.TouchAsync("conv-1", "follow-up");
+
+        var conversations = await index.GetConversationsAsync();
+        Assert.True(Assert.Single(conversations).Pinned);
+    }
+
+    [Fact]
+    public async Task ConversationIndex_SetPinned_UnknownConversation_IsANoOp()
+    {
+        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-unknown-user");
+
+        await index.TouchAsync("conv-1", "The only chat");
+
+        await index.SetPinnedAsync("does-not-exist", true);
+
+        var conversations = await index.GetConversationsAsync();
+        var only = Assert.Single(conversations);
+        Assert.Equal("conv-1", only.Id);
+        Assert.False(only.Pinned);
+    }
+
+    [Fact]
     public async Task WhenAReminderFires_ItsPromptIsSentToTheAgent()
     {
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-firing-conversation");

@@ -76,6 +76,7 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/api/models")]
     [InlineData("/api/conversations")]
     [InlineData("/api/conversations/x/share")]
+    [InlineData("/api/conversations/x/pin")]
     [InlineData("/api/providers")]
     [InlineData("/api/usage")]
     [InlineData("/api/profile")]

@@ -207,7 +207,7 @@ body {
   position: relative;
   width: 100%;
   text-align: left;
-  padding: 10px 58px 9px 14px; /* right room for the hover-revealed share + delete actions */
+  padding: 10px 82px 9px 14px; /* right room for the hover-revealed pin + share + delete actions */
   border: 0;
   border-left: 2px solid transparent;
   border-radius: 6px;
@@ -304,6 +304,84 @@ body {
 .conv__share:hover {
   background: var(--line-soft);
   color: var(--amber);
+}
+
+/* Pin action (ADR 0045) — the same hover-reveal glyph button, one 24px step left of .conv__share. */
+.conv__pin {
+  position: absolute;
+  top: 50%;
+  right: 55px;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.conv__pin svg { width: 14px; height: 14px; display: block; }
+
+.conv-row:hover .conv__pin,
+.conv__pin:focus-visible {
+  opacity: 1;
+}
+
+.conv__pin:hover {
+  background: var(--line-soft);
+  color: var(--amber);
+}
+
+/* A pinned row must READ as pinned without hovering: hover-reveal suits an action, not a state
+   indicator. The lit glyph is the only thing marking a hoisted row as user-placed rather than recent. */
+.conv-row.is-pinned .conv__pin {
+  opacity: 1;
+  color: var(--amber);
+}
+
+/* Where there is no pointer at all, a hover-reveal is a hidden control. The installed Android PWA is a
+   first-class surface here (ADR 0023 share target, ADR 0028 push), and pinning would be flatly impossible
+   on it — asymmetrically so, since .is-pinned above would still let a user UNPIN. Share and delete carry
+   the same latent gap today and are fixed in the same block: one family of row actions, one rule. */
+@media (hover: none) {
+  .conv__pin,
+  .conv__share,
+  .conv__delete {
+    opacity: 1;
+  }
+}
+
+/* The agent badge a hoisted (pinned) row carries in place of the group header it left behind. */
+.conv__agent {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+/* Visual separation between the pinned block and the recency list below it. renderSidebar sets
+   .is-pinned-last only when something actually follows the block, so an empty (or all-pinned) list draws
+   nothing and the sidebar looks exactly as it did. Margin, never padding: .conv-row is the containing
+   block for the three absolutely-positioned actions, whose `top: 50%` resolves against its PADDING box —
+   padding-bottom here would push pin/share/delete off-centre on this row alone. */
+.conv-row.is-pinned-last {
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 8px;
 }
 
 .conversations__empty {
