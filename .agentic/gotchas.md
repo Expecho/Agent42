@@ -780,10 +780,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 - **Claim:** ADR 0019 removed the baseline chat availability floor. `Models:Providers` in `appsettings.json`
   is `{}`, so the app boots with **zero** chat providers; chat is **only** the per-user overlay (ADR 0018).
-  A user with none configured sees an **empty picker** and a **gated composer** (the frontend disables send
-  + the input and shows a hint when `/api/models` is empty). **As of ADR 0030 there is NO fixed model left at
-  all:** embeddings are a per-user model too (chosen in Preferences, resolved via `GetEmbeddingGenerator`), so
-  the old "embedding endpoint/key is the sole remaining availability path, fatal-if-blank + `@minLength(32)`"
+  A user with none configured sees an **empty picker** and a **gated composer** (the frontend disables the
+  composer **input** and shows a hint when `/api/models` is empty — ADR 0043 removed the send button that
+  used to be disabled alongside it, so `input.disabled` is now the whole gate; a disabled `<textarea>` fires
+  no `keydown`, which is what keeps ADR 0023's "a share prefills but cannot send" property true).
+  **As of ADR 0030 there is NO fixed model left at all:** embeddings are a per-user model too (chosen
+  in Preferences, resolved via `GetEmbeddingGenerator`), so the old "embedding endpoint/key is the sole remaining availability path, fatal-if-blank + `@minLength(32)`"
   claim is **dead** — the `AzureOpenAI:ApiKey`/`EmbeddingDeploymentName` fatal checks, the `@minLength` Bicep
   param, and the `AZURE_OPENAI_API_KEY` secret were all removed; the app boots with no Azure OpenAI config.
   See the "Embeddings are a per-user model" gotcha. The chat-only `AzureOpenAI:*` keys (`DeploymentName`/`SubscriptionId`/`ResourceGroup`/`AccountName`)
@@ -817,8 +819,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/AgentGrainTests.cs` (`NoModel_YieldsNotice_AndHistoryDoesNotThrow`,
   `NoModelThenProviderAdded_ReResolvesAndReplies`, `RebindAfterRegainingModel_PreservesHistory`),
   `tests/Agent42.Tests/ProvidersApiTests.cs` (`RejectsProviderWithNoModels`),
-  `.agentic/decisions/0019-remove-baseline-chat-providers.md`
-- **Verified:** 2026-07-17
+  `.agentic/decisions/0019-remove-baseline-chat-providers.md`,
+  `.agentic/decisions/0043-remove-composer-send-button.md` (the gate is `input.disabled` alone now),
+  `tests/Agent42.Tests/ComposerAssetsTests.cs` (`AppJs_GatesComposerOnInputWhenNoModel`)
+- **Verified:** 2026-08-21
 
 ### GitHub Models: the context-limit error is a 413, and the caps are small enough to matter here
 

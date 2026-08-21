@@ -4,7 +4,7 @@ import { ephemeral } from "./agents.js";
 import { clearPendingAttachments, pendingAttachments } from "./attachments.js";
 import { autosize } from "./composer.js";
 import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./conversations.js";
-import { form, incognitoBtn, input, modelSelect, sendBtn } from "./dom.js";
+import { form, incognitoBtn, input, modelSelect } from "./dom.js";
 import { currentLocationForSend } from "./location.js";
 import { applyModelAvailability } from "./models.js";
 import { refreshConversations } from "./sidebar.js";
@@ -31,7 +31,6 @@ export let voice = { active: false, onDelta: () => {}, onStreamEnd: () => {}, st
 export async function send(prompt) {
   stopSpeech(); // capture the dictated prompt and reset the mic before clearing the box
   streaming = true;
-  sendBtn.disabled = true;
   modelSelect.disabled = true;
   // Ephemerality is fixed at creation (ADR 0034): once the first prompt goes out, lock the toggle
   // for the life of this chat. "New chat" re-enables it.
@@ -140,7 +139,6 @@ export async function send(prompt) {
   } finally {
     sendAbort = null;
     streaming = false;
-    sendBtn.disabled = false;
     modelSelect.disabled = modelSelect.options.length === 0;
     applyModelAvailability(); // keep the composer gated if there's still no model (ADR 0019)
     scrollToBottom();

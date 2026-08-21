@@ -1,6 +1,6 @@
 /* Agent 42 — model picker (ADR 0013/0018). Split out of app.js (ADR 0041). */
 
-import { input, modelSelect, noModelHint, sendBtn } from "./dom.js";
+import { input, modelSelect, noModelHint } from "./dom.js";
 import { syncDefaultModelSelect, syncEmbeddingModelSelect, syncSpeechModelSelect } from "./providers.js";
 import { streaming } from "./send.js";
 
@@ -29,17 +29,15 @@ export async function loadModels({ pin = true } = {}) {
 }
 
 // Gates the composer on whether ANY chat provider is configured (ADR 0019). With none, /api/models is
-// empty: disable send + the input and show the hint, so the user can't transmit into a grain that has no
+// empty: disable the input and show the hint, so the user can't transmit into a grain that has no
 // model (it would only answer with a "configure a provider" notice). Re-run after every loadModels() —
 // including the one saveProvider() fires — so adding a provider re-enables the composer live, no restart.
-// The streaming lock wins while a turn is in flight; send()'s finally re-applies this when it ends.
+// The streaming lock wins while a turn is in flight: a mid-turn call (saveProvider() fires one) must not
+// disable the box the user may already be typing their next prompt into. send()'s finally re-applies it.
 export function applyModelAvailability() {
   const hasModel = (modelsData.models ?? []).length > 0;
   noModelHint.hidden = hasModel;
-  if (!streaming) {
-    sendBtn.disabled = !hasModel;
-    input.disabled = !hasModel;
-  }
+  if (!streaming) input.disabled = !hasModel;
 }
 
 // A model is named by a qualified id — "provider:model", split on the FIRST colon (a provider's own

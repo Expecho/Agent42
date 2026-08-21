@@ -7,6 +7,14 @@ tags: [pwa, web-share-target, service-worker, easy-auth, attachments, egress, an
 
 # Web Share Target for the Android PWA
 
+> **Amended by [ADR 0043](0043-remove-composer-send-button.md) (2026-08-21) — the composer has no
+> send button any more.** The review-then-send property below is unchanged (a share is still never
+> auto-sent), but the control it names is gone: the user now sends with **Enter** — or the soft
+> keyboard's **Send** key, which `enterkeyhint="send"` labels. This covers the wording in **both** the
+> Decision ("the user reviews and presses Send") and the Consequences ("disables the send button and
+> the input"); the no-model gate now rests on `input.disabled` alone, and because a disabled
+> `<textarea>` fires no `keydown`, the "prefills but **cannot send**" guarantee still holds.
+
 ## Context
 The Agent 42 PWA is installable, but an installed app could only *receive* content by the user
 opening it and pasting/attaching. The user wanted Agent 42 to appear in Android's system **Share
