@@ -100,6 +100,33 @@
           <span class="topbar__bars" aria-hidden="true"></span>
         </button>
         <span class="topbar__brand"><span class="topbar__mark">42</span>AGENT&nbsp;42</span>
+        <div class="topbar__actions">
+          <!-- Ephemeral / incognito chat (ADR 0034): fixed at chat creation, so it's only interactive on a
+               fresh empty chat and hides under the same lock as the model picker (regular chats only).
+               Lives in the topbar rather than the composer frame so it is findable at a glance. -->
+          <button class="topbar__action" id="incognitoBtn" type="button" hidden aria-pressed="false"
+                  aria-label="Incognito chat" title="Incognito: don't save this chat or list it in the sidebar">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M2 9h12M5 9l.8-2.6a1.2 1.2 0 0 1 1.15-.9h2.1a1.2 1.2 0 0 1 1.15.9L11 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="4.6" cy="11" r="1.8" stroke="currentColor" stroke-width="1.4"/>
+              <circle cx="11.4" cy="11" r="1.8" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M6.4 11h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <!-- Read-only share link (ADR 0035): a second entry point into the same dialog as the sidebar
+               row action — it only OPENS the dialog, and still mints nothing until the user presses
+               Create. `disabled` here in the markup because between HTML parse and the deferred module
+               executing there is no conversation target yet; the JS enables it per transition. -->
+          <button class="topbar__action" id="topbarShareBtn" type="button" disabled
+                  aria-label="Share this conversation" title="Share: create a read-only public link anyone can open without signing in">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="12" cy="3.5" r="1.9" stroke="currentColor" stroke-width="1.4"/>
+              <circle cx="4" cy="8" r="1.9" stroke="currentColor" stroke-width="1.4"/>
+              <circle cx="12" cy="12.5" r="1.9" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M5.7 7.1l4.6-2.6M5.7 8.9l4.6 2.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
       </header>
 
       <div class="chat__scroll" id="chatScroll">
@@ -130,17 +157,6 @@
               <path d="M2 4.5h7M2 8h12M2 11.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
               <circle cx="11.5" cy="4.5" r="1.6" stroke="currentColor" stroke-width="1.4"/>
               <circle cx="11.5" cy="11.5" r="1.6" stroke="currentColor" stroke-width="1.4"/>
-            </svg>
-          </button>
-          <!-- Ephemeral / incognito chat (ADR 0034): fixed at chat creation, so it's only interactive on a
-               fresh empty chat and hides under the same lock as the model picker (regular chats only). -->
-          <button class="composer__incognito" id="incognitoBtn" type="button" hidden aria-pressed="false"
-                  aria-label="Incognito chat" title="Incognito: don't save this chat or list it in the sidebar">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M2 9h12M5 9l.8-2.6a1.2 1.2 0 0 1 1.15-.9h2.1a1.2 1.2 0 0 1 1.15.9L11 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-              <circle cx="4.6" cy="11" r="1.8" stroke="currentColor" stroke-width="1.4"/>
-              <circle cx="11.4" cy="11" r="1.8" stroke="currentColor" stroke-width="1.4"/>
-              <path d="M6.4 11h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
             </svg>
           </button>
           <!-- enterkeyhint relabels a soft keyboard's return key to "Send" (ADR 0043): there is no send

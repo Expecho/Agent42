@@ -288,11 +288,13 @@ body {
   border-radius: 4px;
   background: transparent;
   color: var(--ink-faint);
-  font: 400 13px/1 var(--mono);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
+
+/* the mark is a 16x16 SVG, larger than the 22x22 box — scale it down so it centres without clipping */
+.conv__share svg { width: 14px; height: 14px; display: block; }
 
 .conv-row:hover .conv__share,
 .conv__share:focus-visible {
@@ -1258,45 +1260,6 @@ body {
   box-shadow: 0 0 0 1px var(--amber-deep), 0 0 18px var(--amber-glow);
 }
 
-/* incognito / ephemeral chat toggle (ADR 0034): icon-only, mirrors .composer__tools at rest; lights
-   amber when engaged so a fresh incognito chat reads as "off the record" at a glance. */
-.composer__incognito {
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: transparent;
-  color: var(--ink-dim);
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-}
-
-.composer__incognito:hover { background: var(--line-soft); color: var(--amber); border-color: var(--amber-deep); }
-.composer__incognito:active { transform: translateY(1px); }
-
-.composer__incognito:focus-visible {
-  outline: 0;
-  border-color: var(--amber-deep);
-  box-shadow: 0 0 0 1px var(--amber-deep), 0 0 18px var(--amber-glow);
-}
-
-.composer__incognito.is-active {
-  color: var(--amber);
-  border-color: var(--amber-deep);
-  box-shadow: inset 0 0 0 1px var(--amber-deep), 0 0 14px var(--amber-glow);
-}
-
-.composer__incognito:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
-
-/* While incognito is engaged, tint the composer frame so the whole compose area signals "not saved". */
-body.is-incognito .composer__frame {
-  border-color: var(--amber-deep);
-  box-shadow: inset 0 0 0 1px var(--amber-deep);
-}
-
 /* checkbox grid shared by the agent dialog, preferences, and the per-chat tools popover */
 .tools-checks {
   display: flex;
@@ -1821,14 +1784,77 @@ kbd {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
 
-/* ————— mobile top bar + drawer ————— */
+/* ————— top bar + mobile drawer ————— */
 
-/* Off-canvas chrome — desktop hidden; the @media block below reveals it at ≤760px. */
-.topbar { display: none; }
+/* The top bar itself is always on: it is a static flex sibling ABOVE .chat__scroll (the only element
+   in the main column that scrolls), which is the whole mechanism behind the action cluster staying put
+   while a long chat scrolls — no position: sticky, no z-index, no new stacking context. Do NOT give it
+   a z-index: the usage view (#usageView, z-index: 100) covers it precisely because it is unpositioned.
+   Its two ORIGINAL children are the off-canvas chrome and stay mobile-only; the @media block below
+   reveals them at ≤760px along with the drawer + backdrop. */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px dashed var(--line);
+}
+
 .backdrop { display: none; }
 
-.topbar__menu {
+/* Right-aligned action cluster (incognito, ADR 0034 · share, ADR 0035) — the only topbar content on
+   desktop, pushed to the far edge by the auto margin. */
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Icon-only topbar buttons; same resting shape as .composer__tools, which is where incognito used to
+   live. Lights amber when engaged (`.is-active`, toggled by setIncognito) so an incognito chat reads
+   as "off the record" at a glance. */
+.topbar__action {
+  flex-shrink: 0;
   display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.topbar__action:hover:not(:disabled) { background: var(--line-soft); color: var(--amber); border-color: var(--amber-deep); }
+.topbar__action:active:not(:disabled) { transform: translateY(1px); }
+
+.topbar__action:focus-visible {
+  outline: 0;
+  border-color: var(--amber-deep);
+  box-shadow: 0 0 0 1px var(--amber-deep), 0 0 18px var(--amber-glow);
+}
+
+.topbar__action.is-active {
+  color: var(--amber);
+  border-color: var(--amber-deep);
+  box-shadow: inset 0 0 0 1px var(--amber-deep), 0 0 14px var(--amber-glow);
+}
+
+.topbar__action:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+
+/* While incognito is engaged the whole bar signals "not saved" — the tint that used to sit on
+   .composer__frame, moved to where the toggle now lives (same body class, so setIncognito is unchanged). */
+body.is-incognito .topbar {
+  border-bottom-color: var(--amber-deep);
+  box-shadow: inset 0 -1px 0 var(--amber-deep), 0 6px 18px -12px var(--amber-glow);
+}
+
+/* Hamburger: above 760px the sidebar is not a drawer, so there is nothing to toggle. */
+.topbar__menu {
+  display: none;
   place-items: center;
   width: 40px;
   height: 40px;
@@ -1872,8 +1898,11 @@ kbd {
 .topbar__bars::before { top: -6px; }
 .topbar__bars::after { top: 6px; }
 
+/* Mobile-only: the desktop sidebar header renders the identical mark + wordmark (.brand__mark /
+   .brand__name), so revealing this above 760px would show "42 AGENT 42" twice, side by side. It exists
+   only because the sidebar is off-canvas at ≤760px. */
 .topbar__brand {
-  display: inline-flex;
+  display: none;
   align-items: center;
   gap: 10px;
   font-weight: 600;
@@ -1903,13 +1932,10 @@ kbd {
 @media (max-width: 760px) {
   .app { grid-template-columns: 1fr; }
 
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    border-bottom: 1px dashed var(--line);
-  }
+  /* The bar itself is always on (see above); at this width it regains the off-canvas chrome. */
+  .topbar { padding: 12px 16px; }
+  .topbar__menu { display: grid; }
+  .topbar__brand { display: inline-flex; }
 
   .sidebar {
     position: fixed;

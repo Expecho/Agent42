@@ -14,6 +14,14 @@ tags: [agents, conversations, sharing, public-endpoint, easy-auth, excluded-path
 > form and pins the semantics in a test. It also makes `Request.Scheme` honest behind the ingress, so the
 > minted `ShareUrl` is `https://` rather than `http://`.
 
+> **Also amended by [ADR 0044](0044-persistent-topbar-action-cluster.md) (2026-08-21) — a second owner
+> entry point.** The hover-revealed sidebar row action below is no longer the only way in: a
+> `#topbarShareBtn` in the persistent top-right cluster opens the same `#shareLinkDialog`, and the row's
+> `↗` text glyph became the same SVG mark that button draws. The row action itself is unchanged, and so
+> is the consent property — the topbar button only *opens* the dialog and mints nothing. 0044 records the
+> one place that property could have been weakened (a fresh agent chat inheriting the previous
+> conversation as a stale share target) and closes it.
+
 ## Context
 Every conversation in Agent42 is private to its owner: the whole app sits behind Entra Easy Auth
 (ADR 0002), and every read route is user-scoped via `AgentKey(GetUserId(), conversationId)`. There was no

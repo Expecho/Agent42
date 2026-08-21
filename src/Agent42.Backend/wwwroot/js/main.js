@@ -22,7 +22,7 @@ import { loadProviders, wireProviders } from "./providers.js";
 import { initPush } from "./push.js";
 import { wirePwa } from "./pwa.js";
 import { wireSend } from "./send.js";
-import { wireShareLinks } from "./sharelinks.js";
+import { setTopbarShare, wireShareLinks } from "./sharelinks.js";
 import { initShare } from "./sharetarget.js";
 import { conversations, refreshConversations, renderSidebar, setConversations } from "./sidebar.js";
 import { wireSpeech } from "./speech.js";
@@ -83,6 +83,9 @@ const toolsReady = loadTools();
 toolsBtn.hidden = false;
 incognitoBtn.hidden = false;
 setIncognito(false, true);
+// Same reason the tool seed below is needed: an empty boot chat has nothing to expose, and a link minted
+// here would resolve to nothing.
+setTopbarShare(null);
 // The boot chat isn't created through startNewConversation(), so seed its composer tool selection
 // from the user default once BOTH the profile (enabledTools) and the catalog (allToolKeys) have
 // loaded — otherwise the Tools popover shows an empty set on startup instead of the saved default

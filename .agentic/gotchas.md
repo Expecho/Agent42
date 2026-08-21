@@ -1594,7 +1594,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0041-frontend-es-modules.md`
 - **Verified:** 2026-08-19
 
-### A frontend module unreachable from `main.js` is invisible to all 47 source-text guards
+### A frontend module unreachable from `main.js` is invisible to every source-text guard
 
 - **Claim:** the `*AssetsTests` classes no longer read one file. They call
   `StaticAssetsServerFixture.GetAppScriptAsync()`, which starts at the served `main.js`, extracts relative
@@ -1618,3 +1618,33 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `FrontEndModule_ExportsItsEntryPoint_AndIsCalledFromTheCompositionRoot`),
   `.agentic/decisions/0041-frontend-es-modules.md`
 - **Verified:** 2026-08-19
+
+### Topbar share availability: `startAgentChat` is a FOURTH transition and is the one that gets missed
+
+- **Claim:** **four sites change the active conversation, not three.** `#topbarShareBtn` is enabled iff the active
+  chat is persisted **and** has history, driven from `startNewConversation`, `selectConversation`,
+  `send()`'s success path — and **`startAgentChat`**, which is the one that gets missed because it does
+  **not** delegate to `startNewConversation`: it calls `setActiveId(convId)` itself. Without an explicit
+  `setTopbarShare(null)` there, opening conversation A and then clicking an agent leaves the button
+  **enabled and still pointing at A**, so Create mints a public, no-login link to a chat the user is not
+  looking at — ADR 0035's consent property, broken. The analogy to `setIncognito` does **not** carry:
+  `lockPicker` *hides* incognito, whereas share is *disabled, not hidden*, so a stale target stays visible
+  and clickable. Place the clear **after** the continuous-agent early return (ADR 0016), which delegates to
+  `selectConversation` and enables correctly on its own. Related: the `send()` enable belongs at the **end
+  of the `try`**, never beside the `incognitoBtn.disabled = true` lock at the top of `send()` — that line
+  runs *before* the fetch, so an offline send, a failed turn or a voice barge-in `AbortError` (ADR 0037)
+  would light the button up on a chat that persisted nothing. Failure leaving it disabled is the
+  conservative direction and self-heals via the sidebar. The two CSS traps that ride along — never give
+  `.topbar` a `z-index` (it is unpositioned *so that* `#usageView`'s overlay still covers it), and
+  `.topbar__brand`/`.topbar__menu` are mobile-only by default because the desktop sidebar header already
+  draws the same wordmark — are carried by the comment on the `.topbar` rule itself, where anyone editing
+  it will be looking.
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/agents.js` (`startAgentChat`, the clear after the
+  continuous early return), `src/Agent42.Backend/wwwroot/js/conversations.js`
+  (`startNewConversation`, `selectConversation`), `src/Agent42.Backend/wwwroot/js/send.js` (the enable at
+  the end of the `try`), `src/Agent42.Backend/wwwroot/js/sharelinks.js` (`setTopbarShare`, the
+  `openShareLink` null guard), `src/Agent42.Backend/wwwroot/styles.css` (`.topbar`, `.topbar__brand`,
+  `.topbar__menu`, `body.is-incognito .topbar`), `tests/Agent42.Tests/TopbarActionsAssetsTests.cs`
+  (`TopbarShare_IsClearedWhenAnAgentChatStarts`, `TopbarShare_IsGatedOnEmptyAndEphemeralChats`,
+  `TopbarBrandAndMenu_AreMobileOnly`), `.agentic/decisions/0044-persistent-topbar-action-cluster.md`
+- **Verified:** 2026-08-21

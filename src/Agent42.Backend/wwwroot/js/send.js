@@ -7,7 +7,8 @@ import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./co
 import { form, incognitoBtn, input, modelSelect } from "./dom.js";
 import { currentLocationForSend } from "./location.js";
 import { applyModelAvailability } from "./models.js";
-import { refreshConversations } from "./sidebar.js";
+import { setTopbarShare } from "./sharelinks.js";
+import { conversations, refreshConversations } from "./sidebar.js";
 import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, renderSuggestions, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
 
 export let streaming = false;
@@ -125,6 +126,17 @@ export async function send(prompt) {
     // The persona is now bound server-side; don't resend agentId on later turns. Kept on
     // failure so a retry rebinds.
     setPendingAgentId(null);
+    // This turn persisted, so the conversation now has something to share — unless it is incognito,
+    // which is never written at all (ADR 0034). Deliberately here at the END of the try and not beside
+    // the incognitoBtn lock at the top of send(): that line runs BEFORE the fetch, so an offline send, a
+    // failed turn or a voice barge-in would light the button up on a chat that persisted nothing.
+    // Failure therefore leaves it disabled — the conservative direction, and self-healing: the chat
+    // appears in the sidebar and opening it enables share through selectConversation.
+    // The title lookup is the same one selectConversation does: a chat that already has a sidebar row
+    // has a real title, and only a brand-new one (whose title the server derives after this turn) falls
+    // back to the constant. Passing the constant unconditionally would blank the title of every
+    // already-named chat on its second turn.
+    if (!ephemeral) setTopbarShare(convId, conversations.find((c) => c.id === convId)?.title ?? "This conversation");
   } catch (err) {
     // Barge-in (ADR 0037): an aborted turn is a deliberate interruption, not a failure —
     // leave the partial reply as-is, don't paint the error state. voice mode drives what

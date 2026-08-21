@@ -7,6 +7,7 @@ import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentDescriptionInpu
 import { closeDrawer } from "./drawer.js";
 import { defaultModel, fillModelOptions, modelLabel, selectModel, setModel } from "./models.js";
 import { streaming } from "./send.js";
+import { setTopbarShare } from "./sharelinks.js";
 import { conversations, renderSidebar } from "./sidebar.js";
 import { clearThread, setEmptyVisible } from "./thread.js";
 import { allToolKeys, readToolChecks, renderToolChecks, toolCatalog } from "./tools.js";
@@ -105,6 +106,11 @@ export function startAgentChat(agent) {
     return;
   }
   setActiveId(convId);
+  // A fresh agent chat has nothing to share yet. This does NOT come for free from startNewConversation
+  // — startAgentChat sets the id itself — and without it the button would stay enabled pointing at the
+  // conversation the user just left, so Create would mint a public link to a chat they aren't looking at.
+  // (The continuous branch above returns through selectConversation, which enables share correctly.)
+  setTopbarShare(null);
   setActiveAgentId(agent.id);
   setPendingAgentId(agent.id);
   clearPendingAttachments();
