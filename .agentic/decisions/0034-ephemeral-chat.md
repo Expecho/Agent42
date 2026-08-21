@@ -7,6 +7,13 @@ tags: [agents, conversations, privacy, ephemeral, incognito, session, persistenc
 
 # Ephemeral ("incognito") chat
 
+> **Amended by [ADR 0044](0044-persistent-topbar-action-cluster.md) (2026-08-21) — the toggle moved.**
+> `#incognitoBtn` no longer lives in `.composer__frame`, and no longer "tints the composer frame while
+> engaged": it sits in a persistent top-right action cluster in `.topbar`, and the engaged tint moved to
+> the topbar with it (same `body.is-incognito` class, so `setIncognito` is unchanged). Every behavioural
+> rule below — off by default, interactive only on a fresh empty regular chat, hidden under the picker
+> lock — still holds exactly as written.
+
 ## Context
 Every chat in Agent42 is durable by design: `AgentGrain` re-serializes its whole session into one
 `agent-state` Cosmos item on every turn (`ChatCoreAsync` → `WriteStateAsync`, ADR 0004/0001), and the API

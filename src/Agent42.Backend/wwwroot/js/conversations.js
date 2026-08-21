@@ -8,7 +8,8 @@ import { closeDrawer } from "./drawer.js";
 import { defaultModel, setModel } from "./models.js";
 import { profile } from "./profile.js";
 import { streaming, voice } from "./send.js";
-import { renderSidebar } from "./sidebar.js";
+import { setTopbarShare } from "./sharelinks.js";
+import { conversations, renderSidebar } from "./sidebar.js";
 import { addAgentImage, addCopyButton, addMessage, clearThread, fillUserBubble, scrollToBottom, setAgentMarkdown, setEmptyVisible } from "./thread.js";
 import { allToolKeys, setChatTools } from "./tools.js";
 
@@ -27,6 +28,9 @@ export async function selectConversation(id) {
   // An opened conversation is a persisted one (an ephemeral chat never gets a sidebar row), so
   // incognito is off and locked here — it can only be chosen on a fresh chat (ADR 0034).
   setIncognito(false, false);
+  // ...and it is persisted WITH history (an ephemeral chat never gets a sidebar row to open), so it is
+  // shareable. Title from the same list the row action reads; the constant covers a not-yet-loaded list.
+  setTopbarShare(id, conversations.find((c) => c.id === id)?.title ?? "This conversation");
   clearPendingAttachments();
   renderSidebar();
   clearThread();
@@ -105,6 +109,9 @@ export function startNewConversation() {
   unlockPicker();
   // A fresh chat is where incognito can be chosen — off by default, and interactive until first send.
   setIncognito(false, true);
+  // ...and there is nothing in it to share yet. Clearing also drops the previous conversation as the
+  // target, so Create can't mint a public link to a chat the user has just navigated away from.
+  setTopbarShare(null);
   clearThread();
   setEmptyVisible(true);
   renderSidebar();

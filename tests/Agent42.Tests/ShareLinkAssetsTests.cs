@@ -47,6 +47,31 @@ public sealed class ShareLinkAssetsTests
         Assert.Contains("/share", open);
     }
 
+    // The row action and the topbar action are two entry points into ONE feature, so they draw one mark:
+    // the row's old "↗" text glyph was replaced by the same three-node share SVG the topbar button
+    // carries. Pinned on the distinctive connector path, which no other icon in the app contains.
+    [Fact]
+    public async Task ShareIcon_IsTheSameMarkInBothPlaces()
+    {
+        const string connector = "M5.7 7.1l4.6-2.6M5.7 8.9l4.6 2.6";
+
+        var index = await _client.GetStringAsync("/");
+        var app = await _fixture.GetAppScriptAsync();
+
+        // The topbar button draws it in the markup — bounded at BOTH ends, so the mark has to be inside
+        // this button rather than merely somewhere further down the document.
+        var shareAt = index.IndexOf("id=\"topbarShareBtn\"", StringComparison.Ordinal);
+        Assert.True(shareAt >= 0, "the topbar share button is missing");
+        var shareEnd = index.IndexOf("</button>", shareAt, StringComparison.Ordinal);
+        Assert.True(shareEnd > shareAt, "the topbar share button is not closed");
+        Assert.Contains(connector, index[shareAt..shareEnd]);
+
+        // ...and buildConvRow draws the same one, in place of the text glyph it used to set.
+        var row = StaticAssetsServerFixture.Body(app, "function buildConvRow(conv)");
+        Assert.Contains(connector, row);
+        Assert.DoesNotContain("share.textContent", row); // anchored by the two positives above
+    }
+
     // The public viewer is served under /shared/, advertises itself read-only, and reads its content from the
     // token-scoped /api/share endpoint (never the user-scoped /api/conversations proxy).
     [Fact]

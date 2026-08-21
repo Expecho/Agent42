@@ -411,7 +411,8 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   beyond the frontend JS is the shell version bump `agent42-shell-v9` → `-v10`. **Consequence:** conversation text
   + agent definitions now persist **unencrypted** in origin IndexedDB (data-at-rest, cleared with site
   data); no new egress. Image thumbnails don't load offline (separate attachment proxy) — text shows.
-- Ephemeral / incognito chat (ADR 0034): a composer **incognito toggle** starts a chat whose history is
+- Ephemeral / incognito chat (ADR 0034, **UI position amended by ADR 0044**): an **incognito toggle** —
+  in the persistent topbar cluster since 0044, not the composer frame — starts a chat whose history is
   **never persisted** (the grain skips its `WriteStateAsync`) and that **never appears in the sidebar** (the
   `POST /api/chat/{id}` handler skips `ConversationIndexGrain.TouchAsync`). It reuses the non-persisted
   `_turnLocation` pattern exactly: a trailing `bool Ephemeral` on `ChatRequest` → a trailing `bool ephemeral`
@@ -420,14 +421,16 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   at the composer** (RAG ingestion writes durable Cosmos vector chunks), images stay allowed (their blob
   bytes persist — accepted), and **scheduling is refused inside `SchedulePromptAsync`** (a durable reminder
   would fire the persisting/pushing `ReceiveReminder`, ADR 0028). The toggle is fixed at chat creation
-  (settable only on a fresh empty regular chat, hidden under the picker lock on agent chats). No new grain,
+  (settable only on a fresh empty regular chat, hidden under the picker lock on agent chats) — those rules
+  survived 0044's move untouched; only its DOM position and the engaged tint's target changed. No new grain,
   no state migration, no new Cosmos surface. **The guarantee is "not persisted, not listed", not "not in
   memory"** — a live activation still holds the chat; the trace-free property shows up on deactivation. Egress
   (ADR 0013) is unchanged: incognito is about durability, not privacy from a third-party model. See the
   ephemeral-chat gotcha before touching `_ephemeral` or the scheduling guard.
-- Read-only share links (ADR 0035): an owner mints a **public, no-login** link to any conversation (regular
-  or agent chat) from a **↗ Share** action on each sidebar row (`buildConvRow`) → `#shareLinkDialog`
-  (create/copy/revoke). It mirrors the ADR 0022 two-grain split: **`ShareToken`** (copy of `ApiKey`, `shr_`
+- Read-only share links (ADR 0035, **owner UI extended by ADR 0044**): an owner mints a **public, no-login**
+  link to any conversation (regular or agent chat) from a share action on each sidebar row (`buildConvRow`)
+  **or from `#topbarShareBtn` in the persistent topbar cluster** — both open the same `#shareLinkDialog`
+  (create/copy/revoke), and both only *open* it: nothing is minted until the user presses **Create**. It mirrors the ADR 0022 two-grain split: **`ShareToken`** (copy of `ApiKey`, `shr_`
   prefix) → a global hash-keyed **`ShareLinkDirectoryGrain`** (token hash → `(userId, conversationId)`) for
   O(1) public resolution, plus a per-user **`UserShareLinksGrain`** (state `"share-links"`) for
   list/create/revoke — both ride `agent-state`, **no new Cosmos container/secret/DI**. Owner routes
@@ -524,6 +527,31 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   `Enter` stays silently ignored. The surviving
   `.composer__hint` still names `<kbd>` keys a soft keyboard lacks and is not responsive at ≤760px — a
   known gap, deliberately unfixed. A stop-generation button is explicitly **out of scope** (own ADR).
+- Persistent topbar action cluster (ADR 0044, **amends 0034 + 0035**): `.topbar` — previously
+  `display: none` above 760px, off-canvas chrome for the mobile drawer only — is now revealed at **every**
+  width and carries a right-aligned `.topbar__actions` cluster holding the **incognito toggle** (moved out
+  of `.composer__frame`, same `#incognitoBtn` id and same state rules) and **`#topbarShareBtn`**, a second
+  entry point into ADR 0035's dialog. **The mechanism is the existing box model, not new layout
+  machinery:** `.topbar` is a static flex *sibling* above `.chat__scroll` (the only element in the main
+  column that scrolls), so "stays visible while scrolling" needs no `position: sticky` and **no z-index** —
+  and that absence is load-bearing, because `#usageView` (`position: fixed; z-index: 100`) still covers the
+  topbar precisely *because* the topbar is unpositioned. `.topbar__brand` and `.topbar__menu` are inverted
+  to **mobile-only** (the desktop sidebar header already renders the same mark + wordmark, so a naively
+  revealed brand doubles it). The engaged incognito tint **moved** — `body.is-incognito .composer__frame`
+  is deleted in favour of `body.is-incognito .topbar` (same body class, so `setIncognito` is unchanged),
+  and `.composer__incognito` is gone from both markup and stylesheet. Share availability is driven from
+  **four** transitions — `startNewConversation` / `startAgentChat` / `selectConversation` / `send()`'s
+  success path — held in a `setTopbarShare(convId, title)` setter slot on `sharelinks.js` (the `send.js`
+  `voice`/`stopSpeech` seam, **not** a cycle workaround: ADR 0041 §5 permits the cycles). Two things to
+  read before touching this: **`startAgentChat` is the transition that bites** — it does not delegate to
+  `startNewConversation`, so without an explicit `setTopbarShare(null)` after its continuous early-return,
+  a fresh agent chat leaves the button enabled and pointing at the **previous** conversation, and Create
+  would mint a public link to a chat the user isn't looking at (ADR 0035's consent property); and the
+  `send()` enable belongs at the **end of the `try`**, never beside the `incognitoBtn.disabled` lock at the
+  top, which runs before the fetch and would light it up on a failed, offline or barged-in turn. Shell
+  cache bumped `agent42-shell-v14` → `-v15` (this adds a named export). Unlike ADR 0043 the manual leg
+  **was** actually run — headless Chrome over CDP against DevHost, both themes, both widths — and the ADR
+  records the measured values.
 - Frontend layout (ADR 0041, the frontend instalment of 0039/0040): the 3616-line `app.js` IIFE is
   **gone**, split into **28 native ES modules** in `src/Agent42.Backend/wwwroot/js/`, loaded by one
   `<script type="module" src="js/main.js">`. Module names reuse the Agents/Backend feature vocabulary
@@ -538,8 +566,8 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   feature's `wire*()`/`init*()`. Three traps to read before touching this: `sw.js`'s `SHELL` is
   **all-or-nothing** and now bidirectional (a *stale* entry kills the whole SW, not just one file);
   **every MR touching `wwwroot/js/` must bump `CACHE`** (cache-first subresources + a renamed export =
-  `SyntaxError` and a blank app); and a module unreachable from `main.js` is **invisible to all 47
-  source-text asset guards** (the fixture's `GetAppScriptAsync()` walks the import graph over HTTP).
+  `SyntaxError` and a blank app); and a module unreachable from `main.js` is **invisible to every
+  source-text asset guard** (the fixture's `GetAppScriptAsync()` walks the import graph over HTTP).
   All three are in gotchas, and all three are asserted in `ProjectLayoutTests`/`PwaAssetsTests`.
   `styles.css` and `index.html`'s markup are deliberately untouched — separate MRs.
 - Project layout (ADR 0039): `src/Agent42.Agents` is organised into **16 top-level feature folders**

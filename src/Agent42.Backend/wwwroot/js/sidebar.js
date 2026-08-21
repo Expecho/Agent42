@@ -65,7 +65,14 @@ function buildConvRow(conv) {
   share.type = "button";
   share.className = "conv__share";
   share.setAttribute("aria-label", `Share conversation: ${conv.title}`);
-  share.textContent = "↗";
+  // Same three-node share mark as the topbar button, so one action reads as one action. innerHTML is
+  // safe here — this string is author-controlled markup, not user data, so it is not a sanitiser bypass.
+  share.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">'
+    + '<circle cx="12" cy="3.5" r="1.9" stroke="currentColor" stroke-width="1.4"/>'
+    + '<circle cx="4" cy="8" r="1.9" stroke="currentColor" stroke-width="1.4"/>'
+    + '<circle cx="12" cy="12.5" r="1.9" stroke="currentColor" stroke-width="1.4"/>'
+    + '<path d="M5.7 7.1l4.6-2.6M5.7 8.9l4.6 2.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'
+    + '</svg>';
   share.addEventListener("click", (e) => {
     e.stopPropagation();
     openShareLink(conv.id, conv.title);
