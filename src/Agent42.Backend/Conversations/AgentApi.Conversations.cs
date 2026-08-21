@@ -122,6 +122,16 @@ public static partial class AgentApi
             return Results.Text(JsonSerializer.Serialize(binding, JsonSerializerOptions.Web), "application/json");
         });
 
+        // Pins or unpins a conversation so it leads the sidebar listing regardless of recency (ADR 0045).
+        // Idempotent, and a silent no-op for an id that isn't listed — an unlisted id is indistinguishable
+        // from an unchanged one, so pinning discloses nothing about what exists. The grain key scopes the
+        // write to the signed-in user, so pinning someone else's conversation is structurally impossible.
+        app.MapPut("/api/conversations/{conversationId}/pin", async (string conversationId, PinConversationRequest request, IGrainFactory grains, HttpContext http) =>
+        {
+            await grains.GetGrain<IConversationIndexGrain>(http.GetUserId()).SetPinnedAsync(conversationId, request.Pinned);
+            return Results.NoContent();
+        });
+
         // Permanently deletes a conversation: purges the agent grain (session + durable
         // reminders), then removes it from the user's conversation index.
         app.MapDelete("/api/conversations/{conversationId}", async (string conversationId, IGrainFactory grains, HttpContext http) =>

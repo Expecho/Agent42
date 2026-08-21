@@ -47,9 +47,27 @@ public sealed class ConversationIndexGrain : Grain, IConversationIndexGrain
         await _state.WriteStateAsync();
     }
 
+    public async Task SetPinnedAsync(string conversationId, bool pinned)
+    {
+        var conversations = _state.State.Conversations;
+        var existing = conversations.FindIndex(c => c.Id == conversationId);
+
+        // No-op for an unlisted conversation, and for a value that is already set —
+        // only a real change earns a write (mirrors RemoveAsync).
+        if (existing < 0 || conversations[existing].Pinned == pinned)
+        {
+            return;
+        }
+
+        conversations[existing] = conversations[existing] with { Pinned = pinned };
+        await _state.WriteStateAsync();
+    }
+
     public Task<IReadOnlyList<ConversationInfo>> GetConversationsAsync()
         => Task.FromResult<IReadOnlyList<ConversationInfo>>(
-            [.. _state.State.Conversations.OrderByDescending(c => c.UpdatedAt)]);
+            [.. _state.State.Conversations
+                .OrderByDescending(c => c.Pinned)
+                .ThenByDescending(c => c.UpdatedAt)]);
 
     public async Task RemoveAsync(string conversationId)
     {
