@@ -292,8 +292,8 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   never sees it and can't drop the body on a login redirect. `sharetarget.js` reads the stash on load, opens a
   **per-share destination picker** (new chat / an agent, incl. continuous — ADR 0016), prefills the composer
   and runs shared files through the existing `handleFiles` upload path (images → attachments, documents →
-  RAG), then the user **reviews and presses Send — never auto-sent** (egress consent, ADR 0013). Two things
-  to read before touching this: the share `respondWith` must sit **after** the `/api` guard and **before**
+  RAG), then the user **reviews and sends it themselves — never auto-sent** (egress consent, ADR 0013;
+  the send control is **Enter**, not a button — ADR 0043). Two things to read before touching this: the share `respondWith` must sit **after** the `/api` guard and **before**
   the non-GET early-return, and the SW must be **active** for the share to work (else the POST reaches the
   server and fails — accepted degradation, no server fallback). Both are in gotchas. **Headline consequence:**
   sharing is a new **inbound** vector for ADR 0013's egress, and sharing a large file into a **continuous**
@@ -507,6 +507,23 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   (ADR 0013 egress) — the reason it is opt-in and the browser voice stays default. Offline can't reach a real
   TTS endpoint (like image gen, ADR 0020); the Foundry audio wire path is spike-informed, prod-smoke verified.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
+- Composer send button removed (ADR 0043, **amends 0023**): `#sendBtn` is gone — markup, the four
+  `.composer__send*` rules, the `dom.js` export and its five references across `send.js`/`models.js` — and
+  `#promptInput` carries **`enterkeyhint="send"`** so a touch keyboard labels its return key **Send**.
+  `wireComposer()`'s keydown handler (`Enter` → `form.requestSubmit()`, `Shift+Enter` → newline) is now
+  **the only path that sends arbitrary composed text**; `form.requestSubmit()` never needed a default
+  submitter, and `send()` is still called directly by the suggestion chips (ADR 0036) and voice (ADR 0037),
+  neither of which needs Enter (nor substitutes for it — they send their own text, not yours). Two consequences to know: the **no-model gate
+  (ADR 0019) now rests on `input.disabled` alone** — sufficient, because a disabled `<textarea>` fires no
+  `keydown`, which is what keeps ADR 0023's "a share prefills but **cannot send**" property true, and which
+  makes that one line load-bearing (`ComposerAssetsTests` pins it); and **`enterkeyhint` has no automated
+  proof** — the test pins the attribute string, the platform behaviour is a device fact (ADR 0037's
+  untestable-half treatment), and **neither interactive leg was run** — no browser driver was available,
+  so the desktop smoke *and* the Android Send key / end-to-end share flow are unverified residuals
+  recorded in ADR 0043. No busy-state replacement: the streaming caret is the signal and mid-turn
+  `Enter` stays silently ignored. The surviving
+  `.composer__hint` still names `<kbd>` keys a soft keyboard lacks and is not responsive at ≤760px — a
+  known gap, deliberately unfixed. A stop-generation button is explicitly **out of scope** (own ADR).
 - Frontend layout (ADR 0041, the frontend instalment of 0039/0040): the 3616-line `app.js` IIFE is
   **gone**, split into **28 native ES modules** in `src/Agent42.Backend/wwwroot/js/`, loaded by one
   `<script type="module" src="js/main.js">`. Module names reuse the Agents/Backend feature vocabulary

@@ -9,7 +9,6 @@ export const chatScroll = document.getElementById("chatScroll");
 export const emptyState = document.getElementById("emptyState");
 export const form = document.getElementById("composerForm");
 export const input = document.getElementById("promptInput");
-export const sendBtn = document.getElementById("sendBtn");
 export const attachBtn = document.getElementById("attachBtn");
 export const micBtn = document.getElementById("micBtn");
 export const voiceBtn = document.getElementById("voiceBtn");
