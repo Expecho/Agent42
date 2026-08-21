@@ -29,7 +29,7 @@ public sealed partial class AgentGrain
             {
                 new(ChatRole.System,
                     "You suggest what the user might ask next. Given the last exchange, propose up to 3 short, "
-                    + "distinct follow-up questions or requests the USER could send to continue. Write each on "
+                    + "distinct follow-up questions or requests the USER could send to continue in English. Write each on "
                     + "its own line, phrased in the user's voice, with no numbering, bullets, or quotes. Output "
                     + "only the lines."),
                 new(ChatRole.User,
