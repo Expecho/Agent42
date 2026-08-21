@@ -984,24 +984,6 @@ body {
 
 .composer__input::placeholder { color: var(--ink-faint); }
 
-.composer__send {
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--amber-deep);
-  border-radius: 9px;
-  background: var(--amber-glow);
-  color: var(--amber);
-  cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
-}
-
-.composer__send:hover:not(:disabled) { background: rgba(255, 177, 61, 0.28); }
-.composer__send:active:not(:disabled) { transform: translateY(1px); }
-.composer__send:disabled { opacity: 0.35; cursor: default; }
-
 /* attach control + thumbnail previews */
 
 .composer__attach {

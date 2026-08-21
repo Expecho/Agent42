@@ -8,7 +8,7 @@
 
 An installed PWA appears in Android's system **Share sheet** and receives shared text, URL,
 images, or documents. You pick a destination (new chat, or an agent), the content is prefilled,
-and **you** press Send — it's never auto-sent. iOS PWAs can't register as share targets, so this
+and **you** send it yourself — it's never auto-sent. iOS PWAs can't register as share targets, so this
 is Android/Chromium only.
 
 ## How it works
@@ -32,7 +32,7 @@ sequenceDiagram
     OS->>APP: navigate /?share=1 (authenticated)
     APP->>IDB: read + delete stash (one-time)
     APP->>APP: destination picker (new chat / agent)
-    APP->>APP: prefill composer + handleFiles → user presses Send
+    APP->>APP: prefill composer + handleFiles → user sends
 ```
 
 ### The manifest declaration
@@ -96,7 +96,7 @@ function applyShare(record) {
   autosize();
   const files = filesFromShare(record);
   if (files.length) handleFiles(files);   // images → attachments, documents → RAG
-  input.focus();                          // user reviews and presses Send
+  input.focus();                          // user reviews it and sends it themselves
 }
 ```
 

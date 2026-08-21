@@ -57,7 +57,7 @@ function renderShareAgents(onChoose) {
 }
 
 // After a destination is chosen: prefill the composer and push shared files through the upload
-// path. NEVER auto-sends — the user reviews and presses Send, keeping egress an explicit act
+// path. NEVER auto-sends — the user reviews it and sends it themselves, keeping egress an explicit act
 // (ADR 0013); with no model the composer stays gated (applyModelAvailability), so it can't send.
 function applyShare(record) {
   input.value = sharePrefillText(record);

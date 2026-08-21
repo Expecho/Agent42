@@ -38,7 +38,8 @@ decision. The one fixed model that must remain is the **embedding** model
 **The `Models:` mechanism stays; the baseline chat set ships empty; the grain stays valid with no
 model via a no-op client.** `Models:Providers` is `{}` — the app boots with zero chat providers.
 Chat providers are **only** the per-user overlay (ADR 0018). A user with no configured provider
-sees an **empty picker** and a **gated composer** (the frontend disables send and shows a hint), and
+sees an **empty picker** and a **gated composer** (the frontend disables the composer input and shows
+a hint — ADR 0043 removed the send button that was disabled alongside it), and
 their conversation grain keeps a valid `_agent`/`_session` by wrapping a shared no-op
 `NoModelChatClient` — so every non-inference grain operation (history, bind, register-document,
 reminder, rehydrate) keeps working unguarded. Only the two sites that actually **run** the model

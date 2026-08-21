@@ -143,7 +143,9 @@
               <path d="M6.4 11h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
             </svg>
           </button>
-          <textarea id="promptInput" class="composer__input" rows="1"
+          <!-- enterkeyhint relabels a soft keyboard's return key to "Send" (ADR 0043): there is no send
+               button any more, and the keydown handler already turns that press into a submit. -->
+          <textarea id="promptInput" class="composer__input" rows="1" enterkeyhint="send"
             placeholder="Transmit a prompt…" aria-label="Prompt"></textarea>
           <button class="composer__mic" id="micBtn" type="button" aria-label="Dictate prompt" aria-pressed="false">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -159,11 +161,6 @@
                   title="Hands-free voice conversation: speak, hear the reply, talk over it to interrupt">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M4.5 6v4M7 3.5v9M9.5 5.5v5M12 6.5v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-          </button>
-          <button class="composer__send" id="sendBtn" type="submit" aria-label="Send prompt">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M2 8h11M9 3.5 13.5 8 9 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
         </div>
@@ -445,14 +442,14 @@
 
   <!-- Web Share Target destination picker (Android PWA only). A payload shared into the app lands here;
        the user picks a destination PER SHARE — a new regular chat, or a stored agent (regular or
-       continuous, ADR 0016). The content is then prefilled/attached for review and the user presses
-       Send — never auto-sent, so sending stays the user's explicit consent to any third-party egress
-       (ADR 0013). Reuses the agent-dialog/agent-form styling. -->
+       continuous, ADR 0016). The content is then prefilled/attached for review and the user sends it
+       themselves — never auto-sent, so sending stays the user's explicit consent to any third-party
+       egress (ADR 0013). Reuses the agent-dialog/agent-form styling. -->
   <dialog class="agent-dialog" id="shareDialog">
     <form class="agent-form" id="shareForm" method="dialog">
       <h2 class="agent-form__title">Share to Agent 42</h2>
       <section class="agent-form__section">
-        <p class="agent-form__note">Pick where the shared content goes. It's prefilled for you to review — then press Send.</p>
+        <p class="agent-form__note">Pick where the shared content goes. It's prefilled for you to review — then send it.</p>
         <button class="agent-form__btn agent-form__btn--primary share-dest" type="button" id="shareNewChatBtn">New chat</button>
         <ul class="share-agents" id="shareAgentList"></ul>
       </section>
