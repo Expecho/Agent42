@@ -166,3 +166,5 @@ export const shareLinkUrl = document.getElementById("shareLinkUrl");
 export const shareLinkCopyBtn = document.getElementById("shareLinkCopyBtn");
 export const shareLinkRevokeBtn = document.getElementById("shareLinkRevokeBtn");
 export const shareLinkCloseBtn = document.getElementById("shareLinkCloseBtn");
+// Second entry point into the same dialog, in the persistent topbar cluster beside #incognitoBtn.
+export const topbarShareBtn = document.getElementById("topbarShareBtn");
