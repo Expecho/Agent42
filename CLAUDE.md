@@ -510,6 +510,31 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   (ADR 0013 egress) — the reason it is opt-in and the browser voice stays default. Offline can't reach a real
   TTS endpoint (like image gen, ADR 0020); the Foundry audio wire path is spike-informed, prod-smoke verified.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
+- Pinned conversations (ADR 0045): a pin toggle on every sidebar row hoists a chat to the top of the
+  transmissions list and keeps it there regardless of recency. It is a trailing optional
+  **`[Id(5)] bool Pinned = false`** on `ConversationInfo` (the `[Id(3)]`/`[Id(4)]` agent-identity shape —
+  zero migration), a `SetPinnedAsync` on `IConversationIndexGrain`, `GetConversationsAsync` ordering
+  **`OrderByDescending(Pinned).ThenByDescending(UpdatedAt)`**, and **`PUT /api/conversations/{id}/pin`**
+  (Easy-Auth gated — **not** `excludedPaths`; idempotent; a silent no-op for an unlisted id). `TouchAsync`
+  is **untouched** — its `with` expression carries `Pinned` forward for free, which is exactly why a
+  regression test pins that. **The load-bearing part is client-side and must not be got wrong:**
+  `renderSidebar` does one walk that places an agent group at its most-recent member, so server-side
+  re-sorting **alone** would drag an agent's *entire group* to the top when one of its chats is pinned.
+  The render is therefore **two passes** — a flat pinned block (`buildConvRow(conv, true)`), then the
+  existing grouping walk over the **unpinned remainder only** — which costs the hoisted row its agent
+  label (only `.conv-group__name` draws it) and is repaid by a `.conv__agent` badge; a **fully-pinned
+  agent group disappears by design**, the normal case for a continuous agent (ADR 0016), safe only
+  because of that badge. Persistence is proved on the **Cosmos JSON path** (a committed pre-pin
+  `ConversationIndexState` golden document in `GrainStorageSerializerTests` — Newtonsoft binding a
+  *missing* property onto a positional record is the actual risk); the binary
+  `SerializationCompatibilityTests` assertion is secondary and explicitly **not** the data-at-rest guard.
+  An `@media (hover: none)` block reveals `.conv__pin`/`.conv__share`/`.conv__delete` permanently —
+  without it pinning is impossible on the Android PWA while unpinning works — which also fixes the same
+  pre-existing gap on share and delete, but **only for those three**: `.agent__action` and `.msg__copy`
+  use the same hover-reveal idiom and stay touch-unreachable (a recorded residual, not fixed here). Ephemeral chats (ADR 0034) are structurally unpinnable (never
+  indexed); pins are **not** surfaced into the ADR 0035 public share payload; offline lists cached before
+  this shipped render unpinned until the next refresh. Shell cache bumped `agent42-shell-v15` → `-v16`.
+  Read the hoist-out-of-the-group gotcha before touching `renderSidebar`.
 - Composer send button removed (ADR 0043, **amends 0023**): `#sendBtn` is gone — markup, the four
   `.composer__send*` rules, the `dom.js` export and its five references across `send.js`/`models.js` — and
   `#promptInput` carries **`enterkeyhint="send"`** so a touch keyboard labels its return key **Send**.

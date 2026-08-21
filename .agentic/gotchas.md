@@ -1648,3 +1648,45 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`TopbarShare_IsClearedWhenAnAgentChatStarts`, `TopbarShare_IsGatedOnEmptyAndEphemeralChats`,
   `TopbarBrandAndMenu_AreMobileOnly`), `.agentic/decisions/0044-persistent-topbar-action-cluster.md`
 - **Verified:** 2026-08-21
+
+### A pinned agent chat must be HOISTED out of its group, never sorted into it — and hoisting costs the agent label
+
+- **Claim:** `renderSidebar` does **one walk** over the server-ordered list and reserves a per-agent
+  group's slot at its **first-encountered (= most recent) member**, filling it through a placeholder
+  `<li>` replaced afterwards. So pinning implemented as *server-side re-sorting alone* drags **that
+  agent's entire group** to the top the moment one of its chats is pinned — the group's slot follows its
+  most-recent member. The render must therefore be **two passes**: a flat pinned block first
+  (`buildConvRow(conv, true)`), then the existing grouping walk over the **unpinned remainder only**
+  (`if (conv.pinned) continue;`, or the row renders twice). The server still owns the ordering
+  (`OrderByDescending(c => c.Pinned).ThenByDescending(c => c.UpdatedAt)`) — do **not** re-sort in JS.
+  Two things ride along and are easy to get wrong. First, **hoisting discards the agent's name**: only
+  `.conv-group__name` renders it, so a hoisted agent chat needs a badge or it reads as a regular chat —
+  and that badge must key on **`agentId` with a `|| "Agent"` fallback**, exactly as the grouping walk and
+  `buildAgentGroup` do. Keying it on `agentName` looks equivalent and is not: a blank-named agent chat
+  then groups correctly but hoists with **no label at all**, which is the very bug the badge exists to
+  prevent. Second, **a fully-pinned agent group disappears by design** — the walk sees
+  zero members and constructs nothing — which for a **continuous** agent (ADR 0016: exactly one
+  conversation) is the *normal* case, not an edge case; it is safe only because of the badge, so do not
+  "fix" it with an empty-group placeholder. Related, in the same family: the row actions are
+  `opacity: 0` hover-reveals, so `.conv__pin` needs the `@media (hover: none)` block or pinning is
+  impossible on the installed Android PWA while **un**pinning still works (`.conv-row.is-pinned
+  .conv__pin` keeps that one visible) — but that block covers the three *conversation-row* actions only;
+  `.agent__action` and `.msg__copy` share the idiom and stay touch-unreachable (a recorded residual).
+  The divider between the two blocks is likewise a trap: mark the last pinned row from JS
+  (`.is-pinned-last`, set only when something follows it) rather than reaching for `:has()` — the
+  selector cannot see past the block, so an all-pinned list draws a trailing rule under nothing — and
+  style it with **`margin-bottom`, never `padding-bottom`**, because `.conv-row` is the containing block
+  for the three absolutely-positioned actions, whose `top: 50%` resolves against its **padding** box.
+  Finally, note what the guards can and cannot prove: every
+  assertion here is source-text, so "renders exactly once" is **not** covered by any test — it was
+  verified manually and the measurements are in the ADR.
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/sidebar.js` (`renderSidebar`'s two passes,
+  `buildConvRow(conv, hoisted)`, `setPinned`),
+  `src/Agent42.Agents/Conversations/ConversationIndexGrain.cs` (`GetConversationsAsync`, `SetPinnedAsync`),
+  `src/Agent42.Backend/wwwroot/styles.css` (`.conv__pin`, `.conv-row.is-pinned .conv__pin`,
+  `@media (hover: none)`, `.conv__agent`),
+  `tests/Agent42.Tests/PinChatAssetsTests.cs`
+  (`RenderSidebar_EmitsThePinnedBlockBeforeTheGroupingWalk`, `HoistedRow_CarriesTheAgentBadge`,
+  `PinnedState_IsVisibleWithoutHover_AndReachableOnTouch`),
+  `.agentic/decisions/0045-pinned-conversations.md`
+- **Verified:** 2026-08-21

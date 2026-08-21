@@ -14,7 +14,11 @@ public sealed record ConversationInfo(
     // a later rename/delete of the source agent must not blank the group label). Null for a
     // regular (non-agent) chat. Trailing optional [Id(3)]/[Id(4)] → no state migration.
     [property: Id(3)] string? AgentId = null,
-    [property: Id(4)] string? AgentName = null);
+    [property: Id(4)] string? AgentName = null,
+    // Whether the user pinned this conversation to the top of the sidebar (ADR 0045).
+    // Trailing optional [Id(5)] with a false default → no state migration: an existing
+    // persisted document carries no "pinned" key and deserializes to unpinned.
+    [property: Id(5)] bool Pinned = false);
 
 /// <summary>
 /// Tracks the conversations of a user (the grain key) so the UI can list them
@@ -33,7 +37,14 @@ public interface IConversationIndexGrain : IGrainWithStringKey
     [Alias("TouchAsync")]
     Task TouchAsync(string conversationId, string firstPrompt, string? agentId = null, string? agentName = null);
 
-    /// <summary>Returns all conversations, most recently used first.</summary>
+    /// <summary>
+    /// Sets or clears the pinned flag on a conversation. Idempotent, and a no-op
+    /// when the conversation isn't listed.
+    /// </summary>
+    [Alias("SetPinnedAsync")]
+    Task SetPinnedAsync(string conversationId, bool pinned);
+
+    /// <summary>Returns all conversations, pinned first, then most recently used first.</summary>
     [Alias("GetConversationsAsync")]
     Task<IReadOnlyList<ConversationInfo>> GetConversationsAsync();
 
