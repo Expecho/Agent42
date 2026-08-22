@@ -53,6 +53,9 @@ export async function send(prompt) {
   fillUserBubble(userMsg, prompt, turnAttachments, convId);
   const agentMsg = addMessage("agent");
   setAgentMarkdown(agentMsg, "", { caret: true });
+  // The only scroll of the turn: bring the freshly appended turn into view. The reply is then
+  // deliberately NOT followed as it streams — the view stays wherever the reader put it, so
+  // scrolling back to re-read something earlier is not yanked away by the next chunk.
   scrollToBottom();
 
   let answer = "";
@@ -116,7 +119,6 @@ export async function send(prompt) {
         } else if (chunk.type === "done") {
           showUsage(agentMsg, chunk);
         }
-        scrollToBottom();
       }
     }
     setAgentMarkdown(agentMsg, answer);
@@ -153,7 +155,6 @@ export async function send(prompt) {
     streaming = false;
     modelSelect.disabled = modelSelect.options.length === 0;
     applyModelAvailability(); // keep the composer gated if there's still no model (ADR 0019)
-    scrollToBottom();
     input.focus();
     refreshConversations();
   }
