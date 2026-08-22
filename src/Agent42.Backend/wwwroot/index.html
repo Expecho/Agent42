@@ -475,7 +475,7 @@
     </form>
   </dialog>
 
-  <!-- Read-only share link (ADR 0035): mint / copy / revoke a PUBLIC, no-login link to ONE conversation.
+  <!-- Read-only share link (ADR 0035): mint / share-or-copy / revoke a PUBLIC, no-login link to ONE conversation.
        Distinct from #shareDialog above (ADR 0023 Web Share Target, which shares INTO the app). Reuses the
        agent-dialog/agent-form styling. -->
   <dialog class="agent-dialog" id="shareLinkDialog">
@@ -489,13 +489,14 @@
         <!-- Unshared state: a single create button (nothing is minted until pressed). -->
         <button class="agent-form__btn agent-form__btn--primary" type="button" id="shareLinkCreateBtn">Create link</button>
 
-        <!-- Shared state: the URL + copy/revoke, revealed once a link exists. -->
+        <!-- Shared state: the URL + share-or-copy/revoke, revealed once a link exists. -->
         <div class="share-link" id="shareLinkResult" hidden>
           <label class="agent-form__field">
             <span class="agent-form__label">// link</span>
             <input class="agent-form__input" type="text" id="shareLinkUrl" readonly />
           </label>
           <div class="share-link__actions">
+            <button class="agent-form__btn agent-form__btn--primary" type="button" id="shareLinkShareBtn" hidden>Share</button>
             <button class="agent-form__btn agent-form__btn--primary" type="button" id="shareLinkCopyBtn">Copy</button>
             <button class="agent-form__btn share-link__revoke" type="button" id="shareLinkRevokeBtn">Revoke</button>
           </div>

@@ -85,7 +85,7 @@ completeness, explicitly not as the data-at-rest guard.
 
 ### "Pinned" already meant something else here — the name was kept anyway
 This repo already says "pinned" for **model binding**: "the already-pinned persona stands"
-(`AgentApi.Conversations.cs`), "the model is pinned server-side" (`js/send.js`), and ADR 0018's "the
+(`AgentApi.Conversations.cs`), "the model is pinned server-side" (`src/Agent42.Backend/wwwroot/js/send.js`), and ADR 0018's "the
 first turn calls `RebindModelAsync` and pins the model". The collision is real, and a reviewer proposed
 `Starred`/`Favourite`. Those uses are **prose and comments only** — never a member name — and they sit on
 a different type (`AgentGrainState`/`AgentBinding`) from `ConversationInfo`. "Pin" is the user's own word
@@ -117,7 +117,7 @@ known residual and an obvious follow-up rather than smuggled in.
 `http.GetUserId()`, so the grain key scopes the write to that user and pinning someone else's
 conversation is structurally impossible. Idempotent, and a **silent no-op for an unlisted id**: an
 unlisted id is indistinguishable from an unchanged one, so the endpoint discloses nothing about what
-exists. It follows the canonical minimal-API endpoint group (`Users/AgentApi.Users.cs`, body-bound with
+exists. It follows the canonical minimal-API endpoint group (`src/Agent42.Backend/Users/AgentApi.Users.cs`, body-bound with
 no 400-validation branch) and its nearest sibling route (`PUT …/tools`, same route family, same
 `GetUserId()` scoping).
 
@@ -129,7 +129,7 @@ an entry count, so leaving the Bicep untouched proves nothing about a new route.
 ## Consequences
 - **Not a security change and not an egress change (ADR 0013).** A pin is owner-side sidebar state. It is
   deliberately **not** surfaced into the ADR 0035 public share payload, and the other
-  `GetConversationsAsync` caller (`Sharing/AgentApi.Sharing.cs`, resolving a shared conversation's title
+  `GetConversationsAsync` caller (`src/Agent42.Backend/Sharing/AgentApi.Sharing.cs`, resolving a shared conversation's title
   on the owner's index) is an **id lookup** over the returned list, so the ordering change is inert
   there. It must stay a lookup — a pinned-first ordering must not tempt an index-based shortcut.
 - **Ephemeral chats are structurally unpinnable.** ADR 0034 chats never enter the index at all, so there

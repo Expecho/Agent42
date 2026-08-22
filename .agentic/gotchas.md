@@ -1719,3 +1719,28 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/StreamRecoveryAssetsTests.cs`,
   `.agentic/decisions/0046-recover-a-reply-whose-stream-died.md`
 - **Verified:** 2026-08-22
+
+### `navigator.share` — render the link first, and it is NOT an Android test
+
+- **Claim:** Three traps in one small call site, none of them visible in the code.
+  **(1) Render before you share.** Transient user activation is a **Window-scoped time window**
+  (~5 s in Chromium), not a token the `fetch` consumes — `share()` itself consumes it. So the hazard in
+  "mint, then open the sheet on the same press" is the window **expiring** across the `await` on the
+  POST, and the engine that breaks the gesture *deterministically* across an intervening `await` is
+  **WebKit** (its same-task requirement), not Chrome. Do not describe this as "the fetch spends the
+  activation" — that is the wrong mechanism and leads to the wrong fix. `createShareLink` therefore
+  calls `renderShareLinkState(url)` **before** `nativeShareLink()`, so a sheet that never opens costs
+  the user nothing.
+  **(2) `typeof navigator.share === "function"` is not a phone test.** Desktop Chrome and Edge on
+  Windows, Safari on macOS/iOS and Firefox on Android all satisfy it, so the **Copy** button is absent
+  there too. That is deliberate (ADR 0047 chose the pure capability check over `(hover: none)` and over
+  a UA sniff) — do not "fix" the missing Copy button with a media query. `#shareLinkUrl` stays a
+  selectable readonly input, and that is the desktop fallback.
+  **(3) The rejection swallow covers TWO causes and must stay silent.** `AbortError` is the user
+  dismissing the sheet; `NotAllowedError` is no transient activation at call time. Neither is an error
+  worth surfacing — the link is already in the dialog — so the `catch` shows nothing at all.
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/sharelinks.js` (`canNativeShare`, `nativeShareLink`,
+  `createShareLink`), `tests/Agent42.Tests/ShareLinkAssetsTests.cs`
+  (`NativeShare_IsGatedOnAPureFeatureDetect`, `NativeShare_RendersTheLinkBeforeOpeningTheSheet`),
+  `.agentic/decisions/0047-native-share-for-read-only-links.md`
+- **Verified:** 2026-08-22
