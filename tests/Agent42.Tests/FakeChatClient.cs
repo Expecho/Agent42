@@ -29,6 +29,15 @@ public sealed class FakeChatClient : IChatClient
     // the gating tests.
     private const string SuggestionSystemMarker = "You suggest what the user might ask next";
 
+    /// <summary>
+    /// Prompt marker that paces the streamed reply. Without it every chunk is produced faster than a
+    /// test can act on the connection, so a test about what happens to a turn that is still arriving
+    /// (the client abandoning it mid-reply) would never actually reach that state.
+    /// </summary>
+    public const string SlowStreamMarker = "stream slowly";
+
+    private const int SlowStreamChunkDelayMs = 200;
+
     private int _suggestionCalls;
 
     /// <summary>Number of follow-up-suggestion generation calls this (per-silo) client has served.</summary>
@@ -79,10 +88,20 @@ public sealed class FakeChatClient : IChatClient
             await Task.Yield();
         }
 
+        var slow = list.LastOrDefault(m => m.Role == ChatRole.User)?.Text is { } prompt
+            && prompt.Contains(SlowStreamMarker, StringComparison.OrdinalIgnoreCase);
+
         foreach (var chunk in ReplyChunks)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
-            await Task.Yield();
+            if (slow)
+            {
+                await Task.Delay(SlowStreamChunkDelayMs);
+            }
+            else
+            {
+                await Task.Yield();
+            }
         }
     }
 
