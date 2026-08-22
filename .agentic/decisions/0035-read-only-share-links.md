@@ -22,6 +22,13 @@ tags: [agents, conversations, sharing, public-endpoint, easy-auth, excluded-path
 > one place that property could have been weakened (a fresh agent chat inheriting the previous
 > conversation as a stale share target) and closes it.
 
+> **Also amended by [ADR 0047](0047-native-share-for-read-only-links.md) (2026-08-22) — the link now
+> leaves through the OS share sheet.** Pressing **Create link** mints, renders, and then hands the fresh
+> URL to `navigator.share`, and a **Share** button replaces **Copy** wherever that API exists — a pure
+> feature-detect, so not only on Android. The consent property below is untouched: nothing is minted
+> without the Create press, and the auto-open rides that same press. One thing here does change — the
+> conversation **title** now leaves the app alongside the URL, where Copy carried the URL alone.
+
 ## Context
 Every conversation in Agent42 is private to its owner: the whole app sits behind Entra Easy Auth
 (ADR 0002), and every read route is user-scoped via `AgentKey(GetUserId(), conversationId)`. There was no
