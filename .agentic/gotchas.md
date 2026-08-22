@@ -1690,3 +1690,32 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `PinnedState_IsVisibleWithoutHover_AndReachableOnTouch`),
   `.agentic/decisions/0045-pinned-conversations.md`
 - **Verified:** 2026-08-21
+
+### A chat turn outlives its client — and "Transmission failed" after an app switch is a lie
+
+- **Claim:** Two halves of one mechanism, neither visible in the code that depends on it.
+  **Server:** Kestrel **discards** writes to an aborted connection rather than faulting them — measured
+  with a real loopback RST mid-reply, `Response.WriteAsync` threw nothing at all — so the chat endpoint's
+  `await foreach` keeps draining after the browser is gone, the turn completes and `AgentGrain` writes its
+  session. Nothing in `AgentApi.Conversations.cs` *asks* for this, which is what makes it easy to delete:
+  wiring `HttpContext.RequestAborted` into the turn (to stop an abandoned turn burning tokens) looks like
+  an improvement and would silently break recovery, because the grain persists only **after** the last
+  event — a cancelled turn is a *lost* turn, not a shortened one. `ChatStreamDisconnectTests` is the only
+  thing that notices, and it needs **real Kestrel + a raw socket**: TestServer's in-memory pipe leaves the
+  server unaware of a cancelled client, so the same test written against the shared TestServer host is
+  vacuous (measured — it passes against a deliberately broken endpoint).
+  **Client:** because of that, a failed stream on the installed PWA usually means the reply *succeeded*.
+  Android freezes a backgrounded app and the socket dies with it, so `reader.read()` rejects (a
+  `TypeError`, not an `AbortError`) the moment the user returns — which is why a refresh shows the answer.
+  `send()` therefore re-reads the history and adopts the persisted reply before considering the error.
+  Two traps inside that: the backgrounded flag **must be latched by a `visibilitychange` listener**
+  (a frozen PWA runs no JS, so the rejection is only observed once the app is visible again and
+  `document.hidden` read in the `catch` always says "no"), and the `priorTurns` yardstick must be
+  snapshotted **before** the turn appends its own two bubbles or it counts them and never matches.
+- **Evidence:** `src/Agent42.Backend/Conversations/AgentApi.Conversations.cs` (the `await foreach` that
+  writes the NDJSON stream), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`WriteStateAsync` after the
+  stream), `src/Agent42.Backend/wwwroot/js/send.js` (`recoverPersistedReply`, `priorTurns`,
+  `onVisibilityChange`), `tests/Agent42.Tests/ChatStreamDisconnectTests.cs`,
+  `tests/Agent42.Tests/StreamRecoveryAssetsTests.cs`,
+  `.agentic/decisions/0046-recover-a-reply-whose-stream-died.md`
+- **Verified:** 2026-08-22

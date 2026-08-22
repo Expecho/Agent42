@@ -2,9 +2,10 @@
 
 import { ephemeral } from "./agents.js";
 import { clearPendingAttachments, pendingAttachments } from "./attachments.js";
+import { cachePut } from "./cache.js";
 import { autosize } from "./composer.js";
 import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./conversations.js";
-import { form, incognitoBtn, input, modelSelect } from "./dom.js";
+import { form, incognitoBtn, input, modelSelect, thread } from "./dom.js";
 import { currentLocationForSend } from "./location.js";
 import { applyModelAvailability } from "./models.js";
 import { setTopbarShare } from "./sharelinks.js";
@@ -29,6 +30,60 @@ export let sendAbort = null;
 // feeds it stream deltas so the reply can be spoken sentence-by-sentence as it arrives. Same seam as
 // stopSpeech above — send.js only ever READS it, at call time (ADR 0041).
 export let voice = { active: false, onDelta: () => {}, onStreamEnd: () => {}, stop: () => {} };
+
+// How long recoverPersistedReply() waits for a backgrounded turn to show up in the history.
+// Roughly half a minute, which covers a tool-calling turn that was still running when the app
+// came back; a turn slower than that is left to the sidebar and a later reopen.
+const RECOVER_ATTEMPTS = 15;
+const RECOVER_DELAY_MS = 2000;
+
+// Adopts the reply the server already persisted, after the response stream died under us.
+//
+// This is the backgrounded-PWA case, and the failure is a lie: Android freezes an installed PWA
+// when the user switches apps and the response socket goes with it, so reader.read() rejects the
+// instant the app is resumed — while the SERVER ran the turn to completion and wrote its session,
+// oblivious (ChatStreamDisconnectTests pins that: a turn does not stop when its client does). That
+// is why a refresh shows the reply. So re-read the conversation and paint the real answer instead
+// of "Transmission failed" over a turn that succeeded.
+//
+// Polling, because resuming can beat the turn: the history only gains the assistant message once
+// the run finishes, so the first look may legitimately come up short.
+async function recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded) {
+  // An incognito chat is never written at all (ADR 0034) — there is nothing to recover, ever.
+  if (ephemeral) return false;
+  // A turn that never went to the background gets ONE cheap look — a transient blip can still leave
+  // a completed turn behind — and then fails honestly. Polling a genuinely broken connection for
+  // half a minute would only hide the error behind a caret that is never going to stop blinking.
+  const attempts = backgrounded ? RECOVER_ATTEMPTS : 1;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, RECOVER_DELAY_MS));
+
+    let turns = null;
+    try {
+      const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages`);
+      if (res.ok) turns = await res.json();
+    } catch {
+      // Still no network. Fall through and try again on the next attempt.
+    }
+
+    // Rendered .msg elements are 1:1 with history turns (renderTurns builds one per turn), so the
+    // server is holding THIS turn once the history has grown by both of its messages — the user's
+    // and the reply — and ends on the reply.
+    const last = turns?.[turns.length - 1];
+    if (turns && turns.length >= priorTurns + 2 && last.role !== "user") {
+      setAgentMarkdown(agentMsg, last.text ?? "");
+      addCopyButton(agentMsg, last.text ?? "");
+      // An assistant turn may carry a generated image (ADR 0020) — the live `image` event for it
+      // went down with the stream, so re-render from the history exactly as a reload would.
+      for (const att of last.attachments ?? []) addAgentImage(agentMsg, convId, att.id, att.fileName);
+      cachePut("messages:" + convId, turns); // keep the offline mirror in step (ADR 0032)
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export async function send(prompt) {
   stopSpeech(); // capture the dictated prompt and reset the mic before clearing the box
   streaming = true;
@@ -48,6 +103,16 @@ export async function send(prompt) {
   // Follow-up suggestion chips are live-only and belong to the newest turn: drop any left over from
   // the previous reply before this turn appends its own.
   clearSuggestions();
+
+  // How many turns are on screen BEFORE this one appends its two bubbles — the yardstick
+  // recoverPersistedReply() measures the server's history against.
+  const priorTurns = thread.querySelectorAll(".msg").length;
+  // Whether this turn spent any time in the background. It has to be latched by a listener:
+  // a frozen PWA runs no JS, so the stream's rejection is not observed until the app is already
+  // visible again and reading document.hidden in the catch would always say "no".
+  let backgrounded = document.hidden;
+  const onVisibilityChange = () => { backgrounded = backgrounded || document.hidden; };
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
   const userMsg = addMessage("user");
   fillUserBubble(userMsg, prompt, turnAttachments, convId);
@@ -146,11 +211,18 @@ export async function send(prompt) {
     if (err.name === "AbortError") {
       setAgentMarkdown(agentMsg, answer);
       voice.onStreamEnd();
+    } else if (await recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)) {
+      // The stream died but the turn did not. Finish exactly as the success path does — the reply
+      // IS on the server, so the persona is bound and the conversation is shareable.
+      voice.onStreamEnd();
+      setPendingAgentId(null);
+      setTopbarShare(convId, conversations.find((c) => c.id === convId)?.title ?? "This conversation");
     } else {
       agentMsg.classList.add("is-error");
       setAgentMarkdown(agentMsg, `**Transmission failed.** ${err.message ?? err}`);
     }
   } finally {
+    document.removeEventListener("visibilitychange", onVisibilityChange);
     sendAbort = null;
     streaming = false;
     modelSelect.disabled = modelSelect.options.length === 0;
