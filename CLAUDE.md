@@ -535,6 +535,25 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   indexed); pins are **not** surfaced into the ADR 0035 public share payload; offline lists cached before
   this shipped render unpinned until the next refresh. Shell cache bumped `agent42-shell-v15` → `-v16`.
   Read the hoist-out-of-the-group gotcha before touching `renderSidebar`.
+- Recovering a reply whose stream died (ADR 0046): switching away from the installed PWA mid-reply used
+  to end in **"Transmission failed."** while a refresh showed the complete answer. **The turn was never
+  lost — only its delivery was**, and the fix is **client-side only, no server change**: on a non-abort
+  stream failure `send()` re-reads `GET /api/conversations/{id}/messages` and adopts the persisted reply
+  into the bubble it was streaming into (`recoverPersistedReply`), painting the error only if nothing
+  turns up. **What makes that possible is an implicit server property, not endpoint code:** Kestrel
+  *discards* writes to an aborted connection instead of faulting them (measured with a real RST), so the
+  endpoint's `await foreach` keeps draining and `AgentGrain` writes its session as usual — which is why
+  wiring `HttpContext.RequestAborted` into the turn would silently break this (the grain persists only
+  **after** the last event, so a cancelled turn is a *lost* turn). `ChatStreamDisconnectTests` pins it on
+  **real Kestrel + a raw socket**, because TestServer's in-memory pipe cannot reproduce a dead transport
+  and the same test there passes against a broken endpoint. Three client traps: the backgrounded flag must
+  be **latched by a `visibilitychange` listener** (a frozen PWA runs no JS, so `document.hidden` read in
+  the `catch` always says "no"); `priorTurns` must be snapshotted **before** the turn appends its two
+  bubbles; and recovery is a **success**, so it runs the success tail (`setPendingAgentId(null)` +
+  `setTopbarShare`). Backgrounded turns poll 15 × 2 s, foreground failures get **one** look and fail fast;
+  an incognito chat (ADR 0034) is never recovered (never written). Verified in headless Chrome both ways —
+  with the change the full reply appears, with `send.js` reverted the same script reproduces the bug.
+  Shell cache bumped `agent42-shell-v17` → `-v18`.
 - Composer send button removed (ADR 0043, **amends 0023**): `#sendBtn` is gone — markup, the four
   `.composer__send*` rules, the `dom.js` export and its five references across `send.js`/`models.js` — and
   `#promptInput` carries **`enterkeyhint="send"`** so a touch keyboard labels its return key **Send**.
