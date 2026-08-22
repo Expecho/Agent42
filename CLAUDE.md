@@ -427,10 +427,11 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   memory"** — a live activation still holds the chat; the trace-free property shows up on deactivation. Egress
   (ADR 0013) is unchanged: incognito is about durability, not privacy from a third-party model. See the
   ephemeral-chat gotcha before touching `_ephemeral` or the scheduling guard.
-- Read-only share links (ADR 0035, **owner UI extended by ADR 0044**): an owner mints a **public, no-login**
+- Read-only share links (ADR 0035, **owner UI extended by ADR 0044, outbound share added by ADR 0047**): an owner mints a **public, no-login**
   link to any conversation (regular or agent chat) from a share action on each sidebar row (`buildConvRow`)
   **or from `#topbarShareBtn` in the persistent topbar cluster** — both open the same `#shareLinkDialog`
-  (create/copy/revoke), and both only *open* it: nothing is minted until the user presses **Create**. It mirrors the ADR 0022 two-grain split: **`ShareToken`** (copy of `ApiKey`, `shr_`
+  (create / share-or-copy / revoke — **Copy is conditional as of ADR 0047**), and both only *open* it:
+  nothing is minted until the user presses **Create**. It mirrors the ADR 0022 two-grain split: **`ShareToken`** (copy of `ApiKey`, `shr_`
   prefix) → a global hash-keyed **`ShareLinkDirectoryGrain`** (token hash → `(userId, conversationId)`) for
   O(1) public resolution, plus a per-user **`UserShareLinksGrain`** (state `"share-links"`) for
   list/create/revoke — both ride `agent-state`, **no new Cosmos container/secret/DI**. Owner routes
@@ -452,6 +453,30 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   conversation's **full current live history** — text, images, the user's street address (ADR 0012),
   document/web content — to anyone holding the link, outside the Entra tenant; the view is live until revoked,
   and **revocation is the only control** (deleting the conversation also revokes it).
+- Native share for a read-only link (ADR 0047, **extends 0035 + 0013**): pressing **Create link** in
+  `#shareLinkDialog` now mints, renders, **and then** hands the fresh URL to the OS share sheet via
+  `navigator.share`, and a **Share** button **replaces** (not joins) **Copy** wherever that API exists.
+  Frontend-only — no endpoint, grain, token shape, `excludedPaths` entry, secret or Bicep change; both
+  buttons ship in the markup with Share `hidden` and `wireShareLinks` flips the pair. **The gate is a
+  pure feature-detect** — `typeof navigator.share === "function"`, the `speech.js` import-time-capability
+  idiom — which is emphatically **not an Android test**: desktop Chrome/Edge on Windows, Safari and
+  Firefox-on-Android all match, so Copy disappears there too and the ungated auto-open force-opens an OS
+  flyout on desktop. Both were chosen with that stated (`(hover: none)` gating and UA sniffing were
+  rejected); `#shareLinkUrl` stays a selectable readonly input as the desktop fallback, and
+  `NativeShare_IsGatedOnAPureFeatureDetect` pins the exact expression so the choice stays falsifiable.
+  **The ordering is load-bearing:** transient user activation is a Window-scoped ~5 s window that
+  `share()` consumes — the risk is it **expiring** across the POST `await` (and WebKit's same-task rule),
+  never "the fetch spending it" — so the link is rendered first and a sheet that never opens is a
+  non-event. Both rejections (`AbortError` = dismissed, `NotAllowedError` = no activation) are swallowed
+  silently. Payload is **title + url only** (a `text` repeating the URL renders twice in some targets),
+  the title captured **raw** because `shareLinkConvTitle.textContent` is quote-wrapped. **Headline
+  consequence:** the conversation **title** now leaves the app alongside the URL — Copy carried the URL
+  alone — and the OS share history sees it (a **first-turn** chat sends the placeholder
+  `This conversation`, because the server derives the real title only after that turn); ADR 0035's consent property is untouched (nothing minted
+  without the Create press). Shell cache bumped `agent42-shell-v18` → `-v19`. The three browser passes
+  **were** run (headless Chrome over CDP against DevHost, stubbed/deleted/rejecting); the real Android
+  system sheet on a device stays an honest unverified residual. Read the `navigator.share` gotcha before
+  touching `createShareLink`.
 - Follow-up suggestion prompts (ADR 0036): after an **interactive** reply, `AgentGrain` makes one extra
   model call (`GenerateFollowUpsAsync`) — **streamed via `GetStreamingResponseAsync` and aggregated, the same
   path/cached client the reply uses** (the non-streaming `GetResponseAsync` returned nothing on the Foundry

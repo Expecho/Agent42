@@ -156,13 +156,14 @@ export const shareAgentList = document.getElementById("shareAgentList");
 export const shareNewChatBtn = document.getElementById("shareNewChatBtn");
 export const shareCancelBtn = document.getElementById("shareCancelBtn");
 
-// Read-only share link (ADR 0035): mint/copy/revoke a public, no-login link to one conversation.
+// Read-only share link (ADR 0035): mint/share-or-copy/revoke a public, no-login link to one conversation.
 // Distinct from the ADR 0023 Web Share Target above (which shares INTO the app).
 export const shareLinkDialog = document.getElementById("shareLinkDialog");
 export const shareLinkConvTitle = document.getElementById("shareLinkConvTitle");
 export const shareLinkCreateBtn = document.getElementById("shareLinkCreateBtn");
 export const shareLinkResult = document.getElementById("shareLinkResult");
 export const shareLinkUrl = document.getElementById("shareLinkUrl");
+export const shareLinkShareBtn = document.getElementById("shareLinkShareBtn");
 export const shareLinkCopyBtn = document.getElementById("shareLinkCopyBtn");
 export const shareLinkRevokeBtn = document.getElementById("shareLinkRevokeBtn");
 export const shareLinkCloseBtn = document.getElementById("shareLinkCloseBtn");
