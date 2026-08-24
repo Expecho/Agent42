@@ -86,10 +86,15 @@ public static class SkillCatalog
                     .Where(s => !string.IsNullOrWhiteSpace(s.Frontmatter.Name))
                     .Select(s => new SkillInfo(s.Frontmatter.Name, s.Frontmatter.Description ?? "", s.Path))
                     .OrderBy(s => s.Name, StringComparer.Ordinal)
-                    // First wins, mirroring the framework's own DeduplicatingAgentSkillsSource. Two skills
-                    // CAN share a frontmatter name once directories nest (Skills/a/foo and Skills/b/foo),
-                    // and two identical checkboxes addressing an ambiguous gate is worse than losing one.
-                    // LINQ's OrderBy is stable, so the winner is deterministic.
+                    // ThenBy(Path) is NOT cosmetic — it is what makes the de-dupe below deterministic.
+                    // Two skills CAN share a frontmatter name once directories nest (a `foo` skill under
+                    // two different category directories), and two identical checkboxes addressing an
+                    // ambiguous gate is worse than losing one. But "first wins" is only meaningful if
+                    // "first" is well defined, and the input order here is the FILESYSTEM's: NTFS and ext4
+                    // enumerate differently, so ordering on Name alone picks a different winner per
+                    // platform. CI caught exactly that — green on Windows, red on Linux. Sorting on Path
+                    // pins the winner to the lowest path, ordinal, everywhere.
+                    .ThenBy(s => s.Path, StringComparer.Ordinal)
                     .DistinctBy(s => s.Name, StringComparer.Ordinal),
             ];
         }

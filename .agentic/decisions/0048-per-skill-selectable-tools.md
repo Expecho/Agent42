@@ -157,6 +157,11 @@ wildcard terms are load-bearing and neither may be removed.
   recurses and `AgentFileSkill.Path` is the skill's own directory, so each nests correctly in
   the gate. The shipped layout is flat; the nested case is pinned by a test so a future
   reorganisation does not silently collapse two skills onto one key.
+- **The de-dupe tie-break is ordered on `Path`, not just `Name`, and that is load-bearing.** The input
+  order is the *filesystem's*, and NTFS and ext4 enumerate differently — so "first wins" on `Name` alone
+  picks a different winner per platform. This shipped green on a Windows dev machine and went **red on
+  Linux CI**; the fix pins the winner to the lowest path, ordinal, everywhere. Any future "first wins"
+  rule over directory enumeration needs the same treatment.
 - **`SkillCatalog.Discover` never throws**, and that is load-bearing rather than merely tidy:
   `Skills` is a `Lazy<T>`, which **caches a thrown exception**, so a single throw would rethrow
   on every subsequent touch and fail `BuildAgent` for every conversation on the silo for the

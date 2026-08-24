@@ -74,9 +74,14 @@ public class SkillCatalogTests : IDisposable
     }
 
     // AC11 (de-dupe): the source recurses, so two skills CAN share a frontmatter name once directories
-    // nest — and two identical checkboxes addressing an ambiguous gate is worse than losing one. First
-    // wins, ordinal. This is also the regression pin for the nesting bug a per-directory scan would have:
-    // each nested skill's Path must be its OWN directory, never the shared category directory.
+    // nest — and two identical checkboxes addressing an ambiguous gate is worse than losing one. The
+    // winner is the LOWEST PATH ordinal, and that tie-break is the point of the test: the input order is
+    // the filesystem's, and NTFS and ext4 disagree, so an earlier version of this ordered on Name alone
+    // and was green on Windows / red on Linux CI. `alpha` and `zeta` are named so the expected winner is
+    // unambiguous either way the directories happen to enumerate.
+    //
+    // This is also the regression pin for the nesting bug a per-directory scan would have: each nested
+    // skill's Path must be its OWN directory, never the shared category directory.
     [Fact]
     public void Discover_DedupesByName_AndPairsNestedSkillsWithTheirOwnDirectory()
     {
@@ -88,10 +93,12 @@ public class SkillCatalogTests : IDisposable
         var skills = SkillCatalog.Discover(root);
 
         Assert.Equal(["dup", "solo"], skills.Select(s => s.Name));
+
+        // The lowest path wins regardless of enumeration order — `alpha/dup`, never `zeta/dup`.
         Assert.Equal("the first one wins", skills.Single(s => s.Name == "dup").Description);
+        Assert.Equal(Path.Combine(root, "alpha", "dup"), skills.Single(s => s.Name == "dup").Path);
 
         // Each path is the skill's own directory, not the `alpha` category above it.
-        Assert.Equal(Path.Combine(root, "alpha", "dup"), skills.Single(s => s.Name == "dup").Path);
         Assert.Equal(Path.Combine(root, "alpha", "solo"), skills.Single(s => s.Name == "solo").Path);
     }
 

@@ -497,7 +497,22 @@ A one-line correction found at compile time — no `.AsTask()` is needed inside 
 The bridge itself is exactly as step 1 mandated and must not be "simplified" to a bare
 `.GetAwaiter().GetResult()`.
 
-### 5. Critic findings folded in before the MR
+### 5. CI caught a platform-dependent bug the local run could not
+
+The first push went **red on `build-test`** while green locally. Not flaky, and not a test-only problem:
+the de-dupe's "first wins" ordered on `Name` alone, so the winner was decided by **filesystem enumeration
+order** — NTFS and ext4 disagree, so `alpha/dup` won on Windows and `zeta/dup` won on Linux. The code
+comment asserting "LINQ's OrderBy is stable, so the winner is deterministic" was true only given a
+deterministic *input* order, which the filesystem does not provide.
+
+Fixed with an explicit `.ThenBy(s => s.Path, StringComparer.Ordinal)` before the `DistinctBy`, pinning the
+winner to the lowest path ordinal on every platform. The test now says why the tie-break exists, so the
+next reader does not "simplify" it back. Recorded as an ADR consequence.
+
+This is the one defect in the whole MR that neither the local suite, the manual browser pass, nor the
+critic could have found — it needed a different filesystem.
+
+### 6. Critic findings folded in before the MR
 
 A `critic` pass ran on the full diff (step 5). Verdict: 1 medium-high, 1 medium, 4 low — **all six
 accepted and fixed**, none rejected:
