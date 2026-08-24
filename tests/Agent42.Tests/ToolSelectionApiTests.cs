@@ -86,9 +86,10 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         return [.. doc.RootElement.EnumerateArray().Select(e => e.GetString()!)];
     }
 
-    // AC5 (catalog): /api/tools returns the static selectable keys, with the hosted-tools flag. The bare
-    // `mcp` wildcard is NO LONGER a catalog key (ADR 0026 — it is a selection sentinel, not a checkbox); a
-    // user with no MCP servers gets exactly the five static keys.
+    // AC6 (catalog): /api/tools returns the static selectable keys, with the hosted-tools flag. NEITHER bare
+    // wildcard is a catalog key — not `mcp` (ADR 0026) and, since per-skill selectable tools, not `skills`
+    // either: both are selection sentinels, not checkboxes. A user with no MCP servers gets the four static
+    // keys plus one `skill:{name}` per shipped skill.
     [Fact]
     public async Task Tools_Catalog_ReturnsSelectableKeys()
     {
@@ -99,13 +100,46 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         var keys = doc.RootElement.EnumerateArray().Select(e => e.GetProperty("key").GetString()).ToArray();
 
         Assert.Equal(
-            new[] { "web_search", "location", "scheduling", "skills", "code_interpreter" }.Order(),
+            new[]
+            {
+                "web_search", "location", "scheduling", "code_interpreter",
+                "skill:scheduledprompt", "skill:websearch",
+            }.Order(),
             keys.Order());
+
+        Assert.DoesNotContain("skills", keys); // the wildcard is never rendered
 
         // code_interpreter is the only one flagged as needing a hosted-tools model.
         var codeInterpreter = doc.RootElement.EnumerateArray()
             .Single(e => e.GetProperty("key").GetString() == "code_interpreter");
         Assert.True(codeInterpreter.GetProperty("requiresHostedTools").GetBoolean());
+    }
+
+    // AC6/AC14 (per-skill): every shipped skill appears as a `skill:{name}` descriptor whose LABEL is the
+    // frontmatter name verbatim — the same token the key addresses and the model is shown, so the picker,
+    // the stored key and the ADR all say the same thing. Deliberately not title-cased (a display-only
+    // transform would drift from the key). Unlike the MCP portion this is per-deployment, not per-user.
+    [Fact]
+    public async Task Tools_Catalog_IncludesPerSkillKeys()
+    {
+        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-skill-cat"));
+        response.EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var skills = doc.RootElement.EnumerateArray()
+            .Where(e => e.GetProperty("key").GetString()!.StartsWith("skill:", StringComparison.Ordinal))
+            .Select(e => (Key: e.GetProperty("key").GetString(), Label: e.GetProperty("label").GetString()))
+            .ToArray();
+
+        Assert.Equal(
+            [("skill:scheduledprompt", "scheduledprompt"), ("skill:websearch", "websearch")],
+            skills);
+
+        // A skill never needs a hosted-tools model — that flag belongs to code_interpreter alone.
+        Assert.All(
+            doc.RootElement.EnumerateArray()
+                .Where(e => e.GetProperty("key").GetString()!.StartsWith("skill:", StringComparison.Ordinal)),
+            e => Assert.False(e.GetProperty("requiresHostedTools").GetBoolean()));
     }
 
     // AC5 (per-server, ADR 0026): a management-ENABLED MCP server appears in the catalog as an `mcp:{id}`
