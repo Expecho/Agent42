@@ -196,25 +196,9 @@ builder.Services.AddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
 builder.Services.AddSingleton<DocumentChunker>();
 builder.Services.AddSingleton<DocumentIngestionService>();
 
-// Branch the document index exactly like the blob store above: use Cosmos vector search only when
-// the doc-chunks container is configured (production, threaded from Bicep). Under the AppHost's
-// Cosmos emulator — which can't do vector search — this key is absent, so the in-memory index is
-// used and the emulator never receives a vector query (constraint 6). The container is pre-created
-// in Bicep with its vector policy; CosmosDocumentIndex never creates on use (disableLocalAuth).
-var docChunksContainer = builder.Configuration["Cosmos:DocChunksContainerName"];
-if (!string.IsNullOrWhiteSpace(docChunksContainer))
-{
-    // The container's vector policy dimension (Bicep-fixed at 3072 for text-embedding-3-large, ADR 0007).
-    // Threaded here so ingest can reject a user-chosen embedding model whose vectors don't fit, with a clear
-    // message instead of an opaque Cosmos error. Config-overridable only if the container is ever recreated.
-    var docChunksDimensions = builder.Configuration.GetValue<int?>("Cosmos:DocChunksDimensions") ?? 3072;
-    builder.Services.AddSingleton<IDocumentIndex>(sp => new CosmosDocumentIndex(
-        sp.GetRequiredService<CosmosClient>(), "agent42", docChunksContainer, docChunksDimensions));
-}
-else
-{
-    builder.Services.AddSingleton<IDocumentIndex, InMemoryDocumentIndex>();
-}
+// The document index (ADR 0007) branches on whether the doc-chunks container is configured;
+// that decision lives with the Documents feature (ADR 0040/0050), not inline here.
+builder.Services.AddDocumentIndex(builder.Configuration);
 
 // Web tools (ADR 0011): search runs against the SearXNG sidecar in this Container App, reached over
 // localhost. Eager-validated so a missing endpoint fails at startup rather than in the middle of a

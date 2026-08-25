@@ -108,28 +108,41 @@ public static class Extensions
             }
         }
 
+        if (!hasEnvEndpoint && !addLocalCollector)
+        {
+            return builder;
+        }
+
+        // Which of the two exporters to add, decided ONCE rather than re-tested per signal (ADR 0050 —
+        // this was six copies of the same pair of ifs, nested one lambda deep each). Behaviour is
+        // unchanged: the same calls, under the same conditions, in the same order.
+        //
+        // Each signal's AddOtlpExporter is a separate extension method on a separate builder type with
+        // no shared interface, so the signal hands its own two overloads in as delegates rather than
+        // this being generic over the builder.
+        void AddConfiguredExporters(Action addEnvExporter, Action<Action<OtlpExporterOptions>> addLocalExporter)
+        {
+            if (hasEnvEndpoint)
+            {
+                addEnvExporter();
+            }
+
+            if (addLocalCollector)
+            {
+                addLocalExporter(ConfigureLocalCollector);
+            }
+        }
+
         // Two endpoints means per-signal AddOtlpExporter(): UseOtlpExporter() is one-shot and throws
         // NotSupportedException if combined with any signal-specific AddOtlpExporter().
-        if (hasEnvEndpoint || addLocalCollector)
-        {
-            builder.Logging.AddOpenTelemetry(logging =>
-            {
-                if (hasEnvEndpoint) logging.AddOtlpExporter();
-                if (addLocalCollector) logging.AddOtlpExporter(ConfigureLocalCollector);
-            });
+        builder.Logging.AddOpenTelemetry(logging =>
+            AddConfiguredExporters(() => logging.AddOtlpExporter(), configure => logging.AddOtlpExporter(configure)));
 
-            builder.Services.AddOpenTelemetry()
-                .WithMetrics(metrics =>
-                {
-                    if (hasEnvEndpoint) metrics.AddOtlpExporter();
-                    if (addLocalCollector) metrics.AddOtlpExporter(ConfigureLocalCollector);
-                })
-                .WithTracing(tracing =>
-                {
-                    if (hasEnvEndpoint) tracing.AddOtlpExporter();
-                    if (addLocalCollector) tracing.AddOtlpExporter(ConfigureLocalCollector);
-                });
-        }
+        builder.Services.AddOpenTelemetry()
+            .WithMetrics(metrics =>
+                AddConfiguredExporters(() => metrics.AddOtlpExporter(), configure => metrics.AddOtlpExporter(configure)))
+            .WithTracing(tracing =>
+                AddConfiguredExporters(() => tracing.AddOtlpExporter(), configure => tracing.AddOtlpExporter(configure)));
 
         // Uncomment the following lines to enable the Azure Monitor exporter (requires the Azure.Monitor.OpenTelemetry.AspNetCore package)
         //if (!string.IsNullOrEmpty(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))

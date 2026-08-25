@@ -23,9 +23,9 @@ enforcement:
   ci: hard_block             # PR checks (.github/workflows/pr-checks.yml) block on:
                              # build, tests, dotnet format, vulnerable packages,
                              # doc-path integrity, and new-code coverage.
-                             # cognitive_complexity_max is measured at build time but does NOT yet
-                             # block: 11 methods predate the rule (ADR 0050 lists them). It becomes
-                             # blocking when that backlog is cleared.
+                             # cognitive_complexity_max BLOCKS: S3776 is an `error`, so a method over
+                             # the threshold fails `dotnet build` (ADR 0051 cleared the backlog that
+                             # ADR 0050 had to carry).
 
 dependencies:
   vulnerable_packages: 0     # hard block (CI: package-freshness job)

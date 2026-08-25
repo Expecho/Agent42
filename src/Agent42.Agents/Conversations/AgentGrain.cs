@@ -443,27 +443,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         if (!string.IsNullOrWhiteSpace(model) && model != _modelId)
         {
-            // Rehost the existing conversation on the newly picked model: snapshot the
-            // session, rebuild the agent against the new client, then restore the session
-            // so history carries over.
-            var snapshot = await _agent.SerializeSessionAsync(_session);
-            _modelId = model;
-            _state.State.DeploymentName = model;
-            _agent = BuildAgent(model);
-            _session = await _agent.DeserializeSessionAsync(snapshot);
-
-            // A DOWNGRADE — tools-capable conversation onto a model that has none — would replay this
-            // conversation's FunctionCallContent/FunctionResultContent in a request that declares no
-            // tools. GitHub Models accepts that today (ADR 0013 spike), but that is a service behaviour
-            // we don't control and OpenAI-compatible endpoints commonly reject it; the failure mode is
-            // a conversation that can never be reopened on this model. Cheap to prevent, so we do.
-            if (!_chatClientFactory.GetCapabilities(model).SupportsTools)
-            {
-                StripToolHistory();
-            }
-
-            _logger.LogInformation("Agent grain {GrainKey} switched to model {Model}",
-                this.GetPrimaryKeyString(), model);
+            await SwitchModelAsync(model);
         }
 
         // Image-generation model (ADR 0020): the turn produces an IMAGE, not a chat reply. Branch BEFORE the
@@ -496,6 +476,182 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // It also applies the vision gate to history — see the method.
         await RehydrateAttachmentUrlsAsync(canSeeImages);
 
+        // Build the user turn (images, withholding, the TurnAttachments 1:1 join — see the method).
+        var (userMessage, skippedImages) = await BuildUserTurnAsync(message, attachments, canSeeImages);
+
+        // Tell the user their image was withheld, rather than letting the model silently ignore it.
+        // This is streamed to the CLIENT and never added to the user's message: a note pushed into
+        // `contents` would be concatenated into that turn's text by GetHistoryAsync and render inside
+        // the user's own chat bubble on every later reload.
+        if (skippedImages > 0)
+        {
+            yield return new AgentStreamEvent(
+                AgentStreamEventType.TextDelta,
+                Text: $"_The selected model cannot see images, so {skippedImages} attachment(s) were "
+                    + "not sent to it. Switch to a vision-capable model to ask about them._\n\n");
+        }
+
+        // Token usage arrives as UsageContent updates, one per LLM turn (a tool-calling
+        // run has several); accumulate them and report the totals on the Done event.
+        var tokens = new TurnTokenTotals();
+
+        // Accumulate the reply text (only) so we can feed the last exchange to the follow-up
+        // suggestion call after the turn — cheaper than re-reading the serialized session.
+        var reply = new StringBuilder();
+
+        await foreach (AgentResponseUpdate update in _agent.RunStreamingAsync([userMessage], _session))
+        {
+            // The projection is a plain iterator because it must not be an ASYNC one; usage updates
+            // produce no event at all, they only accumulate into `tokens`.
+            foreach (var evt in ProjectStreamedUpdate(update, reply, tokens))
+            {
+                yield return evt;
+            }
+        }
+
+        await PersistTurnUnlessEphemeralAsync();
+
+        // Follow-up suggestions (interactive path only, opt-out via Preferences). Best-effort: the helper
+        // owns its try/catch and returns null on any failure, so a slow/failing suggestion call never breaks
+        // the turn. Emitted BEFORE Done, after the reply is fully streamed. Skipped on the agent-run/reminder
+        // drain (_interactiveTurn is false there) and on an empty reply. The generator uses a throwaway
+        // message list and never touches _session, so nothing is persisted.
+        if (await SuggestFollowUpsAsync(message, reply) is { Count: > 0 } suggestions)
+        {
+            yield return new AgentStreamEvent(AgentStreamEventType.Suggestions, Suggestions: suggestions);
+        }
+
+        yield return tokens.ToDoneEvent();
+    }
+
+    /// <summary>
+    /// One turn's running token totals. A class rather than three locals so
+    /// <see cref="ProjectStreamedContent"/> can accumulate into it without <c>ref</c> parameters —
+    /// which an iterator method cannot hand out across its own state machine.
+    /// </summary>
+    private sealed class TurnTokenTotals
+    {
+        public long Input { get; set; }
+
+        public long Output { get; set; }
+
+        public long Cached { get; set; }
+
+        /// <summary>
+        /// The terminating <c>Done</c> event. A total of zero is reported as <c>null</c>, not 0: the
+        /// browser distinguishes "this provider reported no usage" from "this turn cost nothing".
+        /// </summary>
+        public AgentStreamEvent ToDoneEvent() => new(
+            AgentStreamEventType.Done,
+            InputTokens: Input > 0 ? Input : null,
+            OutputTokens: Output > 0 ? Output : null,
+            CachedTokens: Cached > 0 ? Cached : null);
+    }
+
+    // Every event one streamed update produces, in order. A synchronous iterator, so the async iterator
+    // above stays one loop deep instead of two.
+    private static IEnumerable<AgentStreamEvent> ProjectStreamedUpdate(
+        AgentResponseUpdate update, StringBuilder reply, TurnTokenTotals tokens)
+    {
+        foreach (AIContent content in update.Contents)
+        {
+            if (ProjectStreamedContent(content, reply, tokens) is { } evt)
+            {
+                yield return evt;
+            }
+        }
+    }
+
+    // Follow-up suggestions (ADR 0036), or null when they are not wanted for this turn. The gating lives
+    // HERE rather than at the call site so the model call is still skipped — not merely discarded — on
+    // the agent-run/reminder drain (_interactiveTurn is false there), when the user has opted out, and
+    // on an empty reply. Best-effort beyond that: GenerateFollowUpsAsync owns its try/catch and returns
+    // null on any failure, so a slow or failing suggestion call never breaks the turn.
+    private async Task<IReadOnlyList<string>?> SuggestFollowUpsAsync(string message, StringBuilder reply)
+        => _interactiveTurn && _suggestFollowUpsEnabled && reply.Length > 0
+            ? await GenerateFollowUpsAsync(message, reply.ToString())
+            : null;
+
+    // Rehosts the existing conversation on a newly picked model: snapshot the session, rebuild the
+    // agent against the new client, then restore the session so history carries over.
+    private async Task SwitchModelAsync(string model)
+    {
+        var snapshot = await _agent.SerializeSessionAsync(_session);
+        _modelId = model;
+        _state.State.DeploymentName = model;
+        _agent = BuildAgent(model);
+        _session = await _agent.DeserializeSessionAsync(snapshot);
+
+        // A DOWNGRADE — tools-capable conversation onto a model that has none — would replay this
+        // conversation's FunctionCallContent/FunctionResultContent in a request that declares no
+        // tools. GitHub Models accepts that today (ADR 0013 spike), but that is a service behaviour
+        // we don't control and OpenAI-compatible endpoints commonly reject it; the failure mode is
+        // a conversation that can never be reopened on this model. Cheap to prevent, so we do.
+        if (!_chatClientFactory.GetCapabilities(model).SupportsTools)
+        {
+            StripToolHistory();
+        }
+
+        _logger.LogInformation("Agent grain {GrainKey} switched to model {Model}",
+            this.GetPrimaryKeyString(), model);
+    }
+
+    // Turns one streamed content part into the event the client sees, or null when it produces none.
+    // A UsageContent yields nothing — it only accumulates into <paramref name="tokens"/>.
+    private static AgentStreamEvent? ProjectStreamedContent(
+        AIContent content, StringBuilder reply, TurnTokenTotals tokens)
+    {
+        switch (content)
+        {
+            case TextContent text when !string.IsNullOrEmpty(text.Text):
+                reply.Append(text.Text);
+                return new AgentStreamEvent(AgentStreamEventType.TextDelta, Text: text.Text);
+
+            case FunctionCallContent call:
+                return new AgentStreamEvent(AgentStreamEventType.ToolCallStart,
+                    ToolName: call.Name, ToolCallId: call.CallId, ToolInput: SerializeOrNull(call.Arguments));
+
+            case FunctionResultContent result:
+                return new AgentStreamEvent(AgentStreamEventType.ToolCallEnd,
+                    ToolCallId: result.CallId, ToolResult: SerializeOrNull(result.Result));
+
+            case UsageContent usage:
+                tokens.Input += usage.Details.InputTokenCount.GetValueOrDefault();
+                tokens.Output += usage.Details.OutputTokenCount.GetValueOrDefault();
+                tokens.Cached += usage.Details.CachedInputTokenCount.GetValueOrDefault();
+                return null;
+
+            default:
+                return null;
+        }
+    }
+
+    // An ephemeral turn (ADR 0034) runs the model but never writes its session item, so the
+    // conversation leaves no trace in Cosmos — the incognito guarantee. Skip the whole serialize.
+    private async Task PersistTurnUnlessEphemeralAsync()
+    {
+        if (_ephemeral)
+        {
+            _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral turn (not persisted)",
+                this.GetPrimaryKeyString());
+            return;
+        }
+
+        var serializedSession = await _agent.SerializeSessionAsync(_session);
+        _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
+        await _state.WriteStateAsync();
+
+        _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
+            this.GetPrimaryKeyString());
+    }
+
+    // Builds the user turn. Images ride alongside the text as UriContent parts pointing at a
+    // store-provided URL (a blob SAS in prod, a placeholder offline) — never raw bytes, so the
+    // serialized session stays small (ADR 0004). Returns the message and how many images were withheld;
+    // the caller streams the user-facing notice, because this method cannot yield.
+    private async Task<(ChatMessage Message, int SkippedImages)> BuildUserTurnAsync(
+        string message, IReadOnlyList<AttachmentRef>? attachments, bool canSeeImages)
+    {
         // Build the user turn. Images ride alongside the text as UriContent parts pointing at
         // a store-provided URL (a blob SAS in prod, a placeholder offline) — never raw bytes,
         // so the serialized session stays small (ADR 0004). Record this turn's refs so history
@@ -556,93 +712,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         AlignTurnAttachmentsToHistory();
         _state.State.TurnAttachments.Add(turnRefs);
 
-        var userMessage = new ChatMessage(ChatRole.User, contents);
 
-        // Tell the user their image was withheld, rather than letting the model silently ignore it.
-        // This is streamed to the CLIENT and never added to the user's message: a note pushed into
-        // `contents` would be concatenated into that turn's text by GetHistoryAsync and render inside
-        // the user's own chat bubble on every later reload.
-        if (skippedImages > 0)
-        {
-            yield return new AgentStreamEvent(
-                AgentStreamEventType.TextDelta,
-                Text: $"_The selected model cannot see images, so {skippedImages} attachment(s) were "
-                    + "not sent to it. Switch to a vision-capable model to ask about them._\n\n");
-        }
-
-        // Token usage arrives as UsageContent updates, one per LLM turn (a tool-calling
-        // run has several); accumulate them and report the totals on the Done event.
-        long inputTokens = 0, outputTokens = 0, cachedTokens = 0;
-
-        // Accumulate the reply text (only) so we can feed the last exchange to the follow-up
-        // suggestion call after the turn — cheaper than re-reading the serialized session.
-        var reply = new StringBuilder();
-
-        await foreach (AgentResponseUpdate update in _agent.RunStreamingAsync([userMessage], _session))
-        {
-            foreach (AIContent content in update.Contents)
-            {
-                switch (content)
-                {
-                    case TextContent text when !string.IsNullOrEmpty(text.Text):
-                        reply.Append(text.Text);
-                        yield return new AgentStreamEvent(AgentStreamEventType.TextDelta, Text: text.Text);
-                        break;
-
-                    case FunctionCallContent call:
-                        yield return new AgentStreamEvent(AgentStreamEventType.ToolCallStart,
-                            ToolName: call.Name, ToolCallId: call.CallId, ToolInput: SerializeOrNull(call.Arguments));
-                        break;
-
-                    case FunctionResultContent result:
-                        yield return new AgentStreamEvent(AgentStreamEventType.ToolCallEnd,
-                            ToolCallId: result.CallId, ToolResult: SerializeOrNull(result.Result));
-                        break;
-
-                    case UsageContent usage:
-                        inputTokens += usage.Details.InputTokenCount.GetValueOrDefault();
-                        outputTokens += usage.Details.OutputTokenCount.GetValueOrDefault();
-                        cachedTokens += usage.Details.CachedInputTokenCount.GetValueOrDefault();
-                        break;
-                }
-            }
-        }
-
-        // An ephemeral turn (ADR 0034) runs the model but never writes its session item, so the
-        // conversation leaves no trace in Cosmos — the incognito guarantee. Skip the whole serialize.
-        if (!_ephemeral)
-        {
-            var serializedSession = await _agent.SerializeSessionAsync(_session);
-            _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
-            await _state.WriteStateAsync();
-
-            _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
-                this.GetPrimaryKeyString());
-        }
-        else
-        {
-            _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral turn (not persisted)",
-                this.GetPrimaryKeyString());
-        }
-
-        // Follow-up suggestions (interactive path only, opt-out via Preferences). Best-effort: the helper
-        // owns its try/catch and returns null on any failure, so a slow/failing suggestion call never breaks
-        // the turn. Emitted BEFORE Done, after the reply is fully streamed. Skipped on the agent-run/reminder
-        // drain (_interactiveTurn is false there) and on an empty reply. The generator uses a throwaway
-        // message list and never touches _session, so nothing is persisted.
-        if (_interactiveTurn && _suggestFollowUpsEnabled && reply.Length > 0)
-        {
-            var suggestions = await GenerateFollowUpsAsync(message, reply.ToString());
-            if (suggestions is { Count: > 0 })
-            {
-                yield return new AgentStreamEvent(AgentStreamEventType.Suggestions, Suggestions: suggestions);
-            }
-        }
-
-        yield return new AgentStreamEvent(AgentStreamEventType.Done,
-            InputTokens: inputTokens > 0 ? inputTokens : null,
-            OutputTokens: outputTokens > 0 ? outputTokens : null,
-            CachedTokens: cachedTokens > 0 ? cachedTokens : null);
+        return (new ChatMessage(ChatRole.User, contents), skippedImages);
     }
 
     private static string? SerializeOrNull(object? value) =>
@@ -659,44 +730,55 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         var userTurnIndex = 0;
         foreach (var message in messages)
         {
-            if (message.Role == ChatRole.User)
+            // The two roles are projected separately because they resolve their images differently:
+            // a user turn joins TurnAttachments POSITIONALLY (so it must advance the index even when
+            // the turn is then skipped), while an assistant turn looks its image up by id.
+            var turn = message.Role == ChatRole.User
+                ? ProjectUserTurn(message, ref userTurnIndex)
+                : message.Role == ChatRole.Assistant ? ProjectAssistantTurn(message) : null;
+
+            if (turn is not null)
             {
-                // Join this user turn to its attachments by index (one TurnAttachments entry per
-                // user turn, in order — see ChatAsync/ReceiveReminder).
-                var refs = userTurnIndex < _state.State.TurnAttachments.Count
-                    ? _state.State.TurnAttachments[userTurnIndex]
-                    : null;
-                userTurnIndex++;
-
-                var hasAttachments = refs is { Count: > 0 };
-                // Retain an image-only turn (blank text but an image attached) — the old filter
-                // dropped any blank-text message, which would hide an image-only prompt.
-                if (string.IsNullOrWhiteSpace(message.Text) && !hasAttachments)
-                {
-                    continue;
-                }
-
-                turns.Add(new ChatTurn(
-                    message.Role.Value, message.Text ?? "", hasAttachments ? refs : null));
-            }
-            else if (message.Role == ChatRole.Assistant)
-            {
-                // A generated-image turn (ADR 0020) is typically blank-text; retain it by its ref, looked up
-                // by the message-level assistantImageId — id-keyed, so it survives interleaved tool-call
-                // assistant messages (the old filter dropped any blank-text assistant message, hiding it).
-                var generated = AssistantImageRef(message);
-                var hasImage = generated is not null;
-                if (string.IsNullOrWhiteSpace(message.Text) && !hasImage)
-                {
-                    continue;
-                }
-
-                turns.Add(new ChatTurn(
-                    message.Role.Value, message.Text ?? "", hasImage ? [generated!] : null));
+                turns.Add(turn);
             }
         }
 
         return Task.FromResult<IReadOnlyList<ChatTurn>>(turns);
+    }
+
+    // One user turn, or null when it carries neither text nor an image and should not be shown.
+    //
+    // ADVANCES userTurnIndex unconditionally, including for a skipped turn — the join to
+    // TurnAttachments is positional (one entry per user turn, in order — see ChatAsync/
+    // ReceiveReminder), so skipping the increment would misalign every image after it.
+    private ChatTurn? ProjectUserTurn(ChatMessage message, ref int userTurnIndex)
+    {
+        var refs = userTurnIndex < _state.State.TurnAttachments.Count
+            ? _state.State.TurnAttachments[userTurnIndex]
+            : null;
+        userTurnIndex++;
+
+        var hasAttachments = refs is { Count: > 0 };
+        // Retain an image-only turn (blank text but an image attached) — the old filter
+        // dropped any blank-text message, which would hide an image-only prompt.
+        return string.IsNullOrWhiteSpace(message.Text) && !hasAttachments
+            ? null
+            : new ChatTurn(message.Role.Value, message.Text ?? "", hasAttachments ? refs : null);
+    }
+
+    // One assistant turn, or null when it carries neither text nor a generated image.
+    //
+    // A generated-image turn (ADR 0020) is typically blank-text; it is retained by its ref, looked up by
+    // the message-level assistantImageId — id-keyed, so it survives interleaved tool-call assistant
+    // messages (the old filter dropped any blank-text assistant message, hiding it).
+    private ChatTurn? ProjectAssistantTurn(ChatMessage message)
+    {
+        var generated = AssistantImageRef(message);
+        var hasImage = generated is not null;
+
+        return string.IsNullOrWhiteSpace(message.Text) && !hasImage
+            ? null
+            : new ChatTurn(message.Role.Value, message.Text ?? "", hasImage ? [generated!] : null);
     }
 
     public async Task PurgeAsync()
