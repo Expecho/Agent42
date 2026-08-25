@@ -24,7 +24,12 @@ jobs:
       - run: dotnet restore Agent42.slnx
       - run: dotnet build Agent42.slnx --no-restore
       - run: dotnet test Agent42.slnx --no-build
-      - run: dotnet format Agent42.slnx --verify-no-changes --no-restore
+      # --exclude-diagnostics S3776: `dotnet format` runs an `analyzers` pass and exits 2 on ANY
+      # analyzer diagnostic at warning severity, so the eleven recorded cognitive-complexity
+      # warnings (ADR 0050) would fail the FORMAT gate — a gate that has nothing to say about them.
+      # S3776 stays at `warning` so it is visible in every build; this excludes it here only.
+      # Remove this flag once the backlog is cleared and the gate becomes blocking.
+      - run: dotnet format Agent42.slnx --verify-no-changes --no-restore --exclude-diagnostics S3776
 
   vulnerable-packages:
     runs-on: ubuntu-latest

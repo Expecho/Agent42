@@ -106,8 +106,16 @@ otherwise, silently, because nothing at runtime reads both.
 | `src/Agent42.Backend/Attachments/AgentApi.Attachments.cs` | 18 |
 | `src/Agent42.Backend/Program.cs` (top-level) | 16 |
 
-So S3776 is enabled at **`warning`** — visible in every build, not `-warnaserror`, and no CI job
-fails on it. The gate is **measurable now and blocking once the backlog is cleared**; the
+So S3776 is enabled at **`warning`** — visible in every build, not `-warnaserror`.
+
+**That collides with the format gate, and the collision is only visible in CI.** `dotnet format` runs
+an `analyzers` pass and exits **2 on any analyzer diagnostic at warning severity**, so
+`--verify-no-changes` fails on the eleven — in a job that has nothing to say about complexity. The
+fix is `--exclude-diagnostics S3776` on that command only (in the workflow *and* in CLAUDE.md's
+Commands table, or every local lint run disagrees with CI); it comes off when the backlog clears.
+The tempting alternative — dropping S3776 back to `info` — silences it everywhere and returns the
+gate to measuring nothing, which is the failure this ADR exists to correct.
+`FormatGate_ExcludesTheRecordedComplexityBacklog` pins the two-file agreement. The gate is **measurable now and blocking once the backlog is cleared**; the
 `enforcement` block in `quality-gates.yaml` says so rather than implying it already binds.
 
 Refactoring eleven methods — including the app's central `ChatCoreAsync` — was explicitly **not**

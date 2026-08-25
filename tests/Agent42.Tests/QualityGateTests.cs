@@ -121,6 +121,23 @@ public sealed class QualityGateTests
         Assert.Equal(["S3776"], enabled);
     }
 
+    // The format gate and the complexity gate collide, and the collision is invisible until CI.
+    // `dotnet format` runs an `analyzers` pass and exits 2 on ANY analyzer diagnostic at warning
+    // severity — so keeping S3776 visible at `warning` makes the FORMAT job fail on the eleven
+    // recorded violations, a gate that has nothing to say about them. CI therefore excludes S3776
+    // there specifically, and CLAUDE.md's Commands table must teach the same command or every local
+    // lint run disagrees with CI.
+    //
+    // This is pinned because it is a two-file agreement that nothing else checks, and because the
+    // tempting "fix" is to drop S3776 back to `info` — which silences it everywhere and returns the
+    // gate to measuring nothing.
+    [Fact]
+    public void FormatGate_ExcludesTheRecordedComplexityBacklog()
+    {
+        Assert.Contains("--exclude-diagnostics S3776", Read(".github/workflows/pr-checks.yml"), StringComparison.Ordinal);
+        Assert.Contains("--exclude-diagnostics S3776", Read("CLAUDE.md"), StringComparison.Ordinal);
+    }
+
     // CI must actually run the coverage gate. A script in .agentic/scripts/ that no workflow invokes is
     // the same failure in a new costume — it looks like enforcement and enforces nothing.
     [Fact]
