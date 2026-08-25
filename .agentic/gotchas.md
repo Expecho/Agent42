@@ -1719,7 +1719,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   "fix" it with an empty-group placeholder. Related, in the same family: the row actions are
   `opacity: 0` hover-reveals, so `.conv__pin` needs the `@media (hover: none)` block or pinning is
   impossible on the installed Android PWA while **un**pinning still works (`.conv-row.is-pinned
-  .conv__pin` keeps that one visible) — but that block covers the three *conversation-row* actions only;
+  .conv__pin` keeps that one visible) — **ADR 0052 replaced that block's permanent reveal with a
+  long-press; see the separate entry below, and note `.conv-row.is-pinned .conv__pin` is the one rule it
+  deliberately left alone.** That block covered the three *conversation-row* actions only;
   `.agent__action` and `.msg__copy` share the idiom and stay touch-unreachable (a recorded residual).
   The divider between the two blocks is likewise a trap: mark the last pinned row from JS
   (`.is-pinned-last`, set only when something follows it) rather than reaching for `:has()` — the
@@ -1739,6 +1741,38 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `PinnedState_IsVisibleWithoutHover_AndReachableOnTouch`),
   `.agentic/decisions/0045-pinned-conversations.md`
 - **Verified:** 2026-08-21
+
+### Hiding a hover-reveal on touch: `:hover` still fires there, and `opacity: 0` still gets tapped
+- **Area:** frontend — sidebar row actions, touch behaviour
+- **Trap:** ADR 0052 replaced ADR 0045's permanent touch reveal with a 400 ms press-and-hold that marks
+  one row `.is-revealed`. Two things make that harder than it looks, and both were caught in review
+  rather than in production. First, **`(hover: none)` UAs still match `:hover`.** The three
+  `.conv-row:hover .conv__*` reveals were unconditional, and Android Chrome applies `:hover` on tap and
+  on press-and-hold and *keeps it* until the user taps elsewhere — so deleting the always-on rule inside
+  `@media (hover: none)` fixes nothing on its own: a plain tap would still light every icon, and the
+  timer would be invisible because the row is already hovered. Those three rules must therefore live
+  inside **`@media (hover: hover)`**, split from their `:focus-visible` partners, which stay **ungated**
+  so keyboard reveal survives everywhere. Second, **`opacity: 0` removes the paint, not the hit-test.**
+  The three actions are `position: absolute` siblings appended *after* the row button, overlaying the
+  82 px strip `.conv`'s `padding-right` reserves — ADR 0045's own manual pass proved a pure
+  `Input.dispatchTouchEvent` tap on that strip fires them. Hidden-but-live means a thumb on the right
+  edge of any row raises `deleteConversation`'s `confirm()` from a control nobody can see, so the
+  unrevealed state needs **`pointer-events: none`** — with `.conv-row.is-pinned .conv__pin` exempted back
+  to `auto`, since it is *visible* and would otherwise look pressable and not be. Three smaller ones in
+  the same family: **never add `touch-action` to `.conv-row`** (it would stop the conversation list
+  scrolling — cancel the press from JS instead); **`pointercancel` must cancel only a *pending* timer**,
+  because Android fires it for its own long-press at ~500 ms, a good 100 ms *after* our 400 ms reveal, so
+  treating it as "dismiss" makes the reveal flash and die on the one platform this exists for; and the
+  click-suppression listener belongs on **the row button, not the `<li>`** — the three actions are the
+  `<li>`'s children, so an `<li>` capture listener eats their clicks too, and their own
+  `stopPropagation` runs later in the bubble phase and cannot save them. As with ADR 0045, every
+  assertion here is source-text; the behaviour itself is the manual pass recorded in ADR 0052.
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/sidebar.js` (`wireRowReveal`, `clearReveal`,
+  `LONG_PRESS_MS`, `renderSidebar`'s `clearReveal()`),
+  `src/Agent42.Backend/wwwroot/styles.css` (`@media (hover: hover)`, `@media (hover: none)`),
+  `tests/Agent42.Tests/RowActionsRevealAssetsTests.cs`,
+  `.agentic/decisions/0052-long-press-reveals-row-actions.md`
+- **Verified:** 2026-08-25
 
 ### A chat turn outlives its client — and "Transmission failed" after an app switch is a lie
 

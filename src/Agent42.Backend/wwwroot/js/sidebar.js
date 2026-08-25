@@ -119,7 +119,113 @@ function buildConvRow(conv, hoisted) {
   });
 
   li.append(btn, pin, share, del);
+  wireRowReveal(li, btn);
   return li;
+}
+
+
+// --- Long-press reveals a row's actions on touch (ADR 0052) ------------------------------------
+// The three row actions are hover-reveals, and a hovering pointer is exactly what a phone lacks. ADR 0045
+// answered that by lighting all three permanently under @media (hover: none); this replaces that with an
+// explicit press-and-hold, so the list stays quiet and one row at a time shows its controls.
+//
+// The corresponding CSS lives in the (hover: none) block in styles.css, so on a hovering device this
+// class is set but changes nothing — the :hover rules there are gated to (hover: hover) and still win.
+
+// The one row currently showing its actions, or null. Only ever one: revealing clears the previous.
+let revealedRow = null;
+// Set when the hold completes, consumed by the click that ENDS that hold. Without it the same press both
+// reveals the row and opens the chat. Cleared on the next pointerdown too, so a press that ends off-row
+// (finger slid away, no click dispatched) can never strand it into the following tap.
+let swallowNextClick = false;
+let onDocPointerDown = null;
+
+// How long the finger must stay down. Deliberately under Android's ~500ms native long-press threshold, so
+// our reveal wins the race against the context menu / selection callout.
+const LONG_PRESS_MS = 400;
+// Slop allowed before the press is read as a scroll instead.
+const LONG_PRESS_SLOP_PX = 10;
+
+function clearReveal() {
+  if (revealedRow) revealedRow.classList.remove("is-revealed");
+  revealedRow = null;
+  if (onDocPointerDown) {
+    document.removeEventListener("pointerdown", onDocPointerDown, true);
+    onDocPointerDown = null;
+  }
+}
+
+function wireRowReveal(li, btn) {
+  let timer = null;
+  let startX = 0;
+  let startY = 0;
+
+  // Cancels a PENDING hold only. Never tears down a reveal that already fired: Android dispatches
+  // pointercancel for its own long-press gesture at ~500ms — a good 100ms AFTER our timer — so treating
+  // that as "dismiss" would make the reveal flash and die on the one platform this is for.
+  const cancelPending = () => {
+    if (timer === null) return;
+    clearTimeout(timer);
+    timer = null;
+  };
+
+  li.addEventListener("pointerdown", (e) => {
+    swallowNextClick = false;
+    // A mouse has hover, so it never enters the gesture — that is what keeps a hybrid laptop on the
+    // desktop behaviour rather than giving it both.
+    if (e.pointerType === "mouse") return;
+    startX = e.clientX;
+    startY = e.clientY;
+    cancelPending();
+    timer = setTimeout(() => {
+      timer = null;
+      clearReveal();
+      li.classList.add("is-revealed");
+      revealedRow = li;
+      swallowNextClick = true;
+      // Registered at most once — guarded by the null check, not by self-removal alone, so repeated
+      // reveals cannot stack listeners.
+      if (!onDocPointerDown) {
+        onDocPointerDown = (ev) => {
+          // Only an outside press dismisses. A press INSIDE the revealed row is how its own pin/share/
+          // delete get tapped, so clearing here would eat the very interaction the gesture exists for.
+          if (revealedRow && !revealedRow.contains(ev.target)) clearReveal();
+        };
+        document.addEventListener("pointerdown", onDocPointerDown, true);
+      }
+    }, LONG_PRESS_MS);
+  });
+
+  li.addEventListener("pointermove", (e) => {
+    if (Math.abs(e.clientX - startX) > LONG_PRESS_SLOP_PX || Math.abs(e.clientY - startY) > LONG_PRESS_SLOP_PX) cancelPending();
+  });
+  li.addEventListener("pointerup", cancelPending);
+  li.addEventListener("pointercancel", cancelPending);
+
+  // Suppress the native menu while this row is the revealed one — reactive, so it is a backstop to the
+  // -webkit-touch-callout / user-select suppression in CSS rather than the primary defence.
+  li.addEventListener("contextmenu", (e) => {
+    if (revealedRow === li) e.preventDefault();
+  });
+
+  // Capture on btn, NOT on li: pin/share/delete are li's children, so an li capture listener would
+  // intercept their clicks too, and their own stopPropagation runs later (bubble phase) and could not
+  // save them. btn is the only node whose click means "open this chat".
+  btn.addEventListener("click", (e) => {
+    if (swallowNextClick) {
+      // The click that ended the hold. Swallow it, but keep the reveal — it is what the user just asked for.
+      swallowNextClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (revealedRow === li) {
+      // A second tap on the row body dismisses rather than navigating.
+      clearReveal();
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
 }
 
 // Renders one collapsible agent group: a header (chevron + name + count) toggling a body
@@ -165,6 +271,8 @@ function buildAgentGroup(agentId, agentName, convs) {
 }
 
 export function renderSidebar() {
+  // Every row is about to be destroyed and rebuilt, so the revealed node is going with them.
+  clearReveal();
   conversationList.innerHTML = "";
   if (conversations.length === 0) {
     const li = document.createElement("li");

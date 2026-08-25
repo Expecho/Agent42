@@ -90,16 +90,25 @@ public sealed class PinChatAssetsTests
     }
 
     // AC10: a pinned row reads as pinned WITHOUT hovering — a hover-only reveal suits an action but not a
-    // state indicator — and the row actions are reachable where there is no pointer at all. Without the
-    // hover:none block the control is invisible on the installed Android PWA (ADR 0023/0028 make that a
-    // first-class surface), and asymmetrically so: is-pinned would let a user unpin but never pin.
+    // state indicator. ADR 0052 narrowed how the OTHER two are reached on touch (a press-and-hold reveals
+    // one row, rather than every row carrying three lit glyphs), but this rule is deliberately untouched:
+    // the lit pin is the only thing marking a hoisted row as user-placed rather than merely recent, so it
+    // stays visible — and, in the (hover: none) block, hit-testable — whether or not the row is revealed.
     [Fact]
     public async Task PinnedState_IsVisibleWithoutHover_AndReachableOnTouch()
     {
         var css = await _client.GetStringAsync("/styles.css");
 
         Assert.Contains(".conv-row.is-pinned .conv__pin", css);
-        Assert.Contains("hover: none", css);
+        // ADR 0052 replaced the permanent touch reveal with an .is-revealed-scoped one. Asserting the bare
+        // "hover: none" string would now prove nothing about what that block DOES, so pin the rule itself.
+        Assert.Contains("@media (hover: none)", css);
+        Assert.Contains(".conv-row.is-revealed .conv__pin", css);
+        // The exact old rule, whitespace included: a looser negative would collide with the .is-revealed
+        // rule's own ".conv__pin," and pass vacuously — the same trap the padding assertion below guards.
+        // Line endings are normalised so the needle cannot pass vacuously on a CRLF checkout.
+        var oldTouchRule = string.Join("\n", "  .conv__pin,", "  .conv__share,", "  .conv__delete {", "    opacity: 1;");
+        Assert.DoesNotContain(oldTouchRule, css.Replace("\r\n", "\n"));
         // The pinned-block divider must not use padding: .conv-row is the containing block for the three
         // absolutely-positioned actions, whose `top: 50%` resolves against its PADDING box, so a
         // padding-bottom would push pin/share/delete off-centre on that one row.
