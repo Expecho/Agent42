@@ -70,9 +70,16 @@ State which path you took and why (one line) so the numbers are interpretable.
 - A table ranked worst-first: file · method/line · cyclomatic complexity.
 - **Threshold** comes from config, never memory (hard rule 3). Read
   `gates.cyclomatic_complexity_max` from `.agentic/quality-gates.yaml`.
-  - If it exists: flag every method at or over it, and state the source. This is
-    the row `/execute-plan` step 4 renders for the gate.
+  - If it exists: flag every method at or over it, and state the source.
   - If it does not exist: report raw numbers, state plainly that no cyclomatic gate
     is configured, and offer to add one to `quality-gates.yaml` (do not invent a
     pass/fail line from a hardcoded number).
+
+**In THIS repo that key does not exist, and that is deliberate — do not "fix" it by
+scoring against `cognitive_complexity_max` (ADR 0050).** Cyclomatic and cognitive
+complexity are different metrics with different numbers: `ChatCoreAsync` measures 29
+cyclomatic and 39 cognitive, and this repo's gate is the cognitive one, measured at
+build time by SonarAnalyzer.CSharp rule S3776 — not by this skill. So this skill is
+**informational here**, never the row `/execute-plan` step 4 renders. Report raw
+cyclomatic numbers, say which metric they are, and leave the gate to the build.
 - Keep it to the report. Refactoring is a separate, explicit ask.

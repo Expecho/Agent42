@@ -3,6 +3,30 @@
 # repo on the next run. Only the namespace rule of ADR 0039 lives here.
 root = true
 
+# ————— Cognitive complexity (ADR 0050) —————
+# `.agentic/quality-gates.yaml` carries `cognitive_complexity_max: 15`. Nothing in this repo measured
+# it until SonarAnalyzer.CSharp was added — cognitive complexity is a Sonar metric (rule S3776), NOT
+# cyclomatic complexity, and the two are different numbers.
+#
+# The analyzer ships hundreds of rules. Exactly ONE is adopted, because the rest fight this repo's
+# established idioms rather than finding defects — measured on the tree at aa247ff: S108 ("either
+# remove or fill this block") fires 40x on the deliberate `catch { /* best effort */ }` pattern, and
+# S125 ("remove this commented out code") fires 30x on the dense explanatory comments this repo is
+# written in. Adopting them would mean 300+ standing warnings or 300+ suppressions; neither is a gate.
+#
+# So every analyzer diagnostic defaults to none and S3776 alone is turned back on. Note this also
+# silences the built-in CA*/IDE* analyzers; nothing is lost today (the build emitted none of them
+# before this), but a future CA rule must be enabled explicitly.
+#
+# The severity line is load-bearing: S3776 ships at `info`, which no build surfaces — leave it off and
+# the gate looks wired up while reporting zero violations when there are eleven. The THRESHOLD is not
+# set here on purpose: the analyzer's built-in default is already 15, matching the gate file exactly,
+# so there is one source of truth and no second number to drift. Changing it needs a SonarLint.xml
+# AdditionalFile (`.editorconfig` is silently ignored for it, measured) — `QualityGateTests` will say so.
+[*.cs]
+dotnet_analyzer_diagnostic.severity = none
+dotnet_diagnostic.S3776.severity = warning
+
 # ADR 0039: src/Agent42.Agents is organised into feature FOLDERS, but every type stays in the
 # single flat `Agent42.Agents` namespace. That mismatch is intentional and load-bearing.
 #
