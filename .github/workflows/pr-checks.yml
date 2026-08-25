@@ -1,6 +1,9 @@
 # PR quality gates. Thresholds and policy live in .agentic/quality-gates.yaml —
-# this workflow enforces: build, tests, format, vulnerable_packages: 0, and
-# doc-path integrity. outdated_packages is report-only (policy: report).
+# this workflow enforces: build, tests, format, vulnerable_packages: 0,
+# doc-path integrity, and coverage_new_code_pct_min. outdated_packages is
+# report-only (policy: report). cognitive_complexity_max is enforced at BUILD
+# time by SonarAnalyzer.CSharp rule S3776, so it needs no job of its own —
+# see ADR 0050 for why it does not fail the build yet.
 name: PR checks
 
 on:
@@ -21,7 +24,12 @@ jobs:
       - run: dotnet restore Agent42.slnx
       - run: dotnet build Agent42.slnx --no-restore
       - run: dotnet test Agent42.slnx --no-build
-      - run: dotnet format Agent42.slnx --verify-no-changes --no-restore
+      # --exclude-diagnostics S3776: `dotnet format` runs an `analyzers` pass and exits 2 on ANY
+      # analyzer diagnostic at warning severity, so the eleven recorded cognitive-complexity
+      # warnings (ADR 0050) would fail the FORMAT gate — a gate that has nothing to say about them.
+      # S3776 stays at `warning` so it is visible in every build; this excludes it here only.
+      # Remove this flag once the backlog is cleared and the gate becomes blocking.
+      - run: dotnet format Agent42.slnx --verify-no-changes --no-restore --exclude-diagnostics S3776
 
   vulnerable-packages:
     runs-on: ubuntu-latest
@@ -55,6 +63,24 @@ jobs:
             echo "Outdated packages found — not blocking (policy: report), but update soon."
             exit 1
           fi
+
+  new-code-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the gate diffs against the merge base, so it needs real history
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: dotnet restore Agent42.slnx
+      - name: Test with coverage
+        run: dotnet test Agent42.slnx --collect:"XPlat Code Coverage"
+      - name: Gate coverage of NEW code (policy coverage_new_code_pct_min)
+        run: node .agentic/scripts/check-new-code-coverage.mjs origin/${{ github.base_ref }}
 
   agent-docs-check:
     runs-on: ubuntu-latest

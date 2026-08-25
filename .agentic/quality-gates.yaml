@@ -4,19 +4,28 @@
 branches:
   protected: [main]  # read by .claude/hooks/protect-main.mjs and lefthook.yml
 
+# EVERY GATE BELOW MUST HAVE A MEASURING TOOL IN THIS REPO (ADR 0050).
+# That is the admission test, and it is the whole point: a threshold nothing measures cannot fail, so
+# it is not a gate — it is a wish that reads like one. Three such entries were removed rather than
+# estimated (new_issues, new_security_issues, duplication_pct_max); the tool for each is named here.
 gates:
-  new_issues: 0
-  new_security_issues: 0
-  duplication_pct_max: 3
+  # node .agentic/scripts/check-new-code-coverage.mjs — coverlet cobertura x git diff, so this is the
+  # coverage of the lines this branch ADDED, not the repo's slow-moving overall number.
   coverage_new_code_pct_min: 80
+  # SonarAnalyzer.CSharp rule S3776, at build time (Directory.Packages.props + .editorconfig).
+  # NOT cyclomatic complexity — a different metric with different numbers. The value here matches the
+  # analyzer's built-in default exactly, so there is one source of truth; changing it requires a
+  # SonarLint.xml AdditionalFile, and QualityGateTests fails if the two ever disagree.
   cognitive_complexity_max: 15
 
 enforcement:
   local: soft_warning        # skills render the gate table, ask proceed/abort on FAIL
   ci: hard_block             # PR checks (.github/workflows/pr-checks.yml) block on:
                              # build, tests, dotnet format, vulnerable packages,
-                             # doc-path integrity. Coverage/duplication/complexity
-                             # gates are self-reported only (no Sonar-style server).
+                             # doc-path integrity, and new-code coverage.
+                             # cognitive_complexity_max is measured at build time but does NOT yet
+                             # block: 11 methods predate the rule (ADR 0050 lists them). It becomes
+                             # blocking when that backlog is cleared.
 
 dependencies:
   vulnerable_packages: 0     # hard block (CI: package-freshness job)
