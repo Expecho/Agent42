@@ -262,7 +262,16 @@ body {
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
-.conv-row:hover .conv__delete,
+/* Reveal on hover only where a hovering pointer actually exists. Ungated, this rule fires on touch too:
+   an (hover: none) UA still applies :hover on tap and on press-and-hold, and keeps it until the user taps
+   elsewhere — which would light every row's actions and make the long-press gesture below decorative
+   (ADR 0052). :focus-visible stays OUTSIDE the query: keyboard reveal must survive on every device. */
+@media (hover: hover) {
+  .conv-row:hover .conv__delete {
+    opacity: 1;
+  }
+}
+
 .conv__delete:focus-visible {
   opacity: 1;
 }
@@ -296,7 +305,13 @@ body {
 /* the mark is a 16x16 SVG, larger than the 22x22 box — scale it down so it centres without clipping */
 .conv__share svg { width: 14px; height: 14px; display: block; }
 
-.conv-row:hover .conv__share,
+/* Hover-gated for the reason given on .conv__delete above. */
+@media (hover: hover) {
+  .conv-row:hover .conv__share {
+    opacity: 1;
+  }
+}
+
 .conv__share:focus-visible {
   opacity: 1;
 }
@@ -329,7 +344,13 @@ body {
 
 .conv__pin svg { width: 14px; height: 14px; display: block; }
 
-.conv-row:hover .conv__pin,
+/* Hover-gated for the reason given on .conv__delete above. */
+@media (hover: hover) {
+  .conv-row:hover .conv__pin {
+    opacity: 1;
+  }
+}
+
 .conv__pin:focus-visible {
   opacity: 1;
 }
@@ -346,15 +367,41 @@ body {
   color: var(--amber);
 }
 
-/* Where there is no pointer at all, a hover-reveal is a hidden control. The installed Android PWA is a
-   first-class surface here (ADR 0023 share target, ADR 0028 push), and pinning would be flatly impossible
-   on it — asymmetrically so, since .is-pinned above would still let a user UNPIN. Share and delete carry
-   the same latent gap today and are fixed in the same block: one family of row actions, one rule. */
+/* Where there is no pointer at all, a hover-reveal is a hidden control, so the three row actions are
+   reached by an explicit press-and-hold instead (ADR 0052, amending ADR 0045's permanent reveal — which
+   made every row carry three lit glyphs). .is-revealed is set by the gesture in sidebar.js.
+
+   pointer-events, not just opacity, is the load-bearing half: opacity: 0 removes the PAINT, not the
+   hit-test, and these three are absolutely positioned over the 82px strip .conv's padding reserves. Without
+   it, a thumb on the right edge of any row would fire deleteConversation's confirm() from a control nobody
+   can see. The lit pinned pin is exempted below — it is visible, so it must stay tappable, or it becomes
+   a control that looks pressable and is not. */
 @media (hover: none) {
   .conv__pin,
   .conv__share,
   .conv__delete {
+    pointer-events: none;
+  }
+
+  .conv-row.is-revealed .conv__pin,
+  .conv-row.is-revealed .conv__share,
+  .conv-row.is-revealed .conv__delete {
     opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* The pin state indicator (.conv-row.is-pinned .conv__pin above) is lit whether or not the row is
+     revealed, so it must remain hit-testable. */
+  .conv-row.is-pinned .conv__pin {
+    pointer-events: auto;
+  }
+
+  /* The hold must not raise a text-selection callout or the native long-press menu, which would fight
+     the gesture. Note what is deliberately absent: disabling touch gestures on .conv-row would stop the
+     conversation list scrolling altogether, so the press is cancelled from JS instead. */
+  .conv-row {
+    -webkit-touch-callout: none;
+    user-select: none;
   }
 }
 
