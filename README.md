@@ -8,7 +8,7 @@ backend. Deployed to Azure Container Apps behind Entra ID Easy Auth at
 [chat.agent42.nl](https://chat.agent42.nl).
 
 **Stack:** .NET 10 · Orleans 10.2 (grains, Cosmos persistence + reminders) · Microsoft
-Agent Framework 1.13 · ASP.NET Core minimal APIs · Aspire 13.4 (local orchestration) ·
+Agent Framework 1.19 · ASP.NET Core minimal APIs · Aspire 13.5 (local orchestration) ·
 vanilla-JS frontend · Bicep + GitHub Actions → Azure Container Apps.
 
 ## Features
