@@ -1225,8 +1225,15 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   present `skills` into `skill:{name}` for every entry in `SkillCatalog` or a no-op Save silently disables
   **every skill**, `Sanitize` must **pass through** `skill:{name}` keys, and `renderToolChecks` must treat a
   stored `skills` as "all skills checked". Three things differ from the MCP case:
-  **(a)** the expansion needs **no grain field** — `SkillCatalog` is static and process-wide, so there is no
-  `OnActivateAsync` ordering hazard here;
+  **(a)** ~~the expansion needs **no grain field** — `SkillCatalog` is static and process-wide, so there is
+  no `OnActivateAsync` ordering hazard here~~ — **INVERTED by ADR 0049.** That held only while skills were
+  process-wide. Uploaded skills are per-user, so `ExpandSkillsWildcard` is **no longer `static`**: it reads
+  `_userSkills`, a **FIFTH** field with the identical `OnActivateAsync` hazard, resolved from
+  `IUserSkillProvider` before the first `BuildAgent`. Get it wrong and the first chat turn *and every
+  reminder turn on that activation* silently ignore the user's uploads. The expansion — and the
+  `selectedSkillPaths` gate — both run over the **merged** catalog (`MergedSkills()`: shipped ⊕ uploads,
+  upload wins, `OrdinalIgnoreCase`), and they must use the *same* merge or a key the user can tick would
+  gate nothing;
   **(b)** the two expansions **compose in a recorded order** —
   `ExpandSkillsWildcard(ExpandMcpWildcard(effective))`, MCP first and skills outermost — because
   `BindAgent_SnapshotsEnabledTools` and `LegacyState_NullEnabledTools_MeansAll` assert an order-sensitive
@@ -1255,8 +1262,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ToolCatalogTests.cs`, `.agentic/decisions/0021-selectable-tools-three-layer.md`,
   `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`,
   `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`,
-  `.agentic/decisions/0048-per-skill-selectable-tools.md`
-- **Verified:** 2026-08-24
+  `.agentic/decisions/0048-per-skill-selectable-tools.md`,
+  `src/Agent42.Agents/UserSkills/IUserSkillProvider.cs` + `UserSkillProvider.cs` (the per-user layer),
+  `.agentic/decisions/0049-upload-agent-skills.md`
+- **Verified:** 2026-08-25
 
 ### Remote MCP servers: a live-socket cache (bound it), a group-gated catalog exception, and a route-matcher trap
 
@@ -1784,3 +1793,74 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`NativeShare_IsGatedOnAPureFeatureDetect`, `NativeShare_RendersTheLinkBeforeOpeningTheSheet`),
   `.agentic/decisions/0047-native-share-for-read-only-links.md`
 - **Verified:** 2026-08-22
+
+### Uploaded skills: the framework's own limits are NOT what they look like, and two of them are security controls
+
+- **Claim:** ADR 0049 lets a user upload a skill (`SKILL.md` or a zip). Four properties of
+  `Microsoft.Agents.AI@1.13.0` shape `SkillPackage`, none of them guessable from the API surface, and all
+  four **measured** (a throwaway `dotnet run app.cs`, 2026-08-25) rather than reasoned about.
+  **(1) Resource/script classification is by EXTENSION at any folder — folder names are IRRELEVANT.**
+  Resources are `.md .json .yaml .yml .csv .xml .txt`; scripts are `.py .js .sh .ps1 .cs .csx`; anything
+  else is dropped by the parser. Measured: a `.py` file under a skill's `references/` folder is a **SCRIPT** and an `.md` file under an
+  arbitrary `docs/` folder is a **RESOURCE** — the `scripts/`, `references/` and `assets/` literals in the assembly mean nothing to the
+  classifier. So a script filter keyed on the `scripts/` **folder** lets a `.py` under `references/`
+  straight through, and that filter is a security control. Belt and braces: the provider is also built
+  with `AgentFileSkillsSourceOptions { AllowedScriptExtensions = [] }`, which makes the framework itself
+  refuse to discover a script even if one reached disk.
+  **(2) The skill-directory search is hard-capped at depth 2 and `SearchDepth` does NOT raise it.**
+  `DefaultSearchDepth = 2` and `MaxSkillDirectorySearchDepth = 2`; `SearchDepth` governs the *resource*
+  scan depth only (3 and 9 measured identical for skill discovery; 0 throws). A skill under **two**
+  wrapper directories — a zipped parent folder, or a macOS archive — yields **nothing at all**. So a
+  single `Discover(stagingRoot)` cannot normalize an arbitrary upload: walk the tree for `SKILL.md`
+  yourself and point `Discover` **at each skill's own directory** (measured to work, and the same
+  per-skill mechanism ADR 0048 relies on).
+  **(3) `AgentSkillFrontmatter.ValidateName` is public and strict** (`^[a-z0-9]([a-z0-9]*-[a-z0-9])*[a-z0-9]*$`,
+  max 64) — but it **accepts `con`, `aux` and `com1`**, which are Windows reserved device names, and
+  `con.md` IS the CON device. Reject them separately, and never use `Path.GetInvalidFileNameChars()` for
+  a shared rule: it returns the Windows set on Windows and only `{'\0','/'}` on Linux, so the same archive
+  would be accepted in production and rejected in CI.
+  **(4) `run_skill_script` is advertised UNCONDITIONALLY** — measured on a skill with no scripts and no
+  runner supplied. Dropping script *files* does not remove the *tool*. What makes it safe is that
+  `DisableRunSkillScriptApproval` stays **false** (so it is an `ApprovalRequiredAIFunction` and this grain
+  has no approval loop) and no `AgentFileSkillScriptRunner` is registered (so invoking it throws
+  `InvalidOperationException: … no AgentFileSkillScriptRunner was provided`). Do not "clean up" either.
+- **And one about the ORDER of validation.** A bare `.md` upload has no directory yet, so that path — and
+  only that path — scans the `name:` frontmatter line to choose one. **Validate that value before it
+  touches the filesystem.** Writing `{staging}/{name}/SKILL.md` first and validating after makes
+  `name: ../../../../foo` a path-traversal write and, on Windows, `name: foo:bar` an alternate-data-stream
+  write, *before* any validator runs — and the same unvalidated value would become the normalized zip's
+  top-level directory and part of the materialization path.
+- **Evidence:** `src/Agent42.Agents/UserSkills/SkillPackage.cs`
+  (`AllowedResourceExtensions`, `ScriptExtensions`, `MaxResourceDepth`, `IsSafeSkillName`,
+  `ReservedDeviceNames`, `InvalidNameChars`, `StageBareMarkdown`, `CollectSkills`),
+  `src/Agent42.Agents/UserSkills/TruncatingSkillsProvider.cs` (`ForSkillPaths` — the single place the
+  script ban and the two approval flags live),
+  `tests/Agent42.Tests/SkillPackageTests.cs` (`Normalize_DropsScripts_AndReportsThem`,
+  `Normalize_HandlesHostileEntryNames`, `BareMarkdown_TraversalName_RejectedBeforeWrite`,
+  `Upload_MultiSkillZip_InstallsEach` with its two- and four-wrapper rows),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`SkillTools_NeverAdvertiseAScript_EvenWhenOneIsOnDisk`),
+  `.agentic/decisions/0049-upload-agent-skills.md`
+- **Verified:** 2026-08-25
+
+### `src/Agent42.Agents/Skills/` is a CONTENT folder — never put `.cs` files in it
+
+- **Claim:** `Agent42.Agents.csproj` has `<Content Include="Skills\**\*">` with `CopyToOutputDirectory`,
+  because `SkillCatalog` reads shipped skills from `AppContext.BaseDirectory/Skills` at runtime. So a `.cs`
+  file added under `Skills/` is **shipped as content into the deployed `Skills/` directory** and handed to
+  `AgentFileSkillsSource`. Uploaded-skill code therefore lives in `UserSkills/` (ADR 0049) in **both**
+  projects — the one place in this repo where a feature folder is named around an existing folder rather
+  than after the feature. `ProjectLayoutTests.ExpectedFolders` pins both names, and its doc-comment says
+  why, so the pair cannot be "tidied" into one.
+- **Also: uploaded skills are materialized into `Path.GetTempPath()`, never beside the shipped ones.**
+  `src/Agent42.Backend/Dockerfile` ends with `USER $APP_UID`, so the app runs non-root and `/app` is not
+  writable — writing uploads next to the shipped skills would work on a dev box and fail in production.
+  And `SkillCatalog`'s `Lazy` cache is process-wide, so it would serve one user's uploads to everyone.
+  The materialized tree is a **cache, not the record**: blob storage is durable, a restart wipes the tree,
+  and the next activation re-materializes.
+- **Evidence:** `src/Agent42.Agents/Agent42.Agents.csproj` (the `Content` glob),
+  `src/Agent42.Agents/Tools/SkillCatalog.cs` (reads `AppContext.BaseDirectory/Skills`),
+  `src/Agent42.Agents/UserSkills/UserSkillProvider.cs` (`MaterializationRoot`),
+  `src/Agent42.Backend/Dockerfile` (`USER $APP_UID`),
+  `tests/Agent42.Tests/ProjectLayoutTests.cs` (`ExpectedFolders`),
+  `.agentic/decisions/0049-upload-agent-skills.md`
+- **Verified:** 2026-08-25

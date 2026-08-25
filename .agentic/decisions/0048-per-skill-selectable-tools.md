@@ -3,10 +3,21 @@ id: 0048
 date: 2026-08-24
 status: accepted
 tags: [skills, tools, ux, no-migration, per-deployment]
+amended_by: 0049 (per-deployment → per-user; the "no grain field" clause)
 amends: 0021 (static-catalog scope + the skills gate only — see "Amends")
 ---
 
 # Title: Per-skill selectable tools — `skill:{name}` keys with a `skills` wildcard
+
+> **Amended by [ADR 0049](0049-upload-agent-skills.md) (2026-08-25) — scope of the skills
+> catalog, and one mechanism claim.** Two statements below are now false and are struck through
+> where they appear: the skills portion of `GET /api/tools` is **no longer per-deployment** (it is
+> the shipped set overlaid with each user's uploaded skills, an upload of the same name winning),
+> and the Decision's claim that the wildcard expansion "needs no grain field … no `OnActivateAsync`
+> ordering hazard" held only while skills were process-wide — `ExpandSkillsWildcard` now reads a
+> `_userSkills` field resolved on activation. The `skill:{name}` key shape, the `skills` wildcard,
+> the `null == all` sentinel and the per-skill gate are all unchanged, and this ADR stays
+> `status: accepted`.
 
 > **Amends [ADR 0021](0021-selectable-tools-three-layer.md), following the precedent of
 > [ADR 0026](0026-per-mcp-server-selectable-tools.md).** Two things are re-scoped, not
@@ -14,8 +25,9 @@ amends: 0021 (static-catalog scope + the skills gate only — see "Amends")
 > per-skill (`skill:{name}`) with the `skills` key repurposed as an all-skills **wildcard**;
 > and 0021's "`ToolCatalog` is the **static** single source of truth" is re-scoped a
 > **second** time — the skills portion of `GET /api/tools` is now disk-derived and
-> **per-deployment** (the interesting difference from ADR 0026's MCP portion, which is
-> per-user), while the static keys stay authoritative and centralised in `ToolCatalog`.
+> ~~**per-deployment** (the interesting difference from ADR 0026's MCP portion, which is
+> per-user)~~ **per-user since [ADR 0049](0049-upload-agent-skills.md): shipped ⊕ the user's
+> uploads**, while the static keys stay authoritative and centralised in `ToolCatalog`.
 > ADR 0021 and ADR 0026 both stay `status: accepted`. No state migration (the wildcard
 > preserves every existing selection).
 
@@ -88,8 +100,10 @@ Each shipped skill is individually selectable as a per-skill key **`skill:{name}
   "`AgentSkillsProvider` is a TOOL" rule closes. The RAG `TextSearchProvider` arms are
   unchanged: it is not a tool and stays on whenever documents are present.
 - `GET /api/tools` appends one `ToolDescriptor("skill:{name}", name, false)` per shipped
-  skill. Unlike the MCP portion this is **per-deployment, not per-user** — skills ship with
-  the image, so every user sees the same set and there is no management/enable flag.
+  skill. ~~Unlike the MCP portion this is **per-deployment, not per-user** — skills ship with
+  the image, so every user sees the same set and there is no management/enable flag.~~
+  **Superseded by [ADR 0049](0049-upload-agent-skills.md):** like the MCP portion it is now
+  per-user — the shipped set overlaid with the skills that user has uploaded.
 - Unlike `Mcp`, the `Skills` key **keeps** its three `ToolNameToKey` entries (`load_skill`,
   `read_skill_resource`, `run_skill_script`): those names are static and known, so the
   "every registered tool maps to a catalog key" guard still covers them through this key.

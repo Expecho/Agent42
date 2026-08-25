@@ -212,7 +212,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v20", sw);
+        Assert.Contains("agent42-shell-v21", sw);
     }
 
     // Offline read cache (ADR 0032): agents, conversations and previously-opened chat histories are

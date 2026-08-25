@@ -77,15 +77,16 @@ export const pushStatus = document.getElementById("pushStatus");
 export const pushToggleBtn = document.getElementById("pushToggleBtn");
 // Preferences + agent dialog tabs. wireTabs (defined near openProfileDialog) takes [tab, panel]
 // pairs in tablist order, attaches the click + keyboard nav, and returns a select(index, focus).
-// The Configuration tab is APPENDED LAST on purpose: initMcpOAuthReturn deep-links to select(3) (the
-// MCP tab), so MCP must stay index 3 — a new tab inserted before it would shift MCP to 4 and break the
-// OAuth return. Append → Configuration is index 4, MCP stays 3.
+// Configuration and Skills are APPENDED, never inserted: initMcpOAuthReturn deep-links to select(3)
+// (the MCP tab), so MCP must stay index 3 — a new tab placed before it would shift MCP and break the
+// OAuth return. Append → MCP stays 3, Configuration is 4, Skills is 5.
 export const profileTabs = wireTabs([
   [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
   [document.getElementById("tabTools"), document.getElementById("panelTools")],
   [document.getElementById("tabProviders"), document.getElementById("panelProviders")],
   [document.getElementById("tabMcp"), document.getElementById("panelMcp")],
   [document.getElementById("tabConfig"), document.getElementById("panelConfig")],
+  [document.getElementById("tabSkills"), document.getElementById("panelSkills")],
 ]);
 export const agentTabs = wireTabs([
   [document.getElementById("tabAgentGeneral"), document.getElementById("panelAgentGeneral")],
@@ -116,6 +117,12 @@ export const providerCancelBtn = document.getElementById("providerCancelBtn");
 // Remote MCP servers (config-driven remote MCP servers) — mirrors the provider dialog.
 export const mcpServerList = document.getElementById("mcpServerList");
 export const addMcpServerBtn = document.getElementById("addMcpServerBtn");
+// Uploaded agent skills (ADR 0049) — mirrors the MCP server list, minus an editor: a skill IS a file,
+// so "edit" is "upload again" and the server replaces by name.
+export const skillList = document.getElementById("skillList");
+export const addSkillBtn = document.getElementById("addSkillBtn");
+export const skillFileInput = document.getElementById("skillFile");
+export const skillStatus = document.getElementById("skillStatus");
 export const configHealthList = document.getElementById("configHealthList");
 export const runConfigProbesBtn = document.getElementById("runConfigProbesBtn");
 export const mcpDialog = document.getElementById("mcpDialog");

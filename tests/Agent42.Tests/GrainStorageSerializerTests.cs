@@ -64,6 +64,7 @@ public sealed class GrainStorageSerializerTests : IAsyncLifetime
         "Agent42.Agents.UserProviderConfigState",
         "Agent42.Agents.UserPushState",
         "Agent42.Agents.UserShareLinksState",
+        "Agent42.Agents.UserSkillsState",
     ];
 
     // The type name a document is keyed on must keep resolving. Hard-coded literals, deliberately: a

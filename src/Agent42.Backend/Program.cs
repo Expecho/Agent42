@@ -174,6 +174,14 @@ builder.Services.AddSingleton<IMcpSecretProtector, McpSecretProtector>();
 // gated by the ToolCatalog.Mcp key (ADR 0021).
 builder.Services.AddSingleton<IMcpConnectionFactory, McpConnectionFactory>();
 builder.Services.AddSingleton<IUserMcpToolProvider, UserMcpToolProvider>();
+// Uploaded agent skills (ADR 0049). The two registrations are NOT equivalent, and the asymmetry is
+// deliberate: IUserSkillProvider is an AgentGrain constructor dependency, so it is MANDATORY in every
+// host that activates the grain (the IUserMcpToolProvider / IPushNotificationSender shape — miss it and
+// every activation fails). ISkillPackageStore is only ever resolved OPTIONALLY, out of IServiceProvider
+// inside the endpoint handler, so a host that omits it degrades to a 409 instead of breaking route
+// matching for the whole host (the /api/speech and /api/config-health pattern).
+builder.Services.AddSingleton<ISkillPackageStore, BlobSkillPackageStore>();
+builder.Services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
 // Drives the interactive-OAuth HTTP exchanges (PRM discovery, code→token, refresh — Phase 3) over a plain
 // HttpClient (not DI-resolved, so no AddServiceDefaults resilience inheritance). Used by the /api/mcp/oauth/*
 // endpoints and by the tool provider's connect-time token refresh.

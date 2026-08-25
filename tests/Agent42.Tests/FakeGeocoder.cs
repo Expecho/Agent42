@@ -49,6 +49,8 @@ public sealed class CoordinatesOnlyGeocoderSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
                 new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>()));
             services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvider());
+            services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
+            services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
             services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             services.AddDocumentRagFakes();

@@ -91,6 +91,9 @@ public sealed class SerializationCompatibilityTests
     private const string UserShareLinksStateBlob =
         "ICAAAyHoQA1jb252LTFBH3Nocl9nb2xkZW50b2tlbiGAgAC3lqtJ3giBAAAAAAAAAADg4ODg";
 
+    private const string UserSkillsStateBlob =
+        "ICDoMAHDrnj4fVJlYWRPbmx5TGlzdEludGVyZmFjZUNvZGVjYDFbW0FnZW50NDIuQWdlbnRzLlN0b3JlZFVzZXJTa2lsbF1dAAMh6EAPc2tpbGwtMUEPbXlub3Rlc0EZVGFrZXMgbm90ZXMuMQHD2W4+TVJlYWRPbmx5TGlzdEludGVyZmFjZUNvZGVjYDFbW3N0cmluZ11dAAVBEVNLSUxMLm1kQCdyZWZlcmVuY2VzL25vdGVzLm1k4CGAgAC3lqtJ3giBAAAAAAAAAADg4OABEeDg";
+
 
     // AC2: the conversation session itself — the 2 MB Cosmos item of ADR 0004, and the only state
     // that carries every feature's per-turn residue at once.
@@ -314,5 +317,25 @@ public sealed class SerializationCompatibilityTests
         var actual = Restore<UserShareLinksState>(UserShareLinksStateBlob);
 
         Assert.Equal(GoldenStates.UserShareLinks().Links, actual.Links);
+    }
+
+    // AC24: the uploaded-skill overlay (ADR 0049). Its element type is reached through an
+    // IReadOnlyList, and StoredUserSkill's own Files member is a second nested IReadOnlyList — the
+    // shape most likely to drift if an [Id(n)] is renumbered.
+    [Fact]
+    public void UserSkillsState_RoundTripsFieldForField()
+    {
+        var expectedConfig = GoldenStates.UserSkills().Config;
+        var actualConfig = Restore<UserSkillsState>(UserSkillsStateBlob).Config;
+
+        Assert.Equal(expectedConfig.Version, actualConfig.Version);
+        var expected = Assert.Single(expectedConfig.Skills);
+        var actual = Assert.Single(actualConfig.Skills);
+
+        Assert.Equal(expected.Id, actual.Id);
+        Assert.Equal(expected.Name, actual.Name);
+        Assert.Equal(expected.Description, actual.Description);
+        Assert.Equal(expected.Files, actual.Files);
+        Assert.Equal(expected.UploadedAt, actual.UploadedAt);
     }
 }
