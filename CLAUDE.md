@@ -252,19 +252,46 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   the interface is **`IImageGenerationService`** because M.E.AI 1.13 ships a colliding `IImageGenerator`. All
   in the "assistant generated image is id-keyed" gotcha. **Headline consequence:** generating sends the prompt
   — and for edits the **input image bytes** — outside the Entra tenant (extends ADR 0013's egress).
-- Selectable tools (ADR 0021): a user chooses **which tools** an assistant may use, remembered at three
+- Selectable tools (ADR 0021, **the skills key amended by ADR 0048**): a user chooses **which tools** an
+  assistant may use, remembered at three
   layers — a **user default** (Preferences → default tools, every new regular chat), a **per-conversation
   override** (composer "Tools" popover, non-agent chats only), and a **per-agent** set (agent editor,
   snapshotted into the conversation like ADR 0003). The selectable set is a curated catalog of **keys**
-  (`ToolCatalog`, the single source of truth, exposed via `GET /api/tools`): `web_search`, `location`,
-  `scheduling`, `skills`, `code_interpreter`; `get_date` and document RAG stay always-on. `EnabledTools`
+  (`ToolCatalog`, the single source of truth for the **static** ones, exposed via `GET /api/tools`):
+  `web_search`, `location`, `scheduling`, `code_interpreter`; `get_date` and document RAG stay always-on.
+  **`skills` is no longer among them** — since ADR 0048 it is a **wildcard** (in `AllSelectableToolKeys`,
+  **not** in `Descriptors`) and the picker renders one `skill:{name}` box per shipped skill, exactly as ADR
+  0026 did to `mcp`. `EnabledTools`
   is a nullable list of keys on `UserProfile`/`AgentDefinition`/`AgentBinding`/`AgentGrainState` where
   **`null == all`** (no migration); the grain resolves **override ?? user-default ?? all** and then
   **intersects with model capability** — selection can only *narrow*, never grant (a text-only model still
   gets none; `code_interpreter` still needs a hosted model). Two things to read before touching this: the
   `null == all` sentinel and the **user-default-fetch-before-first-`BuildAgent`** ordering hazard (both in
-  the "Selectable tools" gotcha); and that disabling `skills` must **drop the `AgentSkillsProvider`** (it is
-  a tool), while RAG must stay (the "`AgentSkillsProvider` is a TOOL" gotcha).
+  the "Selectable tools" gotcha); and that a selection resolving to **zero skills** must **drop the
+  `AgentSkillsProvider`** (it is a tool), while RAG must stay (the "`AgentSkillsProvider` is a TOOL" gotcha).
+- Per-skill selectable tools (ADR 0048, amends 0021, follows 0026): each skill shipped in
+  `src/Agent42.Agents/Skills/` is **individually selectable** in the ADR 0021 picker as a `skill:{name}` key
+  (was one all-or-none `skills` checkbox). The bare `skills` key is repurposed into a **wildcard "all skills"**
+  meta-key kept in `AllSelectableToolKeys` (so `null == all` and legacy selections keep enabling every skill —
+  **zero migration**) but dropped from `Descriptors`. A new **`SkillCatalog`** discovers the shipped skills
+  once per process from `AppContext.BaseDirectory/Skills`, **one directory at a time** — that is the whole
+  filtering mechanism, because `AgentFileSkillsSource` treats each supplied path as a search root and a path
+  pointing AT one skill directory yields exactly that skill (measured, 1.13.0; `AgentSkillsProviderBuilder.UseFilter`
+  is **unusable** — `Build()` demands a script runner this app deliberately lacks). `BuildAgent` resolves the
+  selected skills' **paths** and constructs the provider **only when that list is non-empty**. The skills
+  portion of `GET /api/tools` is **per-deployment**, read from disk — the interesting difference from ADR
+  0026's per-user MCP portion. Picker labels are the frontmatter `name` **verbatim** (`websearch`, not "Web
+  search"). Four traps, all in gotchas: `GetEnabledToolsAsync` must **expand** the `skills` wildcard into
+  `skill:{name}` keys (else a no-op Save silently disables every skill — the picker has no `skills` checkbox);
+  the two expansions **compose in a fixed order**, `ExpandSkillsWildcard(ExpandMcpWildcard(…))`, because two
+  `Assert.Equal` guards are order-sensitive; `renderToolChecks`'s `cb.checked` is now a **three-way** OR whose
+  MCP term is load-bearing and guarded only by a **source-text** assertion; and a skill whose frontmatter
+  `name` disagrees with its directory name is **silently invisible** (the source returns `[]`, it does not
+  throw). **Consequence worth knowing:** because the picker materialises "all" as the full explicit list, a
+  skill added in a *later* release is **off** for anyone who ever pressed Save, while `BindAgentAsync` still
+  snapshots the bare wildcard and *does* pick it up — the two paths diverge. Shell cache bumped
+  `agent42-shell-v19` → `-v20`. Unlike ADR 0043 the manual DevHost leg **was** run (headless Chrome over CDP)
+  and ADR 0048 records the observed values.
 - Per-agent API key + async run (ADR 0022): each stored agent has a **per-agent API key** (minted on
   create, **shown once**, only its **SHA-256 hash** stored on `AgentDefinition [Id(9)]`, **regenerate**-on-edit)
   and a fire-and-forget **`POST /api/agent-run`** — `multipart/form-data` (a `prompt` field + optional `file`

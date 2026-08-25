@@ -1414,6 +1414,89 @@ public sealed class AgentGrainTests : IAsyncLifetime
             "get_current_location must expose no parameters to the model (ADR 0012).");
     }
 
+    // The client-facing projection of a null (all) selection for a user with no MCP servers: the static keys
+    // in catalog order, both wildcards gone, one skill:{name} per shipped skill. Shared by the two null==all
+    // guards so the recorded ordering lives in exactly one place.
+    private static IEnumerable<string> AllKeysExpanded() =>
+    [
+        .. ToolCatalog.AllSelectableToolKeys.Where(k => k != ToolCatalog.Mcp && k != ToolCatalog.Skills),
+        .. SkillCatalog.Skills.Select(sk => ToolCatalog.SkillKey(sk.Name)),
+    ];
+
+    // AC1 (per-skill selectable tools): with no stored selection (null == all) EVERY shipped skill is
+    // advertised to the model. The fake echoes the instructions as [sys:…], where the AgentSkillsProvider
+    // writes each skill's name and description (progressive disclosure).
+    [Fact]
+    public async Task AllSkills_AdvertisedByDefault()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("all-skills-default-conversation");
+
+        var answer = Answer(await Chat(agent, "hi"));
+
+        Assert.Contains("[sys:", answer);
+        foreach (var skill in SkillCatalog.Skills)
+        {
+            Assert.Contains(skill.Name, answer);
+        }
+
+        Assert.Contains("load_skill", ToolNames(answer));
+    }
+
+    // AC2: selecting ONE skill advertises that skill and NOT the other, while load_skill stays registered —
+    // the whole point of per-skill selection over the old all-or-none `skills` key.
+    //
+    // The negative assertion is only safe because the tool names use underscores (`schedule_prompt`), so
+    // "scheduledprompt" cannot match a tool name — see the gotcha recording exactly this collision for
+    // `web_search` vs the `websearch` skill description. Do not weaken it to a shorter substring.
+    [Fact]
+    public async Task PerSkillSelection_AdvertisesOnlySelectedSkill()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("per-skill-selection-conversation");
+        await agent.SetEnabledToolsAsync([ToolCatalog.Scheduling, ToolCatalog.SkillKey("websearch")]);
+
+        var answer = Answer(await Chat(agent, "hi"));
+
+        Assert.Contains("websearch", answer);
+        Assert.DoesNotContain("scheduledprompt", answer);
+        Assert.Contains("load_skill", ToolNames(answer));  // the provider is still on for the one selected skill
+        Assert.Contains("schedule_prompt", ToolNames(answer)); // an unrelated tool key is untouched
+    }
+
+    // AC4: a legacy stored selection carrying the bare `skills` key still enables EVERY skill — the
+    // zero-migration promise. This is the state shape that exists in Cosmos today.
+    [Fact]
+    public async Task LegacySkillsWildcard_EnablesEverySkill()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("legacy-skills-wildcard-conversation");
+        await agent.SetEnabledToolsAsync([ToolCatalog.Skills]);
+
+        var answer = Answer(await Chat(agent, "hi"));
+
+        foreach (var skill in SkillCatalog.Skills)
+        {
+            Assert.Contains(skill.Name, answer);
+        }
+
+        Assert.Contains("load_skill", ToolNames(answer));
+    }
+
+    // AC5 (the wildcard-expansion pin, the skills twin of GetEnabledTools_NullSelection_ExpandsWildcardToPerServerKeys):
+    // a null (all) selection must reach the picker with `skills` EXPANDED into per-skill keys, never as a bare
+    // `skills`. Otherwise the picker — which has no `skills` checkbox — would drop it on the next Save and
+    // silently disable every skill.
+    [Fact]
+    public async Task GetEnabledTools_NullSelection_ExpandsSkillsWildcard()
+    {
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("skills-wildcard-expand-conversation");
+
+        var effective = await agent.GetEnabledToolsAsync(); // no override, no user default → null == all
+
+        Assert.DoesNotContain(ToolCatalog.Skills, effective); // the bare wildcard never reaches the picker
+        Assert.Contains(ToolCatalog.SkillKey("websearch"), effective);
+        Assert.Contains(ToolCatalog.SkillKey("scheduledprompt"), effective);
+        Assert.Contains(ToolCatalog.WebSearch, effective);    // the static keys are still there
+    }
+
     private static async Task<TestCluster> NewClusterAsync<TConfigurator>(short initialSilosCount = 2)
         where TConfigurator : ISiloConfigurator, new()
     {
@@ -2118,14 +2201,16 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Equal(new[] { ToolCatalog.Scheduling }, await scoped.GetEnabledToolsAsync());
 
         // A null-tools agent materializes to ALL selectable tools on bind — never inherits the user default.
-        // GetEnabledToolsAsync is the client-facing projection, so it strips the `mcp` wildcard and expands it
-        // into the user's per-server keys (ADR 0026) — here that user has zero MCP servers, so the wildcard
-        // simply drops and the static keys remain.
+        // GetEnabledToolsAsync is the client-facing projection, so it strips BOTH wildcards and expands them:
+        // `mcp` into the user's per-server keys (ADR 0026) — here that user has zero MCP servers, so it simply
+        // drops — and `skills` into a skill:{name} key per shipped skill (per-skill selectable tools). The
+        // sequence is order-sensitive: static keys in catalog order, then the skills in SkillCatalog's
+        // Name-ordinal order, because the expansions compose as ExpandSkillsWildcard(ExpandMcpWildcard(...)).
         var full = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-bind-all-conversation");
         await full.BindAgentAsync(new AgentBinding(
             "agent-full", "Full", "You do everything.", TestSiloConfigurator.DefaultModel, null));
         Assert.Equal(
-            ToolCatalog.AllSelectableToolKeys.Where(k => k != ToolCatalog.Mcp),
+            AllKeysExpanded(),
             await full.GetEnabledToolsAsync());
     }
 
@@ -2138,10 +2223,11 @@ public sealed class AgentGrainTests : IAsyncLifetime
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         // A first turn persists the session with EnabledTools still null (the old shape). GetEnabledToolsAsync
-        // strips the `mcp` wildcard (ADR 0026) and this user has zero MCP servers, so the static keys remain.
+        // strips the `mcp` wildcard (ADR 0026 — this user has zero MCP servers, so it drops) and expands the
+        // `skills` wildcard into a key per shipped skill (per-skill selectable tools).
         await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel));
         Assert.Equal(
-            ToolCatalog.AllSelectableToolKeys.Where(k => k != ToolCatalog.Mcp),
+            AllKeysExpanded(),
             await agent.GetEnabledToolsAsync());
 
         // Reactivate: the persisted null deserializes to null → all tools on.

@@ -13,16 +13,27 @@ public static partial class AgentApi
     {
         // The selectable-tools catalog (ADR 0021): the curated keys the UI renders as checkbox groups in
         // Preferences, the agent editor and the composer popover. The static keys are the single source of
-        // truth in ToolCatalog; per-user MCP servers (ADR 0026) are appended as one `mcp:{id}` descriptor per
-        // MANAGEMENT-ENABLED server (a disabled server contributes no tools, so it gets no checkbox). Capability
-        // gating still happens server-side in BuildAgent.
+        // truth in ToolCatalog; two groups are appended to them, and they differ in SCOPE:
+        //
+        //   • shipped skills (per-skill selectable tools) — one `skill:{name}` descriptor per skill in
+        //     SkillCatalog, labelled with the skill's frontmatter name verbatim. PER-DEPLOYMENT, not
+        //     per-user: skills ship with the image and are read from disk, so every user sees the same set
+        //     and there is no management/enable flag to honour.
+        //   • per-user MCP servers (ADR 0026) — one `mcp:{id}` descriptor per MANAGEMENT-ENABLED server (a
+        //     disabled server contributes no tools, so it gets no checkbox).
+        //
+        // Neither bare wildcard (`skills`, `mcp`) is a descriptor — they are selection sentinels only.
+        // Capability gating still happens server-side in BuildAgent.
         app.MapGet("/api/tools", async (IGrainFactory grains, HttpContext http) =>
         {
+            var skillDescriptors = SkillCatalog.Skills
+                .Select(s => new ToolDescriptor(ToolCatalog.SkillKey(s.Name), s.Name, RequiresHostedTools: false));
             var overlay = await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId()).GetAsync();
             var mcpDescriptors = overlay.Servers
                 .Where(s => s.Enabled)
                 .Select(s => new ToolDescriptor(ToolCatalog.McpServerKey(s.Id), s.Name, RequiresHostedTools: false));
-            return Results.Json<IReadOnlyList<ToolDescriptor>>([.. ToolCatalog.Descriptors, .. mcpDescriptors]);
+            return Results.Json<IReadOnlyList<ToolDescriptor>>(
+                [.. ToolCatalog.Descriptors, .. skillDescriptors, .. mcpDescriptors]);
         });
 
         // The EFFECTIVE tools for one conversation (override ?? user-default ?? all), so the composer popover

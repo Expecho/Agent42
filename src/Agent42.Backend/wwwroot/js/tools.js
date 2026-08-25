@@ -32,15 +32,22 @@ export async function refreshToolCatalog() {
 }
 
 // Renders one checkbox per catalog tool into `container`, checked when its key is in `selectedKeys`.
-// Per-server MCP keys (`mcp:{id}`, ADR 0026) render under an "MCP servers" subheading beneath the built-in
-// tools. A stored/effective selection may carry the bare `mcp` wildcard (a null==all default that reached
-// the client, or legacy state) — since it has no checkbox, treat it as "every MCP server checked" so a
-// save re-emits explicit per-server keys instead of silently dropping the wildcard (the ADR 0026 hazard).
+// Two prefixed groups render under their own subheadings beneath the built-in tools: per-skill keys
+// (`skill:{name}`, per-skill selectable tools) and per-server MCP keys (`mcp:{id}`, ADR 0026).
+//
+// A stored/effective selection may carry EITHER bare wildcard — `skills` or `mcp` — because a null==all
+// default reached the client, or because it is legacy state. Neither has a checkbox, so each is treated as
+// "every box in that group checked", so a save re-emits explicit per-entry keys instead of silently dropping
+// the wildcard and disabling the whole group. That is the ADR 0026 hazard, and it now has two instances:
+// both wildcard terms below are load-bearing and neither may be removed.
 export function renderToolChecks(container, selectedKeys) {
   const selected = new Set(selectedKeys);
   const mcpWildcard = selected.has("mcp");
+  const skillsWildcard = selected.has("skills");
   container.innerHTML = "";
-  const builtins = toolCatalog.filter((t) => !t.key.startsWith("mcp:"));
+  // Built-ins must exclude BOTH prefixes, or the prefixed groups would render twice.
+  const builtins = toolCatalog.filter((t) => !t.key.startsWith("mcp:") && !t.key.startsWith("skill:"));
+  const skills = toolCatalog.filter((t) => t.key.startsWith("skill:"));
   const mcpServers = toolCatalog.filter((t) => t.key.startsWith("mcp:"));
 
   const addCheck = (tool) => {
@@ -49,21 +56,27 @@ export function renderToolChecks(container, selectedKeys) {
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.value = tool.key;
-    cb.checked = selected.has(tool.key) || (mcpWildcard && tool.key.startsWith("mcp:"));
+    cb.checked = selected.has(tool.key)
+      || (mcpWildcard && tool.key.startsWith("mcp:"))
+      || (skillsWildcard && tool.key.startsWith("skill:"));
     const span = document.createElement("span");
     span.textContent = tool.requiresHostedTools ? `${tool.label} (Responses)` : tool.label;
     label.append(cb, span);
     container.appendChild(label);
   };
 
+  const addGroup = (heading, group) => {
+    if (group.length === 0) return;
+    const el = document.createElement("div");
+    el.className = "tool-check__heading";
+    el.textContent = heading;
+    container.appendChild(el);
+    for (const tool of group) addCheck(tool);
+  };
+
   for (const tool of builtins) addCheck(tool);
-  if (mcpServers.length > 0) {
-    const heading = document.createElement("div");
-    heading.className = "tool-check__heading";
-    heading.textContent = "MCP servers";
-    container.appendChild(heading);
-    for (const tool of mcpServers) addCheck(tool);
-  }
+  addGroup("Skills", skills);
+  addGroup("MCP servers", mcpServers);
 }
 
 export const readToolChecks = (container) =>
