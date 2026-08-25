@@ -92,14 +92,15 @@ public sealed class QualityGateTests
             + "the build would still enforce 15. Add a SonarLint.xml AdditionalFile, or restore the gate to 15.");
     }
 
-    // The rule is adopted at all. Without an explicit severity S3776 ships as `info`, which no build
-    // surfaces and no CI reads — the gate would look wired up while measuring nothing. That is not a
-    // hypothetical: the first baseline taken for ADR 0050 counted zero violations for exactly this
-    // reason, and there were eleven.
+    // The rule is adopted, and adopted as BLOCKING. Two ways this silently stops gating anything:
+    // without an explicit severity S3776 ships as `info`, which no build surfaces (the first ADR 0050
+    // baseline counted zero violations for exactly that reason, and there were eleven); and at
+    // `warning` it is visible but nothing fails, since the build is not -warnaserror. ADR 0051 cleared
+    // the backlog, so `error` is what makes the threshold in quality-gates.yaml actually bind.
     [Fact]
-    public void S3776_IsExplicitlyEnabled_AndTheAnalyzerIsReferenced()
+    public void S3776_IsEnabledAsAnError_AndTheAnalyzerIsReferenced()
     {
-        Assert.Contains("dotnet_diagnostic.S3776.severity = warning", Read(".editorconfig"), StringComparison.Ordinal);
+        Assert.Contains("dotnet_diagnostic.S3776.severity = error", Read(".editorconfig"), StringComparison.Ordinal);
         Assert.Contains("SonarAnalyzer.CSharp", Read("Directory.Packages.props"), StringComparison.Ordinal);
     }
 
@@ -121,21 +122,16 @@ public sealed class QualityGateTests
         Assert.Equal(["S3776"], enabled);
     }
 
-    // The format gate and the complexity gate collide, and the collision is invisible until CI.
-    // `dotnet format` runs an `analyzers` pass and exits 2 on ANY analyzer diagnostic at warning
-    // severity — so keeping S3776 visible at `warning` makes the FORMAT job fail on the eleven
-    // recorded violations, a gate that has nothing to say about them. CI therefore excludes S3776
-    // there specifically, and CLAUDE.md's Commands table must teach the same command or every local
-    // lint run disagrees with CI.
-    //
-    // This is pinned because it is a two-file agreement that nothing else checks, and because the
-    // tempting "fix" is to drop S3776 back to `info` — which silences it everywhere and returns the
-    // gate to measuring nothing.
+    // `dotnet format` runs an `analyzers` pass and exits non-zero on any analyzer diagnostic, so while
+    // ADR 0050 carried a backlog of eleven S3776 violations the format job had to exclude the rule —
+    // a gate failing on findings it has nothing to say about. ADR 0051 cleared the backlog, so the
+    // carve-out is gone and must stay gone: re-adding it would let a complexity regression through the
+    // one CI job that would otherwise catch it before the build does.
     [Fact]
-    public void FormatGate_ExcludesTheRecordedComplexityBacklog()
+    public void FormatGate_CarriesNoComplexityCarveOut()
     {
-        Assert.Contains("--exclude-diagnostics S3776", Read(".github/workflows/pr-checks.yml"), StringComparison.Ordinal);
-        Assert.Contains("--exclude-diagnostics S3776", Read("CLAUDE.md"), StringComparison.Ordinal);
+        Assert.DoesNotContain("--exclude-diagnostics", Read(".github/workflows/pr-checks.yml"), StringComparison.Ordinal);
+        Assert.DoesNotContain("--exclude-diagnostics", Read("CLAUDE.md"), StringComparison.Ordinal);
     }
 
     // CI must actually run the coverage gate. A script in .agentic/scripts/ that no workflow invokes is

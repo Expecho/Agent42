@@ -367,67 +367,45 @@ public sealed class FakeChatClient : IChatClient
             return null;
         }
 
-        // Ordering is load-bearing: "reminder" contains the substring "remind", so the cancel
-        // checks MUST precede the schedule check — do not reorder these branches.
-        if (text.Contains("cancel all", StringComparison.OrdinalIgnoreCase))
+        // Ordering is load-bearing and is now the TABLE's order, checked top to bottom (ADR 0050 —
+        // this used to be a chain of a dozen `if (text.Contains(...))` branches). The precedence rules
+        // that were spread across comments on those branches are all still here, and the table makes
+        // them a single readable sequence rather than something a reader has to reconstruct:
+        //
+        //   • "reminder" contains the substring "remind", so BOTH cancel rows MUST precede the
+        //     schedule row — do not reorder them.
+        //   • The web triggers are chosen so they cannot collide with the cancel/remind rows, and they
+        //     stay AFTER them so the original precedence is untouched.
+        //   • "fetch and follow" (ADR 0027) precedes the plain read row, so the more specific phrase wins.
+        //   • Neither location trigger collides with cancel/remind — "schedule a location check"
+        //     contains neither "cancel" nor "remind".
+        foreach (var (trigger, build) in ToolCallTriggers)
         {
-            return BuildCancelAllCall();
-        }
-
-        if (text.Contains("cancel", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildCancelCall();
-        }
-
-        if (text.Contains("remind", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildReminderCall();
-        }
-
-        // Web tools. The trigger words are chosen so they cannot collide with the cancel/remind
-        // branches above, and these checks stay *after* them so the existing precedence is untouched.
-        // The one-step version of the attack: fetch an attacker URL with no search at all.
-        if (text.Contains("leak to the attacker", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildExfiltrationCall();
-        }
-
-        // A fetch that follows links by filter (ADR 0027) — kept before the plain "read" branch so the
-        // more specific phrase wins.
-        if (text.Contains("fetch and follow", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildFetchWithFollowCall();
-        }
-
-        if (text.Contains("fetch the broken page", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildFetchFailingCall();
-        }
-
-        if (text.Contains("read the first result", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildFetchSearchResultCall();
-        }
-
-        if (text.Contains("look up", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildWebSearchCall(text);
-        }
-
-        // Location (ADR 0012). Neither trigger collides with the cancel/remind branches above —
-        // "schedule a location check" contains neither "cancel" nor "remind".
-        if (text.Contains("schedule a location check", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildLocationReminderCall();
-        }
-
-        if (text.Contains("where am i", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildGetCurrentLocationCall();
+            if (text.Contains(trigger, StringComparison.OrdinalIgnoreCase))
+            {
+                return build(text);
+            }
         }
 
         return null;
     }
+
+    // The trigger → tool-call table, in precedence order. See SelectToolCall for why the order matters.
+    // A Func<string, FunctionCallContent> so the one trigger that needs the prompt text
+    // (BuildWebSearchCall) has it; the rest ignore the argument.
+    private static readonly (string Trigger, Func<string, FunctionCallContent> Build)[] ToolCallTriggers =
+    [
+        ("cancel all", _ => BuildCancelAllCall()),
+        ("cancel", _ => BuildCancelCall()),
+        ("remind", _ => BuildReminderCall()),
+        ("leak to the attacker", _ => BuildExfiltrationCall()),
+        ("fetch and follow", _ => BuildFetchWithFollowCall()),
+        ("fetch the broken page", _ => BuildFetchFailingCall()),
+        ("read the first result", _ => BuildFetchSearchResultCall()),
+        ("look up", BuildWebSearchCall),
+        ("schedule a location check", _ => BuildLocationReminderCall()),
+        ("where am i", _ => BuildGetCurrentLocationCall()),
+    ];
 
     private static int LastUserIndex(IReadOnlyList<ChatMessage> list)
     {
