@@ -509,17 +509,31 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   must stay on regardless, or a document conversation silently loses retrieval the moment it moves to a
   text-only model. The asymmetry is invisible in the types; both are just `AIContextProviders` entries.
   `FakeChatClient` echoes the tool schemas it is handed **by name** (`[tools:a,b,c]`) rather than a count,
-  precisely so the "and no `load_skill`" half is assertable. **Same rule for the ADR 0021 selection layer:**
-  a user disabling the `skills` key must drop the provider from that switch-arm, not merely hide a label —
-  the `skillsEnabled = SupportsTools && selected.Contains(skills)` guard, not a filter on the `Tools` list
-  (the provider's tools are never in it). And the provider surfaces **three** tools, not one —
+  precisely so the "and no `load_skill`" half is assertable. **Same rule for the ADR 0021 selection layer, and as of ADR 0048 the
+  gate is "at least ONE selected skill", not `enabled.Contains(skills)`:** skills are selectable
+  individually (`skill:{name}`), so `BuildAgent` resolves the selected skill **directory paths** and
+  constructs `AgentSkillsProvider` **only when that list is non-empty** — `skillsProvider is not null` is
+  the switch-arm condition. Building it from an empty path list would advertise no skills yet still hand the
+  model a `load_skill` schema, which is this trap wearing a different hat. It is still never a filter on the
+  `Tools` list (the provider's tools are never in it). And the provider surfaces **three** tools, not one —
   `load_skill`, `read_skill_resource`, `run_skill_script` — so `ToolCatalog` maps all three to the `skills`
-  key (the key-coverage guard test found this).
-- **Evidence:** `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent`'s `AIContextProviders` switch),
+  key, which is why that key keeps its `ToolNameToKey` entries even though it became a wildcard (the
+  key-coverage guard test found this).
+
+  **A skill whose frontmatter `name` disagrees with its directory name is SILENTLY INVISIBLE** (measured,
+  1.13.0, ADR 0048): `AgentFileSkillsSource` returns an **empty list — it does not throw** — for that
+  directory. So the framework enforces `name == directory name`, skill names are unique for free, and a
+  renamed directory that forgets its `SKILL.md` drops the skill out of the picker with no error anywhere.
+- **Evidence:** `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent`'s `selectedSkillPaths`
+  gate and its `AIContextProviders` switch),
+  `src/Agent42.Agents/Tools/SkillCatalog.cs` (`Discover`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`NoToolModel_RegistersNoTools_AndNoSkillsProvider`,
-  `NoToolModel_StillGetsDocumentRetrieval`, `SkillsDisabled_DropsLoadSkill_KeepsRetrieval`),
-  `tests/Agent42.Tests/FakeChatClient.cs` (`ToolsEcho`)
-- **Verified:** 2026-07-17
+  `NoToolModel_StillGetsDocumentRetrieval`, `SkillsDisabled_DropsLoadSkill_KeepsRetrieval`,
+  `PerSkillSelection_AdvertisesOnlySelectedSkill`),
+  `tests/Agent42.Tests/SkillCatalogTests.cs` (`Discover_ToleratesBadInput` — pins the name/directory rule),
+  `tests/Agent42.Tests/FakeChatClient.cs` (`ToolsEcho`),
+  `.agentic/decisions/0048-per-skill-selectable-tools.md`
+- **Verified:** 2026-08-24
 
 ### The boot chat is not created via `startNewConversation()` — seed its composer state explicitly
 
@@ -1203,20 +1217,46 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `renderToolChecks` treats a stored `mcp` as "all servers checked" for the editor surfaces. `Sanitize` must
   **pass through** `mcp:{id}` keys (they are not in `AllSelectableToolKeys`), and the provider emits an
   **empty group per skipped server** so the id list for expansion is complete.
+- **Per-skill `skills` wildcard (ADR 0048) — a FOURTH null==all trap, identical in shape to the third.**
+  Shipped skills are now selectable as `skill:{name}` keys; the bare `skills` key became a **wildcard "all
+  skills"** meta-key that stays in `AllSelectableToolKeys` (legacy `"skills"` selections keep enabling every
+  skill — still no migration) but is **removed from `Descriptors`** (no checkbox). Everything the MCP
+  paragraph above says applies verbatim with `skill:` for `mcp:`: `GetEnabledToolsAsync` must **expand** a
+  present `skills` into `skill:{name}` for every entry in `SkillCatalog` or a no-op Save silently disables
+  **every skill**, `Sanitize` must **pass through** `skill:{name}` keys, and `renderToolChecks` must treat a
+  stored `skills` as "all skills checked". Three things differ from the MCP case:
+  **(a)** the expansion needs **no grain field** — `SkillCatalog` is static and process-wide, so there is no
+  `OnActivateAsync` ordering hazard here;
+  **(b)** the two expansions **compose in a recorded order** —
+  `ExpandSkillsWildcard(ExpandMcpWildcard(effective))`, MCP first and skills outermost — because
+  `BindAgent_SnapshotsEnabledTools` and `LegacyState_NullEnabledTools_MeansAll` assert an order-sensitive
+  sequence; and
+  **(c)** `renderToolChecks`'s `cb.checked` is now a **three-way** OR and **both** wildcard terms are
+  load-bearing. Deleting either one re-opens this trap for that whole group, and the *only* thing in the repo
+  that catches it is a source-text assertion (`SkillPickerAssetsTests.CheckedState_KeepsTheThreeWayWildcardOr`)
+  — there is no JS runner. Treat that assertion as the guard it is; do not "tidy" it away.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`[Id(10)] EnabledTools`),
-  `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Sanitize`, `AllSelectableToolKeys`, `Mcp` wildcard,
-  `IsMcpServerEnabled`, `McpServerKey`),
+  `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Sanitize`, `AllSelectableToolKeys`, `Mcp` + `Skills` wildcards,
+  `IsMcpServerEnabled`, `McpServerKey`, `IsSkillEnabled`, `SkillKey`),
+  `src/Agent42.Agents/Tools/SkillCatalog.cs` (`Discover` — one root enumeration reading
+  `AgentFileSkill.Path`, guarded whole because `Lazy` caches a throw; the `Task.Run` sync-over-async bridge),
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`OnActivateAsync` fetch before the first
   `BuildAgent`, and the `_mcpServers` field),
   `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`EffectiveEnabledTools`, `ExpandMcpWildcard`,
-  the per-server MCP gate in `BuildAgent`),
+  `ExpandSkillsWildcard`, the per-server MCP gate and the per-skill `selectedSkillPaths` gate in
+  `BuildAgent`),
+  `src/Agent42.Backend/wwwroot/js/tools.js` (`renderToolChecks`'s three-way `cb.checked`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
   `UserDefault_AppliesWhenNoOverride`, `McpTools_ResolvedBeforeFirstBuildAgent`,
-  `PerServerSelection_EnablesOnlySelectedServer`, `GetEnabledTools_NullSelection_ExpandsWildcardToPerServerKeys`),
+  `PerServerSelection_EnablesOnlySelectedServer`, `GetEnabledTools_NullSelection_ExpandsWildcardToPerServerKeys`,
+  `PerSkillSelection_AdvertisesOnlySelectedSkill`, `LegacySkillsWildcard_EnablesEverySkill`,
+  `GetEnabledTools_NullSelection_ExpandsSkillsWildcard`),
+  `tests/Agent42.Tests/SkillPickerAssetsTests.cs` (`CheckedState_KeepsTheThreeWayWildcardOr`),
   `tests/Agent42.Tests/ToolCatalogTests.cs`, `.agentic/decisions/0021-selectable-tools-three-layer.md`,
   `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`,
-  `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`
-- **Verified:** 2026-07-19
+  `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`,
+  `.agentic/decisions/0048-per-skill-selectable-tools.md`
+- **Verified:** 2026-08-24
 
 ### Remote MCP servers: a live-socket cache (bound it), a group-gated catalog exception, and a route-matcher trap
 

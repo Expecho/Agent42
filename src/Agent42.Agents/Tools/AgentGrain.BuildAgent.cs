@@ -83,15 +83,6 @@ public sealed partial class AgentGrain
                 "is — local weather, what's nearby, travel times, 'where am I'. If the user has not " +
                 "shared their location, this says so; ask them to share it rather than guessing.");
 
-        // Agent Skills: markdown skills discovered on disk from Skills/<name>/SKILL.md.
-        // The provider advertises each skill's name + description in the system prompt and
-        // exposes a `load_skill` tool so the agent pulls the full guidance only when a task
-        // matches (progressive disclosure). This grain has no human-in-the-loop approval
-        // step, so load_skill is auto-approved; the skills ship no scripts or resources.
-        var skillsProvider = new AgentSkillsProvider(
-            Path.Combine(AppContext.BaseDirectory, "Skills"),
-            options: new AgentSkillsProviderOptions { DisableLoadSkillApproval = true });
-
         // The web tools depend on the WIRE API, not just on tool support. On Chat Completions the model
         // reaches the web through our self-hosted SearXNG shims web_search/fetch_web_page (ADR 0011),
         // because Chat Completions 400s on OpenAI's hosted tools. A model running the Responses API
@@ -143,11 +134,32 @@ public sealed partial class AgentGrain
             }
         }
 
-        // AgentSkillsProvider IS a tool (it exposes load_skill), so a user disabling `skills` must DROP the
-        // provider, not just hide a label — leaving it on hands the model a load_skill schema it can't use,
-        // the same trap the no-tools gate closes. It is gated by BOTH capability and selection; the RAG
-        // TextSearchProvider is NOT a tool and stays on whenever documents are present, regardless of either.
-        var skillsEnabled = capabilities.SupportsTools && enabled.Contains(ToolCatalog.Skills);
+        // Agent Skills: markdown skills discovered on disk from Skills/<name>/SKILL.md (SkillCatalog).
+        // The provider advertises each skill's name + description in the system prompt and exposes a
+        // `load_skill` tool so the agent pulls the full guidance only when a task matches (progressive
+        // disclosure). This grain has no human-in-the-loop approval step, so load_skill is auto-approved;
+        // the skills ship no scripts or resources.
+        //
+        // Gated PER SKILL (per-skill selectable tools, the ADR 0026 shape applied to skills): each shipped
+        // skill is kept when the effective selection contains the `skills` wildcard (null==all / legacy) OR
+        // that skill's own `skill:{name}` key — see ToolCatalog.IsSkillEnabled. Capability (SupportsTools) is
+        // the outer gate, exactly as for the static keys. AgentFileSkillsSource treats each supplied path as a
+        // search root, so handing it the SELECTED directories is what filters the set (measured, 1.13.0).
+        //
+        // AgentSkillsProvider IS a tool (it exposes load_skill), so a selection that resolves to ZERO skills
+        // must DROP the provider, not merely advertise nothing — leaving it on hands the model a load_skill
+        // schema it can't use, the same trap the no-tools gate closes. That is why the provider is built only
+        // when the path list is non-empty. The RAG TextSearchProvider is NOT a tool and stays on whenever
+        // documents are present, regardless of capability or selection — the asymmetry is the point.
+        var selectedSkillPaths = capabilities.SupportsTools
+            ? SkillCatalog.Skills.Where(s => ToolCatalog.IsSkillEnabled(s.Name, enabled)).Select(s => s.Path).ToList()
+            : [];
+
+        var skillsProvider = selectedSkillPaths.Count > 0
+            ? new AgentSkillsProvider(
+                selectedSkillPaths,
+                options: new AgentSkillsProviderOptions { DisableLoadSkillApproval = true })
+            : null;
 
         // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
         // state at bind time; a normal chat falls back to the default Agent 42 persona.
@@ -176,10 +188,10 @@ public sealed partial class AgentGrain
                 // still receives a function schema it cannot handle. The TextSearchProvider is NOT a
                 // tool: it injects excerpts before the call, so it stays on regardless of capability, and
                 // a document conversation keeps working on a no-tools model.
-                AIContextProviders = (skillsEnabled, _state.State.DocumentNames.Count > 0) switch
+                AIContextProviders = (skillsProvider is not null, _state.State.DocumentNames.Count > 0) switch
                 {
-                    (true, true) => [skillsProvider, BuildDocumentSearchProvider()],
-                    (true, false) => [skillsProvider],
+                    (true, true) => [skillsProvider!, BuildDocumentSearchProvider()],
+                    (true, false) => [skillsProvider!],
                     (false, true) => [BuildDocumentSearchProvider()],
                     (false, false) => [],
                 },
@@ -224,8 +236,16 @@ public sealed partial class AgentGrain
             this.GetPrimaryKeyString(), _state.State.EnabledTools is null ? "all" : string.Join(",", _state.State.EnabledTools));
     }
 
+    // Both wildcards are expanded before the effective selection reaches the picker. Each expansion appends
+    // its keys at the TAIL, so composing skills-outermost projects a null (all) selection as
+    // [static keys..., mcp:{id}..., skill:{name}...]. Note this is NOT the order Sanitize produces
+    // (static, then skill:, then mcp:) — the two are independent projections of an unordered set, one for the
+    // picker and one for persistence, and nothing depends on them agreeing. What DOES depend on this order:
+    // BindAgent_SnapshotsEnabledTools and LegacyState_NullEnabledTools_MeansAll use an order-sensitive
+    // Assert.Equal. Both run with zero MCP servers, so they only pin the [static..., skill:{name}...] tail —
+    // which is exactly why the mcp:/skill: relative order has no test and this comment has to be right.
     public Task<IReadOnlyList<string>> GetEnabledToolsAsync()
-        => Task.FromResult(ExpandMcpWildcard(EffectiveEnabledTools()));
+        => Task.FromResult(ExpandSkillsWildcard(ExpandMcpWildcard(EffectiveEnabledTools())));
 
     // Expands the bare `mcp` wildcard into a per-server key (mcp:{id}) for each of this user's servers before
     // the effective selection reaches the picker (ADR 0026). WHY this is load-bearing: EffectiveEnabledTools
@@ -248,6 +268,31 @@ public sealed partial class AgentGrain
             .. effective
                 .Where(k => k != ToolCatalog.Mcp)
                 .Concat(_mcpServers.Select(s => ToolCatalog.McpServerKey(s.ServerId)))
+                .Distinct(StringComparer.Ordinal),
+        ];
+    }
+
+    // Expands the bare `skills` wildcard into a per-skill key (skill:{name}) for each shipped skill before the
+    // effective selection reaches the picker — the exact hazard ExpandMcpWildcard closes for MCP servers, for
+    // the exact same reason: EffectiveEnabledTools materializes AllSelectableToolKeys (which carries the bare
+    // `skills` wildcard, NOT any skill:{name}) for every null/all conversation, the picker renders only keys
+    // present in the catalog, and `skills` has no checkbox there — so a picker Save would drop the wildcard and
+    // add no per-skill key, silently disabling EVERY skill. The gate (via IsSkillEnabled) still honours the raw
+    // wildcard, so this is a read-only, client-facing projection that never changes what is persisted. Unlike
+    // the MCP one this needs no grain field: SkillCatalog is static and process-wide, so there is no
+    // OnActivateAsync ordering hazard.
+    private static IReadOnlyList<string> ExpandSkillsWildcard(IReadOnlyList<string> effective)
+    {
+        if (!effective.Contains(ToolCatalog.Skills))
+        {
+            return effective;
+        }
+
+        return
+        [
+            .. effective
+                .Where(k => k != ToolCatalog.Skills)
+                .Concat(SkillCatalog.Skills.Select(s => ToolCatalog.SkillKey(s.Name)))
                 .Distinct(StringComparer.Ordinal),
         ];
     }
