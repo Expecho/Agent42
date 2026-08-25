@@ -16,9 +16,13 @@ public sealed record SkillInfo(string Name, string Description, string Path);
 /// <c>skill:{name}</c> checkbox per entry, and <c>BuildAgent</c> points the provider at only the
 /// selected entries' <see cref="SkillInfo.Path"/>s.
 ///
-/// <para><b>Per-deployment, not per-user</b> — unlike the MCP portion of <c>GET /api/tools</c>
-/// (ADR 0026), which is per-user config. Skills ship with the image, so every user sees the same set
-/// and there is no management/enable flag.</para>
+/// <para><b>The SHIPPED layer, not the whole picture (ADR 0049).</b> This set is per-deployment — skills
+/// ship with the image, so every user sees the same ones — but it is now the <i>base</i> of a per-user
+/// overlay: <c>AgentGrain.MergedSkills()</c> combines it with the skills that user has uploaded
+/// (<c>IUserSkillProvider</c>), an upload of the same name <b>shadowing</b> the shipped one, and it is the
+/// merged list that reaches both the picker and the <c>BuildAgent</c> gate. Keep this class shipped-only and
+/// read-only: its <see cref="Lazy{T}"/> is process-wide, so putting a user's uploads in here would serve
+/// them to everyone.</para>
 ///
 /// <para><b>Discovery must never fail the host.</b> A missing or unreadable <c>Skills/</c> folder, or one
 /// malformed <c>SKILL.md</c>, must yield a shorter list rather than an exception — a broken skill file must
@@ -44,10 +48,20 @@ public static class SkillCatalog
     /// <para><b>The (directory ↔ name) pairing comes from the framework, not from us.</b>
     /// <see cref="AgentFileSkillsSource"/> yields <see cref="AgentFileSkill"/>, whose public
     /// <see cref="AgentFileSkill.Path"/> is the directory the skill was discovered in — so one enumeration
-    /// of the root gives both halves of the pair (measured against Microsoft.Agents.AI 1.13.0). Do NOT
-    /// "improve" this into a per-directory loop that treats each subdirectory as a root: the source recurses,
-    /// so a nested <c>Skills/category/foo/SKILL.md</c> would then be recorded under <c>Skills/category</c> and
-    /// two skills sharing a category would become mutually inseparable in the <c>BuildAgent</c> gate.</para>
+    /// of the root gives both halves of the pair (measured against Microsoft.Agents.AI 1.13.0), and a
+    /// per-directory loop would be redundant rather than merely different.</para>
+    ///
+    /// <para><b>Two measured limits, one of which corrects what this comment used to say (ADR 0049).</b>
+    /// A skill is recorded under its OWN directory from any root that reaches it — an earlier version of
+    /// this comment warned that a nested <c>Skills/category/foo/SKILL.md</c> "would be recorded under
+    /// <c>Skills/category</c>" if each subdirectory were scanned as a root, and that is simply not what the
+    /// source does. The real constraint is depth: <c>DefaultSearchDepth = 2</c> and
+    /// <c>MaxSkillDirectorySearchDepth = 2</c>, and <c>AgentFileSkillsSourceOptions.SearchDepth</c> does
+    /// <b>not</b> raise it (3 and 9 measure identical to the default; 0 throws) — it governs the
+    /// resource/script scan only. So <c>Skills/category/foo/SKILL.md</c> IS found from the root, while
+    /// <c>Skills/a/b/foo/SKILL.md</c> is invisible, silently. Pointing this method AT a single skill's own
+    /// directory returns exactly that one skill, which is what makes per-skill selection (ADR 0048) and
+    /// uploaded-skill materialization (ADR 0049) work.</para>
     ///
     /// <para><b>Why the <see cref="Task.Run"/> bridge:</b> <c>GetSkillsAsync</c> is async and the first touch
     /// of <see cref="Skills"/> is nondeterministic — it can easily be <c>BuildAgent</c> on a grain thread

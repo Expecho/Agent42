@@ -134,17 +134,19 @@ public sealed partial class AgentGrain
             }
         }
 
-        // Agent Skills: markdown skills discovered on disk from Skills/<name>/SKILL.md (SkillCatalog).
-        // The provider advertises each skill's name + description in the system prompt and exposes a
-        // `load_skill` tool so the agent pulls the full guidance only when a task matches (progressive
-        // disclosure). This grain has no human-in-the-loop approval step, so load_skill is auto-approved;
-        // the skills ship no scripts or resources.
+        // Agent Skills: markdown skills read from directory paths — the ones shipped in the image
+        // (SkillCatalog) MERGED with the ones this user uploaded (ADR 0049, _userSkills, resolved on
+        // activation). The provider advertises each skill's name + description in the system prompt and
+        // exposes a `load_skill` tool so the agent pulls the full guidance only when a task matches
+        // (progressive disclosure). This grain has no human-in-the-loop approval step, so load_skill AND
+        // read_skill_resource are auto-approved — see the options below.
         //
-        // Gated PER SKILL (per-skill selectable tools, the ADR 0026 shape applied to skills): each shipped
-        // skill is kept when the effective selection contains the `skills` wildcard (null==all / legacy) OR
-        // that skill's own `skill:{name}` key — see ToolCatalog.IsSkillEnabled. Capability (SupportsTools) is
-        // the outer gate, exactly as for the static keys. AgentFileSkillsSource treats each supplied path as a
-        // search root, so handing it the SELECTED directories is what filters the set (measured, 1.13.0).
+        // Gated PER SKILL (ADR 0048, the ADR 0026 shape applied to skills): a skill is kept when the
+        // effective selection contains the `skills` wildcard (null==all / legacy) OR that skill's own
+        // `skill:{name}` key — see ToolCatalog.IsSkillEnabled, which cannot tell the two layers apart and
+        // must not. Capability (SupportsTools) is the outer gate, exactly as for the static keys.
+        // AgentFileSkillsSource treats each supplied path as a search root, so handing it the SELECTED
+        // directories is what filters the set (measured, 1.13.0).
         //
         // AgentSkillsProvider IS a tool (it exposes load_skill), so a selection that resolves to ZERO skills
         // must DROP the provider, not merely advertise nothing — leaving it on hands the model a load_skill
@@ -152,13 +154,17 @@ public sealed partial class AgentGrain
         // when the path list is non-empty. The RAG TextSearchProvider is NOT a tool and stays on whenever
         // documents are present, regardless of capability or selection — the asymmetry is the point.
         var selectedSkillPaths = capabilities.SupportsTools
-            ? SkillCatalog.Skills.Where(s => ToolCatalog.IsSkillEnabled(s.Name, enabled)).Select(s => s.Path).ToList()
+            ? MergedSkills().Where(s => ToolCatalog.IsSkillEnabled(s.Name, enabled)).Select(s => s.Path).ToList()
             : [];
 
+        // The provider's tools return UNBOUNDED text — a whole SKILL.md body, a whole resource file —
+        // straight into the session that becomes one 2 MB-capped Cosmos item (ADR 0004). Measured on 1.13.0:
+        // a 300 KB SKILL.md made load_skill return 300,087 characters. TruncatingSkillsProvider bounds every
+        // one of them, the way UserMcpToolProvider wraps MCP tool results, preserving each tool's name and
+        // schema so the model still calls them correctly. Its factory also carries the script ban and the
+        // two approval flags — see TruncatingSkillsProvider.ForSkillPaths and SkillToolLimits.
         var skillsProvider = selectedSkillPaths.Count > 0
-            ? new AgentSkillsProvider(
-                selectedSkillPaths,
-                options: new AgentSkillsProviderOptions { DisableLoadSkillApproval = true })
+            ? TruncatingSkillsProvider.ForSkillPaths(selectedSkillPaths)
             : null;
 
         // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
@@ -272,16 +278,19 @@ public sealed partial class AgentGrain
         ];
     }
 
-    // Expands the bare `skills` wildcard into a per-skill key (skill:{name}) for each shipped skill before the
-    // effective selection reaches the picker — the exact hazard ExpandMcpWildcard closes for MCP servers, for
-    // the exact same reason: EffectiveEnabledTools materializes AllSelectableToolKeys (which carries the bare
-    // `skills` wildcard, NOT any skill:{name}) for every null/all conversation, the picker renders only keys
-    // present in the catalog, and `skills` has no checkbox there — so a picker Save would drop the wildcard and
-    // add no per-skill key, silently disabling EVERY skill. The gate (via IsSkillEnabled) still honours the raw
-    // wildcard, so this is a read-only, client-facing projection that never changes what is persisted. Unlike
-    // the MCP one this needs no grain field: SkillCatalog is static and process-wide, so there is no
-    // OnActivateAsync ordering hazard.
-    private static IReadOnlyList<string> ExpandSkillsWildcard(IReadOnlyList<string> effective)
+    // Expands the bare `skills` wildcard into a per-skill key (skill:{name}) for each skill in the MERGED
+    // catalog before the effective selection reaches the picker — the exact hazard ExpandMcpWildcard closes
+    // for MCP servers, for the exact same reason: EffectiveEnabledTools materializes AllSelectableToolKeys
+    // (which carries the bare `skills` wildcard, NOT any skill:{name}) for every null/all conversation, the
+    // picker renders only keys present in the catalog, and `skills` has no checkbox there — so a picker Save
+    // would drop the wildcard and add no per-skill key, silently disabling EVERY skill. The gate (via
+    // IsSkillEnabled) still honours the raw wildcard, so this is a read-only, client-facing projection that
+    // never changes what is persisted.
+    //
+    // NOT static, unlike its ADR 0048 form: it reads _userSkills, resolved in OnActivateAsync. ADR 0048's
+    // claim that this expansion "needs no grain field ... there is no OnActivateAsync ordering hazard here"
+    // held only while skills were process-wide; ADR 0049 made them per-user and re-opened the hazard.
+    private IReadOnlyList<string> ExpandSkillsWildcard(IReadOnlyList<string> effective)
     {
         if (!effective.Contains(ToolCatalog.Skills))
         {
@@ -292,8 +301,38 @@ public sealed partial class AgentGrain
         [
             .. effective
                 .Where(k => k != ToolCatalog.Skills)
-                .Concat(SkillCatalog.Skills.Select(s => ToolCatalog.SkillKey(s.Name)))
+                .Concat(MergedSkills().Select(s => ToolCatalog.SkillKey(s.Name)))
                 .Distinct(StringComparer.Ordinal),
+        ];
+    }
+
+    /// <summary>
+    /// The skills this conversation can see: the shipped catalog OVERLAID with this user's uploads (ADR
+    /// 0049). An upload with the same name as a shipped skill <b>wins</b> — it shadows the built-in
+    /// entirely: name, description, guidance and all.
+    ///
+    /// <para>The comparison is <see cref="StringComparer.OrdinalIgnoreCase"/> even though the framework's own
+    /// name rule is lowercase-only. Two names differing only in case are ONE directory on NTFS and TWO on
+    /// ext4, and a merge that produced a different set on the two would be the same platform-dependence bug
+    /// the shipped catalog's de-dupe tie-break already had to fix — green on Windows, red on Linux. The
+    /// surviving entry's name is emitted verbatim, so a shadowing upload also supplies the key's spelling.</para>
+    ///
+    /// <para>Used by BOTH the provider gate and <see cref="ExpandSkillsWildcard"/>, deliberately: the picker
+    /// and the gate must agree about which skills exist, or a key the user can tick would gate nothing.</para>
+    /// </summary>
+    private IReadOnlyList<SkillInfo> MergedSkills()
+    {
+        if (_userSkills.Count == 0)
+        {
+            return SkillCatalog.Skills;
+        }
+
+        var shadowed = _userSkills.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return
+        [
+            .. _userSkills
+                .Concat(SkillCatalog.Skills.Where(s => !shadowed.Contains(s.Name)))
+                .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase),
         ];
     }
 }

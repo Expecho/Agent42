@@ -57,6 +57,8 @@ public sealed class NoModelSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
                 sp.GetRequiredService<SwitchableChatClientFactoryProvider>());
             services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvider());
+            services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
+            services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
             // Recording sender (not the Null of the other three degraded silos): AC9 asserts a no-model
             // agent-run sends ZERO pushes, which is only observable with a recorder — and this is the one
             // silo whose provider can be flipped no-model → model to prove the gate suppressed the send.

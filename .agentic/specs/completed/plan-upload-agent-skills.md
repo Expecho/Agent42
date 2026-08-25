@@ -659,3 +659,92 @@ critic believes is inaccurate — the spike settles it and the comment is reconc
 **Rejected** — the suggestion to put this code in the existing `Tools/` folders to avoid the §13
 folder-list churn. Those guard lists exist precisely so that adding a feature forces the docs to be
 updated; routing around them to save three edits inverts the mechanism. Rationale recorded in §7.
+
+## Divergence from the plan (written at execution time, 2026-08-25)
+
+Executed on `feature/upload-agent-skills` off `main @ cb77bd2` — no drift; `main` was still exactly
+the planned-against ref. Every step ran. Where the implementation differs from the plan, it is
+because **Step 1 measured something the plan had assumed**, and Step 1 existed to do exactly that.
+Full spike output is quoted in ADR 0049.
+
+### 1. §10's "resource discovery is folder-scoped" was wrong — the filter is by EXTENSION
+
+The plan said the framework "carries `references`, `assets` and `scripts` folder literals" and had
+the normalizer's allowlist derived from folder + extension. Measured: **classification is by
+extension at any folder, and the folder names are inert**. A `.py` under a skill's `references/`
+folder is a SCRIPT; an `.md` under an arbitrary `docs/` folder is a RESOURCE. `SkillPackage`'s
+script filter is therefore extension-keyed — a folder-keyed one would have been a security control
+that did not control anything.
+
+### 2. §6 could not delegate the whole zip to one `Discover(stagingRoot)` call
+
+Measured: `MaxSkillDirectorySearchDepth = 2` is a **hard cap** and `SearchDepth` does not raise it,
+so a skill under two wrapper directories yields nothing — the exact "must not silently yield
+nothing" case Step 1 item 4 was told to rule out. `SkillPackage.CollectSkills` walks the staging
+tree for `SKILL.md` itself and points `Discover` at each skill's **own** directory. §6's principle
+(the framework stays the single authority on what a valid skill is) is preserved intact; only the
+call shape changed. A `[Theory]` covers wrapper depths 0, 1, 2 and 4.
+
+### 3. A stronger script control existed than the plan knew about
+
+`AgentSkillsProvider(paths, scriptRunner, fileOptions, options, loggerFactory)` accepts
+`AgentFileSkillsSourceOptions` directly, so `AllowedScriptExtensions = []` makes the **framework**
+refuse to discover a script at all. Added as defence in depth behind the normalizer's drop. (ADR
+0048's finding that `AgentSkillsProviderBuilder` is unusable was re-confirmed: `Build()` still
+throws "File-based skill sources require a script runner".)
+
+### 4. §11's open question resolved in favour of the plan's original reading
+
+`run_skill_script` is advertised **unconditionally** — measured on a skill with no scripts and no
+runner. The plan forbade asserting either way and had Step 1 settle it; the critic's contrary
+reading was wrong. ADR 0049 records the measured value and both corollaries.
+
+### 5. `UserSkillProvider` lives in Agents, not Backend (§12/Step 5 said Backend)
+
+It needs no Backend-only type — just `IGrainFactory` and `ISkillPackageStore` — unlike
+`UserMcpToolProvider`, which is in Backend because it needs the MCP package. Keeping it in Agents
+lets DevHost and the tests run the **real** normalize → store → materialize → discover path over
+`InMemorySkillPackageStore` instead of a stub, which is what AC3, AC20 and Step 10 actually need.
+Consequently there is **no `SingleUserSkillProvider`**: the plan's `SingleUserMcpToolProvider`
+analogue would have been dead code. `src/Agent42.Backend/UserSkills/` still exists
+(`BlobSkillPackageStore`, the endpoint partial, the contracts), so §13's folder-list edits are
+unchanged.
+
+### 6. `TruncatingSkillsProvider` is public and owns the provider construction
+
+`AgentSkillsProvider` is `sealed` and `AIContextProvider.InvokingAsync` is **not virtual** — the
+seam is the protected virtual `ProvideAIContextAsync`. And the public `InvokingAsync`
+**accumulates** onto the context it is handed (measured: it concatenates `Instructions` and unions
+`Messages`/`Tools` by reference), so a naive wrapper re-emits the request's own messages as
+provider-injected context. That is not hypothetical: it broke
+`AgentChat_NoDocuments_NoRetrieval` and `AgentChat_InjectsDocumentContext_BeforeInvocation`, and the
+existing suite is what caught it. The wrapper therefore hands the inner provider a **fresh empty**
+`AIContext` (behind the repo's existing `#pragma warning disable MAAI001` idiom).
+
+It is `public` rather than `internal` for the reason `SkillCatalog.Discover` is (no
+`InternalsVisibleTo`), and it exposes `ForSkillPaths` as the **single** place the truncation
+wrapper, the script ban and the two approval flags are configured — so a test asserting on
+truncation cannot drift from what a conversation actually gets.
+
+### 7. Extra work the plan did not list, all forced by hard rule 2
+
+- `ProjectLayoutTests.ExpectedFolders`'s doc-comment, ADR 0039 §1, ADR 0040 §1/§3 and two CLAUDE.md
+  counts were corrected. **ADR 0040's §1 heading said "Twelve feature folders" while listing
+  seventeen** — pre-existing drift (it had picked up the endpoint-group count), fixed in the same MR.
+- Two shared test helpers were extracted rather than duplicated: `ZipTestData` (verbatim entry
+  names — `CreateEntryFromFile` sanitizes hostile ones away, so a fixture built from real files
+  could not exercise the guards) and `ToolCapturingChatClient` (returns live `AIFunction`s, which
+  `FakeChatClient`'s name-only echo cannot).
+
+### 8. Step 10 ran, with one honest gap
+
+The manual leg was run in headless Chrome over CDP against DevHost and its observed values are in
+ADR 0049 — including the §5 auto-enable case exercised **after** a deliberate picker Save, which is
+the whole point of that step. One thing DevHost cannot show and is **not** claimed: its canned chat
+client ignores the system prompt entirely, so there is no `[sys:…]` echo offline. Advertisement to
+the model rests on `AgentGrainTests` over `FakeChatClient`.
+
+### Not done, deliberately
+
+Everything in "Out of scope" stands. `.agentic/gotchas.md` is now at 75 entries against a stated
+~40 guardrail — pre-existing (73 before this MR) and out of scope here; it belongs to `/audit-docs`.

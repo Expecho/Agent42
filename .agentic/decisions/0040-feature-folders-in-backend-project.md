@@ -22,10 +22,15 @@ Finding the MCP OAuth routes or the share-link contract meant knowing a line ran
 
 ## Decision
 
-### 1. Twelve feature folders, flat namespace, same as ADR 0039
+### 1. Eighteen feature folders, flat namespace, same as ADR 0039
 `Api/`, `Attachments/`, `Configuration/`, `Conversations/`, `Documents/`, `ImageGeneration/`,
 `Location/`, `Mcp/`, `Models/`, `Push/`, `Sharing/`, `Speech/`, `StoredAgents/`, `Telemetry/`,
-`Tools/`, `Users/`, `Web/`. The vocabulary deliberately mirrors `Agent42.Agents`, so the canonical
+`Tools/`, `UserSkills/`, `Users/`, `Web/`.
+
+*(This heading read "Twelve" while listing seventeen — it had picked up the count of the endpoint
+groups in §3. Corrected, along with the eighteenth folder `UserSkills/` added by ADR 0049. A folder
+list is a factual inventory, not a decision, so it is corrected in place;
+`ProjectLayoutTests.ExpectedFolders` asserts it by name so the two cannot drift.)* The vocabulary deliberately mirrors `Agent42.Agents`, so the canonical
 pairing this repo already relies on — contract plus in-memory implementation in Agents, production
 implementation in Backend — is now visible as the same folder name in both projects
 (`src/Agent42.Agents/Attachments/IAttachmentStore.cs` ↔ `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`).
@@ -61,7 +66,7 @@ So folder-matching namespaces would probably have been safe here. They were stil
 - **It is free.** A flat namespace means no `using` churn in the 54 test files that reference Backend
   types — the reorganisation touches no consuming file at all.
 
-### 3. `MapAgentApi` splits into twelve per-feature partials
+### 3. `MapAgentApi` splits into per-feature partials (twelve here; thirteen since ADR 0049)
 Each feature's endpoints move to `<Folder>/AgentApi.<Feature>.cs`, all completing the one
 `public static partial class AgentApi`. `src/Agent42.Backend/Api/AgentApi.cs` drops from 1268 to 50 lines and becomes a
 composition root: twelve `Map*Endpoints(app)` calls plus the two members genuinely shared across

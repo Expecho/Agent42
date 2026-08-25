@@ -146,4 +146,16 @@ public static class GoldenStates
     {
         Links = [new ShareLink("conv-1", "shr_goldentoken", Created)],
     };
+
+    public static UserSkillsState UserSkills() => new()
+    {
+        Config = new UserSkillConfig(
+            [
+                new StoredUserSkill(
+                    "skill-1", "mynotes", "Takes notes.",
+                    ["SKILL.md", "references/notes.md"],
+                    Created),
+            ],
+            Version: 4),
+    };
 }

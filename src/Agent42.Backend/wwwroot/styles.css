@@ -1481,6 +1481,13 @@ body {
   color: var(--ink-faint);
 }
 
+/* Uploaded skills (ADR 0049): the Skills panel's status line doubles as its error surface — a failed
+   upload returns a text/plain reason the user has to act on, so it must not read as a faint note.
+   A modifier rather than a second element, because the same <p> also carries the success summary. */
+.agent-form__note--error {
+  color: var(--red);
+}
+
 /* Web Share Target destination picker (ADR 0023): a "New chat" default action + an agent list,
    inside the shared agent-dialog/agent-form frame. Rows mirror the sidebar agent buttons. */
 .share-dest {

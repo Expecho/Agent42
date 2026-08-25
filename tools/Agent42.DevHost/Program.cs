@@ -59,6 +59,8 @@ builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
 // empty tool set for every user. The MCP providers CRUD/UI is still exercisable; only overlay→tools
 // reflection is prod-wired.
 builder.Services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvider());
+builder.Services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
+builder.Services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
 
 builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel,
 [

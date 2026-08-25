@@ -84,7 +84,10 @@ public sealed class ProjectLayoutTests
     /// <summary>
     /// The feature folders of each project. <c>Skills/</c> is content rather than a feature namespace and
     /// must not move (its csproj <c>Content</c> glob resolves next to the assembly); <c>wwwroot/</c> and
-    /// <c>Properties/</c> are likewise not code folders.
+    /// <c>Properties/</c> are likewise not code folders. Note <c>UserSkills/</c> beside it: uploaded skills
+    /// (ADR 0049) deliberately do NOT live under <c>Skills/</c>, because a <c>.cs</c> file there would be
+    /// copied into the deployed <c>Skills/</c> directory by that same glob and handed to
+    /// <c>AgentFileSkillsSource</c>.
     /// </summary>
     public static TheoryData<string, string[]> ExpectedFolders() => new()
     {
@@ -93,7 +96,7 @@ public sealed class ProjectLayoutTests
             [
                 "Attachments", "Conversations", "Documents", "ImageGeneration", "Location", "Mcp",
                 "Models", "Push", "Scheduling", "Sharing", "Skills", "Speech", "StoredAgents",
-                "Telemetry", "Tools", "Users", "Web",
+                "Telemetry", "Tools", "UserSkills", "Users", "Web",
             ]
         },
         {
@@ -101,7 +104,7 @@ public sealed class ProjectLayoutTests
             [
                 "Api", "Attachments", "Configuration", "Conversations", "Documents", "ImageGeneration",
                 "Location", "Mcp", "Models", "Properties", "Push", "Sharing", "Speech", "StoredAgents",
-                "Telemetry", "Tools", "Users", "Web", "wwwroot",
+                "Telemetry", "Tools", "UserSkills", "Users", "Web", "wwwroot",
             ]
         },
     };
@@ -150,7 +153,7 @@ public sealed class ProjectLayoutTests
         Assert.Contains("partial class AgentGrain", File.ReadAllText(file), StringComparison.Ordinal);
     }
 
-    /// <summary>The twelve endpoint groups <c>MapAgentApi</c> was split into, and the folder each sits in.</summary>
+    /// <summary>The thirteen endpoint groups <c>MapAgentApi</c> was split into, and the folder each sits in.</summary>
     public static TheoryData<string, string> AgentApiParts() => new()
     {
         { "Conversations/AgentApi.Conversations.cs", "MapConversationEndpoints" },
@@ -165,6 +168,7 @@ public sealed class ProjectLayoutTests
         { "Configuration/AgentApi.Configuration.cs", "MapConfigurationEndpoints" },
         { "Telemetry/AgentApi.Telemetry.cs", "MapTelemetryEndpoints" },
         { "Mcp/AgentApi.Mcp.cs", "MapMcpEndpoints" },
+        { "UserSkills/AgentApi.UserSkills.cs", "MapUserSkillEndpoints" },
     };
 
     // Each endpoint group exists, is a partial of the one AgentApi class, and — the part that matters —
@@ -243,6 +247,7 @@ public sealed class ProjectLayoutTests
         { "send.js", "wireSend" },
         { "sharelinks.js", "wireShareLinks" },
         { "sharetarget.js", "initShare" },
+        { "skills.js", "wireSkills" },
         { "speech.js", "wireSpeech" },
         { "theme.js", "initTheme" },
         { "tools.js", "wireTools" },

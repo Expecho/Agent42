@@ -7,10 +7,12 @@ namespace Agent42.Agents;
 ///
 /// <para><b>It is no longer the COMPLETE catalog, and that is deliberate.</b> Two groups are appended to
 /// <see cref="Descriptors"/> by <c>GET /api/tools</c> rather than living here, because neither is static:
-/// per-server MCP keys (<c>mcp:{id}</c>, per-user — ADR 0026) and per-skill keys (<c>skill:{name}</c>,
-/// per-deployment, read from disk via <c>SkillCatalog</c> — ADR 0048). Each is represented here only by a
-/// bare <b>wildcard</b> key (<see cref="Mcp"/>, <see cref="Skills"/>) that is a selection sentinel, never a
-/// rendered checkbox. The static keys below stay authoritative and centralised.</para>
+/// per-server MCP keys (<c>mcp:{id}</c>, per-user — ADR 0026) and per-skill keys (<c>skill:{name}</c> —
+/// ADR 0048, extended by ADR 0049). <b>Both are now per-user:</b> the skill keys are the shipped
+/// <c>SkillCatalog</c> (read from disk, per-deployment) OVERLAID with the skills that user has uploaded,
+/// an upload of the same name winning. Each group is represented here only by a bare <b>wildcard</b> key
+/// (<see cref="Mcp"/>, <see cref="Skills"/>) that is a selection sentinel, never a rendered checkbox. The
+/// static keys below stay authoritative and centralised.</para>
 ///
 /// <para><b>Always-on, never selectable:</b> <c>get_date</c> and the document RAG <c>TextSearchProvider</c>.
 /// <c>get_date</c> is filtered in as always-enabled here; the RAG provider is not a tool and is gated only by
@@ -31,8 +33,10 @@ public static class ToolCatalog
 
     /// <summary>
     /// The agent-skills <b>wildcard</b> ("all skills") meta-key (per-skill selectable tools, amends 0021).
-    /// Each skill shipped in <see cref="SkillCatalog"/> is now individually selectable as a per-skill key
-    /// <c>skill:{name}</c> (see <see cref="SkillKey"/>); this bare <c>skills</c> key is the wildcard the grain
+    /// Each skill is individually selectable as a per-skill key <c>skill:{name}</c> (see
+    /// <see cref="SkillKey"/>) — both the ones shipped in <see cref="SkillCatalog"/> and the ones the user
+    /// has uploaded (ADR 0049), which the grain merges into one catalog before this gate ever sees them, so
+    /// a key cannot tell the two layers apart and must not; this bare <c>skills</c> key is the wildcard the grain
     /// honours in <c>BuildAgent</c> (<c>enabled.Contains(Skills) || enabled.Contains(skill:{name})</c>). Exactly
     /// like <see cref="Mcp"/>, it is deliberately <b>kept in</b> <see cref="AllSelectableToolKeys"/> (so the
     /// <c>null == all</c> default and any legacy stored selection carrying literal <c>"skills"</c> keep enabling
@@ -106,9 +110,9 @@ public static class ToolCatalog
         new(Location, "Location", RequiresHostedTools: false),
         new(Scheduling, "Scheduling", RequiresHostedTools: false),
         new(CodeInterpreter, "Code interpreter", RequiresHostedTools: true),
-        // Skills is NOT here — shipped skills surface as per-deployment, per-skill descriptors appended by
-        // GET /api/tools (per-skill selectable tools). The bare `skills` wildcard is a selection sentinel
-        // only, never a rendered checkbox.
+        // Skills is NOT here — skills surface as per-skill descriptors appended by GET /api/tools (ADR 0048),
+        // and since ADR 0049 that list is PER-USER: the shipped set overlaid with the user's uploads. The
+        // bare `skills` wildcard is a selection sentinel only, never a rendered checkbox.
         // Mcp is NOT here — MCP servers surface as per-user, per-server descriptors appended by GET /api/tools
         // (ADR 0026). The bare `mcp` wildcard is a selection sentinel only, never a rendered checkbox.
     ];
@@ -138,10 +142,14 @@ public static class ToolCatalog
     public static bool IsSkillKey(string key) => key.StartsWith(SkillKeyPrefix, StringComparison.Ordinal);
 
     /// <summary>
-    /// True when a shipped skill should be handed to the provider given the effective selection: the selection
+    /// True when a skill should be handed to the provider given the effective selection: the selection
     /// contains either the bare <see cref="Skills"/> wildcard (the <c>null == all</c> default or a legacy
     /// all-skills selection) OR this skill's own <c>skill:{name}</c> key. Capability (<c>SupportsTools</c>) is
     /// the outer gate applied by the caller, exactly as for the static keys and MCP servers.
+    ///
+    /// <para>Deliberately blind to WHERE the skill came from: the caller passes names from the merged
+    /// shipped ⊕ uploaded catalog (ADR 0049), and a <c>skill:{name}</c> key means the same thing either
+    /// way — which is what lets a user's upload shadow a shipped skill under one key rather than two.</para>
     /// </summary>
     public static bool IsSkillEnabled(string name, ISet<string> enabled)
         => enabled.Contains(Skills) || enabled.Contains(SkillKey(name));
