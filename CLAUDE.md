@@ -648,13 +648,40 @@ to document a mechanical rule, add a lint rule instead.
   `ConversationIndexState` golden document in `GrainStorageSerializerTests` — Newtonsoft binding a
   *missing* property onto a positional record is the actual risk); the binary
   `SerializationCompatibilityTests` assertion is secondary and explicitly **not** the data-at-rest guard.
-  An `@media (hover: none)` block reveals `.conv__pin`/`.conv__share`/`.conv__delete` permanently —
-  without it pinning is impossible on the Android PWA while unpinning works — which also fixes the same
-  pre-existing gap on share and delete, but **only for those three**: `.agent__action` and `.msg__copy`
-  use the same hover-reveal idiom and stay touch-unreachable (a recorded residual, not fixed here). Ephemeral chats (ADR 0034) are structurally unpinnable (never
+  An `@media (hover: none)` block originally revealed `.conv__pin`/`.conv__share`/`.conv__delete`
+  **permanently** — without which pinning is impossible on the Android PWA while unpinning works — which
+  also fixed the same pre-existing gap on share and delete, but **only for those three**:
+  `.agent__action` and `.msg__copy` use the same hover-reveal idiom and stay touch-unreachable (a recorded
+  residual, not fixed here). **ADR 0052 replaced that permanent reveal with a long press** (the three
+  actions are hidden and inert until a hold reveals one row); `.conv-row.is-pinned .conv__pin` is the one
+  rule it deliberately left alone. Ephemeral chats (ADR 0034) are structurally unpinnable (never
   indexed); pins are **not** surfaced into the ADR 0035 public share payload; offline lists cached before
   this shipped render unpinned until the next refresh. Shell cache bumped `agent42-shell-v15` → `-v16`.
   Read the hoist-out-of-the-group gotcha before touching `renderSidebar`.
+- Long press reveals a row's actions on touch (ADR 0052, **amends 0045**): the pin/share/delete glyphs no
+  longer sit lit on every sidebar row of the installed PWA. They are hidden and **inert** until a **~400 ms
+  press-and-hold** marks one row `.is-revealed` (`wireRowReveal` in `wwwroot/js/sidebar.js` — the repo's
+  **first** pointer-event handler). Frontend-only: no endpoint, grain, secret or Bicep change.
+  **Two things make it harder than an opacity swap, and both were caught in review, not testing.** First,
+  **`(hover: none)` UAs still match `:hover`** — Android Chrome applies it on tap and press-and-hold and
+  keeps it until you tap elsewhere — so the three `.conv-row:hover .conv__*` rules had to move into
+  **`@media (hover: hover)`**, split from their `:focus-visible` partners, which stay **ungated** for
+  keyboard. Without that the gesture is decorative and a plain tap still lights every row. Second,
+  **`opacity: 0` removes the paint, not the hit-test**: the actions overlay the 82 px strip `.conv`'s
+  padding reserves, so hidden-but-live meant a thumb on any row's right edge firing
+  `deleteConversation`'s `confirm()` from an invisible control — hence **`pointer-events: none`** when
+  unrevealed, with `.conv-row.is-pinned .conv__pin` exempted back to `auto` (it is *visible*, so it must
+  stay pressable). Three traps in the JS: `pointercancel` must cancel only a **pending** timer (Android
+  fires it for its own long-press at ~500 ms, *after* our 400 ms); the click-suppression listener sits on
+  the **row button, not the `<li>`** (the actions are the `<li>`'s children and their `stopPropagation`
+  runs later, in the bubble phase); and **never add `touch-action` to `.conv-row`** — it would stop the
+  list scrolling. `renderSidebar` calls `clearReveal()` first, since it rebuilds every row.
+  **Consequences:** the gesture is **undiscoverable** (accepted cost of a quiet list); `user-select: none`
+  costs long-press-to-copy on titles; and a reveal does not survive the action taken from it. Shell cache
+  bumped `agent42-shell-v21` → `-v22`. The manual pass **was** run (headless Chrome over CDP) and ADR 0052
+  records the measured values — including one addition to ADR 0045's lever note: the viewport must be
+  **wider than 760 px**, or the sidebar is an off-canvas drawer and every synthetic touch misses, which
+  looks exactly like a broken feature.
 - Recovering a reply whose stream died (ADR 0046): switching away from the installed PWA mid-reply used
   to end in **"Transmission failed."** while a refresh showed the complete answer. **The turn was never
   lost — only its delivery was**, and the fix is **client-side only, no server change**: on a non-abort
