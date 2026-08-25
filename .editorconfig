@@ -19,13 +19,15 @@ root = true
 # before this), but a future CA rule must be enabled explicitly.
 #
 # The severity line is load-bearing: S3776 ships at `info`, which no build surfaces — leave it off and
-# the gate looks wired up while reporting zero violations when there are eleven. The THRESHOLD is not
+# the gate looks wired up while reporting zero violations when there are some. It is `error`, not
+# `warning`, because the gate is BLOCKING (ADR 0051): the eleven violations it was introduced with have
+# been cleared, so a new one must fail the build rather than scroll past in CI output. The THRESHOLD is not
 # set here on purpose: the analyzer's built-in default is already 15, matching the gate file exactly,
 # so there is one source of truth and no second number to drift. Changing it needs a SonarLint.xml
 # AdditionalFile (`.editorconfig` is silently ignored for it, measured) — `QualityGateTests` will say so.
 [*.cs]
 dotnet_analyzer_diagnostic.severity = none
-dotnet_diagnostic.S3776.severity = warning
+dotnet_diagnostic.S3776.severity = error
 
 # ADR 0039: src/Agent42.Agents is organised into feature FOLDERS, but every type stays in the
 # single flat `Agent42.Agents` namespace. That mismatch is intentional and load-bearing.

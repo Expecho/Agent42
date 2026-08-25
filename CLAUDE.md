@@ -15,7 +15,7 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 | Run dev (offline) | `dotnet run --project tools/Agent42.DevHost` — canned LLM, in-memory grains; UI at http://localhost:61326 |
 | Run full stack | `dotnet run --project src/Agent42.AppHost` — Aspire + Cosmos emulator (needs Docker) |
 | Test | `dotnet test Agent42.slnx` |
-| Lint | `dotnet format Agent42.slnx --verify-no-changes --exclude-diagnostics S3776` |
+| Lint | `dotnet format Agent42.slnx --verify-no-changes` |
 | Type check | `dotnet build Agent42.slnx` |
 
 ## Hard rules

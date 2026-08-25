@@ -75,9 +75,7 @@ public sealed partial class AgentGrain
                 continue;
             }
 
-            var refs = userTurnIndex < _state.State.TurnAttachments.Count
-                ? _state.State.TurnAttachments[userTurnIndex]
-                : null;
+            var refs = AttachmentsForUserTurn(userTurnIndex);
             userTurnIndex++;
 
             if (!includeImages)
@@ -95,32 +93,50 @@ public sealed partial class AgentGrain
                 continue;
             }
 
-            var uriParts = message.Contents.OfType<UriContent>().ToList();
-            for (var i = 0; i < refs.Count; i++)
-            {
-                var url = await _attachments.GetReadUrlAsync(refs[i]);
+            await RestoreUserTurnImagesAsync(message, refs);
+        }
+    }
 
-                if (i < uriParts.Count)
-                {
-                    uriParts[i].Uri = url;
-                }
-                else
-                {
-                    // Restoring a part a previous no-vision turn withheld.
-                    message.Contents.Add(new UriContent(url, refs[i].MediaType));
-                }
+    // Refreshes (or re-adds) one user turn's image parts from its durable TurnAttachments refs.
+    //
+    // Split out of the loop above (ADR 0050) purely for readability — the POSITIONAL join between
+    // TurnAttachments and user turns stays in the caller, because that index is what makes the whole
+    // mechanism work and it must not be reconstructed anywhere else.
+    private async Task RestoreUserTurnImagesAsync(ChatMessage message, IReadOnlyList<AttachmentRef> refs)
+    {
+        var uriParts = message.Contents.OfType<UriContent>().ToList();
+        for (var i = 0; i < refs.Count; i++)
+        {
+            var url = await _attachments.GetReadUrlAsync(refs[i]);
+
+            if (i < uriParts.Count)
+            {
+                uriParts[i].Uri = url;
             }
-
-            // Undo the placeholder below, so a restored turn reads as the user wrote it.
-            for (var i = message.Contents.Count - 1; i >= 0; i--)
+            else
             {
-                if (message.Contents[i] is TextContent { Text: WithheldImagePlaceholder })
-                {
-                    message.Contents.RemoveAt(i);
-                }
+                // Restoring a part a previous no-vision turn withheld.
+                message.Contents.Add(new UriContent(url, refs[i].MediaType));
+            }
+        }
+
+        // Undo the placeholder, so a restored turn reads as the user wrote it.
+        for (var i = message.Contents.Count - 1; i >= 0; i--)
+        {
+            if (message.Contents[i] is TextContent { Text: WithheldImagePlaceholder })
+            {
+                message.Contents.RemoveAt(i);
             }
         }
     }
+
+    // The durable image refs for the Nth user turn, or null when this conversation predates
+    // TurnAttachments (ADR 0004) — that list deserializes EMPTY for an old chat while its session still
+    // holds image parts, which is why every caller must tolerate null rather than assume an entry exists.
+    private IReadOnlyList<AttachmentRef>? AttachmentsForUserTurn(int userTurnIndex) =>
+        userTurnIndex < _state.State.TurnAttachments.Count
+            ? _state.State.TurnAttachments[userTurnIndex]
+            : null;
 
     // What a user turn says once its images are withheld. An IMAGE-ONLY turn (blank text, one photo — a
     // shape the composer deliberately allows) would otherwise be left with ZERO content parts, and an
