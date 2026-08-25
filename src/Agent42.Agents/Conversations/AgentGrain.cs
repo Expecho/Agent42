@@ -53,6 +53,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly IUserMcpToolProvider _mcpToolProvider;
 
+    private readonly IUserSkillProvider _userSkillProvider;
+
     private readonly IAttachmentStore _attachments;
 
     private readonly IDocumentIndex _documentIndex;
@@ -107,6 +109,21 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // their conversation grains.
     private IReadOnlyList<McpServerTools> _mcpServers = [];
 
+    // This user's UPLOADED skills (ADR 0049), resolved ONCE on activation from this grain's userId — BEFORE
+    // the first BuildAgent, the same ordering hazard as _mcpServers, _chatClientFactory and
+    // _userDefaultEnabledTools. BuildAgent merges these with SkillCatalog into one catalog (upload wins on a
+    // name clash) for BOTH the provider gate and the `skills` wildcard expansion in GetEnabledToolsAsync, and
+    // ReceiveReminder reuses that same _agent — so resolving later would have the first chat turn AND every
+    // reminder turn on this activation silently ignore the user's uploads.
+    //
+    // NOTE this is precisely why ExpandSkillsWildcard is no longer static. ADR 0048 could say the skills
+    // expansion "needs no grain field ... there is no OnActivateAsync ordering hazard here" because
+    // SkillCatalog is static and process-wide; making skills per-user re-opens the hazard the MCP expansion
+    // already had.
+    //
+    // Best-effort: a missing or corrupt package costs that one skill, never the activation.
+    private IReadOnlyList<SkillInfo> _userSkills = [];
+
     /// <summary>
     /// The user's position for the turn currently being processed, or null (ADR 0012). Set at the top
     /// of <see cref="ChatAsync"/> from the position the browser sent with the request.
@@ -150,6 +167,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
         IUserChatClientFactoryProvider chatClientFactoryProvider,
         IUserMcpToolProvider mcpToolProvider,
+        IUserSkillProvider userSkillProvider,
         IAttachmentStore attachments,
         IDocumentIndex documentIndex,
         IWebSearch webSearch,
@@ -161,6 +179,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _state = state;
         _chatClientFactoryProvider = chatClientFactoryProvider;
         _mcpToolProvider = mcpToolProvider;
+        _userSkillProvider = userSkillProvider;
         _attachments = attachments;
         _documentIndex = documentIndex;
         _webSearch = webSearch;
@@ -204,6 +223,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // omit the user's MCP tools. Same ordering hazard the two resolutions above guard against. Best-effort:
         // the provider connects with a timeout and skips dead servers, so this never fails activation.
         _mcpServers = (await _mcpToolProvider.GetForUserAsync(_userId, cancellationToken)).Servers;
+
+        // Resolve this user's UPLOADED skills (ADR 0049) BEFORE the first BuildAgent below, for exactly the
+        // reason above — BuildAgent merges them with the shipped catalog and ReceiveReminder reuses the same
+        // _agent, so materializing later would have the first chat turn AND every reminder turn on this
+        // activation silently ignore them. Best-effort: a missing or corrupt package costs that one skill.
+        _userSkills = (await _userSkillProvider.GetForUserAsync(_userId, cancellationToken)).Skills;
 
         _agent = BuildAgent(_modelId);
 

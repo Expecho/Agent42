@@ -307,10 +307,13 @@
                 aria-selected="false" aria-controls="panelProviders" tabindex="-1">Model providers</button>
         <button class="agent-form__tab" type="button" role="tab" id="tabMcp"
                 aria-selected="false" aria-controls="panelMcp" tabindex="-1">MCP servers</button>
-        <!-- Appended LAST on purpose: the MCP-OAuth return deep-links to profileTabs.select(3), so this
-             tab must be index 4 — inserting it before MCP would break that return (js/mcp.js). -->
+        <!-- These two are APPENDED, never inserted: the MCP-OAuth return deep-links to
+             profileTabs.select(3), so MCP must stay index 3 — anything placed before it would break that
+             return (js/mcp.js). Configuration is 4, Skills is 5. -->
         <button class="agent-form__tab" type="button" role="tab" id="tabConfig"
                 aria-selected="false" aria-controls="panelConfig" tabindex="-1">Configuration</button>
+        <button class="agent-form__tab" type="button" role="tab" id="tabSkills"
+                aria-selected="false" aria-controls="panelSkills" tabindex="-1">Skills</button>
       </div>
 
       <div class="agent-form__panel" role="tabpanel" id="panelGeneral" aria-labelledby="tabGeneral">
@@ -431,6 +434,21 @@
           </div>
           <div class="config-health" id="configHealthList"></div>
           <p class="agent-form__note">Which configuration inputs are set, malformed, or (with live checks) unreachable. Read-only, and never shows a secret value. Live checks for geocoding and page scraping cost a metered call, so they run only on demand.</p>
+        </section>
+      </div>
+
+      <div class="agent-form__panel" role="tabpanel" id="panelSkills" aria-labelledby="tabSkills" hidden>
+        <section class="agent-form__section">
+          <div class="providers__head">
+            <span class="agent-form__label">// uploaded skills</span>
+            <button class="agent-form__btn" type="button" id="addSkillBtn">Upload skill</button>
+          </div>
+          <!-- The real file picker; the button above clicks it, so the control matches every other
+               "Add …" button in this dialog instead of being a stray file input. -->
+          <input type="file" id="skillFile" accept=".md,.zip" hidden>
+          <ul class="providers__list" id="skillList"></ul>
+          <p class="agent-form__note" id="skillStatus" hidden></p>
+          <p class="agent-form__note">Upload a SKILL.md, or a .zip of skill folders with bundled reference files. Enable a skill in the Tools tab to use it. Changes take effect on your next new chat — no restart, and existing chats and agents keep the tools they were given. A skill named after a built-in one replaces it. Scripts are never stored or run, and an uploaded skill's text becomes instructions the model follows — upload only skills you trust.</p>
         </section>
       </div>
 

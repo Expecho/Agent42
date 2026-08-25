@@ -64,5 +64,21 @@ resource dataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices
   }
 }
 
+// Uploaded agent skill packages (ADR 0049): one normalized zip per installed skill, at
+// {userId}/{skillId}.zip. Same privacy posture as the other two containers — no public access, reached
+// only by the app MI's account-scoped Storage Blob Data Contributor grant, which is why this container
+// needs NO new role assignment (and so no manual RBAC step).
+// This is the DURABLE record; the container filesystem the skills are materialized onto is only a cache
+// of it, wiped by every restart.
+// A fixed literal, not a param, for the same reason as `dataprotection`: BlobSkillPackageStore hardcodes
+// the same name, and a param here would be a second knob that could drift from the code.
+resource skillPackagesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'skill-packages'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 output accountName string = account.name
 output blobEndpoint string = account.properties.primaryEndpoints.blob

@@ -269,7 +269,7 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   `null == all` sentinel and the **user-default-fetch-before-first-`BuildAgent`** ordering hazard (both in
   the "Selectable tools" gotcha); and that a selection resolving to **zero skills** must **drop the
   `AgentSkillsProvider`** (it is a tool), while RAG must stay (the "`AgentSkillsProvider` is a TOOL" gotcha).
-- Per-skill selectable tools (ADR 0048, amends 0021, follows 0026): each skill shipped in
+- Per-skill selectable tools (ADR 0048, amends 0021, follows 0026, **scope amended by ADR 0049**): each skill shipped in
   `src/Agent42.Agents/Skills/` is **individually selectable** in the ADR 0021 picker as a `skill:{name}` key
   (was one all-or-none `skills` checkbox). The bare `skills` key is repurposed into a **wildcard "all skills"**
   meta-key kept in `AllSelectableToolKeys` (so `null == all` and legacy selections keep enabling every skill —
@@ -279,8 +279,9 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   pointing AT one skill directory yields exactly that skill (measured, 1.13.0; `AgentSkillsProviderBuilder.UseFilter`
   is **unusable** — `Build()` demands a script runner this app deliberately lacks). `BuildAgent` resolves the
   selected skills' **paths** and constructs the provider **only when that list is non-empty**. The skills
-  portion of `GET /api/tools` is **per-deployment**, read from disk — the interesting difference from ADR
-  0026's per-user MCP portion. Picker labels are the frontmatter `name` **verbatim** (`websearch`, not "Web
+  portion of `GET /api/tools` was **per-deployment**, read from disk — ~~the interesting difference from ADR
+  0026's per-user MCP portion~~; **ADR 0049 made it per-user too** (shipped ⊕ the user's uploads), so the
+  two portions no longer differ in scope. Picker labels are the frontmatter `name` **verbatim** (`websearch`, not "Web
   search"). Four traps, all in gotchas: `GetEnabledToolsAsync` must **expand** the `skills` wildcard into
   `skill:{name}` keys (else a no-op Save silently disables every skill — the picker has no `skills` checkbox);
   the two expansions **compose in a fixed order**, `ExpandSkillsWildcard(ExpandMcpWildcard(…))`, because two
@@ -292,6 +293,43 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   snapshots the bare wildcard and *does* pick it up — the two paths diverge. Shell cache bumped
   `agent42-shell-v19` → `-v20`. Unlike ADR 0043 the manual DevHost leg **was** run (headless Chrome over CDP)
   and ADR 0048 records the observed values.
+- Upload your own agent skills (ADR 0049, **amends 0048**: per-deployment → per-user): a signed-in user
+  uploads a standalone `SKILL.md`, or a `.zip` of skill directories **with bundled resource files**, from
+  **Preferences → Skills**, and it merges into the ADR 0048 picker as an ordinary `skill:{name}` key. One
+  **normalized zip per skill** (single top-level directory = the frontmatter `name`) lives in a new
+  `skill-packages` blob container; the index rides `agent-state` on a new `"user-skills"` state — **no new
+  Cosmos container, no new secret, no RBAC step** (the Blob Data Contributor grant is account-scoped). A
+  **fresh skill id on every upload, including a replace**, is what makes the materialized directory
+  `{temp}/agent42-skills/{skillId}/{name}/` immutable and cache-invalidation-free; that tree is a **cache,
+  not the record** (blob storage is durable, a restart wipes it) and it is `Path.GetTempPath()` because the
+  Dockerfile's `USER $APP_UID` leaves `/app` unwritable. `BuildAgent` runs over a **merged** catalog
+  (shipped ⊕ uploads, upload wins, `OrdinalIgnoreCase`) used by **both** the provider gate and
+  `ExpandSkillsWildcard` — which **stops being `static`** and reads a new `_userSkills` field, re-opening
+  the `OnActivateAsync` ordering hazard ADR 0048 said did not apply. Endpoints are `GET/POST/DELETE
+  /api/skills` behind Easy Auth (**not** `excludedPaths` — ADR 0042's list is unchanged), with
+  `ISkillPackageStore` resolved **optionally via `IServiceProvider`** (the `/api/speech` pattern) while
+  `IUserSkillProvider` is a mandatory grain dependency in every silo. **Six framework facts were measured,
+  and four of them corrected the plan** — read the two new gotchas before touching this: resource/script
+  classification is by **extension at any folder**, so a `.py` under `references/` is a SCRIPT and a
+  folder-keyed filter is worthless; skill-directory search is **hard-capped at depth 2** and `SearchDepth`
+  does *not* raise it, so a double-wrapped zip yields nothing and the normalizer must walk for `SKILL.md`
+  itself; `run_skill_script` is advertised **unconditionally** (safe only because it is approval-wrapped
+  with no approval loop and no runner is registered); and `ValidateName` **accepts `con`/`aux`/`com1`**.
+  Scripts are blocked twice — the normalizer drops them *and* the provider passes
+  `AllowedScriptExtensions = []`. `DisableReadSkillResourceApproval = true` is a deliberate change (it is
+  what makes bundled resources readable at all) and it creates a return path that **must** be budgeted:
+  measured, a 300 KB SKILL.md makes `load_skill` return 300,087 chars, so `TruncatingSkillsProvider` caps
+  both tools per `SkillToolLimits` (ADR 0004's 2 MB session). An upload **auto-enables** into a *non-null*
+  stored default (else ADR 0048's "all is the full explicit list" rule leaves it silently OFF for anyone
+  who ever pressed Save) — but per-conversation overrides and per-agent snapshots are deliberately **not**
+  rewritten. **Two headline consequences:** an uploaded SKILL.md is untrusted instruction text entering the
+  system prompt — a new **inbound prompt-injection channel** feeding ADR 0011/0027's exfiltration channel
+  and ADR 0013's egress; and because an upload named after a shipped skill **wins**, uploading `websearch`
+  replaces the only copy of the ADR 0011 mitigation text (an accepted residual — the upload response warns).
+  Skills tab is appended **last** (index 5), so MCP stays 3 and the ADR 0025 OAuth return still works. Shell
+  cache bumped `agent42-shell-v20` → `-v21`. The manual DevHost leg **was** run (headless Chrome over CDP)
+  and ADR 0049 records the observed values — including the one thing it cannot show, since DevHost's canned
+  chat client ignores the system prompt entirely.
 - Per-agent API key + async run (ADR 0022): each stored agent has a **per-agent API key** (minted on
   create, **shown once**, only its **SHA-256 hash** stored on `AgentDefinition [Id(9)]`, **regenerate**-on-edit)
   and a fire-and-forget **`POST /api/agent-run`** — `multipart/form-data` (a `prompt` field + optional `file`
@@ -666,7 +704,7 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   source-text asset guard** (the fixture's `GetAppScriptAsync()` walks the import graph over HTTP).
   All three are in gotchas, and all three are asserted in `ProjectLayoutTests`/`PwaAssetsTests`.
   `styles.css` and `index.html`'s markup are deliberately untouched — separate MRs.
-- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **16 top-level feature folders**
+- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **17 top-level feature folders**
   (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …), and `AgentGrain` is split into
   **10 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`
   namespace — folders and namespaces deliberately DISAGREE, and that is load-bearing, not sloppiness.**
@@ -682,10 +720,10 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   binary path) and is **not** what protects data at rest. `ReceiveReminder` stays in the core `AgentGrain`
   part beside `ChatAsync` (the `_turnLocation`/`_ephemeral` clears must be read together); `Skills/` does
   not move (csproj `Content` glob); `Agent42.Tests` stays flat on purpose.
-- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **17
+- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **18
   feature folders** mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
   visibly with `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`), **flat `Agent42.Backend` namespace**, and
-  `Program.cs` alone at the project root. `MapAgentApi` is split into **12 per-feature partials**
+  `Program.cs` alone at the project root. `MapAgentApi` is split into **13 per-feature partials**
   (`src/Agent42.Backend/Mcp/AgentApi.Mcp.cs`, …) with `src/Agent42.Backend/Api/AgentApi.cs` reduced to a 50-line composition root, and the 25
   request/response records live beside their feature as `*Contracts.cs`. Backend persists nothing, so
   the flat namespace is **not** forced here as it is in Agents — it is kept flat for consistency and

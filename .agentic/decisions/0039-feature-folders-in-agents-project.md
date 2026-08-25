@@ -28,11 +28,17 @@ this ADR and is recorded in full rather than quietly corrected.
 
 ## Decision
 
-### 1. Sixteen top-level feature folders, in a single flat namespace
+### 1. Seventeen top-level feature folders, in a single flat namespace
 `StoredAgents/`, `Attachments/`, `Conversations/`, `Documents/`, `ImageGeneration/`, `Location/`,
-`Mcp/`, `Models/`, `Push/`, `Scheduling/`, `Sharing/`, `Speech/`, `Telemetry/`, `Tools/`, `Users/`,
-`Web/`. `Skills/` does not move: its csproj `Content Include="Skills\**\*"` glob must keep resolving
-next to the built assembly.
+`Mcp/`, `Models/`, `Push/`, `Scheduling/`, `Sharing/`, `Speech/`, `Telemetry/`, `Tools/`,
+`UserSkills/`, `Users/`, `Web/`. `Skills/` does not move: its csproj
+`Content Include="Skills\**\*"` glob must keep resolving next to the built assembly — which is also
+why `UserSkills/` (ADR 0049) is a separate folder rather than living under it, since a `.cs` file
+there would be shipped as content into the deployed `Skills/` directory.
+
+*(Sixteen at the time of this ADR; `UserSkills/` was added by ADR 0049. A folder list is a factual
+inventory, not a decision, so it is corrected in place — `ProjectLayoutTests.ExpectedFolders` asserts
+it by name so the two cannot drift.)*
 
 **Every type stays in `namespace Agent42.Agents;`.** Folders organise the files; they do not shape the
 namespace. This is the opposite of the usual convention and it is not a style preference — see

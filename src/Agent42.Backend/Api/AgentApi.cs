@@ -35,6 +35,7 @@ public static partial class AgentApi
         MapConfigurationEndpoints(app);
         MapTelemetryEndpoints(app);
         MapMcpEndpoints(app);
+        MapUserSkillEndpoints(app);
 
         return app;
     }

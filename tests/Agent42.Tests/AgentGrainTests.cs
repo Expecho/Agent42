@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Agent42.Agents;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Core.Internal;
@@ -21,7 +22,18 @@ public sealed class AgentGrainTests : IAsyncLifetime
         await _cluster.DeployAsync();
     }
 
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        // The uploaded-skill tests materialize real directories under the OS temp folder (ADR 0049); nothing
+        // else clears them, and a stale one would be reused by a later run under the same skill id.
+        foreach (var id in _materializedSkillIds)
+        {
+            try { Directory.Delete(Path.Combine(UserSkillProvider.MaterializationRoot, id), recursive: true); }
+            catch { /* best effort */ }
+        }
+
+        await _cluster.DisposeAsync();
+    }
 
     [Fact]
     public async Task SendingHi_ReturnsAnAnswer()
@@ -1497,6 +1509,242 @@ public sealed class AgentGrainTests : IAsyncLifetime
         Assert.Contains(ToolCatalog.WebSearch, effective);    // the static keys are still there
     }
 
+    // ---- Uploaded skills (ADR 0049) -------------------------------------------------------------
+    //
+    // These use the REAL path end to end: SkillPackage.Normalize -> InMemorySkillPackageStore ->
+    // IUserSkillsGrain -> UserSkillProvider materialization -> AgentSkillsProvider. There is deliberately no
+    // fake provider to inject a SkillInfo through, because the interesting failures (a name that never
+    // reaches the picker, a resource the framework will not read) all live in the parts a fake would skip.
+
+    // AC12/AC19: an uploaded skill is advertised to the model — which also proves the resolution happens in
+    // OnActivateAsync BEFORE the first BuildAgent. The upload is installed before the grain is ever touched,
+    // so the FIRST turn on the FIRST activation must already see it; resolving the skills any later would
+    // make this turn (and every reminder turn on the activation) silently skip them.
+    [Fact]
+    public async Task UserSkills_ResolvedOnActivation_BeforeFirstBuildAgent()
+    {
+        const string user = "uploaded-skill-first-turn";
+        // Deliberately apostrophe-free: the framework XML-ESCAPES the description into the system prompt
+        // (measured on 1.13.0 — `user's` arrives as `user&apos;s`, `<` as `&lt;`, `&` as `&amp;`), so a
+        // fixture with punctuation in it would fail here for a reason that has nothing to do with skills.
+        await InstallSkillAsync(user, "mynotes", "Keeps meeting notes for the user.");
+
+        var answer = Answer(await Chat(_cluster.GrainFactory.GetGrain<IAgentGrain>(user), "hi"));
+
+        Assert.Contains("mynotes", answer);
+        Assert.Contains("Keeps meeting notes for the user.", answer);
+        Assert.Contains("load_skill", ToolNames(answer));
+    }
+
+    // AC12: the same claim stated as the user story — an uploaded skill's guidance reaches the model.
+    [Fact]
+    public async Task UploadedSkill_IsAdvertisedToTheModel()
+    {
+        const string user = "uploaded-skill-advertised";
+        await InstallSkillAsync(user, "expenses", "Files an expense claim.");
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+
+        var answer = Answer(await Chat(agent, "hi"));
+
+        // Both layers are visible at once — the upload is an addition, not a replacement.
+        Assert.Contains("expenses", answer);
+        foreach (var shipped in SkillCatalog.Skills)
+        {
+            Assert.Contains(shipped.Name, answer);
+        }
+    }
+
+    // AC9: an upload named after a shipped skill SHADOWS it — one entry, carrying the user's description
+    // and the user's guidance. This is the chosen behaviour and it is also the accepted residual recorded in
+    // ADR 0049: `websearch` is the only place the prompt-injection mitigation text lives, and uploading a
+    // skill by that name replaces it wholesale.
+    [Fact]
+    public async Task UploadedSkill_ShadowsShippedSkill()
+    {
+        const string user = "uploaded-skill-shadows";
+        await InstallSkillAsync(user, "websearch", "REPLACED-BY-THE-USER");
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+
+        var answer = Answer(await Chat(agent, "hi"));
+
+        Assert.Contains("REPLACED-BY-THE-USER", answer);
+        // The shipped websearch description opens with this; its absence is what "shadowed" means.
+        Assert.DoesNotContain("Guidance for using the web search", answer);
+
+        // And exactly ONE key, not two — the picker must not render a duplicate checkbox.
+        var effective = await agent.GetEnabledToolsAsync();
+        Assert.Single(effective, k => k == ToolCatalog.SkillKey("websearch"));
+    }
+
+    // AC14: a null (all) selection expands to include the UPLOADED skills' keys too. Without this the picker
+    // would render only the shipped skills, and the first Save would silently disable every upload — the
+    // same hazard ADR 0048 closed for shipped skills, now reached through a grain field.
+    [Fact]
+    public async Task GetEnabledTools_NullSelection_IncludesUploadedSkills()
+    {
+        const string user = "uploaded-skill-wildcard";
+        await InstallSkillAsync(user, "invoices", "Reads an invoice.");
+
+        var effective = await _cluster.GrainFactory.GetGrain<IAgentGrain>(user).GetEnabledToolsAsync();
+
+        Assert.DoesNotContain(ToolCatalog.Skills, effective);
+        Assert.Contains(ToolCatalog.SkillKey("invoices"), effective);
+        Assert.Contains(ToolCatalog.SkillKey("websearch"), effective);
+    }
+
+    // AC13: selecting ONLY an uploaded skill drops every shipped one and keeps load_skill — per-skill
+    // selection works identically across the two layers, which is the point of merging them into one catalog
+    // before the gate rather than gating them separately.
+    [Fact]
+    public async Task PerSkillSelection_AcrossBothLayers()
+    {
+        const string user = "uploaded-skill-only-selected";
+        await InstallSkillAsync(user, "invoices", "Reads an invoice.");
+        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+        await agent.SetEnabledToolsAsync([ToolCatalog.SkillKey("invoices")]);
+
+        var answer = Answer(await Chat(agent, "hi"));
+
+        Assert.Contains("invoices", answer);
+        // Safe as a substring assertion only because the tool names use underscores — "scheduledprompt"
+        // cannot match "schedule_prompt". See the gotcha about web_search vs the websearch skill.
+        Assert.DoesNotContain("scheduledprompt", answer);
+        Assert.Contains("load_skill", ToolNames(answer));
+    }
+
+    // AC7: the 2 MB session budget (ADR 0004). Both tool returns are unbounded in the framework — measured,
+    // a 300 KB SKILL.md yields a 300,087-character load_skill result — so the wrapper is what stands between
+    // an uploaded skill and a bricked conversation. Asserted by invoking the real tools the provider hands
+    // out, because that is the only place the truncation actually happens.
+    [Fact]
+    public async Task SkillTools_TruncateOversizedReturns()
+    {
+        const string user = "uploaded-skill-oversized";
+        var body = new string('Y', SkillToolLimits.MaxSkillBodyLength * 2);
+        var resource = new string('Z', SkillToolLimits.MaxResourceTextLength * 2);
+        await InstallSkillAsync(user, "bigskill", "A large skill.", body, ("references/big.md", resource));
+
+        var tools = await SkillToolsForAsync(user);
+
+        var loaded = await InvokeToolAsync(tools, "load_skill", new() { ["skillName"] = "bigskill" });
+        Assert.Equal(SkillToolLimits.MaxSkillBodyLength + SkillToolLimits.TruncationMarker.Length, loaded.Length);
+        Assert.EndsWith(SkillToolLimits.TruncationMarker, loaded, StringComparison.Ordinal);
+
+        var read = await InvokeToolAsync(
+            tools, "read_skill_resource", new() { ["skillName"] = "bigskill", ["resourceName"] = "references/big.md" });
+        Assert.Equal(SkillToolLimits.MaxResourceTextLength + SkillToolLimits.TruncationMarker.Length, read.Length);
+        Assert.EndsWith(SkillToolLimits.TruncationMarker, read, StringComparison.Ordinal);
+    }
+
+    // A skill whose body already fits passes through UNCHANGED — a truncation wrapper that quietly reshaped
+    // every result would be worse than none, and this is what proves the cap binds only when it must.
+    [Fact]
+    public async Task SkillTools_LeaveSmallReturnsUntouched()
+    {
+        const string user = "uploaded-skill-small";
+        await InstallSkillAsync(user, "tinyskill", "A small skill.", "SHORT-BODY-MARKER");
+
+        var loaded = await InvokeToolAsync(
+            await SkillToolsForAsync(user), "load_skill", new() { ["skillName"] = "tinyskill" });
+
+        Assert.Contains("SHORT-BODY-MARKER", loaded, StringComparison.Ordinal);
+        Assert.DoesNotContain(SkillToolLimits.TruncationMarker, loaded, StringComparison.Ordinal);
+    }
+
+    // The security position, asserted rather than asserted-in-prose: scripts are never advertised. The
+    // normalizer drops script entries, and AllowedScriptExtensions = [] makes the framework refuse to
+    // discover one even if a file somehow reached disk. run_skill_script IS still registered (measured:
+    // unconditionally), but with no runner behind it and no approval loop it cannot execute anything.
+    [Fact]
+    public async Task SkillTools_NeverAdvertiseAScript_EvenWhenOneIsOnDisk()
+    {
+        const string user = "uploaded-skill-scripts";
+        await InstallSkillAsync(user, "scripted", "Has a script on disk.");
+
+        // Plant a script directly in the materialized tree, bypassing the normalizer entirely — the point is
+        // that the framework layer refuses it too.
+        var set = await ProviderFor(user).GetForUserAsync(user);
+        var path = Assert.Single(set.Skills, s => s.Name == "scripted").Path;
+        Directory.CreateDirectory(Path.Combine(path, "scripts"));
+        await File.WriteAllTextAsync(Path.Combine(path, "scripts", "evil.py"), "print('pwned')");
+
+        var loaded = await InvokeToolAsync(
+            await SkillToolsForAsync(user), "load_skill", new() { ["skillName"] = "scripted" });
+
+        Assert.DoesNotContain("evil.py", loaded, StringComparison.Ordinal);
+    }
+
+    // ---- uploaded-skill helpers ------------------------------------------------------------------
+
+    private readonly List<string> _materializedSkillIds = [];
+
+    // Installs a skill exactly the way the endpoint does — normalize, store the package, record the row —
+    // so these tests cannot pass against a fixture the real upload path would reject.
+    // The id is minted here rather than passed in, and that is not cosmetic: MaterializationRoot is a
+    // MACHINE-GLOBAL directory (%TEMP%/agent42-skills) and the provider skips extraction when the
+    // directory already exists. A fixed id would let a stale tree from an aborted earlier run silently
+    // serve the wrong bundle to a later one — a green suite hiding a wrong answer.
+    private async Task<string> InstallSkillAsync(
+        string userId, string name, string description,
+        string? body = null, params (string Path, string Content)[] resources)
+    {
+        var skillId = Guid.NewGuid().ToString("n");
+        var staging = Path.Combine(Path.GetTempPath(), "grainskill-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var entries = new List<(string, string)>
+            {
+                ($"{name}/SKILL.md",
+                    $"---\nname: {name}\ndescription: {description}\n---\n\n{body ?? "Some guidance."}\n"),
+            };
+            entries.AddRange(resources.Select(r => ($"{name}/{r.Path}", r.Content)));
+
+            var result = SkillPackage.Normalize("skill.zip", ZipTestData.Zip([.. entries]), staging);
+            var skill = Assert.Single(result.Skills);
+
+            _materializedSkillIds.Add(skillId);
+            await new InMemorySkillPackageStore().SaveAsync(userId, skillId, skill.Zip);
+            await _cluster.GrainFactory.GetGrain<IUserSkillsGrain>(userId).SaveAsync(
+                new StoredUserSkill(skillId, skill.Name, skill.Description, skill.Files, DateTimeOffset.UtcNow));
+            return skillId;
+        }
+        finally
+        {
+            try { Directory.Delete(staging, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    private UserSkillProvider ProviderFor(string userId) => new(
+        _cluster.GrainFactory,
+        new InMemorySkillPackageStore(),
+        Microsoft.Extensions.Logging.Abstractions.NullLogger<UserSkillProvider>.Instance);
+
+    // Builds the SAME provider BuildAgent builds — truncation wrapper, script ban and all — over this user's
+    // materialized skills, and returns the live tools so a test can invoke one. FakeChatClient echoes only
+    // tool NAMES, which cannot answer a question about what a tool RETURNS.
+    private async Task<IReadOnlyList<AITool>> SkillToolsForAsync(string userId)
+    {
+        var paths = (await ProviderFor(userId).GetForUserAsync(userId)).Skills.Select(s => s.Path).ToList();
+
+        var capture = new ToolCapturingChatClient();
+        await new ChatClientAgent(capture, new ChatClientAgentOptions
+        {
+            Name = "skill-tools-probe",
+            AIContextProviders = [TruncatingSkillsProvider.ForSkillPaths(paths)],
+        }).RunAsync("hi");
+
+        return capture.Tools;
+    }
+
+    private static async Task<string> InvokeToolAsync(
+        IReadOnlyList<AITool> tools, string name, Dictionary<string, object?> arguments)
+    {
+        var fn = tools.OfType<AIFunction>().Single(t => t.Name == name);
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection().BuildServiceProvider();
+        var result = await fn.InvokeAsync(new AIFunctionArguments(arguments) { Services = services });
+        return result?.ToString() ?? "";
+    }
+
     private static async Task<TestCluster> NewClusterAsync<TConfigurator>(short initialSilosCount = 2)
         where TConfigurator : ISiloConfigurator, new()
     {
@@ -2078,6 +2326,11 @@ public sealed class AgentGrainTests : IAsyncLifetime
         const string key = "tools-skills-disabled-conversation";
         await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
 
+        // An UPLOADED skill (ADR 0049) that is also not selected. Since the two layers merge into one
+        // catalog before the gate, "zero selected skills" has to mean zero across BOTH — an upload that
+        // kept the provider alive on its own would silently un-disable skills for this conversation.
+        await InstallSkillAsync(key, "unselected", "Should not be reachable.");
+
         var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         await agent.RegisterDocumentAsync("guide.pdf");
         // Everything EXCEPT skills.
@@ -2088,6 +2341,7 @@ public sealed class AgentGrainTests : IAsyncLifetime
             agent.ChatAsync("what does the document say about magrathea", TestSiloConfigurator.DefaultModel)));
 
         Assert.DoesNotContain("load_skill", answer);
+        Assert.DoesNotContain("unselected", answer);                // the upload is not advertised either
         Assert.Contains("web_search", ToolNames(answer));           // a non-skills tool still registers
         Assert.Contains("Magrathea is a legendary planet", answer); // RAG stayed on
     }
