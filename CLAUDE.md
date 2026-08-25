@@ -28,6 +28,10 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
    authority on structure. On conflict, trust code and fix the doc in the same MR.
 3. **Quality gates** live in `.agentic/quality-gates.yaml` — read them, never hardcode
    thresholds. Tests are written alongside implementation, never deferred.
+   **Every gate there must name a measuring tool in this repo (ADR 0050)** — a threshold
+   nothing measures cannot fail, so it is not a gate. Adding one without tooling fails
+   `QualityGateTests`. Never estimate an "Actual" value to fill a gate table; report
+   SKIPPED and fix the gate.
 4. **Dependency versions are resolved, never recalled.** When adding a package, never
    write a version number from memory — let the tooling resolve the latest stable
    (`dotnet add package X`, `npm install X@latest`) and pin it where the repo pins
@@ -70,8 +74,9 @@ the per-step discipline; plain subagents don't.
 
 **Convention enforcement:** conventions here are enforced by tooling
 (`dotnet format` whitespace/IDE analyzers — checked in CI; lefthook pre-push +
-`.claude/hooks/protect-main.mjs` for branch protection; no extra Roslyn analyzers yet).
-If you find yourself about to document a mechanical rule, add a lint rule instead.
+`.claude/hooks/protect-main.mjs` for branch protection; **`SonarAnalyzer.CSharp` for
+cognitive complexity, and exactly that one rule** — ADR 0050). If you find yourself about
+to document a mechanical rule, add a lint rule instead.
 
 ## Repo-specific notes
 
@@ -330,6 +335,31 @@ If you find yourself about to document a mechanical rule, add a lint rule instea
   cache bumped `agent42-shell-v20` → `-v21`. The manual DevHost leg **was** run (headless Chrome over CDP)
   and ADR 0049 records the observed values — including the one thing it cannot show, since DevHost's canned
   chat client ignores the system prompt entirely.
+- Quality gates are measurable or absent (ADR 0050): `.agentic/quality-gates.yaml` used to carry **five**
+  gates of which **four had no measuring tool in the repo** — they are SonarQube "Clean as You Code"
+  metrics and there is no Sonar here (`pr-checks.yml` said so itself, and `.agentic/optional-skills/sonar/`
+  sits uninstalled). Three are now **deleted** (`new_issues`, `new_security_issues`, `duplication_pct_max`
+  — `new_issues: 0` without a definition of "issue" is unfalsifiable); the two that remain are real.
+  **`coverage_new_code_pct_min`** is enforced by `.agentic/scripts/check-new-code-coverage.mjs` in a new CI
+  job — coverlet's cobertura report intersected with `git diff -U0` against the merge base, so it gates the
+  lines a branch **added**, not the repo's overall number (`fetch-depth: 0` is load-bearing; a shallow
+  checkout has no merge base and would silently gate nothing). **`cognitive_complexity_max`** is enforced at
+  **build time** by `SonarAnalyzer.CSharp` rule **S3776** — a `GlobalPackageReference` (CPM's analyzer form,
+  implies `PrivateAssets="all"`), no Sonar server, no token, no Java, no extra CI job. Three things to know
+  before touching it: **cognitive ≠ cyclomatic** (`ChatCoreAsync` is 29 cyclomatic and **39 cognitive**), so
+  the installed `dotnet-complexity` skill — which reads a `cyclomatic_complexity_max` key that deliberately
+  does not exist here — is **informational only** and never scores this gate; **exactly ONE Sonar rule is
+  adopted**, because the other ~400 produce ~300 warnings that fire on this repo's own idioms (S108 ×40 on
+  `catch { /* best effort */ }`, S125 ×30 on its dense comments), so `.editorconfig` defaults every analyzer
+  diagnostic to `none` and re-enables S3776 alone; and the **threshold is the analyzer's built-in default of
+  15**, which is why the yaml can say 15 with no second number to drift — it is settable only via a
+  `SonarLint.xml` `AdditionalFiles` entry, **not** `.editorconfig` (silently ignored, measured), and
+  `QualityGateTests` fails if the two ever disagree. **The gate does not block yet:** eleven pre-existing
+  methods exceed 15 (listed in ADR 0050; five are `Map*Endpoints` partials where the metric sums independent
+  registration lambdas — an ADR 0040 idiom artifact), so S3776 is at `warning`, visible in every build but
+  not `-warnaserror`. It becomes blocking when that backlog is cleared. The trap that cost a wrong answer
+  once already: **S3776 ships at `info` severity**, so a build that does not set it explicitly reports zero
+  violations while eleven exist.
 - Per-agent API key + async run (ADR 0022): each stored agent has a **per-agent API key** (minted on
   create, **shown once**, only its **SHA-256 hash** stored on `AgentDefinition [Id(9)]`, **regenerate**-on-edit)
   and a fire-and-forget **`POST /api/agent-run`** — `multipart/form-data` (a `prompt` field + optional `file`

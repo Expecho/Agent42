@@ -3,6 +3,17 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The measuring tool for `cognitive_complexity_max` in .agentic/quality-gates.yaml (ADR 0050).
+         Cognitive complexity is a Sonar metric (rule S3776); the .NET SDK ships no equivalent, which is
+         why that gate was unmeasurable — and unfalsifiable — before this.
+         GlobalPackageReference, not PackageVersion + per-project PackageReference: it applies to every
+         project and implies PrivateAssets="all", which is exactly right for a build-time analyzer (it
+         must never flow to consumers as a dependency).
+         Exactly ONE of its ~400 rules is adopted; see .editorconfig for the measurement behind that. -->
+    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.33.0.1635" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Aspire -->
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.4.6" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.4.6" />
