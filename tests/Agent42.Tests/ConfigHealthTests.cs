@@ -37,6 +37,8 @@ public sealed class ConfigHealthTests
         ("Storage:BlobEndpoint", "https://acct.blob.core.windows.net"),
         ("Geocoding:GoogleApiKey", "SECRET-google-key"),
         ("ContextScrape:ApiKey", "SECRET-context-key"),
+        ("GoogleCalendar:ClientId", "SECRET-google-oauth-client-id"),
+        ("GoogleCalendar:ClientSecret", "SECRET-google-oauth-client-secret"),
     ];
 
     private static ConfigCheck Find(ConfigHealthReport report, string key) =>
@@ -54,6 +56,38 @@ public sealed class ConfigHealthTests
         Assert.Equal(ConfigHealth.Ok, Find(report, "Geocoding:GoogleApiKey").Status);
         Assert.Equal(ConfigHealth.Ok, Find(report, "ContextScrape:ApiKey").Status);
         Assert.Equal(ConfigHealth.Ok, Find(report, "Push:Vapid").Status);
+        Assert.Equal(ConfigHealth.Ok, Find(report, "GoogleCalendar:ClientId").Status);
+        Assert.Equal(ConfigHealth.Ok, Find(report, "GoogleCalendar:ClientSecret").Status);
+    }
+
+    // AC11 (ADR 0053). Presence only, and the two halves are reported SEPARATELY: a Google Web
+    // application client is confidential, so setting only the id leaves the token exchange broken, and
+    // an operator who did that has to be able to see which half is missing.
+    [Fact]
+    public void ConfigHealth_ReportsGoogleCalendarClientPresence()
+    {
+        var report = ConfigHealth.BuildStatic(
+            Config(AllSecretsSet.Where(e => e.Key != "GoogleCalendar:ClientSecret").ToArray()),
+            Env(), Push(enabled: true));
+
+        Assert.Equal(ConfigHealth.Ok, Find(report, "GoogleCalendar:ClientId").Status);
+        Assert.Equal(ConfigHealth.Warning, Find(report, "GoogleCalendar:ClientSecret").Status);
+
+        // Neither check carries a VALUE — the whole report is a status plus a curated message, and a
+        // secret leaking into the Configuration tab would be visible to every allowlisted user.
+        var json = JsonSerializer.Serialize(report);
+        Assert.DoesNotContain("SECRET-google-oauth-client-id", json, StringComparison.Ordinal);
+
+        // There is deliberately NO live probe (derived decision (k)): every other probe here is
+        // operator-keyed, but a calendar probe would need a USER's OAuth token and would be meaningless
+        // with none connected. Asserted against the shape probe keys ACTUALLY take — every one of them is
+        // "probe:*" and carries Billable — because an assertion phrased against a display name could
+        // never fail, and this rule is otherwise unguarded.
+        Assert.DoesNotContain(
+            report.Checks,
+            c => c.Key.StartsWith("probe:", StringComparison.Ordinal)
+                && c.Key.Contains("google", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(report.Checks, c => c.Billable && c.Key.Contains("Calendar", StringComparison.Ordinal));
     }
 
     // AC1: a missing optional secret is a warning, not an error (the app boots fine without it).

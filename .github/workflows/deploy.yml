@@ -95,6 +95,8 @@ jobs:
               searxngSecret="${{ secrets.SEARXNG_SECRET }}" \
               googleMapsApiKey="${{ secrets.GOOGLE_MAPS_API_KEY }}" \
               contextApiKey="${{ secrets.CONTEXT_API_KEY }}" \
+              googleOAuthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
+              googleOAuthClientSecret="${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}" \
               vapidPrivateKey="${{ secrets.VAPID_PRIVATE_KEY }}" \
               cosmosLocation="northeurope" \
               otlpEndpoint="http://home.peterbons.nl:4317" \

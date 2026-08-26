@@ -263,7 +263,8 @@ to document a mechanical rule, add a lint rule instead.
   override** (composer "Tools" popover, non-agent chats only), and a **per-agent** set (agent editor,
   snapshotted into the conversation like ADR 0003). The selectable set is a curated catalog of **keys**
   (`ToolCatalog`, the single source of truth for the **static** ones, exposed via `GET /api/tools`):
-  `web_search`, `location`, `scheduling`, `code_interpreter`; `get_date` and document RAG stay always-on.
+  `web_search`, `location`, `scheduling`, `code_interpreter`, `calendar` (ADR 0053); `get_date` and
+  document RAG stay always-on.
   **`skills` is no longer among them** — since ADR 0048 it is a **wildcard** (in `AllSelectableToolKeys`,
   **not** in `Descriptors`) and the picker renders one `skill:{name}` box per shipped skill, exactly as ADR
   0026 did to `mcp`. `EnabledTools`
@@ -335,6 +336,52 @@ to document a mechanical rule, add a lint rule instead.
   cache bumped `agent42-shell-v20` → `-v21`. The manual DevHost leg **was** run (headless Chrome over CDP)
   and ADR 0049 records the observed values — including the one thing it cannot show, since DevHost's canned
   chat client ignores the system prompt entirely.
+- Google Calendar tools (ADR 0053): six model-invoked tools — `list_calendars`, `list_calendar_events`,
+  `get_calendar_event`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event` — over
+  the Calendar REST API v3, authorized by a **per-user** Google OAuth connection made in Preferences →
+  Calendar. A co-hosted first-party MCP server and a third-party ADR 0024 one were both **considered and
+  rejected by the user** (the request was reversed in one round); native tools reuse `IGeocoder`'s
+  port/adapter shape and add no transport. Port `ICalendarService` (Agents `Calendar/`, the 18th folder),
+  adapter `GoogleCalendarService` (Backend `Calendar/`, the 19th), `InMemoryCalendarService` for
+  DevHost/tests, an 11th `AgentGrain` partial and the 14th endpoint group. **The credential never crosses
+  the port** — every method takes `userId` first and the adapter resolves/decrypts/refreshes itself (the
+  `UserMcpToolProvider.ResolveOAuthAccessTokenAsync` shape, 2-minute skew, persist-the-new-bundle);
+  `CalendarPort_ExposesNoCredential` pins it. **One adapter, self-reporting** — there is deliberately no
+  `NotConfiguredCalendarService` twin of `CoordinatesOnlyGeocoder`, because a blank
+  `GoogleCalendar:ClientId`/`ClientSecret` and an unconnected user are the *same* curated result;
+  `InMemoryCalendarService` must never be registered by the Backend. Google is a **confidential** client
+  (a Web application client needs `client_secret` on the exchange, so **two** config values), its
+  endpoints are **constants** — no PRM discovery — but held as constructor values with Google as the
+  pinned default so the flow is testable against a fake authorization server, and `GooglePkce` is a
+  deliberate **copy** of `McpPkce` (the ADR 0035 `ShareToken`←`ApiKey` precedent). Scope is the narrow
+  **pair** `calendar.events` + `calendar.calendarlist.readonly`, never the broad `.../auth/calendar`,
+  which would add exactly the out-of-scope operations (create/delete a calendar, change sharing) — the
+  bound that matters given no confirmation gate; no `openid`/`email` scope, since the identity is the
+  primary calendar's id. Two **optional** secrets (`GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET`,
+  the `GOOGLE_MAPS_API_KEY` shape, not `SEARXNG_SECRET`'s), two new states on `agent-state`
+  (`google-credentials`, `google-oauth-pending`) — **no new Cosmos container, no RBAC step** — and a third
+  DP purpose. `excludedPaths` is **unchanged**: all four `/api/google/*` routes stay behind Easy Auth, and
+  `EasyAuthExclusionTests` gains three rows to actually assert that; the endpoints resolve their deps
+  **optionally via `IServiceProvider`** (the `/api/speech` pattern), so zero new mandatory API
+  registrations — while `ICalendarService` **is** a mandatory grain dependency (4 edit sites, 6 silo
+  configurators, both hosts). Config is `GoogleCalendar:*` while routes are `/api/google/*` —
+  a **deliberate asymmetry** (`Geocoding:GoogleApiKey` already exists; the redirect URI is hand-registered
+  in Google Cloud). Setup guide: `docs/integrations/google-calendar/README.md`, first entry in a new
+  `docs/integrations/` tree. **Four headline consequences:** the READ side puts event titles, locations
+  and **shared-calendar ids (other people's email addresses)** into the transcript, where ADR 0013 egress,
+  ADR 0027's allowlist-exempt followed links, ADR 0035 share links and ADR 0032's unencrypted IndexedDB
+  all reach it; a prompt injection (ADR 0011/0027/0049) can rewrite or delete entries, with no
+  confirmation gate — an accepted residual; the tools are **live on `ReceiveReminder` and
+  `/api/agent-run`**, so a model-invoked delete can fire with no user present; and the new `calendar` key
+  lands **OFF for anyone who ever pressed Save** (the ADR 0048 divergence — a stored selection is an
+  explicit list), with **no migration** by design, so after deploying press Save once in Preferences →
+  Tools. Listing uses `singleEvents=true`, so ids are **instance** ids and an edit touches one occurrence,
+  never the series (said in the tool descriptions); `sendUpdates=none` is pinned on every write, because a
+  pre-existing event may already carry attendees. The outbound span is **suppressed** — OTel redacts a
+  query string but not a path, and the path carries the calendar id. Incognito chats (ADR 0034) may still
+  write to the calendar, deliberately and with a test pinning the non-refusal. Shell cache bumped
+  `agent42-shell-v22` → `-v23`. The DevHost leg was run (headless Chrome over CDP); the **real Google leg
+  is an honest unverified residual** — it needs the manual Google Cloud prerequisites.
 - Quality gates are measurable or absent (ADR 0050): `.agentic/quality-gates.yaml` used to carry **five**
   gates of which **four had no measuring tool in the repo** — they are SonarQube "Clean as You Code"
   metrics and there is no Sonar here (`pr-checks.yml` said so itself, and `.agentic/optional-skills/sonar/`
@@ -660,7 +707,7 @@ to document a mechanical rule, add a lint rule instead.
   Read the hoist-out-of-the-group gotcha before touching `renderSidebar`.
 - Long press reveals a row's actions on touch (ADR 0052, **amends 0045**): the pin/share/delete glyphs no
   longer sit lit on every sidebar row of the installed PWA. They are hidden and **inert** until a **~400 ms
-  press-and-hold** marks one row `.is-revealed` (`wireRowReveal` in `wwwroot/js/sidebar.js` — the repo's
+  press-and-hold** marks one row `.is-revealed` (`wireRowReveal` in `src/Agent42.Backend/wwwroot/js/sidebar.js` — the repo's
   **first** pointer-event handler). Frontend-only: no endpoint, grain, secret or Bicep change.
   **Two things make it harder than an opacity swap, and both were caught in review, not testing.** First,
   **`(hover: none)` UAs still match `:hover`** — Android Chrome applies it on tap and press-and-hold and
@@ -761,9 +808,9 @@ to document a mechanical rule, add a lint rule instead.
   source-text asset guard** (the fixture's `GetAppScriptAsync()` walks the import graph over HTTP).
   All three are in gotchas, and all three are asserted in `ProjectLayoutTests`/`PwaAssetsTests`.
   `styles.css` and `index.html`'s markup are deliberately untouched — separate MRs.
-- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **17 top-level feature folders**
+- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **18 top-level feature folders**
   (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …), and `AgentGrain` is split into
-  **10 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`
+  **11 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`
   namespace — folders and namespaces deliberately DISAGREE, and that is load-bearing, not sloppiness.**
   Orleans Cosmos grain storage uses `JsonGrainStorageSerializer`, which writes the full CLR type name
   into every document (`"$type":"Agent42.Agents.AgentGrainState, Agent42.Agents"`), so giving a
@@ -777,10 +824,10 @@ to document a mechanical rule, add a lint rule instead.
   binary path) and is **not** what protects data at rest. `ReceiveReminder` stays in the core `AgentGrain`
   part beside `ChatAsync` (the `_turnLocation`/`_ephemeral` clears must be read together); `Skills/` does
   not move (csproj `Content` glob); `Agent42.Tests` stays flat on purpose.
-- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **18
+- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **19
   feature folders** mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
   visibly with `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`), **flat `Agent42.Backend` namespace**, and
-  `Program.cs` alone at the project root. `MapAgentApi` is split into **13 per-feature partials**
+  `Program.cs` alone at the project root. `MapAgentApi` is split into **14 per-feature partials**
   (`src/Agent42.Backend/Mcp/AgentApi.Mcp.cs`, …) with `src/Agent42.Backend/Api/AgentApi.cs` reduced to a 50-line composition root, and the 25
   request/response records live beside their feature as `*Contracts.cs`. Backend persists nothing, so
   the flat namespace is **not** forced here as it is in Agents — it is kept flat for consistency and

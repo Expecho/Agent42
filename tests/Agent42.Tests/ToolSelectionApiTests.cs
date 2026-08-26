@@ -102,7 +102,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         Assert.Equal(
             new[]
             {
-                "web_search", "location", "scheduling", "code_interpreter",
+                "web_search", "location", "scheduling", "code_interpreter", "calendar",
                 "skill:scheduledprompt", "skill:websearch",
             }.Order(),
             keys.Order());

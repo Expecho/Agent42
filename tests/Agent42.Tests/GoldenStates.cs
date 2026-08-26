@@ -103,6 +103,22 @@ public static class GoldenStates
             Version: 3),
     };
 
+    public static UserGoogleState UserGoogle() => new()
+    {
+        Connection = new GoogleConnection(
+            "cipher-access", "cipher-refresh", Updated, "golden@example.com", Created),
+    };
+
+    public static UserGoogleOAuthPendingState UserGoogleOAuthPending() => new()
+    {
+        Pending =
+        [
+            new GoogleOAuthPending(
+                "google-state-1", "google-verifier-1",
+                "https://chat.agent42.nl/api/google/oauth/callback", Created),
+        ],
+    };
+
     public static UserMcpOAuthPendingState UserMcpOAuthPending() => new()
     {
         Pending =

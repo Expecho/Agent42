@@ -47,6 +47,10 @@ builder.AddProject<Projects.Agent42_Backend>("backend")
     // full-stack run can exercise the real fetcher. Absent is fine — it degrades to a per-call failure,
     // not a startup throw (it is deliberately NOT on the availability path, unlike SEARXNG_SECRET above).
     .WithEnvironment("ContextScrape__ApiKey", builder.Configuration["ContextScrape:ApiKey"] ?? "")
+    // Google Calendar (ADR 0053). Forwarded the same way as the context.dev key: optional, so an
+    // empty value is a working local run with the calendar tools reporting "not connected".
+    .WithEnvironment("GoogleCalendar__ClientId", builder.Configuration["GoogleCalendar:ClientId"] ?? "")
+    .WithEnvironment("GoogleCalendar__ClientSecret", builder.Configuration["GoogleCalendar:ClientSecret"] ?? "")
     .WaitFor(cosmos)
     .WaitFor(blobs)
     .WaitFor(searxng);
