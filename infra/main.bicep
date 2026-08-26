@@ -45,6 +45,14 @@ param googleMapsApiKey string = ''
 param contextApiKey string = ''
 
 @secure()
+@description('OAuth client id for the Google Calendar connection (ADR 0053 — the GOOGLE_OAUTH_CLIENT_ID GitHub Actions secret). A manual prerequisite, but deliberately OPTIONAL like googleMapsApiKey/contextApiKey (no @minLength, empty default): an absent value must NOT fail the deployment. It is not on the availability path — the app starts fine without it, GET /api/google/status reports configured:false, and the calendar tools return a curated "not connected" notice per call. Paired with googleOAuthClientSecret: the Google Web application client type is CONFIDENTIAL, so the token exchange needs BOTH.')
+param googleOAuthClientId string = ''
+
+@secure()
+@description('OAuth client secret for the Google Calendar connection (ADR 0053 — the GOOGLE_OAUTH_CLIENT_SECRET GitHub Actions secret). Same optionality as googleOAuthClientId, and required alongside it: a Google Web application client is a confidential client and PKCE alone is not accepted on the token exchange.')
+param googleOAuthClientSecret string = ''
+
+@secure()
 @description('VAPID private key for Web Push notifications (ADR 0028 — the VAPID_PRIVATE_KEY GitHub Actions secret). A manual prerequisite, but deliberately OPTIONAL like googleMapsApiKey/contextApiKey (no @minLength, empty default): an absent key must NOT fail the deployment. It is not on the availability path — the app starts fine without it and push simply stays disabled (the UI hides the toggle). The matching public key + subject are non-secret and committed in appsettings.json.')
 param vapidPrivateKey string = ''
 
@@ -187,6 +195,8 @@ module containerApp 'modules/container-app.bicep' = {
     googleMapsApiKey: googleMapsApiKey
     contextApiKey: contextApiKey
     vapidPrivateKey: vapidPrivateKey
+    googleOAuthClientId: googleOAuthClientId
+    googleOAuthClientSecret: googleOAuthClientSecret
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint

@@ -58,6 +58,8 @@ public sealed class GrainStorageSerializerTests : IAsyncLifetime
         "Agent42.Agents.ConversationIndexState",
         "Agent42.Agents.ShareLinkDirectoryState",
         "Agent42.Agents.UsageRollupState",
+        "Agent42.Agents.UserGoogleOAuthPendingState",
+        "Agent42.Agents.UserGoogleState",
         "Agent42.Agents.UserMcpConfigState",
         "Agent42.Agents.UserMcpOAuthPendingState",
         "Agent42.Agents.UserProfileState",

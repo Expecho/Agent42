@@ -15,7 +15,9 @@ vanilla-JS frontend · Bicep + GitHub Actions → Azure Container Apps.
 
 Everything below is what you get as a signed-in user in the web app. For a developer
 walkthrough of each feature — how it works, how Agent Framework and Orleans fit in, with flow
-diagrams and code — see [`docs/features/`](docs/features/README.md).
+diagrams and code — see [`docs/features/`](docs/features/README.md). Features that need setup outside this repo
+(an account, an app registration, a redirect URI) have a guide in
+[`docs/integrations/`](docs/integrations/README.md).
 
 ### Chat
 
@@ -53,6 +55,11 @@ into a **custom agent**. Availability is also capped by what the chosen model su
   what's nearby, travel times, and "where am I".
 - **Scheduled reminders** — the agent can set durable reminders that fire later (once or
   repeating) and prompt it to follow up — even when you're not watching.
+- **Google Calendar** — after you connect your Google account once (Preferences → Calendar), the
+  agent can see what's on your calendars and create, change or delete events on them. It acts on
+  your request without asking you to confirm each change, and it cannot create or delete a calendar
+  or change who one is shared with. Setup:
+  [`docs/integrations/google-calendar/`](docs/integrations/google-calendar/README.md).
 - **Skills** — reusable markdown playbooks the agent loads on demand when a task matches.
 - **Code interpreter** — runs code to compute, analyze, and produce results (on models
   that support it).
@@ -205,6 +212,8 @@ locally everything maps to a single `local-dev` pseudo-user.
 - `GET /api/mcp/oauth/start` · `GET /api/mcp/oauth/callback` — MCP interactive OAuth flow
 - `GET /api/push/config` · `POST/DELETE /api/push/subscriptions` — Web Push
 - `GET /api/config-health` — configuration health report (never contains a secret value)
+- `GET /api/google/status` · `GET /api/google/oauth/start` · `GET /api/google/oauth/callback` ·
+  `DELETE /api/google/connection` — the per-user Google Calendar connection (ADR 0053)
 
 ## Deployment
 
@@ -214,7 +223,9 @@ app runs on Azure Container Apps behind Entra ID Easy Auth at chat.agent42.nl.
 
 Several manual prerequisites live outside the code as GitHub Actions secrets — required
 ones (`AzureOpenAI:ApiKey`, `SEARXNG_SECRET`) and optional feature keys
-(`GOOGLE_MAPS_API_KEY`, `CONTEXT_API_KEY`, `VAPID_PRIVATE_KEY`). See `.agentic/gotchas.md`
+(`GOOGLE_MAPS_API_KEY`, `CONTEXT_API_KEY`, `VAPID_PRIVATE_KEY`, `GOOGLE_OAUTH_CLIENT_ID`,
+`GOOGLE_OAUTH_CLIENT_SECRET`). Integrations needing setup outside this repo have a step-by-step
+guide in [`docs/integrations/`](docs/integrations/README.md). See `.agentic/gotchas.md`
 before touching infra: Cosmos region/containers, the custom domain, RBAC grants, and the
 search sidecar all carry constraints that are invisible in the code.
 

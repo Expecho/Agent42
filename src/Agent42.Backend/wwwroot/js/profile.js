@@ -6,6 +6,7 @@ import { LANGUAGES } from "./format.js";
 import { updateLocationControl } from "./location.js";
 import { loadMcpServers } from "./mcp.js";
 import { loadProviders } from "./providers.js";
+import { loadGoogleStatus } from "./calendar.js";
 import { loadSkills } from "./skills.js";
 import { updatePushControl } from "./push.js";
 import { applyTheme } from "./theme.js";
@@ -58,6 +59,7 @@ export async function openProfileDialog() {
   loadProviders(); // refresh the user's providers list alongside the profile
   loadMcpServers(); // and their MCP servers (config-driven remote MCP servers)
   loadSkills(); // and their uploaded skills (ADR 0049)
+  loadGoogleStatus(); // and whether Google Calendar is connected (ADR 0053)
   loadConfigHealth(); // and the STATIC configuration health (live probes are opt-in, on the button)
   profileDialog.showModal();
   profileLanguage.focus();

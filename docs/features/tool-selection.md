@@ -7,7 +7,7 @@
 ## What it is
 
 You pick which of the curated tools (`web_search`, `location`, `scheduling`, `skills`,
-`code_interpreter`, plus your MCP servers) an assistant may use, remembered at three layers:
+`code_interpreter`, `calendar`, plus your MCP servers) an assistant may use, remembered at three layers:
 
 - **User default** (Preferences → default tools) — every new regular chat.
 - **Per-conversation override** (the composer's "Tools" popover) — non-agent chats only.
@@ -43,9 +43,10 @@ public const string Location = "location";
 public const string Scheduling = "scheduling";
 public const string Skills = "skills";
 public const string CodeInterpreter = "code_interpreter";
+public const string Calendar = "calendar";     // ADR 0053
 ...
 public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-    [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp];
+    [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Calendar, Mcp];
 ```
 
 ### Three-layer resolution

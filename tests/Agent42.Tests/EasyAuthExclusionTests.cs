@@ -81,6 +81,12 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/api/usage")]
     [InlineData("/api/profile")]
     [InlineData("/api/mcp/oauth/start")]
+    // AC12 (ADR 0053). A Google OAuth route reachable outside Easy Auth would make GetUserId() return
+    // the local-dev principal and bind every user's calendar tokens to one phantom identity — so all
+    // three are named here one at a time, because that is how this theory proves gating at all.
+    [InlineData("/api/google/status")]
+    [InlineData("/api/google/oauth/start")]
+    [InlineData("/api/google/oauth/callback")]
     public void Exclusions_DoNotCoverAnyAuthenticatedPath(string path)
     {
         var entries = ExcludedPaths();

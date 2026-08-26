@@ -84,6 +84,7 @@ public sealed class CapSizedFetcherSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IWebSearch, InMemoryWebSearch>();
             services.AddSingleton<IWebPageFetcher, CapSizedWebPageFetcher>();
             services.AddSingleton<IGeocoder, FakeGeocoder>();
+            services.AddSingleton<ICalendarService, FakeCalendarService>();
         });
     }
 }

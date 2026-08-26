@@ -32,6 +32,22 @@ public static class ToolCatalog
     public const string CodeInterpreter = "code_interpreter";
 
     /// <summary>
+    /// The Google Calendar tools (ADR 0053) — all six under one key, because they are one capability
+    /// and a user who wants the agent reading their calendar but not writing to it is asking for a
+    /// confirmation gate, which was considered and rejected.
+    ///
+    /// <para><b>This key lands OFF for anyone who has ever pressed Save.</b> <c>null == all</c> only
+    /// helps a user who has never narrowed a selection: the picker materialises "all" as the full
+    /// EXPLICIT list, so a stored selection cannot contain a key that did not exist when it was saved.
+    /// There is deliberately no migration (ADR 0049's auto-enable hook had an upload to hang itself on;
+    /// a shipped key has no such event, and rewriting every stored selection to add a key the user never
+    /// chose is a worse precedent than one re-save). The remedy is one press of Save in Preferences →
+    /// Tools, and it is documented rather than automated.
+    /// <c>LegacyStoredSelection_DoesNotEnableCalendar_ButNullDoes</c> pins both halves.</para>
+    /// </summary>
+    public const string Calendar = "calendar";
+
+    /// <summary>
     /// The agent-skills <b>wildcard</b> ("all skills") meta-key (per-skill selectable tools, amends 0021).
     /// Each skill is individually selectable as a per-skill key <c>skill:{name}</c> (see
     /// <see cref="SkillKey"/>) — both the ones shipped in <see cref="SkillCatalog"/> and the ones the user
@@ -76,7 +92,7 @@ public static class ToolCatalog
     /// today's "every tool on" behaviour with no migration.
     /// </summary>
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp];
+        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Calendar, Mcp];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
     // web_search is intentionally the key for BOTH the SearXNG shims and HostedWebSearchTool — the hosted
@@ -98,6 +114,12 @@ public static class ToolCatalog
         ["load_skill"] = Skills,
         ["read_skill_resource"] = Skills,
         ["run_skill_script"] = Skills,
+        ["list_calendars"] = Calendar,
+        ["list_calendar_events"] = Calendar,
+        ["get_calendar_event"] = Calendar,
+        ["create_calendar_event"] = Calendar,
+        ["update_calendar_event"] = Calendar,
+        ["delete_calendar_event"] = Calendar,
     };
 
     /// <summary>
@@ -110,6 +132,7 @@ public static class ToolCatalog
         new(Location, "Location", RequiresHostedTools: false),
         new(Scheduling, "Scheduling", RequiresHostedTools: false),
         new(CodeInterpreter, "Code interpreter", RequiresHostedTools: true),
+        new(Calendar, "Calendar", RequiresHostedTools: false),
         // Skills is NOT here — skills surface as per-skill descriptors appended by GET /api/tools (ADR 0048),
         // and since ADR 0049 that list is PER-USER: the shipped set overlaid with the user's uploads. The
         // bare `skills` wildcard is a selection sentinel only, never a rendered checkbox.
