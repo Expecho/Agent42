@@ -27,6 +27,57 @@ public class ToolCatalogTests
         Assert.DoesNotContain(ToolCatalog.Descriptors, d => d.Key == ToolCatalog.Skills);
     }
 
+    // ── Calendar (ADR 0053) ─────────────────────────────────────────────────────────────────────────
+
+    [Fact] // AC10 — one key gates all six calendar tools, and it IS a rendered checkbox (unlike the wildcards).
+    public void Calendar_IsSelectable_AndGatesItsTools()
+    {
+        Assert.Contains(ToolCatalog.Calendar, ToolCatalog.AllSelectableToolKeys);
+        Assert.Contains(ToolCatalog.Descriptors, d => d.Key == ToolCatalog.Calendar);
+        Assert.False(
+            ToolCatalog.Descriptors.Single(d => d.Key == ToolCatalog.Calendar).RequiresHostedTools,
+            "The calendar tools are ordinary function tools — they do not need a hosted-tools model.");
+
+        string[] tools =
+        [
+            "list_calendars", "list_calendar_events", "get_calendar_event",
+            "create_calendar_event", "update_calendar_event", "delete_calendar_event",
+        ];
+
+        var off = new HashSet<string>(ToolCatalog.AllSelectableToolKeys.Where(k => k != ToolCatalog.Calendar));
+        var on = new HashSet<string>(ToolCatalog.AllSelectableToolKeys);
+
+        foreach (var tool in tools)
+        {
+            Assert.Equal(ToolCatalog.Calendar, ToolCatalog.KeyFor(tool));
+            Assert.False(ToolCatalog.IsToolEnabled(tool, off), $"{tool} must be gated by the calendar key.");
+            Assert.True(ToolCatalog.IsToolEnabled(tool, on), $"{tool} must be enabled by the calendar key.");
+        }
+    }
+
+    // AC17. Derived decision (l), stated as a test because the behaviour looks like a bug and is not:
+    // `null == all` only helps a user who has NEVER narrowed a selection. The picker materialises "all"
+    // as the full EXPLICIT list, so anyone who has ever pressed Save in Preferences → Tools holds a
+    // non-null selection that cannot contain `calendar` — the key did not exist when they saved. There is
+    // deliberately no migration; the remedy is one more press of Save, and it is documented.
+    [Fact]
+    public void LegacyStoredSelection_DoesNotEnableCalendar_ButNullDoes()
+    {
+        // What a Save looked like BEFORE this feature shipped: every key that existed then, explicitly.
+        var legacy = new HashSet<string>(
+            ["web_search", "location", "scheduling", "skills", "code_interpreter", "mcp"]);
+
+        Assert.False(
+            ToolCatalog.IsToolEnabled("list_calendar_events", legacy),
+            "A selection saved before the calendar key existed cannot contain it — that is the ADR 0048 "
+                + "divergence, and it is why the MR says to press Save once after deploying.");
+
+        // …while a user who never narrowed anything resolves through the null == all fallback and DOES
+        // get it. Both halves matter: the first is the trap, the second is why there is no migration.
+        var never = new HashSet<string>(ToolCatalog.AllSelectableToolKeys);
+        Assert.True(ToolCatalog.IsToolEnabled("list_calendar_events", never));
+    }
+
     [Fact] // AC7 — a per-skill key round-trips through Sanitize, deduped; garbage is dropped.
     public void Sanitize_PreservesPerSkillKeys_AndDropsGarbage()
     {

@@ -94,17 +94,17 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Agents",
             [
-                "Attachments", "Conversations", "Documents", "ImageGeneration", "Location", "Mcp",
-                "Models", "Push", "Scheduling", "Sharing", "Skills", "Speech", "StoredAgents",
+                "Attachments", "Calendar", "Conversations", "Documents", "ImageGeneration", "Location",
+                "Mcp", "Models", "Push", "Scheduling", "Sharing", "Skills", "Speech", "StoredAgents",
                 "Telemetry", "Tools", "UserSkills", "Users", "Web",
             ]
         },
         {
             "Agent42.Backend",
             [
-                "Api", "Attachments", "Configuration", "Conversations", "Documents", "ImageGeneration",
-                "Location", "Mcp", "Models", "Properties", "Push", "Sharing", "Speech", "StoredAgents",
-                "Telemetry", "Tools", "UserSkills", "Users", "Web", "wwwroot",
+                "Api", "Attachments", "Calendar", "Configuration", "Conversations", "Documents",
+                "ImageGeneration", "Location", "Mcp", "Models", "Properties", "Push", "Sharing",
+                "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web", "wwwroot",
             ]
         },
     };
@@ -126,7 +126,7 @@ public sealed class ProjectLayoutTests
         Assert.Equal(expected, actual);
     }
 
-    /// <summary>The ten parts of <c>AgentGrain</c> (ADR 0039) and the folder each belongs to.</summary>
+    /// <summary>The eleven parts of <c>AgentGrain</c> (ADR 0039) and the folder each belongs to.</summary>
     public static TheoryData<string> AgentGrainParts() =>
     [
         "Conversations/AgentGrain.cs",
@@ -139,6 +139,7 @@ public sealed class ProjectLayoutTests
         "ImageGeneration/AgentGrain.ImageTurn.cs",
         "Attachments/AgentGrain.Attachments.cs",
         "Push/AgentGrain.Push.cs",
+        "Calendar/AgentGrain.CalendarTools.cs",
     ];
 
     // Each part exists where planned and really is a part of the one AgentGrain class.
@@ -153,7 +154,7 @@ public sealed class ProjectLayoutTests
         Assert.Contains("partial class AgentGrain", File.ReadAllText(file), StringComparison.Ordinal);
     }
 
-    /// <summary>The thirteen endpoint groups <c>MapAgentApi</c> was split into, and the folder each sits in.</summary>
+    /// <summary>The fourteen endpoint groups <c>MapAgentApi</c> was split into, and the folder each sits in.</summary>
     public static TheoryData<string, string> AgentApiParts() => new()
     {
         { "Conversations/AgentApi.Conversations.cs", "MapConversationEndpoints" },
@@ -169,6 +170,7 @@ public sealed class ProjectLayoutTests
         { "Telemetry/AgentApi.Telemetry.cs", "MapTelemetryEndpoints" },
         { "Mcp/AgentApi.Mcp.cs", "MapMcpEndpoints" },
         { "UserSkills/AgentApi.UserSkills.cs", "MapUserSkillEndpoints" },
+        { "Calendar/AgentApi.Calendar.cs", "MapCalendarEndpoints" },
     };
 
     // Each endpoint group exists, is a partial of the one AgentApi class, and — the part that matters —
@@ -230,6 +232,11 @@ public sealed class ProjectLayoutTests
     {
         { "agents.js", "wireAgents" },
         { "attachments.js", "wireAttachments" },
+        { "calendar.js", "wireCalendar" },
+        // calendar.js has TWO entry points, for the same reason mcp.js does: dropping the
+        // initGoogleOAuthReturn() call silently kills the ADR 0053 connect return, so a user who has
+        // just consented at Google lands on a blank app with no idea whether it worked.
+        { "calendar.js", "initGoogleOAuthReturn" },
         { "composer.js", "wireComposer" },
         { "confighealth.js", "wireConfigHealth" },
         { "conversations.js", "wireConversations" },

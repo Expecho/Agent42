@@ -65,6 +65,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly IGeocoder _geocoder;
 
+    private readonly ICalendarService _calendar;
+
     private readonly IPushNotificationSender _pushSender;
 
     private readonly ILogger<AgentGrain> _logger;
@@ -173,6 +175,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         IWebSearch webSearch,
         IWebPageFetcher webPageFetcher,
         IGeocoder geocoder,
+        ICalendarService calendar,
         IPushNotificationSender pushSender,
         ILogger<AgentGrain> logger)
     {
@@ -185,6 +188,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _webSearch = webSearch;
         _webPageFetcher = webPageFetcher;
         _geocoder = geocoder;
+        _calendar = calendar;
         _pushSender = pushSender;
         _logger = logger;
     }

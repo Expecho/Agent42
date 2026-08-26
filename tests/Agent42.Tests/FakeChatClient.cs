@@ -313,6 +313,63 @@ public sealed class FakeChatClient : IChatClient
             ["query"] = "attacker.example the-secret-conversation",
         });
 
+    // ---- Calendar (ADR 0053) --------------------------------------------------------------------
+    //
+    // The four id-bearing calendar calls read the event id out of the PROMPT, after a marker. That is
+    // what makes a create → get → update → delete round-trip expressible at all: the fake cannot know
+    // the id the create returned, but the test can — it reads it out of the echoed tool result and puts
+    // it in the next prompt, exactly as a real model would carry it forward from its own history.
+
+    /// <summary>Prompt marker the fake reads a calendar event id from: "…calendar event {id}".</summary>
+    public const string CalendarEventIdMarker = "calendar event ";
+
+    private static FunctionCallContent BuildListCalendarsCall() =>
+        new("calendar-list-1", "list_calendars", new Dictionary<string, object?>());
+
+    private static FunctionCallContent BuildListCalendarEventsCall() =>
+        new("calendar-events-1", "list_calendar_events", new Dictionary<string, object?>());
+
+    private static FunctionCallContent BuildCreateCalendarEventCall() =>
+        new("calendar-create-1", "create_calendar_event", new Dictionary<string, object?>
+        {
+            ["title"] = "Lunch with Sam",
+            ["start"] = "2026-08-27T12:00:00+02:00",
+            ["end"] = "2026-08-27T13:00:00+02:00",
+        });
+
+    private static FunctionCallContent BuildGetCalendarEventCall(string text) =>
+        new("calendar-get-1", "get_calendar_event", new Dictionary<string, object?>
+        {
+            ["eventId"] = EventIdFrom(text),
+        });
+
+    private static FunctionCallContent BuildUpdateCalendarEventCall(string text) =>
+        new("calendar-update-1", "update_calendar_event", new Dictionary<string, object?>
+        {
+            ["eventId"] = EventIdFrom(text),
+            ["title"] = "Lunch with Sam (moved)",
+        });
+
+    private static FunctionCallContent BuildDeleteCalendarEventCall(string text) =>
+        new("calendar-delete-1", "delete_calendar_event", new Dictionary<string, object?>
+        {
+            ["eventId"] = EventIdFrom(text),
+        });
+
+    // Everything after the marker, up to the next space — the id a test pasted into the prompt.
+    private static string EventIdFrom(string text)
+    {
+        var at = text.IndexOf(CalendarEventIdMarker, StringComparison.OrdinalIgnoreCase);
+        if (at < 0)
+        {
+            return "";
+        }
+
+        var rest = text[(at + CalendarEventIdMarker.Length)..].Trim();
+        var space = rest.IndexOf(' ');
+        return space < 0 ? rest : rest[..space];
+    }
+
     // Picks the tool call (if any) the model should make for the current user turn.
     private static FunctionCallContent? SelectToolCall(IEnumerable<ChatMessage> messages, ChatOptions? options)
     {
@@ -405,6 +462,16 @@ public sealed class FakeChatClient : IChatClient
         ("look up", BuildWebSearchCall),
         ("schedule a location check", _ => BuildLocationReminderCall()),
         ("where am i", _ => BuildGetCurrentLocationCall()),
+        // Calendar (ADR 0053). The three id-bearing triggers come FIRST among the calendar ones, because
+        // each of their prompts also contains the word "calendar" and would otherwise be swallowed by
+        // the listing trigger below. None of them contains "cancel" or "remind", so they do not collide
+        // with the scheduling triggers at the top of this table.
+        ("get calendar event ", BuildGetCalendarEventCall),
+        ("update calendar event ", BuildUpdateCalendarEventCall),
+        ("delete calendar event ", BuildDeleteCalendarEventCall),
+        ("list my calendars", _ => BuildListCalendarsCall()),
+        ("what's on my calendar", _ => BuildListCalendarEventsCall()),
+        ("book a meeting", _ => BuildCreateCalendarEventCall()),
     ];
 
     private static int LastUserIndex(IReadOnlyList<ChatMessage> list)

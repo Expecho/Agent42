@@ -83,6 +83,59 @@ public sealed partial class AgentGrain
                 "is — local weather, what's nearby, travel times, 'where am I'. If the user has not " +
                 "shared their location, this says so; ask them to share it rather than guessing.");
 
+        // The six Google Calendar tools (ADR 0053). Two things are said in the DESCRIPTIONS rather than
+        // only in code, because they are what the model would otherwise get wrong out loud: listing
+        // EXPANDS recurring events, so an id names one occurrence and an edit or delete touches that
+        // occurrence and not the series; and everything is optional-calendar-id, defaulting to primary.
+        // CalendarToolDescriptions_StateTheSingleInstanceLimitation pins the first.
+        var listCalendars = AIFunctionFactory.Create(
+            ListCalendarsAsync,
+            name: "list_calendars",
+            description: "List the user's calendars — their ids, names and time zones. Use this when " +
+                "the user mentions a calendar other than their default one, so you can pass the right " +
+                "'calendarId' to the other calendar tools. Every other calendar tool defaults to the " +
+                "user's primary calendar, so you do not need this first for an ordinary request.");
+
+        var listCalendarEvents = AIFunctionFactory.Create(
+            ListCalendarEventsAsync,
+            name: "list_calendar_events",
+            description: "List the user's calendar events between two dates — use this for anything " +
+                "about their schedule ('what's on tomorrow', 'am I free Thursday', 'when is the " +
+                "review'). Dates are RFC 3339 or yyyy-MM-dd; with none given it covers the coming " +
+                "week. Recurring events are EXPANDED into individual occurrences, so each returned id " +
+                "identifies ONE occurrence, not the repeating series.");
+
+        var getCalendarEvent = AIFunctionFactory.Create(
+            GetCalendarEventAsync,
+            name: "get_calendar_event",
+            description: "Read one calendar event by its id, as returned by list_calendar_events. Use " +
+                "this when you need the full detail of an event you have already found.");
+
+        var createCalendarEvent = AIFunctionFactory.Create(
+            CreateCalendarEventAsync,
+            name: "create_calendar_event",
+            description: "Create an event on the user's calendar. Times are RFC 3339 " +
+                "(2026-08-27T09:00:00+02:00); for an all-day event pass yyyy-MM-dd dates and set " +
+                "allDay. Attendees cannot be invited — create the event and tell the user to invite " +
+                "people themselves. Confirm the details with the user before creating anything they " +
+                "did not clearly ask for.");
+
+        var updateCalendarEvent = AIFunctionFactory.Create(
+            UpdateCalendarEventAsync,
+            name: "update_calendar_event",
+            description: "Change an existing calendar event. Anything you leave out is left unchanged. " +
+                "Because list_calendar_events expands recurring events, an id from it names a SINGLE " +
+                "occurrence — this edits that one occurrence and cannot change a repeating series. Say " +
+                "so rather than claiming you changed the series.");
+
+        var deleteCalendarEvent = AIFunctionFactory.Create(
+            DeleteCalendarEventAsync,
+            name: "delete_calendar_event",
+            description: "Delete a calendar event by its id. Because list_calendar_events expands " +
+                "recurring events, this deletes ONE occurrence and cannot delete a whole repeating " +
+                "series. Deletion cannot be undone, so make sure the user has actually asked for it " +
+                "and that you have the right event.");
+
         // The web tools depend on the WIRE API, not just on tool support. On Chat Completions the model
         // reaches the web through our self-hosted SearXNG shims web_search/fetch_web_page (ADR 0011),
         // because Chat Completions 400s on OpenAI's hosted tools. A model running the Responses API
@@ -92,6 +145,8 @@ public sealed partial class AgentGrain
         List<AITool> tools =
         [
             schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime, getCurrentLocation,
+            listCalendars, listCalendarEvents, getCalendarEvent,
+            createCalendarEvent, updateCalendarEvent, deleteCalendarEvent,
         ];
         if (capabilities.SupportsHostedTools)
         {

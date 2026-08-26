@@ -86,6 +86,14 @@ param contextApiKey string = ''
 @description('VAPID private key for Web Push notifications (ADR 0028). OPTIONAL, exactly like googleMapsApiKey/contextApiKey: when empty, neither the secret nor the env var below is emitted, and push simply stays disabled (GET /api/push/config returns enabled:false, the UI hides the toggle) rather than failing to deploy. Not on the availability path. The matching public key + subject are non-secret and committed in appsettings.json.')
 param vapidPrivateKey string = ''
 
+@secure()
+@description('OAuth client id for the Google Calendar connection (ADR 0053). OPTIONAL, exactly like googleMapsApiKey/contextApiKey/vapidPrivateKey: when empty, neither the secret nor the env var below is emitted, and the calendar tools report "not connected" per call rather than the deployment failing. Not on the availability path.')
+param googleOAuthClientId string = ''
+
+@secure()
+@description('OAuth client secret for the Google Calendar connection (ADR 0053). Same optionality as googleOAuthClientId. Both are needed together: the Google Web application client is CONFIDENTIAL, so the token exchange carries the secret as well as the PKCE verifier.')
+param googleOAuthClientSecret string = ''
+
 @description('Minimum replica count. Orleans localhost clustering (used by this single-instance deployment) only supports one instance.')
 param minReplicas int
 
@@ -178,6 +186,22 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
                 name: 'vapid-private-key'
                 value: vapidPrivateKey
               }
+            ],
+        empty(googleOAuthClientId)
+          ? []
+          : [
+              {
+                name: 'google-oauth-client-id'
+                value: googleOAuthClientId
+              }
+            ],
+        empty(googleOAuthClientSecret)
+          ? []
+          : [
+              {
+                name: 'google-oauth-client-secret'
+                value: googleOAuthClientSecret
+              }
             ]
       )
     }
@@ -226,7 +250,18 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           // empty-valued secret is risked (the searxngSecret-vs-optional contrast, like the two above).
           empty(vapidPrivateKey)
             ? []
-            : [{ name: 'Push__VapidPrivateKey', secretRef: 'vapid-private-key' }])
+            : [{ name: 'Push__VapidPrivateKey', secretRef: 'vapid-private-key' }],
+          // The Google OAuth client behind the calendar tools (ADR 0053). Emitted only when supplied,
+          // and the two travel together: a Google Web application client is CONFIDENTIAL, so the token
+          // exchange needs the secret as well as the PKCE verifier. With neither, the app starts
+          // normally and every calendar call returns the curated "not connected" notice — the
+          // optional-secret shape of the three above, not searxngSecret's availability-path shape.
+          empty(googleOAuthClientId)
+            ? []
+            : [{ name: 'GoogleCalendar__ClientId', secretRef: 'google-oauth-client-id' }],
+          empty(googleOAuthClientSecret)
+            ? []
+            : [{ name: 'GoogleCalendar__ClientSecret', secretRef: 'google-oauth-client-secret' }])
         }
         // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume and no API
         // key. NOT private, though — SearXNG is a *meta*search engine and forwards every query on to
