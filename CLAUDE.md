@@ -382,6 +382,37 @@ to document a mechanical rule, add a lint rule instead.
   write to the calendar, deliberately and with a test pinning the non-refusal. Shell cache bumped
   `agent42-shell-v22` → `-v23`. The DevHost leg was run (headless Chrome over CDP); the **real Google leg
   is an honest unverified residual** — it needs the manual Google Cloud prerequisites.
+- Live OpenTelemetry console at `/logs` (ADR 0054): a **standalone page** (three tabs — Traces / Logs /
+  Metrics, `wwwroot/logs/`, mirroring `wwwroot/shared/`) polling a **bounded in-memory ring buffer** filled
+  by in-process capture components in `src/Agent42.Backend/Telemetry/`. **No new datastore, container,
+  secret, Cosmos container, grain, OTLP receiver, `excludedPaths` entry or Bicep change** — it is
+  *consistent with* ADR 0031 rather than a supersession, because 0031 rejected **receiving** OTLP and this
+  adds no receiver. One entry point, `AddLiveTelemetryCapture`, called by **both** hosts with different
+  arguments: the Backend without instrumentation (`AddServiceDefaults()` already registered it — twice
+  risks duplicate spans), **DevHost with** it and still **no exporter**, which is what makes the feature
+  exercisable offline. **The headline consequence: this is the widest read surface in the app.**
+  `EnableSensitiveData = true` means gen_ai spans carry **full prompt and completion text**, plus
+  `user.*` identity, document excerpts, street addresses (ADR 0012) and calendar content (ADR 0053) — and
+  with **no role system**, any signed-in user reads **every** user's conversations. **It exposes incognito
+  chats too** (ADR 0034 guarantees "not persisted, not listed", explicitly *not* "not in memory"). Chosen
+  deliberately; `CalendarSpanSuppressingHandler` does **not** cover calendar tool arguments/results.
+  Four things to read before touching this: **`LogRecord` is POOLED** — retaining one makes every buffered
+  entry read back as the latest message, measured `count=2 distinctRefs=1`, and nothing throws;
+  **`MetricType` has EIGHT members**, and 11 of 28 real instruments are `LongSumNonMonotonic`, so a
+  five-arm switch reads `NaN` for 39% of the Metrics tab; the self-observation log filter **cannot be
+  keyed off the category** (`Hosting.Diagnostics` is shared by every request — key off the path, two ways);
+  and `wwwroot/logs/` is invisible to **both** frontend source-text guards, so `LogsConsoleAssetsTests`
+  must fetch from the fixture `Client` directly and never call `GetAppScriptAsync()`. All four are in
+  gotchas. The ring is bounded by **bytes as well as item count** (`gen_ai.input.messages` is the whole
+  conversation, per turn, in a 1 GiB container) and **single replica is load-bearing** — `infra/main.bicep`
+  pins `minReplicas = maxReplicas = 1`. **The Logs tab is legitimately EMPTY in production**
+  (`Logging:LogLevel:Default` is `Warning` and `ILogger` filtering runs *before* the OTel processor, so no
+  buffer setting can recover those records) — the tab reports the effective floor for exactly that reason;
+  do not lower the level, which would also change what ships to the OTLP collector. No `sw.js` `CACHE`
+  bump was due (the page is one **classic** script outside `wwwroot/js/`). The DevHost browser leg **was**
+  run (headless Chrome over CDP) and ADR 0054 records the measured values — including the honest residual
+  it cannot close: DevHost's canned chat client emits **no gen_ai spans**, so prompt-content capture is
+  verifiable only in production.
 - Quality gates are measurable or absent (ADR 0050): `.agentic/quality-gates.yaml` used to carry **five**
   gates of which **four had no measuring tool in the repo** — they are SonarQube "Clean as You Code"
   metrics and there is no Sonar here (`pr-checks.yml` said so itself, and `.agentic/optional-skills/sonar/`
@@ -540,7 +571,8 @@ to document a mechanical rule, add a lint rule instead.
   the **`application` dimension is per-agent** (the grain publishes the agent name into `RequestContext`, the
   identity span processor stamps it as the `agent42.application` tag — never override `gen_ai.operation.name`;
   non-agent chats fall back to `"Agent42"`); and the global grain **prunes on every write** (hourly ~48 h / daily ~92 d) to hold the 2 MB item cap
-  (ADR 0004), so `range=all` = the retained window. Empty offline (DevHost has no OTel pipeline).
+  (ADR 0004), so `range=all` = the retained window. Empty offline — because the usage processor is
+  Backend-only, **not** because DevHost lacks a pipeline: since ADR 0054 it has one.
 - Offline read cache (ADR 0032): the installed PWA renders the user's **agents and chats offline** via a
   **client-side IndexedDB mirror in `cache.js`** (DB `agent42-cache`, store `kv`, keys `agents` /
   `conversations` / `messages:<id>`; helpers `cacheGet`/`cachePut`/`cacheDelete`). Every successful
@@ -827,7 +859,7 @@ to document a mechanical rule, add a lint rule instead.
 - Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **19
   feature folders** mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
   visibly with `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`), **flat `Agent42.Backend` namespace**, and
-  `Program.cs` alone at the project root. `MapAgentApi` is split into **14 per-feature partials**
+  `Program.cs` alone at the project root. `MapAgentApi` is split into **15 per-feature partials**
   (`src/Agent42.Backend/Mcp/AgentApi.Mcp.cs`, …) with `src/Agent42.Backend/Api/AgentApi.cs` reduced to a 50-line composition root, and the 25
   request/response records live beside their feature as `*Contracts.cs`. Backend persists nothing, so
   the flat namespace is **not** forced here as it is in Agents — it is kept flat for consistency and

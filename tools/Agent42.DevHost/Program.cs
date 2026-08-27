@@ -140,6 +140,13 @@ builder.Services.AddSingleton(new GoogleOAuthClient(new HttpClient()));
 builder.Services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
 builder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
 
+// The live telemetry console at /logs (ADR 0054). addInstrumentation is TRUE here and only here: DevHost
+// deliberately does NOT call AddServiceDefaults() — that would drag in resilience handlers, health checks
+// and service discovery it does without — so it has no OpenTelemetry pipeline of its own and capture has
+// to bring the sources and instrumentation with it. No exporter is registered, so nothing leaves the
+// machine; the buffer behind /logs is the only sink offline.
+builder.AddLiveTelemetryCapture(addInstrumentation: true);
+
 builder.UseOrleans(silo =>
 {
     silo.UseLocalhostClustering();

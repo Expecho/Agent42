@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Telemetry console — Agent 42</title>
+  <!-- This page renders raw telemetry, which with EnableSensitiveData carries prompt and completion
+       text. Keep it out of search indexes and out of Referer headers, exactly as /shared does. -->
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="logs.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90' font-family='monospace' fill='%23FFB13D'>42</text></svg>" />
+  <meta name="theme-color" content="#100f0d" />
+  <script>
+    // No-FOUC theme resolve (mirrors index.html and /shared). OS preference only — this page has no
+    // profile of its own.
+    (function () {
+      try {
+        var dark = matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = dark ? "#100f0d" : "#f4efe4";
+      } catch (e) { /* matchMedia unavailable → CSS dark default stands */ }
+    })();
+  </script>
+</head>
+<body>
+  <div class="console">
+    <header class="console__topbar">
+      <span class="console__brand"><span class="console__mark">42</span>TELEMETRY</span>
+
+      <nav class="console__tabs" role="tablist" aria-label="Signal">
+        <button class="console__tab is-active" role="tab" id="tabTraces" data-tab="traces" aria-selected="true">Traces</button>
+        <button class="console__tab" role="tab" id="tabLogs" data-tab="logs" aria-selected="false">Logs</button>
+        <button class="console__tab" role="tab" id="tabMetrics" data-tab="metrics" aria-selected="false">Metrics</button>
+      </nav>
+
+      <div class="console__controls">
+        <input class="console__filter" id="filterInput" type="search" placeholder="filter…" aria-label="Filter" />
+        <select class="console__select" id="levelSelect" aria-label="Minimum log level">
+          <option value="">all levels</option>
+          <option value="Debug">Debug+</option>
+          <option value="Information">Information+</option>
+          <option value="Warning">Warning+</option>
+          <option value="Error">Error+</option>
+        </select>
+        <select class="console__select" id="intervalSelect" aria-label="Poll interval">
+          <option value="1000">1s</option>
+          <option value="2000" selected>2s</option>
+          <option value="5000">5s</option>
+          <option value="15000">15s</option>
+        </select>
+        <button class="console__btn" id="pauseBtn" type="button" aria-pressed="false">Pause</button>
+        <button class="console__btn" id="clearBtn" type="button">Clear</button>
+      </div>
+    </header>
+
+    <p class="console__note">
+      Live, in-memory and unfiltered: spans carry full prompt and completion text for
+      <strong>every</strong> user, including chats started in incognito. Nothing here is persisted — the
+      buffer is lost on restart or redeploy.
+    </p>
+
+    <main class="console__scroll">
+      <section class="console__panel is-active" id="panelTraces" role="tabpanel" aria-labelledby="tabTraces"></section>
+      <section class="console__panel" id="panelLogs" role="tabpanel" aria-labelledby="tabLogs" hidden></section>
+      <section class="console__panel" id="panelMetrics" role="tabpanel" aria-labelledby="tabMetrics" hidden></section>
+    </main>
+
+    <footer class="console__status">
+      <span id="statusCounts">connecting…</span>
+      <!-- AC19: the Logs tab is legitimately EMPTY in production, because Logging:LogLevel:Default is
+           Warning and ILogger filtering runs before the OpenTelemetry processor. Saying so here is what
+           makes an empty tab read as correct rather than broken. -->
+      <span id="statusLevel" class="console__status-level"></span>
+    </footer>
+  </div>
+
+  <!-- ONE classic script, deliberately not an ES-module graph. The service worker
+       stale-while-revalidates same-origin static assets, so a multi-module page would carry ADR 0041's
+       version-skew hazard (a renamed export across a stale cached module = SyntaxError and a blank page)
+       with no CACHE bump to protect it — and this page is outside wwwroot/js, so no bump is due.
+       wwwroot/shared/viewer.js is the same call. -->
+  <script src="logs.js"></script>
+</body>
+</html>
