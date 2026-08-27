@@ -2,30 +2,17 @@ using System.Collections.Concurrent;
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
-public sealed class WebPushNotificationSenderTests : IAsyncLifetime
+public sealed class WebPushNotificationSenderTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     private WebPushNotificationSender Sender(IWebPushClient client) =>
-        new(_cluster.GrainFactory, client, NullLogger<WebPushNotificationSender>.Instance);
+        new(Cluster.GrainFactory, client, NullLogger<WebPushNotificationSender>.Instance);
 
     private async Task<IUserPushGrain> SeedAsync(string user, params string[] endpoints)
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserPushGrain>(user);
+        var grain = Cluster.GrainFactory.GetGrain<IUserPushGrain>(user);
         foreach (var endpoint in endpoints)
         {
             await grain.AddAsync(new PushSubscription(endpoint, "p256", "auth"));

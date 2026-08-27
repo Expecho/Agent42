@@ -4,14 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Agent42.Agents;
 using Agent42.Backend;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -21,49 +14,18 @@ namespace Agent42.Tests;
 /// ENCRYPTED tokens on the server (AC12). Runs against a real Orleans cluster + a fake authorization server
 /// (the McpOAuthClient's HttpClient is backed by a routing stub). The live interactive dance is deploy-smoke.
 /// </summary>
-public sealed class McpOAuthEndpointTests : IAsyncLifetime
+public sealed class McpOAuthEndpointTests(McpOAuthApiFixture fixture) : SharedClusterTests<McpOAuthApiFixture>(fixture)
 {
     private const string IdHeader = "X-MS-CLIENT-PRINCIPAL-ID";
 
-    private TestCluster _cluster = null!;
-    private WebApplication _app = null!;
-    private HttpClient _client = null!; // does NOT auto-follow redirects (we inspect 302 Location)
+    // The host and cluster are the fixture's, built once for the class. This client does NOT auto-follow
+    // redirects — the 302 Location is what these tests inspect.
+    private readonly HttpClient _client = fixture.CreateNonRedirectingClient();
 
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-
-        var appBuilder = WebApplication.CreateSlimBuilder();
-        appBuilder.WebHost.UseTestServer();
-        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
-        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
-            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient(new FakeAuthServerHandler())));
-        appBuilder.Services.AddSingleton<IProviderSecretProtector>(
-            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
-        appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
-            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
-        appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
-        appBuilder.Services.AddDocumentRagFakes();
-        // /api/push/config injects PushConfig; MapAgentApi infers every endpoint's params up front, so it
-        // must resolve or routing breaks for the whole host (ADR 0028). This host does not test push.
-        appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
-        _app = appBuilder.Build();
-        _app.MapAgentApi();
-        await _app.StartAsync();
-        // A handler-backed client so 302s are returned, not followed (the authz endpoint is external/fake).
-        _client = new HttpClient(_app.GetTestServer().CreateHandler()) { BaseAddress = new Uri("http://localhost") };
-    }
-
-    public async Task DisposeAsync()
+    protected override Task OnDisposeAsync()
     {
         _client.Dispose();
-        await _app.DisposeAsync();
-        await _cluster.DisposeAsync();
+        return Task.CompletedTask;
     }
 
     private static HttpRequestMessage Request(HttpMethod method, string uri, string principalId, object? body = null)
@@ -152,28 +114,5 @@ public sealed class McpOAuthEndpointTests : IAsyncLifetime
 
         Assert.Contains("mcp_oauth=error", replay.Headers.Location!.ToString());
         Assert.Contains("unknown_state", replay.Headers.Location!.ToString());
-    }
-
-    // A fake authorization server: serves PRM + AS metadata for discovery and a token endpoint for exchange.
-    private sealed class FakeAuthServerHandler : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            var url = request.RequestUri!.AbsoluteUri;
-            HttpResponseMessage Json(string json) =>
-                new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
-
-            var response = url switch
-            {
-                "https://mcp.example.com/.well-known/oauth-protected-resource" =>
-                    Json("""{"authorization_servers":["https://as.example.com"],"scopes_supported":["mcp.read"]}"""),
-                _ when url.StartsWith("https://as.example.com/.well-known/oauth-authorization-server") =>
-                    Json("""{"authorization_endpoint":"https://as.example.com/authorize","token_endpoint":"https://as.example.com/token"}"""),
-                "https://as.example.com/token" =>
-                    Json("""{"access_token":"at-123","refresh_token":"rt-456","expires_in":3600}"""),
-                _ => new HttpResponseMessage(HttpStatusCode.NotFound),
-            };
-            return Task.FromResult(response);
-        }
     }
 }

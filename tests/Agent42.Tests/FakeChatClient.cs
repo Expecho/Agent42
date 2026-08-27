@@ -43,6 +43,13 @@ public sealed class FakeChatClient : IChatClient
     /// <summary>Number of follow-up-suggestion generation calls this (per-silo) client has served.</summary>
     public int SuggestionCalls => Volatile.Read(ref _suggestionCalls);
 
+    /// <summary>
+    /// Zeroes the counter. The cluster is deployed once per test CLASS rather than once per test, so this
+    /// per-silo singleton outlives a single test — the class resets it between tests to keep the
+    /// absolute-count assertions meaningful.
+    /// </summary>
+    public void Reset() => Volatile.Write(ref _suggestionCalls, 0);
+
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {

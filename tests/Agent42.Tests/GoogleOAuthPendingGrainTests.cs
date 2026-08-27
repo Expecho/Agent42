@@ -1,5 +1,4 @@
 using Agent42.Agents;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -9,20 +8,8 @@ namespace Agent42.Tests;
 /// the properties that matter (one-time take, bounded list, per-user isolation) are the same, and a
 /// copy that quietly lost one of them would be a real regression.
 /// </summary>
-public sealed class GoogleOAuthPendingGrainTests : IAsyncLifetime
+public sealed class GoogleOAuthPendingGrainTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     private static GoogleOAuthPending Pending(string state) => new(
         State: state, CodeVerifier: "verifier",
         RedirectUri: "https://chat.agent42.nl/api/google/oauth/callback",
@@ -33,7 +20,7 @@ public sealed class GoogleOAuthPendingGrainTests : IAsyncLifetime
     [Fact]
     public async Task Take_IsOneTime()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserGoogleOAuthPendingGrain>("google-pending-onetime");
+        var grain = Cluster.GrainFactory.GetGrain<IUserGoogleOAuthPendingGrain>("google-pending-onetime");
         await grain.PutAsync(Pending("state-1"));
 
         var first = await grain.TakeAsync("state-1");
@@ -46,7 +33,7 @@ public sealed class GoogleOAuthPendingGrainTests : IAsyncLifetime
     [Fact]
     public async Task Take_UnknownState_ReturnsNull()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserGoogleOAuthPendingGrain>("google-pending-unknown");
+        var grain = Cluster.GrainFactory.GetGrain<IUserGoogleOAuthPendingGrain>("google-pending-unknown");
         Assert.Null(await grain.TakeAsync("nope"));
     }
 
@@ -54,7 +41,7 @@ public sealed class GoogleOAuthPendingGrainTests : IAsyncLifetime
     [Fact]
     public async Task Put_BoundsPendingList()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserGoogleOAuthPendingGrain>("google-pending-bounded");
+        var grain = Cluster.GrainFactory.GetGrain<IUserGoogleOAuthPendingGrain>("google-pending-bounded");
         for (var i = 0; i < 12; i++)
         {
             await grain.PutAsync(Pending($"state-{i}"));
@@ -67,8 +54,8 @@ public sealed class GoogleOAuthPendingGrainTests : IAsyncLifetime
     [Fact]
     public async Task IsIsolatedPerUser()
     {
-        var alice = _cluster.GrainFactory.GetGrain<IUserGoogleOAuthPendingGrain>("google-pending-alice");
-        var bob = _cluster.GrainFactory.GetGrain<IUserGoogleOAuthPendingGrain>("google-pending-bob");
+        var alice = Cluster.GrainFactory.GetGrain<IUserGoogleOAuthPendingGrain>("google-pending-alice");
+        var bob = Cluster.GrainFactory.GetGrain<IUserGoogleOAuthPendingGrain>("google-pending-bob");
         await alice.PutAsync(Pending("shared-state"));
 
         Assert.Null(await bob.TakeAsync("shared-state"));

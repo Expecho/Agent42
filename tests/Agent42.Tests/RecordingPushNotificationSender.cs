@@ -21,6 +21,13 @@ public sealed class RecordingPushNotificationSender : IPushNotificationSender
     /// <summary>Every recorded send, in order.</summary>
     public IReadOnlyList<(string UserId, PushMessage Message)> Sends => _sends.ToArray();
 
+    /// <summary>
+    /// Drops every recorded send. The cluster is deployed once per test CLASS rather than once per test,
+    /// so this per-silo singleton outlives a single test — the class resets it between tests to keep the
+    /// Assert.Single/Assert.Empty assertions meaningful.
+    /// </summary>
+    public void Reset() => _sends.Clear();
+
     public Task SendAsync(string userId, PushMessage message, CancellationToken cancellationToken = default)
     {
         _sends.Enqueue((userId, message));

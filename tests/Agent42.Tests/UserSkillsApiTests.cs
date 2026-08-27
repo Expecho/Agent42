@@ -3,13 +3,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using Agent42.Agents;
 using Agent42.Backend;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -23,54 +17,16 @@ namespace Agent42.Tests;
 /// appends to a materialised default selection while leaving a null one null — which is the difference
 /// between the headline user story working and silently doing nothing.</para>
 /// </summary>
-public sealed class UserSkillsApiTests : IAsyncLifetime
+public sealed class UserSkillsApiTests(UserSkillsApiFixture fixture) : SharedClusterTests<UserSkillsApiFixture>(fixture)
 {
     private const string IdHeader = "X-MS-CLIENT-PRINCIPAL-ID";
 
-    private TestCluster _cluster = null!;
-    private WebApplication _app = null!;
-    private HttpClient _client = null!;
+    // The host, the cluster and the client are all the fixture's, deployed once for the class.
+    private HttpClient Client => Fixture.Client;
+
     private readonly List<string> _uploadedIds = [];
 
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-
-        var appBuilder = WebApplication.CreateSlimBuilder();
-        appBuilder.WebHost.UseTestServer();
-        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
-
-        // The skills endpoints' own dependencies. Both are resolved OPTIONALLY by the handlers (the
-        // /api/speech pattern), but registering them is what makes uploads actually work here.
-        appBuilder.Services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
-        appBuilder.Services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
-
-        // MapAgentApi maps every endpoint and the route matcher infers all of their parameters up front, so
-        // the services the OTHER endpoints take as parameters must resolve even though these tests only hit
-        // /api/skills and /api/tools — otherwise minimal-API treats an unregistered service param as a body
-        // and routing breaks for the WHOLE host.
-        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
-            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
-        appBuilder.Services.AddSingleton<IProviderSecretProtector>(
-            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
-        appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
-            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
-        appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
-        appBuilder.Services.AddDocumentRagFakes();
-        appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
-
-        _app = appBuilder.Build();
-        _app.MapAgentApi();
-        await _app.StartAsync();
-        _client = _app.GetTestClient();
-    }
-
-    public async Task DisposeAsync()
+    protected override Task OnDisposeAsync()
     {
         foreach (var id in _uploadedIds)
         {
@@ -78,9 +34,7 @@ public sealed class UserSkillsApiTests : IAsyncLifetime
             catch { /* best effort */ }
         }
 
-        _client.Dispose();
-        await _app.DisposeAsync();
-        await _cluster.DisposeAsync();
+        return Task.CompletedTask;
     }
 
     // AC1: a standalone SKILL.md installs through the endpoint.
@@ -185,7 +139,7 @@ public sealed class UserSkillsApiTests : IAsyncLifetime
     public async Task Upload_AutoEnables_OnMaterialisedSelection()
     {
         const string user = "user-autoenable";
-        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
+        var profile = Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
         await profile.SaveAsync(UserProfile.Empty with { EnabledTools = [ToolCatalog.WebSearch] });
 
         await UploadAsync(user, "SKILL.md", Bytes(ZipTestData.Frontmatter("invoices", "Reads an invoice.")));
@@ -201,7 +155,7 @@ public sealed class UserSkillsApiTests : IAsyncLifetime
         const string user = "user-nullselection";
         await UploadAsync(user, "SKILL.md", Bytes(ZipTestData.Frontmatter("invoices", "Reads an invoice.")));
 
-        Assert.Null((await _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user).GetAsync()).EnabledTools);
+        Assert.Null((await Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user).GetAsync()).EnabledTools);
     }
 
     // AC17 at the endpoint: a re-upload of the same name replaces rather than duplicating, and the picker
@@ -232,7 +186,7 @@ public sealed class UserSkillsApiTests : IAsyncLifetime
         var packages = new InMemorySkillPackageStore();   // static backing store — the same one the endpoint used
         Assert.NotNull(await packages.ReadAsync(user, id));
 
-        var response = await _client.SendAsync(Request(HttpMethod.Delete, $"/api/skills/{id}", user));
+        var response = await Client.SendAsync(Request(HttpMethod.Delete, $"/api/skills/{id}", user));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Empty(await ListAsync(user));
@@ -264,7 +218,7 @@ public sealed class UserSkillsApiTests : IAsyncLifetime
     public async Task Delete_UnknownId_Is404()
         => Assert.Equal(
             HttpStatusCode.NotFound,
-            (await _client.SendAsync(Request(HttpMethod.Delete, "/api/skills/nope", "user-delete-unknown"))).StatusCode);
+            (await Client.SendAsync(Request(HttpMethod.Delete, "/api/skills/nope", "user-delete-unknown"))).StatusCode);
 
     // The per-user install cap (SkillToolLimits). The 10 MB per-upload limit bounds a single request, not
     // what a user can accumulate on the container filesystem across many of them — and that filesystem is
@@ -274,7 +228,7 @@ public sealed class UserSkillsApiTests : IAsyncLifetime
     public async Task Upload_BeyondTheInstallCap_Is400()
     {
         const string user = "user-cap";
-        var grain = _cluster.GrainFactory.GetGrain<IUserSkillsGrain>(user);
+        var grain = Cluster.GrainFactory.GetGrain<IUserSkillsGrain>(user);
         for (var i = 0; i < SkillToolLimits.MaxInstalledSkillsPerUser; i++)
         {
             await grain.SaveAsync(new StoredUserSkill($"id-{i}", $"seeded{i}", "Seeded.", ["SKILL.md"], DateTimeOffset.UtcNow));
@@ -293,7 +247,7 @@ public sealed class UserSkillsApiTests : IAsyncLifetime
     public async Task Upload_ReplacingAtTheCap_IsAllowed()
     {
         const string user = "user-cap-replace";
-        var grain = _cluster.GrainFactory.GetGrain<IUserSkillsGrain>(user);
+        var grain = Cluster.GrainFactory.GetGrain<IUserSkillsGrain>(user);
         for (var i = 0; i < SkillToolLimits.MaxInstalledSkillsPerUser; i++)
         {
             await grain.SaveAsync(new StoredUserSkill($"id-{i}", $"seeded{i}", "Seeded.", ["SKILL.md"], DateTimeOffset.UtcNow));
@@ -334,7 +288,7 @@ public sealed class UserSkillsApiTests : IAsyncLifetime
         part.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         form.Add(part, "file", fileName);
         request.Content = form;
-        return await _client.SendAsync(request);
+        return await Client.SendAsync(request);
     }
 
     private async Task<JsonElement> UploadAsync(string principalId, string fileName, byte[] content)
@@ -355,7 +309,7 @@ public sealed class UserSkillsApiTests : IAsyncLifetime
 
     private async Task<IReadOnlyList<JsonElement>> ListAsync(string principalId)
     {
-        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/skills", principalId));
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/skills", principalId));
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return [.. doc.RootElement.GetProperty("skills").EnumerateArray().Select(e => e.Clone())];
@@ -363,7 +317,7 @@ public sealed class UserSkillsApiTests : IAsyncLifetime
 
     private async Task<IReadOnlyList<string>> ToolKeysAsync(string principalId)
     {
-        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/tools", principalId));
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/tools", principalId));
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return [.. doc.RootElement.EnumerateArray().Select(e => e.GetProperty("key").GetString()!)];

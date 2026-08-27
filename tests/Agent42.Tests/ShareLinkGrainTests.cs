@@ -1,6 +1,5 @@
 using Agent42.Agents;
 using Orleans.Core.Internal;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -10,25 +9,13 @@ namespace Agent42.Tests;
 /// property is that a revoked link STOPS resolving — unsharing has no conversation-deletion backstop, so the
 /// per-user grain must deregister the directory, or a revoked link would stay live.
 /// </summary>
-public sealed class ShareLinkGrainTests : IAsyncLifetime
+public sealed class ShareLinkGrainTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     [Fact]
     public async Task Directory_Register_Resolve_Deregister_RoundTrips()
     {
         var hash = ShareToken.Hash("shr_directory-test");
-        var directory = _cluster.GrainFactory.GetGrain<IShareLinkDirectoryGrain>(hash);
+        var directory = Cluster.GrainFactory.GetGrain<IShareLinkDirectoryGrain>(hash);
 
         // Unregistered → null (fail closed → the endpoint 404s).
         Assert.Null(await directory.ResolveAsync());
@@ -47,13 +34,13 @@ public sealed class ShareLinkGrainTests : IAsyncLifetime
     public async Task Directory_Registration_SurvivesReactivation()
     {
         var hash = ShareToken.Hash("shr_directory-persist");
-        var directory = _cluster.GrainFactory.GetGrain<IShareLinkDirectoryGrain>(hash);
+        var directory = Cluster.GrainFactory.GetGrain<IShareLinkDirectoryGrain>(hash);
         await directory.RegisterAsync("user-2", "conv-2");
 
         // Force deactivation so the next call re-reads persisted state (Cosmos in prod).
         await directory.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var reactivated = _cluster.GrainFactory.GetGrain<IShareLinkDirectoryGrain>(hash);
+        var reactivated = Cluster.GrainFactory.GetGrain<IShareLinkDirectoryGrain>(hash);
         var target = await reactivated.ResolveAsync();
         Assert.NotNull(target);
         Assert.Equal("user-2", target!.UserId);
@@ -63,7 +50,7 @@ public sealed class ShareLinkGrainTests : IAsyncLifetime
     [Fact]
     public async Task UserGrain_Create_IsIdempotent_AndRegistersTheDirectory()
     {
-        var links = _cluster.GrainFactory.GetGrain<IUserShareLinksGrain>("owner-1");
+        var links = Cluster.GrainFactory.GetGrain<IUserShareLinksGrain>("owner-1");
 
         // Not shared → null.
         Assert.Null(await links.GetAsync("conv-a"));
@@ -77,7 +64,7 @@ public sealed class ShareLinkGrainTests : IAsyncLifetime
         Assert.Equal(first.Token, again.Token);
 
         // The global directory resolves the token to this owner + conversation.
-        var target = await _cluster.GrainFactory
+        var target = await Cluster.GrainFactory
             .GetGrain<IShareLinkDirectoryGrain>(ShareToken.Hash(first.Token)).ResolveAsync();
         Assert.NotNull(target);
         Assert.Equal("owner-1", target!.UserId);
@@ -87,9 +74,9 @@ public sealed class ShareLinkGrainTests : IAsyncLifetime
     [Fact]
     public async Task UserGrain_Revoke_DeregistersTheDirectory_SoTheLinkGoesDead()
     {
-        var links = _cluster.GrainFactory.GetGrain<IUserShareLinksGrain>("owner-2");
+        var links = Cluster.GrainFactory.GetGrain<IUserShareLinksGrain>("owner-2");
         var link = await links.CreateOrGetAsync("conv-b");
-        var directory = _cluster.GrainFactory.GetGrain<IShareLinkDirectoryGrain>(ShareToken.Hash(link.Token));
+        var directory = Cluster.GrainFactory.GetGrain<IShareLinkDirectoryGrain>(ShareToken.Hash(link.Token));
         Assert.NotNull(await directory.ResolveAsync());
 
         await links.RemoveAsync("conv-b");
@@ -102,7 +89,7 @@ public sealed class ShareLinkGrainTests : IAsyncLifetime
     [Fact]
     public async Task UserGrain_Revoke_UnknownConversation_IsNoOp()
     {
-        var links = _cluster.GrainFactory.GetGrain<IUserShareLinksGrain>("owner-3");
+        var links = Cluster.GrainFactory.GetGrain<IUserShareLinksGrain>("owner-3");
         await links.RemoveAsync("never-shared"); // must not throw
         Assert.Null(await links.GetAsync("never-shared"));
     }

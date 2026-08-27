@@ -1,23 +1,10 @@
 using Agent42.Agents;
 using Orleans.Core.Internal;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
-public sealed class UserProviderConfigGrainTests : IAsyncLifetime
+public sealed class UserProviderConfigGrainTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     private static StoredProvider Ollama(string? cipher = "cipher") => new(
         Key: "ollama",
         Kind: "OpenAICompatible",
@@ -31,7 +18,7 @@ public sealed class UserProviderConfigGrainTests : IAsyncLifetime
     public async Task Save_RoundTrips_AndSurvivesReactivation()
     {
         const string user = "providers-roundtrip-user";
-        var grain = _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(user);
+        var grain = Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(user);
 
         // Never saved → the empty default.
         var empty = await grain.GetAsync();
@@ -43,7 +30,7 @@ public sealed class UserProviderConfigGrainTests : IAsyncLifetime
         // Force deactivation so the next call re-reads persisted state.
         await grain.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var reactivated = _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(user);
+        var reactivated = Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(user);
         var stored = await reactivated.GetAsync();
         var provider = Assert.Single(stored.Providers);
         Assert.Equal("ollama", provider.Key);
@@ -55,7 +42,7 @@ public sealed class UserProviderConfigGrainTests : IAsyncLifetime
     [Fact]
     public async Task Save_BumpsVersion_OnEveryWrite()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-version-user");
+        var grain = Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-version-user");
 
         Assert.Equal(0, await grain.GetVersionAsync());
         await grain.SaveAsync(Ollama());
@@ -68,7 +55,7 @@ public sealed class UserProviderConfigGrainTests : IAsyncLifetime
     [Fact]
     public async Task BlankKeyOnUpdate_KeepsStoredKey()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-blankkey-user");
+        var grain = Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-blankkey-user");
 
         await grain.SaveAsync(Ollama(cipher: "secret-cipher"));
 
@@ -88,7 +75,7 @@ public sealed class UserProviderConfigGrainTests : IAsyncLifetime
     [Fact]
     public async Task Delete_RemovesProvider_AndBumpsVersion()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-delete-user");
+        var grain = Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-delete-user");
 
         await grain.SaveAsync(Ollama());
         Assert.Single((await grain.GetAsync()).Providers);
@@ -106,7 +93,7 @@ public sealed class UserProviderConfigGrainTests : IAsyncLifetime
     [Fact]
     public async Task SetDefault_RoundTrips_AndBumpsVersion()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-default-user");
+        var grain = Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-default-user");
 
         await grain.SetDefaultAsync("ollama:llama3.1");
         Assert.Equal("ollama:llama3.1", (await grain.GetAsync()).Default);
@@ -121,7 +108,7 @@ public sealed class UserProviderConfigGrainTests : IAsyncLifetime
     [Fact]
     public async Task SetEmbeddingDefault_RoundTrips_AndBumpsVersion()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-embedding-default-user");
+        var grain = Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-embedding-default-user");
 
         await grain.SetEmbeddingDefaultAsync("foundry:text-embedding-3-large");
         Assert.Equal("foundry:text-embedding-3-large", (await grain.GetAsync()).EmbeddingDefault);
@@ -141,8 +128,8 @@ public sealed class UserProviderConfigGrainTests : IAsyncLifetime
     [Fact]
     public async Task IsIsolatedPerUser()
     {
-        var alice = _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-alice");
-        var bob = _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-bob");
+        var alice = Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-alice");
+        var bob = Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>("providers-bob");
 
         await alice.SaveAsync(Ollama());
 

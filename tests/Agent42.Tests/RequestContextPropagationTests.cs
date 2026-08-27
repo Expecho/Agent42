@@ -1,6 +1,5 @@
 using Agent42.Agents;
 using Orleans.Runtime;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -18,20 +17,8 @@ namespace Agent42.Tests;
 /// grain-call-filter pair) before anything else. No new grain is defined here (the test assembly has
 /// no Orleans SDK codegen) — reusing <see cref="AgentGrain"/> + <see cref="FakeChatClient"/> avoids that.
 /// </summary>
-public sealed class RequestContextPropagationTests : IAsyncLifetime
+public sealed class RequestContextPropagationTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     // AC3: identity set before the streaming grain call is visible at the in-grain chat-client site.
     [Fact]
     public async Task RequestContext_SetBeforeStreamingChat_IsVisibleAtChatClientSite()
@@ -41,7 +28,7 @@ public sealed class RequestContextPropagationTests : IAsyncLifetime
             new UserTelemetryContext("oid-propagated", "user@contoso.com", null, null, null, "aad"));
         try
         {
-            var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("uctx-propagation-conversation");
+            var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("uctx-propagation-conversation");
             var answer = await DrainAnswerAsync(agent, "hi");
 
             // The fake echoed the RequestContext it saw INSIDE the grain's streaming iteration —
@@ -60,7 +47,7 @@ public sealed class RequestContextPropagationTests : IAsyncLifetime
     {
         RequestContext.Clear();
 
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("no-uctx-propagation-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("no-uctx-propagation-conversation");
         var answer = await DrainAnswerAsync(agent, "hi");
 
         Assert.DoesNotContain("[uctx:", answer);

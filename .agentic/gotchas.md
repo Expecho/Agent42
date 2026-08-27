@@ -24,7 +24,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Per-user singleton-preference grain (get/save)  | `src/Agent42.Agents/Users/UserProfileGrain.cs`          | 2026-07-08 |
 | Minimal-API endpoint group                      | `src/Agent42.Backend/Users/AgentApi.Users.cs`      | 2026-08-18 |
 | Endpoint composition root (registers groups)     | `src/Agent42.Backend/Api/AgentApi.cs`             | 2026-08-18 |
-| Grain test (Orleans TestCluster + fake client)  | `tests/Agent42.Tests/AgentGrainTests.cs`          | 2026-07-07 |
+| Grain test (shared TestCluster + fake client)   | `tests/Agent42.Tests/SharedClusterTests.cs`, `tests/Agent42.Tests/UserProfileGrainTests.cs` | 2026-08-27 |
+| API test (shared cluster + one MapAgentApi host) | `tests/Agent42.Tests/SharedApiFixture.cs`, `tests/Agent42.Tests/McpServersApiTests.cs` | 2026-08-27 |
 | Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-07-06 |
 | Frontend feature module (vanilla JS, no build)  | `src/Agent42.Backend/wwwroot/js/conversations.js` | 2026-08-19 |
 | Frontend composition root (wires every module)  | `src/Agent42.Backend/wwwroot/js/main.js`          | 2026-08-19 |
@@ -2035,4 +2036,42 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Telemetry/LiveTelemetryFilter.cs`,
   `tests/Agent42.Tests/LiveLogProcessorTests.cs`, `tests/Agent42.Tests/LiveSpanProcessorTests.cs`,
   `.agentic/decisions/0054-live-otel-console.md`
+- **Verified:** 2026-08-27
+
+### xUnit v2 runs `IAsyncLifetime` per TEST, so a cluster built there is deployed per test
+
+- **Claim:** xUnit constructs a **new instance of the test class for every test method**, so
+  `IAsyncLifetime.InitializeAsync` on the class runs per test, not per class. A test class that
+  builds a `TestClusterBuilder` there deploys a fresh two-silo Orleans cluster (~1.2s) and, for an
+  API class, a whole `MapAgentApi` host, once per test. That single fact was most of a 7m38s test
+  suite; `IClassFixture<T>` is the per-class seam, and it took the suite to 31s (ADR 0055).
+  **Do not reach a shared cluster by taking `SharedClusterFixture` directly** — derive from
+  `SharedClusterTests<TFixture>`, which resets the mutable per-silo fakes before each test and
+  cannot be overridden past. `SharedClusterSeamTests` fails the build's test run if a class skips it.
+  Sharing is **not** universally safe: it holds only where grain keys are unique per test, no
+  assertion reads an unreset per-silo singleton, and nothing asserts a cluster-wide aggregate. Six
+  classes are deliberately left cluster-per-test for failing one of those — the three Usage classes
+  (a well-known global grain key with absolute-total assertions), `ActivityPropagationTests` (the
+  two-cluster comparison IS the test), `AttachmentRehydrateTests` (its own configurator), and
+  `ChatStreamDisconnectTests`, which ADR 0046 pins to a real Kestrel server and a raw socket.
+  Read ADR 0055's three checks before converting a class or adding a new one.
+- **Evidence:** `tests/Agent42.Tests/SharedClusterTests.cs`, `tests/Agent42.Tests/SharedClusterFixture.cs`,
+  `tests/Agent42.Tests/SharedClusterSeamTests.cs`; `.agentic/decisions/0055-one-orleans-cluster-per-test-class.md`
+- **Verified:** 2026-08-27
+
+### A live Orleans reminder outlives its test once the cluster is shared
+
+- **Claim:** `AgentGrain.Scheduling.cs` registers a **real** reminder with Orleans' **1-minute
+  minimum**, backed by `UseInMemoryReminderService()` per silo, and nothing ever cancels it. Under
+  the old cluster-per-test shape this was invisible: the cluster was disposed after ~1.3s, so no
+  reminder ever fired. In a class-scoped cluster the reminders accumulate, and **any class whose
+  tests take more than a minute in total will fire one mid-test** — `ReceiveReminder` then runs a
+  full turn and pushes into `RecordingPushNotificationSender`, perturbing any assertion on a
+  cluster-wide aggregate. It is a **CI-only** flake: a class is ~9s locally but CI runs under
+  `--collect:"XPlat Code Coverage"` on a hosted runner. The rule for every shared-cluster class is
+  therefore: **assert on state scoped to your own user or grain, never on a cluster-wide total** —
+  which is why `AgentGrainTests`' push assertions filter by userId (`SendsFor`) rather than counting
+  every send. Cancelling the reminders in `src/` was rejected: a production change to fix a test.
+- **Evidence:** `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`,
+  `tests/Agent42.Tests/RecordingPushNotificationSender.cs`, `tests/Agent42.Tests/TestSiloConfigurator.cs`
 - **Verified:** 2026-08-27

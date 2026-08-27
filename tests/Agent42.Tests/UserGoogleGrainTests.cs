@@ -1,5 +1,4 @@
 using Agent42.Agents;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -8,20 +7,8 @@ namespace Agent42.Tests;
 /// record" — it is that the grain holds <b>ciphertext</b>, that a disconnect really removes it, and
 /// that one user's connection is not visible to another.
 /// </summary>
-public sealed class UserGoogleGrainTests : IAsyncLifetime
+public sealed class UserGoogleGrainTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     private static GoogleConnection Connection(string suffix = "") => new(
         AccessTokenCiphertext: $"cipher-access{suffix}",
         RefreshTokenCiphertext: $"cipher-refresh{suffix}",
@@ -32,14 +19,14 @@ public sealed class UserGoogleGrainTests : IAsyncLifetime
     [Fact]
     public async Task NeverConnected_ReturnsNull()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-never");
+        var grain = Cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-never");
         Assert.Null(await grain.GetAsync());
     }
 
     [Fact]
     public async Task Set_ThenGet_RoundTrips()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-roundtrip");
+        var grain = Cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-roundtrip");
         await grain.SetAsync(Connection());
 
         var stored = await grain.GetAsync();
@@ -54,7 +41,7 @@ public sealed class UserGoogleGrainTests : IAsyncLifetime
     [Fact]
     public async Task Set_ReplacesTheStoredConnection()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-replace");
+        var grain = Cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-replace");
         await grain.SetAsync(Connection());
         await grain.SetAsync(Connection("-2"));
 
@@ -64,7 +51,7 @@ public sealed class UserGoogleGrainTests : IAsyncLifetime
     [Fact]
     public async Task Clear_RemovesTheConnection_AndIsIdempotent()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-clear");
+        var grain = Cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-clear");
         await grain.SetAsync(Connection());
 
         await grain.ClearAsync();
@@ -77,8 +64,8 @@ public sealed class UserGoogleGrainTests : IAsyncLifetime
     [Fact]
     public async Task IsIsolatedPerUser()
     {
-        var alice = _cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-alice");
-        var bob = _cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-bob");
+        var alice = Cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-alice");
+        var bob = Cluster.GrainFactory.GetGrain<IUserGoogleGrain>("google-bob");
         await alice.SetAsync(Connection());
 
         Assert.Null(await bob.GetAsync());

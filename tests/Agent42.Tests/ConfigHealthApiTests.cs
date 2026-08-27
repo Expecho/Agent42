@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -20,25 +19,21 @@ namespace Agent42.Tests;
 /// <see cref="ConfigHealthProbeSet"/> is injected so the count is observable without a network — the same
 /// seam ProbeAsync prefers over its production FromServices factory.
 /// </summary>
-public sealed class ConfigHealthApiTests : IAsyncLifetime
+public sealed class ConfigHealthApiTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
     private const string IdHeader = "X-MS-CLIENT-PRINCIPAL-ID";
 
-    private TestCluster _cluster = null!;
     private WebApplication _app = null!;
     private HttpClient _client = null!;
     private readonly ProbeCounter _counter = new();
 
-    public async Task InitializeAsync()
+    // The CLUSTER is shared class-wide; the HOST is not. The counting probe set it registers is what the
+    // two tests assert on (0 for a static call, one bump per probeable check), so it must be per test.
+    protected override async Task OnInitializeAsync()
     {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-
         var appBuilder = WebApplication.CreateSlimBuilder();
         appBuilder.WebHost.UseTestServer();
-        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
+        appBuilder.Services.AddSingleton<IGrainFactory>(Cluster.GrainFactory);
 
         // MapAgentApi infers every endpoint's params up front, so the services the OTHER endpoints resolve
         // must be present even though these tests only hit /api/config-health (otherwise minimal-API treats
@@ -69,11 +64,10 @@ public sealed class ConfigHealthApiTests : IAsyncLifetime
         _client = _app.GetTestClient();
     }
 
-    public async Task DisposeAsync()
+    protected override async Task OnDisposeAsync()
     {
         _client.Dispose();
         await _app.DisposeAsync();
-        await _cluster.DisposeAsync();
     }
 
     private HttpRequestMessage Request(string uri)
