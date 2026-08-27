@@ -10,19 +10,28 @@ using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
-public sealed class AgentGrainTests : IAsyncLifetime
+// The cluster is deployed ONCE for the class (SharedClusterFixture) rather than once per test. IAsyncLifetime
+// still runs per test — xUnit builds a new instance of this class per test method — so it is kept for the
+// per-test work: resetting the shared silos' mutable fakes, and clearing the temp directories a test made.
+public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyncLifetime
 {
-    private TestCluster _cluster = null!;
+    private readonly SharedClusterFixture _fixture;
+    private readonly TestCluster _cluster;
 
-    public async Task InitializeAsync()
+    public AgentGrainTests(SharedClusterFixture fixture)
     {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
+        _fixture = fixture;
+        _cluster = fixture.Cluster;
     }
 
-    public async Task DisposeAsync()
+    public Task InitializeAsync()
+    {
+        // The counters and recorders are per-silo singletons that now outlive a single test.
+        _fixture.ResetSiloState();
+        return Task.CompletedTask;
+    }
+
+    public Task DisposeAsync()
     {
         // The uploaded-skill tests materialize real directories under the OS temp folder (ADR 0049); nothing
         // else clears them, and a stale one would be reused by a later run under the same skill id.
@@ -32,7 +41,8 @@ public sealed class AgentGrainTests : IAsyncLifetime
             catch { /* best effort */ }
         }
 
-        await _cluster.DisposeAsync();
+        // The cluster belongs to the fixture and outlives this test — it is NOT disposed here.
+        return Task.CompletedTask;
     }
 
     [Fact]
