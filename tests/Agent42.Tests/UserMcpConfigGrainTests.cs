@@ -1,23 +1,10 @@
 using Agent42.Agents;
 using Orleans.Core.Internal;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
-public sealed class UserMcpConfigGrainTests : IAsyncLifetime
+public sealed class UserMcpConfigGrainTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     private static StoredMcpServer Server(string id = "srv1", string? headerCipher = "cipher") => new(
         Id: id,
         Name: "Dataverse",
@@ -32,7 +19,7 @@ public sealed class UserMcpConfigGrainTests : IAsyncLifetime
     public async Task Save_RoundTrips_AndSurvivesReactivation()
     {
         const string user = "mcp-roundtrip-user";
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
 
         var empty = await grain.GetAsync();
         Assert.Empty(empty.Servers);
@@ -43,7 +30,7 @@ public sealed class UserMcpConfigGrainTests : IAsyncLifetime
         // Force deactivation so the next call re-reads persisted state.
         await grain.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var reactivated = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        var reactivated = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
         var stored = await reactivated.GetAsync();
         var server = Assert.Single(stored.Servers);
         Assert.Equal("srv1", server.Id);
@@ -56,7 +43,7 @@ public sealed class UserMcpConfigGrainTests : IAsyncLifetime
     [Fact]
     public async Task Save_BumpsVersion_OnEveryWrite()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-version-user");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-version-user");
 
         Assert.Equal(0, await grain.GetVersionAsync());
         await grain.SaveAsync(Server());
@@ -69,7 +56,7 @@ public sealed class UserMcpConfigGrainTests : IAsyncLifetime
     [Fact]
     public async Task BlankSecretOnUpdate_KeepsStoredSecret()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-blanksecret-user");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-blanksecret-user");
 
         await grain.SaveAsync(Server(headerCipher: "secret-cipher"));
 
@@ -89,7 +76,7 @@ public sealed class UserMcpConfigGrainTests : IAsyncLifetime
     [Fact]
     public async Task Delete_RemovesServer_AndBumpsVersion()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-delete-user");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-delete-user");
 
         await grain.SaveAsync(Server());
         Assert.Single((await grain.GetAsync()).Servers);
@@ -108,8 +95,8 @@ public sealed class UserMcpConfigGrainTests : IAsyncLifetime
     [Fact]
     public async Task IsIsolatedPerUser()
     {
-        var alice = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-alice");
-        var bob = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-bob");
+        var alice = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-alice");
+        var bob = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-bob");
 
         await alice.SaveAsync(Server());
 

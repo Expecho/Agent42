@@ -1,7 +1,6 @@
 using Agent42.Agents;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Storage;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -20,22 +19,10 @@ namespace Agent42.Tests;
 /// <para>Nothing else in the suite covers this path, so if these tests are ever deleted, the namespace
 /// of a persisted type becomes silently changeable again.</para>
 /// </summary>
-public sealed class GrainStorageSerializerTests : IAsyncLifetime
+public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     private IGrainStorageSerializer Serializer() =>
-        _cluster.GetSiloServiceProvider(_cluster.Primary.SiloAddress).GetRequiredService<IGrainStorageSerializer>();
+        Cluster.GetSiloServiceProvider(Cluster.Primary.SiloAddress).GetRequiredService<IGrainStorageSerializer>();
 
     // The persisted format is JSON carrying assembly-qualified type names. Asserted explicitly, because
     // every other test in this file only makes sense once this is true — and because a future Orleans

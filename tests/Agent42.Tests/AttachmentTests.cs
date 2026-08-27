@@ -4,12 +4,7 @@ using System.Net.Http.Json;
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -20,51 +15,10 @@ namespace Agent42.Tests;
 /// is only correct because the store is process-global (constraint 10): an upload served by the
 /// WebApplication must be visible to the grain running in the separate silo, and vice-versa.
 /// </summary>
-public sealed class AttachmentTests : IAsyncLifetime
+public sealed class AttachmentTests(SharedApiFixture fixture) : SharedClusterTests<SharedApiFixture>(fixture)
 {
-    private TestCluster _cluster = null!;
-    private WebApplication _app = null!;
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-
-        var appBuilder = WebApplication.CreateSlimBuilder();
-        appBuilder.WebHost.UseTestServer();
-        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
-        appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
-        // /api/models is user-scoped (ADR 0018); the single static catalog stands in for every user.
-        appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
-            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
-        // /api/providers encrypts keys, so the protector must resolve for the route matcher (ADR 0018).
-        appBuilder.Services.AddSingleton<IProviderSecretProtector>(
-            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
-        // /api/mcp-servers likewise encrypts secrets, so its protector must resolve for the route matcher too.
-        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
-            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
-        appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
-        // The upload endpoint resolves the ingestion service even on the image path (ADR 0007).
-        appBuilder.Services.AddDocumentRagFakes();
-        // /api/push/config injects PushConfig; MapAgentApi infers every endpoint's params up front, so it
-        // must resolve or routing breaks for the whole host (ADR 0028). This host does not test push.
-        appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
-        _app = appBuilder.Build();
-        _app.MapAgentApi();
-        await _app.StartAsync();
-        _client = _app.GetTestClient();
-    }
-
-    public async Task DisposeAsync()
-    {
-        _client.Dispose();
-        await _app.DisposeAsync();
-        await _cluster.DisposeAsync();
-    }
+    // The host, the cluster and the client are all the fixture's, deployed once for the class.
+    private HttpClient Client => Fixture.Client;
 
     private static MultipartFormDataContent ImageForm(byte[] bytes, string contentType, string fileName)
     {
@@ -112,7 +66,7 @@ public sealed class AttachmentTests : IAsyncLifetime
     [Fact]
     public async Task Upload_ReturnsAttachmentMetadataAsJson()
     {
-        var response = await _client.PostAsync(
+        var response = await Client.PostAsync(
             "/api/conversations/ac1-conversation/attachments",
             ImageForm([1, 2, 3, 4], "image/png", "cat.png"));
 
@@ -135,7 +89,7 @@ public sealed class AttachmentTests : IAsyncLifetime
     [Fact]
     public async Task Upload_RejectsUnsupportedTypeAndOversize()
     {
-        var unsupported = await _client.PostAsync(
+        var unsupported = await Client.PostAsync(
             "/api/conversations/ac2-conversation/attachments",
             ImageForm([1, 2, 3], "application/octet-stream", "blob.bin"));
         Assert.Equal(HttpStatusCode.BadRequest, unsupported.StatusCode);
@@ -144,7 +98,7 @@ public sealed class AttachmentTests : IAsyncLifetime
         Assert.Equal("Only image and document (PDF, Office, text) attachments are supported.", unsupportedBody);
         Assert.DoesNotContain("\"", unsupportedBody); // not JSON-encoded — no surrounding quotes
 
-        var oversize = await _client.PostAsync(
+        var oversize = await Client.PostAsync(
             "/api/conversations/ac2-conversation/attachments",
             ImageForm(new byte[(11 * 1024 * 1024)], "image/png", "big.png"));
         Assert.Equal(HttpStatusCode.BadRequest, oversize.StatusCode);
@@ -159,18 +113,18 @@ public sealed class AttachmentTests : IAsyncLifetime
     {
         const string id = "ac4-conversation";
 
-        var metadata = await (await _client.PostAsync(
+        var metadata = await (await Client.PostAsync(
             $"/api/conversations/{id}/attachments", ImageForm([7, 7, 7], "image/png", "p.png")))
             .Content.ReadFromJsonAsync<AttachmentMetadata>();
 
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{id}",
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{id}",
             new ChatRequest("look at this", null, null, [metadata!.Id])))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync(); // drain NDJSON so the turn is persisted
         }
 
-        var turns = await _client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages");
+        var turns = await Client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages");
         var userTurn = Assert.Single(turns!, t => t.Role == "user" && t.Text == "look at this");
         Assert.NotNull(userTurn.Attachments);
         Assert.Equal(metadata.Id, Assert.Single(userTurn.Attachments!).Id);
@@ -184,16 +138,16 @@ public sealed class AttachmentTests : IAsyncLifetime
         const string id = "ac5-conversation";
         var bytes = new byte[] { 9, 8, 7, 6, 5 };
 
-        var metadata = await (await _client.PostAsync(
+        var metadata = await (await Client.PostAsync(
             $"/api/conversations/{id}/attachments", ImageForm(bytes, "image/png", "pic.png")))
             .Content.ReadFromJsonAsync<AttachmentMetadata>();
 
-        var display = await _client.GetAsync($"/api/conversations/{id}/attachments/{metadata!.Id}");
+        var display = await Client.GetAsync($"/api/conversations/{id}/attachments/{metadata!.Id}");
         display.EnsureSuccessStatusCode();
         Assert.Equal("image/png", display.Content.Headers.ContentType?.MediaType);
         Assert.Equal(bytes, await display.Content.ReadAsByteArrayAsync());
 
-        var missing = await _client.GetAsync($"/api/conversations/{id}/attachments/does-not-exist");
+        var missing = await Client.GetAsync($"/api/conversations/{id}/attachments/does-not-exist");
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
     }
 }

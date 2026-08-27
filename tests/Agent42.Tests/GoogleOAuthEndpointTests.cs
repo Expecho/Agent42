@@ -3,14 +3,6 @@ using System.Text.Json;
 using System.Web;
 using Agent42.Agents;
 using Agent42.Backend;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -20,82 +12,20 @@ namespace Agent42.Tests;
 /// <b>encrypted</b> tokens; <c>/status</c> reports the connection without ever echoing one. Runs against
 /// a real Orleans cluster plus a fake authorization server. The live interactive dance is deploy-smoke.
 /// </summary>
-public sealed class GoogleOAuthEndpointTests : IAsyncLifetime
+public sealed class GoogleOAuthEndpointTests(GoogleOAuthApiFixture fixture) : SharedClusterTests<GoogleOAuthApiFixture>(fixture)
 {
     private const string IdHeader = "X-MS-CLIENT-PRINCIPAL-ID";
     private const string User = "google-endpoint-user";
 
-    private TestCluster _cluster = null!;
-    private WebApplication _app = null!;
-    private HttpClient _client = null!; // does NOT auto-follow redirects (we inspect the 302 Location)
-    private IGoogleSecretProtector _protector = null!;
+    // The host, the cluster and the key ring are the fixture's, built once for the class. The client does
+    // NOT auto-follow redirects — the 302 Location is what these tests inspect.
+    private readonly HttpClient _client = fixture.CreateNonRedirectingClient();
+    private readonly IGoogleSecretProtector _protector = fixture.Protector;
 
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-
-        _protector = new GoogleSecretProtector(
-            new EphemeralDataProtectionProvider(), NullLogger<GoogleSecretProtector>.Instance);
-
-        var appBuilder = WebApplication.CreateSlimBuilder();
-        appBuilder.WebHost.UseTestServer();
-        appBuilder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["GoogleCalendar:ClientId"] = "client-1",
-            ["GoogleCalendar:ClientSecret"] = "secret-1",
-        });
-
-        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
-        appBuilder.Services.AddSingleton(_protector);
-        appBuilder.Services.AddSingleton(new GoogleOAuthClient(
-            new HttpClient(new RecordingHttpHandler
-            {
-                Responder = _ => RecordingHttpHandler.Json(
-                    """{"access_token":"at-live","refresh_token":"rt-live","expires_in":3600}"""),
-            }),
-            "https://accounts.test/authorize",
-            "https://oauth2.test/token"));
-        // A CONNECTION-AWARE double, deliberately not the bare InMemoryCalendarService. The callback
-        // reads the connected identity back through ICalendarService, and production resolves the
-        // caller's token from the very grain the callback is writing — so a double that answers
-        // regardless of connection state would keep OAuthCallback_PersistsEncryptedTokens green even
-        // if the endpoint asked for the identity BEFORE storing the tokens, which is exactly the bug
-        // that ordering once had.
-        appBuilder.Services.AddSingleton<ICalendarService>(sp =>
-            new ConnectionAwareCalendarService(sp.GetRequiredService<IGrainFactory>()));
-
-        // The registrations every MapAgentApi host needs — a param a host cannot resolve is treated as a
-        // body and breaks routing for the WHOLE host, which is exactly the trap this feature avoids
-        // adding to (see AgentApi.Calendar.cs).
-        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
-            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
-        // /api/mcp/oauth/start takes McpOAuthClient as a HANDLER parameter, so it is mandatory for every
-        // MapAgentApi host — this is the trap from the other side, and the reason the calendar endpoints
-        // resolve their own dependencies through IServiceProvider instead.
-        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
-        appBuilder.Services.AddSingleton<IProviderSecretProtector>(
-            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
-        appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
-            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
-        appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
-        appBuilder.Services.AddDocumentRagFakes();
-        appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
-
-        _app = appBuilder.Build();
-        _app.MapAgentApi();
-        await _app.StartAsync();
-        _client = new HttpClient(_app.GetTestServer().CreateHandler()) { BaseAddress = new Uri("http://localhost") };
-    }
-
-    public async Task DisposeAsync()
+    protected override Task OnDisposeAsync()
     {
         _client.Dispose();
-        await _app.DisposeAsync();
-        await _cluster.DisposeAsync();
+        return Task.CompletedTask;
     }
 
     private HttpRequestMessage Request(HttpMethod method, string uri, string principalId)
@@ -146,7 +76,7 @@ public sealed class GoogleOAuthEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/?google_oauth=connected", response.Headers.Location!.ToString());
 
-        var stored = await _cluster.GrainFactory.GetGrain<IUserGoogleGrain>(User).GetAsync();
+        var stored = await Cluster.GrainFactory.GetGrain<IUserGoogleGrain>(User).GetAsync();
         Assert.NotNull(stored);
 
         // Ciphertext, not the token: the grain must never hold a readable credential.
@@ -184,7 +114,7 @@ public sealed class GoogleOAuthEndpointTests : IAsyncLifetime
             Request(HttpMethod.Get, $"/api/google/oauth/callback?code=c&state={state}", "bob-user"));
 
         Assert.Equal("/?google_oauth=error&reason=unknown_state", response.Headers.Location!.ToString());
-        Assert.Null(await _cluster.GrainFactory.GetGrain<IUserGoogleGrain>("bob-user").GetAsync());
+        Assert.Null(await Cluster.GrainFactory.GetGrain<IUserGoogleGrain>("bob-user").GetAsync());
     }
 
     // Google's own error text carries the client id and often the redirect URI, and this string lands in
@@ -256,7 +186,7 @@ public sealed class GoogleOAuthEndpointTests : IAsyncLifetime
 
         using var first = await _client.SendAsync(Request(HttpMethod.Delete, "/api/google/connection", user));
         Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
-        Assert.Null(await _cluster.GrainFactory.GetGrain<IUserGoogleGrain>(user).GetAsync());
+        Assert.Null(await Cluster.GrainFactory.GetGrain<IUserGoogleGrain>(user).GetAsync());
 
         using var second = await _client.SendAsync(Request(HttpMethod.Delete, "/api/google/connection", user));
         Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
@@ -275,57 +205,5 @@ public sealed class GoogleOAuthEndpointTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await bob.Content.ReadAsStringAsync());
 
         Assert.False(doc.RootElement.GetProperty("connected").GetBoolean());
-    }
-
-    /// <summary>
-    /// <see cref="InMemoryCalendarService"/>, but only for a user who actually has a stored
-    /// <see cref="GoogleConnection"/> — which is what the production adapter does, and what makes the
-    /// store-then-resolve ordering in the callback falsifiable.
-    /// </summary>
-    private sealed class ConnectionAwareCalendarService(IGrainFactory grains) : ICalendarService
-    {
-        private readonly InMemoryCalendarService _inner = new();
-
-        private async Task<bool> ConnectedAsync(string userId) =>
-            await grains.GetGrain<IUserGoogleGrain>(userId).GetAsync() is not null;
-
-        public async Task<CalendarResult<IReadOnlyList<CalendarSummary>>> ListCalendarsAsync(
-            string userId, CancellationToken cancellationToken = default) =>
-            await ConnectedAsync(userId)
-                ? await _inner.ListCalendarsAsync(userId, cancellationToken)
-                : CalendarResult<IReadOnlyList<CalendarSummary>>.NotConnected();
-
-        public async Task<CalendarResult<IReadOnlyList<CalendarEvent>>> ListEventsAsync(
-            string userId, string? calendarId, DateTimeOffset timeMin, DateTimeOffset timeMax,
-            int maxResults, CancellationToken cancellationToken = default) =>
-            await ConnectedAsync(userId)
-                ? await _inner.ListEventsAsync(userId, calendarId, timeMin, timeMax, maxResults, cancellationToken)
-                : CalendarResult<IReadOnlyList<CalendarEvent>>.NotConnected();
-
-        public async Task<CalendarResult<CalendarEvent>> GetEventAsync(
-            string userId, string? calendarId, string eventId, CancellationToken cancellationToken = default) =>
-            await ConnectedAsync(userId)
-                ? await _inner.GetEventAsync(userId, calendarId, eventId, cancellationToken)
-                : CalendarResult<CalendarEvent>.NotConnected();
-
-        public async Task<CalendarResult<CalendarEvent>> CreateEventAsync(
-            string userId, string? calendarId, CalendarEventDraft draft,
-            CancellationToken cancellationToken = default) =>
-            await ConnectedAsync(userId)
-                ? await _inner.CreateEventAsync(userId, calendarId, draft, cancellationToken)
-                : CalendarResult<CalendarEvent>.NotConnected();
-
-        public async Task<CalendarResult<CalendarEvent>> UpdateEventAsync(
-            string userId, string? calendarId, string eventId, CalendarEventDraft draft,
-            CancellationToken cancellationToken = default) =>
-            await ConnectedAsync(userId)
-                ? await _inner.UpdateEventAsync(userId, calendarId, eventId, draft, cancellationToken)
-                : CalendarResult<CalendarEvent>.NotConnected();
-
-        public async Task<CalendarResult<bool>> DeleteEventAsync(
-            string userId, string? calendarId, string eventId, CancellationToken cancellationToken = default) =>
-            await ConnectedAsync(userId)
-                ? await _inner.DeleteEventAsync(userId, calendarId, eventId, cancellationToken)
-                : CalendarResult<bool>.NotConnected();
     }
 }

@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -25,24 +24,20 @@ namespace Agent42.Tests;
 /// still answers. Second, <c>limit</c> is clamped server-side — a caller may narrow a page, never widen
 /// it past the configured budget.</para>
 /// </summary>
-public sealed class DiagnosticsApiTests : IAsyncLifetime
+public sealed class DiagnosticsApiTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
     private const string IdHeader = "X-MS-CLIENT-PRINCIPAL-ID";
 
-    private TestCluster _cluster = null!;
     private WebApplication _withCapture = null!;
     private WebApplication _withoutCapture = null!;
     private HttpClient _client = null!;
     private HttpClient _bareClient = null!;
     private LiveTelemetryBuffer _buffer = null!;
 
-    public async Task InitializeAsync()
+    // The CLUSTER is shared class-wide, but the two HOSTS are not: which registrations a host carries is
+    // the variable under test here, and the buffer they read is asserted on per test.
+    protected override async Task OnInitializeAsync()
     {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-
         _buffer = new LiveTelemetryBuffer(new DiagnosticsConfig(
             MaxSpans: 100, MaxLogs: 100, MaxTagValueLength: 1024, MaxBufferBytes: 1024 * 1024,
             MaxItemsPerPoll: 2, MetricExportIntervalMs: DiagnosticsConfig.Default.MetricExportIntervalMs));
@@ -61,7 +56,7 @@ public sealed class DiagnosticsApiTests : IAsyncLifetime
             appBuilder.Configuration.AddInMemoryCollection(configOverrides);
         }
 
-        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
+        appBuilder.Services.AddSingleton<IGrainFactory>(Cluster.GrainFactory);
 
         // MapAgentApi infers every endpoint's params up front, so the services the OTHER endpoints
         // resolve must be present even though these tests only hit /api/diagnostics/*. Mirrors
@@ -90,13 +85,12 @@ public sealed class DiagnosticsApiTests : IAsyncLifetime
         return (app, app.GetTestClient());
     }
 
-    public async Task DisposeAsync()
+    protected override async Task OnDisposeAsync()
     {
         _client.Dispose();
         _bareClient.Dispose();
         await _withCapture.DisposeAsync();
         await _withoutCapture.DisposeAsync();
-        await _cluster.DisposeAsync();
     }
 
     private static HttpRequestMessage Request(string uri)

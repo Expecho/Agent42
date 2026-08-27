@@ -1,6 +1,5 @@
 using Agent42.Agents;
 using Orleans.Core.Internal;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -15,20 +14,8 @@ namespace Agent42.Tests;
 /// back the row they removed. Without that the superseded package would be orphaned in blob storage and its
 /// materialized directory left on disk forever, since only the old id can address either.</para>
 /// </summary>
-public sealed class UserSkillsGrainTests : IAsyncLifetime
+public sealed class UserSkillsGrainTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     [Fact]
     public async Task NeverSaved_IsEmpty()
     {
@@ -143,7 +130,7 @@ public sealed class UserSkillsGrainTests : IAsyncLifetime
         Assert.Empty((await Grain("skills-user-b").GetAsync()).Skills);
     }
 
-    private IUserSkillsGrain Grain(string userId) => _cluster.GrainFactory.GetGrain<IUserSkillsGrain>(userId);
+    private IUserSkillsGrain Grain(string userId) => Cluster.GrainFactory.GetGrain<IUserSkillsGrain>(userId);
 
     private static StoredUserSkill Skill(
         string id, string name, string description = "A skill.", IReadOnlyList<string>? files = null)

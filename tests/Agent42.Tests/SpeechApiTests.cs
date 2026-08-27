@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -18,21 +17,9 @@ namespace Agent42.Tests;
 /// against a real Orleans test cluster (like <see cref="ProvidersApiTests"/>, so MapAgentApi's up-front param
 /// inference resolves), with the per-user factory's <see cref="ISpeechService"/> toggled to prove both paths.
 /// </summary>
-public sealed class SpeechApiTests : IAsyncLifetime
+public sealed class SpeechApiTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
     private const string IdHeader = "X-MS-CLIENT-PRINCIPAL-ID";
-
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
 
     // Builds a MapAgentApi host wiring the factory provider only when a speech service is supplied — so the
     // endpoint's optional GetService resolves it (bytes path) or returns null (409 path). Registers the same
@@ -41,7 +28,7 @@ public sealed class SpeechApiTests : IAsyncLifetime
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseTestServer();
-        builder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
+        builder.Services.AddSingleton<IGrainFactory>(Cluster.GrainFactory);
 
         if (speech is not null)
         {

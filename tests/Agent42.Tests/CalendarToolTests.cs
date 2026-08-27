@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
 using Agent42.Agents;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -10,21 +9,9 @@ namespace Agent42.Tests;
 /// the grain's tool methods, out to <see cref="ICalendarService"/> and back into the turn. The adapter's
 /// own wire behaviour is <see cref="GoogleCalendarServiceTests"/>; this file owns the grain half.
 /// </summary>
-public sealed class CalendarToolTests : IAsyncLifetime
+public sealed class CalendarToolTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
-    private IAgentGrain Agent(string grainKey) => _cluster.GrainFactory.GetGrain<IAgentGrain>(grainKey);
+    private IAgentGrain Agent(string grainKey) => Cluster.GrainFactory.GetGrain<IAgentGrain>(grainKey);
 
     /// <summary>
     /// Runs one turn and returns what the tool actually returned, read off the <c>ToolCallEnd</c> stream

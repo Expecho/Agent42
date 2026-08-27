@@ -3,13 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Agent42.Agents;
 using Agent42.Backend;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -20,53 +14,12 @@ namespace Agent42.Tests;
 /// must not wipe a previously-saved tool default (the read-modify-write / absent-means-keep contract),
 /// which only an endpoint-level test can prove.
 /// </summary>
-public sealed class ToolSelectionApiTests : IAsyncLifetime
+public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClusterTests<SharedApiFixture>(fixture)
 {
     private const string IdHeader = "X-MS-CLIENT-PRINCIPAL-ID";
 
-    private TestCluster _cluster = null!;
-    private WebApplication _app = null!;
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-
-        var appBuilder = WebApplication.CreateSlimBuilder();
-        appBuilder.WebHost.UseTestServer();
-        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
-        // MapAgentApi maps every endpoint; the route matcher infers all of their parameters up front, so the
-        // services the OTHER endpoints resolve as parameters must be present even though these tests only hit
-        // /api/tools, /api/conversations/*, /api/agents and /api/profile (otherwise minimal-API treats an
-        // unregistered service param as a body). Same set-up as ProvidersApiTests.
-        appBuilder.Services.AddSingleton<IProviderSecretProtector>(
-            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
-            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
-        appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
-        appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
-            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
-        appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
-        appBuilder.Services.AddDocumentRagFakes();
-        // /api/push/config injects PushConfig; MapAgentApi infers every endpoint's params up front, so it
-        // must resolve or routing breaks for the whole host (ADR 0028). This host does not test push.
-        appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
-        _app = appBuilder.Build();
-        _app.MapAgentApi();
-        await _app.StartAsync();
-        _client = _app.GetTestClient();
-    }
-
-    public async Task DisposeAsync()
-    {
-        _client.Dispose();
-        await _app.DisposeAsync();
-        await _cluster.DisposeAsync();
-    }
+    // The host, the cluster and the client are all the fixture's, deployed once for the class.
+    private HttpClient Client => Fixture.Client;
 
     private static HttpRequestMessage Request(HttpMethod method, string uri, string principalId, object? body = null)
     {
@@ -93,7 +46,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
     [Fact]
     public async Task Tools_Catalog_ReturnsSelectableKeys()
     {
-        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-cat"));
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-cat"));
         response.EnsureSuccessStatusCode();
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -122,7 +75,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
     [Fact]
     public async Task Tools_Catalog_IncludesPerSkillKeys()
     {
-        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-skill-cat"));
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-skill-cat"));
         response.EnsureSuccessStatusCode();
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -148,7 +101,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
     [Fact]
     public async Task Tools_Catalog_IncludesEnabledMcpServers_ExcludesDisabled()
     {
-        var on = await _client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-mcp-cat", new
+        var on = await Client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-mcp-cat", new
         {
             name = "Weather",
             endpoint = "https://weather.example.com/mcp",
@@ -156,7 +109,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
             enabled = true,
         }));
         on.EnsureSuccessStatusCode();
-        var off = await _client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-mcp-cat", new
+        var off = await Client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-mcp-cat", new
         {
             name = "Docs",
             endpoint = "https://docs.example.com/mcp",
@@ -170,7 +123,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         using var offDoc = JsonDocument.Parse(await off.Content.ReadAsStringAsync());
         var disabledId = offDoc.RootElement.GetProperty("id").GetString();
 
-        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-mcp-cat"));
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-mcp-cat"));
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var descriptors = doc.RootElement.EnumerateArray().ToArray();
@@ -188,7 +141,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
     [Fact]
     public async Task Agent_RoundTripsEnabledTools()
     {
-        var scoped = await _client.SendAsync(Request(HttpMethod.Post, "/api/agents", "user-agent", new
+        var scoped = await Client.SendAsync(Request(HttpMethod.Post, "/api/agents", "user-agent", new
         {
             name = "Scheduler",
             description = "schedules",
@@ -207,7 +160,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         }
 
         // A create that omits enabledTools stores null — the "all tools" sentinel, no migration for old clients.
-        var full = await _client.SendAsync(Request(HttpMethod.Post, "/api/agents", "user-agent", new
+        var full = await Client.SendAsync(Request(HttpMethod.Post, "/api/agents", "user-agent", new
         {
             name = "Full",
             description = "everything",
@@ -221,7 +174,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         }
 
         // GET /api/agents carries the round-tripped set for the scoped agent.
-        var list = await _client.SendAsync(Request(HttpMethod.Get, "/api/agents", "user-agent"));
+        var list = await Client.SendAsync(Request(HttpMethod.Get, "/api/agents", "user-agent"));
         using var listDoc = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
         var scheduler = listDoc.RootElement.EnumerateArray().Single(a => a.GetProperty("name").GetString() == "Scheduler");
         var schedulerId = scheduler.GetProperty("id").GetString();
@@ -230,7 +183,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
             scheduler.GetProperty("enabledTools").EnumerateArray().Select(e => e.GetString()).ToArray());
 
         // AC12 also covers EDIT: PUT /api/agents/{id} threads a changed EnabledTools through the same path.
-        var edit = await _client.SendAsync(Request(HttpMethod.Put, $"/api/agents/{schedulerId}", "user-agent", new
+        var edit = await Client.SendAsync(Request(HttpMethod.Put, $"/api/agents/{schedulerId}", "user-agent", new
         {
             name = "Scheduler",
             description = "schedules",
@@ -249,7 +202,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
     [Fact]
     public async Task Conversation_ToolsPutThenGet_ReturnsSet()
     {
-        var put = await _client.SendAsync(Request(HttpMethod.Put, "/api/conversations/conv-1/tools", "user-conv", new
+        var put = await Client.SendAsync(Request(HttpMethod.Put, "/api/conversations/conv-1/tools", "user-conv", new
         {
             tools = new[] { "web_search", "not-a-real-tool", "scheduling" },
         }));
@@ -257,7 +210,7 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
         // The response is the sanitized effective set (garbage dropped, catalog order).
         Assert.Equal(new[] { "web_search", "scheduling" }, await ReadStringArrayAsync(put));
 
-        var get = await _client.SendAsync(Request(HttpMethod.Get, "/api/conversations/conv-1/tools", "user-conv"));
+        var get = await Client.SendAsync(Request(HttpMethod.Get, "/api/conversations/conv-1/tools", "user-conv"));
         get.EnsureSuccessStatusCode();
         Assert.Equal(new[] { "web_search", "scheduling" }, await ReadStringArrayAsync(get));
     }
@@ -269,18 +222,18 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
     public async Task Profile_LanguageOnlySave_DoesNotWipeToolDefault()
     {
         // Save a tool default first (no language).
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/profile", "user-prof", new
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/profile", "user-prof", new
         {
             enabledTools = new[] { "web_search" },
         }))).EnsureSuccessStatusCode();
 
         // Then a language-only save (no enabledTools field at all).
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/profile", "user-prof", new
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/profile", "user-prof", new
         {
             preferredLanguage = "nl-NL",
         }))).EnsureSuccessStatusCode();
 
-        var get = await _client.SendAsync(Request(HttpMethod.Get, "/api/profile", "user-prof"));
+        var get = await Client.SendAsync(Request(HttpMethod.Get, "/api/profile", "user-prof"));
         using var doc = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
         Assert.Equal("nl-NL", doc.RootElement.GetProperty("preferredLanguage").GetString());
         Assert.Equal(
@@ -288,12 +241,12 @@ public sealed class ToolSelectionApiTests : IAsyncLifetime
             doc.RootElement.GetProperty("enabledTools").EnumerateArray().Select(e => e.GetString()).ToArray());
 
         // And the reverse: a tools-only save leaves the language intact.
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/profile", "user-prof", new
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/profile", "user-prof", new
         {
             enabledTools = new[] { "scheduling" },
         }))).EnsureSuccessStatusCode();
 
-        var after = await _client.SendAsync(Request(HttpMethod.Get, "/api/profile", "user-prof"));
+        var after = await Client.SendAsync(Request(HttpMethod.Get, "/api/profile", "user-prof"));
         using var afterDoc = JsonDocument.Parse(await after.Content.ReadAsStringAsync());
         Assert.Equal("nl-NL", afterDoc.RootElement.GetProperty("preferredLanguage").GetString());
         Assert.Equal(

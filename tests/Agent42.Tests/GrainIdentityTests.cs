@@ -1,5 +1,4 @@
 using Orleans.Runtime;
-using Orleans.TestingHost;
 using Agent42.Agents;
 
 namespace Agent42.Tests;
@@ -13,20 +12,8 @@ namespace Agent42.Tests;
 /// <para>The expected strings are deliberately hard-coded literals captured from the pre-move tree,
 /// NOT computed from the type — a symmetric test would move with the code and prove nothing.</para>
 /// </summary>
-public sealed class GrainIdentityTests : IAsyncLifetime
+public sealed class GrainIdentityTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     /// <summary>
     /// The grain type token of every persisted grain, frozen. A rename of any of these classes — or a
     /// convention change that pulls in the namespace — changes the Cosmos item id and strands state.
@@ -50,18 +37,18 @@ public sealed class GrainIdentityTests : IAsyncLifetime
     /// <summary>Resolves one reference per grain interface, keyed identically, so only the type token varies.</summary>
     private GrainId Reference(string interfaceName) => interfaceName switch
     {
-        nameof(IAgentGrain) => _cluster.GrainFactory.GetGrain<IAgentGrain>(Key).GetGrainId(),
-        nameof(IAgentRegistryGrain) => _cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(Key).GetGrainId(),
-        nameof(IAgentKeyDirectoryGrain) => _cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(Key).GetGrainId(),
-        nameof(IConversationIndexGrain) => _cluster.GrainFactory.GetGrain<IConversationIndexGrain>(Key).GetGrainId(),
-        nameof(IShareLinkDirectoryGrain) => _cluster.GrainFactory.GetGrain<IShareLinkDirectoryGrain>(Key).GetGrainId(),
-        nameof(IUsageRollupGrain) => _cluster.GrainFactory.GetGrain<IUsageRollupGrain>(Key).GetGrainId(),
-        nameof(IUserMcpConfigGrain) => _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(Key).GetGrainId(),
-        nameof(IUserMcpOAuthPendingGrain) => _cluster.GrainFactory.GetGrain<IUserMcpOAuthPendingGrain>(Key).GetGrainId(),
-        nameof(IUserProfileGrain) => _cluster.GrainFactory.GetGrain<IUserProfileGrain>(Key).GetGrainId(),
-        nameof(IUserProviderConfigGrain) => _cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(Key).GetGrainId(),
-        nameof(IUserPushGrain) => _cluster.GrainFactory.GetGrain<IUserPushGrain>(Key).GetGrainId(),
-        nameof(IUserShareLinksGrain) => _cluster.GrainFactory.GetGrain<IUserShareLinksGrain>(Key).GetGrainId(),
+        nameof(IAgentGrain) => Cluster.GrainFactory.GetGrain<IAgentGrain>(Key).GetGrainId(),
+        nameof(IAgentRegistryGrain) => Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(Key).GetGrainId(),
+        nameof(IAgentKeyDirectoryGrain) => Cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(Key).GetGrainId(),
+        nameof(IConversationIndexGrain) => Cluster.GrainFactory.GetGrain<IConversationIndexGrain>(Key).GetGrainId(),
+        nameof(IShareLinkDirectoryGrain) => Cluster.GrainFactory.GetGrain<IShareLinkDirectoryGrain>(Key).GetGrainId(),
+        nameof(IUsageRollupGrain) => Cluster.GrainFactory.GetGrain<IUsageRollupGrain>(Key).GetGrainId(),
+        nameof(IUserMcpConfigGrain) => Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(Key).GetGrainId(),
+        nameof(IUserMcpOAuthPendingGrain) => Cluster.GrainFactory.GetGrain<IUserMcpOAuthPendingGrain>(Key).GetGrainId(),
+        nameof(IUserProfileGrain) => Cluster.GrainFactory.GetGrain<IUserProfileGrain>(Key).GetGrainId(),
+        nameof(IUserProviderConfigGrain) => Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(Key).GetGrainId(),
+        nameof(IUserPushGrain) => Cluster.GrainFactory.GetGrain<IUserPushGrain>(Key).GetGrainId(),
+        nameof(IUserShareLinksGrain) => Cluster.GrainFactory.GetGrain<IUserShareLinksGrain>(Key).GetGrainId(),
         _ => throw new ArgumentOutOfRangeException(nameof(interfaceName), interfaceName, "Unmapped grain interface."),
     };
 
@@ -84,7 +71,7 @@ public sealed class GrainIdentityTests : IAsyncLifetime
     [Fact]
     public void AgentGrainId_IsUnchanged_IncludingTheKey()
     {
-        var id = _cluster.GrainFactory.GetGrain<IAgentGrain>("user/conv").GetGrainId();
+        var id = Cluster.GrainFactory.GetGrain<IAgentGrain>("user/conv").GetGrainId();
 
         Assert.Equal("agent/user/conv", id.ToString());
     }
