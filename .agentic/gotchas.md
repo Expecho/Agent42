@@ -2004,6 +2004,50 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0054-live-otel-console.md`
 - **Verified:** 2026-08-27
 
+### The gen_ai metrics ride a meter named after `sourceName` — and `AddSource` alone drops every one
+
+- **Claim:** `UseOpenTelemetry(sourceName: X)` on an `IChatClient` names **both** the `ActivitySource` and
+  the `Meter` `X` — `_meter = new(string.IsNullOrEmpty(sourceName) ? DefaultSourceName : sourceName)`.
+  `MultiProviderChatClientFactory` passes `OtelSourceName`, so the four gen_ai histograms
+  (`gen_ai.client.token.usage`, `.operation.duration`, `.operation.time_to_first_chunk`,
+  `.operation.time_per_output_chunk`) are published on a meter called **`"Agent42.Backend"`**, *not* on
+  `"Microsoft.Extensions.AI"` — which is the name every doc and blog post tells you to register, and which
+  is wrong for this app precisely *because* it passes a custom `sourceName`.
+  **A `MeterProvider` subscribes by meter name and nothing else, so getting this wrong fails in complete
+  silence.** The instruments are still created and every measurement is still recorded; the SDK simply
+  never listens, and the result is an empty series rather than an error, a warning or a missing-meter
+  diagnostic. That is how the app shipped from ADR 0013 through ADR 0054 with `AddSource(OtelSourceName)`
+  and no matching `AddMeter` — the token histograms were live the whole time and discarded on every turn,
+  which is a large part of why ADR 0031's usage dashboard had to reconstruct token counts from **spans**.
+  **`AddSource` and `AddMeter` are separate subscriptions to the same name** and neither implies the
+  other, so any future host that traces this app must register both. The single `AddMeter` lives in
+  `AddLiveTelemetryCapture` and is **deliberately outside** that method's `addInstrumentation` gate, which
+  is the one thing about it easy to get wrong: the gate's `true` branch is DevHost's, and the *Backend* —
+  the only host that ever talks to a real model — passes `false`. Subscribing next to the matching
+  `AddSource` inside that branch reads as the natural home for it and would leave production exactly as
+  broken while the offline host looked fine, which is why `CaptureWiring_CollectsTheChatClientTokenHistogram`
+  is a `[Theory]` over **both** values rather than a fact. It is also the one line of that method that
+  changes what the Backend ships to its **OTLP collector** — the class summary's "purely additive" claim
+  carries an explicit exception for it — because both metric readers hang off one `MeterProvider`.
+  It sits there rather than in `Program.cs` for a second reason worth knowing before moving it back:
+  **nothing in the suite runs `Program.cs`**, so a registration there is untestable by construction *and*
+  scores 0% on the new-code coverage gate (ADR 0050).
+  **The Agent Framework agent layer emits no metrics at all** and cannot be the fix: `Microsoft.Agents.AI`
+  1.19.0 (verified against the assembly — `.AI`, `.Abstractions` and `.OpenAI` all contain zero
+  `System.Diagnostics.Metrics` / `CreateHistogram` / `CreateCounter` references) is **trace-only**
+  (`OpenTelemetryAgent`, `OpenTelemetryConsts`), an acknowledged .NET/Python gap —
+  microsoft/agent-framework#2688. The agent-level instruments the framework docs advertise
+  (`agent.invocation.duration`, `agent_framework.function.invocation.duration`, `agent.token.usage`) are
+  the **Python** SDK's, so `AddMeter("*Microsoft.Agents.AI")` subscribes to nothing here. Every gen_ai
+  metric this app has comes from the `Microsoft.Extensions.AI` client underneath the agent.
+  `MeterNamingTests` asserts the naming rule in **both** directions against the real library, because the
+  positive alone would still pass if the instruments were published on both names.
+- **Evidence:** `src/Agent42.Backend/Telemetry/LiveTelemetryCaptureExtensions.cs`
+  (the unconditional `metrics.AddMeter(OtelSourceName)`),
+  `src/Agent42.Backend/Models/ChatClientFactory.cs` (`_otelSourceName`),
+  `tests/Agent42.Tests/MeterNamingTests.cs`
+- **Verified:** 2026-08-27
+
 ### A diagnostics console watches itself, and the obvious log filter blinds it instead
 
 - **Claim:** A page that polls `/api/diagnostics/*` every couple of seconds produces a server span **and**
