@@ -11,8 +11,12 @@ namespace Agent42.Backend;
 /// pipeline from <c>AddServiceDefaults()</c>, while <c>tools/Agent42.DevHost</c> has none at all.
 ///
 /// <para>Capture is deliberately <b>additive and exporter-independent</b>: it adds a processor to each
-/// signal and a second metric reader, and touches nothing about what the app already ships to the OTLP
-/// collector. Measured facts this rests on — a second
+/// signal and a second metric reader. It touches nothing about what the app already ships to the OTLP
+/// collector <b>with one deliberate exception</b> — the unconditional <c>AddMeter(OtelSourceName)</c>
+/// below, which subscribes the chat client's gen_ai histograms for the first time and so reaches the OTLP
+/// exporter as well as the ring, because both readers hang off the one <c>MeterProvider</c>. That is the
+/// point of it, and it is the only registration here that is not gated on <c>addInstrumentation</c>.
+/// Measured facts this rests on — a second
 /// <c>PeriodicExportingMetricReader</c> alongside the OTLP one captures the full instrument set; calling
 /// <c>builder.Logging.AddOpenTelemetry</c> a second time is <b>additive, not duplicating</b> (one
 /// provider, two processors, each record seen exactly once); and span capture works with no exporter
@@ -66,6 +70,29 @@ public static class LiveTelemetryCaptureExtensions
             })
             .WithMetrics(metrics =>
             {
+                // UNCONDITIONAL — the one line in this method that is not gated on addInstrumentation, and
+                // the one that is not purely about the /logs console.
+                //
+                // MultiProviderChatClientFactory wraps every chat client in
+                // UseOpenTelemetry(sourceName: OtelSourceName), and Microsoft.Extensions.AI names the Meter
+                // from the SAME string it names the ActivitySource from. So the four gen_ai histograms —
+                // token.usage, operation.duration, time_to_first_chunk, time_per_output_chunk — are
+                // published on a meter called "Agent42.Backend", NOT on "Microsoft.Extensions.AI". A
+                // MeterProvider subscribes by meter name and nothing else, so without this line those
+                // instruments are recorded and every measurement is dropped — with no exception, warning or
+                // missing-meter diagnostic, just a permanently empty token series. MeterNamingTests pins the
+                // naming rule in both directions so a library bump cannot reintroduce that quietly.
+                //
+                // It belongs HERE rather than beside Program.cs's AddSource(OtelSourceName) so that both
+                // hosts subscribe from one place and cannot drift — and because nothing in the suite runs
+                // Program.cs, so a registration there is untestable by construction. The price is stated in
+                // the class summary: this single line does change what the Backend ships to its OTLP
+                // collector, since both readers hang off the one MeterProvider.
+                //
+                // The Agent Framework layer adds nothing further to subscribe to — Microsoft.Agents.AI
+                // 1.19.0 contains no System.Diagnostics.Metrics references at all and is trace-only.
+                metrics.AddMeter(OtelSourceName);
+
                 if (addInstrumentation)
                 {
                     metrics.AddAspNetCoreInstrumentation()
