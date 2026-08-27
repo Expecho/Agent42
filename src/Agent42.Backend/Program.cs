@@ -13,7 +13,7 @@ using Microsoft.Extensions.AI;
 using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Trace;
 
-const string OtelSourceName = "Agent42.Backend";
+const string OtelSourceName = LiveTelemetryCaptureExtensions.OtelSourceName;
 
 // The application dimension of the usage dashboard (ADR 0031). Agent42 is one service and agent name
 // is not on the span, so this is a constant; per-agent attribution is a future OTEL-native add.
@@ -42,6 +42,12 @@ builder.Services.AddOpenTelemetry()
         // Project the gen_ai chat/execute_tool spans (already on OtelSourceName) into the usage
         // rollups (ADR 0031). OnEnd-only, non-blocking — enqueues to usageChannel.
         .AddProcessor(new UsageSpanProcessor(usageChannel.Writer, UsageApplication)));
+
+// The live telemetry console at /logs (ADR 0054): a bounded in-memory ring filled by in-process capture
+// components. addInstrumentation stays FALSE here — AddServiceDefaults() above already registered the
+// AspNetCore/Http/Runtime instrumentation, and registering it twice risks duplicate spans. Capture is
+// purely additive: it changes nothing about what this app ships to the OTLP collector.
+builder.AddLiveTelemetryCapture();
 
 // Stamp OTel semantic-convention user.* attributes onto the ASP.NET Core server span of every
 // authenticated request (ADR 0009). The Easy-Auth-specific extraction lives in CurrentUser here in
