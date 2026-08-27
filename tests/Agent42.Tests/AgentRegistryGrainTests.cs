@@ -1,29 +1,16 @@
 using Agent42.Agents;
 using Orleans.Core.Internal;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
-public sealed class AgentRegistryGrainTests : IAsyncLifetime
+public sealed class AgentRegistryGrainTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     // AC1: create → list → get → update → delete, and the store survives grain deactivation.
     [Fact]
     public async Task AgentRegistry_CrudRoundTrips_AndSurvivesReactivation()
     {
         const string user = "registry-crud-user";
-        var registry = _cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
 
         // Create: an empty id means insert; the grain assigns the id + timestamps.
         // Continuous: true exercises the history-mode flag (ADR 0016) through the whole
@@ -59,7 +46,7 @@ public sealed class AgentRegistryGrainTests : IAsyncLifetime
         // Force deactivation so the next call re-reads persisted state (Cosmos in prod).
         await registry.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var reactivated = _cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        var reactivated = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
         var afterReactivation = await reactivated.GetAsync(updated.Id);
         Assert.Equal(updated, afterReactivation);
         Assert.True(afterReactivation!.Continuous, "the history-mode flag should survive reactivation.");
@@ -73,7 +60,7 @@ public sealed class AgentRegistryGrainTests : IAsyncLifetime
     [Fact]
     public async Task AgentRegistry_ListsMostRecentlyUpdatedFirst()
     {
-        var registry = _cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("registry-order-user");
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("registry-order-user");
 
         var first = (await registry.SaveAsync(new AgentDefinition(
             "", "First", "", "gpt-4o", "sys", default, default))).Agent;
@@ -95,7 +82,7 @@ public sealed class AgentRegistryGrainTests : IAsyncLifetime
     public async Task AgentRegistry_Create_MintsKey_StoresHashOnly()
     {
         const string user = "registry-mintkey-user";
-        var registry = _cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
 
         var result = await registry.SaveAsync(new AgentDefinition(
             "", "Keyed", "", "gpt-4o", "sys", default, default));
@@ -106,7 +93,7 @@ public sealed class AgentRegistryGrainTests : IAsyncLifetime
         Assert.Equal(ApiKey.Hash(result.PlaintextApiKey!), result.Agent.ApiKeyHash);
 
         // The hash resolves to this agent in the global directory.
-        var owner = await _cluster.GrainFactory
+        var owner = await Cluster.GrainFactory
             .GetGrain<IAgentKeyDirectoryGrain>(result.Agent.ApiKeyHash).ResolveAsync();
         Assert.NotNull(owner);
         Assert.Equal(user, owner!.UserId);
@@ -123,7 +110,7 @@ public sealed class AgentRegistryGrainTests : IAsyncLifetime
     public async Task AgentKey_Regenerate_InvalidatesOldKey()
     {
         const string user = "registry-regen-user";
-        var registry = _cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
 
         var created = await registry.SaveAsync(new AgentDefinition(
             "", "Rotatable", "", "gpt-4o", "sys", default, default));
@@ -136,8 +123,8 @@ public sealed class AgentRegistryGrainTests : IAsyncLifetime
         Assert.Equal(ApiKey.Hash(regenerated.PlaintextApiKey!), regenerated.Agent.ApiKeyHash);
 
         // Old hash no longer resolves; new hash does.
-        Assert.Null(await _cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(oldHash).ResolveAsync());
-        var owner = await _cluster.GrainFactory
+        Assert.Null(await Cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(oldHash).ResolveAsync());
+        var owner = await Cluster.GrainFactory
             .GetGrain<IAgentKeyDirectoryGrain>(regenerated.Agent.ApiKeyHash).ResolveAsync();
         Assert.NotNull(owner);
         Assert.Equal(created.Agent.Id, owner!.AgentId);
@@ -148,15 +135,15 @@ public sealed class AgentRegistryGrainTests : IAsyncLifetime
     public async Task AgentDelete_DeregistersKey()
     {
         const string user = "registry-delete-user";
-        var registry = _cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
 
         var created = await registry.SaveAsync(new AgentDefinition(
             "", "Doomed", "", "gpt-4o", "sys", default, default));
         var hash = created.Agent.ApiKeyHash;
-        Assert.NotNull(await _cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(hash).ResolveAsync());
+        Assert.NotNull(await Cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(hash).ResolveAsync());
 
         await registry.DeleteAsync(created.Agent.Id);
 
-        Assert.Null(await _cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(hash).ResolveAsync());
+        Assert.Null(await Cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(hash).ResolveAsync());
     }
 }

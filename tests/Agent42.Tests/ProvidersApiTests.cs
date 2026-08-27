@@ -3,13 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Agent42.Agents;
 using Agent42.Backend;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -18,54 +12,12 @@ namespace Agent42.Tests;
 /// test cluster — so the encrypt-before-grain, mask-on-read, and per-user isolation guarantees are
 /// exercised end to end. The API layer encrypts the key, so the host registers IProviderSecretProtector (m7).
 /// </summary>
-public sealed class ProvidersApiTests : IAsyncLifetime
+public sealed class ProvidersApiTests(SharedApiFixture fixture) : SharedClusterTests<SharedApiFixture>(fixture)
 {
     private const string IdHeader = "X-MS-CLIENT-PRINCIPAL-ID";
 
-    private TestCluster _cluster = null!;
-    private WebApplication _app = null!;
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-
-        var appBuilder = WebApplication.CreateSlimBuilder();
-        appBuilder.WebHost.UseTestServer();
-        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
-        // The API encrypts the key before the grain (ADR 0018), so the protector must be registered —
-        // an ephemeral key ring is fine for tests (no persisted secrets).
-        appBuilder.Services.AddSingleton<IProviderSecretProtector>(
-            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
-            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
-        // MapAgentApi maps every endpoint; the route matcher infers all of their parameters up front, so
-        // the services the OTHER endpoints resolve as parameters must be present even though these tests
-        // only hit /api/providers (otherwise minimal-API treats an unregistered service param as a body).
-        appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
-        appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
-            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
-        appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
-        appBuilder.Services.AddDocumentRagFakes();
-        // /api/push/config injects PushConfig; MapAgentApi infers every endpoint's params up front, so it
-        // must resolve or routing breaks for the whole host (ADR 0028). This host does not test push.
-        appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
-        _app = appBuilder.Build();
-        _app.MapAgentApi();
-        await _app.StartAsync();
-        _client = _app.GetTestClient();
-    }
-
-    public async Task DisposeAsync()
-    {
-        _client.Dispose();
-        await _app.DisposeAsync();
-        await _cluster.DisposeAsync();
-    }
+    // The host, the cluster and the client are all the fixture's, deployed once for the class.
+    private HttpClient Client => Fixture.Client;
 
     private static HttpRequestMessage Request(HttpMethod method, string uri, string principalId, object? body = null)
     {
@@ -94,10 +46,10 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task Get_NeverReturnsKey()
     {
-        (await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-a", OllamaBody("super-secret-value"))))
+        (await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-a", OllamaBody("super-secret-value"))))
             .EnsureSuccessStatusCode();
 
-        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-a"));
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-a"));
         response.EnsureSuccessStatusCode();
         var raw = await response.Content.ReadAsStringAsync();
 
@@ -114,10 +66,10 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task AcceptsLocalhost_RejectsMalformed()
     {
-        var ok = await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-b", OllamaBody()));
+        var ok = await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-b", OllamaBody()));
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
 
-        var bad = await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-b", new
+        var bad = await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-b", new
         {
             key = "broken",
             kind = "OpenAICompatible",
@@ -126,7 +78,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
         }));
         Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
 
-        var badKind = await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-b", new
+        var badKind = await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-b", new
         {
             key = "x",
             kind = "Nonsense",
@@ -142,7 +94,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task RejectsProviderWithNoModels()
     {
-        var response = await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-d", new
+        var response = await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-d", new
         {
             key = "modelless",
             kind = "OpenAICompatible",
@@ -159,11 +111,11 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task Put_BlankKey_KeepsStoredKey()
     {
-        (await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-c", OllamaBody("original-key"))))
+        (await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-c", OllamaBody("original-key"))))
             .EnsureSuccessStatusCode();
 
         // Update the display name, sending NO key (but the required ≥1 model — ADR 0019).
-        var put = await _client.SendAsync(Request(HttpMethod.Put, "/api/providers/ollama", "user-c", new
+        var put = await Client.SendAsync(Request(HttpMethod.Put, "/api/providers/ollama", "user-c", new
         {
             key = "ollama",
             kind = "OpenAICompatible",
@@ -174,7 +126,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
         }));
         put.EnsureSuccessStatusCode();
 
-        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-c"));
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-c"));
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var provider = doc.RootElement.GetProperty("providers").EnumerateArray().Single();
         Assert.Equal("Renamed", provider.GetProperty("displayName").GetString());
@@ -186,7 +138,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task Providers_AcceptImageModel_MaskKey()
     {
-        var post = await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-img", new
+        var post = await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-img", new
         {
             key = "images",
             kind = "OpenAICompatible",
@@ -201,7 +153,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
         }));
         post.EnsureSuccessStatusCode();
 
-        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-img"));
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-img"));
         var raw = await response.Content.ReadAsStringAsync();
         Assert.DoesNotContain("img-secret", raw);
 
@@ -218,7 +170,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     // side of PUT /api/default-model, which deliberately has no GET of its own.
     private async Task<string?> GetDefaultAsync(string principalId)
     {
-        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", principalId));
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", principalId));
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return doc.RootElement.GetProperty("default").GetString();
@@ -229,7 +181,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task PutDefaultEmbeddingModel_PersistsClearsAndCaps()
     {
-        var put = await _client.SendAsync(Request(HttpMethod.Put, "/api/default-embedding-model", "user-emb", new
+        var put = await Client.SendAsync(Request(HttpMethod.Put, "/api/default-embedding-model", "user-emb", new
         {
             embeddingDefault = "foundry:text-embedding-3-large",
         }));
@@ -237,18 +189,18 @@ public sealed class ProvidersApiTests : IAsyncLifetime
         Assert.Equal("foundry:text-embedding-3-large", await GetEmbeddingDefaultAsync("user-emb"));
 
         // Independent of the chat default.
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-emb", new { @default = "ollama:llama3.1" })))
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-emb", new { @default = "ollama:llama3.1" })))
             .EnsureSuccessStatusCode();
         Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-emb"));
         Assert.Equal("foundry:text-embedding-3-large", await GetEmbeddingDefaultAsync("user-emb"));
 
         // Blank clears it back to null.
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-embedding-model", "user-emb", new { embeddingDefault = "  " })))
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/default-embedding-model", "user-emb", new { embeddingDefault = "  " })))
             .EnsureSuccessStatusCode();
         Assert.Null(await GetEmbeddingDefaultAsync("user-emb"));
 
         // The 200-char cap is a 400.
-        var tooLong = await _client.SendAsync(Request(HttpMethod.Put, "/api/default-embedding-model", "user-emb", new
+        var tooLong = await Client.SendAsync(Request(HttpMethod.Put, "/api/default-embedding-model", "user-emb", new
         {
             embeddingDefault = new string('x', 201),
         }));
@@ -257,7 +209,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
 
     private async Task<string?> GetEmbeddingDefaultAsync(string principalId)
     {
-        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", principalId));
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", principalId));
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return doc.RootElement.GetProperty("embeddingDefault").GetString();
@@ -267,7 +219,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task PutDefaultModel_PersistsAndIsReturnedByGet()
     {
-        var put = await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-def", new
+        var put = await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-def", new
         {
             @default = "ollama:llama3.1",
         }));
@@ -280,15 +232,15 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task PutDefaultModel_Blank_ClearsTheDefault()
     {
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-clear", new { @default = "ollama:llama3.1" })))
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-clear", new { @default = "ollama:llama3.1" })))
             .EnsureSuccessStatusCode();
         Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-clear"));
 
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-clear", new { @default = "  " })))
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-clear", new { @default = "  " })))
             .EnsureSuccessStatusCode();
         Assert.Null(await GetDefaultAsync("user-clear"));
 
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-clear", new { @default = (string?)null })))
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-clear", new { @default = (string?)null })))
             .EnsureSuccessStatusCode();
         Assert.Null(await GetDefaultAsync("user-clear"));
     }
@@ -297,7 +249,7 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task PutDefaultModel_IsPerUser()
     {
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "dora", new { @default = "ollama:llama3.1" })))
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "dora", new { @default = "ollama:llama3.1" })))
             .EnsureSuccessStatusCode();
 
         Assert.Equal("ollama:llama3.1", await GetDefaultAsync("dora"));
@@ -309,18 +261,18 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task ProviderCrud_PreservesTheDefault()
     {
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-crud", new { @default = "ollama:llama3.1" })))
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-crud", new { @default = "ollama:llama3.1" })))
             .EnsureSuccessStatusCode();
 
-        (await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-crud", OllamaBody())))
-            .EnsureSuccessStatusCode();
-        Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-crud"));
-
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/providers/ollama", "user-crud", OllamaBody(null))))
+        (await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-crud", OllamaBody())))
             .EnsureSuccessStatusCode();
         Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-crud"));
 
-        (await _client.SendAsync(Request(HttpMethod.Delete, "/api/providers/ollama", "user-crud")))
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/providers/ollama", "user-crud", OllamaBody(null))))
+            .EnsureSuccessStatusCode();
+        Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-crud"));
+
+        (await Client.SendAsync(Request(HttpMethod.Delete, "/api/providers/ollama", "user-crud")))
             .EnsureSuccessStatusCode();
         Assert.Equal("ollama:llama3.1", await GetDefaultAsync("user-crud"));
     }
@@ -331,10 +283,10 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task PutDefaultModel_TooLong_Rejected_AndLeavesStoredValue()
     {
-        (await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-long", new { @default = "ollama:llama3.1" })))
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-long", new { @default = "ollama:llama3.1" })))
             .EnsureSuccessStatusCode();
 
-        var tooLong = await _client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-long", new
+        var tooLong = await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", "user-long", new
         {
             @default = new string('x', 201),
         }));
@@ -348,28 +300,28 @@ public sealed class ProvidersApiTests : IAsyncLifetime
     [Fact]
     public async Task Crud_IsPerUser()
     {
-        (await _client.SendAsync(Request(HttpMethod.Post, "/api/providers", "alice", OllamaBody())))
+        (await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "alice", OllamaBody())))
             .EnsureSuccessStatusCode();
 
         // Bob sees nothing.
-        var bob = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", "bob"));
+        var bob = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", "bob"));
         using (var bobDoc = JsonDocument.Parse(await bob.Content.ReadAsStringAsync()))
         {
             Assert.Empty(bobDoc.RootElement.GetProperty("providers").EnumerateArray());
         }
 
         // Bob deleting "ollama" does not touch Alice's.
-        (await _client.SendAsync(Request(HttpMethod.Delete, "/api/providers/ollama", "bob"))).EnsureSuccessStatusCode();
+        (await Client.SendAsync(Request(HttpMethod.Delete, "/api/providers/ollama", "bob"))).EnsureSuccessStatusCode();
 
-        var alice = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", "alice"));
+        var alice = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", "alice"));
         using (var aliceDoc = JsonDocument.Parse(await alice.Content.ReadAsStringAsync()))
         {
             Assert.Single(aliceDoc.RootElement.GetProperty("providers").EnumerateArray());
         }
 
         // Alice deleting it removes it.
-        (await _client.SendAsync(Request(HttpMethod.Delete, "/api/providers/ollama", "alice"))).EnsureSuccessStatusCode();
-        var aliceAfter = await _client.SendAsync(Request(HttpMethod.Get, "/api/providers", "alice"));
+        (await Client.SendAsync(Request(HttpMethod.Delete, "/api/providers/ollama", "alice"))).EnsureSuccessStatusCode();
+        var aliceAfter = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", "alice"));
         using var afterDoc = JsonDocument.Parse(await aliceAfter.Content.ReadAsStringAsync());
         Assert.Empty(afterDoc.RootElement.GetProperty("providers").EnumerateArray());
     }

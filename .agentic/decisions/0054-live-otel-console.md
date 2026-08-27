@@ -183,13 +183,14 @@ level: that changes what the app ships to the OTLP collector too. Instead both t
 - **`excludedPaths` is unchanged** — all three API routes and the static page stay behind Easy Auth.
   `EasyAuthExclusionTests` gains six rows so that is a checked fact rather than an omission.
 - **Two service-worker residuals, deliberately not fixed here.** `sw.js`'s stale-while-revalidate branch
-  caches every same-origin non-navigation request, so `/logs/logs.js` *is* runtime-cached and `activate`
-  only purges when `CACHE` changes — a future `/logs` edit is served stale to the installed PWA until some
-  other MR bumps `CACHE`. And an offline navigation to `/logs` falls back to `caches.match("/index.html")`,
-  painting the chat shell at that URL. Both are acceptable for a diagnostics page that is useless offline;
-  neither justifies touching `sw.js`. One classic script removes the *cross-module* skew hazard, not skew
-  in general: `index.html` is a navigation and so network-first, while `logs.js`/`logs.css` are
-  stale-while-revalidate, so fresh HTML can still meet a stale script until some MR bumps `CACHE`.
+  caches every same-origin non-navigation request, so the script served at /logs/logs.js *is*
+  runtime-cached and `activate` only purges when `CACHE` changes — a future `/logs` edit is served
+  stale to the installed PWA until some other MR bumps `CACHE`. And an offline navigation to `/logs`
+  falls back to `caches.match("/index.html")`, painting the chat shell at that URL. Both are acceptable
+  for a diagnostics page that is useless offline; neither justifies touching `sw.js`. One classic script
+  removes the *cross-module* skew hazard, not skew in general: `index.html` is a navigation and so
+  network-first, while `logs.js`/`logs.css` are stale-while-revalidate, so fresh HTML can still meet a
+  stale script until some MR bumps `CACHE`.
 - **DevHost gains an OpenTelemetry pipeline** (instrumentation, no exporter). This falsifies the
   parenthetical *"empty offline (DevHost has no OTel pipeline)"* in ADR 0031 and CLAUDE.md — both corrected
   in this MR. The usage dashboard is still empty offline, because `UsageSpanProcessor` is Backend-only.

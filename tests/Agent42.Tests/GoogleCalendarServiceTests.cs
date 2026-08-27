@@ -3,7 +3,6 @@ using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -14,32 +13,24 @@ namespace Agent42.Tests;
 /// are invisible in a response-shaped test and irreversible in production, so they are pinned on the
 /// request.
 /// </summary>
-public sealed class GoogleCalendarServiceTests : IAsyncLifetime
+public sealed class GoogleCalendarServiceTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private const string UserId = "user@example.com";
+    // Unique per TEST, not per class. xUnit builds a new instance of this class for each test, so this
+    // gives every test its own IUserGoogleGrain — which is what pairs it with the per-test key ring below:
+    // a shared key would leave a previous test's ciphertext, protected by a DIFFERENT ring, live in the
+    // grain, and a test that read without connecting would fail as an unexplained NotConnected.
+    private readonly string UserId = $"user-{Guid.NewGuid():N}@example.com";
 
-    private TestCluster _cluster = null!;
-    private IDataProtectionProvider _ring = null!;
-    private IGoogleSecretProtector _protector = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-
-        _ring = new EphemeralDataProtectionProvider();
-        _protector = new GoogleSecretProtector(_ring, NullLogger<GoogleSecretProtector>.Instance);
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
+    // A key ring per TEST, not per class: what a test protects must stay undecryptable to the rotated ring
+    // UndecryptableCredential_DegradesToNotConnected builds, and a shared ring would blur that line.
+    private readonly IGoogleSecretProtector _protector = new GoogleSecretProtector(
+        new EphemeralDataProtectionProvider(), NullLogger<GoogleSecretProtector>.Instance);
 
     // ── fixture plumbing ────────────────────────────────────────────────────────────────────────────
 
     private async Task ConnectAsync(string userId, TimeSpan expiresIn)
     {
-        await _cluster.GrainFactory.GetGrain<IUserGoogleGrain>(userId).SetAsync(new GoogleConnection(
+        await Cluster.GrainFactory.GetGrain<IUserGoogleGrain>(userId).SetAsync(new GoogleConnection(
             AccessTokenCiphertext: _protector.Protect("access-current"),
             RefreshTokenCiphertext: _protector.Protect("refresh-current"),
             AccessTokenExpiresAt: DateTimeOffset.UtcNow.Add(expiresIn),
@@ -54,7 +45,7 @@ public sealed class GoogleCalendarServiceTests : IAsyncLifetime
         var oauth = new GoogleOAuthClient(http, "https://as.test/authorize", "https://as.test/token");
 
         return new GoogleCalendarService(
-            http, _cluster.GrainFactory, _protector, oauth, clientId, clientSecret,
+            http, Cluster.GrainFactory, _protector, oauth, clientId, clientSecret,
             NullLogger<GoogleCalendarService>.Instance);
     }
 
@@ -199,7 +190,7 @@ public sealed class GoogleCalendarServiceTests : IAsyncLifetime
         // The refreshed token is the one the calendar call actually uses.
         Assert.Equal("Bearer access-refreshed", handler.Recorded[1].Authorization);
 
-        var stored = await _cluster.GrainFactory.GetGrain<IUserGoogleGrain>(user).GetAsync();
+        var stored = await Cluster.GrainFactory.GetGrain<IUserGoogleGrain>(user).GetAsync();
         Assert.Equal("access-refreshed", _protector.Unprotect(stored!.AccessTokenCiphertext));
         // A refresh response carries no refresh_token; the original must survive, or the connection
         // dies at the next expiry.
@@ -262,7 +253,7 @@ public sealed class GoogleCalendarServiceTests : IAsyncLifetime
         var handler = Responding("""{"items":[]}""");
         var http = new HttpClient(handler) { BaseAddress = new Uri(GoogleCalendarService.DefaultBaseAddress) };
         var service = new GoogleCalendarService(
-            http, _cluster.GrainFactory, otherRing,
+            http, Cluster.GrainFactory, otherRing,
             new GoogleOAuthClient(http, "https://as.test/authorize", "https://as.test/token"),
             "client-1", "secret-1", NullLogger<GoogleCalendarService>.Instance);
 

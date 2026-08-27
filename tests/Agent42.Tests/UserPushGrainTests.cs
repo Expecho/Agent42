@@ -1,23 +1,10 @@
 using Agent42.Agents;
 using Orleans.Core.Internal;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
-public sealed class UserPushGrainTests : IAsyncLifetime
+public sealed class UserPushGrainTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     private static PushSubscription Sub(string endpoint, string p256dh = "p256", string auth = "auth") =>
         new(endpoint, p256dh, auth);
 
@@ -26,7 +13,7 @@ public sealed class UserPushGrainTests : IAsyncLifetime
     public async Task Add_RoundTrips_AndSurvivesReactivation()
     {
         const string user = "push-roundtrip-user";
-        var grain = _cluster.GrainFactory.GetGrain<IUserPushGrain>(user);
+        var grain = Cluster.GrainFactory.GetGrain<IUserPushGrain>(user);
 
         // Never subscribed → empty.
         Assert.Empty(await grain.GetAllAsync());
@@ -36,7 +23,7 @@ public sealed class UserPushGrainTests : IAsyncLifetime
         // Force deactivation so the next call re-reads persisted state.
         await grain.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var reactivated = _cluster.GrainFactory.GetGrain<IUserPushGrain>(user);
+        var reactivated = Cluster.GrainFactory.GetGrain<IUserPushGrain>(user);
         var stored = Assert.Single(await reactivated.GetAllAsync());
         Assert.Equal("https://fcm.example/a", stored.Endpoint);
         Assert.Equal("p256", stored.P256dh);
@@ -47,7 +34,7 @@ public sealed class UserPushGrainTests : IAsyncLifetime
     [Fact]
     public async Task Add_UpsertsByEndpoint()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserPushGrain>("push-upsert-user");
+        var grain = Cluster.GrainFactory.GetGrain<IUserPushGrain>("push-upsert-user");
 
         await grain.AddAsync(Sub("https://fcm.example/dev1", p256dh: "old", auth: "old"));
         await grain.AddAsync(Sub("https://fcm.example/dev2"));
@@ -63,7 +50,7 @@ public sealed class UserPushGrainTests : IAsyncLifetime
     [Fact]
     public async Task Remove_DropsByEndpoint()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserPushGrain>("push-remove-user");
+        var grain = Cluster.GrainFactory.GetGrain<IUserPushGrain>("push-remove-user");
 
         await grain.AddAsync(Sub("https://fcm.example/keep"));
         await grain.AddAsync(Sub("https://fcm.example/drop"));
@@ -81,8 +68,8 @@ public sealed class UserPushGrainTests : IAsyncLifetime
     [Fact]
     public async Task IsIsolatedPerUser()
     {
-        var alice = _cluster.GrainFactory.GetGrain<IUserPushGrain>("push-alice");
-        var bob = _cluster.GrainFactory.GetGrain<IUserPushGrain>("push-bob");
+        var alice = Cluster.GrainFactory.GetGrain<IUserPushGrain>("push-alice");
+        var bob = Cluster.GrainFactory.GetGrain<IUserPushGrain>("push-bob");
 
         await alice.AddAsync(Sub("https://fcm.example/alice"));
 

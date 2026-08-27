@@ -10,7 +10,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -18,63 +17,10 @@ namespace Agent42.Tests;
 /// Hosts the minimal-API endpoints in-memory (TestServer) against a real Orleans test
 /// cluster, so the HTTP contract the browser depends on is exercised end to end.
 /// </summary>
-public sealed class AgentApiTests : IAsyncLifetime
+public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<AgentApiFixture>(fixture)
 {
-    private TestCluster _cluster = null!;
-    private WebApplication _app = null!;
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-
-        var appBuilder = WebApplication.CreateSlimBuilder();
-        appBuilder.WebHost.UseTestServer();
-        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
-        // Registered so the /api/models endpoint's parameter is resolved as a service
-        // (otherwise minimal-API metadata inference treats it as a body and fails to map). Two
-        // providers, so the endpoint's qualified-id contract (ADR 0013) is assertable.
-        appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("foundry:gpt-4o",
-        [
-            new ModelInfo("foundry:gpt-4o", "foundry", "GPT-4o", "gpt-4o", "2024-08-06", true, true),
-            new ModelInfo("github:openai/gpt-4o-mini", "github", "GPT-4o mini", "openai/gpt-4o-mini",
-                null, SupportsTools: true, SupportsVision: false),
-        ]));
-        // /api/models is user-scoped (ADR 0018); the single static catalog stands in for every user.
-        appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
-            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
-        // /api/providers encrypts keys, so the protector must resolve for the route matcher (ADR 0018).
-        appBuilder.Services.AddSingleton<IProviderSecretProtector>(
-            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
-        // /api/mcp-servers encrypts secrets, so its protector must also resolve for the route matcher
-        // (minimal-API infers every endpoint's parameters up front — an unregistered service param would be
-        // treated as a body and break routing for the whole host).
-        appBuilder.Services.AddSingleton<IMcpSecretProtector>(
-            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
-        appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
-        // The chat endpoint resolves attachments through the store; the in-memory store is
-        // process-global, so it is the same instance the silo grain sees (constraint 10).
-        appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
-        // Document ingestion + retrieval stand-ins for the upload endpoint and grain (ADR 0007).
-        appBuilder.Services.AddDocumentRagFakes();
-        // Web Push (ADR 0028): registered ENABLED with a known public key so GET /api/push/config is
-        // assertable, and so /api/push/config's PushConfig param resolves for the route matcher.
-        appBuilder.Services.AddSingleton(new PushConfig(Enabled: true, PublicKey: TestVapidPublicKey, Subject: "mailto:test@agent42"));
-        _app = appBuilder.Build();
-        _app.MapAgentApi();
-        await _app.StartAsync();
-        _client = _app.GetTestClient();
-    }
-
-    public async Task DisposeAsync()
-    {
-        _client.Dispose();
-        await _app.DisposeAsync();
-        await _cluster.DisposeAsync();
-    }
+    // The host, the cluster and the client are all the fixture's, deployed once for the class.
+    private HttpClient Client => Fixture.Client;
 
     [Fact]
     public async Task SelectedModelEndpoint_RespondsWithJson_NotPlainText()
@@ -83,7 +29,7 @@ public sealed class AgentApiTests : IAsyncLifetime
         // framework serves as text/plain. The UI parses this response as JSON, so a
         // text/plain body threw in response.json() and silently aborted rendering the
         // conversation history alongside it.
-        var response = await _client.GetAsync("/api/conversations/model-contract-conversation/model");
+        var response = await Client.GetAsync("/api/conversations/model-contract-conversation/model");
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
@@ -96,13 +42,13 @@ public sealed class AgentApiTests : IAsyncLifetime
     {
         const string id = "api-history-conversation";
 
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("hi", null)))
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("hi", null)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync(); // drain the NDJSON stream so the turn is persisted
         }
 
-        var response = await _client.GetAsync($"/api/conversations/{id}/messages");
+        var response = await Client.GetAsync($"/api/conversations/{id}/messages");
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
@@ -118,7 +64,7 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task Chat_ForwardsLocation()
     {
-        using var chat = await _client.PostAsJsonAsync(
+        using var chat = await Client.PostAsJsonAsync(
             "/api/chat/api-location-conversation",
             new ChatRequest("where am i", null, null, null, new UserLocation(52.3676, 4.9041, 12)));
 
@@ -137,7 +83,7 @@ public sealed class AgentApiTests : IAsyncLifetime
     [InlineData(52.3676, 999)]
     public async Task Chat_DropsOutOfRangeLocation(double latitude, double longitude)
     {
-        using var chat = await _client.PostAsJsonAsync(
+        using var chat = await Client.PostAsJsonAsync(
             $"/api/chat/api-bad-location-{latitude}-{longitude}",
             new ChatRequest("where am i", null, null, null, new UserLocation(latitude, longitude)));
 
@@ -153,22 +99,22 @@ public sealed class AgentApiTests : IAsyncLifetime
     {
         const string id = "api-delete-conversation";
 
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("hi", null)))
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("hi", null)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync(); // drain the NDJSON stream so the conversation is persisted
         }
 
-        var before = await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
+        var before = await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
         Assert.Contains(before!, c => c.Id == id);
 
-        var delete = await _client.DeleteAsync($"/api/conversations/{id}");
+        var delete = await Client.DeleteAsync($"/api/conversations/{id}");
         Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
 
-        var after = await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
+        var after = await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
         Assert.DoesNotContain(after!, c => c.Id == id);
 
-        var history = await _client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages");
+        var history = await Client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages");
         Assert.Empty(history!);
     }
 
@@ -184,10 +130,10 @@ public sealed class AgentApiTests : IAsyncLifetime
         await StartConversationAsync(olderId, "the older chat");
         await StartConversationAsync(newerId, "the newer chat");
 
-        var pin = await _client.PutAsJsonAsync($"/api/conversations/{olderId}/pin", new PinConversationRequest(true));
+        var pin = await Client.PutAsJsonAsync($"/api/conversations/{olderId}/pin", new PinConversationRequest(true));
         Assert.Equal(HttpStatusCode.NoContent, pin.StatusCode);
 
-        var conversations = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
+        var conversations = (await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
 
         Assert.True(conversations.FindIndex(c => c.Id == olderId) < conversations.FindIndex(c => c.Id == newerId));
         Assert.True(Assert.Single(conversations, c => c.Id == olderId).Pinned);
@@ -206,11 +152,11 @@ public sealed class AgentApiTests : IAsyncLifetime
         await Task.Delay(20);
         await StartConversationAsync(newerId, "the newer chat");
 
-        await _client.PutAsJsonAsync($"/api/conversations/{olderId}/pin", new PinConversationRequest(true));
-        var unpin = await _client.PutAsJsonAsync($"/api/conversations/{olderId}/pin", new PinConversationRequest(false));
+        await Client.PutAsJsonAsync($"/api/conversations/{olderId}/pin", new PinConversationRequest(true));
+        var unpin = await Client.PutAsJsonAsync($"/api/conversations/{olderId}/pin", new PinConversationRequest(false));
         Assert.Equal(HttpStatusCode.NoContent, unpin.StatusCode);
 
-        var conversations = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
+        var conversations = (await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
 
         Assert.True(conversations.FindIndex(c => c.Id == newerId) < conversations.FindIndex(c => c.Id == olderId));
         Assert.False(Assert.Single(conversations, c => c.Id == olderId).Pinned);
@@ -220,19 +166,19 @@ public sealed class AgentApiTests : IAsyncLifetime
     public async Task PinConversation_UnknownId_Returns204()
     {
         // Idempotent silent no-op: an unlisted id must not be distinguishable from a listed one.
-        var pin = await _client.PutAsJsonAsync(
+        var pin = await Client.PutAsJsonAsync(
             "/api/conversations/api-pin-does-not-exist/pin", new PinConversationRequest(true));
 
         Assert.Equal(HttpStatusCode.NoContent, pin.StatusCode);
 
-        var conversations = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
+        var conversations = (await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
         Assert.DoesNotContain(conversations, c => c.Id == "api-pin-does-not-exist");
     }
 
     // Runs one turn so the conversation is listed in the index, draining the NDJSON stream.
     private async Task StartConversationAsync(string conversationId, string prompt)
     {
-        using var chat = await _client.PostAsJsonAsync($"/api/chat/{conversationId}", new ChatRequest(prompt, null));
+        using var chat = await Client.PostAsJsonAsync($"/api/chat/{conversationId}", new ChatRequest(prompt, null));
         chat.EnsureSuccessStatusCode();
         await chat.Content.ReadAsStringAsync();
     }
@@ -247,20 +193,20 @@ public sealed class AgentApiTests : IAsyncLifetime
         const string ephemeralId = "api-ephemeral-conversation";
         const string normalId = "api-normal-conversation";
 
-        using (var chat = await _client.PostAsJsonAsync(
+        using (var chat = await Client.PostAsJsonAsync(
             $"/api/chat/{ephemeralId}", new ChatRequest("secret", null, null, null, null, Ephemeral: true)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync(); // drain the NDJSON stream
         }
 
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{normalId}", new ChatRequest("hi", null)))
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{normalId}", new ChatRequest("hi", null)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync();
         }
 
-        var conversations = await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
+        var conversations = await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
         Assert.DoesNotContain(conversations!, c => c.Id == ephemeralId);
         Assert.Contains(conversations!, c => c.Id == normalId);
     }
@@ -269,7 +215,7 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task AgentsEndpoints_CrudRoundTrip_AsJson()
     {
-        var createRes = await _client.PostAsJsonAsync("/api/agents",
+        var createRes = await Client.PostAsJsonAsync("/api/agents",
             new AgentUpsertRequest("Marvin", "Paranoid android", "gpt-4o", "You are perpetually depressed.",
                 Continuous: true));
         createRes.EnsureSuccessStatusCode();
@@ -286,12 +232,12 @@ public sealed class AgentApiTests : IAsyncLifetime
         // AC2: POST echoes the history-mode flag.
         Assert.True(created.Continuous);
 
-        var list = await _client.GetFromJsonAsync<List<AgentDefinition>>("/api/agents");
+        var list = await Client.GetFromJsonAsync<List<AgentDefinition>>("/api/agents");
         // AC2: GET carries it too.
         Assert.Contains(list!, a => a.Id == created.Id && a.Name == "Marvin" && a.Continuous);
 
         // AC2: PUT accepts and echoes a flipped flag.
-        var updateRes = await _client.PutAsJsonAsync($"/api/agents/{created.Id}",
+        var updateRes = await Client.PutAsJsonAsync($"/api/agents/{created.Id}",
             new AgentUpsertRequest("Marvin II", "Still paranoid", "gpt-4o", "You are brilliant but morose.",
                 Continuous: false));
         updateRes.EnsureSuccessStatusCode();
@@ -306,18 +252,18 @@ public sealed class AgentApiTests : IAsyncLifetime
         // AC3: an old-shape client that OMITS `continuous` entirely stores false (per-chat) — the
         // real "old data defaults to per-chat" property, asserted at the JSON layer (not the ctor).
         // An anonymous payload without the field, so it is genuinely absent on the wire.
-        var oldShapeRes = await _client.PostAsJsonAsync("/api/agents",
+        var oldShapeRes = await Client.PostAsJsonAsync("/api/agents",
             new { name = "Legacy", description = "no flag", model = "gpt-4o", systemPrompt = "You are old." });
         oldShapeRes.EnsureSuccessStatusCode();
         var legacy = (await oldShapeRes.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
         Assert.NotNull(legacy);
         Assert.False(legacy.Continuous, "an omitted `continuous` must default to false (per-chat).");
-        await _client.DeleteAsync($"/api/agents/{legacy.Id}");
+        await Client.DeleteAsync($"/api/agents/{legacy.Id}");
 
-        var deleteRes = await _client.DeleteAsync($"/api/agents/{created.Id}");
+        var deleteRes = await Client.DeleteAsync($"/api/agents/{created.Id}");
         Assert.Equal(HttpStatusCode.NoContent, deleteRes.StatusCode);
 
-        var after = await _client.GetFromJsonAsync<List<AgentDefinition>>("/api/agents");
+        var after = await Client.GetFromJsonAsync<List<AgentDefinition>>("/api/agents");
         Assert.DoesNotContain(after!, a => a.Id == created.Id);
     }
 
@@ -327,18 +273,18 @@ public sealed class AgentApiTests : IAsyncLifetime
     public async Task ChatWithAgentId_BindsAgent_AndReportsIt()
     {
         const string convId = "api-agent-chat";
-        var created = (await (await _client.PostAsJsonAsync("/api/agents",
+        var created = (await (await Client.PostAsJsonAsync("/api/agents",
             new AgentUpsertRequest("Zaphod", "Two heads", "zaphod-model", "You are Zaphod.")))
             .Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
 
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{convId}",
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{convId}",
             new ChatRequest("hi", null, created!.Id)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync(); // drain the NDJSON stream so the turn is persisted
         }
 
-        var bindingRes = await _client.GetAsync($"/api/conversations/{convId}/agent");
+        var bindingRes = await Client.GetAsync($"/api/conversations/{convId}/agent");
         bindingRes.EnsureSuccessStatusCode();
         Assert.Equal("application/json", bindingRes.Content.Headers.ContentType?.MediaType);
         var binding = await bindingRes.Content.ReadFromJsonAsync<AgentBinding>();
@@ -347,7 +293,7 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.Equal("You are Zaphod.", binding.SystemPrompt);
 
         // The model endpoint reports the agent's pinned model, not the server default.
-        var model = await _client.GetFromJsonAsync<string>($"/api/conversations/{convId}/model");
+        var model = await Client.GetFromJsonAsync<string>($"/api/conversations/{convId}/model");
         Assert.Equal("zaphod-model", model);
     }
 
@@ -356,23 +302,23 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task ChatWithAgentId_ListsConversationUnderAgent()
     {
-        var created = (await (await _client.PostAsJsonAsync("/api/agents",
+        var created = (await (await Client.PostAsJsonAsync("/api/agents",
             new AgentUpsertRequest("Slartibartfast", "Fjords", "fjord-model", "You design coastlines.")))
             .Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
 
-        using (var chat = await _client.PostAsJsonAsync("/api/chat/api-agent-grouped",
+        using (var chat = await Client.PostAsJsonAsync("/api/chat/api-agent-grouped",
             new ChatRequest("hi", null, created!.Id)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync();
         }
-        using (var chat = await _client.PostAsJsonAsync("/api/chat/api-plain-grouped", new ChatRequest("hi", null)))
+        using (var chat = await Client.PostAsJsonAsync("/api/chat/api-plain-grouped", new ChatRequest("hi", null)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync();
         }
 
-        var conversations = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
+        var conversations = (await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!;
 
         var agentChat = Assert.Single(conversations, c => c.Id == "api-agent-grouped");
         Assert.Equal(created.Id, agentChat.AgentId);
@@ -387,13 +333,13 @@ public sealed class AgentApiTests : IAsyncLifetime
     public async Task NormalChat_HasNoAgentBinding()
     {
         const string convId = "api-normal-chat";
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{convId}", new ChatRequest("hi", null)))
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{convId}", new ChatRequest("hi", null)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync();
         }
 
-        var bindingRes = await _client.GetAsync($"/api/conversations/{convId}/agent");
+        var bindingRes = await Client.GetAsync($"/api/conversations/{convId}/agent");
         bindingRes.EnsureSuccessStatusCode();
         Assert.Equal("application/json", bindingRes.Content.Headers.ContentType?.MediaType);
         var binding = await bindingRes.Content.ReadFromJsonAsync<AgentBinding>();
@@ -406,28 +352,28 @@ public sealed class AgentApiTests : IAsyncLifetime
     public async Task ChatAfterAgentDeleted_StillUsesPinnedPersona_NoError()
     {
         const string convId = "api-agent-deleted-chat";
-        var created = (await (await _client.PostAsJsonAsync("/api/agents",
+        var created = (await (await Client.PostAsJsonAsync("/api/agents",
             new AgentUpsertRequest("Trillian", "", "trillian-model", "You are Trillian.")))
             .Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
 
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{convId}",
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{convId}",
             new ChatRequest("hi", null, created!.Id)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync();
         }
 
-        (await _client.DeleteAsync($"/api/agents/{created.Id}")).EnsureSuccessStatusCode();
+        (await Client.DeleteAsync($"/api/agents/{created.Id}")).EnsureSuccessStatusCode();
 
         // Another turn still carrying the now-deleted agent id must succeed, not 500.
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{convId}",
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{convId}",
             new ChatRequest("hello again", null, created.Id)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync();
         }
 
-        var binding = await (await _client.GetAsync($"/api/conversations/{convId}/agent"))
+        var binding = await (await Client.GetAsync($"/api/conversations/{convId}/agent"))
             .Content.ReadFromJsonAsync<AgentBinding>();
         Assert.NotNull(binding);
         Assert.Equal(created.Id, binding!.AgentId);
@@ -437,10 +383,17 @@ public sealed class AgentApiTests : IAsyncLifetime
 
     // AC2: GET /api/profile is application/json and returns the empty default when never set
     // (honors the JSON-contract gotcha — a non-null object via Results.Json, never a bare string).
+    //
+    // The principal is named here, and written by no other test, so "never set" is a property of THIS
+    // request. With no header the endpoint falls back to the shared local-dev user, whose profile the
+    // neighbouring PUT tests set — which the per-test cluster used to hide.
     [Fact]
     public async Task ProfileEndpoint_ReturnsJson_WithDefaultWhenUnset()
     {
-        var response = await _client.GetAsync("/api/profile");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/profile");
+        request.Headers.Add("X-MS-CLIENT-PRINCIPAL-ID", "profile-never-set-user");
+
+        using var response = await Client.SendAsync(request);
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
@@ -453,13 +406,13 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task ProfileEndpoint_PersistsPreferredLanguage()
     {
-        var putRes = await _client.PutAsJsonAsync("/api/profile", new ProfileUpdateRequest("nl-NL"));
+        var putRes = await Client.PutAsJsonAsync("/api/profile", new ProfileUpdateRequest("nl-NL"));
         putRes.EnsureSuccessStatusCode();
         Assert.Equal("application/json", putRes.Content.Headers.ContentType?.MediaType);
         var saved = await putRes.Content.ReadFromJsonAsync<UserProfile>();
         Assert.Equal("nl-NL", saved!.PreferredLanguage);
 
-        var getBack = await _client.GetFromJsonAsync<UserProfile>("/api/profile");
+        var getBack = await Client.GetFromJsonAsync<UserProfile>("/api/profile");
         Assert.Equal("nl-NL", getBack!.PreferredLanguage);
     }
 
@@ -467,11 +420,11 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task ProfileEndpoint_PersistsTheme()
     {
-        var putRes = await _client.PutAsJsonAsync("/api/profile", new ProfileUpdateRequest("en-US", "dark"));
+        var putRes = await Client.PutAsJsonAsync("/api/profile", new ProfileUpdateRequest("en-US", "dark"));
         putRes.EnsureSuccessStatusCode();
         Assert.Equal("dark", (await putRes.Content.ReadFromJsonAsync<UserProfile>())!.Theme);
 
-        var getBack = await _client.GetFromJsonAsync<UserProfile>("/api/profile");
+        var getBack = await Client.GetFromJsonAsync<UserProfile>("/api/profile");
         Assert.Equal("dark", getBack!.Theme);
     }
 
@@ -481,11 +434,11 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task ProfileEndpoint_OmittedTheme_KeepsStoredTheme()
     {
-        var seed = await _client.PutAsJsonAsync("/api/profile", new ProfileUpdateRequest("en-US", "dark"));
+        var seed = await Client.PutAsJsonAsync("/api/profile", new ProfileUpdateRequest("en-US", "dark"));
         seed.EnsureSuccessStatusCode();
 
         // Body without any Theme key, as a pre-theme client would send.
-        var staleSave = await _client.PutAsJsonAsync("/api/profile", new { preferredLanguage = "fr-FR" });
+        var staleSave = await Client.PutAsJsonAsync("/api/profile", new { preferredLanguage = "fr-FR" });
         staleSave.EnsureSuccessStatusCode();
 
         var saved = await staleSave.Content.ReadFromJsonAsync<UserProfile>();
@@ -497,12 +450,12 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task ProfileEndpoint_PersistsSuggestFollowUps()
     {
-        var putRes = await _client.PutAsJsonAsync(
+        var putRes = await Client.PutAsJsonAsync(
             "/api/profile", new ProfileUpdateRequest(PreferredLanguage: "en-US", SuggestFollowUps: false));
         putRes.EnsureSuccessStatusCode();
         Assert.False((await putRes.Content.ReadFromJsonAsync<UserProfile>())!.SuggestFollowUps);
 
-        var getBack = await _client.GetFromJsonAsync<UserProfile>("/api/profile");
+        var getBack = await Client.GetFromJsonAsync<UserProfile>("/api/profile");
         Assert.False(getBack!.SuggestFollowUps);
     }
 
@@ -511,12 +464,12 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task ProfileEndpoint_OmittedSuggestFollowUps_KeepsStored()
     {
-        var seed = await _client.PutAsJsonAsync(
+        var seed = await Client.PutAsJsonAsync(
             "/api/profile", new ProfileUpdateRequest(PreferredLanguage: "en-US", SuggestFollowUps: false));
         seed.EnsureSuccessStatusCode();
 
         // Body without any suggestFollowUps key.
-        var staleSave = await _client.PutAsJsonAsync("/api/profile", new { preferredLanguage = "fr-FR" });
+        var staleSave = await Client.PutAsJsonAsync("/api/profile", new { preferredLanguage = "fr-FR" });
         staleSave.EnsureSuccessStatusCode();
 
         var saved = await staleSave.Content.ReadFromJsonAsync<UserProfile>();
@@ -524,7 +477,7 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.False(saved.SuggestFollowUps); // kept, not reset to the null default (ON)
     }
 
-    // AC4: the profile is isolated per user (the Entra object id). The shared _client sends no
+    // AC4: the profile is isolated per user (the Entra object id). The shared Client sends no
     // principal header (→ "local-dev"), so this builds explicit requests carrying distinct
     // X-MS-CLIENT-PRINCIPAL-ID values; TestServer has no ingress stripping X-MS-CLIENT-* headers.
     [Fact]
@@ -552,7 +505,7 @@ public sealed class AgentApiTests : IAsyncLifetime
         fileContent.Headers.ContentType = new MediaTypeHeaderValue(DocumentMediaTypes.Pdf);
         form.Add(fileContent, "file", "guide.pdf");
 
-        var response = await _client.PostAsync($"/api/conversations/{convId}/attachments", form);
+        var response = await Client.PostAsync($"/api/conversations/{convId}/attachments", form);
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
@@ -590,7 +543,7 @@ public sealed class AgentApiTests : IAsyncLifetime
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         form.Add(fileContent, "file", "guide.pdf");
 
-        var response = await _client.PostAsync($"/api/conversations/{convId}/attachments", form);
+        var response = await Client.PostAsync($"/api/conversations/{convId}/attachments", form);
 
         response.EnsureSuccessStatusCode();
         var result = JsonSerializer.Deserialize<DocumentUploadResult>(
@@ -607,7 +560,7 @@ public sealed class AgentApiTests : IAsyncLifetime
             Content = JsonContent.Create(new ProfileUpdateRequest(language)),
         };
         request.Headers.Add("X-MS-CLIENT-PRINCIPAL-ID", principalId);
-        using var response = await _client.SendAsync(request);
+        using var response = await Client.SendAsync(request);
         response.EnsureSuccessStatusCode();
     }
 
@@ -615,7 +568,7 @@ public sealed class AgentApiTests : IAsyncLifetime
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/profile");
         request.Headers.Add("X-MS-CLIENT-PRINCIPAL-ID", principalId);
-        using var response = await _client.SendAsync(request);
+        using var response = await Client.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<UserProfile>())!;
     }
@@ -625,7 +578,7 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task ModelsEndpoint_ReturnsQualifiedIdsWithProvider()
     {
-        var json = await _client.GetStringAsync("/api/models");
+        var json = await Client.GetStringAsync("/api/models");
 
         using var doc = JsonDocument.Parse(json);
         Assert.Equal("foundry:gpt-4o", doc.RootElement.GetProperty("default").GetString());
@@ -650,7 +603,7 @@ public sealed class AgentApiTests : IAsyncLifetime
     {
         var (_, apiKey) = await CreateAgentAsync("SecretHolder");
 
-        var listRaw = await _client.GetStringAsync("/api/agents");
+        var listRaw = await Client.GetStringAsync("/api/agents");
         Assert.DoesNotContain(apiKey, listRaw);
         Assert.DoesNotContain("sk_agent_", listRaw);
     }
@@ -675,7 +628,7 @@ public sealed class AgentApiTests : IAsyncLifetime
         Assert.Contains(turns, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
 
         // The conversation is bound to the agent persona (ADR 0003).
-        var binding = await (await _client.GetAsync($"/api/conversations/{convId}/agent"))
+        var binding = await (await Client.GetAsync($"/api/conversations/{convId}/agent"))
             .Content.ReadFromJsonAsync<AgentBinding>();
         Assert.NotNull(binding);
         Assert.Equal(agentId, binding!.AgentId);
@@ -698,7 +651,7 @@ public sealed class AgentApiTests : IAsyncLifetime
     {
         var (agentId, oldKey) = await CreateAgentAsync();
 
-        var regenerated = (await (await _client.PutAsJsonAsync($"/api/agents/{agentId}",
+        var regenerated = (await (await Client.PutAsJsonAsync($"/api/agents/{agentId}",
             new AgentUpsertRequest("Runner", "", "gpt-4o", "You are a runner.", RegenerateKey: true)))
             .Content.ReadFromJsonAsync<AgentSaveResponse>())!;
         var newKey = regenerated.ApiKey;
@@ -756,20 +709,20 @@ public sealed class AgentApiTests : IAsyncLifetime
     public async Task AgentRun_BadFile_Rejects400_NoConversation()
     {
         var (_, apiKey) = await CreateAgentAsync();
-        var before = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!.Count;
+        var before = (await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!.Count;
 
         using var res = await AgentRunAsync(apiKey, "hi",
             (new byte[] { 1, 2, 3 }, "application/octet-stream", "malware.exe"));
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
 
-        var after = (await _client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!.Count;
+        var after = (await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!.Count;
         Assert.Equal(before, after);
     }
 
     // Creates an agent and returns its id + the once-shown raw API key.
     private async Task<(string Id, string ApiKey)> CreateAgentAsync(string name = "Runner")
     {
-        var body = (await (await _client.PostAsJsonAsync("/api/agents",
+        var body = (await (await Client.PostAsJsonAsync("/api/agents",
             new AgentUpsertRequest(name, "", "gpt-4o", "You are a runner.")))
             .Content.ReadFromJsonAsync<AgentSaveResponse>())!;
         return (body.Agent.Id, body.ApiKey!);
@@ -794,7 +747,7 @@ public sealed class AgentApiTests : IAsyncLifetime
             request.Headers.Add("X-Api-Key", apiKey);
         }
 
-        return await _client.SendAsync(request);
+        return await Client.SendAsync(request);
     }
 
     // Polls a conversation's history until <paramref name="until"/> holds or a bound elapses — the
@@ -804,7 +757,7 @@ public sealed class AgentApiTests : IAsyncLifetime
         List<ChatTurn> turns = [];
         for (var attempt = 0; attempt < 50; attempt++)
         {
-            turns = (await _client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{convId}/messages"))!;
+            turns = (await Client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{convId}/messages"))!;
             if (until(turns))
             {
                 return turns;
@@ -818,8 +771,8 @@ public sealed class AgentApiTests : IAsyncLifetime
 
     // ---- Web Push subscription + config endpoints (ADR 0028) -------------------------------------
 
-    // A recognizable non-secret public key, registered in the host so GET /api/push/config is assertable.
-    private const string TestVapidPublicKey = "BTestVapidPublicKeyForConfigAssertion";
+    // The key the fixture registers, so GET /api/push/config is assertable against a known value.
+    private const string TestVapidPublicKey = AgentApiFixture.TestVapidPublicKey;
 
     // With no principal header GetUserId falls back to this — the key the push grain is stored under.
     private const string LocalDevUser = "local-dev";
@@ -828,7 +781,7 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task PushConfig_ReflectsEnabled()
     {
-        var response = await _client.GetAsync("/api/push/config");
+        var response = await Client.GetAsync("/api/push/config");
 
         response.EnsureSuccessStatusCode();
         var config = await response.Content.ReadFromJsonAsync<PushConfigResponse>();
@@ -841,29 +794,40 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task PushSubscriptionEndpoints_Crud()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserPushGrain>(LocalDevUser);
+        var grain = Cluster.GrainFactory.GetGrain<IUserPushGrain>(LocalDevUser);
 
-        var post = await _client.PostAsJsonAsync(
+        var post = await Client.PostAsJsonAsync(
             "/api/push/subscriptions", new PushSubscriptionRequest("https://push/dev", "p256", "auth"));
         Assert.Equal(HttpStatusCode.NoContent, post.StatusCode);
         var stored = Assert.Single(await grain.GetAllAsync());
         Assert.Equal("https://push/dev", stored.Endpoint);
 
-        var delete = await _client.DeleteAsync(
+        var delete = await Client.DeleteAsync(
             "/api/push/subscriptions?endpoint=" + Uri.EscapeDataString("https://push/dev"));
         Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
         Assert.Empty(await grain.GetAllAsync());
     }
 
     // A subscription missing a required field is rejected 400 (never persisted).
+    //
+    // Its own principal, not the shared local-dev fallback: PushSubscriptionEndpoints_Crud writes that
+    // grain, and "never persisted" must be a property of THIS request rather than of that test having
+    // already deleted what it added (ADR 0055, check 1 — one grain key per test).
     [Fact]
     public async Task PushSubscription_Post_RejectsIncomplete()
     {
-        var post = await _client.PostAsJsonAsync(
-            "/api/push/subscriptions", new PushSubscriptionRequest("https://push/x", "", "auth"));
+        const string user = "push-reject-user";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/push/subscriptions")
+        {
+            Content = JsonContent.Create(new PushSubscriptionRequest("https://push/x", "", "auth")),
+        };
+        request.Headers.Add("X-MS-CLIENT-PRINCIPAL-ID", user);
+
+        using var post = await Client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, post.StatusCode);
-        Assert.Empty(await _cluster.GrainFactory.GetGrain<IUserPushGrain>(LocalDevUser).GetAllAsync());
+        Assert.Empty(await Cluster.GrainFactory.GetGrain<IUserPushGrain>(user).GetAllAsync());
     }
 
     // AC8: with no VAPID private key configured the app still serves, and config reports disabled.
@@ -873,7 +837,7 @@ public sealed class AgentApiTests : IAsyncLifetime
         // A separate minimal host with push DISABLED — the shared host registers it enabled.
         var appBuilder = WebApplication.CreateSlimBuilder();
         appBuilder.WebHost.UseTestServer();
-        appBuilder.Services.AddSingleton<IGrainFactory>(_cluster.GrainFactory);
+        appBuilder.Services.AddSingleton<IGrainFactory>(Cluster.GrainFactory);
         appBuilder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
         appBuilder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
             new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
@@ -911,41 +875,41 @@ public sealed class AgentApiTests : IAsyncLifetime
     public async Task ShareLink_CreateResolveRevoke()
     {
         const string id = "share-lifecycle-conversation";
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("share me", null)))
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("share me", null)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync(); // drain so the turn persists
         }
 
         // Not shared yet.
-        var before = await _client.GetFromJsonAsync<ShareLinkResponse>($"/api/conversations/{id}/share");
+        var before = await Client.GetFromJsonAsync<ShareLinkResponse>($"/api/conversations/{id}/share");
         Assert.Null(before!.Url);
 
         // Create → a URL carrying the token in the fragment.
-        var created = await (await _client.PostAsync($"/api/conversations/{id}/share", null))
+        var created = await (await Client.PostAsync($"/api/conversations/{id}/share", null))
             .Content.ReadFromJsonAsync<ShareLinkResponse>();
         Assert.False(string.IsNullOrEmpty(created!.Url));
         Assert.Contains("/shared/#shr_", created.Url);
         var token = TokenFromShareUrl(created.Url!);
 
         // Idempotent — a second create returns the same stable, re-copyable link.
-        var again = await (await _client.PostAsync($"/api/conversations/{id}/share", null))
+        var again = await (await Client.PostAsync($"/api/conversations/{id}/share", null))
             .Content.ReadFromJsonAsync<ShareLinkResponse>();
         Assert.Equal(created.Url, again!.Url);
 
         // The public endpoint resolves the conversation's history.
-        var shared = await _client.GetFromJsonAsync<SharedConversationResponse>($"/api/share/{token}");
+        var shared = await Client.GetFromJsonAsync<SharedConversationResponse>($"/api/share/{token}");
         Assert.NotNull(shared);
         Assert.Contains(shared!.Turns, t => t.Role == "user" && t.Text == "share me");
 
         // Revoke → the public endpoint 404s and the owner sees no link.
-        var del = await _client.DeleteAsync($"/api/conversations/{id}/share");
+        var del = await Client.DeleteAsync($"/api/conversations/{id}/share");
         Assert.Equal(HttpStatusCode.NoContent, del.StatusCode);
 
-        var afterPublic = await _client.GetAsync($"/api/share/{token}");
+        var afterPublic = await Client.GetAsync($"/api/share/{token}");
         Assert.Equal(HttpStatusCode.NotFound, afterPublic.StatusCode);
 
-        var afterOwner = await _client.GetFromJsonAsync<ShareLinkResponse>($"/api/conversations/{id}/share");
+        var afterOwner = await Client.GetFromJsonAsync<ShareLinkResponse>($"/api/conversations/{id}/share");
         Assert.Null(afterOwner!.Url);
     }
 
@@ -953,10 +917,10 @@ public sealed class AgentApiTests : IAsyncLifetime
     [Fact]
     public async Task ShareLink_UnknownToken_Returns404()
     {
-        var view = await _client.GetAsync("/api/share/shr_not-a-real-token");
+        var view = await Client.GetAsync("/api/share/shr_not-a-real-token");
         Assert.Equal(HttpStatusCode.NotFound, view.StatusCode);
 
-        var att = await _client.GetAsync("/api/share/shr_not-a-real-token/attachments/whatever");
+        var att = await Client.GetAsync("/api/share/shr_not-a-real-token/attachments/whatever");
         Assert.Equal(HttpStatusCode.NotFound, att.StatusCode);
     }
 
@@ -965,19 +929,19 @@ public sealed class AgentApiTests : IAsyncLifetime
     public async Task ShareLink_RevokedWhenConversationDeleted()
     {
         const string id = "share-then-delete-conversation";
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("bye", null)))
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("bye", null)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync();
         }
 
-        var token = TokenFromShareUrl((await (await _client.PostAsync($"/api/conversations/{id}/share", null))
+        var token = TokenFromShareUrl((await (await Client.PostAsync($"/api/conversations/{id}/share", null))
             .Content.ReadFromJsonAsync<ShareLinkResponse>())!.Url!);
 
-        var del = await _client.DeleteAsync($"/api/conversations/{id}");
+        var del = await Client.DeleteAsync($"/api/conversations/{id}");
         Assert.Equal(HttpStatusCode.NoContent, del.StatusCode);
 
-        var gone = await _client.GetAsync($"/api/share/{token}");
+        var gone = await Client.GetAsync($"/api/share/{token}");
         Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
     }
 
@@ -987,30 +951,30 @@ public sealed class AgentApiTests : IAsyncLifetime
     {
         const string id = "share-image-conversation";
         var attId = await UploadImageAsync(id, [1, 2, 3, 4], "pic.png");
-        using (var chat = await _client.PostAsJsonAsync($"/api/chat/{id}",
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{id}",
             new ChatRequest("look", null, null, [attId])))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync();
         }
 
-        var token = TokenFromShareUrl((await (await _client.PostAsync($"/api/conversations/{id}/share", null))
+        var token = TokenFromShareUrl((await (await Client.PostAsync($"/api/conversations/{id}/share", null))
             .Content.ReadFromJsonAsync<ShareLinkResponse>())!.Url!);
 
         // The public history carries the attachment id (never a blob path).
-        var shared = await _client.GetFromJsonAsync<SharedConversationResponse>($"/api/share/{token}");
+        var shared = await Client.GetFromJsonAsync<SharedConversationResponse>($"/api/share/{token}");
         var userTurn = Assert.Single(shared!.Turns, t => t.Role == "user");
         var att = Assert.Single(userTurn.Attachments!);
         Assert.Equal("pic.png", att.FileName);
 
         // The token-scoped byte proxy returns the image without any auth.
-        var img = await _client.GetAsync($"/api/share/{token}/attachments/{att.Id}");
+        var img = await Client.GetAsync($"/api/share/{token}/attachments/{att.Id}");
         Assert.Equal(HttpStatusCode.OK, img.StatusCode);
         Assert.Equal(new byte[] { 1, 2, 3, 4 }, await img.Content.ReadAsByteArrayAsync());
 
         // After revoke, the image proxy 404s too.
-        await _client.DeleteAsync($"/api/conversations/{id}/share");
-        var goneImg = await _client.GetAsync($"/api/share/{token}/attachments/{att.Id}");
+        await Client.DeleteAsync($"/api/conversations/{id}/share");
+        var goneImg = await Client.GetAsync($"/api/share/{token}/attachments/{att.Id}");
         Assert.Equal(HttpStatusCode.NotFound, goneImg.StatusCode);
     }
 
@@ -1021,7 +985,7 @@ public sealed class AgentApiTests : IAsyncLifetime
         var part = new ByteArrayContent(bytes);
         part.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         form.Add(part, "file", fileName);
-        var res = await _client.PostAsync($"/api/conversations/{convId}/attachments", form);
+        var res = await Client.PostAsync($"/api/conversations/{convId}/attachments", form);
         res.EnsureSuccessStatusCode();
         return (await res.Content.ReadFromJsonAsync<AttachmentMetadata>())!.Id;
     }

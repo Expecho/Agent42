@@ -1,3 +1,4 @@
+using Agent42.Agents;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.TestingHost;
 
@@ -24,7 +25,7 @@ public class SharedClusterFixture : IAsyncLifetime
 {
     public TestCluster Cluster { get; private set; } = null!;
 
-    public async Task InitializeAsync()
+    public virtual async Task InitializeAsync()
     {
         var builder = new TestClusterBuilder();
         builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
@@ -32,12 +33,19 @@ public class SharedClusterFixture : IAsyncLifetime
         await Cluster.DeployAsync();
     }
 
-    public async Task DisposeAsync() => await Cluster.DisposeAsync();
+    public virtual async Task DisposeAsync() => await Cluster.DisposeAsync();
 
     /// <summary>
     /// Returns the mutable per-silo fakes to their initial state, restoring the per-test isolation the
     /// old cluster-per-test shape gave for free. Tests within a class run serially (one collection), so
     /// this cannot race a test still in flight.
+    ///
+    /// <para>The list is every per-silo singleton a test can WRITE — not just the two that own a
+    /// <c>Reset()</c>. <see cref="SingleUserMcpToolProvider"/> has none of its own (it lives in <c>src/</c>
+    /// and serves offline hosts as well as tests), so its settable state is cleared from here instead. The
+    /// in-memory attachment, document, skill and calendar stores are deliberately absent: they are
+    /// process-global rather than per-silo and already outlive every cluster, so a fresh cluster was never
+    /// their isolation boundary and sharing one changes nothing for them.</para>
     /// </summary>
     public void ResetSiloState()
     {
@@ -46,6 +54,7 @@ public class SharedClusterFixture : IAsyncLifetime
             var services = Cluster.GetSiloServiceProvider(silo.SiloAddress);
             services.GetRequiredService<FakeChatClient>().Reset();
             services.GetRequiredService<RecordingPushNotificationSender>().Reset();
+            services.GetRequiredService<SingleUserMcpToolProvider>().Servers = [];
         }
     }
 }

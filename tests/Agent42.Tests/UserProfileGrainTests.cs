@@ -1,29 +1,16 @@
 using Agent42.Agents;
 using Orleans.Core.Internal;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
-public sealed class UserProfileGrainTests : IAsyncLifetime
+public sealed class UserProfileGrainTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
-
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     // AC1: the preferred language persists and survives grain deactivation (Cosmos in prod).
     [Fact]
     public async Task UserProfile_RoundTrips_AndSurvivesReactivation()
     {
         const string user = "profile-roundtrip-user";
-        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
+        var profile = Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
 
         // Never saved → the empty default.
         Assert.Equal("", (await profile.GetAsync()).PreferredLanguage);
@@ -35,7 +22,7 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
         // Force deactivation so the next call re-reads persisted state.
         await profile.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var reactivated = _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
+        var reactivated = Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
         Assert.Equal("nl-NL", (await reactivated.GetAsync()).PreferredLanguage);
     }
 
@@ -45,7 +32,7 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
     public async Task UserProfile_RoundTripsEnabledTools_AndSurvivesReactivation()
     {
         const string user = "profile-tools-user";
-        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
+        var profile = Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
 
         var saved = await profile.SaveAsync(new UserProfile("de-DE", "system", [ToolCatalog.WebSearch, ToolCatalog.Scheduling]));
         Assert.Equal("de-DE", saved.PreferredLanguage);
@@ -53,7 +40,7 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
 
         await profile.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var reactivated = _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
+        var reactivated = Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
         var reread = await reactivated.GetAsync();
         Assert.Equal("de-DE", reread.PreferredLanguage);
         Assert.Equal(new[] { ToolCatalog.WebSearch, ToolCatalog.Scheduling }, reread.EnabledTools);
@@ -62,7 +49,7 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
     [Fact]
     public async Task UserProfile_TrimsAndCapsLanguageTag()
     {
-        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-cap-user");
+        var profile = Cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-cap-user");
 
         var saved = await profile.SaveAsync(new UserProfile("  en-US  "));
         Assert.Equal("en-US", saved.PreferredLanguage);
@@ -92,7 +79,7 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
     [InlineData("", "system")]            // blank → system
     public async Task UserProfile_NormalizesTheme(string input, string expected)
     {
-        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>($"profile-theme-{expected}-{input.Trim()}");
+        var profile = Cluster.GrainFactory.GetGrain<IUserProfileGrain>($"profile-theme-{expected}-{input.Trim()}");
 
         var saved = await profile.SaveAsync(new UserProfile("en-US", input));
         Assert.Equal(expected, saved.Theme);
@@ -102,7 +89,7 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
     [Fact]
     public async Task UserProfile_DefaultTheme_IsSystem()
     {
-        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-theme-default");
+        var profile = Cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-theme-default");
 
         // Never saved → empty default carries "system".
         Assert.Equal("system", (await profile.GetAsync()).Theme);
@@ -118,7 +105,7 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
     public async Task UserProfile_RoundTripsSuggestFollowUps_AndSurvivesReactivation()
     {
         const string user = "profile-suggest-user";
-        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
+        var profile = Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user);
 
         // Never saved → null (treated as ON wherever the flag is read).
         Assert.Null((await profile.GetAsync()).SuggestFollowUps);
@@ -130,14 +117,14 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
 
         await profile.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var reread = await _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user).GetAsync();
+        var reread = await Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user).GetAsync();
         Assert.False(reread.SuggestFollowUps);
     }
 
     [Fact]
     public async Task UserProfile_DefaultSuggestFollowUps_IsNull_MeaningOn()
     {
-        var profile = _cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-suggest-default");
+        var profile = Cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-suggest-default");
 
         // Never saved → empty default carries null (ON). Saving without touching it preserves null.
         Assert.Null((await profile.GetAsync()).SuggestFollowUps);
@@ -148,8 +135,8 @@ public sealed class UserProfileGrainTests : IAsyncLifetime
     [Fact]
     public async Task UserProfile_IsIsolatedPerUser()
     {
-        var alice = _cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-alice");
-        var bob = _cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-bob");
+        var alice = Cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-alice");
+        var bob = Cluster.GrainFactory.GetGrain<IUserProfileGrain>("profile-bob");
 
         await alice.SaveAsync(new UserProfile("fr-FR"));
 

@@ -10,28 +10,12 @@ using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
-// The cluster is deployed ONCE for the class (SharedClusterFixture) rather than once per test. IAsyncLifetime
-// still runs per test — xUnit builds a new instance of this class per test method — so it is kept for the
-// per-test work: resetting the shared silos' mutable fakes, and clearing the temp directories a test made.
-public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyncLifetime
+// The cluster is deployed ONCE for the class rather than once per test: SharedClusterTests takes it from a
+// SharedClusterFixture and resets the shared silos' mutable fakes before each test. What stays here is the
+// only per-test work this class alone needs — clearing the temp directories an uploaded-skill test made.
+public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private readonly SharedClusterFixture _fixture;
-    private readonly TestCluster _cluster;
-
-    public AgentGrainTests(SharedClusterFixture fixture)
-    {
-        _fixture = fixture;
-        _cluster = fixture.Cluster;
-    }
-
-    public Task InitializeAsync()
-    {
-        // The counters and recorders are per-silo singletons that now outlive a single test.
-        _fixture.ResetSiloState();
-        return Task.CompletedTask;
-    }
-
-    public Task DisposeAsync()
+    protected override Task OnDisposeAsync()
     {
         // The uploaded-skill tests materialize real directories under the OS temp folder (ADR 0049); nothing
         // else clears them, and a stale one would be reused by a later run under the same skill id.
@@ -48,7 +32,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task SendingHi_ReturnsAnAnswer()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("test-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("test-conversation");
 
         var events = new List<AgentStreamEvent>();
         await foreach (var evt in agent.ChatAsync("hi", null))
@@ -67,14 +51,14 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     // caller of the fake's GetResponseAsync is the suggestion helper — summing FakeChatClient.SuggestionCalls
     // across every silo (the grain may activate on any) counts exactly the suggestion-generation calls.
     private int TotalSuggestionCalls() =>
-        _cluster.Silos.Sum(silo => _cluster.GetSiloServiceProvider(silo.SiloAddress)
+        Cluster.Silos.Sum(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
             .GetRequiredService<FakeChatClient>().SuggestionCalls);
 
     [Fact]
     public async Task ChatAsync_WhenSuggestionsEnabled_EmitsUpToThreeFollowUps()
     {
         // Default profile → suggestions ON (null-sentinel). The interactive path generates them.
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("suggest-on-user/conv");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("suggest-on-user/conv");
 
         var events = new List<AgentStreamEvent>();
         await foreach (var evt in agent.ChatAsync("hi", null))
@@ -95,10 +79,10 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task ChatAsync_WhenSuggestionsDisabled_EmitsNoFollowUps()
     {
         // The preference is read on grain activation, so persist it BEFORE the first turn activates the grain.
-        await _cluster.GrainFactory.GetGrain<IUserProfileGrain>("suggest-off-user")
+        await Cluster.GrainFactory.GetGrain<IUserProfileGrain>("suggest-off-user")
             .SaveAsync(UserProfile.Empty with { SuggestFollowUps = false });
 
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("suggest-off-user/conv");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("suggest-off-user/conv");
 
         var events = new List<AgentStreamEvent>();
         await foreach (var evt in agent.ChatAsync("hi", null))
@@ -118,7 +102,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     {
         // An agent-run (background) turn has no live client watching the stream, so generating follow-ups
         // would be a wasted model call for a discarded event — the interactive gate must keep it off.
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("suggest-enqueue-user/conv");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("suggest-enqueue-user/conv");
 
         await agent.EnqueuePromptAsync("hi", null);
 
@@ -130,7 +114,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task History_ContainsUserAndAssistantTurns_SoAConversationCanBeResumed()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("history-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("history-conversation");
 
         await foreach (var _ in agent.ChatAsync("hi", null))
         {
@@ -146,7 +130,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task History_SurvivesGrainReactivation()
     {
         const string key = "reactivation-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         await foreach (var _ in agent.ChatAsync("hi", null))
         {
@@ -158,7 +142,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         // session must round-trip the visible history.
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var history = await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        var history = await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
 
         Assert.Contains(history, t => t.Role == "user" && t.Text == "hi");
         Assert.Contains(history, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
@@ -167,7 +151,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ConversationIndex_ListsTouchedConversations_MostRecentFirst()
     {
-        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("test-user");
+        var index = Cluster.GrainFactory.GetGrain<IConversationIndexGrain>("test-user");
 
         await index.TouchAsync("conv-1", "What is the answer to everything?");
         await index.TouchAsync("conv-2", "Plan a trip to Magrathea");
@@ -184,7 +168,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ConversationIndex_TouchWithAgent_StoresAndPreservesIdentity()
     {
-        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("agent-index-user");
+        var index = Cluster.GrainFactory.GetGrain<IConversationIndexGrain>("agent-index-user");
 
         // A regular chat carries no agent identity.
         await index.TouchAsync("plain", "Just a normal chat");
@@ -209,7 +193,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task AskingToBeReminded_SchedulesAReminderViaTheTool()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-conversation");
 
         var events = new List<AgentStreamEvent>();
         await foreach (var evt in agent.ChatAsync("please remind me to drink water", null))
@@ -234,7 +218,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task Purge_ClearsHistoryAndUnregistersReminders()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("purge-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("purge-conversation");
 
         await foreach (var _ in agent.ChatAsync("please remind me to drink water", null))
         {
@@ -248,7 +232,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         // this call exercises the UnregisterReminder path against a live reminder.
         await agent.PurgeAsync();
 
-        var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>("purge-conversation");
+        var reactivated = Cluster.GrainFactory.GetGrain<IAgentGrain>("purge-conversation");
         Assert.Empty(await reactivated.GetHistoryAsync());
         Assert.Empty(await reactivated.GetScheduledPromptsAsync());
     }
@@ -256,7 +240,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ConversationIndex_RemoveAsync_DropsTheConversation()
     {
-        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("remove-user");
+        var index = Cluster.GrainFactory.GetGrain<IConversationIndexGrain>("remove-user");
 
         await index.TouchAsync("conv-1", "What is the answer to everything?");
         await index.TouchAsync("conv-2", "Plan a trip to Magrathea");
@@ -270,7 +254,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ConversationIndex_SetPinned_HoistsTheConversationAboveMoreRecentOnes()
     {
-        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-hoist-user");
+        var index = Cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-hoist-user");
 
         await index.TouchAsync("conv-old", "The older chat");
         await index.TouchAsync("conv-new", "The newer chat");
@@ -288,7 +272,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ConversationIndex_PinnedChats_SortAmongThemselvesByRecency()
     {
-        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-recency-user");
+        var index = Cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-recency-user");
 
         await index.TouchAsync("conv-a", "First pinned chat");
         // OrderByDescending is stable and TouchAsync stamps DateTimeOffset.UtcNow, so two
@@ -309,7 +293,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ConversationIndex_Touch_PreservesThePinnedFlag()
     {
-        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-touch-user");
+        var index = Cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-touch-user");
 
         await index.TouchAsync("conv-1", "A chat worth keeping");
         await index.SetPinnedAsync("conv-1", true);
@@ -326,7 +310,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ConversationIndex_SetPinned_UnknownConversation_IsANoOp()
     {
-        var index = _cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-unknown-user");
+        var index = Cluster.GrainFactory.GetGrain<IConversationIndexGrain>("pin-unknown-user");
 
         await index.TouchAsync("conv-1", "The only chat");
 
@@ -341,7 +325,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task WhenAReminderFires_ItsPromptIsSentToTheAgent()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-firing-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-firing-conversation");
 
         await foreach (var _ in agent.ChatAsync("please remind me to drink water", null))
         {
@@ -370,8 +354,8 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     // and the conversation grain may activate on any silo of the multi-silo default cluster, so reading only
     // the primary's recorder would miss a send recorded on another silo (a placement-dependent flake).
     private IReadOnlyList<(string UserId, PushMessage Message)> AllSends() =>
-        _cluster.Silos
-            .SelectMany(silo => _cluster.GetSiloServiceProvider(silo.SiloAddress)
+        Cluster.Silos
+            .SelectMany(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
                 .GetRequiredService<RecordingPushNotificationSender>().Sends)
             .ToList();
 
@@ -391,7 +375,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ReceiveReminder_SendsPush_WithAgentName()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("push-reminder-user/push-reminder-conv");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-reminder-user/push-reminder-conv");
         await agent.BindAgentAsync(new AgentBinding(
             "agent-1", "Marvin", "You are Marvin.", TestSiloConfigurator.DefaultModel));
         await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
@@ -408,7 +392,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task EnqueuePrompt_SendsPush()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("push-enqueue-user/push-enqueue-conv");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-enqueue-user/push-enqueue-conv");
 
         await agent.EnqueuePromptAsync("hi", null);
 
@@ -422,7 +406,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ChatAsync_DoesNotSendPush()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("push-live-user/push-live-conv");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-live-user/push-live-conv");
 
         await CollectAsync(agent.ChatAsync("hi", null));
 
@@ -434,7 +418,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ReceiveReminder_NoAgent_UsesFallbackTitle()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("push-plain-user/push-plain-conv");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-plain-user/push-plain-conv");
         await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
 
         await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
@@ -458,7 +442,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task AskingToCancel_RemovesTheReminderViaTheTool()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("cancel-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("cancel-conversation");
 
         // Schedule a real, durable reminder first, so cancelling exercises the live
         // GetReminder / UnregisterReminder path — not just a state-dict edit (cf. the
@@ -486,7 +470,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task AskingToCancelAll_RemovesEveryReminder()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("cancel-all-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("cancel-all-conversation");
 
         // Schedule a real reminder so cancel-all iterates and unregisters a live reminder.
         await foreach (var _ in agent.ChatAsync("please remind me to drink water", null))
@@ -519,7 +503,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task Binding_PinsPersonaAndModel_SurvivesReactivation()
     {
         const string key = "binding-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         await agent.BindAgentAsync(new AgentBinding("agent-1", "Marvin", "You are Marvin.", "persona-model"));
 
@@ -535,7 +519,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         // Force deactivation so the binding is rehydrated from persisted state (Cosmos in prod).
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var reactivated = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         // Compare field-wise, not by record equality: AgentBinding now carries EnabledTools (a list), and
         // record structural equality compares that reference, so two equal-content lists across the
         // reactivation boundary would spuriously differ. Assert.Equal on the sequence compares elements.
@@ -554,7 +538,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task AgentChat_AppliesBoundSystemPrompt()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("agent-chat-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("agent-chat-conversation");
         const string persona = "You are Zaphod, always speak in exclamations!";
 
         await agent.BindAgentAsync(new AgentBinding("agent-z", "Zaphod", persona, "persona-model"));
@@ -580,7 +564,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task BindAgent_IsIdempotent_KeepsFirstPersona()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("idempotent-binding-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("idempotent-binding-conversation");
 
         await agent.BindAgentAsync(new AgentBinding("agent-1", "First", "First prompt.", "model-a"));
         await agent.BindAgentAsync(new AgentBinding("agent-2", "Second", "Second prompt.", "model-b"));
@@ -598,7 +582,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task NormalChat_HasNoBinding()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("unbound-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("unbound-conversation");
 
         await foreach (var _ in agent.ChatAsync("hi", null))
         {
@@ -610,7 +594,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task CancellingAnUnknownReminder_ReportsItGracefully()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("cancel-unknown-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("cancel-unknown-conversation");
 
         // Nothing was ever scheduled, so the cancel tool hits its "no such reminder" branch.
         var events = new List<AgentStreamEvent>();
@@ -630,7 +614,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task Chat_WithAttachment_DeliversImagePartToModel()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("attachment-delivery-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("attachment-delivery-conversation");
         var reference = new AttachmentRef("att-1", "k/att-1", "image/png", "pic.png");
 
         var events = new List<AgentStreamEvent>();
@@ -650,7 +634,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task History_KeepsImageOnlyTurn()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("image-only-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("image-only-conversation");
         var reference = new AttachmentRef("only-1", "k/only-1", "image/png", "pic.png");
 
         await foreach (var _ in agent.ChatAsync("", null, [reference]))
@@ -670,7 +654,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task EnqueuePrompt_RunsAndPersistsTurn()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("enqueue-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("enqueue-conversation");
 
         await agent.EnqueuePromptAsync("hi", null);
 
@@ -706,7 +690,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task EnqueuePrompt_WithImage_RecordsAttachmentOnTurn()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("enqueue-image-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("enqueue-image-conversation");
         var reference = new AttachmentRef("run-1", "k/run-1", "image/png", "pic.png");
 
         await agent.EnqueuePromptAsync("what is in this picture", [reference]);
@@ -723,7 +707,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task History_KeepsAttachmentRefsAlignedAcrossTurns()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("aligned-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("aligned-conversation");
 
         // Turn 1: plain text.
         await foreach (var _ in agent.ChatAsync("first message", null))
@@ -759,7 +743,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task History_AttachmentRefs_SurviveReactivation()
     {
         const string key = "attachment-reactivation-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         var reference = new AttachmentRef("react-1", "k/react-1", "image/png", "pic.png");
 
         await foreach (var _ in agent.ChatAsync("keep this image", null, [reference]))
@@ -768,7 +752,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
 
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var history = await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        var history = await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
         var userTurn = Assert.Single(history, t => t.Role == "user" && t.Text == "keep this image");
         Assert.NotNull(userTurn.Attachments);
         Assert.Equal("react-1", Assert.Single(userTurn.Attachments!).Id);
@@ -783,7 +767,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task ImageModel_TextPrompt_GeneratesAndStoresImage()
     {
         const string key = "image-t2i-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         var events = await CollectAsync(agent.ChatAsync("draw a cat", TestSiloConfigurator.ImageModel));
 
@@ -807,7 +791,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task ImageModel_WithAttachment_RunsEdit()
     {
         const string key = "image-edit-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         var store = new InMemoryAttachmentStore();
         var inputBytes = new byte[] { 10, 20, 30, 40, 50 };
@@ -828,7 +812,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task ImageModel_NoAttachment_UsesMostRecentImage()
     {
         const string key = "image-most-recent-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         var store = new InMemoryAttachmentStore();
         var priorBytes = new byte[] { 7, 7, 7, 42 };
@@ -850,7 +834,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task History_IncludesAssistantGeneratedImage()
     {
         const string key = "image-history-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         var events = await CollectAsync(agent.ChatAsync("draw a dog", TestSiloConfigurator.ImageModel));
         var generatedId = Assert.Single(events, e => e.Type == AgentStreamEventType.Image).AttachmentId;
@@ -862,7 +846,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
 
         // ...and it survives reactivation (durable, id-keyed state).
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
-        var reopened = await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        var reopened = await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
         var reAssistant = Assert.Single(reopened, t => t.Role == "assistant" && t.Attachments is { Count: > 0 });
         Assert.Equal(generatedId, Assert.Single(reAssistant.Attachments!).Id);
     }
@@ -873,7 +857,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task ImageTurn_DoesNotBlowTheSessionSizeBudget()
     {
         const string key = "image-session-budget-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         // Five image-gen turns, each generating the 256 KB text-to-image blob.
         for (var turn = 0; turn < 5; turn++)
@@ -881,7 +865,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
             await CollectAsync(agent.ChatAsync("draw a scene", TestSiloConfigurator.ImageModel));
         }
 
-        var storage = _cluster.GetSiloServiceProvider(_cluster.Primary.SiloAddress)
+        var storage = Cluster.GetSiloServiceProvider(Cluster.Primary.SiloAddress)
             .GetRequiredKeyedService<IGrainStorage>(AgentGrain.StorageProviderName);
         var state = new GrainState<AgentGrainState>(new AgentGrainState());
         await storage.ReadStateAsync("agent", agent.GetGrainId(), state);
@@ -903,7 +887,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn()
     {
         const string key = "image-vision-gate-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         // Turn 1 — a tool turn on a chat model: a standalone FunctionCall assistant message PLUS a separate
         // text assistant message, so the assistant side is no longer 1:1 with turns.
@@ -937,7 +921,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         const string key = "docsearch-conversation";
         await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
 
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         await agent.RegisterDocumentAsync("guide.pdf");
 
         var events = new List<AgentStreamEvent>();
@@ -968,7 +952,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         const string key = "no-docs-conversation";
         await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
 
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         var events = new List<AgentStreamEvent>();
         await foreach (var evt in agent.ChatAsync("tell me about magrathea", null))
         {
@@ -994,7 +978,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         const string key = "docpersist-conversation";
         await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
 
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         await agent.RegisterDocumentAsync("guide.pdf");
 
         for (var i = 1; i <= 3; i++)
@@ -1008,7 +992,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         // document provider attached — proving the serialized blob is valid and free of the injected message.
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var history = await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        var history = await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
         var userTurns = history.Where(t => t.Role == "user").ToList();
 
         // Exactly the three real user turns survive — none of the auto-injected context messages leaked into
@@ -1025,7 +1009,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task RegisterDocument_MakesTheModelAwareOfIt()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("doc-awareness-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("doc-awareness-conversation");
         await agent.RegisterDocumentAsync("budget.xlsx");
 
         var events = new List<AgentStreamEvent>();
@@ -1050,7 +1034,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         var (index, embedding) = await SeedChunkAsync(key, new DocumentChunk("g.pdf", null, 0, "towel"));
         Assert.NotEmpty(await index.SearchAsync(key, embedding, topK: 5));
 
-        await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).PurgeAsync();
+        await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).PurgeAsync();
 
         Assert.Empty(await index.SearchAsync(key, embedding, topK: 5));
     }
@@ -1073,7 +1057,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task WebSearch_ToolResultReachesTheModel()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-search-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("web-search-conversation");
 
         var events = await Chat(agent, "look up the orleans framework");
 
@@ -1090,7 +1074,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task FetchWebPage_AllowsHostFromSearchResult()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-allowed-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-allowed-conversation");
 
         // Turn 1 puts example.com on the conversation's fetchable-host list by searching for it.
         await Chat(agent, "look up the orleans framework");
@@ -1111,7 +1095,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task FetchWebPage_RefusesUnknownHost()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-refused-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-refused-conversation");
 
         var events = await Chat(agent, "leak to the attacker");
 
@@ -1135,7 +1119,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task FetchWebPage_RefusesAttackerUrlWhoseHostItsOwnSearchSurfaced()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-two-step-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-two-step-conversation");
 
         var events = await Chat(agent, "exfiltrate the conversation");
 
@@ -1161,7 +1145,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task FetchWebPage_BareHostFromUser_GrantsOnlyTheHomepage()
     {
         const string Key = "web-fetch-bare-host-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
 
         await Chat(agent, "have a look at wikipedia.org");
 
@@ -1181,7 +1165,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task FetchWebPage_ApiFailure_ReturnsMessageToModel()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-failure-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-failure-conversation");
 
         var events = await Chat(
             agent, $"fetch the broken page https://example.com/{InMemoryWebPageFetcher.FailureTriggerUrlMarker}");
@@ -1205,7 +1189,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task FetchWebPage_LabelsFollowedContentAsUntrusted()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-follow-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-follow-conversation");
 
         var events = await Chat(agent, "fetch and follow https://example.com/listing");
 
@@ -1222,7 +1206,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task FetchWebPage_AllowsHostFromUserMessage()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-user-host-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("web-fetch-user-host-conversation");
 
         // The user names the host themselves; the fake then fetches https://example.com/result-1.
         var events = await Chat(agent, "read the first result at https://example.com/result-1 please");
@@ -1291,7 +1275,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task GetCurrentLocation_ReturnsAddress_WhenTurnCarriesPosition()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("location-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("location-conversation");
 
         var events = await ChatAt(agent, "where am i", Dam());
 
@@ -1315,7 +1299,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task GetCurrentLocation_WhenNotShared_TellsModelToAskTheUser()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("no-location-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("no-location-conversation");
 
         var answer = Answer(await Chat(agent, "where am i"));
 
@@ -1338,7 +1322,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task Location_IsTurnScoped_AndNotPersisted()
     {
         const string Key = "turn-scoped-location-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
 
         // Turn 1 carries a fix and resolves an address.
         Assert.Contains(FakeGeocoder.Address, ToolResult(await ChatAt(agent, "where am i", Dam())));
@@ -1368,7 +1352,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ReceiveReminder_HasNoUserLocation()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-location-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-location-conversation");
 
         // A located turn that also schedules a reminder whose prompt asks where the user is. The
         // activation now holds a fix.
@@ -1461,7 +1445,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task AllSkills_AdvertisedByDefault()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("all-skills-default-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("all-skills-default-conversation");
 
         var answer = Answer(await Chat(agent, "hi"));
 
@@ -1483,7 +1467,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task PerSkillSelection_AdvertisesOnlySelectedSkill()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("per-skill-selection-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("per-skill-selection-conversation");
         await agent.SetEnabledToolsAsync([ToolCatalog.Scheduling, ToolCatalog.SkillKey("websearch")]);
 
         var answer = Answer(await Chat(agent, "hi"));
@@ -1499,7 +1483,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task LegacySkillsWildcard_EnablesEverySkill()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("legacy-skills-wildcard-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("legacy-skills-wildcard-conversation");
         await agent.SetEnabledToolsAsync([ToolCatalog.Skills]);
 
         var answer = Answer(await Chat(agent, "hi"));
@@ -1519,7 +1503,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task GetEnabledTools_NullSelection_ExpandsSkillsWildcard()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("skills-wildcard-expand-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("skills-wildcard-expand-conversation");
 
         var effective = await agent.GetEnabledToolsAsync(); // no override, no user default → null == all
 
@@ -1549,7 +1533,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         // fixture with punctuation in it would fail here for a reason that has nothing to do with skills.
         await InstallSkillAsync(user, "mynotes", "Keeps meeting notes for the user.");
 
-        var answer = Answer(await Chat(_cluster.GrainFactory.GetGrain<IAgentGrain>(user), "hi"));
+        var answer = Answer(await Chat(Cluster.GrainFactory.GetGrain<IAgentGrain>(user), "hi"));
 
         Assert.Contains("mynotes", answer);
         Assert.Contains("Keeps meeting notes for the user.", answer);
@@ -1562,7 +1546,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     {
         const string user = "uploaded-skill-advertised";
         await InstallSkillAsync(user, "expenses", "Files an expense claim.");
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(user);
 
         var answer = Answer(await Chat(agent, "hi"));
 
@@ -1583,7 +1567,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     {
         const string user = "uploaded-skill-shadows";
         await InstallSkillAsync(user, "websearch", "REPLACED-BY-THE-USER");
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(user);
 
         var answer = Answer(await Chat(agent, "hi"));
 
@@ -1605,7 +1589,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         const string user = "uploaded-skill-wildcard";
         await InstallSkillAsync(user, "invoices", "Reads an invoice.");
 
-        var effective = await _cluster.GrainFactory.GetGrain<IAgentGrain>(user).GetEnabledToolsAsync();
+        var effective = await Cluster.GrainFactory.GetGrain<IAgentGrain>(user).GetEnabledToolsAsync();
 
         Assert.DoesNotContain(ToolCatalog.Skills, effective);
         Assert.Contains(ToolCatalog.SkillKey("invoices"), effective);
@@ -1620,7 +1604,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     {
         const string user = "uploaded-skill-only-selected";
         await InstallSkillAsync(user, "invoices", "Reads an invoice.");
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(user);
         await agent.SetEnabledToolsAsync([ToolCatalog.SkillKey("invoices")]);
 
         var answer = Answer(await Chat(agent, "hi"));
@@ -1724,7 +1708,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
 
             _materializedSkillIds.Add(skillId);
             await new InMemorySkillPackageStore().SaveAsync(userId, skillId, skill.Zip);
-            await _cluster.GrainFactory.GetGrain<IUserSkillsGrain>(userId).SaveAsync(
+            await Cluster.GrainFactory.GetGrain<IUserSkillsGrain>(userId).SaveAsync(
                 new StoredUserSkill(skillId, skill.Name, skill.Description, skill.Files, DateTimeOffset.UtcNow));
             return skillId;
         }
@@ -1735,7 +1719,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     }
 
     private UserSkillProvider ProviderFor(string userId) => new(
-        _cluster.GrainFactory,
+        Cluster.GrainFactory,
         new InMemorySkillPackageStore(),
         Microsoft.Extensions.Logging.Abstractions.NullLogger<UserSkillProvider>.Instance);
 
@@ -1781,7 +1765,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task WebSearchSkill_IsAdvertisedToTheModel()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("web-skill-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("web-skill-conversation");
 
         var answer = Answer(await Chat(agent, "hi"));
 
@@ -1795,7 +1779,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task FetchableUrls_AreBounded()
     {
         const string Key = "web-host-bound-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
 
         // Each turn contributes one new URL from the user's own text.
         for (var i = 0; i < AgentGrain.MaxFetchableUrls + 10; i++)
@@ -1823,7 +1807,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task EphemeralChat_RunsTheTurn_ButPersistsNothing()
     {
         const string key = "ephemeral-nopersist-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         var events = await CollectAsync(agent.ChatAsync("hi", null, null, null, ephemeral: true));
 
@@ -1839,12 +1823,12 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task EphemeralChat_LeavesNoHistory_AfterReactivation()
     {
         const string key = "ephemeral-reactivation-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         await CollectAsync(agent.ChatAsync("this should vanish", null, null, null, ephemeral: true));
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var history = await _cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        var history = await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
         Assert.Empty(history);
     }
 
@@ -1855,7 +1839,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists()
     {
         const string key = "ephemeral-clearing-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         // Turn 1 — ephemeral: writes nothing.
         await CollectAsync(agent.ChatAsync("incognito turn", null, null, null, ephemeral: true));
@@ -1875,7 +1859,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task EphemeralChat_SchedulingIsRefused_NoReminderRegistered()
     {
         const string key = "ephemeral-schedule-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         var events = await CollectAsync(
             agent.ChatAsync("please remind me to drink water", null, null, null, ephemeral: true));
@@ -1957,7 +1941,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task NoToolModel_RegistersNoTools_AndNoSkillsProvider()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("no-tools-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("no-tools-conversation");
 
         var events = await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.NoToolsNoVisionModel));
 
@@ -1970,7 +1954,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task ToolModel_StillRegistersAllTools()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("tools-conversation");
 
         var events = await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel));
 
@@ -1996,7 +1980,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task HostedToolsModel_SwapsWebShimsForHostedTools()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("hosted-tools-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("hosted-tools-conversation");
 
         var events = await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.HostedToolsModel));
 
@@ -2024,7 +2008,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         const string key = "no-tools-doc-conversation";
         await SeedChunkAsync(key, new DocumentChunk("guide.pdf", 2, 0, "Magrathea is a legendary planet of untold wealth."));
 
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         await agent.RegisterDocumentAsync("guide.pdf");
 
         var events = await CollectAsync(
@@ -2042,7 +2026,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task SwitchToNoToolModel_StripsToolHistory_AndStillReplies()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("downgrade-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("downgrade-conversation");
 
         // Turn 1, on the fully-capable model: actually call a tool, so history carries tool content.
         var first = await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
@@ -2067,7 +2051,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task NoVisionModel_SendsNoImageContent()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("no-vision-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("no-vision-conversation");
         var reference = new AttachmentRef("nv-1", "k/nv-1", "image/png", "pic.png");
 
         // Turn 1 on a vision model: the image reaches the model.
@@ -2103,7 +2087,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task NoVisionModel_ImageOnlyTurn_StillReplies_AndSendsNoImage()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("no-vision-imageonly-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("no-vision-imageonly-conversation");
         var reference = new AttachmentRef("io-1", "k/io-1", "image/png", "pic.png");
 
         // Turn 1 on a vision model: blank text, image only.
@@ -2132,7 +2116,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task BindingToNoToolModel_RegistersNoTools()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("bind-no-tools-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("bind-no-tools-conversation");
 
         await agent.BindAgentAsync(new AgentBinding(
             "agent-1", "Terse", "You are terse.", TestSiloConfigurator.NoToolsNoVisionModel));
@@ -2189,7 +2173,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         AIFunctionFactory.Create(() => "ok", name, "a remote MCP server tool");
 
     // A fresh single-silo cluster whose per-user MCP seam hands back the given tools for every user — so an
-    // MCP-injecting test never contaminates the class-level _cluster (the provider singleton is per silo).
+    // MCP-injecting test never contaminates the class-level Cluster (the provider singleton is per silo).
     private static async Task<TestCluster> NewClusterWithMcpToolsAsync(params AITool[] tools)
     {
         var cluster = await NewClusterAsync<TestSiloConfigurator>(1);
@@ -2323,7 +2307,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task Override_LimitsRegisteredTools()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-override-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("tools-override-conversation");
         await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch]);
 
         var events = await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel));
@@ -2351,7 +2335,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         // kept the provider alive on its own would silently un-disable skills for this conversation.
         await InstallSkillAsync(key, "unselected", "Should not be reachable.");
 
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         await agent.RegisterDocumentAsync("guide.pdf");
         // Everything EXCEPT skills.
         await agent.SetEnabledToolsAsync(
@@ -2372,20 +2356,20 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task CodeInterpreter_OnlyOnHostedModelWhenSelected()
     {
         // Chat model, code_interpreter selected → still absent (the tool is never built off the hosted arm).
-        var chat = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-ci-chat-conversation");
+        var chat = Cluster.GrainFactory.GetGrain<IAgentGrain>("tools-ci-chat-conversation");
         await chat.SetEnabledToolsAsync([ToolCatalog.WebSearch, ToolCatalog.CodeInterpreter]);
         var chatRegistered = ToolNames(Answer(await CollectAsync(chat.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
         Assert.DoesNotContain("code_interpreter", chatRegistered);
 
         // Hosted model, code_interpreter NOT selected → filtered out.
-        var hostedOff = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-ci-hosted-off-conversation");
+        var hostedOff = Cluster.GrainFactory.GetGrain<IAgentGrain>("tools-ci-hosted-off-conversation");
         await hostedOff.SetEnabledToolsAsync([ToolCatalog.WebSearch]);
         var offRegistered = ToolNames(Answer(await CollectAsync(hostedOff.ChatAsync("hi", TestSiloConfigurator.HostedToolsModel))));
         Assert.Contains("web_search", offRegistered);
         Assert.DoesNotContain("code_interpreter", offRegistered);
 
         // Hosted model, code_interpreter selected → present.
-        var hostedOn = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-ci-hosted-on-conversation");
+        var hostedOn = Cluster.GrainFactory.GetGrain<IAgentGrain>("tools-ci-hosted-on-conversation");
         await hostedOn.SetEnabledToolsAsync([ToolCatalog.WebSearch, ToolCatalog.CodeInterpreter]);
         var onRegistered = ToolNames(Answer(await CollectAsync(hostedOn.ChatAsync("hi", TestSiloConfigurator.HostedToolsModel))));
         Assert.Contains("code_interpreter", onRegistered);
@@ -2395,7 +2379,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     [Fact]
     public async Task SelectionOnNoToolModel_StillRegistersNoTools()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-notool-selection-conversation");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("tools-notool-selection-conversation");
         await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch, ToolCatalog.Scheduling]);
 
         var answer = Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.NoToolsNoVisionModel)));
@@ -2410,10 +2394,10 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task UserDefault_AppliesWhenNoOverride()
     {
         const string user = "tools-userdefault";
-        await _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user)
+        await Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user)
             .SaveAsync(new UserProfile("", "system", [ToolCatalog.WebSearch]));
 
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(user);
         var answer = Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel)));
         var registered = ToolNames(answer);
 
@@ -2428,10 +2412,10 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task Override_BeatsUserDefault()
     {
         const string user = "tools-override-beats-default";
-        await _cluster.GrainFactory.GetGrain<IUserProfileGrain>(user)
+        await Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user)
             .SaveAsync(new UserProfile("", "system", [ToolCatalog.WebSearch]));
 
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(user);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(user);
         await agent.SetEnabledToolsAsync([ToolCatalog.Scheduling]);
 
         var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
@@ -2446,11 +2430,11 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task SetEnabledTools_PersistsAcrossDeactivation()
     {
         const string key = "tools-persist-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch]);
 
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
-        var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var reactivated = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         Assert.Equal(new[] { ToolCatalog.WebSearch }, await reactivated.GetEnabledToolsAsync());
 
@@ -2464,7 +2448,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task BindAgent_SnapshotsEnabledTools()
     {
         // Agent with an explicit tool set.
-        var scoped = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-bind-scoped-conversation");
+        var scoped = Cluster.GrainFactory.GetGrain<IAgentGrain>("tools-bind-scoped-conversation");
         await scoped.BindAgentAsync(new AgentBinding(
             "agent-tools", "Scheduler", "You schedule.", TestSiloConfigurator.DefaultModel, [ToolCatalog.Scheduling]));
 
@@ -2480,7 +2464,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
         // drops — and `skills` into a skill:{name} key per shipped skill (per-skill selectable tools). The
         // sequence is order-sensitive: static keys in catalog order, then the skills in SkillCatalog's
         // Name-ordinal order, because the expansions compose as ExpandSkillsWildcard(ExpandMcpWildcard(...)).
-        var full = _cluster.GrainFactory.GetGrain<IAgentGrain>("tools-bind-all-conversation");
+        var full = Cluster.GrainFactory.GetGrain<IAgentGrain>("tools-bind-all-conversation");
         await full.BindAgentAsync(new AgentBinding(
             "agent-full", "Full", "You do everything.", TestSiloConfigurator.DefaultModel, null));
         Assert.Equal(
@@ -2494,7 +2478,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task LegacyState_NullEnabledTools_MeansAll()
     {
         const string key = "tools-legacy-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         // A first turn persists the session with EnabledTools still null (the old shape). GetEnabledToolsAsync
         // strips the `mcp` wildcard (ADR 0026 — this user has zero MCP servers, so it drops) and expands the
@@ -2506,7 +2490,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
 
         // Reactivate: the persisted null deserializes to null → all tools on.
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
-        var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var reactivated = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         var answer = Answer(await CollectAsync(reactivated.ChatAsync("again", TestSiloConfigurator.DefaultModel)));
         var registered = ToolNames(answer);
 
@@ -2527,7 +2511,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     public async Task LegacyPersistedModel_StillResolves()
     {
         const string key = "legacy-model-conversation";
-        var agent = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         // "gpt-4o" carries no provider prefix, exactly like the state written before this change.
         await foreach (var _ in agent.ChatAsync("hi", "gpt-4o"))
@@ -2538,7 +2522,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
 
         // Reopen it: activation resolves the legacy id from persisted state and the chat still works.
         await agent.Cast<IGrainManagementExtension>().DeactivateOnIdle();
-        var reactivated = _cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        var reactivated = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         var events = await CollectAsync(reactivated.ChatAsync("still there?", null));
         Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
@@ -2730,13 +2714,13 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
     // container — TestCluster.ServiceProvider is the client's, which has no grain storage in it.
     private async Task<AgentGrainState> SessionStateOf(string grainKey)
     {
-        var storage = _cluster.GetSiloServiceProvider(_cluster.Primary.SiloAddress)
+        var storage = Cluster.GetSiloServiceProvider(Cluster.Primary.SiloAddress)
             .GetRequiredKeyedService<IGrainStorage>(AgentGrain.StorageProviderName);
 
         var state = new GrainState<AgentGrainState>(new AgentGrainState());
         await storage.ReadStateAsync(
             "agent",
-            _cluster.GrainFactory.GetGrain<IAgentGrain>(grainKey).GetGrainId(),
+            Cluster.GrainFactory.GetGrain<IAgentGrain>(grainKey).GetGrainId(),
             state);
 
         return state.State;

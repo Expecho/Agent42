@@ -3,7 +3,6 @@ using Agent42.Backend;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -12,9 +11,8 @@ namespace Agent42.Tests;
 /// connection lifetime — against a real Orleans config grain and a STUB connection seam. The real SDK
 /// connect/list path is proven by the Step 0 spike (recorded in the spec); these tests own OUR logic.
 /// </summary>
-public sealed class UserMcpToolProviderTests : IAsyncLifetime
+public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
     private readonly FakeMcpConnectionFactory _connections = new();
     private readonly IMcpSecretProtector _protector =
         new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance);
@@ -22,18 +20,8 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     // never called for those, so a bare HttpClient stands in.
     private readonly McpOAuthClient _oauth = new(new HttpClient());
 
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync() => await _cluster.DisposeAsync();
-
     private UserMcpToolProvider NewProvider() =>
-        new(_cluster.GrainFactory, _connections, _protector, _oauth, NullLogger<UserMcpToolProvider>.Instance);
+        new(Cluster.GrainFactory, _connections, _protector, _oauth, NullLogger<UserMcpToolProvider>.Instance);
 
     private StoredMcpServer HeaderServer(string id, string plaintextSecret = "plain-secret") => new(
         Id: id,
@@ -49,7 +37,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task LoadsTools_AndDecryptsHeaderSecret()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-load");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-load");
         await grain.SaveAsync(HeaderServer("a", "top-secret"));
 
         var set = await NewProvider().GetForUserAsync("mcp-tp-load");
@@ -63,7 +51,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task DisabledServer_ContributesNoTools()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-disabled");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-disabled");
         await grain.SaveAsync(HeaderServer("a") with { Enabled = false });
 
         var set = await NewProvider().GetForUserAsync("mcp-tp-disabled");
@@ -74,7 +62,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task DeadServer_IsSkipped_NotFatal()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-dead");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-dead");
         await grain.SaveAsync(HeaderServer("dead"));
         await grain.SaveAsync(HeaderServer("alive"));
         _connections.DeadServerIds.Add("dead");
@@ -95,7 +83,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task ToolResult_Truncated_ToBudget()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-trunc");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-trunc");
         await grain.SaveAsync(HeaderServer("big"));
         _connections.ToolsFor = _ =>
             [AIFunctionFactory.Create(() => new string('a', McpToolLimits.MaxToolResultLength + 5_000), "tool_big")];
@@ -112,7 +100,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task VersionBump_ReloadsTools()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-reload");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-reload");
         var provider = NewProvider();
 
         await grain.SaveAsync(HeaderServer("a"));
@@ -129,7 +117,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task SameVersion_IsCacheHit_DoesNotReconnect()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-cachehit");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-cachehit");
         await grain.SaveAsync(HeaderServer("a"));
         var provider = NewProvider();
 
@@ -145,7 +133,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task OldVersions_AreEvicted_AndTheirConnectionsDisposed()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-evict");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-evict");
         var provider = NewProvider();
 
         await grain.SaveAsync(HeaderServer("a"));
@@ -168,12 +156,12 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task RealFactory_DeadEndpoint_IsSkipped_NotFatal()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-real-dead");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-real-dead");
         // Port 1 refuses immediately; the provider's connect timeout bounds it either way.
         await grain.SaveAsync(HeaderServer("dead") with { Endpoint = "http://localhost:1/mcp" });
 
         var provider = new UserMcpToolProvider(
-            _cluster.GrainFactory,
+            Cluster.GrainFactory,
             new McpConnectionFactory(NullLoggerFactory.Instance),
             _protector,
             _oauth,
@@ -196,7 +184,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task OAuthServer_WithToken_LoadsTools_AndInjectsAccessToken()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-load");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-load");
         var tokens = new McpOAuthTokens("access-abc", "refresh-1", DateTimeOffset.UtcNow.AddHours(1),
             "https://as.example.com/token", "client-1", ["mcp.read"]);
         await grain.SaveAsync(OAuthServer("o1", tokens));
@@ -211,7 +199,7 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task OAuthServer_WithoutToken_IsSkipped()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-notoken");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-notoken");
         await grain.SaveAsync(OAuthServer("o1", tokens: null));
 
         var set = await NewProvider().GetForUserAsync("mcp-oauth-notoken");
@@ -223,14 +211,14 @@ public sealed class UserMcpToolProviderTests : IAsyncLifetime
     [Fact]
     public async Task OAuthServer_NearExpiry_RefreshesAndPersists()
     {
-        var grain = _cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-refresh");
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-refresh");
         var expiring = new McpOAuthTokens("access-old", "refresh-1", DateTimeOffset.UtcNow.AddSeconds(10),
             "https://as.example.com/token", "client-1", ["mcp.read"]);
         await grain.SaveAsync(OAuthServer("o1", expiring));
 
         var oauth = new McpOAuthClient(new HttpClient(new RefreshStubHandler()));
         var provider = new UserMcpToolProvider(
-            _cluster.GrainFactory, _connections, _protector, oauth, NullLogger<UserMcpToolProvider>.Instance);
+            Cluster.GrainFactory, _connections, _protector, oauth, NullLogger<UserMcpToolProvider>.Instance);
 
         var set = await provider.GetForUserAsync("mcp-oauth-refresh");
 

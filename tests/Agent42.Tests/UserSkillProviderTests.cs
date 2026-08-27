@@ -19,20 +19,11 @@ namespace Agent42.Tests;
 /// proves nothing: the framework classifies resources by extension and only scans one folder below
 /// SKILL.md, so the test that matters asks <c>AgentSkillsProvider</c> itself what it can see.</para>
 /// </summary>
-public sealed class UserSkillProviderTests : IAsyncLifetime
+public sealed class UserSkillProviderTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private TestCluster _cluster = null!;
     private readonly List<string> _materialized = [];
 
-    public async Task InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<TestSiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async Task DisposeAsync()
+    protected override Task OnDisposeAsync()
     {
         foreach (var id in _materialized)
         {
@@ -40,7 +31,7 @@ public sealed class UserSkillProviderTests : IAsyncLifetime
             catch { /* best effort */ }
         }
 
-        await _cluster.DisposeAsync();
+        return Task.CompletedTask;
     }
 
     [Fact]
@@ -169,9 +160,9 @@ public sealed class UserSkillProviderTests : IAsyncLifetime
     // ---- helpers ---------------------------------------------------------------------------------
 
     private UserSkillProvider Provider()
-        => new(_cluster.GrainFactory, new InMemorySkillPackageStore(), NullLogger<UserSkillProvider>.Instance);
+        => new(Cluster.GrainFactory, new InMemorySkillPackageStore(), NullLogger<UserSkillProvider>.Instance);
 
-    private IUserSkillsGrain Grain(string userId) => _cluster.GrainFactory.GetGrain<IUserSkillsGrain>(userId);
+    private IUserSkillsGrain Grain(string userId) => Cluster.GrainFactory.GetGrain<IUserSkillsGrain>(userId);
 
     // Installs a skill the way the endpoint does — normalize, store the package, record the row — so the
     // fixture cannot drift from the real write path.

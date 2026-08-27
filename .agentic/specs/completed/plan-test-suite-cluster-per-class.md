@@ -231,3 +231,70 @@ a test would pin the implementation rather than the property.
   drive type (local fixed disk), extra projects (one), parallelism config. Fact 1 supplies a plausible
   mechanism — runtime scales nearly linearly with per-deploy latency and has no parallel headroom — but
   this plan does not claim to close it.
+
+---
+
+## Implementation divergences (recorded at execution, 2026-08-27)
+
+Executed on `fix/agent-grain-tests-class-fixture` (the branch already carrying steps 0a/0b), not a new
+`feature/*` branch — the spec's own header names that branch as the base.
+
+**1. Step 1b ran BEFORE step 1, and produced a base class rather than a resetting accessor.**
+Converting 18 classes onto a seam that step 1b was about to change would have meant editing each twice.
+The seam is `SharedClusterTests<TFixture>` (new file), whose `InitializeAsync` calls `ResetSiloState()`
+and is not overridable; a non-generic `SharedClusterTests` alias keeps the plain-grain case a one-word
+base clause. A "resetting accessor" on the fixture was rejected: reset must happen once per test, not
+once per property read. Because the type system cannot forbid taking `SharedClusterFixture` directly,
+`SharedClusterSeamTests` (new) asserts it by reflection. Its first version compared interfaces by
+identity against `IClassFixture<SharedClusterFixture>`, which — because `GetInterfaces()` returns closed
+generics — matched the plain-grain classes and was blind to all eight API ones; a `critic` pass caught
+that. It now opens the generic and tests the argument for assignability, with two anti-vacuity checks
+(a minimum match count, and that at least one match uses a fixture subclass).
+
+**2. Step 2 did NOT build one host registering the union of the eight Group B classes' services.**
+The route-matcher filler (fact 7) unions cleanly and lives in `SharedApiFixture.AddRouteMatcherServices`.
+What does not is that a few registrations are inputs a test asserts on: `AgentApiTests`' model catalog
+(read back from `/api/models`) and `PushConfig` (read from `/api/push/config`), and the two OAuth
+classes' behavioural doubles. Shipped: `SharedApiFixture` (defaults) + four subclasses
+(`AgentApiFixture`, `UserSkillsApiFixture`, `GoogleOAuthApiFixture`, `McpOAuthApiFixture`). Same
+one-host-per-class result; xUnit gives each class its own fixture instance regardless, so it costs
+nothing.
+
+**This entry originally claimed more than it could support**, and the `critic` pass falsified it: it said
+registering `ISkillPackageStore` in a shared host would leak `UserSkillsApiTests`' uploads into
+`ToolSelectionApiTests`' `/api/tools` assertions. `/api/tools` reads uploads from `IUserSkillsGrain`
+(`src/Agent42.Backend/Tools/AgentApi.Tools.cs`), never from the package store, so that list is already
+per-class via the cluster. A union host was feasible; the split is a legibility choice, and only Group C
+genuinely cannot share a host.
+
+**3. Three test bodies changed, all shared grain keys within one class.**
+`AgentApiTests.ProfileEndpoint_ReturnsJson_WithDefaultWhenUnset` read the shared `local-dev` fallback
+profile its neighbouring PUT tests write — it failed loudly on the class's first shared run, which is
+the outcome the step-1 gate is for. Two more were found only by the `critic` pass, both passing by
+accident: `AgentApiTests.PushSubscription_Post_RejectsIncomplete` asserted `Empty` on the same
+`local-dev` push grain `PushSubscriptionEndpoints_Crud` writes (safe only because `Crud` cleans up after
+itself), and `GoogleCalendarServiceTests` shared one `user@example.com` key across nine tests (safe only
+because every one of them connects before reading — and paired with a deliberately per-test key ring, so
+a future read-without-connect would have failed as an unexplained `NotConnected`). All three now name a
+key per test; no assertion changed.
+
+**4. `ResetSiloState()` extended** to clear `SingleUserMcpToolProvider.Servers` (fact 5's known case).
+`UserMcpToolProviderTests` turned out not to touch that singleton at all — it uses its own
+`FakeMcpConnectionFactory` — so the class converted unchanged; the reset is there for the next class.
+The `Tools` setter writes through to `Servers`, so there is no second field to clear.
+
+**5. Both "Conditional" classes were converted.** `RequestContextPropagationTests` was exactly the
+canonical shape (one command). `ConfigHealthApiTests` got cluster-only sharing, which stopped being
+bespoke work once `DiagnosticsApiTests` established that shape in step 4 — its `ProbeCounter` is asserted
+on per test, so its host stays per-test.
+
+**6. No class was skipped**, but the per-class gate is a review, not a run, and it missed two of the
+three shared keys in divergence 3 on the first pass. Group C and the two conditionals share the cluster
+only. The six excluded classes are untouched — `git diff --stat` over them is empty (AC6).
+
+**7. Pre-existing gate failure fixed in-branch.** `check-doc-paths.mjs` (a hard CI block) was already
+failing on `main` over ADR 0054's `/logs/logs.js`, which is a runtime URL rather than a repo path.
+
+**Results.** 956 tests green. Full suite **7m38s → 31s / 34s / 36s** parallel over three runs, **9m05s →
+1m12s** serial, and **49s** under `--collect:"XPlat Code Coverage"` with `MaxParallelThreads=2`. The
+suite never runs a class for over a minute in any of those, so fact 8's reminder window never opens.
