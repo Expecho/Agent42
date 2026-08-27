@@ -375,6 +375,16 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
                 .GetRequiredService<RecordingPushNotificationSender>().Sends)
             .ToList();
 
+    // Sends recorded for ONE user. Every assertion below filters, and that is load-bearing rather than
+    // tidiness: the cluster now lives for the whole class, and the scheduling tests register REAL Orleans
+    // reminders whose minimum due time is 1 minute (AgentGrain.Scheduling.cs) and which nothing cancels.
+    // Under cluster-per-test the cluster was gone in ~1.3s so they never fired; shared, a class that runs
+    // longer than a minute (CI under coverage on few cores — not this machine, where it is ~9s) will fire
+    // one MID-TEST, and ReceiveReminder pushes. An unfiltered Assert.Single/Assert.Empty would then fail
+    // intermittently in CI only. Each test owns a distinct userId, so filtering is a complete fix.
+    private IReadOnlyList<(string UserId, PushMessage Message)> SendsFor(string userId) =>
+        AllSends().Where(s => s.UserId == userId).ToList();
+
     // AC1: a fired reminder sends exactly one push titled with the bound agent's name. Binding first, then
     // scheduling via chat (the live path, which pushes NOTHING), then firing — so the single recorded send
     // is unambiguously the reminder's, and the userId/conversationId split off the grain key is exercised.
@@ -388,7 +398,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
 
         await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
 
-        var send = Assert.Single(AllSends());
+        var send = Assert.Single(SendsFor("push-reminder-user"));
         Assert.Equal("Marvin", send.Message.Title);
         Assert.Equal("push-reminder-user", send.UserId);
         Assert.Equal("push-reminder-conv", send.Message.ConversationId);
@@ -402,8 +412,8 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
 
         await agent.EnqueuePromptAsync("hi", null);
 
-        await PollUntilAsync(() => AllSends().Count >= 1);
-        var send = Assert.Single(AllSends());
+        await PollUntilAsync(() => SendsFor("push-enqueue-user").Count >= 1);
+        var send = Assert.Single(SendsFor("push-enqueue-user"));
         Assert.Equal("push-enqueue-user", send.UserId);
         Assert.Equal("push-enqueue-conv", send.Message.ConversationId);
     }
@@ -416,7 +426,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
 
         await CollectAsync(agent.ChatAsync("hi", null));
 
-        Assert.Empty(AllSends());
+        Assert.Empty(SendsFor("push-live-user"));
     }
 
     // AC4: a reminder firing on a PLAIN conversation (no bound agent) falls back to the exact title
@@ -429,7 +439,7 @@ public sealed class AgentGrainTests : IClassFixture<SharedClusterFixture>, IAsyn
 
         await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
 
-        var send = Assert.Single(AllSends());
+        var send = Assert.Single(SendsFor("push-plain-user"));
         Assert.Equal("Agent 42", send.Message.Title);
     }
 
