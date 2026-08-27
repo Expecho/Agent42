@@ -1673,12 +1673,24 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - Related: assertions that slice a function body must count brace depth
   (`StaticAssetsServerFixture.Body`), never scan for a fixed indent like `"\n  }"` — at module scope
   bodies close at column 0, so an indentation-sensitive scan runs straight past the end.
+- **The blind spot is wider than orphans, and `wwwroot/logs/` is the live example.** A standalone page
+  outside `wwwroot/js/` is invisible to **both** guards at once: `GetAppScriptAsync()` never reaches it
+  (nothing under `main.js` imports it) *and* `ProjectLayoutTests`' orphan check is scoped to
+  `wwwroot/js`, so it is not reported either. `wwwroot/logs/` (ADR 0054) and `wwwroot/shared/` (ADR 0035)
+  are both in that position by design — each is a self-contained classic script — so **each needs its own
+  asset test that fetches its files from the fixture's `Client` directly**
+  (`LogsConsoleAssetsTests`, `ShareLinkAssetsTests`), and such a test must **never** call
+  `GetAppScriptAsync()`, which would silently assert against a corpus that does not contain the page.
+  The same scoping is why adding files under `wwwroot/logs/` does not affect
+  `ServiceWorkerShell_ListsExactlyTheModuleDirectory` (it compares only the `"/js/..."` entries) and why
+  no `sw.js` `CACHE` bump was due for ADR 0054.
 - **Evidence:** `tests/Agent42.Tests/StaticAssetsServerFixture.cs` (`GetAppScriptAsync`, `Body`),
+  `tests/Agent42.Tests/LogsConsoleAssetsTests.cs`,
   `tests/Agent42.Tests/ProjectLayoutTests.cs`
   (`EveryFrontEndModule_IsReachableFromTheEntryPoint`,
   `FrontEndModule_ExportsItsEntryPoint_AndIsCalledFromTheCompositionRoot`),
-  `.agentic/decisions/0041-frontend-es-modules.md`
-- **Verified:** 2026-08-19
+  `.agentic/decisions/0041-frontend-es-modules.md`, `.agentic/decisions/0054-live-otel-console.md`
+- **Verified:** 2026-08-27
 
 ### Topbar share availability: `startAgentChat` is a FOURTH transition and is the one that gets missed
 
@@ -1943,3 +1955,84 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `docs/integrations/google-calendar/README.md`,
   `.agentic/decisions/0053-google-calendar-tools.md`
 - **Verified:** 2026-08-26
+
+### `LogRecord` is POOLED — retaining one in a `BaseProcessor` silently corrupts the buffer
+
+- **Claim:** A `BaseProcessor<LogRecord>` that stores the `LogRecord` reference and reads its fields
+  later gets the **latest** record back for every entry it kept. The SDK pools and reuses the instance.
+  Measured twice against the pinned OpenTelemetry 1.18.0 — including once inside this repo's exact
+  pipeline (`LoggerFactory` + `AddOpenTelemetry` + `IncludeFormattedMessage`) — two log calls yielded
+  `count=2 distinctRefs=1`, and *both* buffered entries read back as the **second** message.
+  **Nothing throws.** The console just shows the same line N times, which reads like a rendering bug
+  rather than a capture bug, and is the reason this cost real time.
+  Every field must be copied **inside `OnEnd`** — `CategoryName`, `LogLevel`, `FormattedMessage`,
+  `Exception`, timestamp, trace/span ids — and `Attributes` must be materialised into a **new list**:
+  keeping the `IReadOnlyList` reference is the same bug wearing a different hat, because that list is
+  part of the pooled buffer. Scope output likewise (`ForEachScope` into a fresh list). Values read
+  inside `OnEnd` are correct; that window is the whole contract.
+  `Activity` is the **opposite** — measured `captured=6 distinctRefs=6`, not pooled — so the same
+  reasoning does not transfer between the two processors. `LiveSpanProcessor` projects anyway, but only
+  to make the buffer's byte budget computable.
+  `LiveLogProcessorTests.LogProcessor_DoesNotRetainThePooledRecord` is written to fail against the naive
+  implementation, not merely to pass against the correct one.
+- **Evidence:** `src/Agent42.Backend/Telemetry/LiveLogProcessor.cs`,
+  `tests/Agent42.Tests/LiveLogProcessorTests.cs`,
+  `.agentic/decisions/0054-live-otel-console.md`
+- **Verified:** 2026-08-27
+
+### `MetricType` has EIGHT members — a five-arm switch reads `NaN` for 39% of the real instruments
+
+- **Claim:** Beyond the obvious `LongSum, DoubleSum, LongGauge, DoubleGauge, Histogram` there are
+  **`ExponentialHistogram`, `LongSumNonMonotonic` and `DoubleSumNonMonotonic`**. These are not exotic
+  corner cases: measured live against DevHost, **11 of 28 captured instruments were
+  `LongSumNonMonotonic`** — among them `dotnet.process.memory.working_set`,
+  `dotnet.gc.last_collection.heap.size` and `dotnet.gc.last_collection.memory.committed_size`, all from
+  the standard `AddRuntimeInstrumentation` set. A switch covering only the obvious five falls through to
+  a default and reports `NaN` for them, which renders as data-shaped nonsense rather than as an error.
+  A non-monotonic sum is read with the **same** `GetSumLong()` / `GetSumDouble()` accessors as a
+  monotonic one — the bug is a missing switch arm, not a missing API, which is why it is so easy to
+  write and so hard to see. An unrecognised member must be recorded as a **null value with a detail
+  naming the type**, never as a silent `NaN`.
+  Two related mechanics: `MetricPoint` is enumerated by reference
+  (`foreach (ref readonly var p in metric.GetMetricPoints())`) so it cannot be captured by a lambda; and
+  `ExponentialHistogram` cannot be produced by an instrument alone — it needs a
+  `Base2ExponentialBucketHistogramConfiguration` **view**, which is how the test covers all eight members
+  with real SDK data instead of a hand-written list that would only be testing itself.
+- **Evidence:** `src/Agent42.Backend/Telemetry/LiveMetricExporter.cs`,
+  `tests/Agent42.Tests/LiveMetricExporterTests.cs`,
+  `.agentic/decisions/0054-live-otel-console.md`
+- **Verified:** 2026-08-27
+
+### A diagnostics console watches itself, and the obvious log filter blinds it instead
+
+- **Claim:** A page that polls `/api/diagnostics/*` every couple of seconds produces a server span **and**
+  request log lines on every tick, so an unfiltered ring fills with the console observing itself.
+  The **span** half is easy — drop spans whose `url.path`/`http.route` starts with the diagnostics
+  prefix, mirroring ServiceDefaults' `HealthEndpointPath` filter.
+  The **log** half is the trap: the noise is `Microsoft.AspNetCore.Hosting.Diagnostics`
+  "Request starting"/"Request finished", a **shared** category every other request also uses, so
+  filtering by category removes all request logging from the console — the exact capability someone
+  opened it for. Key off the **request path** instead, and reach it two independent ways, because
+  neither is reliable at the moment a record is written: the ambient `Activity`'s `url.path`/`http.route`
+  tag (absent until the instrumentation has enriched the activity) and the record's own **`Path`** state
+  attribute (which the hosting logger sets on both request messages regardless of instrumentation).
+  **Use `Path`, not `RequestPath`** — measured, `RequestPath` exists only inside a formatted *scope*
+  string (`"RequestPath:/ RequestId:..."`), so a filter reading state attributes never sees it and
+  listing it is dead code that reads as extra thoroughness.
+  **The allowlist of path-bearing keys is the load-bearing half, not the string match.** Consult only
+  `url.path`/`http.route`/`http.target` (and the log record's `Path`), and match them by **prefix**. A
+  match-anywhere check, or one applied to every tag, drops a span whose `gen_ai.tool.call.result` merely
+  *quotes* the route — a fetched web page, a tool result — which is exactly the content the console
+  exists to show. Any looser `"{method} {route}"` matching belongs on the activity's **display name**
+  alone, which is framework-generated and never carries model or web content.
+  This bites hardest **offline**: `tools/Agent42.DevHost` has no `appsettings.json` at all, so its floor
+  is `Information` with no `Microsoft.AspNetCore` override. Measured there after ~15 polls: **6 spans / 0
+  diagnostics spans**, and **63 logs of which 12 were `Hosting.Diagnostics` records for genuine requests
+  and 0 were diagnostics polls** — both halves of the property in one measurement.
+  **Metrics are deliberately exempt.** The snapshot is fixed-size and replaced wholesale, so there is no
+  ring to flood, and `http.server.request.duration` legitimately carries a `/api/diagnostics/*` route
+  dimension. Filtering it would misreport the app's actual request mix.
+- **Evidence:** `src/Agent42.Backend/Telemetry/LiveTelemetryFilter.cs`,
+  `tests/Agent42.Tests/LiveLogProcessorTests.cs`, `tests/Agent42.Tests/LiveSpanProcessorTests.cs`,
+  `.agentic/decisions/0054-live-otel-console.md`
+- **Verified:** 2026-08-27

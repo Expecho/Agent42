@@ -29,6 +29,11 @@
     <!-- Direct reference (transitive via ServiceDefaults) so AspNetCoreTraceInstrumentationOptions
          is unambiguously in scope for the user.* trace enrichment; version is centrally pinned. -->
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <!-- Direct references (transitive via ServiceDefaults) because AddLiveTelemetryCapture calls
+         AddHttpClientInstrumentation / AddRuntimeInstrumentation itself for the DevHost leg, which
+         has no OpenTelemetry pipeline of its own (ADR 0054); versions are centrally pinned. -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
     <PackageReference Include="WebPush" />
   </ItemGroup>
 

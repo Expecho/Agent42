@@ -154,7 +154,7 @@ public sealed class ProjectLayoutTests
         Assert.Contains("partial class AgentGrain", File.ReadAllText(file), StringComparison.Ordinal);
     }
 
-    /// <summary>The fourteen endpoint groups <c>MapAgentApi</c> was split into, and the folder each sits in.</summary>
+    /// <summary>The fifteen endpoint groups <c>MapAgentApi</c> was split into, and the folder each sits in.</summary>
     public static TheoryData<string, string> AgentApiParts() => new()
     {
         { "Conversations/AgentApi.Conversations.cs", "MapConversationEndpoints" },
@@ -168,6 +168,7 @@ public sealed class ProjectLayoutTests
         { "Push/AgentApi.Push.cs", "MapPushEndpoints" },
         { "Configuration/AgentApi.Configuration.cs", "MapConfigurationEndpoints" },
         { "Telemetry/AgentApi.Telemetry.cs", "MapTelemetryEndpoints" },
+        { "Telemetry/AgentApi.Diagnostics.cs", "MapDiagnosticsEndpoints" },
         { "Mcp/AgentApi.Mcp.cs", "MapMcpEndpoints" },
         { "UserSkills/AgentApi.UserSkills.cs", "MapUserSkillEndpoints" },
         { "Calendar/AgentApi.Calendar.cs", "MapCalendarEndpoints" },

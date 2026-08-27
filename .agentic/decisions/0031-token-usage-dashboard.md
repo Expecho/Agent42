@@ -32,7 +32,11 @@ counter in `AgentGrain` — and stored in Cosmos **without a new container**.
   the `OnStart` identity processor), projects the span via the pure `UsageSpanProjector`, and enqueues to a
   **bounded, drop-on-full** `Channel<UsageEvent>`. `UsageIngestionService` (a `BackgroundService`) drains it
   on a **≥30 s** cadence into the rollup grain. `OnEnd` never blocks or does I/O — usage telemetry must never
-  back-pressure a chat turn. Backend-only: DevHost has no OTel pipeline, so the dashboard is empty offline.
+  back-pressure a chat turn. Backend-only, so the dashboard is empty offline.
+  (Corrected 2026-08-27, ADR 0054 — this decision stands; only the parenthetical reason below was
+  overtaken by later work: DevHost now *has* an OTel pipeline — instrumentation and live capture,
+  no exporter. The dashboard is still empty offline, but because `UsageSpanProcessor` and
+  `UsageIngestionService` are registered by the Backend alone, not because there is nothing to observe.)
 - **The projection rule is load-bearing:** count tokens **only** from `gen_ai.operation.name == "chat"` and
   tool events **only** from `execute_tool`; **ignore `orchestrate_tools`** and everything else, or the
   spike-confirmed child-sum double-counts.
