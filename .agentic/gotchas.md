@@ -2119,3 +2119,30 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`,
   `tests/Agent42.Tests/RecordingPushNotificationSender.cs`, `tests/Agent42.Tests/TestSiloConfigurator.cs`
 - **Verified:** 2026-08-27
+
+### `OpenAI` is pinned to 2.12.0 because 2.13.0 kills any stream with an empty `choices` chunk
+
+- **Claim:** `Microsoft.Extensions.AI.OpenAI` probes `"$.choices[0].delta.reasoning_content"` on
+  **every** streaming update (it exists to surface DeepSeek-style `reasoning_content`), and
+  `OpenAI`'s generated `StreamingChatCompletionUpdate.PropagateGet` indexes `Choices[index]` with
+  **no bounds check**. In 2.12.0 that read resolves from stored JSON and the propagator is never
+  reached; **2.13.0 routes it through the typed indexer**, so a chunk carrying an **empty `choices`
+  array** throws `ArgumentOutOfRangeException` out of `List<T>.get_Item` and takes down the whole
+  stream, not one chunk. Azure sends exactly such chunks — the leading `prompt_filter_results` one,
+  and the trailing usage-only one — so the symptom is a reply that dies mid-flight on the **Chat
+  Completions** path (`Provider.OpenAICompatible`, and Foundry when `UseResponsesApi` is false).
+  The Responses path builds a different client and never reaches this code, which is why prod
+  Foundry did not see it. Measured with everything else held equal: **2.12.0 → `found=False`, stream
+  completes; 2.13.0 → throws.** `PropagateGet`'s own IL is byte-identical between the two, so
+  diffing that method "proves" the versions are equivalent — they are not; the change is upstream of
+  it, in whether the propagator is consulted at all. **Do not let a routine outdated-package sweep
+  raise `OpenAI`** (hard rule 4 says resolve latest stable — this pin is the documented exception).
+  It is enforced two ways: `StreamingEmptyChoicesTests` fails, and the direct
+  `Microsoft.Extensions.AI.OpenAI` 10.9.0 reference declares `OpenAI [2.12.0, 2.13.0)`, so restore
+  itself refuses 2.13.0 — a restore error there is the guard working, not a broken lockfile. Lift
+  the pin only against a released `OpenAI` whose `PropagateGet` bounds-checks, with that test green.
+- **Evidence:** `Directory.Packages.props` (the pin + its note),
+  `src/Agent42.Backend/Agent42.Backend.csproj` (the direct 10.9.0 reference that makes the range bind),
+  `tests/Agent42.Tests/StreamingEmptyChoicesTests.cs`,
+  `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` — the affected path)
+- **Verified:** 2026-08-27
