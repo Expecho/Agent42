@@ -1885,6 +1885,186 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
     // Drains an already-built chat stream. Chat/ChatAt above cover the common turns; the model-capability
     // tests (ADR 0013) need to pass a model id and attachments together, so they build the call themselves.
+    // ---- Long-term memory (ADR 0056) -------------------------------------------------------------
+    //
+    // A Hindsight bank per user, recalled into the agent's instructions before each model call and
+    // retained after it. RecordingHindsightClient (registered in TestSiloConfigurator) captures both.
+
+    // Aggregates recalls/retains across EVERY silo, for the same reason AllSends does: the recorder is a
+    // per-silo singleton and a conversation grain may activate on any silo of the multi-silo cluster, so
+    // reading only the primary's would miss a call recorded elsewhere (a placement-dependent flake).
+    private IReadOnlyList<RecordingHindsightClient> MemoryRecorders() =>
+        [.. Cluster.Silos.Select(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
+            .GetRequiredService<RecordingHindsightClient>())];
+
+    // Every assertion below reads ONE bank, never a cluster-wide total. That is load-bearing, not
+    // tidiness: the cluster lives for the whole class, and a reminder registered by a scheduling test can
+    // fire mid-test and drain ChatCoreAsync, which retains. Each test owns a distinct userId, so scoping
+    // to its own bank is a complete fix.
+    private IReadOnlyList<string> RecallsFor(string bankId) =>
+        [.. MemoryRecorders().SelectMany(r => r.RecallsFor(bankId))];
+
+    private IReadOnlyList<string> RetainsFor(string bankId) =>
+        [.. MemoryRecorders().SelectMany(r => r.RetainsFor(bankId))];
+
+    private void MemoryReturns(params string[] texts)
+    {
+        foreach (var recorder in MemoryRecorders())
+        {
+            recorder.ReturnsMemories(texts);
+        }
+    }
+
+    // BC1: with a client configured, a recalled memory reaches the MODEL on a real grain turn — recall is
+    // queried with the user's message, and the memory lands in the instructions the terminal IChatClient
+    // received ([sys:…]). The bank is the userId off the grain key, not the conversation id (BC5).
+    [Fact]
+    public async Task AgentChat_InjectsRecalledMemories()
+    {
+        MemoryReturns("The user is allergic to shellfish");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-inject-user/memory-inject-conv");
+
+        var events = await CollectAsync(agent.ChatAsync("what should I order?", null));
+
+        var answer = string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
+        Assert.Contains("[sys:", answer);
+        Assert.Contains("## Memories", answer);
+        Assert.Contains("The user is allergic to shellfish", answer);
+        Assert.Equal(["what should I order?"], RecallsFor("memory-inject-user"));
+    }
+
+    // BC5: the bank is the USER, not the conversation — that is what makes memory span chats. Two different
+    // conversations of one user recall from one bank; nothing is ever recalled for a bank named after a
+    // conversation.
+    [Fact]
+    public async Task BankId_IsTheUserId()
+    {
+        var first = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-bank-user/conv-one");
+        var second = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-bank-user/conv-two");
+
+        await CollectAsync(first.ChatAsync("first chat", null));
+        await CollectAsync(second.ChatAsync("second chat", null));
+
+        Assert.Equal(["first chat", "second chat"], RecallsFor("memory-bank-user").Order().ToList());
+        Assert.Empty(RecallsFor("conv-one"));
+        Assert.Empty(RecallsFor("memory-bank-user/conv-one"));
+    }
+
+    // BC2 + BC3 guard the ordering trap: BuildAgent runs on ACTIVATION, never per turn, while _ephemeral is
+    // turn-scoped, so a provider capturing the flag as a VALUE freezes it at whatever it was when the agent
+    // was built. Which of the two actually catches that was measured (2026-08-28) rather than assumed, by
+    // mutating BuildMemoryProvider twice and running the pair:
+    //
+    //   capture at build time (the realistic bug — activation has _ephemeral false):  BC2 FAIL, BC3 FAIL
+    //   gate stuck off       (the capture-of-true direction):                         BC2 pass, BC3 FAIL
+    //
+    // So BC3 is the load-bearing one — the only test that fails in BOTH directions. BC2 asserts that
+    // NOTHING was recorded, which a provider that never records anything satisfies trivially. Do not delete
+    // BC3 as redundant with BC2; it is the reverse.
+
+    // BC2: an incognito turn records neither a recall nor a retain for its own bank (ADR 0034 + 0056).
+    [Fact]
+    public async Task EphemeralTurn_NeitherRecallsNorRetains()
+    {
+        MemoryReturns("a memory that must not be injected");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-incognito-user/memory-incognito-conv");
+
+        await CollectAsync(agent.ChatAsync("off the record", null, ephemeral: true));
+
+        Assert.Empty(RecallsFor("memory-incognito-user"));
+        Assert.Empty(RetainsFor("memory-incognito-user"));
+    }
+
+    // BC3: a NORMAL turn after an incognito one, on the SAME activation, does recall and retain again.
+    [Fact]
+    public async Task MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-resume-user/memory-resume-conv");
+
+        await CollectAsync(agent.ChatAsync("off the record", null, ephemeral: true));
+        await CollectAsync(agent.ChatAsync("on the record", null));
+
+        // Only the second turn is remembered, and the first appears in neither list.
+        Assert.Equal(["on the record"], RecallsFor("memory-resume-user"));
+        var retained = Assert.Single(RetainsFor("memory-resume-user"));
+        Assert.Contains("on the record", retained);
+        Assert.DoesNotContain("off the record", retained);
+    }
+
+    // BC6: a memory service that throws on every call does not break the turn. The user still gets a reply;
+    // memory simply degrades to nothing. Asserted on the recorder rather than the reply, because a silent
+    // failure and a silent success look identical from the outside.
+    [Fact]
+    public async Task MemoryFailure_DoesNotBreakTheTurn()
+    {
+        foreach (var recorder in MemoryRecorders())
+        {
+            recorder.ReturnsMemories("never delivered");
+            recorder.Throws = new InvalidOperationException("hindsight is down");
+        }
+
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-failure-user/memory-failure-conv");
+        var events = await CollectAsync(agent.ChatAsync("still answer me", null));
+
+        var answer = string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
+        Assert.False(string.IsNullOrWhiteSpace(answer));
+        Assert.DoesNotContain("## Memories", answer);
+        Assert.Contains(AgentStreamEventType.Done, events.Select(e => e.Type));
+        // It was attempted and it failed, rather than never being wired up.
+        Assert.Equal(["still answer me"], RecallsFor("memory-failure-user"));
+    }
+
+    // The memory provider is NOT a tool — it injects instructions before the call — so like the document
+    // TextSearchProvider it must stay attached on a model that supports no tools at all. Same asymmetry as
+    // NoToolModel_StillGetsDocumentRetrieval above, and the same gotcha: AgentSkillsProvider goes when
+    // tools go because it exposes load_skill, while these two do not and must not.
+    //
+    // Without this, the natural "tidy" mistake — folding the memory provider in beside the skills provider
+    // under the capability gate — would silently lose memory for every text-only model and no test would
+    // notice, because BC1 runs on the default full-capability model.
+    [Fact]
+    public async Task NoToolModel_StillGetsMemory()
+    {
+        MemoryReturns("The user is allergic to shellfish");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-notools-user/memory-notools-conv");
+
+        var events = await CollectAsync(
+            agent.ChatAsync("what should I order?", TestSiloConfigurator.NoToolsNoVisionModel));
+
+        var answer = Answer(events);
+        Assert.Contains("[tools:]", answer);
+        Assert.Contains("The user is allergic to shellfish", answer);
+        Assert.Equal(["what should I order?"], RecallsFor("memory-notools-user"));
+    }
+
+    // BC4: with no client configured (HindsightIntegration(null)) the provider is never ATTACHED, so no call
+    // is made at all. Asserted on the recorder, not the [sys:…] echo: "not attached" and "attached but
+    // recalled nothing" are indistinguishable in the echo and trivially distinguishable here. Runs on its own
+    // cluster, since the shared one deliberately has memory configured.
+    [Fact]
+    public async Task UnconfiguredMemory_MakesNoCalls()
+    {
+        await using var cluster = await NewClusterAsync<UnconfiguredMemorySiloConfigurator>(1);
+        var recorder = cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress)
+            .GetRequiredService<RecordingHindsightClient>();
+        recorder.ReturnsMemories("must never be recalled");
+
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("memory-off-user/memory-off-conv");
+        var events = await CollectAsync(agent.ChatAsync("hello", null));
+
+        var answer = string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
+        Assert.False(string.IsNullOrWhiteSpace(answer));
+        Assert.Empty(recorder.RecallsFor("memory-off-user"));
+        Assert.Empty(recorder.RetainsFor("memory-off-user"));
+        Assert.DoesNotContain("## Memories", answer);
+    }
+
     private static async Task<List<AgentStreamEvent>> CollectAsync(IAsyncEnumerable<AgentStreamEvent> stream)
     {
         var events = new List<AgentStreamEvent>();

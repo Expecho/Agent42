@@ -82,6 +82,9 @@ param googleMapsApiKey string = ''
 @description('API key for the hosted context.dev page-scrape API behind fetch_web_page (ADR 0027). OPTIONAL, exactly like googleMapsApiKey: when empty, neither the secret nor the env var below is emitted, and fetch_web_page degrades to a per-call failure rather than failing to deploy. Not on the availability path.')
 param contextApiKey string = ''
 
+@description('API key for the Hindsight long-term-memory service (ADR 0056). OPTIONAL, exactly like googleMapsApiKey/contextApiKey/vapidPrivateKey: when empty, neither the secret nor the env var below is emitted, and long-term memory is simply off rather than the deployment failing. Not on the availability path.')
+param hindsightApiKey string = ''
+
 @secure()
 @description('VAPID private key for Web Push notifications (ADR 0028). OPTIONAL, exactly like googleMapsApiKey/contextApiKey: when empty, neither the secret nor the env var below is emitted, and push simply stays disabled (GET /api/push/config returns enabled:false, the UI hides the toggle) rather than failing to deploy. Not on the availability path. The matching public key + subject are non-secret and committed in appsettings.json.')
 param vapidPrivateKey string = ''
@@ -179,6 +182,14 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
                 value: contextApiKey
               }
             ],
+        empty(hindsightApiKey)
+          ? []
+          : [
+              {
+                name: 'hindsight-api-key'
+                value: hindsightApiKey
+              }
+            ],
         empty(vapidPrivateKey)
           ? []
           : [
@@ -261,7 +272,14 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             : [{ name: 'GoogleCalendar__ClientId', secretRef: 'google-oauth-client-id' }],
           empty(googleOAuthClientSecret)
             ? []
-            : [{ name: 'GoogleCalendar__ClientSecret', secretRef: 'google-oauth-client-secret' }])
+            : [{ name: 'GoogleCalendar__ClientSecret', secretRef: 'google-oauth-client-secret' }],
+          // The Hindsight key behind long-term memory (ADR 0056). Emitted only when supplied: with no key
+          // the app starts normally and BuildAgent attaches no memory provider, so nothing is recalled or
+          // retained - the optional-secret shape of the four above, not searxngSecret's availability-path
+          // shape. Supplying it is what turns the always-on per-turn egress ON.
+          empty(hindsightApiKey)
+            ? []
+            : [{ name: 'Hindsight__ApiKey', secretRef: 'hindsight-api-key' }])
         }
         // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume and no API
         // key. NOT private, though — SearXNG is a *meta*search engine and forwards every query on to

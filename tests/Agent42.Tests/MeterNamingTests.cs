@@ -30,6 +30,7 @@ namespace Agent42.Tests;
 /// microsoft/agent-framework#2688). Every gen_ai metric this app has comes from the
 /// Microsoft.Extensions.AI chat client underneath it.</para>
 /// </summary>
+[Collection("LiveTelemetry")]
 public sealed class MeterNamingTests
 {
     /// <summary>Stands in for <c>LiveTelemetryCaptureExtensions.OtelSourceName</c>, kept distinct so a

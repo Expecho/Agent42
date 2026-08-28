@@ -16,6 +16,7 @@ namespace Agent42.Tests;
 /// is why it drives real log calls through a real <c>LoggerFactory</c> rather than hand-constructing
 /// records the SDK would never have pooled.</para>
 /// </summary>
+[Collection("LiveTelemetry")]
 public sealed class LiveLogProcessorTests
 {
     private static DiagnosticsConfig Config() => DiagnosticsConfig.Default;

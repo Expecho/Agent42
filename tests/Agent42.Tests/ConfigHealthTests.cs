@@ -39,6 +39,7 @@ public sealed class ConfigHealthTests
         ("ContextScrape:ApiKey", "SECRET-context-key"),
         ("GoogleCalendar:ClientId", "SECRET-google-oauth-client-id"),
         ("GoogleCalendar:ClientSecret", "SECRET-google-oauth-client-secret"),
+        ("Hindsight:ApiKey", "SECRET-hindsight-key"),
     ];
 
     private static ConfigCheck Find(ConfigHealthReport report, string key) =>
@@ -58,6 +59,7 @@ public sealed class ConfigHealthTests
         Assert.Equal(ConfigHealth.Ok, Find(report, "Push:Vapid").Status);
         Assert.Equal(ConfigHealth.Ok, Find(report, "GoogleCalendar:ClientId").Status);
         Assert.Equal(ConfigHealth.Ok, Find(report, "GoogleCalendar:ClientSecret").Status);
+        Assert.Equal(ConfigHealth.Ok, Find(report, "Hindsight:ApiKey").Status);
     }
 
     // AC11 (ADR 0053). Presence only, and the two halves are reported SEPARATELY: a Google Web
@@ -161,7 +163,8 @@ public sealed class ConfigHealthTests
             SearXng: null,
             Geocoding: _ => throw new InvalidOperationException(
                 "GET https://maps.googleapis.com/maps/api/geocode/json?latlng=0,0&key=SECRET-google-key failed"),
-            ContextScrape: null);
+            ContextScrape: null,
+            Hindsight: null);
         var services = new ServiceCollection().AddSingleton(probes).BuildServiceProvider();
 
         var probed = await ConfigHealth.ProbeAsync(report, services, Config(AllSecretsSet));
@@ -181,7 +184,8 @@ public sealed class ConfigHealthTests
         var probes = new ConfigHealthProbeSet(
             SearXng: _ => Task.FromResult(new ProbeResult(ConfigHealth.Ok, "reachable")),
             Geocoding: _ => Task.FromResult(new ProbeResult(ConfigHealth.Error, "auth failed")),
-            ContextScrape: null);
+            ContextScrape: null,
+            Hindsight: null);
         var services = new ServiceCollection().AddSingleton(probes).BuildServiceProvider();
 
         var probed = await ConfigHealth.ProbeAsync(report, services, Config(AllSecretsSet));
@@ -196,7 +200,7 @@ public sealed class ConfigHealthTests
     public async Task UnresolvedProbeClient_IsSkipped()
     {
         var report = ConfigHealth.BuildStatic(Config(AllSecretsSet), Env(), Push(enabled: true));
-        var probes = new ConfigHealthProbeSet(null, null, null);
+        var probes = new ConfigHealthProbeSet(null, null, null, null);
         var services = new ServiceCollection().AddSingleton(probes).BuildServiceProvider();
 
         var probed = await ConfigHealth.ProbeAsync(report, services, Config(AllSecretsSet));
@@ -215,6 +219,33 @@ public sealed class ConfigHealthTests
         Assert.Equal(ConfigHealth.NotApplicable, Find(report, "Storage:BlobEndpoint").Status);
         Assert.Equal(ConfigHealth.NotApplicable, Find(report, "AzureOpenAI:TenantId").Status);
     }
+
+    // BC7: the Hindsight key's presence and absence are both reported, and neither reveals the key.
+    //
+    // The absence assertion is the one that matters. Long-term memory is off by default and not setting the
+    // key is its ONLY off switch (ADR 0056) — there is no Preferences toggle — so an operator who expects
+    // memory and does not have it has exactly one place to find that out, and this is it.
+    [Fact]
+    public void ConfigHealth_ReportsHindsight()
+    {
+        var configured = ConfigHealth.BuildStatic(Config(AllSecretsSet), Env(), Push(enabled: true));
+        var check = Find(configured, "Hindsight:ApiKey");
+        Assert.Equal(ConfigHealth.Ok, check.Status);
+        Assert.DoesNotContain("SECRET-hindsight-key", JsonSerializer.Serialize(configured));
+
+        var without = ConfigHealth.BuildStatic(
+            Config(AllSecretsSet.Where(e => e.Key != "Hindsight:ApiKey").ToArray()),
+            Env(),
+            Push(enabled: true));
+        var missing = Find(without, "Hindsight:ApiKey");
+        Assert.Equal(ConfigHealth.Warning, missing.Status);
+        Assert.Contains("long-term memory is off", missing.Message);
+
+        // Free, unlike the geocoding and context.dev probes — /health is unauthenticated.
+        Assert.False(Find(configured, "probe:hindsight").Billable);
+        Assert.Equal(ConfigHealth.Skipped, Find(configured, "probe:hindsight").Status);
+    }
+
 }
 
 /// <summary>A minimal <see cref="IHostEnvironment"/> so <see cref="ConfigHealth.BuildStatic"/> — a pure

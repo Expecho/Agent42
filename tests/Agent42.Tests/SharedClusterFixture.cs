@@ -54,6 +54,7 @@ public class SharedClusterFixture : IAsyncLifetime
             var services = Cluster.GetSiloServiceProvider(silo.SiloAddress);
             services.GetRequiredService<FakeChatClient>().Reset();
             services.GetRequiredService<RecordingPushNotificationSender>().Reset();
+            services.GetRequiredService<RecordingHindsightClient>().Reset();
             services.GetRequiredService<SingleUserMcpToolProvider>().Servers = [];
         }
     }
