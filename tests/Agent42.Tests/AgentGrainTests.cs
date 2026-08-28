@@ -2018,6 +2018,29 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Equal(["still answer me"], RecallsFor("memory-failure-user"));
     }
 
+    // The memory provider is NOT a tool — it injects instructions before the call — so like the document
+    // TextSearchProvider it must stay attached on a model that supports no tools at all. Same asymmetry as
+    // NoToolModel_StillGetsDocumentRetrieval above, and the same gotcha: AgentSkillsProvider goes when
+    // tools go because it exposes load_skill, while these two do not and must not.
+    //
+    // Without this, the natural "tidy" mistake — folding the memory provider in beside the skills provider
+    // under the capability gate — would silently lose memory for every text-only model and no test would
+    // notice, because BC1 runs on the default full-capability model.
+    [Fact]
+    public async Task NoToolModel_StillGetsMemory()
+    {
+        MemoryReturns("The user is allergic to shellfish");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-notools-user/memory-notools-conv");
+
+        var events = await CollectAsync(
+            agent.ChatAsync("what should I order?", TestSiloConfigurator.NoToolsNoVisionModel));
+
+        var answer = Answer(events);
+        Assert.Contains("[tools:]", answer);
+        Assert.Contains("The user is allergic to shellfish", answer);
+        Assert.Equal(["what should I order?"], RecallsFor("memory-notools-user"));
+    }
+
     // BC4: with no client configured (HindsightIntegration(null)) the provider is never ATTACHED, so no call
     // is made at all. Asserted on the recorder, not the [sys:…] echo: "not attached" and "attached but
     // recalled nothing" are indistinguishable in the echo and trivially distinguishable here. Runs on its own
