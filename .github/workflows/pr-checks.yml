@@ -2,8 +2,9 @@
 # this workflow enforces: build, tests, format, vulnerable_packages: 0,
 # doc-path integrity, and coverage_new_code_pct_min. outdated_packages is
 # report-only (policy: report). cognitive_complexity_max is enforced at BUILD
-# time by SonarAnalyzer.CSharp rule S3776, so it needs no job of its own —
-# see ADR 0050 for why it does not fail the build yet.
+# time by SonarAnalyzer.CSharp rule S3776, so it needs no job of its own — and
+# since ADR 0051 cleared the backlog ADR 0050 had to carry, it is an `error`
+# rather than a warning, so build-test above already fails on it.
 name: PR checks
 
 on:
