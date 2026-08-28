@@ -98,6 +98,7 @@ public sealed class ConfigHealthProbeTests
 
         Assert.Null(probes.SearXng);
         Assert.Null(probes.Geocoding);
+        Assert.Null(probes.Hindsight);
         Assert.Null(probes.ContextScrape);
     }
 

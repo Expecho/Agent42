@@ -28,7 +28,7 @@ this ADR and is recorded in full rather than quietly corrected.
 
 ## Decision
 
-### 1. Seventeen top-level feature folders, in a single flat namespace
+### 1. Nineteen top-level feature folders, in a single flat namespace
 `StoredAgents/`, `Attachments/`, `Conversations/`, `Documents/`, `ImageGeneration/`, `Location/`,
 `Mcp/`, `Models/`, `Push/`, `Scheduling/`, `Sharing/`, `Speech/`, `Telemetry/`, `Tools/`,
 `UserSkills/`, `Users/`, `Web/`. `Skills/` does not move: its csproj
@@ -83,7 +83,7 @@ auto-fixing it would break three projects.
 The `.editorconfig` is deliberately free of whitespace/formatting keys: `dotnet format` is a CI gate, so
 any style key added there reformats the whole repo on the next run.
 
-### 3. `AgentGrain` splits into ten partials that live in their feature folders
+### 3. `AgentGrain` splits into twelve partials that live in their feature folders
 `src/Agent42.Agents/Conversations/AgentGrain.cs` (core) plus
 `src/Agent42.Agents/Conversations/AgentGrain.FollowUps.cs`,
 `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs`,

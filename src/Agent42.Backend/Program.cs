@@ -301,6 +301,11 @@ else
     builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
 }
 
+// Long-term memory across conversations (ADR 0056): a Hindsight memory bank per user, recalled into the
+// agent's instructions before each model call and retained after it. Optional and off by default; see
+// HindsightRegistration for what the two branches mean and why this is not inline here.
+builder.Services.AddHindsightMemory(builder.Configuration);
+
 // Google Calendar (ADR 0053): the six calendar tools, over the user's own OAuth connection.
 //
 // ONE adapter, always registered, self-reporting. There is deliberately no NotConfiguredCalendarService

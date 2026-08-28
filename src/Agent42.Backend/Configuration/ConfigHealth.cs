@@ -1,3 +1,4 @@
+using Hindsight.AgentFramework;
 using Microsoft.Extensions.AI;
 
 namespace Agent42.Backend;
@@ -46,6 +47,7 @@ public static class ConfigHealth
     private const string ProbeSearxng = "probe:searxng";
     private const string ProbeGeocoding = "probe:geocoding";
     private const string ProbeContext = "probe:context.dev";
+    private const string ProbeHindsight = "probe:hindsight";
 
     /// <summary>
     /// The static report — a pure function of config + environment + push state. No network. Fatal values
@@ -119,6 +121,16 @@ public static class ConfigHealth
             missing: "not set — a Google Web application client is confidential, so the token exchange needs this too",
             missingStatus: Warning));
 
+        // Long-term memory (ADR 0056). Absent is the DEFAULT and it is the only off switch there is, so the
+        // missing message says what is lost rather than how to fix it.
+        checks.Add(PresenceCheck(GroupOptional, "Hindsight:ApiKey", config["Hindsight:ApiKey"],
+            present: "long-term memory enabled — every non-incognito turn is recalled and retained",
+            missing: "not set — long-term memory is off; the agent recalls and retains nothing",
+            missingStatus: Warning));
+        // Unlike the geocoding and context.dev probes this one is FREE: /health is unauthenticated and
+        // metered by nobody, so it costs the operator nothing to press the button.
+        checks.Add(NotProbed(GroupOptional, ProbeHindsight, "Hindsight reachability", billable: false));
+
         // Web Push: derive from PushConfig.Enabled — the single source of the "push is on" fact (both VAPID
         // keys required). Never recompute from the raw keys.
         checks.Add(new ConfigCheck(GroupOptional, "Push:Vapid", push.Enabled ? Ok : Warning,
@@ -187,6 +199,11 @@ public static class ConfigHealth
             await RunAsync(ProbeContext, probes.ContextScrape, context);
         }
 
+        if (byKey.TryGetValue(ProbeHindsight, out var hindsight))
+        {
+            await RunAsync(ProbeHindsight, probes.Hindsight, hindsight);
+        }
+
         if (overrides.Count == 0)
         {
             return staticReport;
@@ -246,7 +263,8 @@ public sealed record ProbeResult(string Status, string Message);
 public sealed record ConfigHealthProbeSet(
     Func<CancellationToken, Task<ProbeResult>>? SearXng,
     Func<CancellationToken, Task<ProbeResult>>? Geocoding,
-    Func<CancellationToken, Task<ProbeResult>>? ContextScrape)
+    Func<CancellationToken, Task<ProbeResult>>? ContextScrape,
+    Func<CancellationToken, Task<ProbeResult>>? Hindsight)
 {
     /// <summary>
     /// Builds the real probes from the already-registered clients — each resolved <b>optionally</b>
@@ -259,6 +277,7 @@ public sealed record ConfigHealthProbeSet(
     {
         var httpFactory = services.GetService<IHttpClientFactory>();
         var googleKey = config["Geocoding:GoogleApiKey"];
+        var hindsightKey = config["Hindsight:ApiKey"];
 
         return new ConfigHealthProbeSet(
             SearXng: httpFactory is null ? null : ct => ProbeSearxngAsync(httpFactory, ct),
@@ -266,7 +285,13 @@ public sealed record ConfigHealthProbeSet(
             Geocoding: httpFactory is null || string.IsNullOrWhiteSpace(googleKey)
                 ? null
                 : ct => ProbeGeocodingAsync(httpFactory, googleKey, ct),
-            ContextScrape: httpFactory is null ? null : ct => ProbeContextAsync(httpFactory, ct));
+            ContextScrape: httpFactory is null ? null : ct => ProbeContextAsync(httpFactory, ct),
+            // Key-gated for the same reason as geocoding, not because the probe needs the key (it does not
+            // — /health is unauthenticated): the named client is registered only when the key is present, so
+            // CreateClient would otherwise hand back a resilience-pipeline-inheriting client.
+            Hindsight: httpFactory is null || string.IsNullOrWhiteSpace(hindsightKey)
+                ? null
+                : ct => ProbeHindsightAsync(httpFactory, config, ct));
     }
 
     // SearXNG healthy sidecars answer ?format=json with 403 when json is not in `search.formats` (gotcha),
@@ -325,5 +350,20 @@ public sealed record ConfigHealthProbeSet(
         }
 
         return new ProbeResult(ConfigHealth.Ok, "reachable");
+    }
+
+    // Hindsight /health is UNAUTHENTICATED and free, which is why this probe is Billable: false while the
+    // geocoding and context.dev ones are not. No key is sent and none is needed; the point is only whether
+    // the configured base address answers. A curated constant either way, never the exception or the URL.
+    private static async Task<ProbeResult> ProbeHindsightAsync(
+        IHttpClientFactory factory, IConfiguration config, CancellationToken ct)
+    {
+        var client = factory.CreateClient(nameof(HindsightClient));
+        var root = (config["Hindsight:BaseAddress"] ?? HindsightOptions.DefaultBaseAddress.ToString())
+            .TrimEnd('/');
+        using var response = await client.GetAsync($"{root}/health", ct);
+        return response.IsSuccessStatusCode
+            ? new ProbeResult(ConfigHealth.Ok, "reachable")
+            : new ProbeResult(ConfigHealth.Error, "unreachable");
     }
 }

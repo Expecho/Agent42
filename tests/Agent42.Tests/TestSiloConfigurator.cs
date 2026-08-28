@@ -88,6 +88,11 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             // sender registered or activation fails.
             services.AddSingleton<RecordingPushNotificationSender>();
             services.AddSingleton<IPushNotificationSender>(sp => sp.GetRequiredService<RecordingPushNotificationSender>());
+            // Long-term memory (ADR 0056): the recording stand-in, registered as its concrete type too so a
+            // test can read which bank recalled and retained. Every AgentGrain host must register a
+            // HindsightIntegration or activation fails; a null Client means no provider is attached at all.
+            services.AddSingleton<RecordingHindsightClient>();
+            services.AddSingleton(sp => new HindsightIntegration(sp.GetRequiredService<RecordingHindsightClient>()));
             // Process-global in-memory stores, shared with the endpoint DI container (constraint 10).
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             // Document ingestion + retrieval stand-ins (ADR 0007): the grain resolves these to

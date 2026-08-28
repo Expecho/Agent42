@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Docnet.Core" />
     <PackageReference Include="DocumentFormat.OpenXml" />
+    <PackageReference Include="Hindsight.AgentFramework.Net" />
     <PackageReference Include="Microsoft.Agents.AI" />
     <PackageReference Include="Microsoft.Orleans.Sdk" />
     <PackageReference Include="Microsoft.Orleans.Runtime" />

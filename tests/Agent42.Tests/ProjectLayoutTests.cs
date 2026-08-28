@@ -95,15 +95,15 @@ public sealed class ProjectLayoutTests
             "Agent42.Agents",
             [
                 "Attachments", "Calendar", "Conversations", "Documents", "ImageGeneration", "Location",
-                "Mcp", "Models", "Push", "Scheduling", "Sharing", "Skills", "Speech", "StoredAgents",
-                "Telemetry", "Tools", "UserSkills", "Users", "Web",
+                "Mcp", "Memory", "Models", "Push", "Scheduling", "Sharing", "Skills", "Speech",
+                "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web",
             ]
         },
         {
             "Agent42.Backend",
             [
                 "Api", "Attachments", "Calendar", "Configuration", "Conversations", "Documents",
-                "ImageGeneration", "Location", "Mcp", "Models", "Properties", "Push", "Sharing",
+                "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Properties", "Push", "Sharing",
                 "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web", "wwwroot",
             ]
         },
@@ -126,7 +126,7 @@ public sealed class ProjectLayoutTests
         Assert.Equal(expected, actual);
     }
 
-    /// <summary>The eleven parts of <c>AgentGrain</c> (ADR 0039) and the folder each belongs to.</summary>
+    /// <summary>The twelve parts of <c>AgentGrain</c> (ADR 0039) and the folder each belongs to.</summary>
     public static TheoryData<string> AgentGrainParts() =>
     [
         "Conversations/AgentGrain.cs",
@@ -140,6 +140,7 @@ public sealed class ProjectLayoutTests
         "Attachments/AgentGrain.Attachments.cs",
         "Push/AgentGrain.Push.cs",
         "Calendar/AgentGrain.CalendarTools.cs",
+        "Memory/AgentGrain.Memory.cs",
     ];
 
     // Each part exists where planned and really is a part of the one AgentGrain class.

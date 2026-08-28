@@ -64,6 +64,11 @@ public sealed class NoModelSiloConfigurator : ISiloConfigurator
             // silo whose provider can be flipped no-model → model to prove the gate suppressed the send.
             services.AddSingleton<RecordingPushNotificationSender>();
             services.AddSingleton<IPushNotificationSender>(sp => sp.GetRequiredService<RecordingPushNotificationSender>());
+            // Long-term memory (ADR 0056): the recording stand-in, registered as its concrete type too so a
+            // test can read which bank recalled and retained. Every AgentGrain host must register a
+            // HindsightIntegration or activation fails; a null Client means no provider is attached at all.
+            services.AddSingleton<RecordingHindsightClient>();
+            services.AddSingleton(sp => new HindsightIntegration(sp.GetRequiredService<RecordingHindsightClient>()));
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             services.AddDocumentRagFakes();
             services.AddWebToolFakes();
