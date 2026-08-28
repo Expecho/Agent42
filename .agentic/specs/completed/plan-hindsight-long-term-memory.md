@@ -624,3 +624,135 @@ being applied or rejected, and all fixes survive into this revision.
 some findings and moves others, but **Phase A has had no adversarial pass**. Re-running `/plan`'s
 critic step against this revision — or dispatching a `critic` at the start of execution — is
 advisable before Phase A's first MR.
+
+---
+
+# Execution record — where the implementation diverged from this plan
+
+Executed 2026-08-28. Both phases shipped: `Hindsight.AgentFramework.Net` **0.1.0** is on nuget.org
+(https://github.com/Expecho/Hindsight.AgentFramework.Net), and Agent42 consumes it on
+`feature/hindsight-long-term-memory`.
+
+## Corrections to the plan's stated findings
+
+**1. Finding (A) was wrong about `InvokingContext`.** The plan's contract table put the run's messages
+on `InvokingContext.RequestMessages`. That member does not exist. Reflected against
+`Microsoft.Agents.AI` 1.19.0, `InvokingContext` exposes exactly `Agent`, `Session` and **`AIContext`**;
+the run's incoming messages arrive on **`context.AIContext.Messages`**. `InvokedContext` *does* have
+`RequestMessages`/`ResponseMessages`/`InvokeException` as the plan said — the two halves of the API are
+simply not symmetric, which is the trap. Caught at first compile; the provider reads `AIContext.Messages`.
+
+Finding (B) was confirmed exactly, by the same spike (a real `ChatClientAgent` over a fake `IChatClient`):
+injected text is appended to `ChatOptions.Instructions`, never becomes a message, and does not accumulate —
+`instructions length=71` on turn 1 *and* turn 2, held instance never mutated.
+
+**2. There are SEVEN silo configurators, not three.** B3's table named `TestSiloConfigurator`,
+`NoModelSiloConfigurator` and `CapSizedWebPageFetcher`. `AgentGrain` is also activated by
+`CountingStoreSiloConfigurator` (`AttachmentRehydrateTests.cs`), `CoordinatesOnlyGeocoderSiloConfigurator`
+(`FakeGeocoder.cs`), `ActivityPropagationSiloConfigurator` (delegates to `TestSiloConfigurator`, so covered
+for free), and the new `UnconfiguredMemorySiloConfigurator`. Missing two of them failed **activation** on
+those silos — the correct failure mode for a mandatory dependency, and how they were found.
+
+**3. `CapSizedWebPageFetcher`'s silo gets `HindsightIntegration(null)`, not the recorder.** B3 said the
+dual recorder registration for all three. That silo deliberately uses minimal fakes
+(`NullPushNotificationSender`), and a recorder there would attach a real context provider and inject a
+`## Memories` block into the very instructions its session-budget test measures.
+
+**4. The registration lives in `HindsightRegistration`, not inline in `Program.cs`.** B3's table put the
+conditional branch in `Program.cs` beside the geocoder. Doing that took the composition root from 15 to
+**16** cognitive complexity and **failed the build** — `cognitive_complexity_max` blocks (S3776 at
+`error`). Extracted into `src/Agent42.Backend/Memory/HindsightRegistration.cs`, which is what ADR 0050/0051
+established and what `DocumentIndexRegistration` already does. Side effect: `Memory/` becomes Backend's
+**20th** feature folder, so `ProjectLayoutTests`' Backend array and ADR 0040's count needed updating too —
+neither was in the plan's affected areas.
+
+**5. `HindsightIntegration` carries `Mission` as well as `Client`.** The plan specified a one-line
+`record HindsightIntegration(IHindsightClient? Client)` while B1 read `Hindsight:Mission` from config.
+Without a second member that value is read and dropped on the floor.
+
+**6. The BC2 + BC3 "neither alone" claim was false.** The plan said the two are a regression pair where
+"neither alone catches a captured-value bug". Mutation-tested rather than assumed:
+
+| Mutation | BC2 | BC3 |
+|---|---|---|
+| value captured at build time (**the realistic bug** — activation has `_ephemeral` false) | FAIL | FAIL |
+| gate stuck OFF (the capture-of-true direction) | **pass** | FAIL |
+
+So **BC3 is the load-bearing one** — the only test that fails in both directions. BC2 asserts that nothing
+was recorded, which a provider that never records anything satisfies trivially. The claim had been copied
+into a code comment, a gotcha and CLAUDE.md before being checked; all three now state the measured result
+and warn that deleting BC3 as "redundant with BC2" is exactly backwards.
+
+## Things the plan predicted correctly and are worth crediting
+
+- **The coverage squeeze happened.** The plan warned Phase B would be mostly uncovered DI/config wiring.
+  First gate run: **61.3%** against the 80% floor, with `HindsightRegistration` at 0/21. Fixed with
+  `HindsightRegistrationTests` (both branches, blank-key handling, mission threading, and the
+  named-client-only-when-keyed asymmetry) plus Hindsight arms on `ConfigHealthProbeTests` → **98.8%**.
+- **M3's positional-record warning was exact.** Widening `ConfigHealthProbeSet` broke precisely the four
+  sites it named.
+- **Finding (F) was right**: every foreign-repo reference is a full URL, and `check-doc-paths.mjs` passes.
+
+## Deviations of process, not design
+
+- **Publishing uses nuget.org trusted publishing (OIDC), not a stored `NUGET_API_KEY`.** The user chose
+  this when the secret was raised. `release.yml` uses `NuGet/login@v1` with `id-token: write`; the only
+  repo secret is `NUGET_USER`, a profile name rather than a credential. A6's `NUGET_API_KEY` prerequisite
+  is therefore obsolete — the manual prerequisite is a trusted-publishing **policy** on nuget.org naming
+  owner, repo and the workflow file `release.yml`.
+- **Phase A's genesis commit is on `main`.** The plan asked for the same branch discipline this repo uses.
+  A brand-new repository has nothing to branch *from*, so the initial commit landed on `main` and CI ran on
+  the push before the tag was cut. Branch discipline applies from here on.
+- **`Microsoft.SourceLink.GitHub` was not added as a package.** The .NET 8+ SDK references it implicitly;
+  the packaging properties alone produce a source-linked `.snupkg`, verified by inspecting the pack output.
+- **Test project multi-targets `net8.0;net10.0`.** The plan only required the library to. A package
+  claiming net8.0 support should have run its tests there; both runtimes are present locally and on CI.
+
+## Incidental fix carried in this MR
+
+CLAUDE.md claimed `cognitive_complexity_max` "does not block yet … S3776 is at `warning`". ADR 0051 made
+it blocking and this branch had it **fail a build** as an `error`. Corrected in the same MR under hard
+rule 2 (trust code, fix the doc), with the `Program.cs`-tips-over case written down since it will recur.
+
+## Honest unverified residual
+
+**Neither repo's tests ever reach a real Hindsight server.** Both stub the HTTP layer; the wire contract
+is implemented against the upstream OpenAPI document and pinned by URL/body assertions, not a round trip.
+DevHost registers `HindsightIntegration(null)`, so there is no offline browser leg either. The first real
+call this code makes will be in production, with a key set. Recorded in ADR 0056 rather than papered over.
+
+## Findings from the critic pass, and what they cost
+
+A `critic` subagent reviewed the finished diff (the pass the plan's own *Review* section said Phase A and
+the two-repo restructure had never had). It confirmed the hard call — that ADR 0056 amends ADR 0008 rather
+than citing it — and cleared the gotchas, the exemplar shapes and BC1–BC8. It also found nine things worth
+fixing, all fixed in `d5efbc3`:
+
+- **Two counts were bumped without their inventories.** ADR 0039's folder list and partial list, and ADR
+  0040's folder list, still enumerated the old sets after this branch changed the numbers above them —
+  the exact outcome those ADRs' own *"a folder list is a factual inventory … corrected in place"* rule
+  exists to prevent. Both were *already* missing `Calendar/` from ADR 0053, so this branch made a
+  pre-existing contradiction worse rather than creating one.
+- **A retraction that missed its main target.** Commit `aefe8ef` said it had corrected the false
+  "neither test alone" claim in "the code comment, the gotcha and CLAUDE.md" — and had not touched the
+  code comment, which sits on the very method under discussion. The commit message was wrong about its
+  own diff.
+- **A half-thread-safe recorder.** `RecordingHindsightClient` locked its writers and left readers walking
+  live `List<T>`s, in a shared-cluster suite whose own remarks describe the racing case. Worse than no
+  lock, because it reads as safe. Replaced with the exemplar's `ConcurrentQueue` + snapshots.
+- **A silo configurator that lied about itself.** `UnconfiguredMemorySiloConfigurator` claimed to be
+  "otherwise identical to `TestSiloConfigurator`" while omitting the image generator, the capability
+  predicate and the embedding generator — so BC4 ran against a differently-capable grain than every other
+  memory AC. Now delegates, per `ActivityPropagationSiloConfigurator`.
+- **A real startup bug.** A blank `Hindsight:BaseAddress` threw `UriFormatException` from
+  `AddHindsightMemory`, because an unset optional value arrives as `""` and not null — so the host
+  designed to boot with every optional value blank would have failed to boot over an empty optional knob.
+  Two lines below a correctly blank-guarded key. Regression test added.
+- Plus: no `amended_by` back-pointer on ADR 0008; `Hindsight:Mission` plumbed but unreachable in prod;
+  a stale comment on the rewritten `AIContextProviders` assignment; a missing blank line in `gotchas.md`.
+
+**The pattern worth carrying forward:** every one of the documentation findings was a claim written
+confidently and not checked — a count without its list, a commit message about its own diff, a "shape"
+citation that did not match the exemplar. The two code findings were the same failure in a different
+medium. Mutation-testing the three behavioural claims (the incognito pair, the no-tools guard) caught two
+more before the critic ran, and is the cheapest tool here for the same class of mistake.

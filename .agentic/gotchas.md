@@ -2206,3 +2206,27 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Memories_DoNotAccumulateAcrossTurns` / `InjectedMemories_AreNotRetained` in its test suite),
   `.agentic/decisions/0056-hindsight-long-term-memory.md`
 - **Verified:** 2026-08-28
+### A live-telemetry test host captures from a PROCESS-GLOBAL source, so those classes must not run in parallel
+
+- **Claim:** `AddLiveTelemetryCapture` (ADR 0054) subscribes its `LiveTelemetryBuffer` to the
+  `ActivitySource` named `Agent42.Backend` — a **process-wide name, not a per-host one**. The buffer
+  instance is per-host and looks isolated; the thing feeding it is not. So while one test's host is
+  alive, a span emitted **anywhere else in the process** on that source lands in *its* buffer. xUnit
+  runs test classes in parallel by default, and two classes sat on opposite sides of exactly that:
+  `MeterNamingTests` drives a real instrumented chat call through
+  `UseOpenTelemetry(sourceName: LiveTelemetryCaptureExtensions.OtelSourceName)`, which **emits a span**,
+  while `OtelConfigurationTests.AddLiveTelemetryCapture_ComposesWithTheDualExporterPipeline` asserts its
+  freshly-built buffer is still **empty**. Intermittent `Assert.Empty() Failure: Collection was not
+  empty` — measured at roughly **2 failures in 6 runs** under `--collect:"XPlat Code Coverage"`, and it
+  failed the **`new-code-coverage` PR check**, which is a blocking gate. It is timing-sensitive rather
+  than new: four consecutive coverage runs on an unmodified `main` worktree were green, so a branch that
+  merely adds tests (a longer run, more overlap) can surface it without having caused it. **The fix is
+  the shared `[Collection("LiveTelemetry")]`** — xUnit never runs two classes of one collection
+  concurrently, so nothing had to be weakened to make it deterministic (6/6 green after). **Any new test
+  class that builds a live-capture host, or that emits on `OtelSourceName`, must join that collection**;
+  the failure it prevents lands in a *different* class than the one you added, which is what makes it
+  hard to attribute.
+- **Evidence:** `tests/Agent42.Tests/LiveTelemetryCollection.cs`,
+  `tests/Agent42.Tests/OtelConfigurationTests.cs`, `tests/Agent42.Tests/MeterNamingTests.cs`,
+  `src/Agent42.Backend/Telemetry/LiveTelemetryCaptureExtensions.cs` (`OtelSourceName`, `AddSource`)
+- **Verified:** 2026-08-28
