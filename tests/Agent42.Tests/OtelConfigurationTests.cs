@@ -17,6 +17,7 @@ namespace Agent42.Tests;
 /// of that wiring: the Backend is the sole host that calls <c>AddServiceDefaults</c>, so DevHost
 /// booting never exercises it.
 /// </summary>
+[Collection("LiveTelemetry")]
 public sealed class OtelConfigurationTests
 {
     private static IHost BuildHost(

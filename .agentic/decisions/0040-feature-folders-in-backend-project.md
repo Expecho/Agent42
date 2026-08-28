@@ -22,15 +22,18 @@ Finding the MCP OAuth routes or the share-link contract meant knowing a line ran
 
 ## Decision
 
-### 1. Eighteen feature folders, flat namespace, same as ADR 0039
-`Api/`, `Attachments/`, `Configuration/`, `Conversations/`, `Documents/`, `ImageGeneration/`,
-`Location/`, `Mcp/`, `Models/`, `Push/`, `Sharing/`, `Speech/`, `StoredAgents/`, `Telemetry/`,
-`Tools/`, `UserSkills/`, `Users/`, `Web/`.
+### 1. Twenty feature folders, flat namespace, same as ADR 0039
+`Api/`, `Attachments/`, `Calendar/`, `Configuration/`, `Conversations/`, `Documents/`,
+`ImageGeneration/`, `Location/`, `Mcp/`, `Memory/`, `Models/`, `Push/`, `Sharing/`, `Speech/`,
+`StoredAgents/`, `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`.
 
 *(This heading read "Twelve" while listing seventeen — it had picked up the count of the endpoint
-groups in §3. Corrected, along with the eighteenth folder `UserSkills/` added by ADR 0049. A folder
-list is a factual inventory, not a decision, so it is corrected in place;
-`ProjectLayoutTests.ExpectedFolders` asserts it by name so the two cannot drift.)* The vocabulary deliberately mirrors `Agent42.Agents`, so the canonical
+groups in §3. Corrected, along with `UserSkills/` (ADR 0049), `Calendar/` (ADR 0053) and `Memory/`
+(ADR 0056) — the last holding `HindsightRegistration`, which lives in its own folder because adding
+its branch to `Program.cs` inline breached `cognitive_complexity_max`, the same reason
+`DocumentIndexRegistration` sits in `Documents/`. A folder list is a factual inventory, not a
+decision, so it is corrected in place; `ProjectLayoutTests.ExpectedFolders` asserts it by name so the
+two cannot drift.)* The vocabulary deliberately mirrors `Agent42.Agents`, so the canonical
 pairing this repo already relies on — contract plus in-memory implementation in Agents, production
 implementation in Backend — is now visible as the same folder name in both projects
 (`src/Agent42.Agents/Attachments/IAttachmentStore.cs` ↔ `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`).

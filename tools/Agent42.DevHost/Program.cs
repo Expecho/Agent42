@@ -120,6 +120,13 @@ builder.Services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
 // request leaves the machine. The tool reports coordinates without a street address.
 builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
 
+// Long-term memory offline (ADR 0056): OFF. HindsightIntegration(null) makes BuildAgent attach no memory
+// provider, so nothing is recalled, nothing is retained, and no request leaves the machine — there is no
+// canned Hindsight server to talk to, and a fake one would prove nothing the package's own tests do not
+// already prove in its repo. Still registered, because it is a mandatory grain dependency: leaving it out
+// fails activation rather than disabling memory.
+builder.Services.AddSingleton(new HindsightIntegration(null));
+
 // Google Calendar offline (ADR 0053): a WORKING canned calendar, not a degraded one — the six tools run
 // end to end and create → list → update → delete really round-trips, with no Google connection and no
 // request leaving the machine. That is the deliberate difference from CoordinatesOnlyGeocoder above:

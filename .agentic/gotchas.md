@@ -446,6 +446,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   working as URL shapes grow, and timing for a third-party GET does not justify defending that. **Any new
   client whose PATH carries an identifier needs the same treatment — the query-string default above will
   not save it.**
+  **One recorded exception, ADR 0056:** the Hindsight memory client puts the bank id in its path
+  (`/v1/default/banks/{bankId}/…`) and is deliberately **not** suppressed. The rule above is about an
+  identifier that names a *human* — a calendar id is somebody's email address. A Hindsight bank id is the
+  Easy Auth principal id: opaque, and already exported on purpose as the `user.id` span attribute
+  (ADR 0009/0010), so suppressing the span would hide nothing that is not already there. The recall query
+  and the retained transcript ride in the request **body**, which OTel does not capture at all. Weigh a new
+  client against *that* test — does the path name a person — rather than against the literal wording.
 - **Evidence:** `src/Agent42.ServiceDefaults/Extensions.cs` (`AddHttpClientInstrumentation`),
   `src/Agent42.Backend/Telemetry/UserTelemetrySpanProcessor.cs`, `src/Agent42.Backend/Location/GoogleGeocoder.cs`,
   `src/Agent42.Backend/Calendar/CalendarSpanSuppressingHandler.cs`,
@@ -2146,3 +2153,80 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/StreamingEmptyChoicesTests.cs`,
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` — the affected path)
 - **Verified:** 2026-08-27
+
+### The memory provider is built at ACTIVATION but the incognito gate is per-TURN — it must be a delegate
+
+- **Claim:** `HindsightMemoryProvider` (ADR 0056) is constructed in `BuildAgent`, which runs on **activation**
+  and on the five rebuild paths (`BindAgentAsync`, `SwitchModelAsync`, `RebindModelAsync`,
+  `RegisterDocumentAsync`, `SetEnabledToolsAsync`) — and **never per turn**. `_ephemeral` is the opposite:
+  turn-scoped, set at the top of `ChatAsync` and cleared in its `finally` (ADR 0034). So the obvious
+  spelling — `new HindsightOptions { … Enabled = !_ephemeral }` — captures whatever the flag happened to be
+  when the agent was built and is then **wrong for every later turn of a warm activation**: an incognito
+  chat gets retained, or a normal chat silently stops being remembered, depending on which way the capture
+  froze. Nothing throws; the tests that pass are the ones you would write first. `HindsightOptions.IsEnabled`
+  is a `Func<bool>` for exactly this reason and Agent42 passes `IsEnabled = () => !_ephemeral` — the
+  `BuildDocumentSearchProvider` shape, a closure over the grain read at invoke time. **Which test actually
+  catches it, measured rather than assumed** (2026-08-28, by mutating the provider two ways and running the
+  pair): with the value captured at build time — the realistic bug, since `BuildAgent` runs at activation
+  where `_ephemeral` is false — **both** `EphemeralTurn_NeitherRecallsNorRetains` and
+  `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` fail. With the gate stuck OFF instead (the
+  capture-of-true direction), **only `MemoryResumes_…` fails; `EphemeralTurn_…` passes**, because asserting
+  "nothing was recorded" is satisfied by a provider that never records anything. So
+  **`MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` is the load-bearing one** — it is the only test that
+  fails in both directions, and deleting it as "redundant with the incognito test" would leave the gate
+  free to be silently stuck off. Same trap as `_turnLocation`.
+- **Evidence:** `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`,
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_ephemeral` and its `finally`),
+  `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`BuildDocumentSearchProvider`, the shape copied),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`EphemeralTurn_NeitherRecallsNorRetains`,
+  `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne`),
+  `.agentic/decisions/0056-hindsight-long-term-memory.md`
+- **Verified:** 2026-08-28
+
+### `InvokingContext` has no `RequestMessages`, and injected `Instructions` neither come back nor accumulate
+
+- **Claim:** the two halves of `AIContextProvider` are **not symmetric**, and assuming they are costs a
+  compile error at best and a wrong port at worst. `InvokedContext` exposes `Agent`, `Session`,
+  `RequestMessages`, `ResponseMessages` and `InvokeException`. `InvokingContext` exposes only `Agent`,
+  `Session` and **`AIContext`** — there is no `RequestMessages` on it, and the run's incoming messages
+  arrive on **`context.AIContext.Messages`**. Measured by reflection against `Microsoft.Agents.AI` 1.19.0,
+  after the plan for ADR 0056 asserted the opposite from an earlier reading.
+  Two further behaviours were measured with a spike (a real `ChatClientAgent` over a fake `IChatClient`,
+  a provider injecting `## Memories\n- …`), because both look like risks and neither is: (1) the injected
+  text is **appended to `ChatOptions.Instructions`** and never becomes a message, so
+  `InvokedContext.RequestMessages` contained **only** `[user] a question` — which is why the Python
+  original's `exclude_sources` feedback-loop guard ports as *nothing*, and why recall costs nothing against
+  the 2 MB session cap (ADR 0004); and (2) across three turns through one held `ChatOptions` the model saw
+  `## Memories` **exactly once per turn** (`instructions length=71`, unchanged) and the held instance was
+  **never mutated** — the framework composes a per-run copy, so a warm activation's system prompt does not
+  grow without bound even though `BuildAgent` holds one `ChatOptions` for the activation's life.
+- **Evidence:** `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`,
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`AgentChat_InjectsRecalledMemories`),
+  https://github.com/Expecho/Hindsight.AgentFramework.Net (`HindsightMemoryProvider`, and
+  `Memories_DoNotAccumulateAcrossTurns` / `InjectedMemories_AreNotRetained` in its test suite),
+  `.agentic/decisions/0056-hindsight-long-term-memory.md`
+- **Verified:** 2026-08-28
+### A live-telemetry test host captures from a PROCESS-GLOBAL source, so those classes must not run in parallel
+
+- **Claim:** `AddLiveTelemetryCapture` (ADR 0054) subscribes its `LiveTelemetryBuffer` to the
+  `ActivitySource` named `Agent42.Backend` — a **process-wide name, not a per-host one**. The buffer
+  instance is per-host and looks isolated; the thing feeding it is not. So while one test's host is
+  alive, a span emitted **anywhere else in the process** on that source lands in *its* buffer. xUnit
+  runs test classes in parallel by default, and two classes sat on opposite sides of exactly that:
+  `MeterNamingTests` drives a real instrumented chat call through
+  `UseOpenTelemetry(sourceName: LiveTelemetryCaptureExtensions.OtelSourceName)`, which **emits a span**,
+  while `OtelConfigurationTests.AddLiveTelemetryCapture_ComposesWithTheDualExporterPipeline` asserts its
+  freshly-built buffer is still **empty**. Intermittent `Assert.Empty() Failure: Collection was not
+  empty` — measured at roughly **2 failures in 6 runs** under `--collect:"XPlat Code Coverage"`, and it
+  failed the **`new-code-coverage` PR check**, which is a blocking gate. It is timing-sensitive rather
+  than new: four consecutive coverage runs on an unmodified `main` worktree were green, so a branch that
+  merely adds tests (a longer run, more overlap) can surface it without having caused it. **The fix is
+  the shared `[Collection("LiveTelemetry")]`** — xUnit never runs two classes of one collection
+  concurrently, so nothing had to be weakened to make it deterministic (6/6 green after). **Any new test
+  class that builds a live-capture host, or that emits on `OtelSourceName`, must join that collection**;
+  the failure it prevents lands in a *different* class than the one you added, which is what makes it
+  hard to attribute.
+- **Evidence:** `tests/Agent42.Tests/LiveTelemetryCollection.cs`,
+  `tests/Agent42.Tests/OtelConfigurationTests.cs`, `tests/Agent42.Tests/MeterNamingTests.cs`,
+  `src/Agent42.Backend/Telemetry/LiveTelemetryCaptureExtensions.cs` (`OtelSourceName`, `AddSource`)
+- **Verified:** 2026-08-28

@@ -47,6 +47,10 @@ public sealed class CountingStoreSiloConfigurator : ISiloConfigurator
             services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
             services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
             services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
+            // Long-term memory (ADR 0056) OFF on this silo, matching the null push sender above.
+            // Still registered: HindsightIntegration is a mandatory grain dependency, so omitting it
+            // fails ACTIVATION on this silo rather than merely disabling memory.
+            services.AddSingleton(new HindsightIntegration(null));
             services.AddSingleton<IAttachmentStore, CountingAttachmentStore>();
             // The grain resolves the document retrieval stand-ins (ADR 0007) and the web tools (ADR 0011).
             services.AddDocumentRagFakes();

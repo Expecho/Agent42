@@ -56,7 +56,8 @@ public sealed class ConfigHealthApiTests(SharedClusterFixture fixture) : SharedC
         appBuilder.Services.AddSingleton(new ConfigHealthProbeSet(
             SearXng: _ => _counter.Bump(),
             Geocoding: _ => _counter.Bump(),
-            ContextScrape: _ => _counter.Bump()));
+            ContextScrape: _ => _counter.Bump(),
+            Hindsight: _ => _counter.Bump()));
 
         _app = appBuilder.Build();
         _app.MapAgentApi();

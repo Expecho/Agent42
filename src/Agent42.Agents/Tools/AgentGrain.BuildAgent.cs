@@ -222,6 +222,36 @@ public sealed partial class AgentGrain
             ? TruncatingSkillsProvider.ForSkillPaths(selectedSkillPaths)
             : null;
 
+        // The context providers, which are NOT tools and are therefore gated differently from the list
+        // above. Built as a list rather than a tuple switch because there are now three independent
+        // conditions: a 3-dimensional switch would be eight unreadable arms, and cognitive_complexity_max
+        // is 15, enforced at build time by S3776.
+        //
+        // The gating asymmetry is the point (ADR 0013). AgentSkillsProvider IS a tool — it exposes
+        // load_skill — so it was already dropped above on a no-tools model. The RAG TextSearchProvider and
+        // the Hindsight memory provider are NOT tools: they inject text before the call, so both stay on
+        // regardless of SupportsTools, and neither has an ADR 0021 catalog key.
+        //
+        // Memory differs from RAG in one way worth naming, because it is the property ADR 0008 relied on
+        // and ADR 0056 gives up: RAG is gated per conversation (DocumentNames.Count > 0), so a
+        // document-free chat makes zero retrieval calls. Memory has no per-conversation analogue —
+        // spanning conversations is the whole feature — so once a key is configured it runs on EVERY turn.
+        var contextProviders = new List<AIContextProvider>();
+        if (skillsProvider is not null)
+        {
+            contextProviders.Add(skillsProvider);
+        }
+
+        if (_state.State.DocumentNames.Count > 0)
+        {
+            contextProviders.Add(BuildDocumentSearchProvider());
+        }
+
+        if (BuildMemoryProvider() is { } memoryProvider)
+        {
+            contextProviders.Add(memoryProvider);
+        }
+
         // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
         // state at bind time; a normal chat falls back to the default Agent 42 persona.
         // Old Cosmos state has null persona fields, so existing chats fall back too.
@@ -237,25 +267,10 @@ public sealed partial class AgentGrain
                     // the hosted ones — even if it somehow reported SupportsHostedTools.
                     Tools = capabilities.SupportsTools ? tools : [],
                 },
-                // Automatic document retrieval (ADR 0008): a TextSearchProvider runs before every model
-                // call and injects the top matching excerpts — but ONLY for conversations that actually
-                // have an ingested document. Document-free chats make zero embedding calls, which is
-                // what makes the always-on switch safe (it confines the per-turn embedding round-trip
-                // ADR 0007 feared to document conversations).
-                //
-                // The two providers are gated DIFFERENTLY on a no-tools model, and the asymmetry is the
-                // point (ADR 0013): AgentSkillsProvider IS a tool — it exposes load_skill to the model —
-                // so it must be dropped alongside the seven AIFunctionFactory tools above, or the model
-                // still receives a function schema it cannot handle. The TextSearchProvider is NOT a
-                // tool: it injects excerpts before the call, so it stays on regardless of capability, and
-                // a document conversation keeps working on a no-tools model.
-                AIContextProviders = (skillsProvider is not null, _state.State.DocumentNames.Count > 0) switch
-                {
-                    (true, true) => [skillsProvider!, BuildDocumentSearchProvider()],
-                    (true, false) => [skillsProvider!],
-                    (false, true) => [BuildDocumentSearchProvider()],
-                    (false, false) => [],
-                },
+                // Built above: skills (a tool, so already dropped on a no-tools model), document RAG
+                // (ADR 0008, per-conversation) and long-term memory (ADR 0056, ungated). The reasoning
+                // that used to live here is with the list, so there is one explanation rather than two.
+                AIContextProviders = contextProviders,
                 // The provider injects retrieval as a ChatRole.User message tagged
                 // AgentRequestMessageSourceType.AIContextProvider. Left in the default history store it
                 // would be persisted into the serialized session — and it carries an attribution struct

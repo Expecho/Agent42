@@ -15,9 +15,12 @@ namespace Agent42.Tests;
 /// </summary>
 public sealed class ConfigHealthProbeTests
 {
-    private static IConfiguration Config(string? googleKey = null) =>
+    private static IConfiguration Config(string? googleKey = null, string? hindsightKey = null) =>
         new ConfigurationBuilder()
-            .AddInMemoryCollection([new KeyValuePair<string, string?>("Geocoding:GoogleApiKey", googleKey)])
+            .AddInMemoryCollection([
+                new KeyValuePair<string, string?>("Geocoding:GoogleApiKey", googleKey),
+                new KeyValuePair<string, string?>("Hindsight:ApiKey", hindsightKey),
+            ])
             .Build();
 
     private static IServiceProvider Services(HttpMessageHandler handler)
@@ -98,6 +101,7 @@ public sealed class ConfigHealthProbeTests
 
         Assert.Null(probes.SearXng);
         Assert.Null(probes.Geocoding);
+        Assert.Null(probes.Hindsight);
         Assert.Null(probes.ContextScrape);
     }
 
@@ -115,4 +119,34 @@ public sealed class ConfigHealthProbeTests
         public HttpClient CreateClient(string name) =>
             new(handler, disposeHandler: false) { BaseAddress = new Uri("http://localhost/") };
     }
+
+    // The Hindsight probe (ADR 0056) is key-gated like geocoding, but for a different reason worth keeping
+    // straight: /health is UNAUTHENTICATED, so the probe does not need the key at all. The gate exists
+    // because the named client is only registered when a key is present, and CreateClient on an
+    // unregistered name hands back a client carrying the resilience pipeline.
+    [Fact]
+    public void HindsightProbe_NullWhenKeyAbsent()
+    {
+        var probes = ConfigHealthProbeSet.FromServices(
+            Services(new CannedHandler(HttpStatusCode.OK)), Config(hindsightKey: null));
+
+        Assert.Null(probes.Hindsight);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK, ConfigHealth.Ok)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, ConfigHealth.Error)]
+    [InlineData(HttpStatusCode.NotFound, ConfigHealth.Error)]
+    public async Task HindsightProbe_ClassifiesStatus(HttpStatusCode status, string expected)
+    {
+        var probes = ConfigHealthProbeSet.FromServices(
+            Services(new CannedHandler(status)), Config(hindsightKey: "SECRET-hindsight-key"));
+
+        var result = await probes.Hindsight!(default);
+
+        Assert.Equal(expected, result.Status);
+        // Curated constants only — never a body, a URL or an exception (the invariant on this whole path).
+        Assert.Contains(result.Message, new[] { "reachable", "unreachable" });
+    }
+
 }

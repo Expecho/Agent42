@@ -4,6 +4,7 @@ date: 2026-07-10
 status: accepted
 tags: [rag, documents, retrieval, agent-framework, context-provider]
 supersedes: 0007   # partial — only ADR 0007's retrieval mechanism (the agentic search_documents tool)
+amended_by: 0056   # the ungated shape rejected below was later adopted, for memory rather than RAG
 ---
 
 # Always-on TextSearchProvider retrieval, replacing the agentic search_documents tool
@@ -35,6 +36,10 @@ retrieval results are **excluded from session storage** (see Consequences).
 - **Always-on but *ungated*** — this is exactly what ADR 0007 rejected: an embedding round-trip every turn
   in every chat, and a broken embedding deployment breaking *all* conversations. Rejected in favour of the
   `DocumentNames.Count > 0` gate below, which is what makes the reversal safe.
+  **This rejection was later overridden — see ADR 0056.** Long-term memory has no per-conversation
+  analogue (spanning conversations is the point), so it ships ungated, with a per-turn cost that is
+  *worse* than the one rejected here: two third-party HTTP calls carrying conversation content, rather
+  than one embedding round-trip inside the tenant. Read 0056 before citing this bullet as settled.
 - **Migrate storage to `Microsoft.Extensions.VectorData`** — deferred to its own spec
   (`.agentic/specs/plan-rag-vectordata-abstractions.md`); `TextSearchProvider` needs a plain search
   delegate, not a `VectorStoreCollection`, and the concrete connectors are preview-only (hard rule 4).

@@ -80,7 +80,10 @@ to document a mechanical rule, add a lint rule instead.
 
 ## Repo-specific notes
 
-- Personal/experimental project (Peter Bons); no external consumers.
+- Personal/experimental project (Peter Bons). It now has ONE external consumer surface, and only one:
+  the `Hindsight.AgentFramework.Net` package published from
+  https://github.com/Expecho/Hindsight.AgentFramework.Net (ADR 0056). What is owned is that package's
+  public API and its issue tracker; Agent42's own internals stay private and freely breakable.
 - Deploy: push to `main` → `.github/workflows/deploy.yml` → ACR `crexpechohosting`,
   Bicep to RG `rg-agent42`; app is behind Entra ID Easy Auth at chat.agent42.nl.
 - The AI Foundry account `Agent42` lives in a *different* RG (`agent42`); the deploy
@@ -413,6 +416,45 @@ to document a mechanical rule, add a lint rule instead.
   run (headless Chrome over CDP) and ADR 0054 records the measured values — including the honest residual
   it cannot close: DevHost's canned chat client emits **no gen_ai spans**, so prompt-content capture is
   verifiable only in production.
+- Long-term memory across conversations (ADR 0056, **amends ADR 0008**): a Hindsight memory bank per user
+  — memories relevant to the user's message are recalled into the agent's **instructions** before each
+  model call, and the turn's transcript is retained after it, with no MCP server and no tool the model has
+  to call. It is a `AIContextProvider` attached in `BuildAgent` beside the RAG one, from a package **we
+  publish**: `Hindsight.AgentFramework.Net`, an independent MIT port of Vectorize's Python
+  `hindsight-agent-framework`, living in its own public repo
+  (https://github.com/Expecho/Hindsight.AgentFramework.Net) so it is usable outside this codebase — which
+  is also what discharges the upstream MIT attribution obligation this private repo could not.
+  **Read the amendment before writing anything that cites ADR 0008 here:** 0008 lists "always-on but
+  *ungated*" under Alternatives and **rejects** it; its per-conversation `DocumentNames.Count > 0` gate is
+  the load-bearing property. Memory has no per-conversation analogue by design, so it takes the shape 0008
+  refused, and the per-turn cost is **two third-party HTTP calls carrying conversation content** rather
+  than one embedding round trip. Do not write "following ADR 0008".
+  **The headline consequence is the widest egress in the app after ADR 0054's `/logs`:** with a key set,
+  **every non-incognito turn** POSTs the user's message *and* the assistant's reply to a third party and
+  sends the message again as a recall query — automatic, always-on, invisible in the UI, unlike ADR 0013
+  (only when the user *picks* a third-party model) or ADR 0027 (only when the model *calls* fetch). It
+  carries document excerpts, the user's street address (ADR 0012), calendar content (ADR 0053). Worse, and
+  worth reading twice: because retain **persists** the transcript, a prompt injection landing once — an
+  ADR 0027 followed link, an ADR 0024 MCP result, an ADR 0049 uploaded SKILL.md — becomes a **durable
+  memory re-injected into every future conversation of that user**, with **no delete path** (out of scope,
+  which is what makes it unmitigable rather than merely unmitigated). Hence off by default, and **not
+  setting `Hindsight:ApiKey` is the ONLY off switch** — no Preferences toggle, no `ToolCatalog` key.
+  Optional secret, the `GOOGLE_MAPS_API_KEY` shape (`HINDSIGHT_API_KEY`; blank boots fine and attaches no
+  provider, so a turn makes **zero** calls rather than failing ones). Incognito chats (ADR 0034) are fully
+  excluded and **image-generation turns are too** (`RecordImageTurnAsync` builds its own agent with no
+  providers) — but **reminder and agent-run turns are INCLUDED**, deliberately, so memory is written on
+  turns with no user present. `Memory/` is the 19th Agents feature folder and `AgentGrain.Memory.cs` its
+  12th partial; `HindsightRegistration` makes `Memory/` the 20th Backend folder — extracted there because
+  adding the branch inline took `Program.cs` from 15 to 16 cognitive complexity and **failed the build**.
+  Three things to read before touching it: the provider is built at **activation** while the incognito gate
+  is **per-turn**, so it must be a delegate (`IsEnabled = () => !_ephemeral`), guarded by a test pair whose
+  load-bearing half is `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` (measured: it is the only one of
+  the two that fails when the gate is stuck OFF as well as when it is captured); `InvokingContext` has **no `RequestMessages`** (a run's messages arrive on
+  `AIContext.Messages`) and injected instructions neither come back in `InvokedContext.RequestMessages` nor
+  accumulate across turns — both measured, both in gotchas; and the outbound span is deliberately **NOT**
+  suppressed, a recorded exception to the ADR 0053 rule (a bank id is the opaque principal id, not an email
+  address). The honest residual: **neither repo's tests ever reach a real Hindsight server**, and DevHost
+  registers `HindsightIntegration(null)`, so the first real call happens in production.
 - Quality gates are measurable or absent (ADR 0050): `.agentic/quality-gates.yaml` used to carry **five**
   gates of which **four had no measuring tool in the repo** — they are SonarQube "Clean as You Code"
   metrics and there is no Sonar here (`pr-checks.yml` said so itself, and `.agentic/optional-skills/sonar/`
@@ -432,12 +474,14 @@ to document a mechanical rule, add a lint rule instead.
   diagnostic to `none` and re-enables S3776 alone; and the **threshold is the analyzer's built-in default of
   15**, which is why the yaml can say 15 with no second number to drift — it is settable only via a
   `SonarLint.xml` `AdditionalFiles` entry, **not** `.editorconfig` (silently ignored, measured), and
-  `QualityGateTests` fails if the two ever disagree. **The gate does not block yet:** eleven pre-existing
-  methods exceed 15 (listed in ADR 0050; five are `Map*Endpoints` partials where the metric sums independent
-  registration lambdas — an ADR 0040 idiom artifact), so S3776 is at `warning`, visible in every build but
-  not `-warnaserror`. It becomes blocking when that backlog is cleared. The trap that cost a wrong answer
-  once already: **S3776 ships at `info` severity**, so a build that does not set it explicitly reports zero
-  violations while eleven exist.
+  `QualityGateTests` fails if the two ever disagree. **The gate BLOCKS (ADR 0051):** S3776 is at `error` in
+  `.editorconfig`, so a method over 15 fails `dotnet build` outright — ADR 0050 shipped it as a `warning`
+  only because eleven methods already exceeded it, and ADR 0051 cleared that backlog. Expect to meet it: a
+  feature that adds one `if`/`else` to `Program.cs` can tip the composition root over on its own, and the
+  answer is the `DocumentIndexRegistration` / `HindsightRegistration` one — lift that feature's registration
+  into its own folder — never a ternary that buys the metric and costs the reader. The trap that cost a
+  wrong answer once already: **S3776 ships at `info` severity**, so a build that does not set it explicitly
+  reports zero violations however many exist.
 - Per-agent API key + async run (ADR 0022): each stored agent has a **per-agent API key** (minted on
   create, **shown once**, only its **SHA-256 hash** stored on `AgentDefinition [Id(9)]`, **regenerate**-on-edit)
   and a fire-and-forget **`POST /api/agent-run`** — `multipart/form-data` (a `prompt` field + optional `file`
@@ -840,9 +884,9 @@ to document a mechanical rule, add a lint rule instead.
   source-text asset guard** (the fixture's `GetAppScriptAsync()` walks the import graph over HTTP).
   All three are in gotchas, and all three are asserted in `ProjectLayoutTests`/`PwaAssetsTests`.
   `styles.css` and `index.html`'s markup are deliberately untouched — separate MRs.
-- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **18 top-level feature folders**
+- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **19 top-level feature folders**
   (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …), and `AgentGrain` is split into
-  **11 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`
+  **12 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`
   namespace — folders and namespaces deliberately DISAGREE, and that is load-bearing, not sloppiness.**
   Orleans Cosmos grain storage uses `JsonGrainStorageSerializer`, which writes the full CLR type name
   into every document (`"$type":"Agent42.Agents.AgentGrainState, Agent42.Agents"`), so giving a
@@ -856,7 +900,7 @@ to document a mechanical rule, add a lint rule instead.
   binary path) and is **not** what protects data at rest. `ReceiveReminder` stays in the core `AgentGrain`
   part beside `ChatAsync` (the `_turnLocation`/`_ephemeral` clears must be read together); `Skills/` does
   not move (csproj `Content` glob); `Agent42.Tests` stays flat on purpose.
-- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **19
+- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **20
   feature folders** mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
   visibly with `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`), **flat `Agent42.Backend` namespace**, and
   `Program.cs` alone at the project root. `MapAgentApi` is split into **15 per-feature partials**

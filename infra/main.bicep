@@ -44,6 +44,9 @@ param googleMapsApiKey string = ''
 @description('API key for the hosted context.dev page-scrape API behind fetch_web_page (ADR 0027 — the CONTEXT_API_KEY GitHub Actions secret). A manual prerequisite, but deliberately OPTIONAL like googleMapsApiKey (no @minLength, empty default): an absent key must NOT fail the deployment. It is not on the availability path — the app starts fine without it and fetch_web_page simply fails per call, telling the model the page could not be read (unlike searxngSecret, whose absence crash-loops the sidecar and takes the backend down).')
 param contextApiKey string = ''
 
+@description('API key for the Hindsight long-term-memory service (ADR 0056 - the HINDSIGHT_API_KEY GitHub Actions secret). A manual prerequisite, but deliberately OPTIONAL like googleMapsApiKey/contextApiKey (no @minLength, empty default): an absent key must NOT fail the deployment. It is not on the availability path - the app starts fine without it and memory is simply off, with BuildAgent attaching no memory provider at all, so a turn makes zero Hindsight calls rather than calls that quietly fail. NOTE the reverse: SETTING this key turns on an always-on egress in which every non-incognito turn, user message and assistant reply both, is POSTed to a third party. Read ADR 0056 before supplying it.')
+param hindsightApiKey string = ''
+
 @secure()
 @description('OAuth client id for the Google Calendar connection (ADR 0053 — the GOOGLE_OAUTH_CLIENT_ID GitHub Actions secret). A manual prerequisite, but deliberately OPTIONAL like googleMapsApiKey/contextApiKey (no @minLength, empty default): an absent value must NOT fail the deployment. It is not on the availability path — the app starts fine without it, GET /api/google/status reports configured:false, and the calendar tools return a curated "not connected" notice per call. Paired with googleOAuthClientSecret: the Google Web application client type is CONFIDENTIAL, so the token exchange needs BOTH.')
 param googleOAuthClientId string = ''
@@ -194,6 +197,7 @@ module containerApp 'modules/container-app.bicep' = {
     searxngSecret: searxngSecret
     googleMapsApiKey: googleMapsApiKey
     contextApiKey: contextApiKey
+    hindsightApiKey: hindsightApiKey
     vapidPrivateKey: vapidPrivateKey
     googleOAuthClientId: googleOAuthClientId
     googleOAuthClientSecret: googleOAuthClientSecret
