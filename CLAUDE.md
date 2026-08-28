@@ -447,8 +447,9 @@ to document a mechanical rule, add a lint rule instead.
   12th partial; `HindsightRegistration` makes `Memory/` the 20th Backend folder — extracted there because
   adding the branch inline took `Program.cs` from 15 to 16 cognitive complexity and **failed the build**.
   Three things to read before touching it: the provider is built at **activation** while the incognito gate
-  is **per-turn**, so it must be a delegate (`IsEnabled = () => !_ephemeral`) and the regression guard is a
-  test **pair**; `InvokingContext` has **no `RequestMessages`** (a run's messages arrive on
+  is **per-turn**, so it must be a delegate (`IsEnabled = () => !_ephemeral`), guarded by a test pair whose
+  load-bearing half is `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` (measured: it is the only one of
+  the two that fails when the gate is stuck OFF as well as when it is captured); `InvokingContext` has **no `RequestMessages`** (a run's messages arrive on
   `AIContext.Messages`) and injected instructions neither come back in `InvokedContext.RequestMessages` nor
   accumulate across turns — both measured, both in gotchas; and the outbound span is deliberately **NOT**
   suppressed, a recorded exception to the ADR 0053 rule (a bank id is the opaque principal id, not an email

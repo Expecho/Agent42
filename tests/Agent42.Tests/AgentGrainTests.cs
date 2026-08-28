@@ -1952,11 +1952,17 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Empty(RecallsFor("memory-bank-user/conv-one"));
     }
 
-    // BC2 + BC3 are the regression PAIR for the ordering trap, and neither catches it alone. BuildAgent runs
-    // on ACTIVATION, never per turn, while _ephemeral is turn-scoped — so a provider that captured the flag
-    // as a value would be frozen at whatever it was when the agent was built. BC2 alone passes against a
-    // capture-of-true; BC3 alone passes against a capture-of-false. Only both, on ONE activation, pin that
-    // HindsightOptions.IsEnabled is a delegate read at invoke time.
+    // BC2 + BC3 guard the ordering trap: BuildAgent runs on ACTIVATION, never per turn, while _ephemeral is
+    // turn-scoped, so a provider capturing the flag as a VALUE freezes it at whatever it was when the agent
+    // was built. Which of the two actually catches that was measured (2026-08-28) rather than assumed, by
+    // mutating BuildMemoryProvider twice and running the pair:
+    //
+    //   capture at build time (the realistic bug — activation has _ephemeral false):  BC2 FAIL, BC3 FAIL
+    //   gate stuck off       (the capture-of-true direction):                         BC2 pass, BC3 FAIL
+    //
+    // So BC3 is the load-bearing one — the only test that fails in BOTH directions. BC2 asserts that
+    // NOTHING was recorded, which a provider that never records anything satisfies trivially. Do not delete
+    // BC3 as redundant with BC2; it is the reverse.
 
     // BC2: an incognito turn records neither a recall nor a retain for its own bank (ADR 0034 + 0056).
     [Fact]

@@ -2164,10 +2164,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   chat gets retained, or a normal chat silently stops being remembered, depending on which way the capture
   froze. Nothing throws; the tests that pass are the ones you would write first. `HindsightOptions.IsEnabled`
   is a `Func<bool>` for exactly this reason and Agent42 passes `IsEnabled = () => !_ephemeral` — the
-  `BuildDocumentSearchProvider` shape, a closure over the grain read at invoke time. **The regression guard
-  is a PAIR and neither half works alone:** `EphemeralTurn_NeitherRecallsNorRetains` passes against a
-  capture-of-true, `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` passes against a capture-of-false, and
-  only both on one activation pin the delegate. Same trap as `_turnLocation`.
+  `BuildDocumentSearchProvider` shape, a closure over the grain read at invoke time. **Which test actually
+  catches it, measured rather than assumed** (2026-08-28, by mutating the provider two ways and running the
+  pair): with the value captured at build time — the realistic bug, since `BuildAgent` runs at activation
+  where `_ephemeral` is false — **both** `EphemeralTurn_NeitherRecallsNorRetains` and
+  `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` fail. With the gate stuck OFF instead (the
+  capture-of-true direction), **only `MemoryResumes_…` fails; `EphemeralTurn_…` passes**, because asserting
+  "nothing was recorded" is satisfied by a provider that never records anything. So
+  **`MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` is the load-bearing one** — it is the only test that
+  fails in both directions, and deleting it as "redundant with the incognito test" would leave the gate
+  free to be silently stuck off. Same trap as `_turnLocation`.
 - **Evidence:** `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`,
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_ephemeral` and its `finally`),
   `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`BuildDocumentSearchProvider`, the shape copied),
