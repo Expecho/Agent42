@@ -359,8 +359,12 @@ public sealed record ConfigHealthProbeSet(
         IHttpClientFactory factory, IConfiguration config, CancellationToken ct)
     {
         var client = factory.CreateClient(nameof(HindsightClient));
-        var root = (config["Hindsight:BaseAddress"] ?? HindsightOptions.DefaultBaseAddress.ToString())
-            .TrimEnd('/');
+        // Blank, not just null — an unset optional value arrives as an empty string (see
+        // HindsightRegistration), and "" would probe "/health" against no host at all.
+        var configured = config["Hindsight:BaseAddress"];
+        var root = (string.IsNullOrWhiteSpace(configured)
+            ? HindsightOptions.DefaultBaseAddress.ToString()
+            : configured).TrimEnd('/');
         using var response = await client.GetAsync($"{root}/health", ct);
         return response.IsSuccessStatusCode
             ? new ProbeResult(ConfigHealth.Ok, "reachable")

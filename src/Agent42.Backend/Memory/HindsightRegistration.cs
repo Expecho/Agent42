@@ -38,11 +38,16 @@ public static class HindsightRegistration
             return;
         }
 
+        // IsNullOrWhiteSpace, not ?? — an unset optional value threads through Bicep and the env as an
+        // EMPTY STRING, not as null, and `new Uri("")` throws. A host designed to boot with every
+        // optional value blank must not fail to boot because one of them is blank.
+        var baseAddress = configuration["Hindsight:BaseAddress"];
         var options = new HindsightOptions
         {
             ApiKey = apiKey,
-            BaseAddress = new Uri(
-                configuration["Hindsight:BaseAddress"] ?? HindsightOptions.DefaultBaseAddress.ToString()),
+            BaseAddress = string.IsNullOrWhiteSpace(baseAddress)
+                ? HindsightOptions.DefaultBaseAddress
+                : new Uri(baseAddress),
         };
 
         // Same explicit-timeout / no-retry discipline as the other outbound clients, and for the same

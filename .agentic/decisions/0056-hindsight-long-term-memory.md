@@ -181,7 +181,32 @@ package's API and its issue tracker — **not** Agent42's internals, which stay 
    build** on S3776. Extracting into the feature's folder is what ADR 0050/0051 established and what
    `DocumentIndexRegistration` already does. The gate worked exactly as designed.
 4. **`HindsightIntegration` carries `Mission` as well as `Client`.** Otherwise `Hindsight:Mission` would
-   be read from config and dropped on the floor.
+   be read from config and dropped on the floor. It is **not** threaded through Bicep as a parameter, the
+   way the key is: a mission is neither a secret nor per-environment, so it ships as a committed
+   (empty-by-default) value in `appsettings.json` — the `Push:PublicKey` precedent — settable there or by
+   `Hindsight__Mission`. Empty means no create-bank call is ever made, which is the current production
+   state.
+5. **The BC2 + BC3 "neither alone" claim was false.** The plan said the pair guards the captured-value bug
+   with neither half sufficient. Mutation-tested: the realistic bug (capture at build time) fails **both**,
+   while a gate stuck permanently OFF fails **only** `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` —
+   `EphemeralTurn_NeitherRecallsNorRetains` asserts that nothing was recorded, which a provider that
+   records nothing satisfies trivially. So BC3 is the load-bearing half, not an equal partner. The claim
+   had already been copied into a code comment, a gotcha and CLAUDE.md before anyone checked it.
+6. **A no-tools test was added that the plan did not ask for.** The gotcha gating `AgentSkillsProvider` on
+   `SupportsTools` is explicit that the RAG provider must *not* be dropped with it; memory is the same kind
+   of thing and had no equivalent guard. `NoToolModel_StillGetsMemory` is mutation-verified: adding
+   `capabilities.SupportsTools &&` to the memory arm fails that test and only that test.
+7. **A blank `Hindsight:BaseAddress` used to throw at startup.** `new Uri("")` throws, and an unset
+   optional value threads through Bicep and the environment as an empty string rather than null — so the
+   host designed to boot with every optional value blank would have failed to boot. Guarded with
+   `IsNullOrWhiteSpace` in both the registration and the probe, with a regression test.
+
+## An unrelated correction carried in the same MR
+CLAUDE.md's ADR 0050 paragraph claimed `cognitive_complexity_max` "does not block yet … S3776 is at
+`warning`". ADR 0051 made it blocking and this branch had it **fail a build** as an `error`. That is
+pre-existing drift rather than anything this feature caused, and it is fixed here under hard rule 2
+(trust the code, fix the doc in the same MR) — recorded so the MR's scope reads honestly rather than
+looking like a stray edit.
 
 ## Unverified residual
 **Neither repo's tests ever talk to a real Hindsight server.** Both stub the HTTP layer; the wire

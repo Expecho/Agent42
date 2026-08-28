@@ -97,6 +97,22 @@ public sealed class HindsightRegistrationTests
         }
     }
 
+    // A blank BaseAddress must not stop the host booting. An unset optional value threads through Bicep
+    // and the environment as an EMPTY STRING rather than null, and `new Uri("")` throws — so a null-guard
+    // is not enough here, and the failure mode would be the whole app refusing to start because one
+    // optional knob was empty. `BlankApiKey_IsTreatedAsAbsent` above documents that "" is the real shape.
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void BlankBaseAddress_FallsBackToTheDefault(string baseAddress)
+    {
+        var integration = Resolve(Config(
+            ("Hindsight:ApiKey", "SECRET-hindsight-key"),
+            ("Hindsight:BaseAddress", baseAddress)));
+
+        Assert.NotNull(integration.Client);
+    }
+
     // A self-hosted server is the reason BaseAddress is configurable at all; the default is the cloud.
     // Asserted through a real request rather than by reading the option back, because the client composes
     // the URL itself and that is the part that can break.

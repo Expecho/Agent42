@@ -267,18 +267,9 @@ public sealed partial class AgentGrain
                     // the hosted ones — even if it somehow reported SupportsHostedTools.
                     Tools = capabilities.SupportsTools ? tools : [],
                 },
-                // Automatic document retrieval (ADR 0008): a TextSearchProvider runs before every model
-                // call and injects the top matching excerpts — but ONLY for conversations that actually
-                // have an ingested document. Document-free chats make zero embedding calls, which is
-                // what makes the always-on switch safe (it confines the per-turn embedding round-trip
-                // ADR 0007 feared to document conversations).
-                //
-                // The two providers are gated DIFFERENTLY on a no-tools model, and the asymmetry is the
-                // point (ADR 0013): AgentSkillsProvider IS a tool — it exposes load_skill to the model —
-                // so it must be dropped alongside the seven AIFunctionFactory tools above, or the model
-                // still receives a function schema it cannot handle. The TextSearchProvider is NOT a
-                // tool: it injects excerpts before the call, so it stays on regardless of capability, and
-                // a document conversation keeps working on a no-tools model.
+                // Built above: skills (a tool, so already dropped on a no-tools model), document RAG
+                // (ADR 0008, per-conversation) and long-term memory (ADR 0056, ungated). The reasoning
+                // that used to live here is with the list, so there is one explanation rather than two.
                 AIContextProviders = contextProviders,
                 // The provider injects retrieval as a ChatRole.User message tagged
                 // AgentRequestMessageSourceType.AIContextProvider. Left in the default history store it

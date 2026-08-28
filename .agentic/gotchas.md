@@ -2153,6 +2153,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/StreamingEmptyChoicesTests.cs`,
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` — the affected path)
 - **Verified:** 2026-08-27
+
 ### The memory provider is built at ACTIVATION but the incognito gate is per-TURN — it must be a delegate
 
 - **Claim:** `HindsightMemoryProvider` (ADR 0056) is constructed in `BuildAgent`, which runs on **activation**

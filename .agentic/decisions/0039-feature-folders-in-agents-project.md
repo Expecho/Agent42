@@ -29,16 +29,18 @@ this ADR and is recorded in full rather than quietly corrected.
 ## Decision
 
 ### 1. Nineteen top-level feature folders, in a single flat namespace
-`StoredAgents/`, `Attachments/`, `Conversations/`, `Documents/`, `ImageGeneration/`, `Location/`,
-`Mcp/`, `Models/`, `Push/`, `Scheduling/`, `Sharing/`, `Speech/`, `Telemetry/`, `Tools/`,
-`UserSkills/`, `Users/`, `Web/`. `Skills/` does not move: its csproj
+`StoredAgents/`, `Attachments/`, `Calendar/`, `Conversations/`, `Documents/`, `ImageGeneration/`,
+`Location/`, `Mcp/`, `Memory/`, `Models/`, `Push/`, `Scheduling/`, `Sharing/`, `Speech/`,
+`Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`. `Skills/` does not move: its csproj
 `Content Include="Skills\**\*"` glob must keep resolving next to the built assembly — which is also
 why `UserSkills/` (ADR 0049) is a separate folder rather than living under it, since a `.cs` file
 there would be shipped as content into the deployed `Skills/` directory.
 
-*(Sixteen at the time of this ADR; `UserSkills/` was added by ADR 0049. A folder list is a factual
-inventory, not a decision, so it is corrected in place — `ProjectLayoutTests.ExpectedFolders` asserts
-it by name so the two cannot drift.)*
+*(Sixteen at the time of this ADR; `UserSkills/` was added by ADR 0049, `Calendar/` by ADR 0053 and
+`Memory/` by ADR 0056. A folder list is a factual inventory, not a decision, so it is corrected in
+place — `ProjectLayoutTests.ExpectedFolders` asserts it by name so the two cannot drift. Correcting
+the heading's number without the list below it is the one outcome that rule exists to prevent, and it
+has now happened twice.)*
 
 **Every type stays in `namespace Agent42.Agents;`.** Folders organise the files; they do not shape the
 namespace. This is the opposite of the usual convention and it is not a style preference — see
@@ -92,8 +94,13 @@ any style key added there reformats the whole repo on the next run.
 `src/Agent42.Agents/Location/AgentGrain.LocationTool.cs`,
 `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`,
 `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
-`src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs` and
-`src/Agent42.Agents/Push/AgentGrain.Push.cs`.
+`src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs`,
+`src/Agent42.Agents/Push/AgentGrain.Push.cs`,
+`src/Agent42.Agents/Calendar/AgentGrain.CalendarTools.cs` (ADR 0053) and
+`src/Agent42.Agents/Memory/AgentGrain.Memory.cs` (ADR 0056).
+
+*(Ten at the time of this ADR. Same in-place-correction rule as the folder list above;
+`ProjectLayoutTests.AgentGrainParts` asserts every path by name.)*
 
 Every part declares `namespace Agent42.Agents;`, like every other file in the project — the split is
 purely about which file a member lives in.

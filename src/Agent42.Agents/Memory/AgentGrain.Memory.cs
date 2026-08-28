@@ -19,9 +19,11 @@ public sealed partial class AgentGrain
     // would freeze whatever the flag happened to be when the agent was built, and then be wrong for every
     // later turn of a warm activation — silently retaining an incognito chat, or silently refusing to
     // remember a normal one. Reading it through a closure over `this` defers the question to invoke time.
-    // This is the BuildDocumentSearchProvider shape (a method group closing over the grain), and
-    // EphemeralTurn_NeitherRecallsNorRetains + MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne are the
-    // regression pair that catches a captured value — neither test alone does.
+    // This is the BuildDocumentSearchProvider shape (a method group closing over the grain). The
+    // regression guard is EphemeralTurn_NeitherRecallsNorRetains + MemoryResumes_OnTheNormalTurnAfterAn-
+    // EphemeralOne, and which of the two actually catches a captured value was MEASURED (see the table on
+    // those tests): the realistic bug fails both, but a gate stuck permanently OFF fails only
+    // MemoryResumes_… — so that is the load-bearing one, and deleting it as redundant is backwards.
     //
     // The bank is read from the grain key rather than from _userId so it carries no dependency on
     // OnActivateAsync having run its assignments first.
