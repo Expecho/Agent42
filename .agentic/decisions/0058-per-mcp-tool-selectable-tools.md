@@ -1,10 +1,20 @@
-# 0058 — Per-MCP-tool selectable tools (`mcp:{serverId}:{toolName}`)
+---
+id: 0058
+date: 2026-08-29
+status: accepted
+tags: [mcp, tools, per-user, selection, ux, no-migration, persistence]
+supersedes: []
+extends: [0024, 0048]
+amends: [0021, 0026]
+---
 
-- **Status:** Accepted
-- **Date:** 2026-08-29
-- **Amends:** ADR 0026 (per-MCP-server selectable tools), and re-scopes ADR 0021 (selectable tools) once more
-- **Related:** ADR 0024 (config-driven remote MCP servers), ADR 0048 (per-skill selectable tools),
-  ADR 0004 (2 MB session cap), ADR 0013 (egress), ADR 0045 (trailing optional persisted fields)
+# Per-MCP-tool selectable tools — `mcp:{serverId}:{toolName}` keys
+
+> **Amends [ADR 0026](0026-per-mcp-server-selectable-tools.md) and re-scopes
+> [ADR 0021](0021-selectable-tools-three-layer.md) once more.** Nothing is overturned: `mcp:{id}` keeps its
+> exact ADR 0026 meaning ("all of this server's tools") and the bare `mcp` wildcard is untouched. What
+> changes is that the selectable set gains a third level beneath them. ADR 0026's mandated shape — a
+> **server-side** expansion rule, not client-only — is preserved and extended, not replaced.
 
 ## Context
 
