@@ -138,7 +138,9 @@ public sealed class AgentGrainState
     /// the user changes tools in it; an agent chat materializes it to a concrete set on bind (never null, so the
     /// persona never inherits the user's per-chat default). Old Cosmos state deserializes this as null, so every
     /// existing conversation keeps all tools with no migration. Resolution is override ?? user-default ?? all —
-    /// then intersected with model capability in <c>BuildAgent</c>.</para>
+    /// then, for TOOLS, intersected with model capability in <c>BuildAgent</c>. <c>ToolCatalog.Memory</c> is
+    /// the one key exempt from that intersection (ADR 0057): it gates an <c>AIContextProvider</c>, not a
+    /// tool, so a text-only model with <c>memory</c> selected still gets memory.</para>
     /// </summary>
     [Id(10)]
     public List<string>? EnabledTools { get; set; }

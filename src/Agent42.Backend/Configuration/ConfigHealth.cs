@@ -121,10 +121,13 @@ public static class ConfigHealth
             missing: "not set — a Google Web application client is confidential, so the token exchange needs this too",
             missingStatus: Warning));
 
-        // Long-term memory (ADR 0056). Absent is the DEFAULT and it is the only off switch there is, so the
-        // missing message says what is lost rather than how to fix it.
+        // Long-term memory (ADR 0056). Absent is the DEFAULT and it is the OPERATOR's off switch — since
+        // ADR 0057 a user can additionally deselect memory in Preferences → Tools, so this key being present
+        // no longer means every turn is remembered. The missing message says what is lost rather than how to
+        // fix it, because absent is the intended state.
         checks.Add(PresenceCheck(GroupOptional, "Hindsight:ApiKey", config["Hindsight:ApiKey"],
-            present: "long-term memory enabled — every non-incognito turn is recalled and retained",
+            present: "configured — long-term memory is available; each user selects it per chat in "
+                + "Preferences → Tools (ADR 0057), so this key being set does not mean every turn is remembered",
             missing: "not set — long-term memory is off; the agent recalls and retains nothing",
             missingStatus: Warning));
         // Unlike the geocoding and context.dev probes this one is FREE: /health is unauthenticated and

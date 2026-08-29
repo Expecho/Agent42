@@ -223,8 +223,11 @@ public sealed class ConfigHealthTests
     // BC7: the Hindsight key's presence and absence are both reported, and neither reveals the key.
     //
     // The absence assertion is the one that matters. Long-term memory is off by default and not setting the
-    // key is its ONLY off switch (ADR 0056) — there is no Preferences toggle — so an operator who expects
-    // memory and does not have it has exactly one place to find that out, and this is it.
+    // key is the only switch that stops the egress DEPLOYMENT-WIDE (ADR 0056) — so an operator who expects
+    // memory and does not have it has exactly one place to find that out, and this is it. Since ADR 0057 it
+    // is no longer the only off switch at all: `memory` is a ToolCatalog key each user selects per chat,
+    // which is why the PRESENT message is now asserted too — it used to promise that every non-incognito
+    // turn was remembered, and that is false for a user who has deselected it.
     [Fact]
     public void ConfigHealth_ReportsHindsight()
     {
@@ -232,6 +235,13 @@ public sealed class ConfigHealthTests
         var check = Find(configured, "Hindsight:ApiKey");
         Assert.Equal(ConfigHealth.Ok, check.Status);
         Assert.DoesNotContain("SECRET-hindsight-key", JsonSerializer.Serialize(configured));
+
+        // AC12 (ADR 0057): the present message must not claim every turn is recalled and retained — a user
+        // who deselected `memory` in Preferences → Tools makes zero Hindsight calls with this key set. It
+        // reports the key as CONFIGURED and points at the per-user control instead.
+        Assert.Contains("configured", check.Message);
+        Assert.Contains("Preferences", check.Message);
+        Assert.DoesNotContain("every non-incognito turn is recalled and retained", check.Message);
 
         var without = ConfigHealth.BuildStatic(
             Config(AllSecretsSet.Where(e => e.Key != "Hindsight:ApiKey").ToArray()),

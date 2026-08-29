@@ -24,10 +24,13 @@ public static class HindsightRegistration
     /// <see cref="HindsightIntegration"/> is registered either way, because it is a mandatory grain
     /// dependency: omitting it fails activation rather than disabling memory.</para>
     ///
-    /// <para><b>Not setting the key is also the only off switch.</b> There is no Preferences toggle and
-    /// no <c>ToolCatalog</c> key (out of scope, ADR 0056), so once configured this runs on every turn of
-    /// every non-incognito conversation, sending the user's message and the assistant's reply to a third
-    /// party. Read ADR 0056's consequences before widening this.</para>
+    /// <para><b>Not setting the key is the OPERATOR's off switch, and the only one that stops the egress
+    /// deployment-wide.</b> Since ADR 0057 it is no longer the only off switch there is: memory is a
+    /// selectable tool (<c>ToolCatalog.Memory</c>), so each user narrows it per chat at the three ADR 0021
+    /// layers. This key gates everything underneath — with it unset, selecting memory still makes zero
+    /// calls. With it set, a turn whose selection keeps memory on sends the user's message and the
+    /// assistant's reply to a third party. Read ADR 0056's consequences, and ADR 0057's, before widening
+    /// this.</para>
     /// </summary>
     public static void AddHindsightMemory(this IServiceCollection services, IConfiguration configuration)
     {

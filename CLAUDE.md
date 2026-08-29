@@ -260,21 +260,28 @@ to document a mechanical rule, add a lint rule instead.
   the interface is **`IImageGenerationService`** because M.E.AI 1.13 ships a colliding `IImageGenerator`. All
   in the "assistant generated image is id-keyed" gotcha. **Headline consequence:** generating sends the prompt
   — and for edits the **input image bytes** — outside the Entra tenant (extends ADR 0013's egress).
-- Selectable tools (ADR 0021, **the skills key amended by ADR 0048**): a user chooses **which tools** an
+- Selectable tools (ADR 0021, **the skills key amended by ADR 0048, memory added by ADR 0057**): a user chooses **which tools** an
   assistant may use, remembered at three
   layers — a **user default** (Preferences → default tools, every new regular chat), a **per-conversation
   override** (composer "Tools" popover, non-agent chats only), and a **per-agent** set (agent editor,
   snapshotted into the conversation like ADR 0003). The selectable set is a curated catalog of **keys**
   (`ToolCatalog`, the single source of truth for the **static** ones, exposed via `GET /api/tools`):
-  `web_search`, `location`, `scheduling`, `code_interpreter`, `calendar` (ADR 0053); `get_date` and
-  document RAG stay always-on.
+  `web_search`, `location`, `scheduling`, `code_interpreter`, `calendar` (ADR 0053), `memory` (ADR 0057);
+  `get_date` and document RAG stay always-on.
   **`skills` is no longer among them** — since ADR 0048 it is a **wildcard** (in `AllSelectableToolKeys`,
   **not** in `Descriptors`) and the picker renders one `skill:{name}` box per shipped skill, exactly as ADR
   0026 did to `mcp`. `EnabledTools`
   is a nullable list of keys on `UserProfile`/`AgentDefinition`/`AgentBinding`/`AgentGrainState` where
   **`null == all`** (no migration); the grain resolves **override ?? user-default ?? all** and then
   **intersects with model capability** — selection can only *narrow*, never grant (a text-only model still
-  gets none; `code_interpreter` still needs a hosted model). Two things to read before touching this: the
+  gets none; `code_interpreter` still needs a hosted model). **`memory` is the ONE documented exception to
+  that intersection** (ADR 0057): it gates an `AIContextProvider`, not a tool, so it never passes through
+  the capability filter — a text-only model with `memory` selected still gets memory — and it is the first
+  key in `Descriptors` with **no** `ToolNameToKey` entry. Like `calendar` before it, `memory` lands **OFF
+  for anyone who ever pressed Save** (a stored selection is an explicit list), with **no migration** by
+  design, so after deploying press Save once in Preferences → Tools — and on **agent** chats there is no
+  in-UI remedy at all (the bind snapshot is immutable and the popover is hidden), which is accepted and
+  documented. Two more things to read before touching this: the
   `null == all` sentinel and the **user-default-fetch-before-first-`BuildAgent`** ordering hazard (both in
   the "Selectable tools" gotcha); and that a selection resolving to **zero skills** must **drop the
   `AgentSkillsProvider`** (it is a tool), while RAG must stay (the "`AgentSkillsProvider` is a TOOL" gotcha).
@@ -437,8 +444,12 @@ to document a mechanical rule, add a lint rule instead.
   worth reading twice: because retain **persists** the transcript, a prompt injection landing once — an
   ADR 0027 followed link, an ADR 0024 MCP result, an ADR 0049 uploaded SKILL.md — becomes a **durable
   memory re-injected into every future conversation of that user**, with **no delete path** (out of scope,
-  which is what makes it unmitigable rather than merely unmitigated). Hence off by default, and **not
-  setting `Hindsight:ApiKey` is the ONLY off switch** — no Preferences toggle, no `ToolCatalog` key.
+  which is what makes it unmitigable rather than merely unmitigated). Hence off by default. **ADR 0057
+  reversed the no-off-switch scope call:** memory is now a selectable `ToolCatalog` key (`memory`, ON by
+  default, controllable at all three ADR 0021 layers), so `Hindsight:ApiKey` is the **operator's** switch —
+  the only one that stops the egress deployment-wide — rather than the only switch there is. Deselecting
+  stops future recall *and* retain and makes **zero** calls, but does **not** remove memories already
+  retained: the no-delete-path residual is untouched.
   Optional secret, the `GOOGLE_MAPS_API_KEY` shape (`HINDSIGHT_API_KEY`; blank boots fine and attaches no
   provider, so a turn makes **zero** calls rather than failing ones). Incognito chats (ADR 0034) are fully
   excluded and **image-generation turns are too** (`RecordImageTurnAsync` builds its own agent with no
@@ -446,10 +457,14 @@ to document a mechanical rule, add a lint rule instead.
   turns with no user present. `Memory/` is the 19th Agents feature folder and `AgentGrain.Memory.cs` its
   12th partial; `HindsightRegistration` makes `Memory/` the 20th Backend folder — extracted there because
   adding the branch inline took `Program.cs` from 15 to 16 cognitive complexity and **failed the build**.
-  Three things to read before touching it: the provider is built at **activation** while the incognito gate
+  Four things to read before touching it: the provider is built at **activation** while the incognito gate
   is **per-turn**, so it must be a delegate (`IsEnabled = () => !_ephemeral`), guarded by a test pair whose
   load-bearing half is `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` (measured: it is the only one of
-  the two that fails when the gate is stuck OFF as well as when it is captured); `InvokingContext` has **no `RequestMessages`** (a run's messages arrive on
+  the two that fails when the gate is stuck OFF as well as when it is captured); the ADR 0057 **selection**
+  gate in the same method is the deliberate OPPOSITE — read at build time, as a value, because
+  `SetEnabledToolsAsync`/`BindAgentAsync`/activation all rebuild, so do not "harmonise" the two (and note
+  the **user-default** layer is still read once per activation, so switching memory off in Preferences
+  reaches an already-warm chat only on its next activation); `InvokingContext` has **no `RequestMessages`** (a run's messages arrive on
   `AIContext.Messages`) and injected instructions neither come back in `InvokedContext.RequestMessages` nor
   accumulate across turns — both measured, both in gotchas; and the outbound span is deliberately **NOT**
   suppressed, a recorded exception to the ADR 0053 rule (a bank id is the opaque principal id, not an email
