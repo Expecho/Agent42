@@ -78,6 +78,38 @@ public class ToolCatalogTests
         Assert.True(ToolCatalog.IsToolEnabled("list_calendar_events", never));
     }
 
+    // ── Long-term memory (ADR 0057) ─────────────────────────────────────────────────────────────────
+
+    // AC1 — `memory` is a selectable key AND a rendered checkbox, labelled so it cannot be misread as the
+    // conversation's own history. It is the FIRST key here that is not a tool: it gates an
+    // AIContextProvider, so it deliberately owns no ToolNameToKey entry and must never gain one. There is
+    // no reverse guard requiring a descriptor to own tool names — the only guard over that map runs
+    // name → key — which is what makes the absence safe rather than merely untested.
+    //
+    // The KeyFor assertion below is deliberately weaker than that paragraph, and saying so is the point:
+    // ToolNameToKey is private and only readable name → key, so this proves no tool is *named* "memory" —
+    // it would stay green if someone added ["recall_memory"] = Memory. The "owns no entry" property is
+    // not assertable through the public surface; it is held by the docstring on the const and by review.
+    //
+    // The no-migration half is NOT asserted here on purpose. Memory owns no tool name, so the shape of
+    // LegacyStoredSelection_DoesNotEnableCalendar_ButNullDoes above degenerates into asserting that a
+    // hardcoded literal set lacks a string — a tautology over test data, not over the feature. It is
+    // proved at grain level instead, by LegacyAgentSnapshot_DoesNotEnableMemory.
+    [Fact]
+    public void Memory_IsSelectable_AndAppearsInDescriptors()
+    {
+        Assert.Contains(ToolCatalog.Memory, ToolCatalog.AllSelectableToolKeys);
+
+        var descriptor = Assert.Single(ToolCatalog.Descriptors, d => d.Key == ToolCatalog.Memory);
+        Assert.Equal("Long-term memory", descriptor.Label);
+        Assert.False(
+            descriptor.RequiresHostedTools,
+            "Memory is not a tool at all, so no model capability can grey it out.");
+
+        Assert.Null(
+            ToolCatalog.KeyFor(ToolCatalog.Memory));
+    }
+
     [Fact] // AC7 — a per-skill key round-trips through Sanitize, deduped; garbage is dropped.
     public void Sanitize_PreservesPerSkillKeys_AndDropsGarbage()
     {

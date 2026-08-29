@@ -13,6 +13,11 @@ tags: [agents, tools, capabilities, user-preferences, agent-definition]
 > `mcp:{id}` descriptor for each of the user's enabled MCP servers. The `null == all` sentinel and
 > three-layer model are unchanged.
 
+> **Amended by ADR 0057** — `memory` (long-term memory, ADR 0056) joins the catalog as a selectable key
+> and is the **one documented exception** to the "then `BuildAgent` intersects it with model capability"
+> rule below. It gates an `AIContextProvider` rather than a tool, so it never passes through the `Tools`
+> filter: a text-only model with `memory` selected still gets memory. Everything else here stands.
+
 ## Context
 Every tool is unconditionally registered in `AgentGrain.BuildAgent`, gated only by model
 capability (ADR 0013/0015) — there is no user control over *which* tools an assistant may use. The

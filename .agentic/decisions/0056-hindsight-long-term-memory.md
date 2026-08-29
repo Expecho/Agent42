@@ -10,6 +10,15 @@ amends: [0008]
 
 # Long-term memory across conversations, via a .NET package we publish
 
+> **Amended by ADR 0057** — the scope call "not a Preferences UI" (scope call 1 below) and the
+> Alternatives entry "a per-user opt-out, or a `ToolCatalog` key" were **reversed by the user**. Memory
+> is now a selectable tool (`ToolCatalog.Memory`), ON by default, controllable at all three ADR 0021
+> layers. So where this ADR says memory is "always-on", "invisible in the UI", and that not setting
+> `Hindsight:ApiKey` "is the only off switch there is", read: that key is the **operator's** switch and
+> the only one that stops the egress deployment-wide, while each user narrows it per chat. The
+> no-delete-path residual is **untouched** — deselecting stops future recall and retain, and does not
+> remove memories already retained.
+
 ## Context
 Every Agent 42 conversation starts from nothing. Document RAG (ADR 0007/0008) gives a chat access to
 files *uploaded into that chat*; the session (ADR 0004) carries history *within* one conversation.

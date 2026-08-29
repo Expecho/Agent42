@@ -136,7 +136,16 @@ _state.State.EnabledTools =
   snapshot in grain state (`Name = _state.State.AgentName ?? "Agent42"`,
   `Instructions = WithDocumentAwareness(_state.State.SystemPrompt ...)`).
 - The agent's `EnabledTools` set is intersected with model capability in `BuildAgent` (see
-  [Tool selection](tool-selection.md)).
+  [Tool selection](tool-selection.md)) — except `memory` (ADR 0057), which gates a context provider
+  rather than a tool and so is never capability-filtered.
+- **A bound conversation cannot change its tool set, and since ADR 0057 that has a consequence worth
+  knowing.** The bind snapshot is immutable (ADR 0003): `BindAgentAsync` always materialises a concrete
+  list and a re-bind returns early, while the composer's Tools popover is hidden on agent chats. So every
+  conversation bound **before** a new catalog key shipped holds a selection that cannot contain it, with
+  **no in-UI remedy**. For `memory` that means long-term memory is **off** on those chats — deliberately,
+  and it fails safe, since memory is the widest egress in the app. New agent chats re-materialise the
+  current key list at bind time and are unaffected. The stuck case is a **continuous** agent (ADR 0016):
+  one permanent grain, so the only reset is `DELETE /api/conversations/agent-{agentId}`.
 - The external run reuses the identical framework turn path (`ChatCoreAsync` →
   `RunStreamingAsync`), so an agent-run image rides the same `UriContent` / vision-gate
   machinery as a browser turn.

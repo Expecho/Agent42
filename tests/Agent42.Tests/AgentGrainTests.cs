@@ -2065,6 +2065,143 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.DoesNotContain("## Memories", answer);
     }
 
+
+    // ---- Long-term memory as a selectable tool (ADR 0057) ---------------------------------------
+    //
+    // READ THE MUTATION TABLE BEFORE EDITING ANY OF THESE. Every "assert nothing was recorded" test
+    // below shares BC2's trivial-pass shape: a gate stuck permanently OFF satisfies it without
+    // executing anything. So each test states which direction it catches, and the set as a whole was
+    // mutated in both directions (2026-08-29), exactly as ADR 0056 did for BC2/BC3:
+    //
+    //   gate stuck OFF  (BuildMemoryProvider always returns null):
+    //       MemoryDeselected_…                             pass (TRIVIALLY — this is the trap)
+    //       MemorySelected_RecallsAndRetains               FAIL
+    //       MemorySelection_IsNotIntersectedWithCapability FAIL
+    //       TogglingMemoryMidChat_…                        FAIL (turn 1 records nothing)
+    //       LegacyAgentSnapshot_…                          pass (trivially)
+    //   gate stuck ON   (the `!enabled.Contains(Memory)` term deleted — i.e. no feature at all):
+    //       MemoryDeselected_…                             FAIL
+    //       MemorySelected_RecallsAndRetains               pass
+    //       MemorySelection_IsNotIntersectedWithCapability pass
+    //       TogglingMemoryMidChat_…                        FAIL (turn 2 records a second recall)
+    //       LegacyAgentSnapshot_…                          FAIL
+    //
+    // TogglingMemoryMidChat_… is the load-bearing one — the only test here that fails in BOTH
+    // directions, and the only one that proves the REBUILD (not merely the predicate). Written as
+    // "deselect, then one turn, assert nothing" it collapses into MemoryDeselected_… and proves
+    // nothing. Do not simplify it.
+
+    // AC3: an explicit selection that omits `memory` produces ZERO recalls and ZERO retains — off means
+    // both halves, exactly the incognito semantics (ADR 0056 scope call 4). "Recall only, keep retaining"
+    // was considered and rejected. Catches a gate stuck ON only.
+    [Fact]
+    public async Task MemoryDeselected_NeitherRecallsNorRetains()
+    {
+        MemoryReturns("a memory that must not be injected");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-off-sel-user/memory-off-sel-conv");
+        await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch, ToolCatalog.Scheduling]);
+
+        var answer = Answer(await CollectAsync(agent.ChatAsync("remember nothing", null)));
+
+        Assert.Empty(RecallsFor("memory-off-sel-user"));
+        Assert.Empty(RetainsFor("memory-off-sel-user"));
+        Assert.DoesNotContain("## Memories", answer);
+    }
+
+    // AC4: an explicit selection CONTAINING `memory` behaves exactly as ADR 0056 shipped — recall reaches
+    // the model and the turn is retained. Catches a gate stuck OFF, and is the reason AC3 above is not
+    // vacuous: together they show the predicate reads the selection rather than ignoring it.
+    [Fact]
+    public async Task MemorySelected_RecallsAndRetains()
+    {
+        MemoryReturns("The user is allergic to shellfish");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-on-sel-user/memory-on-sel-conv");
+        await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch, ToolCatalog.Memory]);
+
+        var answer = Answer(await CollectAsync(agent.ChatAsync("what should I order?", null)));
+
+        Assert.Contains("The user is allergic to shellfish", answer);
+        Assert.Equal(["what should I order?"], RecallsFor("memory-on-sel-user"));
+        Assert.Single(RetainsFor("memory-on-sel-user"));
+    }
+
+    // AC5: `memory` is the documented EXCEPTION to selection ∩ capability (ADR 0057). It gates a context
+    // provider, not a tool, so it never passes through BuildAgent's `Tools = SupportsTools ? tools : []`
+    // intersection: a text-only model with memory EXPLICITLY selected still gets memory.
+    //
+    // NoToolModel_StillGetsMemory covers the same property from the NULL-selection side and cannot reach
+    // this one — a null selection never touches the predicate at all. The mutation this catches and that
+    // one does not: adding `capabilities.SupportsTools &&` to the memory arm while ALSO intersecting the
+    // selection, i.e. "tidying" memory into the tool-gating path now that it owns a key.
+    [Fact]
+    public async Task MemorySelection_IsNotIntersectedWithCapability()
+    {
+        MemoryReturns("The user is allergic to shellfish");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-cap-user/memory-cap-conv");
+        await agent.SetEnabledToolsAsync([ToolCatalog.Memory]);
+
+        var answer = Answer(await CollectAsync(
+            agent.ChatAsync("what should I order?", TestSiloConfigurator.NoToolsNoVisionModel)));
+
+        Assert.Contains("[tools:]", answer);   // the model really did get no tools at all
+        Assert.Contains("The user is allergic to shellfish", answer);
+        Assert.Equal(["what should I order?"], RecallsFor("memory-cap-user"));
+    }
+
+    // AC7 — THE LOAD-BEARING ONE. Deselecting memory mid-chat detaches the provider on the SAME
+    // activation, with no deactivation in between. Two turns, not one: turn 1 proves memory was actually
+    // running, turn 2 proves the deselection took effect. That is what makes it fail in both mutation
+    // directions where a one-turn version fails in neither.
+    //
+    // It is also the guard behind reading the selection at BUILD time rather than through a delegate the
+    // way `_ephemeral` must be (see BuildMemoryProvider): the read is safe precisely because
+    // SetEnabledToolsAsync rebuilds the agent. If someone removes that rebuild, this test is what notices.
+    [Fact]
+    public async Task TogglingMemoryMidChat_DetachesOnTheSameActivation()
+    {
+        MemoryReturns("The user is allergic to shellfish");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-toggle-user/memory-toggle-conv");
+
+        await agent.SetEnabledToolsAsync([ToolCatalog.Memory]);
+        await CollectAsync(agent.ChatAsync("first turn", null));
+        Assert.Equal(["first turn"], RecallsFor("memory-toggle-user"));
+
+        // Same activation — no DeactivateOnIdle. SetEnabledToolsAsync rebuilds the agent in place.
+        await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch]);
+        await CollectAsync(agent.ChatAsync("second turn", null));
+
+        // No NEW recall: still exactly the one from turn 1.
+        Assert.Equal(["first turn"], RecallsFor("memory-toggle-user"));
+        Assert.DoesNotContain(RetainsFor("memory-toggle-user"), r => r.Contains("second turn"));
+    }
+
+    // AC6: the no-migration promise, proved at GRAIN level rather than on a literal set. A conversation
+    // bound to an agent whose EnabledTools snapshot predates this feature holds an explicit list that
+    // cannot contain `memory` — so memory is OFF there, deliberately and with no migration.
+    //
+    // The agent layer is worse than the ADR 0053 calendar precedent and that is why this test is at grain
+    // level: BindAgentAsync ALWAYS materialises a concrete list and a re-bind returns early (the persona
+    // snapshot is immutable, ADR 0003), while the per-conversation popover is hidden on agent chats — so
+    // there is no in-UI remedy for an already-bound conversation. Accepted and documented in ADR 0057; it
+    // fails SAFE, because the widest egress in the app stays off until deliberately re-enabled.
+    [Fact]
+    public async Task LegacyAgentSnapshot_DoesNotEnableMemory()
+    {
+        MemoryReturns("a memory that must not be injected");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-legacy-user/memory-legacy-conv");
+
+        // Exactly what BindAgentAsync materialised before ADR 0057: every key that existed then.
+        await agent.BindAgentAsync(new AgentBinding(
+            "agent-legacy", "Legacy", "You are a legacy agent.", TestSiloConfigurator.DefaultModel,
+            ["web_search", "location", "scheduling", "skills", "code_interpreter", "calendar", "mcp"]));
+
+        var answer = Answer(await CollectAsync(agent.ChatAsync("hello", null)));
+
+        Assert.Empty(RecallsFor("memory-legacy-user"));
+        Assert.Empty(RetainsFor("memory-legacy-user"));
+        Assert.DoesNotContain("## Memories", answer);
+    }
+
     private static async Task<List<AgentStreamEvent>> CollectAsync(IAsyncEnumerable<AgentStreamEvent> stream)
     {
         var events = new List<AgentStreamEvent>();

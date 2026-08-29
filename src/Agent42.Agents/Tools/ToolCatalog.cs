@@ -15,13 +15,26 @@ namespace Agent42.Agents;
 /// static keys below stay authoritative and centralised.</para>
 ///
 /// <para><b>Always-on, never selectable:</b> <c>get_date</c> and the document RAG <c>TextSearchProvider</c>.
-/// <c>get_date</c> is filtered in as always-enabled here; the RAG provider is not a tool and is gated only by
-/// document presence (ADR 0008), so it never appears in this catalog.</para>
+/// <c>get_date</c> is filtered in as always-enabled here; the RAG provider is gated only by document presence
+/// (ADR 0008), so it never appears in this catalog.</para>
 ///
-/// <para><b>Capability is the outer gate.</b> This catalog only expresses <i>user intent</i>. Whether a
-/// selected tool is actually registered is still decided by the model's <see cref="ModelCapabilities"/> in
-/// <c>BuildAgent</c> (a text-only model gets none; <c>code_interpreter</c> needs a hosted-tools model). The
-/// intersection — selection ∩ capability — keeps the ADR 0013/0015 gates authoritative.</para>
+/// <para><b>"Not a tool" and "not selectable" are two different things, and since ADR 0057 they no longer
+/// coincide.</b> RAG is both — not a tool, and absent from this catalog. <see cref="Memory"/> is the first key
+/// here that is <i>not</i> a tool: it gates an <c>AIContextProvider</c> attached outside <c>BuildAgent</c>'s
+/// tool list, owns no entry in <c>ToolNameToKey</c>, and is nevertheless selectable. Do not infer from the RAG
+/// sentence above that a non-tool cannot appear in this catalog.</para>
+///
+/// <para><b>Capability is the outer gate — for TOOLS.</b> This catalog only expresses <i>user intent</i>.
+/// Whether a selected tool is actually registered is still decided by the model's
+/// <see cref="ModelCapabilities"/> in <c>BuildAgent</c> (a text-only model gets none;
+/// <c>code_interpreter</c> needs a hosted-tools model). The intersection — selection ∩ capability — keeps the
+/// ADR 0013/0015 gates authoritative.</para>
+///
+/// <para><b><see cref="Memory"/> is the documented exception to that intersection (ADR 0057).</b> It gates a
+/// context provider, not a tool, so it never passes through the <c>SupportsTools</c> filter: a text-only model
+/// with <c>memory</c> selected still gets memory. <c>NoToolModel_StillGetsMemory</c> and
+/// <c>MemorySelection_IsNotIntersectedWithCapability</c> pin that from the null- and explicit-selection sides
+/// respectively. Folding capability into the memory arm fails them and nothing else.</para>
 /// </summary>
 public static class ToolCatalog
 {
@@ -46,6 +59,43 @@ public static class ToolCatalog
     /// <c>LegacyStoredSelection_DoesNotEnableCalendar_ButNullDoes</c> pins both halves.</para>
     /// </summary>
     public const string Calendar = "calendar";
+
+    /// <summary>
+    /// Long-term memory across conversations (ADR 0057, amends 0021 + 0056) — recall of relevant memories into
+    /// the agent's instructions before each model call, and retention of the turn's transcript after it.
+    /// Deselecting it attaches no provider at all, so the turn makes <b>zero</b> Hindsight calls: no recall
+    /// <i>and</i> no retain, exactly the incognito semantics of ADR 0056. "Recall only, keep retaining" was
+    /// considered and rejected — it leaves the always-on egress and the durable-injection risk fully intact
+    /// while the UI claims memory is off.
+    ///
+    /// <para><b>The first key here that is not a tool.</b> It gates an <c>AIContextProvider</c> added outside
+    /// <c>BuildAgent</c>'s tool list, so it maps to NO <c>ToolNameToKey</c> entries and must not gain any. That
+    /// is safe because the only guard over that map,
+    /// <c>EveryRegisteredTool_MapsToACatalogKey_OrIsGetDate_OrIsAnMcpTool</c>, runs name → key only; there is
+    /// no reverse guard requiring a <see cref="Descriptors"/> key to own tool names. Contrast
+    /// <see cref="Skills"/>, which keeps its three entries precisely because it <i>does</i> have static tool
+    /// names.</para>
+    ///
+    /// <para><b>It is exempt from the selection ∩ capability intersection</b> — see the class remarks. A
+    /// text-only model with <c>memory</c> selected still gets memory.</para>
+    ///
+    /// <para><b>The operator's <c>Hindsight:ApiKey</c> remains the outer gate</b> and the only one that stops
+    /// the egress deployment-wide. This key narrows within it; with no key configured, selecting memory still
+    /// makes zero calls (<c>UnconfiguredMemory_MakesNoCalls</c>). Deselecting also does <b>not</b> remove
+    /// memories already retained — ADR 0056's no-delete-path residual is untouched by it.</para>
+    ///
+    /// <para><b>This key lands OFF for anyone who has ever pressed Save</b>, exactly as <see cref="Calendar"/>
+    /// did, and there is deliberately no migration. <b>For agent chats it is worse than the Calendar
+    /// precedent:</b> <c>BindAgentAsync</c> always materialises a concrete list and a re-bind returns early
+    /// (the persona snapshot is immutable, ADR 0003), while the per-conversation popover is hidden on agent
+    /// chats — so <i>every already-bound agent conversation</i> has memory off with no in-UI remedy,
+    /// permanently for a continuous agent (ADR 0016) short of deleting it. Accepted and documented in ADR 0057:
+    /// it fails <b>safe</b>, since the widest egress in the app stays off on pre-existing chats until
+    /// deliberately re-enabled. The remedy for regular chats is one press of Save in Preferences → Tools; new
+    /// agent chats re-materialise the current key list at bind time and are fine.
+    /// <c>LegacyAgentSnapshot_DoesNotEnableMemory</c> pins the no-migration half at grain level.</para>
+    /// </summary>
+    public const string Memory = "memory";
 
     /// <summary>
     /// The agent-skills <b>wildcard</b> ("all skills") meta-key (per-skill selectable tools, amends 0021).
@@ -92,7 +142,7 @@ public static class ToolCatalog
     /// today's "every tool on" behaviour with no migration.
     /// </summary>
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Calendar, Mcp];
+        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Calendar, Mcp, Memory];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
     // web_search is intentionally the key for BOTH the SearXNG shims and HostedWebSearchTool — the hosted
@@ -138,6 +188,13 @@ public static class ToolCatalog
         // bare `skills` wildcard is a selection sentinel only, never a rendered checkbox.
         // Mcp is NOT here — MCP servers surface as per-user, per-server descriptors appended by GET /api/tools
         // (ADR 0026). The bare `mcp` wildcard is a selection sentinel only, never a rendered checkbox.
+        //
+        // Memory is LAST deliberately (ADR 0057): appending keeps catalog order stable for every existing key,
+        // so the order-sensitive Sanitize_OrdersStaticFirst_* guards need no expectation edit. The label is
+        // "Long-term memory", not "Memory" — plain "Memory" reads as the conversation's own history (the ADR
+        // 0004 session), which this is not, and that misreading makes the checkbox look like it wipes the chat.
+        // RequiresHostedTools is false: memory is not a tool at all, so no capability can grey it out.
+        new(Memory, "Long-term memory", RequiresHostedTools: false),
     ];
 
     /// <summary>The logical key for a registered tool name, or null (e.g. <c>get_date</c>, or an unmapped tool).</summary>

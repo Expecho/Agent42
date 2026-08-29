@@ -8,6 +8,11 @@ namespace Agent42.Agents;
 /// Agent construction and tool selection (ADR 0021): builds the <see cref="AIAgent"/> for a model and
 /// resolves which tools it may use — override ?? user-default ?? all, then intersected with model
 /// capability, so a selection can only narrow and never grant.
+///
+/// <para>That intersection governs <b>tools</b>. <c>ToolCatalog.Memory</c> (ADR 0057) is the one
+/// selectable key exempt from it: it gates an <c>AIContextProvider</c> added outside the tool list, so a
+/// text-only model with <c>memory</c> selected still gets memory. See the three-way table on the
+/// <c>contextProviders</c> block below.</para>
 /// </summary>
 public sealed partial class AgentGrain
 {
@@ -227,15 +232,23 @@ public sealed partial class AgentGrain
         // conditions: a 3-dimensional switch would be eight unreadable arms, and cognitive_complexity_max
         // is 15, enforced at build time by S3776.
         //
-        // The gating asymmetry is the point (ADR 0013). AgentSkillsProvider IS a tool — it exposes
-        // load_skill — so it was already dropped above on a no-tools model. The RAG TextSearchProvider and
-        // the Hindsight memory provider are NOT tools: they inject text before the call, so both stay on
-        // regardless of SupportsTools, and neither has an ADR 0021 catalog key.
+        // The gating asymmetry is the point (ADR 0013), and since ADR 0057 it is a THREE-way split, not a
+        // tools-vs-not one:
+        //   * AgentSkillsProvider IS a tool (it exposes load_skill) — gated by capability AND selection,
+        //     which is why it was already dropped above on a no-tools model.
+        //   * The RAG TextSearchProvider is NOT a tool and has NO catalog key — gated by neither; it stays
+        //     on whenever documents are present (ADR 0008).
+        //   * The Hindsight memory provider is NOT a tool either, but it DOES have a catalog key
+        //     (ToolCatalog.Memory, ADR 0057) — gated by selection but NOT by capability. It is the first
+        //     and only selectable key exempt from the selection ∩ capability intersection, because it never
+        //     passes through the tool list at all: a text-only model with memory selected still gets memory
+        //     (NoToolModel_StillGetsMemory, MemorySelection_IsNotIntersectedWithCapability).
         //
-        // Memory differs from RAG in one way worth naming, because it is the property ADR 0008 relied on
-        // and ADR 0056 gives up: RAG is gated per conversation (DocumentNames.Count > 0), so a
+        // Memory differs from RAG in a second way worth naming, because it is the property ADR 0008 relied
+        // on and ADR 0056 gave up: RAG is gated per CONVERSATION (DocumentNames.Count > 0), so a
         // document-free chat makes zero retrieval calls. Memory has no per-conversation analogue —
-        // spanning conversations is the whole feature — so once a key is configured it runs on EVERY turn.
+        // spanning conversations is the whole feature — so within a selection that keeps it on, it runs on
+        // EVERY turn. ADR 0057 narrows who that is; it does not restore a per-conversation gate.
         var contextProviders = new List<AIContextProvider>();
         if (skillsProvider is not null)
         {
@@ -247,7 +260,7 @@ public sealed partial class AgentGrain
             contextProviders.Add(BuildDocumentSearchProvider());
         }
 
-        if (BuildMemoryProvider() is { } memoryProvider)
+        if (BuildMemoryProvider(enabled) is { } memoryProvider)
         {
             contextProviders.Add(memoryProvider);
         }
@@ -268,8 +281,9 @@ public sealed partial class AgentGrain
                     Tools = capabilities.SupportsTools ? tools : [],
                 },
                 // Built above: skills (a tool, so already dropped on a no-tools model), document RAG
-                // (ADR 0008, per-conversation) and long-term memory (ADR 0056, ungated). The reasoning
-                // that used to live here is with the list, so there is one explanation rather than two.
+                // (ADR 0008, per-conversation) and long-term memory (ADR 0056, selectable since ADR 0057 —
+                // gated by the selection but NOT by capability). The reasoning that used to live here is
+                // with the list, so there is one explanation rather than two.
                 AIContextProviders = contextProviders,
                 // The provider injects retrieval as a ChatRole.User message tagged
                 // AgentRequestMessageSourceType.AIContextProvider. Left in the default history store it
@@ -286,8 +300,10 @@ public sealed partial class AgentGrain
 
     // The tools this conversation may use, resolved three-layer (ADR 0021): a per-conversation override or an
     // agent snapshot (_state.State.EnabledTools) wins; else the user's default read on activation; else all
-    // selectable tools (the null==all sentinel, today's behaviour). This is INTENT only — BuildAgent still
-    // intersects it with model capability, which stays the authoritative security gate (ADR 0013/0015).
+    // selectable tools (the null==all sentinel, today's behaviour). This is INTENT only — for TOOLS, BuildAgent
+    // still intersects it with model capability, which stays the authoritative security gate (ADR
+    // 0013/0015). ToolCatalog.Memory is the one key exempt from that intersection (ADR 0057): it gates a
+    // context provider, not a tool, so it never passes through the Tools filter at all.
     private IReadOnlyList<string> EffectiveEnabledTools()
         => _state.State.EnabledTools
             ?? _userDefaultEnabledTools

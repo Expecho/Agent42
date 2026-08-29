@@ -2,12 +2,13 @@
 
 > Choose which tools an assistant may use — a personal default, a per-conversation override, or
 > baked into a custom agent. Availability is also capped by what the chosen model supports.
-> ADRs 0021 · 0026.
+> ADRs 0021 · 0026 · 0057.
 
 ## What it is
 
 You pick which of the curated tools (`web_search`, `location`, `scheduling`, `skills`,
-`code_interpreter`, `calendar`, plus your MCP servers) an assistant may use, remembered at three layers:
+`code_interpreter`, `calendar`, `memory`, plus your MCP servers) an assistant may use, remembered at
+three layers:
 
 - **User default** (Preferences → default tools) — every new regular chat.
 - **Per-conversation override** (the composer's "Tools" popover) — non-agent chats only.
@@ -15,6 +16,11 @@ You pick which of the curated tools (`web_search`, `location`, `scheduling`, `sk
 
 `get_date` and document RAG stay **always-on**. Selection can only *narrow*, never grant: it is
 intersected with model capability.
+
+**`memory` is the one documented exception to that intersection** (ADR 0057). Long-term memory is not a
+tool — it is an `AIContextProvider` injected before the call — so it never passes through the capability
+filter: a text-only model with `memory` selected still gets memory. It is also gated underneath by the
+operator's `Hindsight:ApiKey`; with no key, selecting it makes zero calls.
 
 ## How it works
 
@@ -33,7 +39,12 @@ flowchart TD
     EFF --> FILT["BuildAgent: keep tools whose key ∈ set"]
     FILT --> CAP["intersect with model capability (SupportsTools / SupportsHostedTools)"]
     CAP --> FINAL["final AITool list"]
+    EFF --> MEM["memory ∈ set? (ADR 0057)"]
+    MEM --> PROV["HindsightMemoryProvider — NOT capability-filtered"]
 ```
+
+The `memory` arm leaves the flow before `CAP` on purpose: it is a context provider, not a tool, so the
+capability intersection never applies to it.
 
 ### The catalog keys and the null==all set
 
@@ -44,9 +55,10 @@ public const string Scheduling = "scheduling";
 public const string Skills = "skills";
 public const string CodeInterpreter = "code_interpreter";
 public const string Calendar = "calendar";     // ADR 0053
+public const string Memory = "memory";         // ADR 0057 — the first key that is NOT a tool
 ...
 public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-    [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Calendar, Mcp];
+    [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Calendar, Mcp, Memory];
 ```
 
 ### Three-layer resolution
@@ -118,7 +130,10 @@ every server — the picker has no bare `mcp` checkbox.
 - Selection resolves to a concrete `List<AITool>` (plus hosted-tool markers) that becomes
   `ChatClientAgentOptions.ChatOptions.Tools`. The framework is what turns "present in the list"
   into "advertised to the model."
-- The skills arm gates a framework `AIContextProvider` in/out of `AIContextProviders`.
+- Two arms gate a framework `AIContextProvider` in/out of `AIContextProviders`, and they differ: the
+  **skills** arm is filtered by capability *and* selection (it exposes `load_skill`, so it is a tool);
+  the **memory** arm is filtered by selection only (ADR 0057). Document RAG is a third arm, filtered by
+  neither — document presence alone (ADR 0008).
 - The framework has no notion of the catalog — Agent42's filter runs *before* handing the final
   list to `ChatClientAgent`.
 
@@ -130,7 +145,10 @@ every server — the picker has no bare `mcp` checkbox.
   `IUserMcpConfigGrain`.
 - Because resolution reads these on activation and `BuildAgent` intersects with model
   capability, a Preferences change reflects in a warm chat only on its next activation (accepted
-  staleness).
+  staleness). **That staleness is worth knowing for `memory` specifically:** switching the default off
+  stops recall and retain on the *next* activation of an already-warm chat, not immediately — and memory
+  is the widest egress in the app. The per-conversation override and the agent snapshot both rebuild
+  eagerly; only the user-default layer is deferred.
 - Every mutation persists and rebuilds the agent via the snapshot→rebuild→restore-session
   dance, so the selection survives deactivation.
 
@@ -140,5 +158,6 @@ every server — the picker has no bare `mcp` checkbox.
 |---------|------|
 | Catalog (source of truth) | `src/Agent42.Agents/Tools/ToolCatalog.cs` |
 | Resolution + gate | `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`EffectiveEnabledTools`, `BuildAgent`) |
+| Memory gate (ADR 0057) | `src/Agent42.Agents/Memory/AgentGrain.Memory.cs` (`BuildMemoryProvider`) |
 | Endpoints | `src/Agent42.Backend/Tools/AgentApi.Tools.cs` (`/api/tools`, `/api/conversations/{id}/tools`, `/api/profile`) |
 | State | `src/Agent42.Agents/Conversations/AgentGrainState.cs`, `UserProfile.cs` |
