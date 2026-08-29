@@ -4,6 +4,8 @@ using System.Text.Json;
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Orleans.Storage;
 
 namespace Agent42.Tests;
 
@@ -275,5 +277,108 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
         Assert.Equal(
             new[] { "scheduling" },
             afterDoc.RootElement.GetProperty("enabledTools").EnumerateArray().Select(e => e.GetString()).ToArray());
+    }
+
+    // AC16 — per-tool descriptors: each known tool of an enabled server gets its own nested row, labelled
+    // with the tool name VERBATIM and carrying parentKey = mcp:{id}. The parentKey is what lets the picker
+    // nest without splitting key strings — a startsWith("mcp:") test cannot tell a server row from a tool row.
+    [Fact]
+    public async Task Tools_Catalog_IncludesPerMcpToolKeys()
+    {
+        const string user = "user-mcp-tool-cat";
+        var created = await Client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", user, new
+        {
+            name = "Jira",
+            endpoint = "https://jira.example.com/mcp",
+            auth = "None",
+            enabled = true,
+        }));
+        created.EnsureSuccessStatusCode();
+        using var createdDoc = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var id = createdDoc.RootElement.GetProperty("id").GetString()!;
+
+        // Stand in for a successful connect — the endpoint itself never connects, by design.
+        await Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user)
+            .RecordToolNamesAsync(id, ["jira_get_issue", "jira_delete_issue"]);
+
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/tools", user));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var descriptors = doc.RootElement.EnumerateArray().ToArray();
+
+        // The server row is still there and is still top-level.
+        var server = Assert.Single(descriptors, e => e.GetProperty("key").GetString() == $"mcp:{id}");
+        Assert.Equal("Jira", server.GetProperty("label").GetString());
+        Assert.Null(server.GetProperty("parentKey").GetString());
+
+        var child = Assert.Single(descriptors, e => e.GetProperty("key").GetString() == $"mcp:{id}:jira_get_issue");
+        Assert.Equal("jira_get_issue", child.GetProperty("label").GetString()); // verbatim, not prettified
+        Assert.Equal($"mcp:{id}", child.GetProperty("parentKey").GetString());
+        Assert.False(child.GetProperty("requiresHostedTools").GetBoolean());
+
+        Assert.Contains(descriptors, e => e.GetProperty("key").GetString() == $"mcp:{id}:jira_delete_issue");
+    }
+
+    // AC17 — the cold-start shape, and the reason the grain must leave mcp:{id} unexpanded to match it. A
+    // server whose tools have never been discovered yields its server row and NO tool rows. The picker
+    // therefore renders an ordinary server checkbox with no children, which is correct and lossless; it is
+    // expanding into zero children that would be destructive (see GetEnabledTools_UnknownToolList_*).
+    [Fact]
+    public async Task Tools_Catalog_ServerWithoutKnownTools_KeepsServerRow()
+    {
+        const string user = "user-mcp-coldstart-cat";
+        var created = await Client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", user, new
+        {
+            name = "Fresh",
+            endpoint = "https://fresh.example.com/mcp",
+            auth = "None",
+            enabled = true,
+        }));
+        created.EnsureSuccessStatusCode();
+        using var createdDoc = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var id = createdDoc.RootElement.GetProperty("id").GetString()!;
+
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/tools", user));
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var descriptors = doc.RootElement.EnumerateArray().ToArray();
+
+        Assert.Contains(descriptors, e => e.GetProperty("key").GetString() == $"mcp:{id}");
+        Assert.DoesNotContain(descriptors, e => e.GetProperty("parentKey").GetString() == $"mcp:{id}");
+    }
+
+    // A saved tool default must be READABLE BACK from grain storage, not merely accepted by the endpoint —
+    // and, just as usefully, this pins WHY the handler needs no .ToList() while AgentGrain.BuildAgent.cs does.
+    //
+    // ToolCatalog.Sanitize returns a collection expression, which compiles to a compiler-internal
+    // <>z__ReadOnlyList<string>; JsonGrainStorageSerializer writes that into $type and cannot construct it on
+    // read (see GrainStorageSerializerTests.StateBuiltInsideAGrain_*). It is harmless HERE only because the
+    // value crosses a grain-call boundary, where Orleans' binary serializer rebuilds it as a plain List<string>
+    // before the grain ever writes it — asserted below, so the reasoning is checked rather than assumed.
+    [Fact]
+    public async Task ProfileToolSave_IsReadableBackFromStorage()
+    {
+        const string user = "user-profile-storage-roundtrip";
+
+        var response = await Client.SendAsync(Request(HttpMethod.Put, "/api/profile", user, new
+        {
+            preferredLanguage = "nl-NL",
+            enabledTools = new[] { ToolCatalog.WebSearch, ToolCatalog.Location },
+        }));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var storage = Cluster.GetSiloServiceProvider(Cluster.Primary.SiloAddress)
+            .GetRequiredKeyedService<IGrainStorage>(AgentGrain.StorageProviderName);
+        var grainId = Cluster.GrainFactory.GetGrain<IUserProfileGrain>(user).GetGrainId();
+        var state = new GrainState<UserProfileState>(new UserProfileState());
+
+        await storage.ReadStateAsync("profile", grainId, state);
+
+        // The laundering, stated as an assertion: whatever shape the handler built, what got PERSISTED is a
+        // plain List<string>. If this ever reads back as a <>z__ReadOnly* type, the boundary stopped
+        // normalising and every handler that builds a persisted list with a collection expression is suddenly
+        // a data-loss bug — start with AgentApi.Users.cs, AgentApi.Mcp.cs and AgentApi.Models.cs.
+        Assert.Equal(typeof(List<string>), state.State.Profile.EnabledTools!.GetType());
+        Assert.Equal([ToolCatalog.WebSearch, ToolCatalog.Location], state.State.Profile.EnabledTools);
+        Assert.Equal("nl-NL", state.State.Profile.PreferredLanguage);
     }
 }

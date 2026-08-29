@@ -50,6 +50,12 @@ public sealed class UserMcpConfigGrain : Grain, IUserMcpConfigGrain
                 HeaderValueCiphertext = Keep(server.HeaderValueCiphertext, prev.HeaderValueCiphertext),
                 ClientSecretCiphertext = Keep(server.ClientSecretCiphertext, prev.ClientSecretCiphertext),
                 TokenCiphertext = Keep(server.TokenCiphertext, prev.TokenCiphertext),
+                // Discovered names are preserved for the same reason as the ciphertexts, and it is even less
+                // optional: ToStored builds a FRESH record from the upsert request, which carries no names at
+                // all, so without this line every rename, header rotation or enable/disable round-trip erases
+                // them — and the tool picker loses its per-tool checkboxes until that user's next chat
+                // reconnects. Edit_PreservesKnownToolNames pins it.
+                KnownToolNames = server.KnownToolNames ?? prev.KnownToolNames,
             };
             servers[existing] = stored;
         }
@@ -72,11 +78,44 @@ public sealed class UserMcpConfigGrain : Grain, IUserMcpConfigGrain
         }
     }
 
+    public async Task RecordToolNamesAsync(string serverId, IReadOnlyList<string> toolNames)
+    {
+        var servers = _state.State.Config.Servers.ToList();
+        var index = servers.FindIndex(s => string.Equals(s.Id, serverId, StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+        {
+            return; // a server deleted between connect and record — nothing to attach names to
+        }
+
+        // No-op when unchanged: the common case is re-discovering the same tools on every activation, and a
+        // write per activation would be pure Cosmos churn. Ordinal and order-sensitive on purpose — a server
+        // that reorders its tools has genuinely changed what the picker should render.
+        var current = servers[index].KnownToolNames;
+        if (current is not null && current.SequenceEqual(toolNames, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        // .ToList(), NOT a collection expression. A collection expression targeting IReadOnlyList<T> compiles
+        // to a compiler-internal <>z__ReadOnlyList<T>, whose type name Newtonsoft writes into the Cosmos
+        // document's $type and then CANNOT construct on read — the whole mcp-servers document becomes
+        // unreadable, taking every one of that user's MCP servers with it. Measured; see the gotcha and
+        // KnownToolNames_SurviveTheCosmosJsonRoundTrip. AgentGrain.BuildAgent.cs:317 already guards the same
+        // way for EnabledTools.
+        servers[index] = servers[index] with { KnownToolNames = toolNames.ToList() };
+
+        // Deliberately NOT BumpAsync — see IUserMcpConfigGrain.RecordToolNamesAsync. Bumping here would
+        // invalidate the provider's live-socket cache for every warm grain of this user.
+        _state.State.Config = _state.State.Config with { Servers = servers };
+        await _state.WriteStateAsync();
+    }
+
     private static string? Keep(string? incoming, string? stored) =>
         string.IsNullOrEmpty(incoming) ? stored : incoming;
 
-    // Every write bumps the monotonic version, which the per-user tool-provider layer keys its cache on —
-    // so a save is picked up on the next grain activation without an app restart.
+    // Every CONFIGURATION write bumps the monotonic version, which the per-user tool-provider layer keys its
+    // cache on — so a save is picked up on the next grain activation without an app restart.
+    // RecordToolNamesAsync is the one write that deliberately does not go through here.
     private async Task BumpAsync(UserMcpConfig next)
     {
         _state.State.Config = next with { Version = next.Version + 1 };

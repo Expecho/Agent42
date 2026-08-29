@@ -240,6 +240,15 @@ public sealed class SerializationCompatibilityTests
         Assert.Equal(expected.ClientSecretCiphertext, actual.ClientSecretCiphertext);
         Assert.Equal(expected.Scopes, actual.Scopes);
         Assert.Equal(expected.TokenCiphertext, actual.TokenCiphertext);
+
+        // Per-tool selection appended a trailing [Id(12)] KnownToolNames; this blob predates it and must still
+        // read as null — the never-connected state, which the grain treats as "leave mcp:{id} unexpanded".
+        //
+        // The blob is NOT regenerated to include the new field, following ADR 0045: its whole value is being a
+        // genuine pre-feature artifact, and rewriting it would forfeit that for every OTHER member it covers.
+        // Secondary evidence regardless — this is the BINARY path. The data-at-rest guard is
+        // GrainStorageSerializerTests.UserMcpConfigDocument_WrittenBeforeKnownToolNames_*.
+        Assert.Null(actual.KnownToolNames);
     }
 
     // AC2: the user's stored Google connection (ADR 0053). The refresh-token ciphertext IS the

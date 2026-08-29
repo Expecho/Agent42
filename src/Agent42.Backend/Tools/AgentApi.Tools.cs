@@ -21,7 +21,9 @@ public static partial class AgentApi
         //     0049 is what made this portion per-user; before it, skills shipped with the image and there
         //     was no per-user flag to honour.
         //   • per-user MCP servers (ADR 0026) — one `mcp:{id}` descriptor per MANAGEMENT-ENABLED server (a
-        //     disabled server contributes no tools, so it gets no checkbox).
+        //     disabled server contributes no tools, so it gets no checkbox), plus one nested
+        //     `mcp:{id}:{toolName}` descriptor per entry in that server's KnownToolNames, carrying ParentKey
+        //     = `mcp:{id}` so the picker can nest without splitting key strings.
         //
         // Neither bare wildcard (`skills`, `mcp`) is a descriptor — they are selection sentinels only.
         // Capability gating still happens server-side in BuildAgent.
@@ -44,10 +46,31 @@ public static partial class AgentApi
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .Select(n => new ToolDescriptor(ToolCatalog.SkillKey(n), n, RequiresHostedTools: false));
 
+            // Tool names come from the PERSISTED KnownToolNames, never from a live connection — and that is a
+            // deliberate constraint, not a shortcut. Calling IUserMcpToolProvider here would (1) make a GET
+            // take up to 10 s per dead server, sequentially, before the picker is usable, and (2) turn a page
+            // load into a WRITE, because resolving an InteractiveOAuth token refreshes and saves it, bumping
+            // the overlay version and invalidating the live-socket tool cache for every warm grain of the user.
+            //
+            // The same list reaches the grain on McpServerTools.KnownToolNames, so the checkboxes rendered here
+            // and the keys AgentGrain.ExpandMcpWildcard projects are one source. They must not drift: a key the
+            // projection mints without a checkbox here is dropped by the very next Save.
+            //
+            // Consequence worth knowing (the cold-start window): a newly added server has no names until the
+            // user's next chat activation connects to it, so it shows a server checkbox and no tool rows until
+            // then. It is fully usable meanwhile — mcp:{id} gates exactly as it always did; only per-tool
+            // granularity waits.
             var overlay = await grains.GetGrain<IUserMcpConfigGrain>(userId).GetAsync();
             var mcpDescriptors = overlay.Servers
                 .Where(s => s.Enabled)
-                .Select(s => new ToolDescriptor(ToolCatalog.McpServerKey(s.Id), s.Name, RequiresHostedTools: false));
+                .SelectMany(s => new[] { new ToolDescriptor(ToolCatalog.McpServerKey(s.Id), s.Name, RequiresHostedTools: false) }
+                    .Concat((s.KnownToolNames ?? []).Select(name => new ToolDescriptor(
+                        ToolCatalog.McpToolKey(s.Id, name),
+                        // The tool name VERBATIM, the ADR 0048 per-skill precedent. addCheck writes it with
+                        // textContent, so there is no injection concern in rendering a server-supplied string.
+                        name,
+                        RequiresHostedTools: false,
+                        ParentKey: ToolCatalog.McpServerKey(s.Id)))));
             return Results.Json<IReadOnlyList<ToolDescriptor>>(
                 [.. ToolCatalog.Descriptors, .. skillDescriptors, .. mcpDescriptors]);
         });

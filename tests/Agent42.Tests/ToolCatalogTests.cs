@@ -201,4 +201,58 @@ public class ToolCatalogTests
         Assert.False(ToolCatalog.IsMcpServerKey(ToolCatalog.Mcp)); // bare wildcard is not a per-server key
         Assert.False(ToolCatalog.IsMcpServerKey(ToolCatalog.WebSearch));
     }
+
+    // AC1 — a per-tool key is a per-server key plus a segment, so IsMcpServerKey (a prefix test, deliberately
+    // not a parser) already admits it. That is the whole reason Sanitize needed no new clause: if this ever
+    // fails, per-tool keys are being stripped from every stored selection.
+    [Fact]
+    public void McpToolKey_IsAlsoAnMcpServerKey()
+    {
+        var key = ToolCatalog.McpToolKey("abc123", "jira_get_issue");
+
+        Assert.Equal("mcp:abc123:jira_get_issue", key);
+        Assert.True(ToolCatalog.IsMcpServerKey(key));
+        Assert.StartsWith(ToolCatalog.McpServerKey("abc123"), key, StringComparison.Ordinal);
+    }
+
+    // AC2 — the three-level hierarchy: mcp ⊃ mcp:{id} ⊃ mcp:{id}:{tool}. Any level grants the tool; a
+    // selection naming a SIBLING tool of the same server does not.
+    [Fact]
+    public void IsMcpToolEnabled_HonoursAllThreeLevels()
+    {
+        Assert.True(ToolCatalog.IsMcpToolEnabled("s1", "get_issue", new HashSet<string> { ToolCatalog.Mcp }));
+        Assert.True(ToolCatalog.IsMcpToolEnabled("s1", "get_issue", new HashSet<string> { "mcp:s1" }));
+        Assert.True(ToolCatalog.IsMcpToolEnabled("s1", "get_issue", new HashSet<string> { "mcp:s1:get_issue" }));
+
+        // A sibling tool's key grants nothing — this is the narrowing the feature exists for.
+        Assert.False(ToolCatalog.IsMcpToolEnabled("s1", "delete_issue", new HashSet<string> { "mcp:s1:get_issue" }));
+        Assert.False(ToolCatalog.IsMcpToolEnabled("s1", "get_issue", new HashSet<string> { ToolCatalog.WebSearch }));
+    }
+
+    // AC3 — a per-tool key is scoped to its own server. Two servers exposing an identically named tool must
+    // not cross-grant, which is what makes the serverId part of the key load-bearing rather than decorative.
+    [Fact]
+    public void IsMcpToolEnabled_DoesNotLeakAcrossServers()
+    {
+        var enabled = new HashSet<string> { "mcp:s1:search" };
+
+        Assert.True(ToolCatalog.IsMcpToolEnabled("s1", "search", enabled));
+        Assert.False(ToolCatalog.IsMcpToolEnabled("s2", "search", enabled));
+
+        // Nor does a per-SERVER key reach another server's tool of the same name.
+        Assert.False(ToolCatalog.IsMcpToolEnabled("s2", "search", new HashSet<string> { "mcp:s1" }));
+    }
+
+    // AC4 — per-tool keys survive Sanitize (they ride the IsMcpServerKey prefix clause), keep input order,
+    // dedupe, and sit after the static keys; garbage is still dropped.
+    [Fact]
+    public void Sanitize_PreservesPerToolKeys_AndDropsGarbage()
+    {
+        var result = ToolCatalog.Sanitize(
+            ["mcp:s1:beta", ToolCatalog.WebSearch, "not_a_key", "mcp:s1:alpha", "mcp:s1:beta", "mcp:s1"]);
+
+        Assert.Equal(
+            [ToolCatalog.WebSearch, "mcp:s1:beta", "mcp:s1:alpha", "mcp:s1"],
+            result);
+    }
 }
