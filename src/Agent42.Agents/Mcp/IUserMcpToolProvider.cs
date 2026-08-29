@@ -8,8 +8,26 @@ namespace Agent42.Agents;
 /// is not yet OAuth-connected) still appears here with an <b>empty</b> <see cref="Tools"/> list — its id is
 /// needed so the grain can expand the <c>mcp</c> wildcard into the complete per-server key set, matching the
 /// <c>GET /api/tools</c> catalog (which lists every enabled server, connected or not).
+///
+/// <para>Not an Orleans-serialized type — it never leaves the silo's process boundary as state and carries
+/// <see cref="AITool"/> instances, so it needs no <c>[Id]</c>s and no <c>[GenerateSerializer]</c>.</para>
 /// </summary>
-public sealed record McpServerTools(string ServerId, IReadOnlyList<AITool> Tools);
+/// <param name="KnownToolNames">
+/// The names the picker will render checkboxes for — <b>the same list the grain expands
+/// <c>mcp:{serverId}</c> into</b>, which is the invariant the per-tool feature rests on. The provider fills
+/// it from the persisted <c>StoredMcpServer.KnownToolNames</c>, refreshed with what it just discovered on a
+/// successful connect, so the catalog endpoint (which reads the config grain) and the grain (which reads
+/// this) can never disagree. Empty when the server has never connected: the grain must then leave
+/// <c>mcp:{serverId}</c> UNEXPANDED rather than expand it into nothing.
+///
+/// <para>Deliberately NOT derived from <see cref="Tools"/>. On a failed connect <see cref="Tools"/> is empty
+/// while the previously discovered names still stand, and erasing them there is exactly the bug that makes a
+/// partial per-tool selection unrecoverable.</para>
+/// </param>
+public sealed record McpServerTools(
+    string ServerId,
+    IReadOnlyList<AITool> Tools,
+    IReadOnlyList<string>? KnownToolNames = null);
 
 /// <summary>
 /// The MCP tools resolved for a user, grouped per server, plus the overlay <see cref="Version"/> they were
@@ -59,10 +77,16 @@ public sealed class SingleUserMcpToolProvider : IUserMcpToolProvider
     /// Convenience for the common single-server test: assigns a lone group under
     /// <see cref="DefaultServerId"/>. Existing tests that set a flat tool list and gate with the
     /// <c>mcp</c> wildcard keep working unchanged.
+    ///
+    /// <para><see cref="McpServerTools.KnownToolNames"/> is derived from the tools' own names here, which is
+    /// the offline analogue of a successful connect — the fake provider genuinely knows its tools. A test
+    /// that needs the never-connected shape (known names empty) assigns <see cref="Servers"/> directly.</para>
     /// </summary>
     public IReadOnlyList<AITool> Tools
     {
-        set => Servers = value.Count == 0 ? [] : [new McpServerTools(DefaultServerId, value)];
+        set => Servers = value.Count == 0
+            ? []
+            : [new McpServerTools(DefaultServerId, value, [.. value.Select(t => t.Name)])];
     }
 
     /// <summary>The server id the <see cref="Tools"/> convenience assigns.</summary>

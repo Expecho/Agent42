@@ -1420,6 +1420,63 @@ body {
   color: var(--ink-dim);
 }
 
+/* One MCP server: a master row, plus its per-tool checkboxes indented beneath and collapsed by default
+   (per-MCP-tool selection). Deliberately built from the existing .tool-check idiom — the rows inside are
+   ordinary .tool-check labels, so nothing here restyles a checkbox. */
+.tool-server {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-server__head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The disclosure. A <button>, not a checkbox — readToolChecks sweeps every checkbox in the container into
+   the saved keys, so a checkbox here would persist as a phantom selection. Styled flat so it reads as a
+   control on the row rather than a second thing to tick. */
+.tool-server__toggle {
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: transparent;
+  font: 500 10px var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+
+.tool-server__toggle:hover,
+.tool-server__toggle:focus-visible {
+  color: var(--ink);
+  border-color: var(--amber-deep);
+}
+
+/* The cold-start note: a server whose tools have not been discovered yet has no per-tool rows to show. */
+.tool-server__hint {
+  font: 500 10px var(--mono);
+  letter-spacing: 0.02em;
+  color: var(--ink-dim);
+  font-style: italic;
+}
+
+.tool-server__tools {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-left: 22px;
+  border-left: 1px solid var(--line-soft);
+  margin-left: 6px;
+}
+
+.tool-server__tools[hidden] {
+  display: none;
+}
+
 /* ————— agent form dialog ————— */
 
 .agent-dialog {

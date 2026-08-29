@@ -301,7 +301,7 @@ to document a mechanical rule, add a lint rule instead.
   search"). Four traps, all in gotchas: `GetEnabledToolsAsync` must **expand** the `skills` wildcard into
   `skill:{name}` keys (else a no-op Save silently disables every skill — the picker has no `skills` checkbox);
   the two expansions **compose in a fixed order**, `ExpandSkillsWildcard(ExpandMcpWildcard(…))`, because two
-  `Assert.Equal` guards are order-sensitive; `renderToolChecks`'s `cb.checked` is now a **three-way** OR whose
+  `Assert.Equal` guards are order-sensitive; `renderToolChecks`'s `cb.checked` became a **three-way** OR (**four-way** since ADR 0058) whose
   MCP term is load-bearing and guarded only by a **source-text** assertion; and a skill whose frontmatter
   `name` disagrees with its directory name is **silently invisible** (the source returns `[]`, it does not
   throw). **Consequence worth knowing:** because the picker materialises "all" as the full explicit list, a
@@ -565,6 +565,35 @@ to document a mechanical rule, add a lint rule instead.
   wildcard into `mcp:{id}` keys before the picker sees it (else a no-op Save silently disables every server —
   the picker has no `mcp` checkbox), and the provider emits an **empty group per skipped server** so the
   expansion id-list is complete. Both in the null==all gotcha.
+- Per-MCP-TOOL selectable tools (ADR 0058, amends 0026, re-scopes 0021 again): each tool of a server is
+  individually selectable as `mcp:{serverId}:{toolName}` — a **third level** under `mcp` ⊃ `mcp:{id}` ⊃
+  `mcp:{id}:{tool}`, any of which grants a tool (`ToolCatalog.IsMcpToolEnabled`, which subsumes
+  `IsMcpServerEnabled`). `mcp:{id}` keeps its exact ADR 0026 meaning, so **zero migration**; `Sanitize` and
+  `IsMcpServerKey` need **no change** because a per-tool key is a per-server key plus a segment, and
+  **nothing anywhere parses a key**. This is the third instalment of ADR 0026's shape (0048 did skills) but
+  **not** a copy of either: those gate over a list knowable locally, while **MCP tool names are only knowable
+  by connecting**, and every hard part follows from that. Names are persisted on a trailing
+  `StoredMcpServer [Id(12)] KnownToolNames` — **discovered metadata, never a user setting** — recorded by the
+  provider after a **successful** connect via a **non-bumping** `RecordToolNamesAsync` (bumping would tear
+  down the live-socket cache for every warm grain), preserved across a server edit by a `Keep` clause in
+  `SaveAsync` (**the single easiest way to ship this broken** — `ToStored` rebuilds the record from a request
+  that carries no names), and carried to the grain on `McpServerTools.KnownToolNames` so the picker and the
+  gate are **one source** (a divergence mints keys with no checkbox that the next Save drops). `GET
+  /api/tools` reads those names and **never calls `IUserMcpToolProvider`**: connecting would cost ~10 s per
+  dead server sequentially, and an OAuth refresh would turn the GET into a **write**. **The headline
+  consequence: a newly added server has no per-tool checkboxes until that user's next chat activation** (its
+  master checkbox works throughout, so only granularity waits; the picker says "tools not discovered yet").
+  Four traps, all in gotchas: never expand `mcp:{id}` into an **empty** set (both master states are then
+  wrong — one silently disables the server, the other silently re-grants deselected tools); the picker must
+  partition on **`ToolDescriptor.ParentKey`**, not `startsWith("mcp:")`, which matches both row kinds;
+  `cb.checked` is now a **four-way** OR whose new term is the parent key; and the disclosure must be a
+  `<button>`, since `readToolChecks` sweeps every checkbox into the saved keys. Two client rules have **no
+  runtime test** and are guarded only by source text — the **collapse** rule (an all-ticked server saves as
+  bare `mcp:{id}`, so it still picks up tools added later) and the **preservation** rule (per-tool keys for
+  unrendered servers carried forward over a **per-container `WeakMap`**); both were verified over CDP and the
+  second was **mutation checked** (removing it makes an unrelated toggle silently destroy the selection).
+  Egress is **unchanged** (ADR 0024/0013) — selection only narrows. Shell cache bumped `agent42-shell-v23` →
+  `-v24`. The DevHost browser leg **was** run and ADR 0058 records the measured values.
 - Web Push when an agent replies while away (ADR 0028): a **Web Push** notification titled with the
   **agent's name** is delivered to the user's installed Android/Chromium PWA when an agent finishes a reply
   on one of the two **asynchronous** paths — a fired reminder (`ReceiveReminder`) or an agent-run

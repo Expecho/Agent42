@@ -119,6 +119,12 @@ public static partial class AgentApi
     // Maps the request into the stored shape, encrypting each secret. A blank secret becomes a null
     // ciphertext: on create that is "no secret", on update the grain reads it as "keep the stored secret".
     // The auth mode is normalized to its enum name so the tool provider parses it back.
+    //
+    // This deliberately builds a FRESH record and so carries no KnownToolNames — there is no such field on the
+    // request and the user cannot type one (they are DISCOVERED on connect, never configured). The names
+    // survive an edit because UserMcpConfigGrain.SaveAsync keeps them, exactly as it keeps the ciphertexts.
+    // Do not "fix" this by threading names through the request; do not remove that Keep clause either, or every
+    // rename silently wipes the per-tool checkboxes.
     private static StoredMcpServer ToStored(McpServerUpsertRequest request, string id, IMcpSecretProtector protector) =>
         new(
             Id: id,

@@ -175,22 +175,24 @@ public sealed partial class AgentGrain
         tools = [.. tools.Where(t => ToolCatalog.IsToolEnabled(t.Name, enabled))];
 
         // Remote MCP-server tools (config-driven remote MCP servers) are added AFTER the per-tool
-        // IsToolEnabled filter and BEFORE the capability intersection below. They are gated PER SERVER
-        // (ADR 0026), not per tool name: MCP tool names are user-defined and dynamic, so they are absent from
-        // the catalog map and IsToolEnabled would keep them UNCONDITIONALLY (the unmapped-name rule), bypassing
-        // the picker. Each server is kept when the effective selection contains the `mcp` wildcard (null==all /
-        // legacy) OR the server's own `mcp:{id}` key — see ToolCatalog.IsMcpServerEnabled. A user with zero
-        // configured MCP servers has an empty _mcpServers, so nothing is added; a skipped/unreachable server is
-        // an empty group and contributes nothing either. The tools were already truncation-wrapped by the
-        // provider (ADR 0004). Capability (SupportsTools) is the outer gate, exactly as for the static keys.
+        // IsToolEnabled filter and BEFORE the capability intersection below. They are gated on their OWN
+        // three-level hierarchy — `mcp` (all servers) ⊃ `mcp:{id}` (all tools of one server, ADR 0026) ⊃
+        // `mcp:{id}:{toolName}` (one tool) — not by the catalog map: MCP tool names are user-defined and
+        // dynamic, so they are absent from it and IsToolEnabled would keep them UNCONDITIONALLY (the
+        // unmapped-name rule), bypassing the picker. Any of the three levels grants a tool; see
+        // ToolCatalog.IsMcpToolEnabled, which subsumes IsMcpServerEnabled rather than replacing it.
+        //
+        // Note the filter is per TOOL but the key is built from (server.ServerId, tool.Name) — no key is ever
+        // parsed. A user with zero configured MCP servers has an empty _mcpServers, so nothing is added; a
+        // skipped/unreachable server is an empty group and contributes nothing either (and, importantly, an
+        // empty group is still ENUMERATED — that is what keeps ExpandMcpWildcard's server list complete). The
+        // tools were already truncation-wrapped by the provider (ADR 0004). Capability (SupportsTools) is the
+        // outer gate, exactly as for the static keys.
         if (capabilities.SupportsTools)
         {
             foreach (var server in _mcpServers)
             {
-                if (ToolCatalog.IsMcpServerEnabled(server.ServerId, enabled))
-                {
-                    tools.AddRange(server.Tools);
-                }
+                tools.AddRange(server.Tools.Where(t => ToolCatalog.IsMcpToolEnabled(server.ServerId, t.Name, enabled)));
             }
         }
 
@@ -339,29 +341,55 @@ public sealed partial class AgentGrain
     public Task<IReadOnlyList<string>> GetEnabledToolsAsync()
         => Task.FromResult(ExpandSkillsWildcard(ExpandMcpWildcard(EffectiveEnabledTools())));
 
-    // Expands the bare `mcp` wildcard into a per-server key (mcp:{id}) for each of this user's servers before
-    // the effective selection reaches the picker (ADR 0026). WHY this is load-bearing: EffectiveEnabledTools
-    // materializes AllSelectableToolKeys (which carries the bare `mcp` wildcard, NOT any mcp:{id}) for every
-    // null/all conversation. The picker renders only keys present in the catalog, and `mcp` has no checkbox
-    // there — so a picker Save would drop the wildcard and add no per-server key, silently disabling EVERY MCP
-    // server. Expanding here means the client always receives explicit per-server keys that round-trip. The
-    // gate (EffectiveEnabledTools, via IsMcpServerEnabled) still honours the raw wildcard, so this is a
-    // read-only, client-facing projection — it never changes what is persisted. Non-wildcard selections pass
-    // through unchanged; a lone `mcp` for a user with zero servers simply drops (no servers to expand to).
+    // Expands the MCP wildcards into the explicit keys the picker actually renders, before the effective
+    // selection reaches it (ADR 0026, extended one level down by per-tool selection). TWO levels now:
+    //
+    //   `mcp`            → mcp:{id}          for every server, then each of those in turn →
+    //   `mcp:{id}`       → mcp:{id}:{tool}   for every tool in that server's KnownToolNames
+    //
+    // WHY this is load-bearing: EffectiveEnabledTools materializes AllSelectableToolKeys (which carries the
+    // bare `mcp` wildcard, NOT any mcp:{id}) for every null/all conversation. The picker renders only keys
+    // present in the catalog, and `mcp` has no checkbox there — so a picker Save would drop the wildcard and
+    // add no per-server key, silently disabling EVERY MCP server. The same argument now applies one level
+    // down. The gate (EffectiveEnabledTools, via IsMcpToolEnabled) still honours both raw wildcards, so this
+    // stays a read-only, client-facing projection that never changes what is persisted.
+    //
+    // ⚠ THE ONE RULE THAT MUST NOT BE SIMPLIFIED: a server whose KnownToolNames is empty keeps its bare
+    // mcp:{id} key, UNEXPANDED. Expanding it into nothing would emit a master checkbox with zero children, and
+    // both master states are then wrong — unchecked drops a stored partial selection and silently disables the
+    // server; checked ("all children ticked" being vacuously true over zero children) collapses back to
+    // mcp:{id} and silently re-grants tools the user deliberately deselected. That is the exact failure this
+    // feature exists to avoid, reproduced by the rule meant to close it.
+    // GetEnabledTools_UnknownToolList_KeepsServerKeyIntact pins it.
+    //
+    // Names come from the GROUP's KnownToolNames — never from live Tools. The catalog endpoint reads the same
+    // persisted list, so the picker and this projection cannot disagree; deriving from Tools would diverge the
+    // moment a server is briefly unreachable (empty Tools, names intact) and mint keys with no checkbox.
     private IReadOnlyList<string> ExpandMcpWildcard(IReadOnlyList<string> effective)
     {
-        if (!effective.Contains(ToolCatalog.Mcp))
-        {
-            return [.. effective];
-        }
-
-        return
-        [
-            .. effective
+        var expanded = effective.Contains(ToolCatalog.Mcp)
+            ? effective
                 .Where(k => k != ToolCatalog.Mcp)
                 .Concat(_mcpServers.Select(s => ToolCatalog.McpServerKey(s.ServerId)))
-                .Distinct(StringComparer.Ordinal),
-        ];
+            : effective;
+
+        return [.. expanded.SelectMany(ExpandOneServerKey).Distinct(StringComparer.Ordinal)];
+    }
+
+    // One key's projection: a per-server key becomes its per-tool keys when that server's tools are known,
+    // and stays itself otherwise (see the rule above). Anything that is not a per-server key passes through.
+    // Extracted rather than nested so ExpandMcpWildcard stays under the cognitive-complexity gate (ADR 0050).
+    private IEnumerable<string> ExpandOneServerKey(string key)
+    {
+        if (!ToolCatalog.IsMcpServerKey(key))
+        {
+            return [key];
+        }
+
+        var group = _mcpServers.FirstOrDefault(s => key == ToolCatalog.McpServerKey(s.ServerId));
+        return group?.KnownToolNames is { Count: > 0 } names
+            ? names.Select(n => ToolCatalog.McpToolKey(group.ServerId, n))
+            : [key];
     }
 
     // Expands the bare `skills` wildcard into a per-skill key (skill:{name}) for each skill in the MERGED
