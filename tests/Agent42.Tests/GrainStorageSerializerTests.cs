@@ -175,6 +175,39 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal(["alpha", "beta"], Assert.Single(restored.Config.Servers).KnownToolNames);
     }
 
+    // The other half of the scoping rule, and the one that actually matters in production. Handler-built
+    // lists are laundered by the grain-call boundary — but by WHICH mechanism depends on topology, and only
+    // one of the two is exercised by the test suite's own shape.
+    //
+    // `SharedApiFixture` injects the TestCluster's EXTERNAL client, so its handler→grain calls fully
+    // serialize (that is what ProfileToolSave_IsReadableBackFromStorage measures). Production does not:
+    // `Program.cs` co-hosts the silo via `builder.UseOrleans`, so those same calls are LOCAL and Orleans
+    // DEEP-COPIES the arguments instead. Different code path, same question — and the answer has to be
+    // measured, not assumed, because the conclusion drawn from it is "the request handlers need no
+    // .ToList() and adding one is churn".
+    [Fact]
+    public void OrleansDeepCopy_LaundersACollectionExpressionList_LikeSerializationDoes()
+    {
+        IReadOnlyList<string> source = ["web_search", "location"];
+        IReadOnlyList<string> collectionExpression = [.. source.Select(x => x).Where(x => x.Length > 0)];
+
+        // Precondition: the hazard is actually present before the copy, or this proves nothing. Asserted on
+        // the type NAME, not its full name — a compiler-internal type is still called `<>z__ReadOnlyList`1`,
+        // so a substring test against the full name would match the very `List`1[[System.String` it is meant
+        // to exclude.
+        Assert.StartsWith("<>z__", collectionExpression.GetType().Name, StringComparison.Ordinal);
+        Assert.NotEqual(typeof(List<string>), collectionExpression.GetType());
+
+        var copier = Cluster.GetSiloServiceProvider(Cluster.Primary.SiloAddress)
+            .GetRequiredService<Orleans.Serialization.DeepCopier<UserProfile>>();
+
+        var copied = copier.Copy(new UserProfile("nl-NL", "dark", collectionExpression));
+
+        Assert.Equal(typeof(List<string>), copied.EnabledTools!.GetType());
+        // ...and the laundered value survives the Cosmos JSON round trip, which the original would not.
+        Serializer().Deserialize<UserProfileState>(Serializer().Serialize(new UserProfileState { Profile = copied }));
+    }
+
     // The pin flag (ADR 0045) appended a trailing [Id(5)] member to the POSITIONAL record ConversationInfo,
     // and every conversation-index document already in Cosmos was written without it. The mechanism at risk
     // is Newtonsoft constructor-binding a MISSING property onto a positional record — which only this path

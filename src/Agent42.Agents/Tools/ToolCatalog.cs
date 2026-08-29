@@ -290,9 +290,17 @@ public static class ToolCatalog
     /// <see cref="IsMcpServerKey"/> already admits them. Sanitize is deliberately <b>static</b> (no per-user
     /// server list, no disk read for the skill list, and no MCP connection), so it validates neither a server
     /// id, nor a tool name, nor a skill name here. A stale <c>mcp:{deletedId}</c>,
-    /// <c>mcp:{id}:{removedTool}</c> or <c>skill:{removedName}</c> is inert (it gates nothing in
-    /// <c>BuildAgent</c>) and self-heals when the user next saves from the picker, which only offers current
-    /// entries.</para>
+    /// <c>mcp:{id}:{removedTool}</c> or <c>skill:{removedName}</c> is inert — it gates nothing in
+    /// <c>BuildAgent</c>.</para>
+    ///
+    /// <para><b>Self-healing is NOT universal, and the exception is deliberate.</b> A stale key normally
+    /// clears when the user next saves from the picker, which only offers current entries. But
+    /// <c>readToolChecks</c> deliberately <b>carries forward</b> a <c>mcp:{id}:{tool}</c> key whose SERVER
+    /// row is still in the catalog while its tool row was not rendered — that is the backstop against
+    /// silently destroying a per-tool selection the picker could not display. So a per-tool key for a live
+    /// server persists until that server's tools are known again; only keys whose server row is gone
+    /// (deleted or management-disabled) clear on the next save. Both halves are intentional; do not "fix"
+    /// either into the other.</para>
     /// </summary>
     public static IReadOnlyList<string>? Sanitize(IReadOnlyList<string>? tools)
         => tools is null

@@ -301,7 +301,7 @@ to document a mechanical rule, add a lint rule instead.
   search"). Four traps, all in gotchas: `GetEnabledToolsAsync` must **expand** the `skills` wildcard into
   `skill:{name}` keys (else a no-op Save silently disables every skill — the picker has no `skills` checkbox);
   the two expansions **compose in a fixed order**, `ExpandSkillsWildcard(ExpandMcpWildcard(…))`, because two
-  `Assert.Equal` guards are order-sensitive; `renderToolChecks`'s `cb.checked` is now a **three-way** OR whose
+  `Assert.Equal` guards are order-sensitive; `renderToolChecks`'s `cb.checked` became a **three-way** OR (**four-way** since ADR 0058) whose
   MCP term is load-bearing and guarded only by a **source-text** assertion; and a skill whose frontmatter
   `name` disagrees with its directory name is **silently invisible** (the source returns `[]`, it does not
   throw). **Consequence worth knowing:** because the picker materialises "all" as the full explicit list, a

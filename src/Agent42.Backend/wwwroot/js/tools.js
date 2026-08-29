@@ -148,6 +148,19 @@ export function renderToolChecks(container, selectedKeys) {
 
     const boxes = tools.map((tool) => addCheck(tool, children));
 
+    // A server whose tools are ALL selected is fully enabled, however the selection happens to spell it —
+    // so derive the master from the children at RENDER time, not only on a change event.
+    //
+    // This is load-bearing, not tidiness. `GetEnabledToolsAsync` expands `mcp:{id}` AWAY into per-tool keys,
+    // and that projection is exactly what the composer popover renders from on every reopen and after every
+    // save. Without this line the master renders UNCHECKED above a full set of ticked children (measured:
+    // `master:false, children:[true,true]`) — a self-contradictory UI whose real cost is that the collapse
+    // rule in readToolChecks never fires, so the next save freezes the selection into an explicit list that
+    // will NOT pick up tools the server adds later. That is the ADR 0026 meaning this feature promises to
+    // preserve. Note a fresh conversation seeds from allToolKeys(), which DOES contain `mcp:{id}`, so the
+    // bug is invisible until a conversation is reopened.
+    if (boxes.every((b) => b.checked)) master.checked = true;
+
     // Master and children sync BOTH ways. The child-to-master half is not cosmetic: without it, ticking
     // every tool by hand never re-checks the master, so readToolChecks' collapse rule never fires and the
     // selection saves as N per-tool keys instead of one `mcp:{id}`. That still works today, but it freezes
@@ -170,12 +183,20 @@ export function renderToolChecks(container, selectedKeys) {
     for (const server of mcpServers) addServer(server);
   }
 
-  // Remember the per-tool keys this render had no checkbox for, so the next read carries them forward.
-  // Only `mcp:` keys: a server whose tools are unknown renders zero children, and a stored partial per-tool
-  // selection for it would otherwise be silently destroyed by the next Save. Recomputed on every render, so
-  // it can never go stale.
+  // Remember the per-tool keys this render had no checkbox for, so the next read carries them forward: a
+  // server whose tools are unknown renders zero children, and a stored partial per-tool selection for it
+  // would otherwise be silently destroyed by the next Save. Recomputed on every render, so it never goes stale.
+  //
+  // Scoped to keys whose SERVER ROW is present, and that scoping matters. A key for a server that is gone
+  // from the catalog — deleted, or management-disabled — is deliberately NOT preserved, so it drops on the
+  // next Save exactly as ADR 0026 always dropped a stale `mcp:{deletedId}`. Preserving every unknown `mcp:`
+  // key instead would make stored selections grow monotonically and never shed dead ones, quietly falsifying
+  // the "a stale key self-heals when the user next saves" rule in ToolCatalog.Sanitize's doc comment.
   const rendered = new Set(toolCatalog.map((t) => t.key));
-  unrenderedKeys.set(container, selectedKeys.filter((k) => k.startsWith("mcp:") && !rendered.has(k)));
+  const serverRowKeys = new Set(mcpServers.map((t) => t.key));
+  unrenderedKeys.set(
+    container,
+    selectedKeys.filter((k) => !rendered.has(k) && [...serverRowKeys].some((s) => k.startsWith(`${s}:`))));
 }
 
 // The keys to save for `container`. Two rules beyond "whatever is checked":

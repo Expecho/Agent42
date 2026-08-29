@@ -58,10 +58,16 @@ public sealed class SkillPickerAssetsTests
     //
     // Dropping either wildcard term re-opens the ADR 0026 trap — a profile or agent storing the bare
     // `"mcp"`/`"skills"` would render that whole group unchecked, and the next Save would silently disable
-    // every server / every skill. Dropping the fourth term re-opens it one level down and is subtler: a
-    // stored `mcp:{id}` (the ordinary ADR 0026 selection, and what the collapse rule emits) would render the
-    // server's tool rows all UNCHECKED, so the next Save would emit the server key with no tools ticked —
-    // reading back as "this server, none of its tools".
+    // every server / every skill.
+    //
+    // The fourth term is weaker than its siblings and is worth stating precisely, because overstating it
+    // invites the wrong later edit. Dropping it does NOT lose data on the next Save: a stored `mcp:{id}`
+    // would render the server's tool rows unchecked while the MASTER stays checked, and readToolChecks then
+    // collapses to `["mcp:{id}"]` — which IsMcpToolEnabled still reads as every tool of that server, its
+    // unchanged ADR 0026 meaning. What it buys is UI consistency, and that is not cosmetic either: from a
+    // contradictory render (master ticked, children clear) the user's next child toggle flips the master
+    // false and saves a single per-tool key, silently discarding the rest of the server. The loss is one
+    // interaction away, not immediate.
     //
     // Pinned by source text because the alternative (a JS runner) does not exist here by design; whitespace
     // is collapsed so the assertion survives reformatting but not the deletion of a term.

@@ -563,3 +563,44 @@ with S3776 at `error`.
   `RecordToolNames_UnknownServer_IsANoOp`, `Save_WithNullKnownToolNames_KeepsStoredNames`,
   `SkippedServer_KeepsPreviouslyKnownToolNames`, plus `SuccessfulConnect_RecordsDiscoveredToolNames` and
   `GetEnabledTools_ExplicitPerToolKey_RoundTripsUnchanged`.
+
+### 5. The `critic` pass found a shipped bug; two client rules changed after it
+
+The step-5 `critic` review found seven items. Two were real defects in the implementation, four were doc
+debt, one was an evidence gap. All were verified before acting — two of the seven were rejected or narrowed
+on measurement rather than accepted as written.
+
+**F1 (accepted, real bug).** `ExpandMcpWildcard` removes `mcp:{id}` when it expands, and the composer renders
+from exactly that projection — so on any **reopened** conversation the server master drew unchecked above a
+full set of ticked children, and `readToolChecks` then declined to collapse. Reproduced over CDP
+(`master:false, children:[true,true]`, saving the explicit per-tool list). Fixed by deriving the master from
+its children at render time, not only on a change event. The original browser leg missed it because it only
+ever used a *fresh* conversation, which seeds from `allToolKeys()` and does contain `mcp:{id}` — a real gap in
+the step-7 script, not just in the code.
+
+**F3/F4 (accepted, real).** The preservation rule stashed *every* selected `mcp:`-prefixed key absent from the
+catalog, so a deleted or management-disabled server's keys were carried forward forever — falsifying
+`ToolCatalog.Sanitize`'s "a stale key self-heals" comment (which this diff had itself extended to per-tool
+keys) and silently changing ADR 0026 behaviour for disabled servers. Fixed by scoping the stash to keys whose
+**server row is present**, rather than by editing the doc to match the code. Verified over CDP: the live
+server's partial key survives while `mcp:ghost` and `mcp:ghost:zombie_tool` both drop.
+
+**F2, F5 (accepted, doc debt).** Four stale "three-way OR" claims and two references to the renamed
+`CheckedState_KeepsTheThreeWayWildcardOr` were fixed in `gotchas.md` and `CLAUDE.md` (hard rule 2); the two
+remaining hits are inside *completed specs*, which are historical records and were left alone. A guard comment
+overstated what the fourth OR term protects — the immediate next Save is actually lossless; the loss is one
+interaction away — and was corrected to say so.
+
+**F6 (accepted, precision).** The new gotcha's type mapping was ambiguous and quoted a failure message from a
+different probe than the one it described. Replaced with the measured table (four expression shapes → three
+compiler-internal types) and both verbatim failure strings.
+
+**F7 (accepted as an evidence gap; the claim survived).** The laundering measurement used `SharedApiFixture`,
+which injects the TestCluster's **external** client, so handler→grain calls fully serialize — while production
+co-hosts the silo (`builder.UseOrleans`), where those calls are local and Orleans **deep-copies** instead.
+Different mechanism, and only one had been measured. Orleans' `DeepCopier<T>` was then measured directly:
+it converts `<>z__ReadOnlyList` → `List<string>` too, so the rule holds on both topologies. A permanent test
+(`OrleansDeepCopy_LaundersACollectionExpressionList_LikeSerializationDoes`) now covers the production path,
+and the gotcha cites both mechanisms instead of generalising from one.
+
+Net: 1024 tests (up from 1023), two client-side behaviour fixes, no change to the server-side design.

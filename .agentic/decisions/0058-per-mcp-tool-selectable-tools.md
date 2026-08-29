@@ -114,6 +114,11 @@ Two rules ship anyway, because "unreachable" is an argument and arguments rot:
 - **Client-side.** `readToolChecks` **carries forward** stored `mcp:{id}:*` keys for any server whose
   children were not rendered, over a **per-container `WeakMap`** (three containers share these functions; a
   module-level slot would depend on an unstated cross-dialog ordering invariant and fail silently).
+  Deliberately scoped to keys whose **server row is present in the catalog**: a key for a deleted or
+  management-disabled server still drops on the next Save, exactly as ADR 0026 always dropped a stale
+  `mcp:{deletedId}`. Preserving every unknown `mcp:` key instead would make stored selections grow
+  monotonically and never shed dead ones — and would quietly falsify `ToolCatalog.Sanitize`'s "a stale key
+  self-heals" doc comment, which is now stated with the one exception this rule creates.
 
 **Be honest about the limits.** The server-side rule does **not** defend a fully-explicit partial selection —
 there is nothing there to expand. And `profile.js`/`agents.js` render the raw stored list, never
@@ -131,9 +136,13 @@ sweep a checkbox disclosure into the saved keys.
   `mcp:`.
 - `cb.checked` becomes a **four-way** OR; the new fourth term is "this row's parent key is selected", which
   is what makes a stored `mcp:{id}` render as *all of its tools ticked* rather than as an empty group.
-- Master ↔ child sync runs **both ways**. The child→master half is not cosmetic: without it, ticking every
-  tool by hand never re-checks the master, so the collapse rule never fires and the selection freezes into
-  an explicit list that will not pick up tools the server adds later.
+- Master ↔ child sync runs **both ways**, and the master is **also derived from its children at render
+  time** — not only on a change event. The render-time half is the one that bites: `GetEnabledToolsAsync`
+  expands `mcp:{id}` *away* into per-tool keys, and that projection is what the composer renders from on
+  every reopen, so without it the master draws unchecked above a full set of ticked children and the
+  collapse rule below silently stops firing. This shipped wrong for one review cycle and was caught by the
+  `critic` pass, not by testing — the browser leg only ever exercised a *fresh* conversation, which seeds
+  from `allToolKeys()` and therefore does contain `mcp:{id}`. See Verification.
 - `readToolChecks` **collapses** an all-ticked server back to the bare `mcp:{id}`, preserving ADR 0026's
   "all of this server's tools, including future ones" meaning.
 - Child labels are the tool name **verbatim** (the ADR 0048 precedent); `addCheck` uses `textContent`.
@@ -152,7 +161,10 @@ sweep a checkbox disclosure into the saved keys.
   recorded rather than solved. Recorded, not repaired.
 - **Per-tool keys are server-supplied and uncapped.** A server advertising very many tools grows the stored
   selection. No cap exists for `skill:{name}` either; noted as a residual, not addressed.
-- A stored selection can hold a stale `mcp:{deletedId}:{tool}`. It is inert and self-heals on the next Save.
+- **Stale keys self-heal, with one deliberate exception.** A key for a server that is gone from the catalog
+  (deleted or management-disabled) is inert and clears on the next Save. A `mcp:{id}:{tool}` key for a server
+  that still exists but whose tools are not currently known is **kept** — that is the backstop above, and it
+  persists until the server's tools are discovered again.
 
 ## Alternatives considered
 
@@ -191,6 +203,18 @@ demo server and a never-connected one. Measured:
 That last row is the ADR's most important claim and the one with no automated test, so it was **mutation
 checked**: with the preservation rule removed, the same script reports `persistedAfterSave: []` — the
 selection silently destroyed. With it, the key survives.
+
+**A second round was run after the `critic` pass**, covering the two cases the first round did not reach.
+Both were genuine defects in the first implementation, not merely unmeasured:
+
+| What | Before the fix | After |
+|---|---|---|
+| Master on a **reopened** conversation (rendered from the `GetEnabledToolsAsync` projection) | `master:false` above `children:[true,true]` — contradictory, and the next save emitted `["mcp:offline:demo_search","mcp:offline:demo_delete"]` instead of collapsing | `master:true`, next save `["mcp:offline"]` |
+| Stale keys for a server absent from the catalog (`mcp:ghost`, `mcp:ghost:zombie_tool`) | preserved forever | **dropped**, while `mcp:offline-cold:secret_tool` (live server, unrendered children) still **survives** |
+
+The first of those is why the render-time master derivation exists. It was invisible to the original leg
+because a fresh conversation seeds its selection from `allToolKeys()`, which contains `mcp:{id}`; only a
+reopen goes through the projection that expands it away.
 
 `Edit_PreservesKnownToolNames` and the grain's `Keep` clause were mutation checked the same way (both tests
 fail when the clause is removed), as was the `.ToList()` in `RecordToolNamesAsync` (see the gotcha).

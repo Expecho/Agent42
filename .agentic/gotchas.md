@@ -1277,10 +1277,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `ExpandSkillsWildcard(ExpandMcpWildcard(effective))`, MCP first and skills outermost — because
   `BindAgent_SnapshotsEnabledTools` and `LegacyState_NullEnabledTools_MeansAll` assert an order-sensitive
   sequence; and
-  **(c)** `renderToolChecks`'s `cb.checked` is now a **three-way** OR and **both** wildcard terms are
-  load-bearing. Deleting either one re-opens this trap for that whole group, and the *only* thing in the repo
-  that catches it is a source-text assertion (`SkillPickerAssetsTests.CheckedState_KeepsTheThreeWayWildcardOr`)
-  — there is no JS runner. Treat that assertion as the guard it is; do not "tidy" it away.
+  **(c)** `renderToolChecks`'s `cb.checked` is a wildcard OR — **three-way** as of ADR 0048, **four-way**
+  since ADR 0058 added the parent-key term — and **both** wildcard terms are load-bearing. Deleting either one
+  re-opens this trap for that whole group, and the *only* thing in the repo that catches it is a source-text
+  assertion (`SkillPickerAssetsTests.CheckedState_KeepsTheFourWayWildcardOr`) — there is no JS runner. Treat
+  that assertion as the guard it is; do not "tidy" it away.
 - **Per-MCP-TOOL keys (ADR 0058) — a FIFTH trap, and the only one whose list is not knowable locally.**
   Each tool of a server is now selectable as `mcp:{id}:{toolName}`, a third level under `mcp` ⊃ `mcp:{id}`.
   Four things differ from the third and fourth traps above, and the differences are the whole design:
@@ -1335,13 +1336,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`EffectiveEnabledTools`, `ExpandMcpWildcard`,
   `ExpandSkillsWildcard`, the per-server MCP gate and the per-skill `selectedSkillPaths` gate in
   `BuildAgent`),
-  `src/Agent42.Backend/wwwroot/js/tools.js` (`renderToolChecks`'s three-way `cb.checked`),
+  `src/Agent42.Backend/wwwroot/js/tools.js` (`renderToolChecks`'s four-way `cb.checked`, ADR 0058),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
   `UserDefault_AppliesWhenNoOverride`, `McpTools_ResolvedBeforeFirstBuildAgent`,
   `PerServerSelection_EnablesOnlySelectedServer`, `GetEnabledTools_NullSelection_ExpandsWildcardToPerServerKeys`,
   `PerSkillSelection_AdvertisesOnlySelectedSkill`, `LegacySkillsWildcard_EnablesEverySkill`,
   `GetEnabledTools_NullSelection_ExpandsSkillsWildcard`),
-  `tests/Agent42.Tests/SkillPickerAssetsTests.cs` (`CheckedState_KeepsTheThreeWayWildcardOr`),
+  `tests/Agent42.Tests/SkillPickerAssetsTests.cs` (`CheckedState_KeepsTheFourWayWildcardOr`),
   `tests/Agent42.Tests/ToolCatalogTests.cs`, `.agentic/decisions/0021-selectable-tools-three-layer.md`,
   `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`,
   `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`,
@@ -2336,25 +2337,41 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ### A collection expression into `IReadOnlyList<T>` written from INSIDE a grain is unreadable from Cosmos
 
-- **Claim:** a collection expression targeting `IReadOnlyList<T>` does **not** compile to a `List<T>`. Measured
-  on .NET 10 it produces a compiler-internal type — `<>z__ReadOnlyList`1` for a spread of unknown length,
-  `<>z__ReadOnlyArray`1` for a plain spread or a multi-element literal, `<>z__ReadOnlySingleElementList`1` for
-  a one-element literal. `JsonGrainStorageSerializer` (the Cosmos path, ADR 0039) writes that name into the
-  document's `$type` and then **cannot construct it on read**, failing with
-  `Unable to find a constructor to use for type <>z__ReadOnlyList`1[System.String]`. The document is not
-  subtly wrong, it is **unreadable**, and it strands the whole state root — for `mcp-servers` that is every one
-  of a user's MCP servers, their encrypted secrets and their OAuth token.
+- **Claim:** a collection expression targeting `IReadOnlyList<T>` does **not** compile to a `List<T>`. It
+  produces a compiler-internal type. Measured on .NET 10, each of these was printed from a running test:
+
+  | Expression | Runtime type |
+  |---|---|
+  | `[.. src.Select(...).Where(...)]` (no known count) | `<>z__ReadOnlyList`1` |
+  | `[.. src]` where `src` is an `IReadOnlyList<T>` (known count) | `<>z__ReadOnlyArray`1` |
+  | `["a", "b"]` (multi-element literal) | `<>z__ReadOnlyArray`1` |
+  | `["a"]` (single-element literal) | `<>z__ReadOnlySingleElementList`1` |
+
+  `JsonGrainStorageSerializer` (the Cosmos path, ADR 0039) writes that name into the document's `$type` and
+  then **cannot construct it on read**. Both observed failures, verbatim:
+  `Unable to find a constructor to use for type <>z__ReadOnlyArray`1[System.String]` (from `[.. toolNames]`)
+  and `... <>z__ReadOnlyList`1[System.String]` (from a `Select`/`Where` spread). The document is not subtly
+  wrong, it is **unreadable**, and it strands the whole state root — for `mcp-servers` that is every one of a
+  user's MCP servers, their encrypted secrets and their OAuth token. Note the repo's guard test asserts only
+  the substring `"Unable to find a constructor to use"`, so it does not pin which type maps to which shape;
+  the table above is the measurement, and it is what makes the entry actionable.
 - **Nothing warns.** It serializes fine, so a write-side test passes. The binary
   `SerializationCompatibilityTests` passes too, because Orleans' own serializer handles these types happily.
   Only the Cosmos JSON path sees it — the same split ADR 0045 recorded for a different reason.
 - **⚠ The scope is narrower than it first looks, and getting THAT wrong wastes a day.** Almost every persisted
-  list is built in a **request handler** and reaches the grain as a **call argument**. Orleans' binary
-  serializer round-trips arguments across the grain boundary and rebuilds them as a plain `List<T>`, so the
-  compiler-internal type never survives to the write. Measured: with `AgentApi.Users.cs` deliberately reverted
-  to a bare `ToolCatalog.Sanitize(...)`, `ProfileToolSave_IsReadableBackFromStorage` still passed and the
-  stored runtime type read back as `System.Collections.Generic.List`1[System.String]`. So the handlers in
-  `AgentApi.Users.cs`, `AgentApi.Mcp.cs`, `AgentApi.Models.cs` and `AgentApi.UserSkills.cs` are **not** at
-  risk and "fixing" them is churn. (They were fixed and then reverted here, on evidence.)
+  list is built in a **request handler** and reaches the grain as a **call argument**, and the grain-call
+  boundary launders it back to a plain `List<T>` before any write. **Both transports were measured, because
+  they are different mechanisms and only checking one is an evidence gap:**
+  - **Remote/serialized** (the test topology — `SharedApiFixture` injects the TestCluster's external client):
+    with `AgentApi.Users.cs` deliberately reverted to a bare `ToolCatalog.Sanitize(...)`,
+    `ProfileToolSave_IsReadableBackFromStorage` still passed and the stored runtime type read back as
+    `System.Collections.Generic.List`1[System.String]`.
+  - **Local/deep-copied** (the PRODUCTION topology — `Program.cs` co-hosts the silo via `builder.UseOrleans`,
+    so handler→grain calls never serialize): Orleans' `DeepCopier<T>` was measured directly and converts
+    `<>z__ReadOnlyList`1` → `List`1` as well.
+
+  So the handlers in `AgentApi.Users.cs`, `AgentApi.Mcp.cs`, `AgentApi.Models.cs` and `AgentApi.UserSkills.cs`
+  are **not** at risk and "fixing" them is churn. (They were fixed and then reverted here, on evidence.)
 - **The exposed case is state a grain constructs INSIDE itself and writes directly** — no serializer in
   between to launder it. That is the entire rule: **inside a grain, `.ToList()`; crossing into one, either.**
   It also explains the lone `?.ToList()` at `AgentGrain.BuildAgent.cs`'s `SetEnabledToolsAsync`, which looks

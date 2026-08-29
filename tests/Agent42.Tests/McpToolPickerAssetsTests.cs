@@ -36,10 +36,16 @@ public sealed class McpToolPickerAssetsTests
             app);
     }
 
-    // AC22 — master and children stay in sync BOTH ways. The child-to-master direction is the one worth
-    // pinning: without it, ticking every tool by hand never re-checks the master, so the collapse rule below
-    // never fires and the selection persists as N per-tool keys. That is not broken today, but it silently
-    // freezes the selection against tools the server adds LATER — the server key would have granted them.
+    // AC22 — master and children stay in sync BOTH ways, and the master is ALSO derived from the children at
+    // render time. The child-to-master direction is the one worth pinning, in both forms.
+    //
+    // The render-time half was missed on the first pass and shipped broken for one review cycle, so it is
+    // worth saying exactly how it failed rather than only what it does. `GetEnabledToolsAsync` expands
+    // `mcp:{id}` AWAY into per-tool keys, and that projection is what the composer renders from on every
+    // reopen — so the master drew UNCHECKED above a full set of ticked children (measured:
+    // `master:false, children:[true,true]`), and `readToolChecks` then declined to collapse, freezing the
+    // selection into an explicit list that will not pick up tools the server adds later. It was invisible in
+    // testing because a FRESH conversation seeds from `allToolKeys()`, which does contain `mcp:{id}`.
     [Fact]
     public async Task RenderToolChecks_SyncsMasterFromChildren()
     {
@@ -47,8 +53,13 @@ public sealed class McpToolPickerAssetsTests
 
         // master → children
         Assert.Contains(Collapse("for (const box of boxes) box.checked = master.checked;"), app);
-        // children → master
+        // children → master, on change
         Assert.Contains(Collapse("master.checked = boxes.every((b) => b.checked);"), app);
+        // ...and children → master at RENDER time, which the change handler cannot cover. Without this the
+        // master draws UNCHECKED above a full set of ticked children on every reopen, because
+        // GetEnabledToolsAsync expands mcp:{id} AWAY into per-tool keys — measured, and the reason the
+        // collapse rule silently stopped firing on existing conversations.
+        Assert.Contains(Collapse("if (boxes.every((b) => b.checked)) master.checked = true;"), app);
     }
 
     // The disclosure must not be a checkbox. readToolChecks collects EVERY checkbox in the container, so a
@@ -103,7 +114,13 @@ public sealed class McpToolPickerAssetsTests
         // The stash is per container, and weak so a detached container is collectable.
         Assert.Contains(Collapse("const unrenderedKeys = new WeakMap();"), app);
         Assert.Contains(
-            Collapse("""unrenderedKeys.set(container, selectedKeys.filter((k) => k.startsWith("mcp:") && !rendered.has(k)));"""),
+            Collapse("const serverRowKeys = new Set(mcpServers.map((t) => t.key));"),
+            app);
+        // Scoped to keys whose SERVER ROW is present: a key for a deleted or management-disabled server must
+        // still drop on the next Save, or stored selections grow forever and never shed dead keys — which
+        // would quietly falsify ToolCatalog.Sanitize's "a stale key self-heals" doc comment.
+        Assert.Contains(
+            Collapse("selectedKeys.filter((k) => !rendered.has(k) && [...serverRowKeys].some((s) => k.startsWith(`${s}:`)))"),
             app);
 
         // ...and read back for THAT container, never a shared slot.
