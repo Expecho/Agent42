@@ -540,6 +540,22 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   key, which is why that key keeps its `ToolNameToKey` entries even though it became a wildcard (the
   key-coverage guard test found this).
 
+  **As of ADR 0057 the RAG-vs-skills asymmetry above is a THREE-way split, and the new arm breaks the
+  rule the other two follow.** Long-term memory (`ToolCatalog.Memory`) is like RAG in being *not a tool*,
+  and like skills in being *selectable* — so it is gated by the selection but **NOT** by capability:
+
+  | provider | is a tool? | gated by capability | gated by selection |
+  |---|---|---|---|
+  | `AgentSkillsProvider` | yes (`load_skill`) | yes | yes (`skill:{name}` / `skills`) |
+  | RAG `TextSearchProvider` | no | no | no — document presence only (ADR 0008) |
+  | Hindsight memory | no | **no** | **yes** (`memory`) |
+
+  The tidy-looking mistake is now the reverse of the original one: memory owns a catalog key, so folding
+  it in beside the skills provider under `capabilities.SupportsTools` reads as consistency and is wrong —
+  a text-only model with `memory` selected **must** still get memory. `NoToolModel_StillGetsMemory`
+  (null selection) and `MemorySelection_IsNotIntersectedWithCapability` (explicit selection) are the two
+  guards, and they cover different halves: a null selection never reaches the predicate at all.
+
   **A skill whose frontmatter `name` disagrees with its directory name is SILENTLY INVISIBLE** (measured,
   1.13.0, ADR 0048): `AgentFileSkillsSource` returns an **empty list — it does not throw** — for that
   directory. So the framework enforces `name == directory name`, skill names are unique for free, and a
@@ -552,8 +568,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `PerSkillSelection_AdvertisesOnlySelectedSkill`),
   `tests/Agent42.Tests/SkillCatalogTests.cs` (`Discover_ToleratesBadInput` — pins the name/directory rule),
   `tests/Agent42.Tests/FakeChatClient.cs` (`ToolsEcho`),
-  `.agentic/decisions/0048-per-skill-selectable-tools.md`
-- **Verified:** 2026-08-24
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`NoToolModel_StillGetsMemory`,
+  `MemorySelection_IsNotIntersectedWithCapability` — the ADR 0057 three-way arm),
+  `.agentic/decisions/0048-per-skill-selectable-tools.md`,
+  `.agentic/decisions/0057-memory-as-a-selectable-tool.md`
+- **Verified:** 2026-08-29
 
 ### The boot chat is not created via `startNewConversation()` — seed its composer state explicitly
 
@@ -1262,6 +1281,18 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   load-bearing. Deleting either one re-opens this trap for that whole group, and the *only* thing in the repo
   that catches it is a source-text assertion (`SkillPickerAssetsTests.CheckedState_KeepsTheThreeWayWildcardOr`)
   — there is no JS runner. Treat that assertion as the guard it is; do not "tidy" it away.
+- **`memory` (ADR 0057) is a static key, NOT a fifth wildcard — but it breaks two other assumptions.**
+  It needs no expansion, no `Sanitize` pass-through and no `renderToolChecks` term: it is an ordinary key
+  in both `AllSelectableToolKeys` and `Descriptors`, and the picker renders it as a builtin with no
+  frontend change at all. Two things about it are novel and worth not re-deriving. **(a) It is the first
+  key in `Descriptors` with NO `ToolNameToKey` entry**, because it gates an `AIContextProvider` rather
+  than a tool — safe only because the key-coverage guard runs name → key and there is no reverse guard;
+  do not "complete" the map by inventing one. **(b) It is EXEMPT from the selection ∩ capability
+  intersection** that `ToolCatalog`'s docstring otherwise states universally — see the
+  `AgentSkillsProvider` is a TOOL entry for the three-way table. It also lands **OFF for anyone who ever
+  pressed Save**, the ADR 0048/0053 divergence, with no migration — and on agent chats there is **no
+  in-UI remedy at all** (`BindAgentAsync` always materialises, a re-bind returns early, and the popover
+  is hidden on agent chats), which is accepted and documented rather than fixed.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`[Id(10)] EnabledTools`),
   `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Sanitize`, `AllSelectableToolKeys`, `Mcp` + `Skills` wildcards,
   `IsMcpServerEnabled`, `McpServerKey`, `IsSkillEnabled`, `SkillKey`),
@@ -1284,8 +1315,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`,
   `.agentic/decisions/0048-per-skill-selectable-tools.md`,
   `src/Agent42.Agents/UserSkills/IUserSkillProvider.cs` + `UserSkillProvider.cs` (the per-user layer),
-  `.agentic/decisions/0049-upload-agent-skills.md`
-- **Verified:** 2026-08-25
+  `.agentic/decisions/0049-upload-agent-skills.md`,
+  `.agentic/decisions/0057-memory-as-a-selectable-tool.md`
+- **Verified:** 2026-08-29
 
 ### Remote MCP servers: a live-socket cache (bound it), a group-gated catalog exception, and a route-matcher trap
 
@@ -2175,13 +2207,37 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **`MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` is the load-bearing one** — it is the only test that
   fails in both directions, and deleting it as "redundant with the incognito test" would leave the gate
   free to be silently stuck off. Same trap as `_turnLocation`.
+- **The SELECTION gate added by ADR 0057 is the opposite case, and the asymmetry is deliberate.**
+  `BuildMemoryProvider` now takes the effective selection and returns null when it lacks
+  `ToolCatalog.Memory` — read at **build time**, as a plain value, not through a delegate. That is
+  correct for the two layers that *rebuild*: `SetEnabledToolsAsync` does the snapshot/rebuild/restore/write
+  dance explicitly, `BindAgentAsync` rebuilds, and activation builds from scratch — whereas nothing
+  rebuilds between turns of a warm activation, which is what forces `_ephemeral` into a delegate.
+  **But the USER-DEFAULT layer is stale by design, and for `memory` that staleness bites harder than for
+  any other key.** `_userDefaultEnabledTools` is assigned only in `OnActivateAsync`
+  (`AgentGrain.cs:224`), so changing the Preferences default does **not** rebuild a warm grain — the
+  documented accepted staleness of the `null == all` entry above. For `web_search` that means a tool
+  lingers one activation too long. For `memory` it means a user who has just switched off **the widest
+  egress in the app keeps POSTing their conversation to a third party** in every already-warm chat until
+  it deactivates. That is inherited behaviour, not a defect introduced by ADR 0057, and it was
+  deliberately not fixed there — but do not repeat the flat claim that a build-time read "can never go
+  stale". It cannot go stale on the override/agent layers; it can on the user default. **Do not
+  "harmonise" the two**: folding the selection into `IsEnabled` is unnecessary indirection, and folding
+  `_ephemeral` into the build-time check is the bug the entry above describes. The guard on the rebuild
+  half is `TogglingMemoryMidChat_DetachesOnTheSameActivation` — two turns on one activation, and the only
+  test in the ADR 0057 set that fails in **both** mutation directions (measured 2026-08-29). Keep the
+  `_memory.Client is null` term **first** in that predicate: it is what makes
+  `UnconfiguredMemory_MakesNoCalls` assert zero calls rather than failing ones.
 - **Evidence:** `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`,
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_ephemeral` and its `finally`),
   `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`BuildDocumentSearchProvider`, the shape copied),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`EphemeralTurn_NeitherRecallsNorRetains`,
-  `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne`),
-  `.agentic/decisions/0056-hindsight-long-term-memory.md`
-- **Verified:** 2026-08-28
+  `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne`,
+  `TogglingMemoryMidChat_DetachesOnTheSameActivation`, `MemoryDeselected_NeitherRecallsNorRetains`,
+  `MemorySelection_IsNotIntersectedWithCapability`),
+  `.agentic/decisions/0056-hindsight-long-term-memory.md`,
+  `.agentic/decisions/0057-memory-as-a-selectable-tool.md`
+- **Verified:** 2026-08-29
 
 ### `InvokingContext` has no `RequestMessages`, and injected `Instructions` neither come back nor accumulate
 
