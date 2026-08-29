@@ -100,6 +100,114 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal("gen-1", generated.Value.Id);
     }
 
+    /// <summary>
+    /// State a grain builds <b>itself</b> and writes, round-tripped through the real Cosmos serializer.
+    ///
+    /// <para><b>The trap.</b> A collection expression targeting <c>IReadOnlyList&lt;T&gt;</c> does not compile
+    /// to a <c>List&lt;T&gt;</c>. Measured on .NET 10 it compiles to a compiler-internal type —
+    /// <c>&lt;&gt;z__ReadOnlyList`1</c> for a spread of unknown length, <c>&lt;&gt;z__ReadOnlyArray`1</c> for a
+    /// plain spread or multi-element literal, <c>&lt;&gt;z__ReadOnlySingleElementList`1</c> for a one-element
+    /// literal. <c>JsonGrainStorageSerializer</c> writes that name into the document's <c>$type</c> and then
+    /// <b>cannot construct it on read</b>: "Unable to find a constructor to use for type". The document is not
+    /// subtly wrong, it is unreadable, and it strands the entire state root.</para>
+    ///
+    /// <para><b>Why it is nevertheless rare, and where it actually bites — established by measurement, not by
+    /// reading the code.</b> Almost every persisted list is built in a request handler and reaches the grain as
+    /// a CALL ARGUMENT. Orleans' binary serializer round-trips arguments across that boundary and rebuilds them
+    /// as a plain <c>List&lt;T&gt;</c>, so the compiler-internal type never survives to the write. Verified: with
+    /// <c>AgentApi.Users.cs</c> deliberately reverted to a bare collection expression,
+    /// <c>ToolSelectionApiTests.ProfileToolSave_IsReadableBackFromStorage</c> still passed and the stored
+    /// runtime type read back as <c>System.Collections.Generic.List`1[System.String]</c>. So the handlers are
+    /// NOT at risk, and "fixing" them is churn.</para>
+    ///
+    /// <para><b>The exposed case is state a grain constructs INSIDE itself</b>, after the boundary, and writes
+    /// directly — there is no serializer in between to launder it. That is exactly why
+    /// <c>AgentGrain.BuildAgent.cs</c> carries a lone <c>?.ToList()</c> that looks gratuitous next to every
+    /// handler that has none, and why <c>UserMcpConfigGrain.RecordToolNamesAsync</c> needs one too. This test
+    /// covers that class of write; see the gotcha for the rule.</para>
+    /// </summary>
+    [Fact]
+    public void StateBuiltInsideAGrain_WithACollectionExpression_CannotBeReadBack()
+    {
+        IReadOnlyList<string> discovered = ["alpha", "beta"];
+
+        // Exactly what RecordToolNamesAsync would produce with `KnownToolNames = [.. toolNames]`.
+        var broken = new UserMcpConfigState
+        {
+            Config = new UserMcpConfig(
+                new List<StoredMcpServer>
+                {
+                    new("s1", "n", "https://e/mcp", nameof(McpAuthMode.None), Enabled: true,
+                        KnownToolNames: [.. discovered]),
+                },
+                1),
+        };
+
+        var ex = Record.Exception(() => Serializer().Deserialize<UserMcpConfigState>(Serializer().Serialize(broken)));
+
+        // The hazard is real and this is what it looks like. If this ever stops throwing, .NET changed how
+        // collection expressions materialise (or Newtonsoft learned to construct them) — at which point the
+        // .ToList() calls guarding it can be revisited, and not before.
+        Assert.NotNull(ex);
+        Assert.Contains("Unable to find a constructor to use", (ex.InnerException ?? ex).Message, StringComparison.Ordinal);
+    }
+
+    // The same write built the way the grain actually builds it — .ToList() — is readable. This is the half
+    // that fails if UserMcpConfigGrain.RecordToolNamesAsync regresses to a collection expression.
+    [Fact]
+    public void KnownToolNames_WrittenWithToList_SurviveTheCosmosJsonRoundTrip()
+    {
+        IReadOnlyList<string> discovered = ["alpha", "beta"];
+
+        var state = new UserMcpConfigState
+        {
+            Config = new UserMcpConfig(
+                new List<StoredMcpServer>
+                {
+                    new("s1", "n", "https://e/mcp", nameof(McpAuthMode.None), Enabled: true,
+                        KnownToolNames: discovered.ToList()),
+                },
+                1),
+        };
+
+        var restored = Serializer().Deserialize<UserMcpConfigState>(Serializer().Serialize(state));
+
+        Assert.Equal(["alpha", "beta"], Assert.Single(restored.Config.Servers).KnownToolNames);
+    }
+
+    // The other half of the scoping rule, and the one that actually matters in production. Handler-built
+    // lists are laundered by the grain-call boundary — but by WHICH mechanism depends on topology, and only
+    // one of the two is exercised by the test suite's own shape.
+    //
+    // `SharedApiFixture` injects the TestCluster's EXTERNAL client, so its handler→grain calls fully
+    // serialize (that is what ProfileToolSave_IsReadableBackFromStorage measures). Production does not:
+    // `Program.cs` co-hosts the silo via `builder.UseOrleans`, so those same calls are LOCAL and Orleans
+    // DEEP-COPIES the arguments instead. Different code path, same question — and the answer has to be
+    // measured, not assumed, because the conclusion drawn from it is "the request handlers need no
+    // .ToList() and adding one is churn".
+    [Fact]
+    public void OrleansDeepCopy_LaundersACollectionExpressionList_LikeSerializationDoes()
+    {
+        IReadOnlyList<string> source = ["web_search", "location"];
+        IReadOnlyList<string> collectionExpression = [.. source.Select(x => x).Where(x => x.Length > 0)];
+
+        // Precondition: the hazard is actually present before the copy, or this proves nothing. Asserted on
+        // the type NAME, not its full name — a compiler-internal type is still called `<>z__ReadOnlyList`1`,
+        // so a substring test against the full name would match the very `List`1[[System.String` it is meant
+        // to exclude.
+        Assert.StartsWith("<>z__", collectionExpression.GetType().Name, StringComparison.Ordinal);
+        Assert.NotEqual(typeof(List<string>), collectionExpression.GetType());
+
+        var copier = Cluster.GetSiloServiceProvider(Cluster.Primary.SiloAddress)
+            .GetRequiredService<Orleans.Serialization.DeepCopier<UserProfile>>();
+
+        var copied = copier.Copy(new UserProfile("nl-NL", "dark", collectionExpression));
+
+        Assert.Equal(typeof(List<string>), copied.EnabledTools!.GetType());
+        // ...and the laundered value survives the Cosmos JSON round trip, which the original would not.
+        Serializer().Deserialize<UserProfileState>(Serializer().Serialize(new UserProfileState { Profile = copied }));
+    }
+
     // The pin flag (ADR 0045) appended a trailing [Id(5)] member to the POSITIONAL record ConversationInfo,
     // and every conversation-index document already in Cosmos was written without it. The mechanism at risk
     // is Newtonsoft constructor-binding a MISSING property onto a positional record — which only this path
@@ -124,6 +232,41 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Null(plainChat.AgentId);
         Assert.False(plainChat.Pinned);
     }
+
+    // Per-tool selection appended a trailing [Id(12)] KnownToolNames to the POSITIONAL record StoredMcpServer,
+    // and every mcp-servers document already in Cosmos was written without it. The mechanism at risk is
+    // Newtonsoft constructor-binding a MISSING property onto a positional record — which only this path
+    // exercises, exactly as ADR 0045 established for the pin flag. Getting this wrong does not lose a
+    // checkbox; it strands the whole document and takes every one of that user's MCP servers with it,
+    // including their encrypted secrets and OAuth token.
+    [Fact]
+    public void UserMcpConfigDocument_WrittenBeforeKnownToolNames_StillDeserializes()
+    {
+        var restored = Serializer().Deserialize<UserMcpConfigState>(new BinaryData(PreKnownToolNamesMcpConfigJson));
+
+        var server = Assert.Single(restored.Config.Servers);
+        Assert.Equal("srv-1", server.Id);
+        Assert.Equal("Dataverse", server.Name);
+        Assert.Equal("cipher-header", server.HeaderValueCiphertext);   // the secrets still bind
+        Assert.Equal("cipher-token", server.TokenCiphertext);
+        Assert.Equal(["scope.read", "scope.write"], server.Scopes);    // ...and so does the prior list member
+        Assert.Equal(3, restored.Config.Version);
+
+        // The whole point: an absent "KnownToolNames" key must bind to the constructor default, not throw and
+        // not strand the document. Every existing server reads as never-connected — zero state migration — and
+        // re-learns its tool names on that user's next chat activation.
+        Assert.Null(server.KnownToolNames);
+    }
+
+    /// <summary>
+    /// An <c>mcp-servers</c> payload in the shape written before per-tool selection — note the total absence
+    /// of a <c>KnownToolNames</c> key. Committed rather than generated at run time, for the same reason as
+    /// <see cref="StoredAgentGrainStateJson"/>: a fixture the test writes for itself would agree with whatever
+    /// the code currently does and could never fail.
+    /// </summary>
+    private const string PreKnownToolNamesMcpConfigJson = """
+        {"$id":"1","$type":"Agent42.Agents.UserMcpConfigState, Agent42.Agents","Config":{"$id":"2","$type":"Agent42.Agents.UserMcpConfig, Agent42.Agents","Servers":{"$type":"System.Collections.Generic.List`1[[Agent42.Agents.StoredMcpServer, Agent42.Agents]], System.Private.CoreLib","$values":[{"$id":"3","$type":"Agent42.Agents.StoredMcpServer, Agent42.Agents","Id":"srv-1","Name":"Dataverse","Endpoint":"https://mcp.example/sse","Auth":"InteractiveOAuth","Enabled":true,"HeaderName":"X-Api-Key","HeaderValueCiphertext":"cipher-header","Authority":"https://login.example/tenant","ClientId":"client-1","ClientSecretCiphertext":"cipher-secret","Scopes":{"$type":"System.Collections.Generic.List`1[[System.String, System.Private.CoreLib]], System.Private.CoreLib","$values":["scope.read","scope.write"]},"TokenCiphertext":"cipher-token"}]},"Version":3}}
+        """;
 
     /// <summary>
     /// A <c>conversations</c> payload in the shape written before ADR 0045 — note the total absence of a

@@ -2620,6 +2620,123 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains(ToolCatalog.WebSearch, effective); // the static keys are still there
     }
 
+    // AC5 — the headline of per-tool selection: a selection naming ONE tool of a server exposes that tool and
+    // not its siblings. `mcp:{id}:{tool}` is the third and narrowest level of mcp ⊃ mcp:{id} ⊃ mcp:{id}:{tool}.
+    [Fact]
+    public async Task PerToolSelection_ExposesOnlySelectedTool()
+    {
+        await using var cluster = await NewClusterWithMcpServersAsync(
+            new McpServerTools("srv-a", [FakeMcpTool("jira_get_issue"), FakeMcpTool("jira_delete_issue")],
+                ["jira_get_issue", "jira_delete_issue"]),
+            new McpServerTools("srv-b", [FakeMcpTool("mcp_tool_b")], ["mcp_tool_b"]));
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-per-tool");
+        await agent.SetEnabledToolsAsync([ToolCatalog.McpToolKey("srv-a", "jira_get_issue")]);
+
+        var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+
+        Assert.Contains("jira_get_issue", registered);
+        Assert.DoesNotContain("jira_delete_issue", registered); // the sibling is NOT granted
+        Assert.DoesNotContain("mcp_tool_b", registered);        // nor another server's tool
+    }
+
+    // AC6 — zero migration, level two: a stored `mcp:{id}` keeps its exact ADR 0026 meaning (every tool of
+    // that server), so every selection saved before per-tool selection existed keeps working untouched.
+    [Fact]
+    public async Task LegacyPerServerKey_StillEnablesEveryToolOfThatServer()
+    {
+        await using var cluster = await NewClusterWithMcpServersAsync(
+            new McpServerTools("srv-a", [FakeMcpTool("jira_get_issue"), FakeMcpTool("jira_delete_issue")],
+                ["jira_get_issue", "jira_delete_issue"]));
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-legacy-server-key");
+        await agent.SetEnabledToolsAsync([ToolCatalog.McpServerKey("srv-a")]);
+
+        var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+
+        Assert.Contains("jira_get_issue", registered);
+        Assert.Contains("jira_delete_issue", registered);
+    }
+
+    // AC7 — zero migration, level one: null == all still means every tool of every server.
+    [Fact]
+    public async Task NullSelection_StillEnablesEveryMcpTool()
+    {
+        await using var cluster = await NewClusterWithMcpServersAsync(
+            new McpServerTools("srv-a", [FakeMcpTool("jira_get_issue"), FakeMcpTool("jira_delete_issue")],
+                ["jira_get_issue", "jira_delete_issue"]),
+            new McpServerTools("srv-b", [FakeMcpTool("mcp_tool_b")], ["mcp_tool_b"]));
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-null-all-tools");
+
+        var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+
+        Assert.Contains("jira_get_issue", registered);
+        Assert.Contains("jira_delete_issue", registered);
+        Assert.Contains("mcp_tool_b", registered);
+    }
+
+    // AC8 — the projection the picker consumes: with tool names known, a null (all) selection comes back as
+    // explicit PER-TOOL keys, so every checkbox the picker renders round-trips through a Save. The names come
+    // from KnownToolNames, which is also what GET /api/tools renders from — one source, so the picker and the
+    // gate cannot disagree.
+    [Fact]
+    public async Task GetEnabledTools_ExpandsPerServerKeyFromKnownToolNames()
+    {
+        await using var cluster = await NewClusterWithMcpServersAsync(
+            new McpServerTools("srv-a", [FakeMcpTool("jira_get_issue"), FakeMcpTool("jira_delete_issue")],
+                ["jira_get_issue", "jira_delete_issue"]));
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-expand-per-tool");
+
+        var effective = await agent.GetEnabledToolsAsync();
+
+        Assert.DoesNotContain(ToolCatalog.Mcp, effective);                          // wildcard never surfaces
+        Assert.DoesNotContain(ToolCatalog.McpServerKey("srv-a"), effective);        // nor the server key...
+        Assert.Contains(ToolCatalog.McpToolKey("srv-a", "jira_get_issue"), effective);    // ...only its tools
+        Assert.Contains(ToolCatalog.McpToolKey("srv-a", "jira_delete_issue"), effective);
+        Assert.Contains(ToolCatalog.WebSearch, effective);                          // static keys still there
+    }
+
+    // AC9 — the rule that must never be "simplified away", and the one a reviewer should check first. A server
+    // whose tool names are NOT known (never connected, or connected and genuinely exposing none) keeps its
+    // bare mcp:{id} key UNEXPANDED.
+    //
+    // Expanding it into an empty set would hand the picker a master checkbox with zero children, and both
+    // master states are then wrong: unchecked drops any stored per-tool key and silently disables the server;
+    // checked — "all children ticked" being vacuously true over nothing — collapses to mcp:{id} and silently
+    // re-grants every tool the user deliberately deselected. Keeping the key intact means the picker renders
+    // an ordinary, correct server checkbox and nothing is lost.
+    [Fact]
+    public async Task GetEnabledTools_UnknownToolList_KeepsServerKeyIntact()
+    {
+        await using var cluster = await NewClusterWithMcpServersAsync(
+            // Never connected: tools present is irrelevant, KnownToolNames is what governs the projection.
+            new McpServerTools("srv-unknown", [FakeMcpTool("mcp_tool_x")], KnownToolNames: null),
+            // Connected, but exposes nothing.
+            new McpServerTools("srv-empty", [], KnownToolNames: []));
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-unknown-tools");
+
+        var effective = await agent.GetEnabledToolsAsync();
+
+        Assert.Contains(ToolCatalog.McpServerKey("srv-unknown"), effective);
+        Assert.Contains(ToolCatalog.McpServerKey("srv-empty"), effective);
+        Assert.DoesNotContain(ToolCatalog.McpToolKey("srv-unknown", "mcp_tool_x"), effective);
+    }
+
+    // The server-side rule is a projection, never a persistence change: an explicitly stored per-tool key is
+    // returned as-is, and a stored per-server key for a server with KNOWN tools expands. Both halves in one
+    // test, because it is the pair that shows the expansion is driven by names and not by the wildcard.
+    [Fact]
+    public async Task GetEnabledTools_ExplicitPerToolKey_RoundTripsUnchanged()
+    {
+        await using var cluster = await NewClusterWithMcpServersAsync(
+            new McpServerTools("srv-a", [FakeMcpTool("jira_get_issue"), FakeMcpTool("jira_delete_issue")],
+                ["jira_get_issue", "jira_delete_issue"]));
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-explicit-per-tool-roundtrip");
+        await agent.SetEnabledToolsAsync([ToolCatalog.McpToolKey("srv-a", "jira_get_issue")]);
+
+        var effective = await agent.GetEnabledToolsAsync();
+
+        Assert.Equal([ToolCatalog.McpToolKey("srv-a", "jira_get_issue")], effective);
+    }
+
     // AC2: a per-conversation override limits the registered tools to the selected key's tools (+ get_date).
     [Fact]
     public async Task Override_LimitsRegisteredTools()

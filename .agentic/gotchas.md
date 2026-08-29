@@ -1277,10 +1277,43 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `ExpandSkillsWildcard(ExpandMcpWildcard(effective))`, MCP first and skills outermost — because
   `BindAgent_SnapshotsEnabledTools` and `LegacyState_NullEnabledTools_MeansAll` assert an order-sensitive
   sequence; and
-  **(c)** `renderToolChecks`'s `cb.checked` is now a **three-way** OR and **both** wildcard terms are
-  load-bearing. Deleting either one re-opens this trap for that whole group, and the *only* thing in the repo
-  that catches it is a source-text assertion (`SkillPickerAssetsTests.CheckedState_KeepsTheThreeWayWildcardOr`)
-  — there is no JS runner. Treat that assertion as the guard it is; do not "tidy" it away.
+  **(c)** `renderToolChecks`'s `cb.checked` is a wildcard OR — **three-way** as of ADR 0048, **four-way**
+  since ADR 0058 added the parent-key term — and **both** wildcard terms are load-bearing. Deleting either one
+  re-opens this trap for that whole group, and the *only* thing in the repo that catches it is a source-text
+  assertion (`SkillPickerAssetsTests.CheckedState_KeepsTheFourWayWildcardOr`) — there is no JS runner. Treat
+  that assertion as the guard it is; do not "tidy" it away.
+- **Per-MCP-TOOL keys (ADR 0058) — a FIFTH trap, and the only one whose list is not knowable locally.**
+  Each tool of a server is now selectable as `mcp:{id}:{toolName}`, a third level under `mcp` ⊃ `mcp:{id}`.
+  Four things differ from the third and fourth traps above, and the differences are the whole design:
+  **(a) `Sanitize` and `IsMcpServerKey` need NO change** — a per-tool key is a per-server key plus a
+  segment, so the existing `StartsWith("mcp:")` prefix test already admits it. That is *why* the key was
+  shaped this way. **Nothing anywhere parses a key**; gating and expansion construct one from a known
+  `(serverId, toolName)` pair and test membership. Do not add a parser.
+  **(b) The expansion source is `KnownToolNames`, NOT live `Tools`, and that is load-bearing.** The picker
+  (`GET /api/tools`, reading the config grain) and `ExpandMcpWildcard` (reading the group's
+  `KnownToolNames`, carried on `McpServerTools`) must be **one source**. Any divergence mints a key with no
+  checkbox, which the next Save drops — the exact hazard these traps exist to close, one level down. This
+  is `MergedSkills()`'s discipline, and the reason `AgentGrain` still never touches `IUserMcpConfigGrain`
+  (no sixth `OnActivateAsync` field).
+  **(c) ⚠ NEVER expand `mcp:{id}` into an EMPTY set.** A server whose `KnownToolNames` is empty (never
+  connected) must keep its bare `mcp:{id}` key intact. Expanding it yields a master checkbox with zero
+  children, and *both* master states are then wrong: unchecked drops any stored per-tool key and silently
+  disables the server; checked — vacuously "all children ticked" over nothing — collapses to `mcp:{id}` and
+  silently re-grants tools the user deliberately deselected. `GetEnabledTools_UnknownToolList_KeepsServerKeyIntact`
+  pins it. Note the `toolCatalog.length > 0` guard in `profile.js`/`agents.js` does **not** catch this: it
+  fires only on a *total* catalog failure.
+  **(d) `cb.checked` is now a FOUR-way OR** (`CheckedState_KeepsTheFourWayWildcardOr`), the fourth term
+  being `!!tool.parentKey && selected.has(tool.parentKey)` — what makes a stored `mcp:{id}` render as *all
+  of its tools ticked* rather than as an empty group. And `renderToolChecks` must partition MCP rows on
+  **`parentKey`**, never `startsWith("mcp:")`, because a server row and its tool rows share that prefix.
+  Two client rules have **no runtime test** (no JS runner, by design) and are guarded only by source text in
+  `McpToolPickerAssetsTests`: the **collapse** rule (an all-ticked server saves as the bare `mcp:{id}`, so
+  it still picks up tools the server adds later) and the **preservation** rule (`readToolChecks` carries
+  forward per-tool keys for servers whose children were not rendered, over a **per-container `WeakMap`** —
+  a module-level slot would be correct only under an unstated "every read follows that container's own
+  render" invariant across three dialogs). The preservation rule was verified by hand over CDP *and*
+  mutation checked: removing it makes an unrelated toggle silently destroy the stored selection (measured,
+  `persistedAfterSave: []`). Treat those assertions as the guards they are.
 - **`memory` (ADR 0057) is a static key, NOT a fifth wildcard — but it breaks two other assumptions.**
   It needs no expansion, no `Sanitize` pass-through and no `renderToolChecks` term: it is an ordinary key
   in both `AllSelectableToolKeys` and `Descriptors`, and the picker renders it as a builtin with no
@@ -1303,13 +1336,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`EffectiveEnabledTools`, `ExpandMcpWildcard`,
   `ExpandSkillsWildcard`, the per-server MCP gate and the per-skill `selectedSkillPaths` gate in
   `BuildAgent`),
-  `src/Agent42.Backend/wwwroot/js/tools.js` (`renderToolChecks`'s three-way `cb.checked`),
+  `src/Agent42.Backend/wwwroot/js/tools.js` (`renderToolChecks`'s four-way `cb.checked`, ADR 0058),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
   `UserDefault_AppliesWhenNoOverride`, `McpTools_ResolvedBeforeFirstBuildAgent`,
   `PerServerSelection_EnablesOnlySelectedServer`, `GetEnabledTools_NullSelection_ExpandsWildcardToPerServerKeys`,
   `PerSkillSelection_AdvertisesOnlySelectedSkill`, `LegacySkillsWildcard_EnablesEverySkill`,
   `GetEnabledTools_NullSelection_ExpandsSkillsWildcard`),
-  `tests/Agent42.Tests/SkillPickerAssetsTests.cs` (`CheckedState_KeepsTheThreeWayWildcardOr`),
+  `tests/Agent42.Tests/SkillPickerAssetsTests.cs` (`CheckedState_KeepsTheFourWayWildcardOr`),
   `tests/Agent42.Tests/ToolCatalogTests.cs`, `.agentic/decisions/0021-selectable-tools-three-layer.md`,
   `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`,
   `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`,
@@ -1342,6 +1375,21 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   breaks routing for *every* endpoint (this bit all six `MapAgentApi` hosts — DevHost 500s + 39 test failures —
   until each registered it). The MCP **endpoint is deliberately NOT SSRF-guarded** (config, not a model/request
   — may be `localhost`), exactly like the user-provider endpoint (see that gotcha).
+  **(4) `RecordToolNamesAsync` is the ONE write that must not bump the version (ADR 0058), and (1) is why.**
+  Every other write goes through `BumpAsync`, and the version is the key the cache in (1) holds **live MCP
+  sockets** under. Discovered tool names are picker metadata, not connection config, so persisting them must
+  not tear down every warm grain's connections for that user. Get the reason right, because a wrong one
+  invites a "simplification": the method is *also* a no-op when the names are unchanged, and that half alone
+  would already stop a bumping write from recurring forever — so "it would bump on every activation" is
+  **not** the justification. Even a single genuine name change must not invalidate the socket cache. Do not
+  reuse `SaveAsync` for it, and note the doc comments on `SaveAsync`/`GetVersionAsync`/`UserMcpConfig` now say
+  "every CONFIGURATION write" for exactly this reason.
+  **(5) `GET /api/tools` must NEVER call `IUserMcpToolProvider`.** Two measured reasons: `ConnectAllAsync` is
+  a **sequential** `foreach` with a **10 s** timeout per server behind a per-user semaphore, so three dead
+  servers cost ~30 s before the picker is usable; and resolving an InteractiveOAuth token **refreshes and
+  saves it**, so the GET would become a **write** that bumps the version and invalidates the socket cache on
+  a page load. The endpoint reads persisted `KnownToolNames` instead. The cost is the cold-start window: a
+  newly added server has no per-tool checkboxes until that user's next chat activation connects to it.
 - **Evidence:** `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (`RetainedVersionsPerUser`, `EvictBeyondAsync`),
   `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Mcp` wildcard + `IsMcpServerEnabled`, both absent from `ToolNameToKey`),
   `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent` per-server MCP gate over `_mcpServers`),
@@ -2286,3 +2334,53 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/OtelConfigurationTests.cs`, `tests/Agent42.Tests/MeterNamingTests.cs`,
   `src/Agent42.Backend/Telemetry/LiveTelemetryCaptureExtensions.cs` (`OtelSourceName`, `AddSource`)
 - **Verified:** 2026-08-28
+
+### A collection expression into `IReadOnlyList<T>` written from INSIDE a grain is unreadable from Cosmos
+
+- **Claim:** a collection expression targeting `IReadOnlyList<T>` does **not** compile to a `List<T>`. It
+  produces a compiler-internal type. Measured on .NET 10, each of these was printed from a running test:
+
+  | Expression | Runtime type |
+  |---|---|
+  | `[.. src.Select(...).Where(...)]` (no known count) | `<>z__ReadOnlyList`1` |
+  | `[.. src]` where `src` is an `IReadOnlyList<T>` (known count) | `<>z__ReadOnlyArray`1` |
+  | `["a", "b"]` (multi-element literal) | `<>z__ReadOnlyArray`1` |
+  | `["a"]` (single-element literal) | `<>z__ReadOnlySingleElementList`1` |
+
+  `JsonGrainStorageSerializer` (the Cosmos path, ADR 0039) writes that name into the document's `$type` and
+  then **cannot construct it on read**. Both observed failures, verbatim:
+  `Unable to find a constructor to use for type <>z__ReadOnlyArray`1[System.String]` (from `[.. toolNames]`)
+  and `... <>z__ReadOnlyList`1[System.String]` (from a `Select`/`Where` spread). The document is not subtly
+  wrong, it is **unreadable**, and it strands the whole state root — for `mcp-servers` that is every one of a
+  user's MCP servers, their encrypted secrets and their OAuth token. Note the repo's guard test asserts only
+  the substring `"Unable to find a constructor to use"`, so it does not pin which type maps to which shape;
+  the table above is the measurement, and it is what makes the entry actionable.
+- **Nothing warns.** It serializes fine, so a write-side test passes. The binary
+  `SerializationCompatibilityTests` passes too, because Orleans' own serializer handles these types happily.
+  Only the Cosmos JSON path sees it — the same split ADR 0045 recorded for a different reason.
+- **⚠ The scope is narrower than it first looks, and getting THAT wrong wastes a day.** Almost every persisted
+  list is built in a **request handler** and reaches the grain as a **call argument**, and the grain-call
+  boundary launders it back to a plain `List<T>` before any write. **Both transports were measured, because
+  they are different mechanisms and only checking one is an evidence gap:**
+  - **Remote/serialized** (the test topology — `SharedApiFixture` injects the TestCluster's external client):
+    with `AgentApi.Users.cs` deliberately reverted to a bare `ToolCatalog.Sanitize(...)`,
+    `ProfileToolSave_IsReadableBackFromStorage` still passed and the stored runtime type read back as
+    `System.Collections.Generic.List`1[System.String]`.
+  - **Local/deep-copied** (the PRODUCTION topology — `Program.cs` co-hosts the silo via `builder.UseOrleans`,
+    so handler→grain calls never serialize): Orleans' `DeepCopier<T>` was measured directly and converts
+    `<>z__ReadOnlyList`1` → `List`1` as well.
+
+  So the handlers in `AgentApi.Users.cs`, `AgentApi.Mcp.cs`, `AgentApi.Models.cs` and `AgentApi.UserSkills.cs`
+  are **not** at risk and "fixing" them is churn. (They were fixed and then reverted here, on evidence.)
+- **The exposed case is state a grain constructs INSIDE itself and writes directly** — no serializer in
+  between to launder it. That is the entire rule: **inside a grain, `.ToList()`; crossing into one, either.**
+  It also explains the lone `?.ToList()` at `AgentGrain.BuildAgent.cs`'s `SetEnabledToolsAsync`, which looks
+  gratuitous beside every handler that has none — it is not, and it must not be "tidied".
+- **Evidence:** `src/Agent42.Agents/Mcp/UserMcpConfigGrain.cs` (`RecordToolNamesAsync`, `toolNames.ToList()`),
+  `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`SetEnabledToolsAsync`, `Sanitize(tools)?.ToList()`),
+  `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
+  (`StateBuiltInsideAGrain_WithACollectionExpression_CannotBeReadBack` — asserts the throw, so it fails loudly
+  if .NET or Newtonsoft ever changes; `KnownToolNames_WrittenWithToList_SurviveTheCosmosJsonRoundTrip`),
+  `tests/Agent42.Tests/ToolSelectionApiTests.cs` (`ProfileToolSave_IsReadableBackFromStorage` — asserts the
+  stored type is `List<string>`, pinning the laundering rather than assuming it)
+- **Verified:** 2026-08-29

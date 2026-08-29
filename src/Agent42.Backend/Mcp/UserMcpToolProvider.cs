@@ -96,10 +96,16 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             // Every management-enabled server yields a group, even when it contributes no tools: the grain
             // needs the id to expand the `mcp` wildcard into the complete per-server key set (ADR 0026). A
             // skipped/unreachable server is recorded as an empty group here (see the Skip local).
+            //
+            // A skipped group still carries the server's PREVIOUSLY discovered KnownToolNames. This is what
+            // makes "names are never erased" true: a server that is briefly unreachable keeps its per-tool
+            // checkboxes, so a user's partial per-tool selection survives the outage instead of being dropped
+            // by the next picker Save. It is also why KnownToolNames is not derived from Tools — here Tools is
+            // empty and the names are not.
             void Skip(string reason)
             {
                 _logger.LogInformation("MCP server {Server} for user {User}: {Reason}", server.Name, userId, reason);
-                servers.Add(new McpServerTools(server.Id, []));
+                servers.Add(new McpServerTools(server.Id, [], server.KnownToolNames));
             }
 
             // None/Header (Phase 1), ClientCredentials (Phase 2), and InteractiveOAuth (Phase 3) connect.
@@ -134,7 +140,17 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             {
                 var connection = await _connectionFactory.ConnectAsync(server, secrets, timeout.Token);
                 // Wrap each tool so its persisted result is bounded (ADR 0004), preserving name + schema.
-                servers.Add(new McpServerTools(server.Id, [.. connection.Tools.Select(WrapForTruncation)]));
+                var tools = connection.Tools.Select(WrapForTruncation).ToList();
+
+                // A SUCCESSFUL connect is the only place names are learned. Persist them (non-bumping, and a
+                // no-op when unchanged — see IUserMcpConfigGrain.RecordToolNamesAsync) so GET /api/tools can
+                // render per-tool checkboxes without ever connecting, and hand the SAME list to the grain on
+                // the group. One source of names for the picker and the gate: if these two ever diverge, the
+                // picker mints per-tool keys with no checkbox and the next Save silently drops them.
+                var discovered = tools.Select(t => t.Name).ToList();
+                await RecordToolNamesAsync(userId, server, discovered);
+
+                servers.Add(new McpServerTools(server.Id, tools, discovered));
                 connections.Add(connection.Connection);
             }
             catch (Exception ex)
@@ -145,11 +161,28 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 _logger.LogWarning(ex,
                     "MCP server {Server} for user {User} could not be reached; skipping its tools.",
                     server.Name, userId);
-                servers.Add(new McpServerTools(server.Id, []));
+                servers.Add(new McpServerTools(server.Id, [], server.KnownToolNames));
             }
         }
 
         return (servers, connections);
+    }
+
+    // Persists the tool names just discovered from a server. Best-effort by design: this is picker metadata,
+    // so a storage hiccup must not fail an activation that otherwise has working tools — the names simply stay
+    // as they were and are re-recorded on the next successful connect.
+    private async Task RecordToolNamesAsync(string userId, StoredMcpServer server, IReadOnlyList<string> names)
+    {
+        try
+        {
+            await _grains.GetGrain<IUserMcpConfigGrain>(userId).RecordToolNamesAsync(server.Id, names);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Recording discovered tool names for MCP server {Server} (user {User}) failed; the picker keeps the previous names.",
+                server.Name, userId);
+        }
     }
 
     // Resolves the current InteractiveOAuth access token for a server, refreshing it (app-owned) when it is

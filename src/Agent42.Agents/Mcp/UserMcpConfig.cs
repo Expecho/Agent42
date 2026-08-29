@@ -39,6 +39,21 @@ public enum McpAuthMode
 /// <para>Trailing <c>[Id]</c>s from <see cref="Authority"/> onward have defaults so a Phase-1 overlay
 /// deserializes the Phase-2/3 fields as null with no migration.</para>
 /// </summary>
+/// <param name="KnownToolNames">
+/// The tool names last discovered from this server, or null when it has never connected. <b>Not a
+/// setting</b> — the user cannot type it and no request carries it; the tool provider records it after a
+/// SUCCESSFUL connect, which is what lets <c>GET /api/tools</c> render per-tool checkboxes
+/// (<c>mcp:{id}:{toolName}</c>) without connecting to anything itself.
+///
+/// <para><b>Never erased.</b> A skipped or unreachable server leaves the previous names standing, and
+/// <see cref="IUserMcpConfigGrain.SaveAsync"/> preserves this field across an edit exactly as it preserves
+/// the secret ciphertexts — <c>ToStored</c> builds a fresh record from the request and would otherwise
+/// destroy it on every rename or header rotation. Both halves are load-bearing: together they are why the
+/// picker can never mint a per-tool key it has no checkbox for.</para>
+///
+/// <para>Trailing and optional, so an overlay persisted before it existed deserializes with no
+/// migration.</para>
+/// </param>
 [GenerateSerializer]
 [Alias("Agent42.Agents.StoredMcpServer")]
 public sealed record StoredMcpServer(
@@ -56,14 +71,22 @@ public sealed record StoredMcpServer(
     [property: Id(9)] string? ClientSecretCiphertext = null,
     [property: Id(10)] IReadOnlyList<string>? Scopes = null,
     // ── InteractiveOAuth mode — Phase 3 ─────────────────────────────
-    [property: Id(11)] string? TokenCiphertext = null);
+    [property: Id(11)] string? TokenCiphertext = null,
+    // ── Discovered metadata, never a user selection — see the param doc above ──
+    [property: Id(12)] IReadOnlyList<string>? KnownToolNames = null);
 
 /// <summary>
 /// A user's remote-MCP-server overlay: the servers they added and a monotonically-increasing
-/// <see cref="Version"/> the grain bumps on every write. The version is the cache key the per-user tool
-/// provider stamps on (like <c>UserChatClientFactoryProvider</c>), so a save is reflected on the next
-/// grain activation without an app restart. An empty overlay (the default) means "no MCP servers" — the
-/// egress surface only opens once the user deliberately adds one.
+/// <see cref="Version"/> the grain bumps on every <b>configuration</b> write. The version is the cache key
+/// the per-user tool provider stamps on (like <c>UserChatClientFactoryProvider</c>), so a save is reflected
+/// on the next grain activation without an app restart. An empty overlay (the default) means "no MCP
+/// servers" — the egress surface only opens once the user deliberately adds one.
+///
+/// <para><b>Not every write bumps, and that exception is deliberate.</b>
+/// <see cref="IUserMcpConfigGrain.RecordToolNamesAsync"/> persists discovered
+/// <see cref="StoredMcpServer.KnownToolNames"/> <i>without</i> bumping: names are picker metadata, not
+/// connection config, and bumping would invalidate the live-socket tool cache for every warm grain of that
+/// user on what is merely a re-discovery of the same tools.</para>
 /// </summary>
 [GenerateSerializer]
 [Alias("Agent42.Agents.UserMcpConfig")]

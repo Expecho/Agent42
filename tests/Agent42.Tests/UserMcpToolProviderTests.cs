@@ -241,6 +241,73 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
             });
     }
 
+    // A successful connect is the ONLY place tool names are learned, and it persists them so GET /api/tools
+    // can render per-tool checkboxes without ever connecting. The group carries the SAME list it just
+    // recorded — one source of names for the picker and for the grain's wildcard expansion. If these two ever
+    // diverge, the expansion mints mcp:{id}:{tool} keys the picker has no checkbox for, and the next Save
+    // drops them.
+    [Fact]
+    public async Task SuccessfulConnect_RecordsDiscoveredToolNames()
+    {
+        const string user = "mcp-tp-record";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await grain.SaveAsync(HeaderServer("a"));
+
+        var set = await NewProvider().GetForUserAsync(user);
+
+        Assert.Equal(["tool_a"], Assert.Single(set.Servers).KnownToolNames);
+        Assert.Equal(["tool_a"], Assert.Single((await grain.GetAsync()).Servers).KnownToolNames);
+    }
+
+    // AC13 — one half of the invariant the whole feature rests on: names are NEVER erased. A server that is
+    // unreachable this activation contributes no tools, but it must keep the names it was known to expose, so
+    // its per-tool checkboxes survive the outage. Without this a transient failure would render the group with
+    // ZERO children, and the next picker Save would either silently disable the server or silently re-grant a
+    // tool the user deliberately deselected — the exact failure per-tool selection was designed to avoid.
+    //
+    // This is also why McpServerTools.KnownToolNames is not derived from Tools: right here, Tools is empty and
+    // the names are not.
+    [Fact]
+    public async Task FailedConnect_KeepsPreviouslyKnownToolNames()
+    {
+        const string user = "mcp-tp-failed-keeps-names";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await grain.SaveAsync(HeaderServer("a"));
+
+        // First activation succeeds and learns the names.
+        await NewProvider().GetForUserAsync(user);
+        Assert.Equal(["tool_a"], Assert.Single((await grain.GetAsync()).Servers).KnownToolNames);
+
+        // The server goes dark. Bump the version so the provider re-connects rather than serving its cache.
+        _connections.DeadServerIds.Add("a");
+        await grain.SaveAsync(HeaderServer("a") with { Name = "still-dark" });
+
+        var set = await NewProvider().GetForUserAsync(user);
+
+        var group = Assert.Single(set.Servers);
+        Assert.Empty(group.Tools);                            // unreachable: contributes nothing
+        Assert.Equal(["tool_a"], group.KnownToolNames);       // ...but the checkboxes survive
+        Assert.Equal(["tool_a"], Assert.Single((await grain.GetAsync()).Servers).KnownToolNames);
+    }
+
+    // The same guarantee on the OTHER empty-group path: a server skipped before any connect is attempted
+    // (unsupported auth mode, or InteractiveOAuth with no token yet) must also keep its names.
+    [Fact]
+    public async Task SkippedServer_KeepsPreviouslyKnownToolNames()
+    {
+        const string user = "mcp-tp-skipped-keeps-names";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await grain.SaveAsync(HeaderServer("a"));
+        await NewProvider().GetForUserAsync(user);
+
+        // InteractiveOAuth with no stored token → the "not connected" Skip path, never reaching ConnectAsync.
+        await grain.SaveAsync(HeaderServer("a") with { Auth = nameof(McpAuthMode.InteractiveOAuth), TokenCiphertext = null });
+
+        var group = Assert.Single((await NewProvider().GetForUserAsync(user)).Servers);
+        Assert.Empty(group.Tools);
+        Assert.Equal(["tool_a"], group.KnownToolNames);
+    }
+
     private sealed class FakeMcpConnectionFactory : IMcpConnectionFactory
     {
         public HashSet<string> DeadServerIds { get; } = new(StringComparer.Ordinal);

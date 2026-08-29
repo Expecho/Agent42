@@ -55,10 +55,21 @@ builder.Services.AddSingleton<IChatClientFactory>(sp =>
 builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
     new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>()));
 
-// No per-user MCP store offline (config-driven remote MCP servers): the single-user adapter hands back an
-// empty tool set for every user. The MCP providers CRUD/UI is still exercisable; only overlay→tools
+// No per-user MCP store offline (config-driven remote MCP servers): the single-user adapter hands back a
+// FIXED tool set for every user. The MCP providers CRUD/UI is still exercisable; only overlay→tools
 // reflection is prod-wired.
-builder.Services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvider());
+//
+// The set is seeded (it used to be empty) so the per-MCP-tool picker is exercisable offline. Two demo tools
+// under the adapter's constant "offline" server id; the Tools convenience derives KnownToolNames from their
+// names, which is the offline analogue of a successful connect.
+builder.Services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvider
+{
+    Tools =
+    [
+        AIFunctionFactory.Create(() => "ok", "demo_search", "a demo MCP search tool"),
+        AIFunctionFactory.Create(() => "ok", "demo_delete", "a demo MCP delete tool"),
+    ],
+});
 builder.Services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
 builder.Services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
 
@@ -168,4 +179,42 @@ app.UseStaticFiles();
 
 app.MapAgentApi();
 
-app.Run();
+// StartAsync + WaitForShutdownAsync rather than Run(), because the seed below is a GRAIN CALL: it needs the
+// silo running, and calling it before the runtime is up NREs inside Orleans' InsideRuntimeClient.
+await app.StartAsync();
+
+// Seed the MCP overlay so the per-MCP-tool picker has something to render offline.
+//
+// BOTH halves are required and their ids MUST match, or the leg proves nothing. The tool PROVIDER above
+// feeds AgentGrain (gating + wildcard expansion) under the constant server id "offline"; GET /api/tools
+// reads the CONFIG GRAIN, which the offline adapter never writes — SingleUserMcpToolProvider does not call
+// RecordToolNamesAsync (that lives in the Backend provider), and the MCP UI cannot supply KnownToolNames
+// (neither McpServerUpsertRequest nor ToStored carries them). Adding a server through the UI would mint a
+// fresh Guid id and get no tool rows. So the grain is seeded programmatically, pinned to "offline".
+//
+// Consequence, expected: these two tools enter BuildAgent's list for every offline conversation under
+// null == all.
+//
+// "local-dev" is CurrentUser's fallback user id when no Easy Auth principal header is present, which is
+// every request offline. It is private there, so it is repeated (not imported) here.
+var mcpConfig = app.Services.GetRequiredService<IGrainFactory>().GetGrain<IUserMcpConfigGrain>("local-dev");
+await mcpConfig.SaveAsync(new StoredMcpServer(
+    Id: SingleUserMcpToolProvider.DefaultServerId,
+    Name: "Demo MCP server",
+    Endpoint: "https://demo.invalid/mcp",
+    Auth: nameof(McpAuthMode.None),
+    Enabled: true,
+    KnownToolNames: ["demo_search", "demo_delete"]));
+
+// A second server that has NEVER connected, so the cold-start half is exercisable offline too: it renders a
+// plain checkbox with the "tools not discovered yet" hint and no disclosure, and — the part worth checking by
+// hand — a stored mcp:{id}:{tool} key for it must SURVIVE a picker Save even though no child box exists to
+// carry it. Deliberately absent from the tool provider above: a configured server nobody has connected to.
+await mcpConfig.SaveAsync(new StoredMcpServer(
+    Id: "offline-cold",
+    Name: "Never-connected server",
+    Endpoint: "https://cold.invalid/mcp",
+    Auth: nameof(McpAuthMode.None),
+    Enabled: true));
+
+await app.WaitForShutdownAsync();

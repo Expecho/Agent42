@@ -299,4 +299,43 @@ public sealed class McpServersApiTests(SharedApiFixture fixture) : SharedCluster
         using var afterDoc = JsonDocument.Parse(await aliceAfter.Content.ReadAsStringAsync());
         Assert.Empty(afterDoc.RootElement.GetProperty("servers").EnumerateArray());
     }
+
+    // AC12 — the single easiest way to ship per-tool selection broken. KnownToolNames is DISCOVERED metadata
+    // that no request carries, and PUT /api/mcp-servers/{id} rebuilds the record from scratch via ToStored,
+    // so nothing on the request path can carry it forward: only UserMcpConfigGrain.SaveAsync's Keep clause
+    // does. Drop that clause and every rename, header rotation or enable/disable round-trip silently wipes a
+    // server's per-tool checkboxes — turning the "children not rendered" state into the ROUTINE state
+    // immediately after an MCP edit, which is exactly when a user opens the Tools picker.
+    //
+    // Exercised through the real endpoint on purpose: a grain-level test cannot see ToStored, which is the
+    // thing that actually drops the field.
+    [Fact]
+    public async Task Edit_PreservesKnownToolNames()
+    {
+        const string user = "user-known-tools";
+
+        (await Client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", user, HeaderServerBody())))
+            .EnsureSuccessStatusCode();
+        var id = (await SingleServer(await Client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", user))))
+            .GetProperty("id").GetString()!;
+
+        // Stand in for a successful connect: the provider records what it discovered.
+        var config = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await config.RecordToolNamesAsync(id, ["jira_get_issue", "jira_delete_issue"]);
+
+        var put = await Client.SendAsync(Request(HttpMethod.Put, $"/api/mcp-servers/{id}", user, new
+        {
+            name = "Renamed",
+            endpoint = "https://example.crm4.dynamics.com/mcp",
+            auth = "Header",
+            enabled = true,
+            headerName = "Authorization",
+            headerValue = (string?)null,
+        }));
+        put.EnsureSuccessStatusCode();
+
+        var stored = Assert.Single((await config.GetAsync()).Servers);
+        Assert.Equal("Renamed", stored.Name); // the edit really happened
+        Assert.Equal(["jira_get_issue", "jira_delete_issue"], stored.KnownToolNames);
+    }
 }

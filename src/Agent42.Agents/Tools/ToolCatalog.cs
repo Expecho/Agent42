@@ -7,8 +7,8 @@ namespace Agent42.Agents;
 ///
 /// <para><b>It is no longer the COMPLETE catalog, and that is deliberate.</b> Two groups are appended to
 /// <see cref="Descriptors"/> by <c>GET /api/tools</c> rather than living here, because neither is static:
-/// per-server MCP keys (<c>mcp:{id}</c>, per-user — ADR 0026) and per-skill keys (<c>skill:{name}</c> —
-/// ADR 0048, extended by ADR 0049). <b>Both are now per-user:</b> the skill keys are the shipped
+/// MCP keys (<c>mcp:{id}</c> per server — ADR 0026 — and <c>mcp:{id}:{toolName}</c> per tool, both per-user)
+/// and per-skill keys (<c>skill:{name}</c> — ADR 0048, extended by ADR 0049). <b>Both are now per-user:</b> the skill keys are the shipped
 /// <c>SkillCatalog</c> (read from disk, per-deployment) OVERLAID with the skills that user has uploaded,
 /// an upload of the same name winning. Each group is represented here only by a bare <b>wildcard</b> key
 /// (<see cref="Mcp"/>, <see cref="Skills"/>) that is a selection sentinel, never a rendered checkbox. The
@@ -118,9 +118,10 @@ public static class ToolCatalog
 
     /// <summary>
     /// The remote-MCP-server <b>wildcard</b> ("all servers") meta-key (ADR 0026, amends 0024). Each MCP server
-    /// is now individually selectable as a per-server key <c>mcp:{serverId}</c> (see <see cref="McpServerKey"/>);
-    /// this bare <c>mcp</c> key is the wildcard the grain honours in <c>BuildAgent</c>
-    /// (<c>enabled.Contains(Mcp) || enabled.Contains(mcp:{id})</c>). It is deliberately <b>kept in</b>
+    /// is individually selectable as a per-server key <c>mcp:{serverId}</c> (see <see cref="McpServerKey"/>),
+    /// and each of that server's tools as a per-tool key <c>mcp:{serverId}:{toolName}</c> (see
+    /// <see cref="McpToolKey"/>) — a three-level hierarchy this bare <c>mcp</c> key sits at the top of, and
+    /// which the grain honours in <c>BuildAgent</c> via <see cref="IsMcpToolEnabled"/>. It is deliberately <b>kept in</b>
     /// <see cref="AllSelectableToolKeys"/> (so the <c>null == all</c> default and any legacy stored selection
     /// carrying literal <c>"mcp"</c> keep enabling every server, with no migration) but <b>removed from</b>
     /// <see cref="Descriptors"/> (it is no longer a single UI checkbox — the picker renders one box per server).
@@ -130,7 +131,11 @@ public static class ToolCatalog
     /// </summary>
     public const string Mcp = "mcp";
 
-    /// <summary>The prefix of a per-server MCP selection key: <c>mcp:{serverId}</c> (ADR 0026).</summary>
+    /// <summary>
+    /// The prefix of a per-server MCP selection key: <c>mcp:{serverId}</c> (ADR 0026). Also the prefix of a
+    /// per-tool key <c>mcp:{serverId}:{toolName}</c>, which is a per-server key with a second segment appended
+    /// — see <see cref="McpToolKey"/>.
+    /// </summary>
     public const string McpServerKeyPrefix = "mcp:";
 
     /// <summary>The always-on date tool that no selection can disable.</summary>
@@ -203,17 +208,48 @@ public static class ToolCatalog
     /// <summary>The per-server selection key for an MCP server id: <c>mcp:{serverId}</c> (ADR 0026).</summary>
     public static string McpServerKey(string serverId) => McpServerKeyPrefix + serverId;
 
-    /// <summary>True when a key is a per-server MCP key (<c>mcp:{id}</c>), not the bare <c>mcp</c> wildcard.</summary>
+    /// <summary>
+    /// True when a key is <b>any</b> prefixed MCP key — a per-server one (<c>mcp:{id}</c>) or a per-tool one
+    /// (<c>mcp:{id}:{toolName}</c>) — as opposed to the bare <c>mcp</c> wildcard. Deliberately a prefix test and
+    /// not a parser: per-tool keys pass through <see cref="Sanitize"/> on this predicate with no code change,
+    /// which is the whole reason the per-tool key was shaped as a per-server key plus a segment.
+    /// </summary>
     public static bool IsMcpServerKey(string key) => key.StartsWith(McpServerKeyPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The per-tool selection key for one tool of one MCP server: <c>mcp:{serverId}:{toolName}</c>. Server ids
+    /// are 32 hex chars (<c>Guid.NewGuid().ToString("n")</c>) and carry no colon, but nothing in this codebase
+    /// relies on that by splitting: gating and expansion <b>construct</b> a key from a known
+    /// <c>(serverId, toolName)</c> pair and test set membership. Do not add a parser.
+    /// </summary>
+    public static string McpToolKey(string serverId, string toolName)
+        => McpServerKeyPrefix + serverId + ":" + toolName;
 
     /// <summary>
     /// True when a server's tools should be kept given the effective selection (ADR 0026): the selection
     /// contains either the bare <see cref="Mcp"/> wildcard (the <c>null == all</c> default or a legacy
     /// all-servers selection) OR this server's own <c>mcp:{serverId}</c> key. Capability (<c>SupportsTools</c>)
     /// is the outer gate applied by the caller, exactly as for the static keys.
+    ///
+    /// <para><b>Subsumed by <see cref="IsMcpToolEnabled"/> and kept anyway.</b> The per-tool gate is this test
+    /// OR-ed with one more term, so <c>BuildAgent</c> calls that one instead. This overload stays because it is
+    /// the honest predicate wherever a whole server — not a named tool — is the subject, and callers that have
+    /// no tool name in hand should not have to invent one.</para>
     /// </summary>
     public static bool IsMcpServerEnabled(string serverId, ISet<string> enabled)
         => enabled.Contains(Mcp) || enabled.Contains(McpServerKey(serverId));
+
+    /// <summary>
+    /// True when one named tool of one MCP server should be kept given the effective selection — the third and
+    /// narrowest level of the hierarchy <c>mcp</c> ⊃ <c>mcp:{serverId}</c> ⊃ <c>mcp:{serverId}:{toolName}</c>.
+    /// Any of the three grants it: the bare wildcard (<c>null == all</c> / legacy), the server's own key (every
+    /// tool of that server — its ADR 0026 meaning, unchanged), or this tool's own key.
+    ///
+    /// <para>Capability (<c>SupportsTools</c>) is the outer gate applied by the caller, exactly as for the
+    /// static keys — selection can only narrow, never grant.</para>
+    /// </summary>
+    public static bool IsMcpToolEnabled(string serverId, string toolName, ISet<string> enabled)
+        => IsMcpServerEnabled(serverId, enabled) || enabled.Contains(McpToolKey(serverId, toolName));
 
     /// <summary>The per-skill selection key for a skill's frontmatter name: <c>skill:{name}</c>.</summary>
     public static string SkillKey(string name) => SkillKeyPrefix + name;
@@ -248,12 +284,23 @@ public static class ToolCatalog
     /// Null passes through unchanged (the <c>null == all</c> sentinel). Called by the grain before persisting a
     /// selection so state can never hold a garbage or client-invented key.
     ///
-    /// <para>Per-skill keys (<c>skill:{name}</c>) and per-server MCP keys (<c>mcp:{id}</c>, ADR 0026) are
-    /// passed through after the static keys, in input order, deduped — Sanitize is deliberately <b>static</b>
-    /// (no per-user server list, and no disk read for the skill list), so it validates neither a server id nor
-    /// a skill name here. A stale <c>mcp:{deletedId}</c> or <c>skill:{removedName}</c> is inert (it gates
-    /// nothing in <c>BuildAgent</c>) and self-heals when the user next saves from the picker, which only
-    /// offers current entries.</para>
+    /// <para>Per-skill keys (<c>skill:{name}</c>) and prefixed MCP keys — per-server (<c>mcp:{id}</c>, ADR
+    /// 0026) <b>and</b> per-tool (<c>mcp:{id}:{toolName}</c>) alike — are passed through after the static keys,
+    /// in input order, deduped. Per-tool keys need no clause of their own: they start with <c>mcp:</c>, so
+    /// <see cref="IsMcpServerKey"/> already admits them. Sanitize is deliberately <b>static</b> (no per-user
+    /// server list, no disk read for the skill list, and no MCP connection), so it validates neither a server
+    /// id, nor a tool name, nor a skill name here. A stale <c>mcp:{deletedId}</c>,
+    /// <c>mcp:{id}:{removedTool}</c> or <c>skill:{removedName}</c> is inert — it gates nothing in
+    /// <c>BuildAgent</c>.</para>
+    ///
+    /// <para><b>Self-healing is NOT universal, and the exception is deliberate.</b> A stale key normally
+    /// clears when the user next saves from the picker, which only offers current entries. But
+    /// <c>readToolChecks</c> deliberately <b>carries forward</b> a <c>mcp:{id}:{tool}</c> key whose SERVER
+    /// row is still in the catalog while its tool row was not rendered — that is the backstop against
+    /// silently destroying a per-tool selection the picker could not display. So a per-tool key for a live
+    /// server persists until that server's tools are known again; only keys whose server row is gone
+    /// (deleted or management-disabled) clear on the next save. Both halves are intentional; do not "fix"
+    /// either into the other.</para>
     /// </summary>
     public static IReadOnlyList<string>? Sanitize(IReadOnlyList<string>? tools)
         => tools is null
@@ -268,5 +315,13 @@ public static class ToolCatalog
 /// <summary>
 /// One entry in the selectable-tools catalog surfaced by <c>GET /api/tools</c> (ADR 0021):
 /// the logical key, a display label, and whether the tool requires a hosted-tools model.
+///
+/// <para>A <b>response DTO only</b> — never grain state, so <paramref name="ParentKey"/> needs no
+/// <c>[Id]</c> and no migration.</para>
 /// </summary>
-public sealed record ToolDescriptor(string Key, string Label, bool RequiresHostedTools);
+/// <param name="ParentKey">
+/// The key of the row this one nests under, or null for a top-level row. Set to <c>mcp:{serverId}</c> on the
+/// per-tool MCP descriptors so the picker can <b>partition on this field</b> rather than string-splitting keys
+/// — a <c>startsWith("mcp:")</c> test cannot tell a server row from one of its tool rows.
+/// </param>
+public sealed record ToolDescriptor(string Key, string Label, bool RequiresHostedTools, string? ParentKey = null);
