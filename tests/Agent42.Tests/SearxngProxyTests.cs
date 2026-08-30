@@ -311,7 +311,11 @@ public sealed class SearxngProxyTests(SearxngProxyFixture fixture)
         Assert.DoesNotContain("SECRET-SESSION", cookie);
     }
 
-    /// <summary>AC 7. The search form is a POST, so a proxy that dropped bodies would break search itself.</summary>
+    /// <summary>
+    /// AC 7. A proxy that dropped bodies would break the UI: saving preferences is a POST on every upstream
+    /// version. (The <i>search</i> form was also a POST on the image ADR 0059 measured; it is a GET since
+    /// ADR 0060's bump. That is why this asserts the body path, not a particular form's verb.)
+    /// </summary>
     [Fact]
     public async Task Proxy_ForwardsPostBodies()
     {

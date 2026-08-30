@@ -42,6 +42,15 @@ It is tempting — and wrong — to say the queries never leave our infrastructu
 `infra/searxng/settings.yml` (the `keep_only:` list — DuckDuckGo and Bing at the time of this decision;
 read the file for what is enabled now). Queries *do* leave.
 
+> **Amended by [ADR 0060](0060-enable-google-and-bing-search-engines.md) (2026-08-30) — the egress claim
+> stands; the sentence "the engines enabled in the `keep_only:` list" was wrong.** `keep_only` **filters**
+> upstream's engine list, it enables nothing. Upstream shipped Google `inactive: true` (skipped by
+> `load_engines` outright — unfixable from our config) and Bing `disabled: true`, so from this decision
+> until ADR 0060 **DuckDuckGo was the only engine that ever answered a query**, and `web_search` went
+> quiet once it began serving CAPTCHAs to the datacenter IP. Enabling an engine takes a top-level
+> `engines:` override, and — for an `inactive` one — a base-image bump. Read ADR 0060 before editing
+> the engine set, and check `/config` rather than the yaml.
+
 What self-hosting actually buys: **no API key, no per-query bill, no contract, and no per-user
 attribution** — queries arrive at the upstream engines unauthenticated, from the container's IP, not
 tied to an account of ours or to an end user. That is a real and sufficient benefit. The privacy claim
@@ -49,7 +58,7 @@ is not, and must not be repeated in the skill, the code comments, or here.
 
 A consequence worth naming: because the model chooses the search *query*, `web_search` is itself an
 outbound text channel that the fetch allowlist below does not cover. A prompt-injected page could put
-conversation text into a query and it would reach DuckDuckGo/Bing. The `websearch` skill instructs the
+conversation text into a query and it would reach DuckDuckGo/Bing (Google too, since ADR 0060). The `websearch` skill instructs the
 model never to put conversation or document contents into a query; that is mitigation, not prevention.
 Accepted.
 

@@ -32,7 +32,8 @@ public static partial class AgentApi
                 ? ProxyToSearxngAsync(path: null, services, http, ct)
                 : Task.FromResult(Results.Redirect(SearxngProxy.RoutePrefix + "/")));
 
-        // GET and POST only: the search form is a POST (measured on the pinned image) and preferences
+        // GET and POST only: preferences saves are POSTs, and the search form has been both (it was a POST
+        // on the image ADR 0059 measured, a GET since ADR 0060's bump — do not narrow this to one verb)
         // are saved with one, but nothing in the UI needs another verb, and a proxy should forward the
         // smallest set that works.
         // IServiceProvider (NOT IHttpClientFactory) is injected deliberately, mirroring /api/speech and
