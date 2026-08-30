@@ -134,6 +134,7 @@ export const skillFileInput = document.getElementById("skillFile");
 export const skillStatus = document.getElementById("skillStatus");
 export const configHealthList = document.getElementById("configHealthList");
 export const runConfigProbesBtn = document.getElementById("runConfigProbesBtn");
+export const searxngUiLink = document.getElementById("searxngUiLink");
 export const mcpDialog = document.getElementById("mcpDialog");
 export const mcpForm = document.getElementById("mcpForm");
 export const mcpFormTitle = document.getElementById("mcpFormTitle");

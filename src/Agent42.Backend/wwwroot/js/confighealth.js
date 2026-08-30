@@ -1,6 +1,6 @@
 /* Agent 42 — configuration health (ADR 0029). Split out of app.js (ADR 0041). */
 
-import { configHealthList, runConfigProbesBtn } from "./dom.js";
+import { configHealthList, runConfigProbesBtn, searxngUiLink } from "./dom.js";
 
 // Fetches the health report and renders it. probe=false (the default, on tab open) is the STATIC report
 // and runs no metered calls; probe=true runs the opt-in live probes (button). Mirrors loadProviders.
@@ -64,6 +64,12 @@ function renderConfigHealth(report) {
       body.append(key, msg);
 
       li.append(pill, body);
+      // The SearXNG reachability check reports reachable/unreachable and nothing more; the proxied UI
+      // (ADR 0059) is how you see what the instance actually returned and which engines answered. Move
+      // the link onto that row so the two sit together. appendChild MOVES the existing anchor rather
+      // than cloning it, so it survives this function wiping configHealthList on every repaint.
+      if (check.key === "probe:searxng" && searxngUiLink) li.appendChild(searxngUiLink);
+
       list.appendChild(li);
     }
     configHealthList.appendChild(list);

@@ -435,6 +435,12 @@
             <button class="agent-form__btn" type="button" id="runConfigProbesBtn">Run live checks (billable)</button>
           </div>
           <div class="config-health" id="configHealthList"></div>
+          <!-- The proxied SearXNG web UI (ADR 0059). Lives here in the markup so it is part of the cached
+               shell, but confighealth.js moves it onto the "SearXNG reachability" row when that check is
+               rendered, so it sits beside the signal it complements. Opens in a new tab: on the installed
+               Android PWA the manifest scope is "/" so that tab is the standalone window itself, and the
+               back gesture returns to the chat. -->
+          <a class="config-health__link" id="searxngUiLink" href="/searxng/" target="_blank" rel="noopener">Open search UI &rarr;</a>
           <p class="agent-form__note">Which configuration inputs are set, malformed, or (with live checks) unreachable. Read-only, and never shows a secret value. Live checks for geocoding and page scraping cost a metered call, so they run only on demand.</p>
         </section>
       </div>

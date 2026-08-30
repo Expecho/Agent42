@@ -98,6 +98,15 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/logs")]
     [InlineData("/logs/")]
     [InlineData("/logs/logs.js")]
+    // The proxied SearXNG web UI (ADR 0059). Its whole security argument is that it INHERITS Easy Auth
+    // from the app's single ingress rather than publishing a second, unauthenticated port - so the
+    // sidecar becoming reachable at all is safe only while these stay gated. Like /logs above, adding
+    // it needed no excludedPaths change; these rows are what make that a checked fact. The bare prefix,
+    // the canonical slash URL and a subresource are named separately, because /shared taught us those
+    // are three separate mistakes.
+    [InlineData("/searxng")]
+    [InlineData("/searxng/")]
+    [InlineData("/searxng/static/x.css")]
     public void Exclusions_DoNotCoverAnyAuthenticatedPath(string path)
     {
         var entries = ExcludedPaths();

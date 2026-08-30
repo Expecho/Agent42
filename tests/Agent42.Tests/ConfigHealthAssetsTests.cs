@@ -53,6 +53,26 @@ public sealed class ConfigHealthAssetsTests
         Assert.Contains("profileTabs.select(3)", app);
     }
 
+    // AC 15 (ADR 0059): the tab links to the proxied SearXNG web UI, and the link is placed beside the
+    // reachability check it complements rather than floating loose in the panel. Source-text heuristic like
+    // the rest of this class: it proves the wiring shipped, not that a browser renders it there.
+    [Fact]
+    public async Task ConfigurationTab_LinksToTheSearchUi()
+    {
+        var index = await _client.GetStringAsync("/");
+
+        Assert.Contains("id=\"searxngUiLink\"", index);
+        // The canonical URL with its trailing slash: /searxng redirects, /searxng/ is served.
+        Assert.Contains("href=\"/searxng/\"", index);
+        // A new tab, so the Configuration dialog is not replaced by the search UI.
+        Assert.Contains("rel=\"noopener\"", index);
+
+        var app = await _fixture.GetAppScriptAsync();
+        var render = StaticAssetsServerFixture.Body(app, "function renderConfigHealth(report)");
+        Assert.Contains("probe:searxng", render);
+        Assert.Contains("searxngUiLink", render);
+    }
+
     // AC8: the static fetch is wired on tab open, and the live-checks button re-fetches with ?probe=true.
     [Fact]
     public async Task ConfigHealth_FetchesStaticOnOpen_AndProbesOnDemand()

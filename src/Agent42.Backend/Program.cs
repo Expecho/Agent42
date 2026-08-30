@@ -257,6 +257,31 @@ builder.Services.AddHttpClient(ContextWebPageFetcher.HttpClientName, http =>
     http.Timeout = TimeSpan.FromSeconds(30);
 })
     .RemoveAllResilienceHandlers();
+
+// The SearXNG web UI proxy (ADR 0059). A SECOND client against the same sidecar, deliberately: three
+// primary-handler defaults that suit web_search break a proxy, and all three are shared with
+// SearxngWebSearch and ConfigHealth's probe, so they cannot simply be changed on the existing client.
+//   * AllowAutoRedirect — the client would follow the 3xx itself, so the endpoint would never see a
+//     Location to rewrite; the redirect rules would be dead in production while green against a stub.
+//   * UseCookies — the pooled CookieContainer is shared across every consumer of the named client, so
+//     one user's SearXNG preference cookie would replay onto another user's request AND onto
+//     web_search's own queries, silently changing search behaviour.
+//   * AutomaticDecompression — without it the proxy forwards the browser's Accept-Encoding and emits
+//     gzip bytes labelled text/html.
+// RemoveAllResilienceHandlers for the same reason as the two clients above: a retried proxy request is
+// a stalled page, and the grain-latency argument applies to a user watching a browser tab too.
+builder.Services.AddHttpClient(SearxngProxy.HttpClientName, http =>
+{
+    http.BaseAddress = new Uri(webSearchEndpoint);
+    http.Timeout = TimeSpan.FromSeconds(10);
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        AutomaticDecompression = System.Net.DecompressionMethods.All,
+    })
+    .RemoveAllResilienceHandlers();
 #pragma warning restore EXTEXP0001
 
 builder.Services.AddSingleton<IWebSearch>(sp => new SearxngWebSearch(
