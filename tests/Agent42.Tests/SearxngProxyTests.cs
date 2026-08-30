@@ -121,10 +121,43 @@ public sealed class SearxngProxyTests(SearxngProxyFixture fixture)
 
         Assert.True(SearxngProxy.TryApplyResponseHeaders(upstream, headers, UpstreamBase, "chat.agent42.nl"));
 
-        Assert.Equal("sandbox allow-scripts allow-forms", headers["Content-Security-Policy"]);
+        var csp = headers["Content-Security-Policy"].ToString();
+        Assert.StartsWith("sandbox allow-scripts allow-forms", csp);
         // Omitting allow-same-origin is what makes the origin opaque; a value carrying it would silently
         // hand the sidecar's scripts the app's IndexedDB and its /api surface.
-        Assert.DoesNotContain("allow-same-origin", headers["Content-Security-Policy"].ToString());
+        Assert.DoesNotContain("allow-same-origin", csp);
+    }
+
+    /// <summary>
+    /// The sandbox stops READS, not cookie-bearing navigations. Measured: a sandboxed opaque-origin page
+    /// can still submit a form to a same-origin URL and the browser sends the session cookie with it —
+    /// and `POST /api/conversations/{id}/share` takes no body, so a form submission mints a public
+    /// no-login share link (ADR 0035). `form-action` is what actually closes that.
+    ///
+    /// It must carry the PATH, which is why it names scheme and host and is built per request:
+    /// `form-action 'self'` was measured NOT to work, because 'self' matches the URL's origin rather than
+    /// the document's opaque one, so it still permits every same-origin endpoint.
+    /// </summary>
+    [Fact]
+    public void Proxy_ConfinesFormSubmissionsToItsOwnPrefix()
+    {
+        var csp = SearxngProxy.BuildCsp("https", "chat.agent42.nl");
+
+        Assert.Contains("form-action https://chat.agent42.nl/searxng/", csp);
+        Assert.DoesNotContain("'self'", csp);
+    }
+
+    /// <summary>
+    /// The scheme comes from the request, so it is `https` in production only because ADR 0042 put
+    /// `UseForwardedHeaders(XForwardedProto)` first — behind the ACA ingress `Request.Scheme` is
+    /// otherwise `http`, and the policy would fail closed and block SearXNG's own search form.
+    /// </summary>
+    [Fact]
+    public void Proxy_BuildsTheFormActionFromTheRequestScheme()
+    {
+        Assert.Contains("form-action http://localhost:5000/searxng/", SearxngProxy.BuildCsp("http", "localhost:5000"));
+        // No host to pin means no source expression can be written; the sandbox still ships.
+        Assert.Equal(SearxngProxy.SandboxCsp, SearxngProxy.BuildCsp("https", null));
     }
 
     /// <summary>
@@ -239,7 +272,43 @@ public sealed class SearxngProxyTests(SearxngProxyFixture fixture)
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
         Assert.Equal("upstream saw /search?q=hello", await response.Content.ReadAsStringAsync());
-        Assert.Equal("sandbox allow-scripts allow-forms", response.Headers.GetValues("Content-Security-Policy").Single());
+        var csp = response.Headers.GetValues("Content-Security-Policy").Single();
+        Assert.StartsWith("sandbox allow-scripts allow-forms", csp);
+        Assert.Contains("form-action", csp);
+    }
+
+    /// <summary>
+    /// AC 2 and AC 4, END TO END. The helper tests above prove the rules in isolation; this proves the
+    /// COMPOSITION in `BuildUpstreamRequest`, which calls the header allowlist and then adds a `Cookie`
+    /// header of its own. Without this, a future edit that also copied the raw `Cookie` through, or added
+    /// `X-Forwarded-For` to the allowlist, would pass every other test in this file.
+    /// </summary>
+    [Fact]
+    public async Task Proxy_SendsNeitherTheSessionCookieNorTheIdentityHeaders_EndToEnd()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/searxng/search?q=hello");
+        request.Headers.TryAddWithoutValidation("Cookie", "AppServiceAuthSession=SECRET-SESSION; sxng_theme=simple");
+        request.Headers.TryAddWithoutValidation("X-MS-CLIENT-PRINCIPAL-NAME", "someone@example.com");
+        request.Headers.TryAddWithoutValidation("X-MS-CLIENT-PRINCIPAL-ID", "principal-id");
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer app-token");
+        request.Headers.TryAddWithoutValidation("Referer", "https://chat.agent42.nl/");
+        request.Headers.TryAddWithoutValidation("X-Forwarded-For", "203.0.113.7");
+
+        using var response = await Fixture.Client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        var upstream = Fixture.Received[^1];
+        var names = upstream.Headers.Select(h => h.Key).ToArray();
+
+        Assert.DoesNotContain(names, n => n.StartsWith("X-MS-", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain("Authorization", names);
+        Assert.DoesNotContain("Referer", names);
+        Assert.DoesNotContain("X-Forwarded-For", names);
+
+        // The one cookie that may cross is the namespaced one, with its prefix stripped.
+        var cookie = upstream.Headers.TryGetValues("Cookie", out var values) ? string.Join("; ", values) : "";
+        Assert.Equal("theme=simple", cookie);
+        Assert.DoesNotContain("SECRET-SESSION", cookie);
     }
 
     /// <summary>AC 7. The search form is a POST, so a proxy that dropped bodies would break search itself.</summary>

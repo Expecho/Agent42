@@ -2400,13 +2400,19 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **(2) Inbound, the proxied page runs on OUR origin with OUR privileges.** Absent a control, a script
   in the pinned upstream image can read the ADR 0032 IndexedDB mirror (`agent42-cache` — conversation
   text, unencrypted) and call any `/api/*` with the ambient Easy Auth cookie, including ADR 0054's
-  trace dump and ADR 0035's share-link minting. The fix is `Content-Security-Policy: sandbox
-  allow-scripts allow-forms` on **every** response — omitting `allow-same-origin` is the whole point, as
-  it forces an opaque origin. Measured: IndexedDB, `document.cookie` and `localStorage` all throw
-  `SecurityError` and a same-origin `fetch` is blocked, while the page still renders styled, the form
-  still submits and preferences still persist (SearXNG reads those from HTTP cookies **server-side**,
-  and HTTP cookies still round-trip). Do not add `allow-same-origin` to "fix" the one casualty,
-  SearXNG's JS autocomplete — that trades the entire defence for a convenience.
+  trace dump and ADR 0035's share-link minting. **`sandbox` alone does NOT close this, and believing it
+  does is the trap.** Omitting `allow-same-origin` forces an opaque origin, which stops every *read* —
+  measured: IndexedDB, `document.cookie` and `localStorage` all throw `SecurityError` and a same-origin
+  `fetch` is blocked, while the page still renders styled and preferences persist (SearXNG reads those
+  from HTTP cookies **server-side**, and HTTP cookies still round-trip). But a sandboxed opaque-origin
+  document **can still submit a form to a same-origin URL, and the browser sends the session cookie with
+  it** — measured — and `POST /api/conversations/{id}/share` takes no body, so that alone mints a public
+  no-login share link. The second directive is what closes it: **`form-action {scheme}://{host}/searxng/`**.
+  **`form-action 'self'` is measurably useless here** — `'self'` matches the origin of the URL, not the
+  document's opaque origin, so it permits every same-origin endpoint. That is why the source expression
+  must carry the path, hence the scheme and host, hence a per-request header — and hence a second,
+  quiet dependency on ADR 0042's `UseForwardedHeaders`, without which the policy names `http://` and
+  fails closed on SearXNG's own form. Do not add `allow-same-origin` to "fix" anything.
   **(3) A trailing slash matches a LITERAL template, and the literal out-ranks the catch-all.** A
   catch-all does not match a missing segment, so `/searxng` needs its own route — but `/searxng/`, the
   canonical URL every link on the page points at, then matches **that literal route too** and wins over
@@ -2438,7 +2444,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `CookieContainer` across every consumer of the name, so one user's SearXNG preference cookie replays
   onto another user's request **and onto `web_search`'s own tool queries**. `AutomaticDecompression =
   None` means the proxy forwards the browser's `Accept-Encoding` and emits gzip bytes labelled
-  `text/html`. Hence a second registration, `searxng-ui`, against the same address — and it needs
+  `text/html` — though note that third one is defence in depth rather than a live bug here, since the
+  browser's `Accept-Encoding` is never forwarded (it is not in the request allowlist); it matters because
+  `Content-Encoding` is deliberately not copied back, so a compressed upstream response would be
+  forwarded as undeclared encoded bytes. Hence a second registration, `searxng-ui`, against the same address — and it needs
   `RemoveAllResilienceHandlers()` for the same reason every other client here does (the named-client
   retry-inheritance trap).
 - **Evidence:** `src/Agent42.Backend/Program.cs` (the `SearxngProxy.HttpClientName` registration),

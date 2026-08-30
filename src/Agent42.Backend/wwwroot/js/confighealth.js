@@ -22,6 +22,10 @@ function renderConfigHealth(report) {
     empty.className = "providers__empty";
     empty.textContent = "no checks";
     configHealthList.appendChild(empty);
+    // Put the search-UI link back (ADR 0059). A previous render moved it onto the searxng row, and the
+    // innerHTML wipe above just detached it — without this it stays gone for the life of the page, even
+    // though the route works regardless of what the health report says.
+    if (searxngUiLink) configHealthList.appendChild(searxngUiLink);
     return;
   }
 

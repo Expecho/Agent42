@@ -26,10 +26,13 @@ public static class SearxngProxy
     /// <remarks>
     /// Deliberately NOT <see cref="SearxngWebSearch.HttpClientName"/>. That client is shared with
     /// <c>web_search</c> and the config-health probe, and three of its primary-handler defaults break a
-    /// proxy: it follows redirects itself (so the <c>Location</c> rewrite below would never run), it
+    /// proxy: it follows redirects itself (so the <c>Location</c> rewrite below would never run), and it
     /// pools a <c>CookieContainer</c> across consumers (one user's SearXNG preference cookie would
-    /// replay onto another user's request and onto the tool's own queries), and it does not
-    /// decompress (so gzip bytes would be emitted labelled <c>text/html</c>).
+    /// replay onto another user's request and onto the tool's own queries). The third,
+    /// <c>AutomaticDecompression</c>, is defence in depth rather than a live bug: the browser's
+    /// <c>Accept-Encoding</c> is never forwarded (it is not in the request allowlist), so the sidecar has
+    /// no reason to compress — but since <c>Content-Encoding</c> is deliberately not copied back, a
+    /// compressed upstream response would be forwarded as undeclared encoded bytes.
     /// </remarks>
     public const string HttpClientName = "searxng-ui";
 
@@ -45,17 +48,40 @@ public static class SearxngProxy
     public const string CookiePrefix = "sxng_";
 
     /// <summary>
-    /// Applied to <b>every</b> proxied response. Omitting <c>allow-same-origin</c> puts the document in
-    /// an opaque origin, which is the whole defence: the sidecar's HTML and JS execute on our origin,
-    /// where they would otherwise read the ADR 0032 IndexedDB conversation mirror and call any
-    /// <c>/api/*</c> with the ambient Easy Auth cookie. Measured under this exact value: IndexedDB,
+    /// The sandbox half of the policy. Omitting <c>allow-same-origin</c> puts the document in an opaque
+    /// origin, which stops every <b>read</b>: the sidecar's HTML and JS execute on our origin, where they
+    /// would otherwise read the ADR 0032 IndexedDB conversation mirror and <c>fetch</c> any <c>/api/*</c>
+    /// with the ambient Easy Auth cookie. Measured under this exact value: IndexedDB,
     /// <c>document.cookie</c> and <c>localStorage</c> all throw <c>SecurityError</c> and a same-origin
     /// <c>fetch</c> is blocked, while the page still renders styled, the search form still submits and
-    /// preferences still persist (SearXNG reads them from HTTP cookies server-side, and those still
-    /// round-trip). The one casualty is SearXNG's JS autocomplete, whose <c>fetch</c> is blocked by the
-    /// same rule — an accepted cost.
+    /// preferences still persist (SearXNG reads those from HTTP cookies server-side, and HTTP cookies
+    /// still round-trip).
     /// </summary>
     public const string SandboxCsp = "sandbox allow-scripts allow-forms";
+
+    /// <summary>
+    /// Builds the full policy for one response: the sandbox, plus a <c>form-action</c> pinned to this
+    /// route. Both halves are required, and the second is not belt-and-braces.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The sandbox stops reads, not cookie-bearing navigations.</b> Measured: a sandboxed
+    /// opaque-origin page can still submit a form to a same-origin URL, and the browser <b>sends the
+    /// session cookie with it</b>. That is not theoretical here —
+    /// <c>POST /api/conversations/{id}/share</c> takes no body, so a form submission runs it verbatim and
+    /// mints a public, no-login link to a conversation (ADR 0035). <c>form-action</c> is what actually
+    /// closes that, and it is why <c>allow-forms</c> can be kept at all (SearXNG's search form is a POST).</para>
+    /// <para><b><c>form-action 'self'</c> does NOT work here — measured.</b> <c>'self'</c> is matched
+    /// against the origin of the URL, not the document's opaque origin, so it still permits every
+    /// same-origin endpoint and blocks nothing. The source expression must carry the <b>path</b>, which
+    /// means it must name the scheme and host, which means it is per-request. <c>Request.Scheme</c> is
+    /// trustworthy behind the ACA ingress only because ADR 0042 put
+    /// <c>UseForwardedHeaders(XForwardedProto)</c> first in the pipeline — without it this would emit
+    /// <c>http://</c> and the policy would fail closed, blocking SearXNG's own form.</para>
+    /// </remarks>
+    public static string BuildCsp(string scheme, string? host)
+        => string.IsNullOrEmpty(host)
+            ? SandboxCsp
+            : $"{SandboxCsp}; form-action {scheme}://{host}{RoutePrefix}/";
 
     /// <summary>
     /// Request headers forwarded upstream. Everything absent here is dropped, which is what keeps
@@ -64,7 +90,7 @@ public static class SearxngProxy
     /// <c>Authorization</c>, <c>Cookie</c>, <c>Host</c>, <c>Referer</c> and <c>X-Forwarded-For</c> away
     /// from the sidecar without enumerating any of them.
     /// </summary>
-    public static readonly string[] ForwardedRequestHeaders =
+    public static readonly IReadOnlyList<string> ForwardedRequestHeaders =
         ["Accept", "Accept-Language", "User-Agent"];
 
     /// <summary>
@@ -72,7 +98,7 @@ public static class SearxngProxy
     /// must not survive, because the handler decompresses and the bytes we emit are no longer encoded.
     /// <c>Location</c> and <c>Set-Cookie</c> are not copied — they are rewritten, below.
     /// </summary>
-    public static readonly string[] ForwardedResponseHeaders = ["Content-Type"];
+    public static readonly IReadOnlyList<string> ForwardedResponseHeaders = ["Content-Type"];
 
     /// <summary>
     /// Composes the upstream URI from the route's catch-all remainder by <b>explicit string
@@ -157,8 +183,10 @@ public static class SearxngProxy
     /// <para>Every other absolute value, and anything protocol-relative, is rejected: the app origin
     /// hosts two OAuth callbacks (<c>/api/mcp/oauth/callback</c>, <c>/api/google/oauth/callback</c>), so
     /// an open redirector here would not be benign. A genuinely relative value is passed through
-    /// untouched — the browser resolves it against the current <c>/searxng/</c> URL, so it cannot
-    /// address anything outside the prefix.</para>
+    /// untouched: the browser resolves it against the current <c>/searxng/</c> URL, so it stays on our
+    /// origin — though note it is <b>not</b> confined to the prefix, since <c>../../foo</c> resolves
+    /// above it. SearXNG emits absolute values (measured), so this branch is a fallback, not a path in
+    /// normal use.</para>
     /// </remarks>
     public static string? RewriteLocation(string? location, Uri upstreamBase, string? requestHost)
     {
@@ -225,9 +253,13 @@ public static class SearxngProxy
     /// when the redirect was rejected, which the caller answers with a 502.
     /// </summary>
     public static bool TryApplyResponseHeaders(
-        HttpResponseMessage upstream, IHeaderDictionary destination, Uri upstreamBase, string? requestHost)
+        HttpResponseMessage upstream,
+        IHeaderDictionary destination,
+        Uri upstreamBase,
+        string? requestHost,
+        string requestScheme = "https")
     {
-        destination["Content-Security-Policy"] = SandboxCsp;
+        destination["Content-Security-Policy"] = BuildCsp(requestScheme, requestHost);
 
         foreach (var name in ForwardedResponseHeaders)
         {
@@ -266,10 +298,10 @@ public static class SearxngProxy
     }
 
     /// <summary>
-    /// Wraps the inbound body as upstream content, carrying only <c>Content-Type</c> across. Returns
-    /// <c>null</c> for methods without a body.
+    /// Wraps the inbound body as upstream content, carrying only <c>Content-Type</c> across. The caller
+    /// decides whether a body applies at all; this is not called for methods without one.
     /// </summary>
-    public static HttpContent? BuildUpstreamContent(Stream body, string? contentType)
+    public static HttpContent BuildUpstreamContent(Stream body, string? contentType)
     {
         var content = new StreamContent(body);
         if (!string.IsNullOrEmpty(contentType) && MediaTypeHeaderValue.TryParse(contentType, out var parsed))

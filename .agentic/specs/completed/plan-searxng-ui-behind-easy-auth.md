@@ -500,3 +500,56 @@ change.
 **One residual carried forward:** S13 from the plan's own review — on the installed Android PWA the
 `manifest.webmanifest` scope is `/`, so the "new tab" link opens inside the standalone window. Recorded
 in ADR 0059's consequences; not observable from the desktop AppHost leg.
+
+
+## Post-review corrections (critic pass, 2026-08-30)
+
+A `critic` subagent reviewed the committed diff and returned nine findings. Every factual claim was
+checked against the code before acting; all the ones acted on were correct.
+
+**The one that changed the design — the CSP was not doing what the ADR said it did.** `sandbox` stops
+*reads*, and reads are all that Step 1 and Step 9 measured. It does **not** stop a sandboxed
+opaque-origin document from submitting a form to a same-origin URL, and
+`POST /api/conversations/{id}/share` takes **no body**, so that alone mints a public no-login share
+link (ADR 0035). Measured on a harness reproducing the real shape:
+
+| CSP under test | Attack POST to the share endpoint | SearXNG's own search form |
+|---|---|---|
+| `sandbox allow-scripts allow-forms` | **reached the server, with the session cookie** | works |
+| `… ; form-action 'self'` | **still reached the server** | works |
+| `… ; form-action {scheme}://{host}/searxng/` | **blocked** | works |
+
+`form-action 'self'` is useless here because `'self'` matches the origin of the *URL*, not the
+document's opaque origin. The source expression must carry the path, so it must name scheme and host,
+so the header is **per-request** — making this a second, quiet dependency on ADR 0042's
+`UseForwardedHeaders(XForwardedProto)`: without it the policy names `http://` and **fails closed**,
+blocking SearXNG's own form. Re-verified against the real AppHost: the real form still submits
+(navigates to `/searxng/search`) and the attack POST never leaves the browser.
+
+**Also corrected:**
+
+- **The "autocomplete is the accepted cost" line was wrong.** `infra/searxng/settings.yml` already sets
+  `autocomplete: ""`, so it is off in the baked image and the sandbox costs nothing observable here.
+  Corrected in the ADR, `gotchas.md`, `CLAUDE.md` and `docs/features/web-search.md`, which had told an
+  operator to expect a symptom they will never see.
+- **The `AutomaticDecompression` justification was invented.** `Accept-Encoding` is not in the request
+  allowlist, so the stated failure ("we forward the browser's Accept-Encoding and emit gzip labelled
+  text/html") cannot occur. The setting is kept as defence in depth — `Content-Encoding` is deliberately
+  not copied back — and the reason is now stated accurately in all four places it appeared.
+- **AC 2 and AC 4 had no end-to-end assertion**, though `SearxngProxyFixture.Received` was built for one
+  and never read. `Proxy_SendsNeitherTheSessionCookieNorTheIdentityHeaders_EndToEnd` now pins the
+  composition in `BuildUpstreamRequest`, not just the two helpers in isolation.
+- **A dead sidecar was a bare unhandled 500** (neither host installs `UseExceptionHandler`) — in the one
+  feature whose purpose is diagnosing a sick sidecar. It is now a curated 502.
+- **An empty config-health report permanently detached the search-UI link**, because only the
+  `probe:searxng` branch re-appends it after the `innerHTML` wipe.
+- Smaller: the relative-`Location` comment claimed confinement to the prefix that `../../foo` defeats;
+  the two public security allowlists are now `IReadOnlyList<string>`; `DisableAntiforgery`'s comment
+  claimed a mechanism this app does not register; `BuildUpstreamContent` was documented as returning
+  null and never did; the ADR's test count was wrong; the ADR's "egress is unchanged" absolute now
+  admits that a human driving the UI fetches result links from third parties; and
+  `docs/features/configuration-health.md` still pointed at `wwwroot/app.js`, which ADR 0041 deleted.
+
+**Findings not acted on:** the SSRF authority re-check is unreachable-by-construction defence in depth
+(the leading-separator collapse already guarantees it) and is kept deliberately; and a decoded `?`/`#`
+in the catch-all can re-split the composed URL, which stays bounded to the sidecar.

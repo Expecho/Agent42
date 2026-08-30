@@ -166,9 +166,11 @@ Four things to know before relying on it:
 
 - It is **behind Easy Auth**, like every other browser surface, and is deliberately *not* in
   `excludedPaths`. There is still one ingress and port 8888 is still unpublished.
-- Every proxied response carries `Content-Security-Policy: sandbox allow-scripts allow-forms`, which
-  puts the page in an opaque origin so the third-party image cannot touch the app's IndexedDB or
-  `/api`. **The one visible cost: SearXNG's autocomplete does not work.** That is expected.
+- Every proxied response carries a CSP with two halves - a `sandbox` that puts the page in an opaque
+  origin (so the third-party image cannot read the app's IndexedDB or `fetch` `/api`), and a
+  `form-action` pinned to `/searxng/` (so it cannot POST a form to `/api` either, which the sandbox
+  alone does not prevent). **Nothing you can see is lost by this**: it would disable SearXNG's
+  autocomplete, but this image already ships with autocomplete off.
 - **Your preferences there are yours alone** (cookies are namespaced `sxng_` and scoped to
   `/searxng/`) and they do **not** affect `web_search`, which dials the sidecar directly with no
   cookie. The instance itself is shared.

@@ -57,8 +57,10 @@ for **every** user), `POST /api/conversations/{id}/share` (mints a public no-log
 calendar writes (ADR 0053). The upstream image is pinned and has never been bumped, so any XSS in it
 would become an XSS on the app origin. There was no CSP anywhere in the repo before this change.
 
-**Every proxied response therefore carries `Content-Security-Policy: sandbox allow-scripts allow-forms`.**
-Omitting `allow-same-origin` puts the document in an **opaque origin**, which reaches none of the above.
+**Every proxied response therefore carries `Content-Security-Policy: sandbox allow-scripts allow-forms;
+form-action {scheme}://{host}/searxng/`.** Omitting `allow-same-origin` puts the document in an **opaque
+origin**, which stops every **read**. The `form-action` half stops the **writes**, and it is not
+belt-and-braces — see below.
 
 This was measured rather than assumed, against a harness that seeded the real `agent42-cache` mirror from
 the app origin first and proved it readable there — so the sandboxed result is a *denied read of data that
@@ -75,9 +77,35 @@ exists*, not an absent database:
 | Preferences persist | **yes** — HTTP cookies still round-trip; SearXNG reads them server-side |
 | `fetch("/searxng/autocompleter")` | **blocked** |
 
-The last row is the accepted cost: **SearXNG's JS autocomplete does not work**, because from an opaque
-origin its own `fetch` is cross-origin. Everything the feature exists for — seeing the results, the engine
-errors and the preferences — works.
+Everything the feature exists for — seeing the results, the engine errors and the preferences — works.
+The last row is the only functional loss, and it costs nothing **in this deployment**: SearXNG's JS
+autocomplete would be blocked by the same rule, but `infra/searxng/settings.yml` already sets
+`autocomplete: ""`, so it is off in the baked image regardless. There is no observable regression here.
+
+#### The sandbox stops reads, not cookie-bearing navigations — which is why `form-action` is required
+
+The probe table above measures *reads*, and reads are all the sandbox stops. Measured separately, against
+a page carrying exactly the header above minus `form-action`: **a sandboxed opaque-origin document can
+still submit a form to a same-origin URL, and the browser sends the session cookie with it.** That is not
+an abstract gap — `POST /api/conversations/{conversationId}/share` takes **no body**
+(`src/Agent42.Backend/Sharing/AgentApi.Sharing.cs`), so a form submission runs it verbatim and mints a
+public, no-login link to a conversation (ADR 0035); the two OAuth `start` routes are state-changing GET
+navigations reachable the same way.
+
+`form-action` closes it, and **`form-action 'self'` does not** — measured: `'self'` matches the origin of
+the *URL*, not the document's opaque origin, so it still permits every same-origin endpoint and blocks
+nothing. The source expression therefore has to carry the **path**, which means naming the scheme and
+host, which makes the header **per-request**:
+
+| CSP under test | Attack POST to `/api/share` | SearXNG's own search form |
+|---|---|---|
+| `sandbox allow-scripts allow-forms` | **reached the server, with the session cookie** | works |
+| `… ; form-action 'self'` | **still reached the server** | works |
+| `… ; form-action {scheme}://{host}/searxng/` | **blocked — never left the browser** | works |
+
+This is also a second, quieter dependency on ADR 0042: `Request.Scheme` is `https` behind the ACA ingress
+only because `UseForwardedHeaders(XForwardedProto)` runs first. Without it the policy would name
+`http://` and **fail closed**, blocking SearXNG's own search form.
 
 ### 2. `SEARXNG_BASE_URL` carries the subpath, so no markup is rewritten
 
@@ -139,7 +167,7 @@ proxy, and all three are shared with `web_search` and the config-health probe.
 |---|---|
 | `AllowAutoRedirect = true` | the client follows the 3xx itself, so the endpoint never sees a `Location` — the rewrite rules would be **dead in production while green against a stub**, since the stub *is* the primary handler |
 | `UseCookies = true` | the pooled `CookieContainer` is shared across consumers — one user's SearXNG cookie replays onto another user's request *and* onto `web_search`'s own queries |
-| `AutomaticDecompression = None` | the proxy forwards the browser's `Accept-Encoding` and emits gzip bytes labelled `text/html` |
+| `AutomaticDecompression = None` | defence in depth, not a live bug: the browser's `Accept-Encoding` is never forwarded (it is not in the request allowlist), but since `Content-Encoding` is deliberately not copied back, a compressed upstream response would be forwarded as undeclared encoded bytes |
 
 `RemoveAllResilienceHandlers()` for the reason the two existing clients give: a retried proxy request is a
 stalled page.
@@ -173,8 +201,11 @@ the chat app — for a `/searxng/` navigation. The guard sits beside the `/api` 
   safesearch for their own browser only; nothing they set there reaches `web_search`, which dials the
   sidecar directly with no cookie.
 - **Autocomplete is broken** in the proxied UI, and deliberately. See §1.
-- **Egress is unchanged.** No new third party sees anything; the sidecar was already forwarding queries to
-  DuckDuckGo/Bing (ADR 0011's non-privacy note). This adds a *read* path, not an egress path.
+- **Egress is essentially unchanged.** The sidecar was already forwarding queries to DuckDuckGo/Bing
+  (ADR 0011's non-privacy note), and this adds a *read* path rather than a new server-side egress path.
+  The one genuinely new thing is that a human now drives the UI in a browser, so result links and any
+  non-proxied thumbnails are fetched by **the user's browser** from third parties — ordinary web
+  browsing, but worth stating rather than claiming a flat "unchanged".
 - **On the installed Android PWA the link opens inside the standalone window.** `manifest.webmanifest` has
   `"scope": "/"`, so the "new tab" is the PWA window itself and the chat UI is replaced with no browser
   chrome; the back gesture returns. Narrowing the scope was rejected — it is load-bearing for ADR 0023's
@@ -202,7 +233,7 @@ Full suite green (1057 tests; the one failure, `OtelConfigurationTests.AddLiveTe
 **pre-existing flake reproduced on clean `main` at `c86fa93`** and is unrelated). `dotnet format` clean,
 `dotnet build` clean with S3776 at `error`, `az bicep build` clean.
 
-31 tests cover the route, 29 of them on the translation rules directly. Two things are pinned that no
+34 tests cover the route, 25 of them on the translation rules directly and 9 through the host. Two things are pinned that no
 review caught:
 
 1. **The canonical URL would have been an infinite redirect loop.** Endpoint routing matches a trailing

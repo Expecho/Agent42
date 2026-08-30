@@ -40,8 +40,9 @@ public static partial class AgentApi
         // host cannot resolve is treated as a request BODY, which breaks routing for the WHOLE host.
         // DevHost registers no IHttpClientFactory at all, so resolving it optionally is also what makes
         // the curated 503 fall out for free rather than needing a second code path.
-        // DisableAntiforgery: the app is Easy-Auth gated, not cookie/forms — same as the upload and
-        // /api/speech. Without it the proxied search form's POST would be rejected before it ran.
+        // DisableAntiforgery mirrors the upload and /api/speech endpoints. It is a no-op today — nothing
+        // calls AddAntiforgery, and minimal-API validation only covers endpoints that BIND form data,
+        // which this one does not — but it is kept so the POST stays exempt if antiforgery is ever added.
         app.MapMethods(SearxngProxy.RoutePrefix + "/{**path}", ["GET", "POST"], ProxyToSearxngAsync)
             .DisableAntiforgery();
     }
@@ -65,12 +66,29 @@ public static partial class AgentApi
         }
 
         using var request = BuildUpstreamRequest(http, upstreamUri);
-        using var upstream = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+
+        // The whole point of this route is to diagnose a sidecar that is misbehaving, so the case where it
+        // is unreachable or too slow is the one it must handle best. Neither host installs
+        // UseExceptionHandler, so without this a dead sidecar is a bare unhandled 500 with no explanation.
+        HttpResponseMessage upstream;
+        try
+        {
+            upstream = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            return Results.Text(
+                "The search sidecar did not respond.",
+                "text/plain",
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        using var _ = upstream;
 
         // Nothing has been written yet, so a rejected redirect can still clear the headers already set
         // and answer 502 instead of forwarding an off-site Location.
         if (!SearxngProxy.TryApplyResponseHeaders(
-                upstream, http.Response.Headers, client.BaseAddress, http.Request.Host.Value))
+                upstream, http.Response.Headers, client.BaseAddress, http.Request.Host.Value, http.Request.Scheme))
         {
             http.Response.Headers.Clear();
             return Results.StatusCode(StatusCodes.Status502BadGateway);

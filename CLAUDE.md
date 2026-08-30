@@ -138,9 +138,14 @@ to document a mechanical rule, add a lint rule instead.
   `web_search` is untouched. **The headline consequence is a direction that nearly got missed: the
   proxied page runs on OUR origin**, where it could otherwise read ADR 0032's unencrypted IndexedDB
   conversation mirror and call any `/api/*` with the ambient Easy Auth cookie (ADR 0054's traces, ADR
-  0035's share minting). Hence `Content-Security-Policy: sandbox allow-scripts allow-forms` on every
-  response — omitting `allow-same-origin` forces an opaque origin — whose one measured casualty is
-  SearXNG's autocomplete. Four traps, all in gotchas: the outbound Easy Auth cookie / `X-MS-*` leak
+  0035's share minting). Hence a CSP on every response — **and it takes BOTH halves**:
+  `sandbox allow-scripts allow-forms` (omitting `allow-same-origin` forces an opaque origin) stops every
+  *read*, but a sandboxed page **can still POST a form same-origin with the session cookie** (measured),
+  which alone mints a share link — so `form-action {scheme}://{host}/searxng/` is required, built
+  per-request because **`form-action 'self'` is measurably useless** (it matches the URL's origin, not the
+  opaque one). That makes this a second quiet dependency on ADR 0042's `UseForwardedHeaders`. Nothing
+  observable is lost: the sandbox would break SearXNG's autocomplete, but `settings.yml` already ships
+  `autocomplete: ""`. Four traps, all in gotchas: the outbound Easy Auth cookie / `X-MS-*` leak
   (fixed by **allowlists, never denylists**); that same-origin escalation and its CSP; that `/searxng/`
   matches the **literal** `/searxng` template, which **out-ranks the catch-all**, so a naive
   bare-prefix redirect loops forever on the canonical URL; and that the catch-all value is
