@@ -38,6 +38,13 @@ var searxng = builder.AddDockerfile("searxng", "../../infra/searxng")
     // inert for the bind), and refuses to start without a secret.
     .WithEnvironment("SEARXNG_SECRET", "local-dev-only-not-a-real-secret");
 
+// The /searxng/ subpath the backend proxies the UI under (ADR 0059), so the served HTML prefixes its
+// own asset URLs. Unlike production — where the sidecar shares the backend's network namespace and
+// the base URL can name the public domain — here SearXNG is its own container on an Aspire-assigned
+// port, so the base URL must name THAT endpoint: it is the authority the proxy dials, and the proxy
+// only reduces a redirect Location to a root-relative path when its authority is one it recognises.
+searxng.WithEnvironment("SEARXNG_BASE_URL", ReferenceExpression.Create($"{searxng.GetEndpoint("http")}/searxng/"));
+
 builder.AddProject<Projects.Agent42_Backend>("backend")
     .WithReference(orleans)
     .WithReference(cosmos)

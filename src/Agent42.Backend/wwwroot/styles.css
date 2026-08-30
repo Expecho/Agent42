@@ -1847,6 +1847,26 @@ body {
 .config-check__key { font: 500 11.5px var(--mono); color: var(--ink); }
 .config-check__msg { font: 400 11px var(--mono); color: var(--ink-dim); }
 
+/* The proxied SearXNG web UI (ADR 0059). confighealth.js moves this onto the SearXNG reachability row,
+   so it is laid out as a trailing action on a .config-check rather than as a standalone block: margin-left
+   auto pushes it to the row's end, and align-self keeps it centred against a two-line body. */
+.config-health__link {
+  margin-left: auto;
+  align-self: center;
+  flex: none;
+  font: 500 11px var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--amber);
+  text-decoration: none;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.config-health__link:hover,
+.config-health__link:focus-visible { border-color: var(--amber); background: var(--amber-glow); }
+
 .provider-row__meta {
   flex: 1;
   min-width: 0;

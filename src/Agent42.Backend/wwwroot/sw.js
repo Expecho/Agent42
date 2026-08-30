@@ -2,7 +2,7 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v24";
+const CACHE = "agent42-shell-v25";
 const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/attachments.js",
   "/js/cache.js", "/js/calendar.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
   "/js/drawer.js", "/js/format.js", "/js/location.js", "/js/main.js", "/js/mcp.js",
@@ -77,6 +77,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // never touch cross-origin
   if (url.pathname.startsWith("/api")) return; // never cache chat/auth API — must precede any respondWith
+  // Same rule, same reason, for the proxied SearXNG UI (ADR 0059): its subresources carry the Easy Auth
+  // cookie and per-user SearXNG preference cookies, so they must never land in the SHARED shell cache.
+  // Also keeps the navigate branch below from painting /index.html — the chat app — when a /searxng/
+  // navigation fails offline. Must precede any respondWith, exactly like the /api guard.
+  if (url.pathname.startsWith("/searxng")) return;
   // Share branch sits AFTER the /api guard (keeps the ADR-0002 invariant / the position test green)
   // and BEFORE the non-GET early-return below (a share is a POST).
   if (req.method === "POST" && url.pathname === "/share") { event.respondWith(handleShare(req)); return; }

@@ -94,6 +94,25 @@ public sealed class PwaAssetsTests
         Assert.True(apiGuard < firstRespond, "The /api bypass must precede any respondWith");
     }
 
+    [Fact]
+    public async Task ServiceWorker_BypassesTheProxiedSearchUiBeforeCaching()
+    {
+        // Same invariant as the /api guard, for the SearXNG UI proxy (ADR 0059) - the first non-/api route
+        // in MapAgentApi. Its subresources carry the Easy Auth cookie and per-user SearXNG preference
+        // cookies, so caching them in the SHARED shell cache would leak one user's state to the next; and
+        // the navigate branch's offline fallback would paint /index.html - the chat app - in place of a
+        // /searxng/ page. Source-text heuristic, like the /api guard above: proves position, not logic.
+        var response = await _client.GetAsync("/sw.js");
+        response.EnsureSuccessStatusCode();
+        var source = await response.Content.ReadAsStringAsync();
+
+        var searxngGuard = source.IndexOf("startsWith(\"/searxng\")", StringComparison.Ordinal);
+        Assert.True(searxngGuard >= 0, "Service worker is missing the /searxng bypass guard");
+
+        var firstRespond = source.IndexOf("event.respondWith(", StringComparison.Ordinal);
+        Assert.True(searxngGuard < firstRespond, "The /searxng bypass must precede any respondWith");
+    }
+
     [Theory]
     [InlineData("/icons/icon-192.png")]
     [InlineData("/icons/icon-512.png")]
@@ -212,7 +231,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v24", sw);
+        Assert.Contains("agent42-shell-v25", sw);
     }
 
     // Offline read cache (ADR 0032): agents, conversations and previously-opened chat histories are
