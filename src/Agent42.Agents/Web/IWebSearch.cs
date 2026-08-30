@@ -4,7 +4,7 @@ namespace Agent42.Agents;
 /// Runs a web search and returns ranked results for the model to read (ADR 0011). Backed by a
 /// self-hosted SearXNG instance, so a query needs no API key, carries no per-user attribution and
 /// costs nothing. It is <b>not</b> private: SearXNG is a <i>meta</i>search engine — it forwards the
-/// query to upstream engines (DuckDuckGo, Bing) from the container's IP. Treat a search query as
+/// query to upstream engines (Google, DuckDuckGo, Bing — ADR 0060) from the container's IP. Treat a search query as
 /// leaving our infrastructure, because it does.
 ///
 /// Production talks to the SearXNG sidecar over localhost (<c>SearxngWebSearch</c>); local dev and

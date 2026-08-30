@@ -69,7 +69,9 @@ public static class SearxngProxy
     /// session cookie with it</b>. That is not theoretical here —
     /// <c>POST /api/conversations/{id}/share</c> takes no body, so a form submission runs it verbatim and
     /// mints a public, no-login link to a conversation (ADR 0035). <c>form-action</c> is what actually
-    /// closes that, and it is why <c>allow-forms</c> can be kept at all (SearXNG's search form is a POST).</para>
+    /// closes that, and it is why <c>allow-forms</c> can be kept at all (SearXNG submits its search and
+    /// preferences forms same-origin under this prefix; the search form's method has changed across
+    /// upstream versions — POST on ADR 0059's image, GET since ADR 0060's — but its action has not).</para>
     /// <para><b><c>form-action 'self'</c> does NOT work here — measured.</b> <c>'self'</c> is matched
     /// against the origin of the URL, not the document's opaque origin, so it still permits every
     /// same-origin endpoint and blocks nothing. The source expression must carry the <b>path</b>, which

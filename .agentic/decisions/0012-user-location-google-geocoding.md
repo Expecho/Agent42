@@ -58,7 +58,7 @@ this is hidden behind a comfortable phrase.
 ### It raises the stakes of an outbound channel we have already accepted
 ADR 0011 recorded two acknowledged, *unclosed* outbound text channels: the **model writes the
 `web_search` query**, which the `fetch_web_page` URL allowlist does not cover and which SearXNG forwards
-on to DuckDuckGo/Bing; and a fetched page's text can instruct the model to act on it.
+on to DuckDuckGo/Bing (and Google, since ADR 0060); and a fetched page's text can instruct the model to act on it.
 
 Before this feature, the worst thing draining those channels was conversation text and document excerpts.
 **After it, the conversation may hold the user's street address.** The feature does not open a new hole —

@@ -8,7 +8,7 @@ namespace Agent42.Backend;
 /// <see cref="IWebSearch"/> over the self-hosted SearXNG sidecar (ADR 0011). The sidecar runs in the
 /// same Container App and is reached over <c>localhost</c>, so a query costs nothing, needs no API key
 /// and is not attributable to a user account. It is <b>not</b> private: SearXNG is a <i>meta</i>search
-/// engine and forwards the query to upstream engines (DuckDuckGo, Bing).
+/// engine and forwards the query to upstream engines (Google, DuckDuckGo, Bing — ADR 0060).
 ///
 /// The <see cref="HttpClient"/> is a named client with <b>explicit</b> timeouts (see Program.cs):
 /// <c>AgentGrain</c> is non-reentrant, so a slow search serializes the conversation's turn and delays

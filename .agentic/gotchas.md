@@ -268,12 +268,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   client needs it)
 - **Verified:** 2026-07-21
 
-### SearXNG is self-hosted, NOT private — it forwards every query to DuckDuckGo/Bing
+### SearXNG is self-hosted, NOT private — it forwards every query to the upstream engines
 
 - **Claim:** "self-hosted search" reads like "the query never leaves our infrastructure". It does leave.
   SearXNG is a ***meta*search** engine: it forwards each query to the upstream engines enabled in
-  `infra/searxng/settings.yml` (currently `google`, `duckduckgo`, `bing` — read the `keep_only:` list,
-  it changes). What self-hosting actually buys is
+  `infra/searxng/settings.yml` (currently `google`, `duckduckgo`, `bing` — read the `keep_only:` list
+  **and the `engines:` override block below it**, and see the next gotcha: `keep_only` alone enables
+  nothing). What self-hosting actually buys is
   **no API key, no per-query bill, and no per-user attribution** — queries arrive at the upstream engines
   unauthenticated from the container's IP. That is the claim to make; the privacy one is false, and it
   was wrong in five places in the first draft of this feature (including in the `websearch` SKILL.md,
@@ -281,10 +282,37 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   writes the search query, `web_search` is an outbound text channel that the `fetch_web_page` URL
   allowlist does **not** cover — a prompt-injected page could put conversation text in a query. The skill
   instructs the model never to do that; it is mitigation, not prevention (ADR 0011).
-- **Evidence:** `infra/searxng/settings.yml` (`keep_only:` engine list),
+- **Evidence:** `infra/searxng/settings.yml` (the `keep_only:` list **and** the `engines:` override),
   `src/Agent42.Agents/Skills/websearch/SKILL.md`, `src/Agent42.Agents/Web/IWebSearch.cs`,
-  `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`
-- **Verified:** 2026-07-12
+  `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`,
+  `.agentic/decisions/0060-enable-google-and-bing-search-engines.md`
+- **Verified:** 2026-08-30
+
+### SearXNG `keep_only` enables nothing — and `inactive` is not `disabled`
+
+- **Claim:** listing an engine under `use_default_settings.engines.keep_only` **filters** the upstream
+  engine list; it does not switch anything on. For the whole life of the web-search feature the list read
+  `google, duckduckgo, bing` while **DuckDuckGo was the only engine that ever answered a query** — and the
+  gotcha above said "forwards every query to DuckDuckGo/Bing" — wrong on both counts, and reworded by
+  ADR 0060. Two
+  *different* upstream flags were doing it, and they are not interchangeable:
+  **`inactive: true`** — `load_engines` skips the entry outright (`searx/engines/__init__.py:318`), so the
+  engine is never registered, never appears in `/config`, is never queried, and **never shows up in
+  `unresponsive_engines` either**: it fails silently and invisibly. **No setting in our `settings.yml` can
+  revive it — only a base-image bump can.** That is the trap: overriding `inactive: false` on an image
+  whose engine upstream marked inactive *does* flip `/config` to `enabled=True` while still returning zero
+  results with no error, which looks fixed and is not (measured on `2026.7.12-c19d86faa`).
+  **`disabled: true`** — the engine loads and registers, but sits out the *default* query set; it answers
+  only a `!bang`. **This one our `settings.yml` can and does override.**
+  To change an engine, add a top-level `engines:` entry: it is matched by `name` and `update_dict`-ed onto
+  the upstream default (`searx/settings_loader.py:166-174`), so you set one key and inherit the rest —
+  never copy a whole engine definition in, or the next image bump silently freezes that engine's config.
+  The way to check is not to read the yaml: run the image and read **`/config`**, which lists exactly the
+  engines that loaded and whether each is enabled.
+- **Evidence:** `infra/searxng/settings.yml` (the `engines:` override block and its comment),
+  `infra/searxng/Dockerfile` (the tag bump and why),
+  `.agentic/decisions/0060-enable-google-and-bing-search-engines.md` (the before/after measurements)
+- **Verified:** 2026-08-30
 
 ### SearXNG: the JSON API answers 403 unless enabled, and the port moves only via env
 
