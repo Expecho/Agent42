@@ -154,6 +154,38 @@ builder.Services.AddHttpClient(ContextWebPageFetcher.HttpClientName, http => {
 - SearXNG is an Aspire-managed sidecar; its endpoint is forwarded to the backend as
   `WebSearch__Endpoint`.
 
+## Which engines are enabled (ADR 0060)
+
+Three: **Google, DuckDuckGo and Bing**. Getting there needed more than a list, and the trap is worth
+knowing before you touch `infra/searxng/settings.yml`.
+
+`use_default_settings.engines.keep_only` **filters** upstream's engine list - it enables nothing. That
+list named all three from the start, but upstream shipped two of them off, using two flags that behave
+differently:
+
+| flag | what it does | can `settings.yml` override it? |
+|---|---|---|
+| `inactive: true` | `load_engines` skips the entry outright. Never registered, absent from `/config`, never queried - and **never reported in `unresponsive_engines` either**, so it fails invisibly. | **No.** Only a base-image bump. |
+| `disabled: true` | Loads and registers, but sits out the default query set; answers only a `!bang`. | Yes. |
+
+Google was `inactive`, Bing was `disabled`. **DuckDuckGo was the only engine that ever answered a
+query**, which is why `web_search` had been returning empty lists once DuckDuckGo started serving
+CAPTCHAs to the datacenter IP - the failure ADR 0059's UI was built to make visible.
+
+The fix was two changes with different jobs, and it is worth keeping them apart. The top-level
+`engines:` override is what restores search — measured, it brings Bing back on the **old** image too. The
+image bump buys **Google alone**, because an `inactive` engine is unreachable from config at any setting.
+An override entry is matched by `name` and merged onto the upstream default, so set **one key** and
+inherit the rest - never paste a whole engine definition in, or the next bump silently freezes that
+engine's config.
+
+Measured after the change: **Bing returns the results**; Google and DuckDuckGo both CAPTCHA. Google is
+kept on anyway because it now *reports* its failure into `unresponsive_engines` and the `/searxng/` UI
+instead of being invisible.
+
+To check the engine set, run the image and read **`/config`** - it lists exactly which engines loaded
+and whether each is enabled. Reading the yaml will mislead you.
+
 ## Seeing what the sidecar actually returned (ADR 0059)
 
 `web_search` gives you a result list and nothing else, so an empty or odd answer has no explanation.

@@ -115,6 +115,13 @@ Measured on the pinned image (`2026.7.12-c19d86faa`) with `SEARXNG_BASE_URL=…/
 |---|---|
 | Are asset URLs prefixed? | **yes** — `http://localhost:8888/searxng/static/themes/simple/sxng-ltr.min.css` and its sxng-core.min.js sibling, plus the prefixed `/searxng/preferences`, manifest and opensearch links |
 | The search form | `<form id="search" method="POST" action="/searxng/search">` — **POST**, prefixed |
+
+> **Amended by [ADR 0060](0060-enable-google-and-bing-search-engines.md) (2026-08-30) — one measured cell
+> in this table is now stale.** ADR 0060 bumped the pinned image to `2026.8.29-d226b78bc`, on which the
+> search form is **`method="GET"`**. Everything else here re-measured unchanged, including the form's
+> `action` — which is what the `form-action` argument in §1 actually rests on, so the CSP is unaffected.
+> §4's `Set-Cookie` count re-measured as 21 rather than 22, all still `Path=/`; §5's absolute redirect is
+> unchanged. ADR 0060 carries the full re-measurement.
 | Which paths serve | `/searxng/` → 200 **and** `/` → 200; bare `/searxng` → 308 to an **absolute** URL |
 
 Every generated URL is **root-relative and already prefixed**, so the proxy rewrites no markup — the

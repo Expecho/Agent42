@@ -117,8 +117,17 @@ to document a mechanical rule, add a lint rule instead.
   here: our client is Chat Completions, which rejects `web_search_options` with HTTP 400 (that is
   what `f14de0e`/`81b2f93` were about). The sidecar image is `infra/searxng/` (thin image over a
   pinned upstream tag, config baked in). Self-hosted ≠ private: SearXNG is a *meta*search engine and
-  forwards every query to DuckDuckGo/Bing — what it buys is no API key, no bill, no per-user
-  attribution. A **`SEARXNG_SECRET` GitHub Actions secret is a manual prerequisite** (any long random
+  forwards every query to Google/DuckDuckGo/Bing — what it buys is no API key, no bill, no per-user
+  attribution. **ADR 0060 is required reading before touching the engine list:** `keep_only` FILTERS the
+  upstream engines, it enables nothing, so for the whole life of this feature DuckDuckGo was the only
+  engine that answered — which is why `web_search` was returning empty lists. Google shipped upstream as
+  `inactive: true` (skipped by `load_engines` outright — invisible in `/config` AND in
+  `unresponsive_engines`, and **unfixable from `settings.yml`**; only the image bump to
+  `2026.8.29-d226b78bc` reached it) and Bing as `disabled: true` (loaded but never queried — that one an
+  `engines:` override does fix). `/config` is the only honest way to see which engines **loaded**;
+  `unresponsive_engines` and the ADR 0059 UI are how you see which ones **answered**. Reading the yaml
+  tells you neither.
+  A **`SEARXNG_SECRET` GitHub Actions secret is a manual prerequisite** (any long random
   string): the sidecar won't start without it, and since ACA gates revision health on *every*
   container in the replica, a crash-looping sidecar takes the **backend** down too. Three things to
   read before touching this: a tool's *return value* is persisted into the 2 MB session;

@@ -283,7 +283,7 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
         }
         // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume and no API
         // key. NOT private, though — SearXNG is a *meta*search engine and forwards every query on to
-        // DuckDuckGo/Bing; what self-hosting buys is no key, no bill and no per-user attribution, not
+        // Google/DuckDuckGo/Bing (ADR 0060); what self-hosting buys is no key, no bill and no per-user attribution, not
         // confidentiality. A thin image over upstream SearXNG with our settings.yml baked in
         // (infra/searxng) — `search.formats` must include `json` or the API answers 403.
         {

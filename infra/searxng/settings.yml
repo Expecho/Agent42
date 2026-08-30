@@ -5,6 +5,22 @@ use_default_settings:
       - duckduckgo
       - bing
 
+# `keep_only` FILTERS the upstream engine list; it does not switch anything on. Upstream ships
+# `google` and `bing` off by default, so for most of this feature's life DuckDuckGo was the only
+# engine that ever answered a query. Two distinct upstream flags do that, and they are not
+# interchangeable:
+#   `inactive: true`  -> `load_engines` skips the entry outright; it never reaches /config and no
+#                        setting here can revive it. Only a base-image bump can.
+#   `disabled: true`  -> the engine loads but sits out the default query set (reachable only by a
+#                        `!bang`). THAT is what the override below flips.
+# Merge semantics: a top-level `engines:` entry is matched by `name` and `update_dict`-ed onto the
+# upstream default (searx/settings_loader.py), so this changes one key and inherits the rest.
+engines:
+  - name: google
+    disabled: false
+  - name: bing
+    disabled: false
+
 general:
   instance_name: "Agent 42 search"
   debug: false
