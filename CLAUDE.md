@@ -125,6 +125,36 @@ to document a mechanical rule, add a lint rule instead.
   `fetch_web_page`'s allowlist is a prompt-injection exfiltration control (it pins whole URLs, not
   hosts — a host allowlist is bypassable); and a named `HttpClient` silently inherits
   `AddServiceDefaults`' retry pipeline. All three are in gotchas.
+- SearXNG's web UI, proxied behind Easy Auth (ADR 0059, **amends 0011**): the sidecar's own HTML search
+  UI is served at **`/searxng/{**path}`** — the **first non-`/api` routes** in `MapAgentApi` — linked from
+  Preferences → Configuration, so an empty or odd `web_search` result can be explained (which engines
+  answered, which failed) instead of the sidecar being a black box. **ADR 0011's "unreachable from
+  outside by construction" is RETIRED**; its other half is not — one ingress, port 8888 still unpublished,
+  **no `excludedPaths` entry**, ADR 0002 unweakened. Frontend/backend only: no new secret, Cosmos
+  container, Dockerfile change, Bicep ingress change or mandatory DI registration (`IServiceProvider` +
+  `GetService`, the `/api/speech` pattern, which is also what makes DevHost's curated 503 free).
+  `SEARXNG_BASE_URL` gains the `/searxng/` subpath, which — measured — makes every generated asset URL
+  root-relative and already prefixed, so **no markup is rewritten**; the sidecar still answers on `/`, so
+  `web_search` is untouched. **The headline consequence is a direction that nearly got missed: the
+  proxied page runs on OUR origin**, where it could otherwise read ADR 0032's unencrypted IndexedDB
+  conversation mirror and call any `/api/*` with the ambient Easy Auth cookie (ADR 0054's traces, ADR
+  0035's share minting). Hence a CSP on every response — **and it takes BOTH halves**:
+  `sandbox allow-scripts allow-forms` (omitting `allow-same-origin` forces an opaque origin) stops every
+  *read*, but a sandboxed page **can still POST a form same-origin with the session cookie** (measured),
+  which alone mints a share link — so `form-action {scheme}://{host}/searxng/` is required, built
+  per-request because **`form-action 'self'` is measurably useless** (it matches the URL's origin, not the
+  opaque one). That makes this a second quiet dependency on ADR 0042's `UseForwardedHeaders`. Nothing
+  observable is lost: the sandbox would break SearXNG's autocomplete, but `settings.yml` already ships
+  `autocomplete: ""`. Four traps, all in gotchas: the outbound Easy Auth cookie / `X-MS-*` leak
+  (fixed by **allowlists, never denylists**); that same-origin escalation and its CSP; that `/searxng/`
+  matches the **literal** `/searxng` template, which **out-ranks the catch-all**, so a naive
+  bare-prefix redirect loops forever on the canonical URL; and that the catch-all value is
+  **percent-decoded**, making it an SSRF sink (`%2f%2fevil.example`) — with the redirect `Location` rule
+  its mirror image, where an absolute value is *expected* and only a recognised authority is accepted.
+  A **second** named client `searxng-ui` is required: `AllowAutoRedirect`/`UseCookies`/no-decompression
+  each break a proxy and all three are shared with `web_search`. Shell cache bumped `agent42-shell-v24`
+  → `-v25` (the SW needs a `/searxng` guard beside `/api`). Bumping the pinned upstream image is
+  explicitly out of scope.
 - Hosted page scrape (ADR 0027, **supersedes ADR 0011's SSRF-guard mechanism only**): `fetch_web_page`
   no longer dials the model's URL from our container — it calls the hosted **context.dev** scrape API,
   which returns clean markdown, and can **follow depth-1 links** whose text matches a model-supplied
@@ -947,7 +977,7 @@ to document a mechanical rule, add a lint rule instead.
 - Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **20
   feature folders** mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
   visibly with `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`), **flat `Agent42.Backend` namespace**, and
-  `Program.cs` alone at the project root. `MapAgentApi` is split into **15 per-feature partials**
+  `Program.cs` alone at the project root. `MapAgentApi` is split into **16 per-feature partials**
   (`src/Agent42.Backend/Mcp/AgentApi.Mcp.cs`, …) with `src/Agent42.Backend/Api/AgentApi.cs` reduced to a 50-line composition root, and the 25
   request/response records live beside their feature as `*Contracts.cs`. Backend persists nothing, so
   the flat namespace is **not** forced here as it is in Agents — it is kept flat for consistency and

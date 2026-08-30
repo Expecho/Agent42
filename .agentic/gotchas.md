@@ -2384,3 +2384,72 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ToolSelectionApiTests.cs` (`ProfileToolSave_IsReadableBackFromStorage` — asserts the
   stored type is `List<string>`, pinning the laundering rather than assuming it)
 - **Verified:** 2026-08-29
+
+### Proxying a third-party app onto our own origin: both directions leak, and the route template bites
+
+- **Claim:** ADR 0059 serves the SearXNG sidecar's own web UI at `/searxng/*` on the app's ingress.
+  Four traps, and the first two are the security surface — they are why the translation rules live in
+  a DI-free `SearxngProxy` that is tested as *rules*, not only through a host.
+  **(1) Outbound, the app hands the sidecar its own credentials unless stopped.** The browser attaches
+  the Easy Auth session cookie (`AppServiceAuthSession`, path `/`) to every `/searxng/*` request, and
+  Easy Auth injects `X-MS-CLIENT-PRINCIPAL-*` — the user's id, email and name — into every request the
+  backend sees. Forwarding either hands the sidecar exactly the per-user attribution ADR 0011 says
+  self-hosting buys the absence of. Both are stopped by **allowlists** (`ForwardedRequestHeaders`, and
+  cookies by the `sxng_` prefix), never denylists: a denylist fails open the day the app gains a cookie
+  or header nobody remembered to add to it.
+  **(2) Inbound, the proxied page runs on OUR origin with OUR privileges.** Absent a control, a script
+  in the pinned upstream image can read the ADR 0032 IndexedDB mirror (`agent42-cache` — conversation
+  text, unencrypted) and call any `/api/*` with the ambient Easy Auth cookie, including ADR 0054's
+  trace dump and ADR 0035's share-link minting. **`sandbox` alone does NOT close this, and believing it
+  does is the trap.** Omitting `allow-same-origin` forces an opaque origin, which stops every *read* —
+  measured: IndexedDB, `document.cookie` and `localStorage` all throw `SecurityError` and a same-origin
+  `fetch` is blocked, while the page still renders styled and preferences persist (SearXNG reads those
+  from HTTP cookies **server-side**, and HTTP cookies still round-trip). But a sandboxed opaque-origin
+  document **can still submit a form to a same-origin URL, and the browser sends the session cookie with
+  it** — measured — and `POST /api/conversations/{id}/share` takes no body, so that alone mints a public
+  no-login share link. The second directive is what closes it: **`form-action {scheme}://{host}/searxng/`**.
+  **`form-action 'self'` is measurably useless here** — `'self'` matches the origin of the URL, not the
+  document's opaque origin, so it permits every same-origin endpoint. That is why the source expression
+  must carry the path, hence the scheme and host, hence a per-request header — and hence a second,
+  quiet dependency on ADR 0042's `UseForwardedHeaders`, without which the policy names `http://` and
+  fails closed on SearXNG's own form. Do not add `allow-same-origin` to "fix" anything.
+  **(3) A trailing slash matches a LITERAL template, and the literal out-ranks the catch-all.** A
+  catch-all does not match a missing segment, so `/searxng` needs its own route — but `/searxng/`, the
+  canonical URL every link on the page points at, then matches **that literal route too** and wins over
+  `/searxng/{**path}`. A bare `Results.Redirect(prefix + "/")` there is an **infinite redirect loop on
+  the one URL that matters most**. The bare-prefix handler must test `Request.Path` for the trailing
+  slash and proxy instead of redirecting.
+  **(4) The catch-all value is percent-DECODED, so it is an SSRF sink.** `/searxng/%2f%2fevil.example/x`
+  yields the remainder `//evil.example/x`, which `new Uri(base, remainder)` resolves protocol-relative to
+  `http://evil.example/x` — dialled from inside the container. Build the upstream URI by **explicit
+  concatenation onto the fixed base** with leading `/` and `\` collapsed, then re-check the resolved
+  `Authority`. The same shape applies to the redirect `Location`: an absolute value is *expected* (a
+  preferences save emits one from `SEARXNG_BASE_URL`, so rejecting all absolutes 502s the commonest
+  redirect in the UI), so accept only the upstream authority or the request host and reject the rest —
+  the app origin hosts two OAuth callbacks, so an open redirector here is not benign.
+- **Evidence:** `src/Agent42.Backend/Web/SearxngProxy.cs`, `src/Agent42.Backend/Web/AgentApi.Web.cs`,
+  `tests/Agent42.Tests/SearxngProxyTests.cs` (`Proxy_ServesTheCanonicalSlashUrlWithoutLooping`,
+  `Proxy_CannotBeSteeredOffTheSidecarByAProtocolRelativePath`, `Proxy_RejectsOffSiteRedirects`,
+  `Proxy_ForwardsOnlyAllowlistedRequestHeaders`),
+  `.agentic/decisions/0059-searxng-ui-behind-easy-auth-proxy.md`
+- **Verified:** 2026-08-30
+
+### A named `HttpClient` cannot be re-pointed per consumer — a proxy needs its OWN
+
+- **Claim:** Three primary-handler defaults that are right for `web_search` are wrong for a proxy, and
+  because they are shared with `SearxngWebSearch` and `ConfigHealth`'s probe they cannot be changed on
+  the existing `searxng` client. `AllowAutoRedirect = true` makes the client follow the 3xx itself, so
+  the endpoint never sees a `Location` — the rewrite rules are then **dead in production while green in
+  tests**, because a test's stub *is* the primary handler. `UseCookies = true` pools one
+  `CookieContainer` across every consumer of the name, so one user's SearXNG preference cookie replays
+  onto another user's request **and onto `web_search`'s own tool queries**. `AutomaticDecompression =
+  None` means the proxy forwards the browser's `Accept-Encoding` and emits gzip bytes labelled
+  `text/html` — though note that third one is defence in depth rather than a live bug here, since the
+  browser's `Accept-Encoding` is never forwarded (it is not in the request allowlist); it matters because
+  `Content-Encoding` is deliberately not copied back, so a compressed upstream response would be
+  forwarded as undeclared encoded bytes. Hence a second registration, `searxng-ui`, against the same address — and it needs
+  `RemoveAllResilienceHandlers()` for the same reason every other client here does (the named-client
+  retry-inheritance trap).
+- **Evidence:** `src/Agent42.Backend/Program.cs` (the `SearxngProxy.HttpClientName` registration),
+  `tests/Agent42.Tests/SearxngProxyFixture.cs` (the stub is installed as the PRIMARY handler, deliberately)
+- **Verified:** 2026-08-30

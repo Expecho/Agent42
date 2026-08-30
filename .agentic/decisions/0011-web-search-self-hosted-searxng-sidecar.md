@@ -63,6 +63,12 @@ Accepted.
 - **SearXNG as a separate internal Container App** — a second app, its own ingress and scaling, reached
   over the environment network. Rejected: a sidecar is one deployment unit, `localhost`-only, and
   therefore unreachable from outside by construction.
+  >
+  > **Amended by [ADR 0059](0059-searxng-ui-behind-easy-auth-proxy.md) (2026-08-30) — the rejection
+  > stands, its *reason* is now narrower.** The sidecar is still one deployment unit behind one ingress,
+  > and a separate app/origin was rejected again on these same grounds. But it is no longer unreachable
+  > *by construction*: a backend proxy route serves its web UI at `/searxng/*` on the app's own
+  > Easy-Auth-gated ingress. Read ADR 0059 before relying on unreachability as a security property.
 - **Always-on retrieval (an `AIContextProvider`), mirroring ADR 0008** — see below; deliberately *not*
   chosen, and the distinction matters.
 
@@ -169,6 +175,12 @@ one, accepted.
   clear message instead of producing a dead revision.
 - **No new ingress.** The sidecar is `localhost`-only and unreachable from outside by construction; Easy
   Auth still fronts the only exposed port (ADR 0002 unweakened).
+  >
+  > **Amended by [ADR 0059](0059-searxng-ui-behind-easy-auth-proxy.md) (2026-08-30).** "No new ingress"
+  > and "Easy Auth fronts the only exposed port" both still hold — there is still one ingress, port 8888
+  > is still unpublished, and `excludedPaths` is unchanged. **"Unreachable from outside by construction"
+  > does not.** The sidecar's UI is reachable through one authenticated, CSP-sandboxed,
+  > header-and-cookie-scrubbing backend route. ADR 0002 is unweakened; this bullet's absolute is not.
 - Web search is on for every chat; there is no per-conversation or per-agent toggle. A `code_interpreter`
   tool (the other half of `f14de0e`) is a different problem with a different sandbox, and is out of scope.
 

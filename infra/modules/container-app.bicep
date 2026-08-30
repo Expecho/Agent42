@@ -299,7 +299,22 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             // from this variable (server.port in settings.yml is inert for the bind).
             { name: 'SEARXNG_PORT', value: '8888' }
             { name: 'SEARXNG_BIND_ADDRESS', value: '0.0.0.0' }
-            { name: 'SEARXNG_BASE_URL', value: 'http://localhost:8888/' }
+            // Carries the /searxng/ SUBPATH the backend proxies the UI under (ADR 0059). Measured on
+            // the pinned image: with a subpath here, every generated href/src in the served HTML is
+            // prefixed root-relative (`/searxng/static/...`), which is what makes the proxy work with
+            // no markup rewriting. Set as an env var rather than in settings.yml because base_url
+            // lives under `server:`, which the container's SEARXNG_* overrides DO cover — the inverse
+            // of the `search.formats` case the Dockerfile records as NOT reachable that way.
+            //
+            // The authority only shows up in redirect Location headers (the proxy reduces those to a
+            // root-relative path) and in opensearch.xml, so the custom domain is a correctness nicety
+            // rather than load-bearing; falling back to localhost still proxies correctly. Serving is
+            // unaffected: the sidecar answers on BOTH `/` and `/searxng/`, so web_search's own
+            // `/search?format=json` call over localhost:8888 keeps working unchanged.
+            {
+              name: 'SEARXNG_BASE_URL'
+              value: empty(customDomainName) ? 'http://localhost:8888/searxng/' : 'https://${customDomainName}/searxng/'
+            }
             { name: 'SEARXNG_SECRET', secretRef: 'searxng-secret' }
           ]
         }
