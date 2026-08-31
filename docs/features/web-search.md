@@ -194,15 +194,21 @@ The sidecar's own HTML search UI is proxied at **`/searxng/`**, linked from
 answered and which failed - an engine serving a CAPTCHA to the datacenter IP looks identical to
 "no results" from the tool's side.
 
-Four things to know before relying on it:
+Five things to know before relying on it:
 
 - It is **behind Easy Auth**, like every other browser surface, and is deliberately *not* in
   `excludedPaths`. There is still one ingress and port 8888 is still unpublished.
 - Every proxied response carries a CSP with two halves - a `sandbox` that puts the page in an opaque
   origin (so the third-party image cannot read the app's IndexedDB or `fetch` `/api`), and a
-  `form-action` pinned to `/searxng/` (so it cannot POST a form to `/api` either, which the sandbox
-  alone does not prevent). **Nothing you can see is lost by this**: it would disable SearXNG's
-  autocomplete, but this image already ships with autocomplete off.
+  `form-action` pinned to `/searxng/` (so it cannot navigate a form to `/api` either, which the sandbox
+  alone does not prevent for GETs). It also disables SearXNG's autocomplete, which costs nothing
+  because this image already ships with autocomplete off.
+- **Saving preferences does not work - it answers 403, and that is expected.** The opaque origin makes
+  the Save POST cross-site, so the browser drops the `SameSite=Lax` Easy Auth cookie and the request is
+  rejected before it reaches the proxy. Reading the page, running searches and reading engine errors
+  are all unaffected, which is what the page is for. It is not fixable without either granting
+  `allow-same-origin` (reopening the whole same-origin read surface) or making the page public. Note
+  this **cannot reproduce offline**: DevHost has no Easy Auth, so the same POST succeeds there.
 - **Your preferences there are yours alone** (cookies are namespaced `sxng_` and scoped to
   `/searxng/`) and they do **not** affect `web_search`, which dials the sidecar directly with no
   cookie. The instance itself is shared.

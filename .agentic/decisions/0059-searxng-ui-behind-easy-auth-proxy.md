@@ -77,8 +77,14 @@ exists*, not an absent database:
 | Preferences persist | **yes** — HTTP cookies still round-trip; SearXNG reads them server-side |
 | `fetch("/searxng/autocompleter")` | **blocked** |
 
-Everything the feature exists for — seeing the results, the engine errors and the preferences — works.
-The last row is the only functional loss, and it costs nothing **in this deployment**: SearXNG's JS
+> **Corrected 2026-08-31 — "Preferences persist" holds only where there is no Easy Auth, i.e. not in
+> production.** Cookies do round-trip, but *saving* is a POST from the opaque origin, which loses the Easy
+> Auth cookie and 403s before reaching SearXNG (see the correction under §1). Reading and searching are
+> unaffected. This row was measured in DevHost, which has no Easy Auth — the whole class of bug is
+> invisible offline, which is the honest reason it shipped.
+
+Everything the feature exists for — seeing the results and the engine errors — works.
+The autocompleter row is the only functional loss that was known at the time, and it costs nothing **in this deployment**: SearXNG's JS
 autocomplete would be blocked by the same rule, but `infra/searxng/settings.yml` already sets
 `autocomplete: ""`, so it is off in the baked image regardless. There is no observable regression here.
 
@@ -103,6 +109,20 @@ host, which makes the header **per-request**:
 | `… ; form-action 'self'` | **still reached the server** | works |
 | `… ; form-action {scheme}://{host}/searxng/` | **blocked — never left the browser** | works |
 
+> **Corrected 2026-08-31 — the "with the session cookie" cell is wrong, and the reason `form-action` is
+> needed is not the one given above.** An opaque origin makes the document's form submissions
+> **cross-site**, and the Easy Auth session cookie is `SameSite=Lax`, so the browser **omits it on a
+> POST**. Measured in one headless-Chrome session against a server issuing a Lax `AppServiceAuthSession`:
+> a normal navigation to the sandboxed page carries the cookie, its **GET** form carries the cookie, and
+> its **POST** form arrives with `Cookie: none` and `Origin: null`. Production confirms it independently
+> and is the better evidence: saving preferences through the proxy **403s**, which is Easy Auth rejecting
+> an unauthenticated POST — if the cookie were being sent it would pass and SearXNG would answer 302.
+>
+> So the `/api/share` minting described above **does not work as described**: that POST arrives
+> unauthenticated and Easy Auth stops it before any endpoint runs. **`form-action` is still required, but
+> for the GET half of the same paragraph** — a sandboxed **GET** form *does* carry the cookie (Lax permits
+> cross-site top-level GET navigation), so the state-changing GET routes named above really are reachable
+> without it. Keep the header; fix the reasoning. The consequence for this feature is in §4 below.
 This is also a second, quieter dependency on ADR 0042: `Request.Scheme` is `https` behind the ACA ingress
 only because `UseForwardedHeaders(XForwardedProto)` runs first. Without it the policy would name
 `http://` and **fail closed**, blocking SearXNG's own search form.
@@ -204,9 +224,13 @@ the chat app — for a `/searxng/` navigation. The guard sits beside the `/api` 
   dashboard — but materially narrower than `/logs`, because SearXNG holds no conversation content. What it
   does expose is **shared**: preference cookies are per-browser (guaranteed by `UseCookies = false`), but
   the *instance* is one, so a query typed into the UI is a query from the app's egress IP like any other.
-- **The full surface is passed through**, including `/preferences`. A user can change engine selection and
-  safesearch for their own browser only; nothing they set there reaches `web_search`, which dials the
-  sidecar directly with no cookie.
+- **The full surface is passed through**, including `/preferences` — but **saving preferences does not
+  work in production** (corrected 2026-08-31): the Save POST leaves the opaque origin without the Easy
+  Auth cookie and is rejected with a 403. Reading the page, searching and reading engine errors all work.
+  The loss is small and was accepted rather than fixed, because nothing set there reaches `web_search`
+  anyway — which dials the sidecar directly with no cookie — so the diagnostic purpose of the page is
+  intact. The alternatives all cost more than the feature is worth: granting `allow-same-origin` reopens
+  everything §1 closes, and an `excludedPaths` carve-out would make the page publicly reachable.
 - **Autocomplete is broken** in the proxied UI, and deliberately. See §1.
 - **Egress is essentially unchanged.** The sidecar was already forwarding queries to DuckDuckGo/Bing
   (ADR 0011's non-privacy note), and this adds a *read* path rather than a new server-side egress path.

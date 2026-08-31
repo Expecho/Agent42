@@ -53,9 +53,14 @@ public static class SearxngProxy
     /// would otherwise read the ADR 0032 IndexedDB conversation mirror and <c>fetch</c> any <c>/api/*</c>
     /// with the ambient Easy Auth cookie. Measured under this exact value: IndexedDB,
     /// <c>document.cookie</c> and <c>localStorage</c> all throw <c>SecurityError</c> and a same-origin
-    /// <c>fetch</c> is blocked, while the page still renders styled, the search form still submits and
-    /// preferences still persist (SearXNG reads those from HTTP cookies server-side, and HTTP cookies
-    /// still round-trip).
+    /// <c>fetch</c> is blocked, while the page still renders styled and the search form still submits
+    /// (it is a GET, and a Lax cookie survives a cross-site top-level GET navigation).
+    /// <para><b>What the opaque origin also costs: SAVING preferences 403s in production.</b> A POST from
+    /// an opaque origin is cross-site, so the browser omits the <c>SameSite=Lax</c> Easy Auth cookie and
+    /// the request is rejected before it reaches this proxy. Reading the page and searching are
+    /// unaffected, and nothing set there reaches <c>web_search</c> anyway, so this is accepted rather
+    /// than fixed — see the gotcha. Do NOT "fix" it with <c>allow-same-origin</c>; that reopens
+    /// everything this header closes. It cannot reproduce offline: DevHost has no Easy Auth.</para>
     /// </summary>
     public const string SandboxCsp = "sandbox allow-scripts allow-forms";
 

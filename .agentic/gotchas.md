@@ -288,6 +288,32 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0060-enable-google-and-bing-search-engines.md`
 - **Verified:** 2026-08-30
 
+### A CSP-sandboxed page loses the Easy Auth cookie on POST — so its forms 403 in prod only
+
+- **Claim:** a `Content-Security-Policy: sandbox` **without** `allow-same-origin` gives the document an
+  **opaque origin**, which makes even a *same-origin* form submission **cross-site** for cookie purposes.
+  The Easy Auth session cookie (`AppServiceAuthSession`) is `SameSite=Lax`, and Lax is **not** sent on a
+  cross-site **POST** — so Easy Auth sees an unauthenticated request and answers **403** (it will not
+  redirect a POST to a login page). The split is exact and it is what makes this confusing:
+  **normal navigation → cookie sent. Sandboxed GET form → cookie sent** (Lax permits cross-site top-level
+  GET navigation). **Sandboxed POST form → no cookie, `Origin: null`.** So the page loads, search works,
+  and only the thing that POSTs — SearXNG's Save preferences — fails, which reads like a broken button
+  rather than an auth problem.
+  **This is invisible in DevHost and in every test in this repo**, because neither has Easy Auth: the
+  same POST succeeds offline and 403s in production. ADR 0059 shipped believing preferences saved
+  correctly for exactly that reason.
+  Two corollaries worth carrying: a security argument of the form "a sandboxed page can still POST
+  same-origin **with the session cookie**" is **false** for a Lax cookie (ADR 0059 asserted it; the
+  production 403 disproves it) — but `form-action` is still required, because the **GET** half of that
+  argument is true. And do not "fix" a 403 like this by adding `allow-same-origin`: that reopens the
+  entire same-origin read surface the sandbox exists to close (ADR 0032's IndexedDB mirror, ADR 0054's
+  traces, ADR 0035's share minting).
+- **Evidence:** `src/Agent42.Backend/Web/SearxngProxy.cs` (`SandboxCsp`, `BuildCsp`),
+  `.agentic/decisions/0059-searxng-ui-behind-easy-auth-proxy.md` (§1 and §4 corrections),
+  `infra/modules/container-app.bicep` (`excludedPaths` — `/searxng/*` is deliberately NOT in it)
+- **Verified:** 2026-08-31 (headless Chrome against a server issuing a Lax `AppServiceAuthSession`, and
+  the production 403 at `https://chat.agent42.nl/searxng/preferences`)
+
 ### SearXNG `keep_only` enables nothing — and `inactive` is not `disabled`
 
 - **Claim:** listing an engine under `use_default_settings.engines.keep_only` **filters** the upstream

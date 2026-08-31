@@ -129,10 +129,13 @@ public sealed class SearxngProxyTests(SearxngProxyFixture fixture)
     }
 
     /// <summary>
-    /// The sandbox stops READS, not cookie-bearing navigations. Measured: a sandboxed opaque-origin page
-    /// can still submit a form to a same-origin URL and the browser sends the session cookie with it —
-    /// and `POST /api/conversations/{id}/share` takes no body, so a form submission mints a public
-    /// no-login share link (ADR 0035). `form-action` is what actually closes that.
+    /// The sandbox stops READS, not navigations. `form-action` closes the navigation half.
+    ///
+    /// Note the reason, which was corrected on 2026-08-31: the original claim here was that a sandboxed
+    /// POST carries the session cookie and so could mint an ADR 0035 share link. It does not — an opaque
+    /// origin makes the POST cross-site and the `SameSite=Lax` Easy Auth cookie is dropped (which is why
+    /// saving SearXNG preferences 403s in production). The header is still required for the **GET** half:
+    /// a sandboxed GET form DOES carry the cookie, so state-changing GET routes are genuinely reachable.
     ///
     /// It must carry the PATH, which is why it names scheme and host and is built per request:
     /// `form-action 'self'` was measured NOT to work, because 'self' matches the URL's origin rather than
