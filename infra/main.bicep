@@ -85,6 +85,9 @@ param cosmosRemindersContainerName string = 'reminders'
 @description('Cosmos DB SQL container name used for document RAG vector search (ADR 0007). Setting it also switches the app onto the Cosmos document index (vs the in-memory one).')
 param cosmosDocChunksContainerName string = 'doc-chunks'
 
+@description('Cosmos DB SQL container name used for the searchable chat-message projection (ADR 0061). Setting it also switches the app onto the Cosmos chat search index (vs the in-memory one).')
+param cosmosChatMessagesContainerName string = 'chat-messages'
+
 @description('Name of the storage account to create for image attachments. Must be globally unique, lowercase alphanumeric, 3-24 characters.')
 param storageAccountName string = 'stagent42${uniqueString(resourceGroup().id)}'
 
@@ -166,6 +169,7 @@ module cosmos 'modules/cosmos.bicep' = {
     containerName: cosmosContainerName
     remindersContainerName: cosmosRemindersContainerName
     docChunksContainerName: cosmosDocChunksContainerName
+    chatMessagesContainerName: cosmosChatMessagesContainerName
     tags: tags
   }
 }
@@ -205,6 +209,7 @@ module containerApp 'modules/container-app.bicep' = {
     blobEndpoint: storage.outputs.blobEndpoint
     azureOpenAIEndpoint: azureOpenAIEndpoint
     cosmosDocChunksContainerName: cosmosDocChunksContainerName
+    cosmosChatMessagesContainerName: cosmosChatMessagesContainerName
     azureOpenAITenantId: azureOpenAITenantId
     otlpEndpoint: otlpEndpoint
     authClientId: authClientId

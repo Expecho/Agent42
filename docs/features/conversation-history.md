@@ -1,7 +1,8 @@
 # Conversation history
 
 > Every chat is saved and listed in the sidebar (most recent first, grouped by agent), so you
-> can leave and resume any conversation later, or delete one.
+> can leave and resume any conversation later, delete one, or **search inside the messages
+> themselves** — not just their titles.
 
 ## What it is
 
@@ -9,6 +10,11 @@ Each conversation shows up in the sidebar, ordered by most-recent activity, with
 chats collapsed into groups. Click one to resume it — the full transcript, model, agent, and
 tool selection are restored. Delete one and it's gone, along with its reminders and any
 indexed document chunks.
+
+A search box above the list filters it by **message text** — both what you asked and what the
+agent answered. Typing replaces the list with matching messages (conversation title plus a
+snippet around the match); clicking one opens that conversation; clearing the box brings the
+list back, pins and agent groups intact.
 
 ## How it works
 
@@ -140,6 +146,55 @@ for (const conv of conversations) {
 for (const [agentId, group] of groups) group.placeholder.replaceWith(buildAgentGroup(agentId, group.name, group.convs));
 ```
 
+### Searching — a separate projection, because the session is one opaque blob
+
+The transcript *is* the serialized session, which is exactly why it cannot be searched in
+place: Cosmos full-text search indexes a **named string path**, and `SerializedSession` is one
+JSON string per conversation. Indexing it would tokenize JSON keys (`messages`, `role`,
+`assistant`) alongside the content, and "document" would mean *whole conversation* rather than
+*message* — the unit a person actually searches for.
+
+So messages are projected into a second container, `chat-messages`, one item per message,
+partitioned by **`/userId`**. That partition choice is the security property: a query is
+single-partition *and* owner-scoped by construction, not by a `WHERE` clause a later edit could
+drop (ADR 0061).
+
+```csharp
+// One projection, used by BOTH the live write and the backfill - so their ordinals cannot
+// disagree, which is what makes re-indexing overwrite instead of duplicate.
+private static List<ChatSearchTurn> ProjectForSearch(IReadOnlyList<ChatTurn> turns, int fromOrdinal)
+{
+    var projected = new List<ChatSearchTurn>();
+    for (var ordinal = Math.Max(fromOrdinal, 0); ordinal < turns.Count; ordinal++)
+        if (!string.IsNullOrWhiteSpace(turns[ordinal].Text))
+            projected.Add(new ChatSearchTurn(ordinal, turns[ordinal].Role, turns[ordinal].Text));
+    return projected;
+}
+```
+
+Three properties are worth knowing, because each is easy to get wrong:
+
+- **The write is best-effort** — its own `try`/`catch`, logged, never rethrown. The index is a
+  projection, so losing a write costs search results and never conversation content; nothing
+  about search may be able to fail a turn. The gap that leaves is repairable, because
+  `POST /api/search/reindex` is user-invocable and **idempotent**.
+- **Incognito chats produce zero index documents**, and skipping the ephemeral write is not
+  enough on its own: an incognito turn stays in the in-memory session, so the next normal turn
+  would re-project it. The cursor is advanced past it instead.
+- **Deleting a conversation deletes its messages with a filtered delete**, never a partition
+  drop — the partition here is the *user*, so dropping it would take every other chat with it.
+
+v1 queries with `CONTAINS` (case-insensitively — the third argument is required, and the
+default is case-sensitive). The container is nonetheless created **with** an `en-US` full-text
+policy, because that policy cannot be added afterwards: switching to BM25 ranking later is then
+a query change rather than a second backfill.
+
+On the client the one rule that matters is that the search render lives **inside**
+`renderSidebar`, as an early return — not as a second render path beside it. Nine call sites
+re-render this list independently of the search box (a background refresh, cache hydration, an
+agent save, a completed send), and any of them would otherwise wipe an active result list while
+it was being read.
+
 ## How the Agent Framework fits
 
 - History is **not** stored separately — it lives inside the Agent Framework `AgentSession`.
@@ -169,4 +224,8 @@ for (const [agentId, group] of groups) group.placeholder.replaceWith(buildAgentG
 | History / purge | `src/Agent42.Agents/Conversations/AgentGrain.cs` (`GetHistoryAsync`, `PurgeAsync`) |
 | Endpoints | `src/Agent42.Backend/Conversations/AgentApi.Conversations.cs` |
 | Cosmos wiring | `src/Agent42.Backend/Program.cs` |
-| Frontend | `src/Agent42.Backend/wwwroot/app.js` |
+| Search port + in-memory twin | `src/Agent42.Agents/Search/IChatSearchIndex.cs`, `src/Agent42.Agents/Search/InMemoryChatSearchIndex.cs` |
+| Search projection + backfill | `src/Agent42.Agents/Search/AgentGrain.Search.cs` |
+| Search Cosmos adapter | `src/Agent42.Backend/Search/CosmosChatSearchIndex.cs` |
+| Search endpoints | `src/Agent42.Backend/Search/AgentApi.Search.cs` |
+| Frontend | `src/Agent42.Backend/wwwroot/js/sidebar.js`, `src/Agent42.Backend/wwwroot/js/search.js` |

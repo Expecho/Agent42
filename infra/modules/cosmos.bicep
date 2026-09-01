@@ -16,6 +16,9 @@ param remindersContainerName string
 @description('Cosmos DB SQL container name used for document RAG vector search (ADR 0007).')
 param docChunksContainerName string
 
+@description('Cosmos DB SQL container name used for the searchable chat-message projection (ADR 0061).')
+param chatMessagesContainerName string
+
 @description('Tags applied to the account.')
 param tags object
 
@@ -150,6 +153,53 @@ resource docChunksContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/
             path: '/embedding'
             type: 'quantizedFlat'
           }
+        ]
+      }
+    }
+  }
+}
+
+// Chat-message search projection (ADR 0061). Pre-created for the same reason as every container
+// above: disableLocalAuth: true means Cosmos AAD data-plane RBAC cannot create containers, so
+// CosmosChatSearchIndex never creates on use. Partitioned by /userId — NOT by conversation — so a
+// user's whole corpus is one logical partition and every search is single-partition and
+// owner-scoped by construction. (The consequence is that deleting one conversation is a filtered
+// delete within the partition, never a partition drop; see the ADR.)
+//
+// The full-text policy is declared HERE, at creation, even though v1 queries with CONTAINS: a
+// container's full-text policy cannot be added afterwards, so declaring it now makes the eventual
+// switch to BM25 (ORDER BY RANK FullTextScore) a query change rather than a second backfill.
+// Language is en-US: it is GA and needs no preview enrollment. Dutch is NOT a supported FTS
+// language; Dutch text still tokenizes and matches exactly, it just will not stem.
+resource chatMessagesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2026-03-15' = {
+  parent: database
+  name: chatMessagesContainerName
+  properties: {
+    resource: {
+      id: chatMessagesContainerName
+      partitionKey: {
+        paths: ['/userId']
+        kind: 'Hash'
+      }
+      fullTextPolicy: {
+        defaultLanguage: 'en-US'
+        fullTextPaths: [
+          {
+            path: '/text'
+            language: 'en-US'
+          }
+        ]
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        includedPaths: [
+          { path: '/*' }
+        ]
+        excludedPaths: [
+          { path: '/_etag/?' }
+        ]
+        fullTextIndexes: [
+          { path: '/text' }
         ]
       }
     }

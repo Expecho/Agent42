@@ -2,6 +2,7 @@
 
 import { cacheDelete, cacheGet, cachePut } from "./cache.js";
 import { activeId, selectConversation, startNewConversation } from "./conversations.js";
+import { query as searchQuery, renderSearchHits } from "./search.js";
 import { conversationList } from "./dom.js";
 import { timeLabel } from "./format.js";
 import { streaming } from "./send.js";
@@ -274,6 +275,16 @@ export function renderSidebar() {
   // Every row is about to be destroyed and rebuilt, so the revealed node is going with them.
   clearReveal();
   conversationList.innerHTML = "";
+
+  // Search (ADR 0061). This branch is INSIDE renderSidebar on purpose: nine call sites re-render
+  // this list independently of the search box — a background refresh, cache hydration (ADR 0032),
+  // an agent save, send()'s success path — and every one of them would wipe an active result list
+  // if the hits were painted by a separate render path beside this one.
+  if (searchQuery) {
+    renderSearchHits(conversationList);
+    return;
+  }
+
   if (conversations.length === 0) {
     const li = document.createElement("li");
     li.className = "conversations__empty";

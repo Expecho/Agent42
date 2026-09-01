@@ -13,6 +13,13 @@ namespace Agent42.Tests;
 /// service (what the upload endpoint resolves). Registered in both the silo and the WebApplication
 /// DI containers, exactly like the in-memory attachment store — the index is process-global, so an
 /// upload served by the endpoint is visible to the grain in the separate silo (constraint 10).
+///
+/// <para>It also carries the chat search index (ADR 0061), which is not document RAG. This is the
+/// ONE helper that every silo configurator AND every API host calls — including
+/// <see cref="CapSizedFetcherSiloConfigurator"/>, which skips <see cref="AddWebToolFakes"/> — and
+/// <c>IChatSearchIndex</c> needs both: it is a mandatory <c>AgentGrain</c> dependency (a miss fails
+/// activation) and the search endpoint resolves it (a miss returns 409). Putting it here is what
+/// makes both true everywhere at once.</para>
 /// </summary>
 internal static class TestServiceRegistration
 {
@@ -20,6 +27,7 @@ internal static class TestServiceRegistration
     {
         services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, DeterministicEmbeddingGenerator>();
         services.AddSingleton<IDocumentIndex, InMemoryDocumentIndex>();
+        services.AddSingleton<IChatSearchIndex, TestChatSearchIndex>();
         services.AddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
         services.AddSingleton<DocumentChunker>();
         services.AddSingleton<DocumentIngestionService>();

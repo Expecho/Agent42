@@ -207,6 +207,7 @@ builder.Services.AddSingleton<DocumentIngestionService>();
 // The document index (ADR 0007) branches on whether the doc-chunks container is configured;
 // that decision lives with the Documents feature (ADR 0040/0050), not inline here.
 builder.Services.AddDocumentIndex(builder.Configuration);
+builder.Services.AddChatSearchIndex(builder.Configuration);
 
 // Web tools (ADR 0011): search runs against the SearXNG sidecar in this Container App, reached over
 // localhost. Eager-validated so a missing endpoint fails at startup rather than in the middle of a

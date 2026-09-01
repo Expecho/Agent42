@@ -113,4 +113,12 @@ public interface IAgentGrain : IGrainWithStringKey
     /// </summary>
     [Alias("PurgeAsync")]
     Task PurgeAsync();
+
+    /// <summary>
+    /// Re-projects this conversation into the chat search index (ADR 0061) and returns how many
+    /// turns were indexed. Idempotent — ordinals come from the same <see cref="GetHistoryAsync"/>
+    /// projection the live write path uses, so a re-run overwrites rather than duplicates.
+    /// </summary>
+    [Alias("ReindexAsync")]
+    Task<int> ReindexAsync();
 }
