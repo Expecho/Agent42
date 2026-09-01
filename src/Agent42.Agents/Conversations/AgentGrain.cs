@@ -59,6 +59,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly IDocumentIndex _documentIndex;
 
+    private readonly IChatSearchIndex _chatSearchIndex;
+
     private readonly IWebSearch _webSearch;
 
     private readonly IWebPageFetcher _webPageFetcher;
@@ -174,6 +176,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         IUserSkillProvider userSkillProvider,
         IAttachmentStore attachments,
         IDocumentIndex documentIndex,
+        IChatSearchIndex chatSearchIndex,
         IWebSearch webSearch,
         IWebPageFetcher webPageFetcher,
         IGeocoder geocoder,
@@ -188,6 +191,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _userSkillProvider = userSkillProvider;
         _attachments = attachments;
         _documentIndex = documentIndex;
+        _chatSearchIndex = chatSearchIndex;
         _webSearch = webSearch;
         _webPageFetcher = webPageFetcher;
         _geocoder = geocoder;
@@ -640,6 +644,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     {
         if (_ephemeral)
         {
+            // The incognito turn is still in the IN-MEMORY session (ADR 0034 guarantees "not
+            // persisted, not listed", never "not in memory"), so the next normal turn of this same
+            // activation would otherwise re-project it straight into the search index. Consume its
+            // ordinals without indexing them — see IndexNewTurnsForSearchAsync (ADR 0061).
+            await SkipIndexingForEphemeralTurnAsync();
+
             _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral turn (not persisted)",
                 this.GetPrimaryKeyString());
             return;
@@ -648,6 +658,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
         await _state.WriteStateAsync();
+
+        // Search projection (ADR 0061). No _ephemeral guard needed: the early return above already
+        // took the incognito path, so reaching here means the turn is persisted. Best-effort inside.
+        await IndexNewTurnsForSearchAsync();
 
         _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
             this.GetPrimaryKeyString());
@@ -803,6 +817,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // by the same grain key.
         await _documentIndex.DeleteAsync(this.GetPrimaryKeyString());
 
+        // And its indexed messages, so deleted conversation text does not survive in the search
+        // projection (ADR 0061). Best-effort and bounded inside: this grain is non-reentrant and
+        // DELETE /api/conversations/{id} awaits it synchronously.
+        await DeleteSearchIndexForConversationAsync();
+
         _state.State.ScheduledPrompts.Clear();
         _state.State.DocumentNames.Clear();
         _state.State.SerializedSession = null;
@@ -876,6 +895,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _state.State.ScheduledPrompts[reminderName] = info with { TimesFired = info.TimesFired + 1 };
 
         await _state.WriteStateAsync();
+
+        // Search projection (ADR 0061). Deliberately NO _ephemeral guard here — this method clears
+        // _ephemeral on entry because a fired reminder always persists, so adding one would be the
+        // fresh-guard mistake ADR 0034 warns about. Best-effort inside.
+        await IndexNewTurnsForSearchAsync();
 
         // Away-reply push (ADR 0028): a scheduled prompt fired with no live client watching. After the
         // persist, so a push only ever follows a durably-recorded reply. No _modelId guard needed — the

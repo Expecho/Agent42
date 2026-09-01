@@ -104,6 +104,13 @@ public sealed class EasyAuthExclusionTests
     // it needed no excludedPaths change; these rows are what make that a checked fact. The bare prefix,
     // the canonical slash URL and a subresource are named separately, because /shared taught us those
     // are three separate mistakes.
+    // AC10 (ADR 0061). Chat history search reads the caller's own message text, and the reindex route
+    // activates their grains. Both take the userId from GetUserId(), so a route reachable outside Easy
+    // Auth would resolve to the local-dev principal and expose one phantom identity's whole corpus.
+    // As with /logs and /searxng, the correct change to excludedPaths was NO change; these rows are
+    // what make that a checked fact rather than an omission.
+    [InlineData("/api/search")]
+    [InlineData("/api/search/reindex")]
     [InlineData("/searxng")]
     [InlineData("/searxng/")]
     [InlineData("/searxng/static/x.css")]

@@ -36,6 +36,9 @@ param azureOpenAIEndpoint string
 @description('Cosmos DB container name for document RAG vector search (ADR 0007). Its presence switches the app onto the Cosmos document index.')
 param cosmosDocChunksContainerName string
 
+@description('Cosmos DB container name for the chat-message search projection (ADR 0061). Its presence switches the app onto the Cosmos chat search index.')
+param cosmosChatMessagesContainerName string
+
 @description('Entra ID tenant id used for DefaultAzureCredential (blob storage + ARM).')
 param azureOpenAITenantId string
 
@@ -233,6 +236,7 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             // any more — the embedding model is per-user (ADR 0007/0018).
             { name: 'AzureOpenAI__Endpoint', value: azureOpenAIEndpoint }
             { name: 'Cosmos__DocChunksContainerName', value: cosmosDocChunksContainerName }
+            { name: 'Cosmos__ChatMessagesContainerName', value: cosmosChatMessagesContainerName }
             { name: 'AzureOpenAI__TenantId', value: azureOpenAITenantId }
             { name: 'OTEL_SERVICE_NAME', value: containerAppName }
             { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', value: otlpEndpoint }

@@ -2481,3 +2481,64 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Program.cs` (the `SearxngProxy.HttpClientName` registration),
   `tests/Agent42.Tests/SearxngProxyFixture.cs` (the stub is installed as the PRIMARY handler, deliberately)
 - **Verified:** 2026-08-30
+
+### Chat-search ordinals must come from ONE `GetHistoryAsync()` projection, on both paths
+
+- **Claim:** the chat-search document id is `{conversationId}:{ordinal}` (ADR 0061), and the ordinal is
+  the index into **`GetHistoryAsync()`'s projected list** — not a raw session-message index, and not a
+  counter a caller keeps. The live write and the backfill both derive it from that one projection, so
+  they cannot disagree; that is the only reason an upsert overwrites instead of appending, and so the
+  only reason `ReindexAsync` is idempotent. Get it wrong and nothing throws: a live path counting raw
+  session messages against a backfill counting projected turns silently **double-indexes** every
+  conversation that ever had a skipped turn (an image-only turn, a turn with neither text nor image),
+  because the two schemes agree exactly until the first skip and diverge by one thereafter. The
+  projection skips empty-text turns, which is what makes skips ordinary rather than exotic.
+- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.Search.cs` (`ProjectForSearch` — the single
+  projection both paths call), `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
+  (`Reindex_AfterLiveIndexing_ProducesNoDuplicates`, `Reindex_IsIdempotent`),
+  `.agentic/decisions/0061-searchable-chat-message-projection.md`
+- **Verified:** 2026-09-01
+
+### Skipping an incognito turn's index write is NOT enough — it stays in the in-memory session
+
+- **Claim:** ADR 0034 guarantees "not persisted, not listed", explicitly **not** "not in memory", and
+  chat search is the first feature where that distinction bites. An ephemeral turn skips its
+  `WriteStateAsync`, but it is still in the live `_session`, so it is still returned by
+  `GetHistoryAsync()` for the rest of that activation — and the **next normal turn's re-projection
+  sweeps it straight into the index**. Guarding only the ephemeral write leaves incognito text in a
+  queryable Cosmos container. The fix is to advance the index cursor past the ephemeral turn without
+  indexing it (`SkipIndexingForEphemeralTurnAsync`), which costs the activation's self-heal from that
+  point on — deliberately, since re-indexing something incognito is a correctness failure while a
+  missed repair is what the reindex endpoint is for. **Measured**, not theorised: without it
+  `Indexing_ResumesOnTheNormalTurnAfterAnEphemeralOne` fails with the incognito text indexed at its
+  original ordinal.
+  Note also that the three write sites have **three different `_ephemeral` shapes** and must be read
+  before editing: `PersistTurnUnlessEphemeralAsync` is an **early return**, `GenerateImageTurnAsync` is
+  a real `if (!_ephemeral)` block, and `ReceiveReminder` has **no guard at all** — it clears
+  `_ephemeral` on entry because a fired reminder always persists, so adding one there is the
+  fresh-guard mistake ADR 0034 warns about.
+- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.Search.cs`
+  (`SkipIndexingForEphemeralTurnAsync`), `src/Agent42.Agents/Conversations/AgentGrain.cs`,
+  `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
+  `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
+- **Verified:** 2026-09-01
+
+### The chat-search write is best-effort — and that is NOT ADR 0008's rejected shape
+
+- **Claim:** every `IChatSearchIndex` call from the grain is wrapped in its **own try/catch, logged and
+  never rethrown**, including the delete inside `PurgeAsync` (which a synchronous, non-reentrant
+  `DELETE /api/conversations/{id}` awaits). The index is a **projection**: losing a write costs search
+  results, never conversation content, so nothing about search may be able to fail a turn.
+  Do **not** describe the feature as "following ADR 0008" — 0008's *Alternatives* explicitly **rejects**
+  "always-on but ungated", and its per-conversation `DocumentNames.Count > 0` gate is load-bearing. This
+  takes the shape 0008 refused, and the distinction that makes it acceptable is the failure mode: 0008
+  rejected a per-turn **third-party embedding round trip**, whose breakage broke every conversation,
+  whereas this is a **local Cosmos upsert** — no third party, no embedding, no new egress, no new
+  availability dependency. The honest cost is that a dropped write is an *invisible* gap in results,
+  which is the same invisibility the backfill decision rejected; what closes it is that
+  `POST /api/search/reindex` is user-invocable and idempotent, so a suspected gap is repairable.
+- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.Search.cs`,
+  `tests/Agent42.Tests/ChatSearchIndexingTests.cs` (`ThrowingIndex_DoesNotBreakTheReply`,
+  `ThrowingIndex_DoesNotBreakPurge`),
+  `.agentic/decisions/0008-always-on-textsearchprovider-retrieval.md` (Alternatives)
+- **Verified:** 2026-09-01

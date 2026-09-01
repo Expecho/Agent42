@@ -493,8 +493,8 @@ to document a mechanical rule, add a lint rule instead.
   provider, so a turn makes **zero** calls rather than failing ones). Incognito chats (ADR 0034) are fully
   excluded and **image-generation turns are too** (`RecordImageTurnAsync` builds its own agent with no
   providers) — but **reminder and agent-run turns are INCLUDED**, deliberately, so memory is written on
-  turns with no user present. `Memory/` is the 19th Agents feature folder and `AgentGrain.Memory.cs` its
-  12th partial; `HindsightRegistration` makes `Memory/` the 20th Backend folder — extracted there because
+  turns with no user present. `Memory/` was the 19th Agents feature folder and `AgentGrain.Memory.cs` its
+  12th partial (ADR 0061's `Search/` has since followed it); `HindsightRegistration` makes `Memory/` the 20th Backend folder — extracted there because
   adding the branch inline took `Program.cs` from 15 to 16 cognitive complexity and **failed the build**.
   Four things to read before touching it: the provider is built at **activation** while the incognito gate
   is **per-turn**, so it must be a delegate (`IsEnabled = () => !_ephemeral`), guarded by a test pair whose
@@ -509,6 +509,40 @@ to document a mechanical rule, add a lint rule instead.
   suppressed, a recorded exception to the ADR 0053 rule (a bank id is the opaque principal id, not an email
   address). The honest residual: **neither repo's tests ever reach a real Hindsight server**, and DevHost
   registers `HindsightIntegration(null)`, so the first real call happens in production.
+- Search inside chat history (ADR 0061): a sidebar search box over a **plain-text projection of chat
+  messages** in a new Cosmos container `chat-messages`, partitioned by **`/userId`** (not by
+  conversation), so every query is single-partition and **owner-scoped by construction**. Port
+  `IChatSearchIndex` (Agents `Search/`), Cosmos adapter + `ChatSearchIndexRegistration` (Backend
+  `Search/`), `InMemoryChatSearchIndex` offline; `GET /api/search?q=` and `POST /api/search/reindex`,
+  both **Easy-Auth gated — `excludedPaths` is unchanged** and the userId comes from `GetUserId()`,
+  never a query parameter. **The projection is the whole point, not an optimisation:** Cosmos FTS
+  indexes a *named string path*, and `SerializedSession` is one JSON blob per conversation, so
+  indexing it would tokenize JSON keys (`messages`, `role`) alongside content and make "document"
+  mean *whole conversation* — never try to index the grain-state container. The container ships
+  **with** a full-text policy (`en-US`; **Dutch is not a supported FTS language** — it matches
+  exactly but does not stem) even though **v1 queries with `CONTAINS`**, because the policy cannot be
+  added after creation: BM25 later is then a query change, not a second backfill. Hybrid/RRF is the
+  upgrade path and is **explicitly out of scope** — it would re-import ADR 0030's per-turn embedding
+  round trip, *precisely* the shape ADR 0008 rejected. **Do not write "following ADR 0008":** 0008
+  rejects "always-on but ungated" and this takes that shape deliberately, the distinction being that
+  the per-turn work here is a **local upsert**, no third party and no new egress. What 0008 does bind
+  is that **every index write is best-effort — own try/catch, logged, never rethrown**; the invisible
+  gap that leaves is closed by reindex being **user-invocable and idempotent**. Three traps, all in
+  gotchas: **ordinals must come from ONE `GetHistoryAsync()` projection** (both paths, or a
+  live-then-reindex double-indexes); **an incognito turn stays in the in-memory session**, so skipping
+  its write is *not* enough — the next normal turn re-projects it in unless the cursor is advanced
+  past it (measured: the test fails without that); and **delete is a filtered query, never a
+  partition drop**, because the partition is the user. Headline consequence: **a second copy of every
+  message now exists at rest** — no new egress, but anyone reasoning about where conversation content
+  lives (ADR 0035 share links, 0032's IndexedDB mirror, 0054's `/logs`) must now count this container.
+  Two caveats worth knowing before relying on it: the index cursor is **activation-scoped**, so the
+  first indexed turn of each activation re-upserts the **whole** conversation (write amplification,
+  bought deliberately for self-healing); and **`POST /api/search/reindex` has no UI** — it is
+  curl-only, and nothing backfills existing history on deploy, so the "user-invocable repair" the
+  best-effort rule leans on is currently manual.
+  Shell cache bumped `agent42-shell-v25` → `-v26`. The DevHost browser leg **was** run (headless
+  Chrome over CDP) and the AC16 guard was **mutation checked**. The Cosmos wire path is **prod-only**
+  and unverified by CI, exactly as `CosmosDocumentIndex` has been since ADR 0007.
 - Quality gates are measurable or absent (ADR 0050): `.agentic/quality-gates.yaml` used to carry **five**
   gates of which **four had no measuring tool in the repo** — they are SonarQube "Clean as You Code"
   metrics and there is no Sonar here (`pr-checks.yml` said so itself, and `.agentic/optional-skills/sonar/`
@@ -520,7 +554,9 @@ to document a mechanical rule, add a lint rule instead.
   checkout has no merge base and would silently gate nothing). **`cognitive_complexity_max`** is enforced at
   **build time** by `SonarAnalyzer.CSharp` rule **S3776** — a `GlobalPackageReference` (CPM's analyzer form,
   implies `PrivateAssets="all"`), no Sonar server, no token, no Java, no extra CI job. Three things to know
-  before touching it: **cognitive ≠ cyclomatic** (`ChatCoreAsync` is 29 cyclomatic and **39 cognitive**), so
+  before touching it: **cognitive ≠ cyclomatic** (`ChatCoreAsync` measured 29 cyclomatic against **39
+  cognitive** — the figure that made it the worst of ADR 0051's eleven; it has since been split and is
+  under the threshold), so
   the installed `dotnet-complexity` skill — which reads a `cyclomatic_complexity_max` key that deliberately
   does not exist here — is **informational only** and never scores this gate; **exactly ONE Sonar rule is
   adopted**, because the other ~400 produce ~300 warnings that fire on this repo's own idioms (S108 ×40 on
@@ -967,9 +1003,11 @@ to document a mechanical rule, add a lint rule instead.
   source-text asset guard** (the fixture's `GetAppScriptAsync()` walks the import graph over HTTP).
   All three are in gotchas, and all three are asserted in `ProjectLayoutTests`/`PwaAssetsTests`.
   `styles.css` and `index.html`'s markup are deliberately untouched — separate MRs.
-- Project layout (ADR 0039): `src/Agent42.Agents` is organised into **19 top-level feature folders**
+- Project layout (ADR 0039): `src/Agent42.Agents` is organised into feature folders — **the 21 directories
+  `ProjectLayoutTests.ExpectedFolders()` pins by name** (that list, not a count in prose, is the
+  authority; `Skills/` is runtime skill content rather than code, but it is in the set)
   (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …), and `AgentGrain` is split into
-  **12 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`
+  **13 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`
   namespace — folders and namespaces deliberately DISAGREE, and that is load-bearing, not sloppiness.**
   Orleans Cosmos grain storage uses `JsonGrainStorageSerializer`, which writes the full CLR type name
   into every document (`"$type":"Agent42.Agents.AgentGrainState, Agent42.Agents"`), so giving a
@@ -983,10 +1021,11 @@ to document a mechanical rule, add a lint rule instead.
   binary path) and is **not** what protects data at rest. `ReceiveReminder` stays in the core `AgentGrain`
   part beside `ChatAsync` (the `_turnLocation`/`_ephemeral` clears must be read together); `Skills/` does
   not move (csproj `Content` glob); `Agent42.Tests` stays flat on purpose.
-- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **20
-  feature folders** mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
+- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **the 23
+  directories `ProjectLayoutTests.ExpectedFolders()` pins** (`Properties/` and `wwwroot/` ride in that
+  set without being features) mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
   visibly with `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`), **flat `Agent42.Backend` namespace**, and
-  `Program.cs` alone at the project root. `MapAgentApi` is split into **16 per-feature partials**
+  `Program.cs` alone at the project root. `MapAgentApi` is split into **17 per-feature partials**
   (`src/Agent42.Backend/Mcp/AgentApi.Mcp.cs`, …) with `src/Agent42.Backend/Api/AgentApi.cs` reduced to a 50-line composition root, and the 25
   request/response records live beside their feature as `*Contracts.cs`. Backend persists nothing, so
   the flat namespace is **not** forced here as it is in Agents — it is kept flat for consistency and

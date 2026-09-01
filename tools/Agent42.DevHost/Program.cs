@@ -119,6 +119,7 @@ builder.Services.AddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
 builder.Services.AddSingleton<DocumentChunker>();
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, DeterministicEmbeddingGenerator>();
 builder.Services.AddSingleton<IDocumentIndex, InMemoryDocumentIndex>();
+builder.Services.AddSingleton<IChatSearchIndex, InMemoryChatSearchIndex>();
 builder.Services.AddSingleton<DocumentIngestionService>();
 
 // Web tools offline (ADR 0011): canned search results and canned page text, so the web_search /
