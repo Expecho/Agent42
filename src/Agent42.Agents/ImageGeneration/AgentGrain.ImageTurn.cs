@@ -123,11 +123,20 @@ public sealed partial class AgentGrain
             _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
             await _state.WriteStateAsync();
 
+            // Search projection (ADR 0061). This site really does have an `if (!_ephemeral)` block —
+            // unlike the other two, which are an early return and a no-guard-by-design path — so the
+            // write goes INSIDE it. Best-effort inside.
+            await IndexNewTurnsForSearchAsync();
+
             _logger.LogInformation("Agent grain {GrainKey} completed an image-generation turn and persisted it",
                 this.GetPrimaryKeyString());
         }
         else
         {
+            // Same reason as the chat path: consume the ordinals so a later normal turn on this
+            // activation cannot re-project this incognito turn into the search index (ADR 0061).
+            await SkipIndexingForEphemeralTurnAsync();
+
             _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral image-generation turn (not persisted)",
                 this.GetPrimaryKeyString());
         }

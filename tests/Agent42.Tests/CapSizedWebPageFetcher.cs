@@ -77,6 +77,9 @@ public sealed class CapSizedFetcherSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
             services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
+            // Also the source of this silo's IChatSearchIndex (ADR 0061) — a mandatory grain
+            // dependency that deliberately rides the one helper every host calls, so it cannot be
+            // missed by the hand-registration below.
             services.AddDocumentRagFakes();
             // Deliberately NOT AddWebToolFakes(): this silo swaps in the cap-sized fetcher. That makes it
             // the one configurator where a new grain dependency has to be added by hand — miss it and

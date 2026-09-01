@@ -3,6 +3,7 @@
 import { wireTabs } from "./tabs.js";
 
 export const conversationList = document.getElementById("conversationList");
+export const searchInput = document.getElementById("searchInput");
 export const newChatBtn = document.getElementById("newChatBtn");
 export const thread = document.getElementById("thread");
 export const chatScroll = document.getElementById("chatScroll");

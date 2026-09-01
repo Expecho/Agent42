@@ -95,16 +95,17 @@ public sealed class ProjectLayoutTests
             "Agent42.Agents",
             [
                 "Attachments", "Calendar", "Conversations", "Documents", "ImageGeneration", "Location",
-                "Mcp", "Memory", "Models", "Push", "Scheduling", "Sharing", "Skills", "Speech",
-                "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web",
+                "Mcp", "Memory", "Models", "Push", "Scheduling", "Search", "Sharing", "Skills",
+                "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web",
             ]
         },
         {
             "Agent42.Backend",
             [
                 "Api", "Attachments", "Calendar", "Configuration", "Conversations", "Documents",
-                "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Properties", "Push", "Sharing",
-                "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web", "wwwroot",
+                "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Properties", "Push", "Search",
+                "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web",
+                "wwwroot",
             ]
         },
     };
@@ -126,7 +127,7 @@ public sealed class ProjectLayoutTests
         Assert.Equal(expected, actual);
     }
 
-    /// <summary>The twelve parts of <c>AgentGrain</c> (ADR 0039) and the folder each belongs to.</summary>
+    /// <summary>The thirteen parts of <c>AgentGrain</c> (ADR 0039) and the folder each belongs to.</summary>
     public static TheoryData<string> AgentGrainParts() =>
     [
         "Conversations/AgentGrain.cs",
@@ -141,6 +142,7 @@ public sealed class ProjectLayoutTests
         "Push/AgentGrain.Push.cs",
         "Calendar/AgentGrain.CalendarTools.cs",
         "Memory/AgentGrain.Memory.cs",
+        "Search/AgentGrain.Search.cs",
     ];
 
     // Each part exists where planned and really is a part of the one AgentGrain class.
@@ -155,7 +157,7 @@ public sealed class ProjectLayoutTests
         Assert.Contains("partial class AgentGrain", File.ReadAllText(file), StringComparison.Ordinal);
     }
 
-    /// <summary>The sixteen endpoint groups <c>MapAgentApi</c> was split into, and the folder each sits in.</summary>
+    /// <summary>The seventeen endpoint groups <c>MapAgentApi</c> was split into, and the folder each sits in.</summary>
     public static TheoryData<string, string> AgentApiParts() => new()
     {
         { "Conversations/AgentApi.Conversations.cs", "MapConversationEndpoints" },
@@ -174,6 +176,7 @@ public sealed class ProjectLayoutTests
         { "UserSkills/AgentApi.UserSkills.cs", "MapUserSkillEndpoints" },
         { "Calendar/AgentApi.Calendar.cs", "MapCalendarEndpoints" },
         { "Web/AgentApi.Web.cs", "MapWebEndpoints" },
+        { "Search/AgentApi.Search.cs", "MapSearchEndpoints" },
     };
 
     // Each endpoint group exists, is a partial of the one AgentApi class, and — the part that matters —

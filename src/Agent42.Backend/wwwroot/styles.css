@@ -189,6 +189,55 @@ body {
   user-select: none;
 }
 
+.conversations__search {
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.conversations__search::placeholder {
+  color: var(--ink-faint);
+}
+
+.conversations__search:focus-visible {
+  border-color: var(--amber);
+  outline: none;
+}
+
+/* One search hit: the conversation title over a snippet of the matching message. Reuses .conv for
+   the row chrome, so hover/focus behave exactly like an ordinary transmission row (ADR 0061). */
+.search-hit {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.search-hit__title {
+  color: var(--ink);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.search-hit__snippet {
+  color: var(--ink-faint);
+  display: -webkit-box;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .conversations__list {
   list-style: none;
   margin: 0;
