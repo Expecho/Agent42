@@ -151,7 +151,31 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
         await agent.ReindexAsync();
 
         var afterReindex = await _reader.SearchAsync(user, "duplicable", 100);
-        Assert.Equal(afterLive.Count, afterReindex.Count);
+
+        // The exact ordinal SET, not just its size: a count comparison is also satisfied by a
+        // reindex that writes nothing, which is the failure this test exists to catch.
+        Assert.Equal(
+            afterLive.Select(h => h.Ordinal).Order(),
+            afterReindex.Select(h => h.Ordinal).Order());
+    }
+
+    // The other half of the incognito guarantee, and the one a cursor alone does not give:
+    // ReindexAsync re-projects from ordinal 0, so without the ephemeral-ordinal set it would write
+    // exactly the text the live path deliberately skipped. Fails if ReindexAsync ignores that set.
+    [Fact]
+    public async Task Reindex_DoesNotResurrectAnEphemeralTurn()
+    {
+        const string user = "search-reindex-ephemeral-user";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/search-reindex-ephemeral-conv");
+
+        await CollectAsync(agent.ChatAsync("secret incognito phrase", null, ephemeral: true));
+        await CollectAsync(agent.ChatAsync("public recorded phrase", null, ephemeral: false));
+
+        await agent.ReindexAsync();
+
+        var hits = await _reader.SearchAsync(user, "phrase", 50);
+        Assert.Contains(hits, hit => hit.Text.Contains("public recorded"));
+        Assert.DoesNotContain(hits, hit => hit.Text.Contains("secret incognito"));
     }
 
     // Reindex is idempotent on its own terms too: running it twice changes nothing.
@@ -186,6 +210,28 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
 
         Assert.NotEmpty(bobsHits);
         Assert.DoesNotContain(bobsHits, hit => hit.Text.Contains("alice"));
+    }
+
+    // AC4 at the THIRD write site. The image-generation path is the only one with a genuine
+    // `if (!_ephemeral)` block — the other two are an early return and a no-guard-by-design reminder
+    // — and the ADR calls that asymmetry the thing most likely to attract a wrong guard, so both
+    // arms are exercised rather than only the chat path's.
+    [Fact]
+    public async Task ImageTurn_IndexesItsPromptWhenNormal_AndNotWhenEphemeral()
+    {
+        const string user = "search-imageturn-user";
+
+        var normal = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/search-imageturn-normal");
+        await CollectAsync(normal.ChatAsync("draw a heraldic wyvern", TestSiloConfigurator.ImageModel));
+
+        var incognito = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/search-imageturn-incognito");
+        await CollectAsync(incognito.ChatAsync(
+            "draw a secret wyvern", TestSiloConfigurator.ImageModel, null, null, ephemeral: true));
+
+        var hits = await _reader.SearchAsync(user, "wyvern", 50);
+
+        Assert.Contains(hits, hit => hit.Text.Contains("heraldic"));
+        Assert.DoesNotContain(hits, hit => hit.Text.Contains("secret"));
     }
 
     private static async Task<List<AgentStreamEvent>> CollectAsync(IAsyncEnumerable<AgentStreamEvent> stream)

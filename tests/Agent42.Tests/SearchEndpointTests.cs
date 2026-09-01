@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Agent42.Agents;
 
 namespace Agent42.Tests;
 
@@ -95,14 +96,22 @@ public sealed class SearchEndpointTests(SharedApiFixture fixture) : SharedCluste
         Assert.Empty(doc.RootElement.GetProperty("hits").EnumerateArray());
     }
 
-    // AC8: the backfill makes an existing conversation searchable. Reindex is run against a
-    // conversation that is already indexed live, which is the realistic case — what it proves is that
-    // the endpoint reaches the caller's conversations at all and reports what it did.
+    // AC8: the backfill makes a pre-existing conversation searchable — the criterion that justified
+    // rejecting "new messages onward" in the planning interview.
+    //
+    // The index is DELETED between the turn and the reindex, which is what makes this test mean
+    // anything. Written the obvious way — send a turn, reindex, assert hits — it passes even if
+    // ReindexAsync never writes at all, because the live path already indexed the turn. Deleting
+    // first simulates the real case (history that predates the feature) and fails if the backfill is
+    // a no-op.
     [Fact]
     public async Task Reindex_MakesExistingConversationsSearchable()
     {
         const string user = "search-api-reindex-user";
         await SendTurnAsync(user, "search-api-reindex-conv", "backfilled needle");
+
+        await new InMemoryChatSearchIndex().DeleteConversationAsync(user, "search-api-reindex-conv");
+        Assert.Empty(await SearchAsync(user, "backfilled needle"));
 
         var response = await Client.SendAsync(Request(HttpMethod.Post, "/api/search/reindex", user));
         response.EnsureSuccessStatusCode();
@@ -112,6 +121,7 @@ public sealed class SearchEndpointTests(SharedApiFixture fixture) : SharedCluste
         Assert.True(doc.RootElement.GetProperty("turns").GetInt32() >= 1);
         Assert.False(doc.RootElement.GetProperty("more").GetBoolean());
 
+        // Only the backfill can have put these back.
         Assert.NotEmpty(await SearchAsync(user, "backfilled needle"));
     }
 

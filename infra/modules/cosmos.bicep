@@ -196,6 +196,10 @@ resource chatMessagesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabas
           { path: '/*' }
         ]
         excludedPaths: [
+          // /text is served by the full-text index below, so a range index on it buys nothing and
+          // costs write RU and index storage on the largest property of every message — the same
+          // reason /embedding is excluded from the vector container above.
+          { path: '/text/?' }
           { path: '/_etag/?' }
         ]
         fullTextIndexes: [

@@ -36,6 +36,24 @@ public sealed partial class AgentGrain
     private int _indexedTurnCount;
 
     /// <summary>
+    /// Ordinals this activation served as <b>ephemeral</b> turns, which therefore must never be
+    /// indexed — by the live path or by <see cref="ReindexAsync"/>.
+    ///
+    /// <para>A cursor alone is not enough, and that gap is easy to miss. Advancing
+    /// <see cref="_indexedTurnCount"/> past an incognito turn keeps the <i>live</i> path off it, but
+    /// <see cref="ReindexAsync"/> re-projects from ordinal 0 by design — so without this set a
+    /// reindex on the same activation would write exactly the text the incognito guarantee exists to
+    /// keep out, at ordinals the live path had deliberately skipped.</para>
+    ///
+    /// <para>Activation-scoped, like the cursor. See the residual in ADR 0061: once a <i>later</i>
+    /// normal turn persists the session, that write carries the whole session — ephemeral messages
+    /// included, which is ADR 0034's own pre-existing behaviour — so after a deactivation those turns
+    /// are indistinguishable from ordinary history and a reindex will pick them up. The shipped UI
+    /// cannot produce such a mixed conversation; the API can.</para>
+    /// </summary>
+    private readonly HashSet<int> _ephemeralOrdinals = [];
+
+    /// <summary>
     /// Re-indexes the whole conversation from ordinal 0 (ADR 0061's backfill). Idempotent: the
     /// ordinals are the same ones the live path derives, so re-running overwrites the same document
     /// ids rather than appending. Returns the number of turns indexed.
@@ -47,7 +65,7 @@ public sealed partial class AgentGrain
     public async Task<int> ReindexAsync()
     {
         var turns = await GetHistoryAsync();
-        var projected = ProjectForSearch(turns, fromOrdinal: 0);
+        var projected = ProjectForSearch(turns, fromOrdinal: 0, _ephemeralOrdinals);
 
         if (projected.Count > 0)
         {
@@ -73,7 +91,7 @@ public sealed partial class AgentGrain
             // Clamped rather than assumed: a purge (or any future path that shortens history) would
             // otherwise leave the counter past the end and skip every subsequent turn.
             var from = Math.Min(_indexedTurnCount, turns.Count);
-            var projected = ProjectForSearch(turns, from);
+            var projected = ProjectForSearch(turns, from, _ephemeralOrdinals);
 
             if (projected.Count > 0)
             {
@@ -112,7 +130,16 @@ public sealed partial class AgentGrain
     {
         try
         {
-            _indexedTurnCount = (await GetHistoryAsync()).Count;
+            var count = (await GetHistoryAsync()).Count;
+
+            // Record WHICH ordinals were incognito, not merely how far we have got: ReindexAsync
+            // re-projects from 0 and would otherwise index them.
+            for (var ordinal = _indexedTurnCount; ordinal < count; ordinal++)
+            {
+                _ephemeralOrdinals.Add(ordinal);
+            }
+
+            _indexedTurnCount = count;
         }
         catch (Exception ex)
         {
@@ -137,6 +164,7 @@ public sealed partial class AgentGrain
         {
             await _chatSearchIndex.DeleteConversationAsync(_userId, ConversationId());
             _indexedTurnCount = 0;
+            _ephemeralOrdinals.Clear();
         }
         catch (Exception ex)
         {
@@ -151,11 +179,18 @@ public sealed partial class AgentGrain
     /// <paramref name="turns"/> — never by a running counter the caller keeps — so the live path and
     /// the backfill produce identical document ids for identical history.
     /// </summary>
-    private static List<ChatSearchTurn> ProjectForSearch(IReadOnlyList<ChatTurn> turns, int fromOrdinal)
+    private static List<ChatSearchTurn> ProjectForSearch(
+        IReadOnlyList<ChatTurn> turns, int fromOrdinal, IReadOnlySet<int> ephemeralOrdinals)
     {
         var projected = new List<ChatSearchTurn>();
         for (var ordinal = Math.Max(fromOrdinal, 0); ordinal < turns.Count; ordinal++)
         {
+            // Never index a turn this activation served incognito, whichever path is projecting.
+            if (ephemeralOrdinals.Contains(ordinal))
+            {
+                continue;
+            }
+
             var turn = turns[ordinal];
 
             // An image-only turn projects to empty text; there is nothing to search, and indexing it

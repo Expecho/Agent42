@@ -504,3 +504,78 @@ to `/audit-docs`.
 - `OtelConfigurationTests.AddLiveTelemetryCapture_ComposesWithTheDualExporterPipeline` failed once
   mid-execution and passed 3/3 in isolation plus on the final full run. This is the flake ADR 0057
   already **proved** pre-existing (2 of 5 on clean `main`); not absorbed here.
+
+## Critic round (Step 5)
+
+A `critic` subagent reviewed the full diff and returned 12 findings — 1 blocking, 4 high, 7
+non-blocking. It passed ADR 0008 (the distinction is stated, never claimed as precedent), ADR 0039
+(flat namespaces, no persisted type), ADR 0041 (CACHE/SHELL), ADR 0045 (two-pass walk), ADR
+0004/0002/0054, the exemplar shapes, and owner scoping. **Ten findings were accepted and fixed; two
+were accepted as documentation-only.** None were rejected.
+
+### The one that was a real bug: `ReindexAsync` had no ephemeral awareness (F1)
+
+`SkipIndexingForEphemeralTurnAsync` kept the *live* path off incognito turns by advancing a cursor —
+but `ReindexAsync` re-projects **from ordinal 0** by design, so it wrote exactly the text the live
+path had skipped, at the skipped ordinals. It also shifted subsequent ordinals, producing precisely
+the orphaned duplicates the ADR claims are impossible by construction.
+
+A cursor was the wrong shape. Replaced with **`_ephemeralOrdinals`**, an activation-scoped set that
+*both* paths honour. **Mutation checked:** restoring the old behaviour (passing an empty set to
+`ReindexAsync`) fails `Reindex_DoesNotResurrectAnEphemeralTurn`.
+
+The residual this exposed is ADR 0034's, not this feature's, and is now recorded in the ADR's
+Consequences: `PersistTurnUnlessEphemeralAsync` serializes the **whole session**, so a later normal
+turn persists earlier ephemeral messages regardless of search. After a deactivation those turns are
+indistinguishable from ordinary history. The shipped UI cannot produce such a conversation; the API
+can.
+
+### The tests that proved nothing (F2)
+
+AC8, AC9 and AC14 all passed **with `ReindexAsync`'s write deleted** — AC8 because the live path had
+already indexed the conversation, AC9/AC14 because they compared sizes a no-op also satisfies.
+
+- `Reindex_MakesExistingConversationsSearchable` now **deletes the index first**, so only the
+  backfill can restore the hits. **Mutation checked:** disabling the write fails it.
+- `Reindex_AfterLiveIndexing_ProducesNoDuplicates` now compares the exact ordinal **set**, not the
+  count.
+
+### Also fixed
+
+- **F3** — the image-generation write site (the only one with a genuine `if (!_ephemeral)` block) had
+  no test on either arm. `ImageTurn_IndexesItsPromptWhenNormal_AndNotWhenEphemeral` covers both;
+  `AgentGrain.ImageTurn.cs` is now 100%.
+- **F4** — a single failed point-delete faulted the whole `Task.WhenAll`, the grain swallowed it, and
+  `PurgeAsync` then cleared the conversation — leaving orphaned message documents that no path could
+  ever delete (`PurgeAsync` is the only delete path; reindex only writes). Deleted conversation text
+  would have stayed searchable forever. Each delete now swallows its own failure, and 404 is treated
+  as the desired end state. The "losing a write only costs search results" argument does **not**
+  extend to a lost delete, and the ADR now says so.
+- **F6** — `/text` was both range-indexed and full-text-indexed. Excluded from range indexing, which
+  is the same lesson the sibling `docChunksContainer` already records for `/embedding`. Worth
+  catching before deploy: changing it later means recreating the container.
+- **F7** — the backfill paged with `Skip(n)` over a list ordered pinned-then-recency, which reorders
+  under any turn or pin mid-sweep, silently skipping conversations. Now ordered by conversation id.
+- **F9** — the Cosmos query had no `ORDER BY`, so over the 50-hit cap production returned an
+  arbitrary set while the in-memory twin returned a stable one. Ordering added to match the twin.
+- **F10, F12** — two comments that asserted things that were not true (that the two `DocumentId`
+  implementations produce identical strings; that the live path sends empty batches).
+- **F11** — the endpoint returned each hit's full indexed text (up to 50 × 32 KB per debounced
+  keystroke) and the browser discarded ~99% of it building a snippet. Snippeting moved server-side.
+  Measured against DevHost afterwards: an assistant hit is 150 chars rather than the full reply.
+
+### Documented rather than changed
+
+- **F5** — the ADR said the live path "upserts the trailing turns". It does not: the cursor is
+  activation-scoped and starts at zero, so the first indexed turn of each activation re-upserts the
+  **whole** conversation. That is a deliberate trade (it buys self-healing) but it is real write
+  amplification on a serverless account, and it appeared in neither the ADR's Consequences nor the
+  CLAUDE.md bullet. Both now say it.
+- **F8** — the best-effort argument leans on reindex being "user-invocable", but there is **no UI
+  affordance anywhere in `wwwroot/`**; it is curl-only, and nothing backfills on deploy. The ADR now
+  states this plainly instead of letting the phrase imply a control that does not exist. A
+  Preferences affordance is the obvious follow-up and was outside this plan's scope.
+
+Two ADR claims that the fixes themselves falsified were corrected: the Cosmos half of the
+case-insensitivity contract is no longer "unreachable by test" (`BuildSearchSql` is pure and
+asserted), and "user-invocable" is now qualified.

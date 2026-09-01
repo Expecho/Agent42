@@ -87,6 +87,9 @@ public sealed class InMemoryChatSearchIndex : IChatSearchIndex
         return Task.CompletedTask;
     }
 
-    // The Cosmos item id, and the in-memory key, are the same string by construction.
+    // The in-memory key. NOT identical to the Cosmos item id: that one also strips the four
+    // characters Cosmos rejects in an id. Nothing requires the two to match — no data moves
+    // between the implementations — only that each is internally consistent, which is what makes
+    // a re-index overwrite rather than append on either.
     private static string DocumentId(string conversationId, int ordinal) => $"{conversationId}:{ordinal}";
 }

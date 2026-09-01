@@ -40,8 +40,11 @@ public static partial class AgentApi
             var hits = await index.SearchAsync(
                 http.GetUserId(), q, ChatSearchLimits.MaxSearchResults, ct);
 
+            // Snippet here, not in the browser: returning each hit's full indexed text would be a
+            // multi-megabyte response per debounced keystroke, nearly all of it discarded by the UI.
             return Results.Json(new SearchResponse(
-                [.. hits.Select(h => new SearchHitResponse(h.ConversationId, h.Role, h.Text, h.Ordinal))]));
+                [.. hits.Select(h => new SearchHitResponse(
+                    h.ConversationId, h.Role, ChatSearchLimits.SnippetAround(h.Text, q), h.Ordinal))]));
         });
 
         // Backfill (ADR 0061). Per-user by construction: it walks the CALLER's conversation index and
@@ -56,8 +59,15 @@ public static partial class AgentApi
             var userId = http.GetUserId();
             var conversations = await grains.GetGrain<IConversationIndexGrain>(userId).GetConversationsAsync();
 
+            // Ordered by ID, not by the list's own order. GetConversationsAsync returns
+            // pinned-first-then-recency (ADR 0045), which REORDERS under any turn, pin or agent-run
+            // during a multi-batch sweep — and offset paging over a shifting sequence silently skips
+            // conversations. A backfill that can quietly miss would undercut the whole reason the
+            // best-effort write is acceptable.
+            var ordered = conversations.OrderBy(c => c.Id, StringComparer.Ordinal).ToArray();
+
             var from = Math.Max(skip ?? 0, 0);
-            var batch = conversations.Skip(from).Take(ChatSearchLimits.ReindexBatchSize).ToArray();
+            var batch = ordered.Skip(from).Take(ChatSearchLimits.ReindexBatchSize).ToArray();
 
             var turns = 0;
             foreach (var conversation in batch)
@@ -68,7 +78,7 @@ public static partial class AgentApi
                     .ReindexAsync();
             }
 
-            var more = from + batch.Length < conversations.Count;
+            var more = from + batch.Length < ordered.Length;
             return Results.Json(new ReindexResponse(batch.Length, turns, more));
         });
     }

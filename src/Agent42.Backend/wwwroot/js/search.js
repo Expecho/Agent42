@@ -18,7 +18,6 @@ let timer = null;
 let latest = 0;
 
 const DEBOUNCE_MS = 250;
-const SNIPPET_RADIUS = 60;
 
 export function wireSearch() {
   if (!searchInput) return;
@@ -90,9 +89,10 @@ function buildHitRow(hit) {
 
   const snippet = document.createElement("span");
   snippet.className = "search-hit__snippet";
-  // textContent, never innerHTML: this is message text, and the match is highlighted by CSS on the
-  // row rather than by injecting markup around the term.
-  snippet.textContent = snippetOf(hit.text, query);
+  // Already windowed around the match by the server (GET /api/search), so this is a short string
+  // rather than a whole message. textContent, never innerHTML: it is message text, and the match is
+  // highlighted by CSS on the row rather than by injecting markup around the term.
+  snippet.textContent = hit.text;
 
   btn.append(title, snippet);
   btn.addEventListener("click", () => selectConversation(hit.conversationId));
@@ -106,15 +106,4 @@ function buildHitRow(hit) {
 function titleFor(conversationId) {
   const conv = conversations.find((c) => c.id === conversationId);
   return conv?.title || conversationId;
-}
-
-// A window of text around the first match, so the row shows why it matched rather than the opening
-// words of a long message.
-function snippetOf(text, q) {
-  const at = text.toLowerCase().indexOf(q.toLowerCase());
-  if (at < 0) return text.slice(0, SNIPPET_RADIUS * 2);
-
-  const start = Math.max(0, at - SNIPPET_RADIUS);
-  const end = Math.min(text.length, at + q.length + SNIPPET_RADIUS);
-  return (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
 }

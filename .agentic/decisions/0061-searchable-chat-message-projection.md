@@ -76,15 +76,21 @@ three write sites.
 **The acknowledged tension, stated rather than hidden.** Best-effort means a dropped write is an
 *invisible gap* in search results — the same invisibility that the planning interview rejected when it
 chose a full backfill over "new messages onward". These two decisions pull against each other. What
-closes the gap is that **`POST /api/search/reindex` is user-invocable and idempotent**, so a suspected
-gap is repairable without an operator. That repairability is what makes best-effort acceptable here;
-without it the two decisions would genuinely conflict.
+closes the gap is that **`POST /api/search/reindex` is idempotent and reachable by the owner**, so a
+suspected gap is repairable without an operator. That repairability is what makes best-effort
+acceptable here; without it the two decisions would genuinely conflict. **It currently has no UI —
+see Consequences**, which weakens this argument in practice without changing its shape.
 
 ### Ordinals come from one projection function, or the two paths diverge
 A document's id is `{conversationId}:{ordinal}`, where the ordinal is the index into
 **`GetHistoryAsync()`'s projected list**. Both the live write and the backfill derive it from *that
-same projection call* — the live path re-projects the conversation after the session is updated and
-upserts the trailing turns by their projected index.
+same projection call*.
+
+The cursor that decides which turns are "new" (`_indexedTurnCount`) is **activation-scoped and
+starts at zero**, so the first indexed turn of each activation re-upserts the **whole** conversation
+and only later turns in that activation append. That is a deliberate trade — see Consequences for
+what it costs — and it is not "upserts the trailing turns", which is what an earlier draft of this
+ADR said.
 
 One projection function, so the two paths **cannot disagree by construction**. This is what makes
 reindex idempotent (a re-run overwrites the same ids rather than appending duplicates), and it is the
@@ -110,8 +116,12 @@ decision avoids), and it would mis-stem the English chats, which are the majorit
 ### Matching is case-insensitive on both sides, explicitly
 Cosmos: `CONTAINS(c.text, @q, true)` — **the third argument is required**; the default is
 case-sensitive. In-memory twin: `StringComparison.OrdinalIgnoreCase`. The two halves are written in
-different steps and **the Cosmos half is unreachable by test**, so they will diverge silently unless
-pinned. AC15 pins the twin; the Cosmos side rests on the prod smoke.
+different steps and the Cosmos half cannot be *executed* by a test, so they would diverge silently
+unless pinned. AC15 pins the twin. The Cosmos half is pinned too, without a Cosmos account: the query
+text is built by a pure `BuildSearchSql`, and `SearchSql_AsksForCaseInsensitiveMatching` asserts the
+third argument is there. The same split pins the delete as a filtered query rather than the
+partition sweep its exemplar uses. What still rests on a prod smoke is only that Cosmos *executes*
+that SQL as expected — not that we asked for the right thing.
 
 ### The search branch lives inside `renderSidebar`
 `renderSidebar` is called from nine sites that fire independently of the search box — a background
@@ -151,6 +161,31 @@ refresh **writes**. A reindex is a POST so the write is acceptable, and the prov
 per user so only the first activation pays; but a naive unbounded sweep over a user with several dead
 MCP servers would stall for minutes. The endpoint takes a batch size and a per-call cap, and returns a
 count plus whether more remain.
+
+**The live write re-upserts the whole conversation once per activation, and on a serverless account
+that is real write amplification.** A 400-message chat costs 400 upserts of up to 32 KB the first
+time it is touched after activation — and reminders and agent-runs activate grains too, with no user
+present. What it buys is **self-healing**: a write dropped by the best-effort rule in an earlier
+activation is silently repaired the next time the conversation is used, which narrows the invisible
+gap that best-effort would otherwise leave to the reindex endpoint alone. If the RU cost ever bites,
+persisting the cursor is the obvious fix and it gives up exactly that property.
+
+**Incognito is enforced per activation, and a mixed conversation has a residual that is ADR 0034's,
+not this feature's.** Ephemeral ordinals are tracked for the activation and excluded by *both* the
+live path and `ReindexAsync`. But `PersistTurnUnlessEphemeralAsync` serializes the **whole session**,
+so once a *later normal* turn persists, that write carries the earlier ephemeral messages with it —
+pre-existing ADR 0034 behaviour, independent of search. After a deactivation those turns are
+therefore indistinguishable from ordinary history and a reindex will index them. The shipped UI
+cannot produce such a conversation (the incognito toggle locks after the first send); the API can.
+Recorded rather than papered over.
+
+**The reindex endpoint has no UI affordance, so "user-invocable" means "by hand".** The best-effort
+argument above leans on repairability, and `POST /api/search/reindex` is reachable only via curl or
+devtools — there is no button anywhere in `wwwroot/`. Nothing backfills existing history on deploy
+either, so in practice a first deployment behaves like the "new messages onward" option the planning
+interview rejected until someone calls it. A Preferences affordance is the obvious follow-up and was
+out of this plan's scope; saying so is better than letting the word "user-invocable" imply a control
+that does not exist.
 
 **No grain state changes, so there is genuinely no migration.** This adds no `AgentGrainState` field
 and no new persisted type, so ADR 0039's `$type` hazard has no exposure here. `ReindexAsync` is a new

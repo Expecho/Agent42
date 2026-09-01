@@ -41,6 +41,43 @@ public static class ChatSearchLimits
     public const int DeleteConcurrency = 8;
 
     /// <summary>
+    /// Characters of context kept either side of a match in a returned snippet. The UI renders two
+    /// clamped lines, so anything beyond this is fetched and discarded.
+    /// </summary>
+    public const int SnippetRadius = 120;
+
+    /// <summary>
+    /// A window of <paramref name="text"/> around the first case-insensitive occurrence of
+    /// <paramref name="query"/>, ellipsised when trimmed.
+    ///
+    /// <para>Done on the SERVER because the alternative is shipping the full indexed text of every
+    /// hit: <see cref="MaxSearchResults"/> hits at up to <see cref="MaxIndexedTextLength"/> each is a
+    /// multi-megabyte response per debounced keystroke, of which the UI displays a couple of
+    /// hundred characters.</para>
+    /// </summary>
+    public static string SnippetAround(string text, string query)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return "";
+        }
+
+        var at = string.IsNullOrEmpty(query)
+            ? -1
+            : text.IndexOf(query, StringComparison.OrdinalIgnoreCase);
+
+        if (at < 0)
+        {
+            return text.Length <= SnippetRadius * 2 ? text : text[..(SnippetRadius * 2)] + "…";
+        }
+
+        var start = Math.Max(0, at - SnippetRadius);
+        var end = Math.Min(text.Length, at + query.Length + SnippetRadius);
+
+        return (start > 0 ? "…" : "") + text[start..end] + (end < text.Length ? "…" : "");
+    }
+
+    /// <summary>
     /// Truncates <paramref name="text"/> to <see cref="MaxIndexedTextLength"/>. Shared by both
     /// implementations so the in-memory twin and Cosmos cannot disagree on what was indexed.
     /// </summary>

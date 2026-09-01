@@ -144,6 +144,63 @@ public sealed class ChatSearchIndexTests
         Assert.Contains("rewritten", hit.Text);
     }
 
+    // Empty input is a no-op rather than an empty write. The live path guards on projected.Count > 0
+    // so it never sends an empty batch, but the port must tolerate one regardless — it is public
+    // surface, and the guard is the caller's, not the contract's.
+    [Fact]
+    public async Task IndexTurns_WithNoTurns_WritesNothing()
+    {
+        const string user = "search-emptybatch-user";
+        await _index.IndexTurnsAsync(user, "conv-1", []);
+
+        Assert.Empty(await _index.SearchAsync(user, "anything", 10));
+    }
+
+    // CapText is the shared truncation both implementations call, so a null or empty message must
+    // not become a null document field on either side.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void CapText_TurnsMissingTextIntoEmpty_NotNull(string? text)
+    {
+        Assert.Equal("", ChatSearchLimits.CapText(text));
+    }
+
+    [Fact]
+    public void CapText_LeavesTextUnderTheCapUntouched()
+    {
+        Assert.Equal("short", ChatSearchLimits.CapText("short"));
+    }
+
+    // The snippet is built on the SERVER so a search response is not the full text of 50 messages.
+    [Fact]
+    public void SnippetAround_WindowsTheMatch_AndEllipsisesWhatItTrimmed()
+    {
+        var text = new string('x', 500) + "NEEDLE" + new string('y', 500);
+
+        var snippet = ChatSearchLimits.SnippetAround(text, "needle");
+
+        Assert.Contains("NEEDLE", snippet);
+        Assert.StartsWith("…", snippet);
+        Assert.EndsWith("…", snippet);
+        Assert.True(snippet.Length < text.Length / 2, $"snippet was {snippet.Length} chars");
+    }
+
+    [Fact]
+    public void SnippetAround_LeavesAShortMessageWhole()
+    {
+        Assert.Equal("a short reply", ChatSearchLimits.SnippetAround("a short reply", "short"));
+    }
+
+    // A hit whose text does not literally contain the query (possible once the corpus is stemmed by
+    // full-text search) still returns a readable opening rather than an empty string.
+    [Fact]
+    public void SnippetAround_WithNoMatch_FallsBackToTheOpening()
+    {
+        Assert.Equal("no match here", ChatSearchLimits.SnippetAround("no match here", "absent"));
+        Assert.Equal("", ChatSearchLimits.SnippetAround("", "absent"));
+    }
+
     [Fact]
     public async Task Search_ClampsToTheResultCeiling()
     {

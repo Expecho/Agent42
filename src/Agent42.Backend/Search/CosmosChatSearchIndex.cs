@@ -67,10 +67,7 @@ public sealed class CosmosChatSearchIndex(CosmosClient cosmosClient, string data
         // case-sensitive. Its counterpart is OrdinalIgnoreCase in the in-memory twin, and because
         // this half is unreachable by test the two can only be kept in step deliberately (ADR 0061).
         var take = Math.Min(maxResults, ChatSearchLimits.MaxSearchResults);
-        var definition = new QueryDefinition(
-                $"SELECT TOP {take} c.conversationId, c.role, c.text, c.ordinal "
-                + "FROM c WHERE CONTAINS(c.text, @q, true)")
-            .WithParameter("@q", query);
+        var definition = new QueryDefinition(BuildSearchSql(take)).WithParameter("@q", query);
 
         var options = new QueryRequestOptions { PartitionKey = new PartitionKey(userId) };
         using var iterator = _container.GetItemQueryIterator<MessageHit>(definition, requestOptions: options);
@@ -94,8 +91,7 @@ public sealed class CosmosChatSearchIndex(CosmosClient cosmosClient, string data
         // partitions by {userId}/{conversationId}; this container partitions by /userId, so dropping
         // the partition would delete every other conversation the user owns. Filter within it.
         var partition = new PartitionKey(userId);
-        var definition = new QueryDefinition("SELECT c.id FROM c WHERE c.conversationId = @conversationId")
-            .WithParameter("@conversationId", conversationId);
+        var definition = new QueryDefinition(DeleteScanSql).WithParameter("@conversationId", conversationId);
 
         var options = new QueryRequestOptions { PartitionKey = partition };
         using var iterator = _container.GetItemQueryIterator<IdOnly>(definition, requestOptions: options);
@@ -108,21 +104,71 @@ public sealed class CosmosChatSearchIndex(CosmosClient cosmosClient, string data
             var page = await iterator.ReadNextAsync(cancellationToken);
             foreach (var batch in page.Chunk(ChatSearchLimits.DeleteConcurrency))
             {
-                await Task.WhenAll(batch.Select(item =>
-                    _container.DeleteItemAsync<MessageDocument>(
-                        item.id, partition, cancellationToken: cancellationToken)));
+                await Task.WhenAll(batch.Select(item => DeleteOneAsync(item.id, partition, cancellationToken)));
             }
         }
     }
 
-    // {conversationId}:{ordinal} — the ordinal comes from GetHistoryAsync()'s projection on BOTH the
-    // live path and the backfill, which is what makes an upsert overwrite rather than duplicate.
+    // Each delete swallows its own failure so ONE bad item cannot abort the sweep.
     //
-    // A Cosmos item id may not contain '/', '\', '?' or '#'. Conversation ids are crypto.randomUUID()
-    // or `agent-{guid}` so none of these occur in practice, but the id reaches the grain from the
-    // client, so it is sanitized rather than trusted. Collisions are irrelevant: the mapping is
-    // deterministic, so the same conversation always resolves to the same id.
-    private static string DocumentId(string conversationId, int ordinal)
+    // This matters more than the usual best-effort argument. The grain's catch would swallow a
+    // faulted Task.WhenAll, PurgeAsync then clears the conversation from agent-state, and the
+    // surviving message documents become unreachable — PurgeAsync is the only delete path, and
+    // ReindexAsync only ever writes. Deleted conversation text would stay searchable forever. So the
+    // "losing a write only costs search results" reasoning does NOT extend to a lost delete, and the
+    // blast radius is kept to the single item that failed rather than the rest of the conversation.
+    private async Task DeleteOneAsync(string id, PartitionKey partition, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _container.DeleteItemAsync<MessageDocument>(id, partition, cancellationToken: cancellationToken);
+        }
+        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Already gone — the desired end state.
+        }
+    }
+
+    /// <summary>
+    /// The search query text. <b>The third argument of <c>CONTAINS</c> is what makes matching
+    /// case-insensitive</b> — the default is case-sensitive — and its counterpart is
+    /// <c>OrdinalIgnoreCase</c> in <see cref="InMemoryChatSearchIndex"/>. The rest of this class
+    /// cannot be reached by a test (no Cosmos offline), so this is split out to make the one rule
+    /// that would otherwise diverge silently assertable. <paramref name="take"/> is an
+    /// application-clamped int, never user input, so interpolating it into TOP is injection-safe —
+    /// Cosmos does not accept a parameter there.
+    ///
+    /// <para>Public rather than internal because this repo has no <c>InternalsVisibleTo</c> — the
+    /// same reason as <c>SkillCatalog</c> and <c>TruncatingSkillsProvider</c>.</para>
+    /// </summary>
+    public static string BuildSearchSql(int take) =>
+        $"SELECT TOP {take} c.conversationId, c.role, c.text, c.ordinal "
+        + "FROM c WHERE CONTAINS(c.text, @q, true) "
+        // ORDER BY is not decoration: without it TOP returns an ARBITRARY n over the cap while the
+        // in-memory twin returns a stable one, so the pair would diverge exactly where the ADR says
+        // they can only be kept in step deliberately. Matches InMemoryChatSearchIndex's ordering.
+        + "ORDER BY c.conversationId, c.ordinal";
+
+    /// <summary>
+    /// The delete scan. It <b>filters by conversationId</b> rather than sweeping the partition:
+    /// <c>doc-chunks</c> partitions by <c>{userId}/{conversationId}</c> and so can drop a whole
+    /// partition, but this container partitions by <c>/userId</c>, where that would delete every
+    /// other conversation the user owns.
+    /// </summary>
+    public const string DeleteScanSql = "SELECT c.id FROM c WHERE c.conversationId = @conversationId";
+
+    /// <summary>
+    /// <c>{conversationId}:{ordinal}</c> — the ordinal comes from <c>GetHistoryAsync()</c>'s
+    /// projection on BOTH the live path and the backfill, which is what makes an upsert overwrite
+    /// rather than duplicate.
+    ///
+    /// <para>A Cosmos item id may not contain <c>/</c>, <c>\</c>, <c>?</c> or <c>#</c>. Conversation
+    /// ids are <c>crypto.randomUUID()</c> or <c>agent-{guid}</c> so none of these occur in practice,
+    /// but the id reaches the grain from the client, so it is sanitized rather than trusted.
+    /// Collisions are irrelevant: the mapping is deterministic, so the same conversation always
+    /// resolves to the same id.</para>
+    /// </summary>
+    public static string DocumentId(string conversationId, int ordinal)
     {
         var safe = conversationId
             .Replace('/', '_').Replace('\\', '_').Replace('?', '_').Replace('#', '_');
