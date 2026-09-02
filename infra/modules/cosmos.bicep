@@ -202,6 +202,24 @@ resource chatMessagesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabas
           { path: '/text/?' }
           { path: '/_etag/?' }
         ]
+        // REQUIRED by CosmosChatSearchIndex.BuildSearchSql, not an optimisation. Cosmos serves a
+        // single-property ORDER BY from the default range index, but a MULTI-property one is a hard
+        // 400 ("The order by query does not have a corresponding composite index that it can be
+        // served from") without an explicit composite index. The search query orders by
+        // conversationId then ordinal, so that pair must be declared here, in that sequence and
+        // direction. Writes never needed it — UpsertItemAsync runs no query — so shipping without it
+        // broke every read while indexing carried on silently, surfacing as an empty result list
+        // rather than an error (search.js maps a non-ok response to zero hits).
+        //
+        // Unlike fullTextPolicy above, an indexing policy CAN be changed after creation: this
+        // redeploys onto the existing container and reindexes in the background, with no migration
+        // and no re-backfill. CompositeIndexMatchesTheSearchQueryTests pins it against the SQL.
+        compositeIndexes: [
+          [
+            { path: '/conversationId', order: 'ascending' }
+            { path: '/ordinal', order: 'ascending' }
+          ]
+        ]
         fullTextIndexes: [
           { path: '/text' }
         ]
