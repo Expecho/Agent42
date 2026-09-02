@@ -527,8 +527,12 @@ to document a mechanical rule, add a lint rule instead.
   rejects "always-on but ungated" and this takes that shape deliberately, the distinction being that
   the per-turn work here is a **local upsert**, no third party and no new egress. What 0008 does bind
   is that **every index write is best-effort — own try/catch, logged, never rethrown**; the invisible
-  gap that leaves is closed by reindex being **user-invocable and idempotent**. Three traps, all in
-  gotchas: **ordinals must come from ONE `GetHistoryAsync()` projection** (both paths, or a
+  gap that leaves is closed by reindex being **user-invocable and idempotent**. Four traps, all in
+  gotchas: a **multi-property `ORDER BY` needs a `compositeIndexes` entry** or the query is a hard 400
+  — which is how this shipped, broken in prod from day one, and it hid because writes are upserts (so
+  the corpus filled fine while every read failed) and `search.js` renders a non-ok response as the same
+  **"no matches"** row an empty result gives, so *read the status code of `/api/search` before
+  theorising*; **ordinals must come from ONE `GetHistoryAsync()` projection** (both paths, or a
   live-then-reindex double-indexes); **an incognito turn stays in the in-memory session**, so skipping
   its write is *not* enough — the next normal turn re-projects it in unless the cursor is advanced
   past it (measured: the test fails without that); and **delete is a filtered query, never a

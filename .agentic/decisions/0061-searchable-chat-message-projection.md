@@ -237,3 +237,35 @@ Vector search needed `EnableNoSQLVectorSearch` in this same account (see the cap
 `infra/modules/cosmos.bicep`), and the FTS GA announcement implies no equivalent is required — but a
 `what-if` validates ARM *schema* acceptance, not data-plane behaviour. See Divergences for what was
 actually determined.
+
+## Correction (2026-09-02)
+
+**The container shipped without the composite index this ADR's own query requires, and chat search was
+broken in production from the moment it deployed.** `BuildSearchSql` orders by
+`c.conversationId, c.ordinal`; Cosmos serves a single-property `ORDER BY` from the default range index
+but rejects a **multi**-property one with a 400 — *"The order by query does not have a corresponding
+composite index that it can be served from"* — unless that path sequence is declared in
+`indexingPolicy.compositeIndexes`. The `chat-messages` container declared none.
+
+The `ORDER BY` itself was not the mistake and was **not** removed: it is load-bearing for the reason
+recorded under *Matching is case-insensitive on both sides* — without it `TOP` returns an arbitrary *n*
+while `InMemoryChatSearchIndex` returns a stable one, which is exactly the silent divergence this ADR
+set out to prevent. The fix is the missing index, declared ascending on `/conversationId` then
+`/ordinal` to match the query. An indexing policy — unlike `fullTextPolicy` — **can** be changed after
+creation, so the repair was a Bicep redeploy with a background reindex: no migration, no re-backfill.
+
+**Two properties of this ADR delayed the diagnosis, and both are worth carrying forward.** Writes were
+unaffected (`IndexTurnsAsync` is an upsert, which runs no query), so the corpus was filling correctly
+while every read failed — which made "the backfill never ran" the natural first hypothesis and the
+wrong one. And the frontend's `hits = res.ok ? … : []` collapses a 400, a 409, a 500 and an offline
+fetch into the same **"no matches"** row that a genuinely empty result produces, so the failure was
+invisible in the UI. The *Unverified residual* below anticipated the general risk — the Cosmos wire
+path has no automated test and was to be covered by a prod smoke — but that smoke did not catch this
+before users did.
+
+What is now pinned instead: `CompositeIndexMatchesTheSearchQueryTests` parses `BuildSearchSql`'s
+`ORDER BY` and asserts the Bicep declares a matching composite index, in the source-text style of
+`EasyAuthExclusionTests`. It needs no Cosmos account because both sides are string construction, and
+it was **mutation checked** three ways — index removed, paths swapped, direction flipped — each failing
+only the assertion that should catch it. The residual below is unchanged in substance: the wire path
+is still untested by CI. This closes one specific way it could be wrong, not the category.
