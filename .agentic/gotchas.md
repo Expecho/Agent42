@@ -2542,3 +2542,31 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `ThrowingIndex_DoesNotBreakPurge`),
   `.agentic/decisions/0008-always-on-textsearchprovider-retrieval.md` (Alternatives)
 - **Verified:** 2026-09-01
+
+### A multi-property `ORDER BY` needs a composite index, or chat search 400s — and it looks like "no matches"
+
+- **Claim:** Cosmos NoSQL serves a **single**-property `ORDER BY` from the default range index, but a
+  **multi**-property one is a hard **400** — *"The order by query does not have a corresponding composite
+  index that it can be served from"* — unless that exact path sequence is declared as a `compositeIndexes`
+  entry on the container. ADR 0061 shipped `BuildSearchSql` ordering by `c.conversationId, c.ordinal`
+  against a `chat-messages` container that declared **no composite index at all**, so every
+  `GET /api/search` with a non-blank query failed in production. Note the irony before removing the
+  `ORDER BY` to "fix" it: it is there deliberately (without it `TOP` returns an arbitrary *n*, diverging
+  from `InMemoryChatSearchIndex`), so the composite index is the fix and dropping the ordering is not.
+  **Two things made it hide unusually well, and both generalise.** Writes were never affected —
+  `IndexTurnsAsync` is an `UpsertItemAsync`, which runs no query — so the corpus filled up normally and
+  only *reads* were broken, which rules out "the index must be empty" as the first hypothesis. And
+  `search.js` maps a non-ok response to zero hits (`hits = res.ok ? … : []`), so the 400 rendered as the
+  ordinary **"no matches"** row: a 409 (index unregistered), a 500, an offline fetch and a genuinely
+  empty result are **visually identical** in the sidebar. When search returns nothing, read the status
+  code of `/api/search` before theorising.
+  The composite index is also the **one** part of this container that can be changed after creation —
+  unlike `fullTextPolicy` — so the repair is a plain Bicep redeploy with a background reindex, no
+  migration and no re-backfill.
+- **Evidence:** `infra/modules/cosmos.bicep` (`chatMessagesContainer.indexingPolicy.compositeIndexes`),
+  `src/Agent42.Backend/Search/CosmosChatSearchIndex.cs` (`BuildSearchSql`),
+  `src/Agent42.Backend/wwwroot/js/search.js` (`runSearch`),
+  `tests/Agent42.Tests/CompositeIndexMatchesTheSearchQueryTests.cs` — which pins the SQL's `ORDER BY`
+  against the Bicep and was **mutation checked** three ways (index removed, paths swapped, direction
+  flipped; each fails only the assertion that should catch it)
+- **Verified:** 2026-09-02
