@@ -115,7 +115,7 @@ public sealed class SearchAssetsTests
         var sw = await _client.GetStringAsync("/sw.js");
 
         Assert.Contains("\"/js/search.js\"", sw);
-        Assert.Contains("agent42-shell-v26", sw);
-        Assert.DoesNotContain("agent42-shell-v25", sw);
+        Assert.Contains("agent42-shell-v27", sw);
+        Assert.DoesNotContain("agent42-shell-v26", sw);
     }
 }

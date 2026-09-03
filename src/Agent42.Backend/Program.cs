@@ -12,6 +12,7 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.AI;
 using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Trace;
+using Orleans.Dashboard;
 
 const string OtelSourceName = LiveTelemetryCaptureExtensions.OtelSourceName;
 
@@ -437,6 +438,7 @@ builder.UseOrleans(silo =>
     // silo + client, so one call covers both directions). Async paths (fired reminders, agent-run) still
     // begin fresh roots by design — they have no ambient inbound Activity. See gotchas.
     silo.AddActivityPropagation();
+    silo.AddDashboard(); // ADR 0062. Consequences + why NOT the community package: Directory.Packages.props.
 
     if (string.IsNullOrEmpty(builder.Configuration["Orleans:Clustering:ProviderType"]))
     {
@@ -525,11 +527,20 @@ app.UseForwardedHeaders(forwardedHeaders);
 // span has already started, which is why that span stays enriched via EnrichWithHttpRequest above.
 app.Use(UserTelemetryMiddleware.InvokeAsync);
 
+// Restrict the Orleans dashboard to its single configured owner (ADR 0062). Easy Auth already gates
+// the path — it is absent from excludedPaths, which is default-deny — so this is the second, narrower
+// rule that keeps a cluster console from becoming a third cross-user read surface beside /logs and
+// /usage. MUST stay ABOVE UseDefaultFiles/UseStaticFiles: below them it still works today only
+// because no wwwroot/dashboard/ exists, and anyone later adding one would have it served ungated
+// while the gate still looked installed. ProjectLayoutTests asserts this ordering.
+app.UseOrleansDashboardOwnerGate();
+
 app.MapDefaultEndpoints();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapAgentApi();
+app.MapOrleansDashboardUi();
 
 app.Run();

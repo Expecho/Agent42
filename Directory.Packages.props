@@ -12,7 +12,6 @@
          Exactly ONE of its ~400 rules is adopted; see .editorconfig for the measurement behind that. -->
     <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.33.0.1635" />
   </ItemGroup>
-
   <ItemGroup>
     <!-- Aspire -->
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.2" />
@@ -65,13 +64,19 @@
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
     <!-- Orleans -->
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Orleans.Persistence.Cosmos" Version="10.2.2" />
-    <PackageVersion Include="Microsoft.Orleans.Reminders" Version="10.2.2" />
-    <PackageVersion Include="Microsoft.Orleans.Reminders.Cosmos" Version="10.2.2" />
-    <PackageVersion Include="Microsoft.Orleans.Runtime" Version="10.2.2" />
-    <PackageVersion Include="Microsoft.Orleans.Sdk" Version="10.2.2" />
-    <PackageVersion Include="Microsoft.Orleans.Server" Version="10.2.2" />
-    <PackageVersion Include="Microsoft.Orleans.TestingHost" Version="10.2.2" />
+    <!-- The OFFICIAL dashboard (ADR 0062), versioned with the rest of the Orleans stack.
+         NOT the community `OrleansDashboard` package, which must never be referenced here:
+         8.2.0 throws MissingMethodException out of Silo.StartAsync on Orleans 10.x, so the SILO
+         NEVER STARTS — in ACA that is a crash-looping container that takes the whole app down.
+         It was deprecated in Nov 2025 and merged into dotnet/orleans. QualityGateTests pins the ban. -->
+    <PackageVersion Include="Microsoft.Orleans.Dashboard" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Persistence.Cosmos" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Reminders" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Reminders.Cosmos" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Runtime" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Sdk" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.Server" Version="10.3.1" />
+    <PackageVersion Include="Microsoft.Orleans.TestingHost" Version="10.3.1" />
     <!-- Telemetry + resilience (ServiceDefaults) -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.9.0" />

@@ -103,9 +103,9 @@ public sealed class ProjectLayoutTests
             "Agent42.Backend",
             [
                 "Api", "Attachments", "Calendar", "Configuration", "Conversations", "Documents",
-                "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Properties", "Push", "Search",
-                "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web",
-                "wwwroot",
+                "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
+                "Search", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users",
+                "Web", "wwwroot",
             ]
         },
     };
@@ -414,10 +414,7 @@ public sealed class ProjectLayoutTests
     {
         // Comment lines are stripped first: this file explains the `KnownNetworks = { }` trap in prose, and
         // an assertion that cannot tell code from the comment warning about it is worse than no assertion.
-        var program = string.Join(
-            Environment.NewLine,
-            File.ReadAllLines(Path.Combine(ProjectDir("Agent42.Backend"), "Program.cs"))
-                .Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
+        var program = StrippedSource(Path.Combine(ProjectDir("Agent42.Backend"), "Program.cs"));
 
         var forwarded = program.IndexOf("app.UseForwardedHeaders(", StringComparison.Ordinal);
         Assert.True(forwarded >= 0, "Program.cs no longer calls UseForwardedHeaders — share URLs revert to http://");
@@ -444,6 +441,93 @@ public sealed class ProjectLayoutTests
             Assert.True(index > forwarded, $"{later} runs before UseForwardedHeaders — the scheme is still http there.");
         }
     }
+
+    /// <summary>
+    /// AC 12 + AC 13 (ADR 0062), and the load-bearing guard of the whole feature.
+    ///
+    /// <para>Nothing in the suite runs <c>Program.cs</c>, so an edit that maps the Orleans dashboard
+    /// while dropping the owner gate would compile, pass every test, and ship a live cluster console —
+    /// grain activations, silo health, reminder names, conversation ids — to every Easy-Auth-allowlisted
+    /// user. That is the failure that actually matters here, and this source-text assertion is the only
+    /// thing standing in front of it. Mutation check: delete the
+    /// <c>app.UseOrleansDashboardOwnerGate()</c> line from <c>Program.cs</c> and this must go red.</para>
+    ///
+    /// <para>It also pins that the raw package call is made in exactly ONE place. Both hosts go through
+    /// the bundled extensions, so the gate and the map cannot drift apart per host.</para>
+    /// </summary>
+    [Fact]
+    public void Program_GatesTheOrleansDashboardBeforeServingIt()
+    {
+        var program = StrippedSource(Path.Combine(ProjectDir("Agent42.Backend"), "Program.cs"));
+
+        var gate = program.IndexOf("app.UseOrleansDashboardOwnerGate()", StringComparison.Ordinal);
+        Assert.True(gate >= 0, "Program.cs no longer installs the dashboard owner gate — /dashboard is open to every allowlisted user");
+
+        var map = program.IndexOf("app.MapOrleansDashboardUi()", StringComparison.Ordinal);
+        Assert.True(map >= 0, "Program.cs no longer maps the Orleans dashboard");
+
+        // Before the static-file middleware. It works below them today only because no wwwroot/dashboard/
+        // exists; anyone later adding one would have it served ungated while the gate still looked installed.
+        foreach (var later in new[] { "app.UseDefaultFiles()", "app.UseStaticFiles()", "app.MapOrleansDashboardUi()" })
+        {
+            var index = program.IndexOf(later, StringComparison.Ordinal);
+            Assert.True(index > gate, $"{later} runs before the dashboard owner gate — /dashboard would be reachable ungated.");
+        }
+
+        // AC13: the package's own map call appears exactly once in the repo, inside DashboardRegistration.
+        // A second call site is a second place to forget the gate.
+        // Production code only (src/ + tools/). Scoping to the whole repo would match this very file,
+        // which names the call in its own assertion.
+        var callSites = new[] { "src", "tools" }
+            .SelectMany(root => Directory.EnumerateFiles(
+                Path.Combine(RepoRoot(), root), "*.cs", SearchOption.AllDirectories))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => StrippedSource(f).Contains("MapOrleansDashboard(", StringComparison.Ordinal))
+            .Select(f => Path.GetFileName(f))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal<string>(["DashboardRegistration.cs"], callSites);
+    }
+
+    /// <summary>
+    /// AC 10 (ADR 0062). Both silo hosts must register the dashboard — the endpoints exist either way,
+    /// but with no <c>AddDashboard()</c> on the silo they have no cluster services to read, so the page
+    /// fails at runtime rather than at build time.
+    /// </summary>
+    [Theory]
+    // DevHost lives under tools/, not src/, so these are repo-relative rather than ProjectDir() calls.
+    [InlineData("src/Agent42.Backend/Program.cs")]
+    [InlineData("tools/Agent42.DevHost/Program.cs")]
+    public void Hosts_RegisterTheOrleansDashboard(string relativePath)
+    {
+        var source = StrippedSource(
+            Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+        Assert.Contains("silo.AddDashboard()", source, StringComparison.Ordinal);
+
+        var gate = source.IndexOf("app.UseOrleansDashboardOwnerGate()", StringComparison.Ordinal);
+        Assert.True(gate >= 0, $"{relativePath} does not install the dashboard owner gate");
+        Assert.Contains("app.MapOrleansDashboardUi()", source, StringComparison.Ordinal);
+
+        // The gate-before-static-files ordering is a property of BOTH hosts, not just the Backend.
+        // DevHost's owner is `local-dev` so it is open by design and the blast radius is small — but the
+        // ADR claims the ordering is asserted rather than merely documented, and an unqualified claim
+        // that holds for one host only is the kind that rots. Same reasoning as the Backend guard: below
+        // the static-file middleware it works only while no wwwroot/dashboard/ exists.
+        foreach (var later in new[] { "app.UseDefaultFiles()", "app.UseStaticFiles()", "app.MapOrleansDashboardUi()" })
+        {
+            var index = source.IndexOf(later, StringComparison.Ordinal);
+            Assert.True(index > gate, $"{relativePath}: {later} runs before the dashboard owner gate.");
+        }
+    }
+
+    // Comment lines stripped first: this repo explains its own traps in dense prose, and an assertion
+    // that cannot tell code from the comment warning about it is worse than no assertion.
+    private static string StrippedSource(string path) => string.Join(
+        Environment.NewLine,
+        File.ReadAllLines(path).Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
 
     private static string DeclaredNamespace(string file)
     {

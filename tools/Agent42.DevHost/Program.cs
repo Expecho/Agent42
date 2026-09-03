@@ -6,6 +6,7 @@ using Agent42.Backend;
 using Agent42.DevHost;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.AI;
+using Orleans.Dashboard;
 
 var webRoot = Path.GetFullPath(Path.Combine(
     AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Agent42.Backend", "wwwroot"));
@@ -166,19 +167,32 @@ builder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subj
 // machine; the buffer behind /logs is the only sink offline.
 builder.AddLiveTelemetryCapture(addInstrumentation: true);
 
+// The Orleans dashboard's owner (ADR 0062). DevHost has no appsettings.json, so the value is set here.
+// "local-dev" is exactly what CurrentUser.GetUserId falls back to with no Easy Auth principal header —
+// which is every request offline — so the dashboard is open here through the SAME rule that admits
+// exactly one principal in production. That is the whole point: there is no IsDevelopment() branch in
+// the gate, because an environment branch is a second code path that only ever runs where it cannot be
+// tested. NEVER put this value in src/Agent42.Backend/appsettings.json.
+builder.Configuration.AddInMemoryCollection(
+    new Dictionary<string, string?> { [DashboardOwnerGate.OwnerOidConfigKey] = "local-dev" });
+
 builder.UseOrleans(silo =>
 {
     silo.UseLocalhostClustering();
     silo.AddMemoryGrainStorage(AgentGrain.StorageProviderName);
     silo.UseInMemoryReminderService();
+    silo.AddDashboard();
 });
 
 var app = builder.Build();
+
+app.UseOrleansDashboardOwnerGate();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapAgentApi();
+app.MapOrleansDashboardUi();
 
 // StartAsync + WaitForShutdownAsync rather than Run(), because the seed below is a GRAIN CALL: it needs the
 // silo running, and calling it before the runtime is up NREs inside Orleans' InsideRuntimeClient.

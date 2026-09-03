@@ -10,6 +10,7 @@ namespace Agent42.Tests;
 /// alternative is no coverage at all of a call whose absence is silent — capture that is never registered
 /// produces an empty console, not an error.</para>
 /// </summary>
+[Collection("LiveTelemetry")]
 public sealed class LiveTelemetryCaptureWiringTests
 {
     private static string ReadHost(params string[] relativePath) =>

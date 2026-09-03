@@ -9,6 +9,7 @@ namespace Agent42.Tests;
 /// across an eviction, so a poller that fell behind skips the window it missed instead of replaying the
 /// ring from the start forever.
 /// </summary>
+[Collection("LiveTelemetry")]
 public sealed class LiveTelemetryBufferTests
 {
     private static DiagnosticsConfig Config(
