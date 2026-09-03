@@ -72,6 +72,53 @@ public sealed class DashboardOwnerGateTests
         Assert.False(DashboardOwnerGate.IsOwner(OwnerOid, ""));
     }
 
+    /// <summary>
+    /// The shipped configuration itself, not the rule. <c>local-dev</c> is
+    /// <c>CurrentUser.GetUserId</c>'s fallback for a request carrying <b>no</b> Easy Auth principal
+    /// header, so writing it into the Backend's own <c>appsettings.json</c> would hand the production
+    /// dashboard to any unauthenticated request that reached the app. It is the correct value only in
+    /// DevHost and the AppHost, which set it in code and have no Easy Auth in front of them.
+    ///
+    /// <para>ADR 0062 calls this "the one catastrophic value for that key" and guards it with a
+    /// <c>//DANGER</c> comment. A comment is not a gate — this is. The GUID check catches the other
+    /// realistic mistake: a truncated or mistyped id, which fails closed and 404s the dashboard for
+    /// everyone while looking exactly like a broken feature.</para>
+    /// </summary>
+    [Fact]
+    public void ShippedConfiguration_NeverNamesTheOfflineFallbackUserAsOwner()
+    {
+        var configured = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(BackendDir(), "appsettings.json"))
+            .Build()[DashboardOwnerGate.OwnerOidConfigKey];
+
+        Assert.False(
+            string.Equals(configured, "local-dev", StringComparison.OrdinalIgnoreCase),
+            "appsettings.json sets Dashboard:OwnerOid to the UNAUTHENTICATED fallback identity — "
+                + "that opens the production dashboard to any request with no Easy Auth principal header.");
+
+        // Blank is a supported state (fail-closed, the dashboard is inert). A non-blank value that is
+        // not a GUID is always a mistake: an Entra object id is one.
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            Assert.True(
+                Guid.TryParse(configured, out _),
+                $"Dashboard:OwnerOid is '{configured}', which is not a GUID — an Entra object id is one. "
+                    + "A wrong value fails closed and 404s the dashboard for everyone.");
+        }
+    }
+
+    private static string BackendDir()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Agent42.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        Assert.True(dir is not null, "Could not locate repo root (Agent42.slnx) from " + AppContext.BaseDirectory);
+        return Path.Combine(dir!.FullName, "src", "Agent42.Backend");
+    }
+
     // ————— Host level: the middleware, not the predicate —————
 
     /// <summary>
