@@ -542,8 +542,9 @@ to document a mechanical rule, add a lint rule instead.
   Two caveats worth knowing before relying on it: the index cursor is **activation-scoped**, so the
   first indexed turn of each activation re-upserts the **whole** conversation (write amplification,
   bought deliberately for self-healing); and **`POST /api/search/reindex` has no UI** — it is
-  curl-only, and nothing backfills existing history on deploy, so the "user-invocable repair" the
-  best-effort rule leans on is currently manual.
+  curl-only via `scripts/reindex-chat-search.sh` (Easy-Auth cookie in, batches of 25, resumable with
+  `--skip`), and nothing backfills existing history on deploy, so the "user-invocable repair" the
+  best-effort rule leans on stays a manual operator step.
   Shell cache bumped `agent42-shell-v25` → `-v26`. The DevHost browser leg **was** run (headless
   Chrome over CDP) and the AC16 guard was **mutation checked**. The Cosmos wire path is **prod-only**
   and unverified by CI, exactly as `CosmosDocumentIndex` has been since ADR 0007.

@@ -177,7 +177,9 @@ Three properties are worth knowing, because each is easy to get wrong:
 - **The write is best-effort** — its own `try`/`catch`, logged, never rethrown. The index is a
   projection, so losing a write costs search results and never conversation content; nothing
   about search may be able to fail a turn. The gap that leaves is repairable, because
-  `POST /api/search/reindex` is user-invocable and **idempotent**.
+  `POST /api/search/reindex` is user-invocable and **idempotent** — drive it with
+  `scripts/reindex-chat-search.sh`, which pages the batches and resumes with `--skip`. Nothing
+  backfills on deploy, so history predating the feature is indexed only once that has been run.
 - **Incognito chats produce zero index documents**, and skipping the ephemeral write is not
   enough on its own: an incognito turn stays in the in-memory session, so the next normal turn
   would re-project it. The cursor is advanced past it instead.
