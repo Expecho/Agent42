@@ -624,3 +624,68 @@ says so explicitly: "these gates are Agent42's; Repo A has none today and must n
 them". Per ADR 0050's own rule, a threshold with no measuring tool is not a gate — so those two are
 reported **SKIPPED (no tooling in Repo A)** rather than estimated. The dependency gates *are*
 measurable there and were measured. When Repo B is executed it runs under Agent42's real gates.
+
+## Handoff — Repo B, for a fresh `/execute-plan` session
+
+**Status: the landing-order gate is satisfied. Repo B may be executed.** The plan's own rule was
+"Repo A must be deployed somewhere Agent42's backend can dial" before Repo B merges — that is now
+true, verified against a real deployment, not a staging/local one.
+
+### What is actually running, right now
+
+- **`Calendar.Mcp`** is live at `https://google.agent42.nl/mcp` — a real, trusted, production
+  Let's Encrypt certificate (verified with a client doing full hostname validation, no `-k`).
+- **`Scraper.Mcp`** is live at `https://scraper.agent42.nl/mcp`, same certificate story.
+- Both are fronted by **`Mcp.Gateway`** (`Z:\Sources\mcpserver`, `src/Mcp.Gateway/`) — one process,
+  one container, host-based YARP routing, TLS-ALPN-01 via LettuceEncrypt — running on the user's own
+  **bare-metal server, directly on the internet, no reverse proxy in front**. Getting here needed a
+  real debugging pass through the actual deployment: the router's own WAN admin service was
+  intercepting port 443, then a missing port-forward rule, then a missing Windows Firewall rule
+  (Docker Desktop + WSL2 on the host), then a real, reproducible Certes bug in Let's Encrypt's
+  *staging* chain specifically (documented in `GatewayCertificates.cs` and the mcpserver README —
+  switching off staging and retrying against production resolved it cleanly). None of that was a
+  code defect; all of it is now recorded so it isn't rediscovered.
+- Google Cloud OAuth client for `Calendar.Mcp` is provisioned and working (`GOOGLE_OAUTH_CLIENT_ID`/
+  `SECRET` set, container issuing real tokens).
+
+This satisfies plan step B7(a)'s substance — the redirect URI
+`https://chat.agent42.nl/api/mcp/oauth/callback` is the one to register on that Google OAuth
+client (confirm it actually was, if picking this up cold).
+
+### What is NOT yet confirmed — check before assuming Repo B is risk-free to start
+
+1. **Has Agent42 actually been pointed at `https://google.agent42.nl/mcp`?** (Preferences → MCP
+   servers → InteractiveOAuth, per B7(b), including opening one chat afterward so ADR 0058
+   discovers the six per-tool checkboxes.) As of this handoff being written, that wiring step and
+   real end-to-end usage (does the OAuth consent flow complete through Agent42, does
+   `list_calendars`/`create_calendar_event` actually work, does a token survive an hour to prove
+   refresh works) had **not yet been done or observed**.
+2. **My own recommendation, not a plan requirement:** validate real usage through Agent42 for a
+   while before executing Repo B's deletion. The hard gate (Repo A deployed and dialable) is met;
+   this second one is prudence, not a rule the plan states — deleting the native fallback before
+   anyone has confirmed the replacement actually works in practice is avoidable risk for zero
+   benefit. If real usage has since been confirmed working, this concern is moot — proceed.
+
+### Before executing B1–B7, two things a fresh session must still do itself
+
+- **Drift check (per `/execute-plan` Step 1):** `planned-against: main @ e392958`. As of this
+  handoff, `main` is one commit ahead, at `e3bc4cd` — and that one commit is PR #110, the doc-only
+  commit that added this very spec file. It touches nothing in the plan's affected areas. A fresh
+  session should still run the check itself rather than trust this note blindly, but should expect
+  it to be a non-event.
+- **B6(d)'s rule collision is still unresolved, deliberately.** `check-doc-paths.mjs` scanning every
+  ADR versus "never edit an accepted ADR's decision content" for ADR 0039's Calendar path reference —
+  the plan says explicitly *"pick one explicitly; do not let CI failure drive the choice."* Nothing
+  since has decided this. It is the executor's call to make at execution time, not something this
+  handoff should pre-empt.
+
+### One correction for ADR 0063 (step B1) to make while writing it
+
+The plan's Repo A steps left hosting **deliberately unspecified** ("Hosting was deliberately
+deferred… this plan cannot name that host"). It can now be named accurately: Design D's OAuth front,
+running behind `Mcp.Gateway` (host-based YARP routing + LettuceEncrypt/TLS-ALPN-01), on the
+operator's own bare-metal server with no reverse proxy in front. ADR 0063 should record the *real*
+shape, not the deferred placeholder — including that a second OAuth-backed MCP server sharing this
+same gateway would need its own subdomain (host-based routing, not path-based — forced by the RFC
+8414 path-insertion collision `BackendRoute`'s remarks describe), should Agent42 or another agent
+ever front more than the two servers already running there.
