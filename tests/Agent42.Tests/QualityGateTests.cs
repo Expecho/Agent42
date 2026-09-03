@@ -145,4 +145,29 @@ public sealed class QualityGateTests
         // The gate diffs against the merge base, so a shallow checkout would silently gate nothing.
         Assert.Contains("fetch-depth: 0", workflow, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// AC 1 (ADR 0062). The deprecated community <c>OrleansDashboard</c> package must never be
+    /// referenced. This is an availability gate, not a taste one: version 8.2.0 — its latest, built
+    /// 2024-07-13 — throws <c>MissingMethodException</c> out of its pre-baked codegen on Orleans 10.x,
+    /// and it does so from <c>Silo.StartAsync</c>, so the silo NEVER STARTS. In Container Apps that is a
+    /// crash-looping container, and revision health is gated on every container in the replica, so it
+    /// takes the whole app down — the <c>SEARXNG_SECRET</c> shape. It also drags in
+    /// <c>OpenTelemetry.Api</c> 1.9.0, which carries a known advisory and would fail
+    /// <c>vulnerable_packages: 0</c> on its own. It was deprecated in Nov 2025 and merged into
+    /// <c>dotnet/orleans</c>; the supported package is <c>Microsoft.Orleans.Dashboard</c>.
+    ///
+    /// <para>Matched on the exact <c>Include</c> attribute, deliberately: a bare
+    /// <c>Contains("OrleansDashboard")</c> is fine, but <c>Contains("Dashboard")</c> would
+    /// false-positive on the Microsoft package this repo DOES reference.</para>
+    /// </summary>
+    [Fact]
+    public void Packages_DoNotReferenceTheDeprecatedCommunityDashboard()
+    {
+        var packages = Read("Directory.Packages.props");
+
+        Assert.DoesNotContain("Include=\"OrleansDashboard\"", packages, StringComparison.Ordinal);
+        // The supported one is present, so this test cannot pass by the section simply being absent.
+        Assert.Contains("Include=\"Microsoft.Orleans.Dashboard\"", packages, StringComparison.Ordinal);
+    }
 }

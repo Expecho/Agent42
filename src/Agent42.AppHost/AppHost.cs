@@ -58,6 +58,12 @@ builder.AddProject<Projects.Agent42_Backend>("backend")
     // empty value is a working local run with the calendar tools reporting "not connected".
     .WithEnvironment("GoogleCalendar__ClientId", builder.Configuration["GoogleCalendar:ClientId"] ?? "")
     .WithEnvironment("GoogleCalendar__ClientSecret", builder.Configuration["GoogleCalendar:ClientSecret"] ?? "")
+    // The Orleans dashboard's owner (ADR 0062). REQUIRED here, and this is the environment that is easy
+    // to forget: this path runs the real Agent42.Backend project, so it loads the real
+    // src/Agent42.Backend/appsettings.json — whose OwnerOid is the production one (or blank). Without
+    // this override the gate would 404 the dashboard for the "local-dev" identity every local
+    // full-stack request carries, which looks exactly like the feature being broken.
+    .WithEnvironment("Dashboard__OwnerOid", "local-dev")
     .WaitFor(cosmos)
     .WaitFor(blobs)
     .WaitFor(searxng);

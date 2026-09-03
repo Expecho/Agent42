@@ -148,8 +148,18 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         // The hazard is real and this is what it looks like. If this ever stops throwing, .NET changed how
         // collection expressions materialise (or Newtonsoft learned to construct them) — at which point the
         // .ToList() calls guarding it can be revisited, and not before.
+        //
+        // The MESSAGE is version-sensitive, the BEHAVIOUR is not: on Orleans 10.2.2 this read
+        // "Unable to find a constructor to use"; 10.3.1 reports the unresolvable compiler-generated
+        // type instead. Both mean the state is unreadable. Update the substring on a bump — never
+        // relax the assertion into a bare Assert.NotNull, which would pass on a silent regression.
         Assert.NotNull(ex);
-        Assert.Contains("Unable to find a constructor to use", (ex.InnerException ?? ex).Message, StringComparison.Ordinal);
+        var message = (ex.InnerException ?? ex).Message;
+        Assert.Contains("Unable to resolve type", message, StringComparison.Ordinal);
+        // Name the compiler-generated type family too, not just the failure verb. Without this, ANY
+        // unrelated $type resolution failure keeps the test green — which would be strictly looser than
+        // the 10.2.2 assertion it replaced, and this test's whole job is to notice when the hazard moves.
+        Assert.Contains("<>z__", message, StringComparison.Ordinal);
     }
 
     // The same write built the way the grain actually builds it — .ToList() — is readable. This is the half

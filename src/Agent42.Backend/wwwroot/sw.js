@@ -2,7 +2,7 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v26";
+const CACHE = "agent42-shell-v27";
 const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/attachments.js",
   "/js/cache.js", "/js/calendar.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
   "/js/drawer.js", "/js/format.js", "/js/location.js", "/js/main.js", "/js/mcp.js",
@@ -82,6 +82,12 @@ self.addEventListener("fetch", (event) => {
   // Also keeps the navigate branch below from painting /index.html — the chat app — when a /searxng/
   // navigation fails offline. Must precede any respondWith, exactly like the /api guard.
   if (url.pathname.startsWith("/searxng")) return;
+  // Same rule again for the Orleans dashboard (ADR 0062). It is server-rendered by the package, not part
+  // of the cached shell, and its 3.5 MB bundle has no business in a shared cache. It also must not be
+  // painted over by the navigate branch: the gate answers a non-owner with 404, and falling back to
+  // /index.html would show the chat app instead — a cached shell silently contradicting the gate.
+  // Must precede any respondWith, exactly like the /api and /searxng guards.
+  if (url.pathname.startsWith("/dashboard")) return;
   // Share branch sits AFTER the /api guard (keeps the ADR-0002 invariant / the position test green)
   // and BEFORE the non-GET early-return below (a share is a POST).
   if (req.method === "POST" && url.pathname === "/share") { event.respondWith(handleShare(req)); return; }

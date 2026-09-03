@@ -87,7 +87,23 @@ public sealed class OtelConfigurationTests
 
         // The buffer the endpoints resolve optionally is registered by the same call.
         var buffer = host.Services.GetRequiredService<LiveTelemetryBuffer>();
-        Assert.Empty(buffer.SpansSince(0, null).Spans);
+
+        // Scoped to THIS pipeline's own source, and that scoping is load-bearing — see the corrected
+        // diagnosis on LiveTelemetryCollection. A bare Assert.Empty here is unfixably racy: this test
+        // calls ConfigureOpenTelemetry(), which subscribes to the `Microsoft.AspNetCore` instrumentation,
+        // and an ActivityListener is PROCESS-GLOBAL. So while this host is alive, every server span from
+        // every other test class's TestServer lands in this buffer — measured, the contaminants were
+        // `PUT /api/conversations/{conversationId}/pin` and `GET /api/conversations`, both Source =
+        // Microsoft.AspNetCore. No xUnit collection can fix that, because the contaminators are the whole
+        // API suite rather than the three classes that emit gen_ai spans.
+        // This is NOT a weakened assertion: nothing in this test emits on OtelSourceName, and the one
+        // class that does (MeterNamingTests) is serialised with this one by the LiveTelemetry collection,
+        // so a span appearing here would still be a real defect.
+        var ownSpans = buffer.SpansSince(0, null).Spans
+            .Where(s => s.Source == LiveTelemetryCaptureExtensions.OtelSourceName)
+            .ToArray();
+
+        Assert.Empty(ownSpans);
     }
 
     /// <summary>
