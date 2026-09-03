@@ -601,9 +601,17 @@ code.
   both redirect URIs registered, and it is the only way to confirm a refresh token is actually
   issued and that a call still works after the access token expires. Everything about that path is
   exercised against a fake Google only.
-- **AC10 / the `docker build` leg was NOT run** — no Docker daemon on the execution machine. The new
-  CI job covers it (it builds both images and asserts the calendar image serves calendar discovery
-  and not the scraper), but CI is the first place it will actually execute.
+- ~~**AC10 / the `docker build` leg was NOT run**~~ — **resolved later the same session**, once a
+  Docker daemon became available. Both images build; both containers report **`(healthy)`**, which is
+  the `--health-probe` fix demonstrated in a real container rather than argued; every CI docker
+  assertion passes; `MCP_PUBLIC_ORIGIN` is honoured inside the container; and the entry-point
+  mechanism was checked directly — `scraper /app/server -> /app/Scraper.Mcp`,
+  `calendar /app/server -> /app/Calendar.Mcp`, each image carrying only its own server's assemblies,
+  both running as non-root `app`.
+  **Running it found one more bug** (fixed in `6cbacfb`): the scraper's `MCP_API_KEY:?` made
+  `docker compose config` fail outright, so `docker compose up calendar-mcp` was broken — the mirror
+  image of the defect the critic found on the Google variables, and one that only became harmful
+  because this change adds a second service. Reading a compose file is not running one.
 - Repo A has **no branch protection**: `.claude/hooks/protect-main.mjs` pins `ROOT` to
   `CLAUDE_PROJECT_DIR` and reports Agent42's branch, so discipline there is manual (as the plan says).
 
