@@ -114,6 +114,16 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/searxng")]
     [InlineData("/searxng/")]
     [InlineData("/searxng/static/x.css")]
+    // AC7 (ADR 0062). The Orleans dashboard. Easy Auth is the FIRST of its two gates — the owner check
+    // is the second, and it is deliberately not a substitute: a route reachable outside Easy Auth would
+    // resolve to the local-dev principal, which is precisely the value DevHost configures as the owner.
+    // So an excludedPaths entry here would not merely widen access, it would hand the cluster console to
+    // anyone. As with /logs and /searxng, the correct change to excludedPaths was NO change; these rows
+    // are what make that a checked fact. The bare prefix, the canonical slash URL the package 301s to,
+    // and a subresource are named separately, because /shared taught us those are three separate mistakes.
+    [InlineData("/dashboard")]
+    [InlineData("/dashboard/")]
+    [InlineData("/dashboard/index.min.js")]
     public void Exclusions_DoNotCoverAnyAuthenticatedPath(string path)
     {
         var entries = ExcludedPaths();

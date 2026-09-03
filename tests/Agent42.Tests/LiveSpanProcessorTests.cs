@@ -8,6 +8,7 @@ namespace Agent42.Tests;
 /// TREE is reconstructable from what lands in the buffer — spans arrive child-first, so the viewer can
 /// never rely on arrival order — and that the console's own polling never reaches the buffer.
 /// </summary>
+[Collection("LiveTelemetry")]
 public sealed class LiveSpanProcessorTests : IDisposable
 {
     private const string SourceName = "Agent42.Tests.Spans";

@@ -113,6 +113,27 @@ public sealed class PwaAssetsTests
         Assert.True(searxngGuard < firstRespond, "The /searxng bypass must precede any respondWith");
     }
 
+    /// <summary>
+    /// AC 8. The same invariant again for the Orleans dashboard (ADR 0062). It is rendered by the
+    /// package, not part of the cached shell, and its bundle is 3.5 MB. The half that matters most is
+    /// the navigate branch: the owner gate answers a non-owner with 404, and the offline fallback would
+    /// paint <c>/index.html</c> — the chat app — in its place, a cached shell quietly contradicting the
+    /// gate. Source-text heuristic, like the two guards above: proves position, not logic.
+    /// </summary>
+    [Fact]
+    public async Task ServiceWorker_BypassesTheDashboardBeforeCaching()
+    {
+        var response = await _client.GetAsync("/sw.js");
+        response.EnsureSuccessStatusCode();
+        var source = await response.Content.ReadAsStringAsync();
+
+        var dashboardGuard = source.IndexOf("startsWith(\"/dashboard\")", StringComparison.Ordinal);
+        Assert.True(dashboardGuard >= 0, "Service worker is missing the /dashboard bypass guard");
+
+        var firstRespond = source.IndexOf("event.respondWith(", StringComparison.Ordinal);
+        Assert.True(dashboardGuard < firstRespond, "The /dashboard bypass must precede any respondWith");
+    }
+
     [Theory]
     [InlineData("/icons/icon-192.png")]
     [InlineData("/icons/icon-512.png")]
@@ -231,7 +252,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v26", sw);
+        Assert.Contains("agent42-shell-v27", sw);
     }
 
     // Offline read cache (ADR 0032): agents, conversations and previously-opened chat histories are

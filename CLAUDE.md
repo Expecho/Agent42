@@ -548,6 +548,53 @@ to document a mechanical rule, add a lint rule instead.
   Shell cache bumped `agent42-shell-v25` → `-v26`. The DevHost browser leg **was** run (headless
   Chrome over CDP) and the AC16 guard was **mutation checked**. The Cosmos wire path is **prod-only**
   and unverified by CI, exactly as `CosmosDocumentIndex` has been since ADR 0007.
+- Orleans dashboard at `/dashboard` (ADR 0062): the official `Microsoft.Orleans.Dashboard` mounted into
+  the existing pipeline in **both** silo hosts, gated by Easy Auth (it is absent from `excludedPaths`,
+  which is default-deny) **plus** a single-owner check. **Read this before typing a package name:** the
+  community **`OrleansDashboard`** package must NEVER be referenced — 8.2.0 throws
+  `MissingMethodException` out of `Silo.StartAsync` on Orleans 10.x, so the **silo never starts**, which
+  in ACA is a crash-looping container that takes the whole app down (the `SEARXNG_SECRET` shape, not
+  `GOOGLE_MAPS_API_KEY`'s); it also drags in a vulnerable `OpenTelemetry.Api` 1.9.0. It was deprecated in
+  Nov 2025 and merged into `dotnet/orleans`, and `QualityGateTests` pins the ban on the exact
+  `Include="OrleansDashboard"` string (a bare `Contains("Dashboard")` false-positives on the Microsoft
+  one). **The rule is one rule, with no environment branch:** the request's user id must equal
+  `Dashboard:OwnerOid`, **fail-closed** (blank denies everyone), compared `OrdinalIgnoreCase` (a GUID in
+  different casing would otherwise 404 the dashboard for its own owner), denying with **404 not 403**.
+  DevHost and the AppHost set that key to **`local-dev`** — exactly `CurrentUser.GetUserId()`'s
+  no-principal-header fallback — so offline is open through the *same* rule; there is deliberately no
+  `IsDevelopment()` branch. That makes **`local-dev` the one catastrophic value** for the key in
+  `src/Agent42.Backend/appsettings.json`, where it would hand the dashboard to any unauthenticated
+  request; a `//DANGER` comment and a negative test guard it. The gate is **middleware over the path
+  prefix, not an endpoint filter** (the package maps its own routes, including a 3.5 MB asset route, and
+  a security control must not rest on it propagating a convention) and is installed **before**
+  `UseDefaultFiles`/`UseStaticFiles` — below them it works only while no `wwwroot/dashboard/` exists.
+  **No infra change at all:** no `excludedPaths` entry (three new `EasyAuthExclusionTests` rows prove
+  it), no Bicep, no secret, no Cosmos container; the owner OID is committed config, because an object id
+  is an identifier not a credential. New Backend folder `Orleans/` (23 → 24 — **not** `Dashboard/`, which
+  collides with ADR 0031's "token-usage dashboard"), flat namespace as ever, endpoint groups stay **17**
+  (the routes come from the package — deliberately not an `AgentApi.*` group). Registration is **split in
+  two** so the gate half runs in a test with no silo, which is what keeps the coverage gate satisfiable.
+  Measured consequences: it installs a `GrainProfilerFilter`, so **every grain call is profiled**
+  including `AgentGrain`'s non-reentrant turn; ~16 MB image growth; and it opens **no listener of its
+  own** (so the SearXNG sidecar cannot reach it on loopback — a real question, closed). **The
+  same-origin question was measured, not argued:** "it only renders our own data" is **false** — reminder
+  names are model-supplied and grain keys client-supplied — but payloads planted in both render inert
+  (`&lt;img src=x …`, zero elements created, zero inline handlers, canary never fires), so no sandbox CSP
+  is applied and the residual is bounded trust in a signed Microsoft package's escaping. This is
+  **not** a third cross-user surface: unlike `/logs` (0054) and `/usage` (0031), it is one principal.
+  Ships with the Orleans stack bumped **10.2.2 → 10.3.1**, whose exact cost was two tests — the
+  collection-expression hazard's *message* moved (behaviour unchanged; do not soften that assertion),
+  and a latent live-telemetry race the bump widened. **That race's standing explanation turned out to
+  be WRONG, and both `gotchas.md` and `LiveTelemetryCollection` now carry the correction:** it is *not*
+  gen_ai spans from classes missing `[Collection("LiveTelemetry")]` — adding the four remaining ones
+  still left it 0/2 green under `--collect`. Measured, the contaminants are **`Microsoft.AspNetCore`
+  server spans from the whole API test suite**, because `ConfigureOpenTelemetry()` subscribes to the
+  ASP.NET instrumentation and an `ActivityListener` is process-global. **No collection can fix that —
+  do not add a fifth class.** The fix is to **scope an emptiness assertion to the source under test**
+  (4/4 green under `--collect` after). Shell cache bumped `agent42-shell-v26` → `-v27`.
+  **`Dashboard:OwnerOid` currently ships BLANK, so the production dashboard denies everyone until it is
+  filled in** — inert, not open, but `silo.AddDashboard()` is unconditional, so prod already pays the
+  per-grain-call profiler and ~16 MB; ADR 0062's Unverified residual names the two ways to enable it.
 - Quality gates are measurable or absent (ADR 0050): `.agentic/quality-gates.yaml` used to carry **five**
   gates of which **four had no measuring tool in the repo** — they are SonarQube "Clean as You Code"
   metrics and there is no Sonar here (`pr-checks.yml` said so itself, and `.agentic/optional-skills/sonar/`
@@ -1026,9 +1073,9 @@ to document a mechanical rule, add a lint rule instead.
   binary path) and is **not** what protects data at rest. `ReceiveReminder` stays in the core `AgentGrain`
   part beside `ChatAsync` (the `_turnLocation`/`_ephemeral` clears must be read together); `Skills/` does
   not move (csproj `Content` glob); `Agent42.Tests` stays flat on purpose.
-- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **the 23
+- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **the 24
   directories `ProjectLayoutTests.ExpectedFolders()` pins** (`Properties/` and `wwwroot/` ride in that
-  set without being features) mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
+  set without being features; `Orleans/` joined in ADR 0062) mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
   visibly with `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`), **flat `Agent42.Backend` namespace**, and
   `Program.cs` alone at the project root. `MapAgentApi` is split into **17 per-feature partials**
   (`src/Agent42.Backend/Mcp/AgentApi.Mcp.cs`, …) with `src/Agent42.Backend/Api/AgentApi.cs` reduced to a 50-line composition root, and the 25

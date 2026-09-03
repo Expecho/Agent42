@@ -19,6 +19,7 @@ namespace Agent42.Tests;
 /// deliberate: a test that listed the handled members itself would only be testing its own list, and
 /// would pass against the very implementation this file exists to reject.</para>
 /// </summary>
+[Collection("LiveTelemetry")]
 public sealed class LiveMetricExporterTests
 {
     private sealed class NoopExporter : BaseExporter<Metric>

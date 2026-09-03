@@ -2354,14 +2354,45 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   than new: four consecutive coverage runs on an unmodified `main` worktree were green, so a branch that
   merely adds tests (a longer run, more overlap) can surface it without having caused it. **The fix is
   the shared `[Collection("LiveTelemetry")]`** — xUnit never runs two classes of one collection
-  concurrently, so nothing had to be weakened to make it deterministic (6/6 green after). **Any new test
+  concurrently. **Any new test
   class that builds a live-capture host, or that emits on `OtelSourceName`, must join that collection**;
   the failure it prevents lands in a *different* class than the one you added, which is what makes it
   hard to attribute.
-- **Evidence:** `tests/Agent42.Tests/LiveTelemetryCollection.cs`,
-  `tests/Agent42.Tests/OtelConfigurationTests.cs`, `tests/Agent42.Tests/MeterNamingTests.cs`,
-  `src/Agent42.Backend/Telemetry/LiveTelemetryCaptureExtensions.cs` (`OtelSourceName`, `AddSource`)
-- **Verified:** 2026-08-28
+- **⚠ CORRECTION 2026-09-03 (ADR 0062): the collection is NOT a sufficient fix, and believing it is
+  costs a session.** The claim above that it made the test deterministic "6/6 green after" does not
+  hold. During the Orleans 10.3.1 bump the four remaining live-capture classes
+  (`LiveMetricExporterTests`, `LiveSpanProcessorTests`, `LiveTelemetryBufferTests`,
+  `LiveTelemetryCaptureWiringTests`) were added to the collection as this entry instructs — and the
+  test still failed **0 of 2 runs green under `--collect:"XPlat Code Coverage"`**, which is the CI path.
+  Dumping the buffer on a failing run showed the contaminants were **not `OtelSourceName` spans at all**:
+
+  ```
+  Source = Microsoft.AspNetCore, Name = PUT /api/conversations/{conversationId}/pin
+  Source = Microsoft.AspNetCore, Name = GET /api/conversations
+  ```
+
+  **The mechanism is one level above `AddSource`.** That test calls `ConfigureOpenTelemetry()`, which
+  subscribes to the **ASP.NET Core instrumentation**, and an `ActivityListener` is process-global — so
+  while such a host is alive it captures **every server span in the process**. The contaminators are
+  therefore **the entire API test suite**, not the handful of classes that emit gen_ai spans. No
+  collection membership can ever cover that, and **adding a fifth class to the collection is the wrong
+  lever** — that is the specific wasted session this correction exists to prevent.
+  **The actual fix for an emptiness assertion is to SCOPE it to the source under test** (see
+  `OtelConfigurationTests`, which now filters on
+  `s.Source == LiveTelemetryCaptureExtensions.OtelSourceName`). That is not a weakened assertion: nothing
+  in that test emits on `OtelSourceName`, and the one class that does is serialised with it by the
+  collection, so a span there would still be a real defect. Measured **4/4 green under `--collect`**
+  after scoping, where it was 0/2. The collection additions were kept — they are correct on their own
+  terms — but they are not what fixed it. Note the failure is far likelier under coverage
+  instrumentation, because the instrumented host build holds the listener open for **seconds** rather
+  than milliseconds.
+- **Evidence:** `tests/Agent42.Tests/LiveTelemetryCollection.cs` (carries the same correction),
+  `tests/Agent42.Tests/OtelConfigurationTests.cs`
+  (`AddLiveTelemetryCapture_ComposesWithTheDualExporterPipeline`, the scoped assertion),
+  `tests/Agent42.Tests/MeterNamingTests.cs`,
+  `src/Agent42.Backend/Telemetry/LiveTelemetryCaptureExtensions.cs` (`OtelSourceName`, `AddSource`),
+  `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
+- **Verified:** 2026-09-03 (the 2026-08-28 fix was measured incomplete; see the correction)
 
 ### A collection expression into `IReadOnlyList<T>` written from INSIDE a grain is unreadable from Cosmos
 
@@ -2376,13 +2407,22 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   | `["a"]` (single-element literal) | `<>z__ReadOnlySingleElementList`1` |
 
   `JsonGrainStorageSerializer` (the Cosmos path, ADR 0039) writes that name into the document's `$type` and
-  then **cannot construct it on read**. Both observed failures, verbatim:
-  `Unable to find a constructor to use for type <>z__ReadOnlyArray`1[System.String]` (from `[.. toolNames]`)
-  and `... <>z__ReadOnlyList`1[System.String]` (from a `Select`/`Where` spread). The document is not subtly
-  wrong, it is **unreadable**, and it strands the whole state root — for `mcp-servers` that is every one of a
-  user's MCP servers, their encrypted secrets and their OAuth token. Note the repo's guard test asserts only
-  the substring `"Unable to find a constructor to use"`, so it does not pin which type maps to which shape;
-  the table above is the measurement, and it is what makes the entry actionable.
+  then **cannot construct it on read**. The document is not subtly wrong, it is **unreadable**, and it
+  strands the whole state root — for `mcp-servers` that is every one of a user's MCP servers, their
+  encrypted secrets and their OAuth token.
+  **⚠ The failure MESSAGE is Orleans-version-sensitive; the failure is not.** Measured on both sides of the
+  10.2.2 → 10.3.1 bump (ADR 0062):
+
+  | Orleans | Message |
+  |---|---|
+  | 10.2.2 | ``Unable to find a constructor to use for type <>z__ReadOnlyArray`1[System.String]`` (from `[.. toolNames]`), and ``... <>z__ReadOnlyList`1[System.String]`` (from a `Select`/`Where` spread) |
+  | 10.3.1 | ``Unable to resolve type "<>z__ReadOnlyArra…"`` — it now fails resolving the `$type` rather than constructing it |
+
+  So the repo's guard test pins a substring that **moves on an Orleans bump**: expect it to be the first
+  thing that goes red, update the quoted string, and do **not** soften it to a bare `Assert.NotNull` — the
+  state is still unreadable and the assertion is what would catch a real regression. It asserts only the
+  message, so it does not pin which type maps to which shape; the table above is that measurement, and it is
+  what makes the entry actionable.
 - **Nothing warns.** It serializes fine, so a write-side test passes. The binary
   `SerializationCompatibilityTests` passes too, because Orleans' own serializer handles these types happily.
   Only the Cosmos JSON path sees it — the same split ADR 0045 recorded for a different reason.
@@ -2411,7 +2451,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   if .NET or Newtonsoft ever changes; `KnownToolNames_WrittenWithToList_SurviveTheCosmosJsonRoundTrip`),
   `tests/Agent42.Tests/ToolSelectionApiTests.cs` (`ProfileToolSave_IsReadableBackFromStorage` — asserts the
   stored type is `List<string>`, pinning the laundering rather than assuming it)
-- **Verified:** 2026-08-29
+- **Verified:** 2026-09-03 (re-measured on Orleans 10.3.1; the hazard holds, only the message moved)
 
 ### Proxying a third-party app onto our own origin: both directions leak, and the route template bites
 
@@ -2455,12 +2495,24 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   preferences save emits one from `SEARXNG_BASE_URL`, so rejecting all absolutes 502s the commonest
   redirect in the UI), so accept only the upstream authority or the request host and reject the rest —
   the app origin hosts two OAuth callbacks, so an open redirector here is not benign.
+- **⚠ The SECOND such surface diverges from this entry, and the divergence is the point.** ADR 0062
+  mounts the Orleans dashboard at `/dashboard` — third-party UI on our origin again — and applies **no
+  CSP and no sandbox**. That is not an oversight and not "it's our own data" (an argument that was
+  drafted, and is **false**: reminder names are model-supplied free text and grain primary keys are
+  client-supplied, so injection-influenced content does render there). The difference is that
+  `/dashboard` is **in-process** — no proxy, no forwarded headers, no upstream cookies, so the two
+  outbound leaks above cannot arise — and that the escaping was **measured** rather than assumed:
+  payloads in a reminder name and a grain key render inert (`&lt;img src=x …`), zero elements created,
+  zero inline handlers in the document, canary never fires. See ADR 0062's Consequences for the table.
+  **If you are adding a THIRD such surface, the rule is: measure, then decide.** Two instances with
+  different threat models is not yet a pattern, and neither answer generalises.
 - **Evidence:** `src/Agent42.Backend/Web/SearxngProxy.cs`, `src/Agent42.Backend/Web/AgentApi.Web.cs`,
   `tests/Agent42.Tests/SearxngProxyTests.cs` (`Proxy_ServesTheCanonicalSlashUrlWithoutLooping`,
   `Proxy_CannotBeSteeredOffTheSidecarByAProtocolRelativePath`, `Proxy_RejectsOffSiteRedirects`,
   `Proxy_ForwardsOnlyAllowlistedRequestHeaders`),
-  `.agentic/decisions/0059-searxng-ui-behind-easy-auth-proxy.md`
-- **Verified:** 2026-08-30
+  `.agentic/decisions/0059-searxng-ui-behind-easy-auth-proxy.md`,
+  `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
+- **Verified:** 2026-09-03 (0059 rules unchanged; the 0062 divergence added and measured)
 
 ### A named `HttpClient` cannot be re-pointed per consumer — a proxy needs its OWN
 
@@ -2570,3 +2622,47 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   against the Bicep and was **mutation checked** three ways (index removed, paths swapped, direction
   flipped; each fails only the assertion that should catch it)
 - **Verified:** 2026-09-02
+
+### The community `OrleansDashboard` package does not start the silo on Orleans 10.x — it CRASHES PROD
+
+- **Claim:** there are two packages with almost the same name, and picking the wrong one takes the whole
+  app down rather than producing a broken page. Use **`Microsoft.Orleans.Dashboard`** (the official one,
+  versioned with the Orleans stack). **Never** `OrleansDashboard` (the community one).
+  Measured on Orleans 10.2.2 with `OrleansDashboard` 8.2.0 — its latest, built 2024-07-13:
+
+  ```
+  System.MissingMethodException: Method not found:
+  '!!0 Orleans.Serialization.Invocation.ITargetHolder.GetTarget()'
+  ```
+
+  thrown from its pre-baked `OrleansCodeGen.OrleansDashboard.Invokable_*` types. The exception is
+  **unhandled out of `Silo.StartAsync`**, so the silo never starts.
+- **⚠ Why that is a production outage and not a broken page.** The app co-hosts the silo in the same
+  process (`builder.UseOrleans`), so a silo that will not start is a process that will not start. In
+  Container Apps revision health is gated on **every** container in the replica — the same mechanism
+  that makes a crash-looping SearXNG sidecar take the backend down — so this is the `SEARXNG_SECRET`
+  failure shape (on the availability path), not the `GOOGLE_MAPS_API_KEY` one (degrades per call).
+  It is also **invisible to a code review**: the two package ids differ by a prefix, both compile, and
+  the API surfaces are similar enough that the calling code looks right either way.
+- **It fails the vulnerability gate too, independently.** Its dependency tree pulls
+  `OpenTelemetry.Api` 1.9.0, which carries a known moderate advisory — a `vulnerable_packages: 0`
+  failure on its own, before the silo is even reached.
+- **Upstream is not going to fix it.** Issue #450 was closed without a fix; the project was deprecated
+  in Nov 2025 and merged into `dotnet/orleans` (PR #9751). The official package IS that merge.
+- **The guard matches the exact `Include` attribute, and must keep doing so.**
+  `Assert.DoesNotContain("Include=\"OrleansDashboard\"", …)` — a bare `Contains("Dashboard")` would
+  false-positive on `Microsoft.Orleans.Dashboard`, which this repo legitimately references, so the test
+  would fail on the correct state. The same test also asserts the Microsoft package IS present, so it
+  cannot pass by the whole section being deleted.
+- **Two more measured facts about the official package**, both worth knowing before touching it:
+  it installs a `GrainProfilerFilter` as an `IIncomingGrainCallFilter`, so **every** grain call is
+  profiled — including `AgentGrain`'s non-reentrant turn path — and it opens **no listener of its own**
+  (`DashboardOptions` has no `Port`/`HostSelf`, unlike the community package). The second one matters:
+  containers in one Container App share a network namespace, so a self-hosted dashboard port would have
+  been reachable from the SearXNG sidecar, which ADR 0059 treats as untrusted. It is not.
+- **Evidence:** `Directory.Packages.props` (the pin, with the ban in a comment beside it),
+  `tests/Agent42.Tests/QualityGateTests.cs`
+  (`Packages_DoNotReferenceTheDeprecatedCommunityDashboard`),
+  `src/Agent42.Backend/Orleans/DashboardRegistration.cs`,
+  `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
+- **Verified:** 2026-09-03
