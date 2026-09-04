@@ -305,7 +305,7 @@ to document a mechanical rule, add a lint rule instead.
   override** (composer "Tools" popover, non-agent chats only), and a **per-agent** set (agent editor,
   snapshotted into the conversation like ADR 0003). The selectable set is a curated catalog of **keys**
   (`ToolCatalog`, the single source of truth for the **static** ones, exposed via `GET /api/tools`):
-  `web_search`, `location`, `scheduling`, `code_interpreter`, `calendar` (ADR 0053), `memory` (ADR 0057);
+  `web_search`, `location`, `scheduling`, `code_interpreter`, `memory` (ADR 0057);
   `get_date` and document RAG stay always-on.
   **`skills` is no longer among them** — since ADR 0048 it is a **wildcard** (in `AllSelectableToolKeys`,
   **not** in `Descriptors`) and the picker renders one `skill:{name}` box per shipped skill, exactly as ADR
@@ -316,7 +316,8 @@ to document a mechanical rule, add a lint rule instead.
   gets none; `code_interpreter` still needs a hosted model). **`memory` is the ONE documented exception to
   that intersection** (ADR 0057): it gates an `AIContextProvider`, not a tool, so it never passes through
   the capability filter — a text-only model with `memory` selected still gets memory — and it is the first
-  key in `Descriptors` with **no** `ToolNameToKey` entry. Like `calendar` before it, `memory` lands **OFF
+  key in `Descriptors` with **no** `ToolNameToKey` entry. Like `calendar` before it (a key ADR 0063 has
+  since removed entirely), `memory` lands **OFF
   for anyone who ever pressed Save** (a stored selection is an explicit list), with **no migration** by
   design, so after deploying press Save once in Preferences → Tools — and on **agent** chats there is no
   in-UI remedy at all (the bind snapshot is immutable and the popover is hidden), which is accepted and
@@ -385,52 +386,25 @@ to document a mechanical rule, add a lint rule instead.
   cache bumped `agent42-shell-v20` → `-v21`. The manual DevHost leg **was** run (headless Chrome over CDP)
   and ADR 0049 records the observed values — including the one thing it cannot show, since DevHost's canned
   chat client ignores the system prompt entirely.
-- Google Calendar tools (ADR 0053): six model-invoked tools — `list_calendars`, `list_calendar_events`,
-  `get_calendar_event`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event` — over
-  the Calendar REST API v3, authorized by a **per-user** Google OAuth connection made in Preferences →
-  Calendar. A co-hosted first-party MCP server and a third-party ADR 0024 one were both **considered and
-  rejected by the user** (the request was reversed in one round); native tools reuse `IGeocoder`'s
-  port/adapter shape and add no transport. Port `ICalendarService` (Agents `Calendar/`, the 18th folder),
-  adapter `GoogleCalendarService` (Backend `Calendar/`, the 19th), `InMemoryCalendarService` for
-  DevHost/tests, an 11th `AgentGrain` partial and the 14th endpoint group. **The credential never crosses
-  the port** — every method takes `userId` first and the adapter resolves/decrypts/refreshes itself (the
-  `UserMcpToolProvider.ResolveOAuthAccessTokenAsync` shape, 2-minute skew, persist-the-new-bundle);
-  `CalendarPort_ExposesNoCredential` pins it. **One adapter, self-reporting** — there is deliberately no
-  `NotConfiguredCalendarService` twin of `CoordinatesOnlyGeocoder`, because a blank
-  `GoogleCalendar:ClientId`/`ClientSecret` and an unconnected user are the *same* curated result;
-  `InMemoryCalendarService` must never be registered by the Backend. Google is a **confidential** client
-  (a Web application client needs `client_secret` on the exchange, so **two** config values), its
-  endpoints are **constants** — no PRM discovery — but held as constructor values with Google as the
-  pinned default so the flow is testable against a fake authorization server, and `GooglePkce` is a
-  deliberate **copy** of `McpPkce` (the ADR 0035 `ShareToken`←`ApiKey` precedent). Scope is the narrow
-  **pair** `calendar.events` + `calendar.calendarlist.readonly`, never the broad `.../auth/calendar`,
-  which would add exactly the out-of-scope operations (create/delete a calendar, change sharing) — the
-  bound that matters given no confirmation gate; no `openid`/`email` scope, since the identity is the
-  primary calendar's id. Two **optional** secrets (`GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET`,
-  the `GOOGLE_MAPS_API_KEY` shape, not `SEARXNG_SECRET`'s), two new states on `agent-state`
-  (`google-credentials`, `google-oauth-pending`) — **no new Cosmos container, no RBAC step** — and a third
-  DP purpose. `excludedPaths` is **unchanged**: all four `/api/google/*` routes stay behind Easy Auth, and
-  `EasyAuthExclusionTests` gains three rows to actually assert that; the endpoints resolve their deps
-  **optionally via `IServiceProvider`** (the `/api/speech` pattern), so zero new mandatory API
-  registrations — while `ICalendarService` **is** a mandatory grain dependency (4 edit sites, 6 silo
-  configurators, both hosts). Config is `GoogleCalendar:*` while routes are `/api/google/*` —
-  a **deliberate asymmetry** (`Geocoding:GoogleApiKey` already exists; the redirect URI is hand-registered
-  in Google Cloud). Setup guide: `docs/integrations/google-calendar/README.md`, first entry in a new
-  `docs/integrations/` tree. **Four headline consequences:** the READ side puts event titles, locations
-  and **shared-calendar ids (other people's email addresses)** into the transcript, where ADR 0013 egress,
-  ADR 0027's allowlist-exempt followed links, ADR 0035 share links and ADR 0032's unencrypted IndexedDB
-  all reach it; a prompt injection (ADR 0011/0027/0049) can rewrite or delete entries, with no
-  confirmation gate — an accepted residual; the tools are **live on `ReceiveReminder` and
-  `/api/agent-run`**, so a model-invoked delete can fire with no user present; and the new `calendar` key
-  lands **OFF for anyone who ever pressed Save** (the ADR 0048 divergence — a stored selection is an
-  explicit list), with **no migration** by design, so after deploying press Save once in Preferences →
-  Tools. Listing uses `singleEvents=true`, so ids are **instance** ids and an edit touches one occurrence,
-  never the series (said in the tool descriptions); `sendUpdates=none` is pinned on every write, because a
-  pre-existing event may already carry attendees. The outbound span is **suppressed** — OTel redacts a
-  query string but not a path, and the path carries the calendar id. Incognito chats (ADR 0034) may still
-  write to the calendar, deliberately and with a test pinning the non-refusal. Shell cache bumped
-  `agent42-shell-v22` → `-v23`. The DevHost leg was run (headless Chrome over CDP); the **real Google leg
-  is an honest unverified residual** — it needs the manual Google Cloud prerequisites.
+- Google Calendar is GONE from this repo (ADR 0063, **supersedes 0053**): the six native calendar tools,
+  the `/api/google/*` OAuth endpoints, both `Calendar/` folders, the `calendar` selection key and the
+  `GoogleCalendar:*` config/Bicep/secrets were all **deleted**. The calendar is reached now like any other
+  remote MCP server (ADR 0024) — a standalone `Calendar.Mcp` in the sibling repo `Expecho/mcpserver`, live
+  at `https://google.agent42.nl/mcp` behind an `Mcp.Gateway` on the operator's own hardware, fronting
+  Google with a stateless federating OAuth server. **ADR 0063 re-adopts an alternative ADR 0053 rejected
+  twice and marked "neither is to be relitigated"** — that is an explicit user decision, and the premise
+  that changed is "code that already lives in this process", which stopped being true once the calendar
+  logic was wanted outside Agent42. Read 0063 before touching anything calendar-shaped. Four consequences
+  worth carrying: Google tokens and the client secret now live **outside** Agent42; the calendar's tool
+  results arrive through ADR 0024's inbound prompt-injection channel, with still **no confirmation gate**
+  on writes; `CalendarSpanSuppressingHandler` is deleted but **the rule it served is not** (OTel never
+  redacts a PATH — see gotchas, where the rule now outlives its worked example); and the
+  `google-credentials` / `google-oauth-pending` documents are **orphaned in `agent-state`**, still holding
+  DP-encrypted refresh tokens, cleanable only by hand. A stored `"calendar"` selection is silently dropped
+  by `Sanitize` — harmless, no migration. ADR 0063 also settled a standing rule collision:
+  `check-doc-paths.mjs` now skips ADRs whose front matter says **`status: superseded`** (keyed on that,
+  never on `superseded_by:`, which ADR 0007 carries while still being authoritative). Shell cache bumped
+  `agent42-shell-v29` → `-v30`.
 - Live OpenTelemetry console at `/logs` (ADR 0054): a **standalone page** (three tabs — Traces / Logs /
   Metrics, `wwwroot/logs/`, mirroring `wwwroot/shared/`) polling a **bounded in-memory ring buffer** filled
   by in-process capture components in `src/Agent42.Backend/Telemetry/`. **No new datastore, container,
@@ -441,10 +415,11 @@ to document a mechanical rule, add a lint rule instead.
   risks duplicate spans), **DevHost with** it and still **no exporter**, which is what makes the feature
   exercisable offline. **The headline consequence: this is the widest read surface in the app.**
   `EnableSensitiveData = true` means gen_ai spans carry **full prompt and completion text**, plus
-  `user.*` identity, document excerpts, street addresses (ADR 0012) and calendar content (ADR 0053) — and
+  `user.*` identity, document excerpts and street addresses (ADR 0012) — and
   with **no role system**, any signed-in user reads **every** user's conversations. **It exposes incognito
   chats too** (ADR 0034 guarantees "not persisted, not listed", explicitly *not* "not in memory"). Chosen
-  deliberately; `CalendarSpanSuppressingHandler` does **not** cover calendar tool arguments/results.
+  deliberately; and note span suppression never covered a tool's ARGUMENTS or RESULTS anyway — only the
+  outbound HTTP span — so an MCP tool's calendar content still lands in `/logs` in full.
   Four things to read before touching this: **`LogRecord` is POOLED** — retaining one makes every buffered
   entry read back as the latest message, measured `count=2 distinctRefs=1`, and nothing throws;
   **`MetricType` has EIGHT members**, and 11 of 28 real instruments are `LongSumNonMonotonic`, so a
@@ -479,7 +454,7 @@ to document a mechanical rule, add a lint rule instead.
   **every non-incognito turn** POSTs the user's message *and* the assistant's reply to a third party and
   sends the message again as a recall query — automatic, always-on, invisible in the UI, unlike ADR 0013
   (only when the user *picks* a third-party model) or ADR 0027 (only when the model *calls* fetch). It
-  carries document excerpts, the user's street address (ADR 0012), calendar content (ADR 0053). Worse, and
+  carries document excerpts and the user's street address (ADR 0012). Worse, and
   worth reading twice: because retain **persists** the transcript, a prompt injection landing once — an
   ADR 0027 followed link, an ADR 0024 MCP result, an ADR 0049 uploaded SKILL.md — becomes a **durable
   memory re-injected into every future conversation of that user**, with **no delete path** (out of scope,
@@ -494,7 +469,8 @@ to document a mechanical rule, add a lint rule instead.
   excluded and **image-generation turns are too** (`RecordImageTurnAsync` builds its own agent with no
   providers) — but **reminder and agent-run turns are INCLUDED**, deliberately, so memory is written on
   turns with no user present. `Memory/` was the 19th Agents feature folder and `AgentGrain.Memory.cs` its
-  12th partial (ADR 0061's `Search/` has since followed it); `HindsightRegistration` makes `Memory/` the 20th Backend folder — extracted there because
+  12th partial (ADR 0061's `Search/` has since followed it, and ADR 0063's deletion of `Calendar/` has
+  since renumbered both projects); `HindsightRegistration` makes `Memory/` a Backend folder — extracted there because
   adding the branch inline took `Program.cs` from 15 to 16 cognitive complexity and **failed the build**.
   Four things to read before touching it: the provider is built at **activation** while the incognito gate
   is **per-turn**, so it must be a delegate (`IsEnabled = () => !_ephemeral`), guarded by a test pair whose
@@ -506,7 +482,7 @@ to document a mechanical rule, add a lint rule instead.
   reaches an already-warm chat only on its next activation); `InvokingContext` has **no `RequestMessages`** (a run's messages arrive on
   `AIContext.Messages`) and injected instructions neither come back in `InvokedContext.RequestMessages` nor
   accumulate across turns — both measured, both in gotchas; and the outbound span is deliberately **NOT**
-  suppressed, a recorded exception to the ADR 0053 rule (a bank id is the opaque principal id, not an email
+  suppressed, a recorded exception to the path-suppression rule (a bank id is the opaque principal id, not an email
   address). The honest residual: **neither repo's tests ever reach a real Hindsight server**, and DevHost
   registers `HindsightIntegration(null)`, so the first real call happens in production.
 - Search inside chat history (ADR 0061): a sidebar search box over a **plain-text projection of chat
@@ -570,8 +546,8 @@ to document a mechanical rule, add a lint rule instead.
   `UseDefaultFiles`/`UseStaticFiles` — below them it works only while no `wwwroot/dashboard/` exists.
   **No infra change at all:** no `excludedPaths` entry (three new `EasyAuthExclusionTests` rows prove
   it), no Bicep, no secret, no Cosmos container; the owner OID is committed config, because an object id
-  is an identifier not a credential. New Backend folder `Orleans/` (23 → 24 — **not** `Dashboard/`, which
-  collides with ADR 0031's "token-usage dashboard"), flat namespace as ever, endpoint groups stay **17**
+  is an identifier not a credential. New Backend folder `Orleans/` (23 → 24, taken back to 23 by ADR 0063 — **not** `Dashboard/`, which
+  collides with ADR 0031's "token-usage dashboard"), flat namespace as ever, endpoint groups stay **17** (**16** since ADR 0063)
   (the routes come from the package — deliberately not an `AgentApi.*` group). Registration is **split in
   two** so the gate half runs in a test with no silo, which is what keeps the coverage gate satisfiable.
   Measured consequences: it installs a `GrainProfilerFilter`, so **every grain call is profiled**
@@ -1102,7 +1078,7 @@ to document a mechanical rule, add a lint rule instead.
   source-text asset guard** (the fixture's `GetAppScriptAsync()` walks the import graph over HTTP).
   All three are in gotchas, and all three are asserted in `ProjectLayoutTests`/`PwaAssetsTests`.
   `styles.css` and `index.html`'s markup are deliberately untouched — separate MRs.
-- Project layout (ADR 0039): `src/Agent42.Agents` is organised into feature folders — **the 21 directories
+- Project layout (ADR 0039): `src/Agent42.Agents` is organised into feature folders — **the 20 directories
   `ProjectLayoutTests.ExpectedFolders()` pins by name** (that list, not a count in prose, is the
   authority; `Skills/` is runtime skill content rather than code, but it is in the set)
   (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …), and `AgentGrain` is split into
@@ -1120,12 +1096,12 @@ to document a mechanical rule, add a lint rule instead.
   binary path) and is **not** what protects data at rest. `ReceiveReminder` stays in the core `AgentGrain`
   part beside `ChatAsync` (the `_turnLocation`/`_ephemeral` clears must be read together); `Skills/` does
   not move (csproj `Content` glob); `Agent42.Tests` stays flat on purpose.
-- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **the 24
+- Backend layout (ADR 0040, extends 0039): `src/Agent42.Backend` follows the same pattern — **the 23
   directories `ProjectLayoutTests.ExpectedFolders()` pins** (`Properties/` and `wwwroot/` ride in that
-  set without being features; `Orleans/` joined in ADR 0062) mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
+  set without being features; `Orleans/` joined in ADR 0062, `Calendar/` left in ADR 0063) mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
   visibly with `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`), **flat `Agent42.Backend` namespace**, and
-  `Program.cs` alone at the project root. `MapAgentApi` is split into **17 per-feature partials**
-  (`src/Agent42.Backend/Mcp/AgentApi.Mcp.cs`, …) with `src/Agent42.Backend/Api/AgentApi.cs` reduced to a 50-line composition root, and the 25
+  `Program.cs` alone at the project root. `MapAgentApi` is split into **16 per-feature partials**
+  (`src/Agent42.Backend/Mcp/AgentApi.Mcp.cs`, …) with `src/Agent42.Backend/Api/AgentApi.cs` reduced to a 50-line composition root, and the
   request/response records live beside their feature as `*Contracts.cs`. Backend persists nothing, so
   the flat namespace is **not** forced here as it is in Agents — it is kept flat for consistency and
   because a type that later moves into a persisted position must not carry a folder-shaped namespace

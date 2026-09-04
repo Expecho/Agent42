@@ -2190,7 +2190,11 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         MemoryReturns("a memory that must not be injected");
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("memory-legacy-user/memory-legacy-conv");
 
-        // Exactly what BindAgentAsync materialised before ADR 0057: every key that existed then.
+        // Exactly what BindAgentAsync materialised before ADR 0057: every key that existed then. That
+        // includes `calendar`, which ADR 0063 has since REMOVED from the catalog — deliberately left in
+        // place here, because this list is a snapshot of stored state, not of today's catalog, and a
+        // since-deleted key is exactly the kind of thing real stored selections carry. KeyFor returns
+        // null for it now, so it enables nothing; that it changes nothing is part of what this pins.
         await agent.BindAgentAsync(new AgentBinding(
             "agent-legacy", "Legacy", "You are a legacy agent.", TestSiloConfigurator.DefaultModel,
             ["web_search", "location", "scheduling", "skills", "code_interpreter", "calendar", "mcp"]));

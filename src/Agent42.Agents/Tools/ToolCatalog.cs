@@ -45,22 +45,6 @@ public static class ToolCatalog
     public const string CodeInterpreter = "code_interpreter";
 
     /// <summary>
-    /// The Google Calendar tools (ADR 0053) — all six under one key, because they are one capability
-    /// and a user who wants the agent reading their calendar but not writing to it is asking for a
-    /// confirmation gate, which was considered and rejected.
-    ///
-    /// <para><b>This key lands OFF for anyone who has ever pressed Save.</b> <c>null == all</c> only
-    /// helps a user who has never narrowed a selection: the picker materialises "all" as the full
-    /// EXPLICIT list, so a stored selection cannot contain a key that did not exist when it was saved.
-    /// There is deliberately no migration (ADR 0049's auto-enable hook had an upload to hang itself on;
-    /// a shipped key has no such event, and rewriting every stored selection to add a key the user never
-    /// chose is a worse precedent than one re-save). The remedy is one press of Save in Preferences →
-    /// Tools, and it is documented rather than automated.
-    /// <c>LegacyStoredSelection_DoesNotEnableCalendar_ButNullDoes</c> pins both halves.</para>
-    /// </summary>
-    public const string Calendar = "calendar";
-
-    /// <summary>
     /// Long-term memory across conversations (ADR 0057, amends 0021 + 0056) — recall of relevant memories into
     /// the agent's instructions before each model call, and retention of the turn's transcript after it.
     /// Deselecting it attaches no provider at all, so the turn makes <b>zero</b> Hindsight calls: no recall
@@ -84,9 +68,9 @@ public static class ToolCatalog
     /// makes zero calls (<c>UnconfiguredMemory_MakesNoCalls</c>). Deselecting also does <b>not</b> remove
     /// memories already retained — ADR 0056's no-delete-path residual is untouched by it.</para>
     ///
-    /// <para><b>This key lands OFF for anyone who has ever pressed Save</b>, exactly as <see cref="Calendar"/>
-    /// did, and there is deliberately no migration. <b>For agent chats it is worse than the Calendar
-    /// precedent:</b> <c>BindAgentAsync</c> always materialises a concrete list and a re-bind returns early
+    /// <para><b>This key lands OFF for anyone who has ever pressed Save</b>, exactly as the <c>calendar</c>
+    /// key did (ADR 0053, superseded by ADR 0063 — that key and its tools now live outside this repo), and
+    /// there is deliberately no migration. <b>For agent chats it is worse than that precedent:</b> <c>BindAgentAsync</c> always materialises a concrete list and a re-bind returns early
     /// (the persona snapshot is immutable, ADR 0003), while the per-conversation popover is hidden on agent
     /// chats — so <i>every already-bound agent conversation</i> has memory off with no in-UI remedy,
     /// permanently for a continuous agent (ADR 0016) short of deleting it. Accepted and documented in ADR 0057:
@@ -147,7 +131,7 @@ public static class ToolCatalog
     /// today's "every tool on" behaviour with no migration.
     /// </summary>
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Calendar, Mcp, Memory];
+        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
     // web_search is intentionally the key for BOTH the SearXNG shims and HostedWebSearchTool — the hosted
@@ -169,12 +153,6 @@ public static class ToolCatalog
         ["load_skill"] = Skills,
         ["read_skill_resource"] = Skills,
         ["run_skill_script"] = Skills,
-        ["list_calendars"] = Calendar,
-        ["list_calendar_events"] = Calendar,
-        ["get_calendar_event"] = Calendar,
-        ["create_calendar_event"] = Calendar,
-        ["update_calendar_event"] = Calendar,
-        ["delete_calendar_event"] = Calendar,
     };
 
     /// <summary>
@@ -187,7 +165,6 @@ public static class ToolCatalog
         new(Location, "Location", RequiresHostedTools: false),
         new(Scheduling, "Scheduling", RequiresHostedTools: false),
         new(CodeInterpreter, "Code interpreter", RequiresHostedTools: true),
-        new(Calendar, "Calendar", RequiresHostedTools: false),
         // Skills is NOT here — skills surface as per-skill descriptors appended by GET /api/tools (ADR 0048),
         // and since ADR 0049 that list is PER-USER: the shipped set overlaid with the user's uploads. The
         // bare `skills` wildcard is a selection sentinel only, never a rendered checkbox.

@@ -15,7 +15,6 @@ import { activeAgentId, activeId, wireConversations } from "./conversations.js";
 import { incognitoBtn, input, toolsBtn } from "./dom.js";
 import { wireDrawer } from "./drawer.js";
 import { initLocation } from "./location.js";
-import { initGoogleOAuthReturn, wireCalendar } from "./calendar.js";
 import { initMcpOAuthReturn, wireMcp } from "./mcp.js";
 import { loadModels } from "./models.js";
 import { profile, wireProfile } from "./profile.js";
@@ -69,7 +68,6 @@ wireProviders();
 wireConfigHealth();
 wireMcp();
 wireSkills();
-wireCalendar();
 wireUsage();
 wireSpeech();
 wireVoice();
@@ -108,5 +106,4 @@ initLocation();
 initPush(); // wires the push toggle + the SW open-conversation message handler (ADR 0028)
 initShare(); // opens the destination picker when this load is an Android share hand-off
 initMcpOAuthReturn(); // surfaces the result when this load is an OAuth callback return
-initGoogleOAuthReturn(); // same, for the Google Calendar connection (ADR 0053)
 input.focus();

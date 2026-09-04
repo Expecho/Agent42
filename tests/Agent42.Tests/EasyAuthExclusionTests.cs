@@ -81,15 +81,9 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/api/usage")]
     [InlineData("/api/profile")]
     [InlineData("/api/mcp/oauth/start")]
-    // AC12 (ADR 0053). A Google OAuth route reachable outside Easy Auth would make GetUserId() return
-    // the local-dev principal and bind every user's calendar tokens to one phantom identity — so all
-    // three are named here one at a time, because that is how this theory proves gating at all.
-    [InlineData("/api/google/status")]
-    [InlineData("/api/google/oauth/start")]
-    [InlineData("/api/google/oauth/callback")]
     // AC15 (ADR 0054). The live telemetry console is the WIDEST read surface in the app — with
     // EnableSensitiveData = true its spans carry full prompt and completion text, every user's, plus
-    // street addresses and calendar content. It is authenticated-only, so the correct change to
+    // street addresses and document excerpts. It is authenticated-only, so the correct change to
     // excludedPaths was NO change; these rows are what make that a checked fact rather than an omission.
     // Both the API and the static page are named, because /shared taught us those are separate mistakes.
     [InlineData("/api/diagnostics/traces")]

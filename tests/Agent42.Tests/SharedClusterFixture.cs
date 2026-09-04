@@ -43,7 +43,7 @@ public class SharedClusterFixture : IAsyncLifetime
     /// <para>The list is every per-silo singleton a test can WRITE — not just the two that own a
     /// <c>Reset()</c>. <see cref="SingleUserMcpToolProvider"/> has none of its own (it lives in <c>src/</c>
     /// and serves offline hosts as well as tests), so its settable state is cleared from here instead. The
-    /// in-memory attachment, document, skill and calendar stores are deliberately absent: they are
+    /// in-memory attachment, document and skill stores are deliberately absent: they are
     /// process-global rather than per-silo and already outlive every cluster, so a fresh cluster was never
     /// their isolation boundary and sharing one changes nothing for them.</para>
     /// </summary>

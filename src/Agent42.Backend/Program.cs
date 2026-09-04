@@ -342,48 +342,6 @@ else
 // HindsightRegistration for what the two branches mean and why this is not inline here.
 builder.Services.AddHindsightMemory(builder.Configuration);
 
-// Google Calendar (ADR 0053): the six calendar tools, over the user's own OAuth connection.
-//
-// ONE adapter, always registered, self-reporting. There is deliberately no NotConfiguredCalendarService
-// twin of CoordinatesOnlyGeocoder: blank client credentials and an un-connected user produce the SAME
-// curated "not connected" result, so a second type would only duplicate one message. And
-// InMemoryCalendarService must never appear here — a fake calendar answering in production would have
-// the model confidently report meetings that do not exist.
-//
-// Same explicit-timeout / no-retry discipline as the clients above, and one extra reason: AgentGrain is
-// non-reentrant, so a retried calendar call multiplies the stall on the user's turn — and a retried POST
-// could double-book them. The span-suppressing handler is NOT optional: Calendar v3 puts the calendar id
-// (an email address) in the URL PATH, which OTel does not redact (it redacts only the query string).
-#pragma warning disable EXTEXP0001
-builder.Services.AddHttpClient(GoogleCalendarService.HttpClientName, http =>
-{
-    http.BaseAddress = new Uri(GoogleCalendarService.DefaultBaseAddress);
-    http.Timeout = TimeSpan.FromSeconds(10);
-})
-    .AddHttpMessageHandler(() => new CalendarSpanSuppressingHandler())
-    .RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
-
-// A dedicated Data Protection purpose, on the shared key ring: the Google refresh token's rotation is
-// independent of the MCP and provider secrets. The key ring MUST persist out-of-process in prod (it
-// does — the dataprotection blob container, ADR 0018), or a restart orphans every connection silently.
-builder.Services.AddSingleton<IGoogleSecretProtector, GoogleSecretProtector>();
-
-// Google's endpoints are constants, so there is no discovery step. The client takes them as constructor
-// values (with Google as the pinned default) purely so the flow is testable against a fake authorization
-// server; production passes nothing. A plain HttpClient, not DI-resolved, so it inherits no resilience
-// pipeline from AddServiceDefaults.
-builder.Services.AddSingleton(new GoogleOAuthClient(new HttpClient()));
-
-builder.Services.AddSingleton<ICalendarService>(sp => new GoogleCalendarService(
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient(GoogleCalendarService.HttpClientName),
-    sp.GetRequiredService<IGrainFactory>(),
-    sp.GetRequiredService<IGoogleSecretProtector>(),
-    sp.GetRequiredService<GoogleOAuthClient>(),
-    builder.Configuration["GoogleCalendar:ClientId"] ?? "",
-    builder.Configuration["GoogleCalendar:ClientSecret"] ?? "",
-    sp.GetRequiredService<ILogger<GoogleCalendarService>>()));
-
 // Web Push notifications (ADR 0028): a push when an agent replies on an async path (a fired reminder or an
 // agent-run) while the user is away.
 //

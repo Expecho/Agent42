@@ -79,12 +79,6 @@ public sealed class SerializationCompatibilityTests
     private const string UserMcpOAuthPendingStateBlob =
         "ICAAAyHoQA9zdGF0ZS0xQQtzcnYtMUEVdmVyaWZpZXItMUERY2xpZW50LTFBN2h0dHBzOi8vbG9naW4uZXhhbXBsZS90b2tlbkFdaHR0cHM6Ly9jaGF0LmFnZW50NDIubmwvYXBpL21jcC9vYXV0aC9jYWxsYmFjazEBw9luPk1SZWFkT25seUxpc3RJbnRlcmZhY2VDb2RlY2AxW1tzdHJpbmddXQADQRVzY29wZS5yZWFk4EEnaHR0cHM6Ly9tY3AuZXhhbXBsZeDg4A==";
 
-    private const string UserGoogleStateBlob =
-        "ICDoQBtjaXBoZXItYWNjZXNzQR1jaXBoZXItcmVmcmVzaCGAAFfJDWzE3giBAAAAAAAAAADgQSVnb2xkZW5AZXhhbXBsZS5jb20hgIAAt5arSd4IgQAAAAAAAAAA4ODg";
-
-    private const string UserGoogleOAuthPendingStateBlob =
-        "ICAAAyHoQB1nb29nbGUtc3RhdGUtMUEjZ29vZ2xlLXZlcmlmaWVyLTFBY2h0dHBzOi8vY2hhdC5hZ2VudDQyLm5sL2FwaS9nb29nbGUvb2F1dGgvY2FsbGJhY2shgIAAt5arSd4IgQAAAAAAAAAA4ODg4A==";
-
     private const string UserProfileStateBlob =
         "ICDoQAtubC1OTEEJZGFyazEBw9luPk1SZWFkT25seUxpc3RJbnRlcmZhY2VDb2RlY2AxW1tzdHJpbmddXQAFQRV3ZWJfc2VhcmNoQBFsb2NhdGlvbuABAeDg";
 
@@ -99,7 +93,6 @@ public sealed class SerializationCompatibilityTests
 
     private const string UserSkillsStateBlob =
         "ICDoMAHDrnj4fVJlYWRPbmx5TGlzdEludGVyZmFjZUNvZGVjYDFbW0FnZW50NDIuQWdlbnRzLlN0b3JlZFVzZXJTa2lsbF1dAAMh6EAPc2tpbGwtMUEPbXlub3Rlc0EZVGFrZXMgbm90ZXMuMQHD2W4+TVJlYWRPbmx5TGlzdEludGVyZmFjZUNvZGVjYDFbW3N0cmluZ11dAAVBEVNLSUxMLm1kQCdyZWZlcmVuY2VzL25vdGVzLm1k4CGAgAC3lqtJ3giBAAAAAAAAAADg4OABEeDg";
-
 
     // AC2: the conversation session itself — the 2 MB Cosmos item of ADR 0004, and the only state
     // that carries every feature's per-turn residue at once.
@@ -249,35 +242,6 @@ public sealed class SerializationCompatibilityTests
         // Secondary evidence regardless — this is the BINARY path. The data-at-rest guard is
         // GrainStorageSerializerTests.UserMcpConfigDocument_WrittenBeforeKnownToolNames_*.
         Assert.Null(actual.KnownToolNames);
-    }
-
-    // AC2: the user's stored Google connection (ADR 0053). The refresh-token ciphertext IS the
-    // connection — Google issues one only on a consent carrying access_type=offline + prompt=consent —
-    // so a dropped [Id] here silently ends the connection at the next access-token expiry.
-    [Fact]
-    public void UserGoogleState_RoundTripsFieldForField()
-    {
-        var expected = GoldenStates.UserGoogle().Connection!;
-        var actual = Restore<UserGoogleState>(UserGoogleStateBlob).Connection!;
-
-        Assert.Equal(expected.AccessTokenCiphertext, actual.AccessTokenCiphertext);
-        Assert.Equal(expected.RefreshTokenCiphertext, actual.RefreshTokenCiphertext);
-        Assert.Equal(expected.AccessTokenExpiresAt, actual.AccessTokenExpiresAt);
-        Assert.Equal(expected.AccountEmail, actual.AccountEmail);
-        Assert.Equal(expected.ConnectedAt, actual.ConnectedAt);
-    }
-
-    // AC2: in-flight Google authorizations (ADR 0053); a lost CodeVerifier breaks the PKCE exchange.
-    [Fact]
-    public void UserGoogleOAuthPendingState_RoundTripsFieldForField()
-    {
-        var expected = Assert.Single(GoldenStates.UserGoogleOAuthPending().Pending);
-        var actual = Assert.Single(Restore<UserGoogleOAuthPendingState>(UserGoogleOAuthPendingStateBlob).Pending);
-
-        Assert.Equal(expected.State, actual.State);
-        Assert.Equal(expected.CodeVerifier, actual.CodeVerifier);
-        Assert.Equal(expected.RedirectUri, actual.RedirectUri);
-        Assert.Equal(expected.StartedAt, actual.StartedAt);
     }
 
     // AC2: in-flight OAuth authorizations (ADR 0025); a lost CodeVerifier breaks the PKCE exchange.
