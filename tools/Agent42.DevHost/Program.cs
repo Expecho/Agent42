@@ -138,6 +138,14 @@ builder.Services.AddSingleton<DocumentIngestionService>();
 builder.Services.AddSingleton<IWebSearch, InMemoryWebSearch>();
 builder.Services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
 
+// read_web_document offline (ADR 0066): a canned document instead of a real download, so the whole tool
+// path — allowlist check, ingest into the in-memory vector index, in-process ranking, deferred rebuild —
+// runs with no network. The INGESTOR is the real one (the pipeline is Azure-free and already registered
+// above); only the fetcher differs offline, because only it opens a socket. That is also why no address
+// guard is re-implemented here: there is nothing to guard.
+builder.Services.AddSingleton<IWebDocumentFetcher, InMemoryWebDocumentFetcher>();
+builder.Services.AddSingleton<IDocumentIngestor, WebDocumentIngestor>();
+
 // Location offline (ADR 0012): the get_current_location tool path runs end to end — the browser's real
 // fix rides the chat request — but nothing is reverse-geocoded, so no Google API key is needed and no
 // request leaves the machine. The tool reports coordinates without a street address.

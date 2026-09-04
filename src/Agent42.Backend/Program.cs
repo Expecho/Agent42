@@ -269,6 +269,27 @@ builder.Services.AddHttpClient(ContextWebPageFetcher.HttpClientName, http =>
 })
     .RemoveAllResilienceHandlers();
 
+// read_web_document over an in-container fetch (ADR 0066). THIS ONE IS AN SSRF SINK, unlike the scrape
+// client above, and the ConfigurePrimaryHttpMessageHandler further down is the entire control: our
+// container — which holds the managed identity Azure IMDS mints Cosmos/Storage/OpenAI tokens for — dials
+// a URL the MODEL chose, and (because /api/agent-run is on excludedPaths, ADR 0022) a URL an API key
+// holder can put in front of it with no browser session. PrivateAddressGuard runs at CONNECT time inside
+// GuardedDocumentFetcher.CreateHandler, so it sees the address actually dialled and covers every
+// redirect hop; a guard applied to the URL string instead would be TOCTOU-broken and blind to redirects.
+// A guard that is built, tested and never wired here is the highest-consequence way this feature can
+// ship green, which is why a source-text assertion pins that line.
+//
+// Explicit timeout + RemoveAllResilienceHandlers for the same reason as the clients above; note the
+// timeout is NOT the whole story here, because the fetcher reads with ResponseHeadersRead — see
+// WebDocumentLimits.DownloadDeadline, which bounds the body read the timeout stops covering.
+builder.Services.AddHttpClient(GuardedDocumentFetcher.HttpClientName, http =>
+{
+    http.Timeout = TimeSpan.FromSeconds(30);
+})
+    .ConfigurePrimaryHttpMessageHandler(
+        () => GuardedDocumentFetcher.CreateHandler(PrivateAddressGuard.IsPubliclyRoutable))
+    .RemoveAllResilienceHandlers();
+
 // The SearXNG web UI proxy (ADR 0059). A SECOND client against the same sidecar, deliberately: three
 // primary-handler defaults that suit web_search break a proxy, and all three are shared with
 // SearxngWebSearch and ConfigHealth's probe, so they cannot simply be changed on the existing client.
@@ -302,6 +323,14 @@ builder.Services.AddSingleton<IWebSearch>(sp => new SearxngWebSearch(
 builder.Services.AddSingleton<IWebPageFetcher>(sp => new ContextWebPageFetcher(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient(ContextWebPageFetcher.HttpClientName),
     sp.GetRequiredService<ILogger<ContextWebPageFetcher>>()));
+
+// read_web_document (ADR 0066): the guarded fetcher over the client registered above, plus the ingestion
+// port the tool reaches the Backend-owned pipeline through. Both are mandatory AgentGrain dependencies,
+// so every silo host must register them or activation fails.
+builder.Services.AddSingleton<IWebDocumentFetcher>(sp => new GuardedDocumentFetcher(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient(GuardedDocumentFetcher.HttpClientName)));
+
+builder.Services.AddSingleton<IDocumentIngestor, WebDocumentIngestor>();
 
 // User location (ADR 0012): reverse-geocoding for the get_current_location tool.
 //

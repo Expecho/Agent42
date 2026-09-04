@@ -127,13 +127,14 @@ public sealed class ProjectLayoutTests
         Assert.Equal(expected, actual);
     }
 
-    /// <summary>The twelve parts of <c>AgentGrain</c> (ADR 0039) and the folder each belongs to.</summary>
+    /// <summary>The thirteen parts of <c>AgentGrain</c> (ADR 0039) and the folder each belongs to.</summary>
     public static TheoryData<string> AgentGrainParts() =>
     [
         "Conversations/AgentGrain.cs",
         "Conversations/AgentGrain.FollowUps.cs",
         "Tools/AgentGrain.BuildAgent.cs",
         "Documents/AgentGrain.Documents.cs",
+        "Documents/AgentGrain.WebDocumentTool.cs",
         "Web/AgentGrain.WebTools.cs",
         "Location/AgentGrain.LocationTool.cs",
         "Scheduling/AgentGrain.Scheduling.cs",

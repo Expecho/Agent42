@@ -31,6 +31,12 @@ internal static class TestServiceRegistration
         services.AddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
         services.AddSingleton<DocumentChunker>();
         services.AddSingleton<DocumentIngestionService>();
+        // The read_web_document ingestion port (ADR 0066). It rides THIS helper rather than
+        // AddWebToolFakes for the same reason IChatSearchIndex does: this is the one helper every silo
+        // configurator AND every API host calls, and it is a mandatory AgentGrain dependency, so a miss
+        // fails activation. The real pipeline is used offline too — only the FETCHER has an in-memory
+        // variant, because only it opens a socket.
+        services.AddSingleton<IDocumentIngestor, WebDocumentIngestor>();
         // DocumentIngestionService resolves the owner's embedding generator through the per-user factory seam
         // (ADR 0018). A silo registers its own provider (with the fake chat client + embeddings) BEFORE calling
         // this, so TryAdd is a no-op there; an endpoint-only container (the upload endpoint) gets this
@@ -57,6 +63,10 @@ internal static class TestServiceRegistration
     {
         services.AddSingleton<IWebSearch, InMemoryWebSearch>();
         services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
+        // read_web_document (ADR 0066). The offline fetcher deliberately re-implements no address guard:
+        // the guard lives in the production fetcher's ConnectCallback because it must run against the
+        // address actually dialled, and a fake that opens no socket has nothing to guard.
+        services.AddSingleton<IWebDocumentFetcher, InMemoryWebDocumentFetcher>();
         services.AddSingleton<IGeocoder, FakeGeocoder>();
         return services;
     }

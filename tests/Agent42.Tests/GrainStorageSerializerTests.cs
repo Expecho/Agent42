@@ -98,6 +98,51 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal("gen-1", generated.Value.Id);
     }
 
+    // AC21 (ADR 0066): the committed golden was written before [Id(11)] WebDocumentNames existed, so it
+    // carries no such key at all. Newtonsoft binding a MISSING property onto the initializer default is
+    // the actual risk here — the ADR 0045 precedent — and it must bind to an EMPTY LIST, not null:
+    // WithDocumentAwareness and the widened retrieval gate both read .Count on it unguarded, so a null
+    // would NRE on the first turn of every conversation that predates this deployment.
+    [Fact]
+    public void DocumentWrittenBeforeWebDocumentNames_StillDeserializes()
+    {
+        var restored = Serializer().Deserialize<AgentGrainState>(new BinaryData(StoredAgentGrainStateJson));
+
+        Assert.NotNull(restored.WebDocumentNames);
+        Assert.Empty(restored.WebDocumentNames);
+
+        // The pre-existing document list is untouched by the split — an old conversation's uploads keep
+        // their "the user uploaded" provenance, which is the whole reason the second list exists.
+        Assert.Equal(["handbook.pdf"], restored.DocumentNames);
+        Assert.NotNull(restored.WebDocumentUrls);
+        Assert.Empty(restored.WebDocumentUrls);
+    }
+
+    // The FORWARD direction for the same two fields, on the path that matters at rest. The golden blob
+    // above cannot cover it — it was written before these fields existed and is deliberately never
+    // regenerated — so this writes and reads back through the SAME configured Cosmos serializer.
+    //
+    // The two lists are given deliberately DIFFERENT values because the failure this guards is them
+    // swapping: [Id(11)] and [Id(12)] were added together, hold the same type, and are appended in
+    // lockstep, so a renumbering would produce a state where every document is named after the wrong URL
+    // and nothing else would notice.
+    [Fact]
+    public void WebDocumentNamesAndUrls_RoundTripWithoutSwapping()
+    {
+        var written = new AgentGrainState
+        {
+            DocumentNames = ["uploaded.pdf"],
+            WebDocumentNames = ["spec-v2.pdf (web: example.com)"],
+            WebDocumentUrls = ["https://example.com/spec-v2.pdf"],
+        };
+
+        var restored = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(written));
+
+        Assert.Equal(["uploaded.pdf"], restored.DocumentNames);
+        Assert.Equal(["spec-v2.pdf (web: example.com)"], restored.WebDocumentNames);
+        Assert.Equal(["https://example.com/spec-v2.pdf"], restored.WebDocumentUrls);
+    }
+
     /// <summary>
     /// State a grain builds <b>itself</b> and writes, round-tripped through the real Cosmos serializer.
     ///

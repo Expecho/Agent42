@@ -128,14 +128,21 @@ Two precision points, so the risk is neither overclaimed nor understated:
 ### Worse than a normal injection channel: the injection becomes durable
 Recalled memories are untrusted third-party text injected into the **system instructions**. Because
 retain *persists* the transcript, an injection landing once — from an ADR 0027 followed link
-(allowlist-**exempt**), an ADR 0024 MCP tool result, or an ADR 0049 uploaded SKILL.md — becomes a
-**durable memory re-injected into every future conversation of that user**, including reminder and
-agent-run turns with nobody watching.
+(allowlist-**exempt**), an ADR 0024 MCP tool result, an ADR 0049 uploaded SKILL.md, or an
+**ADR 0066 `read_web_document` document** — becomes a **durable memory re-injected into every future
+conversation of that user**, including reminder and agent-run turns with nobody watching.
+
+> **Fourth entry added by [ADR 0066](0066-in-container-document-fetch-for-rag.md) (2026-09-04), and it
+> is the largest of the four.** The others carry a link's worth, a tool result's worth, or one
+> SKILL.md's worth of untrusted text; `read_web_document` ingests a **whole document** from a
+> model-chosen URL, indexes it, and keeps injecting excerpts from it on every later turn of that
+> conversation — any of which retain can persist into the bank. Deleting the conversation clears the
+> Cosmos chunks and the name list; it does **not** clear the bank.
 
 Cross-conversation, persistent, and with **no delete path**: deleting or inspecting memories is out of
 scope for this iteration, which is exactly what makes this unmitigable here rather than merely
-unmitigated. That is a materially different risk class from ADR 0011/0027/0049, and it is the strongest
-argument for the per-user opt-out this iteration does not have.
+unmitigated. That is a materially different risk class from ADR 0011/0027/0049/0066, and it is the
+strongest argument for the per-user opt-out this iteration does not have (ADR 0057 supplied one).
 
 ### The outbound span is NOT suppressed — a deliberate exception
 ADR 0053 added `CalendarSpanSuppressingHandler` because a calendar id in the URL path is a real email

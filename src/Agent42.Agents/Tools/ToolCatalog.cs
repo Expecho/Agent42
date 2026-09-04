@@ -82,6 +82,27 @@ public static class ToolCatalog
     public const string Memory = "memory";
 
     /// <summary>
+    /// Reading a web-hosted document into the conversation's retrieval index (ADR 0066) — the
+    /// <c>read_web_document</c> tool.
+    ///
+    /// <para><b>Deliberately its own key, not folded into <see cref="WebSearch"/>.</b> That key covers
+    /// tools whose outbound request is made by a third party (SearXNG, and context.dev since ADR 0027)
+    /// and whose results are transient text. This one dials a model-chosen URL <b>from our own
+    /// container</b> and writes durable vector chunks. Those are different things to consent to, so they
+    /// are different checkboxes — even though a user who wants one usually wants the other.</para>
+    ///
+    /// <para>Appended LAST for the same reason <see cref="Memory"/> was: it keeps catalog order stable
+    /// for every existing key, so the order-sensitive <c>Sanitize_OrdersStaticFirst_*</c> guards need no
+    /// expectation edit. Like every key added after the fact, <b>it lands OFF for anyone who has ever
+    /// pressed Save</b> — a stored selection is an explicit list — and there is deliberately no
+    /// migration. One press of Save in Preferences → Tools restores it for regular chats; an
+    /// already-bound agent chat has no in-UI remedy (ADR 0003's immutable snapshot), exactly as with
+    /// <see cref="Memory"/>. It fails safe: the tool that opens a socket from our container stays off
+    /// until deliberately enabled.</para>
+    /// </summary>
+    public const string ReadWebDocument = "read_web_document";
+
+    /// <summary>
     /// The agent-skills <b>wildcard</b> ("all skills") meta-key (per-skill selectable tools, amends 0021).
     /// Each skill is individually selectable as a per-skill key <c>skill:{name}</c> (see
     /// <see cref="SkillKey"/>) — both the ones shipped in <see cref="SkillCatalog"/> and the ones the user
@@ -131,7 +152,7 @@ public static class ToolCatalog
     /// today's "every tool on" behaviour with no migration.
     /// </summary>
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory];
+        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
     // web_search is intentionally the key for BOTH the SearXNG shims and HostedWebSearchTool — the hosted
@@ -145,6 +166,7 @@ public static class ToolCatalog
     {
         [WebSearch] = WebSearch,
         ["fetch_web_page"] = WebSearch,
+        [ReadWebDocument] = ReadWebDocument,
         [CodeInterpreter] = CodeInterpreter,
         ["get_current_location"] = Location,
         ["schedule_prompt"] = Scheduling,
@@ -182,6 +204,14 @@ public static class ToolCatalog
         // RequiresHostedTools is false: memory is not a tool at all, so no capability can grey it out.
         new(Memory, "Long-term memory", RequiresHostedTools: false,
             Description: "Recalls and retains memories across your conversations, via a third party."),
+        // ReadWebDocument is LAST for the same reason Memory was — appending keeps catalog order stable
+        // for every existing key, so the order-sensitive Sanitize_OrdersStaticFirst_* guards need no
+        // expectation edit. RequiresHostedTools is false: it registers on BOTH capability branches,
+        // because it is document ingestion and no hosted tool provides that (it is not part of ADR 0015's
+        // swap). The description names what makes it a separate consent from Web search: this one fetches
+        // from OUR container and keeps what it finds.
+        new(ReadWebDocument, "Read web documents", RequiresHostedTools: false,
+            Description: "Fetches a PDF or Office document from a link into this chat's searchable context."),
     ];
 
     /// <summary>The logical key for a registered tool name, or null (e.g. <c>get_date</c>, or an unmapped tool).</summary>

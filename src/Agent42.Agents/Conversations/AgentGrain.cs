@@ -65,6 +65,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly IWebPageFetcher _webPageFetcher;
 
+    // read_web_document (ADR 0066). Deliberately NOT the same seam as _webPageFetcher: this one dials the
+    // model-chosen URL from OUR container (so it carries the SSRF guard), and it returns bytes rather
+    // than scraped text.
+    private readonly IWebDocumentFetcher _webDocumentFetcher;
+
+    private readonly IDocumentIngestor _documentIngestor;
+
     private readonly IGeocoder _geocoder;
 
     private readonly HindsightIntegration _memory;
@@ -167,6 +174,24 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// </summary>
     private bool _interactiveTurn;
 
+    /// <summary>
+    /// True when <c>read_web_document</c> ingested a document during the turn currently running, so the
+    /// agent must be rebuilt once that run is over (ADR 0066).
+    ///
+    /// <para>The rebuild cannot happen inside the tool: it swaps <c>_session</c> out from under the
+    /// framework run that is iterating it. So the tool sets this and
+    /// <see cref="RebuildForIngestedWebDocumentAsync"/> consumes it at the <b>two</b> places a run
+    /// completes — after <c>PersistTurnUnlessEphemeralAsync</c> in <see cref="ChatCoreAsync"/>, and after
+    /// <see cref="ReceiveReminder"/>'s own write. Miss the second and a reminder turn's ingest never
+    /// attaches retrieval.</para>
+    ///
+    /// <para>Like <see cref="_ephemeral"/> and <see cref="_turnLocation"/> it lives for the grain
+    /// ACTIVATION, not the call, so it is cleared in the same three places: the <c>finally</c> of
+    /// <see cref="ChatAsync"/>, and on entry to <see cref="EnqueuePromptAsync"/> and
+    /// <see cref="ReceiveReminder"/>. Consuming it clears it too, so a normal turn leaves it false.</para>
+    /// </summary>
+    private bool _webDocumentIngested;
+
     public AgentGrain(
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
         IUserChatClientFactoryProvider chatClientFactoryProvider,
@@ -177,6 +202,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         IChatSearchIndex chatSearchIndex,
         IWebSearch webSearch,
         IWebPageFetcher webPageFetcher,
+        IWebDocumentFetcher webDocumentFetcher,
+        IDocumentIngestor documentIngestor,
         IGeocoder geocoder,
         HindsightIntegration memory,
         IPushNotificationSender pushSender,
@@ -191,6 +218,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _chatSearchIndex = chatSearchIndex;
         _webSearch = webSearch;
         _webPageFetcher = webPageFetcher;
+        _webDocumentFetcher = webDocumentFetcher;
+        _documentIngestor = documentIngestor;
         _geocoder = geocoder;
         _memory = memory;
         _pushSender = pushSender;
@@ -352,6 +381,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             _turnLocation = null;
             _ephemeral = false;
             _interactiveTurn = false;
+            // Consumed inside ChatCoreAsync on the normal path; cleared here for the same
+            // activation-scoped reason as the two above — an abandoned stream must not leave a warm
+            // activation carrying a pending rebuild into someone else's turn (ADR 0066).
+            _webDocumentIngested = false;
         }
     }
 
@@ -367,6 +400,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // A background (agent-run) turn has no live client watching the stream, so follow-up suggestions
         // would be a wasted model call for a discarded event — keep the interactive gate OFF.
         _interactiveTurn = false;
+        // Same activation-scoped reason as the two clears above (ADR 0066). This turn drains
+        // ChatCoreAsync, so its own ingest is consumed there; what must not happen is inheriting a
+        // pending rebuild from a chat turn whose stream was abandoned.
+        _webDocumentIngested = false;
 
         try
         {
@@ -518,6 +555,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
 
         await PersistTurnUnlessEphemeralAsync();
+
+        // Consume site 1 of 2 (ADR 0066): if read_web_document ingested during this run, rebuild now that
+        // the run is over — the tool could not, because a rebuild swaps _session out from under the
+        // framework run iterating it. Covers the live chat path AND /api/agent-run, which drains this
+        // method. Site 2 is in ReceiveReminder, which does NOT drain this method.
+        await RebuildForIngestedWebDocumentAsync();
 
         // Follow-up suggestions (interactive path only, opt-out via Preferences). Best-effort: the helper
         // owns its try/catch and returns null on any failure, so a slow/failing suggestion call never breaks
@@ -819,6 +862,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         _state.State.ScheduledPrompts.Clear();
         _state.State.DocumentNames.Clear();
+        // The web-fetched lists must be cleared alongside DocumentNames, and for the reason that line
+        // exists at all: DeactivateOnIdle() below is *on idle*, so a request landing in the window before
+        // deactivation would otherwise see a grain whose chunks are already gone but whose
+        // WebDocumentNames still gate the retrieval provider AND still name attacker-influenced filenames
+        // in the system prompt (ADR 0066).
+        _state.State.WebDocumentNames.Clear();
+        _state.State.WebDocumentUrls.Clear();
         _state.State.SerializedSession = null;
         _state.State.DeploymentName = null;
         await _state.ClearStateAsync();
@@ -845,8 +895,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // for the activation, so without it a reminder firing after a located chat turn would still see
         // that turn's fix and have the model announce the user's position hours later, somewhere else.
         // _ephemeral is cleared for the same activation-scoped reason: a fired reminder always persists.
+        // _webDocumentIngested likewise (ADR 0066) — this method has its OWN consume site below, and it
+        // must consume this turn's ingest, not one inherited from an abandoned chat stream.
         _turnLocation = null;
         _ephemeral = false;
+        _webDocumentIngested = false;
 
         if (!_state.State.ScheduledPrompts.TryGetValue(reminderName, out var info))
         {
@@ -895,6 +948,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // _ephemeral on entry because a fired reminder always persists, so adding one would be the
         // fresh-guard mistake ADR 0034 warns about. Best-effort inside.
         await IndexNewTurnsForSearchAsync();
+
+        // Consume site 2 of 2 (ADR 0066), and the one that is easy to miss: this method does NOT drain
+        // ChatCoreAsync — it calls _agent.RunAsync directly and does its own serialize/write/index —
+        // so ChatCoreAsync's consume site never runs for a reminder turn. Without this call, a reminder
+        // that ingested a document would persist the name list and lose the rebuild, leaving retrieval
+        // detached for the rest of the activation while the instructions claim the document exists.
+        await RebuildForIngestedWebDocumentAsync();
 
         // Away-reply push (ADR 0028): a scheduled prompt fired with no live client watching. After the
         // persist, so a push only ever follows a durably-recorded reply. No _modelId guard needed — the
