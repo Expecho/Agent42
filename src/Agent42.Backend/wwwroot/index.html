@@ -684,7 +684,7 @@
                placeholder="https://org.crm4.dynamics.com/.default (space-separated)" />
       </label>
 
-      <p class="agent-form__note" id="mcpOAuthNote" hidden>Client id is optional (the server may register one for you). Save the server, then use <b>Connect</b> in the list to sign in — your conversation and its tool results then flow through this server.</p>
+      <p class="agent-form__note" id="mcpOAuthNote" hidden>Client id is optional (the server may register one for you). Save the server, then press <b>Connect</b> below to sign in — your conversation and its tool results then flow through this server.</p>
 
       <p class="agent-form__error" id="mcpError" hidden></p>
 
@@ -697,6 +697,11 @@
         <!-- type="button" is load-bearing: inside a <form>, the default type is "submit", so a Test press
              would silently SAVE the server as well. -->
         <button class="agent-form__btn" type="button" id="mcpTestBtn">Test</button>
+        <!-- Interactive OAuth needs a sign-in that Save cannot perform, so the flow used to dead-end here:
+             the auto-test reported "not connected (no OAuth token yet)" while the only Connect control was
+             the list's 🔗 glyph, inert underneath this modal. Shown by syncMcpConnectBtn() only for a STORED
+             InteractiveOAuth server. type="button" for the #mcpTestBtn reason above. -->
+        <button class="agent-form__btn" type="button" id="mcpConnectBtn" hidden>Connect</button>
         <button class="agent-form__btn agent-form__btn--primary" type="submit" id="mcpSaveBtn">Save</button>
       </div>
     </form>

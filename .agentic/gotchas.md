@@ -1466,6 +1466,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Pressing Test sends them — intended. The **auto-test on save must stay gated on the Enabled checkbox**, or
   saving a server with the box unchecked delivers its credentials to a host the app never contacted, from a
   path the user never asked for.
+  **And the one that is pure UX, found by a user, not by a test:** the auto-test needs a SECOND gate, on a
+  stored OAuth token. Save does not perform the interactive sign-in, so for a fresh InteractiveOAuth server
+  the dial can only return `not connected (no OAuth token yet)` — a true statement rendered in the error
+  style at the one moment it is *guaranteed*, and the one moment the user cannot act on it: the dialog is
+  `showModal()`, so the list row carrying the Connect glyph is inert underneath it. It reads as "saving is
+  broken, and there is no way to connect". Hence `#mcpConnectBtn` **inside** the dialog, and the gate
+  `mcpAuthSelect.value === "InteractiveOAuth" && !storedMcpServer(editingMcpId)?.hasToken`, which reports a
+  success instead. Two traps if you touch it: `hasToken` must be read AFTER the `loadMcpServers()` in
+  `saveMcpServer` or it is a stale value from before the save; and the gate must test the token, not the
+  auth mode, or a **reconnect** of a working server silently stops being verified.
 - **Evidence:** `src/Agent42.Backend/Mcp/McpConnectionTester.cs` (`RecordAndDescribeAsync` non-empty guard,
   the `finally` dispose, curated reasons), `src/Agent42.Backend/Mcp/McpOAuthTokenResolver.cs`,
   `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (the corrected "one of TWO writers" comment),
@@ -1475,7 +1485,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`Test_NeverErasesKnownToolNamesOnAZeroToolConnect`, `Test_RefreshesANearExpiryToken`,
   `Test_DisposesItsConnection`, `Tester_DoesNotDependOnTheToolProvider`,
   `Test_ReturnsACuratedReason_NeverTheException`),
-  `tests/Agent42.Tests/McpServersAssetsTests.cs` (`SaveFlow_DoesNotAutoTestADisabledServer`),
+  `tests/Agent42.Tests/McpServersAssetsTests.cs` (`SaveFlow_DoesNotAutoTestADisabledServer`,
+  `SaveFlow_DoesNotAutoTestAnOAuthServerThatHasNoTokenYet`, `McpDialog_OffersConnectForAStoredOAuthServer`),
   `.agentic/decisions/0064-mcp-connection-test-endpoint.md`
 - **Verified:** 2026-09-04
 

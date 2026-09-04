@@ -1,6 +1,6 @@
 /* Agent 42 — remote MCP servers (ADR 0024/0025/0026), incl. the connection test (ADR 0064). Split out of app.js (ADR 0041). */
 
-import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpDialog, mcpEnabledInput, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpScopesField, mcpScopesInput, mcpServerList, mcpTabResult, mcpTestBtn, mcpTestResult, profileTabs } from "./dom.js";
+import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpConnectBtn, mcpDialog, mcpEnabledInput, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpScopesField, mcpScopesInput, mcpServerList, mcpTabResult, mcpTestBtn, mcpTestResult, profileTabs } from "./dom.js";
 import { openProfileDialog } from "./profile.js";
 import { refreshToolCatalog } from "./tools.js";
 
@@ -16,6 +16,17 @@ export async function loadMcpServers() {
     mcpServers = data.servers ?? [];
     renderMcpServers();
   } catch { /* silo may be unreachable; the list refreshes on next open */ }
+}
+
+// The one place the interactive-OAuth sign-in starts, shared by the list row and the dialog button. A full
+// navigation: the server 302s to the identity provider and returns to /api/mcp/oauth/callback.
+function startMcpOAuth(serverId) {
+  window.location.href = `/api/mcp/oauth/start?serverId=${encodeURIComponent(serverId)}`;
+}
+
+// The masked record for a stored id, or null. Read AFTER loadMcpServers() for a fresh hasToken.
+function storedMcpServer(id) {
+  return mcpServers.find((s) => s.id === id) ?? null;
 }
 
 function renderMcpServers() {
@@ -58,9 +69,7 @@ function renderMcpServers() {
       connect.setAttribute("aria-label", `${server.hasToken ? "Reconnect" : "Connect"} MCP server: ${server.name}`);
       connect.textContent = "🔗";
       connect.title = server.hasToken ? "Reconnect (sign in again)" : "Connect (sign in)";
-      connect.addEventListener("click", () => {
-        window.location.href = `/api/mcp/oauth/start?serverId=${encodeURIComponent(server.id)}`;
-      });
+      connect.addEventListener("click", () => startMcpOAuth(server.id));
       li.append(meta, connect);
     } else {
       li.appendChild(meta);
@@ -99,6 +108,7 @@ function syncMcpAuthUi() {
   mcpClientIdField.hidden = !(isCc || isOAuth);
   mcpScopesField.hidden = !(isCc || isOAuth);
   mcpOAuthNote.hidden = !isOAuth;
+  syncMcpConnectBtn();
 }
 
 function openMcpDialog(server) {
@@ -125,6 +135,18 @@ function openMcpDialog(server) {
 
   mcpDialog.showModal();
   mcpNameInput.focus();
+}
+
+// Connect round-trips through the identity provider and back into this user's overlay, so like Test it
+// needs a STORED id. Labelled from the CURRENT stored token, so an already-connected server offers a
+// Reconnect rather than implying it is unconnected.
+//
+// It navigates away, so any unsaved edits in the form are dropped — the same trade the list row’s 🔗 makes,
+// and the reason the button sits beside Save rather than replacing it.
+function syncMcpConnectBtn() {
+  const isOAuth = mcpAuthSelect.value === "InteractiveOAuth";
+  mcpConnectBtn.hidden = !(isOAuth && editingMcpId);
+  mcpConnectBtn.textContent = storedMcpServer(editingMcpId)?.hasToken ? "Reconnect" : "Connect";
 }
 
 // An unsaved server has no id, and the endpoint takes a STORED id (a blank secret means "keep", which
@@ -233,6 +255,7 @@ async function saveMcpServer() {
     // duplicate server. There is no server-side guard; this line is the whole defence.
     editingMcpId = saved.id ?? editingMcpId;
     syncMcpTestBtn();
+    syncMcpConnectBtn();
   } catch { return; /* silo may be unreachable; leave the dialog open */ }
 
   // The dialog stays open so the auto-test below has somewhere to report. Cancel becomes Close: the save
@@ -254,6 +277,16 @@ async function saveMcpServer() {
   if (!editingMcpId) return;
   if (!mcpEnabledInput.checked) {
     renderTestResult(mcpTestResult, { ok: false, reason: "not tested — this server is switched off. Press Test to check it anyway." });
+    return;
+  }
+  // ...and EXCEPT for an interactive-OAuth server that has never signed in. It cannot hold a token at this
+  // point — Save does not perform the sign-in — so the dial could only ever return "not connected (no OAuth
+  // token yet)": an accurate diagnosis rendered as a failure, at the one moment it is guaranteed AND the
+  // user cannot act on it (this dialog is modal, so the list’s Connect glyph is inert underneath). Report
+  // the save as the success it is and point at the Connect button instead. hasToken comes from the
+  // loadMcpServers() above, so it is fresh; a RECONNECT of an already-connected server still auto-tests.
+  if (mcpAuthSelect.value === "InteractiveOAuth" && !storedMcpServer(editingMcpId)?.hasToken) {
+    renderTestResult(mcpTestResult, { ok: true, toolCount: 0, reason: "saved. Press Connect to sign in — this server is not usable until you do." });
     return;
   }
   await testMcpServer(editingMcpId, mcpTestResult);
@@ -294,6 +327,9 @@ export function wireMcp() {
   mcpCancelBtn.addEventListener("click", () => mcpDialog.close());
   mcpTestBtn.addEventListener("click", () => {
     if (editingMcpId) testMcpServer(editingMcpId, mcpTestResult);
+  });
+  mcpConnectBtn.addEventListener("click", () => {
+    if (editingMcpId) startMcpOAuth(editingMcpId);
   });
   mcpForm.addEventListener("submit", (e) => {
     e.preventDefault();

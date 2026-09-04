@@ -174,6 +174,54 @@ public sealed class McpServersAssetsTests
             "clearMcpTabResult() must run before loadMcpServers() in openProfileDialog.");
     }
 
+    // The save-path auto-test must NOT dial an interactive-OAuth server that has never signed in. Save does
+    // not perform the sign-in, so the dial can only return "not connected (no OAuth token yet)" — an accurate
+    // diagnosis rendered as a failure, at the one moment the user cannot act on it (the dialog is modal, so
+    // the list's Connect glyph is inert underneath). Source-text only, like the enabled gate it follows.
+    [Fact]
+    public async Task SaveFlow_DoesNotAutoTestAnOAuthServerThatHasNoTokenYet()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        var saveStart = app.IndexOf("async function saveMcpServer()", StringComparison.Ordinal);
+        var saveBody = app[saveStart..app.IndexOf("async function deleteMcpServer", StringComparison.Ordinal)];
+
+        var gate = saveBody.IndexOf("mcpAuthSelect.value === \"InteractiveOAuth\" && !storedMcpServer(editingMcpId)?.hasToken", StringComparison.Ordinal);
+        var autoTest = saveBody.IndexOf("await testMcpServer(editingMcpId, mcpTestResult)", StringComparison.Ordinal);
+        Assert.True(gate >= 0, "the save-path auto-test must be gated on a stored OAuth token.");
+        Assert.True(autoTest > gate, "the OAuth gate must precede (and short-circuit) the auto-test.");
+
+        // A save IS a success; rendering the sign-in prompt as a failure is the bug being fixed.
+        var verdict = saveBody[gate..autoTest];
+        Assert.Contains("ok: true", verdict);
+        Assert.Contains("Press Connect", verdict);
+    }
+
+    // The Connect control must be reachable from the dialog itself. Before this it lived ONLY on the list
+    // row, which showModal() renders inert — so the save-time "not connected" verdict pointed at a button
+    // the user could not press. Both entry points share one navigation helper.
+    [Fact]
+    public async Task McpDialog_OffersConnectForAStoredOAuthServer()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("id=\"mcpConnectBtn\"", html);
+
+        // type="button": inside a <form> the default is "submit", so pressing Connect would also save.
+        var buttonStart = html.LastIndexOf("<button", html.IndexOf("id=\"mcpConnectBtn\"", StringComparison.Ordinal), StringComparison.Ordinal);
+        var buttonTag = html[buttonStart..(html.IndexOf('>', buttonStart) + 1)];
+        Assert.Contains("type=\"button\"", buttonTag);
+
+        // One navigation helper, used by the row glyph and the dialog button alike.
+        Assert.Contains("function startMcpOAuth(serverId)", app);
+        Assert.Contains("startMcpOAuth(editingMcpId)", app);
+        Assert.Contains("startMcpOAuth(server.id)", app);
+
+        // Shown only for a STORED OAuth server — the flow returns into this user's overlay by id.
+        Assert.Contains("mcpConnectBtn.hidden = !(isOAuth && editingMcpId);", app);
+    }
+
     // M3 — the save path's refreshToolCatalog() must stay UNCONDITIONAL (ADR 0026): a save whose auto-test
     // then fails must still update the pickers, because the server's own checkbox is driven by the save, not
     // by reachability. Pinned by source text and MUTATION-CHECKED: moving the call inside the test's success
