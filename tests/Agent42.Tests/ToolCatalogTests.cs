@@ -83,6 +83,24 @@ public class ToolCatalogTests
             ToolCatalog.KeyFor(ToolCatalog.Memory));
     }
 
+    // AC8 (preferences redesign) — the picker renders a description line under each built-in's label, and the
+    // copy is server-owned so it cannot drift away from the catalog it describes. Every STATIC descriptor must
+    // carry one: the per-user skill and MCP descriptors appended by GET /api/tools leave Description null (they
+    // are user- and server-supplied names), and those are unreachable from here — ToolCatalog.Descriptors is
+    // exactly the static set, which is why this assertion can be unconditional.
+    [Fact]
+    public void EveryStaticDescriptor_HasADescription()
+    {
+        Assert.NotEmpty(ToolCatalog.Descriptors);
+
+        foreach (var descriptor in ToolCatalog.Descriptors)
+        {
+            Assert.False(
+                string.IsNullOrWhiteSpace(descriptor.Description),
+                $"Built-in tool '{descriptor.Key}' has no description; the picker would render it label-only.");
+        }
+    }
+
     [Fact] // AC7 — a per-skill key round-trips through Sanitize, deduped; garbage is dropped.
     public void Sanitize_PreservesPerSkillKeys_AndDropsGarbage()
     {

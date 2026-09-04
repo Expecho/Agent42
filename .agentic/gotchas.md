@@ -2697,3 +2697,61 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Orleans/DashboardRegistration.cs`,
   `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
 - **Verified:** 2026-09-03
+
+### The prefs drill-down must NOT be driven from `wireTabs`' `select` — every open would land in detail
+
+- **⚠ The trap.** `enterPrefsDetail(index)` sets `#profileDialog.is-detail`, which at ≤760px swaps the
+  Preferences rail (the list view) for the picked section (the detail view). It looks like it belongs
+  inside `wireTabs`' `select()` — that is where "a tab became active" is known, and it would cover both
+  the click and the OAuth deep link in one place. It is wrong.
+- **Why.** `openProfileDialog()` calls `profileTabs.select(0)` on **every** open. Driven from `select`,
+  a phone would land in **General's detail view every single time the dialog opens** — a section the
+  user never chose, with the list they wanted one Back press away. `wireTabs` is also shared with the
+  agent editor (`agentTabs`), so a prefs concept there leaks into a dialog that has no drill-down.
+- **The shape that works.** A **delegated `click` listener on `#profileNav`** resolving the row with
+  `e.target.closest('[role="tab"]')` — delegated so it survives nothing in particular, and `closest`
+  because the rail buttons carry an inline `<svg>` icon, so `e.target` is usually a `<path>` and a bare
+  `e.target` check misses most presses. `openProfileDialog()` calls `exitPrefsDetail()` **before**
+  `showModal()`. The one programmatic case that genuinely wants detail is the interactive-OAuth return,
+  which calls `enterPrefsDetail(3)` beside its own untouched `profileTabs.select(3)`.
+- **Related:** the drill-down title must read the tab's `.prefs__navlabel` span, never
+  `button.textContent` — the Tools button contains the count badge, so `textContent` there is measured
+  as `"Tools 9/9"`.
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/profile.js`, `src/Agent42.Backend/wwwroot/js/tabs.js`,
+  `src/Agent42.Backend/wwwroot/js/mcp.js`,
+  `tests/Agent42.Tests/PreferencesLayoutAssetsTests.cs`
+  (`DetailView_IsEnteredByRailClick_NotByProgrammaticSelect`),
+  `.agentic/decisions/0065-preferences-rail-and-drill-down.md`
+- **Verified:** 2026-09-04
+
+### The prefs CSS cannot be one contiguous block — and the comments explaining that break the guards
+
+- **⚠ Two guards pull `styles.css` in opposite directions.** `.prefs` must be authored **after**
+  `.agent-dialog`: both are single classes, so specificity **ties** and source order decides — above
+  it, the Preferences dialog silently stays `min(520px, 92vw)` and the whole redesign is inert on
+  desktop, **with every other assertion in the suite still green**. Meanwhile the prefs
+  narrow-viewport block must **not** be the first 760px media block in the file, because
+  `tests/Agent42.Tests/TopbarActionsAssetsTests.cs` takes the first one and requires the base
+  `.topbar__brand` rule to appear before it. So the base rules sit after the shared `.agent-form__*`
+  family and the media block sits at the **end of the file**.
+- **⚠ The second-order trap, which cost two red tests.** Both guards are a plain `IndexOf` over the
+  whole stylesheet text, and **`IndexOf` does not skip comments**. The natural comment explaining the
+  split — "its `@media (max-width: 760px)` counterpart is at the end of the file", or "requires
+  `.topbar__brand {` before it" — puts that exact literal **above** the rule it describes, so the guard
+  matches the prose and reads the wrong region. Writing the two pointer comments is what tripped it.
+  **So: in prose above those rules, never spell out the at-rule, and never write a selector followed by
+  its opening brace.** Name it in words instead.
+- **The same hazard in JS.** `PreferencesLayoutAssetsTests` asserts `openProfileDialog`'s body
+  `DoesNotContain("enterPrefsDetail")`; a comment there mentioning the function by name fails it. Say
+  "the exit helper", not the name.
+- **Related, and fixed rather than worked around:** `McpServersAssetsTests` used to slice a fixed
+  1200-character window off `openProfileDialog`'s declaration. Adding comments pushed
+  `loadMcpServers()` past it, turning "the function grew" into an ordering failure. Use
+  `StaticAssetsServerFixture.Body(...)` — the whole body, brace-counted — never a fixed width.
+- **Evidence:** `src/Agent42.Backend/wwwroot/styles.css`,
+  `tests/Agent42.Tests/TopbarActionsAssetsTests.cs`,
+  `tests/Agent42.Tests/PreferencesLayoutAssetsTests.cs`
+  (`PrefsCss_IsOrderedAgainstBothConstraints`, `AgentDialogTabs_AreNotRestyled`),
+  `tests/Agent42.Tests/McpServersAssetsTests.cs`,
+  `.agentic/decisions/0065-preferences-rail-and-drill-down.md`
+- **Verified:** 2026-09-04

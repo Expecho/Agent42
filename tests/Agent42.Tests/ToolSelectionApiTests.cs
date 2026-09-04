@@ -162,6 +162,51 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
         Assert.DoesNotContain(descriptors, e => e.GetProperty("key").GetString() == "mcp"); // no bare wildcard
     }
 
+    // AC9 (preferences redesign): the picker renders a description line under each built-in's label, and the
+    // copy is SERVER-owned so it cannot drift away from the catalog it describes. Skill and MCP rows leave it
+    // null and render label-only — their labels are user-uploaded skill names and server-supplied tool names,
+    // so there is nothing to describe and inventing copy for them would be a lie about what they do.
+    //
+    // Over the wire rather than over ToolCatalog.Descriptors (which ToolCatalogTests covers): the skill and
+    // MCP descriptors do not exist in the static catalog at all — they are appended per-user by this
+    // endpoint, so this is the only place the "leaves it null" half is observable.
+    [Fact]
+    public async Task SkillAndMcpDescriptors_HaveNoDescription()
+    {
+        var created = await Client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", "user-desc-cat", new
+        {
+            name = "Weather",
+            endpoint = "https://weather.example.com/mcp",
+            auth = "None",
+            enabled = true,
+        }));
+        created.EnsureSuccessStatusCode();
+
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-desc-cat"));
+        response.EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var descriptors = doc.RootElement.EnumerateArray().ToArray();
+
+        static string? Description(JsonElement e) =>
+            e.TryGetProperty("description", out var d) ? d.GetString() : null;
+
+        // Every built-in carries copy — which also proves the new field actually serializes.
+        var builtins = descriptors
+            .Where(e => !e.GetProperty("key").GetString()!.StartsWith("skill:", StringComparison.Ordinal))
+            .Where(e => !e.GetProperty("key").GetString()!.StartsWith("mcp:", StringComparison.Ordinal))
+            .ToArray();
+        Assert.NotEmpty(builtins);
+        Assert.All(builtins, e => Assert.False(string.IsNullOrWhiteSpace(Description(e))));
+
+        var prefixed = descriptors
+            .Where(e => e.GetProperty("key").GetString()!.StartsWith("skill:", StringComparison.Ordinal)
+                || e.GetProperty("key").GetString()!.StartsWith("mcp:", StringComparison.Ordinal))
+            .ToArray();
+        Assert.NotEmpty(prefixed); // the shipped skills plus the server just added
+        Assert.All(prefixed, e => Assert.Null(Description(e)));
+    }
+
     // AC12 (agent): POST /api/agents round-trips EnabledTools; a create that omits it stores null (= all).
     [Fact]
     public async Task Agent_RoundTripsEnabledTools()

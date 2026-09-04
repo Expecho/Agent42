@@ -1,7 +1,7 @@
 /* Agent 42 — selectable tools (ADR 0021/0026). Split out of app.js (ADR 0041). */
 
 import { activeId } from "./conversations.js";
-import { chatToolChecks, profileToolChecks, toolsBtn, toolsDialog, toolsDoneBtn } from "./dom.js";
+import { chatToolChecks, profileToolChecks, toolsBtn, toolsCount, toolsDialog, toolsDoneBtn } from "./dom.js";
 
 // The selectable-tools catalog (ADR 0021), fetched once from /api/tools:
 // [{key,label,requiresHostedTools,parentKey}]. parentKey is set only on nested rows (per-MCP-tool).
@@ -30,6 +30,20 @@ export async function refreshToolCatalog() {
   if (profileToolChecks.children.length > 0) {
     renderToolChecks(profileToolChecks, readToolChecks(profileToolChecks));
   }
+  // The rail badge counts what this container renders, so it must be rewritten HERE too and not only
+  // where the user toggles a box: adding an MCP server or uploading a skill changes the total without
+  // any change event ever firing on #profileToolChecks.
+  refreshToolsBadge();
+}
+
+// `on/total` in the Preferences rail's Tools item. The badge lives INSIDE that tab button, so it joins
+// the button's accessible name — hence its own aria-label, and hence the label living in a separate
+// .prefs__navlabel that the drill-down title reads instead of button.textContent.
+export function refreshToolsBadge() {
+  const { on, total } = toolCounts(profileToolChecks);
+  toolsCount.hidden = total === 0;
+  toolsCount.textContent = `${on}/${total}`;
+  toolsCount.setAttribute("aria-label", `${on} of ${total} tools enabled`);
 }
 
 // The per-tool keys a container's LAST render had no checkbox for, keyed BY CONTAINER. readToolChecks adds
@@ -77,25 +91,52 @@ export function renderToolChecks(container, selectedKeys) {
     || (skillsWildcard && tool.key.startsWith("skill:"))
     || (!!tool.parentKey && selected.has(tool.parentKey));
 
-  const addCheck = (tool, parent = container) => {
+  // Rows are wrapped in a group CARD, and the wrapper is a closed-over element rather than a parameter
+  // threaded through the call sites. That is a constraint, not a style choice: SkillPickerAssetsTests pins
+  // `addGroup("Skills", skills)`, `addHeading("MCP servers")` and the `addServer(server)` loop as literal
+  // source text, so addServer's arity and those three lines must stay byte-identical. addCheck's default
+  // parameter reads `currentGroup` at CALL time, which is what lets one closed-over slot serve every group.
+  let currentGroup = null;
+  const startGroup = () => {
+    currentGroup = document.createElement("div");
+    currentGroup.className = "tool-group";
+    container.appendChild(currentGroup);
+  };
+
+  const addCheck = (tool, parent = currentGroup ?? container) => {
     const label = document.createElement("label");
     label.className = "tool-check";
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.value = tool.key;
     cb.checked = isChecked(tool);
+    const text = document.createElement("span");
+    text.className = "tool-check__text";
     const span = document.createElement("span");
+    span.className = "tool-check__name";
     span.textContent = tool.requiresHostedTools ? `${tool.label} (Responses)` : tool.label;
-    label.append(cb, span);
+    text.appendChild(span);
+    // Server-owned copy (ToolCatalog.ToolDescriptor.Description), present only on the static built-ins.
+    // Skill rows and MCP server/tool rows leave it null and render label-only: their labels are
+    // user-uploaded and server-supplied names, so there is nothing to describe.
+    if (tool.description) {
+      const desc = document.createElement("span");
+      desc.className = "tool-check__desc";
+      desc.textContent = tool.description;
+      text.appendChild(desc);
+    }
+    label.append(cb, text);
     parent.appendChild(label);
     return cb;
   };
 
+  // The heading sits OUTSIDE the card it labels, and opens a fresh card for the rows that follow it.
   const addHeading = (heading) => {
     const el = document.createElement("div");
     el.className = "tool-check__heading";
     el.textContent = heading;
     container.appendChild(el);
+    startGroup();
   };
 
   const addGroup = (heading, group) => {
@@ -109,7 +150,7 @@ export function renderToolChecks(container, selectedKeys) {
     const tools = mcpToolsFor(server.key);
     const row = document.createElement("div");
     row.className = "tool-server";
-    container.appendChild(row);
+    (currentGroup ?? container).appendChild(row);
 
     const head = document.createElement("div");
     head.className = "tool-server__head";
@@ -176,7 +217,9 @@ export function renderToolChecks(container, selectedKeys) {
     }
   };
 
-  for (const tool of builtins) addCheck(tool);
+  // The built-ins get a heading of their own now — they used to render headingless, directly into the
+  // container, which left the first card unlabelled while every group below it was named.
+  addGroup("Built-in", builtins);
   addGroup("Skills", skills);
   if (mcpServers.length > 0) {
     addHeading("MCP servers");
@@ -197,6 +240,15 @@ export function renderToolChecks(container, selectedKeys) {
   unrenderedKeys.set(
     container,
     selectedKeys.filter((k) => !rendered.has(k) && [...serverRowKeys].some((s) => k.startsWith(`${s}:`))));
+}
+
+// `{ on, total }` for the Preferences rail badge, counting TOP-LEVEL rows only — every checkbox except the
+// per-MCP-tool ones nested inside `.tool-server__tools`. Those are collapsed behind a disclosure by default,
+// so counting them would make the badge read as a total the user cannot see on screen.
+export function toolCounts(container) {
+  const boxes = [...container.querySelectorAll("input[type=checkbox]")]
+    .filter((cb) => cb.closest(".tool-server__tools") === null);
+  return { on: boxes.filter((cb) => cb.checked).length, total: boxes.length };
 }
 
 // The keys to save for `container`. Two rules beyond "whatever is checked":
