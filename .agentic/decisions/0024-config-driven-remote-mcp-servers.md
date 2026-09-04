@@ -7,6 +7,13 @@ tags: [mcp, tools, per-user, egress, security, agent-framework]
 
 # Title: Config-driven remote MCP servers — per-user, encrypted, gated by one `mcp` tool key
 
+> **Amended by [ADR 0064](0064-mcp-connection-test-endpoint.md) (2026-09-04) — management endpoints are no
+> longer socket-free.** The management routes below were pure config CRUD that never opened a connection;
+> `POST /api/mcp-servers/{id}/test` now connects to one named server **on explicit user request**, so the
+> user is told whether what they saved actually works. Nothing else changes: the lazy, best-effort
+> activation path, the encryption discipline and the egress shape are all untouched, and the test dials the
+> same server with the same credentials the chat path already uses.
+
 > **Amended by [ADR 0026](0026-per-mcp-server-selectable-tools.md) (2026-07-19) — MCP gate scope
 > only.** The "gated as one whole `mcp` group key" decision below (title, Decision, and the
 > per-tool-catalog-entries alternative) is re-scoped to **per-server** gating: each server is

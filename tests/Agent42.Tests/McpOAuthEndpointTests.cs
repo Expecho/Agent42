@@ -100,6 +100,26 @@ public sealed class McpOAuthEndpointTests(McpOAuthApiFixture fixture) : SharedCl
         Assert.True(server.GetProperty("hasToken").GetBoolean());
     }
 
+    // AC13 (ADR 0064): the SUCCESS redirect carries WHICH server connected, so the client can auto-test it on
+    // the return — "connected" then means "connected AND reachable". The sibling assertion above passes with
+    // or without this, so it proves nothing here; this one does. Failure redirects deliberately carry only a
+    // curated reason and no id.
+    [Fact]
+    public async Task Callback_RedirectCarriesTheConnectedServerId()
+    {
+        const string user = "oauth-callback-serverid";
+        var id = await CreateOAuthServerAsync(user);
+
+        var start = await _client.SendAsync(Request(HttpMethod.Get, $"/api/mcp/oauth/start?serverId={id}", user));
+        var state = QueryHelpers.ParseQuery(start.Headers.Location!.Query)["state"].ToString();
+
+        var callback = await _client.SendAsync(Request(HttpMethod.Get, $"/api/mcp/oauth/callback?code=auth-code&state={state}", user));
+
+        var location = callback.Headers.Location!.ToString();
+        Assert.Contains("mcp_oauth=connected", location);
+        Assert.Contains($"serverId={id}", location);
+    }
+
     // A replayed callback (the pending state already consumed) is rejected, not re-exchanged.
     [Fact]
     public async Task OAuthCallback_ReplayedState_IsRejected()

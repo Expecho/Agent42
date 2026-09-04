@@ -8,6 +8,11 @@ amends: 0021, 0024 (MCP gate + static-catalog scope only — see "Amends")
 
 # Title: Per-MCP-server selectable tools — `mcp:{id}` keys with an `mcp` wildcard
 
+> **Amended by [ADR 0064](0064-mcp-connection-test-endpoint.md) (2026-09-04).** The per-user MCP portion of
+> `GET /api/tools` still never connects — that rule is unweakened. What 0064 adds is a separate,
+> user-pressed `POST /api/mcp-servers/{id}/test` that does, and whose success **records the tool names**, so
+> the per-server (and per-tool) checkboxes appear without waiting for a chat activation.
+
 > **Amends [ADR 0024](0024-config-driven-remote-mcp-servers.md) and
 > [ADR 0021](0021-selectable-tools-three-layer.md).** Two things are re-scoped, not overturned:
 > 0024's "MCP tools are gated as **one whole `mcp` group**" becomes per-server (`mcp:{id}`) with

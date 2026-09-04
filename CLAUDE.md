@@ -707,9 +707,11 @@ to document a mechanical rule, add a lint rule instead.
   that carries no names), and carried to the grain on `McpServerTools.KnownToolNames` so the picker and the
   gate are **one source** (a divergence mints keys with no checkbox that the next Save drops). `GET
   /api/tools` reads those names and **never calls `IUserMcpToolProvider`**: connecting would cost ~10 s per
-  dead server sequentially, and an OAuth refresh would turn the GET into a **write**. **The headline
-  consequence: a newly added server has no per-tool checkboxes until that user's next chat activation** (its
-  master checkbox works throughout, so only granularity waits; the picker says "tools not discovered yet").
+  dead server sequentially, and an OAuth refresh would turn the GET into a **write** — a rule **ADR 0064 left
+  intact**. Its headline consequence was that a newly added server had no per-tool checkboxes until that
+  user's next chat activation; **ADR 0064 narrowed that** to "…until the next chat activation **or the user
+  presses Test**" (its master checkbox works throughout either way, so only granularity waits; the picker
+  says "tools not discovered yet").
   Four traps, all in gotchas: never expand `mcp:{id}` into an **empty** set (both master states are then
   wrong — one silently disables the server, the other silently re-grants deselected tools); the picker must
   partition on **`ToolDescriptor.ParentKey`**, not `startsWith("mcp:")`, which matches both row kinds;
@@ -721,6 +723,46 @@ to document a mechanical rule, add a lint rule instead.
   second was **mutation checked** (removing it makes an unrelated toggle silently destroy the selection).
   Egress is **unchanged** (ADR 0024/0013) — selection only narrows. Shell cache bumped `agent42-shell-v23` →
   `-v24`. The DevHost browser leg **was** run and ADR 0058 records the measured values.
+- Test an MCP server's connection (ADR 0064, **amends 0024/0026/0058**): after adding or editing a remote MCP
+  server, the user is told **in the UI, immediately** whether it was reachable and how many tools it exposes,
+  instead of finding out indirectly on some later chat. `POST /api/mcp-servers/{id}/test` connects to one
+  named server, lists its tools, records the names and disconnects — reached from a **Test** button in the
+  edit dialog, run **automatically after a successful save**, and again **on the OAuth return** (whose success
+  redirect now carries `serverId`). **The amendment to 0024 is narrow and worth stating exactly:** the
+  management endpoints were pure config CRUD that never opened a socket, and one of them now does, on explicit
+  request. **ADR 0058's `GET /api/tools` rule is NOT weakened** — that rule was never "never connect", it was
+  "never connect *on a page load, for every server, implicitly*", and both of its measured objections (~10 s
+  per dead server sequentially; an OAuth refresh turning a GET into a **write**) evaporate on a user-pressed
+  POST against one server. It **closes 0058's cold start** as a side effect: a successful test records the
+  names, so the per-tool checkboxes appear without waiting for a chat activation (measured in DevHost — a
+  tested server yields `mcp:{id}` + one key per tool, an untested control only `mcp:{id}`). New
+  `McpOAuthTokenResolver` (lifted out of `UserMcpToolProvider`, which now delegates) and `McpConnectionTester`;
+  no new folder, no new `AgentApi.*` partial, **no `excludedPaths` entry** (a new `EasyAuthExclusionTests` row
+  proves it), no Bicep, no secret, no Cosmos container, and **no new egress for an ENABLED server** (it dials
+  the same server with the same credentials the chat path already uses — changing *when*, not *whether*).
+  **The disabled server is the exception and the reason one line is load-bearing:** the chat path connects
+  only to enabled servers (`Where(s => s.Enabled)`), so a disabled server's credentials have never reached its
+  endpoint; pressing Test now sends them (accepted — that is what the button is for), but **the auto-test on
+  save is gated on the Enabled checkbox** so a *save* never does, which would otherwise be egress the user
+  never asked for. Status codes are **503** unconfigured · **404**
+  unknown-or-foreign id · **200 with `ok:false`** for a reachable-but-failing test (the config-health
+  convention: the request succeeded, the diagnosis is the payload). Four traps, all in gotchas: the resolver
+  is **shared, not re-implemented** (a probe skipping the near-expiry refresh would report failure on a server
+  chat connects to fine — the worst defect a diagnostic tool can ship; the accepted cost is that Test on a
+  near-expiry OAuth server bumps the overlay version and invalidates that user's warm socket cache); a test is
+  **not an activation**, so it disposes in a `finally` and never touches `IUserMcpToolProvider` (guarded
+  **structurally**, by reflection over the ctor); failure reasons are **curated, never the exception**; and —
+  the one that would have shipped a real bug — **never record an empty tool list**, because
+  `RecordToolNamesAsync` no-ops when the list is *unchanged*, not when it is *empty*, so `[]` **erases** the
+  names and makes ADR 0058's unreachable state reachable (a server reading OFF while still granting a tool).
+  `UserMcpToolProvider` has the **identical hole** on its own path, deliberately left for its own MR. Two
+  client rules have **no runtime test** and are guarded by source text — the **duplicate-create defence**
+  (`POST` always inserts and the dialog now stays open, so it must adopt the response id or a second Save
+  silently creates a duplicate) and the **unconditional save-path `refreshToolCatalog()`** (a save whose
+  auto-test fails must still update the pickers) — and **both were mutation-checked**. DevHost registers an
+  **offline fake `IMcpConnectionFactory`** so the feature is exercisable offline at all; it proves the wiring,
+  not an MCP handshake. Shell cache bumped `agent42-shell-v27` → `-v28`. The DevHost browser leg **was** run
+  (headless Chrome over CDP, 13/13) and ADR 0064 records the measured values.
 - Web Push when an agent replies while away (ADR 0028): a **Web Push** notification titled with the
   **agent's name** is delivered to the user's installed Android/Chromium PWA when an agent finishes a reply
   on one of the two **asynchronous** paths — a fired reminder (`ReceiveReminder`) or an agent-run

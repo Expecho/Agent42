@@ -10,6 +10,14 @@ amends: [0021, 0026]
 
 # Per-MCP-tool selectable tools — `mcp:{serverId}:{toolName}` keys
 
+> **Amended by [ADR 0064](0064-mcp-connection-test-endpoint.md) (2026-09-04) — the cold start below is
+> CLOSED.** The rule that `GET /api/tools` never calls `IUserMcpToolProvider` is **unchanged and still
+> load-bearing**; 0064 adds a separate user-pressed POST that connects to one named server, and a successful
+> test records the names. So "no per-tool checkboxes until the next chat activation" now reads "…until the
+> next chat activation **or the user presses Test**". 0064 also adds the second writer of `KnownToolNames`,
+> which must agree with this one — and the rule that an **empty** list is never recorded, because recording
+> `[]` would erase the names and make this ADR's unreachable state reachable.
+
 > **Amends [ADR 0026](0026-per-mcp-server-selectable-tools.md) and re-scopes
 > [ADR 0021](0021-selectable-tools-three-layer.md) once more.** Nothing is overturned: `mcp:{id}` keeps its
 > exact ADR 0026 meaning ("all of this server's tools") and the bare `mcp` wildcard is untouched. What
@@ -151,11 +159,14 @@ sweep a checkbox disclosure into the saved keys.
 
 - **Egress is unchanged** (ADR 0024/0013). Selection can only narrow, never grant, and the capability
   intersection stays the authoritative gate.
-- **Cold start:** a newly added server has **no tool checkboxes until the user's next chat activation**,
-  because names are learned when a conversation grain connects — opening the picker triggers nothing, which
-  is the whole point of not connecting from the endpoint. Its master checkbox works throughout, so the
-  server is fully usable meanwhile; only per-tool granularity waits. The picker says so
-  ("tools not discovered yet") rather than showing an empty disclosure.
+- **Cold start** *(narrowed by [ADR 0064](0064-mcp-connection-test-endpoint.md))*: a newly added server has
+  **no tool checkboxes until the user's next chat activation — or until they press Test**, because names are
+  learned when something connects and *opening the picker* still triggers nothing, which remains the whole
+  point of not connecting from the endpoint. ADR 0064 adds the deliberate second way to make it happen: a
+  user-pressed `POST /api/mcp-servers/{id}/test`, which is also run automatically after a successful save and
+  on the OAuth return. Its master checkbox works throughout, so the server is fully usable meanwhile; only
+  per-tool granularity waits. The picker says so ("tools not discovered yet") rather than showing an empty
+  disclosure.
 - **Agent chats have no in-UI remedy** for a per-tool selection damaged in the agent editor: `BindAgentAsync`
   materialises the list and the composer popover is hidden on agent chats. The same asymmetry ADR 0057
   recorded rather than solved. Recorded, not repaired.
