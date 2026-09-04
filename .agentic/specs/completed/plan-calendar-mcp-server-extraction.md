@@ -695,3 +695,112 @@ shape, not the deferred placeholder — including that a second OAuth-backed MCP
 same gateway would need its own subdomain (host-based routing, not path-based — forced by the RFC
 8414 path-insertion collision `BackendRoute`'s remarks describe), should Agent42 or another agent
 ever front more than the two servers already running there.
+
+## Execution — Repo B, and where it diverged from the plan
+
+Executed 2026-09-04 on branch `fix/remove-native-calendar`. **Scope: Repo B (B1–B6). B7 is the manual
+operator list and was handed to the user, not run.**
+
+**Drift check.** `planned-against: main @ e392958`; HEAD was `4e764e4`, four commits ahead — PRs #110–113,
+all ADR 0064 (MCP connection test) plus the two spec-doc commits. One plan instruction was already stale
+and is the kind that ships a silent bug: the plan said bump `sw.js` CACHE **v28 → v29**, but #113 had
+already spent v29, so the real bump was **v29 → v30**. The plan's own warning about a no-op bump applied
+to the plan itself.
+
+### Landing-order gate
+
+Satisfied and confirmed with the user before any deletion: the MCP server is added in Preferences → MCP
+servers as an InteractiveOAuth server, the Google consent flow completes through Agent42, and the calendar
+tools work end to end. The handoff's second, discretionary gate ("validate real usage for a while first")
+was therefore also met. What is **not** evidenced is the post-expiry refresh specifically — recorded as an
+Unverified residual in ADR 0063 rather than glossed.
+
+### Divergences from the plan
+
+1. **The plan's Repo B file list was incomplete in five places**, one of which breaks the build:
+   - `tests/Agent42.Tests/RecordingHttpHandler.cs:7-8` — a **third** CS1574 site (`see cref` to two
+     deleted test files). The plan listed only the two in `src/`.
+   - `tests/Agent42.Tests/PwaAssetsTests.cs:255` and `SearchAssetsTests.cs:120-121` — both pin the
+     `sw.js` CACHE literal and fail on any bump. Not in the plan; found by running the suite.
+   - `tests/Agent42.Tests/SharedApiFixture.cs:27,95` and `SharedClusterFixture.cs:46` — doc comments
+     whose stated rationale was the calendar double.
+   - `src/Agent42.Agents/Tools/ToolCatalog.cs` — the **Memory** const's docstring carried two
+     `see cref` references to the calendar key (a fourth CS1574 site), using it as its no-migration
+     precedent.
+   - `src/Agent42.Backend/Web/SearxngProxy.cs:186` — ADR 0059's open-redirector guard justified itself
+     by naming the deleted Google callback route. Found by the critic, not by any tool:
+     `check-doc-paths.mjs` scans only `.md`.
+
+2. **`AgentGrainTests.cs:2196`'s `"calendar"` literal was KEPT, against the plan.** The plan called it a
+   stale literal to edit out. It is a *legacy snapshot* — the comment says "every key that existed then",
+   and `calendar` genuinely did. `Sanitize` drops unknown keys, so it enables nothing. Removing it would
+   have made the comment false and thrown away a case that now proves a since-deleted key in stored state
+   is harmless. Annotated in place instead.
+
+3. **B6(d) (the `check-doc-paths.mjs` rule collision) was decided by reading ADR 0039, which had already
+   decided it.** The plan framed it as an open choice between teaching the script to skip superseded ADRs
+   and editing ADR 0039. In fact 0039 (and 0040, identically) state: *"A folder list is a factual
+   inventory, not a decision, so it is corrected in place."* So option (ii) was never a rule breach. Both
+   halves shipped, because neither fixes the other — the skip is keyed on **`status: superseded`** and
+   deliberately not on `superseded_by:`, which ADR 0007 carries while remaining authoritative.
+
+4. **ADR 0040 was amended too, which the plan never mentioned.** It carries the same folder inventory and
+   the same in-place-correction licence; leaving it would have had two sibling ADRs disagreeing about
+   whether a deleted folder exists. Its pre-existing count drift (missing `Search/` and `Orleans/`, a
+   stale endpoint-group count, an unmeasured "25 DTO records") was repaired in the same pass.
+
+5. **A guard test for `check-doc-paths.mjs` was added** (`tests/Agent42.Tests/DocPathCheckerTests.cs`, 4
+   tests). Not in the plan. This MR gives that script its first ability to switch itself **off** for a
+   file, and it fails open, so the "partial supersessions stay fully checked" property needed something
+   stronger than a comment. It paid for itself immediately — see below.
+
+### Two self-inflicted faults worth recording
+
+- **45 files were silently converted CRLF → LF** by the editing helper used here. `git diff` hid it
+  (`core.autocrlf=true` normalises on compare), but `dotnet format` reads the file directly and failed
+  with whitespace errors on lines the diff never touched. Confirmed against clean `main` in a throwaway
+  worktree that the errors were introduced here, then restored CRLF. **If `dotnet format` flags lines you
+  did not edit, check line endings before reading the diff.**
+- **The shell wrapper collapsed doubled backslashes in a heredoc**, turning the new front-matter regex's
+  escapes into a literal CR/LF and leaving `check-doc-paths.mjs` a **syntax error** — which still printed
+  nothing alarming, because the script died before reporting anything. The four new `DocPathCheckerTests`
+  caught it; the earlier manual mutation check could not, having run before that edit. Content with regex
+  escapes goes through the file-writing tools, not a shell heredoc.
+
+### Critic review of the Repo B diff
+
+A `critic` subagent reviewed the staged diff: **two majors, three minors, one nit — all accepted, none
+rejected.** The majors were ADR 0040 (item 4 above) and the `SearxngProxy` comment (item 1). The minors:
+the new front-matter regex was scoped to the whole file rather than the front-matter block (a fail-open
+hole, since `decisions/README.md` documents that very key); ADR 0063's Unverified section claimed the
+refresh path "is exercised in production use" when the handoff said it had not been observed; and two live
+rules still pointed at the now-superseded ADR 0053 (`appsettings.json`, `gotchas.md`).
+It independently re-derived every count against the tree and confirmed no dangling ES specifier in either
+direction, correct `sw.js` handling, safe tab indices, intact `$type` discipline, and that removing the
+six `ToolNameToKey` rows causes no MCP regression (MCP tools are added after the `IsToolEnabled` filter
+and gated by `IsMcpToolEnabled`, so the replacement server's identically-named tools are unaffected).
+
+### Verified this session (measured, not assumed)
+
+- `dotnet build Agent42.slnx`: **succeeded**, no new warnings (the `NU1507`/`NU1510`/`CS8602` ones are
+  pre-existing on `main`).
+- `dotnet test Agent42.slnx`: **1099 passed, 0 failed** (1095 after the deletion, plus 4 new guards).
+- `dotnet format Agent42.slnx --verify-no-changes`: **exit 0**.
+- `node .agentic/scripts/check-doc-paths.mjs`: **green**.
+- `az bicep build --file infra/main.bicep`: **exit 0**.
+- S3776 (`cognitive_complexity_max`, severity `error`): **0 violations**.
+- `dotnet list package --vulnerable --include-transitive`, all 6 projects: **0**.
+- `check-new-code-coverage.mjs`: *"no production code changed — nothing to gate"* — vacuous on a deletion
+  MR, exactly as the plan predicted.
+- Folder/partial/endpoint counts re-derived from the tree: Agents **20**, Backend **23**, `AgentGrain`
+  partials **12**, endpoint groups **16** — agreeing across `ProjectLayoutTests`, CLAUDE.md, ADR 0039 and
+  ADR 0040.
+
+### Still outstanding
+
+**B7, the manual operator steps** — none were run, and the agent must not run them:
+(a) register the production redirect URI on the server's Google OAuth client (confirm it, if it was not
+done during Repo A); (b) already done — the server is added and working; (c) revoke the old Agent42 grant
+at <https://myaccount.google.com/permissions> (deleting code does not revoke it); (d) delete the orphaned
+`google-credentials` / `google-oauth-pending` documents from `agent-state`; (e) remove the
+`GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` GitHub Actions secrets.

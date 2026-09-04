@@ -18,7 +18,11 @@ This is a sibling of [`docs/features/`](../features/README.md), and the split is
 
 | Integration | Guide | Enables |
 |---|---|---|
-| Google Calendar | [google-calendar/](google-calendar/README.md) | The six calendar tools (ADR 0053) — list, read, create, change and delete the user's events |
+| _(none yet)_ | | |
+
+The Google Calendar guide lived here until ADR 0063 moved those tools to a standalone MCP server
+outside this repo. The calendar is now reached like any other remote MCP server (ADR 0024): add it
+in Preferences → MCP servers and connect it there. Its own setup guide lives with that server.
 
 **No page here contains a secret value.** Same discipline as `ConfigHealth`: name the setting, never
 its value — and no screenshot showing one.

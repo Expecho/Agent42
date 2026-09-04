@@ -108,19 +108,6 @@ public static class ConfigHealth
             missingStatus: Warning));
         checks.Add(NotProbed(GroupOptional, ProbeContext, "context.dev reachability", billable: true));
 
-        // Google Calendar (ADR 0053). Presence only, and deliberately NO live probe: every other probe
-        // here is an operator-keyed call, but a calendar probe would need a USER's OAuth token and would
-        // be meaningless with none connected. Two checks rather than one derived flag, because the two
-        // halves fail separately and an operator who set only one needs to see which.
-        checks.Add(PresenceCheck(GroupOptional, "GoogleCalendar:ClientId", config["GoogleCalendar:ClientId"],
-            present: "configured",
-            missing: "not set — the calendar tools report 'not connected' and Preferences offers no Connect",
-            missingStatus: Warning));
-        checks.Add(PresenceCheck(GroupOptional, "GoogleCalendar:ClientSecret", config["GoogleCalendar:ClientSecret"],
-            present: "configured",
-            missing: "not set — a Google Web application client is confidential, so the token exchange needs this too",
-            missingStatus: Warning));
-
         // Long-term memory (ADR 0056). Absent is the DEFAULT and it is the OPERATOR's off switch — since
         // ADR 0057 a user can additionally deselect memory in Preferences → Tools, so this key being present
         // no longer means every turn is remembered. The missing message says what is lost rather than how to

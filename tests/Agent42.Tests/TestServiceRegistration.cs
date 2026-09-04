@@ -58,7 +58,6 @@ internal static class TestServiceRegistration
         services.AddSingleton<IWebSearch, InMemoryWebSearch>();
         services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
         services.AddSingleton<IGeocoder, FakeGeocoder>();
-        services.AddSingleton<ICalendarService, FakeCalendarService>();
         return services;
     }
 }

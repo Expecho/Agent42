@@ -22,14 +22,15 @@ Finding the MCP OAuth routes or the share-link contract meant knowing a line ran
 
 ## Decision
 
-### 1. Twenty feature folders, flat namespace, same as ADR 0039
-`Api/`, `Attachments/`, `Calendar/`, `Configuration/`, `Conversations/`, `Documents/`,
-`ImageGeneration/`, `Location/`, `Mcp/`, `Memory/`, `Models/`, `Push/`, `Sharing/`, `Speech/`,
-`StoredAgents/`, `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`.
+### 1. Twenty-one feature folders, flat namespace, same as ADR 0039
+`Api/`, `Attachments/`, `Configuration/`, `Conversations/`, `Documents/`,
+`ImageGeneration/`, `Location/`, `Mcp/`, `Memory/`, `Models/`, `Orleans/`, `Push/`, `Search/`,
+`Sharing/`, `Speech/`, `StoredAgents/`, `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`.
 
 *(This heading read "Twelve" while listing seventeen — it had picked up the count of the endpoint
 groups in §3. Corrected, along with `UserSkills/` (ADR 0049), `Calendar/` (ADR 0053) and `Memory/`
-(ADR 0056) — the last holding `HindsightRegistration`, which lives in its own folder because adding
+(ADR 0056), then again for `Search/` (ADR 0061), `Orleans/` (ADR 0062) and the REMOVAL of `Calendar/`
+(ADR 0063) — `Memory/` holding `HindsightRegistration`, which lives in its own folder because adding
 its branch to `Program.cs` inline breached `cognitive_complexity_max`, the same reason
 `DocumentIndexRegistration` sits in `Documents/`. A folder list is a factual inventory, not a
 decision, so it is corrected in place; `ProjectLayoutTests.ExpectedFolders` asserts it by name so the
@@ -69,13 +70,16 @@ So folder-matching namespaces would probably have been safe here. They were stil
 - **It is free.** A flat namespace means no `using` churn in the 54 test files that reference Backend
   types — the reorganisation touches no consuming file at all.
 
-### 3. `MapAgentApi` splits into per-feature partials (twelve here; thirteen since ADR 0049)
+### 3. `MapAgentApi` splits into per-feature partials (twelve here; sixteen today)
 Each feature's endpoints move to `<Folder>/AgentApi.<Feature>.cs`, all completing the one
 `public static partial class AgentApi`. `src/Agent42.Backend/Api/AgentApi.cs` drops from 1268 to 50 lines and becomes a
 composition root: twelve `Map*Endpoints(app)` calls plus the two members genuinely shared across
 features — `MaxAttachmentBytes` (used by both the upload endpoint and agent-run) and `AgentKey`.
+Sixteen calls today: ADR 0049 added one, and several since, with ADR 0063 removing the calendar
+group again. Same in-place-correction rule as §1 — `ProjectLayoutTests.AgentApiParts` asserts the
+set by name, so the prose and the tree cannot drift.
 
-The 25 DTO records likewise move to their feature as `*Contracts.cs` files, following the existing
+The DTO records likewise move to their feature as `*Contracts.cs` files, following the existing
 `UsageContracts.cs` shape in `Agent42.Agents` rather than inventing a convention.
 
 **This part is an EXTRACTION, not a relocation, and that distinction was made explicitly before doing

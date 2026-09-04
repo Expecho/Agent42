@@ -37,7 +37,6 @@ public static partial class AgentApi
         MapDiagnosticsEndpoints(app);
         MapMcpEndpoints(app);
         MapUserSkillEndpoints(app);
-        MapCalendarEndpoints(app);
         MapWebEndpoints(app);
         MapSearchEndpoints(app);
 

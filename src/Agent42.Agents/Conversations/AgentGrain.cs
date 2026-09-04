@@ -67,8 +67,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly IGeocoder _geocoder;
 
-    private readonly ICalendarService _calendar;
-
     private readonly HindsightIntegration _memory;
 
     private readonly IPushNotificationSender _pushSender;
@@ -180,7 +178,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         IWebSearch webSearch,
         IWebPageFetcher webPageFetcher,
         IGeocoder geocoder,
-        ICalendarService calendar,
         HindsightIntegration memory,
         IPushNotificationSender pushSender,
         ILogger<AgentGrain> logger)
@@ -195,7 +192,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _webSearch = webSearch;
         _webPageFetcher = webPageFetcher;
         _geocoder = geocoder;
-        _calendar = calendar;
         _memory = memory;
         _pushSender = pushSender;
         _logger = logger;
@@ -733,7 +729,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // existed (old Cosmos state deserializes it empty).
         AlignTurnAttachmentsToHistory();
         _state.State.TurnAttachments.Add(turnRefs);
-
 
         return (new ChatMessage(ChatRole.User, contents), skippedImages);
     }

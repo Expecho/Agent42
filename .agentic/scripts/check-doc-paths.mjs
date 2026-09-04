@@ -32,11 +32,29 @@ const PATH_RE = /`([^`\s]+\/[^`\s]+\.[a-z][a-z0-9]{0,9})`/g;
 const ROOT_RE = /`([^`\s/\\]+\.[a-z][a-z0-9]{0,9})`/g;
 const SKIP = /^(https?:|.*(\*|\{|<|TODO|EXAMPLE))/i;
 
+// A TOTALLY superseded ADR is a historical record: paths naming code that has since been deleted are
+// accurate history, and editing them would both corrupt the record and breach decisions/README.md's
+// "never edit an accepted ADR's decision content". So such a file is skipped (ADR 0063).
+//
+// Keyed on `status: superseded`, deliberately NOT on the presence of `superseded_by:`. ADR 0007 carries
+// `superseded_by: 0008  # partial` while remaining `status: accepted` and authoritative; keying on the
+// tag would silently stop checking it. A partial supersession stays fully checked.
+// Scoped to the leading `---` front-matter block ON PURPOSE, not tested against the whole file: this
+// directory also holds README.md, which DOCUMENTS this very key, and a fenced example or a reflow that
+// put `status: superseded` at the start of a line anywhere in any scanned file would otherwise switch
+// path checking off for that whole file — failing open, silently. Guarded by DocPathCheckerTests.
+const FRONT_MATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
+const isTotallySuperseded = (text) => {
+  const fm = FRONT_MATTER_RE.exec(text);
+  return fm !== null && /^status:\s*superseded\s*$/m.test(fm[1]);
+};
+
 let missing = 0;
 for (const rel of files) {
   const abs = join(root, rel);
   if (!existsSync(abs)) continue;
   const text = readFileSync(abs, "utf8");
+  if (rel.includes("decisions") && isTotallySuperseded(text)) continue;
   // Ignore EXAMPLE-marked lines AND whole sections whose heading says EXAMPLE,
   // so template placeholders don't fail the check.
   let inExampleSection = false;

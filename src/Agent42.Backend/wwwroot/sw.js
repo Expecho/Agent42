@@ -2,9 +2,9 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v29";
+const CACHE = "agent42-shell-v30";
 const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/attachments.js",
-  "/js/cache.js", "/js/calendar.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
+  "/js/cache.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
   "/js/drawer.js", "/js/format.js", "/js/location.js", "/js/main.js", "/js/mcp.js",
   "/js/models.js", "/js/profile.js", "/js/providers.js", "/js/push.js", "/js/pwa.js",
   "/js/search.js", "/js/send.js", "/js/sharelinks.js", "/js/sharetarget.js", "/js/sidebar.js", "/js/skills.js",

@@ -4,16 +4,14 @@ namespace Agent42.Tests;
 
 /// <summary>
 /// An <see cref="HttpMessageHandler"/> that records every outbound request and answers from a
-/// responder delegate. Shared by <see cref="GoogleOAuthClientTests"/> and
-/// <see cref="GoogleCalendarServiceTests"/>.
+/// responder delegate.
 ///
-/// <para>It records the whole <see cref="Recorded"/> list rather than only the last call because the
-/// calendar tests assert on the <b>request line</b> — the method, the path and the query — which is
-/// where <c>singleEvents=true</c>, <c>orderBy=startTime</c> and (the one irreversible outward-facing
-/// parameter in the feature) <c>sendUpdates=none</c> either appear or silently do not. That is the
-/// <c>GoogleGeocoderTests</c>/<c>ContextWebPageFetcherTests</c> discipline; the repo's existing
-/// <c>FakeHttpHandler</c> keeps only the last body, which cannot express a refresh-then-call sequence.
-/// </para>
+/// <para>It records the whole <see cref="Recorded"/> list rather than only the last call so a test can
+/// assert on the <b>request line</b> — the method, the path and the query — across a SEQUENCE of calls,
+/// which the repo's existing <c>FakeHttpHandler</c> cannot express because it keeps only the last body.
+/// That capability was introduced for the Google Calendar adapter's refresh-then-call path (ADR 0053,
+/// removed by ADR 0063) and is kept because it is the only handler here that can express such a
+/// sequence; the surviving caller uses only the responder half.</para>
 /// </summary>
 public sealed class RecordingHttpHandler : HttpMessageHandler
 {

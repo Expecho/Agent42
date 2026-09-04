@@ -78,9 +78,9 @@ export const pushStatus = document.getElementById("pushStatus");
 export const pushToggleBtn = document.getElementById("pushToggleBtn");
 // Preferences + agent dialog tabs. wireTabs (defined near openProfileDialog) takes [tab, panel]
 // pairs in tablist order, attaches the click + keyboard nav, and returns a select(index, focus).
-// Configuration, Skills and Calendar are APPENDED, never inserted: initMcpOAuthReturn deep-links to
+// Configuration and Skills are APPENDED, never inserted: initMcpOAuthReturn deep-links to
 // select(3) (the MCP tab), so MCP must stay index 3 — a new tab placed before it would shift MCP and
-// break the OAuth return. Append → MCP stays 3, Configuration is 4, Skills is 5, Calendar is 6.
+// break the OAuth return. Append → MCP stays 3, Configuration is 4, Skills is 5.
 export const profileTabs = wireTabs([
   [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
   [document.getElementById("tabTools"), document.getElementById("panelTools")],
@@ -88,21 +88,12 @@ export const profileTabs = wireTabs([
   [document.getElementById("tabMcp"), document.getElementById("panelMcp")],
   [document.getElementById("tabConfig"), document.getElementById("panelConfig")],
   [document.getElementById("tabSkills"), document.getElementById("panelSkills")],
-  [document.getElementById("tabCalendar"), document.getElementById("panelCalendar")],
 ]);
 export const agentTabs = wireTabs([
   [document.getElementById("tabAgentGeneral"), document.getElementById("panelAgentGeneral")],
   [document.getElementById("tabAgentTools"), document.getElementById("panelAgentTools")],
   [document.getElementById("tabAgentApi"), document.getElementById("panelAgentApi")],
 ]);
-
-// Preferences → Calendar (ADR 0053). The connect/disconnect pair are mutually exclusive: both ship
-// hidden and loadGoogleStatus reveals exactly one, so a deployment with no Google client credentials
-// offers neither instead of a Connect button that would 409.
-export const googleStatus = document.getElementById("googleStatus");
-export const googleStatusNote = document.getElementById("googleStatusNote");
-export const googleConnectBtn = document.getElementById("googleConnectBtn");
-export const googleDisconnectBtn = document.getElementById("googleDisconnectBtn");
 
 export const defaultModelSelect = document.getElementById("defaultModelSelect");
 export const embeddingModelSelect = document.getElementById("embeddingModelSelect");

@@ -1,7 +1,8 @@
 ---
 id: 0053
 date: 2026-08-26
-status: accepted
+status: superseded
+superseded_by: 0063
 tags: [tools, calendar, oauth, google, egress, prompt-injection, per-user, secrets]
 supersedes: []
 extends: [0012, 0013, 0018, 0021, 0039, 0040]

@@ -1648,16 +1648,6 @@ body {
   color: var(--green);
 }
 
-/* Google Calendar connection (ADR 0053): the Calendar panel is a status line and one button, so the
-   status IS the panel's content rather than a label beside something else — it gets the reading weight
-   the provider rows get, not the faint treatment of .agent-form__note. Its error surface is the note
-   below it, which reuses .agent-form__note--error above. */
-.calendar__status {
-  margin: 8px 0 0;
-  font: 400 12.5px var(--mono);
-  color: var(--ink);
-}
-
 /* Web Share Target destination picker (ADR 0023): a "New chat" default action + an agent list,
    inside the shared agent-dialog/agent-form frame. Rows mirror the sidebar agent buttons. */
 .share-dest {

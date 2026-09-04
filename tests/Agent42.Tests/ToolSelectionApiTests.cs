@@ -57,7 +57,7 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
         Assert.Equal(
             new[]
             {
-                "web_search", "location", "scheduling", "code_interpreter", "calendar", "memory",
+                "web_search", "location", "scheduling", "code_interpreter", "memory",
                 "skill:scheduledprompt", "skill:websearch",
             }.Order(),
             keys.Order());
