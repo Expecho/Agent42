@@ -33,7 +33,8 @@ is wrong"* and *"I never completed the OAuth Connect flow"*. The user has no way
 
 A **user-pressed** `POST /api/mcp-servers/{id}/test` that connects to one stored server, lists its tools,
 records the discovered names, and disconnects. It is reached from the edit dialog's **Test** button and runs
-**automatically after a successful save** and **on the interactive-OAuth return**.
+**automatically after a successful save** (except for a disabled server, or an OAuth server that has
+not signed in yet — see Client rules) and **on the interactive-OAuth return**.
 
 ### Why this does not weaken ADR 0058's rule
 
@@ -118,6 +119,16 @@ live diagnosis.
   creates a duplicate. No server-side guard exists; that one line is the whole defence.
 - **The save path's `refreshToolCatalog()` stays unconditional** (ADR 0026): a save whose auto-test then fails
   must still update the pickers, because the server's own checkbox is driven by the save, not by reachability.
+- **The auto-test on save has TWO carve-outs, and both exist because the dial would be worse than silence.**
+  A **disabled** server is not dialled (egress — see Consequences). An **InteractiveOAuth server with no
+  stored token** is not dialled either: Save does not perform the sign-in, so the probe could only ever
+  return `not connected (no OAuth token yet)` — accurate, rendered as a failure, at the one moment it is
+  *guaranteed* and the user cannot act on it, because `showModal()` makes the list row holding the Connect
+  glyph inert underneath. **This shipped in the original 0064 and was reported as a bug**: to a user adding
+  their first OAuth server the feature reads as "saving is broken", with visibly no way to connect. The fix
+  is a `hasToken` gate that renders the save as the success it is, plus **a Connect button in the dialog
+  itself** (`#mcpConnectBtn`), sharing one `startMcpOAuth()` navigation with the list row. A *reconnect* of
+  an already-connected server still auto-tests — it has a token.
 
 ## Alternatives considered
 
