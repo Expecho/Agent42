@@ -728,7 +728,12 @@ to document a mechanical rule, add a lint rule instead.
   instead of finding out indirectly on some later chat. `POST /api/mcp-servers/{id}/test` connects to one
   named server, lists its tools, records the names and disconnects — reached from a **Test** button in the
   edit dialog, run **automatically after a successful save**, and again **on the OAuth return** (whose success
-  redirect now carries `serverId`). **The amendment to 0024 is narrow and worth stating exactly:** the
+  redirect now carries `serverId`). **The auto-test has two carve-outs, both load-bearing:** a *disabled* server
+  is never dialled (egress, below), and neither is an *InteractiveOAuth server with no stored token* — Save
+  cannot perform the sign-in, so the probe could only ever say `not connected (no OAuth token yet)`, an accurate
+  message rendered as a failure at the one moment the user cannot act on it (the dialog is `showModal()`, so the
+  list row's Connect glyph is inert beneath it). That shipped in 0064 and was reported as a bug; the dialog now
+  carries its own **Connect** button sharing one `startMcpOAuth()` with the row. **The amendment to 0024 is narrow and worth stating exactly:** the
   management endpoints were pure config CRUD that never opened a socket, and one of them now does, on explicit
   request. **ADR 0058's `GET /api/tools` rule is NOT weakened** — that rule was never "never connect", it was
   "never connect *on a page load, for every server, implicitly*", and both of its measured objections (~10 s

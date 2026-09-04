@@ -159,6 +159,7 @@ export const mcpOAuthNote = document.getElementById("mcpOAuthNote");
 export const mcpError = document.getElementById("mcpError");
 export const mcpCancelBtn = document.getElementById("mcpCancelBtn");
 export const mcpTestBtn = document.getElementById("mcpTestBtn");
+export const mcpConnectBtn = document.getElementById("mcpConnectBtn");
 export const mcpTestResult = document.getElementById("mcpTestResult");
 export const mcpTabResult = document.getElementById("mcpTabResult");
 
