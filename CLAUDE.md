@@ -947,6 +947,44 @@ to document a mechanical rule, add a lint rule instead.
   (ADR 0013 egress) — the reason it is opt-in and the browser voice stays default. Offline can't reach a real
   TTS endpoint (like image gen, ADR 0020); the Foundry audio wire path is spike-informed, prod-smoke verified.
 - Frontend is deliberately vanilla JS in `src/Agent42.Backend/wwwroot/` (no SPA build).
+- Preferences is a rail with a mobile drill-down (ADR 0065, **amends 0021**): `#profileDialog` was a
+  `min(520px, 92vw)` box whose six sections were a **single non-wrapping flex row** with no wrap and no
+  scroller — measured on `main` at 390px, the tablist was `scrollWidth 525 / clientWidth 313` with Skills'
+  right edge at **636px**, so half the sections were unreachable on the installed Android PWA. It is now
+  header / rail / scrolling pane / footer, and at ≤760px the *same markup* becomes a two-level drill-down
+  (`.prefs.is-detail`). **The rail is a RESTYLE of the same `role="tab"` buttons, not a new nav**: `wireTabs`,
+  the ids and the `profileTabs` pairing are untouched because `src/Agent42.Backend/wwwroot/js/mcp.js`
+  deep-links `profileTabs.select(3)` and two tests parse that array — so "MCP is index 3" now also reads as
+  **"MCP is the 4th rail item"**. Frontend-only apart from one display field: `ToolDescriptor` gains a
+  trailing `string? Description` (a **response DTO only — never grain state**, so no `[Id]`, no migration, and
+  the three call sites in `src/Agent42.Backend/Tools/AgentApi.Tools.cs` use named args and compile untouched),
+  giving each built-in a description line; **skill and MCP rows pass null and render label-only** — their
+  labels are user- and server-supplied names. Copy comes from the ADRs, **not the mockup, which shows a
+  Calendar tool ADR 0063 deleted**; the `location` and `memory` lines deliberately name the egress.
+  **Switches replace checkboxes in all THREE containers** (`profileToolChecks`, `agentToolChecks`,
+  `chatToolChecks` — one `renderToolChecks`, one look), so the agent editor and composer popover change
+  visually: intended scope, not a leak. Group cards come from a **closed-over `currentGroup`**, never a
+  threaded parameter, because `SkillPickerAssetsTests` pins `addGroup("Skills", skills)`,
+  `addHeading("MCP servers")` and the `addServer(server)` loop as literal source text. Three traps, two in
+  gotchas: the drill-down must **not** be driven from `wireTabs`' `select` (`openProfileDialog` calls
+  `select(0)` on every open, so a phone would always land in General's detail view) — it is a delegated rail
+  click using `closest`, since the inline SVG icons make `e.target` a `<path>`; the prefs CSS is **split
+  across two places in `styles.css`** (`.prefs` must follow `.agent-dialog` on a specificity tie, while its
+  media block must not be the *first* 760px block — and both guards are a plain `IndexOf` that **does not
+  skip comments**, so the pointer comments must not quote the at-rule or a selector-plus-brace); and every
+  nav rule is written `.prefs .agent-form__tab…` because `#agentDialog` shares that family and **nothing in
+  `tests/` asserted it**, so an unscoped edit would mangle the agent editor with the suite green (AC12 now
+  guards all five family members structurally, parsing selector lists on **brace** boundaries — a
+  lines-ending-in-`{` filter misses a single-line rule, which is a live idiom here). A fourth, new coupling:
+  `enterPrefsDetail` resolves its tab by **DOM order** while everything else uses the **`dom.js` array**
+  order, so `RailMarkupOrder_MatchesTheProfileTabsArrayOrder` pins the two together.
+  `#prefsStatus` is wired to the **four Save-persisted fields only** — the three
+  model selects and all provider/MCP/skill CRUD persist immediately, so a form-level listener would claim
+  "Unsaved changes" for something already stored — and it can only ever show two of its three states, since
+  `saveProfile()` closes the dialog. Shell cache bumped `agent42-shell-v30` → `-v31`. The DevHost browser leg
+  **was** run (headless Chrome over CDP, both themes, both widths) and ADR 0065 records the measured values —
+  including one residual it does not own: the document already overflows to **534px** at a 390px viewport on
+  `main` (`.composer__hint` and its `<kbd>`s, the gap ADR 0043 records), which offsets the centred modal.
 - Pinned conversations (ADR 0045): a pin toggle on every sidebar row hoists a chat to the top of the
   transmissions list and keeps it there regardless of recency. It is a trailing optional
   **`[Id(5)] bool Pinned = false`** on `ConversationInfo` (the `[Id(3)]`/`[Id(4)]` agent-identity shape —

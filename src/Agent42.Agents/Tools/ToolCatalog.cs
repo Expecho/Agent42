@@ -161,10 +161,14 @@ public static class ToolCatalog
     /// </summary>
     public static IReadOnlyList<ToolDescriptor> Descriptors { get; } =
     [
-        new(WebSearch, "Web search", RequiresHostedTools: false),
-        new(Location, "Location", RequiresHostedTools: false),
-        new(Scheduling, "Scheduling", RequiresHostedTools: false),
-        new(CodeInterpreter, "Code interpreter", RequiresHostedTools: true),
+        new(WebSearch, "Web search", RequiresHostedTools: false,
+            Description: "Searches the web and fetches pages through the SearXNG sidecar."),
+        new(Location, "Location", RequiresHostedTools: false,
+            Description: "Shares your device location and street address with the model."),
+        new(Scheduling, "Scheduling", RequiresHostedTools: false,
+            Description: "Lets a chat schedule a prompt to run later, on its own."),
+        new(CodeInterpreter, "Code interpreter", RequiresHostedTools: true,
+            Description: "Runs Python in a hosted sandbox. Needs a Responses-API model."),
         // Skills is NOT here — skills surface as per-skill descriptors appended by GET /api/tools (ADR 0048),
         // and since ADR 0049 that list is PER-USER: the shipped set overlaid with the user's uploads. The
         // bare `skills` wildcard is a selection sentinel only, never a rendered checkbox.
@@ -176,7 +180,8 @@ public static class ToolCatalog
         // "Long-term memory", not "Memory" — plain "Memory" reads as the conversation's own history (the ADR
         // 0004 session), which this is not, and that misreading makes the checkbox look like it wipes the chat.
         // RequiresHostedTools is false: memory is not a tool at all, so no capability can grey it out.
-        new(Memory, "Long-term memory", RequiresHostedTools: false),
+        new(Memory, "Long-term memory", RequiresHostedTools: false,
+            Description: "Recalls and retains memories across your conversations, via a third party."),
     ];
 
     /// <summary>The logical key for a registered tool name, or null (e.g. <c>get_date</c>, or an unmapped tool).</summary>
@@ -301,4 +306,14 @@ public static class ToolCatalog
 /// per-tool MCP descriptors so the picker can <b>partition on this field</b> rather than string-splitting keys
 /// — a <c>startsWith("mcp:")</c> test cannot tell a server row from one of its tool rows.
 /// </param>
-public sealed record ToolDescriptor(string Key, string Label, bool RequiresHostedTools, string? ParentKey = null);
+/// <param name="Description">
+/// One short sentence under the label in the picker, or null to render label-only. The <b>skill</b> and
+/// <b>MCP</b> descriptors appended per-user by <c>GET /api/tools</c> leave this null on purpose: their labels
+/// are user-uploaded skill names and server-supplied tool names, so there is no description to give.
+/// </param>
+public sealed record ToolDescriptor(
+    string Key,
+    string Label,
+    bool RequiresHostedTools,
+    string? ParentKey = null,
+    string? Description = null);
