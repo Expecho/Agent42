@@ -108,6 +108,16 @@ builder.Services.AddSingleton<IMcpSecretProtector, McpSecretProtector>();
 // The interactive-OAuth HTTP client (Phase 3) — resolved by the /api/mcp/oauth/* endpoints, exercisable
 // against a real remote MCP server offline (the token is stored in the in-memory overlay grain).
 builder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
+// Connection testing (ADR 0064) over an OFFLINE fake connection factory. The real McpConnectionFactory would
+// dial a live MCP server, which offline means every Test press returns "could not connect" and no leg of the
+// feature is exercisable — so IMcpConnectionFactory (a seam that exists for exactly this) is faked here while
+// the tester, resolver, endpoint and UI are the real ones.
+//
+// Honest residual: this proves the WIRING, not an MCP handshake. The real factory's wire path stays
+// production-verified, as it has been since ADR 0024.
+builder.Services.AddSingleton<IMcpConnectionFactory>(new OfflineMcpConnectionFactory());
+builder.Services.AddSingleton<McpOAuthTokenResolver>();
+builder.Services.AddSingleton<McpConnectionTester>();
 
 // In-memory attachment store: no Azure Storage offline. The canned client ignores image
 // content, so uploads still round-trip for the display proxy and history rendering.
@@ -233,3 +243,34 @@ await mcpConfig.SaveAsync(new StoredMcpServer(
     Enabled: true));
 
 await app.WaitForShutdownAsync();
+
+/// <summary>
+/// Offline stand-in for <see cref="IMcpConnectionFactory"/>: hands back a couple of canned tools instead of
+/// dialling a real MCP server, so the ADR 0064 Test button has something to report offline.
+///
+/// <para>The endpoint whose id is <c>https://cold.invalid/mcp</c> (the seeded never-connected server) THROWS,
+/// so the failure leg — a curated reason, no exception text — is exercisable too.</para>
+/// </summary>
+internal sealed class OfflineMcpConnectionFactory : IMcpConnectionFactory
+{
+    public Task<McpServerConnection> ConnectAsync(
+        StoredMcpServer server, McpConnectionSecrets secrets, CancellationToken cancellationToken)
+    {
+        if (server.Endpoint.Contains("cold.invalid", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("offline: simulated unreachable MCP server");
+        }
+
+        IReadOnlyList<AITool> tools =
+        [
+            AIFunctionFactory.Create(() => "ok", "demo_search", "a demo MCP search tool"),
+            AIFunctionFactory.Create(() => "ok", "demo_delete", "a demo MCP delete tool"),
+        ];
+        return Task.FromResult(new McpServerConnection(tools, new NoopAsyncDisposable()));
+    }
+
+    private sealed class NoopAsyncDisposable : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}

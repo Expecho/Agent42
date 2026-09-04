@@ -31,13 +31,10 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
     // connect + ListTools, then skip it. Belt-and-suspenders with the transport's own ConnectionTimeout.
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(10);
 
-    // Refresh an InteractiveOAuth access token at connect if it expires within this window (app-owned refresh).
-    private static readonly TimeSpan RefreshSkew = TimeSpan.FromMinutes(2);
-
     private readonly IGrainFactory _grains;
     private readonly IMcpConnectionFactory _connectionFactory;
     private readonly IMcpSecretProtector _protector;
-    private readonly McpOAuthClient _oauth;
+    private readonly McpOAuthTokenResolver _oauthTokens;
     private readonly ILogger<UserMcpToolProvider> _logger;
 
     private readonly ConcurrentDictionary<string, UserCache> _caches = new(StringComparer.Ordinal);
@@ -46,13 +43,13 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
         IGrainFactory grains,
         IMcpConnectionFactory connectionFactory,
         IMcpSecretProtector protector,
-        McpOAuthClient oauth,
+        McpOAuthTokenResolver oauthTokens,
         ILogger<UserMcpToolProvider> logger)
     {
         _grains = grains;
         _connectionFactory = connectionFactory;
         _protector = protector;
-        _oauth = oauth;
+        _oauthTokens = oauthTokens;
         _logger = logger;
     }
 
@@ -121,7 +118,7 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             string? oauthAccessToken = null;
             if (mode == McpAuthMode.InteractiveOAuth)
             {
-                oauthAccessToken = await ResolveOAuthAccessTokenAsync(userId, server, cancellationToken);
+                oauthAccessToken = await _oauthTokens.ResolveAsync(userId, server, cancellationToken);
                 if (oauthAccessToken is null)
                 {
                     Skip("not connected (no OAuth token yet)");
@@ -142,11 +139,13 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 // Wrap each tool so its persisted result is bounded (ADR 0004), preserving name + schema.
                 var tools = connection.Tools.Select(WrapForTruncation).ToList();
 
-                // A SUCCESSFUL connect is the only place names are learned. Persist them (non-bumping, and a
-                // no-op when unchanged — see IUserMcpConfigGrain.RecordToolNamesAsync) so GET /api/tools can
-                // render per-tool checkboxes without ever connecting, and hand the SAME list to the grain on
-                // the group. One source of names for the picker and the gate: if these two ever diverge, the
-                // picker mints per-tool keys with no checkbox and the next Save silently drops them.
+                // Names are learned on a SUCCESSFUL connect. This is one of TWO writers — McpConnectionTester
+                // (the user-pressed POST /api/mcp-servers/{id}/test) records them too, and the two must agree.
+                // Persist them (non-bumping, and a no-op when unchanged — see
+                // IUserMcpConfigGrain.RecordToolNamesAsync) so GET /api/tools can render per-tool checkboxes
+                // without ever connecting, and hand the SAME list to the grain on the group. One source of
+                // names for the picker and the gate: if these two ever diverge, the picker mints per-tool keys
+                // with no checkbox and the next Save silently drops them.
                 var discovered = tools.Select(t => t.Name).ToList();
                 await RecordToolNamesAsync(userId, server, discovered);
 
@@ -182,42 +181,6 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             _logger.LogWarning(ex,
                 "Recording discovered tool names for MCP server {Server} (user {User}) failed; the picker keeps the previous names.",
                 server.Name, userId);
-        }
-    }
-
-    // Resolves the current InteractiveOAuth access token for a server, refreshing it (app-owned) when it is
-    // within the skew of expiry and a refresh token is available, and persisting the refreshed bundle. Returns
-    // null when the server has no stored token (the Connect flow hasn't run) → the caller skips it.
-    private async Task<string?> ResolveOAuthAccessTokenAsync(string userId, StoredMcpServer server, CancellationToken cancellationToken)
-    {
-        var tokens = McpOAuthTokens.Deserialize(_protector.Unprotect(server.TokenCiphertext));
-        if (tokens is null)
-        {
-            return null; // not connected yet
-        }
-
-        var nearExpiry = tokens.ExpiresAt is { } expiresAt && expiresAt - DateTimeOffset.UtcNow <= RefreshSkew;
-        if (!nearExpiry || string.IsNullOrEmpty(tokens.RefreshToken))
-        {
-            return tokens.AccessToken;
-        }
-
-        try
-        {
-            var refreshed = await _oauth.RefreshAsync(tokens, new Uri(server.Endpoint), cancellationToken);
-            // Persist the refreshed bundle (bumps the overlay version, so the next activation re-reads it).
-            await _grains.GetGrain<IUserMcpConfigGrain>(userId)
-                .SaveAsync(server with { TokenCiphertext = _protector.Protect(refreshed.Serialize()) });
-            return refreshed.AccessToken;
-        }
-        catch (Exception ex)
-        {
-            // A failed refresh is best-effort: try the existing token (it may still be within skew), and if it
-            // too is rejected the connect fails and the server is skipped.
-            _logger.LogWarning(ex,
-                "MCP OAuth token refresh failed for server {Server} (user {User}); using the existing token.",
-                server.Name, userId);
-            return tokens.AccessToken;
         }
     }
 

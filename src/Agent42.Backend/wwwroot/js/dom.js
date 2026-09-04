@@ -158,6 +158,9 @@ export const mcpScopesInput = document.getElementById("mcpScopes");
 export const mcpOAuthNote = document.getElementById("mcpOAuthNote");
 export const mcpError = document.getElementById("mcpError");
 export const mcpCancelBtn = document.getElementById("mcpCancelBtn");
+export const mcpTestBtn = document.getElementById("mcpTestBtn");
+export const mcpTestResult = document.getElementById("mcpTestResult");
+export const mcpTabResult = document.getElementById("mcpTabResult");
 
 // Selectable tools (ADR 0021): checkbox groups in the agent + preferences dialogs, and a per-chat popover.
 export const agentToolChecks = document.getElementById("agentToolChecks");

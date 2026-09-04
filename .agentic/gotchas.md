@@ -1416,8 +1416,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   a **sequential** `foreach` with a **10 s** timeout per server behind a per-user semaphore, so three dead
   servers cost ~30 s before the picker is usable; and resolving an InteractiveOAuth token **refreshes and
   saves it**, so the GET would become a **write** that bumps the version and invalidates the socket cache on
-  a page load. The endpoint reads persisted `KnownToolNames` instead. The cost is the cold-start window: a
-  newly added server has no per-tool checkboxes until that user's next chat activation connects to it.
+  a page load. The endpoint reads persisted `KnownToolNames` instead. The cost was a cold-start window, and
+  **ADR 0064 closed it without weakening this rule**: a newly added server has no per-tool checkboxes until
+  that user's next chat activation connects to it **or they press Test** (`POST /api/mcp-servers/{id}/test`,
+  which is user-pressed, one named server, and also runs automatically after a successful save). The rule
+  here was never "never connect" — it is "never connect *on a page load, for every server, implicitly*".
 - **Evidence:** `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (`RetainedVersionsPerUser`, `EvictBeyondAsync`),
   `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Mcp` wildcard + `IsMcpServerEnabled`, both absent from `ToolNameToKey`),
   `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent` per-server MCP gate over `_mcpServers`),
@@ -1427,8 +1430,54 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/AgentGrainTests.cs` (`EveryRegisteredTool_MapsToACatalogKey_OrIsGetDate_OrIsAnMcpTool`,
   `PerServerSelection_EnablesOnlySelectedServer`),
   `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`,
-  `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`
-- **Verified:** 2026-07-19
+  `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`,
+  `.agentic/decisions/0064-mcp-connection-test-endpoint.md`
+- **Verified:** 2026-09-04
+
+### The MCP connection test: two writers of the tool names, and an empty list ERASES them
+
+- **Claim:** since ADR 0064 there are **two** callers of `IUserMcpConfigGrain.RecordToolNamesAsync` —
+  `UserMcpToolProvider` (successful connect during activation) and `McpConnectionTester` (successful
+  user-pressed `POST /api/mcp-servers/{id}/test`). Both feed the same `KnownToolNames`, the single source for
+  the picker's checkboxes *and* `BuildAgent`'s per-tool gate; if they diverge the picker mints
+  `mcp:{id}:{tool}` keys with no checkbox and the next Save silently drops them. (A comment in
+  `UserMcpToolProvider` claiming a successful connect was *the only* place names are learned is now false and
+  was corrected.) They agree today because the provider records names **after** `WrapForTruncation` and
+  `TruncatingMcpTool : DelegatingAIFunction` forwards `Name`.
+  **The sharp edge: `RecordToolNamesAsync` no-ops when the list is UNCHANGED, not when it is EMPTY.** `[]`
+  differs from `[A,B]`, so recording an empty list **erases** the names and makes ADR 0058's supposedly
+  unreachable state reachable — the picker renders that server as a bare checkbox reading "tools not
+  discovered yet" with the master **unchecked**, while the client's preservation rule keeps the stored
+  per-tool keys: a server that reads OFF while still granting a tool. So **record only a non-empty list**.
+  `UserMcpToolProvider` has the identical hole and is deliberately NOT fixed (pre-existing, activation-only,
+  its own MR); guarding inside the grain is the true one-source fix and was rejected for the same reason.
+  Use `RecordToolNamesAsync`, never `SaveAsync` — it deliberately does not bump the version.
+  **Three more constraints on the tester, each of which looks optional and is not.** (1) It must resolve OAuth
+  tokens through the **shared** `McpOAuthTokenResolver`: that resolver refreshes within a 2-minute skew and
+  persists the bundle, so a probe that skipped it would report failure on a server the chat path connects to
+  fine — a false negative in a diagnostic tool. Accepted cost: Test on a near-expiry OAuth server bumps the
+  overlay version and invalidates that user's warm socket cache. (2) **A test is not an activation** — dispose
+  in a `finally`, never touch `IUserMcpToolProvider`; that half is pinned *structurally* (reflection over the
+  ctor), because "nothing entered the cache" is not observable at runtime. (3) The failure reason is
+  **curated, never the exception** (the `ConfigHealth.ProbeAsync` discipline); the detail goes to
+  `LogWarning`.
+  **And the one that is pure egress:** the chat path connects only to **enabled** servers
+  (`Where(s => s.Enabled)`), so a disabled server's decrypted credentials have never reached its endpoint.
+  Pressing Test sends them — intended. The **auto-test on save must stay gated on the Enabled checkbox**, or
+  saving a server with the box unchecked delivers its credentials to a host the app never contacted, from a
+  path the user never asked for.
+- **Evidence:** `src/Agent42.Backend/Mcp/McpConnectionTester.cs` (`RecordAndDescribeAsync` non-empty guard,
+  the `finally` dispose, curated reasons), `src/Agent42.Backend/Mcp/McpOAuthTokenResolver.cs`,
+  `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (the corrected "one of TWO writers" comment),
+  `src/Agent42.Agents/Mcp/IUserMcpConfigGrain.cs` + `src/Agent42.Agents/Mcp/UserMcpConfigGrain.cs`
+  (the `SequenceEqual` no-op), `src/Agent42.Backend/wwwroot/js/mcp.js` (the `mcpEnabledInput.checked` gate),
+  `tests/Agent42.Tests/McpConnectionTesterTests.cs`
+  (`Test_NeverErasesKnownToolNamesOnAZeroToolConnect`, `Test_RefreshesANearExpiryToken`,
+  `Test_DisposesItsConnection`, `Tester_DoesNotDependOnTheToolProvider`,
+  `Test_ReturnsACuratedReason_NeverTheException`),
+  `tests/Agent42.Tests/McpServersAssetsTests.cs` (`SaveFlow_DoesNotAutoTestADisabledServer`),
+  `.agentic/decisions/0064-mcp-connection-test-endpoint.md`
+- **Verified:** 2026-09-04
 
 ### MCP interactive OAuth is hand-rolled: the SDK flow blocks, the callback must stay behind Easy Auth
 

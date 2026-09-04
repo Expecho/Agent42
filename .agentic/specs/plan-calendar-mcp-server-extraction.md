@@ -57,8 +57,12 @@ Frontend:
 - `wwwroot/js/calendar.js` (118 lines); `wwwroot/js/dom.js:91,102-105`; `wwwroot/js/main.js:18,72,111`;
   **[`wwwroot/js/profile.js:9,62`]** — `import { loadGoogleStatus } from "./calendar.js";` and its call.
   A dangling ES specifier is not a compile error; it is a runtime `SyntaxError` and a blank app (ADR 0041).
-- `wwwroot/index.html:314,319-320,465-474`; `wwwroot/styles.css:1644-1648`;
-  `wwwroot/sw.js:5` (CACHE `agent42-shell-v27` to `-v28`) and `:7` (drop `/js/calendar.js` from SHELL).
+- `wwwroot/index.html:314,319-320,465-474`; `wwwroot/styles.css` — **the calendar rules MOVED**: ADR 0064
+  inserted `.agent-form__note--ok` at what was `:1644`, so the calendar block is now roughly `:1651-1659`.
+  **Locate it by content (`.calendar__status`), never by that line number.**
+  `wwwroot/sw.js:5` (CACHE — **ADR 0064 already took it to `agent42-shell-v28`, so this plan must bump
+  `-v28` to `-v29`, NOT v27 to v28**, which is now a no-op that would ship a stale shell) and `:7` (drop
+  `/js/calendar.js` from SHELL).
 
 Tests deleted (10): `CalendarToolTests.cs`, `CalendarAssetsTests.cs`, `FakeCalendarService.cs`,
 `GoogleCalendarServiceTests.cs`, `GoogleOAuthClientTests.cs`, `GoogleOAuthEndpointTests.cs`,
@@ -323,8 +327,10 @@ origin-root hosting constraint; ADR 0058's cold start; the orphaned Cosmos state
 *Verify:* `dotnet build Agent42.slnx` with no new warnings.
 
 **B3. Frontend.** Delete `calendar.js`; the `dom.js:91,102-105` exports; `main.js:18,72,111`;
-**`profile.js:9,62`**; `index.html:314,319-320,465-474`; `styles.css:1644-1648`. Drop
-`/js/calendar.js` from `sw.js` SHELL and bump `CACHE` v27 to **v28**.
+**`profile.js:9,62`**; `index.html:314,319-320,465-474`; `styles.css` — the calendar rules moved to roughly
+`:1651-1659` when ADR 0064 inserted `.agent-form__note--ok` above them, so **find them by `.calendar__status`,
+not by line number**. Drop `/js/calendar.js` from `sw.js` SHELL and bump `CACHE` **v28 to `-v29`** (ADR 0064
+already spent v28 — bumping v27 to v28 is now a no-op that ships a stale shell).
 *Verify:* `dotnet test --filter ProjectLayoutTests` (SHELL + import-graph reachability at :311,:336).
 
 **B4. Tests.** Delete the 10 files (**not** `GoogleGeocoderTests.cs`); edit the eleven sites listed

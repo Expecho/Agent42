@@ -60,6 +60,32 @@ public static partial class AgentApi
             return Results.NoContent();
         });
 
+        // Tests one stored server on explicit user request (ADR 0064): connect, list tools, record the names,
+        // disconnect. This is the ONE management route that opens a socket — GET /api/tools still never does
+        // (ADR 0058's rule is about connecting implicitly, on a page load, for every server; it is unchanged).
+        //
+        // IServiceProvider is injected, NOT McpConnectionTester: MapAgentApi infers every endpoint's params up
+        // front, and a param a host does not register would be treated as a body and break routing for the
+        // WHOLE host (the /api/speech and /api/config-health pattern). DevHost and the API test hosts resolve
+        // it optionally and 503 cleanly where it is absent.
+        app.MapPost("/api/mcp-servers/{id}/test", async (string id, IServiceProvider services, HttpContext http, CancellationToken ct) =>
+        {
+            if (services.GetService<McpConnectionTester>() is not { } tester)
+            {
+                return Results.Text("Connection testing is not configured on this host.", "text/plain",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            // A null outcome is "no such server for THIS user" — an unknown id and another user's id are
+            // deliberately indistinguishable.
+            if (await tester.TestAsync(http.GetUserId(), id, ct) is not { } outcome)
+            {
+                return Results.Text("No MCP server with that id.", "text/plain", statusCode: StatusCodes.Status404NotFound);
+            }
+
+            return Results.Json(new McpServerTestResponse(outcome.Ok, outcome.ToolNames.Count, outcome.ToolNames, outcome.Reason));
+        });
+
         app.MapGet("/api/mcp/oauth/start", StartMcpOAuthAsync);
 
         app.MapGet("/api/mcp/oauth/callback", CompleteMcpOAuthAsync);
@@ -270,7 +296,10 @@ public static partial class AgentApi
             }
 
             await configGrain.SaveAsync(server with { TokenCiphertext = protector.Protect(tokens.Serialize()) });
-            return Results.Redirect("/?mcp_oauth=connected");
+            // Carry WHICH server connected: the return lands on the MCP tab with no dialog open, and the
+            // client auto-tests that server so "connected" means "connected AND reachable" (ADR 0064).
+            // Failure redirects deliberately carry only a curated reason, never an id.
+            return Results.Redirect($"/?mcp_oauth=connected&serverId={Uri.EscapeDataString(server.Id)}");
         }
         catch (Exception ex)
         {

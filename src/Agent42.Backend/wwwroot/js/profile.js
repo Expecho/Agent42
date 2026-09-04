@@ -4,7 +4,7 @@ import { loadConfigHealth } from "./confighealth.js";
 import { openProfileBtn, profileCancelBtn, profileDialog, profileForm, profileLanguage, profileSuggest, profileTabs, profileTheme, profileToolChecks } from "./dom.js";
 import { LANGUAGES } from "./format.js";
 import { updateLocationControl } from "./location.js";
-import { loadMcpServers } from "./mcp.js";
+import { clearMcpTabResult, loadMcpServers } from "./mcp.js";
 import { loadProviders } from "./providers.js";
 import { loadGoogleStatus } from "./calendar.js";
 import { loadSkills } from "./skills.js";
@@ -57,6 +57,7 @@ export async function openProfileDialog() {
   updateLocationControl(); // refresh the location status/button for the current grant state
   updatePushControl(); // and the push notifications status/button (ADR 0028)
   loadProviders(); // refresh the user's providers list alongside the profile
+  clearMcpTabResult(); // a stale connection verdict must not outlive the dialog (ADR 0064)
   loadMcpServers(); // and their MCP servers (config-driven remote MCP servers)
   loadSkills(); // and their uploaded skills (ADR 0049)
   loadGoogleStatus(); // and whether Google Calendar is connected (ADR 0053)

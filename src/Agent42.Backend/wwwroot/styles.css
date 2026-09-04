@@ -1641,6 +1641,13 @@ body {
   color: var(--red);
 }
 
+/* MCP connection test (ADR 0064): the same <p> carries both verdicts, so success is a modifier beside the
+   error one rather than a second element. A reachable server is the whole point of pressing Test, so it
+   gets affirmative colour instead of the faint .agent-form__note treatment. */
+.agent-form__note--ok {
+  color: var(--green);
+}
+
 /* Google Calendar connection (ADR 0053): the Calendar panel is a status line and one button, so the
    status IS the panel's content rather than a label beside something else — it gets the reading weight
    the provider rows get, not the faint treatment of .agent-form__note. Its error surface is the note

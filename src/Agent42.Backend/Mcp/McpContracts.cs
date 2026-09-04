@@ -22,3 +22,9 @@ public record McpServerResponse(
 
 // The GET /api/mcp-servers payload: the user's overlay servers (masked).
 public record McpServersResponse(IReadOnlyList<McpServerResponse> Servers);
+
+// The POST /api/mcp-servers/{id}/test payload. A reachable-but-failing test is a 200 with Ok:false — the
+// request succeeded and the diagnosis IS the payload (the config-health convention); only an unknown id
+// (404) or an unconfigured host (503) is an HTTP error. Reason is a CURATED string, never an exception
+// message and never the MCP server's own response body.
+public record McpServerTestResponse(bool Ok, int ToolCount, IReadOnlyList<string> ToolNames, string Reason);
