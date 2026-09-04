@@ -738,8 +738,13 @@ to document a mechanical rule, add a lint rule instead.
   tested server yields `mcp:{id}` + one key per tool, an untested control only `mcp:{id}`). New
   `McpOAuthTokenResolver` (lifted out of `UserMcpToolProvider`, which now delegates) and `McpConnectionTester`;
   no new folder, no new `AgentApi.*` partial, **no `excludedPaths` entry** (a new `EasyAuthExclusionTests` row
-  proves it), no Bicep, no secret, no Cosmos container, **no new egress** (it dials the same server with the
-  same credentials the chat path already uses). Status codes are **503** unconfigured · **404**
+  proves it), no Bicep, no secret, no Cosmos container, and **no new egress for an ENABLED server** (it dials
+  the same server with the same credentials the chat path already uses — changing *when*, not *whether*).
+  **The disabled server is the exception and the reason one line is load-bearing:** the chat path connects
+  only to enabled servers (`Where(s => s.Enabled)`), so a disabled server's credentials have never reached its
+  endpoint; pressing Test now sends them (accepted — that is what the button is for), but **the auto-test on
+  save is gated on the Enabled checkbox** so a *save* never does, which would otherwise be egress the user
+  never asked for. Status codes are **503** unconfigured · **404**
   unknown-or-foreign id · **200 with `ok:false`** for a reachable-but-failing test (the config-health
   convention: the request succeeded, the diagnosis is the payload). Four traps, all in gotchas: the resolver
   is **shared, not re-implemented** (a probe skipping the near-expiry refresh would report failure on a server

@@ -355,10 +355,51 @@ skipped, nothing in *Out of scope* was pulled in. Six differences are worth reco
 | `dotnet test Agent42.slnx` | **1163 passed, 0 failed** |
 | `dotnet format --verify-no-changes` | clean |
 | `node .agentic/scripts/check-doc-paths.mjs` | all referenced paths exist |
+| `node .agentic/scripts/check-new-code-coverage.mjs` (`coverage_new_code_pct_min`, threshold 80) | **84.6%** — 115/136 new lines covered — PASS |
+| `dotnet list package --vulnerable --include-transitive` (`vulnerable_packages`, threshold 0) | **0** across all six projects — PASS |
 | DevHost endpoint legs (curl) | 200 ok+2 tools · 200 `ok:false` "could not connect" · 404 unknown id |
 | Cold-start closure (measured) | tested server → `mcp:{id}` + `:demo_search` + `:demo_delete`; untested control → `mcp:{id}` only |
 | DevHost browser leg (headless Chrome/CDP) | **13/13** — incl. the C9 duplicate defence live (6 servers → 6 after a second Save) and `"✗ could not connect"` with no exception text |
 | Mutation checks (the two source-text-only rules) | both fail when the guarded line is removed/moved, pass when restored |
+
+### Critic findings, and what changed because of them
+
+A `critic` subagent reviewed the diff before the MR. Verdict: **not a clean pass** — 1 substantive, 2 medium,
+4 low. All were addressed; **one was a real defect, not a wording problem**:
+
+1. **The "no new egress" claim was FALSE for a disabled server — and the auto-test dialled one with no
+   press.** `UserMcpToolProvider` connects only to enabled servers (`Where(s => s.Enabled)`), so a disabled
+   server's decrypted credentials have never reached its endpoint. Testing one on an explicit press is
+   intended (the plan required it) — but the save-path auto-test ran unconditionally, so saving a server with
+   the Enabled box unchecked would have delivered its credentials to a host the app had never contacted, from
+   a *save*. **Fixed in code**, not just in prose: the auto-test is now gated on the checkbox and a disabled
+   save renders "not tested — this server is switched off" with zero network calls. ADR 0064 and CLAUDE.md
+   now state the enabled/disabled distinction exactly, and `SaveFlow_DoesNotAutoTestADisabledServer` pins it.
+2. **`extends: [0025, 0049]` in ADR 0064's frontmatter was wrong** — 0049 (uploaded skills) is unrelated and
+   appears nowhere in the body; the ADR actually discussed at length is **0029** (config-health `ProbeAsync`,
+   the rejected home, whose status-code convention this adopts). Corrected to `extends: [0025, 0029]`.
+3. **The `sw.js` version collision was resolved in only one direction.** M2 predicted it and this plan took
+   v28, but nothing was written back into the still-active `plan-calendar-mcp-server-extraction.md`, which
+   still said "bump v27 to v28" — now a **no-op that ships a stale shell** — and still pointed at
+   `styles.css:1644-1648`, which this diff turned into ADR 0064's new `.agent-form__note--ok` rule. Both
+   references fixed in that spec (hard rule 2), and it is now told to locate the block by content.
+4. **ADR 0064 under-enumerated the curated reasons** (four listed, six emitted) and did not note that one
+   interpolates the user's own stored `Auth` string. Both corrected; the closed set is now stated as six.
+5. **The coverage gate was neither reported nor marked SKIPPED** in the table above. It had been run; it is
+   now recorded (84.6%), along with the vulnerable-packages gate.
+6. **`#mcpTabResult` was never cleared on entering Preferences**, so an OAuth-return verdict outlived a
+   close/reopen and even the deletion of the server it described. Now cleared by an exported
+   `clearMcpTabResult()`, called **synchronously** at the top of `openProfileDialog` (which is why it cannot
+   race the un-awaited `loadMcpServers()`) and on delete.
+7. **The gotchas size guardrail** (~≤40 entries; the file is at 96 on `main`) — pre-existing drift, not
+   created here. Responded to by **consolidating this MR's two entries into one**, trimming the parts that
+   merely restated ADR 0064 prose. The full audit the guardrail asks for is out of scope for this MR.
+
+The critic separately confirmed as clean: ADR 0058's `GET /api/tools` rule is genuinely unweakened; the
+two-writers invariant actually holds (the provider records names *after* `WrapForTruncation`, and
+`TruncatingMcpTool` forwards `Name`, so both writers emit identical strings); registration symmetry across
+hosts; the DevHost fake's consistency with the seeded servers; and that no named-`HttpClient` retry trap
+applies.
 
 ### Residuals carried into ADR 0064
 

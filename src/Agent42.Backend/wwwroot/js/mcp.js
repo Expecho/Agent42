@@ -134,6 +134,13 @@ function syncMcpTestBtn() {
   mcpTestBtn.title = editingMcpId ? "Connect to this server and list its tools" : "Save the server first";
 }
 
+// The tab's result line survives the dialog, so Preferences must clear it on open — otherwise an OAuth-return
+// verdict lingers across a close/reopen, and outlives the very server it describes if that server is deleted.
+// Called synchronously from openProfileDialog, which is why it cannot race the un-awaited loadMcpServers().
+export function clearMcpTabResult() {
+  clearTestResult(mcpTabResult);
+}
+
 function clearTestResult(target) {
   target.hidden = true;
   target.textContent = "";
@@ -238,7 +245,18 @@ async function saveMcpServer() {
   await refreshToolCatalog(); // the added/edited server must (dis)appear in the tool pickers (ADR 0026)
   // Tell the user straight away whether what they just saved actually works (ADR 0064) — the point of the
   // feature is that a typo'd host stops saving cleanly and silently.
-  if (editingMcpId) await testMcpServer(editingMcpId, mcpTestResult);
+  //
+  // EXCEPT for a disabled server, which is deliberately NOT dialled here. The chat path connects only to
+  // enabled servers (UserMcpToolProvider's `Where(s => s.Enabled)`), so auto-dialling one on save would send
+  // its decrypted credentials somewhere they have never been — new egress, from a save rather than from an
+  // explicit press. Pressing Test still dials it: that is a deliberate user action, and diagnosing a switched
+  // off server is exactly what the button is for.
+  if (!editingMcpId) return;
+  if (!mcpEnabledInput.checked) {
+    renderTestResult(mcpTestResult, { ok: false, reason: "not tested — this server is switched off. Press Test to check it anyway." });
+    return;
+  }
+  await testMcpServer(editingMcpId, mcpTestResult);
 }
 
 async function deleteMcpServer(id) {
@@ -247,6 +265,7 @@ async function deleteMcpServer(id) {
     if (!res.ok) return;
   } catch { return; }
   mcpServers = mcpServers.filter((s) => s.id !== id);
+  clearMcpTabResult(); // a verdict about a server that no longer exists is worse than none
   renderMcpServers();
   await refreshToolCatalog(); // the deleted server must drop out of the tool pickers (ADR 0026)
 }

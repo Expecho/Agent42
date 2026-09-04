@@ -1434,66 +1434,48 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0064-mcp-connection-test-endpoint.md`
 - **Verified:** 2026-09-04
 
-### TWO writers now feed the picker's MCP tool names — and neither may ever record an empty list
+### The MCP connection test: two writers of the tool names, and an empty list ERASES them
 
-- **Claim:** since ADR 0064 there are **two** places that call
-  `IUserMcpConfigGrain.RecordToolNamesAsync`: `UserMcpToolProvider` (on a successful connect during grain
-  activation) and `McpConnectionTester` (on a successful user-pressed `POST /api/mcp-servers/{id}/test`).
-  Both feed the *same* `KnownToolNames`, which is the single source for both the picker's checkboxes and
-  `BuildAgent`'s per-tool gate. **If those two ever disagree, the picker mints `mcp:{id}:{tool}` keys with
-  no checkbox and the next Save silently drops them** — the one-source invariant ADR 0058 rests on. A comment
-  in `UserMcpToolProvider` used to say a successful connect was *the only* place names are learned; that is
-  now false and the comment was corrected in the same MR.
+- **Claim:** since ADR 0064 there are **two** callers of `IUserMcpConfigGrain.RecordToolNamesAsync` —
+  `UserMcpToolProvider` (successful connect during activation) and `McpConnectionTester` (successful
+  user-pressed `POST /api/mcp-servers/{id}/test`). Both feed the same `KnownToolNames`, the single source for
+  the picker's checkboxes *and* `BuildAgent`'s per-tool gate; if they diverge the picker mints
+  `mcp:{id}:{tool}` keys with no checkbox and the next Save silently drops them. (A comment in
+  `UserMcpToolProvider` claiming a successful connect was *the only* place names are learned is now false and
+  was corrected.) They agree today because the provider records names **after** `WrapForTruncation` and
+  `TruncatingMcpTool : DelegatingAIFunction` forwards `Name`.
   **The sharp edge: `RecordToolNamesAsync` no-ops when the list is UNCHANGED, not when it is EMPTY.** `[]`
-  differs from `[A,B]`, so recording an empty list **erases** the names, which makes ADR 0058's supposedly
-  unreachable state reachable: the picker then renders that server as a bare checkbox reading "tools not
+  differs from `[A,B]`, so recording an empty list **erases** the names and makes ADR 0058's supposedly
+  unreachable state reachable — the picker renders that server as a bare checkbox reading "tools not
   discovered yet" with the master **unchecked**, while the client's preservation rule keeps the stored
-  `mcp:{id}:{tool}` keys — a server that reads OFF while still granting a tool, one tick away from silently
-  re-granting a deselected one. So **record only a non-empty list**; a successful connect that returns zero
-  tools is reported to the user and writes nothing (`McpConnectionTester.RecordAndDescribeAsync`).
-  `UserMcpToolProvider` has the **identical hole** on its own path and it is deliberately NOT fixed — it is
-  pre-existing, fires only on an activation, and changing it is a behaviour change to the chat path (recorded
-  in ADR 0064, its own MR). Guarding inside the grain is the true one-source fix and was rejected for the
-  same reason. Use `RecordToolNamesAsync`, never `SaveAsync`: it deliberately does not bump the version.
-- **Evidence:** `src/Agent42.Backend/Mcp/McpConnectionTester.cs` (`RecordAndDescribeAsync`, the non-empty
-  guard), `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (the corrected "one of TWO writers" comment),
-  `src/Agent42.Agents/Mcp/IUserMcpConfigGrain.cs` (`RecordToolNamesAsync` doc: no-op when unknown or
-  unchanged, never bumps), `src/Agent42.Agents/Mcp/UserMcpConfigGrain.cs` (the `SequenceEqual` no-op),
+  per-tool keys: a server that reads OFF while still granting a tool. So **record only a non-empty list**.
+  `UserMcpToolProvider` has the identical hole and is deliberately NOT fixed (pre-existing, activation-only,
+  its own MR); guarding inside the grain is the true one-source fix and was rejected for the same reason.
+  Use `RecordToolNamesAsync`, never `SaveAsync` — it deliberately does not bump the version.
+  **Three more constraints on the tester, each of which looks optional and is not.** (1) It must resolve OAuth
+  tokens through the **shared** `McpOAuthTokenResolver`: that resolver refreshes within a 2-minute skew and
+  persists the bundle, so a probe that skipped it would report failure on a server the chat path connects to
+  fine — a false negative in a diagnostic tool. Accepted cost: Test on a near-expiry OAuth server bumps the
+  overlay version and invalidates that user's warm socket cache. (2) **A test is not an activation** — dispose
+  in a `finally`, never touch `IUserMcpToolProvider`; that half is pinned *structurally* (reflection over the
+  ctor), because "nothing entered the cache" is not observable at runtime. (3) The failure reason is
+  **curated, never the exception** (the `ConfigHealth.ProbeAsync` discipline); the detail goes to
+  `LogWarning`.
+  **And the one that is pure egress:** the chat path connects only to **enabled** servers
+  (`Where(s => s.Enabled)`), so a disabled server's decrypted credentials have never reached its endpoint.
+  Pressing Test sends them — intended. The **auto-test on save must stay gated on the Enabled checkbox**, or
+  saving a server with the box unchecked delivers its credentials to a host the app never contacted, from a
+  path the user never asked for.
+- **Evidence:** `src/Agent42.Backend/Mcp/McpConnectionTester.cs` (`RecordAndDescribeAsync` non-empty guard,
+  the `finally` dispose, curated reasons), `src/Agent42.Backend/Mcp/McpOAuthTokenResolver.cs`,
+  `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (the corrected "one of TWO writers" comment),
+  `src/Agent42.Agents/Mcp/IUserMcpConfigGrain.cs` + `src/Agent42.Agents/Mcp/UserMcpConfigGrain.cs`
+  (the `SequenceEqual` no-op), `src/Agent42.Backend/wwwroot/js/mcp.js` (the `mcpEnabledInput.checked` gate),
   `tests/Agent42.Tests/McpConnectionTesterTests.cs`
-  (`Test_NeverErasesKnownToolNamesOnAZeroToolConnect`, `Test_RecordsDiscoveredToolNames`),
-  `.agentic/decisions/0064-mcp-connection-test-endpoint.md`,
-  `.agentic/decisions/0058-per-mcp-tool-selectable-tools.md`
-- **Verified:** 2026-09-04
-
-### The MCP connection test must share the OAuth token resolver, dispose its socket, and never say why it failed
-
-- **Claim:** three constraints on `McpConnectionTester` (ADR 0064) that each look optional and are not.
-  **(1) It must resolve OAuth tokens through the SHARED `McpOAuthTokenResolver`**, extracted from
-  `UserMcpToolProvider` for exactly this. That resolver refreshes a token within a 2-minute skew of expiry
-  and persists the refreshed bundle; a test path that skipped the refresh would report **failure on a server
-  the chat path connects to fine** — a false negative in a diagnostic tool, which is the worst thing this
-  feature could ship. Accepted cost, stated in the ADR: pressing Test on an OAuth server with a near-expiry
-  token bumps the overlay version and invalidates that user's warm MCP socket cache (bounded, rare, and
-  exactly what the next activation would have done anyway).
-  **(2) A test is NOT an activation.** It must dispose the connection in a `finally` and must never touch
-  `IUserMcpToolProvider` — populating the version cache from a management action is precisely what ADR 0064's
-  argument for allowing this endpoint rests on not doing. That half is guarded **structurally**
-  (`Tester_DoesNotDependOnTheToolProvider`, reflection over the ctor), because "nothing entered the cache" is
-  not observable at runtime from there.
-  **(3) The failure reason handed to the browser is CURATED, never the exception.** The MCP server's response
-  body is response-controlled; the detail goes to `LogWarning(ex, …)` — the `ConfigHealth.ProbeAsync`
-  discipline. This adds no exposure, since `UserMcpToolProvider` already logs the same detail on every failed
-  connect.
-  Also: the endpoint resolves the tester **optionally out of `IServiceProvider`** (the `/api/speech` pattern)
-  and 503s where it is absent — taking it as a minimal-API *parameter* would be treated as a body by
-  `MapAgentApi`'s up-front inference and break routing for the whole host.
-- **Evidence:** `src/Agent42.Backend/Mcp/McpConnectionTester.cs`,
-  `src/Agent42.Backend/Mcp/McpOAuthTokenResolver.cs`,
-  `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (the `POST /api/mcp-servers/{id}/test` handler),
-  `tests/Agent42.Tests/McpConnectionTesterTests.cs` (`Test_RefreshesANearExpiryToken`,
+  (`Test_NeverErasesKnownToolNamesOnAZeroToolConnect`, `Test_RefreshesANearExpiryToken`,
   `Test_DisposesItsConnection`, `Tester_DoesNotDependOnTheToolProvider`,
   `Test_ReturnsACuratedReason_NeverTheException`),
-  `tests/Agent42.Tests/McpConnectionTestApiTests.cs` (`Test_Returns503WhenUnconfigured`),
+  `tests/Agent42.Tests/McpServersAssetsTests.cs` (`SaveFlow_DoesNotAutoTestADisabledServer`),
   `.agentic/decisions/0064-mcp-connection-test-endpoint.md`
 - **Verified:** 2026-09-04
 

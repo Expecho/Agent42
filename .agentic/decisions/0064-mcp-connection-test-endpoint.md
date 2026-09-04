@@ -4,7 +4,7 @@ date: 2026-09-04
 status: accepted
 tags: [mcp, diagnostics, ux, endpoint, no-migration, oauth]
 supersedes: []
-extends: [0025, 0049]
+extends: [0025, 0029]
 amends: [0024, 0026, 0058]
 ---
 
@@ -93,10 +93,17 @@ is a behaviour change to the chat path, so it belongs in its own MR. Guarding in
 
 ### Curated failure text only
 
-The MCP server's response body is response-controlled. The browser gets a fixed reason from a small set
-(`ok` · `connected, but the server exposes no tools` · `not connected (no OAuth token yet)` · `could not
-connect`); the detail goes to `LogWarning(ex, …)`. This adds no exposure — `UserMcpToolProvider` already logs
-the same detail on every failed connect, so `/logs` (ADR 0054) is unchanged.
+The MCP server's response body is response-controlled. The browser gets a reason from a **closed set of six**,
+none of which is derived from the server's response: `ok` · `ok, but this server is switched off` ·
+`connected, but the server exposes no tools` · `not connected (no OAuth token yet)` · `could not connect` ·
+`auth mode {x} is not yet supported`. The detail goes to `LogWarning(ex, …)`. This adds no exposure —
+`UserMcpToolProvider` already logs the same detail on every failed connect, so `/logs` (ADR 0054) is unchanged.
+
+The last of the six is the only one that interpolates anything, and what it interpolates is the **stored
+`Auth` string of the user's own server** — never upstream content. It also mirrors the provider's own `Skip`
+branch and is effectively unreachable for any server saved through the API, since `ValidateMcpServer` rejects
+an unparseable auth mode at write time. It is kept as defensive symmetry with the activation path, not as a
+live diagnosis.
 
 ### Client rules
 
@@ -136,8 +143,16 @@ the same detail on every failed connect, so `/logs` (ADR 0054) is unchanged.
   yields only `mcp:{id}`.
 - **One management route now opens a socket.** That is the ADR 0024 property being amended. It is
   user-pressed, one server at a time, bounded at 10 s, and disposed in a `finally`.
-- **No new egress.** The test dials the same server the chat path already dials, with the same credentials. It
-  changes *when* that happens, not *whether*.
+- **No new egress for an enabled server.** The test dials the same server the chat path already dials, with
+  the same credentials; it changes *when* that happens, not *whether*.
+  **A disabled server is the exception, and it is bounded deliberately.** `UserMcpToolProvider` connects only
+  to enabled servers (`Where(s => s.Enabled)`), so a disabled server's decrypted header value or OAuth token
+  has **never** reached its endpoint. Pressing **Test** on one now sends it — accepted, because diagnosing a
+  switched-off server is exactly what the button is for and the press is explicit. What is **not** accepted is
+  reaching it without a press, so **the auto-test on save is gated on the Enabled checkbox**: saving a
+  disabled server renders "not tested — this server is switched off" and makes **zero** network calls. Without
+  that gate, saving a server with the box unchecked would have delivered its credentials to a host the app had
+  never contacted, on a path the user never asked for.
 - **No infra change at all:** no `excludedPaths` entry (the route stays behind Easy Auth, with a new
   `EasyAuthExclusionTests` row proving it), no Bicep, no secret, no Cosmos container, no new folder and no new
   `AgentApi.*` partial.

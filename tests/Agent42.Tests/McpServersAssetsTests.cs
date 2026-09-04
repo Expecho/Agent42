@@ -140,6 +140,40 @@ public sealed class McpServersAssetsTests
         Assert.Contains("editingMcpId = saved.id ?? editingMcpId;", app);
     }
 
+    // The save-path auto-test must NOT dial a DISABLED server. The chat path connects only to enabled
+    // servers (UserMcpToolProvider's Where(s => s.Enabled)), so auto-dialling one from a SAVE would send its
+    // decrypted credentials somewhere they have never been — new egress from a save rather than from an
+    // explicit press. Pressing Test still dials it, deliberately. Source-text only, like the rules above.
+    [Fact]
+    public async Task SaveFlow_DoesNotAutoTestADisabledServer()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        var saveStart = app.IndexOf("async function saveMcpServer()", StringComparison.Ordinal);
+        var saveBody = app[saveStart..app.IndexOf("async function deleteMcpServer", StringComparison.Ordinal)];
+
+        var gate = saveBody.IndexOf("if (!mcpEnabledInput.checked)", StringComparison.Ordinal);
+        var autoTest = saveBody.IndexOf("await testMcpServer(editingMcpId, mcpTestResult)", StringComparison.Ordinal);
+        Assert.True(gate >= 0, "the save-path auto-test must be gated on the Enabled checkbox.");
+        Assert.True(autoTest > gate, "the enabled gate must precede (and short-circuit) the auto-test.");
+    }
+
+    // A verdict about a server must not outlive the dialog it was rendered from, nor the server itself.
+    [Fact]
+    public async Task TabResultLine_IsClearedOnPreferencesOpenAndOnDelete()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("export function clearMcpTabResult()", app);
+        // Called synchronously from openProfileDialog, so it cannot race the un-awaited loadMcpServers().
+        var profileStart = app.IndexOf("export async function openProfileDialog()", StringComparison.Ordinal);
+        var profileBody = app[profileStart..(profileStart + 1200)];
+        Assert.True(
+            profileBody.IndexOf("clearMcpTabResult()", StringComparison.Ordinal)
+            < profileBody.IndexOf("loadMcpServers()", StringComparison.Ordinal),
+            "clearMcpTabResult() must run before loadMcpServers() in openProfileDialog.");
+    }
+
     // M3 — the save path's refreshToolCatalog() must stay UNCONDITIONAL (ADR 0026): a save whose auto-test
     // then fails must still update the pickers, because the server's own checkbox is driven by the save, not
     // by reachability. Pinned by source text and MUTATION-CHECKED: moving the call inside the test's success
