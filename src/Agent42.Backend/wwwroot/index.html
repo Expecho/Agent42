@@ -293,182 +293,255 @@
     </form>
   </dialog>
 
-  <!-- User profile / preferences. Reuses the agent-dialog/agent-form styling. Grows by TAB now:
-       add fields to the matching <div role="tabpanel"> (General / Tools / Model providers). Every <button>
-       here lives inside #profileForm, so each MUST carry type="button" or it submits + closes. -->
-  <dialog class="agent-dialog" id="profileDialog">
-    <form class="agent-form" id="profileForm">
-      <h2 class="agent-form__title">Preferences</h2>
+  <!-- User profile / preferences. Reuses the agent-dialog frame (border, radius, --bg-raised, shadow,
+       ::backdrop) and overrides its size/padding through .prefs. Grows by TAB now: add fields to the
+       matching <div role="tabpanel"> (General / Tools / Model providers). Every <button> here lives
+       inside #profileForm, so each MUST carry type="button" or it submits + closes.
 
-      <div class="agent-form__tablist" role="tablist" aria-label="Preferences sections">
-        <button class="agent-form__tab" type="button" role="tab" id="tabGeneral"
-                aria-selected="true" aria-controls="panelGeneral" tabindex="0">General</button>
-        <button class="agent-form__tab" type="button" role="tab" id="tabTools"
-                aria-selected="false" aria-controls="panelTools" tabindex="-1">Tools</button>
-        <button class="agent-form__tab" type="button" role="tab" id="tabProviders"
-                aria-selected="false" aria-controls="panelProviders" tabindex="-1">Model providers</button>
-        <button class="agent-form__tab" type="button" role="tab" id="tabMcp"
-                aria-selected="false" aria-controls="panelMcp" tabindex="-1">MCP servers</button>
-        <!-- These two are APPENDED, never inserted: the MCP-OAuth return deep-links to
-             profileTabs.select(3), so MCP must stay index 3 — anything placed before it would break that
-             return (js/mcp.js). Configuration is 4, Skills is 5. -->
-        <button class="agent-form__tab" type="button" role="tab" id="tabConfig"
-                aria-selected="false" aria-controls="panelConfig" tabindex="-1">Configuration</button>
-        <button class="agent-form__tab" type="button" role="tab" id="tabSkills"
-                aria-selected="false" aria-controls="panelSkills" tabindex="-1">Skills</button>
-      </div>
+       Layout is header / body(rail + pane) / footer. At <=760px the SAME markup becomes a two-level
+       drill-down: the rail is the list view and .prefs.is-detail swaps to the picked section. -->
+  <dialog class="agent-dialog prefs" id="profileDialog">
+    <form class="prefs__form" id="profileForm">
+      <header class="prefs__header">
+        <div class="prefs__heading">
+          <h2 class="agent-form__title">Preferences</h2>
+          <p class="prefs__subtitle">Your account settings, applied across every device you sign in from.</p>
+        </div>
+        <!-- On mobile the footer's Cancel is hidden and this is the only dismiss affordance, so it must
+             close the dialog exactly as Cancel does — profileDialog.close(), which is what the existing
+             theme-revert-on-close handler listens for. -->
+        <button class="prefs__close" type="button" id="prefsCloseBtn" aria-label="Close preferences">&times;</button>
+      </header>
 
-      <div class="agent-form__panel" role="tabpanel" id="panelGeneral" aria-labelledby="tabGeneral">
-        <section class="agent-form__section">
-          <label class="agent-form__field">
-            <span class="agent-form__label">// preferred language</span>
-            <select class="agent-form__input agent-form__select" id="profileLanguage"></select>
-          </label>
-          <p class="agent-form__note">Used as the default for future speech input. It doesn't translate the interface.</p>
-        </section>
+      <div class="prefs__body">
+        <!-- The rail is a RESTYLE of the same role="tab" buttons wireTabs drives, not a new navigation
+             mechanism: dom.js pairs them by id and src/Agent42.Backend/wwwroot/js/mcp.js deep-links
+             profileTabs.select(3), so the six pairs must stay in this order. Every rail rule in styles.css
+             is .prefs-scoped, because #agentDialog shares .agent-form__tablist / .agent-form__tab and
+             nothing in tests/ pins those, so an unscoped edit would mangle it silently. -->
+        <nav class="agent-form__tablist" id="profileNav" role="tablist"
+             aria-orientation="vertical" aria-label="Preferences sections">
+          <button class="agent-form__tab" type="button" role="tab" id="tabGeneral"
+                  aria-selected="true" aria-controls="panelGeneral" tabindex="0">
+            <svg class="prefs__navicon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2 4.5h6M12 4.5h2M2 11.5h2M8 11.5h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/><circle cx="10" cy="4.5" r="2" stroke="currentColor" stroke-width="1.3" fill="none"/><circle cx="6" cy="11.5" r="2" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
+            <span class="prefs__navlabel">General</span>
+          </button>
+          <!-- The badge sits INSIDE this button, so it joins the button's accessible name. The label is
+               therefore in its own span: the drill-down title reads that span, never button.textContent,
+               which reads "Tools 9/9" (measured). -->
+          <button class="agent-form__tab" type="button" role="tab" id="tabTools"
+                  aria-selected="false" aria-controls="panelTools" tabindex="-1">
+            <svg class="prefs__navicon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10.4 2.2a3.4 3.4 0 0 0-4 4.4L2.6 10.4a1.4 1.4 0 0 0 2 2l3.8-3.8a3.4 3.4 0 0 0 4.4-4l-2 2-1.8-1.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" fill="none"/></svg>
+            <span class="prefs__navlabel">Tools</span>
+            <span class="prefs__badge" id="toolsCount" hidden></span>
+          </button>
+          <button class="agent-form__tab" type="button" role="tab" id="tabProviders"
+                  aria-selected="false" aria-controls="panelProviders" tabindex="-1">
+            <svg class="prefs__navicon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="4.5" y="4.5" width="7" height="7" rx="1.2" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M6.5 2v2.5M9.5 2v2.5M6.5 11.5V14M9.5 11.5V14M2 6.5h2.5M2 9.5h2.5M11.5 6.5H14M11.5 9.5H14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            <span class="prefs__navlabel">Model providers</span>
+          </button>
+          <!-- These two are APPENDED, never inserted: the MCP-OAuth return deep-links to
+               profileTabs.select(3), so MCP must stay index 3 — anything placed before it would break that
+               return (src/Agent42.Backend/wwwroot/js/mcp.js). Configuration is 4, Skills is 5. The rail
+               renders the same six buttons top to bottom, so "MCP is index 3" now also reads as
+               "MCP is the 4th rail item". -->
+          <button class="agent-form__tab" type="button" role="tab" id="tabMcp"
+                  aria-selected="false" aria-controls="panelMcp" tabindex="-1">
+            <svg class="prefs__navicon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="2" y="3" width="12" height="4" rx="1.2" stroke="currentColor" stroke-width="1.3" fill="none"/><rect x="2" y="9" width="12" height="4" rx="1.2" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M4.6 5h.01M4.6 11h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <span class="prefs__navlabel">MCP servers</span>
+          </button>
+          <button class="agent-form__tab" type="button" role="tab" id="tabConfig"
+                  aria-selected="false" aria-controls="panelConfig" tabindex="-1">
+            <svg class="prefs__navicon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 8h3l2-4.5L9.5 12l2-4h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            <span class="prefs__navlabel">Configuration</span>
+          </button>
+          <button class="agent-form__tab" type="button" role="tab" id="tabSkills"
+                  aria-selected="false" aria-controls="panelSkills" tabindex="-1">
+            <svg class="prefs__navicon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2.5 3.2A1.2 1.2 0 0 1 3.7 2H8v11.5H3.7a1.2 1.2 0 0 1-1.2-1.2zM13.5 3.2A1.2 1.2 0 0 0 12.3 2H8v11.5h4.3a1.2 1.2 0 0 0 1.2-1.2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" fill="none"/></svg>
+            <span class="prefs__navlabel">Skills</span>
+          </button>
+        </nav>
 
-        <section class="agent-form__section">
-          <label class="agent-form__field">
-            <span class="agent-form__label">// theme</span>
-            <select class="agent-form__input agent-form__select" id="profileTheme">
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </label>
-          <p class="agent-form__note">System follows your device. Applied instantly as a preview; Cancel reverts, Save keeps it across your devices.</p>
-        </section>
-
-        <section class="agent-form__section">
-          <label class="agent-form__field agent-form__field--check">
-            <input class="agent-form__checkbox" type="checkbox" id="profileSuggest" checked />
-            <span class="agent-form__label">// suggest follow-up prompts</span>
-          </label>
-          <p class="agent-form__note">Show up to 3 clickable prompts after each reply to continue the conversation. Each turn spends a small extra model call to generate them.</p>
-        </section>
-
-        <section class="agent-form__section">
-          <span class="agent-form__label">// location</span>
-          <div class="location-row">
-            <span class="location-row__status" id="locationStatus">Off</span>
-            <button class="agent-form__btn" type="button" id="locationEnableBtn">Enable</button>
+        <div class="prefs__pane">
+          <!-- The detail view's own header. display:none above 760px. -->
+          <div class="prefs__detailbar">
+            <button class="prefs__back" type="button" id="prefsBackBtn">&lsaquo; Back</button>
+            <span class="prefs__detailtitle" id="prefsDetailTitle"></span>
           </div>
-          <p class="agent-form__note">Lets Agent 42 answer questions about where you are. Granted per device from your browser; turn it off in your browser's site settings.</p>
-        </section>
 
-        <!-- Web Push (ADR 0028). Hidden until initPush confirms push is enabled server-side AND this
-             browser supports it (feature-detected — unsupported browsers, incl. iOS-in-browser, stay hidden). -->
-        <section class="agent-form__section" id="pushSection" hidden>
-          <span class="agent-form__label">// notifications</span>
-          <div class="location-row">
-            <span class="location-row__status" id="pushStatus">Off</span>
-            <button class="agent-form__btn" type="button" id="pushToggleBtn">Enable</button>
+          <div class="prefs__scroll">
+            <div class="agent-form__panel" role="tabpanel" id="panelGeneral" aria-labelledby="tabGeneral">
+              <h3 class="prefs__panel-title">General</h3>
+              <p class="prefs__panel-desc">Language, appearance, and the per-device permissions Agent 42 asks your browser for.</p>
+              <section class="agent-form__section">
+                <label class="agent-form__field">
+                  <span class="agent-form__label">// preferred language</span>
+                  <select class="agent-form__input agent-form__select" id="profileLanguage"></select>
+                </label>
+                <p class="agent-form__note">Used as the default for future speech input. It doesn't translate the interface.</p>
+              </section>
+
+              <section class="agent-form__section">
+                <label class="agent-form__field">
+                  <span class="agent-form__label">// theme</span>
+                  <select class="agent-form__input agent-form__select" id="profileTheme">
+                    <option value="system">System</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                  </select>
+                </label>
+                <p class="agent-form__note">System follows your device. Applied instantly as a preview; Cancel reverts, Save keeps it across your devices.</p>
+              </section>
+
+              <section class="agent-form__section">
+                <label class="agent-form__field agent-form__field--check">
+                  <input class="agent-form__checkbox" type="checkbox" id="profileSuggest" checked />
+                  <span class="agent-form__label">// suggest follow-up prompts</span>
+                </label>
+                <p class="agent-form__note">Show up to 3 clickable prompts after each reply to continue the conversation. Each turn spends a small extra model call to generate them.</p>
+              </section>
+
+              <section class="agent-form__section">
+                <span class="agent-form__label">// location</span>
+                <div class="location-row">
+                  <span class="location-row__status" id="locationStatus">Off</span>
+                  <button class="agent-form__btn" type="button" id="locationEnableBtn">Enable</button>
+                </div>
+                <p class="agent-form__note">Lets Agent 42 answer questions about where you are. Granted per device from your browser; turn it off in your browser's site settings.</p>
+              </section>
+
+              <!-- Web Push (ADR 0028). Hidden until initPush confirms push is enabled server-side AND this
+                   browser supports it (feature-detected — unsupported browsers, incl. iOS-in-browser, stay hidden). -->
+              <section class="agent-form__section" id="pushSection" hidden>
+                <span class="agent-form__label">// notifications</span>
+                <div class="location-row">
+                  <span class="location-row__status" id="pushStatus">Off</span>
+                  <button class="agent-form__btn" type="button" id="pushToggleBtn">Enable</button>
+                </div>
+                <p class="agent-form__note">Notify me when an agent replies while I'm away — a push to this device (a scheduled prompt or an agent-run reply). Granted per device from your browser.</p>
+              </section>
+            </div>
+
+            <div class="agent-form__panel" role="tabpanel" id="panelTools" aria-labelledby="tabTools" hidden>
+              <h3 class="prefs__panel-title">Tools</h3>
+              <p class="prefs__panel-desc">The default tools for every new regular chat. You can still change tools inside a chat.</p>
+              <section class="agent-form__section">
+                <span class="agent-form__label">// default tools</span>
+                <div class="tools-checks" id="profileToolChecks"></div>
+              </section>
+            </div>
+
+            <div class="agent-form__panel" role="tabpanel" id="panelProviders" aria-labelledby="tabProviders" hidden>
+              <h3 class="prefs__panel-title">Model providers</h3>
+              <p class="prefs__panel-desc">Where your chats run, and which models power document Q&amp;A and the spoken voice.</p>
+              <section class="agent-form__section">
+                <label class="agent-form__field">
+                  <span class="agent-form__label">// default model</span>
+                  <!-- Options (incl. the leading blank "First available") are built by syncDefaultModelSelect();
+                       fillModelOptions() clears innerHTML, so a static option here would be wiped on first paint. -->
+                  <select class="agent-form__input agent-form__select" id="defaultModelSelect"></select>
+                </label>
+                <p class="agent-form__note">The model every new chat starts on. Saved as you pick it. Chats you already started keep the model they are on.</p>
+              </section>
+
+              <section class="agent-form__section">
+                <label class="agent-form__field">
+                  <span class="agent-form__label">// default embedding model</span>
+                  <!-- Options are built by syncEmbeddingModelSelect() from the models a provider marks as embedding
+                       models. Empty until one is configured; without it you cannot attach documents. -->
+                  <select class="agent-form__input agent-form__select" id="embeddingModelSelect"></select>
+                </label>
+                <p class="agent-form__note">The model that powers document Q&amp;A (RAG). Mark a model as an embedding model on its provider, then pick it here. Without one you cannot attach documents. Must produce 3072-dimension vectors; changing it means re-uploading existing documents.</p>
+              </section>
+
+              <section class="agent-form__section">
+                <label class="agent-form__field">
+                  <span class="agent-form__label">// default speech model</span>
+                  <!-- Options are built by syncSpeechModelSelect() from the models a provider marks as speech
+                       models (ADR 0038). Empty until one is configured; with none, voice replies use the browser voice. -->
+                  <select class="agent-form__input agent-form__select" id="speechModelSelect"></select>
+                </label>
+                <p class="agent-form__note">The voice that speaks replies in hands-free voice mode. Mark a text-to-speech model as a speech model on its provider, then pick it here. Without one, the browser's own voice is used. Picking one sends the reply text outside the tenant.</p>
+              </section>
+
+              <section class="agent-form__section">
+                <div class="providers__head">
+                  <span class="agent-form__label">// model providers</span>
+                  <button class="agent-form__btn" type="button" id="addProviderBtn">Add provider</button>
+                </div>
+                <ul class="providers__list" id="providerList"></ul>
+                <p class="agent-form__note">Add an OpenAI-compatible endpoint (Ollama, vLLM…) or another Foundry account. Changes take effect on your next new chat — no restart. Picking a third-party model sends your conversation outside the tenant.</p>
+              </section>
+            </div>
+
+            <div class="agent-form__panel" role="tabpanel" id="panelMcp" aria-labelledby="tabMcp" hidden>
+              <h3 class="prefs__panel-title">MCP servers</h3>
+              <p class="prefs__panel-desc">Remote servers whose tools the agent may call.</p>
+              <section class="agent-form__section">
+                <div class="providers__head">
+                  <span class="agent-form__label">// MCP servers</span>
+                  <button class="agent-form__btn" type="button" id="addMcpServerBtn">Add server</button>
+                </div>
+                <ul class="providers__list" id="mcpServerList"></ul>
+                <!-- The OAuth return has no dialog open, so the tab needs its own result line (ADR 0064). It sits
+                     OUTSIDE #mcpServerList deliberately: renderMcpServers() clears that list's innerHTML and
+                     openProfileDialog() calls loadMcpServers() un-awaited, so a result rendered inside it would be
+                     wiped by the in-flight render. -->
+                <p class="agent-form__note" id="mcpTabResult" hidden></p>
+                <p class="agent-form__note">Add a remote MCP server to give the agent its tools. Enable the "MCP servers" tool to use them. Changes take effect on your next new chat — no restart. An MCP server sees your conversation and its tool results can inject instructions — add only servers you trust.</p>
+              </section>
+            </div>
+
+            <div class="agent-form__panel" role="tabpanel" id="panelConfig" aria-labelledby="tabConfig" hidden>
+              <h3 class="prefs__panel-title">Configuration</h3>
+              <p class="prefs__panel-desc">Which configuration inputs are set, malformed, or (with live checks) unreachable. Read-only, and never shows a secret value. Live checks for geocoding and page scraping cost a metered call, so they run only on demand.</p>
+              <section class="agent-form__section">
+                <div class="providers__head">
+                  <span class="agent-form__label">// configuration health</span>
+                  <button class="agent-form__btn" type="button" id="runConfigProbesBtn">Run live checks (billable)</button>
+                </div>
+                <div class="config-health" id="configHealthList"></div>
+                <!-- The proxied SearXNG web UI (ADR 0059). Lives here in the markup so it is part of the cached
+                     shell, but confighealth.js moves it onto the "SearXNG reachability" row when that check is
+                     rendered, so it sits beside the signal it complements. Opens in a new tab: on the installed
+                     Android PWA the manifest scope is "/" so that tab is the standalone window itself, and the
+                     back gesture returns to the chat. -->
+                <a class="config-health__link" id="searxngUiLink" href="/searxng/" target="_blank" rel="noopener">Open search UI &rarr;</a>
+              </section>
+            </div>
+
+            <div class="agent-form__panel" role="tabpanel" id="panelSkills" aria-labelledby="tabSkills" hidden>
+              <h3 class="prefs__panel-title">Skills</h3>
+              <p class="prefs__panel-desc">Instruction packs you upload, listed beside the ones Agent 42 ships with.</p>
+              <section class="agent-form__section">
+                <div class="providers__head">
+                  <span class="agent-form__label">// uploaded skills</span>
+                  <button class="agent-form__btn" type="button" id="addSkillBtn">Upload skill</button>
+                </div>
+                <!-- The real file picker; the button above clicks it, so the control matches every other
+                     "Add …" button in this dialog instead of being a stray file input. -->
+                <input type="file" id="skillFile" accept=".md,.zip" hidden>
+                <ul class="providers__list" id="skillList"></ul>
+                <p class="agent-form__note" id="skillStatus" hidden></p>
+                <p class="agent-form__note">Upload a SKILL.md, or a .zip of skill folders with bundled reference files. Enable a skill in the Tools tab to use it. Changes take effect on your next new chat — no restart, and existing chats and agents keep the tools they were given. A skill named after a built-in one replaces it. Scripts are never stored or run, and an uploaded skill's text becomes instructions the model follows — upload only skills you trust.</p>
+              </section>
+            </div>
           </div>
-          <p class="agent-form__note">Notify me when an agent replies while I'm away — a push to this device (a scheduled prompt or an agent-run reply). Granted per device from your browser.</p>
-        </section>
+        </div>
       </div>
 
-      <div class="agent-form__panel" role="tabpanel" id="panelTools" aria-labelledby="tabTools" hidden>
-        <section class="agent-form__section">
-          <span class="agent-form__label">// default tools</span>
-          <div class="tools-checks" id="profileToolChecks"></div>
-          <p class="agent-form__note">The default tools for every new regular chat. You can still change tools inside a chat.</p>
-        </section>
-      </div>
-
-      <div class="agent-form__panel" role="tabpanel" id="panelProviders" aria-labelledby="tabProviders" hidden>
-        <section class="agent-form__section">
-          <label class="agent-form__field">
-            <span class="agent-form__label">// default model</span>
-            <!-- Options (incl. the leading blank "First available") are built by syncDefaultModelSelect();
-                 fillModelOptions() clears innerHTML, so a static option here would be wiped on first paint. -->
-            <select class="agent-form__input agent-form__select" id="defaultModelSelect"></select>
-          </label>
-          <p class="agent-form__note">The model every new chat starts on. Saved as you pick it. Chats you already started keep the model they are on.</p>
-        </section>
-
-        <section class="agent-form__section">
-          <label class="agent-form__field">
-            <span class="agent-form__label">// default embedding model</span>
-            <!-- Options are built by syncEmbeddingModelSelect() from the models a provider marks as embedding
-                 models. Empty until one is configured; without it you cannot attach documents. -->
-            <select class="agent-form__input agent-form__select" id="embeddingModelSelect"></select>
-          </label>
-          <p class="agent-form__note">The model that powers document Q&amp;A (RAG). Mark a model as an embedding model on its provider, then pick it here. Without one you cannot attach documents. Must produce 3072-dimension vectors; changing it means re-uploading existing documents.</p>
-        </section>
-
-        <section class="agent-form__section">
-          <label class="agent-form__field">
-            <span class="agent-form__label">// default speech model</span>
-            <!-- Options are built by syncSpeechModelSelect() from the models a provider marks as speech
-                 models (ADR 0038). Empty until one is configured; with none, voice replies use the browser voice. -->
-            <select class="agent-form__input agent-form__select" id="speechModelSelect"></select>
-          </label>
-          <p class="agent-form__note">The voice that speaks replies in hands-free voice mode. Mark a text-to-speech model as a speech model on its provider, then pick it here. Without one, the browser's own voice is used. Picking one sends the reply text outside the tenant.</p>
-        </section>
-
-        <section class="agent-form__section">
-          <div class="providers__head">
-            <span class="agent-form__label">// model providers</span>
-            <button class="agent-form__btn" type="button" id="addProviderBtn">Add provider</button>
-          </div>
-          <ul class="providers__list" id="providerList"></ul>
-          <p class="agent-form__note">Add an OpenAI-compatible endpoint (Ollama, vLLM…) or another Foundry account. Changes take effect on your next new chat — no restart. Picking a third-party model sends your conversation outside the tenant.</p>
-        </section>
-      </div>
-
-      <div class="agent-form__panel" role="tabpanel" id="panelMcp" aria-labelledby="tabMcp" hidden>
-        <section class="agent-form__section">
-          <div class="providers__head">
-            <span class="agent-form__label">// MCP servers</span>
-            <button class="agent-form__btn" type="button" id="addMcpServerBtn">Add server</button>
-          </div>
-          <ul class="providers__list" id="mcpServerList"></ul>
-          <!-- The OAuth return has no dialog open, so the tab needs its own result line (ADR 0064). It sits
-               OUTSIDE #mcpServerList deliberately: renderMcpServers() clears that list's innerHTML and
-               openProfileDialog() calls loadMcpServers() un-awaited, so a result rendered inside it would be
-               wiped by the in-flight render. -->
-          <p class="agent-form__note" id="mcpTabResult" hidden></p>
-          <p class="agent-form__note">Add a remote MCP server to give the agent its tools. Enable the "MCP servers" tool to use them. Changes take effect on your next new chat — no restart. An MCP server sees your conversation and its tool results can inject instructions — add only servers you trust.</p>
-        </section>
-      </div>
-
-      <div class="agent-form__panel" role="tabpanel" id="panelConfig" aria-labelledby="tabConfig" hidden>
-        <section class="agent-form__section">
-          <div class="providers__head">
-            <span class="agent-form__label">// configuration health</span>
-            <button class="agent-form__btn" type="button" id="runConfigProbesBtn">Run live checks (billable)</button>
-          </div>
-          <div class="config-health" id="configHealthList"></div>
-          <!-- The proxied SearXNG web UI (ADR 0059). Lives here in the markup so it is part of the cached
-               shell, but confighealth.js moves it onto the "SearXNG reachability" row when that check is
-               rendered, so it sits beside the signal it complements. Opens in a new tab: on the installed
-               Android PWA the manifest scope is "/" so that tab is the standalone window itself, and the
-               back gesture returns to the chat. -->
-          <a class="config-health__link" id="searxngUiLink" href="/searxng/" target="_blank" rel="noopener">Open search UI &rarr;</a>
-          <p class="agent-form__note">Which configuration inputs are set, malformed, or (with live checks) unreachable. Read-only, and never shows a secret value. Live checks for geocoding and page scraping cost a metered call, so they run only on demand.</p>
-        </section>
-      </div>
-
-      <div class="agent-form__panel" role="tabpanel" id="panelSkills" aria-labelledby="tabSkills" hidden>
-        <section class="agent-form__section">
-          <div class="providers__head">
-            <span class="agent-form__label">// uploaded skills</span>
-            <button class="agent-form__btn" type="button" id="addSkillBtn">Upload skill</button>
-          </div>
-          <!-- The real file picker; the button above clicks it, so the control matches every other
-               "Add …" button in this dialog instead of being a stray file input. -->
-          <input type="file" id="skillFile" accept=".md,.zip" hidden>
-          <ul class="providers__list" id="skillList"></ul>
-          <p class="agent-form__note" id="skillStatus" hidden></p>
-          <p class="agent-form__note">Upload a SKILL.md, or a .zip of skill folders with bundled reference files. Enable a skill in the Tools tab to use it. Changes take effect on your next new chat — no restart, and existing chats and agents keep the tools they were given. A skill named after a built-in one replaces it. Scripts are never stored or run, and an uploaded skill's text becomes instructions the model follows — upload only skills you trust.</p>
-        </section>
-      </div>
-
-      <div class="agent-form__actions">
-        <button class="agent-form__btn" type="button" id="profileCancelBtn">Cancel</button>
-        <button class="agent-form__btn agent-form__btn--primary" type="submit" id="profileSaveBtn">Save</button>
-      </div>
+      <!-- "All changes saved" is observable on OPEN and after a reset, never as a post-save confirmation:
+           saveProfile() closes the dialog. The line's job is to warn that edits are pending. It is wired to
+           the four Save-persisted fields ONLY — the three model selects and all provider/MCP/skill CRUD
+           persist immediately, so a form-level listener would claim "Unsaved changes" for a pick that is
+           already stored. -->
+      <footer class="prefs__footer">
+        <span class="prefs__status" id="prefsStatus">All changes saved</span>
+        <div class="agent-form__actions">
+          <button class="agent-form__btn" type="button" id="profileCancelBtn">Cancel</button>
+          <button class="agent-form__btn agent-form__btn--primary" type="submit" id="profileSaveBtn">Save changes</button>
+        </div>
+      </footer>
     </form>
   </dialog>
 

@@ -166,8 +166,9 @@ public sealed class McpServersAssetsTests
 
         Assert.Contains("export function clearMcpTabResult()", app);
         // Called synchronously from openProfileDialog, so it cannot race the un-awaited loadMcpServers().
-        var profileStart = app.IndexOf("export async function openProfileDialog()", StringComparison.Ordinal);
-        var profileBody = app[profileStart..(profileStart + 1200)];
+        // The whole function body, not a fixed-width window off its declaration: a window silently turns
+        // "the second call is missing" and "the function grew past N characters" into the same failure.
+        var profileBody = StaticAssetsServerFixture.Body(app, "export async function openProfileDialog()");
         Assert.True(
             profileBody.IndexOf("clearMcpTabResult()", StringComparison.Ordinal)
             < profileBody.IndexOf("loadMcpServers()", StringComparison.Ordinal),

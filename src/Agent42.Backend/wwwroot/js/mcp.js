@@ -1,7 +1,7 @@
 /* Agent 42 — remote MCP servers (ADR 0024/0025/0026), incl. the connection test (ADR 0064). Split out of app.js (ADR 0041). */
 
 import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpConnectBtn, mcpDialog, mcpEnabledInput, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpScopesField, mcpScopesInput, mcpServerList, mcpTabResult, mcpTestBtn, mcpTestResult, profileTabs } from "./dom.js";
-import { openProfileDialog } from "./profile.js";
+import { enterPrefsDetail, openProfileDialog } from "./profile.js";
 import { refreshToolCatalog } from "./tools.js";
 
 // The user's own remote MCP servers (config-driven remote MCP servers), fetched masked (hasHeaderValue,
@@ -314,6 +314,9 @@ export async function initMcpOAuthReturn() {
   }
   await openProfileDialog();
   profileTabs.select(3); // the MCP servers tab
+  // ...and on a phone, drill INTO it: the rail is the list view, so select(3) alone leaves the user
+  // looking at the section list with MCP merely marked active behind it. Above 760px this is inert.
+  enterPrefsDetail(3);
 
   // "Connected" should mean "connected AND reachable", so auto-test the server the callback named (ADR
   // 0064). Into the TAB's result line — there is no dialog open on the OAuth return.

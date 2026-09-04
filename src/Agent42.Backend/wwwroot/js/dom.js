@@ -71,6 +71,16 @@ export const profileLanguage = document.getElementById("profileLanguage");
 export const profileTheme = document.getElementById("profileTheme");
 export const profileSuggest = document.getElementById("profileSuggest");
 export const profileCancelBtn = document.getElementById("profileCancelBtn");
+// The rail + drill-down shell. #profileNav is the element carrying role="tablist" — the rail click is
+// delegated there rather than bound per tab, because the inline SVG icons mean e.target is usually a
+// <path>. The back/detail-title pair and the × are the mobile chrome; the status line and the Tools
+// badge are wired in profile.js.
+export const profileNav = document.getElementById("profileNav");
+export const prefsCloseBtn = document.getElementById("prefsCloseBtn");
+export const prefsBackBtn = document.getElementById("prefsBackBtn");
+export const prefsDetailTitle = document.getElementById("prefsDetailTitle");
+export const prefsStatus = document.getElementById("prefsStatus");
+export const toolsCount = document.getElementById("toolsCount");
 export const locationEnableBtn = document.getElementById("locationEnableBtn");
 export const locationStatus = document.getElementById("locationStatus");
 export const pushSection = document.getElementById("pushSection");
