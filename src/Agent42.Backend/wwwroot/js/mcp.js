@@ -1,6 +1,6 @@
-/* Agent 42 — remote MCP servers (ADR 0024/0025/0026). Split out of app.js (ADR 0041). */
+/* Agent 42 — remote MCP servers (ADR 0024/0025/0026), incl. the connection test (ADR 0064). Split out of app.js (ADR 0041). */
 
-import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpDialog, mcpEnabledInput, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpScopesField, mcpScopesInput, mcpServerList, profileTabs } from "./dom.js";
+import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpDialog, mcpEnabledInput, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpScopesField, mcpScopesInput, mcpServerList, mcpTabResult, mcpTestBtn, mcpTestResult, profileTabs } from "./dom.js";
 import { openProfileDialog } from "./profile.js";
 import { refreshToolCatalog } from "./tools.js";
 
@@ -105,6 +105,11 @@ function openMcpDialog(server) {
   editingMcpId = server?.id ?? null;
   mcpFormTitle.textContent = server ? "Edit MCP server" : "New MCP server";
   mcpError.hidden = true;
+  // Clear BOTH result lines, or server A's verdict renders under server B's form. The tab line is cleared
+  // here too because the dialog is the other way into it.
+  clearTestResult(mcpTestResult);
+  clearTestResult(mcpTabResult);
+  syncMcpTestBtn();
   mcpNameInput.value = server?.name ?? "";
   mcpEndpointInput.value = server?.endpoint ?? "";
   mcpEnabledInput.checked = server?.enabled ?? true;
@@ -116,9 +121,66 @@ function openMcpDialog(server) {
   mcpClientSecretInput.value = ""; // never prefilled — write-only (blank = keep on edit)
   mcpScopesInput.value = (server?.scopes ?? []).join(" ");
   syncMcpAuthUi();
+  mcpCancelBtn.textContent = "Cancel"; // a previous save may have relabelled it to Close
 
   mcpDialog.showModal();
   mcpNameInput.focus();
+}
+
+// An unsaved server has no id, and the endpoint takes a STORED id (a blank secret means "keep", which
+// cannot be resolved from an unsaved form) — so Test is only available once the server exists.
+function syncMcpTestBtn() {
+  mcpTestBtn.disabled = !editingMcpId;
+  mcpTestBtn.title = editingMcpId ? "Connect to this server and list its tools" : "Save the server first";
+}
+
+function clearTestResult(target) {
+  target.hidden = true;
+  target.textContent = "";
+  target.classList.remove("agent-form__note--ok", "agent-form__note--error");
+}
+
+// ONE renderer, two targets (the dialog line and the MCP tab line): the OAuth return has no dialog open, so
+// the tab needs its own. Deliberately NOT solved by opening the edit dialog on the OAuth return — landing a
+// user in an edit form after signing in is a non-sequitur.
+function renderTestResult(target, outcome) {
+  target.hidden = false;
+  target.classList.toggle("agent-form__note--ok", outcome.ok);
+  target.classList.toggle("agent-form__note--error", !outcome.ok);
+  if (!outcome.ok) {
+    target.textContent = `✗ ${outcome.reason}`;
+    return;
+  }
+  const names = (outcome.toolNames ?? []).join(", ");
+  target.textContent = outcome.toolCount > 0
+    ? `✓ ${outcome.reason} — ${outcome.toolCount} tool${outcome.toolCount === 1 ? "" : "s"}: ${names}`
+    : `✓ ${outcome.reason}`;
+}
+
+// Tests one STORED server and renders the verdict into `target`. A reachable-but-failing test is a 200 with
+// ok:false — the request succeeded and the diagnosis IS the payload — so only a non-ok response is a
+// transport/plumbing problem.
+async function testMcpServer(id, target) {
+  target.hidden = false;
+  target.classList.remove("agent-form__note--ok", "agent-form__note--error");
+  target.textContent = "testing…";
+  let outcome;
+  try {
+    const res = await fetch(`/api/mcp-servers/${encodeURIComponent(id)}/test`, { method: "POST" });
+    if (!res.ok) {
+      renderTestResult(target, { ok: false, reason: (await res.text()) || "Could not test this server." });
+      return;
+    }
+    outcome = await res.json();
+  } catch {
+    renderTestResult(target, { ok: false, reason: "Could not reach Agent 42 to run the test." });
+    return;
+  }
+  renderTestResult(target, outcome);
+  // A successful test RECORDS the discovered names, so the per-tool checkboxes appear without waiting for a
+  // chat activation (ADR 0058's cold start). No-op for a DISABLED server: GET /api/tools emits a descriptor
+  // only per management-enabled server.
+  if (outcome.ok) await refreshToolCatalog();
 }
 
 async function saveMcpServer() {
@@ -158,11 +220,25 @@ async function saveMcpServer() {
       mcpError.hidden = false;
       return;
     }
+    const saved = await res.json();
+    // POST ALWAYS INSERTS (the id is server-minted), and this dialog now STAYS OPEN after a save — so it
+    // must flip into edit mode on the id we just got back. Miss this and a second Save silently creates a
+    // duplicate server. There is no server-side guard; this line is the whole defence.
+    editingMcpId = saved.id ?? editingMcpId;
+    syncMcpTestBtn();
   } catch { return; /* silo may be unreachable; leave the dialog open */ }
 
-  mcpDialog.close();
+  // The dialog stays open so the auto-test below has somewhere to report. Cancel becomes Close: the save
+  // already happened, so "Cancel" would misdescribe what the button does.
+  mcpCancelBtn.textContent = "Close";
   await loadMcpServers();
+  // UNCONDITIONAL, and it must stay that way (ADR 0026): a save whose auto-test then FAILS must still update
+  // the pickers, because the server's own checkbox is driven by the save, not by reachability. Do not move
+  // this inside the test's success branch.
   await refreshToolCatalog(); // the added/edited server must (dis)appear in the tool pickers (ADR 0026)
+  // Tell the user straight away whether what they just saved actually works (ADR 0064) — the point of the
+  // feature is that a typo'd host stops saving cleanly and silently.
+  if (editingMcpId) await testMcpServer(editingMcpId, mcpTestResult);
 }
 
 async function deleteMcpServer(id) {
@@ -186,12 +262,20 @@ export async function initMcpOAuthReturn() {
   }
   await openProfileDialog();
   profileTabs.select(3); // the MCP servers tab
+
+  // "Connected" should mean "connected AND reachable", so auto-test the server the callback named (ADR
+  // 0064). Into the TAB's result line — there is no dialog open on the OAuth return.
+  const serverId = params.get("serverId");
+  if (result === "connected" && serverId) await testMcpServer(serverId, mcpTabResult);
 }
 
 export function wireMcp() {
   addMcpServerBtn.addEventListener("click", () => openMcpDialog(null));
   mcpAuthSelect.addEventListener("change", syncMcpAuthUi);
   mcpCancelBtn.addEventListener("click", () => mcpDialog.close());
+  mcpTestBtn.addEventListener("click", () => {
+    if (editingMcpId) testMcpServer(editingMcpId, mcpTestResult);
+  });
   mcpForm.addEventListener("submit", (e) => {
     e.preventDefault();
     saveMcpServer();

@@ -124,6 +124,10 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/dashboard")]
     [InlineData("/dashboard/")]
     [InlineData("/dashboard/index.min.js")]
+    // The MCP connection test (ADR 0064) is the one management route that opens a socket, and it dials the
+    // signed-in user's OWN stored server with that user's decrypted secrets — so it must stay behind Easy
+    // Auth, or an anonymous caller would resolve to the local-dev principal and probe their servers.
+    [InlineData("/api/mcp-servers/test-id/test")]
     public void Exclusions_DoNotCoverAnyAuthenticatedPath(string path)
     {
         var entries = ExcludedPaths();

@@ -426,6 +426,11 @@
             <button class="agent-form__btn" type="button" id="addMcpServerBtn">Add server</button>
           </div>
           <ul class="providers__list" id="mcpServerList"></ul>
+          <!-- The OAuth return has no dialog open, so the tab needs its own result line (ADR 0064). It sits
+               OUTSIDE #mcpServerList deliberately: renderMcpServers() clears that list's innerHTML and
+               openProfileDialog() calls loadMcpServers() un-awaited, so a result rendered inside it would be
+               wiped by the in-flight render. -->
+          <p class="agent-form__note" id="mcpTabResult" hidden></p>
           <p class="agent-form__note">Add a remote MCP server to give the agent its tools. Enable the "MCP servers" tool to use them. Changes take effect on your next new chat — no restart. An MCP server sees your conversation and its tool results can inject instructions — add only servers you trust.</p>
         </section>
       </div>
@@ -683,8 +688,15 @@
 
       <p class="agent-form__error" id="mcpError" hidden></p>
 
+      <!-- Connection test result (ADR 0064). Distinct from #mcpError: that reports a failed SAVE, this
+           reports what the server said when we dialled it, and both can be relevant at once. -->
+      <p class="agent-form__note" id="mcpTestResult" hidden></p>
+
       <div class="agent-form__actions">
         <button class="agent-form__btn" type="button" id="mcpCancelBtn">Cancel</button>
+        <!-- type="button" is load-bearing: inside a <form>, the default type is "submit", so a Test press
+             would silently SAVE the server as well. -->
+        <button class="agent-form__btn" type="button" id="mcpTestBtn">Test</button>
         <button class="agent-form__btn agent-form__btn--primary" type="submit" id="mcpSaveBtn">Save</button>
       </div>
     </form>

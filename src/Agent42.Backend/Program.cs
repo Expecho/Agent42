@@ -183,6 +183,15 @@ builder.Services.AddSingleton<IMcpSecretProtector, McpSecretProtector>();
 // gated by the ToolCatalog.Mcp key (ADR 0021).
 builder.Services.AddSingleton<IMcpConnectionFactory, McpConnectionFactory>();
 builder.Services.AddSingleton<IUserMcpToolProvider, UserMcpToolProvider>();
+// The InteractiveOAuth access-token resolution shared by the activation path above and the user-pressed
+// connection test below (ADR 0064). Extracted so the test cannot false-negative on a server the chat path
+// connects to fine: there is exactly one implementation of the refresh-at-connect rule.
+builder.Services.AddSingleton<McpOAuthTokenResolver>();
+// The one-shot connection probe behind POST /api/mcp-servers/{id}/test. Resolved OPTIONALLY out of
+// IServiceProvider inside the endpoint handler (the /api/speech pattern), so a host without an
+// IMcpConnectionFactory — DevHost's real shape before its offline fake — degrades to a curated 503 instead
+// of breaking route matching for the whole host.
+builder.Services.AddSingleton<McpConnectionTester>();
 // Uploaded agent skills (ADR 0049). The two registrations are NOT equivalent, and the asymmetry is
 // deliberate: IUserSkillProvider is an AgentGrain constructor dependency, so it is MANDATORY in every
 // host that activates the grain (the IUserMcpToolProvider / IPushNotificationSender shape — miss it and

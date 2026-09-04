@@ -20,8 +20,13 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
     // never called for those, so a bare HttpClient stands in.
     private readonly McpOAuthClient _oauth = new(new HttpClient());
 
+    // The token resolver is a collaborator since it was extracted for McpConnectionTester to share (ADR 0064);
+    // its behaviour is unchanged, so these tests still own the provider's end of it.
+    private McpOAuthTokenResolver NewTokenResolver(McpOAuthClient? oauth = null) =>
+        new(Cluster.GrainFactory, _protector, oauth ?? _oauth, NullLogger<McpOAuthTokenResolver>.Instance);
+
     private UserMcpToolProvider NewProvider() =>
-        new(Cluster.GrainFactory, _connections, _protector, _oauth, NullLogger<UserMcpToolProvider>.Instance);
+        new(Cluster.GrainFactory, _connections, _protector, NewTokenResolver(), NullLogger<UserMcpToolProvider>.Instance);
 
     private StoredMcpServer HeaderServer(string id, string plaintextSecret = "plain-secret") => new(
         Id: id,
@@ -164,7 +169,7 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
             Cluster.GrainFactory,
             new McpConnectionFactory(NullLoggerFactory.Instance),
             _protector,
-            _oauth,
+            NewTokenResolver(),
             NullLogger<UserMcpToolProvider>.Instance);
 
         var set = await provider.GetForUserAsync("mcp-tp-real-dead");
@@ -218,7 +223,8 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
 
         var oauth = new McpOAuthClient(new HttpClient(new RefreshStubHandler()));
         var provider = new UserMcpToolProvider(
-            Cluster.GrainFactory, _connections, _protector, oauth, NullLogger<UserMcpToolProvider>.Instance);
+            Cluster.GrainFactory, _connections, _protector, NewTokenResolver(oauth),
+            NullLogger<UserMcpToolProvider>.Instance);
 
         var set = await provider.GetForUserAsync("mcp-oauth-refresh");
 
