@@ -464,16 +464,20 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   collector, attributed to them by name. If you enable that flag, scrub or filter `url.full` for the
   geocoding client first. Note this cuts the other way too: any *new* named client whose query string holds
   a secret is protected only by the same default.
-- **And it never redacts the PATH — which is why the calendar client suppresses its span entirely.**
-  Calendar REST v3 puts the calendar id and the event id in the path
-  (`/calendars/{calendarId}/events/{eventId}`), and a calendar id is an **email address** — somebody
-  *else's* for a shared calendar. Combined with the `user.*` stamping above, an unhandled span joins one
-  named human to another named human's calendar in the collector, with no env var needed to "enable" it.
-  `CalendarSpanSuppressingHandler` wraps each send in `SuppressInstrumentationScope.Begin()` (no new
-  package — `OpenTelemetry` comes in transitively). Suppress rather than rewrite: a rewrite has to keep
-  working as URL shapes grow, and timing for a third-party GET does not justify defending that. **Any new
-  client whose PATH carries an identifier needs the same treatment — the query-string default above will
-  not save it.**
+- **And it never redacts the PATH. Any new client whose PATH carries an identifier that names a HUMAN
+  needs its span suppressed — the query-string default above will not save it.** Combined with the
+  `user.*` stamping above, such a span joins one named human to another in the collector, with no env
+  var needed to "enable" it. The technique is `SuppressInstrumentationScope.Begin()` around the send in
+  a `DelegatingHandler` (no new package — `OpenTelemetry` comes in transitively). Suppress rather than
+  rewrite: a rewrite has to keep working as URL shapes grow, and timing for a third-party GET does not
+  justify defending that.
+  **The worked example is gone, and that is worth knowing rather than inferring.** This rule was written
+  for the Google Calendar client, whose Calendar REST v3 paths carry the calendar id — an **email
+  address**, somebody *else's* for a shared calendar. ADR 0063 deleted that client along with the rest
+  of the native calendar integration, so `CalendarSpanSuppressingHandler` no longer exists here. The
+  calendar is reached over MCP now, and the standalone server emits no OpenTelemetry at all — so the
+  concern is **absent** there, not solved there. The rule survives its example; there is currently no
+  client in this repo that needs it.
   **One recorded exception, ADR 0056:** the Hindsight memory client puts the bank id in its path
   (`/v1/default/banks/{bankId}/…`) and is deliberately **not** suppressed. The rule above is about an
   identifier that names a *human* — a calendar id is somebody's email address. A Hindsight bank id is the
@@ -483,9 +487,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   client against *that* test — does the path name a person — rather than against the literal wording.
 - **Evidence:** `src/Agent42.ServiceDefaults/Extensions.cs` (`AddHttpClientInstrumentation`),
   `src/Agent42.Backend/Telemetry/UserTelemetrySpanProcessor.cs`, `src/Agent42.Backend/Location/GoogleGeocoder.cs`,
-  `src/Agent42.Backend/Calendar/CalendarSpanSuppressingHandler.cs`,
-  `tests/Agent42.Tests/GoogleCalendarServiceTests.cs` (`CalendarSpan_DoesNotCarryTheCalendarIdInThePath`)
-- **Verified:** 2026-08-26
+  `src/Agent42.Agents/Memory/HindsightIntegration.cs` (the recorded exception),
+  `.agentic/decisions/0063-calendar-extracted-to-standalone-mcp-server.md` (why the worked example is gone)
+- **Verified:** 2026-09-04
 
 ### The usage dashboard counts tokens from `chat` spans ONLY — `orchestrate_tools` is the summed parent
 
@@ -1351,7 +1355,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   do not "complete" the map by inventing one. **(b) It is EXEMPT from the selection ∩ capability
   intersection** that `ToolCatalog`'s docstring otherwise states universally — see the
   `AgentSkillsProvider` is a TOOL entry for the three-way table. It also lands **OFF for anyone who ever
-  pressed Save**, the ADR 0048/0053 divergence, with no migration — and on agent chats there is **no
+  pressed Save**, the ADR 0048 divergence, with no migration — and on agent chats there is **no
   in-UI remedy at all** (`BindAgentAsync` always materialises, a re-bind returns early, and the popover
   is hidden on agent chats), which is accepted and documented rather than fixed.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`[Id(10)] EnabledTools`),
@@ -2098,39 +2102,6 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ProjectLayoutTests.cs` (`ExpectedFolders`),
   `.agentic/decisions/0049-upload-agent-skills.md`
 - **Verified:** 2026-08-25
-
-### A Google Calendar connection dies SILENTLY in three ways, and none of them errors at connect time
-
-- **Claim:** the calendar tools (ADR 0053) fail by going *quiet*, not by throwing, so all three of these
-  look identical to the user — the assistant simply says it is not connected — and none is visible in a
-  test:
-  1. **A missing `access_type=offline` or `prompt=consent`** on the authorization URL. Google then
-     returns **no refresh token** on a re-consent. The connect flow reports success and the calendar
-     stops answering roughly **an hour later**, at the first access-token expiry. Both parameters are
-     pinned by `AuthorizationUrl_RequestsOfflineAccessAndConsent`, and the callback additionally refuses
-     a token response that carried no refresh token — reporting failure now beats a success that
-     evaporates.
-  2. **The OAuth consent screen left in *Testing* status** (External user type). Google revokes every
-     refresh token after **7 days**. This is entirely outside the repo — no code change can detect or
-     fix it — and the symptom is a connection that worked all week and died on the same weekday. It is
-     step 2 of `docs/integrations/google-calendar/README.md` for that reason.
-  3. **A Data Protection key ring that is not persisted out of process.** `GoogleSecretProtector.Unprotect`
-     **swallows** `CryptographicException` and returns null (deliberately — a throw would cost the user
-     their whole turn), so after a restart with a rotated ring every stored refresh token is
-     undecryptable and every user reads as *not connected*. The `dataprotection` blob container (ADR
-     0018) is what keeps this from happening; the only trace is a `LogWarning` naming the cause.
-
-  Related, and the same class of trap in the other direction: the config section is `GoogleCalendar:*`
-  while the routes are `/api/google/*`. That asymmetry is **deliberate** — `Geocoding:GoogleApiKey`
-  already exists, and two differently-scoped "Google" keys adjacent in `appsettings.json` is how an
-  operator pastes the wrong secret; the routes stay provider-named because the redirect URI is a
-  hand-registered constant in Google Cloud. Renaming the routes means re-registering it by hand.
-- **Evidence:** `src/Agent42.Backend/Calendar/GoogleOAuth.cs` (`BuildAuthorizationUrl`),
-  `src/Agent42.Backend/Calendar/AgentApi.Calendar.cs` (the `no_refresh_token` refusal),
-  `src/Agent42.Backend/Calendar/GoogleSecretProtector.cs`,
-  `docs/integrations/google-calendar/README.md`,
-  `.agentic/decisions/0053-google-calendar-tools.md`
-- **Verified:** 2026-08-26
 
 ### `LogRecord` is POOLED — retaining one in a `BaseProcessor` silently corrupts the buffer
 

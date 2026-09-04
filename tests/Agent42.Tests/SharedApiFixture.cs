@@ -23,9 +23,9 @@ namespace Agent42.Tests;
 /// <see cref="PushConfig"/> from <c>/api/push/config</c>, and needs values the other seven classes do not.
 /// A union host could technically adopt one class's values for everyone — no other class asserts on either
 /// today — but that leaves every host silently carrying one class's expectations, with no way to express a
-/// second class wanting different ones. The OAuth fixtures are the same shape: a fake token endpoint and a
-/// connection-aware calendar double are behaviour, not filler, and forcing them on every host makes each
-/// host's contents a question rather than a statement.
+/// second class wanting different ones. The OAuth fixtures are the same shape: a fake token endpoint is
+/// behaviour, not filler, and forcing it on every host makes each host's contents a question rather than
+/// a statement.
 ///
 /// A subclass per class keeps each host's registrations exactly what that class asked for, and costs no
 /// extra deploys: xUnit gives every class its own fixture instance regardless of the fixture type. This is
@@ -92,8 +92,8 @@ public class SharedApiFixture : SharedClusterFixture
         services.AddSingleton<IMcpSecretProtector>(new McpSecretProtector(
             new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
         // /api/mcp/oauth/start takes McpOAuthClient as a HANDLER parameter, so it is mandatory for every
-        // host — the calendar endpoints resolve their own dependencies through IServiceProvider precisely
-        // to avoid adding to this list (ADR 0053).
+        // host — /api/speech and /api/config-health resolve their own dependencies through IServiceProvider
+        // precisely to avoid adding to this list.
         services.AddSingleton(new McpOAuthClient(new HttpClient()));
         services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
         // /api/models is user-scoped (ADR 0018); the single static catalog stands in for every user.

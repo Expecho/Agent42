@@ -27,55 +27,28 @@ public class ToolCatalogTests
         Assert.DoesNotContain(ToolCatalog.Descriptors, d => d.Key == ToolCatalog.Skills);
     }
 
-    // ── Calendar (ADR 0053) ─────────────────────────────────────────────────────────────────────────
+    // ── Calendar is GONE (ADR 0063, supersedes 0053) ────────────────────────────────────────────────
 
-    [Fact] // AC10 — one key gates all six calendar tools, and it IS a rendered checkbox (unlike the wildcards).
-    public void Calendar_IsSelectable_AndGatesItsTools()
-    {
-        Assert.Contains(ToolCatalog.Calendar, ToolCatalog.AllSelectableToolKeys);
-        Assert.Contains(ToolCatalog.Descriptors, d => d.Key == ToolCatalog.Calendar);
-        Assert.False(
-            ToolCatalog.Descriptors.Single(d => d.Key == ToolCatalog.Calendar).RequiresHostedTools,
-            "The calendar tools are ordinary function tools — they do not need a hosted-tools model.");
-
-        string[] tools =
-        [
-            "list_calendars", "list_calendar_events", "get_calendar_event",
-            "create_calendar_event", "update_calendar_event", "delete_calendar_event",
-        ];
-
-        var off = new HashSet<string>(ToolCatalog.AllSelectableToolKeys.Where(k => k != ToolCatalog.Calendar));
-        var on = new HashSet<string>(ToolCatalog.AllSelectableToolKeys);
-
-        foreach (var tool in tools)
-        {
-            Assert.Equal(ToolCatalog.Calendar, ToolCatalog.KeyFor(tool));
-            Assert.False(ToolCatalog.IsToolEnabled(tool, off), $"{tool} must be gated by the calendar key.");
-            Assert.True(ToolCatalog.IsToolEnabled(tool, on), $"{tool} must be enabled by the calendar key.");
-        }
-    }
-
-    // AC17. Derived decision (l), stated as a test because the behaviour looks like a bug and is not:
-    // `null == all` only helps a user who has NEVER narrowed a selection. The picker materialises "all"
-    // as the full EXPLICIT list, so anyone who has ever pressed Save in Preferences → Tools holds a
-    // non-null selection that cannot contain `calendar` — the key did not exist when they saved. There is
-    // deliberately no migration; the remedy is one more press of Save, and it is documented.
+    // AC15. The six tools moved to a standalone MCP server outside this repo, so nothing here may still
+    // claim to gate them. This is deliberately an assertion about the CATALOG, not about the deleted
+    // folders: ProjectLayoutTests already pins the folder sets, and a branch that deleted both Calendar/
+    // folders while leaving the six ToolNameToKey rows or the `calendar` descriptor behind would satisfy
+    // every structural criterion in this suite and still ship a key that gates nothing. The calendar is
+    // reached now the way any other remote MCP server is (ADR 0024), under its own `mcp:{id}` key.
     [Fact]
-    public void LegacyStoredSelection_DoesNotEnableCalendar_ButNullDoes()
+    public void CalendarKeyAndItsToolNames_AreGoneFromTheCatalog()
     {
-        // What a Save looked like BEFORE this feature shipped: every key that existed then, explicitly.
-        var legacy = new HashSet<string>(
-            ["web_search", "location", "scheduling", "skills", "code_interpreter", "mcp"]);
+        Assert.DoesNotContain("calendar", ToolCatalog.AllSelectableToolKeys);
+        Assert.DoesNotContain(ToolCatalog.Descriptors, d => d.Key == "calendar");
 
-        Assert.False(
-            ToolCatalog.IsToolEnabled("list_calendar_events", legacy),
-            "A selection saved before the calendar key existed cannot contain it — that is the ADR 0048 "
-                + "divergence, and it is why the MR says to press Save once after deploying.");
-
-        // …while a user who never narrowed anything resolves through the null == all fallback and DOES
-        // get it. Both halves matter: the first is the trap, the second is why there is no migration.
-        var never = new HashSet<string>(ToolCatalog.AllSelectableToolKeys);
-        Assert.True(ToolCatalog.IsToolEnabled("list_calendar_events", never));
+        foreach (var tool in new[]
+                 {
+                     "list_calendars", "list_calendar_events", "get_calendar_event",
+                     "create_calendar_event", "update_calendar_event", "delete_calendar_event",
+                 })
+        {
+            Assert.Null(ToolCatalog.KeyFor(tool));
+        }
     }
 
     // ── Long-term memory (ADR 0057) ─────────────────────────────────────────────────────────────────
@@ -91,10 +64,10 @@ public class ToolCatalogTests
     // it would stay green if someone added ["recall_memory"] = Memory. The "owns no entry" property is
     // not assertable through the public surface; it is held by the docstring on the const and by review.
     //
-    // The no-migration half is NOT asserted here on purpose. Memory owns no tool name, so the shape of
-    // LegacyStoredSelection_DoesNotEnableCalendar_ButNullDoes above degenerates into asserting that a
-    // hardcoded literal set lacks a string — a tautology over test data, not over the feature. It is
-    // proved at grain level instead, by LegacyAgentSnapshot_DoesNotEnableMemory.
+    // The no-migration half is NOT asserted here on purpose. Memory owns no tool name, so a catalog-level
+    // version of it degenerates into asserting that a hardcoded literal set lacks a string — a tautology
+    // over test data, not over the feature. (The calendar key's equivalent test lived here until ADR 0063
+    // deleted that key.) It is proved at grain level instead, by LegacyAgentSnapshot_DoesNotEnableMemory.
     [Fact]
     public void Memory_IsSelectable_AndAppearsInDescriptors()
     {

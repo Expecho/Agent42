@@ -183,7 +183,7 @@ public static class SearxngProxy
     /// browser asked for — and reduces it to a root-relative path. Rejecting every absolute value (the
     /// simpler rule) would 502 the single most common redirect in the UI.</para>
     /// <para>Every other absolute value, and anything protocol-relative, is rejected: the app origin
-    /// hosts two OAuth callbacks (<c>/api/mcp/oauth/callback</c>, <c>/api/google/oauth/callback</c>), so
+    /// hosts an OAuth callback (<c>/api/mcp/oauth/callback</c>), so
     /// an open redirector here would not be benign. A genuinely relative value is passed through
     /// untouched: the browser resolves it against the current <c>/searxng/</c> URL, so it stays on our
     /// origin — though note it is <b>not</b> confined to the prefix, since <c>../../foo</c> resolves

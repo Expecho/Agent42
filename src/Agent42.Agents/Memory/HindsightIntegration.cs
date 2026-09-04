@@ -8,7 +8,7 @@ namespace Agent42.Agents;
 /// </summary>
 /// <remarks>
 /// <para>There is deliberately no <c>IMemoryService</c> port and no Backend adapter folder here, unlike
-/// <see cref="IGeocoder"/> or <see cref="ICalendarService"/>. The package's <c>IHindsightClient</c> already
+/// <see cref="IGeocoder"/> or <see cref="IChatSearchIndex"/>. The package's <c>IHindsightClient</c> already
 /// <em>is</em> that seam — it is an interface over the third party, faked in tests exactly as a port would
 /// be — so an Agent42 interface wrapping it would be a second abstraction for the same thing.</para>
 /// <para>The null carries meaning and is the operator's off switch: with no key, <c>BuildAgent</c> attaches

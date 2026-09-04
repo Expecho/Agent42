@@ -87,7 +87,6 @@ public sealed class CapSizedFetcherSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IWebSearch, InMemoryWebSearch>();
             services.AddSingleton<IWebPageFetcher, CapSizedWebPageFetcher>();
             services.AddSingleton<IGeocoder, FakeGeocoder>();
-            services.AddSingleton<ICalendarService, FakeCalendarService>();
             // Long-term memory (ADR 0056) OFF on this silo, deliberately — the NullPushNotificationSender
             // choice above, for the same reason. A recorder would attach a real context provider and put a
             // "## Memories" block into the instructions this silo's session-budget test measures. Still

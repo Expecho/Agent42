@@ -150,19 +150,6 @@ builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
 // fails activation rather than disabling memory.
 builder.Services.AddSingleton(new HindsightIntegration(null));
 
-// Google Calendar offline (ADR 0053): a WORKING canned calendar, not a degraded one — the six tools run
-// end to end and create → list → update → delete really round-trips, with no Google connection and no
-// request leaving the machine. That is the deliberate difference from CoordinatesOnlyGeocoder above:
-// an offline calendar that answered "not connected" would leave the whole tool path unexercised.
-// InMemoryCalendarService is DevHost/tests ONLY and must never be registered by Agent42.Backend.
-builder.Services.AddSingleton<ICalendarService, InMemoryCalendarService>();
-
-// The OAuth half is registered too, so Preferences → Calendar renders and its endpoints answer. With no
-// GoogleCalendar:ClientId/ClientSecret configured, /api/google/status reports configured:false and /start
-// 409s — which is the honest offline behaviour, and the one path that cannot be faked.
-builder.Services.AddSingleton<IGoogleSecretProtector, GoogleSecretProtector>();
-builder.Services.AddSingleton(new GoogleOAuthClient(new HttpClient()));
-
 // Web Push offline (ADR 0028): no VAPID keys, so the no-op sender — the async reply paths run end to end
 // but push nothing. Every AgentGrain host must register an IPushNotificationSender or activation fails, and
 // every host that maps MapAgentApi must register PushConfig or /api/push/config's param inference breaks

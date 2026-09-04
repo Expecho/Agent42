@@ -89,58 +89,6 @@ public sealed class CannedChatClient : IChatClient
             ["query"] = query,
         });
 
-    // ---- Calendar (ADR 0053) --------------------------------------------------------------------
-    //
-    // Offline the calendar tools run against InMemoryCalendarService, which is a WORKING canned
-    // calendar rather than a degraded one — so these four triggers let a DevHost session actually
-    // round-trip create -> list -> update -> delete without a Google connection. The id-bearing calls
-    // read the event id out of the prompt after a marker, which is how a person drives the round-trip
-    // by hand: create, read the id out of the tool chip, paste it into the next message.
-
-    /// <summary>Prompt marker the canned client reads a calendar event id from: "…calendar event {id}".</summary>
-    private const string CalendarEventIdMarker = "calendar event ";
-
-    private static FunctionCallContent BuildListCalendarsCall() =>
-        new("canned-cal-list-1", "list_calendars", new Dictionary<string, object?>());
-
-    private static FunctionCallContent BuildListCalendarEventsCall() =>
-        new("canned-cal-events-1", "list_calendar_events", new Dictionary<string, object?>());
-
-    private static FunctionCallContent BuildCreateCalendarEventCall() =>
-        new("canned-cal-create-1", "create_calendar_event", new Dictionary<string, object?>
-        {
-            ["title"] = "Lunch with Sam",
-            ["start"] = DateTimeOffset.Now.AddHours(2).ToString("O"),
-            ["end"] = DateTimeOffset.Now.AddHours(3).ToString("O"),
-        });
-
-    private static FunctionCallContent BuildUpdateCalendarEventCall(string text) =>
-        new("canned-cal-update-1", "update_calendar_event", new Dictionary<string, object?>
-        {
-            ["eventId"] = EventIdFrom(text),
-            ["title"] = "Lunch with Sam (moved)",
-        });
-
-    private static FunctionCallContent BuildDeleteCalendarEventCall(string text) =>
-        new("canned-cal-delete-1", "delete_calendar_event", new Dictionary<string, object?>
-        {
-            ["eventId"] = EventIdFrom(text),
-        });
-
-    // Everything after the marker up to the next space — the id pasted into the prompt.
-    private static string EventIdFrom(string text)
-    {
-        var at = text.IndexOf(CalendarEventIdMarker, StringComparison.OrdinalIgnoreCase);
-        if (at < 0)
-        {
-            return "";
-        }
-
-        var rest = text[(at + CalendarEventIdMarker.Length)..].Trim();
-        var space = rest.IndexOf(' ');
-        return space < 0 ? rest : rest[..space];
-    }
-
     private static UsageContent BuildUsage(long input, long output) =>
         new(new UsageDetails
         {
@@ -197,34 +145,6 @@ public sealed class CannedChatClient : IChatClient
         if (text.Contains("look up", StringComparison.OrdinalIgnoreCase))
         {
             return BuildWebSearchCall(text);
-        }
-
-        // Calendar (ADR 0053). The two id-bearing triggers come FIRST: their prompts also contain the
-        // word "calendar" and would otherwise be swallowed by the listing trigger below. None of them
-        // contains "cancel" or "remind", so they do not collide with the branches above.
-        if (text.Contains("update calendar event ", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildUpdateCalendarEventCall(text);
-        }
-
-        if (text.Contains("delete calendar event ", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildDeleteCalendarEventCall(text);
-        }
-
-        if (text.Contains("list my calendars", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildListCalendarsCall();
-        }
-
-        if (text.Contains("what's on my calendar", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildListCalendarEventsCall();
-        }
-
-        if (text.Contains("book a meeting", StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildCreateCalendarEventCall();
         }
 
         return null;
