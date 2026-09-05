@@ -1238,11 +1238,17 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         // Five worst-case turns: each fetch returns a full-size (capped) page into the session. Each
         // round also runs the location tool (ADR 0012), whose return value is persisted into the very
         // same item — a new tool that returned Google's raw geocoding response, rather than the budgeted
-        // record, would show up here.
+        // record, would show up here — and read_web_document (ADR 0066), whose excerpts are persisted
+        // the same way. The document turn runs against CapSizedWebDocumentFetcher, so it returns the
+        // largest legal excerpt set (MaxExcerpts full chunks) rather than a token-sized canned one.
         for (var turn = 0; turn < 5; turn++)
         {
             await Chat(agent, "look up the orleans framework");
             await Chat(agent, "read the first result");
+            // A DIFFERENT URL per round: read_web_document is idempotent per URL (ADR 0066), so a fixed
+            // one would ingest once and short-circuit four times, and the document arm would be measuring
+            // a single turn while claiming to measure five.
+            await Chat(agent, $"read the manual at https://example.com/round-{turn}/manual.pdf");
             await ChatAt(agent, "where am i", Dam());
         }
 
@@ -1257,6 +1263,11 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         // Sanity: the pages really are cap-sized, so the ceiling below is a real constraint.
         Assert.True(bytes > WebToolLimits.MaxPageTextLength,
             "the fetched pages should be full-size, or this test proves nothing");
+
+        // Sanity for the document arm (ADR 0066): the cap-sized document's text really is IN the persisted
+        // session, so the ceiling is measuring read_web_document's return and not just the page fetches.
+        // Without this an ingest that silently failed would leave the test green and decorative.
+        Assert.Contains("magrathea-", state.State.SerializedSession!, StringComparison.Ordinal);
 
         // Cosmos hard-caps the item at 2 MB. Five capped fetches (~40 KB of page text) must stay far
         // inside it; 256 KB catches an unbudgeted tool result long before production would.

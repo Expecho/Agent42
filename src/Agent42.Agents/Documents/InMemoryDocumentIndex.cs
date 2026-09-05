@@ -51,7 +51,7 @@ public sealed class InMemoryDocumentIndex : IDocumentIndex
         var scored = new (DocumentChunk Chunk, double Score)[snapshot.Length];
         for (var i = 0; i < snapshot.Length; i++)
         {
-            scored[i] = (snapshot[i].Chunk, CosineSimilarity(queryEmbedding.Span, snapshot[i].Embedding.Span));
+            scored[i] = (snapshot[i].Chunk, VectorSimilarity.Cosine(queryEmbedding.Span, snapshot[i].Embedding.Span));
         }
 
         var ranked = scored
@@ -66,30 +66,5 @@ public sealed class InMemoryDocumentIndex : IDocumentIndex
     {
         Store.TryRemove(ownerKey, out _);
         return Task.CompletedTask;
-    }
-
-    // Cosine similarity in [-1, 1]; higher is more similar. A zero-magnitude vector scores 0
-    // (never ranks), so a degenerate embedding can't poison the ordering.
-    private static double CosineSimilarity(ReadOnlySpan<float> a, ReadOnlySpan<float> b)
-    {
-        if (a.Length != b.Length)
-        {
-            return 0;
-        }
-
-        double dot = 0, magA = 0, magB = 0;
-        for (var i = 0; i < a.Length; i++)
-        {
-            dot += a[i] * b[i];
-            magA += a[i] * a[i];
-            magB += b[i] * b[i];
-        }
-
-        if (magA == 0 || magB == 0)
-        {
-            return 0;
-        }
-
-        return dot / (Math.Sqrt(magA) * Math.Sqrt(magB));
     }
 }

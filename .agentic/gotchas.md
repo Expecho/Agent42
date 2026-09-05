@@ -33,6 +33,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
 | Keyed third-party HTTP client behind an Agents interface | `src/Agent42.Backend/Web/ContextWebPageFetcher.cs`, `src/Agent42.Backend/Location/GoogleGeocoder.cs` | 2026-07-21 |
+| In-container fetch of a MODEL-chosen URL (connect-time SSRF guard + streamed size cap + own deadline) | `src/Agent42.Backend/Web/GuardedDocumentFetcher.cs`, `src/Agent42.Backend/Web/PrivateAddressGuard.cs` | 2026-09-04 |
 
 ## Constraints
 
@@ -148,8 +149,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   one fetch can return the root *plus* up to `MaxFollowedLinks` pages, so the budget that binds is
   `MaxTotalPageTextLength` (across root + followed), not `MaxPageTextLength` alone. Any new tool — or any
   new page added to a fetch result — must count its return payload against this budget.
+  **`read_web_document` (ADR 0066) is the second tool with its own budget class**, in `WebDocumentLimits`:
+  ≤ `MaxExcerpts` excerpts totalling ≤ `MaxReturnTextLength` characters. Note its transport cap
+  (`MaxDownloadBytes`, 10 MB) really is a transport cap — that tool DOES dial the wire — so this file has
+  both kinds again, and they are still different numbers on purpose.
 - **Evidence:** `src/Agent42.Agents/Web/WebToolLimits.cs`,
+  `src/Agent42.Agents/Documents/WebDocumentLimits.cs`,
   `src/Agent42.Agents/Web/AgentGrain.WebTools.cs` (`BuildFetchPayload`),
+  `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs` (`BuildWebDocumentPayload`),
   `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`ExcludeInjectedContextMessages`),
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`, and `ChatCoreAsync`'s
   `SerializeSessionAsync`),
@@ -179,23 +186,44 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0003-snapshot-agent-persona-into-conversation.md`
 - **Verified:** 2026-07-15
 
-### `fetch_web_page` is NO LONGER an SSRF sink — the scrape is made by context.dev, not by us
+### There are TWO web fetch paths with DIFFERENT security models — `fetch_web_page` has no SSRF guard, `read_web_document` does
 
-- **Claim:** this used to be an SSRF sink and had a connect-time `PrivateAddressGuard` in
-  `SocketsHttpHandler.ConnectCallback`. **That is gone** (ADR 0027). `fetch_web_page` no longer opens a
-  socket to the model's URL — it hands the URL to the hosted **context.dev** scrape API, which makes the
-  outbound request. Our container never dials the model-chosen address, so there is no in-container SSRF
-  vector and no guard to place. The only call this path makes is to context.dev's **config-pinned** host
-  (`ContextWebPageFetcher.DefaultBaseAddress`), carrying the URL as a query parameter — an ordinary API
-  call. **Do not reintroduce a `PrivateAddressGuard` here** on the theory that a fetch tool needs one:
-  there is nothing to guard, because the request is not ours. (The allowlist below is a *different*
-  control and stays.) The old direct-fetch code, its guard, its `AngleSharp` HTML→text pass, and their
-  socket-dialling tests were all deleted.
-- **Evidence:** `src/Agent42.Backend/Web/ContextWebPageFetcher.cs`, `src/Agent42.Backend/Program.cs`
-  (the fetch client has **no** `ConfigurePrimaryHttpMessageHandler`),
+- **Claim:** `fetch_web_page` is **not** an SSRF sink and must not grow a guard;
+  `read_web_document` **is** one and its guard is load-bearing. Reading either half alone gets the
+  other wrong, which is why they are one entry.
+  - **`fetch_web_page`** used to dial the model's URL itself and had a connect-time
+    `PrivateAddressGuard` in `SocketsHttpHandler.ConnectCallback`. **That is gone** (ADR 0027): it now
+    hands the URL to the hosted **context.dev** scrape API, which makes the outbound request. Our
+    container never dials the model-chosen address, so there is nothing to guard. The only call this
+    path makes is to context.dev's **config-pinned** host
+    (`ContextWebPageFetcher.DefaultBaseAddress`), carrying the URL as a query parameter — an ordinary
+    API call. **Do not reintroduce a `PrivateAddressGuard` here** on the theory that a fetch tool needs
+    one. `WebPageFetcher`, the `AngleSharp` HTML→text pass and their socket-dialling tests stay deleted.
+  - **`read_web_document`** (ADR 0066) is the opposite, and deliberately so: context.dev returns
+    rendered markdown and **cannot deliver document bytes at all**, so this path fetches **from our own
+    container** — which holds the managed identity Azure IMDS mints Cosmos/Storage/OpenAI tokens for.
+    `PrivateAddressGuard` is therefore restored (verbatim, from the commit that deleted it) and
+    installed at **connect** time on that client's primary handler, so it sees the address actually
+    dialled and covers every redirect hop. ADR 0027's rejected "keep a fallback direct fetch"
+    alternative was **re-adopted on purpose** — the user was asked — because the premise "for no
+    benefit" stopped holding. **A guard that is built, tested and never wired is how this ships
+    green**, so `WebDocumentToolTests` asserts the wiring over `Program.cs` source text; class-level
+    tests cannot see the composition root.
+  - The **whole-URL allowlist** (`AgentGrainState.FetchableUrls`, below) is a *different* control —
+    exfiltration, not SSRF — and applies to **both** paths identically. `read_web_document` has no link
+    following, so it has none of ADR 0027's *opt-in* allowlist-exempt residual — but **do not read that
+    as "the bytes always come from the allowlisted URL"**: `AllowAutoRedirect` is on (5 hops, each one
+    address-guarded), so they may come from a host the allowlist never saw. Mitigated by resolving the
+    media type **and the file name from the final URI**, so hop N's content is never presented under the
+    allowlisted URL's name; `WebDocument.Url` still reports what the model asked for.
+- **Evidence:** `src/Agent42.Backend/Web/ContextWebPageFetcher.cs` (no
+  `ConfigurePrimaryHttpMessageHandler`), `src/Agent42.Backend/Web/GuardedDocumentFetcher.cs` +
+  `src/Agent42.Backend/Web/PrivateAddressGuard.cs`, `src/Agent42.Backend/Program.cs` (both
+  registrations, side by side), `tests/Agent42.Tests/WebDocumentToolTests.cs`
+  (`ProgramCs_WiresTheGuardIntoTheDocumentClientsPrimaryHandler`),
   `.agentic/decisions/0027-hosted-page-scrape-via-context-dev.md`,
-  `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md` (amendment note)
-- **Verified:** 2026-07-21
+  `.agentic/decisions/0066-in-container-document-fetch-for-rag.md`
+- **Verified:** 2026-09-04
 
 ### Following links is exempt from the fetch allowlist — an accepted residual risk, opt-in and hard-capped
 
@@ -262,11 +290,19 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   SSRF guard surfaced as a transient `HttpRequestException` and got re-dialled — but that guard and its
   client are gone.) Note the shipped pipeline (resilience + service discovery) is assembled in `Program.cs`
   and is not what the unit tests construct, so no test will catch this for you.
+  **One extra trap on the document client (ADR 0066):** it reads with
+  `HttpCompletionOption.ResponseHeadersRead` so it can stop at the size cap instead of buffering first,
+  and under that option `HttpClient.Timeout` **stops applying once the headers arrive**. So the explicit
+  timeout does *not* bound the body read, and a slow-drip response would stall the non-reentrant grain
+  indefinitely. `WebDocumentLimits.DownloadDeadline` (a linked `CancellationTokenSource` over the whole
+  download) is what actually bounds it. Do not "simplify" it away as a duplicate of the timeout.
 - **Evidence:** `src/Agent42.ServiceDefaults/Extensions.cs` (`ConfigureHttpClientDefaults`),
-  `src/Agent42.Backend/Program.cs` (`RemoveAllResilienceHandlers` on all three named clients — SearXNG
-  search, the context.dev scrape client (ADR 0027) and the geocoding client (ADR 0012); every new named
-  client needs it)
-- **Verified:** 2026-07-21
+  `src/Agent42.Backend/Program.cs` (`RemoveAllResilienceHandlers` on every named client — SearXNG
+  search, the SearXNG UI proxy (ADR 0059), the context.dev scrape client (ADR 0027), the geocoding
+  client (ADR 0012), the Web Push client (ADR 0028) and the document fetch client (ADR 0066); every new
+  named client needs it), `src/Agent42.Agents/Documents/WebDocumentLimits.cs` (`DownloadDeadline`),
+  `tests/Agent42.Tests/GuardedDocumentFetcherTests.cs` (`Fetch_AbandonsSlowBodyAtDeadline`)
+- **Verified:** 2026-09-04
 
 ### SearXNG is self-hosted, NOT private — it forwards every query to the upstream engines
 
@@ -367,6 +403,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   neither is individually load-bearing in the happy path — but remove **both** and
   `ReceiveReminder_HasNoUserLocation` fails (verified by mutation). Any future per-turn field on this grain
   inherits this trap; PII especially should not sit in memory between turns.
+  **The family is now four:** `_turnLocation`, `_ephemeral`, `_interactiveTurn` and — since ADR 0066 —
+  `_webDocumentIngested`, all declared together and all cleared in the same three places (`ChatAsync`'s
+  `finally`, and on entry to `EnqueuePromptAsync` and `ReceiveReminder`). Keep them together; the reason
+  `ReceiveReminder` lives in the core part rather than under `Scheduling/` is that these clears must be
+  read as one block.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_turnLocation`, the `finally` in `ChatAsync`, the
   clear in `ReceiveReminder`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`ReceiveReminder_HasNoUserLocation`, `Location_IsTurnScoped_AndNotPersisted`),
@@ -390,6 +431,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `GET /messages` reflects it live — the trace-free property only shows up after deactivation (asserted via
   `EphemeralChat_LeavesNoHistory_AfterReactivation`, not an empty `/messages`). Documents are blocked at the
   composer (RAG writes durable chunks); images are allowed (blob bytes persist — accepted, session-only).
+  **`read_web_document` (ADR 0066) follows trap (1) exactly** — an early `if (_ephemeral) return …` inside
+  the tool, for the same reason and with the same ordering argument, and placed **before the fetch** so an
+  incognito turn makes no outbound request either. `ReadWebDocument_RefusedOnEphemeralTurn` also asserts the
+  turn-scoped half (the next normal turn on the same warm activation succeeds). Note the composer's document
+  block is a *client* gate on uploads and does not cover this path at all — the tool is the only gate here.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_ephemeral`; the `finally` in `ChatAsync`; the guards on
   the two `WriteStateAsync` calls in `ChatCoreAsync`/`GenerateImageTurnAsync`; the refusal in
   `SchedulePromptAsync`). **The flag is now split across part files (ADR 0039):** it is declared and
@@ -406,15 +452,19 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists`,
   `EphemeralChat_SchedulingIsRefused_NoReminderRegistered`),
   `tests/Agent42.Tests/AgentApiTests.cs` (`EphemeralChat_IsNotListedInTheSidebar`),
+  `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs` (the `read_web_document` refusal),
+  `tests/Agent42.Tests/WebDocumentToolTests.cs` (`ReadWebDocument_RefusedOnEphemeralTurn`),
   `.agentic/decisions/0034-ephemeral-chat.md`
-- **Verified:** 2026-07-26
+- **Verified:** 2026-09-04
 
 ### `get_current_location` is NOT an SSRF sink — and exactly two properties keep it that way
 
 - **Claim:** it makes an outbound HTTP call from the same container whose managed identity IMDS will mint
   Cosmos/Storage/OpenAI tokens for — the setup that once made a model-chosen fetch URL dangerous — yet it
-  deliberately has **no SSRF address-guard**, and adding one to "fix the asymmetry" would be cargo cult
-  (and there is no longer even a `fetch_web_page` guard to be asymmetric with — ADR 0027). The claim
+  deliberately has **no SSRF address-guard**, and adding one to "fix the asymmetry" would be cargo cult.
+  (There **is** a `PrivateAddressGuard` in the repo again since ADR 0066 — but it belongs to
+  `read_web_document`, whose URL *is* model-supplied. That is the asymmetry working as intended, not an
+  argument for copying it here.) The claim
   rests on two properties, and **both are load-bearing**: (1) the host is **fixed** (`maps.googleapis.com`,
   config-pinned, never model-supplied), and (2) the tool takes **zero model-supplied parameters** — the
   only variable input is a lat/lon pair from the *browser*, range-validated server-side, and a `double`
@@ -1255,8 +1305,86 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `DocumentTextExtractor` serializes every PDF extraction through a single static lock. Do not
   dispose `DocLib.Instance` per call (it frees the native library for the whole process); only the
   `IDocReader`/`IPageReader` are disposed. Fine at per-conversation, synchronous-ingestion scale.
-- **Evidence:** `src/Agent42.Agents/Documents/DocumentTextExtractor.cs` (`PdfLock`)
-- **Verified:** 2026-07-09
+  With `read_web_document` (ADR 0066) a **model-chosen** URL can now reach this lock, and
+  `infra/main.bicep` pins a single replica — so one large PDF blocks every other PDF extraction in the
+  process for its duration. Accepted; `WebDocumentLimits`' byte cap, chunk cap and download deadline are
+  what bound it.
+- **Evidence:** `src/Agent42.Agents/Documents/DocumentTextExtractor.cs` (`PdfLock`),
+  `src/Agent42.Agents/Documents/WebDocumentLimits.cs`
+- **Verified:** 2026-09-04
+
+### A mid-run ingest cannot rebuild the agent — the rebuild is deferred, and there are TWO consume sites
+
+- **Claim:** `read_web_document` (ADR 0066) ingests a document **during** a model run, and two things
+  follow that are each easy to get wrong.
+  1. **It must NOT call `RegisterDocumentAsync`.** That does snapshot → `BuildAgent` → restore, i.e. it
+     swaps `_session` out from under the framework run currently iterating it. Every other call site is
+     an API endpoint *outside* a turn (`AgentApi.Attachments.cs`, `AgentApi.StoredAgents.cs`). The tool
+     sets a turn-scoped `_webDocumentIngested` flag instead and
+     `RebuildForIngestedWebDocumentAsync` runs it after the run completes.
+  2. **That consume site exists TWICE, and missing the second is a silent bug.** `ChatCoreAsync` (after
+     `PersistTurnUnlessEphemeralAsync`) covers the live chat path and `/api/agent-run`, which drains it.
+     **`ReceiveReminder` does not drain `ChatCoreAsync`** — it calls `_agent.RunAsync` directly and does
+     its own serialize/write/index — so it needs its own call. Without it a reminder turn that ingested
+     persists the name list and loses the rebuild: retrieval stays detached for the rest of the
+     activation while the instructions claim the document exists, and a reactivation silently masks it.
+     `ReadWebDocument_AttachesRetrievalAfterReminderTurn` is the half that catches this; it was
+     **mutation checked** (commenting out the reminder call fails that test and only that test).
+- **The consequence for the tool's shape:** because the provider set is decided *before* the run, the
+  tool has to return excerpts **itself**, inline — which is why it takes a `question`. That is the
+  `OnDemandFunctionCalling` shape ADR 0008 explicitly rejected, taken deliberately and only because it
+  is **additive to** the always-on provider, which takes over from the next model call.
+  **Do not write "following ADR 0008" about it.**
+- **Re-reading is prevented, and it has to be.** `CosmosDocumentIndex` gives every chunk a fresh `Guid`
+  id, so a second read of the same URL **duplicates** the document's chunks rather than overwriting them.
+  On the browser-upload path a human decides to upload again; here the trigger is the model, reachable
+  from `/api/agent-run` and from a **repeating reminder**. So the tool short-circuits before the fetch on
+  a URL already in `AgentGrainState.WebDocumentUrls`, and the name list is bounded oldest-first
+  (`WebDocumentLimits.MaxWebDocuments`) because it is rendered into the instructions every turn.
+  Identity is the normalized **URL**, deliberately not the derived name — the name is length-capped and
+  could collide, and a false positive there would silently refuse a genuinely different document.
+- **Also:** the excerpts are ranked **in process** over the just-embedded chunks;
+  `IDocumentIndex.SearchAsync` is never called. A read-back would be green offline against the
+  immediately-consistent in-memory index and could return nothing in production (the Cosmos vector path
+  is prod-only, ADR 0007 — the ADR 0061 `compositeIndexes` scar), and `SearchAsync` has **no
+  per-document filter**, so it would mix in the conversation's *other* documents and label them as this
+  URL's content. `ReadWebDocument_RanksWithoutQueryingTheIndex` counts index queries for exactly this.
+- **Evidence:** `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`,
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (both consume sites, both commented),
+  `tests/Agent42.Tests/WebDocumentToolTests.cs`,
+  `.agentic/decisions/0066-in-container-document-fetch-for-rag.md`
+- **Verified:** 2026-09-04
+
+### A web-fetched document must never be described as "the user has uploaded" — and its file name is prompt text
+
+- **Claim:** `WithDocumentAwareness` renders `DocumentNames` under *"The user has uploaded the following
+  document(s)…"*, the strongest trust signal in the system prompt. A document fetched from a
+  **model-chosen** URL is attacker-authorable, so folding it into that list would assert user provenance
+  for it — the exact inverse of `BuildFetchPayload`'s `"UNTRUSTED: …"` labelling. Hence a **separate**
+  trailing `[Id(11)] WebDocumentNames` on `AgentGrainState` and a second instructions sentence that says
+  the documents were fetched from the web and are untrusted. The retrieval gate is the **sum** of the two
+  lists, so ADR 0008's per-conversation gate is widened, not removed.
+- **The second half is easy to miss, and the instructions are only half the control.** The file name is
+  derived from the **URL path**, so it is attacker-influenced text that lands in the system prompt *and*
+  in every citation `SourceName`. `WebDocumentLimits.SanitizeFileName` is an **allowlist**
+  (`[A-Za-z0-9.-_ ]`) plus a 64-char cap, it percent-decodes **before** flattening the path (an encoded
+  `%2f` must be judged as the separator it decodes to), and it drops `.`/`..` segments. It lives in the
+  Agents project rather than in the production fetcher precisely so **both** `IWebDocumentFetcher`
+  implementations share one copy.
+  **Two properties of that name are load-bearing and look cosmetic.** It carries a **`(web: {host})`
+  qualifier** and is built from the **whole path**, because the always-on provider serves web-fetched and
+  uploaded excerpts through the *same* channel — a `ChatRole.User` message whose only per-excerpt
+  metadata is `SourceName` (`DocumentChunk` has no provenance field). Without the qualifier a fetched
+  `handbook.pdf` cites identically to an uploaded `handbook.pdf` **and collides with it**; without the
+  whole path, two sibling documents that differ only in a directory (a `2024` and a `2025` copy of the
+  same report) become one label. Structured provenance would belong on `DocumentChunk`, not on the
+  string — nobody has added it.
+- **Evidence:** `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`WithDocumentAwareness`),
+  `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`WebDocumentNames`),
+  `src/Agent42.Agents/Documents/WebDocumentLimits.cs` (`SanitizeFileName`),
+  `tests/Agent42.Tests/WebDocumentToolTests.cs` (`WebDocument_IsNotDescribedAsUserUploaded`),
+  `tests/Agent42.Tests/GuardedDocumentFetcherTests.cs` (`Fetch_SanitizesFileNameFromUrlPath`)
+- **Verified:** 2026-09-04
 
 ### Selectable tools: `null == all`, and the user default must be fetched BEFORE the first `BuildAgent`
 

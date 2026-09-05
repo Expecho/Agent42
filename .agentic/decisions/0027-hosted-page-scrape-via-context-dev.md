@@ -8,6 +8,20 @@ tags: [web-search, tools, agent-framework, security, ssrf, prompt-injection, egr
 
 # Hosted page scraping via context.dev, with opt-in depth-1 link following
 
+> **Amended by [ADR 0066](0066-in-container-document-fetch-for-rag.md) (2026-09-04).** Nothing here is
+> overturned: this decision governs `fetch_web_page`, which stays on context.dev, unchanged, guardless
+> and untouched by that MR. What changed is that the *Alternatives considered* entry below — "key-present
+> / key-absent fallback to a direct fetch … Rejected by the user … doubling the surface for no benefit"
+> — was **deliberately re-adopted, in a narrower form, after the user was asked again**. The premise that
+> stopped holding is the clause "for no benefit": the rejected fallback duplicated a path that already
+> worked, whereas ADR 0066's `read_web_document` does something context.dev **cannot do at all** (return
+> raw document bytes), and context.dev is being retired on cost.
+>
+> The cost this ADR named is real and is accepted in full: `PrivateAddressGuard` is back in the repo and
+> there are now **two fetch paths with two security models**. The rule that survives unchanged is the
+> one in `.agentic/gotchas.md` — **do not add a guard to `fetch_web_page`**; there is still nothing to
+> guard on this path, because the request is still not ours.
+
 ## Context
 `fetch_web_page` (ADR 0011) dialled the model-chosen URL **from inside our container** and reduced the
 HTML to text locally with AngleSharp. Two things are wrong with that in practice. The local HTML→text

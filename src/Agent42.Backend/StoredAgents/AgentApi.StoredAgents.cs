@@ -209,7 +209,7 @@ public static partial class AgentApi
                 int chunkCount;
                 try
                 {
-                    chunkCount = await ingestion.IngestAsync(ownerKey, file.FileName, mediaType, bytes);
+                    chunkCount = (await ingestion.IngestAsync(ownerKey, file.FileName, mediaType, bytes)).ChunkCount;
                 }
                 catch (Exception ex) when (ex is EmbeddingModelNotConfiguredException or EmbeddingDimensionMismatchException)
                 {
