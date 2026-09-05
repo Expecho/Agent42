@@ -36,6 +36,22 @@ public class SharedClusterFixture : IAsyncLifetime
     public virtual async Task DisposeAsync() => await Cluster.DisposeAsync();
 
     /// <summary>
+    /// Moves every silo's retention clock forward by <paramref name="by"/>, so a turn already in a
+    /// session reads as that much older (ADR 0016's window). Reset to zero before each test by
+    /// <see cref="ResetSiloState"/>.
+    ///
+    /// <para>Applied to every silo because a grain may activate on any of them, and the offset must
+    /// be the same wherever it lands.</para>
+    /// </summary>
+    public void AdvanceClock(TimeSpan by)
+    {
+        foreach (var silo in Cluster.Silos)
+        {
+            Cluster.GetSiloServiceProvider(silo.SiloAddress).GetRequiredService<TestTimeProvider>().Offset += by;
+        }
+    }
+
+    /// <summary>
     /// Returns the mutable per-silo fakes to their initial state, restoring the per-test isolation the
     /// old cluster-per-test shape gave for free. Tests within a class run serially (one collection), so
     /// this cannot race a test still in flight.
@@ -56,6 +72,7 @@ public class SharedClusterFixture : IAsyncLifetime
             services.GetRequiredService<RecordingPushNotificationSender>().Reset();
             services.GetRequiredService<RecordingHindsightClient>().Reset();
             services.GetRequiredService<SingleUserMcpToolProvider>().Servers = [];
+            services.GetRequiredService<TestTimeProvider>().Offset = TimeSpan.Zero;
         }
     }
 }

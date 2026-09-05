@@ -49,7 +49,23 @@ public sealed partial class FakeChatClient : IChatClient
     /// per-silo singleton outlives a single test — the class resets it between tests to keep the
     /// absolute-count assertions meaningful.
     /// </summary>
-    public void Reset() => Volatile.Write(ref _suggestionCalls, 0);
+    public void Reset()
+    {
+        Volatile.Write(ref _suggestionCalls, 0);
+        StampResponseCreatedAt = null;
+    }
+
+    /// <summary>
+    /// A <c>CreatedAt</c> to stamp on the non-streaming response, or null to leave it unset as a real
+    /// provider does here.
+    ///
+    /// <para>Only the NON-streaming path honours it, and that asymmetry is the point: measured on Agent
+    /// Framework 1.19 the streaming coalescer drops a provider-supplied <c>CreatedAt</c>, while
+    /// <c>RunAsync</c> — the reminder path — preserves it into the session. So this is the only way to
+    /// reproduce a provider value reaching a retention decision, which is what
+    /// <c>RetentionLimits.MaxPlausibleAge</c> clamps.</para>
+    /// </summary>
+    public DateTimeOffset? StampResponseCreatedAt { get; set; }
 
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
@@ -65,7 +81,13 @@ public sealed partial class FakeChatClient : IChatClient
                     + string.Concat(ReplyChunks)),
             };
 
-        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, contents)));
+        var reply = new ChatMessage(ChatRole.Assistant, contents);
+        if (StampResponseCreatedAt is { } stamp)
+        {
+            reply.CreatedAt = stamp;
+        }
+
+        return Task.FromResult(new ChatResponse(reply));
     }
 
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(

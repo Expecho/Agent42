@@ -105,6 +105,22 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly ILogger<AgentGrain> _logger;
 
+    /// <summary>
+    /// The clock every retention decision reads (ADR 0016's window). Injected rather than
+    /// <c>DateTimeOffset.UtcNow</c> for one blunt reason: without a seam no test can produce a turn
+    /// older than the window, so the whole prune would ship unverified.
+    ///
+    /// <para>The parameter is OPTIONAL and falls back to <see cref="TimeProvider.System"/>, so —
+    /// unlike <c>IPushNotificationSender</c> or <c>IUserMcpToolProvider</c> — a silo host that does
+    /// not register one still activates this grain. That is deliberate: this dependency has a
+    /// correct default, and the "every grain host must register X" hazard is worth avoiding when it
+    /// buys nothing. Tests register a controllable one and get it injected as normal.</para>
+    ///
+    /// <para><c>GetDate()</c> — the model-facing <c>get_date</c> tool — deliberately still reads
+    /// <c>DateTime.Now</c>. It answers a question about the user's wall clock, not about retention.</para>
+    /// </summary>
+    private readonly TimeProvider _timeProvider;
+
     private AIAgent _agent = null!;
 
     private AgentSession _session = null!;
@@ -232,7 +248,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         IGeocoder geocoder,
         HindsightIntegration memory,
         IPushNotificationSender pushSender,
-        ILogger<AgentGrain> logger)
+        ILogger<AgentGrain> logger,
+        TimeProvider? timeProvider = null)
     {
         _state = state;
         _chatClientFactoryProvider = chatClientFactoryProvider;
@@ -249,6 +266,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _memory = memory;
         _pushSender = pushSender;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -719,12 +737,22 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             return;
         }
 
+        // Retention (ADR 0016): stamp every message, then delete whole turns that fell outside the window
+        // — continuous chats only. Before the serialize, so the pruned session is what gets written.
+        var pruned = await ApplyRetentionAsync();
+
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
         await _state.WriteStateAsync();
 
+        // AFTER the durable write, deliberately: once a chat is older than the window most turns prune
+        // something, so this fires on most turns — a filtered-query delete plus N deletes and N upserts on
+        // a non-reentrant grain, which must not sit in front of the write ADR 0046's stream recovery reads.
+        await ReconcileSearchIndexAfterPruneAsync(pruned);
+
         // Search projection (ADR 0061). No _ephemeral guard needed: the early return above already
         // took the incognito path, so reaching here means the turn is persisted. Best-effort inside.
+        // When the reconcile above reset the cursor, this is the re-projection from ordinal 0.
         await IndexNewTurnsForSearchAsync();
 
         _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
@@ -962,12 +990,19 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         await _agent.RunAsync([new ChatMessage(ChatRole.User, info.Prompt)], _session);
         _state.State.TurnAttachments.Add([]);
 
+        // Retention (ADR 0016), same as the chat path. This site does its OWN serialize — it does not
+        // delegate to PersistTurnUnlessEphemeralAsync — so the call has to be repeated here.
+        var pruned = await ApplyRetentionAsync();
+
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
 
         _state.State.ScheduledPrompts[reminderName] = info with { TimesFired = info.TimesFired + 1 };
 
         await _state.WriteStateAsync();
+
+        // After the write, for the reason given at the chat site.
+        await ReconcileSearchIndexAfterPruneAsync(pruned);
 
         // Search projection (ADR 0061). Deliberately NO _ephemeral guard here — this method clears
         // _ephemeral on entry because a fired reminder always persists, so adding one would be the

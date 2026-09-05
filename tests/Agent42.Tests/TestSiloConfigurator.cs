@@ -81,6 +81,12 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             // its Tools to exercise the mcp gate (mirrors SwitchableChatClientFactoryProvider).
             services.AddSingleton<SingleUserMcpToolProvider>();
             services.AddSingleton<IUserMcpToolProvider>(sp => sp.GetRequiredService<SingleUserMcpToolProvider>());
+            // The retention clock (ADR 0016's window). Registered as its concrete type too so a test can
+            // fetch it from the silo container and move the wall clock forward; the grain takes it through
+            // an OPTIONAL ctor parameter, so a host that registers none still activates — this registration
+            // is what tests need, not what the grain needs.
+            services.AddSingleton<TestTimeProvider>();
+            services.AddSingleton<TimeProvider>(sp => sp.GetRequiredService<TestTimeProvider>());
             services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
             services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
             // Push sender (ADR 0028): the recording stand-in, registered as its concrete type too so a

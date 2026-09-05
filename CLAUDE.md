@@ -354,6 +354,30 @@ to document a mechanical rule, add a lint rule instead.
   grain. Trailing default = no migration. **The headline consequence: continuous funnels every chat into one
   unbounded grain, so it will eventually hit the 2 MB session cap (ADR 0004) and brick the conversation in
   prod — `DELETE /api/conversations/agent-{agentId}` (delete-to-reset) is the only escape hatch.** See gotchas.
+  **ADR 0068 NARROWS that, and does not close it** (0016's "no code mitigation is in scope" is the one
+  sentence it reverses; everything else in 0016 stands, flag included): messages older than a fixed **24 h**
+  are **hard-deleted** from a continuous chat's session on **every persisted turn**, whole user turns at a
+  time, off the front. A window bounds **age**, not **size** — one oversized tool return still bricks inside
+  the day. Detection is the **id shape** (`agent-` prefix), which is why 0016 needs no reversal. **No new
+  `[Id(n)]`, no migration:** the timestamps ride on the messages inside `SerializedSession`, which round-trips
+  them — but the grain must **stamp** them itself (measured: neither run path sets `CreatedAt`, and the
+  streaming coalescer drops even a provider-supplied one), under a **clamp** rather than a `??=`, because on
+  the `RunAsync` reminder path a provider value **is** preserved and an epoch would delete a live turn. A
+  `TimeProvider` seam exists purely so the window is testable; it is an **optional ctor parameter**
+  (`ActivatorUtilities` honours defaults — verified), so this is deliberately **not** another "every grain
+  host must register X" — the three hosts are untouched. **Only continuous chats are STAMPED, not just
+  pruned** — the gate is in `ApplyRetentionAsync` above the stamp, because `createdAt` costs ~35 bytes a
+  message (~1.2% of the 2 MB item, measured) that a never-pruned chat would never read. Three things to
+  read before touching it: the two new gotchas — remap `_ephemeralOrdinals`, never `Clear()`, **and never
+  in the wrong frame** (the remap belongs in `PruneExpiredTurnsAsync` where the shift happens; deferring it
+  to a retryable reconcile double-shifts and **indexes incognito text** — measured, and it is why the retry
+  state is a bare bool); and the projected-vs-user-turn delta plus the one index delete `ReindexAsync`
+  cannot repair (**not** self-healing across a deactivation). Also: pruning **loses content from a public
+  share link** (ADR 0035), leaves ADR 0032's IndexedDB mirror stale, and does **not** reach text already
+  sent to Hindsight (ADR 0056, no delete path) or sitting in ADR 0054's `/logs`. Two bounds — the
+  `TurnAttachments.RemoveRange` clamp and `MinimumPreservedTurns` — were planned as bug fixes and
+  **measured to be defensive only**; both say so in the code rather than implying coverage that is not
+  there.
 - Image generation (ADR 0020): a new per-model capability bit `SupportsImageGeneration`, declared on an
   OpenAI-compatible model (a user-added provider, ADR 0018), makes a picked model **produce an image
   instead of a chat reply** — text-to-image, or image-to-image (edit) against this turn's attachment, else
@@ -1189,8 +1213,9 @@ to document a mechanical rule, add a lint rule instead.
   authority; `Skills/` is runtime skill content rather than code, but it is in the set)
   (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …), and `AgentGrain` is split into
   **`partial` files that live in those folders — the set `ProjectLayoutTests.AgentGrainParts()` pins by
-  name is the authority, not a count in prose** (it stood at 12 for ADRs 0061–0063 and is 13 since ADR
-  0066's `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`; `AgentGrainState.cs` is NOT one of them, which is what
+  name is the authority, not a count in prose** (it stood at 12 for ADRs 0061–0063, 13 after ADR 0066's
+  `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`, and is 14 since ADR 0068's
+  `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs`; `AgentGrainState.cs` is NOT one of them, which is what
   a count here kept getting wrong). **Every type stays in the flat `Agent42.Agents`
   namespace — folders and namespaces deliberately DISAGREE, and that is load-bearing, not sloppiness.**
   Orleans Cosmos grain storage uses `JsonGrainStorageSerializer`, which writes the full CLR type name

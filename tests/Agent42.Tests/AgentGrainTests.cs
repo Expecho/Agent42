@@ -1275,6 +1275,13 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         // Cosmos hard-caps the item at 2 MB. Five capped fetches (~40 KB of page text) must stay far
         // inside it; 256 KB catches an unbudgeted tool result long before production would.
+        //
+        // This ceiling is UNCHANGED by retention stamping (ADR 0068), and that is the point of the gate
+        // in ApplyRetentionAsync rather than a happy accident. This conversation is a regular one, and
+        // stamping every message here would cost 3,164 bytes on this exact test — 261,106 to 264,270,
+        // about 35 bytes a message, 1.2% — which was measured and is what tipped it over 256 KB before
+        // the stamp was gated on the conversation being continuous. A regular chat is never pruned, so
+        // it never reads a timestamp, so it does not pay for one.
         Assert.InRange(bytes, 1, 256 * 1024);
     }
 
@@ -3161,6 +3168,408 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Single(recorder.Sends);
     }
 
+    // ---- Retention (ADR 0016's 24-hour window) ----------------------------------------------------
+    //
+    // Every prune decision reads ChatMessage.CreatedAt, and the grain has to stamp it ITSELF: measured on
+    // Agent Framework 1.19, neither run path sets it, and the streaming coalescer drops even a
+    // provider-supplied value. These two hold the property the prune rests on — a stamp exists, it survives
+    // the session round trip, and a value that cannot be believed is replaced rather than trusted.
+
+    // AC1. The round trip is the half that is not obvious: createdAt is part of the session's serialized
+    // form, so the second turn stamps a list restored from JSON rather than the live one it was written on.
+    [Fact]
+    public async Task Turn_StampsMessageTimestamps_ThatSurviveReactivation()
+    {
+        const string key = "retention-stamp-user/agent-stamp";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await CollectAsync(agent.ChatAsync("hi", null));
+
+        var first = await SessionCreatedAtStamps(key);
+        Assert.True(first.Count >= 2, "the first turn should persist a stamped user AND assistant message");
+        Assert.All(first, at => Assert.InRange(at, RecentFloor, RecentCeiling));
+
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        Fixture.AdvanceClock(TimeSpan.FromHours(2));
+        await CollectAsync(Cluster.GrainFactory.GetGrain<IAgentGrain>(key).ChatAsync("again", null));
+
+        var second = await SessionCreatedAtStamps(key);
+        Assert.True(second.Count > first.Count, "the second turn should add messages");
+
+        // The original messages keep their ORIGINAL stamps. Re-stamping on every persist would put the
+        // whole session permanently inside the window and nothing would ever be pruned — the failure mode
+        // that looks exactly like a working feature.
+        Assert.Equal(first, second.Take(first.Count));
+    }
+
+    // AC2. The clamp, on the one path where a provider value survives into the session. An epoch stamp
+    // would mark this live turn expired the moment it landed and delete it on the very next persist —
+    // silently, and in production only, which is ADR 0016's own failure class.
+    [Fact]
+    public async Task ReminderTurn_ClampsAnImplausibleProviderTimestamp()
+    {
+        const string key = "retention-clamp-user/agent-clamp";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
+
+        foreach (var silo in Cluster.Silos)
+        {
+            Cluster.GetSiloServiceProvider(silo.SiloAddress)
+                .GetRequiredService<FakeChatClient>().StampResponseCreatedAt = DateTimeOffset.UnixEpoch;
+        }
+
+        await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
+
+        var stamps = await SessionCreatedAtStamps(key);
+        Assert.NotEmpty(stamps);
+        Assert.All(stamps, at => Assert.InRange(at, RecentFloor, RecentCeiling));
+    }
+
+    // A continuous agent chat's grain key. The `agent-` prefix on the CONVERSATION half is the only
+    // server-side signal that this chat is continuous (ADR 0016 keeps the flag client-side, deliberately),
+    // so every prune test has to route through a key shaped exactly like the one agents.js mints.
+    private static string ContinuousKey(string agentId) => $"retention-user/agent-{agentId}";
+
+    private static readonly TimeSpan PastTheWindow = RetentionLimits.Window + TimeSpan.FromHours(1);
+
+    // The stamp is gated on the conversation being CONTINUOUS, not just the prune. A per-chat
+    // conversation is never pruned, so a createdAt on its messages is only ever cost — measured at
+    // ~35 bytes a message against the 2 MB item (ADR 0004) this feature exists to defend, which is
+    // enough to move the session-budget canary on its own. Without this test the gate is one `if` that
+    // nothing would notice the loss of, since every other retention test uses a continuous chat.
+    [Fact]
+    public async Task RegularChat_IsNotStamped()
+    {
+        const string key = "retention-user/unstamped-conversation";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("hi", null));
+
+        Assert.Empty(await SessionCreatedAtStamps(key));
+    }
+
+    // AC3.
+    [Fact]
+    public async Task ContinuousChat_PrunesTurnsOlderThanTheWindow()
+    {
+        var key = ContinuousKey("prune-old");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("the ancient message", null));
+        Assert.Contains(await agent.GetHistoryAsync(), t => t.Text == "the ancient message");
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(agent.ChatAsync("the fresh message", null));
+
+        var history = await agent.GetHistoryAsync();
+        Assert.DoesNotContain(history, t => t.Text == "the ancient message");
+        Assert.Contains(history, t => t.Text == "the fresh message");
+
+        // Deleted, not merely hidden: only removal from the persisted session reclaims the 2 MB budget
+        // (ADR 0004), which is the entire point of the feature.
+        Assert.DoesNotContain("the ancient message", await SessionJsonOf(key), StringComparison.Ordinal);
+    }
+
+    // AC4.
+    [Fact]
+    public async Task ContinuousChat_KeepsTurnsInsideTheWindow()
+    {
+        var key = ContinuousKey("keep-recent");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("the earlier message", null));
+
+        Fixture.AdvanceClock(RetentionLimits.Window - TimeSpan.FromHours(1));
+        await CollectAsync(agent.ChatAsync("the later message", null));
+
+        var history = await agent.GetHistoryAsync();
+        Assert.Contains(history, t => t.Text == "the earlier message");
+        Assert.Contains(history, t => t.Text == "the later message");
+    }
+
+    // AC5. The scope decision, held by a test: a regular chat binds one conversation per chat, so it has
+    // no unbounded-growth problem and nothing licenses deleting a user's history from under them.
+    [Fact]
+    public async Task RegularChat_IsNeverPruned()
+    {
+        const string key = "retention-user/plain-conversation";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("the ancient message", null));
+
+        Fixture.AdvanceClock(TimeSpan.FromDays(30));
+        await CollectAsync(agent.ChatAsync("the fresh message", null));
+
+        var history = await agent.GetHistoryAsync();
+        Assert.Contains(history, t => t.Text == "the ancient message");
+        Assert.Contains(history, t => t.Text == "the fresh message");
+    }
+
+    // AC6. Pruning never empties a session. Note what this can and cannot reach: the turn being persisted
+    // was stamped moments earlier, so the newest turn is always inside the window and
+    // RetentionLimits.MinimumPreservedTurns does not itself bind here — what is held is the property that
+    // matters, that a chat whose every EARLIER turn expired still comes back with history.
+    [Fact]
+    public async Task Prune_AlwaysPreservesTheMostRecentTurn()
+    {
+        var key = ContinuousKey("never-empty");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("first", null));
+        await CollectAsync(agent.ChatAsync("second", null));
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(agent.ChatAsync("third", null));
+
+        var history = await agent.GetHistoryAsync();
+        Assert.NotEmpty(history);
+        Assert.Equal(["third"], history.Where(t => t.Role == "user").Select(t => t.Text));
+        Assert.Contains(history, t => t.Role == "assistant");
+    }
+
+    // The leading-non-user-prefix rule, which the plan claimed had an AC and did not. Removal starts at
+    // the FIRST USER MESSAGE, never at index 0.
+    //
+    // Why this needs surgery on the persisted session rather than an ordinary turn: nothing the shipped
+    // write paths do puts a non-user message at the head of the stored history, and such a message is
+    // invisible to every other test in this file because GetHistoryAsync projects User and Assistant
+    // only — while still counting in the prune's walk. So it is injected into the serialized session
+    // directly, which is the only way to construct the state the rule exists for. Without the rule the
+    // prune starts at 0 and takes the prefix with it, and no other assertion in the suite would notice.
+    [Fact]
+    public async Task Prune_KeepsALeadingNonUserPrefix()
+    {
+        const string marker = "leading-prefix-marker";
+        var key = ContinuousKey("leading-prefix");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("the ancient prefixed turn", null));
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        await MutateSessionStateOf(key, state =>
+        {
+            const string head = "\"messages\":[";
+            Assert.Contains(head, state.SerializedSession!, StringComparison.Ordinal);
+            state.SerializedSession = state.SerializedSession!.Replace(
+                head,
+                head + "{\"role\":\"system\",\"contents\":[{\"$type\":\"text\",\"text\":\"" + marker + "\"}]},",
+                StringComparison.Ordinal);
+        });
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(Cluster.GrainFactory.GetGrain<IAgentGrain>(key).ChatAsync("the fresh turn", null));
+
+        var session = await SessionJsonOf(key);
+        Assert.Contains(marker, session, StringComparison.Ordinal);
+        Assert.DoesNotContain("the ancient prefixed turn", session, StringComparison.Ordinal);
+        Assert.Contains("the fresh turn", session, StringComparison.Ordinal);
+    }
+
+    // AC7. Whole turns only, so a FunctionResultContent is never left without its FunctionCallContent —
+    // an orphan most OpenAI-compatible endpoints reject outright, which would brick the conversation the
+    // prune exists to protect. The tool call and its result are separate MESSAGES, and neither carries the
+    // User role, so both sit inside the one user-led turn the walk drops or keeps as a unit.
+    [Fact]
+    public async Task Prune_NeverOrphansAToolResult()
+    {
+        var key = ContinuousKey("tool-pair");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
+
+        // Control: without this the assertion below could pass on a session that never had a tool pair.
+        Assert.Contains("callId", await SessionJsonOf(key), StringComparison.OrdinalIgnoreCase);
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(agent.ChatAsync("hello again", null));
+
+        Assert.DoesNotContain("callId", await SessionJsonOf(key), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // AC8. TurnAttachments joins user turns POSITIONALLY, so dropping user turns without shortening it by
+    // the same count silently moves every surviving image onto the wrong turn.
+    [Fact]
+    public async Task Prune_RealignsTurnAttachments()
+    {
+        var key = ContinuousKey("realign");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync(
+            "the old picture", null, [new AttachmentRef("old-img", "k/old-img", "image/png", "old.png")]));
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(agent.ChatAsync(
+            "the new picture", null, [new AttachmentRef("new-img", "k/new-img", "image/png", "new.png")]));
+
+        var userTurns = (await agent.GetHistoryAsync()).Where(t => t.Role == "user").ToList();
+        var surviving = Assert.Single(userTurns);
+        Assert.Equal("the new picture", surviving.Text);
+        Assert.NotNull(surviving.Attachments);
+        Assert.Equal("new-img", Assert.Single(surviving.Attachments!).Id);
+    }
+
+    // AC9. A conversation predating TurnAttachments deserializes that list EMPTY while its session still
+    // holds image parts. Simulated by writing the state back short, which is the only way to reach a state
+    // the shipped write paths cannot produce.
+    //
+    // What this DOES and does NOT prove, since the difference was measured rather than assumed: it proves
+    // the end-to-end tolerance — a legacy conversation prunes and comes back correct. It does NOT exercise
+    // the Math.Min clamp in RemoveLeadingTurns, because AlignTurnAttachmentsToHistory runs before the run
+    // on all three persist paths and re-pads the list to the user-turn count before the prune ever sees
+    // it. Removing that clamp leaves this test, and the whole suite, green. The clamp is kept as a
+    // defensive bound and is documented as one; do not read this test as its guard.
+    [Fact]
+    public async Task Prune_ToleratesAShortTurnAttachmentsList()
+    {
+        var key = ContinuousKey("short-attachments");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync(
+            "the old picture", null, [new AttachmentRef("legacy-img", "k/legacy-img", "image/png", "l.png")]));
+        await CollectAsync(agent.ChatAsync("another old turn", null));
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        await MutateSessionStateOf(key, state => state.TurnAttachments.Clear());
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(Cluster.GrainFactory.GetGrain<IAgentGrain>(key).ChatAsync("the fresh turn", null));
+
+        var history = await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        Assert.Equal(["the fresh turn"], history.Where(t => t.Role == "user").Select(t => t.Text));
+    }
+
+    // AC10. The dictionary entry is grain state and would otherwise grow unbounded in the one conversation
+    // that never rotates. The blob bytes are deliberately left behind (IAttachmentStore has no delete).
+    [Fact]
+    public async Task Prune_DropsGeneratedImageEntriesForPrunedTurns()
+    {
+        var key = ContinuousKey("generated-images");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("draw a scene", TestSiloConfigurator.ImageModel));
+        Assert.NotEmpty((await SessionStateOf(key)).GeneratedImages);
+
+        // Explicitly back onto the chat model. A null model keeps the conversation on the one it is BOUND
+        // to — still the image model — so this turn would generate a second image and the assertion below
+        // would be measuring the new entry rather than the pruned one's absence.
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(agent.ChatAsync("hello again", TestSiloConfigurator.DefaultModel));
+
+        Assert.Empty((await SessionStateOf(key)).GeneratedImages);
+    }
+
+    // AC11. The reminder path does its OWN serialize rather than delegating, so the retention call had to
+    // be repeated there — the same shape as ADR 0066's two consume sites, and the same way to miss one.
+    [Fact]
+    public async Task ReminderTurn_PrunesAContinuousConversation()
+    {
+        var key = ContinuousKey("reminder-prune");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
+
+        var history = await agent.GetHistoryAsync();
+        Assert.DoesNotContain(history, t => t.Text == "please remind me to drink water");
+        Assert.Contains(history, t => t.Text == "Tell the user to drink some water.");
+    }
+
+    // AC12. The third persist site, which also round-trips the session through a SEPARATE agent instance
+    // (RecordImageTurnAsync builds its own) — so this covers the one path where a stamp could be lost to a
+    // rebuild rather than to a run.
+    [Fact]
+    public async Task ImageTurn_PrunesAContinuousConversation()
+    {
+        var key = ContinuousKey("image-prune");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("the ancient message", null));
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(agent.ChatAsync("draw a scene", TestSiloConfigurator.ImageModel));
+
+        var history = await agent.GetHistoryAsync();
+        Assert.DoesNotContain(history, t => t.Text == "the ancient message");
+        Assert.Contains(history, t => t.Text == "draw a scene");
+
+        // And its own stamps survived that round trip, so the image turn is itself prunable later.
+        Assert.All(await SessionCreatedAtStamps(key), at => Assert.InRange(at, RecentFloor, RecentCeiling));
+    }
+
+    // AC17. An incognito turn (ADR 0034) never persists, so it never prunes either — the guarantee is
+    // "not persisted", and a prune is a write to the conversation's durable history.
+    [Fact]
+    public async Task EphemeralTurn_DoesNotPrune()
+    {
+        var key = ContinuousKey("ephemeral-no-prune");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("the ancient message", null));
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(agent.ChatAsync("an incognito question", null, null, null, ephemeral: true));
+
+        // The persisted session is untouched — still holding the turn a persisted turn would have dropped.
+        Assert.Contains("the ancient message", await SessionJsonOf(key), StringComparison.Ordinal);
+        Assert.DoesNotContain("an incognito question", await SessionJsonOf(key), StringComparison.Ordinal);
+    }
+
+    // Wide enough that a slow CI box cannot fail it, narrow enough that DateTimeOffset.UnixEpoch (or any
+    // other unbelievable value the clamp is there to catch) is nowhere near it.
+    private static DateTimeOffset RecentFloor => DateTimeOffset.UtcNow.AddMinutes(-10);
+
+    private static DateTimeOffset RecentCeiling => DateTimeOffset.UtcNow.AddHours(48);
+
+    /// <summary>
+    /// Every <c>createdAt</c> in the grain's PERSISTED session, in document order.
+    ///
+    /// <para>Read out of the serialized JSON rather than off the grain, because there is nowhere else to
+    /// see them: <c>GetHistoryAsync</c> projects a <c>ChatTurn</c>, which deliberately carries no
+    /// timestamp. Walked recursively rather than by a fixed path so the assertion does not become a test
+    /// of Agent Framework's state-bag nesting.</para>
+    /// </summary>
+    private async Task<List<DateTimeOffset>> SessionCreatedAtStamps(string grainKey)
+    {
+        var serialized = (await SessionStateOf(grainKey)).SerializedSession;
+        Assert.False(string.IsNullOrEmpty(serialized), "the turn should have persisted a session");
+
+        using var document = System.Text.Json.JsonDocument.Parse(serialized!);
+        var stamps = new List<DateTimeOffset>();
+        CollectCreatedAt(document.RootElement, stamps);
+        return stamps;
+    }
+
+    private static void CollectCreatedAt(System.Text.Json.JsonElement element, List<DateTimeOffset> into)
+    {
+        switch (element.ValueKind)
+        {
+            case System.Text.Json.JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.NameEquals("createdAt")
+                        && property.Value.ValueKind == System.Text.Json.JsonValueKind.String
+                        && property.Value.TryGetDateTimeOffset(out var at))
+                    {
+                        into.Add(at);
+                    }
+
+                    CollectCreatedAt(property.Value, into);
+                }
+
+                break;
+
+            case System.Text.Json.JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    CollectCreatedAt(item, into);
+                }
+
+                break;
+        }
+    }
+
     // Reads the grain's persisted state straight out of the memory storage provider the test silo
     // uses, so a test can assert on what was actually written (the session blob, the host allowlist)
     // rather than on what the grain says about itself. The storage provider lives in the *silo's*
@@ -3177,5 +3586,26 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
             state);
 
         return state.State;
+    }
+
+    private async Task<string> SessionJsonOf(string grainKey) =>
+        (await SessionStateOf(grainKey)).SerializedSession ?? "";
+
+    /// <summary>
+    /// Edits the grain's PERSISTED state behind its back, for the one test that needs a state the shipped
+    /// write paths cannot produce (a legacy conversation whose <c>TurnAttachments</c> is shorter than its
+    /// user-turn count). Deactivate the grain before calling, or the next write overwrites this.
+    /// </summary>
+    private async Task MutateSessionStateOf(string grainKey, Action<AgentGrainState> mutate)
+    {
+        var storage = Cluster.GetSiloServiceProvider(Cluster.Primary.SiloAddress)
+            .GetRequiredKeyedService<IGrainStorage>(AgentGrain.StorageProviderName);
+
+        var grainId = Cluster.GrainFactory.GetGrain<IAgentGrain>(grainKey).GetGrainId();
+        var state = new GrainState<AgentGrainState>(new AgentGrainState());
+        await storage.ReadStateAsync("agent", grainId, state);
+
+        mutate(state.State);
+        await storage.WriteStateAsync("agent", grainId, state);
     }
 }
