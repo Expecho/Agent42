@@ -75,8 +75,12 @@ ClientCredentials (Phase 2), InteractiveOAuth (Phase 3, its own MR).
   opens once a user deliberately adds a server AND enables the `mcp` tool. `mcp` is off-by-default for
   existing **explicit** tool-savers (ADR 0021's semi-breaking note) and on via `null == all` for
   never-configured users — but a user with zero servers gets zero MCP tools regardless.
-- **Best-effort:** a dead/slow MCP server is skipped with a timeout, never fatal to activation or the
-  rest of the tool set.
+- **The inbound channel gained a second-order effect in [ADR 0067](0067-mcp-results-seed-the-fetch-allowlist.md)
+  (2026-09-05).** A server the user marks `SeedsFetchableUrls` may put the URLs from its tool results into
+  the conversation's fetchable-URL allowlist, so a tool result no longer merely *injects text* — it can
+  make our own container **fetch and durably ingest** an attacker-authored URL (ADR 0066's RAG index, and
+  through ADR 0056 a memory bank with no delete path). Per-server, opt-in, off by default. The egress
+  property recorded above is **unchanged**: this endpoint's arguments were always model-chosen.
 - **Follow-up:** Phase 2 (MSAL ClientCredentials — the Dataverse path) and Phase 3 (InteractiveOAuth,
   a new inbound auth surface — re-run `critic`) are separate MRs. Offline (DevHost/tests) exercises the
   CRUD/UI via single-user adapters; overlay→tools reflection is prod-wired. Spec:

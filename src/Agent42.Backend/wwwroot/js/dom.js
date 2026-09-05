@@ -143,6 +143,7 @@ export const mcpFormTitle = document.getElementById("mcpFormTitle");
 export const mcpNameInput = document.getElementById("mcpName");
 export const mcpEndpointInput = document.getElementById("mcpEndpoint");
 export const mcpEnabledInput = document.getElementById("mcpEnabled");
+export const mcpSeedsUrlsInput = document.getElementById("mcpSeedsUrls");
 export const mcpAuthSelect = document.getElementById("mcpAuth");
 export const mcpHeaderNameField = document.getElementById("mcpHeaderNameField");
 export const mcpHeaderNameInput = document.getElementById("mcpHeaderName");

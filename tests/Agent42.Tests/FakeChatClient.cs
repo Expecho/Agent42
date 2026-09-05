@@ -360,6 +360,78 @@ public sealed partial class FakeChatClient : IChatClient
             ["repeatEveryMinutes"] = 60.0,
         });
 
+    /// <summary>
+    /// The name of the fake link-listing MCP tool the seeding tests register (ADR 0067). It stands in for
+    /// the sibling repo's <c>find_links</c>: a tool whose RESULT carries absolute URLs.
+    /// </summary>
+    public const string SeedingLinkToolName = "mcp_find_links";
+
+    /// <summary>Prompt trigger for "call the link tool, then read one of its URLs as a document".</summary>
+    public const string SeedingChainTrigger = "find and read";
+
+    /// <summary>Prompt trigger for "call the link tool, then fetch one of its URLs as a page".</summary>
+    public const string SeedingFetchChainTrigger = "find and fetch";
+
+    // Step 1 of the chain calls the link tool; step 2 uses the FIRST absolute URL in its result. Reading the
+    // URL out of the result rather than hardcoding it is the whole point: a hardcoded URL would pass even if
+    // nothing were harvested, because the test would then be asserting its own constant rather than the
+    // seeding path.
+    private static FunctionCallContent? BuildSeedingChainCall(
+        IReadOnlyList<ChatMessage> list,
+        int lastUserIndex,
+        HashSet<string> calledThisTurn,
+        ChatOptions? options,
+        string thenTool)
+    {
+        if (options?.Tools?.Any(t => t.Name == SeedingLinkToolName) is not true)
+        {
+            return null;
+        }
+
+        if (!calledThisTurn.Contains(SeedingLinkToolName))
+        {
+            return new("seeding-link-call-1", SeedingLinkToolName, new Dictionary<string, object?>
+            {
+                ["filter"] = "pdf",
+            });
+        }
+
+        if (calledThisTurn.Contains(thenTool) || FirstUrlInToolResults(list, lastUserIndex) is not { } url)
+        {
+            return null;
+        }
+
+        return thenTool == ToolCatalog.ReadWebDocument
+            ? new("seeding-read-call-1", ToolCatalog.ReadWebDocument, new Dictionary<string, object?>
+            {
+                ["url"] = url,
+                ["question"] = "what does this say",
+            })
+            : new("seeding-fetch-call-1", "fetch_web_page", new Dictionary<string, object?>
+            {
+                ["url"] = url,
+            });
+    }
+
+    // The first absolute URL in a tool RESULT of the current turn — the model reading a link out of what a
+    // tool handed it, which is precisely the behaviour ADR 0067 permits for a seeding server and still
+    // forbids for page text.
+    private static string? FirstUrlInToolResults(IReadOnlyList<ChatMessage> list, int lastUserIndex)
+    {
+        for (var i = lastUserIndex + 1; i < list.Count; i++)
+        {
+            foreach (var result in list[i].Contents.OfType<FunctionResultContent>())
+            {
+                if (UrlInPrompt().Match(result.Result?.ToString() ?? "") is { Success: true } match)
+                {
+                    return match.Value.TrimEnd('"', ',', ']', '}');
+                }
+            }
+        }
+
+        return null;
+    }
+
     // Simulates a prompt-injected model: a URL the user never wrote and no search ever returned, with
     // the conversation's contents in the query string. The exfiltration channel FetchableUrls exists
     // to close, so the grain must refuse it.
@@ -424,6 +496,23 @@ public sealed partial class FakeChatClient : IChatClient
             }
 
             return calledThisTurn.Contains("fetch_web_page") ? null : BuildExfiltrationCall();
+        }
+
+        // The URL-SEEDING chains (ADR 0067). Like the exfiltration case above, these deliberately span two
+        // calls — an MCP tool result, then a fetch/read of a URL taken OUT OF THAT RESULT — so they are
+        // handled BEFORE the "a tool already ran, answer in text" guard, which would otherwise stop the
+        // conversation after the first call and make the whole feature untestable.
+        //
+        // A model cannot call a tool it was not given, so a deselected link tool falls straight through to
+        // a text answer — which is exactly the shape the deselection test asserts.
+        if (text.Contains(SeedingChainTrigger, StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildSeedingChainCall(list, lastUserIndex, calledThisTurn, options, ToolCatalog.ReadWebDocument);
+        }
+
+        if (text.Contains(SeedingFetchChainTrigger, StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildSeedingChainCall(list, lastUserIndex, calledThisTurn, options, "fetch_web_page");
         }
 
         // Once a tool has run for this turn, answer in text instead of calling it again (which would

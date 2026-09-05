@@ -23,10 +23,17 @@ public sealed record WebDocument(string Url, string FileName, string MediaType, 
 /// generalise from the sibling interface's "no longer an SSRF sink" note: it is true there and false
 /// here.</para>
 ///
-/// <para>The whole-URL allowlist (<c>AgentGrainState.FetchableUrls</c>) is a <i>separate</i>,
-/// prompt-injection exfiltration control and stays the caller's job — <c>AgentGrain</c> checks it
-/// before calling here. There is no link following on this path, so there is no allowlist-exempt
-/// content and none of ADR 0027's residual risk.</para>
+/// <para>The whole-URL allowlist (<c>AgentGrainState.FetchableUrls</c> and, since ADR 0067,
+/// <c>AgentGrainState.SeededFetchableUrls</c>) is a <i>separate</i>, prompt-injection exfiltration
+/// control and stays the caller's job — <c>AgentGrain</c> checks it before calling here. There is no
+/// link following on this path, so there is no allowlist-exempt content and none of ADR 0027's
+/// residual risk.</para>
+///
+/// <para><b>ADR 0067 widened what can reach this fetcher, and this is the path where that matters
+/// most.</b> With a URL-seeding MCP server configured, the URL handed here may be one authored on a page
+/// that server scraped, rather than one a search engine or the user produced verbatim — and it is THIS
+/// fetcher, holding the managed identity, that dials it. The address guard is not a substitute: it
+/// permits every public address by construction.</para>
 ///
 /// <para>Production is <c>GuardedDocumentFetcher</c>; local dev and tests use
 /// <see cref="InMemoryWebDocumentFetcher"/>.</para>

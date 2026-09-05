@@ -139,6 +139,13 @@ conversation of that user**, including reminder and agent-run turns with nobody 
 > conversation — any of which retain can persist into the bank. Deleting the conversation clears the
 > Cosmos chunks and the name list; it does **not** clear the bank.
 
+> **A new ROUTE into that fourth entry, added by [ADR 0067](0067-mcp-results-seed-the-fetch-allowlist.md)
+> (2026-09-05) — not a fifth entry.** Until now `read_web_document` could only be pointed at a URL a
+> search engine or the user produced *verbatim*. With a URL-seeding MCP server configured, it can be
+> pointed at one **authored on a page that server scraped**, which is a materially easier thing for an
+> attacker to arrange than getting their URL into a search result. The volume of untrusted text is
+> unchanged; what changed is who chooses the URL.
+
 Cross-conversation, persistent, and with **no delete path**: deleting or inspecting memories is out of
 scope for this iteration, which is exactly what makes this unmitigable here rather than merely
 unmitigated. That is a materially different risk class from ADR 0011/0027/0049/0066, and it is the

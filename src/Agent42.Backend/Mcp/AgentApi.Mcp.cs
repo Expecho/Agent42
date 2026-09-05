@@ -163,7 +163,11 @@ public static partial class AgentApi
             Authority: string.IsNullOrWhiteSpace(request.Authority) ? null : request.Authority.Trim(),
             ClientId: string.IsNullOrWhiteSpace(request.ClientId) ? null : request.ClientId.Trim(),
             ClientSecretCiphertext: string.IsNullOrWhiteSpace(request.ClientSecret) ? null : protector.Protect(request.ClientSecret),
-            Scopes: request.Scopes is { Count: > 0 } ? [.. request.Scopes.Select(s => s.Trim()).Where(s => s.Length > 0)] : null);
+            Scopes: request.Scopes is { Count: > 0 } ? [.. request.Scopes.Select(s => s.Trim()).Where(s => s.Length > 0)] : null,
+            // The one field that is a SETTING rather than a secret or discovered metadata (ADR 0067), so it
+            // must ride the request: the grain has no Keep clause for it, which is what lets a user turn
+            // seeding back OFF. Adding one there would make the opt-in one-way.
+            SeedsFetchableUrls: request.SeedsFetchableUrls);
 
     // Never returns a secret — only whether one is stored. Authority/clientId/scopes are non-secret and are
     // returned so the edit form can prefill them; the ciphertexts stay server-side.
@@ -175,7 +179,8 @@ public static partial class AgentApi
             ClientId: s.ClientId,
             Scopes: s.Scopes,
             HasClientSecret: !string.IsNullOrEmpty(s.ClientSecretCiphertext),
-            HasToken: !string.IsNullOrEmpty(s.TokenCiphertext));
+            HasToken: !string.IsNullOrEmpty(s.TokenCiphertext),
+            SeedsFetchableUrls: s.SeedsFetchableUrls);
 
     // ————— interactive OAuth for MCP servers (Phase 3) —————
     //

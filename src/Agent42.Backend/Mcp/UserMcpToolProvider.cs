@@ -102,7 +102,7 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             void Skip(string reason)
             {
                 _logger.LogInformation("MCP server {Server} for user {User}: {Reason}", server.Name, userId, reason);
-                servers.Add(new McpServerTools(server.Id, [], server.KnownToolNames));
+                servers.Add(new McpServerTools(server.Id, [], server.KnownToolNames, server.SeedsFetchableUrls));
             }
 
             // None/Header (Phase 1), ClientCredentials (Phase 2), and InteractiveOAuth (Phase 3) connect.
@@ -149,7 +149,11 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 var discovered = tools.Select(t => t.Name).ToList();
                 await RecordToolNamesAsync(userId, server, discovered);
 
-                servers.Add(new McpServerTools(server.Id, tools, discovered));
+                // The URL-seeding opt-in (ADR 0067) is copied verbatim off the stored server — it is the
+                // user's setting, so the provider never derives or defaults it. The harvest itself happens in
+                // the GRAIN, not here: these tool instances are shared across every conversation of this
+                // user, and FetchableUrls is per-conversation state.
+                servers.Add(new McpServerTools(server.Id, tools, discovered, server.SeedsFetchableUrls));
                 connections.Add(connection.Connection);
             }
             catch (Exception ex)
@@ -160,7 +164,7 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 _logger.LogWarning(ex,
                     "MCP server {Server} for user {User} could not be reached; skipping its tools.",
                     server.Name, userId);
-                servers.Add(new McpServerTools(server.Id, [], server.KnownToolNames));
+                servers.Add(new McpServerTools(server.Id, [], server.KnownToolNames, server.SeedsFetchableUrls));
             }
         }
 

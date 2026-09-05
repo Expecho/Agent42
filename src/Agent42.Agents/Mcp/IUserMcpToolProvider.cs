@@ -24,10 +24,17 @@ namespace Agent42.Agents;
 /// while the previously discovered names still stand, and erasing them there is exactly the bug that makes a
 /// partial per-tool selection unrecoverable.</para>
 /// </param>
+/// <param name="SeedsFetchableUrls">
+/// Whether this server's tool results may seed the conversation's fetchable-URL allowlist (ADR 0067) —
+/// the user's per-server opt-in, copied straight off <see cref="StoredMcpServer.SeedsFetchableUrls"/>.
+/// <c>BuildAgent</c> reads it to decide whether to wrap this server's tools in the harvesting delegate;
+/// nothing else does. Defaults to <c>false</c>, so a group built without it seeds nothing.
+/// </param>
 public sealed record McpServerTools(
     string ServerId,
     IReadOnlyList<AITool> Tools,
-    IReadOnlyList<string>? KnownToolNames = null);
+    IReadOnlyList<string>? KnownToolNames = null,
+    bool SeedsFetchableUrls = false);
 
 /// <summary>
 /// The MCP tools resolved for a user, grouped per server, plus the overlay <see cref="Version"/> they were
@@ -81,6 +88,13 @@ public sealed class SingleUserMcpToolProvider : IUserMcpToolProvider
     /// <para><see cref="McpServerTools.KnownToolNames"/> is derived from the tools' own names here, which is
     /// the offline analogue of a successful connect — the fake provider genuinely knows its tools. A test
     /// that needs the never-connected shape (known names empty) assigns <see cref="Servers"/> directly.</para>
+    ///
+    /// <para>The group it builds never seeds fetchable URLs (ADR 0067). There is deliberately no
+    /// convenience for that: seeding is a per-server property, so a caller that wants it assigns
+    /// <see cref="Servers"/> and says so on the group. A settable shortcut here would have to be applied
+    /// at assignment time — making the result depend on the order two properties were set — or by
+    /// rewriting the groups behind the caller's back, which leaves the shortcut's own getter disagreeing
+    /// with what <see cref="Servers"/> holds. Both were written; neither survived review.</para>
     /// </summary>
     public IReadOnlyList<AITool> Tools
     {

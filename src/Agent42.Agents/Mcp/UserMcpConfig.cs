@@ -54,6 +54,24 @@ public enum McpAuthMode
 /// <para>Trailing and optional, so an overlay persisted before it existed deserializes with no
 /// migration.</para>
 /// </param>
+/// <param name="SeedsFetchableUrls">
+/// Whether a URL appearing in one of this server's tool results may be fetched by <c>fetch_web_page</c>
+/// and read by <c>read_web_document</c> in the conversation that received it (ADR 0067). Off unless the
+/// user turns it on, per server.
+///
+/// <para><b>A SETTING, not discovered metadata — the exact opposite of <see cref="KnownToolNames"/>.</b>
+/// It rides the upsert request through <c>ToStored</c> and must NEVER gain a <c>Keep</c> clause in
+/// <see cref="IUserMcpConfigGrain.SaveAsync"/>: with one, the user could turn seeding on and never off
+/// again.</para>
+///
+/// <para><b>What turning it on gives up</b> is the property ADR 0011's allowlist rests on — that the
+/// model may only fetch a string a search engine or the user produced <i>verbatim</i>. A seeded URL was
+/// authored on whatever page the server scraped. It is off by default and per server for that reason;
+/// see ADR 0067 for the full cost, including that our own container then dials such URLs (ADR 0066).</para>
+///
+/// <para>Trailing and optional, so an overlay persisted before it existed deserializes with seeding
+/// disabled — no migration, and every existing server ships unchanged.</para>
+/// </param>
 [GenerateSerializer]
 [Alias("Agent42.Agents.StoredMcpServer")]
 public sealed record StoredMcpServer(
@@ -73,7 +91,9 @@ public sealed record StoredMcpServer(
     // ── InteractiveOAuth mode — Phase 3 ─────────────────────────────
     [property: Id(11)] string? TokenCiphertext = null,
     // ── Discovered metadata, never a user selection — see the param doc above ──
-    [property: Id(12)] IReadOnlyList<string>? KnownToolNames = null);
+    [property: Id(12)] IReadOnlyList<string>? KnownToolNames = null,
+    // ── A user SETTING (ADR 0067), not metadata — must not gain a Keep clause ──
+    [property: Id(13)] bool SeedsFetchableUrls = false);
 
 /// <summary>
 /// A user's remote-MCP-server overlay: the servers they added and a monotonically-increasing
