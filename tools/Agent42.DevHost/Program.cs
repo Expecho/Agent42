@@ -60,15 +60,39 @@ builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
 // FIXED tool set for every user. The MCP providers CRUD/UI is still exercisable; only overlay→tools
 // reflection is prod-wired.
 //
-// The set is seeded (it used to be empty) so the per-MCP-tool picker is exercisable offline. Two demo tools
-// under the adapter's constant "offline" server id; the Tools convenience derives KnownToolNames from their
-// names, which is the offline analogue of a successful connect.
+// The set is seeded (it used to be empty) so the per-MCP-tool picker is exercisable offline. Three demo
+// tools under the adapter's constant "offline" server id; the Tools convenience derives KnownToolNames from
+// their names, which is the offline analogue of a successful connect.
+//
+// demo_find_links returns a JSON LINK LIST rather than "ok", and the group is marked as URL-seeding
+// (ADR 0067), because without both halves the feature is INERT offline: SingleUserMcpToolProvider never
+// reads UserMcpConfig, so the checkbox saved through the DevHost UI can never reach BuildAgent — and the
+// other two demo tools return a literal "ok", so there would be no URL to harvest either. With them, the
+// whole path (harvest → seeded list → read_web_document) runs against InMemoryWebDocumentFetcher.
+//
+// The honest residual is ADR 0064's: this proves the WIRING, not an MCP handshake.
+AITool[] offlineMcpTools =
+[
+    AIFunctionFactory.Create(() => "ok", "demo_search", "a demo MCP search tool"),
+    AIFunctionFactory.Create(() => "ok", "demo_delete", "a demo MCP delete tool"),
+    AIFunctionFactory.Create(
+        (string filter) => "{\"links\":[{\"text\":\"the offline whitepaper\",\"href\":\"https://demo.invalid/whitepaper.pdf\"}]}",
+        "demo_find_links",
+        "lists the links on a page, filtered by their visible text"),
+];
+
+// Servers is assigned directly rather than through the Tools convenience, because the seeding flag is a
+// per-SERVER property and belongs on the group — the adapter offers no shortcut for it, deliberately.
+// KnownToolNames is derived from the tools' own names, which is what the convenience would have done.
 builder.Services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvider
 {
-    Tools =
+    Servers =
     [
-        AIFunctionFactory.Create(() => "ok", "demo_search", "a demo MCP search tool"),
-        AIFunctionFactory.Create(() => "ok", "demo_delete", "a demo MCP delete tool"),
+        new McpServerTools(
+            SingleUserMcpToolProvider.DefaultServerId,
+            offlineMcpTools,
+            [.. offlineMcpTools.Select(t => t.Name)],
+            SeedsFetchableUrls: true),
     ],
 });
 builder.Services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
@@ -224,7 +248,11 @@ await mcpConfig.SaveAsync(new StoredMcpServer(
     Endpoint: "https://demo.invalid/mcp",
     Auth: nameof(McpAuthMode.None),
     Enabled: true,
-    KnownToolNames: ["demo_search", "demo_delete"]));
+    KnownToolNames: ["demo_search", "demo_delete", "demo_find_links"],
+    // Matches the provider group above (ADR 0067). Both halves again: the provider's flag is what
+    // BuildAgent reads, this one is what the MCP dialog renders — a mismatch would show an unticked box
+    // over a seeding server.
+    SeedsFetchableUrls: true));
 
 // A second server that has NEVER connected, so the cold-start half is exercisable offline too: it renders a
 // plain checkbox with the "tools not discovered yet" hint and no disclosure, and — the part worth checking by

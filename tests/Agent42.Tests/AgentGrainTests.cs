@@ -1157,7 +1157,11 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     // A tool result is JSON-serialized on its way to the model, which escapes apostrophes
     // ("won't"), so assertions anchor on an apostrophe-free phrase of the refusal — otherwise a
     // DoesNotContain would pass vacuously and prove nothing.
-    private const string RefusalAnchor = "came back from a web_search in this conversation";
+    //
+    // The phrase moved with ADR 0067, which reworded both refusals: they now describe the
+    // conversation's LIST rather than enumerating its feeders, because "and this one did none of
+    // those" became false in the ordinary case where a non-seeding MCP server had returned the URL.
+    private const string RefusalAnchor = "is not on that list";
 
     // AC12 — a fetch that fails (the scrape API unreachable, ADR 0027) must come back to the model as a
     // message, not throw the whole turn. The user pastes a URL the fake fetcher is rigged to fail on; the

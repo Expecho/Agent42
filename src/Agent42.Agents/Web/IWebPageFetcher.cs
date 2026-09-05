@@ -13,6 +13,10 @@ namespace Agent42.Agents;
 /// control, independent of SSRF, and remains the caller's job — <c>AgentGrain</c> checks the <b>root</b>
 /// URL against it before calling here. Followed links are deliberately exempt from that check (they come
 /// from the page and would never be in the list), which is an accepted residual risk recorded in ADR 0027.
+/// Since ADR 0067 that allowlist has a second, opt-in list behind it
+/// (<c>AgentGrainState.SeededFetchableUrls</c>), so a root URL may also be one a URL-seeding MCP server
+/// returned — page-authored, not verbatim. The exfiltration property is weakened per seeding server by
+/// design; nothing about this interface changes.
 ///
 /// Production is <c>ContextWebPageFetcher</c>; local dev and tests use <see cref="InMemoryWebPageFetcher"/>.
 /// </summary>

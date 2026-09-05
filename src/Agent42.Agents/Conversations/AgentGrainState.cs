@@ -109,6 +109,13 @@ public sealed class AgentGrainState
     /// query. Bounded (<c>AgentGrain.MaxFetchableUrls</c>, oldest dropped first) so a long conversation
     /// cannot grow the 2 MB session item without limit (ADR 0004). Old Cosmos state deserializes this
     /// as an empty list.
+    ///
+    /// <para><b>This list still has exactly the two feeders named above.</b> ADR 0067 added a third
+    /// source of fetchable URLs — a URL-seeding MCP server's tool result — and deliberately gave it its
+    /// OWN list (<see cref="SeededFetchableUrls"/>), which <c>IsFetchableUrl</c> consults separately.
+    /// Nothing seeds into here, and nothing should: these URLs carry the stronger <i>verbatim</i>
+    /// provenance the paragraph above describes, and a link-heavy tool result harvested into a
+    /// 50-entry list would evict every URL the user typed.</para>
     /// </summary>
     [Id(8)]
     public List<string> FetchableUrls { get; set; } = [];
@@ -188,4 +195,34 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(12)]
     public List<string> WebDocumentUrls { get; set; } = [];
+
+    /// <summary>
+    /// The normalized URLs this conversation may fetch <b>because they arrived in the tool result of a
+    /// remote MCP server the user marked as URL-seeding</b> (ADR 0067). <c>IsFetchableUrl</c> consults this
+    /// list and <see cref="FetchableUrls"/>, so a seeded URL is fetchable by <c>fetch_web_page</c> and
+    /// readable by <c>read_web_document</c>.
+    ///
+    /// <para><b>Separate from <see cref="FetchableUrls"/> for two reasons, and the first is functional
+    /// rather than theoretical.</b> That list is capped at <c>AgentGrain.MaxFetchableUrls</c> (50), so
+    /// harvesting into it would let one scrape of a link-heavy page silently evict every URL the user typed
+    /// — before any security argument is reached. Split, seeded URLs can only evict each other, and the
+    /// state can say where a URL came from, which is what makes the audit log line meaningful.</para>
+    ///
+    /// <para><b>The provenance recorded here is weaker than <see cref="FetchableUrls"/>', deliberately.</b>
+    /// A URL in that list was produced <i>verbatim</i> by a search engine or the user; a URL here was
+    /// authored on whatever page the MCP server scraped, so it is attacker-influenceable. That is the cost
+    /// ADR 0067 accepts, per server and opt-in, and it is why the two lists must never be merged: at the
+    /// point of use they would become indistinguishable.</para>
+    ///
+    /// <para>The counter-effect, stated so it is not rediscovered as a surprise: isolating seeds makes a
+    /// poisoned one <i>harder</i> to flush — ordinary search and user activity cannot evict it, only other
+    /// seeds can, and there is no revoke path.</para>
+    ///
+    /// <para>Bounded at <c>AgentGrain.MaxSeededFetchableUrls</c>, oldest dropped first, and each single tool
+    /// result contributes at most <c>AgentGrain.MaxSeededUrlsPerResult</c>. Trailing <c>[Id(13)]</c>, so old
+    /// Cosmos state deserializes this as an empty list — zero migration, and every existing conversation
+    /// starts with nothing seeded.</para>
+    /// </summary>
+    [Id(13)]
+    public List<string> SeededFetchableUrls { get; set; } = [];
 }
