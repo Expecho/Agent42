@@ -234,6 +234,178 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
         Assert.DoesNotContain(hits, hit => hit.Text.Contains("secret"));
     }
 
+    // ---- Retention prune reconciliation (ADR 0016 meeting ADR 0061) --------------------------------
+    //
+    // A prune renumbers every surviving turn, and IChatSearchIndex has no delete-by-ordinal-range: the only
+    // removal is DeleteConversationAsync. So a prune that did nothing here would upsert over the low
+    // ordinals and leave the TAIL documents behind — a three-turn conversation returning five hits, two of
+    // them text that no longer exists anywhere.
+
+    private static readonly TimeSpan PastTheRetentionWindow = RetentionLimits.Window + TimeSpan.FromHours(1);
+
+    // AC13.
+    [Fact]
+    public async Task Prune_LeavesNoOrphanedSearchDocuments()
+    {
+        const string user = "search-prune-orphans-user";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/agent-prune-orphans");
+
+        // TWO turns before the window, one after, so the prune SHORTENS the conversation. That is what
+        // makes this test non-vacuous: with equal lengths the re-projection would upsert over every old
+        // ordinal and an orphan could not exist whatever the code did. Here ordinals 2 and 3 have nothing
+        // to overwrite them and survive unless they are deleted.
+        await CollectAsync(agent.ChatAsync("the ancient needle", null));
+        await CollectAsync(agent.ChatAsync("the elderly needle", null));
+        Assert.NotEmpty(await _reader.SearchAsync(user, "elderly", 50));
+
+        Fixture.AdvanceClock(PastTheRetentionWindow);
+        await CollectAsync(agent.ChatAsync("the fresh needle", null));
+
+        var hits = await _reader.SearchAsync(user, "needle", 50);
+        Assert.Contains(hits, hit => hit.Text.Contains("fresh"));
+        Assert.DoesNotContain(hits, hit => hit.Text.Contains("ancient"));
+        Assert.DoesNotContain(hits, hit => hit.Text.Contains("elderly"));
+
+        // Exactly one user turn is left in the conversation, so exactly one document may mention the
+        // needle. A stale tail would show up here as a second hit at an ordinal past the end.
+        Assert.Single(hits);
+    }
+
+    // AC14: the surviving turns are re-indexed at their NEW ordinals, contiguously from zero — the
+    // property that makes a later live turn append rather than collide, and a reindex idempotent.
+    [Fact]
+    public async Task Prune_KeepsSearchOrdinalsAnchored()
+    {
+        const string user = "search-prune-ordinals-user";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/agent-prune-ordinals");
+
+        await CollectAsync(agent.ChatAsync("the ancient anchor", null));
+
+        Fixture.AdvanceClock(PastTheRetentionWindow);
+        await CollectAsync(agent.ChatAsync("the fresh anchor", null));
+
+        var hits = (await _reader.SearchAsync(user, "anchor", 50)).OrderBy(hit => hit.Ordinal).ToList();
+
+        var fresh = Assert.Single(hits, hit => hit.Text.Contains("fresh anchor"));
+        Assert.Equal("user", fresh.Role);
+
+        // The surviving user turn is now ordinal 0 — it was ordinal 2 before the prune — and the ordinals
+        // still line up one-for-one with GetHistoryAsync's projection, which is where they come from.
+        Assert.Equal(0, fresh.Ordinal);
+        Assert.Equal(Enumerable.Range(0, hits.Count), hits.Select(hit => hit.Ordinal));
+    }
+
+    // AC15, and the load-bearing one of the four: it is the only test that fails if the reconcile CLEARS
+    // _ephemeralOrdinals instead of remapping them.
+    //
+    // The incognito turn is taken AFTER the clock moves, so the prune drops the older turn and leaves the
+    // incognito one resident — an ordinal shift underneath a set of recorded ordinals. Clearing the set
+    // would then hand the re-projection exactly the text ADR 0034 exists to keep out of Cosmos, at its new
+    // ordinal, and nothing else in the suite would notice.
+    //
+    // Driven through the grain rather than POST /api/chat/{id}: the endpoint passes its Ephemeral flag
+    // straight into this call, so the state constructed is identical, and this class has no API host. What
+    // matters is that it is NOT the agent-run path, which sets _ephemeral = false on entry and mints a GUID
+    // conversation id — it can never construct this state, and a test written against it would be green
+    // whatever the reconcile did.
+    [Fact]
+    public async Task Prune_DoesNotIndexAnEphemeralTurn_AfterOrdinalsShift()
+    {
+        const string user = "search-prune-ephemeral-user";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/agent-prune-ephemeral");
+
+        await CollectAsync(agent.ChatAsync("the ancient marker", null));
+
+        Fixture.AdvanceClock(PastTheRetentionWindow);
+        await CollectAsync(agent.ChatAsync("the incognito marker", null, ephemeral: true));
+        await CollectAsync(agent.ChatAsync("the fresh marker", null));
+
+        var hits = await _reader.SearchAsync(user, "marker", 50);
+
+        Assert.Contains(hits, hit => hit.Text.Contains("fresh marker"));
+        Assert.DoesNotContain(hits, hit => hit.Text.Contains("ancient marker"));
+        Assert.DoesNotContain(hits, hit => hit.Text.Contains("incognito marker"));
+    }
+
+    // The regression test for the defect this MR's review caught: an ephemeral turn taken BETWEEN a
+    // failed reconcile and its retry.
+    //
+    // Its ordinals are recorded against the ALREADY-PRUNED projection, so they are in the new frame
+    // before the retry runs. A reconcile that carried the earlier prune's delta forward and remapped at
+    // retry time would subtract that shift a second time, walking the recorded ordinals backwards onto
+    // two real turns — with the result that the incognito text is indexed into Cosmos and two genuine
+    // turns are silently skipped. That is precisely the failure ADR 0034 exists to prevent, reached
+    // through the machinery added to protect it.
+    //
+    // The fix is that the remap happens where the shift happens (in PruneExpiredTurnsAsync) and the
+    // retry carries a bare bool. Neither AC15 (one prune, delete succeeds) nor AC16 (no ephemeral turn)
+    // can reach this state, which is why it needs its own test.
+    [Fact]
+    public async Task Prune_DoesNotIndexAnEphemeralTurn_TakenBetweenAFailedReconcileAndItsRetry()
+    {
+        const string user = "search-prune-retry-ephemeral-user";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/agent-prune-retry-ephemeral");
+
+        await CollectAsync(agent.ChatAsync("the ancient token", null));
+        TestChatSearchIndex.FailNextDeletesFor(user, 1);
+
+        // Prunes the ancient turn; the reconcile's delete throws, so the retry is left outstanding.
+        Fixture.AdvanceClock(PastTheRetentionWindow);
+        await CollectAsync(agent.ChatAsync("the surviving token", null));
+
+        // Recorded in the POST-prune frame — this is the whole point of the test.
+        await CollectAsync(agent.ChatAsync("the incognito token", null, ephemeral: true));
+
+        // Prunes nothing (everything left is fresh) but retries the outstanding reconcile, which resets
+        // the cursor and re-projects the conversation from ordinal 0.
+        await CollectAsync(agent.ChatAsync("the third token", null));
+
+        var hits = await _reader.SearchAsync(user, "token", 50);
+
+        Assert.DoesNotContain(hits, hit => hit.Text.Contains("incognito"));
+        Assert.DoesNotContain(hits, hit => hit.Text.Contains("ancient"));
+        // And the two real turns the double-shift would have skipped are present.
+        Assert.Contains(hits, hit => hit.Text.Contains("surviving"));
+        Assert.Contains(hits, hit => hit.Text.Contains("third"));
+    }
+
+    // AC16. ADR 0061's best-effort licence rests explicitly on ReindexAsync being a user-invocable repair,
+    // and that repair only UPSERTS — DeleteConversationAsync is the sole removal. So a swallowed delete
+    // after a destructive prune is the one index failure nothing can ever clean up, and it has to be
+    // retried rather than logged and forgotten.
+    [Fact]
+    public async Task Prune_RetriesTheSearchReconcile_AfterAFailedDelete()
+    {
+        const string user = "search-prune-retry-user";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/agent-prune-retry");
+
+        await CollectAsync(agent.ChatAsync("the doomed needle", null));
+        TestChatSearchIndex.FailNextDeletesFor(user, 1);
+
+        Fixture.AdvanceClock(PastTheRetentionWindow);
+        await CollectAsync(agent.ChatAsync("the surviving needle", null));
+
+        // The turn itself succeeded — search never fails a turn — but the index is now stale in BOTH
+        // directions, and that is the measured cost of a failed reconcile: the pruned text is still there,
+        // and the surviving turn was not written either, because the cursor was deliberately NOT reset
+        // (it sits past the shortened history, so the re-projection has nothing to add). Resetting it
+        // anyway would have re-projected over documents that were never removed.
+        var afterFailure = await _reader.SearchAsync(user, "needle", 50);
+        Assert.Contains(afterFailure, hit => hit.Text.Contains("doomed"));
+        Assert.DoesNotContain(afterFailure, hit => hit.Text.Contains("surviving"));
+
+        // A later persisted turn that prunes NOTHING still retries the outstanding reconcile. The pending
+        // state is a bare bool: the delete removes the whole conversation whatever was pruned, and the
+        // ordinal shift was already applied at prune time — carrying a count across turns here is what
+        // put it in the wrong frame (see the between-a-failure-and-its-retry test above).
+        await CollectAsync(agent.ChatAsync("a third needle", null));
+
+        var afterRetry = await _reader.SearchAsync(user, "needle", 50);
+        Assert.Contains(afterRetry, hit => hit.Text.Contains("surviving"));
+        Assert.Contains(afterRetry, hit => hit.Text.Contains("third"));
+        Assert.DoesNotContain(afterRetry, hit => hit.Text.Contains("doomed"));
+    }
+
     private static async Task<List<AgentStreamEvent>> CollectAsync(IAsyncEnumerable<AgentStreamEvent> stream)
     {
         var events = new List<AgentStreamEvent>();

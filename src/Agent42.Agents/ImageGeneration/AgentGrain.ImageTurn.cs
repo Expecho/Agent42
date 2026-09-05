@@ -119,9 +119,16 @@ public sealed partial class AgentGrain
         // but the conversation itself leaves no trace in Cosmos.
         if (!_ephemeral)
         {
+            // Retention (ADR 0016). INSIDE the if, unlike the other two sites: this one guards _ephemeral
+            // with a real block rather than an early return, and an incognito turn must not prune.
+            var pruned = await ApplyRetentionAsync();
+
             var serializedSession = await _agent.SerializeSessionAsync(_session);
             _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
             await _state.WriteStateAsync();
+
+            // After the write, for the reason given at the chat site.
+            await ReconcileSearchIndexAfterPruneAsync(pruned);
 
             // Search projection (ADR 0061). This site really does have an `if (!_ephemeral)` block —
             // unlike the other two, which are an early return and a no-guard-by-design path — so the
@@ -227,9 +234,18 @@ public sealed partial class AgentGrain
     // assistantImageId (ADR 0020) — present even after the image UriContent was stripped for a no-vision model,
     // which is what makes the strip reversible and history render an image-only assistant turn.
     private AttachmentRef? AssistantImageRef(ChatMessage message)
+        => AssistantImageId(message) is { } id && _state.State.GeneratedImages.TryGetValue(id, out var reference)
+            ? reference
+            : null;
+
+    // The assistantImageId stamped on an assistant message, or null. Split out of AssistantImageRef because
+    // the retention prune (ADR 0016) needs the KEY rather than the ref: it drops the GeneratedImages entry
+    // for every assistant message it deletes, which is grain state and would otherwise grow unbounded. The
+    // blob bytes are deliberately left behind — IAttachmentStore has no delete, and conversation delete
+    // already orphans them.
+    private static string? AssistantImageId(ChatMessage message)
         => message.AdditionalProperties?.TryGetValue(AssistantImageIdKey, out var value) == true
             && value?.ToString() is { Length: > 0 } id
-            && _state.State.GeneratedImages.TryGetValue(id, out var reference)
-            ? reference
+            ? id
             : null;
 }

@@ -164,7 +164,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0027-hosted-page-scrape-via-context-dev.md`
 - **Verified:** 2026-07-21
 
-### A continuous agent funnels every chat into one unbounded grain — it will eventually brick
+### A continuous agent's history is pruned to 24 h — which NARROWS the brick, and does not close it
 
 - **Claim:** an agent with `Continuous = true` (ADR 0016) routes **every** start onto one deterministic
   conversation id `` `agent-${agent.id}` `` → one grain `{userId}/agent-{agentId}`. That grain never rotates:
@@ -174,7 +174,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   and will eventually fail `WriteStateAsync` *after* the model has already answered — bricking the conversation,
   silently, **in prod only** (the in-memory test store has no 2 MB limit). **The only escape hatch is
   delete-to-reset:** `DELETE /api/conversations/agent-{agentId}` purges the grain and the next start recreates
-  it fresh at the same id. No code cap is in scope. Two further non-obvious traps: (1) the flag is read
+  it fresh at the same id.
+  **ADR 0068 now prunes such a chat to a 24-hour window on every persisted turn — read what that does and
+  does not buy.** It bounds **age**, not **size**: a busy continuous agent, or one oversized tool return (see
+  the "an agent tool's RETURN value is persisted" gotcha above), still exceeds 2 MB inside 24 hours. So every
+  sentence above stays true, delete-to-reset included; what changed is that the ordinary case no longer walks
+  into the wall. Do not read the prune as a fix and delete this entry. Two consequences of the prune itself: a
+  continuous chat **silently loses content over time** — including through a public share link (ADR 0035),
+  which reads the same `GetHistoryAsync()` — and existing history is stamped with "now" on the first turn
+  after deploy, so nothing is pruned until a window later and **never retroactively**.
+  Two further non-obvious traps: (1) the flag is read
   **client-side at chat-start and is never snapshotted into `AgentBinding`** (it's routing, not persona), so
   editing a continuous agent's system prompt or model has **zero effect** on its ongoing conversation until the
   grain is deleted — ADR 0003's "start a new chat to apply the edit" remedy does not work for a continuous
@@ -182,9 +191,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   never collide — do not "fix" the derivation to hash or encode the id.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/agents.js` (`startAgentChat`),
   `src/Agent42.Agents/StoredAgents/AgentDefinition.cs` (`Continuous`), `src/Agent42.Backend/Api/AgentApi.cs` (`AgentKey`),
+  `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs`, `src/Agent42.Agents/Conversations/RetentionLimits.cs`,
   `.agentic/decisions/0016-per-agent-history-mode-deterministic-conversation-id.md`,
+  `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0003-snapshot-agent-persona-into-conversation.md`
-- **Verified:** 2026-07-15
+- **Verified:** 2026-09-05
 
 ### There are TWO web fetch paths with DIFFERENT security models — `fetch_web_page` has no SSRF guard, `read_web_document` does
 
@@ -2942,3 +2953,80 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/McpServersAssetsTests.cs`,
   `.agentic/decisions/0065-preferences-rail-and-drill-down.md`
 - **Verified:** 2026-09-04
+
+### After a retention prune, REMAP `_ephemeralOrdinals` — never `Clear()` it
+
+- **Claim:** a retention prune (ADR 0068) deletes whole turns off the front of a continuous chat's
+  session, shifting every surviving ordinal down, and the fix for the search index is to delete the
+  conversation's documents, reset the cursor and re-project from ordinal 0. That re-projection is
+  exactly where an incognito turn (ADR 0034) gets swept in, because an ephemeral turn **stays in the
+  in-memory session** for the rest of the activation (see the "skipping an incognito turn's index write
+  is NOT enough" gotcha). `_ephemeralOrdinals` is what keeps it out — and it is now recorded against
+  ordinals the prune has just invalidated, so it must be **shifted down by the dropped count**, with
+  negatives discarded. Copying `DeleteSearchIndexForConversationAsync`, which **clears** the set, is the
+  natural mistake and is silently wrong: that method clears because the conversation is being purged and
+  nothing will be re-projected, while here a live conversation is re-projected immediately afterwards.
+  Clearing hands it precisely the text ADR 0034 exists to keep out of Cosmos, at its new ordinal, and
+  nothing throws. **Mutation-checked:** replacing the remap with `Clear()` turns
+  `Prune_DoesNotIndexAnEphemeralTurn_AfterOrdinalsShift` red and **no other test in the suite**, so that
+  one test is the entire guard — its setup takes the incognito turn *after* the clock moves, deliberately,
+  because a shared advance would let the prune drop the incognito turn too and the test would pass
+  vacuously.
+  **The second way to get this wrong is subtler and shipped once already: remap in the wrong FRAME.** The
+  remap must happen where the shift happens — inside `PruneExpiredTurnsAsync` — and **never** be deferred
+  to the index reconcile, which may be retried a turn later. `_ephemeralOrdinals` records ordinals against
+  the projection as it stands *at the moment the ephemeral turn ran*, so an incognito turn taken between a
+  failed reconcile and its retry is already in the post-prune frame; re-applying the earlier prune's delta
+  to it walks it backwards onto real turns, and the re-projection then indexes the incognito text while
+  skipping two genuine turns. **Measured on the pre-fix build**: `the incognito token` written at ordinal
+  2. The corollary is that the retry state must be a **bool**, not a carried count — the delete removes the
+  whole conversation regardless of the delta, so a count has no other consumer and buys nothing but the
+  bug. Guarded by
+  `Prune_DoesNotIndexAnEphemeralTurn_TakenBetweenAFailedReconcileAndItsRetry`; neither of the other two
+  prune/search tests can reach that state.
+- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.Search.cs` (`RemapEphemeralOrdinals`,
+  `ReconcileSearchIndexAfterPruneAsync`, and `DeleteSearchIndexForConversationAsync` for the contrast),
+  `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
+  (`Prune_DoesNotIndexAnEphemeralTurn_AfterOrdinalsShift`),
+  `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
+  `.agentic/decisions/0034-ephemeral-chat.md`
+- **Verified:** 2026-09-05
+
+### A pruned-turn delta is a PROJECTED-turn count, and a failed index delete is the one thing reindex cannot repair
+
+- **Claim:** two traps in the same handful of lines, both about the retention prune's search
+  reconciliation (ADR 0068 amending ADR 0061), and each invisible in testing if got wrong.
+  - **The delta is not the number of user turns dropped.** `GetHistoryAsync()` projects BOTH roles and
+    **skips a turn carrying neither text nor an image**, so *N* dropped user turns is not *N* dropped
+    ordinals — an image-only or blank turn makes the two diverge, and from then on every remapped
+    ephemeral ordinal is off by one. Compute it as `countBefore - countAfter` across **one**
+    `GetHistoryAsync()` projection either side of the removal, never arithmetically from the turn count.
+    That is the same single-projection rule the "ordinals must come from ONE `GetHistoryAsync()`
+    projection" gotcha binds, reached from a second direction.
+  - **The best-effort licence does NOT extend to this delete.** Every other `IChatSearchIndex` call is
+    swallowed because a lost write costs search results and the projection can be rebuilt at any time —
+    reasoning that rests explicitly on `ReindexAsync` being a user-invocable repair. `ReindexAsync` only
+    **upserts**; `DeleteConversationAsync` is the **sole** removal in the interface. So a swallowed
+    delete after a *destructive* prune strands orphaned tail documents that **nothing can ever clean
+    up** — a three-turn conversation returning five hits. Hence `_searchReconcilePending`, retried on
+    the next persisted turn, and hence the cursor being reset **only inside the `try`, after the awaited
+    delete succeeds**: resetting it anyway would re-project over documents that are still there.
+    **The retry is NOT self-healing across a deactivation, and do not let the code's optimism suggest it
+    is.** The flag is activation-scoped, so a grain that idles out with a retry outstanding loses it and
+    the orphans become permanent — text the prune "hard deleted" from the session stays searchable in
+    `chat-messages`. Recorded as a residual in ADR 0068, with a delete-then-reindex `ReindexAsync` as the
+    follow-up that would actually close it.
+  - **Measured shape of the failure state**, since it is now reachable by design: after a failed delete
+    the index is stale in **both** directions — the pruned text is still indexed AND the surviving turn
+    is not, because the un-reset cursor sits past the now-shorter history. The next persisted turn
+    repairs both. A test asserting "the new turn was indexed anyway" is asserting the wrong thing.
+- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.Search.cs`
+  (`ReconcileSearchIndexAfterPruneAsync`, `_searchReconcilePending`),
+  `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs` (`PruneExpiredTurnsAsync`, the
+  before/after projection), `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
+  (`Prune_RetriesTheSearchReconcile_AfterAFailedDelete`, `Prune_LeavesNoOrphanedSearchDocuments`,
+  `Prune_DoesNotIndexAnEphemeralTurn_TakenBetweenAFailedReconcileAndItsRetry`),
+  `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
+  `.agentic/decisions/0061-searchable-chat-message-projection.md`
+- **Verified:** 2026-09-05
+
