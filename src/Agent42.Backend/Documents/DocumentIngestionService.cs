@@ -19,24 +19,36 @@ public sealed class DocumentIngestionService(
 {
     /// <summary>
     /// Extracts, chunks, embeds and indexes <paramref name="content"/> under
-    /// <paramref name="ownerKey"/> (the <c>{userId}/{conversationId}</c> grain key). Returns the
-    /// number of chunks indexed — zero when the document yields no extractable text (e.g. a
-    /// scanned/image-only PDF), which the caller can surface to the user.
+    /// <paramref name="ownerKey"/> (the <c>{userId}/{conversationId}</c> grain key). Returns the chunks
+    /// indexed — empty when the document yields no extractable text (e.g. a scanned/image-only PDF),
+    /// which the caller can surface to the user.
     /// <para>The embedding generator is resolved from the <b>owner's</b> configured default embedding model
     /// (ADR 0018) — the userId is taken from <paramref name="ownerKey"/>, NEVER from an ambient principal, so
     /// this works identically on the browser-upload and the Easy-Auth-excluded <c>/api/agent-run</c> paths.
     /// Throws <see cref="EmbeddingModelNotConfiguredException"/> when the owner has no embedding model, and
     /// <see cref="EmbeddingDimensionMismatchException"/> when its vectors don't fit the store — the upload
     /// endpoints map both to a clear 4xx.</para>
+    /// <para><paramref name="maxChunks"/> is <c>null</c> (unlimited) on the two browser/agent-run upload
+    /// paths, where the user chose the file and the request bounds it. It is set on the
+    /// <c>read_web_document</c> path (ADR 0066), where a model-chosen URL can point at a document whose
+    /// byte size says nothing about how much embedding work it implies — every chunk is a round trip on a
+    /// <b>non-reentrant</b> grain. The tail is dropped and reported, never silently discarded.</para>
     /// </summary>
-    public async Task<int> IngestAsync(
-        string ownerKey, string fileName, string mediaType, byte[] content, CancellationToken cancellationToken = default)
+    public async Task<IngestedDocument> IngestAsync(
+        string ownerKey, string fileName, string mediaType, byte[] content, int? maxChunks = null,
+        CancellationToken cancellationToken = default)
     {
         var segments = extractor.Extract(fileName, mediaType, content);
         var chunks = chunker.Chunk(fileName, segments);
         if (chunks.Count == 0)
         {
-            return 0;
+            return IngestedDocument.Empty;
+        }
+
+        var truncated = maxChunks is int cap && chunks.Count > cap;
+        if (truncated)
+        {
+            chunks = chunks.Take(maxChunks!.Value).ToList();
         }
 
         // The owner's default embedding model (ADR 0018). userId is derived from the ownerKey grain key
@@ -64,7 +76,7 @@ public sealed class DocumentIngestionService(
             .ToList();
 
         await index.UpsertChunksAsync(ownerKey, embedded, cancellationToken);
-        return chunks.Count;
+        return new IngestedDocument(embedded, truncated);
     }
 
     // userId is everything before the first '/' of the {userId}/{conversationId} owner key (mirrors

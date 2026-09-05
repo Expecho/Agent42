@@ -144,4 +144,48 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(10)]
     public List<string>? EnabledTools { get; set; }
+
+    /// <summary>
+    /// Distinct file names of the documents this conversation ingested from the <b>web</b>, via the
+    /// <c>read_web_document</c> tool (ADR 0066). Kept separate from <see cref="DocumentNames"/>, and the
+    /// separation is a security property, not tidiness.
+    ///
+    /// <para><b>These documents were not uploaded by the user, and the instructions must never say they
+    /// were.</b> <c>WithDocumentAwareness</c> renders <see cref="DocumentNames"/> under "the user has
+    /// uploaded…", which is the strongest trust signal in the system prompt. A model-chosen URL can point
+    /// at attacker-authored content, so folding these into that list would assert user provenance for it
+    /// — the exact inverse of the <c>"UNTRUSTED: …"</c> labelling ADR 0027 treats as load-bearing on the
+    /// page-fetch path. They are rendered under their own untrusted-provenance sentence instead.</para>
+    ///
+    /// <para>Each name is <b>attacker-influenced text</b> derived from the URL path and sanitized hard by
+    /// <see cref="WebDocumentLimits.SanitizeFileName"/> before it ever reaches here — it ends up in the
+    /// system prompt AND in every citation's <c>SourceName</c>.</para>
+    ///
+    /// <para>It gates retrieval jointly with <see cref="DocumentNames"/>: <c>BuildAgent</c> attaches the
+    /// always-on provider when the two together are non-empty (ADR 0008's per-conversation gate,
+    /// widened, not removed). Trailing <c>[Id(11)]</c>, so old Cosmos state deserializes this as an empty
+    /// list — zero migration, the idiom of ADR 0016's <c>[Id(7)]</c> and ADR 0045's <c>[Id(5)]</c>.</para>
+    /// </summary>
+    [Id(11)]
+    public List<string> WebDocumentNames { get; set; } = [];
+
+    /// <summary>
+    /// The normalized URLs this conversation has already read with <c>read_web_document</c> (ADR 0066),
+    /// appended in lockstep with <see cref="WebDocumentNames"/> and capped together at
+    /// <see cref="WebDocumentLimits.MaxWebDocuments"/> (oldest dropped first).
+    ///
+    /// <para><b>This is the re-read identity, and it is a separate list on purpose.</b> The display name
+    /// is derived and length-capped, so two long URLs can flatten to one name; using it as the identity
+    /// would silently refuse to read a genuinely different document. Re-reading is worth preventing
+    /// exactly: <c>CosmosDocumentIndex</c> gives every chunk a fresh <c>Guid</c> id, so a second read
+    /// <b>duplicates</b> all of a document's chunks rather than overwriting them — and the trigger here
+    /// is model-driven, reachable from <c>/api/agent-run</c> and from a <b>repeating reminder</b>, so an
+    /// hourly reminder could otherwise re-ingest the same PDF forever.</para>
+    ///
+    /// <para>The residual, bounded and accepted: a URL evicted by the cap can be read again and its
+    /// chunks will duplicate. Trailing <c>[Id(12)]</c> — old Cosmos state deserializes this as an empty
+    /// list, so the first read after a deploy is treated as new. Zero migration.</para>
+    /// </summary>
+    [Id(12)]
+    public List<string> WebDocumentUrls { get; set; } = [];
 }

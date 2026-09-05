@@ -110,6 +110,14 @@ number on purpose. The same values stream to the browser as a tool chip, so the 
 > are removed. The rest of this ADR — `web_search`, `WebToolLimits`, the timeout/no-retry discipline,
 > and the whole-URL **allowlist** two sections below — is unchanged and still authoritative. The
 > paragraph below is retained for the historical rationale.
+>
+> **Partially restored by [ADR 0066](0066-in-container-document-fetch-for-rag.md) (2026-09-04) — for a
+> DIFFERENT tool.** `fetch_web_page` is still not an SSRF sink and still installs no guard. But the new
+> `read_web_document` *does* dial the model-chosen URL from inside our container (context.dev cannot
+> return document bytes at all), so `PrivateAddressGuard` and the connect-time
+> `ConnectCallback` shape below are **back in the repo, verbatim**, on that second path only. The
+> reasoning in the paragraph below is therefore live again — read it as written, and note which tool it
+> now applies to. `WebPageFetcher` and the `AngleSharp` HTML→text pass stay deleted.
 
 The URL is chosen by the **model**, and the container app's managed identity holds Cosmos, Storage and
 Azure OpenAI rights that Azure's IMDS endpoint (`169.254.169.254`) will mint tokens for to anything able

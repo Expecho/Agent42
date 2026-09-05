@@ -31,12 +31,17 @@ public sealed class DocumentIngestionServiceTests
     {
         var index = new FakeIndex(expectedDimensions: DeterministicEmbeddingGenerator.Dimensions);
 
-        var count = await Service(index, EmbeddingProvider()).IngestAsync(
+        var result = await Service(index, EmbeddingProvider()).IngestAsync(
             OwnerKey, "guide.txt", DocumentMediaTypes.PlainText,
             TextDocument("Magrathea is a legendary planet where dolphins once left a message."));
 
-        Assert.True(count > 0);
+        Assert.True(result.ChunkCount > 0);
+        Assert.False(result.Truncated);
         Assert.NotEmpty(index.Upserted);
+
+        // The chunks come back so the read_web_document tool can rank them IN PROCESS (ADR 0066)
+        // rather than reading a top-K back out of the prod-only Cosmos vector index.
+        Assert.Equal(index.Upserted.Count, result.Chunks.Count);
     }
 
     // AC5: a store whose fixed dimension (3072, the prod container) doesn't match the model's vectors rejects
@@ -85,6 +90,51 @@ public sealed class DocumentIngestionServiceTests
             "bob/conversation-9", "guide.txt", DocumentMediaTypes.PlainText, TextDocument("text content"));
 
         Assert.Equal("bob", recording.LastUserId);
+    }
+
+    // AC20 (ADR 0066): maxChunks bounds the embedding work — every chunk is a round trip on a
+    // NON-REENTRANT grain, and a model-chosen URL's byte size says nothing about how much extracted text
+    // it holds. The tail is dropped and the truncation is REPORTED, so the model knows it is reasoning
+    // over part of the document rather than being handed a silent lie.
+    [Fact]
+    public async Task Ingest_RespectsMaxChunksAndReportsTruncation()
+    {
+        var index = new FakeIndex(DeterministicEmbeddingGenerator.Dimensions);
+        var service = Service(index, EmbeddingProvider());
+
+        // Long enough to chunk well past the cap the test applies.
+        var long_ = TextDocument(string.Join("\n\n", Enumerable.Range(0, 400).Select(
+            i => $"Paragraph {i}. " + string.Join(" ", Enumerable.Repeat("magrathea", 60)))));
+
+        var uncapped = await service.IngestAsync(OwnerKey, "long.txt", DocumentMediaTypes.PlainText, long_);
+        Assert.True(uncapped.ChunkCount > 3, "the fixture must chunk past the cap, or this proves nothing");
+        Assert.False(uncapped.Truncated);
+
+        index.Upserted.Clear();
+        var capped = await service.IngestAsync(
+            OwnerKey, "long.txt", DocumentMediaTypes.PlainText, long_, maxChunks: 3);
+
+        Assert.Equal(3, capped.ChunkCount);
+        Assert.True(capped.Truncated);
+
+        // The cap bounds the EMBEDDING and the upsert, not just the returned list — that is the whole
+        // point. Capping only the return would leave the grain stall unbounded.
+        Assert.Equal(3, index.Upserted.Count);
+    }
+
+    // A document that yields no extractable text (a scanned, image-only PDF) is not an error: it is an
+    // empty ingest the caller surfaces to the user.
+    [Fact]
+    public async Task Ingest_NoExtractableText_ReturnsEmpty()
+    {
+        var index = new FakeIndex(DeterministicEmbeddingGenerator.Dimensions);
+
+        var result = await Service(index, EmbeddingProvider()).IngestAsync(
+            OwnerKey, "blank.txt", DocumentMediaTypes.PlainText, TextDocument("   \n\n  "));
+
+        Assert.Equal(0, result.ChunkCount);
+        Assert.False(result.Truncated);
+        Assert.Empty(index.Upserted);
     }
 
     private sealed class FakeIndex(int? expectedDimensions) : IDocumentIndex

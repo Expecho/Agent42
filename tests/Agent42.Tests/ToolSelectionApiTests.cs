@@ -57,12 +57,20 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
         Assert.Equal(
             new[]
             {
-                "web_search", "location", "scheduling", "code_interpreter", "memory",
+                "web_search", "location", "scheduling", "code_interpreter", "memory", "read_web_document",
                 "skill:scheduledprompt", "skill:websearch",
             }.Order(),
             keys.Order());
 
         Assert.DoesNotContain("skills", keys); // the wildcard is never rendered
+
+        // AC24 (ADR 0066): the new key reaches the picker with a DESCRIPTION, like every other built-in.
+        // Skill and MCP rows pass null (their labels are user- and server-supplied names, ADR 0065); a
+        // static key that shipped without one would render as a bare label beside described neighbours.
+        var readWebDocument = doc.RootElement.EnumerateArray()
+            .Single(e => e.GetProperty("key").GetString() == "read_web_document");
+        Assert.False(readWebDocument.GetProperty("requiresHostedTools").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(readWebDocument.GetProperty("description").GetString()));
 
         // code_interpreter is the only one flagged as needing a hosted-tools model.
         var codeInterpreter = doc.RootElement.EnumerateArray()

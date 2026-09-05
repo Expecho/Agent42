@@ -168,16 +168,52 @@ to document a mechanical rule, add a lint rule instead.
   no longer dials the model's URL from our container — it calls the hosted **context.dev** scrape API,
   which returns clean markdown, and can **follow depth-1 links** whose text matches a model-supplied
   `followLinkFilter` (up to `WebToolLimits.MaxFollowedLinks`). Because the outbound request is context.dev's,
-  the old `PrivateAddressGuard`/`WebPageFetcher`/`AngleSharp` **SSRF sink is gone** (deleted); the whole-URL
+  the old `WebPageFetcher`/`AngleSharp` **SSRF sink is gone from THIS path** (deleted — but read the ADR 0066
+  bullet: `PrivateAddressGuard` itself is back in the repo, for `read_web_document` only); the whole-URL
   **allowlist stays** (it is an exfiltration, not SSRF, control) and applies to the **root** URL only.
   **The headline consequences:** (1) every fetched URL and its content now transit a third party outside
   the Entra tenant (ADR 0013's egress shape); (2) followed links are **allowlist-exempt** — an accepted
   residual risk the ADR records honestly (opt-in, hard-capped, credit-billed, labelled untrusted, logged —
   none of which closes the channel). A **`CONTEXT_API_KEY` GitHub Actions secret is a manual prerequisite**,
   but deliberately **not on the availability path** (like `GOOGLE_MAPS_API_KEY`, not `SEARXNG_SECRET`): with
-  no key the app starts and `fetch_web_page` fails per call. Read the two new gotchas (the sink is gone;
-  following is an accepted residual risk) and note the return budget is now `MaxTotalPageTextLength` across
-  root + followed, not `MaxPageTextLength` alone.
+  no key the app starts and `fetch_web_page` fails per call. Read the two new gotchas (the two fetch paths
+  and their different security models; following is an accepted residual risk) and note the return budget
+  is now `MaxTotalPageTextLength` across root + followed, not `MaxPageTextLength` alone.
+- Web-hosted documents into RAG (ADR 0066, **amends 0011 + 0027 + 0056, extends 0007/0008/0021**): a
+  model-invoked **`read_web_document`** tool fetches a PDF/Office/text document **from our own container**,
+  ingests it into the conversation's vector index (ADR 0007's pipeline, unchanged) and returns budget-capped
+  excerpts for the current turn. **`fetch_web_page` and context.dev are untouched** — that disjointness is
+  what lets this ship before the planned context.dev removal, and it leaves the restored guard behind for
+  that work. **The headline is that ADR 0027's rejected "fallback direct fetch" alternative was deliberately
+  re-adopted (the user was asked), so `PrivateAddressGuard` is back — verbatim, connect-time,
+  DNS-self-resolving, IPv4-mapped/NAT64-aware — on this path ONLY.** There are now two fetch paths with two
+  security models, an accepted cost; the gotcha carries both halves in one entry so neither is read alone.
+  `AngleSharp`/`WebPageFetcher` are **not** restored (HTML is rejected here) and **no package is added**.
+  Two design points that are not obvious: **`BuildAgent` decides the context providers before the run**, so
+  a mid-run ingest cannot reach its own turn — hence the tool returns excerpts inline (taking a `question`),
+  which is the `OnDemandFunctionCalling` shape **ADR 0008 rejected**, taken deliberately because it is
+  *additive to* the always-on provider (**do not write "following ADR 0008"**); and the rebuild is deferred
+  to **TWO consume sites** — `ChatCoreAsync` **and** `ReceiveReminder`, which does not drain it. Excerpts are
+  ranked **in process** over the just-embedded chunks, never via `IDocumentIndex.SearchAsync` (prod-only
+  Cosmos path, ADR 0007/0061's scar; and no per-document filter). Provenance is a security property: a
+  trailing **`[Id(11)] WebDocumentNames`** keeps these out of the "the user has uploaded" sentence, the RAG
+  gate becomes the **sum** of the two lists, and the URL-derived filename is hard-sanitized because it is
+  prompt text — **and carries a `(web: {host})` qualifier built from the whole path, which is not
+  cosmetic**: the always-on provider serves uploaded and web-fetched excerpts through the same
+  `ChatRole.User` channel whose only per-excerpt metadata is `SourceName`, so without it a fetched
+  `/handbook.pdf` cites identically to an uploaded one and collides with it. Re-reading a URL
+  short-circuits before the fetch (chunk ids are fresh `Guid`s, so a second read **duplicates** chunks —
+  and a repeating reminder can trigger this) and the name list is bounded oldest-first. Redirects **are**
+  followed (5 hops, each address-guarded), so the bytes can come from a host the allowlist never saw —
+  mitigated by naming the document after the **final** URI. **Three consequences worth carrying:** it is a **fourth and the largest** member of ADR 0056's
+  durable-injection list, so the poisoning is **unbounded, not conversation-bounded** (no Hindsight delete
+  path); **`/api/agent-run` reachability changed** — an `excludedPaths` API-key holder can now make our
+  managed-identity-bearing container dial a URL of their choosing, which is exactly what the guard is for;
+  and the new catalog key lands **OFF for anyone who ever pressed Save** (no migration, by design). Limits
+  live in `WebDocumentLimits` (10 MB streamed cap, chunk cap, and a **separate download deadline** because
+  `ResponseHeadersRead` makes `HttpClient.Timeout` stop covering the body). No new secret, container, Bicep
+  or `excludedPaths` change; `POST /api/conversations/{id}/documents/from-url` is noted as a follow-up and
+  deliberately **not built**.
 - User location (ADR 0012): a `get_current_location` tool returning the user's coordinates and a
   reverse-geocoded street address. `navigator.geolocation` is a *browser* API and tools run server-side,
   and the chat path is a one-way NDJSON stream — so a tool cannot ask the browser for a fix mid-turn. The
@@ -1120,7 +1156,10 @@ to document a mechanical rule, add a lint rule instead.
   `ProjectLayoutTests.ExpectedFolders()` pins by name** (that list, not a count in prose, is the
   authority; `Skills/` is runtime skill content rather than code, but it is in the set)
   (`Conversations/`, `Web/`, `Documents/`, `Mcp/`, `StoredAgents/`, …), and `AgentGrain` is split into
-  **13 `partial` files that live in those folders**. **Every type stays in the flat `Agent42.Agents`
+  **`partial` files that live in those folders — the set `ProjectLayoutTests.AgentGrainParts()` pins by
+  name is the authority, not a count in prose** (it stood at 12 for ADRs 0061–0063 and is 13 since ADR
+  0066's `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`; `AgentGrainState.cs` is NOT one of them, which is what
+  a count here kept getting wrong). **Every type stays in the flat `Agent42.Agents`
   namespace — folders and namespaces deliberately DISAGREE, and that is load-bearing, not sloppiness.**
   Orleans Cosmos grain storage uses `JsonGrainStorageSerializer`, which writes the full CLR type name
   into every document (`"$type":"Agent42.Agents.AgentGrainState, Agent42.Agents"`), so giving a
