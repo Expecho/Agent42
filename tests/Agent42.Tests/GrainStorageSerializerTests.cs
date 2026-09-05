@@ -143,6 +143,47 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal(["https://example.com/spec-v2.pdf"], restored.WebDocumentUrls);
     }
 
+    // AC14 (ADR 0067): the committed golden predates [Id(13)] SeededFetchableUrls, so it carries no such
+    // key. It must bind to an EMPTY LIST rather than null — IsFetchableUrl reads .Contains on it unguarded
+    // on every fetch and every document read, so a null would NRE the first web turn of every conversation
+    // that predates this deployment. Reading empty is also what makes "nothing is seeded until a user opts
+    // a server in" true at rest and not merely in the code.
+    [Fact]
+    public void StateWrittenBeforeUrlSeeding_StillDeserializes()
+    {
+        var restored = Serializer().Deserialize<AgentGrainState>(new BinaryData(StoredAgentGrainStateJson));
+
+        Assert.NotNull(restored.SeededFetchableUrls);
+        Assert.Empty(restored.SeededFetchableUrls);
+
+        // The pre-existing allowlist is untouched by the split: an old conversation keeps the URLs its
+        // user typed and its searches returned, with their stronger provenance.
+        Assert.Equal(["https://example.com/a"], restored.FetchableUrls);
+    }
+
+    // AC15: the FORWARD direction, on the path that matters at rest. The golden above cannot cover it (it
+    // was written before the field existed and is deliberately never regenerated), so this writes and reads
+    // back through the SAME configured Cosmos serializer.
+    //
+    // The two lists are given deliberately DIFFERENT values because the failure this guards is them
+    // SWAPPING: they hold the same type, sit next to each other, and are read by one method — a
+    // renumbering would silently give every seeded URL the provenance of a user-typed one, which is the
+    // exact distinction ADR 0067 rests on, and nothing else would notice.
+    [Fact]
+    public void SeededFetchableUrls_RoundTripWithoutSwapping()
+    {
+        var written = new AgentGrainState
+        {
+            FetchableUrls = ["https://example.com/typed-by-the-user"],
+            SeededFetchableUrls = ["https://linked.example/seeded-by-an-mcp-result.pdf"],
+        };
+
+        var restored = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(written));
+
+        Assert.Equal(["https://example.com/typed-by-the-user"], restored.FetchableUrls);
+        Assert.Equal(["https://linked.example/seeded-by-an-mcp-result.pdf"], restored.SeededFetchableUrls);
+    }
+
     /// <summary>
     /// State a grain builds <b>itself</b> and writes, round-tripped through the real Cosmos serializer.
     ///
@@ -309,6 +350,11 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         // not strand the document. Every existing server reads as never-connected — zero state migration — and
         // re-learns its tool names on that user's next chat activation.
         Assert.Null(server.KnownToolNames);
+
+        // ADR 0067 appended [Id(13)] SeedsFetchableUrls to the same positional record, and the same golden
+        // covers it: an absent key must bind to the constructor default. Reading OFF is what makes "every
+        // existing server ships with seeding disabled" true at rest rather than merely in the code.
+        Assert.False(server.SeedsFetchableUrls);
     }
 
     /// <summary>

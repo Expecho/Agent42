@@ -338,4 +338,43 @@ public sealed class McpServersApiTests(SharedApiFixture fixture) : SharedCluster
         Assert.Equal("Renamed", stored.Name); // the edit really happened
         Assert.Equal(["jira_get_issue", "jira_delete_issue"], stored.KnownToolNames);
     }
+
+    // AC12 (ADR 0067): the URL-seeding opt-in survives POST → GET → PUT → GET. Exercised through the real
+    // endpoints because ToStored and Mask are the two places it can be dropped, and neither is reachable from
+    // a grain-level test. Note this is the OPPOSITE property to KnownToolNames above: that one must survive an
+    // edit that does not mention it, this one must follow what the request says — including "off".
+    [Fact]
+    public async Task Server_SeedsFetchableUrls_RoundTrips()
+    {
+        const string user = "user-seeding-roundtrip";
+
+        var created = await Client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", user, new
+        {
+            name = "Scraper",
+            endpoint = "https://scraper.example/mcp",
+            auth = "None",
+            enabled = true,
+            seedsFetchableUrls = true,
+        }));
+        created.EnsureSuccessStatusCode();
+        Assert.True((await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("seedsFetchableUrls").GetBoolean());
+
+        var listed = await SingleServer(await Client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", user)));
+        Assert.True(listed.GetProperty("seedsFetchableUrls").GetBoolean());
+        var id = listed.GetProperty("id").GetString()!;
+
+        // And the PUT can turn it back off — the field is a SETTING, so an absent/false value means off.
+        var put = await Client.SendAsync(Request(HttpMethod.Put, $"/api/mcp-servers/{id}", user, new
+        {
+            name = "Scraper",
+            endpoint = "https://scraper.example/mcp",
+            auth = "None",
+            enabled = true,
+            seedsFetchableUrls = false,
+        }));
+        put.EnsureSuccessStatusCode();
+
+        Assert.False((await SingleServer(await Client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", user))))
+            .GetProperty("seedsFetchableUrls").GetBoolean());
+    }
 }

@@ -1,6 +1,6 @@
 /* Agent 42 — remote MCP servers (ADR 0024/0025/0026), incl. the connection test (ADR 0064). Split out of app.js (ADR 0041). */
 
-import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpConnectBtn, mcpDialog, mcpEnabledInput, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpScopesField, mcpScopesInput, mcpServerList, mcpTabResult, mcpTestBtn, mcpTestResult, profileTabs } from "./dom.js";
+import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpConnectBtn, mcpDialog, mcpEnabledInput, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpSeedsUrlsInput, mcpScopesField, mcpScopesInput, mcpServerList, mcpTabResult, mcpTestBtn, mcpTestResult, profileTabs } from "./dom.js";
 import { enterPrefsDetail, openProfileDialog } from "./profile.js";
 import { refreshToolCatalog } from "./tools.js";
 
@@ -123,6 +123,8 @@ function openMcpDialog(server) {
   mcpNameInput.value = server?.name ?? "";
   mcpEndpointInput.value = server?.endpoint ?? "";
   mcpEnabledInput.checked = server?.enabled ?? true;
+  // Defaults OFF for a NEW server too, not just an unmigrated one — the opt-in is the whole control.
+  mcpSeedsUrlsInput.checked = server?.seedsFetchableUrls ?? false;
   mcpAuthSelect.value = server?.auth ?? "None";
   mcpHeaderNameInput.value = server?.headerName ?? "Authorization";
   mcpHeaderValueInput.value = ""; // never prefilled — write-only (blank = keep on edit)
@@ -221,6 +223,9 @@ async function saveMcpServer() {
     endpoint: mcpEndpointInput.value.trim(),
     auth: mcpAuthSelect.value,
     enabled: mcpEnabledInput.checked,
+    // A plain setting: unlike the write-only secrets, false really means off, so unticking turns seeding
+    // back off (the grain keeps no previous value for it — deliberately, see ADR 0067).
+    seedsFetchableUrls: mcpSeedsUrlsInput.checked,
     headerName: isHeader ? mcpHeaderNameInput.value.trim() : null,
     // Blank means "keep the stored value" on edit, or "no value" on create — the server maps both.
     headerValue: isHeader ? mcpHeaderValueInput.value : null,

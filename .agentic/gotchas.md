@@ -216,6 +216,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
     address-guarded), so they may come from a host the allowlist never saw. Mitigated by resolving the
     media type **and the file name from the final URI**, so hop N's content is never presented under the
     allowlisted URL's name; `WebDocument.Url` still reports what the model asked for.
+  - **What ADR 0067 changed here is the threat model, not the mechanism.** With a seeding MCP server
+    configured, the URL this container dials can be one **authored on a page the server scraped** rather
+    than one a search engine or the user produced verbatim. Nothing above moves — but do not read the
+    guard as covering it: `PrivateAddressGuard` permits every **public** address by construction, so it
+    is no defence against the channel that actually matters. It bounds *where inside the network* we can
+    be made to connect, never *whose URL* we connect to.
 - **Evidence:** `src/Agent42.Backend/Web/ContextWebPageFetcher.cs` (no
   `ConfigurePrimaryHttpMessageHandler`), `src/Agent42.Backend/Web/GuardedDocumentFetcher.cs` +
   `src/Agent42.Backend/Web/PrivateAddressGuard.cs`, `src/Agent42.Backend/Program.cs` (both
@@ -252,6 +258,53 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0027-hosted-page-scrape-via-context-dev.md`
 - **Verified:** 2026-07-21
 
+### Seeding URLs from an MCP result: harvest in the GRAIN, and the model is told not to on six surfaces
+
+- **Claim:** a server the user marks `SeedsFetchableUrls` (ADR 0067) may put the URLs from its tool
+  results into `AgentGrainState.SeededFetchableUrls`, which `IsFetchableUrl` consults alongside
+  `FetchableUrls`. The list below is the authority on what is easy to get wrong — not any count of it;
+  most of these fail *silently*:
+  - **The harvest belongs in the grain, never in the Backend wrapper.** `TruncatingMcpTool` already wraps
+    every MCP tool and sees its result — the obvious seam, and the wrong one: `UserMcpToolProvider` is a
+    per-**user** singleton whose wrapped instances are shared across every conversation of that user,
+    while the fetchable lists are per-**conversation** grain state. Harvesting there leaks one
+    conversation's discovered URLs into another. `UrlHarvestingMcpTool` is constructed in `BuildAgent`,
+    where the callback closes over the grain.
+  - **A stricter regex than `UrlPattern()`.** That one matches bare hostnames because *user prose* says
+    "look at wikipedia.org". An MCP result is JSON, where a bare host turns up in prose, error strings and
+    unrelated fields — so `AbsoluteUrlPattern()` requires a scheme. **And trim trailing JSON punctuation:**
+    a URL arrives as `"href":"https://…pdf"`, so a naive match keeps the closing quote, `IsFetchableUrl`
+    never matches, and the feature looks broken while every regex test passes.
+  - **The harvest sees the ALREADY-TRUNCATED result.** The wrapper sits *outside* `TruncatingMcpTool`, so a
+    URL straddling `McpToolLimits.MaxToolResultLength` (8 KB) arrives as a garbage prefix that consumes a
+    seed slot and can never match. `IsAtTruncationBoundary` drops it (mutation-checked).
+  - **Two lists and two caps, and the per-result cap is not belt-and-braces.** An 8 KB result holds
+    150–250 URLs, so without `MaxSeededUrlsPerResult` one link-heavy scrape fills the 100-entry seeded
+    list and evicts the very link the feature exists to deliver. And the lists are separate because
+    harvesting into the 50-entry `FetchableUrls` would silently evict every URL the **user** typed — a
+    functional defect before it is a security one. **The counter-effect is real and is not a bug to
+    "fix":** a poisoned seed is now *harder* to flush, because only other seeds evict it.
+  - **The prohibition the model reads lives in the TOOL DESCRIPTIONS, not in `SKILL.md`.** Six surfaces
+    say "never take a URL out of a page": both descriptions in `BuildAgent`, both `[Description]`
+    attributes, both refusal messages — all in the JSON schema on **every** turn — plus `SKILL.md`, which
+    only reaches the model through `load_skill` and only while `skill:websearch` survives (ADR 0021/0048).
+    Update only `SKILL.md` and a compliant model reads a hard prohibition in the schema and declines to use
+    a seeded URL: the feature looks broken while every behavioural test passes, because the tests drive a
+    fake that reads no descriptions.
+  - Two smaller ones. The flag is a **setting**, so `ToStored` must carry it and `UserMcpConfigGrain.SaveAsync`
+    must **not** gain a `Keep` clause for it — with one, seeding could be turned on and never off (the exact
+    opposite of `KnownToolNames` two entries down). And the reminder-path guard on
+    `RememberFetchableUrlsInUserText` deliberately does **not** extend here: that rule is about harvesting
+    from *prompt text*, and a tool result is equally untrusted on both paths.
+- **Evidence:** `src/Agent42.Agents/Mcp/UrlHarvestingMcpTool.cs`,
+  `src/Agent42.Agents/Web/AgentGrain.WebTools.cs` (`RememberSeededUrlsFromToolResult`,
+  `IsAtTruncationBoundary`, `AbsoluteUrlPattern`),
+  `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`WithUrlSeeding`),
+  `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`SeededFetchableUrls`),
+  `tests/Agent42.Tests/McpUrlSeedingTests.cs`,
+  `.agentic/decisions/0067-mcp-results-seed-the-fetch-allowlist.md`
+- **Verified:** 2026-09-05
+
 ### The fetch allowlist must pin whole URLs — a HOST allowlist is bypassable in one tool call
 
 - **Claim:** the SSRF guard permits every public address **by construction**, so it is no defence against
@@ -264,7 +317,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   returns `attacker.example` when you search for its name, which whitelists the host **in the same turn**,
   and the exfiltrating fetch then sails through. (The first draft of this feature shipped exactly that
   hole.) Pinning the whole URL means the model can only fetch a string a search engine or the user
-  produced *verbatim*, so attacker-chosen data cannot ride in the path or query. Two further traps:
+  produced *verbatim*, so attacker-chosen data cannot ride in the path or query. **Since ADR 0067 there
+  is a THIRD feeder and the *verbatim* half is narrowed:** a remote MCP server the user marked
+  `SeedsFetchableUrls` may seed the URLs in its tool results into a separate
+  `AgentGrainState.SeededFetchableUrls`, which `IsFetchableUrl` also consults — so on such a server the
+  model can fetch a URL authored on a scraped page. The whole-URL rule above is otherwise unchanged and
+  still holds verbatim for the two feeders named here and for every server without the flag; see the
+  seeding entry above for the traps that come with it. Two further traps:
   (1) provenance must be harvested from **real user turns only** — never from the reminder path, whose
   prompt text is *model*-authored, so harvesting there would let an injected page schedule a reminder
   naming the attacker's URL and thereby whitelist it; (2) a tool result is JSON-serialized on its way to

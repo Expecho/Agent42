@@ -16,6 +16,14 @@ amends: [0011, 0027, 0056]
 > that the repo again contains a `PrivateAddressGuard` and an in-container outbound fetch, on a
 > **second, document-only path**. Also **amends [ADR 0056](0056-hindsight-long-term-memory.md)**: this
 > is a fourth (and the largest) member of its durable-prompt-injection list.
+>
+> **Amended by [ADR 0067](0067-mcp-results-seed-the-fetch-allowlist.md) (2026-09-05) — the THREAT MODEL
+> changes, the design does not.** ADR 0067 lets a URL from a *seeding* MCP server's tool result enter the
+> conversation's fetchable-URL allowlist, so `read_web_document` can now be handed a URL **authored on a
+> scraped page** rather than one a search engine or the user produced verbatim. Nothing in this ADR's
+> mechanism moves — the guard, the allowlist check and the whole-URL rule are unchanged — but the second
+> consequence below (an outbound connection from our managed-identity-bearing container to a URL someone
+> else chose) becomes reachable from the MODEL, not only from an `excludedPaths` API-key holder.
 
 ## Context
 
@@ -215,6 +223,12 @@ total characters) that ADR 0004's 2 MB session requires.
   the managed identity, to open an outbound connection to a URL of their choosing. `PrivateAddressGuard`
   is precisely the right control and is why it is restored; the point recorded here is that the
   *reachability* changed, not that it is unmitigated.
+- **A second door onto that same property was opened by [ADR 0067](0067-mcp-results-seed-the-fetch-allowlist.md).**
+  A URL harvested from a seeding MCP server's tool result is allowlisted too, so the model itself — not
+  only an API-key holder — can now cause this container to dial a URL that neither a search engine nor
+  the user produced. `PrivateAddressGuard` remains the right control and remains no defence against the
+  channel that actually matters (it permits every public address by construction); ADR 0067 records that
+  as the sharpest of its consequences.
 - **Two fetch paths now exist with different security models.** Accepted, above.
 - **The new `read_web_document` catalog key lands OFF for anyone who has ever pressed Save** (ADR 0021's
   standing consequence: a stored selection is an explicit list). No migration, by design. The remedy for

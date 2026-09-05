@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 
 namespace Agent42.DevHost;
@@ -9,7 +10,7 @@ namespace Agent42.DevHost;
 /// tool call — "remind" schedules, "cancel all" clears every reminder, "cancel" clears
 /// one — so the tool-call and usage UI can be exercised without a real model.
 /// </summary>
-public sealed class CannedChatClient : IChatClient
+public sealed partial class CannedChatClient : IChatClient
 {
     private static string BuildReply(string prompt) => $$"""
         You asked: *{{prompt}}*
@@ -47,7 +48,7 @@ public sealed class CannedChatClient : IChatClient
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var call = SelectToolCall(messages);
+        var call = SelectToolCall(messages, options);
         if (call is not null)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, [call]);
@@ -89,6 +90,64 @@ public sealed class CannedChatClient : IChatClient
             ["query"] = query,
         });
 
+    /// <summary>Prompt trigger for the offline URL-seeding demo (ADR 0067).</summary>
+    public const string SeedingChainTrigger = "find and read";
+
+    // The demo link tool registered on the offline MCP group in Program.cs. Its RESULT carries an absolute
+    // URL that nobody typed, so it is readable only if the harvest allowlisted it.
+    private const string LinkToolName = "demo_find_links";
+
+    // Step 1 calls the link tool; step 2 reads the first absolute URL out of ITS RESULT. Reading the URL
+    // from the result rather than hardcoding it is the point: a hardcoded URL would be allowlisted by the
+    // user's own prompt text and would prove nothing about seeding.
+    private static FunctionCallContent? BuildSeedingChainCall(
+        IReadOnlyList<ChatMessage> list, int lastUserIndex, ChatOptions? options)
+    {
+        // A model cannot call a tool it was not given. Without this, deselecting the MCP tools in the
+        // picker (ADR 0021/0026 — the first thing anyone tries by hand) makes this emit a call for an
+        // unregistered function instead of answering in text. FakeChatClient carries the same guard.
+        if (options?.Tools?.Any(t => t.Name == LinkToolName) is not true)
+        {
+            return null;
+        }
+
+        var calls = list.Skip(lastUserIndex + 1).SelectMany(m => m.Contents.OfType<FunctionCallContent>()).ToList();
+        if (!calls.Any(c => c.Name == LinkToolName))
+        {
+            return new("canned-links-1", LinkToolName, new Dictionary<string, object?> { ["filter"] = "pdf" });
+        }
+
+        if (calls.Any(c => c.Name == "read_web_document") || FirstUrlInToolResults(list, lastUserIndex) is not { } url)
+        {
+            return null;
+        }
+
+        return new("canned-read-1", "read_web_document", new Dictionary<string, object?>
+        {
+            ["url"] = url,
+            ["question"] = "what does this document say",
+        });
+    }
+
+    private static string? FirstUrlInToolResults(IReadOnlyList<ChatMessage> list, int lastUserIndex)
+    {
+        for (var i = lastUserIndex + 1; i < list.Count; i++)
+        {
+            foreach (var result in list[i].Contents.OfType<FunctionResultContent>())
+            {
+                if (UrlInResult().Match(result.Result?.ToString() ?? "") is { Success: true } match)
+                {
+                    return match.Value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    [GeneratedRegex("https?://[^\\s\"',\\\\\\]}<>]+")]
+    private static partial Regex UrlInResult();
+
     private static UsageContent BuildUsage(long input, long output) =>
         new(new UsageDetails
         {
@@ -98,7 +157,7 @@ public sealed class CannedChatClient : IChatClient
         });
 
     // Picks the tool call (if any) the model should make for the current user turn.
-    private static FunctionCallContent? SelectToolCall(IEnumerable<ChatMessage> messages)
+    private static FunctionCallContent? SelectToolCall(IEnumerable<ChatMessage> messages, ChatOptions? options)
     {
         var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
 
@@ -108,19 +167,27 @@ public sealed class CannedChatClient : IChatClient
             return null;
         }
 
+        var text = list[lastUserIndex].Text ?? "";
+
         // Once a tool has run for THIS turn, its result is in the messages that follow the
         // triggering user message — answer in text instead of calling the tool again (which
         // would loop forever). Scoping to messages after the last user turn is what lets a
         // schedule-then-cancel conversation call a second tool on the later turn.
-        for (var i = lastUserIndex + 1; i < list.Count; i++)
+        //
+        // The seeding chain below is the one deliberate exception, so its trigger is let through here.
+        if (!text.Contains(SeedingChainTrigger, StringComparison.OrdinalIgnoreCase)
+            && list.Skip(lastUserIndex + 1).Any(m => m.Contents.Any(c => c is FunctionResultContent)))
         {
-            if (list[i].Contents.Any(c => c is FunctionResultContent))
-            {
-                return null;
-            }
+            return null;
         }
 
-        var text = list[lastUserIndex].Text ?? "";
+        // The URL-seeding chain (ADR 0067), and the ONLY canned case that spans two calls — which is why
+        // the guard above lets its trigger through. Without it the feature is unexercisable offline: there
+        // would be no way to get from the demo link tool's result to read_web_document.
+        if (text.Contains(SeedingChainTrigger, StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildSeedingChainCall(list, lastUserIndex, options);
+        }
 
         // Ordering is load-bearing: "reminder" contains the substring "remind", so the cancel
         // checks MUST precede the schedule check — do not reorder these branches.

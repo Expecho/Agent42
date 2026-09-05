@@ -39,6 +39,31 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// </summary>
     public const int MaxFetchableUrls = 50;
 
+    /// <summary>
+    /// Cap on how many URLs ONE seeding MCP tool result may contribute to
+    /// <see cref="AgentGrainState.SeededFetchableUrls"/> (ADR 0067), in document order.
+    ///
+    /// <para><b>This is not belt-and-braces.</b> An MCP result is capped at
+    /// <see cref="McpToolLimits.MaxToolResultLength"/> (8 KB), which at ~40 characters a URL is 150–250 of
+    /// them. Without a per-result cap, one scrape of a link-heavy page fills the seeded list on its own and
+    /// evicts the very link the feature exists to deliver — the same defect the separate list was introduced
+    /// to prevent, reproduced one level down. 20 comfortably covers a filtered <c>find_links</c>.</para>
+    /// </summary>
+    public const int MaxSeededUrlsPerResult = 20;
+
+    /// <summary>
+    /// Cap on <see cref="AgentGrainState.SeededFetchableUrls"/> — the URLs seeded from MCP tool results
+    /// (ADR 0067). Bounded for the same reason as <see cref="MaxFetchableUrls"/> (the 2 MB session item,
+    /// ADR 0004); oldest dropped first. 100 URLs is roughly 8 KB at ~80 characters each — the same order as
+    /// one MCP result's own budget.
+    ///
+    /// <para>It is a SEPARATE list, and separately bounded, so seeded URLs can only ever evict each other:
+    /// harvesting into <see cref="MaxFetchableUrls"/> would let one link-heavy result silently evict every
+    /// URL the user typed. The cost of the split — a poisoned seed is harder to flush, because only other
+    /// seeds evict it — is recorded in ADR 0067 rather than left implicit.</para>
+    /// </summary>
+    public const int MaxSeededFetchableUrls = 100;
+
     private const string Instructions = """
         You are Agent 42, a friendly and helpful assistant.
         Answer the user's questions concisely and accurately.

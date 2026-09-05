@@ -244,4 +244,29 @@ public sealed class McpServersAssetsTests
         Assert.True(autoTestIndex > refreshIndex,
             "The unconditional refreshToolCatalog() must run BEFORE the auto-test, never inside its success branch.");
     }
+
+    // AC17 (ADR 0067): the URL-seeding opt-in is reachable and round-trips through the dialog. Source-text,
+    // like every other guard in this file (there is no JS runner by design).
+    //
+    // The DEFAULT is the part worth pinning. Seeding is the one control standing between an MCP server and
+    // the fetchable-URL allowlist, so a checkbox that shipped `checked` — or one whose reset used the
+    // `?? true` idiom copied from #mcpEnabled directly above it — would opt every server in silently.
+    [Fact]
+    public async Task McpDialog_ExposesSeedingCheckbox()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _fixture.GetAppScriptAsync();
+
+        var inputStart = html.IndexOf("id=\"mcpSeedsUrls\"", StringComparison.Ordinal);
+        Assert.True(inputStart >= 0, "The MCP dialog must expose the URL-seeding checkbox (ADR 0067).");
+
+        var tagStart = html.LastIndexOf('<', inputStart);
+        var tag = html[tagStart..(html.IndexOf('>', inputStart) + 1)];
+        Assert.Contains("type=\"checkbox\"", tag);
+        Assert.DoesNotContain(" checked", tag);
+
+        // Read on open, written on save — and OFF for a new server, not `?? true`.
+        Assert.Contains("mcpSeedsUrlsInput.checked = server?.seedsFetchableUrls ?? false;", app);
+        Assert.Contains("seedsFetchableUrls: mcpSeedsUrlsInput.checked,", app);
+    }
 }
