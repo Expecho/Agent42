@@ -81,6 +81,15 @@ suspected gap is repairable without an operator. That repairability is what make
 acceptable here; without it the two decisions would genuinely conflict. **It currently has no UI —
 see Consequences**, which weakens this argument in practice without changing its shape.
 
+> **Amended by [ADR 0068](0068-prune-continuous-agent-history-to-a-24-hour-window.md) (2026-09-05) —
+> this licence has exactly one exception.** The argument above turns on `ReindexAsync` being a
+> user-invocable repair, and reindex only **UPSERTS**: `DeleteConversationAsync` is the sole removal in
+> `IChatSearchIndex`. So the index delete that follows a retention prune is the one write whose failure
+> nothing can repair — it strands orphaned tail documents holding text the conversation no longer has.
+> ADR 0068 keeps the write best-effort (a turn still never fails because search did) but adds an
+> activation-scoped retry, and records honestly that a deactivation with a retry outstanding makes those
+> orphans permanent. Everything else in this section stands unchanged.
+
 ### Ordinals come from one projection function, or the two paths diverge
 A document's id is `{conversationId}:{ordinal}`, where the ordinal is the index into
 **`GetHistoryAsync()`'s projected list**. Both the live write and the backfill derive it from *that

@@ -24,6 +24,18 @@ public sealed class TestChatSearchIndex : IChatSearchIndex
     /// <summary>Makes every index call for <paramref name="userId"/> throw <paramref name="error"/>.</summary>
     public static void FailFor(string userId, Exception error) => Failures[userId] = error;
 
+    // How many further DeleteConversationAsync calls must fail, per user. Separate from Failures, and
+    // counted rather than latched, because the retention reconcile's retry (ADR 0016) can only be observed
+    // if a delete fails and a LATER one succeeds — while indexing keeps working throughout, since a
+    // reconcile that could not re-project either would not distinguish the two failures.
+    private static readonly ConcurrentDictionary<string, int> DeleteFailures = new();
+
+    /// <summary>
+    /// Makes the next <paramref name="times"/> deletes for <paramref name="userId"/> throw, and every one
+    /// after that succeed. Keyed by user for the same reason as <see cref="FailFor"/>.
+    /// </summary>
+    public static void FailNextDeletesFor(string userId, int times) => DeleteFailures[userId] = times;
+
     public Task IndexTurnsAsync(
         string userId,
         string conversationId,
@@ -41,7 +53,18 @@ public sealed class TestChatSearchIndex : IChatSearchIndex
 
     public Task DeleteConversationAsync(
         string userId, string conversationId, CancellationToken cancellationToken = default)
-        => Failures.TryGetValue(userId, out var error)
-            ? Task.FromException(error)
-            : _inner.DeleteConversationAsync(userId, conversationId, cancellationToken);
+    {
+        if (Failures.TryGetValue(userId, out var error))
+        {
+            return Task.FromException(error);
+        }
+
+        if (DeleteFailures.TryGetValue(userId, out var remaining) && remaining > 0)
+        {
+            DeleteFailures[userId] = remaining - 1;
+            return Task.FromException(new InvalidOperationException("injected chat-search delete failure"));
+        }
+
+        return _inner.DeleteConversationAsync(userId, conversationId, cancellationToken);
+    }
 }

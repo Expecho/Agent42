@@ -57,7 +57,13 @@ field-id and JSON property-name serializers, so agents persisted before this cha
   results + image refs + RAG excerpts, all replayed every turn) and will eventually fail `WriteStateAsync`
   *after* the model has answered — bricking the conversation, silently, in prod. **The escape hatch is
   delete-to-reset:** `DELETE /api/conversations/agent-{agentId}` purges the grain, and the next start
-  recreates it fresh at the same id. No code mitigation is in scope beyond documenting this.
+  recreates it fresh at the same id. ~~No code mitigation is in scope beyond documenting this.~~
+  **Amended by [ADR 0068](0068-prune-continuous-agent-history-to-a-24-hour-window.md) (2026-09-05) — that
+  last sentence is the one thing 0068 reverses.** A continuous chat's history is now pruned to a fixed
+  24-hour window on every persisted turn. Everything else above stays true, delete-to-reset included:
+  a window bounds **age**, not **size**, so a busy agent or one oversized tool return still bricks
+  inside the day. The flag stays client-side — 0068 detects continuity from the `agent-` id shape
+  precisely so this decision needs no reversal.
 - **Continuous mode disables ADR 0003's only escape hatch for persona edits.** Binding is immutable once set,
   and ADR 0003's remedy for a wanted persona edit is "start a new chat from the updated agent." For a
   continuous agent that is impossible — every start collapses onto the one already-bound grain — so editing a

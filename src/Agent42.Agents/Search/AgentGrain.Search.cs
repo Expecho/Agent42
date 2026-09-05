@@ -54,6 +54,106 @@ public sealed partial class AgentGrain
     private readonly HashSet<int> _ephemeralOrdinals = [];
 
     /// <summary>
+    /// True when a retention prune (ADR 0068) has deleted turns whose index documents have NOT yet
+    /// been removed, because <c>DeleteConversationAsync</c> threw. Retried on the next persisted turn.
+    ///
+    /// <para><b>This marks the one place ADR 0061's best-effort rule does not reach.</b> Every other
+    /// index write may be swallowed because the projection can be rebuilt from the conversation at any
+    /// time — a licence that rests explicitly on <see cref="ReindexAsync"/> being a user-invocable
+    /// repair. That repair only UPSERTS: <c>DeleteConversationAsync</c> is the sole removal in
+    /// <see cref="IChatSearchIndex"/>. So a swallowed delete after a destructive prune leaves orphaned
+    /// tail documents that nothing else can clean up — a three-turn conversation returning five hits,
+    /// two of them text that no longer exists anywhere.</para>
+    ///
+    /// <para><b>It is a bool and NOT an accumulated delta, and that is a correctness fix rather than a
+    /// simplification.</b> <c>DeleteConversationAsync</c> removes the whole conversation whatever the
+    /// delta is, so a carried count was only ever consumed by the ephemeral-ordinal remap — and
+    /// carrying it across turns put it in the wrong reference frame. An ephemeral turn taken BETWEEN a
+    /// failed reconcile and its retry records its ordinals in the already-pruned frame, so applying the
+    /// earlier prune's shift to them a second time walks them backwards onto real turns: the incognito
+    /// text is then indexed and two genuine turns are skipped. The remap therefore happens where the
+    /// shift happens — in <c>PruneExpiredTurnsAsync</c> — and this flag carries nothing but "retry me".</para>
+    ///
+    /// <para><b>Activation-scoped, and that is a real residual rather than self-healing.</b> If the
+    /// grain deactivates while this is set, the retry is lost and the orphans become permanent: reindex
+    /// only upserts, and the only other <c>DeleteConversationAsync</c> caller is <c>PurgeAsync</c>.
+    /// Recorded in ADR 0068 rather than papered over.</para>
+    /// </summary>
+    private bool _searchReconcilePending;
+
+    /// <summary>
+    /// Re-anchors the search index after a retention prune shifted every ordinal down: drop the
+    /// conversation's documents, reset the cursor, and let the caller's own
+    /// <see cref="IndexNewTurnsForSearchAsync"/> re-project from ordinal 0.
+    ///
+    /// <para>Rebuilding wholesale rather than deleting a range is not laziness — there IS no
+    /// delete-by-ordinal-range. Without it the next write upserts over the low ordinals and leaves the
+    /// tail documents behind, indefinitely.</para>
+    ///
+    /// <para>Called AFTER the caller's <c>WriteStateAsync</c>, at all three persist sites.
+    /// <paramref name="pruned"/> says whether THIS turn dropped anything; a pending retry runs even
+    /// when it did not. The ephemeral-ordinal remap is deliberately NOT done here — see
+    /// <see cref="_searchReconcilePending"/> for why that frame matters.</para>
+    /// </summary>
+    private async Task ReconcileSearchIndexAfterPruneAsync(bool pruned)
+    {
+        if (!pruned && !_searchReconcilePending)
+        {
+            return;
+        }
+
+        try
+        {
+            await _chatSearchIndex.DeleteConversationAsync(_userId, ConversationId());
+
+            // Only once the awaited delete has SUCCEEDED — the ordering
+            // DeleteSearchIndexForConversationAsync uses, and for a sharper reason here: resetting the
+            // cursor after a swallowed failure would re-project the whole conversation over ordinals whose
+            // stale documents are still there.
+            _indexedTurnCount = 0;
+            _searchReconcilePending = false;
+        }
+        catch (Exception ex)
+        {
+            _searchReconcilePending = true;
+            _logger.LogWarning(
+                ex, "Agent grain {GrainKey} failed to re-anchor its search index after a retention "
+                + "prune; retrying on the next persisted turn", this.GetPrimaryKeyString());
+        }
+    }
+
+    /// <summary>
+    /// Shifts the recorded incognito ordinals down by the pruned amount, dropping any that fell off
+    /// the front. Called from <c>PruneExpiredTurnsAsync</c>, at the moment the shift actually happens
+    /// — deferring it to the reconcile puts it in the wrong reference frame (see
+    /// <see cref="_searchReconcilePending"/>).
+    ///
+    /// <para><b>Never <c>Clear()</c> here.</b> <see cref="DeleteSearchIndexForConversationAsync"/>
+    /// clears, and is right to — the conversation is going away. This runs on a conversation that is
+    /// still alive and about to be re-projected, and an incognito turn (ADR 0034) stays in the
+    /// in-memory session for the rest of the activation. Clearing would hand that re-projection
+    /// exactly the text the guarantee exists to keep out of Cosmos, at its new ordinal.</para>
+    /// </summary>
+    private void RemapEphemeralOrdinals(int droppedProjectedTurns)
+    {
+        if (_ephemeralOrdinals.Count == 0)
+        {
+            return;
+        }
+
+        var remapped = _ephemeralOrdinals
+            .Select(ordinal => ordinal - droppedProjectedTurns)
+            .Where(ordinal => ordinal >= 0)
+            .ToList();
+
+        _ephemeralOrdinals.Clear();
+        foreach (var ordinal in remapped)
+        {
+            _ephemeralOrdinals.Add(ordinal);
+        }
+    }
+
+    /// <summary>
     /// Re-indexes the whole conversation from ordinal 0 (ADR 0061's backfill). Idempotent: the
     /// ordinals are the same ones the live path derives, so re-running overwrites the same document
     /// ids rather than appending. Returns the number of turns indexed.
