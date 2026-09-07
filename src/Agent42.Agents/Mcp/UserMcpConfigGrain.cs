@@ -110,6 +110,8 @@ public sealed class UserMcpConfigGrain : Grain, IUserMcpConfigGrain
         await _state.WriteStateAsync();
     }
 
+    public Task InvalidateToolCacheAsync() => BumpAsync(_state.State.Config);
+
     private static string? Keep(string? incoming, string? stored) =>
         string.IsNullOrEmpty(incoming) ? stored : incoming;
 
