@@ -1623,7 +1623,24 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   that user's next chat activation connects to it **or they press Test** (`POST /api/mcp-servers/{id}/test`,
   which is user-pressed, one named server, and also runs automatically after a successful save). The rule
   here was never "never connect" — it is "never connect *on a page load, for every server, implicitly*".
-- **Evidence:** `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (`RetainedVersionsPerUser`, `EvictBeyondAsync`),
+  **(6) A tool list that changes on the FAR side is INVISIBLE, and "the next activation reconnects" is true
+  only after a CONFIG write.** The two caches sit in series: `GetForUserAsync`'s version cache, then
+  `AgentGrain._mcpServers`, resolved **once** in `OnActivateAsync` and read by the sync `BuildAgent`. A cache
+  hit on an unchanged version returns **without connecting at all** — and by (4) discovery does not bump — so
+  when an *already-configured* server gains, renames or drops a tool remotely, a fresh activation (even a
+  fresh grain) still serves the **stale** list. The asymmetry that makes (5) easy to over-read: a *newly
+  added* server does reconnect on its next activation, but only because adding it was itself a configuration
+  write. There is **no invalidation path**: `EvictBeyondAsync` is bounded retention, not invalidation, and
+  none of `/api/mcp-servers` (GET/POST/PUT/DELETE, `/{id}/test`) re-resolves a server whose config is
+  unchanged. The unlock is any configuration write on that server — a re-save is enough — then Test, to
+  record `KnownToolNames` for the picker. Worst for diagnosis: a container **restart** clears the
+  process-singleton `_caches` and the tools duly appear, which makes a missing-invalidation defect look like
+  a stale-process one. Do not conclude the cache is "working" because a restart fixed it. This is the trap to
+  read first if a remote server is ever expected to grow tools at runtime.
+- **Evidence:** `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (`RetainedVersionsPerUser`, `EvictBeyondAsync`,
+  `GetForUserAsync`'s `cache.TryGet` early return),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_mcpServers` resolved once in `OnActivateAsync`),
+  `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (the endpoint surface — no refresh route),
   `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Mcp` wildcard + `IsMcpServerEnabled`, both absent from `ToolNameToKey`),
   `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent` per-server MCP gate over `_mcpServers`),
   `src/Agent42.Backend/Program.cs` +
@@ -1634,7 +1651,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`,
   `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`,
   `.agentic/decisions/0064-mcp-connection-test-endpoint.md`
-- **Verified:** 2026-09-04
+- **Verified:** 2026-09-07
 
 ### The MCP connection test: two writers of the tool names, and an empty list ERASES them
 
