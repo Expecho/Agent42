@@ -133,6 +133,60 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
         Assert.Equal(callsAfterFirst, _connections.ConnectCount); // no new connect on the hit
     }
 
+    // ADR 0069, and THE case the feature exists for: a server that was unreachable when the version was first
+    // resolved has its group cached EMPTY, and nothing dislodges that — its names were never erased, so on
+    // recovery it reports exactly what it always did and no config write happens. Before this, the only ways
+    // out were an unrelated re-save or a Backend restart.
+    //
+    // The middle assertion is the load-bearing one: it pins the DEFECT. Without it the last assertion could
+    // pass simply because the provider always reconnects, and the test would prove nothing about invalidation.
+    [Fact]
+    public async Task ARecoveredServer_StaysEmpty_UntilInvalidation()
+    {
+        const string user = "mcp-tp-recovered";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        var provider = NewProvider();
+
+        await grain.SaveAsync(HeaderServer("a"));
+        _connections.DeadServerIds.Add("a");
+        Assert.Empty((await provider.GetForUserAsync(user)).AllTools);
+
+        _connections.DeadServerIds.Remove("a");
+        Assert.Empty((await provider.GetForUserAsync(user)).AllTools);
+
+        // What McpConnectionTester calls after a successful test.
+        await grain.InvalidateToolCacheAsync();
+
+        Assert.Single((await provider.GetForUserAsync(user)).AllTools);
+    }
+
+    // ADR 0069's other motivating case: a server we already know about grows a tool remotely. Same shape —
+    // the middle assertion pins the staleness, so the last one is about invalidation and not about the
+    // provider being eager.
+    [Fact]
+    public async Task AChangedToolList_IsInvisible_UntilInvalidation()
+    {
+        const string user = "mcp-tp-changed";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        var provider = NewProvider();
+
+        await grain.SaveAsync(HeaderServer("a"));
+        Assert.Single((await provider.GetForUserAsync(user)).AllTools);
+
+        _connections.ToolsFor = s =>
+        [
+            AIFunctionFactory.Create(() => "ok", $"tool_{s.Id}"),
+            AIFunctionFactory.Create(() => "ok", "tool_added_later"),
+        ];
+        Assert.Single((await provider.GetForUserAsync(user)).AllTools);
+
+        await grain.InvalidateToolCacheAsync();
+
+        var after = await provider.GetForUserAsync(user);
+        Assert.Equal(2, after.AllTools.Count);
+        Assert.Contains(after.AllTools, t => t.Name == "tool_added_later");
+    }
+
     // Bounded lifetime: after more than RetainedVersionsPerUser (=2) versions, the OLDEST version's live
     // connection is disposed on eviction — the connection leak the copied exemplar's unbounded cache would have.
     [Fact]
