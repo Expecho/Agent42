@@ -193,6 +193,73 @@ public sealed class McpConnectionTesterTests(SharedClusterFixture fixture) : Sha
         Assert.Null(outcome);
     }
 
+    // A successful test must invalidate the provider's cached tool set, or Test reports "connected, N tools"
+    // while the chat path keeps serving whatever was cached under the current version.
+    [Fact]
+    public async Task ASuccessfulTest_BumpsTheVersion_SoTheToolCacheIsReResolved()
+    {
+        const string user = "mcp-test-bumps";
+        var config = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await config.SaveAsync(HeaderServer("a"));
+        var before = await config.GetVersionAsync();
+
+        await NewTester().TestAsync(user, "a", CancellationToken.None);
+
+        Assert.True(await config.GetVersionAsync() > before);
+    }
+
+    // THE regression guard. The state this recovers is a server that was unreachable when the version was
+    // first resolved: its group was cached EMPTY while its names were never erased, so on recovery it reports
+    // exactly the names it always had. Gating the bump on a name change — the obvious "optimization", and the
+    // shape RecordToolNamesAsync itself uses — leaves that case broken forever.
+    [Fact]
+    public async Task ASecondTestWithUnchangedNames_StillBumps()
+    {
+        const string user = "mcp-test-bumps-again";
+        var config = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await config.SaveAsync(HeaderServer("a"));
+
+        await NewTester().TestAsync(user, "a", CancellationToken.None);
+        var afterFirst = await config.GetVersionAsync();
+        await NewTester().TestAsync(user, "a", CancellationToken.None);
+
+        Assert.True(await config.GetVersionAsync() > afterFirst);
+    }
+
+    // The deliberate exception. Recording [] erases the names (the ADR 0058 hazard); re-resolving to an empty
+    // tool set is the same hazard one layer down — it would strip a working chat of this server's tools on a
+    // transient zero-tool answer. A zero-tool connect changes nothing.
+    [Fact]
+    public async Task AZeroToolConnect_DoesNotBump()
+    {
+        const string user = "mcp-test-zero-tools";
+        var config = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await config.SaveAsync(HeaderServer("a"));
+        _connections.ToolsFor = _ => [];
+        var before = await config.GetVersionAsync();
+
+        var outcome = await NewTester().TestAsync(user, "a", CancellationToken.None);
+
+        Assert.True(outcome!.Ok);
+        Assert.Equal(before, await config.GetVersionAsync());
+    }
+
+    // A failed test learned nothing, so it must not tear down every warm grain's sockets for this user.
+    [Fact]
+    public async Task AFailedTest_DoesNotBump()
+    {
+        const string user = "mcp-test-fail-no-bump";
+        var config = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await config.SaveAsync(HeaderServer("a"));
+        _connections.DeadServerIds.Add("a");
+        var before = await config.GetVersionAsync();
+
+        var outcome = await NewTester().TestAsync(user, "a", CancellationToken.None);
+
+        Assert.False(outcome!.Ok);
+        Assert.Equal(before, await config.GetVersionAsync());
+    }
+
     private sealed class FakeConnectionFactory : IMcpConnectionFactory
     {
         public const string SecretExceptionText = "sensitive-upstream-detail";

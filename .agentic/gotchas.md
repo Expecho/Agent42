@@ -1630,10 +1630,18 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   when an *already-configured* server gains, renames or drops a tool remotely, a fresh activation (even a
   fresh grain) still serves the **stale** list. The asymmetry that makes (5) easy to over-read: a *newly
   added* server does reconnect on its next activation, but only because adding it was itself a configuration
-  write. There is **no invalidation path**: `EvictBeyondAsync` is bounded retention, not invalidation, and
-  none of `/api/mcp-servers` (GET/POST/PUT/DELETE, `/{id}/test`) re-resolves a server whose config is
-  unchanged. The unlock is any configuration write on that server — a re-save is enough — then Test, to
-  record `KnownToolNames` for the picker. Worst for diagnosis: a container **restart** clears the
+  write. `EvictBeyondAsync` is bounded retention, **not** invalidation, so for most of this feature's life
+  there was no way out at all. **ADR 0069 added one, and put it on the endpoint that was already lying about
+  it:** a successful `POST /api/mcp-servers/{id}/test` now calls `IUserMcpConfigGrain.InvalidateToolCacheAsync`,
+  which bumps the version so the next activation re-resolves. Before that, Test would report "connected, 12
+  tools" while the chat path served the stale list — the diagnostic and the behaviour disagreeing, both
+  correct. **Two carve-outs, both deliberate:** a **failed** test does not bump (it learned nothing, and
+  bumping tears down every warm grain's sockets for that user), and a **zero-tool** connect does not bump
+  either — re-resolving to an empty set would strip a working chat of that server's tools on a transient
+  empty answer, which is this entry's `[]`-erases-the-names hazard one layer down. And the bump is
+  **deliberately not conditional on the names having changed**, because the recovered-server case reports
+  exactly the names it always had; `ASecondTestWithUnchangedNames_StillBumps` guards that.
+  A no-op re-save is still the other unlock. Worst for diagnosis: a container **restart** clears the
   process-singleton `_caches` and the tools duly appear, which makes a missing-invalidation defect look like
   a stale-process one. Do not conclude the cache is "working" because a restart fixed it. This is the trap to
   read first if a remote server is ever expected to grow tools at runtime.
