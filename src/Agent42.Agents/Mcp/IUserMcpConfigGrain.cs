@@ -55,4 +55,28 @@ public interface IUserMcpConfigGrain : IGrainWithStringKey
     /// </summary>
     [Alias("RecordToolNamesAsync")]
     Task RecordToolNamesAsync(string serverId, IReadOnlyList<string> toolNames);
+
+    /// <summary>
+    /// Bumps the version without changing any configuration, so the per-user tool provider re-resolves this
+    /// user's servers on the next grain activation. Called from a <b>user-pressed</b> connection test.
+    ///
+    /// <para><b>Why this is not a contradiction of <see cref="RecordToolNamesAsync"/>.</b> That method must
+    /// not bump because it runs on <i>every activation</i>, from the provider itself — bumping there would
+    /// tear down every warm grain's sockets as a side effect of ordinary discovery. This one runs only when a
+    /// human pressed Test: once, deliberately, against one server. The same distinction ADR 0064 used to let a
+    /// user-pressed POST connect where <c>GET /api/tools</c> may not.</para>
+    ///
+    /// <para><b>What it fixes.</b> The provider caches a whole <c>McpToolSet</c> under the version and a hit
+    /// returns <i>without connecting</i>, so two states are otherwise unrecoverable without an unrelated
+    /// config write: a server that gained or dropped a tool remotely, and — sharper — a server that was
+    /// unreachable when the version was first resolved, whose <b>empty</b> group stays cached after it
+    /// recovers. Without this, Test reports "connected, 12 tools" while the chat path still serves the stale
+    /// list; the diagnostic and the behaviour disagree and both are correct.</para>
+    ///
+    /// <para>The version is per <b>overlay</b>, not per server, so this re-resolves all of the user's servers.
+    /// That is the same blast radius any config save already has, and the provider retains the previous
+    /// version's connections, so warm grains keep working until they fall out of retention.</para>
+    /// </summary>
+    [Alias("InvalidateToolCacheAsync")]
+    Task InvalidateToolCacheAsync();
 }

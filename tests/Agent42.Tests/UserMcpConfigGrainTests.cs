@@ -127,6 +127,32 @@ public sealed class UserMcpConfigGrainTests(SharedClusterFixture fixture) : Shar
         Assert.Equal(["alpha", "beta"], stored.KnownToolNames);
     }
 
+    // The deliberate counterpart to the test above: an explicit, user-pressed invalidation DOES bump, because
+    // the provider's cache hit returns without connecting and nothing else can dislodge it. It must change the
+    // version and nothing else — a server list altered here would make a diagnostic action a config write.
+    [Fact]
+    public async Task InvalidateToolCache_BumpsTheVersion_AndLeavesTheServersAlone()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-invalidate-user");
+        await grain.SaveAsync(Server());
+        await grain.RecordToolNamesAsync("srv1", ["alpha", "beta"]);
+        var before = await grain.GetAsync();
+
+        await grain.InvalidateToolCacheAsync();
+
+        var after = await grain.GetAsync();
+        Assert.Equal(before.Version + 1, after.Version);
+        var stored = Assert.Single(after.Servers);
+        Assert.Equal(["alpha", "beta"], stored.KnownToolNames);
+
+        // Whole-record equality with the names NULLED on both sides. A positional record's synthesized Equals
+        // compares its IReadOnlyList members by REFERENCE, and the grain hands back a fresh list every read —
+        // so comparing the records as-is fails on two field-identical values. Nulling that one member keeps
+        // this an every-other-field check (which is the point: an invalidation must not be a config write)
+        // instead of an accidental assertion about list identity.
+        Assert.Equal(before.Servers[0] with { KnownToolNames = null }, stored with { KnownToolNames = null });
+    }
+
     // AC11 — recording the SAME names again writes nothing at all. Every activation of every conversation
     // re-discovers the same tool list, so without this the feature would cost one Cosmos write per activation.
     // Proved on the storage ETag rather than on the values: re-writing identical values would leave the state

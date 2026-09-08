@@ -794,7 +794,8 @@ to document a mechanical rule, add a lint rule instead.
 - Test an MCP server's connection (ADR 0064, **amends 0024/0026/0058**): after adding or editing a remote MCP
   server, the user is told **in the UI, immediately** whether it was reachable and how many tools it exposes,
   instead of finding out indirectly on some later chat. `POST /api/mcp-servers/{id}/test` connects to one
-  named server, lists its tools, records the names and disconnects — reached from a **Test** button in the
+  named server, lists its tools, records the names, **invalidates that user's cached tool set (ADR 0069)**
+  and disconnects — reached from a **Test** button in the
   edit dialog, run **automatically after a successful save**, and again **on the OAuth return** (whose success
   redirect now carries `serverId`). **The auto-test has two carve-outs, both load-bearing:** a *disabled* server
   is never dialled (egress, below), and neither is an *InteractiveOAuth server with no stored token* — Save

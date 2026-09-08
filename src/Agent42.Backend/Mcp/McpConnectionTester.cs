@@ -14,7 +14,14 @@ public sealed record McpTestOutcome(bool Ok, IReadOnlyList<string> ToolNames, st
 
 /// <summary>
 /// One-shot probe of a single stored MCP server, behind <c>POST /api/mcp-servers/{id}/test</c> (ADR 0064):
-/// connects, lists tools, records the discovered names, and disposes the connection.
+/// connects, lists tools, records the discovered names, <b>invalidates that user's cached tool set</b> and
+/// disposes the connection.
+///
+/// <para><b>Why the invalidation lives here and not on a second endpoint (ADR 0069).</b> Without it a
+/// successful test reports "connected, 12 tools" while the chat path keeps serving whatever was cached under
+/// the current overlay version — the diagnostic and the behaviour disagreeing, both correct. Making Test true
+/// is smaller than a <c>/refresh</c> route nobody would know to press. Carve-outs: a failed test and a
+/// zero-tool connect both invalidate nothing.</para>
 ///
 /// <para><b>This is not an activation.</b> It never touches <see cref="IUserMcpToolProvider"/> and never
 /// populates its version cache — a management action must not open a socket the chat path then holds. The
@@ -128,6 +135,14 @@ public sealed class McpConnectionTester
 
         try
         {
+            // INVALIDATION FIRST (ADR 0069), and the order is deliberate: the cached tool set is what the user
+            // is actually waiting on, so a failure to record names must not be able to skip it. Both calls hit
+            // the same grain, which is why one best-effort block covers both. It is NOT conditional on the
+            // names having changed — the state it recovers is a server that was unreachable when the version
+            // was first resolved, whose group was cached EMPTY while its names were never erased, so on
+            // recovery it reports exactly the names it always had.
+            await _grains.GetGrain<IUserMcpConfigGrain>(userId).InvalidateToolCacheAsync();
+
             // Non-bumping (see IUserMcpConfigGrain.RecordToolNamesAsync): recording names must not tear down
             // every warm grain's MCP sockets. Never SaveAsync.
             await _grains.GetGrain<IUserMcpConfigGrain>(userId).RecordToolNamesAsync(server.Id, names);
