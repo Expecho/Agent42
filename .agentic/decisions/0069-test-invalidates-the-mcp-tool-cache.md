@@ -104,9 +104,20 @@ Four new tests in `tests/Agent42.Tests/McpConnectionTesterTests.cs`
 `tests/Agent42.Tests/UserMcpConfigGrainTests.cs`
 (`InvalidateToolCache_BumpsTheVersion_AndLeavesTheServersAlone`).
 
-**Unverified residual, and it is the whole motivating case:** every test here drives a stubbed
-`IMcpConnectionFactory`, so the end-to-end path — a real remote server changing its tool list, or recovering
-from an outage, and an `AgentGrain` picking that up on its next activation — has **never been observed**. It
-is verified by reading, as the gotcha it amends already was. The measurement is cheap to run against
-`Expecho/mcpserver` on loopback via the AppHost (DevHost cannot: it fakes both MCP seams) and has not been
-done.
+**Follow-up (2026-09-08): the composition is now executed, not read.** As shipped, this ADR's tests asserted
+only that the version *bumps*, while `UserMcpToolProviderTests` separately asserted that *a bump reloads* —
+nothing joined the two, so the chain the feature actually is had never run. Two tests in
+`tests/Agent42.Tests/UserMcpToolProviderTests.cs` now drive it end to end through the real provider:
+`ARecoveredServer_StaysEmpty_UntilInvalidation` (the motivating case) and
+`AChangedToolList_IsInvisible_UntilInvalidation`. Each **pins the defect in a middle assertion** before
+asserting the fix — without that, both would pass against a provider that simply always reconnected, proving
+nothing about invalidation. **Mutation-checked:** stubbing `InvalidateToolCacheAsync` to `Task.CompletedTask`
+fails all five of this ADR's tests, both new ones included.
+
+**Unverified residual, narrowed to what it always really was:** every test still drives a **stubbed**
+`IMcpConnectionFactory`, so the MCP **wire** — a real server over a real socket reporting a changed tool
+list — remains unexercised here, as it has been for every MCP feature since ADR 0024. What is no longer
+unverified is Agent42's own behaviour, which is what this ADR changed. Also still unobserved: an
+`AgentGrain` picking the new set up on its next activation, because the test silo injects
+`SingleUserMcpToolProvider` rather than the real provider. A live run against `Expecho/mcpserver` on
+loopback via the AppHost (DevHost cannot — it fakes both MCP seams) would close both and has not been done.
