@@ -91,12 +91,20 @@ The overlay `Version` bumps only on a **config write** (`IUserMcpConfigGrain.Sav
 already-configured server produces no bump, and even a brand-new grain activation takes a
 cache hit and returns the **stale** list. Both caches must turn over.
 
-Practical unlock: touch the `forge-runtime` server config (any save) → version bumps → next
-activation reconnects; then press **Test** (ADR 0064) so `KnownToolNames` is recorded and the
-picker draws the checkbox.
+**Corrected 2026-09-09 — ADR 0069 made this ONE action, and the paragraph below used to say two.**
+Pressing **Test** on the runtime server now does both halves: `McpConnectionTester` calls
+`IUserMcpConfigGrain.InvalidateToolCacheAsync()` *first* — unconditionally, not gated on the names
+having changed — and only then the non-bumping `RecordToolNamesAsync`. So the cached tool set turns
+over and the picker's checkboxes appear from the same press. The superseded advice was: "touch the
+server config (any save) → version bumps → next activation reconnects; *then* press Test."
 
-**This is not purely a cost.** It makes promotion a deliberate ~10-second act, so nothing
-reaches consumer agents by accident.
+Two carve-outs from ADR 0069 survive and still bite here. A **failed** test invalidates nothing. So
+does a **zero-tool** connect: the tester returns "connected, but the server exposes no tools" above
+the invalidation, which is exactly the state a runtime surface is in before the first tool is
+written — so the very first promotion may still need a second Test once a tool exists.
+
+**This is not purely a cost.** It makes promotion a deliberate act, so nothing reaches consumer
+agents by accident.
 
 ### C2 — Dispatch is immune to both caches, which is the whole reason the builder uses it.
 
@@ -271,3 +279,66 @@ half only.
   *procedure*, not a callable tool. Kept as a possible companion, not a substitute.
 - **`code_interpreter` alone** (ADR 0015, already shipped). Per-turn scratch code with no
   schema, name or reuse. It is the answer to "compute something", not to "gain a tool".
+
+## Measurements
+
+Recorded 2026-09-09, while executing `plan-toolforge-mcp.md`. **The two halves are at very
+different levels of evidence, and the difference is the point of this section.** The forge itself
+was built and measured end to end; the Agent42-side cache questions (M1–M5) were **not run** and
+must not be read as answered.
+
+### Measured — the forge (Repo A, `feature/toolforge-mcp`)
+
+| What | Value | How |
+|---|---|---|
+| Runtime tool mutation is real | a tool added after `StartAsync` is listed, callable, and gone after removal | throwaway server, real `tools/list` over JSON-RPC |
+| The promotion API | `McpServerOptions.ToolCollection` (mutable), **not** a list-tools handler | same spike |
+| A stored JSON-schema string → a tool | subclass `AIFunction`, override `JsonSchema`; `McpServerToolCreateOptions` has `OutputSchema` but **no input-schema property**, and `AIFunctionFactory` derives a schema by reflecting over parameters a runtime tool does not have | same spike |
+| Reaching it through the host seam | `builder.Services.Configure<McpServerOptions>(o => o.ToolCollection = …)` off `IMcpServerBuilder.Services` | same spike |
+| Promotion latency, server side | immediate — written on `:8080`, advertised on `:8081` on the very next `tools/list`, no restart | two surfaces in one process, one registry |
+| Requirements install once, then reuse | first run **5.5 s**, second **0.72 s**; marker count stays **1** | `httpx` in the built image |
+| Suite | 128 passed, 0 failed, 0 warnings, Release | `dotnet test McpServer.slnx -c Release` |
+
+**One planning assumption was wrong.** K12 says "`python3` is not on the Windows dev machine". A
+real Python **3.11.9** is at `C:\Python311\python.exe`; what is absent is the *name* `python3` —
+the one on `PATH` is the Windows Store stub, which is why an earlier `python3 -c` failed. So the
+executor tests ran locally rather than skipping, and the interpreter probe resolves `python.exe`
+on Windows. The skip mechanism is kept: it is a capability probe, not a Windows check, and the
+network half of K12 is untouched — a pip install still belongs only in the image smoke job.
+
+**A per-call budget does not exist.** `HttpClientTransportOptions` exposes `ConnectionTimeout`,
+documented as covering only "the initial connection to the SSE server", and **no** per-request
+property. The real ceiling on the caller's side is the transport `HttpClient`'s 100 s default. So
+the forge's run timeout is **chosen, not derived**: 30 s, well under that, so the forge kills the
+process and returns a traceback rather than the client giving up first and leaving an orphaned
+process and no diagnosis. The cost is stated rather than avoided — `AgentGrain` is non-reentrant
+for the whole turn, so a tool that runs the full window blocks that conversation for that long.
+
+**The network shape (H3) is settled and verified.** On the compose network the gateway resolves
+`toolforge` to a container address and reaches both surfaces (`/health` → 200 on 8080 and 8081).
+On the default bridge a plain `docker run` joins, the same name does **not** resolve. `docker
+compose up` is therefore the documented deployment, and the README now says why.
+
+### NOT measured — the Agent42 side (M1–M5)
+
+**Not run. No values.** Nothing below should be cited as an answer.
+
+**The blocker is a configured chat model, not deployment** — an earlier draft of this section said
+"real DNS", which contradicts K8 of the executing plan: the measurement target is ToolForge on
+**loopback via the AppHost**, and public deployment gates production use rather than measurement.
+What actually blocks every one of M1–M5 is that they need a model to *reason* — write a buggy tool,
+read its traceback, fix it — so they need an operator session with their own provider credentials.
+DevHost cannot stand in: it registers a single-user tool provider and an offline connection factory,
+so it never reads the config grain or performs a handshake, which is exactly what M3 and M4 are about.
+
+| | Question | Status |
+|---|---|---|
+| M1 | Builder writes a buggy tool, reads the traceback, fixes it, runs it green — one conversation | **not run** |
+| M2 | A tool whose `requirements` name a third-party package installs and runs *through Agent42* | **not run** (proven server-side; the Agent42 leg is not) |
+| M3 | After pressing Test on the runtime server, does a **new** conversation see and call the tool? | **not run** |
+| M4 | Does a **warm** consumer chat see it without deactivating? *Predicted no.* | **not run** — still the cache nothing pins |
+| M5 | With the authoring server's `Enabled` unticked, is the write path gone while runtime tools still work? | **not run** |
+
+The forge half of M1 and M2 *is* proven: the fix loop (broken → `ZeroDivisionError` → rewritten →
+green) and a third-party import both run in the test suite and in the built image. What is unproven
+is Agent42's behaviour around them — which is exactly where C1's two caches live.

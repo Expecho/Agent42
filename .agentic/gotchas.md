@@ -1661,6 +1661,35 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0064-mcp-connection-test-endpoint.md`
 - **Verified:** 2026-09-07
 
+### An MCP tool name can shadow a STATIC tool name, and nothing in this repo stops it
+
+- **Claim:** `BuildAgent` appends MCP tools into the **same flat `List<AITool>`** as the static and
+  always-on tools with **no name de-duplication and no name check at all** — it is a bare
+  `tools.AddRange(server.Tools.Where(…).Select(…))`, filtered only by the ADR 0026/0058 selection keys.
+  And the catalog's unmapped-name rule means a **dynamic MCP name is kept unconditionally**: `KeyFor`
+  returns null for a name absent from `ToolNameToKey`, which the gate reads as "not a catalog tool,
+  leave it alone". So a remote server advertising `web_search`, `get_date`, `fetch_web_page`,
+  `read_web_document`, `code_interpreter`, `schedule_prompt`, `load_skill` or any other static name hands
+  the model **two tools with one name**, and every test still passes. This is the same hazard the
+  `HostedWebSearchTool` entry above records, except that case is ours to swap and this one is not: the
+  name is chosen on the far side of an HTTP boundary.
+  **There is no fix available in this repo** — the defence has to live in the server, at the moment the
+  name is chosen. ToolForge (ADR 0070) does exactly that, with a write-time reserved-name list in the
+  sibling repo Expecho/mcpserver. **The coupling that will rot: a tool added to Agent42 in a later
+  release must be added to that list too**, or a previously-written tool silently shadows the new one.
+  Verified 2026-09-09 by extracting every registered name in `src/Agent42.Agents/` and diffing it against
+  that list: no gaps today. Nothing automated holds it that way across two repos.
+  **And that list only covers OUR static names.** Two MCP servers colliding with each other — a written
+  tool called `list_events` against the calendar server's — is not covered by it or by anything else: no
+  server can know what else a user configured, and this repo does not check. Narrower (it needs both
+  servers selected at once, and the names are at least visible in the tools picker) and still open.
+- **Evidence:** `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (the `AddRange` over `_mcpServers`),
+  `src/Agent42.Agents/Tools/ToolCatalog.cs` (`ToolNameToKey`, `KeyFor`, `IsMcpToolEnabled`),
+  `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`EveryRegisteredTool_MapsToACatalogKey_OrIsGetDate_OrIsAnMcpTool` — note it runs name → key only, so
+  it does **not** catch a collision), `.agentic/decisions/0070-toolforge-agents-author-their-own-tools.md`
+- **Verified:** 2026-09-09
+
 ### The MCP connection test: two writers of the tool names, and an empty list ERASES them
 
 - **Claim:** since ADR 0064 there are **two** callers of `IUserMcpConfigGrain.RecordToolNamesAsync` —

@@ -837,6 +837,31 @@ to document a mechanical rule, add a lint rule instead.
   **offline fake `IMcpConnectionFactory`** so the feature is exercisable offline at all; it proves the wiring,
   not an MCP handshake. Shell cache bumped `agent42-shell-v27` → `-v28`. The DevHost browser leg **was** run
   (headless Chrome over CDP, 13/13) and ADR 0064 records the measured values.
+- Agents author their own tools — ToolForge (ADR 0070, **extends 0024/0026/0058**): a dedicated **Tool
+  Builder** agent writes a Python tool, runs it, reads the traceback, fixes it and publishes it; every other
+  agent of that user can then call it. **No Agent42 product code** — the build lives in the sibling repo
+  `Expecho/mcpserver` as ToolForge.Core + ToolForge.Mcp behind the existing Mcp.Gateway, and on this side it
+  is two ADR 0024 MCP server entries plus two stored agents. **Two surfaces, and the split IS the privilege
+  boundary:** an *authoring* server carrying exactly `write_tool`/`run_tool`/`list_tools`/`delete_tool`, given
+  only to the builder via `AgentDefinition [Id(8)] EnabledTools`, and a *runtime* server carrying **only**
+  promoted tools and no authoring tool at all. Two host names → two ports (8080/8081) → one process → one
+  registry; routing both names at one address destroys the separation silently while every test passes.
+  **The headline consequence is the largest in the app: there is no sandbox** (a deliberate reversal of the
+  design note's execution gate, user-accepted), so generated code runs with full network and filesystem, and
+  the **gateway API key is the only thing between the public internet and arbitrary code execution on the
+  operator's hardware**. It gets its own container purely so that code cannot read the gateway's
+  `MCP_API_KEY`/Google OAuth secret out of the process environment — that is *not* a sandbox. **The trap that
+  reaches back into THIS repo:** `BuildAgent` merges MCP tools into the same flat list as static tools with
+  **no name de-duplication**, and `ToolCatalog` keeps an unmapped dynamic name **unconditionally**, so nothing
+  here filters a collision — the forge's write-time **reserved-name list** is the only defence, and **a tool
+  added to Agent42 later must be added to that list in the sibling repo** or a written tool can shadow it.
+  The 8 KB `McpToolLimits.MaxToolResultLength` budget, the "return, do not print" contract and the reserved
+  names all live in the **tool descriptions** (ADR 0067's lesson — the JSON schema is what the model reads).
+  Promotion is **one** action since ADR 0069 (Test invalidates the cache *and* records names), which
+  **corrects design-note C1** — but its zero-tool carve-out means a runtime surface with nothing written yet
+  invalidates nothing. Measured server-side end to end (fix loop, third-party install 5.5 s → 0.72 s reused,
+  128 tests green); **M1–M5, the Agent42-side cache questions, were NOT run** and are recorded as open in the
+  design note's `## Measurements` — including whether a *warm* consumer chat ever picks up a new tool.
 - Web Push when an agent replies while away (ADR 0028): a **Web Push** notification titled with the
   **agent's name** is delivered to the user's installed Android/Chromium PWA when an agent finishes a reply
   on one of the two **asynchronous** paths — a fired reminder (`ReceiveReminder`) or an agent-run
