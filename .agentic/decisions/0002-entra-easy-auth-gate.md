@@ -8,12 +8,16 @@ tags: [auth, azure, container-apps]
 # Gate the Container App behind Entra ID Easy Auth instead of app-level auth
 
 > **Amended by [ADR 0022](0022-per-agent-api-key-and-async-run-endpoint.md) (2026-07-17),
-> [ADR 0035](0035-read-only-share-links.md) (2026-07-30) and
-> [ADR 0042](0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md) (2026-08-20) — four carve-outs.**
-> `globalValidation.excludedPaths` now holds `/api/agent-run`, `/api/share/*`, `/shared` and `/shared/*`.
+> [ADR 0035](0035-read-only-share-links.md) (2026-07-30),
+> [ADR 0042](0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md) (2026-08-20) and
+> [ADR 0070](0070-expose-stored-agents-as-an-mcp-server.md) (2026-09-11) — six carve-outs.**
+> `globalValidation.excludedPaths` now holds `/api/agent-run`, `/api/share/*`, `/shared`, `/shared/*`,
+> `/api/agent-mcp` and `/api/agent-mcp/*`.
 > Each is NOT ingress-gated and each therefore SELF-ENFORCES access in the handler and fails closed:
-> `/api/agent-run` on a per-agent API key (401), the share routes on the share token (404), and `/shared*`
-> is the static public viewer, which carries no data of its own. Every other endpoint (all UI + API) stays
+> `/api/agent-run` on a per-agent API key (401), the share routes on the share token (404), `/shared*`
+> is the static public viewer, which carries no data of its own, and the MCP pair on the same per-agent key
+> (401) — enforced by MIDDLEWARE over the prefix, not in a handler, because one endpoint serves the whole
+> JSON-RPC surface. Every other endpoint (all UI + API) stays
 > fully Easy-Auth-gated, so the "no auth code in handlers" consequence below holds everywhere except those
 > self-enforcing paths. **The matching rule is exact-unless-`/*`** — see ADR 0042; assuming prefix matching
 > is what made ADR 0035 non-functional in production, and `EasyAuthExclusionTests` now guards the list.

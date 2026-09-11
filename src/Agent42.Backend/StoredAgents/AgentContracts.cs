@@ -8,10 +8,12 @@ namespace Agent42.Backend;
 // timestamps are owned by the registry grain, so they aren't part of the request.
 // Continuous is the history-mode flag (ADR 0016); EnabledTools is the agent's selectable-tools
 // set (ADR 0021, a list of ToolCatalog keys, null = all). RegenerateKey (ADR 0022, PUT only)
-// rotates the agent's API key. All are trailing defaults so an old-shape client that omits them
-// stores false = per-chat, null = all tools, and never regenerates.
+// rotates the agent's API key. McpExposed (ADR 0070) opts the agent into the server-side MCP surface.
+// All are trailing defaults so an old-shape client that omits them stores false = per-chat,
+// null = all tools, never regenerates, and leaves the agent unexposed.
 public record AgentUpsertRequest(string Name, string Description, string Model, string SystemPrompt,
-    bool Continuous = false, IReadOnlyList<string>? EnabledTools = null, bool RegenerateKey = false);
+    bool Continuous = false, IReadOnlyList<string>? EnabledTools = null, bool RegenerateKey = false,
+    bool McpExposed = false);
 
 // What POST/PUT /api/agents return (ADR 0022): the stored agent, plus the raw API key IFF one was just
 // minted (create, or update with regenerateKey) — otherwise null. The raw key is shown exactly once and

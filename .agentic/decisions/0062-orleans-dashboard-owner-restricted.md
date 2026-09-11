@@ -108,7 +108,8 @@ ordering. Position relative to `UseForwardedHeaders` is immaterial: the gate rea
 
 ### No infra change, deliberately
 No `excludedPaths` entry, no Bicep change, no new secret, no new Cosmos container, no deploy-workflow
-change. `excludedPaths` holds exactly four entries and matches a path exactly unless the entry ends
+change. `excludedPaths` held four entries when this shipped — ADR 0002's banner carries the current list, which
+is the only place worth reading a count off — and matches a path exactly unless the entry ends
 `/*` (ADR 0042), so `/dashboard` is gated by *absence*. `EasyAuthExclusionTests` gains three rows —
 `/dashboard`, `/dashboard/`, /dashboard/index.min.js — because `/shared` taught us those are three
 separate mistakes.

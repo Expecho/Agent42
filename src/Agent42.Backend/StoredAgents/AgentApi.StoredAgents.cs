@@ -21,7 +21,10 @@ public static partial class AgentApi
         {
             var result = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition("", request.Name, request.Description, request.Model, request.SystemPrompt,
-                    default, default, request.Continuous, request.EnabledTools));
+                    default, default, request.Continuous, request.EnabledTools,
+                    // By NAME: McpExposed is the eleventh positional parameter and these call sites pass
+                    // nine, so a positional append would silently land in ApiKeyHash (ADR 0065's scar).
+                    McpExposed: request.McpExposed));
             return Results.Json(new AgentSaveResponse(result.Agent, result.PlaintextApiKey));
         });
 
@@ -31,7 +34,8 @@ public static partial class AgentApi
         {
             var result = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition(id, request.Name, request.Description, request.Model, request.SystemPrompt,
-                    default, default, request.Continuous, request.EnabledTools),
+                    default, default, request.Continuous, request.EnabledTools,
+                    McpExposed: request.McpExposed),
                 request.RegenerateKey);
             return Results.Json(new AgentSaveResponse(result.Agent, result.PlaintextApiKey));
         });

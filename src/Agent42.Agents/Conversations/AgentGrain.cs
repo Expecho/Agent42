@@ -399,7 +399,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
-        UserLocation? location = null, bool ephemeral = false)
+        UserLocation? location = null, bool ephemeral = false, bool interactive = true)
     {
         // The position and the ephemeral flag are both turn-scoped, and the fields outlive the call
         // (see _turnLocation / _ephemeral), so the clears are explicit and in a finally: they must
@@ -410,7 +410,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _ephemeral = ephemeral;
         // This is the live browser-streamed path, so follow-up suggestions may be generated (gated further
         // by the user preference). Turn-scoped like the two above; cleared in the finally.
-        _interactiveTurn = true;
+        //
+        // A caller that DRAINS this stream rather than streaming it to a browser passes false: the MCP
+        // surface (ADR 0070) takes the reply text and discards every other event, so a follow-up call
+        // would be a second model call whose result nothing can ever read. EnqueuePromptAsync sets the
+        // flag false directly for the same reason; this parameter is how a caller on THIS method says it.
+        _interactiveTurn = interactive;
 
         try
         {

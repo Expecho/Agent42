@@ -3287,6 +3287,29 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains(history, t => t.Text == "the later message");
     }
 
+    // ADR 0070 AC14. The MCP surface is the SECOND id shape the window covers, and it is the one with no
+    // UI at all: an external caller reusing a conversation id has no sidebar row and no reason to ever
+    // start a fresh one, so nothing but this gate bounds that session. Widening IsRetentionWindowed is a
+    // single `||` that the ADR 0016 tests above would never notice the loss of.
+    [Fact]
+    public async Task McpConversation_IsPruned()
+    {
+        var key = $"retention-user/{AgentMcpLimits.NewConversationId()}";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await CollectAsync(agent.ChatAsync("the ancient message", null));
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(agent.ChatAsync("the fresh message", null));
+
+        var history = await agent.GetHistoryAsync();
+        Assert.DoesNotContain(history, t => t.Text == "the ancient message");
+        Assert.Contains(history, t => t.Text == "the fresh message");
+
+        // Deleted, not hidden — the same property the ADR 0016 case asserts, for the same 2 MB reason.
+        Assert.DoesNotContain("the ancient message", await SessionJsonOf(key), StringComparison.Ordinal);
+    }
+
     // AC5. The scope decision, held by a test: a regular chat binds one conversation per chat, so it has
     // no unbounded-growth problem and nothing licenses deleting a user's history from under them.
     [Fact]

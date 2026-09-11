@@ -3,7 +3,7 @@
 import { clearPendingAttachments } from "./attachments.js";
 import { cacheGet, cachePut } from "./cache.js";
 import { selectConversation, setActiveAgentId, setActiveId, setPendingAgentId } from "./conversations.js";
-import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentDescriptionInput, agentDialog, agentForm, agentFormTitle, agentKeyCopyBtn, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentModelSelect, agentNameInput, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
+import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentDescriptionInput, agentDialog, agentForm, agentFormTitle, agentKeyCopyBtn, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
 import { closeDrawer } from "./drawer.js";
 import { defaultModel, fillModelOptions, modelLabel, selectModel, setModel } from "./models.js";
 import { streaming } from "./send.js";
@@ -129,6 +129,10 @@ function openAgentDialog(agent) {
   agentDescriptionInput.value = agent?.description ?? "";
   agentSystemPromptInput.value = agent?.systemPrompt ?? "";
   agentContinuousInput.checked = agent?.continuous ?? false;
+  agentMcpExposedInput.checked = agent?.mcpExposed ?? false;
+  // Remembered so saveAgent can spot the OFF -> ON transition (ADR 0070). Read at open rather than from
+  // the stored agent at save time, because the list is reloaded asynchronously and could have moved on.
+  mcpExposedWhenOpened = agentMcpExposedInput.checked;
   // The key section (with Regenerate) is meaningful only for a SAVED agent; a new agent has no key
   // yet — one is minted on create and revealed then. Always start with the raw key hidden (ADR 0022).
   agentKeySection.hidden = !agent;
@@ -138,6 +142,9 @@ function openAgentDialog(agent) {
   // agent), so show its absolute URL ALWAYS — even for a not-yet-saved agent — for off-browser copy.
   agentRunUrl.textContent = `${location.origin}/api/agent-run`;
   agentRunUrlCopyBtn.textContent = "Copy"; // reset a stale "Copied" from a prior open (button is always visible)
+  // Same reasoning as the run endpoint above: agent-independent and not a secret, so shown always.
+  agentMcpUrl.textContent = `${location.origin}/api/agent-mcp`;
+  agentMcpUrlCopyBtn.textContent = "Copy";
   pendingRegenerate = false;
   // Null enabledTools (a new agent, or one saved before ADR 0021) means "all selectable tools".
   renderToolChecks(agentToolChecks, agent?.enabledTools ?? allToolKeys());
@@ -154,6 +161,10 @@ function openAgentDialog(agent) {
 // dialog open and after each save, so a plain Save never regenerates.
 let pendingRegenerate = false;
 
+// What the MCP-exposure box read when the dialog was opened, so a save can detect the OFF -> ON
+// transition (ADR 0070) and offer a key rotation for it.
+let mcpExposedWhenOpened = false;
+
 async function saveAgent() {
   const payload = {
     name: agentNameInput.value.trim(),
@@ -161,7 +172,18 @@ async function saveAgent() {
     model: agentModelSelect.value,
     systemPrompt: agentSystemPromptInput.value.trim(),
     continuous: agentContinuousInput.checked,
+    mcpExposed: agentMcpExposedInput.checked,
   };
+  // ADR 0070's headline consequence, surfaced at the one moment the user can act on it. The ADR 0022 key
+  // was minted under a WRITE-ONLY contract — it could push a prompt in and read nothing back. Exposing the
+  // agent hands the reply out, which can carry RAG excerpts, the user's street address and prior turns of a
+  // reused conversation. So a key handed to a cron job months ago silently becomes a read credential unless
+  // it is rotated, and nothing else in the UI would ever mention that. Only on an EXISTING agent: a create
+  // mints a fresh key anyway, so there is nothing to re-consent to.
+  if (editingAgentId && agentMcpExposedInput.checked && !mcpExposedWhenOpened
+      && confirm("Exposing this agent lets anyone holding its API key read its replies, not just send it prompts. Regenerate the key now so the old one stops working?")) {
+    pendingRegenerate = true;
+  }
   // The full explicit list (never null) — "all selected" is the whole list, per ADR 0021. But ONLY
   // when the catalog actually loaded: if /api/tools failed, toolCatalog is [] and readToolChecks would
   // return [] (= none), silently disabling every tool. Omit the field so the server keeps the default
@@ -185,6 +207,9 @@ async function saveAgent() {
   } catch { return; /* silo may be unreachable; leave the dialog open */ }
 
   pendingRegenerate = false;
+  // The save succeeded, so this IS the state now — without adopting it, a dialog that stays open (the
+  // key-reveal path below) would re-prompt for a rotation on every subsequent Save.
+  mcpExposedWhenOpened = payload.mcpExposed;
   loadAgents();
 
   // The response is { agent, apiKey }. A non-null apiKey means one was just minted (create, or a
@@ -280,6 +305,15 @@ export function wireAgents() {
       agentRunUrlCopyBtn.textContent = "Copied";
     } catch {
       /* clipboard blocked (insecure context / permission) — the URL is visible to select manually */
+    }
+  });
+
+  agentMcpUrlCopyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(agentMcpUrl.textContent);
+      agentMcpUrlCopyBtn.textContent = "Copied";
+    } catch {
+      /* clipboard blocked — the URL is visible to select manually */
     }
   });
 }

@@ -139,6 +139,16 @@ public sealed class EasyAuthExclusionTests
         Assert.True(IsExcluded(entries, "/api/agent-run"), Because("/api/agent-run", entries));
     }
 
+    // ADR 0070. Both entries are load-bearing and the second is the one an editor would call redundant:
+    // measured on ModelContextProtocol.AspNetCore 2.2.0, MapMcp registers ONE endpoint that answers at the
+    // bare prefix AND at its trailing-slash form, while a bare excludedPaths entry matches EXACTLY. A client
+    // posting to /api/agent-mcp/ without the wildcard gets the login page — ADR 0035's failure, reproduced.
+    [Theory]
+    [InlineData("/api/agent-mcp")]
+    [InlineData("/api/agent-mcp/")]
+    public void Exclusions_CoverTheAgentMcpSurface(string path)
+        => Assert.True(IsExcluded(ExcludedPaths(), path), Because(path, ExcludedPaths()));
+
     [Fact]
     public void BarePrefixEntry_DoesNotCoverSubPaths()
     {
@@ -157,6 +167,9 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/api/sharezzz")]
     [InlineData("/sharedzzz")]
     [InlineData("/shared-secrets")]
+    // ADR 0070: the wildcard prefix keeps its trailing slash, so it cannot bleed onto a neighbouring stem.
+    [InlineData("/api/agent-mcpzzz")]
+    [InlineData("/api/agent-mcp-admin")]
     public void WildcardEntry_DoesNotMatchANameStem(string path)
     {
         // Measured: the wildcard prefix includes the trailing slash, so it cannot bleed onto a sibling route
