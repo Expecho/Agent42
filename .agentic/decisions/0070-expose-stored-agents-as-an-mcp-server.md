@@ -5,7 +5,7 @@ status: accepted
 tags: [mcp, agents, api-key, security, egress, excluded-paths, no-migration]
 supersedes: []
 extends: [0024]
-amends: [0002, 0022, 0042, 0068]
+amends: [0002, 0022, 0036, 0042, 0068]
 ---
 
 # Stored agents are callable by an external MCP client
@@ -41,7 +41,11 @@ key names.
 `initialize`, `tools/list` and `tools/call` from **one** endpoint and the SDK enforces nothing of its own, so
 an in-tool check alone would leave the handshake anonymously reachable the moment the `excludedPaths` entries
 land. `AgentMcpKeyGate` resolves the key before routing, publishes the caller on `HttpContext.Items`, and
-fails closed with a **uniform** 401 that does not disclose whether an agent exists. This is ADR 0062's
+fails closed with a **uniform** 401 that does not disclose whether an agent exists. Uniform in *status and
+body*: the resolve path still has three distinguishable cost tiers — a blank key returns immediately, an
+unknown key after one directory grain call, and a valid key for an unexposed or deleted agent after a
+directory **plus** a registry call — so a timing oracle is a residual, not something the wording should be
+read as closing. This is ADR 0062's
 dashboard-gate reasoning applied unchanged: a security control must not rest on a third-party package
 propagating an endpoint convention.
 
@@ -54,6 +58,12 @@ must not be extended to cover this.
 
 **The call blocks**, with the wait bounded at `AgentMcpLimits.RunTimeout`, rather than a start-plus-poll pair.
 
+**Refusals ride back in band**, as a `CallToolResult` with `IsError` set, never as a JSON-RPC error response.
+The two are not the same thing: a protocol error is a transport failure the calling model can only surface to
+its user, while `IsError` is the model-readable signal that lets it act on "pass back this conversationId" or
+"the prompt was too long". Returning a bare string would make every refusal arrive as `isError: false`,
+indistinguishable from a reply.
+
 **Turns are listed** in the owner's sidebar with the agent's identity, and are **excluded from long-term
 memory** (ADR 0056/0057).
 
@@ -65,6 +75,16 @@ turn is **never persisted**: tokens spent, the conversation listed with a title 
 index never updated, and no client-side recovery that could repair it. ADR 0046's property is narrower than it
 looks — Kestrel discards *writes* while the endpoint keeps pulling, which is not the same as abandoning the
 enumerator. So the drain runs to completion on a detached task and `Task.WhenAny` races only the wait.
+
+**This closes the state for the TIMEOUT and not for a FAULT, and the difference is worth being exact about.**
+`ChatCoreAsync` has no try/catch around `RunStreamingAsync`, so a model or provider failure throws straight
+out of the enumerator — that is what the browser renders as "Transmission failed" (ADR 0046). The persist
+never runs, and `TouchAsync` has already listed the conversation, so a faulted turn leaves exactly the empty
+listed conversation described above. That is the same orphan `/api/agent-run` leaves on a faulted background
+turn, and closing it is a change to that older surface too, so it is **recorded here rather than claimed
+closed**. What this surface does do is **curate** the failure — the reason is a fixed string, never the
+exception, following the `ConfigHealth.ProbeAsync` discipline, because the caller is not Entra-authenticated
+and must not receive a provider's message, endpoint or stack.
 
 **2. A namespaced conversation id is necessary but not sufficient.** Three defences are required and the first
 draft shipped only one:
@@ -146,6 +166,19 @@ there is no principal header, so MCP spend lands under the `local-dev` fallback 
 dashboard (ADR 0031), and the content reaches `/logs` (ADR 0054) in full. Pre-existing; noted, not fixed,
 because fixing it is a change to that older surface too.
 
+**No away-reply push, and that is a choice rather than an omission.** ADR 0028's rule is "send only on the
+two async paths, never from `ChatCoreAsync`", and `ask_agent` drains `ChatCoreAsync` — so an MCP turn lands in
+the owner's sidebar silently, while `/api/agent-run`, the other external-caller surface on the same
+credential, does push. That is deliberate: the caller already has the reply in hand, so the notification would
+tell the owner about a conversation that is already complete and already read. Anyone comparing the two
+surfaces would otherwise read the difference as an oversight.
+
+**The retention gate is deliberately broader than the id validator.** `IsRetentionWindowed` matches a bare
+`mcp-` prefix while `IsValidConversationId` requires the exact minted shape, so a *browser* conversation whose
+client-supplied id happens to start `mcp-` is stamped and 24-hour-pruned too. ADR 0016's `agent-` prefix has
+the same property, so this is consistent with precedent rather than new — but the two notions of "an MCP
+conversation" differ, and a reader assuming they are the same set will be wrong.
+
 **No rate limiting.** A real gap, named rather than silently omitted.
 
 **Infra:** two `excludedPaths` entries in `container-app.bicep` — the only infra change. No new secret, no new
@@ -172,7 +205,8 @@ questions and **corrected one plan premise**:
   session id. Also measured, and not in the plan: `AddMcpServer()` alone makes `MapMcp` **throw** —
   `.WithHttpTransport()` is mandatory.
 
-**Tests.** 29 in `tests/Agent42.Tests/AgentMcpServerTests.cs` (AC1–AC13 plus the id-shape theory), one in
+**Tests.** 31 in `tests/Agent42.Tests/AgentMcpServerTests.cs` (AC1–AC13, the id-shape theory, and two on a
+faulting turn — one that the failure is curated, one that the listed conversation is left empty), one in
 `AgentGrainTests.cs` (`McpConversation_IsPruned`, AC14), added rows in `EasyAuthExclusionTests.cs` (AC15),
 two in `ProjectLayoutTests.cs` (AC16, including a per-host gate-ordering guard), one in
 `AgentEditorAssetsTests.cs` (AC17).
@@ -186,6 +220,7 @@ two in `ProjectLayoutTests.cs` (AC16, including a per-host gate-ordering guard),
 | `interactive: true` | `AskAgent_DoesNotGenerateFollowUps` fails |
 | Binding comparison removed | `AskAgent_RejectsAnotherAgentsConversation` fails |
 | Drain abandons the enumerator on timeout | `AskAgent_TimedOut_StillPersistsTheTurn` fails |
+| `CallToolResult.IsError` hard-coded false | 7 of 31 fail |
 
 The last is the one worth keeping: it is the "obvious" implementation, and AC10 exists to reject it.
 
@@ -205,6 +240,18 @@ and headless Chrome over CDP. Measured:
   `http://localhost:61326/api/agent-mcp`; unticking, saving and reopening reads back `false`, and the same key
   then gets `401` while a still-exposed agent's key gets `200`.
 - Both `/api/agent-mcp` and `/api/agent-mcp/` answer `200` — the two `excludedPaths` entries, observed.
+
+**Post-review changes.** A `critic` pass on the finished diff found two blocking issues, both real and both
+fixed here rather than deferred: three separate enumerations of the `excludedPaths` hole list still said
+"four" (ADR 0002's banner, the gotcha the plan names as required reading, and `CLAUDE.md`, which then
+contradicted itself), and a faulting turn had no handling at all — the raw provider exception would have
+reached an unauthenticated caller and the ADR claimed a state was closed that was closed only for the
+timeout. Four smaller findings were also taken: `AgentMcpResult.IsError` was computed and dropped on the
+floor, so every refusal reached the caller as `isError: false`; the timeout message told the caller to do
+something `ask_agent` cannot do (it has no read mode, so "call again with this conversationId" queues a
+second billed turn behind the first); `Task.Delay(timeout)` was never cancelled on the success path; and
+`CapReply` returned `MaxReplyChars + 13`. ADR 0062's incidental "exactly four entries" was anchored to its
+own date rather than renumbered, since renumbering every ADR on each growth is what caused the drift.
 
 **Unverified residuals.** The timeout path is covered only by the unit test: DevHost's canned chat client has
 no slow-stream lever, so a genuine 120-second overrun was never driven end to end. The `excludedPaths`

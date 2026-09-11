@@ -324,6 +324,48 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         Assert.Contains(turns, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
     }
 
+    // A faulting turn returns a CURATED failure, never the exception. ChatCoreAsync has no try/catch
+    // around RunStreamingAsync, so a model or provider fault propagates straight out of the enumerator —
+    // the same throw the browser renders as "Transmission failed" (ADR 0046). Here the caller is not
+    // Entra-authenticated, so the provider's message, endpoint and stack must not reach them (the
+    // ConfigHealth.ProbeAsync discipline). Without this the exception would also hand the MCP SDK an
+    // arbitrary throw to render, which this repo has never measured.
+    [Fact]
+    public async Task AskAgent_AFaultingTurn_ReturnsACuratedFailure()
+    {
+        var (_, key) = await CreateExposedAgentAsync("Faulting agent");
+
+        var reply = await AskAgentAsync(key, $"{FakeChatClient.FaultingStreamMarker} please");
+
+        Assert.True(reply.IsError);
+        Assert.Contains("failed to produce a reply", reply.Text, StringComparison.Ordinal);
+        // None of the provider's own detail leaks.
+        Assert.DoesNotContain("secret-deployment", reply.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("InvalidOperationException", reply.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("500", reply.Text, StringComparison.Ordinal);
+    }
+
+    // The consequence a curated message does NOT fix, held by a test so it cannot be quietly forgotten:
+    // the turn never persists (the write sits after the streaming loop), while TouchAsync already listed
+    // the conversation. That orphan is the same one /api/agent-run leaves on a faulted background turn.
+    // ADR 0070 records it rather than claiming the timeout design covers it.
+    [Fact]
+    public async Task AskAgent_AFaultingTurn_LeavesTheListedConversationEmpty()
+    {
+        var (_, key) = await CreateExposedAgentAsync("Orphaning agent");
+
+        var reply = await AskAgentAsync(key, $"{FakeChatClient.FaultingStreamMarker} please");
+        Assert.True(reply.IsError);
+
+        var listed = (await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations"))!
+            .SingleOrDefault(c => c.Id == reply.ConversationId);
+        Assert.NotNull(listed);
+
+        var turns = await Client.GetFromJsonAsync<List<ChatTurn>>(
+            $"/api/conversations/{reply.ConversationId}/messages");
+        Assert.Empty(turns!);
+    }
+
     // AC12, inbound half: refused rather than truncated, because the text lands verbatim in the OWNER's
     // 2 MB session (ADR 0004) and is re-sent on every later turn of a reused conversation.
     [Fact]
@@ -345,7 +387,9 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         var capped = AgentMcpLimits.CapReply(over);
         Assert.StartsWith(new string('y', 100), capped, StringComparison.Ordinal);
         Assert.EndsWith("[truncated]", capped, StringComparison.Ordinal);
-        Assert.True(capped.Length < over.Length);
+        // Inside the cap, not past it — the marker is counted, so a method documented as capping at N
+        // cannot return N + 13. `capped.Length < over.Length` alone would not catch that.
+        Assert.True(capped.Length <= AgentMcpLimits.MaxReplyChars, $"capped to {capped.Length}");
         // And a reply inside the cap is returned byte-identical, never marked.
         Assert.Equal("short reply", AgentMcpLimits.CapReply("short reply"));
     }
@@ -411,16 +455,19 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
     private async Task<(string ConversationId, string Text, bool IsError)> AskAgentAsync(
         string apiKey, string prompt, string? conversationId = null)
     {
-        var text = await RpcToolTextAsync(apiKey, AskAgentRpc(prompt, conversationId));
+        // IsError comes from the PROTOCOL field, never inferred from the text. That is the whole point
+        // of returning a CallToolResult rather than a bare string: a refusal, a timeout and a fault are
+        // otherwise indistinguishable from a reply to the calling model.
+        var (text, isError) = await RpcToolTextAsync(apiKey, AskAgentRpc(prompt, conversationId));
 
         const string Marker = "conversationId: ";
         if (!text.StartsWith(Marker, StringComparison.Ordinal))
         {
-            return ("", text, true);
+            return ("", text, isError);
         }
 
         var newline = text.IndexOf('\n', StringComparison.Ordinal);
-        return (text[Marker.Length..newline].Trim(), text[newline..].TrimStart('\n'), false);
+        return (text[Marker.Length..newline].Trim(), text[newline..].TrimStart('\n'), isError);
     }
 
     private async Task<HttpResponseMessage> PostRpcAsync(string? apiKey, string json)
@@ -451,8 +498,9 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         return body[(marker + "data:".Length)..].Trim();
     }
 
-    // Unwraps one further level: a tools/call result is {"content":[{"type":"text","text":"…"}]}.
-    private async Task<string> RpcToolTextAsync(string apiKey, string json)
+    // Unwraps one further level: a tools/call result is
+    // {"content":[{"type":"text","text":"…"}],"isError":bool}.
+    private async Task<(string Text, bool IsError)> RpcToolTextAsync(string apiKey, string json)
     {
         using var document = JsonDocument.Parse(await RpcResultAsync(apiKey, json));
         var root = document.RootElement;
@@ -460,11 +508,14 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         // A protocol-level error (the defence-in-depth throw) surfaces here rather than in `result`.
         if (root.TryGetProperty("error", out var error))
         {
-            return error.GetProperty("message").GetString() ?? "";
+            return (error.GetProperty("message").GetString() ?? "", true);
         }
 
-        return string.Concat(root.GetProperty("result").GetProperty("content").EnumerateArray()
+        var result = root.GetProperty("result");
+        var text = string.Concat(result.GetProperty("content").EnumerateArray()
             .Select(c => c.GetProperty("text").GetString()));
+
+        return (text, result.TryGetProperty("isError", out var flag) && flag.GetBoolean());
     }
 
     private async Task<List<ChatTurn>> PollMessagesAsync(string convId, Func<List<ChatTurn>, bool> until)

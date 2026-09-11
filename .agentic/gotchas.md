@@ -1776,11 +1776,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   contributor must not miss: **(1)** on an excluded path there is **no `X-MS-CLIENT-PRINCIPAL-ID`**, so
   `GetUserId` returns `local-dev` — the endpoint must take the userId from the **directory resolution**,
   never from `GetUserId`; **(2)** any new endpoint added under this exclusion inherits the same duty. There
-  are now **four** entries in the ADR 0002 gate's hole list — `/api/agent-run` (ADR 0022, fails closed
+  are now **six** entries in the ADR 0002 gate's hole list — `/api/agent-run` (ADR 0022, fails closed
   **401**), `/api/share/*` (ADR 0035, the read-only view; fails closed **404** because it is a
-  browser-visitable link, and userId+conversation come from the share directory), and `/shared` + `/shared/*`
-  (ADR 0035, the static viewer page and its assets, self-contained so they carry no data) — every other
-  browser surface stays fully Easy-Auth-gated.
+  browser-visitable link, and userId+conversation come from the share directory), `/shared` + `/shared/*`
+  (ADR 0035, the static viewer page and its assets, self-contained so they carry no data), and
+  `/api/agent-mcp` + `/api/agent-mcp/*` (ADR 0070, the server-side MCP surface; fails closed **401** on the
+  per-agent key, enforced by **middleware over the prefix** because one endpoint serves `initialize`,
+  `tools/list` and `tools/call` alike) — every other browser surface stays fully Easy-Auth-gated. **Count
+  the entries in the Bicep before repeating a number from here**: this sentence has been stale twice.
 - **The matching rule (ADR 0042 — this is the trap that shipped a dead feature):** an entry is an **exact**
   match unless it ends in `/*`. A bare `/api/share` does **not** cover `/api/share/{token}`, and a bare
   `/shared` does not even cover `/shared/` — so ADR 0035 shipped with every recipient hitting the Entra
@@ -1797,7 +1800,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Sharing/AgentApi.Sharing.cs` (`/api/share/{token}` — 404 branches, userId from the
   directory, never `GetUserId`),
   `tests/Agent42.Tests/AgentApiTests.cs` (`AgentRun_MissingOrUnknownKey_Returns401`, `ShareLink_UnknownToken_Returns404`),
-  `tests/Agent42.Tests/EasyAuthExclusionTests.cs` (the matcher and the four covered/uncovered assertions),
+  `tests/Agent42.Tests/EasyAuthExclusionTests.cs` (the matcher and the covered/uncovered assertions),
   `.agentic/decisions/0002-entra-easy-auth-gate.md`, `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`,
   `.agentic/decisions/0035-read-only-share-links.md`,
   `.agentic/decisions/0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md`

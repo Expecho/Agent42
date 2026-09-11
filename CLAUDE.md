@@ -981,9 +981,10 @@ to document a mechanical rule, add a lint rule instead.
   `POST/GET/DELETE /api/conversations/{id}/share` (Easy Auth); public routes `GET /api/share/{token}` and
   `/api/share/{token}/attachments/{attachmentId}` are on **`excludedPaths`** (with the self-contained static
   viewer under `wwwroot/shared/`), **self-enforce** the token, take userId+conversation
-  from the directory (**never `GetUserId`**), and **fail closed → 404**. **The four entries are
-  `/api/agent-run`, `/api/share/*`, `/shared`, `/shared/*` — corrected by ADR 0042, which is required
-  reading before editing that list:** `excludedPaths` matches a path **exactly** unless the entry ends in
+  from the directory (**never `GetUserId`**), and **fail closed → 404**. **The six entries are
+  `/api/agent-run`, `/api/share/*`, `/shared`, `/shared/*` and — since ADR 0070 — `/api/agent-mcp` +
+  `/api/agent-mcp/*`; the list was corrected by ADR 0042, which is required
+  reading before editing it:** `excludedPaths` matches a path **exactly** unless the entry ends in
   `/*`, so the bare `/api/share` + `/shared` this feature originally shipped gated every URL a recipient
   loads and made it **non-functional in production**; `EasyAuthExclusionTests` now pins the measured
   semantics against the Bicep. ADR 0042 also adds `UseForwardedHeaders(XForwardedProto)` as the **first**

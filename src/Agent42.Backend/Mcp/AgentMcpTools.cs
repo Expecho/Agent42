@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Agent42.Agents;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Agent42.Backend;
@@ -27,9 +28,10 @@ public sealed class AgentMcpTools
         + "and is visible to them. Omit conversationId to start a new conversation; pass back the "
         + "conversationId from a previous reply to continue that one. Only an id this tool returned is "
         + "accepted. The call blocks until the agent finishes and may take a minute or more.")]
-    public static async Task<string> AskAgentAsync(
+    public static async Task<CallToolResult> AskAgentAsync(
         IHttpContextAccessor httpContextAccessor,
         IGrainFactory grains,
+        ILogger<AgentMcpTools> logger,
         [Description("The question or instruction to send to the agent.")]
         string prompt,
         [Description("The conversationId from an earlier ask_agent reply, to continue that conversation.")]
@@ -49,12 +51,22 @@ public sealed class AgentMcpTools
             throw new ModelContextProtocol.McpException(AgentMcpKeyGate.RejectionBody);
         }
 
-        var result = await AgentMcpRunner.RunAsync(caller, prompt, conversationId, grains);
+        var result = await AgentMcpRunner.RunAsync(caller, prompt, conversationId, grains, logger: logger);
 
-        // A refusal and a timeout come back as text rather than a protocol error: the calling model can
-        // act on "pass back this conversationId" but can only surface a transport failure to its user.
-        return result.ConversationId.Length > 0
+        var text = result.ConversationId.Length > 0
             ? $"conversationId: {result.ConversationId}\n\n{result.Text}"
             : result.Text;
+
+        // A refusal and a timeout ride back IN BAND — as a CallToolResult with IsError set — rather
+        // than as a JSON-RPC error response. The two are not the same thing and conflating them loses
+        // the point: a protocol error is a transport failure the calling model can only surface to its
+        // user, while IsError is the model-readable signal that lets it act on "pass back this
+        // conversationId" or "the prompt was too long". Returning a bare string would make every
+        // refusal arrive as isError:false, indistinguishable from a reply.
+        return new CallToolResult
+        {
+            Content = [new TextContentBlock { Text = text }],
+            IsError = result.IsError,
+        };
     }
 }

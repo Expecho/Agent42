@@ -427,3 +427,41 @@ the cache-bump step has to update too.
 
 **Everything else went as planned.** Steps 1, 2, 3, 5, 6, 7, 8, 9 and 11 needed no deviation; step 11's
 DevHost leg was run with a real MCP client and headless Chrome, and its measured values are in ADR 0070.
+
+## Post-review changes (the `critic` pass on the finished diff)
+
+Two blocking findings, both real and both fixed in-branch rather than deferred:
+
+- **Three enumerations of the `excludedPaths` hole list still said "four"** — ADR 0002's amendment banner,
+  the gotcha this plan names as required reading, and `CLAUDE.md`, which then contradicted itself two
+  bullets apart. The plan's C2 said "there is no exact-list assertion to update, only added rows", which is
+  true of the *tests* and misled the execution into thinking no doc debt existed. Hard rule 2 covers it.
+- **A faulting turn had no handling.** `ChatCoreAsync` has no try/catch around `RunStreamingAsync`, so a
+  model or provider failure throws out of the enumerator — and the raw exception would have reached an
+  unauthenticated caller, against the "curated, never the exception" rule. C6 reasoned carefully about the
+  timeout and not at all about a fault, and the ADR as first written claimed the empty-listed-conversation
+  state was closed when it was closed only for the timeout. The fault is now curated and logged; the orphan
+  it leaves is recorded rather than claimed closed, because `/api/agent-run` leaves the same one and closing
+  it is a change to that older surface. `FakeChatClient` gained a `FaultingStreamMarker` so the branch is
+  reachable at all, and two tests cover it.
+
+Four smaller findings taken:
+
+- `AgentMcpResult.IsError` was computed and never read — the tool returned a bare string, so every refusal,
+  timeout and fault arrived as `isError: false`, indistinguishable from a reply. It now returns a
+  `CallToolResult`. Mutation-checked: hard-coding `IsError = false` fails 7 of 31 tests.
+- The timeout message said "call again with this conversationId to read it". `ask_agent` has no read mode —
+  `prompt` is required — so following it queues a second billed turn behind the first on a non-reentrant
+  grain. Reworded to say exactly that.
+- `Task.Delay(timeout)` was never cancelled, leaving a 120-second timer rooted after every successful call
+  on a path with no rate limiting.
+- `CapReply` returned `MaxReplyChars + 13`. The marker is now counted inside the cap, and the test asserts
+  `<= MaxReplyChars` rather than merely "shorter than the input".
+
+Two findings were taken as documentation rather than code: no away-reply push fires on this path (ADR 0028's
+rule is keyed to the two async paths and `ask_agent` drains `ChatCoreAsync`) and the retention gate matches a
+bare `mcp-` prefix while the id validator requires the exact minted shape. Both are defensible as built and
+both now say so in ADR 0070's Consequences. The uniform-401 claim was softened to "uniform in status and
+body", since the resolve path has three distinguishable cost tiers.
+
+Final: **1275/1275 green**, lint clean, new-code coverage 95.0% against a threshold of 80.

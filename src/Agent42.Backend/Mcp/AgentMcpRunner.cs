@@ -1,5 +1,6 @@
 using System.Text;
 using Agent42.Agents;
+using Microsoft.Extensions.Logging;
 
 namespace Agent42.Backend;
 
@@ -27,7 +28,7 @@ public static class AgentMcpRunner
     /// </param>
     public static async Task<AgentMcpResult> RunAsync(
         AgentMcpCaller caller, string prompt, string? conversationId, IGrainFactory grains,
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null, ILogger? logger = null)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
@@ -64,7 +65,8 @@ public static class AgentMcpRunner
             caller.Agent.Id, caller.Agent.Name, caller.Agent.SystemPrompt, caller.Agent.Model,
             WithoutMemory(caller.Agent.EnabledTools)));
 
-        return await DrainWithinBudgetAsync(agentGrain, prompt, id, timeout ?? AgentMcpLimits.RunTimeout);
+        return await DrainWithinBudgetAsync(
+            agentGrain, prompt, id, timeout ?? AgentMcpLimits.RunTimeout, logger);
     }
 
     /// <summary>
@@ -119,7 +121,7 @@ public static class AgentMcpRunner
     /// enumerator. So the timeout races the wait, never the turn.</para>
     /// </summary>
     private static async Task<AgentMcpResult> DrainWithinBudgetAsync(
-        IAgentGrain agentGrain, string prompt, string conversationId, TimeSpan timeout)
+        IAgentGrain agentGrain, string prompt, string conversationId, TimeSpan timeout, ILogger? logger)
     {
         var drain = Task.Run(async () =>
         {
@@ -138,7 +140,11 @@ public static class AgentMcpRunner
             return reply.ToString();
         });
 
-        var finished = await Task.WhenAny(drain, Task.Delay(timeout));
+        // The timer is cancelled on the success path. Left uncancelled it stays rooted for the FULL
+        // timeout after every call that beat it — one live timer per call for two minutes, on a path with
+        // no rate limiting (ADR 0070's recorded residual).
+        using var timer = new CancellationTokenSource();
+        var finished = await Task.WhenAny(drain, Task.Delay(timeout, timer.Token));
         if (finished != drain)
         {
             // Observe the fault so an eventual failure cannot surface as an unobserved task exception,
@@ -147,12 +153,39 @@ public static class AgentMcpRunner
 
             return new AgentMcpResult(
                 conversationId,
-                $"The agent did not finish within {timeout.TotalSeconds:0} seconds. "
-                + "The turn is still running and will be recorded; call again with this conversationId to read it.",
+                $"The agent did not finish within {timeout.TotalSeconds:0} seconds. It is still running, "
+                + "and its reply will appear in the owner's chat history. Sending the same prompt again "
+                + "with this conversationId will queue a SECOND turn behind it, not read the first.",
                 IsError: true);
         }
 
-        return new AgentMcpResult(conversationId, AgentMcpLimits.CapReply(await drain), IsError: false);
+        timer.Cancel();
+
+        try
+        {
+            return new AgentMcpResult(conversationId, AgentMcpLimits.CapReply(await drain), IsError: false);
+        }
+        catch (Exception ex)
+        {
+            // A model or provider failure throws straight out of the enumerator — ChatCoreAsync has no
+            // try/catch around RunStreamingAsync, which is why the browser path shows "Transmission
+            // failed" (ADR 0046). Three things follow, and only the first is fixed here.
+            //
+            // The reason is CURATED, never the exception (the ConfigHealth.ProbeAsync discipline): an
+            // unauthenticated-by-Entra caller must not receive a provider's message, endpoint or stack.
+            // Letting it propagate would also hand the SDK an arbitrary exception to render, which is
+            // behaviour this repo has never measured.
+            //
+            // What is NOT fixed, deliberately: the turn does not persist (the write sits after the
+            // streaming loop), so TouchAsync has already listed a conversation that will stay empty. That
+            // is the same orphan /api/agent-run leaves on a faulted background turn, and closing it is a
+            // change to that older surface too. ADR 0070 records it rather than claiming the timeout
+            // design covers it.
+            logger?.LogError(ex, "MCP ask_agent turn failed for conversation {ConversationId}", conversationId);
+
+            return new AgentMcpResult(
+                conversationId, "The agent failed to produce a reply. Try again.", IsError: true);
+        }
     }
 
     /// <summary>

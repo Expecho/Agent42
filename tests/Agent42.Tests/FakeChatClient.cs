@@ -39,6 +39,20 @@ public sealed partial class FakeChatClient : IChatClient
 
     private const int SlowStreamChunkDelayMs = 200;
 
+    /// <summary>
+    /// Prompt marker that makes the STREAMING path throw mid-reply, standing in for a model or provider
+    /// failure.
+    ///
+    /// <para>Needed because <c>ChatCoreAsync</c> has no try/catch around <c>RunStreamingAsync</c> — a
+    /// provider fault propagates straight out of the enumerator, which is what the browser renders as
+    /// "Transmission failed" (ADR 0046) and what a server-side drainer has to curate rather than leak
+    /// (ADR 0070). Without a lever, that whole branch is unreachable from a test.</para>
+    ///
+    /// <para>It throws AFTER one chunk, deliberately: a fault before any output is the easy case, while a
+    /// partially-streamed reply is the one that also leaves the turn unpersisted.</para>
+    /// </summary>
+    public const string FaultingStreamMarker = "fault the stream";
+
     private int _suggestionCalls;
 
     /// <summary>Number of follow-up-suggestion generation calls this (per-silo) client has served.</summary>
@@ -118,12 +132,21 @@ public sealed partial class FakeChatClient : IChatClient
             await Task.Yield();
         }
 
-        var slow = list.LastOrDefault(m => m.Role == ChatRole.User)?.Text is { } prompt
+        var lastUserText = list.LastOrDefault(m => m.Role == ChatRole.User)?.Text;
+        var slow = lastUserText is { } prompt
             && prompt.Contains(SlowStreamMarker, StringComparison.OrdinalIgnoreCase);
+        var faulting = lastUserText is { } faultPrompt
+            && faultPrompt.Contains(FaultingStreamMarker, StringComparison.OrdinalIgnoreCase);
 
         foreach (var chunk in ReplyChunks)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
+            if (faulting)
+            {
+                throw new InvalidOperationException(
+                    "fake provider failure: model endpoint returned 500 for deployment 'secret-deployment'");
+            }
+
             if (slow)
             {
                 await Task.Delay(SlowStreamChunkDelayMs);

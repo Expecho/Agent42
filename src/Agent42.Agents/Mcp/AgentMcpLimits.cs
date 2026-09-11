@@ -96,9 +96,19 @@ public static class AgentMcpLimits
             && string.Equals(parsed.ToString("d"), remainder, StringComparison.Ordinal);
     }
 
-    /// <summary>Truncates a reply to <see cref="MaxReplyChars"/>, marking it so the caller knows.</summary>
+    /// <summary>
+    /// Truncates a reply to <see cref="MaxReplyChars"/>, marking it so the caller knows.
+    ///
+    /// <para>The marker is counted <b>inside</b> the cap, not appended past it. This file is the one
+    /// place these numbers are meant to be authoritative, so a method documented as capping at N must
+    /// not return N + 13.</para>
+    /// </summary>
     public static string CapReply(string reply)
-        => reply.Length <= MaxReplyChars
+    {
+        const string Marker = "\n\n[truncated]";
+
+        return reply.Length <= MaxReplyChars
             ? reply
-            : reply[..MaxReplyChars] + "\n\n[truncated]";
+            : reply[..(MaxReplyChars - Marker.Length)] + Marker;
+    }
 }
