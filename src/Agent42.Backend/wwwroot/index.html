@@ -273,6 +273,24 @@
           </div>
         </section>
 
+        <!-- MCP exposure (ADR 0070). Lives in the API panel, not General, because it is about this
+             agent's external surface and is meaningless without the key beside it. Turning it ON upgrades
+             an already-distributed key from write-only to READ — the reply can carry document excerpts,
+             the user's street address and prior turns — so agents.js offers a regenerate on that
+             transition. The URL is shown always, like the run endpoint, and for the same reason. -->
+        <section class="agent-form__section">
+          <span class="agent-form__label">// mcp server</span>
+          <label class="agent-form__field agent-form__field--check">
+            <input class="agent-form__checkbox" type="checkbox" id="agentMcpExposed" />
+            <span class="agent-form__label">// expose as an MCP tool</span>
+          </label>
+          <div class="agent-key">
+            <code class="agent-key__value" id="agentMcpUrl"></code>
+            <button class="agent-form__btn" type="button" id="agentMcpUrlCopyBtn">Copy</button>
+            <p class="agent-form__note">An external MCP client can call this agent as an <code>ask_agent</code> tool at this URL, sending the API key as the <code>X-Api-Key</code> header. It replies with the agent's answer, and the turn appears in your chat list.</p>
+          </div>
+        </section>
+
         <!-- Per-agent API key (ADR 0022). Shown only for a saved agent. The raw key is revealed ONCE,
              right after create or a regenerate; only its hash is stored, so it can never be shown again. -->
         <section class="agent-form__section" id="agentKeySection" hidden>

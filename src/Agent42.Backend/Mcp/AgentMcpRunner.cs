@@ -1,0 +1,190 @@
+using System.Text;
+using Agent42.Agents;
+
+namespace Agent42.Backend;
+
+/// <summary>
+/// Runs one turn of an exposed agent on behalf of an external MCP caller (ADR 0070) and hands the reply
+/// text back — the half of the surface that is not protocol plumbing.
+///
+/// <para><b>It drains <c>ChatAsync</c>, not <c>EnqueuePromptAsync</c>.</b> The background path discards
+/// the stream, so it has no reply to return. Draining and concatenating <c>TextDelta</c> is what
+/// <c>/api/chat/{id}</c> already does, and it is deterministic — unlike relying on grain
+/// non-reentrancy to order a following <c>GetHistoryAsync</c> behind an enqueued turn.</para>
+/// </summary>
+public static class AgentMcpRunner
+{
+    /// <summary>
+    /// Authenticates nothing — <see cref="AgentMcpKeyGate"/> already did — and runs the turn.
+    /// Returns the reply and the conversation id the caller can pass back to continue.
+    /// </summary>
+    /// <param name="timeout">
+    /// How long to wait for the reply. A seam, not a feature: without it no test can reach the
+    /// timeout branch, and that branch is the one carrying the property this design exists for — that a
+    /// turn the caller stopped waiting for is still persisted. It defaults to
+    /// <see cref="AgentMcpLimits.RunTimeout"/>, so the tool surface passes nothing and there is no
+    /// second number to drift.
+    /// </param>
+    public static async Task<AgentMcpResult> RunAsync(
+        AgentMcpCaller caller, string prompt, string? conversationId, IGrainFactory grains,
+        TimeSpan? timeout = null)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return AgentMcpResult.Failed("Provide a prompt.");
+        }
+
+        if (prompt.Length > AgentMcpLimits.MaxPromptChars)
+        {
+            // Refused, not truncated: this text lands verbatim in the OWNER's 2 MB session (ADR 0004) and
+            // is re-sent to the model on every later turn of a reused conversation. Silently dropping the
+            // tail would also hide the loss from a caller who could simply have sent less.
+            return AgentMcpResult.Failed(
+                $"Prompt exceeds the {AgentMcpLimits.MaxPromptChars} character limit.");
+        }
+
+        var (id, resolveError) = await ResolveConversationAsync(caller, conversationId, grains);
+        if (resolveError is not null)
+        {
+            return AgentMcpResult.Failed(resolveError);
+        }
+
+        var agentGrain = grains.GetGrain<IAgentGrain>($"{caller.UserId}/{id}");
+
+        // Listed for the owner, with the agent's identity, so a turn an external caller drove is findable
+        // in the sidebar rather than invisible. Touch is idempotent, so a continued conversation just
+        // bumps its position.
+        await grains.GetGrain<IConversationIndexGrain>(caller.UserId)
+            .TouchAsync(id, prompt, caller.Agent.Id, caller.Agent.Name);
+
+        // Snapshot the persona (ADR 0003), with memory removed from the tool selection (see
+        // WithoutMemory). Idempotent and immutable-once-bound, so on a continued conversation this is a
+        // no-op and the binding checked above is the one that runs.
+        await agentGrain.BindAgentAsync(new AgentBinding(
+            caller.Agent.Id, caller.Agent.Name, caller.Agent.SystemPrompt, caller.Agent.Model,
+            WithoutMemory(caller.Agent.EnabledTools)));
+
+        return await DrainWithinBudgetAsync(agentGrain, prompt, id, timeout ?? AgentMcpLimits.RunTimeout);
+    }
+
+    /// <summary>
+    /// Validates a caller-supplied conversation id or mints a fresh one, and confirms an existing
+    /// conversation belongs to the calling agent.
+    ///
+    /// <para><b>Two defences, and neither alone is enough.</b> The shape check
+    /// (<see cref="AgentMcpLimits.IsValidConversationId"/>) stops a traversal or an ADR 0016 continuous id
+    /// from reaching the grain key. But the owner is resolved from the API key, so a <i>well-shaped</i> id
+    /// still addresses one of that owner's other MCP conversations — and <c>BindAgentAsync</c> is
+    /// immutable-once-bound, so a conversation already bound to agent B keeps B's persona, prompt, tools
+    /// and history. A holder of agent A's key supplying that id would therefore run as B and read B's
+    /// content back. Hence the binding comparison, which fails closed on a mismatch.</para>
+    ///
+    /// <para>The mismatch message is deliberately the same as the malformed one: a caller must not be able
+    /// to enumerate which of the owner's conversations exist by the shape of the refusal.</para>
+    /// </summary>
+    private static async Task<(string Id, string? Error)> ResolveConversationAsync(
+        AgentMcpCaller caller, string? conversationId, IGrainFactory grains)
+    {
+        const string Rejection = "Unknown conversationId.";
+
+        if (string.IsNullOrWhiteSpace(conversationId))
+        {
+            return (AgentMcpLimits.NewConversationId(), null);
+        }
+
+        if (!AgentMcpLimits.IsValidConversationId(conversationId))
+        {
+            return ("", Rejection);
+        }
+
+        var binding = await grains
+            .GetGrain<IAgentGrain>($"{caller.UserId}/{conversationId}")
+            .GetAgentBindingAsync();
+
+        // A never-used id is unbound, which is fine — it binds to this agent below. A bound one must match.
+        return binding is null || string.Equals(binding.AgentId, caller.Agent.Id, StringComparison.Ordinal)
+            ? (conversationId, null)
+            : ("", Rejection);
+    }
+
+    /// <summary>
+    /// Enumerates the turn <b>to completion</b> on a detached task and bounds only the caller's WAIT.
+    ///
+    /// <para><b>This is the part that is easy to get backwards.</b> The session write sits after the
+    /// streaming loop, inside the iterator body — so a consumer that stops pulling leaves the iterator
+    /// suspended at a <c>yield return</c> and the turn is <i>never persisted</i>: tokens spent, the
+    /// conversation listed with a title and no messages, the search index never updated, and no
+    /// client-side recovery that could repair it. ADR 0046's property is narrower than it looks — Kestrel
+    /// discards <i>writes</i> while the endpoint keeps pulling, which is not the same as abandoning the
+    /// enumerator. So the timeout races the wait, never the turn.</para>
+    /// </summary>
+    private static async Task<AgentMcpResult> DrainWithinBudgetAsync(
+        IAgentGrain agentGrain, string prompt, string conversationId, TimeSpan timeout)
+    {
+        var drain = Task.Run(async () =>
+        {
+            var reply = new StringBuilder();
+            // interactive: false — nothing is watching this stream, so the follow-up suggestion call
+            // (ADR 0036) would be a second model call whose result is discarded (C13).
+            await foreach (var evt in agentGrain.ChatAsync(
+                prompt, model: null, attachments: null, location: null, ephemeral: false, interactive: false))
+            {
+                if (evt.Type == AgentStreamEventType.TextDelta && evt.Text is { Length: > 0 } text)
+                {
+                    reply.Append(text);
+                }
+            }
+
+            return reply.ToString();
+        });
+
+        var finished = await Task.WhenAny(drain, Task.Delay(timeout));
+        if (finished != drain)
+        {
+            // Observe the fault so an eventual failure cannot surface as an unobserved task exception,
+            // and let the turn run on to its persist.
+            _ = drain.ContinueWith(static t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+
+            return new AgentMcpResult(
+                conversationId,
+                $"The agent did not finish within {timeout.TotalSeconds:0} seconds. "
+                + "The turn is still running and will be recorded; call again with this conversationId to read it.",
+                IsError: true);
+        }
+
+        return new AgentMcpResult(conversationId, AgentMcpLimits.CapReply(await drain), IsError: false);
+    }
+
+    /// <summary>
+    /// The agent's tool selection with <see cref="ToolCatalog.Memory"/> removed (ADR 0056/0057).
+    ///
+    /// <para><b>Exclusion happens at BIND time, deliberately, and not through a turn-scoped grain
+    /// field.</b> <c>_turnLocation</c>, <c>_ephemeral</c>, <c>_interactiveTurn</c> and
+    /// <c>_webDocumentIngested</c> are a family that lives for the <i>activation</i> and is cleared in
+    /// three places; any new per-turn field inherits that trap. A binding is materialised into grain
+    /// state once and read as a value on every rebuild, so it cannot leak into anyone else's turn.</para>
+    ///
+    /// <para><b>Filtered, never rebuilt.</b> A null selection is the <c>null == all</c> sentinel, so it
+    /// expands to <see cref="ToolCatalog.AllSelectableToolKeys"/> — which carries the <c>skills</c> and
+    /// <c>mcp</c> wildcards. Substituting a hand-written list would silently drop both.</para>
+    ///
+    /// <para>Why memory and nothing else: a memory bank is the user's, spans every conversation, and has
+    /// no delete path (ADR 0056). Retaining turns an external caller drove would let a key holder write
+    /// permanently into the owner's memory, and recall would hand that caller content from the owner's
+    /// unrelated conversations.</para>
+    /// </summary>
+    private static IReadOnlyList<string> WithoutMemory(IReadOnlyList<string>? enabledTools)
+        => (enabledTools ?? ToolCatalog.AllSelectableToolKeys)
+            .Where(key => !string.Equals(key, ToolCatalog.Memory, StringComparison.Ordinal))
+            .ToList();
+}
+
+/// <summary>
+/// What one <c>ask_agent</c> call produced: the conversation id to continue with, and either the reply
+/// or a refusal. The id rides back even on a timeout, because the turn is still recorded under it.
+/// </summary>
+public sealed record AgentMcpResult(string ConversationId, string Text, bool IsError)
+{
+    /// <summary>A refusal that never reached a conversation, so it carries no id.</summary>
+    public static AgentMcpResult Failed(string message) => new("", message, IsError: true);
+}

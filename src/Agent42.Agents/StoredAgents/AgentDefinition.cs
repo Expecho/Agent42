@@ -23,6 +23,18 @@ namespace Agent42.Agents;
 /// means no key has been minted, so agents persisted before ADR 0022 deserialize keyless with no
 /// migration and get a key on their next regenerate. Keyed as <c>[Id(9)]</c> because 7 and 8 are
 /// already taken (<see cref="Continuous"/>, <see cref="EnabledTools"/>).
+///
+/// <see cref="McpExposed"/> opts the agent into the server-side MCP surface (ADR 0070): with it set,
+/// a holder of the agent's ADR 0022 key can call it as a tool over <c>/api/agent-mcp</c> and read the
+/// reply back. Trailing and defaulted, so every agent stored before it deserializes unexposed with no
+/// migration. Like <see cref="Continuous"/> it is <b>routing, not persona</b>, so it is deliberately
+/// NOT snapshotted into <see cref="AgentBinding"/> — the call ADR 0016 made for the same reason.
+///
+/// <para><b>Turning it on upgrades an already-distributed key from write-only to read.</b> ADR 0022's
+/// key could only push a prompt in; this surface hands the reply back, which can carry RAG excerpts
+/// (ADR 0007), the user's street address (ADR 0012), tool and web content, and prior turns. A key
+/// handed out months ago silently gains that reach the moment this flips on, which is why the editor
+/// offers a regenerate alongside it.</para>
 /// </remarks>
 [GenerateSerializer]
 [Alias("Agent42.Agents.AgentDefinition")]
@@ -36,4 +48,5 @@ public sealed record AgentDefinition(
     [property: Id(6)] DateTimeOffset UpdatedAt,
     [property: Id(7)] bool Continuous = false,
     [property: Id(8)] IReadOnlyList<string>? EnabledTools = null,
-    [property: Id(9)] string ApiKeyHash = "");
+    [property: Id(9)] string ApiKeyHash = "",
+    [property: Id(10)] bool McpExposed = false);

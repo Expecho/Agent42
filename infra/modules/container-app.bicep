@@ -327,11 +327,22 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
       //   • /shared         — courtesy exact match so a hand-typed URL without the trailing slash gets the 301.
       //   • /shared/*       — the static read-only viewer page and its self-contained assets an unauthenticated
       //                       recipient opens; it carries no data itself and calls /api/share for content.
+      //   • /api/agent-mcp   — the server-side MCP surface (ADR 0070): an external MCP client authenticates
+      //     /api/agent-mcp/*   with the per-agent key (ADR 0022), not an Entra session. AgentMcpKeyGate is
+      //                       middleware over the prefix, so initialize/tools/list are refused with the same
+      //                       uniform 401 as tools/call — a check inside the tool method alone would leave
+      //                       the protocol handshake anonymously reachable. BOTH entries are required and
+      //                       neither is spare: measured on the SDK, MapMcp registers ONE endpoint that
+      //                       matches the bare prefix AND its trailing-slash form, and a bare entry here
+      //                       matches EXACTLY. Without the wildcard a client posting to /api/agent-mcp/ gets
+      //                       the login page — the ADR 0035 failure, exactly.
       excludedPaths: [
         '/api/agent-run'
         '/api/share/*'
         '/shared'
         '/shared/*'
+        '/api/agent-mcp'
+        '/api/agent-mcp/*'
       ]
     }
     identityProviders: {

@@ -487,6 +487,81 @@ public sealed class ProjectLayoutTests
     }
 
     /// <summary>
+    /// AC16 (ADR 0070). The server-side MCP surface is mapped from each host's composition root and is
+    /// deliberately <b>not</b> an <c>AgentApi.*</c> group.
+    ///
+    /// <para>Ten call sites invoke <c>MapAgentApi</c> — two hosts and eight test fixtures — and minimal API
+    /// infers every mapped endpoint's parameters up front, so a dependency one host has not registered
+    /// breaks routing for <i>every</i> endpoint in that host. <c>MapMcp</c> throws outright without
+    /// <c>AddMcpServer().WithHttpTransport()</c>, so folding it into <c>MapAgentApi</c> would take down
+    /// eight fixtures at once. Consequently
+    /// <see cref="AgentApiPart_ExistsAndIsRegisteredFromTheCompositionRoot"/> does not apply here and must
+    /// not be extended to cover it — this test is what records that as a decision rather than an omission.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AgentMcp_IsNotMappedFromTheApiCompositionRoot()
+    {
+        var backend = ProjectDir("Agent42.Backend");
+
+        var compositionRoot = StrippedSource(Path.Combine(backend, "Api", "AgentApi.cs"));
+        Assert.DoesNotContain("MapAgentMcpServer", compositionRoot, StringComparison.Ordinal);
+        Assert.DoesNotContain("MapMcp(", compositionRoot, StringComparison.Ordinal);
+
+        // And no AgentApi partial maps it either — the group could otherwise be reached indirectly.
+        foreach (var part in Directory.EnumerateFiles(backend, "AgentApi.*.cs", SearchOption.AllDirectories))
+        {
+            Assert.DoesNotContain("MapMcp(", StrippedSource(part), StringComparison.Ordinal);
+        }
+
+        // The SDK's own map call appears exactly once in production code, inside the registration file —
+        // a second call site is a second place to forget the gate. Scoped to src/ + tools/ because
+        // scoping to the repo would match this very file, which names the call in its own assertion.
+        var callSites = new[] { "src", "tools" }
+            .SelectMany(root => Directory.EnumerateFiles(
+                Path.Combine(RepoRoot(), root), "*.cs", SearchOption.AllDirectories))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => StrippedSource(f).Contains("MapMcp(", StringComparison.Ordinal))
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal<string>(["AgentMcpServerRegistration.cs"], callSites!);
+    }
+
+    /// <summary>
+    /// AC16, second half (ADR 0070). Every host that MAPS the surface must also install the key gate, and
+    /// install it above the static-file middleware.
+    ///
+    /// <para>Mapping without the gate compiles cleanly and serves every exposed agent to anyone who can
+    /// reach the URL — and since both entries are on <c>excludedPaths</c>, that is the public internet. No
+    /// test executes <c>Program.cs</c>, so this source-text guard is the only thing standing between that
+    /// mistake and production, exactly as <see cref="Program_GatesTheOrleansDashboardBeforeServingIt"/> is
+    /// for the dashboard.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("src/Agent42.Backend/Program.cs")]
+    [InlineData("tools/Agent42.DevHost/Program.cs")]
+    public void Hosts_GateTheAgentMcpSurfaceBeforeServingIt(string relativePath)
+    {
+        var program = StrippedSource(
+            Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+        var gate = program.IndexOf("app.UseAgentMcpKeyGate()", StringComparison.Ordinal);
+        Assert.True(gate >= 0,
+            $"{relativePath} no longer installs the MCP key gate — /api/agent-mcp is on excludedPaths, so the surface would be anonymously reachable.");
+
+        Assert.Contains("AddAgentMcpServer()", program, StringComparison.Ordinal);
+
+        foreach (var later in new[] { "app.UseDefaultFiles()", "app.UseStaticFiles()", "app.MapAgentMcpServer()" })
+        {
+            var index = program.IndexOf(later, StringComparison.Ordinal);
+            Assert.True(index > gate, $"{later} runs before the MCP key gate in {relativePath}.");
+        }
+    }
+
+    /// <summary>
     /// AC 10 (ADR 0062). Both silo hosts must register the dashboard — the endpoints exist either way,
     /// but with no <c>AddDashboard()</c> on the silo they have no cluster services to read, so the page
     /// fails at runtime rather than at build time.

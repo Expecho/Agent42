@@ -37,6 +37,33 @@ public sealed class AgentEditorAssetsTests
         Assert.Contains("continuous: agentContinuousInput.checked", app);
     }
 
+    // AC17 (ADR 0070). The MCP-exposure toggle, and — the half worth guarding by source text — the
+    // regenerate OFFER on the OFF -> ON transition.
+    //
+    // That offer is the only place in the UI that says out loud what turning the flag on does: the ADR 0022
+    // key was minted under a write-only contract, and exposure turns it into a read credential that can
+    // return document excerpts, the user's street address and prior turns. Delete the condition and every
+    // other test here still passes, because nothing else observes it.
+    [Fact]
+    public async Task AgentEditor_HasMcpExposureToggle_AndOffersAKeyRotationWhenItIsTurnedOn()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("id=\"agentMcpExposed\"", html);
+        Assert.Contains("id=\"agentMcpUrl\"", html);
+
+        Assert.Contains("agentMcpExposedInput.checked = agent?.mcpExposed ?? false;", app);
+        Assert.Contains("mcpExposed: agentMcpExposedInput.checked", app);
+
+        // The transition, not merely the current value: `checked && !wasChecked`, and only for a SAVED
+        // agent (a create mints a fresh key anyway, so there is nothing to re-consent to).
+        Assert.Contains("editingAgentId && agentMcpExposedInput.checked && !mcpExposedWhenOpened", app);
+        Assert.Contains("mcpExposedWhenOpened = agentMcpExposedInput.checked;", app);
+        // And the save adopts the new state, so a dialog left open does not re-prompt on every Save.
+        Assert.Contains("mcpExposedWhenOpened = payload.mcpExposed;", app);
+    }
+
     [Fact] // ADR 0022 — the editor exposes a regenerate control and reveals the once-shown key on save.
     public async Task AgentEditor_HasApiKeyRegenerateAndReveal()
     {

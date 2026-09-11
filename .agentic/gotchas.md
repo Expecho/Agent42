@@ -3055,3 +3055,65 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0061-searchable-chat-message-projection.md`
 - **Verified:** 2026-09-05
 
+
+### Bounding a drained agent turn: cap the WAIT, never the enumeration — abandoning it LOSES the turn
+
+- **Claim:** a server-side caller that drains `IAgentGrain.ChatAsync` for its reply text (ADR 0070's
+  `ask_agent`) needs a timeout, and the obvious implementation — stop pulling once the budget is spent —
+  silently destroys the turn. The session write sits **after** the streaming loop, inside the iterator
+  body: `ChatCoreAsync`'s `await foreach` over `RunStreamingAsync` yields each event, and
+  `PersistTurnUnlessEphemeralAsync()` runs about ten lines further on. A consumer that stops pulling
+  leaves the iterator suspended at a `yield return` forever, so the write never happens — tokens spent,
+  the conversation **listed with a title and no messages**, the search index never updated, and no
+  client-side recovery that could repair it (ADR 0046's recovery is the browser re-reading a turn that
+  *was* persisted). Nothing throws, and in the timeout case nobody is watching anyway.
+  **ADR 0046 is the entry most likely to be misread here, and the first draft of ADR 0070 misread it
+  exactly this way.** Its measured property is that *Kestrel discards writes to an aborted connection
+  instead of faulting them*, so the endpoint keeps draining and the grain persists as usual. That is a
+  statement about a **dead socket under a live enumerator**, and it says nothing about a live consumer
+  that stops enumerating. The two cases look alike and behave oppositely.
+  The shape that works: start a task that enumerates to completion, `Task.WhenAny` it against the
+  timeout, answer the caller when the timeout wins, and let the task finish and persist. Observe the
+  task's exception (`ContinueWith(… OnlyOnFaulted)`) so a later failure cannot surface as an unobserved
+  task exception, and **do not** wire a `CancellationToken` into the turn for this — cancelling the turn
+  is the very thing that loses it. **Mutation-checked:** replacing the detached drain with a
+  stop-pulling-on-elapsed loop turns `AskAgent_TimedOut_StillPersistsTheTurn` red while the other 28
+  tests in that class stay green, so that one test is the entire guard.
+- **Evidence:** `src/Agent42.Backend/Mcp/AgentMcpRunner.cs` (`DrainWithinBudgetAsync`),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatCoreAsync`, the persist after the streaming
+  loop), `tests/Agent42.Tests/AgentMcpServerTests.cs` (`AskAgent_TimedOut_StillPersistsTheTurn`),
+  `.agentic/decisions/0070-expose-stored-agents-as-an-mcp-server.md`,
+  `.agentic/decisions/0046-recover-a-reply-whose-stream-died.md`
+- **Verified:** 2026-09-11
+
+### A caller-supplied conversation id needs THREE defences — the id shape is not the whole one
+
+- **Claim:** on a surface where the owner is resolved from a credential rather than a session (ADR 0022's
+  key, ADR 0070's `ask_agent`), a caller-supplied conversation id addresses that owner's grains directly,
+  and namespacing it is only the first of three defences. Getting one right and calling it done is what
+  the first draft of ADR 0070 did, and the sentence "id shape is the whole defence" was itself the
+  defect.
+  1. **Exact shape, never a prefix.** `AgentKey` is raw string concatenation of
+     `{userId}/{conversationId}`, and that same string is an attachment blob prefix and a document-index
+     partition, so a `StartsWith("mcp-")` check accepts `mcp-a/../b` and the grain key honours it. Parse
+     the remainder as a GUID and **round-trip compare** the canonical spelling, so the brace, parenthesis
+     and hyphenless forms `Guid.TryParse` otherwise accepts cannot address one conversation by several
+     keys.
+  2. **Compare the existing binding's agent id with the caller's.** This is the one a shape check cannot
+     give you and the one that actually leaks. `BindAgentAsync` is **immutable-once-bound** — it returns
+     early when `_state.State.AgentId` is set — so a conversation already bound to agent B keeps B's
+     persona, prompt, tools **and history**, and a holder of agent A's key supplying that well-shaped id
+     runs as B and reads B's content back. Resolve `GetAgentBindingAsync()` and fail closed on a
+     mismatch, with a refusal **byte-identical** to the malformed-id one so existence cannot be probed.
+  3. **Reject the ADR 0016 `agent-` shape on the way in.** Those ids collapse every chat onto one
+     non-reentrant grain, so an agent reachable at its own continuous grain can block on itself until the
+     timeout expires.
+  **Mutation-checked:** deleting the binding comparison leaves the shape theory and every other test in
+  the class green and turns only `AskAgent_RejectsAnotherAgentsConversation` red.
+- **Evidence:** `src/Agent42.Agents/Mcp/AgentMcpLimits.cs` (`IsValidConversationId`),
+  `src/Agent42.Backend/Mcp/AgentMcpRunner.cs` (`ResolveConversationAsync`),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`BindAgentAsync`'s early return),
+  `tests/Agent42.Tests/AgentMcpServerTests.cs` (`AskAgent_RejectsAnotherAgentsConversation`,
+  `IsValidConversationId_AcceptsOnlyAMintedId`),
+  `.agentic/decisions/0070-expose-stored-agents-as-an-mcp-server.md`
+- **Verified:** 2026-09-11
