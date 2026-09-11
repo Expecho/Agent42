@@ -28,6 +28,7 @@
     <PackageReference Include="Microsoft.Orleans.Persistence.Cosmos" />
     <PackageReference Include="Microsoft.Orleans.Reminders.Cosmos" />
     <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <!-- Direct reference (transitive via Microsoft.Agents.AI.OpenAI) because the multi-provider
          factory constructs OpenAIClient itself, with an ApiKeyCredential and a custom Endpoint, to
          reach any OpenAI-compatible provider (ADR 0013); version is centrally pinned. -->

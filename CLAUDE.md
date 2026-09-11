@@ -246,6 +246,44 @@ to document a mechanical rule, add a lint rule instead.
   exercisable at all (a `demo_find_links` tool, the seeding flag on the offline group, and a two-call chain in
   `CannedChatClient`); the offline leg **was** run — including an A/B on the flag and a UI untick/re-tick
   round-trip — and ADR 0067 records the measured values.
+- Stored agents exposed as an MCP SERVER (ADR 0070, **extends 0024**, **amends 0002/0022/0042/0068**): the
+  **inverse direction** of every other MCP bullet here — 0024/0025/0026/0058/0064/0067/0069 are all client
+  side; this is the first time Agent42 **serves** the protocol. A trailing `[Id(10)] McpExposed` on
+  `AgentDefinition` (default false, no migration) lets a holder of that agent's **existing ADR 0022 key**
+  call it as an `ask_agent` tool over `/api/agent-mcp` and **read the reply back** — which `/api/agent-run`
+  deliberately never did. **The headline is that turning the flag on silently upgrades an
+  already-distributed key from WRITE-ONLY to READ:** the reply can carry RAG excerpts (0007), the user's
+  street address (0012), tool/web content and prior turns, so a key handed to a cron job months ago becomes a
+  read credential with no re-consent — hence the editor's regenerate offer on the OFF→ON transition, the only
+  place the UI says so. Exposure also grants whatever the owner's per-agent selection already allows (0021),
+  up to unsandboxed code execution; it only ever **narrows** (memory is removed) and it does not re-ask.
+  **Three things are easy to get backwards and all three are in gotchas.** (1) The timeout bounds the
+  **WAIT**, never the turn — the persist sits *after* the streaming loop inside the iterator, so abandoning
+  the enumerator loses the turn outright (tokens spent, conversation listed with no messages); **ADR 0046 is
+  the entry most likely to be misread here** (its property is a dead socket under a *live* enumerator), and
+  the first draft misread it exactly that way. (2) A namespaced id is necessary but **not sufficient** —
+  three defences are needed: exact-shape validation (the grain key is raw concatenation and also a blob
+  prefix), a **binding-owner comparison** (`BindAgentAsync` is immutable-once-bound, so agent A's key on
+  agent B's conversation would run as B and read B's history), and rejecting the `agent-` shape. (3) Memory
+  is excluded at **bind** time via `EnabledTools`, never a turn-scoped grain field (that family lives for the
+  *activation*), and the list is **filtered, never rebuilt** so the `skills`/`mcp` wildcards survive.
+  Enforcement is **middleware over the prefix** (`AgentMcpKeyGate`, the ADR 0062 shape), not a check inside
+  the tool — `MapMcp` serves `initialize`/`tools/list`/`tools/call` from **one** endpoint and the SDK enforces
+  nothing — with a **uniform** 401 that never discloses whether an agent exists. Deliberately **not** an
+  `AgentApi.*` partial (ten `MapAgentApi` call sites; `MapMcp` throws without
+  `AddMcpServer().WithHttpTransport()`, which the plan did not name), so
+  `AgentApiPart_ExistsAndIsRegisteredFromTheCompositionRoot` does not apply. Infra is **two `excludedPaths`
+  entries** (four → six) — `/api/agent-mcp` **and** `/api/agent-mcp/*`, both required: measured, `MapMcp`
+  registers **one** route answering at the bare prefix *and* its trailing-slash form (no `/sse`,
+  `EnableLegacySse` false), while a bare entry matches **exactly** — ADR 0035's dead-feature scar. ADR 0068's
+  24-hour window gains a **second** id prefix (`mcp-`), because an external caller reusing one id has no
+  sidebar row and no reason to start a fresh conversation. `ChatAsync` gains a trailing `interactive`
+  parameter (the `ephemeral` precedent) passed **false**, else every call pays a discarded follow-up model
+  call (ADR 0036). **Two recorded residuals: `ConversationIndexGrain` is unbounded** (a conversation per call
+  eventually fails every `TouchAsync` for that owner, including their own browser turn) and there is **no
+  rate limiting**. No new secret, Cosmos container, grain, folder or Bicep beyond those two entries. Shell
+  cache bumped `agent42-shell-v33` → `-v34`. The DevHost leg **was** run with a **real MCP client** plus
+  headless Chrome, and five mutations were checked (the timeout one rejects the obvious implementation).
 - User location (ADR 0012): a `get_current_location` tool returning the user's coordinates and a
   reverse-geocoded street address. `navigator.geolocation` is a *browser* API and tools run server-side,
   and the chat path is a one-way NDJSON stream — so a tool cannot ask the browser for a fix mid-turn. The
@@ -943,9 +981,10 @@ to document a mechanical rule, add a lint rule instead.
   `POST/GET/DELETE /api/conversations/{id}/share` (Easy Auth); public routes `GET /api/share/{token}` and
   `/api/share/{token}/attachments/{attachmentId}` are on **`excludedPaths`** (with the self-contained static
   viewer under `wwwroot/shared/`), **self-enforce** the token, take userId+conversation
-  from the directory (**never `GetUserId`**), and **fail closed → 404**. **The four entries are
-  `/api/agent-run`, `/api/share/*`, `/shared`, `/shared/*` — corrected by ADR 0042, which is required
-  reading before editing that list:** `excludedPaths` matches a path **exactly** unless the entry ends in
+  from the directory (**never `GetUserId`**), and **fail closed → 404**. **The six entries are
+  `/api/agent-run`, `/api/share/*`, `/shared`, `/shared/*` and — since ADR 0070 — `/api/agent-mcp` +
+  `/api/agent-mcp/*`; the list was corrected by ADR 0042, which is required
+  reading before editing it:** `excludedPaths` matches a path **exactly** unless the entry ends in
   `/*`, so the bare `/api/share` + `/shared` this feature originally shipped gated every URL a recipient
   loads and made it **non-functional in production**; `EasyAuthExclusionTests` now pins the measured
   semantics against the Bicep. ADR 0042 also adds `UseForwardedHeaders(XForwardedProto)` as the **first**

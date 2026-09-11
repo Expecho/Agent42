@@ -393,6 +393,12 @@ var pushEnabled = !string.IsNullOrWhiteSpace(vapidPrivateKey) && !string.IsNullO
 
 builder.Services.AddSingleton(new PushConfig(pushEnabled, vapidPublicKey, vapidSubject));
 
+// The server-side MCP surface at /api/agent-mcp (ADR 0070) — stored agents exposed as a tool to an
+// external MCP client, the inverse direction of the client-side servers above. Deliberately not part of
+// MapAgentApi: MapMcp throws without these services, and a dependency one host lacks breaks routing for
+// every endpoint that host maps. See AgentMcpServerRegistration.
+builder.Services.AddAgentMcpServer();
+
 if (pushEnabled)
 {
     // Same explicit-timeout / no-retry discipline as the web + geocoding clients above, and for the same
@@ -531,6 +537,13 @@ app.Use(UserTelemetryMiddleware.InvokeAsync);
 // while the gate still looked installed. ProjectLayoutTests asserts this ordering.
 app.UseOrleansDashboardOwnerGate();
 
+// Authenticate the server-side MCP surface (ADR 0070) BEFORE the protocol reaches it. /api/agent-mcp is
+// on excludedPaths, so Easy Auth never sees it and MapMcp serves initialize/tools/list from the same
+// endpoint as tools/call — a check living only inside the tool method would leave the first two
+// anonymously reachable. Same ordering rule as the dashboard gate above: ABOVE UseDefaultFiles/
+// UseStaticFiles, so it cannot be bypassed by a file later dropped under that path in wwwroot.
+app.UseAgentMcpKeyGate();
+
 app.MapDefaultEndpoints();
 
 app.UseDefaultFiles();
@@ -538,5 +551,6 @@ app.UseStaticFiles();
 
 app.MapAgentApi();
 app.MapOrleansDashboardUi();
+app.MapAgentMcpServer();
 
 app.Run();

@@ -41,6 +41,7 @@
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.19.0" />
     <PackageVersion Include="Microsoft.Identity.Client" Version="4.88.0" />
     <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <!-- Held at 2.12.0 deliberately; do NOT let a routine outdated-package sweep
          raise it. OpenAI 2.13.0 regressed StreamingChatCompletionUpdate's JsonPatch propagator: a
          streaming chunk with an EMPTY `choices` array throws ArgumentOutOfRangeException, because

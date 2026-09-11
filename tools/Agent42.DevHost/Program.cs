@@ -189,6 +189,12 @@ builder.Services.AddSingleton(new HindsightIntegration(null));
 builder.Services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
 builder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
 
+// The server-side MCP surface (ADR 0070), registered offline exactly as in production so the feature is
+// exercisable here: an MCP client can point at http://localhost:61326/api/agent-mcp with an agent's key.
+// Nothing about it is faked — the gate, the key directory and the grain drain are the real ones; only the
+// chat client behind them is canned.
+builder.Services.AddAgentMcpServer();
+
 // The live telemetry console at /logs (ADR 0054). addInstrumentation is TRUE here and only here: DevHost
 // deliberately does NOT call AddServiceDefaults() — that would drag in resilience handlers, health checks
 // and service discovery it does without — so it has no OpenTelemetry pipeline of its own and capture has
@@ -216,12 +222,14 @@ builder.UseOrleans(silo =>
 var app = builder.Build();
 
 app.UseOrleansDashboardOwnerGate();
+app.UseAgentMcpKeyGate();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapAgentApi();
 app.MapOrleansDashboardUi();
+app.MapAgentMcpServer();
 
 // StartAsync + WaitForShutdownAsync rather than Run(), because the seed below is a GRAIN CALL: it needs the
 // silo running, and calling it before the runtime is up NREs inside Orleans' InsideRuntimeClient.

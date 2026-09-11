@@ -38,11 +38,17 @@ public interface IAgentGrain : IGrainWithStringKey
     /// <paramref name="ephemeral"/> is the incognito flag (ADR 0034): when true the turn skips its
     /// session-state write, so the conversation leaves no trace in Cosmos. Like <paramref name="location"/>
     /// it is turn-scoped and never persisted. The default keeps existing callers working.
+    ///
+    /// <paramref name="interactive"/> is whether a live client is watching this stream (ADR 0070). It
+    /// gates the follow-up suggestion call (ADR 0036), which costs one extra model call per turn. A
+    /// caller that <b>drains</b> the stream for its text — the MCP surface — passes false, because that
+    /// call's result could never be read. Turn-scoped like the two above; the default keeps the browser
+    /// path and every existing caller unchanged.
     /// </summary>
     [Alias("ChatAsync")]
     IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
-        UserLocation? location = null, bool ephemeral = false);
+        UserLocation? location = null, bool ephemeral = false, bool interactive = true);
 
     /// <summary>
     /// Returns the qualified model id this conversation is currently using, so the UI can

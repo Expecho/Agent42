@@ -1,10 +1,17 @@
 namespace Agent42.Agents;
 
 /// <summary>
-/// Bounds on how much history a CONTINUOUS agent chat (ADR 0016) keeps, in the tradition of
+/// Bounds on how much history a WINDOWED conversation keeps, in the tradition of
 /// <see cref="ChatSearchLimits"/> and <see cref="WebToolLimits"/> — but for the oldest reason in
 /// this repo: the whole session is re-serialized into one 2 MB <c>agent-state</c> item every turn
 /// (ADR 0004), and a continuous agent funnels every chat into one grain that never rotates.
+///
+/// <para><b>Two id shapes are windowed, not one.</b> ADR 0016's continuous chats
+/// (<see cref="ContinuousConversationIdPrefix"/>) were the original case, and ADR 0070's MCP
+/// conversations (<c>AgentMcpLimits.ConversationIdPrefix</c>) were admitted for a sharper version of
+/// the same problem: an external caller reusing one id has no sidebar row and no reason to ever start
+/// a fresh conversation, so nothing else bounds that session. Ordinary browser chats are deliberately
+/// excluded — see the per-message byte cost in <c>AgentGrain.ApplyRetentionAsync</c>.</para>
 ///
 /// <para><b>These bound AGE, not SIZE, so they narrow ADR 0016's failure mode without closing
 /// it.</b> A busy continuous agent — or one oversized tool return, which is persisted verbatim —

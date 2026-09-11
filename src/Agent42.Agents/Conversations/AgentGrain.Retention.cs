@@ -80,7 +80,7 @@ public sealed partial class AgentGrain
     /// </summary>
     private async Task<bool> ApplyRetentionAsync()
     {
-        if (!IsContinuousConversation())
+        if (!IsRetentionWindowed())
         {
             return false;
         }
@@ -233,10 +233,22 @@ public sealed partial class AgentGrain
     }
 
     /// <summary>
-    /// True when this grain serves a continuous agent chat (ADR 0016) — the only conversations this
-    /// feature prunes. See <see cref="RetentionLimits.ContinuousConversationIdPrefix"/> for why the
-    /// id shape is the signal and no ADR 0016 reversal is needed.
+    /// True when this grain's history is bounded to <see cref="RetentionLimits.Window"/> — the only
+    /// conversations this feature stamps or prunes. See
+    /// <see cref="RetentionLimits.ContinuousConversationIdPrefix"/> for why an id shape is the signal
+    /// and no ADR 0016 reversal is needed.
+    ///
+    /// <para><b>Two prefixes qualify, not one.</b> ADR 0016's continuous chats were the original case;
+    /// ADR 0070's MCP conversations are the second, and they are here because the growth is worse
+    /// rather than merely similar — an external caller reusing one id has no UI, no sidebar row and no
+    /// reason to ever start a fresh one, so nothing bounds that session at all. A browser chat, by
+    /// contrast, gets a new id per conversation and is deliberately left unstamped: see the
+    /// per-message byte cost in <see cref="ApplyRetentionAsync"/>'s remarks.</para>
     /// </summary>
-    private bool IsContinuousConversation() =>
-        ConversationId().StartsWith(RetentionLimits.ContinuousConversationIdPrefix, StringComparison.Ordinal);
+    private bool IsRetentionWindowed()
+    {
+        var id = ConversationId();
+        return id.StartsWith(RetentionLimits.ContinuousConversationIdPrefix, StringComparison.Ordinal)
+            || id.StartsWith(AgentMcpLimits.ConversationIdPrefix, StringComparison.Ordinal);
+    }
 }

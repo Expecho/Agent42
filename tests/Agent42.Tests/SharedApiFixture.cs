@@ -54,6 +54,7 @@ public class SharedApiFixture : SharedClusterFixture
         Configure(appBuilder);
 
         App = appBuilder.Build();
+        ConfigureApp(App);
         App.MapAgentApi();
         await App.StartAsync();
         Client = App.GetTestClient();
@@ -75,6 +76,23 @@ public class SharedApiFixture : SharedClusterFixture
 
     /// <summary>Extra registrations for one class's host, applied after (and so able to replace) the defaults.</summary>
     protected virtual void Configure(WebApplicationBuilder builder)
+    {
+    }
+
+    /// <summary>
+    /// Middleware and extra endpoint groups for one class's host, applied to the built app.
+    ///
+    /// <para>This exists because not every mapped group belongs to <c>MapAgentApi</c>. The server-side
+    /// MCP surface (ADR 0070) is mapped from the composition root instead, for the reason the class
+    /// remarks above give: its <c>MapMcp</c> needs <c>AddMcpServer().WithHttpTransport()</c> in DI, and a
+    /// host that has not registered it would break routing for every <i>other</i> endpoint too. A
+    /// subclass opts in by registering those services in <see cref="Configure"/> and mapping here.</para>
+    ///
+    /// <para>Called <b>before</b> <c>MapAgentApi</c>, mirroring <c>Program.cs</c>, where the gate
+    /// middleware is installed above the mapping. Ordering between mapped groups is irrelevant; ordering
+    /// of middleware relative to the endpoint terminal is not.</para>
+    /// </summary>
+    protected virtual void ConfigureApp(WebApplication app)
     {
     }
 
