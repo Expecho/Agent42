@@ -245,7 +245,13 @@ to document a mechanical rule, add a lint rule instead.
   Shell cache bumped `agent42-shell-v32` → `-v33`. DevHost needed changes of its own to make the feature
   exercisable at all (a `demo_find_links` tool, the seeding flag on the offline group, and a two-call chain in
   `CannedChatClient`); the offline leg **was** run — including an A/B on the flag and a UI untick/re-tick
-  round-trip — and ADR 0067 records the measured values.
+  round-trip — and ADR 0067 records the measured values. **One server must never have the flag ticked and
+  it will soon be reachable:** the sibling repo `Expecho/mcpserver` has a `Gmail.Mcp` (the ADR 0063 shape,
+  its own subdomain behind the gateway, one `gmail.modify` scope). Mail is the highest-volume source of
+  attacker-authored URLs there is, and seeding them makes them ingestible by `read_web_document` into
+  memory that has no delete path — so leave "seeds fetchable URLs" **off** there, and narrow its tools
+  (ADR 0058): `null == all` means a freshly added Gmail server can send mail with no confirmation step.
+  The gotchas entry carries the reasoning.
 - Stored agents exposed as an MCP SERVER (ADR 0070, **extends 0024**, **amends 0002/0022/0042/0068**): the
   **inverse direction** of every other MCP bullet here — 0024/0025/0026/0058/0064/0067/0069 are all client
   side; this is the first time Agent42 **serves** the protocol. A trailing `[Id(10)] McpExposed` on
