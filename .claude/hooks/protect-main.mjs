@@ -5,7 +5,7 @@
 // — single source, shared with lefthook.yml; falls back to a safe default.
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const FALLBACK = ["main", "master", "develop"];
@@ -25,12 +25,49 @@ function protectedBranches() {
   return FALLBACK;
 }
 
-function currentBranch() {
+function branchOf(dir) {
   try {
-    return execSync("git branch --show-current", { cwd: ROOT, encoding: "utf8" }).trim();
+    return execSync("git branch --show-current", { cwd: dir, encoding: "utf8" }).trim();
   } catch {
-    return "";
+    return ""; // not a checkout, or gone: nothing here can commit to a protected branch
   }
+}
+
+// Which checkout would this command actually write to? The branch used to be read from ROOT
+// alone, which is wrong the moment a command names another repository — and wrong in BOTH
+// directions. The visible half is the false positive: committing to a feature branch in a
+// sibling repo was refused because THIS repo happened to sit on main. The half that matters
+// is the mirror image, a commit landing on main here while the session is rooted elsewhere,
+// which was waved through. Every candidate is collected and any one of them being protected
+// blocks, so a command touching several repositories is judged on the worst of them.
+function targetDirs(cmd) {
+  const dirs = new Set();
+
+  // `git -C <path>` beats the shell's directory, so it is read first and stands alone.
+  for (const m of cmd.matchAll(/\bgit\s+-C\s+(?:"([^"]+)"|'([^']+)'|([^\s;|&]+))/g)) {
+    dirs.add(m[1] ?? m[2] ?? m[3]);
+  }
+
+  // A git call WITHOUT -C runs wherever the shell stands: a leading `cd <path>` when the
+  // command opens with one, otherwise the session root. Requiring such a call is what stops a
+  // pure `git -C <sibling>` command from being judged against this repo as well.
+  if (/\bgit\s+(?!-C\b)/.test(cmd)) {
+    const cd = cmd.match(/^\s*cd\s+(?:"([^"]+)"|'([^']+)'|([^\s;|&]+))/);
+    dirs.add(cd ? (cd[1] ?? cd[2] ?? cd[3]) : ROOT);
+  }
+
+  // Nothing parsed means nothing recognised, and the session root is the safe assumption.
+  if (dirs.size === 0) dirs.add(ROOT);
+
+  // A relative path is resolved against ROOT rather than the shell's real directory, which no
+  // hook can see. Absolute paths, which is what the agent is told to prefer, are exact.
+  return [...dirs].map((d) => (isAbsolute(d) ? d : resolve(ROOT, d)));
+}
+
+function protectedTargets(cmd, PROTECTED) {
+  return targetDirs(cmd)
+    .map((dir) => ({ dir, branch: branchOf(dir) }))
+    .filter((t) => PROTECTED.includes(t.branch));
 }
 
 function block(msg) {
@@ -68,11 +105,11 @@ process.stdin.on("end", () => {
     );
   }
 
-  const branch = currentBranch();
+  const hits = protectedTargets(cmd, PROTECTED);
 
-  if (isCommit && PROTECTED.includes(branch)) {
+  if (isCommit && hits.length) {
     block(
-      `BLOCKED: you are on protected branch '${branch}'. ` +
+      `BLOCKED: '${hits[0].dir}' is on protected branch '${hits[0].branch}'. ` +
         `Create a branch first: git checkout -b feature/<description>`
     );
   }
@@ -87,9 +124,10 @@ process.stdin.on("end", () => {
     }
     // A bare `git push` (or `git push origin HEAD`) from a protected branch
     // names no ref but still targets that branch.
-    if (PROTECTED.includes(branch)) {
+    if (hits.length) {
       block(
-        `BLOCKED: you are on protected branch '${branch}'; a push from here targets it. ` +
+        `BLOCKED: '${hits[0].dir}' is on protected branch '${hits[0].branch}'; ` +
+          `a push from there targets it. ` +
           `Move the work to a feature branch and open an MR instead.`
       );
     }
