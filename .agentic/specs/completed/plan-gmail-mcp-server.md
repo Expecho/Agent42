@@ -704,10 +704,19 @@ checkbox, and `CLAUDE.md` is read every session while a gotcha is read before to
 
 ### Still open
 
-- **Step 8 is not done and cannot be automated.** The second Google Cloud OAuth client, its redirect
-  URIs, DNS for the new subdomain before the gateway restarts, and — the step that is neither optional
-  nor cosmetic — adding the server in Agent42, pressing **Test**, and *choosing a posture* from the
-  table in "What the three send tools buy". Until that is done the server sits in the unsupervised-send
-  posture, because `null == all`.
+- **Step 8 is not done and cannot be automated.** The second Google Cloud **project** and its OAuth
+  client, its redirect URIs, its test users, DNS for the new subdomain before the gateway restarts,
+  and — the step that is neither optional nor cosmetic — adding the server in Agent42, pressing
+  **Test**, and *choosing a posture* from the table in "What the three send tools buy". Until that is
+  done the server sits in the unsupervised-send posture, because `null == all`.
+- **Step 8.1 as written is not sufficient, and the README now says so.** The plan said "a second
+  Google Cloud OAuth client"; a client is not the unit that carries this. The consent screen declares
+  the scopes and holds the verification status, and it is **project-level**, shared by every client in
+  the project — so a second client inside the calendar's project would declare the restricted
+  `gmail.modify` scope for the calendar too, which is precisely the coupling D2 exists to prevent. It
+  needs a second **project**. Test users are per project as well, and the plan never mentioned them at
+  all: with a consent screen in Testing, an account that is not listed is refused without being told
+  why, which reads as a broken server. Both are operator instructions; no code, scope, client pair or
+  environment variable changes either way.
 - **Nothing here has ever talked to the real Gmail API.** The suite runs against a fake Google, the
   same honestly-recorded gap the calendar has had since it shipped.
