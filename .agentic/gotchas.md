@@ -275,6 +275,20 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   results into `AgentGrainState.SeededFetchableUrls`, which `IsFetchableUrl` consults alongside
   `FetchableUrls`. The list below is the authority on what is easy to get wrong — not any count of it;
   most of these fail *silently*:
+  - **Leave the flag OFF on the Gmail MCP server, and on any other mail-shaped server.** The sibling
+    repo has one (`Gmail.Mcp` in https://github.com/Expecho/mcpserver — once deployed it is reached
+    like the calendar of ADR 0063), and **the checkbox that decides this lives here, not there** — a
+    warning in that repo's README reaches nobody standing in front of it. Mail is the worst case this feature
+    has: it is the highest-volume source of attacker-authored URLs in existence, arriving unsolicited,
+    from senders the user never chose, with the links in a phishing mail indistinguishable from the
+    links in a newsletter. Ticking it makes every URL in every message fetchable by `fetch_web_page`
+    and ingestible by `read_web_document`, which writes durable vector chunks that ADR 0056 can retain
+    into a memory bank **with no delete path** — so one opened message becomes permanent. The two caps
+    do not help: they bound how *many* seeds there are, never how *hostile*, and a poisoned seed is
+    flushable only by other seeds. The same reasoning applies to the tools themselves: that server's
+    `send_email` sends with no confirmation step, so a selection that grants it is a selection that
+    lets text somebody emailed the user send mail as the user (ADR 0058 per-tool keys are the control,
+    and `null == all` means a freshly added server grants it until narrowed).
   - **The harvest belongs in the grain, never in the Backend wrapper.** `TruncatingMcpTool` already wraps
     every MCP tool and sees its result — the obvious seam, and the wrong one: `UserMcpToolProvider` is a
     per-**user** singleton whose wrapped instances are shared across every conversation of that user,
@@ -314,7 +328,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`SeededFetchableUrls`),
   `tests/Agent42.Tests/McpUrlSeedingTests.cs`,
   `.agentic/decisions/0067-mcp-results-seed-the-fetch-allowlist.md`
-- **Verified:** 2026-09-05
+- **Verified:** 2026-09-12
 
 ### The fetch allowlist must pin whole URLs — a HOST allowlist is bypassable in one tool call
 
