@@ -14,10 +14,13 @@ namespace Agent42.Tests;
 /// </summary>
 public sealed class UserIdAliasTests
 {
-    private const string AliasOid = "11111111-1111-1111-1111-111111111111";
-    private const string CanonicalOid = "22222222-2222-2222-2222-222222222222";
-    private const string ThirdOid = "33333333-3333-3333-3333-333333333333";
-    private const string FourthOid = "44444444-4444-4444-4444-444444444444";
+    // These MUST contain hex LETTERS. With digits-only GUIDs, ToUpperInvariant() is a no-op and every
+    // case-insensitivity test below silently degrades into a duplicate of its case-sensitive sibling —
+    // which is exactly how AC4 and AC7c shipped vacuous the first time.
+    private const string AliasOid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    private const string CanonicalOid = "11111111-2222-3333-4444-abcdefabcdef";
+    private const string ThirdOid = "55555555-6666-7777-8888-facefacef00d";
+    private const string FourthOid = "99999999-aaaa-bbbb-cccc-ddddeeeeffff";
 
     /// <summary>AC1. The whole point: a configured alias reaches the canonical dataset.</summary>
     [Fact]
@@ -65,6 +68,9 @@ public sealed class UserIdAliasTests
     [Fact]
     public void Resolve_MatchesTheAliasIdCaseInsensitively()
     {
+        // Guard against the constants losing their letters: without this the test proves nothing.
+        Assert.NotEqual(AliasOid.ToUpperInvariant(), AliasOid.ToLowerInvariant());
+
         var aliases = From((AliasOid.ToUpperInvariant(), CanonicalOid));
 
         Assert.Equal(CanonicalOid, aliases.Resolve(AliasOid.ToLowerInvariant()));
@@ -157,6 +163,8 @@ public sealed class UserIdAliasTests
     [Fact]
     public void FromConfiguration_DetectsAChainCaseInsensitively()
     {
+        Assert.NotEqual(CanonicalOid.ToUpperInvariant(), CanonicalOid);
+
         var aliases = From((AliasOid, CanonicalOid.ToUpperInvariant()), (CanonicalOid, ThirdOid));
 
         Assert.True(aliases.IsEmpty);

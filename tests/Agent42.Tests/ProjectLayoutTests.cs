@@ -597,6 +597,18 @@ public sealed class ProjectLayoutTests
 
     // Comment lines stripped first: this repo explains its own traps in dense prose, and an assertion
     // that cannot tell code from the comment warning about it is worse than no assertion.
+    private static string StrippedSource(string path) => string.Join(
+        Environment.NewLine,
+        File.ReadAllLines(path).Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
+
+    private static string DeclaredNamespace(string file)
+    {
+        var match = Regex.Match(File.ReadAllText(file), @"^namespace\s+([A-Za-z0-9_.]+)\s*;", RegexOptions.Multiline);
+
+        Assert.True(match.Success, $"No file-scoped namespace declaration found in {file}");
+        return match.Groups[1].Value;
+    }
+
     /// <summary>
     /// AC16 (ADR 0074). <c>Program.cs</c> must BUILD the identity alias map, REGISTER it, and have the
     /// telemetry enrichment callback CAPTURE that local.
@@ -629,18 +641,6 @@ public sealed class ProjectLayoutTests
             "activity.ApplyUserTelemetryTags(request.Headers, userIdAliases)",
             program,
             StringComparison.Ordinal);
-    }
-
-    private static string StrippedSource(string path) => string.Join(
-        Environment.NewLine,
-        File.ReadAllLines(path).Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
-
-    private static string DeclaredNamespace(string file)
-    {
-        var match = Regex.Match(File.ReadAllText(file), @"^namespace\s+([A-Za-z0-9_.]+)\s*;", RegexOptions.Multiline);
-
-        Assert.True(match.Success, $"No file-scoped namespace declaration found in {file}");
-        return match.Groups[1].Value;
     }
 
     private static string RepoRoot()

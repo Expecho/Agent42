@@ -18,9 +18,10 @@ public static class UserTelemetryMiddleware
         // stamps the IN-GRAIN spans, so aliasing one and not the other would split user.id across a
         // single trace. Resolved from request services here (unlike the Program.cs enrichment callback,
         // which runs before the pipeline) because this middleware has a real HttpContext — but
-        // NULL-CONDITIONALLY: this middleware is registered FIRST, and RequestServices is null on a
-        // bare DefaultHttpContext, where GetService throws rather than returning null. Telemetry
-        // enrichment must never be the thing that fails a request.
+        // NULL-CONDITIONALLY: RequestServices is null on a bare DefaultHttpContext, where GetService
+        // THROWS rather than returning null. A real request always has it (the framework's own
+        // startup filter guarantees that), so this is for the unit-test path — but telemetry
+        // enrichment is the last thing that should be able to fail a request.
         RequestContext.Set(
             UserTelemetryContext.RequestContextKey,
             context.Request.Headers.GetUserTelemetryContext(

@@ -4,7 +4,7 @@ date: 2026-09-13
 status: accepted
 tags: [auth, identity, azure, security, telemetry, configuration, no-migration]
 supersedes: []
-extends: [0002]
+extends: []
 amends: [0001, 0002, 0009, 0062]
 ---
 
@@ -15,7 +15,7 @@ The operator holds two Entra accounts in the tenant — `peter.bons@aceve.com`, 
 production data is keyed to, and `msn@2000miles.nl`, which they want to use from now on. Both must keep
 working.
 
-`userId` is the Entra object id read from `X-MS-CLIENT-PRINCIPAL-ID` (`CurrentUser.cs:59`), and it is the
+`userId` is the Entra object id read from `X-MS-CLIENT-PRINCIPAL-ID` (`CurrentUser.ResolveUserId`), and it is the
 key for effectively all durable state: Cosmos `agent-state` grain keys (`{userId}/{convId}` for
 conversations, bare `userId` across eleven other state types), `doc-chunks` partition keys
 (`{userId}/{convId}`), the `chat-messages` partition key `/userId` (ADR 0061), the `reminders` container,
@@ -107,8 +107,9 @@ breaks, but both should be read with this ADR.
 - **`/usage` still shows one row per account, not per person.** `UsageSpanProjector.cs:54-57` keys the
   user bucket `user.email → user.name → user.id`, and in production the email is always present — so the
   alias does not merge the rows and was never going to. Unifying them would mean aliasing the email too,
-  which would destroy attribution on `/logs`. Recorded as a consequence and pinned by a test rather than
-  left as a surprise.
+  which would destroy attribution on `/logs`. Recorded as a consequence and pinned by
+  `UsageSpanProjectorTests.ChatSpan_WithAnAliasedUserId_StillBucketsOnTheRealEmail` rather than left as a
+  surprise.
 - **The residual that no validation can close.** An alias *key* that is another allowlisted principal's
   object id would silently strand that person's own data *and* hand them the canonical user's entire
   dataset — conversations, RAG excerpts, street address (ADR 0012), Hindsight memory with no delete path

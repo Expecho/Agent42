@@ -31,7 +31,9 @@ public static class CurrentUser
 
     // Local development (DevHost, standalone runs) has no Easy Auth in front,
     // so every request maps to this single pseudo-user.
-    private const string LocalDevelopmentUserId = "local-dev";
+    // internal, not private: UserIdAliases refuses this value on both sides of an alias, and a
+    // "belt and braces" pair only works when both belts are literally the same string.
+    internal const string LocalDevelopmentUserId = "local-dev";
 
     // Easy Auth maps AAD claims through varying claim-type spellings (AAD v1/v2 vs Easy Auth's
     // own mapping), so each attribute is matched against a candidate list, most-preferred first.

@@ -144,6 +144,12 @@ public static class ConfigHealth
     /// <see cref="UserIdAliases"/> as a parameter, which would make <see cref="BuildStatic"/> impure and
     /// add a mandatory dependency to every host that builds a report (ADR 0029).</para>
     ///
+    /// <para><b>What this cannot see.</b> It reports what the <em>configuration</em> would bind, not
+    /// whether the map was actually registered in <c>Program.cs</c> — so for the one failure mode where
+    /// the singleton is missing entirely, this still reads "active" while the alias does nothing.
+    /// <c>ProjectLayoutTests.Program_BuildsAndRegistersTheUserIdAliasMap</c> is the guard for that;
+    /// purity (ADR 0029) is worth more here than covering a case a source-text test already pins.</para>
+    ///
     /// <para><b>Counts only, never an object id.</b> These ids are committed config rather than secrets,
     /// but the report has no reason to restate them and this tab is readable by every signed-in user.</para>
     /// </summary>

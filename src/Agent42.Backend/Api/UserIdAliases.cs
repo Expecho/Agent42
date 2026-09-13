@@ -27,7 +27,7 @@ public sealed class UserIdAliases
     /// header-less request. Belt and braces — <c>ResolveUserId</c> also never consults this map on the
     /// no-header branch — but the <c>Dashboard:OwnerOid</c> <c>//DANGER</c> invariant is worth pinning twice.
     /// </summary>
-    public const string OfflineFallbackUserId = "local-dev";
+    public const string OfflineFallbackUserId = CurrentUser.LocalDevelopmentUserId;
 
     /// <summary>No aliases configured: <see cref="Resolve"/> is then a pure passthrough.</summary>
     public static readonly UserIdAliases Empty = new(new(StringComparer.OrdinalIgnoreCase), []);
