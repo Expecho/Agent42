@@ -175,6 +175,34 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.DoesNotContain(conversations, c => c.Id == "api-pin-does-not-exist");
     }
 
+    // AC4 (ADR 0071): reasoning reaches the browser as its own NDJSON event, typed "reasoning".
+    //
+    // The WIRE SHAPE is the contract send.js dispatches on, and nothing in the endpoint spells it — the
+    // event record is serialized directly and the enum member's camelCase name becomes the type string. So
+    // renaming the member would silently change the wire type and break the client with every C# test still
+    // green. This asserts the literal the client actually compares against.
+    [Fact]
+    public async Task ChatEndpoint_StreamsReasoningAsNdjson()
+    {
+        using var chat = await Client.PostAsJsonAsync(
+            "/api/chat/api-reasoning-conversation",
+            new ChatRequest($"hi, {FakeChatClient.ReasoningStreamMarker}", null));
+        chat.EnsureSuccessStatusCode();
+
+        var lines = (await chat.Content.ReadAsStringAsync())
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonDocument.Parse(line).RootElement)
+            .ToList();
+
+        var reasoning = Assert.Single(lines, e => e.GetProperty("type").GetString() == "reasoning");
+        Assert.Equal(FakeChatClient.ReasoningText, reasoning.GetProperty("text").GetString());
+
+        // It rides the SAME `text` property as a textDelta rather than a field of its own, so a client that
+        // read chunk.text on the wrong arm would still see content — the type string is the discriminator.
+        Assert.Contains(lines, e => e.GetProperty("type").GetString() == "textDelta");
+        Assert.Equal("done", lines[^1].GetProperty("type").GetString());
+    }
+
     // Runs one turn so the conversation is listed in the index, draining the NDJSON stream.
     private async Task StartConversationAsync(string conversationId, string prompt)
     {

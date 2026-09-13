@@ -246,6 +246,7 @@ function addModelRow(model) {
     { label: "image gen", checked: model?.supportsImageGeneration ?? false },
     { label: "embeddings", checked: model?.supportsEmbeddings ?? false },
     { label: "speech", checked: model?.supportsSpeech ?? false },
+    { label: "reasoning", checked: model?.supportsReasoning ?? false },
   ];
   const capBoxes = [];
   const updateCapsSummary = () => {
@@ -291,7 +292,10 @@ function collectModels() {
   for (const row of providerModelList.querySelectorAll(".provider-model-row")) {
     const id = row.querySelector(".provider-model-row__id").value.trim();
     if (!id) continue; // an empty row is dropped, not sent
-    const [tools, vision, image, embed, speech] = row.querySelectorAll(".agent-form__checkbox");
+    // POSITIONAL, and paired by ORDER with capDefs above — a flag added there must be added here too,
+    // in the same position, or every flag after the insertion point silently reads the wrong checkbox.
+    const [tools, vision, image, embed, speech, reasoning] =
+      row.querySelectorAll(".agent-form__checkbox");
     const display = row.querySelector(".provider-model-row__display").value.trim();
     models.push({
       id,
@@ -301,6 +305,7 @@ function collectModels() {
       supportsImageGeneration: image.checked,
       supportsEmbeddings: embed.checked,
       supportsSpeech: speech.checked,
+      supportsReasoning: reasoning.checked,
     });
   }
   return models;

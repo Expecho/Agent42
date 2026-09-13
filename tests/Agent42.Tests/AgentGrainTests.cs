@@ -111,6 +111,160 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Equal(0, TotalSuggestionCalls());
     }
 
+    // ---- Reasoning output (ADR 0071) ------------------------------------------------------------
+    //
+    // A reasoning model's "thinking" is streamed to the client as its own event and then DISCARDED: never
+    // appended to the reply, never written to the serialized session, never replayed on reload. The fake
+    // emits a TextReasoningContent part ahead of its text on the ReasoningStreamMarker prompt, which is the
+    // shape measured on the pinned stack for BOTH wire protocols (chat-completions reasoning_content and
+    // Responses reasoning_summary_text).
+
+    [Fact]
+    public async Task ChatAsync_EmitsReasoningBeforeDone()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("reasoning-user/emits");
+
+        var events = new List<AgentStreamEvent>();
+        await foreach (var evt in agent.ChatAsync($"hi, {FakeChatClient.ReasoningStreamMarker}", null))
+        {
+            events.Add(evt);
+        }
+
+        var reasoning = Assert.Single(events, e => e.Type == AgentStreamEventType.Reasoning);
+        Assert.Equal(FakeChatClient.ReasoningText, reasoning.Text);
+
+        // Ordering, not merely presence: the client renders the disclosure above a reply that is still
+        // arriving, so reasoning must lead the text and Done must still close the stream.
+        Assert.True(
+            events.FindIndex(e => e.Type == AgentStreamEventType.Reasoning)
+                < events.FindIndex(e => e.Type == AgentStreamEventType.TextDelta),
+            "Reasoning should arrive before the reply text.");
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+
+        // It is its own channel: the reply text is unchanged by reasoning riding alongside it.
+        var answer = string.Concat(events
+            .Where(e => e.Type == AgentStreamEventType.TextDelta)
+            .Select(e => e.Text));
+        Assert.DoesNotContain(FakeChatClient.ReasoningText, answer, StringComparison.Ordinal);
+    }
+
+    // AC2 — the load-bearing one. Reasoning must not reach SerializedSession.
+    //
+    // Aimed at the PERSISTED STATE, deliberately, and not at ProjectStreamedContent: the projection cannot
+    // reach the session at all. Agent Framework fills the session from the response message independently,
+    // and — measured on 1.19 — it stores the reasoning part unless the history provider's
+    // StorageInputResponseMessageFilter strips it. Remove StripReasoningFromStorage from BuildAgent and this
+    // test fails; point the same assertion at the projection instead and it passes either way.
+    [Fact]
+    public async Task ReasoningText_IsNotPersisted()
+    {
+        const string Key = "reasoning-user/not-persisted";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        var sawReasoning = false;
+        await foreach (var evt in agent.ChatAsync($"hi, {FakeChatClient.ReasoningStreamMarker}", null))
+        {
+            sawReasoning |= evt.Type == AgentStreamEventType.Reasoning;
+        }
+
+        // Guards the assertions below from passing vacuously because the fake never reasoned at all.
+        Assert.True(sawReasoning, "The turn should have streamed reasoning.");
+
+        var session = (await SessionStateOf(Key)).SerializedSession;
+        Assert.NotNull(session);
+        Assert.DoesNotContain(FakeChatClient.ReasoningText, session!, StringComparison.Ordinal);
+        // The part TYPE as well as its text: the stored JSON keys each part by a discriminator, and that is
+        // what a future framework version would still write if it stored reasoning under another shape.
+        Assert.DoesNotContain(ReasoningPartDiscriminator, session!, StringComparison.Ordinal);
+        // ... while the turn itself WAS persisted, so this is not a test of an empty session.
+        Assert.Contains("Hello!", session!, StringComparison.Ordinal);
+    }
+
+    // The reminder/agent-run path writes the session through RunAsync, not the streaming loop. Measured: the
+    // framework stores the reasoning part there too, so the strip has to cover both — a filter that only
+    // covered the streaming path would leave reasoning persisted on every scheduled turn.
+    [Fact]
+    public async Task ReasoningText_IsNotPersisted_OnTheBackgroundPath()
+    {
+        const string Key = "reasoning-user/not-persisted-background";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        await agent.EnqueuePromptAsync($"hi, {FakeChatClient.ReasoningStreamMarker}", null);
+        await PollHistoryAsync(agent, h => h.Any(t => t.Role == "assistant"));
+
+        var session = (await SessionStateOf(Key)).SerializedSession;
+        Assert.NotNull(session);
+        Assert.DoesNotContain(FakeChatClient.ReasoningText, session!, StringComparison.Ordinal);
+        Assert.DoesNotContain(ReasoningPartDiscriminator, session!, StringComparison.Ordinal);
+    }
+
+    // The case the first implementation got wrong, and the AC11 defect in a new place: a reasoning summary
+    // that arrives as its OWN message (the Responses shape — a separate output item, which is exactly what
+    // the fixture in ReasoningStreamTests replays) has nothing but a reasoning part. Stripping it leaves a
+    // message with ZERO content parts, which stays in the session and is replayed to the provider on every
+    // later turn — and a real OpenAI-compatible endpoint rejects an empty message outright, bricking the
+    // conversation. The fake would answer it happily, so [emptymsg:N] is the only thing that can see it.
+    //
+    // The chat-completions shape (reasoning and text in ONE message) cannot reach this state, which is why
+    // the fake needs a second marker to reproduce it at all.
+    [Fact]
+    public async Task ReasoningOnlyMessage_IsDropped_NotStoredEmpty()
+    {
+        const string Key = "reasoning-user/reasoning-only";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        var first = await CollectAsync(
+            agent.ChatAsync($"hi, {FakeChatClient.ReasoningOnlyStreamMarker}", null));
+
+        // Guards the rest from passing vacuously: the turn really did stream reasoning on its own message.
+        Assert.Contains(first, e => e.Type == AgentStreamEventType.Reasoning);
+
+        // Turn 2 replays turn 1's stored messages to the model. THE load-bearing assertion.
+        var answer = Answer(await CollectAsync(agent.ChatAsync("and now?", null)));
+        Assert.Contains("[emptymsg:0]", answer);
+
+        // The reasoning is gone from the session rather than merely emptied out.
+        var session = (await SessionStateOf(Key)).SerializedSession;
+        Assert.NotNull(session);
+        Assert.DoesNotContain(FakeChatClient.ReasoningText, session!, StringComparison.Ordinal);
+        Assert.DoesNotContain(ReasoningPartDiscriminator, session!, StringComparison.Ordinal);
+
+        // ... and the reply it accompanied survived, so this is not a test of a dropped turn.
+        var history = await agent.GetHistoryAsync();
+        Assert.Contains(history, t => t.Role == "assistant" && t.Text.Contains("Hello!", StringComparison.Ordinal));
+    }
+
+    // AC2b — a DIFFERENT property from AC2, and not a persistence one. `reply` feeds the ADR 0036 follow-up
+    // call, so reasoning appended there would be re-sent to the model as if the assistant had said it: extra
+    // third-party egress (ADR 0013) of the model's private deliberation, rather than a stored-data bug.
+    [Fact]
+    public async Task ReasoningText_DoesNotReachTheFollowUpCall()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("reasoning-user/follow-up");
+
+        await foreach (var _ in agent.ChatAsync($"hi, {FakeChatClient.ReasoningStreamMarker}", null))
+        {
+            // Drained for its side effect; the assertion is on what the suggestion helper was handed.
+        }
+
+        var seen = LastFollowUpPrompt();
+        Assert.NotNull(seen);
+        Assert.DoesNotContain(FakeChatClient.ReasoningText, seen!, StringComparison.Ordinal);
+        // Not vacuous: the reply text DID reach the helper.
+        Assert.Contains("Hello!", seen!, StringComparison.Ordinal);
+    }
+
+    // The stored-JSON discriminator for a reasoning part, as Agent Framework writes it. A const so the
+    // escaping is written once rather than in each assertion.
+    private const string ReasoningPartDiscriminator = "\"$type\":\"reasoning\"";
+
+    // The prompt the most recent follow-up-suggestion call received, from whichever silo served it.
+    private string? LastFollowUpPrompt() =>
+        Cluster.Silos
+            .Select(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
+                .GetRequiredService<FakeChatClient>().LastSuggestionPrompt)
+            .FirstOrDefault(p => p is not null);
+
     [Fact]
     public async Task History_ContainsUserAndAssistantTurns_SoAConversationCanBeResumed()
     {

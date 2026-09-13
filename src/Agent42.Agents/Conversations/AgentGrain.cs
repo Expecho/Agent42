@@ -714,6 +714,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 return new AgentStreamEvent(AgentStreamEventType.ToolCallEnd,
                     ToolCallId: result.CallId, ToolResult: SerializeOrNull(result.Result));
 
+            // Reasoning ("thinking") from a reasoning model, ADR 0071. Deliberately NOT appended to
+            // `reply`: that StringBuilder feeds the ADR 0036 follow-up-suggestion call, so reasoning in it
+            // would be re-sent to the model as if the assistant had said it — a second, pointless
+            // third-party egress (ADR 0013) of the model's private deliberation. It is kept out of the
+            // serialized session by StripReasoningFromStorage, not here; this projection cannot reach the
+            // session, which Agent Framework fills from the response message independently.
+            case TextReasoningContent reasoning when !string.IsNullOrEmpty(reasoning.Text):
+                return new AgentStreamEvent(AgentStreamEventType.Reasoning, Text: reasoning.Text);
+
             case UsageContent usage:
                 tokens.Input += usage.Details.InputTokenCount.GetValueOrDefault();
                 tokens.Output += usage.Details.OutputTokenCount.GetValueOrDefault();
@@ -722,6 +731,65 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
             default:
                 return null;
+        }
+    }
+
+    /// <summary>
+    /// Drops every <see cref="TextReasoningContent"/> part from the assistant messages Agent Framework is
+    /// about to store, so reasoning never reaches <c>SerializedSession</c> (ADR 0071, decision: live-only).
+    /// Wired as the history provider's <c>StorageInputResponseMessageFilter</c> in <c>BuildAgent</c> — the
+    /// response-side twin of the <c>StorageInputRequestMessageFilter</c> that already excludes injected
+    /// context messages there.
+    ///
+    /// <para>This is a strip, not a no-op guard: measured on Agent Framework 1.19, WITHOUT it the framework
+    /// stores the part and the session round-trips it as
+    /// <c>{"$type":"reasoning","text":"…"}</c> — on BOTH the streaming and the <c>RunAsync</c> (reminder)
+    /// path. So reasoning was already being persisted for any OpenAI-compatible reasoning model a user had
+    /// added (ADR 0018), invisibly, before this feature surfaced it.</para>
+    ///
+    /// <para>Nothing downstream wants it back: the Responses path is stateless by mandate (ADR 0014) and
+    /// providers that emit <c>reasoning_content</c> document that it must not be echoed into the next
+    /// request. Dropping it also keeps it out of everything fed FROM the session — the 2 MB item (ADR 0004),
+    /// public share links (ADR 0035), and the search projection (ADR 0061).</para>
+    ///
+    /// <para>Messages with no reasoning part are passed through by reference; only a message that actually
+    /// carries one is rebuilt, so the common turn allocates nothing.</para>
+    ///
+    /// <para><b>A message left with ZERO parts is dropped, not stored empty.</b> On the Responses path a
+    /// reasoning summary arrives as its own output item, distinct from the message item, so it can coalesce
+    /// into a <see cref="ChatMessage"/> of its own — and stripping that one's only part would leave an empty
+    /// message in the session, replayed to the provider on every later turn. An OpenAI-compatible endpoint
+    /// rejects an empty message outright, which bricks the conversation; a fake answers it happily, which is
+    /// why this is the same defect AC11 (<c>NoVisionModel_ImageOnlyTurn_StillReplies_AndSendsNoImage</c>)
+    /// exists to catch on the image-stripping path. That path keeps a placeholder because the user's turn
+    /// must stay visible; here there is nothing to show, so dropping is right.</para>
+    ///
+    /// <para>An ALREADY-empty message is passed through untouched rather than swept up — this filter owns
+    /// reasoning, and silently changing an unrelated invariant is how a strip becomes a second bug.</para>
+    /// </summary>
+    private static IEnumerable<ChatMessage> StripReasoningFromStorage(IEnumerable<ChatMessage> messages)
+    {
+        foreach (var message in messages)
+        {
+            if (!message.Contents.Any(c => c is TextReasoningContent))
+            {
+                yield return message;
+                continue;
+            }
+
+            var kept = message.Contents.Where(c => c is not TextReasoningContent).ToList();
+            if (kept.Count == 0)
+            {
+                continue;
+            }
+
+            yield return new ChatMessage(message.Role, kept)
+            {
+                AuthorName = message.AuthorName,
+                CreatedAt = message.CreatedAt,
+                MessageId = message.MessageId,
+                AdditionalProperties = message.AdditionalProperties,
+            };
         }
     }
 

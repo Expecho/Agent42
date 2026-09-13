@@ -69,6 +69,23 @@ public sealed class ConfiguredModel
     /// tenant, so this is opt-in per model and the browser voice stays the default until it is picked.
     /// </summary>
     public bool SupportsSpeech { get; set; }
+
+    /// <summary>
+    /// Whether this chat model is a <b>reasoning</b> model that emits its own "thinking" alongside the reply
+    /// (ADR 0071). Default <c>false</c>.
+    ///
+    /// <para>Unlike <see cref="SupportsEmbeddings"/> and <see cref="SupportsSpeech"/> this is NOT a separate
+    /// model kind — it is the same chat model on the same chat client. It says two things: ask the provider
+    /// for a reasoning summary (a reasoning model emits none unless asked), and expect the extra content
+    /// part back. It is read at client-construction time by model id, which is why it lives here and
+    /// deliberately NOT on <c>ModelCapabilities</c>: Foundry's <c>GetCapabilities</c> returns
+    /// <c>ModelCapabilities.Full with {...}</c> and never consults the declared models, so a bit added there
+    /// would be silently true for every Foundry model.</para>
+    ///
+    /// <para>The reasoning itself is streamed to the client and then discarded — never persisted (see
+    /// <c>StripReasoningFromStorage</c>), so turning this on does not grow the session item.</para>
+    /// </summary>
+    public bool SupportsReasoning { get; set; }
 }
 
 /// <summary>One configured provider.</summary>

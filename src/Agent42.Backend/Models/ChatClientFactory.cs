@@ -181,8 +181,28 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
 
         // Every client keeps the OTel wrapper, whichever provider it belongs to — a third-party model
         // is exactly the one you want traced.
-        return provider.Client(model)
-            .AsBuilder()
+        var builder = provider.Client(model).AsBuilder();
+
+        // A declared reasoning model asks the provider for a reasoning summary (ADR 0071). Here rather than
+        // inside each provider's client lambda: this is the one place that already has BOTH the resolved
+        // provider and the bare model id, and it is where the other cross-cutting decoration (OTel, below)
+        // lives — so one wiring covers Foundry and OpenAI-compatible alike.
+        //
+        // Measured on the pinned stack: on the Responses path (ADR 0014, how prod Foundry runs) this becomes
+        // `reasoning: {summary: "concise"}` and is the ONLY reason a reasoning model emits any summary at
+        // all; on Chat Completions it is inert — the request body is byte-identical — because those
+        // providers (DeepSeek and friends) send `reasoning_content` unsolicited. So it is safe to apply
+        // uniformly, and doing so keeps the checkbox meaning one thing to the user on every provider.
+        //
+        // Note it does NOT gate DISPLAY: ProjectStreamedContent projects any TextReasoningContent it sees,
+        // so an unticked model that reasons anyway still shows its thinking. The flag only asks.
+        if (Provider.RequestsReasoning(provider.Options, model))
+        {
+            builder = builder.ConfigureOptions(options =>
+                options.Reasoning ??= new ReasoningOptions { Output = ReasoningOutput.Summary });
+        }
+
+        return builder
             .UseOpenTelemetry(sourceName: _otelSourceName, configure: cfg => cfg.EnableSensitiveData = true)
             .Build();
     }
@@ -233,6 +253,27 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         /// </summary>
         public static bool UseResponses(ProviderOptions options) =>
             options.Kind == ProviderKind.AzureOpenAI && options.UseResponsesApi;
+
+        /// <summary>
+        /// Whether <paramref name="model"/> is declared as a <b>reasoning</b> model on this provider
+        /// (ADR 0071) — the signal to ask the provider for a reasoning summary.
+        ///
+        /// <para>Pure and <b>public</b> for the same reason as <see cref="UseResponses"/>: a unit test
+        /// asserts the rule without a network call. Matched on the BARE model id, which is what
+        /// <c>Provider.Client</c> and <c>Build</c> are handed — <c>ConfiguredModel.Id</c> is unqualified,
+        /// while <c>ModelInfo.Id</c> is qualified, and comparing against the wrong one silently never
+        /// matches.</para>
+        ///
+        /// <para>Deliberately NOT a <c>ModelCapabilities</c> bit: <see cref="MultiProviderChatClientFactory.GetCapabilities"/>
+        /// short-circuits a Foundry provider to <c>ModelCapabilities.Full with {...}</c> without consulting
+        /// the declared models at all, so a bit added there would read true for every Foundry model. This is
+        /// the third capability-flag pattern in the codebase — neither a <c>ModelCapabilities</c> bit nor a
+        /// picker-only filter like <c>SupportsEmbeddings</c>/<c>SupportsSpeech</c>, which never reach client
+        /// construction.</para>
+        /// </summary>
+        public static bool RequestsReasoning(ProviderOptions options, string model) =>
+            options.Models.Any(m => m.SupportsReasoning
+                && string.Equals(m.Id, model, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>An Azure AI Foundry provider, reached with an Azure OpenAI API key (ADR 0017).</summary>
         public static Provider Foundry(ProviderOptions options, Uri endpoint, string apiKey)

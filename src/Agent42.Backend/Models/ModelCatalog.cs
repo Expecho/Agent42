@@ -25,6 +25,10 @@ public record ModelInfo(
     // Trailing default so existing constructions stay valid; true only for a declared speech model (ADR 0038).
     // Surfaced on /api/models so the Preferences "default speech model" selector can filter to it.
     bool SupportsSpeech = false,
+    // Trailing default so existing constructions stay valid; true only for a declared reasoning model
+    // (ADR 0071). Surfaced on /api/models for completeness — unlike the embedding and speech flags it
+    // filters no picker, because a reasoning model IS a chat model and belongs in the ordinary list.
+    bool SupportsReasoning = false,
     // Trailing default so existing constructions stay valid; the human-facing name of the model's PROVIDER
     // (StoredProvider/ProviderOptions.DisplayName), surfaced on /api/models so the picker can LABEL each
     // provider optgroup with it. null → the frontend falls back to the provider key. Distinct from

@@ -166,6 +166,51 @@ public sealed class ProvidersApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.False(model.GetProperty("supportsVision").GetBoolean());
     }
 
+    // AC6 (ADR 0071): a provider declaring a reasoning model is accepted, round-trips the
+    // supportsReasoning flag through GET, and still masks the key to hasKey.
+    //
+    // The flag crosses FOUR mappings between the request body and this response — ProviderModelRequest,
+    // ToStored, StoredModel and Mask — and missing any one of them loses it silently, with every other
+    // test still green. That is what this covers; the sibling flag below is the control.
+    [Fact]
+    public async Task Providers_AcceptReasoningModel_MaskKey()
+    {
+        var post = await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-reasoning", new
+        {
+            key = "thinkers",
+            kind = "OpenAICompatible",
+            displayName = "Reasoning Provider",
+            endpoint = "https://thinkers.example/v1",
+            apiKey = "reasoning-secret",
+            models = new[]
+            {
+                new { id = "r1", displayName = "R1", supportsTools = true, supportsVision = false, supportsReasoning = true },
+                new { id = "plain", displayName = "Plain", supportsTools = true, supportsVision = false, supportsReasoning = false },
+            },
+            useResponsesApi = false,
+        }));
+        post.EnsureSuccessStatusCode();
+
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-reasoning"));
+        var raw = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("reasoning-secret", raw);
+
+        using var doc = JsonDocument.Parse(raw);
+        var provider = doc.RootElement.GetProperty("providers").EnumerateArray().Single();
+        Assert.True(provider.GetProperty("hasKey").GetBoolean());
+
+        var models = provider.GetProperty("models").EnumerateArray().ToList();
+        Assert.True(models[0].GetProperty("supportsReasoning").GetBoolean());
+        // The control: a hardcoded true anywhere in the chain would pass the assertion above.
+        Assert.False(models[1].GetProperty("supportsReasoning").GetBoolean());
+        // The neighbouring bits are unshifted — six adjacent same-typed flags is where a mis-ordered
+        // positional construction lands two values in each other's slots.
+        Assert.True(models[0].GetProperty("supportsTools").GetBoolean());
+        Assert.False(models[0].GetProperty("supportsVision").GetBoolean());
+        Assert.False(models[0].GetProperty("supportsEmbeddings").GetBoolean());
+        Assert.False(models[0].GetProperty("supportsSpeech").GetBoolean());
+    }
+
     // Reads the overlay default straight off GET /api/providers (ProvidersResponse.Default) — the read
     // side of PUT /api/default-model, which deliberately has no GET of its own.
     private async Task<string?> GetDefaultAsync(string principalId)
