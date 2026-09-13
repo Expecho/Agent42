@@ -24,6 +24,30 @@ public sealed class UsageSpanProjectorTests
         return map;
     }
 
+    // AC11b (ADR 0074): an identity alias does NOT merge one person's two accounts into one usage row.
+    // The user bucket is resolved user.email -> user.name -> user.id, and in production the email is
+    // always present, so aliasing user.id never reaches this projection. ADR 0074 records that as a
+    // consequence rather than a benefit; this is what keeps the claim falsifiable.
+    [Fact]
+    public void ChatSpan_WithAnAliasedUserId_StillBucketsOnTheRealEmail()
+    {
+        var tags = Tags(
+            ("gen_ai.operation.name", "chat"),
+            ("gen_ai.usage.input_tokens", 10),
+            ("gen_ai.usage.output_tokens", 5),
+            ("gen_ai.response.model", "gpt-5.4"),
+            ("gen_ai.provider.name", "foundry"),
+            // The alias has already rewritten user.id to the canonical account's object id...
+            ("user.id", "2da7fa48-e41e-4ebd-b665-96bc4210fefd"),
+            // ...but user.name/user.email are never aliased, so the span still names who signed in.
+            ("user.email", "msn@2000miles.nl"));
+
+        var e = UsageSpanProjector.Project(tags, When, activityErrored: false, App);
+
+        Assert.NotNull(e);
+        Assert.Equal("msn@2000miles.nl", e!.UserKey);
+    }
+
     // AC1: a chat span projects to a token event carrying input/output/model/provider/user.
     [Fact]
     public void ChatSpan_ProjectsTokenEvent()

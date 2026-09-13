@@ -43,6 +43,48 @@ public sealed class ConfigHealthTests
     private static ConfigCheck Find(ConfigHealthReport report, string key) =>
         report.Checks.Single(c => c.Key == key);
 
+    // ————— Identity aliases (ADR 0074) —————
+
+    // An active alias reports ok and says how many, so an operator can tell the feature is on.
+    [Fact]
+    public void IdentityAliases_WhenConfigured_ReportOkWithACount()
+    {
+        var report = ConfigHealth.BuildStatic(
+            Config(($"{UserIdAliases.SectionName}:11111111-1111-1111-1111-111111111111",
+                "22222222-2222-2222-2222-222222222222")),
+            Env(),
+            Push());
+
+        var check = Find(report, UserIdAliases.SectionName);
+        Assert.Equal(ConfigHealth.Ok, check.Status);
+        Assert.Contains("1 alias", check.Message, StringComparison.Ordinal);
+    }
+
+    // The signal this check exists for: an entry refused at bind time is otherwise indistinguishable
+    // from the feature never having shipped — the account just sees an empty dataset.
+    [Fact]
+    public void IdentityAliases_WhenAnEntryIsInvalid_ReportsAWarningAndNeverEchoesAnObjectId()
+    {
+        const string aliasOid = "11111111-1111-1111-1111-111111111111";
+        var report = ConfigHealth.BuildStatic(
+            Config(($"{UserIdAliases.SectionName}:{aliasOid}", "not-a-guid")),
+            Env(),
+            Push());
+
+        var check = Find(report, UserIdAliases.SectionName);
+        Assert.Equal(ConfigHealth.Warning, check.Status);
+        Assert.DoesNotContain(aliasOid, check.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // No aliases is the default and is healthy, not a warning.
+    [Fact]
+    public void IdentityAliases_WhenAbsent_ReportOk()
+    {
+        var report = ConfigHealth.BuildStatic(Config(AllSecretsSet), Env(), Push());
+
+        Assert.Equal(ConfigHealth.Ok, Find(report, UserIdAliases.SectionName).Status);
+    }
+
     // AC2: all configured → the optional items and the fatal core summarise to ok.
     [Fact]
     public void AllConfigured_ReportsOk()

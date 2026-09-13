@@ -52,6 +52,17 @@ builder.Services.AddOpenTelemetry()
 // collector from here. That is a subscription this app never had — see the method's own summary.
 builder.AddLiveTelemetryCapture();
 
+// Identity aliases (ADR 0074): an additional Entra object id resolving to the object id that owns the
+// data, so one person's two accounts reach one dataset with no data movement. Built ONCE here, because
+// the enrichment callback below receives an HttpRequest — not an HttpContext — and runs at
+// HttpRequestIn.Start, BEFORE the middleware pipeline, where request-scoped resolution is not safe to
+// assume; it captures this local instead of resolving DI. The same instance is registered for
+// CurrentUser.GetUserId and UserTelemetryMiddleware, which do have request services.
+// An invalid entry is dropped and reported, never fatal: identity aliasing is not on the availability
+// path, so an app that boots with the alias inert is recoverable where one that refuses to boot is not.
+var userIdAliases = UserIdAliases.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(userIdAliases);
+
 // Stamp OTel semantic-convention user.* attributes onto the ASP.NET Core server span of every
 // authenticated request (ADR 0009). The Easy-Auth-specific extraction lives in CurrentUser here in
 // the Backend, keeping the shared ServiceDefaults generic (ADR 0002). This Configure delegate
@@ -59,7 +70,7 @@ builder.AddLiveTelemetryCapture();
 // different options properties, so neither overwrites the other.
 builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(options =>
     options.EnrichWithHttpRequest = (activity, request) =>
-        activity.ApplyUserTelemetryTags(request.Headers));
+        activity.ApplyUserTelemetryTags(request.Headers, userIdAliases));
 
 // CosmosClient wired from the Aspire-provided "cosmos" connection.
 builder.AddAzureCosmosClient("cosmos");
@@ -473,6 +484,18 @@ builder.UseOrleans(silo =>
 });
 
 var app = builder.Build();
+
+// An alias entry is an authorization grant, so one refused for being malformed must be visible rather
+// than silently absent. Warning, not Information: Logging:LogLevel:Default is Warning in production, so
+// an Information record would never reach a log at all (ADR 0054). The Configuration health tab reports
+// the same count for the operator who is not reading logs.
+if (userIdAliases.DroppedEntries.Count > 0)
+{
+    app.Logger.LogWarning(
+        "Ignored {Count} invalid identity alias entry/entries (ADR 0074): {Detail}",
+        userIdAliases.DroppedEntries.Count,
+        string.Join("; ", userIdAliases.DroppedEntries));
+}
 
 // Say so once, loudly enough to find, when a provider was dropped for want of a key — otherwise
 // "the GitHub models aren't in the picker" is a silent mystery. Deliberately NOT a throw (ADR 0013):
