@@ -76,6 +76,11 @@ async function recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)
       // An assistant turn may carry a generated image (ADR 0020) — the live `image` event for it
       // went down with the stream, so re-render from the history exactly as a reload would.
       for (const att of last.attachments ?? []) addAgentImage(agentMsg, convId, att.id, att.fileName);
+      // Settle the reasoning disclosure (ADR 0071). The turn IS finished — the stream died, the turn
+      // did not — but the `done` event that normally closes it went down with the socket, so without
+      // this a recovered turn keeps a pulsing "Thinking…" above a complete reply. Reasoning itself is
+      // not recoverable (it is never persisted); what was streamed before the drop stays as it is.
+      finishReasoning(agentMsg);
       cachePut("messages:" + convId, turns); // keep the offline mirror in step (ADR 0032)
       return true;
     }

@@ -85,6 +85,23 @@ public sealed class ReasoningAssetsTests(StaticAssetsServerFixture fixture)
     }
 
     /// <summary>
+    /// A turn recovered after its stream died (ADR 0046) still settles the disclosure.
+    ///
+    /// <para>The <c>done</c> event that normally closes it went down with the socket, but the turn itself
+    /// completed — so without this a recovered reply sits under a pulsing "Thinking…" forever. Scoped to
+    /// the recovery function, because <c>finishReasoning</c> is legitimately called from the done arm
+    /// too and an unscoped assertion would pass on that one alone.</para>
+    /// </summary>
+    [Fact]
+    public async Task RecoveredTurn_SettlesTheReasoningDisclosure()
+    {
+        var app = await fixture.GetAppScriptAsync();
+
+        var recover = CodeOnly(Section(app, "async function recoverPersistedReply", "export async function send"));
+        Assert.Contains("finishReasoning", recover);
+    }
+
+    /// <summary>
     /// The disclosure has a style of its own, so it is not silently inheriting <c>.tool-call</c>'s.
     /// </summary>
     [Fact]

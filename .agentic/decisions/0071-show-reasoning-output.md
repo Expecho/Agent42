@@ -160,6 +160,12 @@ reasoning arm is the obvious mistake and a real one — hands-free voice (ADR 00
 deliberation aloud ahead of its answer, and with a speech model configured (ADR 0038) would pay a third party
 per character to do it. Guarded by a test scoped to that dispatch arm, mutation-checked.
 
+**A recovered turn has to settle the disclosure too** (ADR 0046). When a backgrounded PWA's stream dies,
+the turn still completes server-side and `recoverPersistedReply` adopts the persisted reply — but the `done`
+event that closes the disclosure went down with the socket, so without an explicit `finishReasoning` there
+the recovered answer sits under a pulsing "Thinking…" forever. The reasoning itself is *not* recovered, and
+cannot be: it is never persisted. Whatever streamed before the drop stays as it is.
+
 **No new egress, and slightly less of it.** Reasoning already crossed the wire; it was being thrown away.
 Keeping it out of `reply` *removes* content that would otherwise have been re-sent on the follow-up call.
 
@@ -186,15 +192,16 @@ lifting the `OpenAI` 2.12.0 pin.
 ## Verification
 
 `dotnet build Agent42.slnx` clean, `dotnet format --verify-no-changes` clean, `dotnet test Agent42.slnx` —
-**1302/1302 green** (1293 before this branch), including under `--collect:"XPlat Code Coverage"`.
+**1303/1303 green** (1293 before this branch), including under `--collect:"XPlat Code Coverage"`.
+New-code coverage **100.0% (47/47 lines, threshold 80)**.
 
 **Tests.** 5 in `tests/Agent42.Tests/ReasoningStreamTests.cs` (AC1 and the two Step-1 measurements, with a
 negative control proving no `reasoning` field is sent when none is asked for); 4 in `AgentGrainTests.cs`
 (AC2 on both run paths, AC2b, AC3); 1 in `AgentApiTests.cs` (AC4 — the wire shape); 2 in
-`ModelProviderTests.cs` (AC5, helper and call site); 1 in `ProvidersApiTests.cs` (AC6); 5 in
-`ReasoningAssetsTests.cs` (AC7); AC8 and AC10 extend existing tests.
+`ModelProviderTests.cs` (AC5, helper and call site); 1 in `ProvidersApiTests.cs` (AC6); 6 in
+`ReasoningAssetsTests.cs` (AC7, plus the ADR 0046 recovery guard); AC8 and AC10 extend existing tests.
 
-**Mutation-checked**, three times, because each guard is the only thing holding a decision in place:
+**Mutation-checked**, five times, because each guard is the only thing holding a decision in place:
 
 | Mutation | Result |
 |---|---|
@@ -202,6 +209,7 @@ negative control proving no `reasoning` field is sent when none is asked for); 4
 | `RequestsReasoning(…)` → hardcoded `false` | AC5 call-site test fails |
 | `RequestsReasoning(…)` → hardcoded `true` | AC5 call-site test fails (the control catches it) |
 | Add `voice.onDelta(chunk.text)` to the reasoning arm | AC7 no-speak test fails |
+| Remove `finishReasoning` from `recoverPersistedReply` | the ADR 0046 recovery guard fails |
 
 **A test-authoring trap worth naming:** the negative assertions in `ReasoningAssetsTests` are tripped by the
 *comments* in the code under test, which name `voice.onDelta` and `innerHTML` in order to say "not these".

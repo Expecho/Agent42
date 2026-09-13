@@ -264,7 +264,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         /// while <c>ModelInfo.Id</c> is qualified, and comparing against the wrong one silently never
         /// matches.</para>
         ///
-        /// <para>Deliberately NOT a <c>ModelCapabilities</c> bit: <see cref="ChatClientFactory.GetCapabilities"/>
+        /// <para>Deliberately NOT a <c>ModelCapabilities</c> bit: <see cref="MultiProviderChatClientFactory.GetCapabilities"/>
         /// short-circuits a Foundry provider to <c>ModelCapabilities.Full with {...}</c> without consulting
         /// the declared models at all, so a bit added there would read true for every Foundry model. This is
         /// the third capability-flag pattern in the codebase — neither a <c>ModelCapabilities</c> bit nor a

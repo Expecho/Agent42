@@ -367,6 +367,12 @@ so there was **zero drift** to reconcile. Shipped as ADR 0071.
    needs the SW unregistered (or a cache clear) before it is visible in an already-primed profile — the
    `CACHE` bump only helps a *new* client.
 
+9. **One interaction the plan did not enumerate: ADR 0046's stream recovery.** `finishReasoning` is called
+   from the `done` arm, and `done` never arrives on a turn whose stream died — so a recovered reply would
+   have kept a pulsing "Thinking…" above it. `recoverPersistedReply` now settles the disclosure on its
+   success path, guarded by a test scoped to that function (an unscoped one would pass on the `done` call
+   alone) and mutation-checked.
+
 ### Unchanged from the plan
 
 Live-only, always-shown-collapsed, no Preferences toggle, no new turn-scoped field, no new `[Id]` on
