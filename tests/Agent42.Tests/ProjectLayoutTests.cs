@@ -162,6 +162,7 @@ public sealed class ProjectLayoutTests
     public static TheoryData<string, string> AgentApiParts() => new()
     {
         { "Conversations/AgentApi.Conversations.cs", "MapConversationEndpoints" },
+        { "Conversations/AgentApi.ChatGroups.cs", "MapChatGroupEndpoints" },
         { "Attachments/AgentApi.Attachments.cs", "MapAttachmentEndpoints" },
         { "Sharing/AgentApi.Sharing.cs", "MapSharingEndpoints" },
         { "Models/AgentApi.Models.cs", "MapModelEndpoints" },
@@ -242,6 +243,7 @@ public sealed class ProjectLayoutTests
         { "confighealth.js", "wireConfigHealth" },
         { "conversations.js", "wireConversations" },
         { "drawer.js", "wireDrawer" },
+        { "groups.js", "wireGroups" },
         { "location.js", "initLocation" },
         { "mcp.js", "wireMcp" },
         // mcp.js has TWO entry points, and both need a row. Dropping the initMcpOAuthReturn() call

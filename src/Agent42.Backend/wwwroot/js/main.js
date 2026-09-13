@@ -14,6 +14,7 @@ import { wireConfigHealth } from "./confighealth.js";
 import { activeAgentId, activeId, wireConversations } from "./conversations.js";
 import { incognitoBtn, input, toolsBtn } from "./dom.js";
 import { wireDrawer } from "./drawer.js";
+import { groups, refreshGroups, setGroups, wireGroups } from "./groups.js";
 import { initLocation } from "./location.js";
 import { initMcpOAuthReturn, wireMcp } from "./mcp.js";
 import { loadModels } from "./models.js";
@@ -38,10 +39,15 @@ import { wireVoice } from "./voice.js";
 // loaders below overwrite both the arrays and the cache when the network succeeds; the length
 // guards keep a cache paint from clobbering data the network already delivered (fast path wins).
 async function hydrateFromCache() {
-  const [cachedConvs, cachedAgents] = await Promise.all([
+  const [cachedConvs, cachedAgents, cachedGroups] = await Promise.all([
     cacheGet("conversations"),
     cacheGet("agents"),
+    cacheGet("groups"),
   ]);
+  // Groups are seeded BEFORE the sidebar is painted, never after: renderSidebar partitions the
+  // conversations by group id, so a paint with an empty group list would put every filed chat in the
+  // recency walk and then visibly reflow it into its group a moment later (ADR 0073).
+  if (cachedGroups && groups.length === 0) setGroups(cachedGroups);
   if (cachedConvs && conversations.length === 0) {
     setConversations(cachedConvs);
     renderSidebar();
@@ -59,6 +65,7 @@ wireAgents();
 wireAttachments();
 wireConversations();
 wireSearch();
+wireGroups();
 wireDrawer();
 wireSend();
 wireComposer();
@@ -79,6 +86,7 @@ loadModels();
 loadProviders(); // also sets userDefaultEmbeddingModel at startup, so the composer's document-attach gate works
 hydrateFromCache(); // paint cached agents + conversations first, so offline (or slow) loads aren't empty (ADR 0032)
 refreshConversations();
+refreshGroups(); // the user's custom sidebar groups (ADR 0073)
 loadAgents();
 const profileReady = initTheme(); // loads the profile and reconciles the theme (server wins over the pre-paint cache)
 const toolsReady = loadTools();

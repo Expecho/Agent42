@@ -2178,8 +2178,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Finally, note what the guards can and cannot prove: every
   assertion here is source-text, so "renders exactly once" is **not** covered by any test — it was
   verified manually and the measurements are in the ADR.
-- **Evidence:** `src/Agent42.Backend/wwwroot/js/sidebar.js` (`renderSidebar`'s two passes,
-  `buildConvRow(conv, hoisted)`, `setPinned`),
+- **AMENDED by ADR 0073** (custom chat groups): the render is now **three** passes and the passes are
+  **extracted into named functions** — `renderSidebar` measured exactly 15 cognitive complexity, so a
+  third pass inline would have failed the build. `buildConvRow` is now `(conv, hoisted, grouped)` and
+  the agent badge is `(hoisted || grouped) && conv.agentId`. Everything else in this entry stands, and
+  the hoist rule it describes is what the new pass had to obey. See the entry below.
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/sidebar.js` (`renderSidebar`'s three passes,
+  `buildConvRow(conv, hoisted, grouped)`, `setPinned`),
   `src/Agent42.Agents/Conversations/ConversationIndexGrain.cs` (`GetConversationsAsync`, `SetPinnedAsync`),
   `src/Agent42.Backend/wwwroot/styles.css` (`.conv__pin`, `.conv-row.is-pinned .conv__pin`,
   `@media (hover: none)`, `.conv__agent`),
@@ -2188,6 +2193,63 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `PinnedState_IsVisibleWithoutHover_AndReachableOnTouch`),
   `.agentic/decisions/0045-pinned-conversations.md`
 - **Verified:** 2026-08-21
+
+### Filing a chat into a custom group repeats the ADR 0045 hoist trap — and four things around it bite first
+
+- **Area:** frontend — sidebar rendering, module scope, gestures; Orleans grain state
+- **Claim:** ADR 0073 adds user-named groups, and the render becomes **three** passes: the pinned block,
+  the user's custom groups in manual order, then the agent walk over what is left. The walk must skip
+  `conv.pinned || (conv.groupId && knownGroupIds.has(conv.groupId))` — testing against the **known** ids,
+  not `conv.groupId` alone, is what makes a filing that points at a deleted group render *ungrouped*
+  rather than vanish from the sidebar. Four things around that are easier to get wrong than the pass
+  itself, and three of them are invisible to this repo's tests.
+  1. **`renderSidebar` already declared `const groups = new Map()`.** A module-level `groups` import plus
+     a function-scoped `const groups` is not a shadowing nuisance — it is a **temporal dead zone
+     `ReferenceError` on every render**, i.e. a blank sidebar. Every frontend guard here is source-text,
+     so **nothing in the suite catches it**; it was found by review, not by a failing test. The local is
+     now `agentGroups`, and `AgentWalk_SkipsPinnedAndGroupedRows` asserts the absence of the old name.
+  2. **The passes are extracted for readability, and NOTHING in this repo measures that.** ADR 0073's
+     first draft claimed `renderSidebar` "measured exactly 15 cognitive complexity" and that a third pass
+     would fail `dotnet build` — false on its face: `renderSidebar` is **JavaScript**, `.editorconfig`
+     scopes `S3776` to `[*.cs]`, and there is no JS linter here. Do not repeat the number, and do not
+     reach for S3776 to justify a JS refactor. What is real is that **extraction is bounded, not free**: `clearReveal();`, the search branch, the empty guard and
+     `conversationList.lastElementChild !== lastPinned` must stay in `renderSidebar`'s own body, because
+     `PinChatAssetsTests`, `RowActionsRevealAssetsTests` and `SearchAssetsTests` all call
+     `Body(app, "export function renderSidebar()")` and assert against it. Move one into a pass and those
+     guards go **vacuous rather than red**. Relatedly, an ordering assertion over the raw module must
+     anchor on the **call** (`= renderPinnedBlock();`), never the bare name: the declarations sit *above*
+     `renderSidebar`, so a bare name matches the declaration and inverts the comparison.
+  3. **One boolean cannot carry two badge facts.** A row is outside its *agent* group when hoisted **or**
+     filed into a custom group (which wins over the agent group), but outside its *custom* group only
+     when hoisted. Hence `buildConvRow(conv, hoisted, grouped)`, `(hoisted || grouped) && conv.agentId`,
+     and `hoisted && conv.groupId`. Reverting the first to `hoisted && conv.agentId` silently strips the
+     label from every filed agent chat — and for a **continuous** agent (ADR 0016, one conversation) that
+     is the ordinary state, not an edge case.
+  4. **The drag gate is per INTERACTION, never per device.** `li.draggable = e.pointerType === "mouse"`,
+     set in the `pointerdown` handler `wireRowReveal` already owns. A fine-pointer media query reports
+     the **primary** pointer, so a touchscreen laptop matches it — the exact device where a live
+     `draggable` races the 400 ms reveal. A test asserts that query's absence from the whole script with
+     a plain substring search, **which does not skip comments**: explaining the rejected query by quoting
+     it in a comment fails the test (it did, once). For the same reason the move action is a fourth glyph
+     at **every** width rather than a touch-only one — a hybrid laptop matches `(hover: hover)` and still
+     raises the long press, so a gated glyph strands it with no way to file a chat.
+  Two smaller ones in the same family: drag listeners are **delegated on `conversationList`**, since
+  `wireGroups()` runs before any row exists and `renderSidebar` rebuilds every row on every call; and a
+  non-null `GroupId` naming no group is a **no-op in the grain, not a clear** — clearing is what `null`
+  means, and conflating them lets a client working from a stale group list wipe a filing the user still
+  has.
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/sidebar.js` (`renderPinnedBlock`, `renderCustomGroups`,
+  `renderAgentWalk`, `buildConvRow`, the `li.draggable` line in `wireRowReveal`),
+  `src/Agent42.Backend/wwwroot/js/groups.js` (`buildChatGroup`, `wireDragAndDrop`),
+  `src/Agent42.Agents/Conversations/ConversationIndexGrain.cs` (`SetGroupAsync`, `ReorderGroupsAsync`),
+  `tests/Agent42.Tests/ChatGroupAssetsTests.cs`, `tests/Agent42.Tests/PinChatAssetsTests.cs`,
+  `tests/Agent42.Tests/SearchAssetsTests.cs` (`SearchBranch_LivesInsideRenderSidebar`),
+  `.agentic/decisions/0073-custom-chat-groups.md`
+- **Verified:** 2026-09-13 (test suite plus a headless-Chrome/CDP pass against DevHost, 21/21 UI and
+  9/9 drag — the `draggable` arming rule in trap 4 is measured, not assumed. Two harness traps that
+  imitate product bugs are in ADR 0073: a viewport at or under 760px puts the sidebar off-canvas so every
+  synthetic event misses, and a group node captured before a drop is detached by the time the refresh
+  lands.)
 
 ### Hiding a hover-reveal on touch: `:hover` still fires there, and `opacity: 0` still gets tapped
 - **Area:** frontend — sidebar row actions, touch behaviour
