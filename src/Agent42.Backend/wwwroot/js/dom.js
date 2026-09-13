@@ -196,3 +196,17 @@ export const shareLinkRevokeBtn = document.getElementById("shareLinkRevokeBtn");
 export const shareLinkCloseBtn = document.getElementById("shareLinkCloseBtn");
 // Second entry point into the same dialog, in the persistent topbar cluster beside #incognitoBtn.
 export const topbarShareBtn = document.getElementById("topbarShareBtn");
+
+// Custom conversation groups (ADR 0073): the transmissions-header "+", the shared create/rename name
+// dialog, and the move-to-group picker that is the touch path for what a mouse does by dragging.
+export const addGroupBtn = document.getElementById("addGroupBtn");
+export const groupNameDialog = document.getElementById("groupNameDialog");
+export const groupNameTitle = document.getElementById("groupNameTitle");
+export const groupNameInput = document.getElementById("groupNameInput");
+export const groupNameSaveBtn = document.getElementById("groupNameSaveBtn");
+export const groupNameCancelBtn = document.getElementById("groupNameCancelBtn");
+export const moveToGroupDialog = document.getElementById("moveToGroupDialog");
+export const moveToGroupConvTitle = document.getElementById("moveToGroupConvTitle");
+export const moveToGroupList = document.getElementById("moveToGroupList");
+export const moveToGroupSaveBtn = document.getElementById("moveToGroupSaveBtn");
+export const moveToGroupCancelBtn = document.getElementById("moveToGroupCancelBtn");

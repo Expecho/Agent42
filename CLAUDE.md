@@ -1175,6 +1175,40 @@ to document a mechanical rule, add a lint rule instead.
   **was** run (headless Chrome over CDP, both themes, both widths) and ADR 0065 records the measured values —
   including one residual it does not own: the document already overflows to **534px** at a 390px viewport on
   `main` (`.composer__hint` and its `<kbd>`s, the gap ADR 0043 records), which offsets the centred modal.
+- Custom chat groups (ADR 0073, **extends 0045**): the user files chats into their **own named,
+  manually ordered** groups — the first grouping in the sidebar they author, next to the agent grouping
+  that has always been derived. A first-class `ChatGroup(Id, Name, Order)` on `ConversationIndexState`
+  plus a trailing `[Id(6)] GroupId` on `ConversationInfo` (**no migration**, the 0045 shape); six
+  Easy-Auth routes in a new `src/Agent42.Backend/Conversations/AgentApi.ChatGroups.cs` (endpoint groups 16 → 17, and its
+  reorder route is the distinct `PUT /api/conversation-group-order` for the `PUT /api/default-model`
+  reason); a new `src/Agent42.Backend/wwwroot/js/groups.js` (29th module) owning the group list, two dialogs and the
+  drag-and-drop, while `sidebar.js` keeps the list DOM. **A custom group WINS over the agent group.**
+  **The headline is that this repeats ADR 0045's hoist trap and the render is now THREE passes** —
+  pinned block, custom groups in manual order, then the agent walk skipping
+  `conv.pinned || (conv.groupId && knownGroupIds.has(conv.groupId))`; testing the **known** ids is what
+  makes a filing pointing at a deleted group render ungrouped instead of vanishing.
+  `GetConversationsAsync`'s ordering is **untouched** — partitioning in JS is not re-sorting.
+  Four traps, all in gotchas, and three are invisible to the tests: `renderSidebar` **already declared
+  `const groups = new Map()`**, so a module-level `groups` import shadows into a temporal-dead-zone
+  `ReferenceError` and a **blank sidebar** that no source-text guard can see (the local is now
+  `agentGroups`); `renderSidebar` measured **exactly 15** cognitive complexity, so the passes had to be
+  extracted — but **bounded**, since `clearReveal();`, the search branch and the `.is-pinned-last` marker
+  must stay in its body or three other test classes go **vacuous rather than red**; **one boolean cannot
+  carry two badge facts**, hence `buildConvRow(conv, hoisted, grouped)` with
+  `(hoisted || grouped) && conv.agentId` — reverting it strips the label from every filed agent chat,
+  which for a **continuous** agent (ADR 0016) is the ordinary state; and the drag gate is **per
+  interaction** (`e.pointerType === "mouse"`, the rule `wireRowReveal` already owns), never a
+  fine-pointer media query, which reports the **primary** pointer and so gets a touchscreen laptop
+  wrong — the same reasoning makes the move glyph a fourth row action at **every** width rather than a
+  touch-only one. Groups are capped at **50** per user (ADR 0004's 2 MB item), a `null` `GroupId` clears
+  while an **unknown one is a no-op** (not a silent clear), and deleting a group **ungroups its chats and
+  deletes none**. Incognito chats (ADR 0034) are structurally ungroupable. No new secret, container,
+  Cosmos container, Bicep or `excludedPaths` change (the list stays at **six**, with four new negative
+  rows proving it) and no package. Shell cache bumped `agent42-shell-v36` → `-v37`; `AgentApi.cs`'s
+  route-count comment was wrong and is recounted to **63** with its counting rule stated. **Unlike ADRs
+  0045/0052/0072 the DevHost browser leg was NOT run** — no driver was available — so ADR 0073 records
+  **no measured values**, the drag path has never been exercised, and whether `draggable` set in
+  `pointerdown` is re-read at drag initiation is an unverified assumption.
 - Pinned conversations (ADR 0045): a pin toggle on every sidebar row hoists a chat to the top of the
   transmissions list and keeps it there regardless of recency. It is a trailing optional
   **`[Id(5)] bool Pinned = false`** on `ConversationInfo` (the `[Id(3)]`/`[Id(4)]` agent-identity shape —

@@ -48,7 +48,7 @@ public sealed class RowActionsRevealAssetsTests
     {
         var app = await _fixture.GetAppScriptAsync();
 
-        var row = StaticAssetsServerFixture.Body(app, "function buildConvRow(conv, hoisted)");
+        var row = StaticAssetsServerFixture.Body(app, "export function buildConvRow(conv, hoisted, grouped)");
         Assert.Contains("wireRowReveal(li, btn)", row);
 
         var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn)");

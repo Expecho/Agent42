@@ -122,6 +122,17 @@ public sealed class EasyAuthExclusionTests
     // signed-in user's OWN stored server with that user's decrypted secrets — so it must stay behind Easy
     // Auth, or an anonymous caller would resolve to the local-dev principal and probe their servers.
     [InlineData("/api/mcp-servers/test-id/test")]
+    // Custom conversation groups (ADR 0073). Every one of these takes the userId from GetUserId() and
+    // keys the conversation-index grain with it, so a route reachable outside Easy Auth would resolve to
+    // the local-dev principal — handing one phantom identity the power to rename, reorder and DELETE
+    // groups across that index. As with /logs, /searxng and /dashboard, the correct change to
+    // excludedPaths was NO change; these rows are what make that a checked fact rather than an omission.
+    // The collection route, the per-group route, the distinct order route and the assign route are named
+    // separately, because /shared taught us those are separate mistakes.
+    [InlineData("/api/conversation-groups")]
+    [InlineData("/api/conversation-groups/group-id")]
+    [InlineData("/api/conversation-group-order")]
+    [InlineData("/api/conversations/x/group")]
     public void Exclusions_DoNotCoverAnyAuthenticatedPath(string path)
     {
         var entries = ExcludedPaths();

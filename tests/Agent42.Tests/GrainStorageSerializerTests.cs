@@ -327,6 +327,55 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.False(plainChat.Pinned);
     }
 
+    // AC12 (ADR 0073): the SAME committed golden also predates custom groups — it carries no "Groups" key
+    // on the state and no "GroupId" on either entry, which is why it is reused here rather than a second
+    // fixture being minted. Two mechanisms are at risk and they are different: a missing property bound onto
+    // a POSITIONAL RECORD (GroupId, the ADR 0045 shape), and a missing property bound onto a CLASS with an
+    // initializer (Groups). The second must read as an empty list rather than null — every render path calls
+    // .OrderBy on it unguarded, so a null would take out the whole conversation index of every user who
+    // predates this deployment.
+    [Fact]
+    public void ConversationIndexDocument_WrittenBeforeGrouping_StillDeserializes_AsUngrouped()
+    {
+        var restored = Serializer().Deserialize<ConversationIndexState>(new BinaryData(PrePinConversationIndexStateJson));
+
+        Assert.NotNull(restored.Groups);
+        Assert.Empty(restored.Groups);
+
+        Assert.All(restored.Conversations, c => Assert.Null(c.GroupId));
+    }
+
+    // AC13: the FORWARD direction, on the path that matters at rest. The golden above cannot cover it — it
+    // was written before groups existed and is deliberately never regenerated — so this writes and reads
+    // back through the SAME configured Cosmos serializer.
+    //
+    // This is the direction ADR 0039's scar is actually about: the $type names for List<ChatGroup> and
+    // Agent42.Agents.ChatGroup are written INTO the document, and a state root that cannot be reconstructed
+    // is unreadable rather than subtly wrong. ReorderGroupsAsync rebuilds this list inside the grain, which
+    // is precisely the exposed case in the collection-expression gotcha — so the assertion that matters
+    // most is the runtime type, not the values.
+    [Fact]
+    public void ChatGroups_RoundTripThroughTheCosmosSerializer()
+    {
+        var written = new ConversationIndexState
+        {
+            Conversations =
+            [
+                new ConversationInfo("conv-1", "A filed chat", new DateTimeOffset(2026, 6, 7, 8, 9, 10, TimeSpan.Zero), GroupId: "grp-1"),
+            ],
+            Groups = [new ChatGroup("grp-1", "Work", 0), new ChatGroup("grp-2", "Personal", 1)],
+        };
+
+        var restored = Serializer().Deserialize<ConversationIndexState>(Serializer().Serialize(written));
+
+        Assert.Equal(typeof(List<ChatGroup>), restored.Groups.GetType());
+        Assert.Equal(["grp-1", "grp-2"], restored.Groups.Select(g => g.Id));
+        Assert.Equal(["Work", "Personal"], restored.Groups.Select(g => g.Name));
+        Assert.Equal([0, 1], restored.Groups.Select(g => g.Order));
+        // The filing survives too — the record's trailing [Id(6)] is what the sidebar partitions on.
+        Assert.Equal("grp-1", Assert.Single(restored.Conversations).GroupId);
+    }
+
     // Per-tool selection appended a trailing [Id(12)] KnownToolNames to the POSITIONAL record StoredMcpServer,
     // and every mcp-servers document already in Cosmos was written without it. The mechanism at risk is
     // Newtonsoft constructor-binding a MISSING property onto a positional record — which only this path

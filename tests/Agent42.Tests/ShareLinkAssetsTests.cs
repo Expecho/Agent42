@@ -39,7 +39,7 @@ public sealed class ShareLinkAssetsTests
     {
         var app = await _fixture.GetAppScriptAsync();
 
-        var row = StaticAssetsServerFixture.Body(app, "function buildConvRow(conv, hoisted)");
+        var row = StaticAssetsServerFixture.Body(app, "export function buildConvRow(conv, hoisted, grouped)");
         Assert.Contains("conv__share", row);
         Assert.Contains("openShareLink(conv.id", row);
 
@@ -67,7 +67,7 @@ public sealed class ShareLinkAssetsTests
         Assert.Contains(connector, index[shareAt..shareEnd]);
 
         // ...and buildConvRow draws the same one, in place of the text glyph it used to set.
-        var row = StaticAssetsServerFixture.Body(app, "function buildConvRow(conv, hoisted)");
+        var row = StaticAssetsServerFixture.Body(app, "export function buildConvRow(conv, hoisted, grouped)");
         Assert.Contains(connector, row);
         Assert.DoesNotContain("share.textContent", row); // anchored by the two positives above
     }

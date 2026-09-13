@@ -74,22 +74,29 @@ public sealed class SearchAssetsTests
         var branch = sidebar.IndexOf("renderSearchHits(conversationList)", StringComparison.Ordinal);
         Assert.True(branch > renderStart, "the search render must be called from INSIDE renderSidebar.");
 
-        // And it must be an EARLY RETURN, before the pinned/unpinned walk — otherwise the hit list
-        // would be appended after the ordinary rows rather than replacing them.
-        var pinnedPass = sidebar.IndexOf("Pass 1 — the pinned block", StringComparison.Ordinal);
-        Assert.True(pinnedPass > branch, "the search branch must precede the pinned/unpinned passes.");
+        // And it must be an EARLY RETURN, before the render passes — otherwise the hit list would be
+        // appended after the ordinary rows rather than replacing them. Anchored on the first pass's
+        // CALL SITE rather than on a comment: ADR 0073 extracted the passes into named functions (a
+        // third pass tipped renderSidebar over the S3776 ceiling), so the "Pass 1" prose now sits
+        // above renderSidebar rather than inside it.
+        // The CALL, not the declaration: the extracted passes are declared ABOVE renderSidebar, so a bare
+        // name matches the declaration first and the ordering assertion would be inverted (and vacuous).
+        var firstPass = sidebar.IndexOf("= renderPinnedBlock();", StringComparison.Ordinal);
+        Assert.True(firstPass > branch, "the search branch must precede the render passes.");
     }
 
-    // The ADR 0045 two-pass walk survives on the no-query path: the search branch must not have been
-    // implemented by replacing the grouping walk.
+    // The render passes survive on the no-query path: the search branch must not have been implemented
+    // by replacing them. Three of them since ADR 0073 added the user's custom groups between the pinned
+    // block (ADR 0045) and the agent walk.
     [Fact]
     public async Task PinnedAndGroupedPasses_SurviveOnTheNoQueryPath()
     {
         var sidebar = await _client.GetStringAsync("/js/sidebar.js");
 
-        Assert.Contains("Pass 1 — the pinned block", sidebar);
-        Assert.Contains("Pass 2 — the unchanged grouping walk", sidebar);
-        Assert.Contains("buildConvRow(conv, true)", sidebar);
+        Assert.Contains("function renderPinnedBlock()", sidebar);
+        Assert.Contains("function renderCustomGroups()", sidebar);
+        Assert.Contains("function renderAgentWalk()", sidebar);
+        Assert.Contains("buildConvRow(conv, true, false)", sidebar);
     }
 
     // The hit list is built with textContent, never innerHTML: it renders message text, which
@@ -118,7 +125,7 @@ public sealed class SearchAssetsTests
         // The version moves on with every MR that touches wwwroot/js/ (the tool-call fold took it to
         // v36); what this test owns is that search.js is in SHELL and the cache is not left on a stale
         // version.
-        Assert.Contains("agent42-shell-v36", sw);
+        Assert.Contains("agent42-shell-v37", sw);
         Assert.DoesNotContain("agent42-shell-v32", sw);
     }
 }

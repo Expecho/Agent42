@@ -181,13 +181,39 @@ body {
   min-height: 0;
 }
 
+/* The transmissions header, now that it carries a "+ group" action (ADR 0073). Same shape as
+   .agents__head below, deliberately — one header pattern, two navs. */
+.conversations__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 4px 10px;
+}
+
 .conversations__label {
   color: var(--ink-faint);
   font-size: 11px;
   letter-spacing: 0.14em;
-  margin: 8px 0 10px 4px;
+  margin: 0;
   user-select: none;
 }
+
+.conversations__add {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--amber-deep);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--amber);
+  font: 400 15px/1 var(--mono);
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.conversations__add:hover { background: var(--amber-glow); box-shadow: 0 0 12px var(--amber-glow); }
 
 .conversations__search {
   background: var(--bg-inset);
@@ -256,7 +282,7 @@ body {
   position: relative;
   width: 100%;
   text-align: left;
-  padding: 10px 82px 9px 14px; /* right room for the hover-revealed pin + share + delete actions */
+  padding: 10px 106px 9px 14px; /* right room for the hover-revealed move + pin + share + delete actions */
   border: 0;
   border-left: 2px solid transparent;
   border-radius: 6px;
@@ -416,6 +442,68 @@ body {
   color: var(--amber);
 }
 
+/* File this chat into a custom group (ADR 0073). The fourth action, and the leftmost — so the three
+   that existed keep their positions and a hand that knows where delete is still finds it there. It is
+   present at every width, not gated to touch: a hybrid laptop matches a hovering pointer AND raises the
+   ADR 0052 long-press, so a touch-only glyph would leave that device revealing three actions with no
+   way to file the chat. Drag-and-drop is layered on top for a mouse, never instead of this. */
+.conv__move {
+  position: absolute;
+  top: 50%;
+  right: 79px;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.conv__move svg { width: 14px; height: 14px; display: block; }
+
+@media (hover: hover) {
+  .conv-row:hover .conv__move {
+    opacity: 1;
+  }
+}
+
+/* Ungated, like its three siblings: keyboard reveal must survive on every device. */
+.conv__move:focus-visible {
+  opacity: 1;
+}
+
+.conv__move:hover {
+  background: var(--line-soft);
+  color: var(--amber);
+}
+
+/* The group a hoisted row belongs to. Same treatment as .conv__agent and for the same reason ADR 0045
+   found: only a group header renders the name, and a row in the pinned block has no header above it.
+   Deliberately NOT amber — a pinned agent chat that is also filed shows both badges at once, and two
+   identical chips would read as one wrapped label. */
+.conv__group {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
 /* Where there is no pointer at all, a hover-reveal is a hidden control, so the three row actions are
    reached by an explicit press-and-hold instead (ADR 0052, amending ADR 0045's permanent reveal — which
    made every row carry three lit glyphs). .is-revealed is set by the gesture in sidebar.js.
@@ -426,12 +514,14 @@ body {
    can see. The lit pinned pin is exempted below — it is visible, so it must stay tappable, or it becomes
    a control that looks pressable and is not. */
 @media (hover: none) {
+  .conv__move,
   .conv__pin,
   .conv__share,
   .conv__delete {
     pointer-events: none;
   }
 
+  .conv-row.is-revealed .conv__move,
   .conv-row.is-revealed .conv__pin,
   .conv-row.is-revealed .conv__share,
   .conv-row.is-revealed .conv__delete {
@@ -546,6 +636,118 @@ body {
 }
 
 .conv-group.is-collapsed .conv-group__body { display: none; }
+
+/* ————— custom conversation groups (ADR 0073) ————— */
+
+/* A custom group reuses the whole .conv-group structure above — chevron, name, count, collapsible
+   body — and adds only what an agent group cannot have: it is a drop target, it can be reordered, and
+   it can be renamed or deleted (an agent group is derived from its members and has none of those). */
+.conv-group--custom .conv-group__header {
+  padding-right: 54px; /* room for the rename + delete actions */
+}
+
+/* Positioned against the group <li>, which is the containing block — the same relationship .conv__* has
+   to .conv-row, including the reason the divider rule there uses margin and not padding. */
+.conv-group--custom {
+  position: relative;
+}
+
+.conv-group__action {
+  position: absolute;
+  top: 5px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-faint);
+  font: 400 13px/1 var(--mono);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.conv-group__action--rename { right: 31px; }
+.conv-group__action--delete { right: 7px; font-size: 16px; }
+
+@media (hover: hover) {
+  .conv-group--custom:hover .conv-group__action {
+    opacity: 1;
+  }
+}
+
+/* Ungated, as with every other row action in this sheet: keyboard reveal survives everywhere. */
+.conv-group__action:focus-visible {
+  opacity: 1;
+}
+
+.conv-group__action:hover {
+  background: var(--line-soft);
+  color: var(--amber);
+}
+
+/* On a device with no pointer the actions follow the ADR 0052 rule the conversation rows follow: hidden
+   AND inert until the row is revealed, because opacity: 0 removes the paint and not the hit test. */
+@media (hover: none) {
+  .conv-group__action {
+    pointer-events: none;
+  }
+
+  .conv-group--custom.is-revealed .conv-group__action {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* The drop target, while a row is being dragged over it (mouse only — see groups.js). Drawn on the
+   group as a whole rather than the header, so an EMPTY group is still visibly a target: that is the
+   whole reason groups are first-class entities rather than a label on each chat. */
+.conv-group--custom.is-drop-target {
+  outline: 1px dashed var(--amber-deep);
+  outline-offset: 1px;
+  border-radius: 6px;
+  background: var(--amber-glow);
+}
+
+/* The header of a group being dragged to a new position in the manual order. */
+.conv-group--custom.is-dragging {
+  opacity: 0.5;
+}
+
+.conv-group__empty {
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-style: italic;
+  padding: 4px 4px 4px 14px;
+}
+
+/* The move-to-group picker (#moveToGroupList), injected at open time. */
+.group-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.group-picker__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 5px;
+  color: var(--ink-dim);
+  font: 400 12.5px/1.3 var(--mono);
+  cursor: pointer;
+}
+
+.group-picker__option:hover { background: var(--line-soft); color: var(--ink); }
+
+.group-picker__option input { accent-color: var(--amber); }
 
 /* ————— stored agents ————— */
 
