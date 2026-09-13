@@ -7,6 +7,12 @@ tags: [telemetry, observability, privacy, auth]
 
 # Enrich traces with the full OpenTelemetry `user.*` identity attribute set
 
+> **Amended by [ADR 0074](0074-identity-alias-for-a-second-entra-account.md) (2026-09-13).**
+> `user.id` is no longer necessarily the requesting principal's Entra object id: an aliased account
+> reports the object id it resolves to. The other five attributes are unchanged — `user.name` comes
+> from the principal-name header and `user.email`/`user.full_name`/`user.roles` from the claims blob,
+> none of which passes through the alias — so every span still names the account that signed in.
+
 ## Context
 Agent42 is a multi-user system (two Entra users today, behind Easy Auth — ADR 0002)
 whose traces carried **no user attribution**: a span could not be tied to whose request

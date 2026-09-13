@@ -3,6 +3,7 @@ using Agent42.Backend;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Agent42.Tests;
 
@@ -17,6 +18,10 @@ public sealed class DashboardOwnerGateTests
 {
     // A stand-in for a real Entra object id. Any GUID does — the rule never parses it.
     private const string OwnerOid = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
+
+    // A second account aliased onto the owner (ADR 0074), and one that is aliased to nothing.
+    private const string AliasedOid = "5f2504e0-4f89-11d3-9a0c-0305e82c3301";
+    private const string StrangerOid = "7f2504e0-4f89-11d3-9a0c-0305e82c3301";
 
     /// <summary>
     /// AC 4. <b>Fail closed.</b> No owner configured denies everyone, including a caller presenting a
@@ -213,6 +218,37 @@ public sealed class DashboardOwnerGateTests
     private static readonly string[] GatedPaths =
         ["/dashboard", "/dashboard/", "/dashboard/index.min.js"];
 
+    /// <summary>
+    /// AC18 (ADR 0074). The gate compares <c>context.GetUserId()</c>, which is where the identity alias
+    /// is applied — so a second account aliased onto the configured owner reaches the dashboard. That is
+    /// correct (it is the same person) but it is a real widening of ADR 0062's "it is ONE principal"
+    /// property, so it is asserted deliberately rather than left to be discovered.
+    ///
+    /// <para>The second half is the one that must never regress: an alias grants exactly the principal
+    /// named in it, and everyone else still gets 404.</para>
+    /// </summary>
+    [Fact]
+    public async Task Gate_AllowsAnAliasedPrincipal_OfTheConfiguredOwner()
+    {
+        var aliases = UserIdAliases.FromConfiguration(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        [$"{UserIdAliases.SectionName}:{AliasedOid}"] = OwnerOid,
+                    })
+                .Build());
+
+        using var host = await BuildGatedHostAsync(OwnerOid, aliases);
+        using var client = host.GetTestClient();
+
+        var aliased = await client.SendAsync(Request("/dashboard", AliasedOid));
+        Assert.Equal(HttpStatusCode.OK, aliased.StatusCode);
+
+        var stranger = await client.SendAsync(Request("/dashboard", StrangerOid));
+        Assert.Equal(HttpStatusCode.NotFound, stranger.StatusCode);
+    }
+
     private static HttpRequestMessage Request(string path, string userId)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, path);
@@ -227,12 +263,16 @@ public sealed class DashboardOwnerGateTests
     /// security-relevant half of <see cref="DashboardRegistration"/> executable by a test at all
     /// (<c>HindsightRegistrationTests</c> executes its registration for the same reason).
     /// </summary>
-    private static async Task<WebApplication> BuildGatedHostAsync(string configuredOwnerOid)
+    private static async Task<WebApplication> BuildGatedHostAsync(
+        string configuredOwnerOid, UserIdAliases? aliases = null)
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseTestServer();
         builder.Configuration.AddInMemoryCollection(
             new Dictionary<string, string?> { [DashboardOwnerGate.OwnerOidConfigKey] = configuredOwnerOid });
+        // Registered unconditionally (Empty when the caller passes none) so the host shape is identical
+        // whether or not the test is about aliasing.
+        builder.Services.AddSingleton(aliases ?? UserIdAliases.Empty);
 
         var app = builder.Build();
         app.UseOrleansDashboardOwnerGate();

@@ -13,6 +13,11 @@ namespace Agent42.Backend;
 /// the single home of Easy Auth header knowledge — both grain keying
 /// (<see cref="GetUserId"/>) and telemetry enrichment
 /// (<see cref="GetUserTelemetryTags"/>) read the headers here.
+///
+/// <para>It is also where the <see cref="UserIdAliases"/> map is applied (ADR 0074), so the resolved id
+/// is the object id of the signed-in account <em>unless</em> that account is aliased onto another's.
+/// Identity still originates only from Easy Auth — an alias is applied after extraction and is never a
+/// substitute for authentication.</para>
 /// </summary>
 public static class CurrentUser
 {
@@ -26,7 +31,9 @@ public static class CurrentUser
 
     // Local development (DevHost, standalone runs) has no Easy Auth in front,
     // so every request maps to this single pseudo-user.
-    private const string LocalDevelopmentUserId = "local-dev";
+    // internal, not private: UserIdAliases refuses this value on both sides of an alias, and a
+    // "belt and braces" pair only works when both belts are literally the same string.
+    internal const string LocalDevelopmentUserId = "local-dev";
 
     // Easy Auth maps AAD claims through varying claim-type spellings (AAD v1/v2 vs Easy Auth's
     // own mapping), so each attribute is matched against a candidate list, most-preferred first.
@@ -55,9 +62,20 @@ public static class CurrentUser
         "http://schemas.microsoft.com/ws/2008/06/identity/claims/role",
     ];
 
-    /// <summary>The Entra ID object id of the signed-in user.</summary>
+    /// <summary>
+    /// The Agent42 user id for the request: the Entra ID object id of the signed-in user, unless an
+    /// alias maps it onto another account's object id (ADR 0074), in which case it is that account's.
+    /// This is the isolation boundary for every durable store, so the alias is applied here and only
+    /// here — see <see cref="ResolveUserId"/>.
+    ///
+    /// <para>The map is resolved <b>optionally</b> from request services (the <c>/api/speech</c>
+    /// pattern), so no host gains a mandatory registration: unregistered means zero aliases, which is
+    /// exactly the pre-ADR-0074 behaviour and can never widen access. The cost of that leniency is that
+    /// a missing registration is silent, which is why <c>ProjectLayoutTests</c> pins the one in
+    /// <c>Program.cs</c> as source text — no test executes it.</para>
+    /// </summary>
     public static string GetUserId(this HttpContext http)
-        => http.Request.Headers.ResolveUserId();
+        => http.Request.Headers.ResolveUserId(http.RequestServices?.GetService<UserIdAliases>());
 
     /// <summary>
     /// The signed-in user's identity as a serializable <see cref="UserTelemetryContext"/>, extracted
@@ -69,7 +87,20 @@ public static class CurrentUser
     /// unit-testable with a plain <c>HeaderDictionary</c>. Each optional field is <c>null</c> when
     /// absent; parsing the principal blob never throws (see <see cref="ParsePrincipalClaims"/>).
     /// </summary>
-    public static UserTelemetryContext GetUserTelemetryContext(this IHeaderDictionary headers)
+    /// <remarks>
+    /// <paramref name="aliases"/> is an explicit parameter rather than a DI lookup because one caller —
+    /// the <c>EnrichWithHttpRequest</c> callback in <c>Program.cs</c> — receives an <c>HttpRequest</c>
+    /// and runs at <c>HttpRequestIn.Start</c>, <b>before</b> the middleware pipeline, where
+    /// request-scoped resolution is not safe to assume. It captures the startup-built map instead.
+    ///
+    /// <para><b>Only <c>user.id</c> is aliased.</b> <c>user.name</c> comes from the principal-name header
+    /// and <c>user.email</c>/<c>user.full_name</c>/<c>user.roles</c> from the claims blob, so every span
+    /// still names the account that actually signed in. That is what keeps attribution intact on
+    /// <c>/logs</c> (ADR 0054) — and it is also why <c>/usage</c> (ADR 0031) still shows one row per
+    /// account, since <c>UsageSpanProjector</c> keys on the email first.</para>
+    /// </remarks>
+    public static UserTelemetryContext GetUserTelemetryContext(
+        this IHeaderDictionary headers, UserIdAliases? aliases)
     {
         var name = TryGetHeader(headers, PrincipalNameHeader, out var rawName) ? rawName : null;
         var idp = TryGetHeader(headers, PrincipalIdpHeader, out var rawIdp) ? rawIdp : null;
@@ -87,7 +118,7 @@ public static class CurrentUser
             roles = found.Length > 0 ? found : null;
         }
 
-        return new UserTelemetryContext(headers.ResolveUserId(), name, email, fullName, roles, idp);
+        return new UserTelemetryContext(headers.ResolveUserId(aliases), name, email, fullName, roles, idp);
     }
 
     /// <summary>
@@ -96,8 +127,9 @@ public static class CurrentUser
     /// entry point (the server-span <c>EnrichWithHttpRequest</c> path) while the carrier is the single
     /// parse. Each tag is emitted only when its value is present.
     /// </summary>
-    public static IEnumerable<KeyValuePair<string, object>> GetUserTelemetryTags(this IHeaderDictionary headers)
-        => headers.GetUserTelemetryContext().ToTags();
+    public static IEnumerable<KeyValuePair<string, object>> GetUserTelemetryTags(
+        this IHeaderDictionary headers, UserIdAliases? aliases)
+        => headers.GetUserTelemetryContext(aliases).ToTags();
 
     /// <summary>
     /// Stamps the <c>user.*</c> attributes onto <paramref name="activity"/> via <c>SetTag</c>.
@@ -105,19 +137,27 @@ public static class CurrentUser
     /// test can prove the tags (including <c>user.roles</c> as a <c>string[]</c>) actually land on
     /// a real <see cref="Activity"/> without booting a host.
     /// </summary>
-    public static void ApplyUserTelemetryTags(this Activity activity, IHeaderDictionary headers)
+    public static void ApplyUserTelemetryTags(
+        this Activity activity, IHeaderDictionary headers, UserIdAliases? aliases)
     {
-        foreach (var tag in headers.GetUserTelemetryTags())
+        foreach (var tag in headers.GetUserTelemetryTags(aliases))
         {
             activity.SetTag(tag.Key, tag.Value);
         }
     }
 
     // The principal-id read + local-dev fallback lives in one place so GetUserId (which keys every
-    // grain — 15 call sites) and GetUserTelemetryTags can never drift on the fallback semantics.
-    private static string ResolveUserId(this IHeaderDictionary headers)
+    // grain — 15 call sites) and GetUserTelemetryTags can never drift on the fallback semantics. The
+    // ADR 0074 alias is applied at this same single point, for the same reason, which is why it reaches
+    // grain keys, the telemetry user.id and the dashboard owner gate alike.
+    //
+    // NOTE the alias is consulted ONLY on the header-present branch. The local-dev fallback is returned
+    // untouched and before any lookup, so an alias can neither rewrite nor be keyed on the
+    // unauthenticated identity — offline (DevHost, the AppHost) is bit-for-bit unchanged, and so is the
+    // excludedPaths rule that an endpoint with no principal header must never trust GetUserId.
+    private static string ResolveUserId(this IHeaderDictionary headers, UserIdAliases? aliases)
         => headers.TryGetValue(PrincipalIdHeader, out var id) && !string.IsNullOrWhiteSpace(id)
-            ? id.ToString()
+            ? (aliases ?? UserIdAliases.Empty).Resolve(id.ToString())
             : LocalDevelopmentUserId;
 
     private static bool TryGetHeader(IHeaderDictionary headers, string name, out string value)

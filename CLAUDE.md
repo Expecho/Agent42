@@ -1383,3 +1383,33 @@ to document a mechanical rule, add a lint rule instead.
   with it. **The new trap this split introduces: an endpoint group that exists but is never called from
   `MapAgentApi` compiles cleanly and silently deletes every endpoint in it** — guarded by
   `ProjectLayoutTests.AgentApiPart_ExistsAndIsRegisteredFromTheCompositionRoot`.
+- A second Entra account signs in as an existing user (ADR 0074, **amends 0001/0002/0009/0062**): an
+  `Identity:Aliases` map in `src/Agent42.Backend/appsettings.json` maps an additional Entra **object id**
+  (the key) onto the object id that **owns the data** (the value), applied in `CurrentUser.ResolveUserId`
+  — the choke point that already exists so grain keying and telemetry "can never drift". **Nothing is
+  migrated, deliberately:** the object id keys Cosmos grain keys, `doc-chunks`/`chat-messages` partition
+  keys, the `reminders` container, both blob containers, the two directory grains' state and the Hindsight
+  `BankId`; Cosmos partition keys are immutable and the Hindsight bank has **no delete or rename path**
+  (ADR 0056), so a real migration costs the most *and* loses long-term memory. It is **committed config,
+  not a secret** (an object id is an identifier — the `Dashboard:OwnerOid` precedent), which is what keeps
+  this free of any Bicep, `excludedPaths`, deploy-workflow or GitHub-secret change; both ids were already
+  in `infra/main.bicep`'s `authAllowedUserObjectIds`, which is also what the shipped-map test cross-checks
+  against. **The sentence ADR 0001 needs read with it:** "one user can never address another's
+  conversation" still holds of *userIds*, but two Entra principals can now map to one, so **an alias entry
+  is an authorization grant** — and the residual no validation can close is an alias key pointing at the
+  wrong allowlisted person, which both strands their data and hands them the canonical user's
+  conversations, street address (ADR 0012), memory (no delete path) and share-link minting (ADR 0035).
+  Four traps, all in gotchas: the rewrite reaches **four** surfaces, not just grain keys (server span, the
+  ADR 0010 `RequestContext` carrier that stamps in-grain spans, and the `/dashboard` gate — which now
+  admits one *person*, not one *principal*); **only `user.id` is aliased**, so `/logs` still names the real
+  account and **`/usage` still shows one row per account** (`UsageSpanProjector` keys on `user.email`
+  first — it never merges them and was never going to); the map is consulted **only on the header-present
+  branch**, so `local-dev` and every `excludedPaths` request are untouched; and it is resolved with
+  `GetService`, so a **missing registration is silent** — the feature ships completely inert with every
+  test green, guarded only by `ProjectLayoutTests.Program_BuildsAndRegistersTheUserIdAliasMap`, and the
+  enrichment callback must **capture** the startup-built local because it runs before the pipeline.
+  Validation **drops, never throws** (not the availability path): blank, `local-dev` either side, a
+  self-alias, a value that is not a bare hyphenated GUID (it is concatenated into a grain key split on the
+  **first** `/`, and is a blob prefix), and **chains/cycles refused WHOLE** — while **fan-in survives**,
+  since two keys onto one value is the legitimate three-accounts-one-person shape. No new package, grain,
+  container, folder or frontend change, so no `sw.js` `CACHE` bump.

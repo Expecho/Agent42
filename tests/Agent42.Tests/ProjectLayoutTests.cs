@@ -609,6 +609,40 @@ public sealed class ProjectLayoutTests
         return match.Groups[1].Value;
     }
 
+    /// <summary>
+    /// AC16 (ADR 0074). <c>Program.cs</c> must BUILD the identity alias map, REGISTER it, and have the
+    /// telemetry enrichment callback CAPTURE that local.
+    ///
+    /// <para>This guard is required rather than decorative. <c>CurrentUser.GetUserId</c> resolves the map
+    /// <em>optionally</em> (<c>GetService</c>), so forgetting the registration does not fail anything: the
+    /// alias simply never applies, the second Entra account lands on an empty dataset, and every runtime
+    /// test still passes — because nothing in this suite executes <c>Program.cs</c>. Source text is the
+    /// only thing standing between that mistake and production, exactly as
+    /// <see cref="Hosts_GateTheAgentMcpSurfaceBeforeServingIt"/> is for the MCP key gate.</para>
+    ///
+    /// <para>The capture is asserted separately from the registration because they fail differently: the
+    /// enrichment callback receives an <c>HttpRequest</c> and runs at <c>HttpRequestIn.Start</c>, before
+    /// the middleware pipeline, so resolving DI inside it would leave the server span carrying the raw
+    /// principal id while every other surface carried the canonical one.</para>
+    /// </summary>
+    [Fact]
+    public void Program_BuildsAndRegistersTheUserIdAliasMap()
+    {
+        var program = StrippedSource(
+            Path.Combine(RepoRoot(), "src", "Agent42.Backend", "Program.cs"));
+
+        Assert.Contains(
+            "UserIdAliases.FromConfiguration(builder.Configuration)", program, StringComparison.Ordinal);
+
+        Assert.Contains(
+            "builder.Services.AddSingleton(userIdAliases)", program, StringComparison.Ordinal);
+
+        Assert.Contains(
+            "activity.ApplyUserTelemetryTags(request.Headers, userIdAliases)",
+            program,
+            StringComparison.Ordinal);
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

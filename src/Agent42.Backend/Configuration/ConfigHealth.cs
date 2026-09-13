@@ -129,7 +129,48 @@ public static class ConfigHealth
                 : "off — Web Push needs both a VAPID private key (secret) and public key.",
             Billable: false));
 
+        checks.Add(AliasCheck(config));
+
         return new ConfigHealthReport(env.EnvironmentName, checks);
+    }
+
+    /// <summary>
+    /// Identity aliases (ADR 0074). An entry refused at bind time is the failure this exists to surface:
+    /// the alias is simply absent, so the second account silently lands on an empty dataset, which looks
+    /// exactly like the feature never shipped. The startup log says so too, but an operator reading this
+    /// tab is not reading logs.
+    ///
+    /// <para>Re-derives from <see cref="IConfiguration"/> rather than taking the registered
+    /// <see cref="UserIdAliases"/> as a parameter, which would make <see cref="BuildStatic"/> impure and
+    /// add a mandatory dependency to every host that builds a report (ADR 0029).</para>
+    ///
+    /// <para><b>What this cannot see.</b> It reports what the <em>configuration</em> would bind, not
+    /// whether the map was actually registered in <c>Program.cs</c> — so for the one failure mode where
+    /// the singleton is missing entirely, this still reads "active" while the alias does nothing.
+    /// <c>ProjectLayoutTests.Program_BuildsAndRegistersTheUserIdAliasMap</c> is the guard for that;
+    /// purity (ADR 0029) is worth more here than covering a case a source-text test already pins.</para>
+    ///
+    /// <para><b>Counts only, never an object id.</b> These ids are committed config rather than secrets,
+    /// but the report has no reason to restate them and this tab is readable by every signed-in user.</para>
+    /// </summary>
+    private static ConfigCheck AliasCheck(IConfiguration config)
+    {
+        var aliases = UserIdAliases.FromConfiguration(config);
+
+        if (aliases.DroppedEntries.Count > 0)
+        {
+            return new ConfigCheck(GroupOptional, UserIdAliases.SectionName, Warning,
+                $"{aliases.DroppedEntries.Count} entry/entries ignored as invalid and {aliases.Count} "
+                + "active — an ignored alias means that account reaches its own empty dataset. See the "
+                + "startup log for the reason per entry.", Billable: false);
+        }
+
+        return new ConfigCheck(GroupOptional, UserIdAliases.SectionName, Ok,
+            aliases.IsEmpty
+                ? "no identity aliases configured — every account resolves to its own Entra object id."
+                : $"{aliases.Count} alias(es) active: that many additional accounts resolve to another "
+                    + "account's data.",
+            Billable: false);
     }
 
     /// <summary>
