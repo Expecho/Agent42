@@ -197,15 +197,53 @@ export function finishReasoning(msg) {
   if (summary) summary.textContent = "Thought process";
 }
 
+// Above this many calls in ONE turn, the chips fold into a single counted disclosure. Below it they
+// render flat, exactly as they always have: the common one-search turn is not worth a wrapper.
+const TOOL_GROUP_THRESHOLD = 3;
+
+// The per-turn wrapper the chips live in, created on the first call of the turn.
+//
+// It is always a <details>, whatever the count — the threshold only decides whether its summary is
+// DRAWN (see .msg__toolgroup:not(.is-grouped) in styles.css). Building it unconditionally is what keeps
+// the 4th call of a turn a class toggle rather than a re-parent of live, already-open chips.
+function toolGroup(bubble) {
+  let group = bubble.querySelector(".msg__toolgroup");
+  if (group) return group;
+
+  group = document.createElement("details");
+  group.className = "msg__toolgroup is-running";
+  group.open = true; // open WHILE the turn streams: the running chips are the progress indicator.
+
+  const summary = document.createElement("summary");
+  summary.className = "msg__toolgroup-summary";
+  const status = document.createElement("span");
+  status.className = "tool-call__status";
+  const label = document.createElement("span");
+  label.className = "msg__toolgroup-label";
+  summary.append(status, label);
+
+  const tools = document.createElement("div");
+  tools.className = "msg__tools";
+  group.append(summary, tools);
+  bubble.insertBefore(group, bubble.querySelector(".prose"));
+  return group;
+}
+
+// Re-derives the summary's count and the group's two state classes from the chips actually present.
+// Recomputed rather than counted incrementally so it stays right however the chips were added.
+function syncToolGroup(group) {
+  const count = group.querySelectorAll(".tool-call").length;
+  const label = group.querySelector(".msg__toolgroup-label");
+  if (label) label.textContent = `${count} tool ${count === 1 ? "call" : "calls"}`;
+  group.classList.toggle("is-grouped", count > TOOL_GROUP_THRESHOLD);
+  group.classList.toggle("is-running", !!group.querySelector(".tool-call.is-running"));
+}
+
 // Tool activity is shown as collapsible chips above the reply text, one per call.
 export function addToolCall(msg, { toolCallId, toolName, toolInput }) {
   const bubble = msg.querySelector(".msg__bubble");
-  let tools = bubble.querySelector(".msg__tools");
-  if (!tools) {
-    tools = document.createElement("div");
-    tools.className = "msg__tools";
-    bubble.insertBefore(tools, bubble.querySelector(".prose"));
-  }
+  const group = toolGroup(bubble);
+  const tools = group.querySelector(".msg__tools");
 
   const item = document.createElement("details");
   item.className = "tool-call is-running";
@@ -222,6 +260,7 @@ export function addToolCall(msg, { toolCallId, toolName, toolInput }) {
 
   if (toolInput) appendToolIo(item, "input", toolInput);
   tools.appendChild(item);
+  syncToolGroup(group);
 }
 
 export function completeToolCall(msg, { toolCallId, toolResult }) {
@@ -232,6 +271,21 @@ export function completeToolCall(msg, { toolCallId, toolResult }) {
   item.classList.remove("is-running");
   item.classList.add("is-done");
   if (toolResult) appendToolIo(item, "result", toolResult);
+  const group = item.closest(".msg__toolgroup");
+  if (group) syncToolGroup(group);
+}
+
+// Closes out the turn's tool group, the finishReasoning counterpart: the lamp stops pulsing, and a
+// group that actually crossed the threshold folds itself shut so a long chain of calls stops pushing
+// the reply down the bubble. A short turn stays flat and open — there is nothing to tidy away.
+//
+// Only collapsed here, never on the way in: while the turn streams, the chips ARE the progress
+// indicator. Safe on a turn that called no tools, and idempotent.
+export function finishToolCalls(msg) {
+  const group = msg.querySelector(".msg__toolgroup");
+  if (!group) return;
+  group.classList.remove("is-running");
+  if (group.classList.contains("is-grouped")) group.open = false;
 }
 
 function appendToolIo(item, label, json) {
