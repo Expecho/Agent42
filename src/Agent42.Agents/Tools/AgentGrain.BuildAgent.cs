@@ -273,6 +273,10 @@ public sealed partial class AgentGrain
                 ChatHistoryProvider = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
                 {
                     StorageInputRequestMessageFilter = ExcludeInjectedContextMessages,
+                    // The response-side twin (ADR 0071): a reasoning model's "thinking" is streamed to the
+                    // client and then discarded, never stored. Without this the framework persists it —
+                    // measured, on both the streaming and the RunAsync path.
+                    StorageInputResponseMessageFilter = StripReasoningFromStorage,
                 }),
             });
     }

@@ -148,6 +148,74 @@ public class ModelProviderTests
         Assert.False(MultiProviderChatClientFactory.Provider.UseResponses(compat));
     }
 
+    // ---- Reasoning models (ADR 0071) ------------------------------------------------------------
+
+    [Fact] // AC5 (helper half) — the rule itself: declared-and-flagged, matched on the BARE model id.
+    public void RequestsReasoning_IsTrueOnlyForADeclaredReasoningModel()
+    {
+        var provider = ReasoningProviderOptions();
+
+        Assert.True(MultiProviderChatClientFactory.Provider.RequestsReasoning(provider, "thinker"));
+
+        // Declared on the same provider but not flagged.
+        Assert.False(MultiProviderChatClientFactory.Provider.RequestsReasoning(provider, "plain"));
+
+        // Not declared at all — the unsafe direction is guessing true, so an unknown id gets nothing.
+        Assert.False(MultiProviderChatClientFactory.Provider.RequestsReasoning(provider, "unknown"));
+
+        // The BARE id is what Provider.Client and Build are handed; a qualified one must not match, or the
+        // comparison would be against ModelInfo.Id and silently never fire.
+        Assert.False(MultiProviderChatClientFactory.Provider.RequestsReasoning(provider, "mine:thinker"));
+
+        // Case-insensitive: a model id differing only in case is the same deployment.
+        Assert.True(MultiProviderChatClientFactory.Provider.RequestsReasoning(provider, "THINKER"));
+    }
+
+    [Fact] // AC5 (call-site half) — a correct helper wired next to a hardcoded `false` would pass the test
+           // above and ship the feature dead, so assert the CLIENT the factory actually builds.
+           //
+           // The handle is no-I/O and does not depend on reading source text: ConfigureOptions wraps the
+           // client in a ConfigureOptionsChatClient, and GetService walks the delegating chain (through the
+           // OTel wrapper) to find it. Present for the reasoning model, absent for the control — so both
+           // "never wired" and "wired for everything" fail here.
+    public void ReasoningModel_WiresTheReasoningRequest()
+    {
+        var factory = ReasoningFactory();
+        // Resolved from Microsoft.Extensions.AI (NOT .Abstractions, where ChatOptions lives) and asserted
+        // non-null, so a rename in the library fails loudly here rather than making both probes below
+        // vacuously null.
+        var configureOptions = typeof(ChatClientBuilder).Assembly
+            .GetType("Microsoft.Extensions.AI.ConfigureOptionsChatClient");
+        Assert.NotNull(configureOptions);
+
+        Assert.NotNull(factory.GetClient("mine:thinker").GetService(configureOptions!));
+
+        // The control. Without it, wiring the request for every model would pass the assertion above.
+        Assert.Null(factory.GetClient("mine:plain").GetService(configureOptions!));
+    }
+
+    // One OpenAI-compatible provider declaring a reasoning model and an ordinary one beside it.
+    private static ProviderOptions ReasoningProviderOptions() => new()
+    {
+        Kind = ProviderKind.OpenAICompatible,
+        Endpoint = "https://api.example/v1",
+        ApiKey = "key",
+        Models =
+        [
+            new ConfiguredModel { Id = "thinker", SupportsTools = true, SupportsReasoning = true },
+            new ConfiguredModel { Id = "plain", SupportsTools = true },
+        ],
+    };
+
+    private static MultiProviderChatClientFactory ReasoningFactory()
+    {
+        var options = new ModelProvidersOptions { Default = "mine:thinker" };
+        options.Providers["mine"] = ReasoningProviderOptions();
+        var setup = ModelProviderBuilder.Build(options, Configuration());
+        return new MultiProviderChatClientFactory(
+            setup.Providers, "mine:thinker", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
+    }
+
     [Fact] // AC6 — an unflagged Foundry provider still selects Chat.
     public void Seam_SelectsChatForUnflaggedFoundry()
     {

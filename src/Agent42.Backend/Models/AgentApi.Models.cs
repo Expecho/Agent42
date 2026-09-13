@@ -182,7 +182,8 @@ public static partial class AgentApi
             ApiKeyCiphertext: string.IsNullOrWhiteSpace(request.ApiKey) ? null : protector.Protect(request.ApiKey),
             Models: [.. (request.Models ?? []).Select(m =>
                 new StoredModel(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision,
-                    m.SupportsImageGeneration, m.SupportsEmbeddings, m.SupportsSpeech))],
+                    m.SupportsImageGeneration, m.SupportsEmbeddings, m.SupportsSpeech,
+                    m.SupportsReasoning))],
             UseResponsesApi: request.UseResponsesApi);
 
     // Never returns the key — only whether one is stored (hasKey). The ciphertext stays server-side.
@@ -192,6 +193,7 @@ public static partial class AgentApi
             HasKey: !string.IsNullOrEmpty(p.ApiKeyCiphertext),
             Models: [.. p.Models.Select(m =>
                 new ProviderModelResponse(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision,
-                    m.SupportsImageGeneration, m.SupportsEmbeddings, m.SupportsSpeech))],
+                    m.SupportsImageGeneration, m.SupportsEmbeddings, m.SupportsSpeech,
+                    m.SupportsReasoning))],
             p.UseResponsesApi);
 }

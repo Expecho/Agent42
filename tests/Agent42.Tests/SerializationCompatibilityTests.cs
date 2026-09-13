@@ -307,6 +307,11 @@ public sealed class SerializationCompatibilityTests
         Assert.Equal(expectedModel.SupportsImageGeneration, actualModel.SupportsImageGeneration);
         Assert.Equal(expectedModel.SupportsEmbeddings, actualModel.SupportsEmbeddings);
         Assert.Equal(expectedModel.SupportsSpeech, actualModel.SupportsSpeech);
+        // [Id(7)], ADR 0071. The frozen blob predates it, so this asserts the TRAILING-DEFAULT contract:
+        // an overlay persisted before the field existed must still deserialise, reading false. Both sides
+        // are false by construction (see the fixture comment) — that is the point, not a weak assertion.
+        Assert.Equal(expectedModel.SupportsReasoning, actualModel.SupportsReasoning);
+        Assert.False(actualModel.SupportsReasoning);
     }
 
     // AC2: Web Push subscriptions (ADR 0028).

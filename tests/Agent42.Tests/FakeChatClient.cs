@@ -53,10 +53,39 @@ public sealed partial class FakeChatClient : IChatClient
     /// </summary>
     public const string FaultingStreamMarker = "fault the stream";
 
+    /// <summary>
+    /// Prompt marker that makes the reply carry a <see cref="TextReasoningContent"/> part ahead of its
+    /// text, which is how a reasoning model streams (ADR 0071 — measured on the pinned stack: both a
+    /// chat-completions <c>delta.reasoning_content</c> and a Responses <c>reasoning_summary_text.delta</c>
+    /// surface as exactly that type).
+    ///
+    /// <para>Needed because this client's streaming path otherwise yields only <see cref="TextContent"/>
+    /// and <see cref="FunctionCallContent"/>, so the reasoning arm of <c>ProjectStreamedContent</c> — and
+    /// everything downstream of it — would be unreachable from a test.</para>
+    ///
+    /// <para>Honoured on BOTH paths, deliberately: the streaming one is the chat turn, and the
+    /// non-streaming one is <c>ReceiveReminder</c>, where the session is written just the same. The
+    /// live-only guarantee has to hold on both.</para>
+    /// </summary>
+    public const string ReasoningStreamMarker = "think out loud";
+
+    /// <summary>The reasoning text <see cref="ReasoningStreamMarker"/> produces.</summary>
+    public const string ReasoningText = "The user said hello, so I should greet them back.";
+
     private int _suggestionCalls;
 
     /// <summary>Number of follow-up-suggestion generation calls this (per-silo) client has served.</summary>
     public int SuggestionCalls => Volatile.Read(ref _suggestionCalls);
+
+    /// <summary>
+    /// The full prompt text the most recent follow-up-suggestion call was handed, or null if there has
+    /// been none since <see cref="Reset"/>.
+    ///
+    /// <para>A count alone cannot express what ADR 0071 needs: that the model's reasoning is not among the
+    /// text fed BACK to it by the suggestion helper. The helper is the only consumer of the grain's `reply`
+    /// accumulator, so this is where "reasoning never reached `reply`" becomes observable.</para>
+    /// </summary>
+    public string? LastSuggestionPrompt { get; private set; }
 
     /// <summary>
     /// Zeroes the counter. The cluster is deployed once per test CLASS rather than once per test, so this
@@ -67,6 +96,7 @@ public sealed partial class FakeChatClient : IChatClient
     {
         Volatile.Write(ref _suggestionCalls, 0);
         StampResponseCreatedAt = null;
+        LastSuggestionPrompt = null;
     }
 
     /// <summary>
@@ -95,6 +125,11 @@ public sealed partial class FakeChatClient : IChatClient
                     + string.Concat(ReplyChunks)),
             };
 
+        if (WantsReasoning(messages))
+        {
+            contents.Insert(0, new TextReasoningContent(ReasoningText));
+        }
+
         var reply = new ChatMessage(ChatRole.Assistant, contents);
         if (StampResponseCreatedAt is { } stamp)
         {
@@ -113,6 +148,7 @@ public sealed partial class FakeChatClient : IChatClient
             && (m.Text ?? "").Contains(SuggestionSystemMarker, StringComparison.Ordinal)))
         {
             Interlocked.Increment(ref _suggestionCalls);
+            LastSuggestionPrompt = string.Concat(list.Select(m => m.Text));
         }
 
         messages = list;
@@ -121,6 +157,16 @@ public sealed partial class FakeChatClient : IChatClient
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent> { call });
             yield break;
+        }
+
+        // Ahead of the echo, deliberately: a reasoning model thinks BEFORE it emits any reply text, and
+        // the echoes below are themselves TextContent. Emitted after the tool-call early-return above, so a
+        // tool-calling turn is unaffected.
+        if (WantsReasoning(list))
+        {
+            yield return new ChatResponseUpdate(ChatRole.Assistant,
+                new List<AIContent> { new TextReasoningContent(ReasoningText) });
+            await Task.Yield();
         }
 
         var echo = ToolsEcho(options) + RequestContextEcho() + TraceEcho() + InstructionsEcho(messages, options)
@@ -157,6 +203,12 @@ public sealed partial class FakeChatClient : IChatClient
             }
         }
     }
+
+    // True when the last user message asks for reasoning. Keyed off the USER message, not the whole
+    // conversation, so a reasoning turn does not make every later turn of the same chat reason too.
+    private static bool WantsReasoning(IEnumerable<ChatMessage> messages)
+        => messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text is { } text
+            && text.Contains(ReasoningStreamMarker, StringComparison.OrdinalIgnoreCase);
 
     // Surfaces the Orleans RequestContext identity seen at this terminal chat-client call site as a
     // [uctx:<user.id>] marker — this client runs *inside* the grain's streaming iteration, so the

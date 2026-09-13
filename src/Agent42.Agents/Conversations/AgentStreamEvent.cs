@@ -30,6 +30,21 @@ public enum AgentStreamEventType
     /// just before <see cref="Done"/>. The list rides on <see cref="AgentStreamEvent.Suggestions"/>.
     /// </summary>
     Suggestions,
+
+    /// <summary>
+    /// A fragment of the model's own reasoning ("thinking"), for a reasoning model that emits it
+    /// (ADR 0071). Carried on <see cref="AgentStreamEvent.Text"/> — the same property
+    /// <see cref="TextDelta"/> uses, because reasoning is only ever text and a dedicated field would
+    /// buy nothing.
+    ///
+    /// <para><b>Live-only, like <see cref="Suggestions"/>.</b> It is streamed and then discarded: never
+    /// appended to the reply, never written to the serialized session (the history provider strips it —
+    /// see <c>StripReasoningFromStorage</c>), never replayed by <c>renderTurns</c> on reload. Unlike
+    /// <see cref="Suggestions"/> it is NOT gated on the interactive path, because it costs no extra
+    /// model call — it already rides the turn's own stream — so there is no turn-scoped flag to
+    /// clear.</para>
+    /// </summary>
+    Reasoning,
 }
 
 /// <summary>

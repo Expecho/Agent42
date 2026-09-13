@@ -124,11 +124,17 @@ public static class GoldenStates
             [
                 new StoredProvider(
                     "mine", "OpenAICompatible", "My provider", "https://api.example/v1", "cipher-key",
-                    // The five capability bits alternate rather than all being true: five adjacent
+                    // The six capability bits alternate rather than all being true: six adjacent
                     // same-typed [Id]s are exactly where a renumbering swaps two values silently, and
                     // an all-true fixture could not tell a swap from a correct read.
+                    //
+                    // SupportsReasoning ([Id(7)], ADR 0071) is left FALSE deliberately, and must stay so:
+                    // the frozen blob in SerializationCompatibilityTests predates it and is never
+                    // regenerated, so it carries no [Id(7)] and deserialises the default. A true here
+                    // would fail that comparison while proving nothing about the numbering.
                     [new StoredModel("m1", "Model One", SupportsTools: true, SupportsVision: false,
-                        SupportsImageGeneration: true, SupportsEmbeddings: false, SupportsSpeech: true)],
+                        SupportsImageGeneration: true, SupportsEmbeddings: false, SupportsSpeech: true,
+                        SupportsReasoning: false)],
                     UseResponsesApi: true),
             ],
             Default: "mine:m1",

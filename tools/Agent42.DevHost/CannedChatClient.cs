@@ -56,7 +56,26 @@ public sealed partial class CannedChatClient : IChatClient
             yield break;
         }
 
-        var reply = BuildReply(messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text ?? "");
+        var prompt = messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text ?? "";
+
+        // Reasoning output (ADR 0071), so the collapsed "thinking" disclosure is exercisable offline.
+        // Gated on a prompt marker rather than emitted on every turn, so the ordinary offline reply keeps
+        // its existing shape and a test or a screenshot of it does not suddenly grow a disclosure.
+        //
+        // Streamed in pieces and AHEAD of the reply, which is what a real reasoning model does — one whole
+        // blob would not exercise the append-into-an-existing-element path renderReasoning takes on every
+        // delta after the first.
+        if (prompt.Contains(ReasoningMarker, StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var piece in ReasoningPieces)
+            {
+                yield return new ChatResponseUpdate(ChatRole.Assistant,
+                    new List<AIContent> { new TextReasoningContent(piece) });
+                await Task.Delay(140, cancellationToken);
+            }
+        }
+
+        var reply = BuildReply(prompt);
         foreach (var chunk in reply.Split(' ').Chunk(4).Select(words => string.Join(' ', words) + " "))
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
@@ -65,6 +84,22 @@ public sealed partial class CannedChatClient : IChatClient
 
         yield return new ChatResponseUpdate(ChatRole.Assistant, [BuildUsage(260, 180)]);
     }
+
+    /// <summary>Prompt marker that makes the canned reply stream reasoning ahead of its text.</summary>
+    private const string ReasoningMarker = "think";
+
+    /// <summary>
+    /// The canned "thinking", in deltas. Deliberately long enough to wrap, so the disclosure's scrolling
+    /// and wrapping are visible in the offline browser pass rather than just its summary line.
+    /// </summary>
+    private static readonly string[] ReasoningPieces =
+    [
+        "The user is asking a question, so first I should work out what they actually want. ",
+        "This looks like the canonical question rather than a specific technical one, ",
+        "which means the answer is the famous one and I should say so plainly. ",
+        "I will give the number, then add a little context about how this app stores conversations, ",
+        "since that is what the person running it offline is most likely checking.",
+    ];
 
     private static FunctionCallContent BuildReminderCall() =>
         new("canned-call-1", "schedule_prompt", new Dictionary<string, object?>
