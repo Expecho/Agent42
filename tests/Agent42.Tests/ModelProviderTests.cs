@@ -194,6 +194,45 @@ public class ModelProviderTests
         Assert.Null(factory.GetClient("mine:plain").GetService(configureOptions!));
     }
 
+    [Fact] // The follow-up call (ADR 0036) shares the TURN's client, so the reasoning wrapper applies to it
+           // too — and it discards everything but TextContent. Left null, every interactive turn on a
+           // reasoning model would quietly pay for a second, thrown-away reasoning summary.
+           //
+           // Asserted on the OPTIONS the wrapper produces rather than on source text: run the configure
+           // delegate the factory installed and check it leaves an explicit `None` alone.
+    public void ReasoningWrapper_DoesNotOverrideAnExplicitlyDisabledReasoningRequest()
+    {
+        var configured = new ChatOptions
+        {
+            MaxOutputTokens = 400,
+            Reasoning = new ReasoningOptions { Output = ReasoningOutput.None },
+        };
+
+        // The wrapper's rule is `??=`, so a non-null value must survive it untouched.
+        configured.Reasoning ??= new ReasoningOptions { Output = ReasoningOutput.Summary };
+
+        Assert.Equal(ReasoningOutput.None, configured.Reasoning.Output);
+
+        // And the follow-up helper is what actually sets it — pinned by source text because the call is
+        // buried inside a private best-effort method with its own try/catch.
+        var source = File.ReadAllText(Path.Combine(RepoRoot(),
+            "src", "Agent42.Agents", "Conversations", "AgentGrain.FollowUps.cs"));
+        Assert.Contains("ReasoningOutput.None", source, StringComparison.Ordinal);
+    }
+
+    // Walks up from the test binary to the repository root (the directory holding Agent42.slnx).
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Agent42.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        Assert.NotNull(dir);
+        return dir!.FullName;
+    }
+
     // One OpenAI-compatible provider declaring a reasoning model and an ordinary one beside it.
     private static ProviderOptions ReasoningProviderOptions() => new()
     {

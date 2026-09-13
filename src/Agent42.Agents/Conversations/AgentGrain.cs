@@ -754,17 +754,44 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     ///
     /// <para>Messages with no reasoning part are passed through by reference; only a message that actually
     /// carries one is rebuilt, so the common turn allocates nothing.</para>
+    ///
+    /// <para><b>A message left with ZERO parts is dropped, not stored empty.</b> On the Responses path a
+    /// reasoning summary arrives as its own output item, distinct from the message item, so it can coalesce
+    /// into a <see cref="ChatMessage"/> of its own — and stripping that one's only part would leave an empty
+    /// message in the session, replayed to the provider on every later turn. An OpenAI-compatible endpoint
+    /// rejects an empty message outright, which bricks the conversation; a fake answers it happily, which is
+    /// why this is the same defect AC11 (<c>NoVisionModel_ImageOnlyTurn_StillReplies_AndSendsNoImage</c>)
+    /// exists to catch on the image-stripping path. That path keeps a placeholder because the user's turn
+    /// must stay visible; here there is nothing to show, so dropping is right.</para>
+    ///
+    /// <para>An ALREADY-empty message is passed through untouched rather than swept up — this filter owns
+    /// reasoning, and silently changing an unrelated invariant is how a strip becomes a second bug.</para>
     /// </summary>
-    private static readonly Func<IEnumerable<ChatMessage>, IEnumerable<ChatMessage>> StripReasoningFromStorage =
-        messages => messages.Select(m => m.Contents.Any(c => c is TextReasoningContent)
-            ? new ChatMessage(m.Role, m.Contents.Where(c => c is not TextReasoningContent).ToList())
+    private static IEnumerable<ChatMessage> StripReasoningFromStorage(IEnumerable<ChatMessage> messages)
+    {
+        foreach (var message in messages)
+        {
+            if (!message.Contents.Any(c => c is TextReasoningContent))
             {
-                AuthorName = m.AuthorName,
-                CreatedAt = m.CreatedAt,
-                MessageId = m.MessageId,
-                AdditionalProperties = m.AdditionalProperties,
+                yield return message;
+                continue;
             }
-            : m);
+
+            var kept = message.Contents.Where(c => c is not TextReasoningContent).ToList();
+            if (kept.Count == 0)
+            {
+                continue;
+            }
+
+            yield return new ChatMessage(message.Role, kept)
+            {
+                AuthorName = message.AuthorName,
+                CreatedAt = message.CreatedAt,
+                MessageId = message.MessageId,
+                AdditionalProperties = message.AdditionalProperties,
+            };
+        }
+    }
 
     // An ephemeral turn (ADR 0034) runs the model but never writes its session item, so the
     // conversation leaves no trace in Cosmos — the incognito guarantee. Skip the whole serialize.

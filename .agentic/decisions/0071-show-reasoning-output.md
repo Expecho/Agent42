@@ -83,6 +83,18 @@ response-side twin of the `StorageInputRequestMessageFilter` that already exclud
 in the same options block, so this is an existing shape rather than a new mechanism. It rebuilds only a
 message that actually carries a reasoning part and passes every other message through by reference.
 
+The request filter has **two** sites; the response filter deliberately has one. `RecordImageTurnAsync`'s
+adapter runs `ImageGenerationChatClient`, which returns the contents it was constructed with and cannot
+produce reasoning, so a filter there would be inert — and an inert filter that looks load-bearing is its own
+trap. A comment at that site records the asymmetry rather than leaving the next reader to rediscover it.
+
+**A message the strip would leave with ZERO parts is dropped, not stored empty.** On the Responses path the
+reasoning summary is its own output item, so it can coalesce into a message of its own — and an empty message
+is rejected outright by an OpenAI-compatible endpoint, bricking the conversation. This is the AC11 defect
+(`NoVisionModel_ImageOnlyTurn_StillReplies_AndSendsNoImage`) in a new place, and it needed a second fake
+shape (`ReasoningOnlyStreamMarker`) to be reachable from a test at all, because the chat-completions shape
+merges reasoning into a message that also carries text.
+
 It must be a **storage filter, not a check in `ProjectStreamedContent`**: the projection cannot reach the
 session at all. Agent Framework fills the session from the response message independently of what we project.
 
@@ -173,6 +185,14 @@ Keeping it out of `reply` *removes* content that would otherwise have been re-se
 session persisted before this ships stays as it is until its next turn re-serializes. Bounded and self-healing
 on any active chat; named here rather than migrated.
 
+**One claim here is reasoned, not measured.** "Nothing downstream wants the reasoning back" is *measured*
+for chat-completions providers, which document that `reasoning_content` must not be echoed into the next
+request. For the **Responses** path it is an inference: stateless is mandatory (ADR 0014), and a bare
+reasoning item sent without its follower is what 400s — which is the failure `includeReasoningEncryptedContent`
+exists to avoid and which this branch keeps `false`. Dropping is the safe direction, but the multi-turn
+Foundry case sits behind the same prod-only residual as the rest of the Foundry half, and this sentence
+should not be read as measured.
+
 **It still reaches `/logs` in full** (ADR 0054), which captures span content regardless — as it does for every
 other kind of conversation content.
 
@@ -192,14 +212,16 @@ lifting the `OpenAI` 2.12.0 pin.
 ## Verification
 
 `dotnet build Agent42.slnx` clean, `dotnet format --verify-no-changes` clean, `dotnet test Agent42.slnx` —
-**1303/1303 green** (1293 before this branch), including under `--collect:"XPlat Code Coverage"`.
-New-code coverage **100.0% (47/47 lines, threshold 80)**.
+**1306/1306 green**, including under `--collect:"XPlat Code Coverage"`. The baseline was measured by
+checking out `9be5e04` and running the suite there: **1284**, so this branch adds **22 test cases** (21 new
+`[Fact]`/`[Theory]` methods, one of which is a two-case `[Theory]`).
 
-**Tests.** 5 in `tests/Agent42.Tests/ReasoningStreamTests.cs` (AC1 and the two Step-1 measurements, with a
-negative control proving no `reasoning` field is sent when none is asked for); 4 in `AgentGrainTests.cs`
-(AC2 on both run paths, AC2b, AC3); 1 in `AgentApiTests.cs` (AC4 — the wire shape); 2 in
-`ModelProviderTests.cs` (AC5, helper and call site); 1 in `ProvidersApiTests.cs` (AC6); 6 in
-`ReasoningAssetsTests.cs` (AC7, plus the ADR 0046 recovery guard); AC8 and AC10 extend existing tests.
+**Tests.** 4 methods / 5 cases in `tests/Agent42.Tests/ReasoningStreamTests.cs` (AC1 and the two Step-1
+measurements, with a negative control proving no `reasoning` field is sent when none is asked for); 5 in
+`AgentGrainTests.cs` (AC2 on both run paths, AC2b, AC3, and the reasoning-only-message drop); 1 in
+`AgentApiTests.cs` (AC4 — the wire shape); 3 in `ModelProviderTests.cs` (AC5 helper and call site, plus the
+follow-up opt-out); 1 in `ProvidersApiTests.cs` (AC6); 7 in `ReasoningAssetsTests.cs` (AC7, the
+every-tail settle, and the `capDefs` ↔ destructuring pairing); AC8 and AC10 extend existing tests.
 
 **Mutation-checked**, five times, because each guard is the only thing holding a decision in place:
 
@@ -209,7 +231,8 @@ negative control proving no `reasoning` field is sent when none is asked for); 4
 | `RequestsReasoning(…)` → hardcoded `false` | AC5 call-site test fails |
 | `RequestsReasoning(…)` → hardcoded `true` | AC5 call-site test fails (the control catches it) |
 | Add `voice.onDelta(chunk.text)` to the reasoning arm | AC7 no-speak test fails |
-| Remove `finishReasoning` from `recoverPersistedReply` | the ADR 0046 recovery guard fails |
+| Remove `finishReasoning` from the `finally` | the every-tail settle guard fails |
+| Remove the empty-message drop from the strip | `ReasoningOnlyMessage_IsDropped_NotStoredEmpty` fails on `[emptymsg:0]` — an empty message really does reach the model |
 
 **A test-authoring trap worth naming:** the negative assertions in `ReasoningAssetsTests` are tripped by the
 *comments* in the code under test, which name `voice.onDelta` and `innerHTML` in order to say "not these".
@@ -231,6 +254,15 @@ gained a prompt-marker reasoning stream), **17/17 checks**, both themes:
 - the provider dialog renders **6** capability checkboxes, labels
   `[tools, vision, image gen, embeddings, speech, reasoning]`, reasoning **last** — which is what pins
   `capDefs` against the positional destructuring in `collectModels`.
+
+**The barge-in tail was measured too**, because it is the one `finishReasoning` call site a source-text
+guard can only approximate. Driving `sendAbort.abort()` mid-stream — exactly what voice.js does — the
+disclosure went from `{running: True, summary: "Thinking…"}` to
+`{running: False, doneCls: True, summary: "Thought process", err: False}`: settled, and not painted as an
+error.
+
+Also measured after the marker was made a phrase: `"what do you think about 42"` streams **no** reasoning
+event, while `"think out loud about 42"` does — the false-positive the bare `"think"` marker would have had.
 
 The browser pass also caught a defect no assertion would have: `▸`/`▾` are **not in the mono font stack** and
 fell back to a dot, so the expand affordance read as a bullet. The marker is now drawn with CSS borders and

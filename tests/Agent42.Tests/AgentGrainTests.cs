@@ -198,6 +198,42 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.DoesNotContain(ReasoningPartDiscriminator, session!, StringComparison.Ordinal);
     }
 
+    // The case the first implementation got wrong, and the AC11 defect in a new place: a reasoning summary
+    // that arrives as its OWN message (the Responses shape — a separate output item, which is exactly what
+    // the fixture in ReasoningStreamTests replays) has nothing but a reasoning part. Stripping it leaves a
+    // message with ZERO content parts, which stays in the session and is replayed to the provider on every
+    // later turn — and a real OpenAI-compatible endpoint rejects an empty message outright, bricking the
+    // conversation. The fake would answer it happily, so [emptymsg:N] is the only thing that can see it.
+    //
+    // The chat-completions shape (reasoning and text in ONE message) cannot reach this state, which is why
+    // the fake needs a second marker to reproduce it at all.
+    [Fact]
+    public async Task ReasoningOnlyMessage_IsDropped_NotStoredEmpty()
+    {
+        const string Key = "reasoning-user/reasoning-only";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        var first = await CollectAsync(
+            agent.ChatAsync($"hi, {FakeChatClient.ReasoningOnlyStreamMarker}", null));
+
+        // Guards the rest from passing vacuously: the turn really did stream reasoning on its own message.
+        Assert.Contains(first, e => e.Type == AgentStreamEventType.Reasoning);
+
+        // Turn 2 replays turn 1's stored messages to the model. THE load-bearing assertion.
+        var answer = Answer(await CollectAsync(agent.ChatAsync("and now?", null)));
+        Assert.Contains("[emptymsg:0]", answer);
+
+        // The reasoning is gone from the session rather than merely emptied out.
+        var session = (await SessionStateOf(Key)).SerializedSession;
+        Assert.NotNull(session);
+        Assert.DoesNotContain(FakeChatClient.ReasoningText, session!, StringComparison.Ordinal);
+        Assert.DoesNotContain(ReasoningPartDiscriminator, session!, StringComparison.Ordinal);
+
+        // ... and the reply it accompanied survived, so this is not a test of a dropped turn.
+        var history = await agent.GetHistoryAsync();
+        Assert.Contains(history, t => t.Role == "assistant" && t.Text.Contains("Hello!", StringComparison.Ordinal));
+    }
+
     // AC2b — a DIFFERENT property from AC2, and not a persistence one. `reply` feeds the ADR 0036 follow-up
     // call, so reasoning appended there would be re-sent to the model as if the assistant had said it: extra
     // third-party egress (ADR 0013) of the model's private deliberation, rather than a stored-data bug.

@@ -40,7 +40,7 @@ public sealed class ReasoningAssetsTests(StaticAssetsServerFixture fixture)
     {
         var app = await fixture.GetAppScriptAsync();
 
-        var render = CodeOnly(Section(app, "export function renderReasoning", "export function finishReasoning"));
+        var render = CodeOnly(StaticAssetsServerFixture.Body(app, "export function renderReasoning"));
         Assert.Contains("textContent", render);
         Assert.DoesNotContain("innerHTML", render);
     }
@@ -77,7 +77,7 @@ public sealed class ReasoningAssetsTests(StaticAssetsServerFixture fixture)
     {
         var app = await fixture.GetAppScriptAsync();
 
-        var render = CodeOnly(Section(app, "export function renderReasoning", "export function finishReasoning"));
+        var render = CodeOnly(StaticAssetsServerFixture.Body(app, "export function renderReasoning"));
         // msg.querySelector, never document.querySelector — the latter would find the FIRST disclosure in
         // the whole thread and stream every later turn's thinking into the earliest reply.
         Assert.Contains("msg.querySelector", render);
@@ -85,20 +85,56 @@ public sealed class ReasoningAssetsTests(StaticAssetsServerFixture fixture)
     }
 
     /// <summary>
-    /// A turn recovered after its stream died (ADR 0046) still settles the disclosure.
+    /// Every tail settles the disclosure, not just the happy one.
     ///
-    /// <para>The <c>done</c> event that normally closes it went down with the socket, but the turn itself
-    /// completed — so without this a recovered reply sits under a pulsing "Thinking…" forever. Scoped to
-    /// the recovery function, because <c>finishReasoning</c> is legitimately called from the done arm
-    /// too and an unscoped assertion would pass on that one alone.</para>
+    /// <para><c>done</c> closes it when the turn completes normally, but three other tails never see a
+    /// <c>done</c>: a voice barge-in (<c>AbortError</c>, ADR 0037), a stream that died and was recovered
+    /// (ADR 0046), and an outright failure. Each would otherwise leave a pulsing "Thinking…" above a reply
+    /// that is finished, interrupted or errored — permanently, since reasoning is never persisted and so
+    /// never replayed.</para>
+    ///
+    /// <para>The <c>finally</c> is the only construct that covers all four, so that is what this pins —
+    /// scoped to the block, because <c>finishReasoning</c> is legitimately called from the done arm too and
+    /// an unscoped assertion would pass on that one alone.</para>
     /// </summary>
     [Fact]
-    public async Task RecoveredTurn_SettlesTheReasoningDisclosure()
+    public async Task EveryStreamTail_SettlesTheReasoningDisclosure()
     {
         var app = await fixture.GetAppScriptAsync();
 
-        var recover = CodeOnly(Section(app, "async function recoverPersistedReply", "export async function send"));
-        Assert.Contains("finishReasoning", recover);
+        var tail = CodeOnly(Section(app, "  } finally {", "export function wireSend"));
+        Assert.Contains("finishReasoning", tail);
+    }
+
+    /// <summary>
+    /// The providers UI lets a user flag a model as reasoning, and it is sent on save — copying the
+    /// <c>ProvidersForm_HasImageGenerationFlag</c> shape.
+    ///
+    /// <para><b>The second half is the one that matters.</b> <c>collectModels</c> reads the checkboxes by
+    /// POSITIONAL destructuring of <c>querySelectorAll(".agent-form__checkbox")</c>, paired by ORDER with
+    /// the <c>capDefs</c> array that renders them. Add a flag to one and not the other, or at a different
+    /// index, and every flag after the insertion point silently reads the wrong box — a model saved as
+    /// "speech" comes back as "embeddings". Nothing else in the suite pins that pairing; until now it was
+    /// covered only by a manual browser pass.</para>
+    /// </summary>
+    [Fact]
+    public async Task ProvidersForm_HasReasoningFlag_AndSendsIt()
+    {
+        var app = await fixture.GetAppScriptAsync();
+
+        var addModelRow = StaticAssetsServerFixture.Body(app, "function addModelRow(model)");
+        Assert.Contains("model?.supportsReasoning", addModelRow);
+        Assert.Contains("reasoning", addModelRow);
+
+        var collectModels = StaticAssetsServerFixture.Body(app, "function collectModels()");
+        Assert.Contains("supportsReasoning: reasoning.checked", collectModels);
+
+        // The pairing itself: `reasoning` must be the SIXTH name destructured, matching capDefs' sixth
+        // entry. A name bound at the wrong index compiles, renders and saves — just wrongly.
+        Assert.Contains(
+            "const [tools, vision, image, embed, speech, reasoning] =",
+            CodeOnly(collectModels),
+            StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -136,9 +172,16 @@ public sealed class ReasoningAssetsTests(StaticAssetsServerFixture fixture)
             }));
 
     /// <summary>
-    /// The slice of <paramref name="source"/> between two markers. Returns a bounded region so an
-    /// assertion about one dispatch arm cannot be satisfied — or broken — by an unrelated part of the file.
-    /// Asserts both markers are found, so a rename fails loudly instead of silently searching "".
+    /// The slice of <paramref name="source"/> between two markers.
+    ///
+    /// <para>A last resort, used only for the two regions <see cref="StaticAssetsServerFixture.Body"/>
+    /// cannot express — a single arm of an <c>if</c>/<c>else</c> chain, and a <c>finally</c> block. Both
+    /// are sub-regions of a function body rather than a braced declaration, so the canonical brace-depth
+    /// extractor has nothing to anchor on. Every WHOLE-function assertion here uses <c>Body</c>, which is
+    /// strictly stronger: this one depends on the two markers still being adjacent in the concatenated
+    /// corpus, and silently widens if something is inserted between them.</para>
+    ///
+    /// <para>Asserts both markers are found, so a rename fails loudly instead of silently searching "".</para>
     /// </summary>
     private static string Section(string source, string from, string to)
     {

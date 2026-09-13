@@ -76,11 +76,6 @@ async function recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)
       // An assistant turn may carry a generated image (ADR 0020) — the live `image` event for it
       // went down with the stream, so re-render from the history exactly as a reload would.
       for (const att of last.attachments ?? []) addAgentImage(agentMsg, convId, att.id, att.fileName);
-      // Settle the reasoning disclosure (ADR 0071). The turn IS finished — the stream died, the turn
-      // did not — but the `done` event that normally closes it went down with the socket, so without
-      // this a recovered turn keeps a pulsing "Thinking…" above a complete reply. Reasoning itself is
-      // not recoverable (it is never persisted); what was streamed before the drop stays as it is.
-      finishReasoning(agentMsg);
       cachePut("messages:" + convId, turns); // keep the offline mirror in step (ADR 0032)
       return true;
     }
@@ -194,8 +189,8 @@ export async function send(prompt) {
           // Up to 3 clickable follow-up prompts under the reply; clicking one sends it immediately.
           renderSuggestions(agentMsg, chunk.suggestions);
         } else if (chunk.type === "done") {
-          // Settle the reasoning disclosure before the usage line: the turn is over, so its summary must
-          // stop saying "Thinking…". A no-op on a turn that never reasoned.
+          // Settled here as well as in the finally: the disclosure should stop pulsing the moment the
+          // turn reports done, not one microtask later when the reader drains.
           finishReasoning(agentMsg);
           showUsage(agentMsg, chunk);
         }
@@ -237,6 +232,13 @@ export async function send(prompt) {
       setAgentMarkdown(agentMsg, `**Transmission failed.** ${err.message ?? err}`);
     }
   } finally {
+    // Settle the reasoning disclosure here, not in each tail (ADR 0071). `done` closes it on the happy
+    // path, but there are three others that never see a `done`: a voice barge-in (AbortError, ADR 0037),
+    // a stream that died and was recovered (ADR 0046), and an outright failure. Each would otherwise
+    // leave a pulsing "Thinking…" above a reply that is finished, interrupted or errored — and nothing
+    // heals it, since reasoning is never persisted and so never replayed. A no-op on a turn that never
+    // reasoned, and idempotent, so the `done` arm calling it first costs nothing.
+    finishReasoning(agentMsg);
     document.removeEventListener("visibilitychange", onVisibilityChange);
     sendAbort = null;
     streaming = false;

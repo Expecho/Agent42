@@ -171,6 +171,13 @@ public sealed partial class AgentGrain
                 ChatHistoryProvider = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
                 {
                     StorageInputRequestMessageFilter = ExcludeInjectedContextMessages,
+
+                    // NO StorageInputResponseMessageFilter here, unlike BuildAgent's block (ADR 0071).
+                    // That one strips reasoning from the model's response; this adapter's "response" comes
+                    // from ImageGenerationChatClient, which returns the image contents it was constructed
+                    // with and can never produce a TextReasoningContent. Prior turns in the deserialized
+                    // session were already stripped on the way in, so there is nothing for it to do.
+                    // Stated rather than mirrored: an inert filter that looks load-bearing is its own trap.
                 }),
             });
 

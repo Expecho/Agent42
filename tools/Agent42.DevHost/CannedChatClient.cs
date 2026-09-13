@@ -85,8 +85,12 @@ public sealed partial class CannedChatClient : IChatClient
         yield return new ChatResponseUpdate(ChatRole.Assistant, [BuildUsage(260, 180)]);
     }
 
-    /// <summary>Prompt marker that makes the canned reply stream reasoning ahead of its text.</summary>
-    private const string ReasoningMarker = "think";
+    /// <summary>
+    /// Prompt marker that makes the canned reply stream reasoning ahead of its text. A PHRASE, matching the
+    /// idiom of the test fake's markers ("fault the stream", "stream slowly"): a bare "think" would fire on
+    /// an ordinary "what do you think…", which is precisely what gating on a marker is meant to avoid.
+    /// </summary>
+    private const string ReasoningMarker = "think out loud";
 
     /// <summary>
     /// The canned "thinking", in deltas. Deliberately long enough to wrap, so the disclosure's scrolling

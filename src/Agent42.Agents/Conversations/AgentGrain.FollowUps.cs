@@ -37,8 +37,20 @@ public sealed partial class AgentGrain
             };
 
             var text = new StringBuilder();
+            // Reasoning is switched OFF explicitly, not left null (ADR 0071). The factory wraps a declared
+            // reasoning model's client in a ConfigureOptions that does `Reasoning ??= Summary`, and that
+            // client is SHARED with the turn — so a null here would silently make every interactive turn on
+            // a reasoning model pay for a second reasoning summary whose tokens this loop then discards
+            // (it appends TextContent only). Measured: Output = None sends no `reasoning` field at all, the
+            // same request as omitting it, so this costs nothing on a non-reasoning model.
+            var options = new ChatOptions
+            {
+                MaxOutputTokens = 400,
+                Reasoning = new ReasoningOptions { Output = ReasoningOutput.None },
+            };
+
             await foreach (var update in _chatClientFactory.GetClient(_modelId)
-                .GetStreamingResponseAsync(messages, new ChatOptions { MaxOutputTokens = 400 }))
+                .GetStreamingResponseAsync(messages, options))
             {
                 foreach (var content in update.Contents)
                 {

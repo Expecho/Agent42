@@ -3150,7 +3150,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   The practical consequences, which need **separate** tests because they fail separately:
   1. **To keep a content part out of storage, filter it at the history provider** —
      `InMemoryChatHistoryProviderOptions.StorageInputResponseMessageFilter`, the response-side twin of the
-     `StorageInputRequestMessageFilter` already used there for injected context messages. A check inside
+     `StorageInputRequestMessageFilter` used for injected context messages. Note the request filter has
+     **two** sites (`BuildAgent` and `RecordImageTurnAsync`) while the response filter has one — the
+     image-turn adapter's client cannot emit reasoning, and a comment there says so. A check inside
      `ProjectStreamedContent` cannot reach the session at all. Measured on Agent Framework 1.19: without
      the filter a `TextReasoningContent` round-trips as `{"$type":"reasoning","text":"…"}` on **both** the
      streaming and the `RunAsync` (reminder) path.

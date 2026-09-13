@@ -69,6 +69,24 @@ public sealed partial class FakeChatClient : IChatClient
     /// </summary>
     public const string ReasoningStreamMarker = "think out loud";
 
+    /// <summary>
+    /// Prompt marker that streams the reasoning as its <b>own message</b> — carrying a distinct
+    /// <c>MessageId</c>, so the coalescer does not merge it into the reply text.
+    ///
+    /// <para>This is the shape the <b>Responses</b> path really produces: a reasoning summary arrives as a
+    /// separate output item (<c>rs_…</c>) from the message item (<c>msg_…</c>) — see the fixture in
+    /// <c>ReasoningStreamTests</c>. <see cref="ReasoningStreamMarker"/> above produces the other shape, one
+    /// message carrying both parts, which is what chat-completions <c>reasoning_content</c> gives.</para>
+    ///
+    /// <para>The distinction is load-bearing and not cosmetic: only THIS shape can leave a message with zero
+    /// content parts once reasoning is stripped, and an empty message is rejected outright by a real
+    /// OpenAI-compatible endpoint (the AC11 defect, see
+    /// <c>NoVisionModel_ImageOnlyTurn_StillReplies_AndSendsNoImage</c>). Without a lever for it the case is
+    /// structurally untestable, because the fake would only ever merge reasoning into a message that also
+    /// carries text.</para>
+    /// </summary>
+    public const string ReasoningOnlyStreamMarker = "think separately";
+
     /// <summary>The reasoning text <see cref="ReasoningStreamMarker"/> produces.</summary>
     public const string ReasoningText = "The user said hello, so I should greet them back.";
 
@@ -161,11 +179,11 @@ public sealed partial class FakeChatClient : IChatClient
 
         // Ahead of the echo, deliberately: a reasoning model thinks BEFORE it emits any reply text, and
         // the echoes below are themselves TextContent. Emitted after the tool-call early-return above, so a
-        // tool-calling turn is unaffected.
-        if (WantsReasoning(list))
+        // tool-calling turn is unaffected. The branching lives in ReasoningUpdates — extracted because
+        // inlining it takes this method past the S3776 threshold of 15, which is at `error` severity.
+        foreach (var update in ReasoningUpdates(list))
         {
-            yield return new ChatResponseUpdate(ChatRole.Assistant,
-                new List<AIContent> { new TextReasoningContent(ReasoningText) });
+            yield return update;
             await Task.Yield();
         }
 
@@ -207,8 +225,44 @@ public sealed partial class FakeChatClient : IChatClient
     // True when the last user message asks for reasoning. Keyed off the USER message, not the whole
     // conversation, so a reasoning turn does not make every later turn of the same chat reason too.
     private static bool WantsReasoning(IEnumerable<ChatMessage> messages)
-        => messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text is { } text
-            && text.Contains(ReasoningStreamMarker, StringComparison.OrdinalIgnoreCase);
+        => LastUserText(messages) is { } text
+            && (text.Contains(ReasoningStreamMarker, StringComparison.OrdinalIgnoreCase)
+                || text.Contains(ReasoningOnlyStreamMarker, StringComparison.OrdinalIgnoreCase));
+
+    // The reasoning updates for this request, or nothing when none was asked for.
+    //
+    // With no MessageId the update coalesces INTO the reply message (the chat-completions
+    // `reasoning_content` shape); with one, it becomes a message of its OWN (the Responses shape, where the
+    // summary is a separate output item) — and that is the only shape that can end up with zero content
+    // parts once reasoning is stripped. Both are reachable, by two different markers.
+    private static IEnumerable<ChatResponseUpdate> ReasoningUpdates(IReadOnlyList<ChatMessage> messages)
+    {
+        if (!WantsReasoning(messages))
+        {
+            yield break;
+        }
+
+        var separate = SeparateReasoningMessage(messages);
+        yield return new ChatResponseUpdate(ChatRole.Assistant,
+            new List<AIContent> { new TextReasoningContent(ReasoningText) })
+        {
+            MessageId = separate ? "reasoning-only-1" : null,
+        };
+
+        if (separate)
+        {
+            // Close the reasoning message so the reply below starts a new one.
+            yield return new ChatResponseUpdate(ChatRole.Assistant, []) { MessageId = "reply-1" };
+        }
+    }
+
+    // True when the reasoning should ride a message of its own rather than the reply's.
+    private static bool SeparateReasoningMessage(IEnumerable<ChatMessage> messages)
+        => LastUserText(messages)?.Contains(ReasoningOnlyStreamMarker, StringComparison.OrdinalIgnoreCase)
+            == true;
+
+    private static string? LastUserText(IEnumerable<ChatMessage> messages)
+        => messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text;
 
     // Surfaces the Orleans RequestContext identity seen at this terminal chat-client call site as a
     // [uctx:<user.id>] marker — this client runs *inside* the grain's streaming iteration, so the
