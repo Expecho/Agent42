@@ -577,7 +577,33 @@ recorded because the spec was the cold handoff and a future reader should not ha
    no `.gitattributes`), which `dotnet format` rejects as whitespace errors. All touched files were
    normalized to CRLF; worth knowing before scripting edits in this repo.
 
-### The step that was NOT completed
-**Step 7's DevHost browser leg was not run** — no browser driver was available in this session. Every
-automated gate passes, but the drag-and-drop path has never been exercised in a browser, and ADR 0073
-records that as its largest residual rather than implying coverage that does not exist.
+8. **AC14 shipped narrower than written.** The plan asked the binary path to "carry the new fields
+   too", naming `GoldenStates.cs`. What shipped asserts only the *absent* direction on the committed
+   pre-groups blob (`Groups` empty, `GroupId` null) and deliberately does **not** extend
+   `GoldenStates.ConversationIndex()`, because a golden that is regenerated to match the code can never
+   fail. The forward direction is covered where it actually matters — the Cosmos JSON path, in
+   `ChatGroups_RoundTripThroughTheCosmosSerializer`. Narrower than the wording, and better; recorded
+   rather than quietly counted as satisfied.
+
+9. **Two findings from the post-diff critic were mine and are corrected in this branch**: the claim
+   that `renderSidebar` "measured exactly 15 cognitive complexity" was **false and unmeasurable** (it is
+   JavaScript; S3776 is `[*.cs]`-scoped and there is no JS linter here), and a custom group's
+   rename/delete were **inert on touch** because `buildChatGroup` never wired the press-and-hold — the
+   CSS for it existed but nothing could ever match it. The first is corrected across three docs and six
+   comments; the second is fixed by sharing `wireRowReveal`, with reorder-on-touch recorded as a gap.
+
+### Step 7's browser leg — initially skipped, then run
+It was first recorded as not done ("no browser driver available"). That was wrong: Chrome was present
+at the standard Windows path, and the leg was run over CDP with Node 22's built-in WebSocket (no
+dependency). **21/21** on the UI leg, **9/9** on the drag leg; ADR 0073 carries the measured values.
+
+The single most valuable result is that the drag gate's premise — that `draggable`, set in
+`pointerdown`, is re-read by the browser at drag initiation — **is confirmed rather than assumed**,
+and that a filed chat leaves **zero** rows in the top-level walk (the runtime half of the hoist trap
+that no source-text guard can prove).
+
+Two harness mistakes are worth carrying, because both looked exactly like product failures:
+the first run reported the row at **`x: -244`** — the viewport was at or under 760px, so the sidebar
+was an off-canvas drawer and every synthetic mouse event missed it (the ADR 0052 lever note, met
+live); and the post-drop assertion read an **empty** group because `renderSidebar` rebuilds every
+node, leaving the captured element a detached subtree. Neither was a bug in the feature.

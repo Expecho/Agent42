@@ -51,7 +51,7 @@ public sealed class RowActionsRevealAssetsTests
         var row = StaticAssetsServerFixture.Body(app, "export function buildConvRow(conv, hoisted, grouped)");
         Assert.Contains("wireRowReveal(li, btn)", row);
 
-        var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn)");
+        var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn, listenOn = li)");
         Assert.Contains("pointerdown", wire);
         Assert.Contains("is-revealed", wire);
         Assert.Contains("LONG_PRESS_MS", wire);
@@ -87,7 +87,7 @@ public sealed class RowActionsRevealAssetsTests
     {
         var app = await _fixture.GetAppScriptAsync();
 
-        var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn)");
+        var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn, listenOn = li)");
         Assert.Contains("e.pointerType === \"mouse\"", wire);
     }
 
@@ -101,7 +101,7 @@ public sealed class RowActionsRevealAssetsTests
         var app = await _fixture.GetAppScriptAsync();
         var css = await _client.GetStringAsync("/styles.css");
 
-        var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn)");
+        var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn, listenOn = li)");
         Assert.Contains("pointermove", wire);
         Assert.Contains("pointercancel", wire);
         Assert.Contains("LONG_PRESS_SLOP_PX", wire);
@@ -121,7 +121,7 @@ public sealed class RowActionsRevealAssetsTests
     {
         var app = await _fixture.GetAppScriptAsync();
 
-        var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn)");
+        var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn, listenOn = li)");
         Assert.Contains("btn.addEventListener(\"click\"", wire);
         Assert.DoesNotContain("li.addEventListener(\"click\"", wire);
         Assert.Contains("swallowNextClick", wire);
@@ -141,7 +141,7 @@ public sealed class RowActionsRevealAssetsTests
         var render = StaticAssetsServerFixture.Body(app, "export function renderSidebar()");
         Assert.Contains("clearReveal();", render);
 
-        var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn)");
+        var wire = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn, listenOn = li)");
         Assert.Contains("!revealedRow.contains(ev.target)", wire);
 
         // Registered at most once, guarded on the handle rather than relying on self-removal, so repeated

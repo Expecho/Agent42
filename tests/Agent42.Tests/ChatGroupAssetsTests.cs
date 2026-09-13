@@ -24,8 +24,8 @@ public sealed class ChatGroupAssetsTests
 
     // AC16: the three passes run in order — pinned block, then the user's custom groups, then the agent
     // walk. Order is asserted on the CALL SITES rather than on the passes' bodies, because the passes are
-    // separate functions: renderSidebar measured exactly at the S3776 ceiling with two of them, so a
-    // third had to be extracted or the build would fail.
+    // separate functions (extracted for readability; nothing in this repo scores JavaScript complexity,
+    // whatever ADR 0073's first draft claimed).
     [Fact]
     public async Task RenderSidebar_CallsThePassesInOrder()
     {
@@ -171,14 +171,40 @@ public sealed class ChatGroupAssetsTests
     {
         var app = await _fixture.GetAppScriptAsync();
 
-        var reveal = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn)");
+        var reveal = StaticAssetsServerFixture.Body(app, "function wireRowReveal(li, btn, listenOn = li)");
         Assert.Contains("li.draggable = e.pointerType === \"mouse\"", reveal);
 
+        // A custom group arms the same way, through the SAME function rather than a copy of the rule.
         var group = StaticAssetsServerFixture.Body(app, "export function buildChatGroup(group, convs)");
-        Assert.Contains("li.draggable = e.pointerType === \"mouse\"", group);
+        Assert.Contains("wireRowReveal(li, header, header)", group);
 
         // The gate that must never appear: a media query would get the hybrid device wrong.
         Assert.DoesNotContain("pointer: fine", app);
+    }
+
+    // A custom group's rename and delete are hover-reveals, so on a phone they are opacity: 0 and
+    // pointer-events: none until the ADR 0052 press-and-hold marks the group .is-revealed. Without a
+    // gesture wired to the group they would be inert FOREVER there — the gap ADR 0045 explicitly refused
+    // to ship for the conversation rows ("pinning impossible on the installed PWA while unpinning
+    // worked"), one level up. The CSS for it is only reachable because buildChatGroup wires the reveal.
+    [Fact]
+    public async Task GroupActions_AreReachableOnTouch()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+        var group = StaticAssetsServerFixture.Body(app, "export function buildChatGroup(group, convs)");
+
+        Assert.Contains("wireRowReveal(li, header, header)", group);
+
+        // Listening on the HEADER, not the <li>, is the load-bearing half: the <li> contains the group's
+        // conversation rows, and both timers fire at 400 ms with the outer listener running LAST — so an
+        // <li>-scoped listener makes a long press on a row inside a group reveal the group instead.
+        var reveal = StaticAssetsServerFixture.Body(app, "export function wireRowReveal(li, btn, listenOn = li)");
+        Assert.Contains("listenOn.addEventListener(\"pointerdown\"", reveal);
+        Assert.DoesNotContain("li.addEventListener(\"pointerdown\"", reveal);
+
+        var css = await _client.GetStringAsync("/styles.css");
+        var touchBlock = css[css.IndexOf("@media (hover: none)", StringComparison.Ordinal)..];
+        Assert.Contains(".conv-group--custom.is-revealed .conv-group__action", touchBlock);
     }
 
     // AC25: the drag listeners are delegated on the list, never wired per row. wireGroups() runs from

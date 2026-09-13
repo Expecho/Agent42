@@ -6,9 +6,10 @@ namespace Agent42.Backend;
 /// Custom conversation groups (ADR 0073): the user's own named, manually ordered groupings of chats,
 /// plus the one route that files a conversation into one.
 ///
-/// <para>A group of its own rather than six more lambdas in <see cref="MapConversationEndpoints"/>:
-/// that method is already close to the cognitive-complexity ceiling (S3776, threshold 15 — a build
-/// error, ADR 0051), and a feature's endpoints belong beside the feature anyway (ADR 0040).</para>
+/// <para>A group of its own rather than six more lambdas in <see cref="MapConversationEndpoints"/>,
+/// because a feature's endpoints belong beside the feature (ADR 0040) — the same reason every other
+/// <c>AgentApi.*.cs</c> part exists. It keeps that method short as a side effect, but it is not near
+/// any measured limit: it contains no branching at all, so its S3776 score is zero.</para>
 ///
 /// <para>Every route here is behind Easy Auth — none is in the Bicep <c>excludedPaths</c> list, which
 /// stays at six — and every one is scoped by the conversation-index grain key, so reaching another

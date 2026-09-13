@@ -70,7 +70,7 @@ So folder-matching namespaces would probably have been safe here. They were stil
 - **It is free.** A flat namespace means no `using` churn in the 54 test files that reference Backend
   types — the reorganisation touches no consuming file at all.
 
-### 3. `MapAgentApi` splits into per-feature partials (twelve here; sixteen today)
+### 3. `MapAgentApi` splits into per-feature partials (twelve here; seventeen today)
 Each feature's endpoints move to `<Folder>/AgentApi.<Feature>.cs`, all completing the one
 `public static partial class AgentApi`. `src/Agent42.Backend/Api/AgentApi.cs` drops from 1268 to 50 lines and becomes a
 composition root: twelve `Map*Endpoints(app)` calls plus the two members genuinely shared across

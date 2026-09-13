@@ -76,9 +76,8 @@ public sealed class PinChatAssetsTests
 
         var render = StaticAssetsServerFixture.Body(app, "export function renderSidebar()");
 
-        // ADR 0073 split the passes into named functions — renderSidebar measured exactly at the
-        // cognitive-complexity ceiling with two of them and a third tipped it — so the ORDER is now proved
-        // by the call order here, and each pass's own guard by its own body below.
+        // ADR 0073 split the passes into named functions, so the ORDER is now proved by the call order
+        // here and each pass's own guard by its own body below.
         var hoistAt = render.IndexOf("renderPinnedBlock()", StringComparison.Ordinal);
         var walkAt = render.IndexOf("renderAgentWalk()", StringComparison.Ordinal);
         Assert.True(hoistAt >= 0, "the pinned block does not render hoisted rows");

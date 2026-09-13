@@ -76,9 +76,8 @@ public sealed class SearchAssetsTests
 
         // And it must be an EARLY RETURN, before the render passes — otherwise the hit list would be
         // appended after the ordinary rows rather than replacing them. Anchored on the first pass's
-        // CALL SITE rather than on a comment: ADR 0073 extracted the passes into named functions (a
-        // third pass tipped renderSidebar over the S3776 ceiling), so the "Pass 1" prose now sits
-        // above renderSidebar rather than inside it.
+        // CALL SITE rather than on a comment: ADR 0073 extracted the passes into named functions, so the
+        // "Pass 1" prose now sits above renderSidebar rather than inside it.
         // The CALL, not the declaration: the extracted passes are declared ABOVE renderSidebar, so a bare
         // name matches the declaration first and the ordering assertion would be inverted (and vacuous).
         var firstPass = sidebar.IndexOf("= renderPinnedBlock();", StringComparison.Ordinal);

@@ -2208,9 +2208,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
      `ReferenceError` on every render**, i.e. a blank sidebar. Every frontend guard here is source-text,
      so **nothing in the suite catches it**; it was found by review, not by a failing test. The local is
      now `agentGroups`, and `AgentWalk_SkipsPinnedAndGroupedRows` asserts the absence of the old name.
-  2. **`renderSidebar` measured EXACTLY 15 cognitive complexity** — `cognitive_complexity_max`. A third
-     pass tips it and `dotnet build` fails (S3776 at `error`, ADR 0051). So the passes are extracted —
-     but **extraction is bounded, not free**: `clearReveal();`, the search branch, the empty guard and
+  2. **The passes are extracted for readability, and NOTHING in this repo measures that.** ADR 0073's
+     first draft claimed `renderSidebar` "measured exactly 15 cognitive complexity" and that a third pass
+     would fail `dotnet build` — false on its face: `renderSidebar` is **JavaScript**, `.editorconfig`
+     scopes `S3776` to `[*.cs]`, and there is no JS linter here. Do not repeat the number, and do not
+     reach for S3776 to justify a JS refactor. What is real is that **extraction is bounded, not free**: `clearReveal();`, the search branch, the empty guard and
      `conversationList.lastElementChild !== lastPinned` must stay in `renderSidebar`'s own body, because
      `PinChatAssetsTests`, `RowActionsRevealAssetsTests` and `SearchAssetsTests` all call
      `Body(app, "export function renderSidebar()")` and assert against it. Move one into a pass and those
@@ -2243,8 +2245,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ChatGroupAssetsTests.cs`, `tests/Agent42.Tests/PinChatAssetsTests.cs`,
   `tests/Agent42.Tests/SearchAssetsTests.cs` (`SearchBranch_LivesInsideRenderSidebar`),
   `.agentic/decisions/0073-custom-chat-groups.md`
-- **Verified:** 2026-09-13 (source-text and test-suite evidence only — the browser leg was NOT run; see
-  ADR 0073's residuals)
+- **Verified:** 2026-09-13 (test suite plus a headless-Chrome/CDP pass against DevHost, 21/21 UI and
+  9/9 drag — the `draggable` arming rule in trap 4 is measured, not assumed. Two harness traps that
+  imitate product bugs are in ADR 0073: a viewport at or under 760px puts the sidebar off-canvas so every
+  synthetic event misses, and a group node captured before a drop is detached by the time the refresh
+  lands.)
 
 ### Hiding a hover-reveal on touch: `:hover` still fires there, and `opacity: 0` still gets tapped
 - **Area:** frontend — sidebar row actions, touch behaviour

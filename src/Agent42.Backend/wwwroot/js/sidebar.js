@@ -200,7 +200,13 @@ function clearReveal() {
   }
 }
 
-function wireRowReveal(li, btn) {
+// `li` is the element MARKED `.is-revealed` and armed for dragging; `btn` is the control whose click
+// means "activate this thing" and must therefore be swallowed by the press that ends a hold.
+// `listenOn` defaults to `li` but lets a caller listen on something NARROWER: a custom group's <li>
+// contains conversation rows, and without this a long press on a row inside a group would arm the
+// group's timer too — both fire at 400 ms, the group's listener runs last, and the group would steal
+// the reveal from the row the user actually pressed.
+export function wireRowReveal(li, btn, listenOn = li) {
   let timer = null;
   let startX = 0;
   let startY = 0;
@@ -214,7 +220,7 @@ function wireRowReveal(li, btn) {
     timer = null;
   };
 
-  li.addEventListener("pointerdown", (e) => {
+  listenOn.addEventListener("pointerdown", (e) => {
     swallowNextClick = false;
     // Drag-to-file is decided PER INTERACTION from this same pointer type, never from a media query
     // (ADR 0073). A fine-pointer media query reports the PRIMARY pointer, so a touchscreen laptop
@@ -249,15 +255,15 @@ function wireRowReveal(li, btn) {
     }, LONG_PRESS_MS);
   });
 
-  li.addEventListener("pointermove", (e) => {
+  listenOn.addEventListener("pointermove", (e) => {
     if (Math.abs(e.clientX - startX) > LONG_PRESS_SLOP_PX || Math.abs(e.clientY - startY) > LONG_PRESS_SLOP_PX) cancelPending();
   });
-  li.addEventListener("pointerup", cancelPending);
-  li.addEventListener("pointercancel", cancelPending);
+  listenOn.addEventListener("pointerup", cancelPending);
+  listenOn.addEventListener("pointercancel", cancelPending);
 
   // Suppress the native menu while this row is the revealed one — reactive, so it is a backstop to the
   // -webkit-touch-callout / user-select suppression in CSS rather than the primary defence.
-  li.addEventListener("contextmenu", (e) => {
+  listenOn.addEventListener("contextmenu", (e) => {
     if (revealedRow === li) e.preventDefault();
   });
 
@@ -407,11 +413,13 @@ export function renderSidebar() {
     return;
   }
 
-  // Three passes, in this order. They are separate functions because this one measured exactly at the
-  // cognitive-complexity ceiling with two (S3776, threshold 15 — a build error, ADR 0051), and a third
-  // pass tipped it. What stays HERE is deliberate and load-bearing rather than leftover: clearReveal,
-  // the search branch, the empty guard and the divider marker below are all asserted against this
-  // function's own body by existing source-text guards.
+  // Three passes, in this order. They are separate functions for readability — NOT because a tool said
+  // so: the repo's cognitive-complexity gate is SonarAnalyzer S3776, scoped to [*.cs] in .editorconfig,
+  // and nothing here measures JavaScript at all.
+  // What stays in THIS function rather than moving into a pass is the load-bearing part: clearReveal,
+  // the search branch, the empty guard and the divider marker below are each asserted against this
+  // function's own body by source-text guards in three other test classes, so moving one makes those
+  // guards vacuous rather than red.
   const lastPinned = renderPinnedBlock();
   renderCustomGroups();
   renderAgentWalk();

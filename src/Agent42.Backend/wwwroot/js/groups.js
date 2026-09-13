@@ -12,7 +12,7 @@ import {
   groupNameSaveBtn, groupNameTitle, moveToGroupCancelBtn, moveToGroupConvTitle, moveToGroupDialog,
   moveToGroupList, moveToGroupSaveBtn,
 } from "./dom.js";
-import { buildConvRow, refreshConversations, renderSidebar } from "./sidebar.js";
+import { buildConvRow, refreshConversations, renderSidebar, wireRowReveal } from "./sidebar.js";
 import { streaming } from "./send.js";
 
 export let groups = [];
@@ -101,11 +101,17 @@ export function buildChatGroup(group, convs) {
     renderSidebar();
   });
 
-  // Reordering is a drag of the group itself, armed by the same per-interaction rule the rows use
-  // (ADR 0073): a mouse press arms it, a touch press does not, so the browser's own long-press drag
-  // can never race a tap on a phone. No media query — that would report the PRIMARY pointer and get a
-  // touchscreen laptop wrong.
-  li.addEventListener("pointerdown", (e) => { li.draggable = e.pointerType === "mouse"; });
+  // One call does both jobs, and sharing it with the conversation rows is the point:
+  //   - reordering is a drag of the group itself, armed by the same per-interaction rule the rows use
+  //     (a mouse press arms it, a touch press does not, so the browser's own long-press drag can never
+  //     race a tap on a phone — no media query, which would report the PRIMARY pointer and get a
+  //     touchscreen laptop wrong);
+  //   - and rename/delete are hover-reveals, so without the ADR 0052 press-and-hold they would be
+  //     `opacity: 0` and `pointer-events: none` FOREVER on a phone. That is the gap ADR 0045 refused
+  //     to ship one level down ("pinning impossible on the installed PWA while unpinning worked").
+  // Listening on the HEADER, not the <li>: the <li> contains the group's conversation rows, and a long
+  // press on one of those must reveal that row, not steal the reveal for the group around it.
+  wireRowReveal(li, header, header);
 
   const rename = document.createElement("button");
   rename.type = "button";
@@ -239,6 +245,11 @@ async function saveMoveToGroup() {
 }
 
 async function setConversationGroup(convId, groupId) {
+  // The same mid-stream refusal openMoveToGroup applies, repeated here because the DRAG path does not
+  // go through that function — without it a mouse drag would mutate and re-render the sidebar during a
+  // turn while the touch path politely declined.
+  if (streaming) return;
+
   try {
     const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/group`, {
       method: "PUT",
@@ -313,6 +324,7 @@ function clearDragState() {
 // Moves one group to the position currently held by another, and sends the whole resulting order —
 // the endpoint takes a full list because a positional patch would be ambiguous against a stale client.
 async function reorderGroupTo(groupId, targetId) {
+  if (streaming) return; // as above: the drag path gets the same guard as every other mutation
   const ids = groups.map((g) => g.id).filter((id) => id !== groupId);
   const at = ids.indexOf(targetId);
   if (at < 0) return;
