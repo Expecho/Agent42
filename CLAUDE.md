@@ -1060,6 +1060,25 @@ to document a mechanical rule, add a lint rule instead.
   cache bumped `agent42-shell-v34` → `-v35`. The offline browser leg **was** run (headless Chrome over CDP,
   17/17, both themes) and ADR 0071 records the measured values — including the one residual it cannot close:
   DevHost has no Foundry Responses endpoint, so the Foundry half is prod-only.
+- A turn's tool calls fold once there are more than three (ADR 0072, extends 0041): the chips a turn's
+  `toolCallStart` events render now live inside a per-turn `<details class="msg__toolgroup">` instead of a
+  flat list, and past `TOOL_GROUP_THRESHOLD` (3) it draws a `"N tool calls"` summary and **folds itself shut
+  when the turn ends** — `finishToolCalls(msg)`, wired into `send.js`'s `done` arm **and** its `finally`,
+  exactly where `finishReasoning` is and for the same three tails (barge-in ADR 0037, recovered stream ADR
+  0046, failure). Three calls or fewer render exactly as before: the summary is drawn only under
+  `.is-grouped`. **Do not copy ADR 0071's shape here** — the reasoning disclosure is collapsed from its
+  first delta, while a tool group is deliberately **open while it streams**, because the running chips are
+  the only progress indicator a long chain has; collapsing on the way in (in `toolGroup`/`syncToolGroup`,
+  rather than only in `finishToolCalls`) hides the thing the user is waiting on, and a test pins the
+  absence. Frontend-only — no endpoint, grain, `[Id]`, migration, secret, Bicep or `excludedPaths` change,
+  and no new JS module. One trap worth carrying beyond this feature: a `finally`-block assertion anchored
+  on a bare `"} finally {"` marker can anchor in **another module** (three others have one) and widen far
+  enough to swallow `send.js`'s own `import` line — which named the function and made the guard vacuous
+  until it was scoped to `send`'s body first (measured; `ReasoningAssetsTests` has the same shape and is
+  likely vacuous too, deliberately left alone). Shell cache bumped `agent42-shell-v35` → `-v36`. The
+  offline browser leg **was** run (headless Chrome over CDP, both themes) and ADR 0072 records the measured
+  values — including the one it cannot close: `CannedChatClient` tops out at two tool calls, so the
+  above-threshold path was driven through the shipped `thread.js` functions, not a real stream.
 - Follow-up suggestion prompts (ADR 0036): after an **interactive** reply, `AgentGrain` makes one extra
   model call (`GenerateFollowUpsAsync`) — **streamed via `GetStreamingResponseAsync` and aggregated, the same
   path/cached client the reply uses** (the non-streaming `GetResponseAsync` returned nothing on the Foundry
