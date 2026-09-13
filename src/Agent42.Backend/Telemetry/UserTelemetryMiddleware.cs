@@ -14,8 +14,17 @@ public static class UserTelemetryMiddleware
 {
     public static async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
+        // The ADR 0074 alias must reach this carrier too, not only the server span: the carrier is what
+        // stamps the IN-GRAIN spans, so aliasing one and not the other would split user.id across a
+        // single trace. Resolved from request services here (unlike the Program.cs enrichment callback,
+        // which runs before the pipeline) because this middleware has a real HttpContext — but
+        // NULL-CONDITIONALLY: this middleware is registered FIRST, and RequestServices is null on a
+        // bare DefaultHttpContext, where GetService throws rather than returning null. Telemetry
+        // enrichment must never be the thing that fails a request.
         RequestContext.Set(
-            UserTelemetryContext.RequestContextKey, context.Request.Headers.GetUserTelemetryContext());
+            UserTelemetryContext.RequestContextKey,
+            context.Request.Headers.GetUserTelemetryContext(
+                context.RequestServices?.GetService<UserIdAliases>()));
         await next(context);
     }
 }

@@ -581,6 +581,36 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.True(result.ChunkCount > 0, "the PDF should have produced at least one indexed chunk");
     }
 
+    // AC14 (ADR 0074): two Entra principals, one dataset. Written as the profile because it is the
+    // smallest user-keyed store with a round-trip endpoint; the alias is applied in ResolveUserId, above
+    // every grain key, so proving it here proves it for conversations, agents and the rest.
+    [Fact]
+    public async Task ProfileEndpoint_IsSharedAcrossAnAliasedPrincipal()
+    {
+        await PutProfileAsAsync(AgentApiFixture.CanonicalPrincipalOid, "nl-NL");
+
+        // The second account reads the first account's profile.
+        var viaAlias = await GetProfileAsAsync(AgentApiFixture.AliasPrincipalOid);
+        Assert.Equal("nl-NL", viaAlias.PreferredLanguage);
+
+        // ...and writes back into the same one, rather than shadowing it.
+        await PutProfileAsAsync(AgentApiFixture.AliasPrincipalOid, "en-GB");
+        var viaCanonical = await GetProfileAsAsync(AgentApiFixture.CanonicalPrincipalOid);
+        Assert.Equal("en-GB", viaCanonical.PreferredLanguage);
+    }
+
+    // AC15 (ADR 0074, security set): an alias grants exactly the one principal named in it. A third
+    // account signing in while aliases are configured stays as isolated as it was before the feature —
+    // if this ever fails, the map is widening access beyond its entries.
+    [Fact]
+    public async Task ProfileEndpoint_KeepsAnUnlistedPrincipalIsolated_WhenAliasesAreConfigured()
+    {
+        await PutProfileAsAsync(AgentApiFixture.CanonicalPrincipalOid, "sv-SE");
+
+        var stranger = await GetProfileAsAsync("cccccccc-0000-0000-0000-00000000cccc");
+        Assert.Equal("", stranger.PreferredLanguage);
+    }
+
     private async Task PutProfileAsAsync(string principalId, string language)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, "/api/profile")

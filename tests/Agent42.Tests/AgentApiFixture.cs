@@ -1,6 +1,7 @@
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Agent42.Tests;
@@ -15,6 +16,12 @@ public sealed class AgentApiFixture : SharedApiFixture
 {
     public const string TestVapidPublicKey = "BTestVapidPublicKeyForConfigAssertion";
 
+    // An identity alias (ADR 0074), so AgentApiTests can prove end to end that two principals reach one
+    // dataset. Both are GUIDs no other test uses, which matters because this fixture is shared with
+    // ChatGroupApiTests and SharedClusterSeamTests: an alias whose key nothing sends is inert for them.
+    public const string AliasPrincipalOid = "aaaaaaaa-0000-0000-0000-00000000aaaa";
+    public const string CanonicalPrincipalOid = "bbbbbbbb-0000-0000-0000-00000000bbbb";
+
     protected override void Configure(WebApplicationBuilder builder)
     {
         builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("foundry:gpt-4o",
@@ -25,5 +32,12 @@ public sealed class AgentApiFixture : SharedApiFixture
         ]));
         builder.Services.AddSingleton(
             new PushConfig(Enabled: true, PublicKey: TestVapidPublicKey, Subject: "mailto:test@agent42"));
+        builder.Services.AddSingleton(UserIdAliases.FromConfiguration(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection([
+                    new KeyValuePair<string, string?>(
+                        $"{UserIdAliases.SectionName}:{AliasPrincipalOid}", CanonicalPrincipalOid),
+                ])
+                .Build()));
     }
 }

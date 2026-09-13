@@ -22,6 +22,15 @@ tags: [auth, azure, container-apps]
 > self-enforcing paths. **The matching rule is exact-unless-`/*`** — see ADR 0042; assuming prefix matching
 > is what made ADR 0035 non-functional in production, and `EasyAuthExclusionTests` now guards the list.
 
+> **Also amended by [ADR 0074](0074-identity-alias-for-a-second-entra-account.md) (2026-09-13) — one
+> identity, two principals.** `excludedPaths` is unchanged and no carve-out is added. What changes is what
+> the app does with the identity Easy Auth hands it: an `Identity:Aliases` map may rewrite the incoming
+> object id to another account's, so one person's two Entra accounts reach one dataset. Identity still
+> originates **only** from the Easy Auth headers — the alias is applied after extraction, in
+> `CurrentUser.ResolveUserId`, and is never a substitute for authentication. The `local-dev` fallback is
+> returned before the map is consulted, so the rule that a header-less (excluded-path) request must never
+> be trusted as a user is untouched.
+
 ## Context
 The API was fully open while being publicly reachable (chat.agent42.nl), exposing
 LLM spend and private conversations. Needed: sign-in for exactly two people with

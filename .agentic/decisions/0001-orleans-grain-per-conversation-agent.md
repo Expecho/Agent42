@@ -7,6 +7,12 @@ tags: [architecture, orleans, agent-framework]
 
 # Host each conversation as an Orleans grain wrapping an Agent Framework agent
 
+> **Amended by [ADR 0074](0074-identity-alias-for-a-second-entra-account.md) (2026-09-13).**
+> The Consequences below say grain keys are `{userId}/{conversationId}`, "so one user can never
+> address another's conversation". That still holds of **userIds** — but two Entra principals can
+> now map to one userId through the `Identity:Aliases` map, so the isolation boundary is the userId
+> **after** aliasing, and an alias entry is an authorization grant.
+
 ## Context
 Agent42 needs stateful, addressable per-conversation chat agents on Azure: durable
 conversation history, streaming replies, agent tools that can schedule durable

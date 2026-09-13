@@ -73,6 +73,30 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/DocumentMediaTypesTests.cs`
 - **Verified:** 2026-07-10
 
+### An identity alias rewrites the userId at ONE point, and that point feeds four surfaces
+
+- **Claim:** `Identity:Aliases` (ADR 0074) maps an additional Entra object id onto the object id that
+  owns the data, and it is applied in `CurrentUser.ResolveUserId` — the single choke point. That is
+  deliberate but it means the rewrite reaches **more than grain keys**: it also reaches the telemetry
+  `user.id` on the ASP.NET server span, the ADR 0010 `RequestContext` carrier that stamps **in-grain**
+  spans, and the `/dashboard` owner gate (ADR 0062 — which therefore now admits one *person*, not one
+  *principal*). Two things follow that are easy to get wrong. **(1) Only `user.id` is aliased.**
+  `user.name` comes from `X-MS-CLIENT-PRINCIPAL-NAME` and `user.email`/`user.full_name`/`user.roles`
+  from the claims blob, so a span reads the canonical object id next to the *real* account's email —
+  that is what keeps `/logs` attribution honest, and it is also why **`/usage` still shows one row per
+  account**: `UsageSpanProjector` keys the user bucket `user.email → user.name → user.id`, so the alias
+  never merges those rows and was never going to. **(2) The map is consulted only on the
+  header-present branch** — the `local-dev` fallback returns before any lookup, and `local-dev` is
+  refused on both sides of an entry, so an `excludedPaths` request (which carries no principal header)
+  is unaffected. Also: the map is resolved with `GetService`, not `GetRequiredService`, so a **missing
+  registration is silent** — the alias just never applies and every runtime test still passes, because
+  nothing executes `Program.cs`. `ProjectLayoutTests.Program_BuildsAndRegistersTheUserIdAliasMap` is
+  the only guard, and the enrichment callback must **capture** the startup-built local rather than
+  resolve DI, because it receives an `HttpRequest` and runs at `HttpRequestIn.Start`, before the
+  pipeline.
+- **Evidence:** `src/Agent42.Backend/Api/UserIdAliases.cs`, `src/Agent42.Backend/Api/CurrentUser.cs` (`ResolveUserId`), `src/Agent42.Backend/Program.cs`, `src/Agent42.Agents/Telemetry/UsageSpanProjector.cs`, `tests/Agent42.Tests/UserIdAliasTests.cs`, `.agentic/decisions/0074-identity-alias-for-a-second-entra-account.md`
+- **Verified:** 2026-09-13
+
 ### Easy Auth claim `typ` spellings for `user.*` telemetry are a prod-only fact
 
 - **Claim:** the `user.email`/`user.full_name`/`user.roles` trace attributes (ADR 0009) are pulled
