@@ -61,7 +61,10 @@
       </nav>
 
       <nav class="conversations" aria-label="Conversations">
-        <p class="conversations__label">// transmissions</p>
+        <div class="conversations__head">
+          <p class="conversations__label">// transmissions</p>
+          <button class="conversations__add" id="addGroupBtn" type="button" aria-label="New group">+</button>
+        </div>
         <input class="conversations__search" id="searchInput" type="search"
                placeholder="search messages" aria-label="Search chat history" autocomplete="off">
         <ul class="conversations__list" id="conversationList"></ul>
@@ -626,6 +629,41 @@
       </section>
       <div class="agent-form__actions">
         <button class="agent-form__btn" type="button" id="shareLinkCloseBtn">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Name a custom conversation group (ADR 0073). One dialog serves both create and rename — the title
+       and the prefilled value are swapped by groups.js, because the two differ in nothing else. -->
+  <dialog class="agent-dialog" id="groupNameDialog">
+    <form class="agent-form" id="groupNameForm" method="dialog">
+      <h2 class="agent-form__title" id="groupNameTitle">New group</h2>
+      <section class="agent-form__section">
+        <label class="agent-form__field">
+          <span class="agent-form__label">// name</span>
+          <input class="agent-form__input" type="text" id="groupNameInput" maxlength="60" autocomplete="off" />
+        </label>
+      </section>
+      <div class="agent-form__actions">
+        <button class="agent-form__btn" type="button" id="groupNameCancelBtn">Cancel</button>
+        <button class="agent-form__btn agent-form__btn--primary" type="button" id="groupNameSaveBtn">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- File one conversation into a group (ADR 0073). The touch path for what a mouse does by dragging —
+       and the only way to CLEAR a filing, since there is deliberately no "drag back out" drop region.
+       The radio list is injected at open time from the user's groups, always led by "No group". -->
+  <dialog class="agent-dialog" id="moveToGroupDialog">
+    <form class="agent-form" id="moveToGroupForm" method="dialog">
+      <h2 class="agent-form__title">Move to group</h2>
+      <section class="agent-form__section">
+        <p class="agent-form__note" id="moveToGroupConvTitle"></p>
+        <div class="group-picker" id="moveToGroupList"></div>
+      </section>
+      <div class="agent-form__actions">
+        <button class="agent-form__btn" type="button" id="moveToGroupCancelBtn">Cancel</button>
+        <button class="agent-form__btn agent-form__btn--primary" type="button" id="moveToGroupSaveBtn">Move</button>
       </div>
     </form>
   </dialog>

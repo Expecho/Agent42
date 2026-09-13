@@ -683,7 +683,7 @@ to document a mechanical rule, add a lint rule instead.
   **No infra change at all:** no `excludedPaths` entry (three new `EasyAuthExclusionTests` rows prove
   it), no Bicep, no secret, no Cosmos container; the owner OID is committed config, because an object id
   is an identifier not a credential. New Backend folder `Orleans/` (23 → 24, taken back to 23 by ADR 0063 — **not** `Dashboard/`, which
-  collides with ADR 0031's "token-usage dashboard"), flat namespace as ever, endpoint groups stay **17** (**16** since ADR 0063)
+  collides with ADR 0031's "token-usage dashboard"), flat namespace as ever, endpoint groups stay **17** (**16** after ADR 0063, back to **17** with ADR 0073)
   (the routes come from the package — deliberately not an `AgentApi.*` group). Registration is **split in
   two** so the gate half runs in a test with no silo, which is what keeps the coverage gate satisfiable.
   Measured consequences: it installs a `GrainProfilerFilter`, so **every grain call is profiled**
@@ -950,7 +950,7 @@ to document a mechanical rule, add a lint rule instead.
   Backend-only, **not** because DevHost lacks a pipeline: since ADR 0054 it has one.
 - Offline read cache (ADR 0032): the installed PWA renders the user's **agents and chats offline** via a
   **client-side IndexedDB mirror in `cache.js`** (DB `agent42-cache`, store `kv`, keys `agents` /
-  `conversations` / `messages:<id>`; helpers `cacheGet`/`cachePut`/`cacheDelete`). Every successful
+  `conversations` / `groups` (ADR 0073) / `messages:<id>`; helpers `cacheGet`/`cachePut`/`cacheDelete`). Every successful
   `/api/agents` · `/api/conversations` · `.../messages` fetch writes the mirror; `hydrateFromCache()`
   paints cached lists at startup (length-guarded so the network fast-path wins) and the loaders fall back
   to the cache on failure — a chat is viewable offline only if it was opened at least once online
@@ -1175,6 +1175,49 @@ to document a mechanical rule, add a lint rule instead.
   **was** run (headless Chrome over CDP, both themes, both widths) and ADR 0065 records the measured values —
   including one residual it does not own: the document already overflows to **534px** at a 390px viewport on
   `main` (`.composer__hint` and its `<kbd>`s, the gap ADR 0043 records), which offsets the centred modal.
+- Custom chat groups (ADR 0073, **extends 0045**): the user files chats into their **own named,
+  manually ordered** groups — the first grouping in the sidebar they author, next to the agent grouping
+  that has always been derived. A first-class `ChatGroup(Id, Name, Order)` on `ConversationIndexState`
+  plus a trailing `[Id(6)] GroupId` on `ConversationInfo` (**no migration**, the 0045 shape); six
+  Easy-Auth routes in a new `src/Agent42.Backend/Conversations/AgentApi.ChatGroups.cs` (endpoint groups 16 → 17, and its
+  reorder route is the distinct `PUT /api/conversation-group-order` for the `PUT /api/default-model`
+  reason); a new `src/Agent42.Backend/wwwroot/js/groups.js` owning the group list, two dialogs and the
+  drag-and-drop, while `sidebar.js` keeps the list DOM. **A custom group WINS over the agent group.**
+  **The headline is that this repeats ADR 0045's hoist trap and the render is now THREE passes** —
+  pinned block, custom groups in manual order, then the agent walk skipping
+  `conv.pinned || (conv.groupId && knownGroupIds.has(conv.groupId))`; testing the **known** ids is what
+  makes a filing pointing at a deleted group render ungrouped instead of vanishing.
+  `GetConversationsAsync`'s ordering is **untouched** — partitioning in JS is not re-sorting.
+  Four traps, all in gotchas, and three are invisible to the tests: `renderSidebar` **already declared
+  `const groups = new Map()`**, so a module-level `groups` import shadows into a temporal-dead-zone
+  `ReferenceError` and a **blank sidebar** that no source-text guard can see (the local is now
+  `agentGroups`); `renderSidebar` is split into three named passes for readability — **not** because a tool
+  said so, and an early draft's claim that it "measured exactly 15 cognitive complexity" was **false and
+  unmeasurable** (it is JavaScript; `S3776` is scoped to `[*.cs]` and there is no JS linter here) — but
+  **which lines stay in its body is** load-bearing, since `clearReveal();`, the search branch and the
+  `.is-pinned-last` marker are asserted against it by three other test classes that go **vacuous rather
+  than red** if one moves; **one boolean cannot
+  carry two badge facts**, hence `buildConvRow(conv, hoisted, grouped)` with
+  `(hoisted || grouped) && conv.agentId` — reverting it strips the label from every filed agent chat,
+  which for a **continuous** agent (ADR 0016) is the ordinary state; and the drag gate is **per
+  interaction** (`e.pointerType === "mouse"`, the rule `wireRowReveal` already owns), never a
+  fine-pointer media query, which reports the **primary** pointer and so gets a touchscreen laptop
+  wrong — the same reasoning makes the move glyph a fourth row action at **every** width rather than a
+  touch-only one. Groups are capped at **50** per user (ADR 0004's 2 MB item), a `null` `GroupId` clears
+  while an **unknown one is a no-op** (not a silent clear), and deleting a group **ungroups its chats and
+  deletes none**. Incognito chats (ADR 0034) are structurally ungroupable. No new secret, container,
+  Cosmos container, Bicep or `excludedPaths` change (the list stays at **six**, with four new negative
+  rows proving it) and no package. Shell cache bumped `agent42-shell-v36` → `-v37`; `AgentApi.cs`'s
+  route-count comment was wrong and is recounted to **63** with its counting rule stated. The DevHost browser leg **was** run
+  (headless Chrome over CDP against a clean DevHost, **21/21** UI + **9/9** drag + **4/4** touch, both themes) and ADR 0073 records the measured
+  values — including the two that no source-text guard can reach: a real mouse press **does** arm
+  `draggable` before the browser reads it while a touch press does not, and a filed chat renders inside
+  its group with **zero** rows left in the top-level walk. Two harness traps are recorded there too, both
+  of which look exactly like product bugs: the viewport must be **wider than 760px** or the sidebar is an
+  off-canvas drawer every synthetic event misses, and a group element must be **re-queried** after a drop
+  because `renderSidebar` rebuilds every node. What stays unverified: auto-scroll while dragging is out of
+  scope, the drag was driven by synthetic `DragEvent`s rather than a native held drag, and the Android
+  long-press-drag premise has no device to measure it on.
 - Pinned conversations (ADR 0045): a pin toggle on every sidebar row hoists a chat to the top of the
   transmissions list and keeps it there regardless of recency. It is a trailing optional
   **`[Id(5)] bool Pinned = false`** on `ConversationInfo` (the `[Id(3)]`/`[Id(4)]` agent-identity shape —
@@ -1332,7 +1375,7 @@ to document a mechanical rule, add a lint rule instead.
   directories `ProjectLayoutTests.ExpectedFolders()` pins** (`Properties/` and `wwwroot/` ride in that
   set without being features; `Orleans/` joined in ADR 0062, `Calendar/` left in ADR 0063) mirroring the Agents vocabulary (so `src/Agent42.Agents/Attachments/IAttachmentStore.cs` pairs
   visibly with `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`), **flat `Agent42.Backend` namespace**, and
-  `Program.cs` alone at the project root. `MapAgentApi` is split into **16 per-feature partials**
+  `Program.cs` alone at the project root. `MapAgentApi` is split into **17 per-feature partials**
   (`src/Agent42.Backend/Mcp/AgentApi.Mcp.cs`, …) with `src/Agent42.Backend/Api/AgentApi.cs` reduced to a 50-line composition root, and the
   request/response records live beside their feature as `*Contracts.cs`. Backend persists nothing, so
   the flat namespace is **not** forced here as it is in Agents — it is kept flat for consistency and

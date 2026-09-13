@@ -157,6 +157,15 @@ public sealed class SerializationCompatibilityTests
         // Secondary evidence only — this is the BINARY path, not the one Cosmos writes. The data-at-rest
         // guard is GrainStorageSerializerTests.ConversationIndexDocument_WrittenBeforePinning_*.
         Assert.False(actual.Conversations[0].Pinned);
+        // ADR 0073 appended a trailing GroupId member and a Groups list on the state; the blob predates
+        // both. Same standing as the line above — secondary, with
+        // GrainStorageSerializerTests.ConversationIndexDocument_WrittenBeforeGrouping_* carrying the
+        // data-at-rest guard. The list must read EMPTY rather than null: every render path orders it
+        // unguarded. GoldenStates.ConversationIndex() is deliberately NOT extended with groups — doing so
+        // would make it disagree with this committed blob, which is the whole point of a golden.
+        Assert.NotNull(actual.Groups);
+        Assert.Empty(actual.Groups);
+        Assert.Null(actual.Conversations[0].GroupId);
     }
 
     // AC2: the public share-token directory (ADR 0035) — the resolve path for an unauthenticated caller.

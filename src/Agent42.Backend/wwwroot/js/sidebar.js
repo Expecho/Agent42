@@ -5,6 +5,7 @@ import { activeId, selectConversation, startNewConversation } from "./conversati
 import { query as searchQuery, renderSearchHits } from "./search.js";
 import { conversationList } from "./dom.js";
 import { timeLabel } from "./format.js";
+import { buildChatGroup, groups, openMoveToGroup } from "./groups.js";
 import { streaming } from "./send.js";
 import { openShareLink } from "./sharelinks.js";
 
@@ -41,13 +42,26 @@ function saveExpandedAgents() {
   catch { /* private mode — persistence is best-effort */ }
 }
 
-// Builds the flat conversation row (button + pin/share/delete) shared by ungrouped chats and
-// the items inside an agent group. `hoisted` marks a row rendered in the pinned block at the
-// top of the sidebar (ADR 0045) — such a row sits OUTSIDE its agent group, which is the only
-// thing that would otherwise name the agent, so it carries an agent badge instead.
-function buildConvRow(conv, hoisted) {
+// Builds the flat conversation row (button + move/pin/share/delete) shared by ungrouped chats and the
+// items inside a group of either kind.
+//
+// TWO independent facts decide the badges, which is why one flag could not carry them (ADR 0073):
+//   `hoisted` — rendered in the pinned block at the top of the sidebar (ADR 0045), so the row sits
+//               outside BOTH kinds of group container;
+//   `grouped` — rendered inside a CUSTOM group, so it sits outside its agent group but inside the one
+//               that names its custom group.
+// A badge exists exactly when the container that would otherwise name the thing is missing: the agent
+// badge when the row is outside its agent group (either case), the group badge only when hoisted.
+//
+// Exported because groups.js builds the members of a custom group — a deliberate import cycle between
+// the two modules, which ADR 0041 §5 permits and several modules here already ship. Every binding is
+// used at call time, never at module-evaluation time, which is what makes it safe.
+export function buildConvRow(conv, hoisted, grouped) {
   const li = document.createElement("li");
   li.className = "conv-row" + (conv.pinned ? " is-pinned" : "");
+  // Read by the delegated drag handlers in groups.js, which cannot close over `conv` — the rows are
+  // rebuilt on every render, so the listeners live on the list, not on the row.
+  li.dataset.convId = conv.id;
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "conv" + (conv.id === activeId ? " is-active" : "");
@@ -63,16 +77,46 @@ function buildConvRow(conv, hoisted) {
 
   btn.append(title, time);
 
-  // Repay the label the hoist costs: only .conv-group__name renders an agent's name, and a hoisted
-  // row has no group above it. Without this a pinned agent chat is indistinguishable from a regular one.
-  // Keyed on agentId with the same "Agent" fallback buildAgentGroup uses, so the two paths agree: a chat
-  // with an agent but a blank name groups under "Agent" and must not hoist with no label at all.
-  if (hoisted && conv.agentId) {
+  // Repay the label the hoist costs: only .conv-group__name renders an agent's name, and a row in the
+  // pinned block — or filed into a CUSTOM group, which wins over the agent group (ADR 0073) — has no
+  // agent header above it. Without this a pinned or filed agent chat is indistinguishable from a
+  // regular one. Keyed on agentId with the same "Agent" fallback buildAgentGroup uses, so the two paths
+  // agree: a chat with an agent but a blank name groups under "Agent" and must not appear with no label
+  // at all. Keying it on agentName looks equivalent and is exactly the bug the badge exists to prevent.
+  if ((hoisted || grouped) && conv.agentId) {
     const badge = document.createElement("span");
     badge.className = "conv__agent";
     badge.textContent = conv.agentName || "Agent";
     btn.append(badge);
   }
+
+  // The same repayment for the custom group, and only in the pinned block: a row rendered INSIDE its
+  // group already has that group's header above it.
+  if (hoisted && conv.groupId) {
+    const group = groups.find((g) => g.id === conv.groupId);
+    if (group) {
+      const badge = document.createElement("span");
+      badge.className = "conv__group";
+      badge.textContent = group.name;
+      btn.append(badge);
+    }
+  }
+
+  // File this chat into a custom group (ADR 0073). Present on every row at every width — the touch path
+  // for what a mouse does by dragging, and the only way to CLEAR a filing.
+  const move = document.createElement("button");
+  move.type = "button";
+  move.className = "conv__move";
+  move.setAttribute("aria-label", `Move conversation to a group: ${conv.title}`);
+  // Author-controlled markup, like the pin and share marks — not user data, so not a sanitiser bypass.
+  move.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">'
+    + '<path d="M1.9 4.2c0-.6.5-1.1 1.1-1.1h2.8l1.3 1.6h5.9c.6 0 1.1.5 1.1 1.1v6c0 .6-.5 1.1-1.1 1.1H3c-.6 0-1.1-.5-1.1-1.1z"'
+    + ' stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>'
+    + '</svg>';
+  move.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openMoveToGroup(conv.id, conv.title, conv.groupId ?? null);
+  });
 
   // Pin toggle (ADR 0045): hoists this chat above the recency list and keeps it there.
   const pin = document.createElement("button");
@@ -119,7 +163,7 @@ function buildConvRow(conv, hoisted) {
     deleteConversation(conv.id, conv.title);
   });
 
-  li.append(btn, pin, share, del);
+  li.append(btn, move, pin, share, del);
   wireRowReveal(li, btn);
   return li;
 }
@@ -156,7 +200,13 @@ function clearReveal() {
   }
 }
 
-function wireRowReveal(li, btn) {
+// `li` is the element MARKED `.is-revealed` and armed for dragging; `btn` is the control whose click
+// means "activate this thing" and must therefore be swallowed by the press that ends a hold.
+// `listenOn` defaults to `li` but lets a caller listen on something NARROWER: a custom group's <li>
+// contains conversation rows, and without this a long press on a row inside a group would arm the
+// group's timer too — both fire at 400 ms, the group's listener runs last, and the group would steal
+// the reveal from the row the user actually pressed.
+export function wireRowReveal(li, btn, listenOn = li) {
   let timer = null;
   let startX = 0;
   let startY = 0;
@@ -170,8 +220,16 @@ function wireRowReveal(li, btn) {
     timer = null;
   };
 
-  li.addEventListener("pointerdown", (e) => {
+  listenOn.addEventListener("pointerdown", (e) => {
     swallowNextClick = false;
+    // Drag-to-file is decided PER INTERACTION from this same pointer type, never from a media query
+    // (ADR 0073). A fine-pointer media query reports the PRIMARY pointer, so a touchscreen laptop
+    // matches it — and that is precisely the device where a live `draggable` would put the browser's
+    // own long-press drag in a race with the 400 ms reveal below. One rule, one source of truth: a
+    // mouse press arms the drag, a touch press disarms it and starts the reveal timer instead.
+    // (The forbidden query is deliberately NOT spelled out here: a test asserts its absence from the
+    // whole script with a plain substring search, which does not skip comments.)
+    li.draggable = e.pointerType === "mouse";
     // A mouse has hover, so it never enters the gesture — that is what keeps a hybrid laptop on the
     // desktop behaviour rather than giving it both.
     if (e.pointerType === "mouse") return;
@@ -197,15 +255,15 @@ function wireRowReveal(li, btn) {
     }, LONG_PRESS_MS);
   });
 
-  li.addEventListener("pointermove", (e) => {
+  listenOn.addEventListener("pointermove", (e) => {
     if (Math.abs(e.clientX - startX) > LONG_PRESS_SLOP_PX || Math.abs(e.clientY - startY) > LONG_PRESS_SLOP_PX) cancelPending();
   });
-  li.addEventListener("pointerup", cancelPending);
-  li.addEventListener("pointercancel", cancelPending);
+  listenOn.addEventListener("pointerup", cancelPending);
+  listenOn.addEventListener("pointercancel", cancelPending);
 
   // Suppress the native menu while this row is the revealed one — reactive, so it is a backstop to the
   // -webkit-touch-callout / user-select suppression in CSS rather than the primary defence.
-  li.addEventListener("contextmenu", (e) => {
+  listenOn.addEventListener("contextmenu", (e) => {
     if (revealedRow === li) e.preventDefault();
   });
 
@@ -265,10 +323,71 @@ function buildAgentGroup(agentId, agentName, convs) {
 
   const body = document.createElement("ul");
   body.className = "conv-group__body";
-  for (const conv of convs) body.appendChild(buildConvRow(conv));
+  // Inside its agent group: neither badge is needed, since this header is the thing that names it.
+  for (const conv of convs) body.appendChild(buildConvRow(conv, false, false));
 
   li.append(header, body);
   return li;
+}
+
+// Pass 1 — the pinned block (ADR 0045). Pinned chats render FLAT at the top, agent-bound, filed or
+// neither. Hoisting rather than re-sorting is required, not cosmetic: pass 3 places an agent's group at
+// its first-encountered member, so a pinned agent chat left in the walk would drag its ENTIRE group to
+// the top. The server already returns pinned-first, sorted by recency among themselves — so this emits
+// in order and does not re-sort. A hoisted row is skipped by passes 2 and 3, never rendered twice.
+// Returns the last row emitted, for the divider marker.
+function renderPinnedBlock() {
+  let lastPinned = null;
+  for (const conv of conversations) {
+    if (conv.pinned) lastPinned = conversationList.appendChild(buildConvRow(conv, true, false));
+  }
+  return lastPinned;
+}
+
+// Pass 2 — the user's custom groups (ADR 0073), in their MANUAL order, as a stable block between the
+// pinned rows and the recency walk. Empty groups are rendered too: a group with no members is still a
+// valid drop target, and being able to exist with none is the whole reason groups are first-class
+// entities rather than a label denormalized onto each conversation.
+function renderCustomGroups() {
+  for (const group of groups) {
+    const members = conversations.filter((c) => !c.pinned && c.groupId === group.id);
+    conversationList.appendChild(buildChatGroup(group, members));
+  }
+}
+
+// Pass 3 — the unchanged agent-grouping walk, over what neither earlier pass took: unpinned chats that
+// are not filed into a KNOWN custom group. Non-agent chats render as flat rows; agent chats collect
+// into a per-agent group placed at its first-encountered (= most-recent) member, so those groups
+// interleave with regular chats by recency. An agent whose every chat is pinned or filed has no members
+// left here and so gets no group at all — correct, because those rows carry the agent badge.
+//
+// Testing membership against the known ids rather than `conv.groupId` alone is what makes a dangling
+// filing self-healing: a conversation pointing at a group that no longer exists falls through to here
+// and renders ungrouped, instead of vanishing from the sidebar entirely.
+function renderAgentWalk() {
+  const knownGroupIds = new Set(groups.map((g) => g.id));
+  const agentGroups = new Map();
+
+  for (const conv of conversations) {
+    if (conv.pinned || (conv.groupId && knownGroupIds.has(conv.groupId))) continue;
+    if (!conv.agentId) {
+      conversationList.appendChild(buildConvRow(conv, false, false));
+      continue;
+    }
+    let group = agentGroups.get(conv.agentId);
+    if (!group) {
+      // Placeholder <li> reserves this group's slot in recency order; filled in below.
+      const placeholder = document.createElement("li");
+      conversationList.appendChild(placeholder);
+      group = { name: conv.agentName, convs: [], placeholder };
+      agentGroups.set(conv.agentId, group);
+    }
+    group.convs.push(conv);
+  }
+
+  for (const [agentId, group] of agentGroups) {
+    group.placeholder.replaceWith(buildAgentGroup(agentId, group.name, group.convs));
+  }
 }
 
 export function renderSidebar() {
@@ -285,7 +404,8 @@ export function renderSidebar() {
     return;
   }
 
-  if (conversations.length === 0) {
+  // A user with groups but no chats yet is not empty — their groups are on screen and droppable.
+  if (conversations.length === 0 && groups.length === 0) {
     const li = document.createElement("li");
     li.className = "conversations__empty";
     li.textContent = "no transmissions yet";
@@ -293,43 +413,18 @@ export function renderSidebar() {
     return;
   }
 
-  // Pass 1 — the pinned block (ADR 0045). Pinned chats render FLAT at the top, agent-bound or not.
-  // Hoisting rather than re-sorting is required, not cosmetic: pass 2 places an agent's group at its
-  // first-encountered member, so a pinned agent chat left in the walk would drag its ENTIRE group to
-  // the top. The server already returns pinned-first, sorted by recency among themselves — so this
-  // emits in order and does not re-sort. A hoisted row is skipped by pass 2, never rendered twice.
-  let lastPinned = null;
-  for (const conv of conversations) {
-    if (conv.pinned) lastPinned = conversationList.appendChild(buildConvRow(conv, true));
-  }
+  // Three passes, in this order. They are separate functions for readability — NOT because a tool said
+  // so: the repo's cognitive-complexity gate is SonarAnalyzer S3776, scoped to [*.cs] in .editorconfig,
+  // and nothing here measures JavaScript at all.
+  // What stays in THIS function rather than moving into a pass is the load-bearing part: clearReveal,
+  // the search branch, the empty guard and the divider marker below are each asserted against this
+  // function's own body by source-text guards in three other test classes, so moving one makes those
+  // guards vacuous rather than red.
+  const lastPinned = renderPinnedBlock();
+  renderCustomGroups();
+  renderAgentWalk();
 
-  // Pass 2 — the unchanged grouping walk, over the UNPINNED remainder only. Non-agent chats render as
-  // flat rows; agent chats collect into a per-agent group placed at its first-encountered (= most-recent)
-  // member, so groups interleave with regular chats by recency. An agent whose every chat is pinned has
-  // no members left here and so gets no group at all — correct, because the hoisted rows carry the badge.
-  const groups = new Map();
-  for (const conv of conversations) {
-    if (conv.pinned) continue;
-    if (!conv.agentId) {
-      conversationList.appendChild(buildConvRow(conv));
-      continue;
-    }
-    let group = groups.get(conv.agentId);
-    if (!group) {
-      // Placeholder <li> reserves this group's slot in recency order; filled in below.
-      const placeholder = document.createElement("li");
-      conversationList.appendChild(placeholder);
-      group = { name: conv.agentName, convs: [], placeholder };
-      groups.set(conv.agentId, group);
-    }
-    group.convs.push(conv);
-  }
-
-  for (const [agentId, group] of groups) {
-    group.placeholder.replaceWith(buildAgentGroup(agentId, group.name, group.convs));
-  }
-
-  // Mark the row that ends the pinned block so CSS can draw the divider between the two passes.
+  // Mark the row that ends the pinned block so CSS can draw the divider below it.
   // Done here rather than with a :has() selector: pass 1 already knows which row is last, this is the
   // only place in the sheet that would need :has(), and — unlike the selector — it can also tell that
   // something FOLLOWS the block, so an all-pinned list draws no trailing divider under its last row.

@@ -26,25 +26,26 @@ public sealed class PinChatAssetsTests
     {
         var app = await _fixture.GetAppScriptAsync();
 
-        var row = StaticAssetsServerFixture.Body(app, "function buildConvRow(conv, hoisted)");
+        var row = StaticAssetsServerFixture.Body(app, "export function buildConvRow(conv, hoisted, grouped)");
         Assert.Contains("conv__pin", row);
         Assert.Contains("setPinned(conv.id", row);
         Assert.Contains("is-pinned", row);
         Assert.Contains("aria-pressed", row);
     }
 
-    // AC14: a hoisted row sits outside its agent group, which is the only thing that names the agent —
-    // so the hoisted path must render a badge, or a pinned agent chat reads as a regular one. Pinned on
-    // agentId + the "Agent" fallback, NOT on agentName: grouping keys on agentId and buildAgentGroup
-    // falls back, so keying the badge on the name would hoist a blank-named agent chat with no label at
-    // all — the exact bug the badge exists to prevent.
+    // AC14: a row rendered outside its agent group must carry a badge, or an agent chat reads as a regular
+    // one. TWO placements put it there, which is why the condition is a disjunction and not the single
+    // `hoisted` flag it was before ADR 0073: the pinned block (ADR 0045), and a custom group, which wins
+    // over the agent group. Still pinned on agentId + the "Agent" fallback, NOT on agentName: grouping keys
+    // on agentId and buildAgentGroup falls back, so keying the badge on the name would render a
+    // blank-named agent chat with no label at all — the exact bug the badge exists to prevent.
     [Fact]
     public async Task HoistedRow_CarriesTheAgentBadge()
     {
         var app = await _fixture.GetAppScriptAsync();
 
-        var row = StaticAssetsServerFixture.Body(app, "function buildConvRow(conv, hoisted)");
-        Assert.Contains("hoisted && conv.agentId", row);
+        var row = StaticAssetsServerFixture.Body(app, "export function buildConvRow(conv, hoisted, grouped)");
+        Assert.Contains("(hoisted || grouped) && conv.agentId", row);
         Assert.Contains("conv.agentName || \"Agent\"", row);
         Assert.Contains("conv__agent", row);
     }
@@ -75,13 +76,20 @@ public sealed class PinChatAssetsTests
 
         var render = StaticAssetsServerFixture.Body(app, "export function renderSidebar()");
 
-        var hoistAt = render.IndexOf("buildConvRow(conv, true)", StringComparison.Ordinal);
-        var groupsAt = render.IndexOf("const groups = new Map()", StringComparison.Ordinal);
+        // ADR 0073 split the passes into named functions, so the ORDER is now proved by the call order
+        // here and each pass's own guard by its own body below.
+        var hoistAt = render.IndexOf("renderPinnedBlock()", StringComparison.Ordinal);
+        var walkAt = render.IndexOf("renderAgentWalk()", StringComparison.Ordinal);
         Assert.True(hoistAt >= 0, "the pinned block does not render hoisted rows");
-        Assert.True(groupsAt > hoistAt, "the pinned block must be emitted before the grouping walk");
+        Assert.True(walkAt > hoistAt, "the pinned block must be emitted before the grouping walk");
+
+        var pinnedBlock = StaticAssetsServerFixture.Body(app, "function renderPinnedBlock()");
+        Assert.Contains("buildConvRow(conv, true, false)", pinnedBlock);
 
         // The walk's own source text carries the guard that keeps a hoisted row out of its group.
-        Assert.Contains("if (conv.pinned) continue;", render[groupsAt..]);
+        var walk = StaticAssetsServerFixture.Body(app, "function renderAgentWalk()");
+        Assert.Contains("const agentGroups = new Map()", walk);
+        Assert.Contains("if (conv.pinned ||", walk);
 
         // The divider between the two blocks is marked in JS, not selected with :has() — and the mark is
         // conditional on something FOLLOWING the block, so an all-pinned list draws no trailing rule.

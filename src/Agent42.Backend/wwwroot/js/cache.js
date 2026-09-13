@@ -5,7 +5,7 @@
 // service worker still never touches /api (ADR 0002); the server stays the source of truth and
 // every successful fetch overwrites the mirror. Best-effort throughout: any IndexedDB error
 // resolves to a no-op (private mode, quota) and never blocks a load. A single "kv" store keyed by
-// "agents" / "conversations" / "messages:<id>".
+// "agents" / "conversations" / "groups" / "messages:<id>".
 const CACHE_DB = "agent42-cache";
 const CACHE_STORE = "kv";
 
