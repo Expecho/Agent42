@@ -115,9 +115,10 @@ public sealed class SearchAssetsTests
         var sw = await _client.GetStringAsync("/sw.js");
 
         Assert.Contains("\"/js/search.js\"", sw);
-        // The version moves on with every MR that touches wwwroot/js/ (ADR 0071 took it to v35); what this
-        // test owns is that search.js is in SHELL and the cache is not left on a stale version.
-        Assert.Contains("agent42-shell-v35", sw);
+        // The version moves on with every MR that touches wwwroot/js/ (the tool-call fold took it to
+        // v36); what this test owns is that search.js is in SHELL and the cache is not left on a stale
+        // version.
+        Assert.Contains("agent42-shell-v36", sw);
         Assert.DoesNotContain("agent42-shell-v32", sw);
     }
 }
