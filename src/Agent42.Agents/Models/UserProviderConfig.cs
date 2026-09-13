@@ -24,7 +24,13 @@ public sealed record StoredModel(
     // true only for a declared speech (text-to-speech) model (ADR 0038; the user picks it as the "default
     // speech model" in Preferences; the voice reply is synthesized from it). Like embeddings it is a
     // distinct model KIND sharing the provider's endpoint + key, reached via GetAudioClient not the chat client.
-    [property: Id(6)] bool SupportsSpeech = false);
+    [property: Id(6)] bool SupportsSpeech = false,
+    // Trailing [Id(7)] with a default so an existing overlay deserializes it false with no migration —
+    // true only for a declared REASONING model (ADR 0071), one that emits its own "thinking" alongside the
+    // reply. Unlike embeddings and speech above this is NOT a distinct model kind: it is the same chat
+    // model on the same chat client, and the flag only says to ask the provider for a reasoning summary
+    // and to expect the extra content part back.
+    [property: Id(7)] bool SupportsReasoning = false);
 
 /// <summary>
 /// One provider in a user's overlay (ADR 0018). Mirrors the Backend's <c>ProviderOptions</c>, but:

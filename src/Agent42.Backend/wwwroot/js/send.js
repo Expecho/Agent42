@@ -10,7 +10,7 @@ import { currentLocationForSend } from "./location.js";
 import { applyModelAvailability } from "./models.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, refreshConversations } from "./sidebar.js";
-import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, renderSuggestions, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
+import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, renderReasoning, renderSuggestions, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
 
 export let streaming = false;
 // Stops live speech dictation. Reassigned via setStopSpeech() by wireSpeech() in speech.js when
@@ -170,6 +170,13 @@ export async function send(prompt) {
           answer += chunk.text;
           setAgentMarkdown(agentMsg, answer, { caret: true });
           voice.onDelta(chunk.text); // speak the reply as it streams (ADR 0037); no-op when voice mode is off
+        } else if (chunk.type === "reasoning") {
+          // A reasoning model's thinking (ADR 0071), into a collapsed disclosure above the reply.
+          //
+          // Deliberately does NOT call voice.onDelta, unlike the textDelta arm above: hands-free voice
+          // (ADR 0037) would read the model's deliberation aloud before its actual answer, and with a
+          // speech model configured (ADR 0038) it would pay a third party per character to do it.
+          renderReasoning(agentMsg, chunk.text);
         } else if (chunk.type === "toolCallStart") {
           addToolCall(agentMsg, chunk);
         } else if (chunk.type === "toolCallEnd") {
@@ -182,6 +189,9 @@ export async function send(prompt) {
           // Up to 3 clickable follow-up prompts under the reply; clicking one sends it immediately.
           renderSuggestions(agentMsg, chunk.suggestions);
         } else if (chunk.type === "done") {
+          // Settled here as well as in the finally: the disclosure should stop pulsing the moment the
+          // turn reports done, not one microtask later when the reader drains.
+          finishReasoning(agentMsg);
           showUsage(agentMsg, chunk);
         }
       }
@@ -222,6 +232,13 @@ export async function send(prompt) {
       setAgentMarkdown(agentMsg, `**Transmission failed.** ${err.message ?? err}`);
     }
   } finally {
+    // Settle the reasoning disclosure here, not in each tail (ADR 0071). `done` closes it on the happy
+    // path, but there are three others that never see a `done`: a voice barge-in (AbortError, ADR 0037),
+    // a stream that died and was recovered (ADR 0046), and an outright failure. Each would otherwise
+    // leave a pulsing "Thinking…" above a reply that is finished, interrupted or errored — and nothing
+    // heals it, since reasoning is never persisted and so never replayed. A no-op on a turn that never
+    // reasoned, and idempotent, so the `done` arm calling it first costs nothing.
+    finishReasoning(agentMsg);
     document.removeEventListener("visibilitychange", onVisibilityChange);
     sendAbort = null;
     streaming = false;

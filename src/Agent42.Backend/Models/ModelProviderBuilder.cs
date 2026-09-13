@@ -185,5 +185,6 @@ public static class ModelProviderBuilder
             SupportsImageGeneration: m.SupportsImageGeneration,
             SupportsEmbeddings: m.SupportsEmbeddings,
             SupportsSpeech: m.SupportsSpeech,
+            SupportsReasoning: m.SupportsReasoning,
             ProviderDisplayName: provider.DisplayName));
 }

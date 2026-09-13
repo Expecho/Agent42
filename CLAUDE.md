@@ -1027,6 +1027,39 @@ to document a mechanical rule, add a lint rule instead.
   **were** run (headless Chrome over CDP against DevHost, stubbed/deleted/rejecting); the real Android
   system sheet on a device stays an honest unverified residual. Read the `navigator.share` gotcha before
   touching `createShareLink`.
+- Reasoning output is shown but never stored (ADR 0071, **amends 0014**, extends 0013/0018/0030/0036/0038):
+  a reasoning model's "thinking" streams as a new `AgentStreamEventType.Reasoning` event (reusing `Text`, no
+  new `[Id]`) and renders as a **collapsed `<details>` above the reply**; a per-model **`SupportsReasoning`**
+  flag (trailing `StoredModel [Id(7)]`, **no migration**) asks the provider to produce it.
+  **Copy ADR 0036's live-only shape but NOT its gating** — suggestions are gated on `_interactiveTurn`
+  because they cost an extra model call; reasoning already rides the turn's own stream, so it is **ungated**
+  and adds **no** turn-scoped field (deliberately clear of the clear-it-in-three-places trap).
+  **The headline is what the Step-1 spike found: reasoning was ALREADY persisted at HEAD.** Agent Framework
+  stores the `TextReasoningContent` part on **both** the streaming and the `RunAsync` (reminder) path, so any
+  user on an OpenAI-compatible reasoning model (ADR 0018) was writing it into their 2 MB session invisibly.
+  Live-only therefore needs an explicit strip — `StripReasoningFromStorage`, wired as the history provider's
+  **`StorageInputResponseMessageFilter`**, the response-side twin of the request filter already in that same
+  options block. A check in `ProjectStreamedContent` **cannot** reach the session. Existing sessions keep
+  what was already written until their next turn re-serializes (named, not migrated).
+  **`includeReasoningEncryptedContent` is NOT the mechanism and stays `false`** — measured on both values,
+  reasoning surfaces either way; the real knob is
+  `ChatOptions.Reasoning = new ReasoningOptions { Output = ReasoningOutput.Summary }` → `"reasoning":
+  {"summary":"concise"}`. So ADR 0014's "reasoning models are deferred" is lifted while its stateless mandate
+  is untouched, and **ADR 0004 is not amended**. On Chat Completions that option is **inert** (byte-identical
+  request body), which is why the flag is wired **once in `ChatClientFactory.Build`** — the one place with
+  both the provider and the bare model id — rather than per provider lambda. It is a **third** capability-flag
+  pattern: not a `ModelCapabilities` bit (Foundry's `GetCapabilities` short-circuits to `Full with {…}` and
+  never reads declared models) and not picker-filter-only like `SupportsEmbeddings`/`SupportsSpeech`. The
+  flag does **not** gate display — any `TextReasoningContent` seen is rendered.
+  Three traps: **`reply` is not the persistence path** (its only consumer is the ADR 0036 follow-up call, so
+  reasoning there is an *egress* bug, not a storage one — separate ACs, both in gotchas); the reasoning
+  dispatch arm must **never** call `voice.onDelta` (ADR 0037 would speak the deliberation, ADR 0038 would pay
+  for it); and reasoning is rendered with **`textContent`**, never `innerHTML` — it bypasses the markdown
+  sanitizer. `capDefs` **and** `collectModels`' positional destructuring both gain a sixth entry or every
+  later flag shifts. No new secret, container, Bicep, `excludedPaths` entry, package or JS module. Shell
+  cache bumped `agent42-shell-v34` → `-v35`. The offline browser leg **was** run (headless Chrome over CDP,
+  17/17, both themes) and ADR 0071 records the measured values — including the one residual it cannot close:
+  DevHost has no Foundry Responses endpoint, so the Foundry half is prod-only.
 - Follow-up suggestion prompts (ADR 0036): after an **interactive** reply, `AgentGrain` makes one extra
   model call (`GenerateFollowUpsAsync`) — **streamed via `GetStreamingResponseAsync` and aggregated, the same
   path/cached client the reply uses** (the non-streaming `GetResponseAsync` returned nothing on the Foundry

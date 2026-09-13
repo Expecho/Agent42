@@ -213,6 +213,7 @@ public sealed class UserProviderResolver : IUserProviderResolver
             SupportsImageGeneration = m.SupportsImageGeneration,
             SupportsEmbeddings = m.SupportsEmbeddings,
             SupportsSpeech = m.SupportsSpeech,
+            SupportsReasoning = m.SupportsReasoning,
         })],
     };
 }

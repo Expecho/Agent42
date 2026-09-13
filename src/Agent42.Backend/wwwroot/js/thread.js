@@ -153,6 +153,50 @@ const prettyJson = (text) => {
   try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
 };
 
+// A reasoning model's "thinking", shown as ONE collapsed disclosure above the reply (ADR 0071).
+//
+// Mutated in place as the stream advances, like addToolCall/completeToolCall rather than
+// renderSuggestions — reasoning arrives in deltas, so the element is created on the first one and
+// appended to thereafter. It sits before .prose so the reply text stays the last thing in the bubble.
+//
+// Collapsed by design: the reply is what the user asked for, and the thinking is there to be opened
+// if they want it. Live-only — renderTurns never replays it, because it is never persisted.
+export function renderReasoning(msg, text) {
+  if (!text) return;
+  const bubble = msg.querySelector(".msg__bubble");
+  if (!bubble) return;
+
+  let item = bubble.querySelector(".msg__thinking");
+  if (!item) {
+    item = document.createElement("details");
+    item.className = "msg__thinking is-thinking";
+    const summary = document.createElement("summary");
+    summary.className = "msg__thinking-summary";
+    summary.textContent = "Thinking…";
+    const body = document.createElement("div");
+    body.className = "msg__thinking-body";
+    item.append(summary, body);
+    bubble.insertBefore(item, bubble.querySelector(".prose"));
+  }
+
+  // textContent, never innerHTML: reasoning is model output and is NOT run through the markdown
+  // renderer or the sanitizer the reply uses, so it must never be parsed as markup.
+  const body = item.querySelector(".msg__thinking-body");
+  if (body) body.textContent += text;
+}
+
+// Closes out the disclosure when the turn ends: the summary stops saying "Thinking…" (present tense on
+// a finished turn reads as a hung reply) and the running class drops so the pulse animation stops.
+// Safe to call on a turn that never reasoned — there is simply nothing to find.
+export function finishReasoning(msg) {
+  const item = msg.querySelector(".msg__thinking.is-thinking");
+  if (!item) return;
+  item.classList.remove("is-thinking");
+  item.classList.add("is-done");
+  const summary = item.querySelector(".msg__thinking-summary");
+  if (summary) summary.textContent = "Thought process";
+}
+
 // Tool activity is shown as collapsible chips above the reply text, one per call.
 export function addToolCall(msg, { toolCallId, toolName, toolInput }) {
   const bubble = msg.querySelector(".msg__bubble");

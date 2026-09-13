@@ -24,13 +24,15 @@ public record DefaultEmbeddingModelRequest(string? EmbeddingDefault);
 // catalog here — the resolver's EffectiveSpeechDefault is the single validation point.
 public record DefaultSpeechModelRequest(string? SpeechDefault);
 
-// SupportsImageGeneration (ADR 0020), SupportsEmbeddings and SupportsSpeech (ADR 0038) are trailing defaults
-// so an old-shape client body still binds — an image model produces images instead of chat replies; an
-// embedding model is picked as the "default embedding model" and feeds document RAG; a speech model is picked
-// as the "default speech model" and synthesizes the voice reply.
+// SupportsImageGeneration (ADR 0020), SupportsEmbeddings and SupportsSpeech (ADR 0038) and SupportsReasoning
+// (ADR 0071) are trailing defaults so an old-shape client body still binds — an image model produces images
+// instead of chat replies; an embedding model is picked as the "default embedding model" and feeds document
+// RAG; a speech model is picked as the "default speech model" and synthesizes the voice reply; a reasoning
+// model is an ordinary chat model that also streams its own thinking.
 public record ProviderModelRequest(
     string Id, string? DisplayName, bool SupportsTools, bool SupportsVision,
-    bool SupportsImageGeneration = false, bool SupportsEmbeddings = false, bool SupportsSpeech = false);
+    bool SupportsImageGeneration = false, bool SupportsEmbeddings = false, bool SupportsSpeech = false,
+    bool SupportsReasoning = false);
 
 // What GET/POST/PUT return for a provider: everything EXCEPT the key, which is masked to HasKey so the
 // ciphertext (and the plaintext) never reach the client (ADR 0018).
@@ -40,7 +42,8 @@ public record ProviderResponse(
 
 public record ProviderModelResponse(
     string Id, string? DisplayName, bool SupportsTools, bool SupportsVision,
-    bool SupportsImageGeneration = false, bool SupportsEmbeddings = false, bool SupportsSpeech = false);
+    bool SupportsImageGeneration = false, bool SupportsEmbeddings = false, bool SupportsSpeech = false,
+    bool SupportsReasoning = false);
 
 // The GET /api/providers payload: the user's overlay providers (masked), their optional chat default, their
 // optional embedding default (the "default embedding model" id), and their optional speech default (the

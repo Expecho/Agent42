@@ -1076,7 +1076,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `include:["reasoning.encrypted_content"]`; **non-reasoning models (gpt-5.4, the shipped default) reject
   that with HTTP 400** (`Encrypted content is not supported with this model`) — measured on the wire by the
   Step-1 spikes, invisible in the signature. `true` is only wanted for a *reasoning* Foundry model (to
-  carry reasoning items across turns without server storage), and those are deferred. (3) **Two distinct
+  carry reasoning items across turns without server storage). **ADR 0071 un-deferred reasoning models and
+  left this `false` anyway** — see "Visible reasoning is `ChatOptions.Reasoning`, NOT
+  `includeReasoningEncryptedContent`" below: measured, the flag does not make reasoning visible, and
+  setting it would write reasoning into our own session. (3) **Two distinct
   experimental suppressions are needed, not one.** `GetResponsesClient()` / the
   `OpenAIClient(AuthenticationPolicy, options)` ctor are `[Experimental("OPENAI001")]`, but
   `AsIChatClientWithStoredOutputDisabled` is `[Experimental("MAAI001")]` (Microsoft.Agents.AI, a
@@ -3134,3 +3137,70 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `IsValidConversationId_AcceptsOnlyAMintedId`),
   `.agentic/decisions/0070-expose-stored-agents-as-an-mcp-server.md`
 - **Verified:** 2026-09-11
+
+### `reply` is NOT the persistence path — it feeds the follow-up call, and the two fail differently
+
+- **Claim:** `ChatCoreAsync` accumulates the assistant's text into a `reply` StringBuilder, and it is
+  natural — and wrong — to read that as "the turn being assembled for storage". It is not. `reply`'s only
+  consumers are `SuggestFollowUpsAsync` / `GenerateFollowUpsAsync` (ADR 0036); the session is persisted
+  from `SerializeSessionAsync(_session)`, which Agent Framework fills from the response message
+  **independently of anything `ProjectStreamedContent` does**. The first draft of the ADR 0071 plan built
+  its central acceptance criterion on the wrong object, and that test would have passed with or without
+  the feature working.
+  The practical consequences, which need **separate** tests because they fail separately:
+  1. **To keep a content part out of storage, filter it at the history provider** —
+     `InMemoryChatHistoryProviderOptions.StorageInputResponseMessageFilter`, the response-side twin of the
+     `StorageInputRequestMessageFilter` used for injected context messages. Note the request filter has
+     **two** sites (`BuildAgent` and `RecordImageTurnAsync`) while the response filter has one — the
+     image-turn adapter's client cannot emit reasoning, and a comment there says so. A check inside
+     `ProjectStreamedContent` cannot reach the session at all. Measured on Agent Framework 1.19: without
+     the filter a `TextReasoningContent` round-trips as `{"$type":"reasoning","text":"…"}` on **both** the
+     streaming and the `RunAsync` (reminder) path.
+  2. **To keep it out of the follow-up model call, keep it out of `reply`** — a different concern
+     entirely, and an *egress* one (ADR 0013): whatever lands in `reply` is re-sent to the model on the
+     next turn's suggestion call as if the assistant had said it.
+  A test aimed at the projection function proves neither. Aim one at `SerializedSession` and one at what
+  the suggestion helper was handed.
+  **Mutation-checked:** removing the storage filter fails both `ReasoningText_IsNotPersisted` tests and
+  leaves the projection-level tests green.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (the `reply` declaration and its comment,
+  `SuggestFollowUpsAsync`, `PersistTurnUnlessEphemeralAsync`, `StripReasoningFromStorage`),
+  `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (both filters in one options block),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`ReasoningText_IsNotPersisted`,
+  `ReasoningText_IsNotPersisted_OnTheBackgroundPath`, `ReasoningText_DoesNotReachTheFollowUpCall`),
+  `.agentic/decisions/0071-show-reasoning-output.md`
+- **Verified:** 2026-09-13
+
+### Visible reasoning is `ChatOptions.Reasoning`, NOT `includeReasoningEncryptedContent`
+
+- **Claim:** "The Responses API is stateful by default" above says a reasoning Foundry model would want
+  `includeReasoningEncryptedContent: true`. For **carrying encrypted reasoning items across turns**, yes —
+  but it is **not** what makes reasoning visible, and reaching for it is the wrong lever twice over: it
+  would also write reasoning blobs into our own session, against ADR 0014's stateless mandate and ADR
+  0004's 2 MB item. Measured on the pinned stack against the exact client `Provider.Foundry` builds, both
+  values, stub transport:
+  - `false` → no `include` array; **`TextReasoningContent` still surfaces**
+  - `true` → `include:["reasoning.encrypted_content"]`; the same `TextReasoningContent`
+  What actually asks the provider for reasoning is
+  **`ChatOptions.Reasoning = new ReasoningOptions { Output = ReasoningOutput.Summary }`**, which the
+  adapter renders as `"reasoning": {"summary": "concise"}` in the request body. A reasoning model emits
+  no summary unless asked, so without it the feature is invisible in production however well the client
+  renders it.
+  Two more measured facts that shape where the flag is wired:
+  - on **Chat Completions** `ChatOptions.Reasoning` is **inert** — the request body is byte-identical
+    with and without it — because those providers (DeepSeek and friends) send `reasoning_content`
+    unsolicited. Safe to apply uniformly; load-bearing only on Responses.
+  - the per-model flag must **not** become a `ModelCapabilities` bit: `GetCapabilities` short-circuits a
+    Foundry provider to `ModelCapabilities.Full with { … }` and never consults the declared models, so
+    the bit would read true for every Foundry model. Read it at client-construction time by model id
+    instead — a third pattern, neither a capability bit nor a picker-only filter like
+    `SupportsEmbeddings`/`SupportsSpeech`.
+- **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.RequestsReasoning`, the
+  `ConfigureOptions` wiring in `Build`, and the unchanged `includeReasoningEncryptedContent: false`),
+  `tests/Agent42.Tests/ReasoningStreamTests.cs`
+  (`Reasoning_SurfacesOnTheResponsesPath_RegardlessOfEncryptedContent`,
+  `ReasoningSummary_IsRequested_WhenReasoningOutputIsSummary`,
+  `NoReasoningField_IsSent_WhenReasoningIsNotRequested`),
+  `tests/Agent42.Tests/ModelProviderTests.cs` (`ReasoningModel_WiresTheReasoningRequest`),
+  `.agentic/decisions/0071-show-reasoning-output.md`
+- **Verified:** 2026-09-13
