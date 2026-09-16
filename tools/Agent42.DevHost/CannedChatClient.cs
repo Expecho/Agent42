@@ -260,7 +260,10 @@ public sealed partial class CannedChatClient : IChatClient
         }
 
         // Ordering is load-bearing: "reminder" contains the substring "remind", so the cancel
-        // checks MUST precede the schedule check — do not reorder these branches.
+        // checks MUST precede the schedule check — do not reorder these branches. The two push triggers
+        // above sit outside that constraint rather than ahead of it: neither contains "cancel" or
+        // "remind", so they collide with nothing here and their position is free. (FakeChatClient appends
+        // its equivalents last for the same reason, stated the other way round.)
         if (text.Contains("cancel all", StringComparison.OrdinalIgnoreCase))
         {
             return BuildCancelAllCall();

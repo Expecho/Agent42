@@ -708,6 +708,27 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains("no usable text", answer, StringComparison.Ordinal);
     }
 
+    // AC8 (wiring half): the text that reaches PushMessage is the SANITIZED text, not what the model wrote.
+    //
+    // PushToolLimitsTests covers the sanitizer as a function, and every other test here happens to send
+    // text that survives it byte-identically — so without this one, an implementation that computed the
+    // clean strings only for the emptiness check and then passed the RAW title and body into PushMessage
+    // would pass the entire suite, while putting a bidi override and a 500-character body on a lock
+    // screen. That is the mutation this catches, and it is the security control of the feature.
+    [Fact]
+    public async Task PushTool_SendsTheSanitizedText()
+    {
+        await SubscribeDeviceAsync("push-dirty-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-dirty-user/push-dirty-conv");
+
+        await CollectAsync(agent.ChatAsync("notify me with junk", null));
+
+        var send = Assert.Single(SendsFor("push-dirty-user"));
+        Assert.DoesNotContain('\u202e', send.Message.Title);
+        Assert.Equal("Build finished", send.Message.Title);
+        Assert.Equal(PushToolLimits.MaxBodyLength, send.Message.Body.Length);
+    }
+
     // AC10: an incognito chat REFUSES the tool and sends nothing (ADR 0034 — it names a Web Push, by
     // itself, as breaking its guarantee). The second half pins the turn-scoped nature of the gate exactly
     // as ReadWebDocument_RefusedOnEphemeralTurn does: the next NORMAL turn on the same warm activation
@@ -758,7 +779,17 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         await agent.EnqueuePromptAsync("send me a notification", null);
 
+        // Waiting for the FIRST send is not enough, and the difference is the whole test. The tool's push
+        // is recorded DURING the drain; the away-reply push would be sent AFTER it. PollUntilAsync returns
+        // the instant one send exists, so an Assert.Single there would frequently pass even with the
+        // suppression deleted — it would simply be reading before the second send happened.
+        //
+        // AgentGrain is NON-REENTRANT, so this grain call queues behind the OneWay turn and returns only
+        // once the whole of EnqueuePromptAsync — including the away-reply call site after the drain — has
+        // run. That is what makes the assertion below deterministic rather than a race won by luck.
         await PollUntilAsync(() => SendsFor("push-suppress-run-user").Count >= 1);
+        await agent.GetHistoryAsync();
+
         var send = Assert.Single(SendsFor("push-suppress-run-user"));
         Assert.Equal(FakeChatClient.PushTitle, send.Message.Title);
     }

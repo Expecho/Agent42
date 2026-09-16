@@ -129,14 +129,15 @@ public static class PushToolLimits
     // Everything here is text that cannot honestly render: control and format characters (see the
     // SanitizeNotificationText remarks — Cf carries the bidi overrides), code points no Unicode version
     // has assigned, private-use code points (whose glyph is whatever a particular font decided, so they
-    // say nothing portable), unpaired surrogates (which EnumerateRunes has already turned into U+FFFD),
-    // and the replacement character itself.
+    // say nothing portable), and the replacement character itself — which is also how an UNPAIRED
+    // surrogate is dropped, because EnumerateRunes substitutes U+FFFD for any ill-formed subsequence.
+    // There is deliberately no UnicodeCategory.Surrogate arm: a Rune is a Unicode scalar value, so
+    // D800-DFFF cannot occur here and such a clause would imply a coverage this predicate does not need.
     private static bool IsDroppable(Rune rune)
         => rune.Value == ReplacementChar
             || Rune.GetUnicodeCategory(rune)
                 is UnicodeCategory.Control
                 or UnicodeCategory.Format
-                or UnicodeCategory.Surrogate
                 or UnicodeCategory.OtherNotAssigned
                 or UnicodeCategory.PrivateUse;
 }

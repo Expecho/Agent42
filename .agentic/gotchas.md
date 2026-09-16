@@ -516,6 +516,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `finally`, and on entry to `EnqueuePromptAsync` and `ReceiveReminder`). Keep them together; the reason
   `ReceiveReminder` lives in the core part rather than under `Scheduling/` is that these clears must be
   read as one block.
+  **`_pushesThisTurn` (ADR 0075) is declared in that same block but is deliberately NOT a fifth member of
+  this rule** — it resets in **two** places, not three, because it always resets to `0` and so belongs in
+  the shared `ChatCoreAsync` that both chat callers drain, while the four above carry a *different value*
+  per path and can only be set by the caller. Do not "harmonise" it into the three-site pattern; read the
+  push-per-turn-counter entry for the reason `ReceiveReminder` still needs its own line.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_turnLocation`, the `finally` in `ChatAsync`, the
   clear in `ReceiveReminder`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`ReceiveReminder_HasNoUserLocation`, `Location_IsTurnScoped_AndNotPersisted`),
@@ -539,6 +544,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `GET /messages` reflects it live — the trace-free property only shows up after deactivation (asserted via
   `EphemeralChat_LeavesNoHistory_AfterReactivation`, not an empty `/messages`). Documents are blocked at the
   composer (RAG writes durable chunks); images are allowed (blob bytes persist — accepted, session-only).
+  **`send_push_notification` (ADR 0075) is the THIRD tool to follow trap (1)** — an early
+  `if (_ephemeral) return …` as its very first guard, for the reason ADR 0034 gives by name: a Web Push by
+  itself breaks the guarantee, because the title and body become a durable plaintext artifact in the OS
+  notification shade and an incognito chat has no sidebar row for the notification to point back at.
+  `PushTool_EphemeralChat_RefusesAndSendsNothing` asserts the turn-scoped half too.
   **`read_web_document` (ADR 0066) follows trap (1) exactly** — an early `if (_ephemeral) return …` inside
   the tool, for the same reason and with the same ordering argument, and placed **before the fetch** so an
   incognito turn makes no outbound request either. `ReadWebDocument_RefusedOnEphemeralTurn` also asserts the
@@ -561,6 +571,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `EphemeralChat_SchedulingIsRefused_NoReminderRegistered`),
   `tests/Agent42.Tests/AgentApiTests.cs` (`EphemeralChat_IsNotListedInTheSidebar`),
   `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs` (the `read_web_document` refusal),
+  `src/Agent42.Agents/Push/AgentGrain.PushTool.cs` (the `send_push_notification` refusal),
   `tests/Agent42.Tests/WebDocumentToolTests.cs` (`ReadWebDocument_RefusedOnEphemeralTurn`),
   `.agentic/decisions/0034-ephemeral-chat.md`
 - **Verified:** 2026-09-04

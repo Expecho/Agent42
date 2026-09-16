@@ -5,7 +5,7 @@ status: accepted
 tags: [push-notifications, tools, selectable-tools, prompt-injection, security, egress, incognito, no-migration]
 supersedes: []
 extends: [0021]
-amends: [0028]
+amends: [0028, 0070]
 ---
 
 # A model-invoked push notification tool
@@ -141,10 +141,20 @@ documents) — can now put text of an attacker's choosing in front of the user, 
 the OS has. **Sanitization bounds the characters, not the meaning**: "Your bank needs you to call
 555-0100" sanitizes perfectly.
 
-Sharper, and easy to miss: **this is reachable from the two key-holder endpoints.** A holder of an ADR
-0022 `/api/agent-run` key, or an ADR 0070 `/api/agent-mcp` key, could already cause the *fixed* away-reply
-push to fire. With this tool they can cause a push whose **text they control**, on the *owner's* devices.
-That is a real escalation of both endpoints.
+Sharper, and easy to miss: **this is reachable from a key-holder endpoint.** A holder of an ADR 0022
+`/api/agent-run` key could already cause the *fixed* away-reply push to fire; with this tool they can cause
+one whose **text they control**, on the *owner's* devices. That is a real escalation of that endpoint, and
+it is accepted: notifying is a plausible reason to drive an agent from a cron job, and that surface already
+notifies by design.
+
+**The `/api/agent-mcp` surface (ADR 0070) is the exception, and it is excluded.** That ADR chose
+deliberately that an `ask_agent` turn lands in the owner's sidebar **silently**, because the caller already
+has the reply in hand. Since the new key is in `AllSelectableToolKeys` and that surface binds `null == all`,
+shipping without a filter would have reversed a recorded decision **by default** — so
+`AgentMcpRunner.WithoutMemory` becomes `WithoutMemoryOrPush` and drops both keys at bind time. The
+asymmetry with `/api/agent-run` is deliberate and argued in that method's docstring.
+`AskAgent_SendsNoPushNotification` pins it (mutation-checked, with
+`AskAgent_PushExclusionIsThisSurfaceOnly` as the control that keeps it honest).
 
 ### The egress paragraph ADR 0028 wrote no longer describes the payload
 
@@ -191,6 +201,12 @@ static key renders with no frontend change at all. `UsageSpanProjector` whitelis
 - **An ASCII allowlist, for consistency with ADR 0066.** Rejected — different sink, and it would destroy
   ordinary non-English text and emoji for no gain.
 - **A cross-turn rate limit or quiet hours.** Out of scope; the per-turn cap is the bound that ships.
+- **Leaving the tool available on `/api/agent-mcp`** and merely recording the escalation. Rejected after
+  review: ADR 0070 makes silence on that surface an explicit decision, and `null == all` would have
+  reversed it for every exposed agent without anyone choosing to. Excluding it costs one clause in a filter
+  that already existed for memory. The reverse argument — that a push returns no data to the caller, unlike
+  memory recall, so it is a weaker escalation — is true but does not bear on the point: the harm is to the
+  *owner*, whose lock screen it is, not to the caller.
 
 ## Verification
 

@@ -630,6 +630,17 @@ public sealed partial class FakeChatClient : IChatClient
             ["body"] = PushBody,
         });
 
+    // Text that SURVIVES sanitizing but is changed by it: a bidi override buried in an otherwise ordinary
+    // title, and a body well over the cap. This is what makes the sanitizer's WIRING observable — a tool
+    // that computed the clean strings for the emptiness check and then sent the raw ones would pass every
+    // other test in this file, while putting a U+202E override and a 500-character body on a lock screen.
+    private static FunctionCallContent BuildDirtyPushCall() =>
+        new("push-dirty-call-1", PushToolName, new Dictionary<string, object?>
+        {
+            ["title"] = "Build\u202e finished",
+            ["body"] = new string('b', 500),
+        });
+
     // Title and body made ENTIRELY of characters the sanitizer strips: a bidi override (U+202E), a
     // zero-width space (U+200B), a BEL, and whitespace. Nothing usable survives, so the tool must refuse
     // rather than send a blank notification.
@@ -842,6 +853,7 @@ public sealed partial class FakeChatClient : IChatClient
         // handled by its own counting branch in SelectToolCall.
         ("schedule a notification", _ => BuildPushReminderCall()),
         ("notify me with nothing", _ => BuildBlankPushCall()),
+        ("notify me with junk", _ => BuildDirtyPushCall()),
         ("send me a notification", _ => BuildPushCall()),
     ];
 

@@ -265,6 +265,44 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         Assert.NotEmpty(RetainsFor(Owner));
     }
 
+    // The push exclusion (ADR 0075), asserted as an EFFECT — zero sends — never as a selection list, for
+    // the reason the memory pair above states: a list-shaped assertion is the weak one.
+    //
+    // The agent is created with a NULL selection, the `null == all` sentinel, which therefore INCLUDES
+    // push_notification — so this fails if the filter is dropped, rather than passing trivially. A device
+    // is subscribed first, so an Assert.Empty here is attributable to the exclusion and not to the tool's
+    // own "nobody is subscribed" guard, which would make it pass for the wrong reason.
+    [Fact]
+    public async Task AskAgent_SendsNoPushNotification()
+    {
+        await SubscribeOwnerDeviceAsync();
+        var (_, key) = await CreateExposedAgentAsync("Quiet agent");
+
+        var reply = await AskAgentAsync(key, "send me a notification about the build");
+
+        Assert.False(reply.IsError, reply.Text);
+        Assert.Empty(PushSendsFor(Owner));
+    }
+
+    // The control for the test above: a normal browser turn on this same cluster, with the same prompt and
+    // a subscribed device, DOES push. Without it the exclusion test passes just as well against a cluster
+    // where the tool never worked at all.
+    [Fact]
+    public async Task AskAgent_PushExclusionIsThisSurfaceOnly()
+    {
+        await SubscribeOwnerDeviceAsync();
+
+        using (var chat = await Client.PostAsJsonAsync(
+            "/api/chat/mcp-push-control-conversation",
+            new ChatRequest("send me a notification about the build", null)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync();
+        }
+
+        Assert.NotEmpty(PushSendsFor(Owner));
+    }
+
     // AC11. ChatAsync sets _interactiveTurn = true, and SuggestFollowUpsAsync gates on exactly that — so
     // draining it without the `interactive: false` parameter pays one extra, permanently discarded model
     // call on EVERY invocation of this surface.
@@ -537,6 +575,18 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
 
     // Aggregated across every silo, for the reason AgentGrainTests gives: the recorder is a per-silo
     // singleton and a grain may activate on any silo of the cluster.
+    // Idempotent: IUserPushGrain upserts by endpoint, and SharedClusterFixture.ResetSiloState does not
+    // reset that grain's state anyway, so calling this from several tests is safe.
+    private Task SubscribeOwnerDeviceAsync() =>
+        Cluster.GrainFactory.GetGrain<IUserPushGrain>(Owner)
+            .AddAsync(new PushSubscription("https://push.example/mcp-owner", "p256dh-key", "auth-secret"));
+
+    private IReadOnlyList<(string UserId, PushMessage Message)> PushSendsFor(string userId) =>
+        [.. Cluster.Silos
+            .SelectMany(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
+                .GetRequiredService<RecordingPushNotificationSender>().Sends)
+            .Where(send => send.UserId == userId)];
+
     private IReadOnlyList<RecordingHindsightClient> MemoryRecorders() =>
         [.. Cluster.Silos.Select(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
             .GetRequiredService<RecordingHindsightClient>())];

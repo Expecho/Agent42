@@ -1450,9 +1450,13 @@ to document a mechanical rule, add a lint rule instead.
   device(s)", never "delivered"). **No `SKILL.md`, deliberately** (ADR 0067's lesson: the rule the model reads
   is the tool DESCRIPTION, and a skill would mint a second silently-OFF `skill:` key). **Headline consequence:
   every inbound prompt-injection channel (0011/0024/0027/0049/0066/0067) can now put attacker-chosen text on
-  the user's lock screen** — sanitization bounds the characters, not the meaning — and it is reachable from the
-  two key-holder endpoints, so an ADR 0022 `/api/agent-run` or ADR 0070 `/api/agent-mcp` key holder can raise
-  a notification whose **text they control** on the owner's devices. 0028's egress paragraph needs re-reading
+  the user's lock screen** — sanitization bounds the characters, not the meaning — and it is reachable from
+  an ADR 0022 `/api/agent-run` key holder, who can raise a notification whose **text they control** on the
+  owner's devices (accepted: that surface already notifies by design). **`/api/agent-mcp` is EXCLUDED and
+  this amends ADR 0070 too:** that ADR chose deliberately that an `ask_agent` turn lands in the sidebar
+  **silently**, and since the key is in `AllSelectableToolKeys` and that surface binds `null == all`,
+  shipping unfiltered would have reversed a recorded decision by default — so `WithoutMemory` became
+  **`WithoutMemoryOrPush`**, dropping both keys at bind time (mutation-checked, with a same-cluster control). 0028's egress paragraph needs re-reading
   rather than citing: the RFC 8291 encryption is unchanged, but the payload is no longer just a user-chosen
   agent name. The key lands **OFF for anyone who ever pressed Save** (no migration, fails safe). No new secret,
   Cosmos/blob container, grain, folder, `excludedPaths` entry, Bicep change, package or `[Id(n)]`, **and no
