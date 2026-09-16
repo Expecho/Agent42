@@ -516,6 +516,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `finally`, and on entry to `EnqueuePromptAsync` and `ReceiveReminder`). Keep them together; the reason
   `ReceiveReminder` lives in the core part rather than under `Scheduling/` is that these clears must be
   read as one block.
+  **`_pushesThisTurn` (ADR 0075) is declared in that same block but is deliberately NOT a fifth member of
+  this rule** — it resets in **two** places, not three, because it always resets to `0` and so belongs in
+  the shared `ChatCoreAsync` that both chat callers drain, while the four above carry a *different value*
+  per path and can only be set by the caller. Do not "harmonise" it into the three-site pattern; read the
+  push-per-turn-counter entry for the reason `ReceiveReminder` still needs its own line.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_turnLocation`, the `finally` in `ChatAsync`, the
   clear in `ReceiveReminder`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`ReceiveReminder_HasNoUserLocation`, `Location_IsTurnScoped_AndNotPersisted`),
@@ -539,6 +544,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `GET /messages` reflects it live — the trace-free property only shows up after deactivation (asserted via
   `EphemeralChat_LeavesNoHistory_AfterReactivation`, not an empty `/messages`). Documents are blocked at the
   composer (RAG writes durable chunks); images are allowed (blob bytes persist — accepted, session-only).
+  **`send_push_notification` (ADR 0075) is the THIRD tool to follow trap (1)** — an early
+  `if (_ephemeral) return …` as its very first guard, for the reason ADR 0034 gives by name: a Web Push by
+  itself breaks the guarantee, because the title and body become a durable plaintext artifact in the OS
+  notification shade and an incognito chat has no sidebar row for the notification to point back at.
+  `PushTool_EphemeralChat_RefusesAndSendsNothing` asserts the turn-scoped half too.
   **`read_web_document` (ADR 0066) follows trap (1) exactly** — an early `if (_ephemeral) return …` inside
   the tool, for the same reason and with the same ordering argument, and placed **before the fetch** so an
   incognito turn makes no outbound request either. `ReadWebDocument_RefusedOnEphemeralTurn` also asserts the
@@ -561,6 +571,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `EphemeralChat_SchedulingIsRefused_NoReminderRegistered`),
   `tests/Agent42.Tests/AgentApiTests.cs` (`EphemeralChat_IsNotListedInTheSidebar`),
   `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs` (the `read_web_document` refusal),
+  `src/Agent42.Agents/Push/AgentGrain.PushTool.cs` (the `send_push_notification` refusal),
   `tests/Agent42.Tests/WebDocumentToolTests.cs` (`ReadWebDocument_RefusedOnEphemeralTurn`),
   `.agentic/decisions/0034-ephemeral-chat.md`
 - **Verified:** 2026-09-04
@@ -1957,7 +1968,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0023-web-share-target-android-pwa.md`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
 - **Verified:** 2026-07-18
 
-### The away-reply push belongs in the two async callers, never in `ChatCoreAsync`
+### `SendAwayReplyPushAsync` belongs in the two async callers, never in `ChatCoreAsync`
 
 - **Claim:** the Web Push notification when an agent replies (ADR 0028) must be sent from the two
   **async** callers — `EnqueuePromptAsync` (agent-run) and `ReceiveReminder` (scheduled prompt) — and
@@ -1975,15 +1986,61 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **non-reentrant** grain only because the sender is internally time-bounded (`SendBudget`) and its
   `HttpClient` calls `RemoveAllResilienceHandlers()` (the same named-client retry trap as the web/geocoding
   clients) — see the "web tool return value" / geocoder gotchas.
+  **NARROWED by ADR 0075, and this is the easiest thing here to get wrong: the rule above governs
+  `SendAwayReplyPushAsync` SPECIFICALLY, not "pushing" in general.** That method exists to reach a user who
+  is *not* watching, so firing it from the live stream would be self-defeating — and every trap above still
+  holds exactly as written. A **model-invoked** push (`send_push_notification`, ADR 0075) is a different
+  thing: the model asked for it, so it may fire from ANY path including the live `ChatAsync` turn. That is
+  why it lives in a separate partial (`src/Agent42.Agents/Push/AgentGrain.PushTool.cs`) rather than beside
+  `SendAwayReplyPushAsync` — **the file split is the documentation that these are two rules**. Do not merge
+  the two files and do not "harmonise" their placement rules. One behaviour change lands on the two call
+  sites above: both now also carry `&& _pushesThisTurn == 0`, so the generic away-reply push is **suppressed
+  when the tool already pushed this turn** (the SW sets no `tag`, so otherwise one reply stacks two entries
+  in the shade).
 - **Evidence:** `src/Agent42.Agents/Push/AgentGrain.Push.cs` (`SendAwayReplyPushAsync` itself — but
   note the three facts this gotcha is about are all CALL SITES, which live in the core part:
   `src/Agent42.Agents/Conversations/AgentGrain.cs` has the gated call in `EnqueuePromptAsync`, the
   post-`WriteStateAsync` call in `ReceiveReminder`, and the deliberate ABSENCE of any call from
   `ChatCoreAsync`), `src/Agent42.Backend/Push/WebPushNotificationSender.cs` (`SendBudget`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ReceiveReminder_SendsPush_WithAgentName`,
-  `EnqueuePrompt_SendsPush`, `ChatAsync_DoesNotSendPush`, `EnqueuePrompt_NoModel_DoesNotSendPush`),
-  `.agentic/decisions/0028-web-push-when-agent-replies-while-away.md`
-- **Verified:** 2026-07-21
+  `EnqueuePrompt_SendsPush`, `ChatAsync_DoesNotSendAwayReplyPush` — renamed from
+  `ChatAsync_DoesNotSendPush` by ADR 0075, whose old name became a lie once the live path could push at
+  all, `EnqueuePrompt_NoModel_DoesNotSendPush`, and for the suppression half
+  `ReceiveReminder_SuppressesAwayReplyPush_WhenToolAlreadyPushed` +
+  `EnqueuePrompt_SuppressesAwayReplyPush_WhenToolAlreadyPushed`),
+  `src/Agent42.Agents/Push/AgentGrain.PushTool.cs` (the model-invoked sibling),
+  `.agentic/decisions/0028-web-push-when-agent-replies-while-away.md`,
+  `.agentic/decisions/0075-model-invoked-push-notification.md`
+- **Verified:** 2026-09-16
+
+### The push-per-turn counter resets in TWO places — and `ReceiveReminder` is the one that bites
+
+- **Claim:** `_pushesThisTurn` (ADR 0075) bounds how many notifications one turn may send, and it resets in
+  exactly **two** places — neither the one nor the three it looks like. `ChatAsync` and `EnqueuePromptAsync`
+  both **drain** `ChatCoreAsync`, so a single reset at the top of that shared core covers both, and covers
+  any future caller of it that a per-entrypoint clear would miss. **`ReceiveReminder` does NOT drain
+  `ChatCoreAsync`** — it calls `_agent.RunAsync` directly, the same fact the ADR 0066 "consume site 2 of 2"
+  comment rests on — so it resets the field itself, in its existing `_turnLocation`/`_ephemeral`/
+  `_webDocumentIngested` block. **Miss that second site and a REPEATING reminder inherits the previous
+  tick's count and goes permanently silent after three notifications, for the life of the activation** —
+  the ADR 0012 `_turnLocation` bug shape exactly, and worse than it looks because the away-reply push is
+  *also* suppressed when the counter reads non-zero, so such a reminder notifies nothing at all.
+  This is deliberately **not** the `_ephemeral` shape of "set it in all three entrypoints": those fields
+  carry a *different value* per path so only the caller knows what to set, whereas this one always resets
+  to `0`. Two more things verified at implementation time rather than assumed: `ChatCoreAsync` is an
+  `IAsyncEnumerable` iterator, so the reset must sit **above any `yield`** (both callers enumerate
+  immediately, so it then takes effect at once); and there is **no fourth path** —
+  `GenerateFollowUpsAsync` (ADR 0036) and `RecordImageTurnAsync` (ADR 0020) both run a model with **no
+  `Tools`**, and ADR 0070's `ask_agent` goes through `ChatAsync`.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (the `_pushesThisTurn` declaration and its
+  two reset sites — the top of `ChatCoreAsync` and `ReceiveReminder`'s reset block),
+  `src/Agent42.Agents/Push/AgentGrain.PushTool.cs` (the only site that increments it, on the SEND and not
+  on the attempt, so a refused call does not consume budget),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`PushTool_CounterResetsOnTheReminderPath` — **mutation-checked**:
+  deleting the `ReceiveReminder` reset fails that test and nothing else;
+  `PushTool_CounterResetsOnTheNextTurn`, `PushTool_CapsPushesPerTurn`),
+  `.agentic/decisions/0075-model-invoked-push-notification.md`
+- **Verified:** 2026-09-16
 
 ### Config-health: the PROBE path is the leak channel, not the static one — and don't inject `IHttpClientFactory`
 

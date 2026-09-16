@@ -142,6 +142,7 @@ public sealed class ProjectLayoutTests
         "ImageGeneration/AgentGrain.ImageTurn.cs",
         "Attachments/AgentGrain.Attachments.cs",
         "Push/AgentGrain.Push.cs",
+        "Push/AgentGrain.PushTool.cs",
         "Memory/AgentGrain.Memory.cs",
         "Search/AgentGrain.Search.cs",
     ];

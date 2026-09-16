@@ -5,6 +5,17 @@ status: accepted
 tags: [push-notifications, pwa, service-worker, web-push, vapid, egress, security, ssrf]
 ---
 
+> **Amended by [ADR 0075](0075-model-invoked-push-notification.md) (2026-09-16).** Two things change, and
+> the rest of this ADR stands. **(1)** "Never push from `ChatCoreAsync`" is **narrowed, not repealed**: it
+> governs `SendAwayReplyPushAsync` specifically — including both of its placement traps, which are
+> untouched — while a *model-invoked* notification (`send_push_notification`) may fire from any path,
+> the live turn included. **(2)** The away-reply push is now **suppressed when that tool already pushed
+> during the turn**, so one reply never stacks two entries in a shade that sets no `tag`. The Decision
+> sentence below, "A user actively chatting receives their reply in-stream; no push is generated for that
+> turn", is the one line this makes false. The **Egress** section's reasoning also needs re-reading: the
+> RFC 8291 encryption is unchanged, but the payload is no longer just a user-chosen agent name — title and
+> body are now model-authored, conversation-derived text.
+
 # Web Push notification when an agent replies while the user is away
 
 ## Context

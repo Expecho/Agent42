@@ -8,6 +8,15 @@ extends: [0024]
 amends: [0002, 0022, 0036, 0042, 0068]
 ---
 
+> **Amended by [ADR 0075](0075-model-invoked-push-notification.md) (2026-09-16).** 0075 adds a
+> model-invoked `send_push_notification` tool that may fire from any path, including the `ChatAsync` this
+> surface drains — which would have reversed the "lands in the owner's sidebar **silently**" property
+> below by default, since the new key is in `AllSelectableToolKeys` and this surface binds `null == all`.
+> It does not: the bind-time filter that already removed memory now removes push notifications too
+> (`WithoutMemoryOrPush`), so the silence below still holds. The one sentence to read with care is the
+> comparison to `/api/agent-run`, which keeps the tool — that asymmetry is now deliberate and argued in
+> the filter's docstring, not an oversight.
+
 # Stored agents are callable by an external MCP client
 
 > **The inverse direction of every other MCP decision in this repo.** ADRs 0024/0025/0026/0058/0064/0067/0069
@@ -166,12 +175,14 @@ there is no principal header, so MCP spend lands under the `local-dev` fallback 
 dashboard (ADR 0031), and the content reaches `/logs` (ADR 0054) in full. Pre-existing; noted, not fixed,
 because fixing it is a change to that older surface too.
 
-**No away-reply push, and that is a choice rather than an omission.** ADR 0028's rule is "send only on the
+**No push of any kind, and that is a choice rather than an omission.** ADR 0028's rule is "send only on the
 two async paths, never from `ChatCoreAsync`", and `ask_agent` drains `ChatCoreAsync` — so an MCP turn lands in
 the owner's sidebar silently, while `/api/agent-run`, the other external-caller surface on the same
 credential, does push. That is deliberate: the caller already has the reply in hand, so the notification would
 tell the owner about a conversation that is already complete and already read. Anyone comparing the two
-surfaces would otherwise read the difference as an oversight.
+surfaces would otherwise read the difference as an oversight. **ADR 0075 kept this property deliberately**
+rather than letting its model-invoked tool erode it: an exposed agent has `push_notification` filtered out
+at bind time, so neither kind of notification reaches the owner from this surface.
 
 **The retention gate is deliberately broader than the id validator.** `IsRetentionWindowed` matches a bare
 `mcp-` prefix while `IsValidConversationId` requires the exact minted shape, so a *browser* conversation whose
