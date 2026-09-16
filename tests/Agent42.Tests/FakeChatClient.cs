@@ -583,6 +583,90 @@ public sealed partial class FakeChatClient : IChatClient
         return null;
     }
 
+    /// <summary>The registered name of the model-invoked push tool (ADR 0075).</summary>
+    public const string PushToolName = "send_push_notification";
+
+    /// <summary>
+    /// Drives four <c>send_push_notification</c> calls in ONE turn, so the per-turn cap can be reached and
+    /// exceeded. See the counting branch in <see cref="SelectToolCall"/> for why this cannot be a row in
+    /// the trigger table.
+    /// </summary>
+    public const string PushCapTrigger = "spam notifications";
+
+    /// <summary>The title the push builders use, so a test can tell a MODEL-authored push from the ADR 0028 away-reply one (whose title is the agent name).</summary>
+    public const string PushTitle = "Build finished";
+
+    /// <summary>The body the push builders use.</summary>
+    public const string PushBody = "The nightly build completed successfully.";
+
+    // One more call than the cap allows, so the last one must be REFUSED by the tool rather than sent.
+    private const int PushCapAttempts = PushToolLimits.MaxPushesPerTurn + 1;
+
+    // How many times one named tool has been called since the last user turn. Distinct from the
+    // `calledThisTurn` name-set, which cannot count — see the push-cap branch in SelectToolCall.
+    private static int CountCallsThisTurn(IReadOnlyList<ChatMessage> list, int lastUserIndex, string toolName)
+    {
+        var count = 0;
+        for (var i = lastUserIndex + 1; i < list.Count; i++)
+        {
+            count += list[i].Contents.OfType<FunctionCallContent>().Count(c => c.Name == toolName);
+        }
+
+        return count;
+    }
+
+    private static FunctionCallContent BuildPushCall() =>
+        new("push-call-1", PushToolName, new Dictionary<string, object?>
+        {
+            ["title"] = PushTitle,
+            ["body"] = PushBody,
+        });
+
+    // The nth push call of one turn. The CallId varies with the ordinal — see the counting branch.
+    private static FunctionCallContent BuildPushSpamCall(int ordinal) =>
+        new($"push-spam-call-{ordinal}", PushToolName, new Dictionary<string, object?>
+        {
+            ["title"] = $"{PushTitle} {ordinal}",
+            ["body"] = PushBody,
+        });
+
+    // Text that SURVIVES sanitizing but is changed by it: a bidi override buried in an otherwise ordinary
+    // title, and a body well over the cap. This is what makes the sanitizer's WIRING observable — a tool
+    // that computed the clean strings for the emptiness check and then sent the raw ones would pass every
+    // other test in this file, while putting a U+202E override and a 500-character body on a lock screen.
+    private static FunctionCallContent BuildDirtyPushCall() =>
+        new("push-dirty-call-1", PushToolName, new Dictionary<string, object?>
+        {
+            ["title"] = "Build\u202e finished",
+            ["body"] = new string('b', 500),
+        });
+
+    // Title and body made ENTIRELY of characters the sanitizer strips: a bidi override (U+202E), a
+    // zero-width space (U+200B), a BEL, and whitespace. Nothing usable survives, so the tool must refuse
+    // rather than send a blank notification.
+    private static FunctionCallContent BuildBlankPushCall() =>
+        new("push-blank-call-1", PushToolName, new Dictionary<string, object?>
+        {
+            ["title"] = "\u202e\u200b\u0007",
+            ["body"] = "  \r\n\t  ",
+        });
+
+    // A reminder whose PROMPT triggers the push tool, so a fired reminder exercises the tool on the
+    // ReceiveReminder path — which does NOT drain ChatCoreAsync and so has its own counter reset (ADR 0075).
+    // The same shape as BuildLocationReminderCall / BuildDocumentReminderCall.
+    private static FunctionCallContent BuildPushReminderCall() =>
+        new("push-reminder-call-1", "schedule_prompt", new Dictionary<string, object?>
+        {
+            ["name"] = "notify-me",
+            ["prompt"] = "send me a notification about the build",
+            ["dueInMinutes"] = 1.0,
+            // REQUIRED: schedule_prompt takes a non-nullable double, so omitting it fails the call
+            // outright ("Error: Function failed.") and nothing is ever scheduled. A REPEATING reminder is
+            // also the case that matters here — it is what makes a missing counter reset go permanently
+            // silent rather than costing one notification.
+            ["repeatEveryMinutes"] = 60.0,
+        });
+
     // Simulates a prompt-injected model: a URL the user never wrote and no search ever returned, with
     // the conversation's contents in the query string. The exfiltration channel FetchableUrls exists
     // to close, so the grain must refuse it.
@@ -636,34 +720,12 @@ public sealed partial class FakeChatClient : IChatClient
 
         var text = list[lastUserIndex].Text ?? "";
 
-        // The two-step exfiltration attempt: search for the attacker's domain (whitelisting its HOST),
-        // then try to fetch it with the secret in the query string. Handled before the generic
-        // "a tool already ran, answer in text" guard, because it deliberately spans two calls.
-        if (text.Contains("exfiltrate", StringComparison.OrdinalIgnoreCase))
+        // The scenarios that deliberately span MORE THAN ONE tool call in one turn — see
+        // TryChainedToolCall. They are consulted here, before the single-call guard below, because that
+        // guard would end the turn after the first call and make every one of them untestable.
+        if (TryChainedToolCall(list, lastUserIndex, calledThisTurn, options, text, out var chained))
         {
-            if (!calledThisTurn.Contains("web_search"))
-            {
-                return BuildAttackerSearchCall();
-            }
-
-            return calledThisTurn.Contains("fetch_web_page") ? null : BuildExfiltrationCall();
-        }
-
-        // The URL-SEEDING chains (ADR 0067). Like the exfiltration case above, these deliberately span two
-        // calls — an MCP tool result, then a fetch/read of a URL taken OUT OF THAT RESULT — so they are
-        // handled BEFORE the "a tool already ran, answer in text" guard, which would otherwise stop the
-        // conversation after the first call and make the whole feature untestable.
-        //
-        // A model cannot call a tool it was not given, so a deselected link tool falls straight through to
-        // a text answer — which is exactly the shape the deselection test asserts.
-        if (text.Contains(SeedingChainTrigger, StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildSeedingChainCall(list, lastUserIndex, calledThisTurn, options, ToolCatalog.ReadWebDocument);
-        }
-
-        if (text.Contains(SeedingFetchChainTrigger, StringComparison.OrdinalIgnoreCase))
-        {
-            return BuildSeedingChainCall(list, lastUserIndex, calledThisTurn, options, "fetch_web_page");
+            return chained;
         }
 
         // Once a tool has run for this turn, answer in text instead of calling it again (which would
@@ -696,6 +758,72 @@ public sealed partial class FakeChatClient : IChatClient
         return null;
     }
 
+    // The scenarios that deliberately span MORE THAN ONE tool call within a single turn, grouped because
+    // they all share one property: each must be consulted BEFORE SelectToolCall's "a tool already ran,
+    // answer in text" guard, which would otherwise end the turn after the first call and make them
+    // untestable. They were inline in SelectToolCall until the fourth one pushed it over the cognitive
+    // complexity gate (S3776, ADR 0050/0051) — this is the lift that fixed it, not a ternary.
+    //
+    // The bool/out shape is not decoration. "This is my scenario, and the answer is NO further call" is a
+    // real outcome — the exfiltration chain returns null once the fetch has been attempted — and it has to
+    // be distinguishable from "this is not one of my scenarios", which a bare nullable return cannot do.
+    private static bool TryChainedToolCall(
+        IReadOnlyList<ChatMessage> list,
+        int lastUserIndex,
+        HashSet<string> calledThisTurn,
+        ChatOptions? options,
+        string text,
+        out FunctionCallContent? call)
+    {
+        // The two-step exfiltration attempt: search for the attacker's domain (whitelisting its HOST),
+        // then try to fetch it with the secret in the query string.
+        if (text.Contains("exfiltrate", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!calledThisTurn.Contains("web_search"))
+            {
+                call = BuildAttackerSearchCall();
+                return true;
+            }
+
+            call = calledThisTurn.Contains("fetch_web_page") ? null : BuildExfiltrationCall();
+            return true;
+        }
+
+        // The URL-SEEDING chains (ADR 0067) — an MCP tool result, then a fetch/read of a URL taken OUT OF
+        // THAT RESULT.
+        //
+        // A model cannot call a tool it was not given, so a deselected link tool falls straight through to
+        // a text answer — which is exactly the shape the deselection test asserts.
+        if (text.Contains(SeedingChainTrigger, StringComparison.OrdinalIgnoreCase))
+        {
+            call = BuildSeedingChainCall(list, lastUserIndex, calledThisTurn, options, ToolCatalog.ReadWebDocument);
+            return true;
+        }
+
+        if (text.Contains(SeedingFetchChainTrigger, StringComparison.OrdinalIgnoreCase))
+        {
+            call = BuildSeedingChainCall(list, lastUserIndex, calledThisTurn, options, "fetch_web_page");
+            return true;
+        }
+
+        // The per-turn push CAP (ADR 0075) needs ONE tool called FOUR TIMES in a single turn, and
+        // `calledThisTurn` structurally cannot express that: it is a set of NAMES, so it can only ever say
+        // "this tool ran", never "it ran three times". This branch therefore COUNTS occurrences after the
+        // last user turn instead of testing set membership, and every call it emits carries a DISTINCT
+        // CallId. Both halves are load-bearing: every other builder in this file hardcodes one CallId,
+        // which is safe only because each emits a single call, and four calls sharing an id cannot be
+        // matched to their four results.
+        if (text.Contains(PushCapTrigger, StringComparison.OrdinalIgnoreCase))
+        {
+            var pushCalls = CountCallsThisTurn(list, lastUserIndex, PushToolName);
+            call = pushCalls >= PushCapAttempts ? null : BuildPushSpamCall(pushCalls + 1);
+            return true;
+        }
+
+        call = null;
+        return false;
+    }
+
     // The trigger → tool-call table, in precedence order. See SelectToolCall for why the order matters.
     // A Func<string, FunctionCallContent> so the one trigger that needs the prompt text
     // (BuildWebSearchCall) has it; the rest ignore the argument.
@@ -718,6 +846,15 @@ public sealed partial class FakeChatClient : IChatClient
         ("look up", BuildWebSearchCall),
         ("schedule a location check", _ => BuildLocationReminderCall()),
         ("where am i", _ => BuildGetCurrentLocationCall()),
+        // send_push_notification (ADR 0075). Appended last and worded so none of them is a substring of any
+        // row above (in particular none contains "cancel" or "remind", and "schedule a notification" shares
+        // no substring with "schedule a document read" or "schedule a location check"). The CAP trigger is
+        // not here at all — it needs to emit four calls, which this single-call table cannot express; it is
+        // handled by its own counting branch in SelectToolCall.
+        ("schedule a notification", _ => BuildPushReminderCall()),
+        ("notify me with nothing", _ => BuildBlankPushCall()),
+        ("notify me with junk", _ => BuildDirtyPushCall()),
+        ("send me a notification", _ => BuildPushCall()),
     ];
 
     // The last message the USER actually sent.

@@ -2,13 +2,13 @@
 
 > Choose which tools an assistant may use — a personal default, a per-conversation override, or
 > baked into a custom agent. Availability is also capped by what the chosen model supports.
-> ADRs 0021 · 0026 · 0057.
+> ADRs 0021 · 0026 · 0057 · 0066 · 0075.
 
 ## What it is
 
 You pick which of the curated tools (`web_search`, `location`, `scheduling`, `skills`,
-`code_interpreter`, `memory`, plus your MCP servers) an assistant may use, remembered at
-three layers:
+`code_interpreter`, `memory`, `read_web_document`, `push_notification`, plus your MCP servers) an
+assistant may use, remembered at three layers:
 
 - **User default** (Preferences → default tools) — every new regular chat.
 - **Per-conversation override** (the composer's "Tools" popover) — non-agent chats only.
@@ -16,6 +16,12 @@ three layers:
 
 `get_date` and document RAG stay **always-on**. Selection can only *narrow*, never grant: it is
 intersected with model capability.
+
+Two keys are worth knowing about specifically, because turning them on grants more than a tool:
+`read_web_document` (ADR 0066) lets the assistant fetch a document **from our own container** and keep
+what it finds, and `push_notification` (ADR 0075) lets it put **text it writes itself** on your
+device's lock screen. Both are off in any selection you saved before they shipped — press Save once in
+Preferences → Tools to pick them up.
 
 **`memory` is the one documented exception to that intersection** (ADR 0057). Long-term memory is not a
 tool — it is an `AIContextProvider` injected before the call — so it never passes through the capability

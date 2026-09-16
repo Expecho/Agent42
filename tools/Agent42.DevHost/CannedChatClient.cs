@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using Agent42.Agents;
 using Microsoft.Extensions.AI;
 
 namespace Agent42.DevHost;
@@ -132,6 +133,19 @@ public sealed partial class CannedChatClient : IChatClient
     /// <summary>Prompt trigger for the offline URL-seeding demo (ADR 0067).</summary>
     public const string SeedingChainTrigger = "find and read";
 
+    /// <summary>
+    /// Drives ONE <c>send_push_notification</c> call (ADR 0075), so the offline leg can see the tool chip,
+    /// the queued-to-N-devices return string and the incognito refusal.
+    /// </summary>
+    public const string PushTrigger = "send me a notification";
+
+    /// <summary>
+    /// Drives FOUR <c>send_push_notification</c> calls in one turn, so the per-turn cap is reachable
+    /// offline. Like <see cref="SeedingChainTrigger"/> this spans more than one call, so it is the second
+    /// trigger the "a tool already ran" guard must let through.
+    /// </summary>
+    public const string PushCapTrigger = "spam notifications";
+
     // The demo link tool registered on the offline MCP group in Program.cs. Its RESULT carries an absolute
     // URL that nobody typed, so it is readable only if the harvest allowlisted it.
     private const string LinkToolName = "demo_find_links";
@@ -213,8 +227,10 @@ public sealed partial class CannedChatClient : IChatClient
         // would loop forever). Scoping to messages after the last user turn is what lets a
         // schedule-then-cancel conversation call a second tool on the later turn.
         //
-        // The seeding chain below is the one deliberate exception, so its trigger is let through here.
+        // The seeding chain and the push CAP are the two deliberate exceptions — both deliberately span
+        // more than one call in a turn — so their triggers are let through here.
         if (!text.Contains(SeedingChainTrigger, StringComparison.OrdinalIgnoreCase)
+            && !text.Contains(PushCapTrigger, StringComparison.OrdinalIgnoreCase)
             && list.Skip(lastUserIndex + 1).Any(m => m.Contents.Any(c => c is FunctionResultContent)))
         {
             return null;
@@ -228,8 +244,26 @@ public sealed partial class CannedChatClient : IChatClient
             return BuildSeedingChainCall(list, lastUserIndex, options);
         }
 
+        // send_push_notification (ADR 0075). The cap branch COUNTS calls already made this turn rather
+        // than testing whether the tool ran, and gives every call a DISTINCT CallId — a single shared id
+        // cannot be matched to four results. Four attempts against a cap of three is what makes the
+        // refusal visible offline.
+        if (text.Contains(PushCapTrigger, StringComparison.OrdinalIgnoreCase))
+        {
+            var pushCalls = CountPushCalls(list, lastUserIndex);
+            return pushCalls >= PushToolLimits.MaxPushesPerTurn + 1 ? null : BuildPushCall(pushCalls + 1);
+        }
+
+        if (text.Contains(PushTrigger, StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildPushCall(null);
+        }
+
         // Ordering is load-bearing: "reminder" contains the substring "remind", so the cancel
-        // checks MUST precede the schedule check — do not reorder these branches.
+        // checks MUST precede the schedule check — do not reorder these branches. The two push triggers
+        // above sit outside that constraint rather than ahead of it: neither contains "cancel" or
+        // "remind", so they collide with nothing here and their position is free. (FakeChatClient appends
+        // its equivalents last for the same reason, stated the other way round.)
         if (text.Contains("cancel all", StringComparison.OrdinalIgnoreCase))
         {
             return BuildCancelAllCall();
@@ -254,6 +288,31 @@ public sealed partial class CannedChatClient : IChatClient
         }
 
         return null;
+    }
+
+    // A push call. `ordinal` suffixes the title and varies the CallId for the multi-call cap case; null
+    // means the single-call case, where one hardcoded id is fine (every other builder here does that).
+    private static FunctionCallContent BuildPushCall(int? ordinal) =>
+        new(
+            ordinal is null ? "push-call-1" : $"push-call-{ordinal}",
+            "send_push_notification",
+            new Dictionary<string, object?>
+            {
+                ["title"] = ordinal is null ? "Build finished" : $"Build finished {ordinal}",
+                ["body"] = "The nightly build completed successfully.",
+            });
+
+    private static int CountPushCalls(IReadOnlyList<ChatMessage> list, int lastUserIndex)
+    {
+        var count = 0;
+        for (var i = lastUserIndex + 1; i < list.Count; i++)
+        {
+            count += list[i].Contents
+                .OfType<FunctionCallContent>()
+                .Count(c => c.Name == "send_push_notification");
+        }
+
+        return count;
     }
 
     private static int LastUserIndex(IReadOnlyList<ChatMessage> list)

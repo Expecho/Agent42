@@ -1,14 +1,34 @@
 # Push notifications
 
 > A Web Push notification, titled with the agent's name, when an agent finishes a reply while
-> you're away (e.g. a fired reminder or an external run). ADR 0028. Installed Android/Chromium
-> PWA only.
+> you're away (e.g. a fired reminder or an external run) — **and, since ADR 0075, a notification the
+> assistant writes itself when it judges something worth interrupting you for**. ADRs 0028 · 0075.
+> Installed Android/Chromium PWA only.
 
 ## What it is
 
 When an agent finishes a reply on an **asynchronous** path — a fired reminder or an external
 agent-run — and you're not watching, a Web Push notification titled with the agent's name is
 delivered to your installed PWA. Tapping it opens the conversation.
+
+## Two different notifications
+
+They are easy to confuse and the rules for them are opposite, so keep them apart:
+
+| | Away reply (ADR 0028) | `send_push_notification` (ADR 0075) |
+|---|---|---|
+| Who decides | the app, automatically | the **model**, by calling a tool |
+| Text | fixed: the agent's name + "Replied while you were away." | **written by the model**, sanitized and capped |
+| Which paths | the two **async** paths only, never the live stream | **any** path, the live turn included |
+| Selectable | no | yes — the `push_notification` key (Preferences → Tools) |
+| In incognito | n/a (those paths always persist) | **refused** (ADR 0034) |
+
+When the model's tool has already pushed during a turn, the away-reply notification is **suppressed**,
+so one reply never stacks two entries in your shade.
+
+The assistant can only ever report a notification as **queued**, never delivered: Web Push has no
+delivery receipt. The tool is capped at **3 notifications per turn**, and it refuses when you have no
+subscribed devices (telling the model to say it in the reply instead).
 
 ## How it works
 
@@ -128,7 +148,10 @@ self.addEventListener("push", (event) => {
   host-guarded.
 - **Egress note:** the notification transits a third-party push service, but the payload is RFC
   8291 end-to-end encrypted — a materially smaller egress than picking a third-party model
-  (though the title is the user-chosen agent name).
+  (though the title is the user-chosen agent name). **Since ADR 0075 the plaintext is wider**: a
+  model-written title and body can carry anything the conversation holds, and because the text is
+  model-authored, every prompt-injection channel in the app can put attacker-chosen words on your
+  lock screen. Sanitization bounds the characters, not the meaning.
 
 ## Key files
 
@@ -138,4 +161,5 @@ self.addEventListener("push", (event) => {
 | Subscription grain | `src/Agent42.Agents/Push/UserPushGrain.cs` |
 | Web Push sender | `src/Agent42.Backend/Push/WebPushNotificationSender.cs`, `WebPushClientAdapter.cs` |
 | Send call sites | `src/Agent42.Agents/Push/AgentGrain.Push.cs` (`SendAwayReplyPushAsync`) |
+| Model-invoked tool | `src/Agent42.Agents/Push/AgentGrain.PushTool.cs`, `PushToolLimits.cs` |
 | Endpoints / SW | `src/Agent42.Backend/Push/AgentApi.Push.cs`, `wwwroot/sw.js`, `wwwroot/app.js` |

@@ -103,6 +103,32 @@ public static class ToolCatalog
     public const string ReadWebDocument = "read_web_document";
 
     /// <summary>
+    /// Model-authored push notifications (ADR 0075) — the <c>send_push_notification</c> tool.
+    ///
+    /// <para><b>The key and the tool name deliberately differ</b>, unlike <see cref="ReadWebDocument"/>
+    /// where a one-tool key is spelled identically to its tool. The key is a <b>consent noun</b> rendered
+    /// in the picker ("Push notifications" — the thing you are switching on); the tool name is an
+    /// <b>imperative</b> the model reads. <c>send_push_notification</c> as a checkbox key would read as a
+    /// verb in a list of nouns, and <c>push_notification</c> as a tool name invites the model to treat it
+    /// as a topic rather than an action. <see cref="Location"/> and <see cref="Scheduling"/> already
+    /// establish that a key need not equal a tool name.</para>
+    ///
+    /// <para>Distinct from ADR 0028's away-reply push, which is not a tool and is not selectable: that one
+    /// fires by itself on the two async paths with fixed text. This key governs only the notifications the
+    /// <i>model</i> writes and asks for. Turning it off leaves the away-reply push untouched.</para>
+    ///
+    /// <para>Appended LAST for the same reason <see cref="Memory"/> and <see cref="ReadWebDocument"/> were:
+    /// it keeps catalog order stable for every existing key, so the order-sensitive
+    /// <c>Sanitize_OrdersStaticFirst_*</c> guards need no expectation edit. Like every key added after the
+    /// fact, <b>it lands OFF for anyone who has ever pressed Save</b> — a stored selection is an explicit
+    /// list — and there is deliberately no migration. One press of Save in Preferences → Tools restores it
+    /// for regular chats; an already-bound agent chat has no in-UI remedy (ADR 0003's immutable snapshot).
+    /// It fails safe: a tool that can put model-authored text on the user's lock screen stays off until
+    /// deliberately enabled.</para>
+    /// </summary>
+    public const string PushNotification = "push_notification";
+
+    /// <summary>
     /// The agent-skills <b>wildcard</b> ("all skills") meta-key (per-skill selectable tools, amends 0021).
     /// Each skill is individually selectable as a per-skill key <c>skill:{name}</c> (see
     /// <see cref="SkillKey"/>) — both the ones shipped in <see cref="SkillCatalog"/> and the ones the user
@@ -152,7 +178,7 @@ public static class ToolCatalog
     /// today's "every tool on" behaviour with no migration.
     /// </summary>
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument];
+        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
     // web_search is intentionally the key for BOTH the SearXNG shims and HostedWebSearchTool — the hosted
@@ -167,6 +193,7 @@ public static class ToolCatalog
         [WebSearch] = WebSearch,
         ["fetch_web_page"] = WebSearch,
         [ReadWebDocument] = ReadWebDocument,
+        ["send_push_notification"] = PushNotification,
         [CodeInterpreter] = CodeInterpreter,
         ["get_current_location"] = Location,
         ["schedule_prompt"] = Scheduling,
@@ -212,6 +239,14 @@ public static class ToolCatalog
         // from OUR container and keeps what it finds.
         new(ReadWebDocument, "Read web documents", RequiresHostedTools: false,
             Description: "Fetches a PDF or Office document from a link into this chat's searchable context."),
+        // PushNotification is LAST for the same order-stability reason as the two above.
+        // RequiresHostedTools is false: it registers on BOTH capability branches, because notifying the
+        // user is not something any hosted tool provides (it is not part of ADR 0015's swap). The
+        // description names the thing being consented to — the model choosing to interrupt you — rather
+        // than the transport, and says where it lands, because that is what makes it different from a
+        // reply appearing in the chat.
+        new(PushNotification, "Push notifications", RequiresHostedTools: false,
+            Description: "Lets the assistant send a notification to your devices when something is worth interrupting you for."),
     ];
 
     /// <summary>The logical key for a registered tool name, or null (e.g. <c>get_date</c>, or an unmapped tool).</summary>
