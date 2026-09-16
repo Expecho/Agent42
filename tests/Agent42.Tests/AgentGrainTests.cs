@@ -556,9 +556,15 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Equal("push-enqueue-conv", send.Message.ConversationId);
     }
 
-    // AC3: an interactive ChatAsync turn (the user is watching) sends NO push.
+    // AC3: an interactive ChatAsync turn (the user is watching) sends NO AWAY-REPLY push.
+    //
+    // The name is precise since ADR 0075, and the old one (ChatAsync_DoesNotSendPush) became a lie: the
+    // live path CAN now push, when the model calls send_push_notification (PushTool_SendsPushOnALiveTurn).
+    // What is still true, and what this pins, is that the automatic "Replied while you were away." push
+    // never fires for a turn the user is watching — ADR 0028's rule, narrowed by 0075 rather than repealed.
+    // The prompt is "hi", which triggers no tool, so any send here would have to be the away-reply one.
     [Fact]
-    public async Task ChatAsync_DoesNotSendPush()
+    public async Task ChatAsync_DoesNotSendAwayReplyPush()
     {
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-live-user/push-live-conv");
 
@@ -579,6 +585,220 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         var send = Assert.Single(SendsFor("push-plain-user"));
         Assert.Equal("Agent 42", send.Message.Title);
+    }
+
+    // ---- The model-invoked send_push_notification tool (ADR 0075) ----
+
+    // Seeds one subscribed device for a user, so the tool's "are any devices subscribed?" check passes.
+    //
+    // Two harness facts make this necessary and shape every test below. (1) The tool reads IUserPushGrain
+    // ITSELF and sends nothing when the list is empty, so without this every test here would pass for the
+    // wrong reason. (2) SharedClusterFixture.ResetSiloState resets RecordingPushNotificationSender but NOT
+    // IUserPushGrain, whose Orleans state therefore SURVIVES across tests in this class-shared cluster —
+    // so each test owns a distinct userId, and the no-subscription test below owns one that is never
+    // seeded by anything. Do not rely on a reset that does not happen.
+    private Task SubscribeDeviceAsync(string userId) =>
+        Cluster.GrainFactory.GetGrain<IUserPushGrain>(userId)
+            .AddAsync(new PushSubscription($"https://push.example/{userId}", "p256dh-key", "auth-secret"));
+
+    // AC1: the model can push from a LIVE ChatAsync turn, with its own title and body. This is the ADR 0028
+    // amendment in one assertion — the away-reply push is still forbidden here (ChatAsync_DoesNotSendAwayReplyPush),
+    // but a notification the MODEL asked for is not, and it carries the model's text rather than the agent name.
+    [Fact]
+    public async Task PushTool_SendsPushOnALiveTurn()
+    {
+        await SubscribeDeviceAsync("push-tool-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-tool-user/push-tool-conv");
+
+        await CollectAsync(agent.ChatAsync("send me a notification", null));
+
+        var send = Assert.Single(SendsFor("push-tool-user"));
+        Assert.Equal(FakeChatClient.PushTitle, send.Message.Title);
+        Assert.Equal(FakeChatClient.PushBody, send.Message.Body);
+
+        // The tap target (ADR 0075 decision 3): the conversation that called the tool, off the grain key.
+        Assert.Equal("push-tool-conv", send.Message.ConversationId);
+    }
+
+    // AC4: the 4th push of one turn is refused and NOT sent. The fake emits four calls with distinct
+    // CallIds and ordinal-suffixed titles, so this is non-vacuous in both directions: exactly three sends
+    // arrive, and the one that would have been fourth ("Build finished 4") is absent — the cap stopped it,
+    // not the fake running out of calls.
+    [Fact]
+    public async Task PushTool_CapsPushesPerTurn()
+    {
+        await SubscribeDeviceAsync("push-cap-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-cap-user/push-cap-conv");
+
+        await CollectAsync(agent.ChatAsync(FakeChatClient.PushCapTrigger, null));
+
+        var titles = SendsFor("push-cap-user").Select(s => s.Message.Title).ToList();
+        Assert.Equal(PushToolLimits.MaxPushesPerTurn, titles.Count);
+        Assert.Equal(
+            [$"{FakeChatClient.PushTitle} 1", $"{FakeChatClient.PushTitle} 2", $"{FakeChatClient.PushTitle} 3"],
+            titles);
+    }
+
+    // AC5: the counter resets between turns on the live path (reset site 1 of 2, the top of ChatCoreAsync).
+    //
+    // Turn 1 spends the whole budget so the counter is DIRTY; turn 2 then sends one more. Without the reset
+    // turn 2's single push is refused (3 >= 3) and the total stays at 3 — which is what makes this
+    // discriminating. Two turns of one push each would pass either way and prove nothing.
+    [Fact]
+    public async Task PushTool_CounterResetsOnTheNextTurn()
+    {
+        await SubscribeDeviceAsync("push-reset-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-reset-user/push-reset-conv");
+
+        await CollectAsync(agent.ChatAsync(FakeChatClient.PushCapTrigger, null));
+        await CollectAsync(agent.ChatAsync("send me a notification", null));
+
+        Assert.Equal(PushToolLimits.MaxPushesPerTurn + 1, SendsFor("push-reset-user").Count);
+    }
+
+    // AC6 — the load-bearing one. The counter resets on the REMINDER path (reset site 2 of 2), which does
+    // NOT drain ChatCoreAsync and so cannot inherit reset site 1.
+    //
+    // This is the ADR 0012 _turnLocation bug shape: with the ReceiveReminder reset removed, a repeating
+    // reminder inherits the previous turn's count and goes silent for the life of the activation. The
+    // sequence makes that visible — schedule, spend the whole budget on a chat turn, then fire. With the
+    // reset the reminder pushes (4 sends); without it the tool refuses AND the away-reply push is
+    // suppressed (because the counter still reads 3), so the reminder notifies NOTHING and the total is 3.
+    [Fact]
+    public async Task PushTool_CounterResetsOnTheReminderPath()
+    {
+        await SubscribeDeviceAsync("push-reminder-reset-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(
+            "push-reminder-reset-user/push-reminder-reset-conv");
+
+        await CollectAsync(agent.ChatAsync("schedule a notification", null));
+        await CollectAsync(agent.ChatAsync(FakeChatClient.PushCapTrigger, null));
+
+        await agent.AsReference<IRemindable>().ReceiveReminder("notify-me", default);
+
+        var sends = SendsFor("push-reminder-reset-user");
+        Assert.Equal(PushToolLimits.MaxPushesPerTurn + 1, sends.Count);
+        Assert.Equal(FakeChatClient.PushTitle, sends[^1].Message.Title);
+    }
+
+    // AC7: with no subscribed devices the model is told plainly and NOTHING is sent. The userId here is
+    // seeded by nothing in this class — see SubscribeDeviceAsync's note on the state that does not reset.
+    [Fact]
+    public async Task PushTool_NoSubscriptions_TellsTheModelAndSendsNothing()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-nosubs-user/push-nosubs-conv");
+
+        var answer = Answer(await CollectAsync(agent.ChatAsync("send me a notification", null)));
+
+        Assert.Empty(SendsFor("push-nosubs-user"));
+        Assert.Contains("no devices subscribed", answer, StringComparison.Ordinal);
+    }
+
+    // AC9: text that sanitizes to nothing is refused rather than sent as a blank notification. The fake's
+    // title is a bidi override + a zero-width space + a BEL; its body is only whitespace.
+    [Fact]
+    public async Task PushTool_EmptyAfterSanitize_SendsNothing()
+    {
+        await SubscribeDeviceAsync("push-blank-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-blank-user/push-blank-conv");
+
+        var answer = Answer(await CollectAsync(agent.ChatAsync("notify me with nothing", null)));
+
+        Assert.Empty(SendsFor("push-blank-user"));
+        Assert.Contains("no usable text", answer, StringComparison.Ordinal);
+    }
+
+    // AC10: an incognito chat REFUSES the tool and sends nothing (ADR 0034 — it names a Web Push, by
+    // itself, as breaking its guarantee). The second half pins the turn-scoped nature of the gate exactly
+    // as ReadWebDocument_RefusedOnEphemeralTurn does: the next NORMAL turn on the same warm activation
+    // must succeed, which is the half that fails if _ephemeral is read once and cached.
+    [Fact]
+    public async Task PushTool_EphemeralChat_RefusesAndSendsNothing()
+    {
+        await SubscribeDeviceAsync("push-incognito-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-incognito-user/push-incognito-conv");
+
+        var answer = Answer(await CollectAsync(
+            agent.ChatAsync("send me a notification", null, null, null, ephemeral: true)));
+
+        Assert.Empty(SendsFor("push-incognito-user"));
+        Assert.Contains("cannot send a notification from an incognito chat", answer, StringComparison.Ordinal);
+
+        await CollectAsync(agent.ChatAsync("send me a notification", null));
+        Assert.Single(SendsFor("push-incognito-user"));
+    }
+
+    // AC11: the tool is gated by tool selection (ADR 0021) — deselecting removes it, selecting keeps it.
+    // Asserted in both directions on ONE grain, so the second half proves the first was the selection
+    // doing the work rather than anything else about this conversation.
+    [Fact]
+    public async Task PushTool_IsGatedByToolSelection()
+    {
+        await SubscribeDeviceAsync("push-selection-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-selection-user/push-selection-conv");
+
+        await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch]);
+        await CollectAsync(agent.ChatAsync("send me a notification", null));
+        Assert.Empty(SendsFor("push-selection-user"));
+
+        await agent.SetEnabledToolsAsync([ToolCatalog.PushNotification]);
+        await CollectAsync(agent.ChatAsync("send me a notification", null));
+        Assert.Single(SendsFor("push-selection-user"));
+    }
+
+    // AC15 (agent-run half): when the tool already pushed, the ADR 0028 away-reply push is SUPPRESSED, so
+    // one reply produces ONE notification rather than two stacked in the shade (the SW sets no `tag`).
+    // The title assertion is what distinguishes them — the away-reply one would be "Agent 42" here.
+    [Fact]
+    public async Task EnqueuePrompt_SuppressesAwayReplyPush_WhenToolAlreadyPushed()
+    {
+        await SubscribeDeviceAsync("push-suppress-run-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(
+            "push-suppress-run-user/push-suppress-run-conv");
+
+        await agent.EnqueuePromptAsync("send me a notification", null);
+
+        await PollUntilAsync(() => SendsFor("push-suppress-run-user").Count >= 1);
+        var send = Assert.Single(SendsFor("push-suppress-run-user"));
+        Assert.Equal(FakeChatClient.PushTitle, send.Message.Title);
+    }
+
+    // AC15 (reminder half). ReceiveReminder_SendsPush_WithAgentName is the control that keeps this
+    // non-vacuous: a reminder whose turn does NOT push still gets its away-reply notification.
+    [Fact]
+    public async Task ReceiveReminder_SuppressesAwayReplyPush_WhenToolAlreadyPushed()
+    {
+        await SubscribeDeviceAsync("push-suppress-rem-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(
+            "push-suppress-rem-user/push-suppress-rem-conv");
+        await agent.BindAgentAsync(new AgentBinding(
+            "agent-2", "Marvin", "You are Marvin.", TestSiloConfigurator.DefaultModel));
+        await CollectAsync(agent.ChatAsync("schedule a notification", null));
+
+        await agent.AsReference<IRemindable>().ReceiveReminder("notify-me", default);
+
+        var send = Assert.Single(SendsFor("push-suppress-rem-user"));
+        Assert.Equal(FakeChatClient.PushTitle, send.Message.Title);
+        Assert.NotEqual("Marvin", send.Message.Title);
+    }
+
+    // AC16: a stored (non-null) tool selection made BEFORE this key shipped does not enable it — the
+    // LegacyAgentSnapshot_DoesNotEnableMemory shape (ADR 0057). This is the "lands OFF for anyone who ever
+    // pressed Save" property, pinned at grain level rather than left as prose: a selection is an explicit
+    // list, and there is deliberately no migration.
+    [Fact]
+    public async Task LegacyAgentSnapshot_DoesNotEnablePushNotification()
+    {
+        await SubscribeDeviceAsync("push-legacy-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-legacy-user/push-legacy-conv");
+
+        await agent.BindAgentAsync(new AgentBinding(
+            "agent-legacy-push", "Legacy", "You are a legacy agent.", TestSiloConfigurator.DefaultModel,
+            ["web_search", "location", "scheduling", "skills", "code_interpreter", "mcp", "memory"]));
+
+        await CollectAsync(agent.ChatAsync("send me a notification", null));
+
+        Assert.Empty(SendsFor("push-legacy-user"));
     }
 
     // Polls a condition until it holds or a bound elapses — for the OneWay agent-run push, which the

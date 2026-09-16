@@ -233,6 +233,31 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// </summary>
     private bool _webDocumentIngested;
 
+    /// <summary>
+    /// How many push notifications the <c>send_push_notification</c> tool has actually SENT during the
+    /// turn currently running (ADR 0075). Bounded by <see cref="PushToolLimits.MaxPushesPerTurn"/>, and
+    /// also read by the two async paths to suppress their away-reply push when the model already pushed.
+    ///
+    /// <para><b>It resets in exactly TWO places, and that is neither the one nor the three it looks
+    /// like.</b> <see cref="ChatAsync"/> and <see cref="EnqueuePromptAsync"/> both drain
+    /// <see cref="ChatCoreAsync"/>, so the top of that shared core covers both — and covers any future
+    /// caller of it, which a per-entrypoint clear could not. <see cref="ReceiveReminder"/> is the
+    /// exception: it does <b>not</b> drain <c>ChatCoreAsync</c> (it calls <c>_agent.RunAsync</c>
+    /// directly), so it resets the field itself, in its own reset block. Miss that second site and a
+    /// REPEATING reminder inherits the previous tick's count and goes permanently silent after three
+    /// pushes, for the life of the activation — the <see cref="_turnLocation"/> bug shape exactly.</para>
+    ///
+    /// <para>This is deliberately <b>not</b> the <see cref="_ephemeral"/> shape of "set it in all three
+    /// entrypoints". Those fields carry a <i>different value</i> per path, so only the caller knows what
+    /// to set; this one always resets to <c>0</c>, so the shared core is the better site.</para>
+    ///
+    /// <para>Like the fields above it lives for the grain ACTIVATION, not the call. There is no fourth
+    /// path to cover: <c>GenerateFollowUpsAsync</c> (ADR 0036) and <c>RecordImageTurnAsync</c> (ADR 0020)
+    /// both run a model with no <c>Tools</c> at all, and ADR 0070's <c>ask_agent</c> goes through
+    /// <see cref="ChatAsync"/>.</para>
+    /// </summary>
+    private int _pushesThisTurn;
+
     public AgentGrain(
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
         IUserChatClientFactoryProvider chatClientFactoryProvider,
@@ -470,7 +495,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             // notifies. Gated on _modelId so the no-model path (which drains normally after emitting the
             // "configure a provider" notice, ChatCoreAsync) does NOT fire a false "your agent replied";
             // _modelId is set by ChatCoreAsync's re-resolve/rebind if a provider appeared mid-flight.
-            if (!string.IsNullOrEmpty(_modelId))
+            //
+            // Also suppressed when the model already pushed this turn (ADR 0075): the service worker sets
+            // no `tag`, so a model-authored "Build finished" followed by the generic "Replied while you
+            // were away." would stack as two entries in the shade for one reply. The model's own text is
+            // the better of the two, so this generic one yields. The _modelId gate above is untouched.
+            if (!string.IsNullOrEmpty(_modelId) && _pushesThisTurn == 0)
             {
                 await SendAwayReplyPushAsync();
             }
@@ -501,6 +531,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments)
     {
         PublishUsageApplication();
+
+        // Push budget (ADR 0075), reset site 1 of 2. Here rather than in the two callers because both of
+        // them — ChatAsync and EnqueuePromptAsync — drain this core, so one reset covers both and a future
+        // caller of it cannot forget. ReceiveReminder is the one path that does NOT come through here and
+        // resets the field itself; see the _pushesThisTurn remarks. This runs before the first yield, so
+        // it takes effect as soon as either caller starts enumerating.
+        _pushesThisTurn = 0;
 
         _logger.LogInformation(
             "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s), location: {HasLocation})",
@@ -1023,9 +1060,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // _ephemeral is cleared for the same activation-scoped reason: a fired reminder always persists.
         // _webDocumentIngested likewise (ADR 0066) — this method has its OWN consume site below, and it
         // must consume this turn's ingest, not one inherited from an abandoned chat stream.
+        // _pushesThisTurn is reset site 2 of 2 (ADR 0075) and belongs here for a reason specific to this
+        // method: ChatCoreAsync's reset covers ChatAsync and EnqueuePromptAsync because both DRAIN it,
+        // and this method does not — it calls _agent.RunAsync directly (the same fact the "consume site
+        // 2 of 2" comment below rests on). Without this line a repeating reminder inherits the previous
+        // tick's count and stops pushing after three, permanently, for the life of the activation.
         _turnLocation = null;
         _ephemeral = false;
         _webDocumentIngested = false;
+        _pushesThisTurn = 0;
 
         if (!_state.State.ScheduledPrompts.TryGetValue(reminderName, out var info))
         {
@@ -1095,6 +1138,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // The sender's contract is "never throws", but the reminder's TimesFired is already persisted, so
         // a defensive wrap keeps a future misbehaving sender from faulting an already-recorded reminder
         // (EnqueuePromptAsync's send is likewise inside its own try).
+        // Suppressed when the model already pushed this turn (ADR 0075) — same reasoning as the
+        // agent-run path: with no `tag` on the notification the two would stack in the shade for one
+        // reply, and the model's own text is the better of the two. The position (after the persist) and
+        // the defensive try below are both unchanged.
+        if (_pushesThisTurn > 0)
+        {
+            return;
+        }
+
         try
         {
             await SendAwayReplyPushAsync();

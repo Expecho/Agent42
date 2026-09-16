@@ -58,7 +58,7 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
             new[]
             {
                 "web_search", "location", "scheduling", "code_interpreter", "memory", "read_web_document",
-                "skill:scheduledprompt", "skill:websearch",
+                "push_notification", "skill:scheduledprompt", "skill:websearch",
             }.Order(),
             keys.Order());
 
@@ -71,6 +71,14 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
             .Single(e => e.GetProperty("key").GetString() == "read_web_document");
         Assert.False(readWebDocument.GetProperty("requiresHostedTools").GetBoolean());
         Assert.False(string.IsNullOrWhiteSpace(readWebDocument.GetProperty("description").GetString()));
+
+        // AC17 (ADR 0075): same rule for the push key — it reaches the picker with a description, and is
+        // NOT flagged as needing a hosted-tools model (it registers on both capability branches, because
+        // notifying a device is no part of ADR 0015's hosted swap).
+        var pushNotification = doc.RootElement.EnumerateArray()
+            .Single(e => e.GetProperty("key").GetString() == "push_notification");
+        Assert.False(pushNotification.GetProperty("requiresHostedTools").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(pushNotification.GetProperty("description").GetString()));
 
         // code_interpreter is the only one flagged as needing a hosted-tools model.
         var codeInterpreter = doc.RootElement.EnumerateArray()

@@ -1413,3 +1413,50 @@ to document a mechanical rule, add a lint rule instead.
   **first** `/`, and is a blob prefix), and **chains/cycles refused WHOLE** — while **fan-in survives**,
   since two keys onto one value is the legitimate three-accounts-one-person shape. No new package, grain,
   container, folder or frontend change, so no `sw.js` `CACHE` bump.
+- The model can send a push notification it writes itself (ADR 0075, **amends 0028**, extends 0021): a
+  `send_push_notification` tool — `title` + `body`, **both model-authored** — delivered over ADR 0028's
+  existing transport, which needed **no change** (`PushMessage` already carries all three fields and the SW
+  already reads them and sets no `tag`). Gated by a new selectable key `push_notification`. **ADR 0028's
+  "never push from `ChatCoreAsync`" is NARROWED, not repealed, and this is the easiest thing here to get
+  wrong:** that rule governs **`SendAwayReplyPushAsync` specifically** — which exists to reach a user who is
+  *not* watching, and keeps both its placement traps intact — while a model-invoked push may fire from **any**
+  path, the live turn included. The whole reason the tool is a **new partial**
+  (`src/Agent42.Agents/Push/AgentGrain.PushTool.cs`, a sibling of `AgentGrain.Push.cs`) is that **the file
+  split is the documentation that these are two rules**; do not merge them. Do **not** cite 0028's "no
+  notifying for interactive turns" against this — its actual text is "…interactive turns **the user abandons
+  mid-stream**", an ADR-0046-shaped carve-out about a dead stream; the live-path decision stands on 0028's
+  *service-worker* section, which already argues a notification arriving while the user is looking at the
+  device is "acceptable and arguably wanted". **The counter (`_pushesThisTurn`, cap 3) resets in exactly TWO
+  places and that is the trap:** the top of `ChatCoreAsync` (covering the live turn *and* the agent-run drain,
+  above any `yield`) and `ReceiveReminder`'s own reset block, because **`ReceiveReminder` does not drain
+  `ChatCoreAsync`** — miss it and a **repeating** reminder inherits the previous tick's count and goes
+  permanently silent, the ADR 0012 `_turnLocation` shape (mutation-checked). Deliberately **not** the
+  `_ephemeral` "set it in all three entrypoints" shape: those carry a different value per path, this always
+  resets to `0`. There is **no fourth path** (0036's follow-ups and 0020's image turn run with no `Tools`;
+  0070's `ask_agent` goes through `ChatAsync`). It increments on the **send, not the attempt**, so a refused
+  call costs no budget. **The away-reply push is now SUPPRESSED when the tool already pushed this turn** (both
+  call sites gain `&& _pushesThisTurn == 0`) — a behaviour change on 0028's own paths, which is why 0028
+  carries an inline amendment banner and not just a gotcha edit. **Refused in incognito** (ADR 0034, which
+  names a Web Push by itself as guarantee-breaking): the text is a durable plaintext artifact in the OS shade,
+  and an incognito chat has no sidebar row so the notification would be its only handle — this **upholds**
+  0034, so 0034 gets no banner. **The sanitizer is a DENYLIST, the deliberate opposite of ADR 0066's
+  allowlist**, and the divergence must not be "fixed": 0066's sink is the *system prompt*, this one is
+  `showNotification`'s **plain text** (no HTML parse, no prompt), so an ASCII allowlist would destroy ordinary
+  Dutch and every emoji for no gain — it strips Unicode **control and format** characters (Cf is the half that
+  matters: the bidi overrides such as U+202E really can reorder rendered text), collapses whitespace runs
+  including newlines, caps length, and returns **empty → refusal**. The tool reads `IUserPushGrain` **itself**
+  because `IPushNotificationSender.SendAsync` returns `Task`, never throws and early-returns silently, so the
+  sender can tell it nothing — but it still **cannot report delivery and must never imply it** ("queued to N
+  device(s)", never "delivered"). **No `SKILL.md`, deliberately** (ADR 0067's lesson: the rule the model reads
+  is the tool DESCRIPTION, and a skill would mint a second silently-OFF `skill:` key). **Headline consequence:
+  every inbound prompt-injection channel (0011/0024/0027/0049/0066/0067) can now put attacker-chosen text on
+  the user's lock screen** — sanitization bounds the characters, not the meaning — and it is reachable from the
+  two key-holder endpoints, so an ADR 0022 `/api/agent-run` or ADR 0070 `/api/agent-mcp` key holder can raise
+  a notification whose **text they control** on the owner's devices. 0028's egress paragraph needs re-reading
+  rather than citing: the RFC 8291 encryption is unchanged, but the payload is no longer just a user-chosen
+  agent name. The key lands **OFF for anyone who ever pressed Save** (no migration, fails safe). No new secret,
+  Cosmos/blob container, grain, folder, `excludedPaths` entry, Bicep change, package or `[Id(n)]`, **and no
+  `sw.js` `CACHE` bump** (nothing under `wwwroot/` changed — the picker is data-driven off `/api/tools`). The
+  offline leg **was** run against DevHost and ADR 0075 records the measured values, including the one it cannot
+  close: with `NullPushNotificationSender` no notification is ever produced, so real delivery stays a manual
+  Android-device check, exactly as 0028 recorded for its own frontend leg.
