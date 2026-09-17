@@ -16,7 +16,7 @@ public static partial class AgentApi
         app.MapGet("/api/mcp-servers", async (IGrainFactory grains, HttpContext http) =>
         {
             var overlay = await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId()).GetAsync();
-            return Results.Json(new McpServersResponse([.. overlay.Servers.Select(Mask)]));
+            return Results.Json(new McpServersResponse([.. overlay.Servers.Select(s => Mask(s))]));
         });
 
         // Creates an MCP server. The id is server-minted (unlike a provider key, a server name is not an
@@ -31,15 +31,19 @@ public static partial class AgentApi
             }
 
             var id = Guid.NewGuid().ToString("n");
-            var stored = await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId())
-                .SaveAsync(ToStored(request, id, protector));
-            return Results.Json(Mask(stored));
+            var config = grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId());
+            var stored = await config.SaveAsync(ToStored(request, id, protector));
+            var (synced, bridgeKey) = await SyncBridgeKeyAsync(config, stored);
+            return Results.Json(Mask(synced, bridgeKey));
         });
 
         // Updates the server named by the route id. A BLANK secret means "keep the stored secret" (the
         // field is write-only in the UI) — ToStored maps blank to a null ciphertext, which the grain reads
         // as "keep".
-        app.MapPut("/api/mcp-servers/{id}", async (string id, McpServerUpsertRequest request, IMcpSecretProtector protector, IGrainFactory grains, HttpContext http) =>
+        //
+        // IServiceProvider, not LocalBridgeRegistry, for the /test route's reason below: most MapAgentApi hosts
+        // do not register the registry, and eviction is then simply a no-op (ADR 0076).
+        app.MapPut("/api/mcp-servers/{id}", async (string id, McpServerUpsertRequest request, IMcpSecretProtector protector, IGrainFactory grains, IServiceProvider services, HttpContext http) =>
         {
             var error = ValidateMcpServer(request);
             if (error is not null)
@@ -47,17 +51,51 @@ public static partial class AgentApi
                 return Results.Text(error, "text/plain", statusCode: StatusCodes.Status400BadRequest);
             }
 
-            var stored = await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId())
-                .SaveAsync(ToStored(request, id, protector));
-            return Results.Json(Mask(stored));
+            var userId = http.GetUserId();
+            var config = grains.GetGrain<IUserMcpConfigGrain>(userId);
+            var stored = await config.SaveAsync(ToStored(request, id, protector));
+            var (synced, bridgeKey) = await SyncBridgeKeyAsync(config, stored);
+
+            // Revocation must reach a LIVE socket, which authenticated before this write. A server that is no
+            // longer an enabled bridge — disabled, or switched to another mode — loses its socket now. A rename
+            // of an enabled bridge server revokes nothing, so it keeps its socket (and its auto-test still works).
+            if (!synced.Enabled || synced.Auth != nameof(McpAuthMode.LocalBridge))
+            {
+                await EvictBridgeAsync(services, userId, id, "server disabled or no longer a local bridge");
+            }
+
+            return Results.Json(Mask(synced, bridgeKey));
         });
 
         // Deletes a server from the user's overlay. A warm conversation grain picks up the change on its
-        // next activation (the tool provider is version-cached), never mid-turn.
-        app.MapDelete("/api/mcp-servers/{id}", async (string id, IGrainFactory grains, HttpContext http) =>
+        // next activation (the tool provider is version-cached), never mid-turn. A bridge server's key is
+        // deregistered by the grain, and its live socket is closed here.
+        app.MapDelete("/api/mcp-servers/{id}", async (string id, IGrainFactory grains, IServiceProvider services, HttpContext http) =>
         {
-            await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId()).DeleteAsync(id);
+            var userId = http.GetUserId();
+            await grains.GetGrain<IUserMcpConfigGrain>(userId).DeleteAsync(id);
+            await EvictBridgeAsync(services, userId, id, "server deleted");
             return Results.NoContent();
+        });
+
+        // Regenerates a local-bridge key (ADR 0076). A dedicated route rather than ADR 0022's regenerate-on-
+        // upsert, because a Save also re-runs the auto-test; rotating a key should not need a Save. The old key
+        // stops resolving (the grain deregisters it first) and the socket it opened is closed here, so a running
+        // helper reconnects, meets a 401, and stops.
+        app.MapPost("/api/mcp-servers/{id}/bridge-key", async (string id, IGrainFactory grains, IServiceProvider services, HttpContext http) =>
+        {
+            var userId = http.GetUserId();
+            var config = grains.GetGrain<IUserMcpConfigGrain>(userId);
+            if (await config.MintBridgeKeyAsync(id) is not { } bridgeKey)
+            {
+                return Results.Text("No local-bridge MCP server with that id.", "text/plain", statusCode: StatusCodes.Status404NotFound);
+            }
+
+            await EvictBridgeAsync(services, userId, id, "bridge key regenerated");
+            var stored = (await config.GetAsync()).Servers.FirstOrDefault(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase));
+            return stored is null
+                ? Results.Text("No local-bridge MCP server with that id.", "text/plain", statusCode: StatusCodes.Status404NotFound)
+                : Results.Json(Mask(stored, bridgeKey));
         });
 
         // Tests one stored server on explicit user request (ADR 0064): connect, list tools, record the names,
@@ -94,9 +132,9 @@ public static partial class AgentApi
     // An MCP endpoint comes from the authenticated user's OWN persisted config, never a model or a live
     // request — so, exactly like a user provider endpoint (ADR 0018), it is deliberately NOT SSRF
     // address-guarded and may be localhost (a self-hosted MCP server is a valid target). Validation is only structural:
-    // absolute http/https, a parseable auth mode, and the fields that mode needs. None/Header (Phase 1) and
-    // ClientCredentials (Phase 2) are supported; InteractiveOAuth is staged (Phase 3) and rejected here for
-    // now. Returns an error message, or null when valid.
+    // absolute http/https, a parseable auth mode, and the fields that mode needs. The auth mode is parsed
+    // FIRST because LocalBridge (ADR 0076) has no endpoint at all — its helper dials in — so a blank one is
+    // valid there and only there. Returns an error message, or null when valid.
     private static string? ValidateMcpServer(McpServerUpsertRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
@@ -104,21 +142,23 @@ public static partial class AgentApi
             return "MCP server name must be non-empty.";
         }
 
-        if (string.IsNullOrWhiteSpace(request.Endpoint)
-            || !Uri.TryCreate(request.Endpoint, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        {
-            return "Endpoint must be an absolute http or https URL.";
-        }
-
         if (!Enum.TryParse<McpAuthMode>(request.Auth, ignoreCase: true, out var auth))
         {
-            return $"Unknown auth mode '{request.Auth}'. Use 'None', 'Header', 'ClientCredentials', or 'InteractiveOAuth'.";
+            return $"Unknown auth mode '{request.Auth}'. Use 'None', 'Header', 'ClientCredentials', 'InteractiveOAuth', or 'LocalBridge'.";
+        }
+
+        if (auth != McpAuthMode.LocalBridge
+            && (string.IsNullOrWhiteSpace(request.Endpoint)
+                || !Uri.TryCreate(request.Endpoint, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)))
+        {
+            return "Endpoint must be an absolute http or https URL.";
         }
 
         return auth switch
         {
             McpAuthMode.None => null,
+            McpAuthMode.LocalBridge => null,
             McpAuthMode.Header when string.IsNullOrWhiteSpace(request.HeaderName)
                 => "Header auth requires a header name.",
             McpAuthMode.Header => null,
@@ -151,12 +191,18 @@ public static partial class AgentApi
     // survive an edit because UserMcpConfigGrain.SaveAsync keeps them, exactly as it keeps the ciphertexts.
     // Do not "fix" this by threading names through the request; do not remove that Keep clause either, or every
     // rename silently wipes the per-tool checkboxes.
-    private static StoredMcpServer ToStored(McpServerUpsertRequest request, string id, IMcpSecretProtector protector) =>
-        new(
+    //
+    // Nor does it carry a BridgeKeyHash (ADR 0076): the grain carries the stored one forward unconditionally, and
+    // SyncBridgeKeyAsync is the only thing that mints or clears it. A LocalBridge server stores an empty endpoint —
+    // there is nothing to dial.
+    private static StoredMcpServer ToStored(McpServerUpsertRequest request, string id, IMcpSecretProtector protector)
+    {
+        var auth = Enum.Parse<McpAuthMode>(request.Auth, ignoreCase: true);
+        return new(
             Id: id,
             Name: request.Name.Trim(),
-            Endpoint: request.Endpoint.Trim(),
-            Auth: Enum.Parse<McpAuthMode>(request.Auth, ignoreCase: true).ToString(),
+            Endpoint: auth == McpAuthMode.LocalBridge ? "" : (request.Endpoint ?? "").Trim(),
+            Auth: auth.ToString(),
             Enabled: request.Enabled,
             HeaderName: string.IsNullOrWhiteSpace(request.HeaderName) ? null : request.HeaderName.Trim(),
             HeaderValueCiphertext: string.IsNullOrWhiteSpace(request.HeaderValue) ? null : protector.Protect(request.HeaderValue),
@@ -168,10 +214,13 @@ public static partial class AgentApi
             // must ride the request: the grain has no Keep clause for it, which is what lets a user turn
             // seeding back OFF. Adding one there would make the opt-in one-way.
             SeedsFetchableUrls: request.SeedsFetchableUrls);
+    }
 
     // Never returns a secret — only whether one is stored. Authority/clientId/scopes are non-secret and are
-    // returned so the edit form can prefill them; the ciphertexts stay server-side.
-    private static McpServerResponse Mask(StoredMcpServer s) =>
+    // returned so the edit form can prefill them; the ciphertexts stay server-side. bridgeKey is the one
+    // exception, and only on the response to the write that MINTED it: that is the only time it exists in
+    // plaintext anywhere (ADR 0076). GET passes none, so it can never be read back.
+    private static McpServerResponse Mask(StoredMcpServer s, string? bridgeKey = null) =>
         new(
             s.Id, s.Name, s.Endpoint, s.Auth, s.Enabled, s.HeaderName,
             HasHeaderValue: !string.IsNullOrEmpty(s.HeaderValueCiphertext),
@@ -180,7 +229,39 @@ public static partial class AgentApi
             Scopes: s.Scopes,
             HasClientSecret: !string.IsNullOrEmpty(s.ClientSecretCiphertext),
             HasToken: !string.IsNullOrEmpty(s.TokenCiphertext),
-            SeedsFetchableUrls: s.SeedsFetchableUrls);
+            SeedsFetchableUrls: s.SeedsFetchableUrls,
+            HasBridgeKey: !string.IsNullOrEmpty(s.BridgeKeyHash),
+            BridgeKey: bridgeKey);
+
+    // Keeps the bridge key in step with the auth mode after a save (ADR 0076): a LocalBridge server without a
+    // key gets one — on create, or on a switch TO the mode — and a server that is no longer LocalBridge loses
+    // its key. The grain does the directory work in ADR 0022's order; this only decides which operation runs.
+    // Returns the server as it now stands, plus the raw key when one was minted.
+    private static async Task<(StoredMcpServer Server, string? BridgeKey)> SyncBridgeKeyAsync(
+        IUserMcpConfigGrain config, StoredMcpServer stored)
+    {
+        var isBridge = stored.Auth == nameof(McpAuthMode.LocalBridge);
+        if (isBridge && string.IsNullOrEmpty(stored.BridgeKeyHash))
+        {
+            var raw = await config.MintBridgeKeyAsync(stored.Id);
+            return (stored with { BridgeKeyHash = raw is null ? null : BridgeKey.Hash(raw) }, raw);
+        }
+
+        if (!isBridge && !string.IsNullOrEmpty(stored.BridgeKeyHash))
+        {
+            await config.ClearBridgeKeyAsync(stored.Id);
+            return (stored with { BridgeKeyHash = null }, null);
+        }
+
+        return (stored, null);
+    }
+
+    // Closes a server's live bridge socket (ADR 0076). The registry is resolved optionally: only the silo hosts
+    // register it, and on every other MapAgentApi host there is no socket to close.
+    private static Task EvictBridgeAsync(IServiceProvider services, string userId, string serverId, string reason) =>
+        services.GetService<LocalBridgeRegistry>() is { } registry
+            ? registry.EvictAsync(userId, serverId, reason)
+            : Task.CompletedTask;
 
     // ————— interactive OAuth for MCP servers (Phase 3) —————
     //

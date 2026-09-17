@@ -1755,6 +1755,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   success instead. Two traps if you touch it: `hasToken` must be read AFTER the `loadMcpServers()` in
   `saveMcpServer` or it is a stale value from before the save; and the gate must test the token, not the
   auth mode, or a **reconnect** of a working server silently stops being verified.
+  **A third gate since ADR 0076, same reasoning:** the save that **mints a local-bridge key** skips the
+  auto-test (`if (mintedBridgeKey)` in `saveMcpServer`), because no helper can be connected with a key that
+  was created a moment ago — the dial could only say `local bridge not connected`. It keys off the response
+  carrying a key, not off the auth mode, so a later save of the same bridge server still auto-tests.
 - **Evidence:** `src/Agent42.Backend/Mcp/McpConnectionTester.cs` (`RecordAndDescribeAsync` non-empty guard,
   the `finally` dispose, curated reasons), `src/Agent42.Backend/Mcp/McpOAuthTokenResolver.cs`,
   `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (the corrected "one of TWO writers" comment),
@@ -1828,13 +1832,15 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   contributor must not miss: **(1)** on an excluded path there is **no `X-MS-CLIENT-PRINCIPAL-ID`**, so
   `GetUserId` returns `local-dev` — the endpoint must take the userId from the **directory resolution**,
   never from `GetUserId`; **(2)** any new endpoint added under this exclusion inherits the same duty. There
-  are now **six** entries in the ADR 0002 gate's hole list — `/api/agent-run` (ADR 0022, fails closed
+  are now **seven** entries in the ADR 0002 gate's hole list — `/api/agent-run` (ADR 0022, fails closed
   **401**), `/api/share/*` (ADR 0035, the read-only view; fails closed **404** because it is a
   browser-visitable link, and userId+conversation come from the share directory), `/shared` + `/shared/*`
   (ADR 0035, the static viewer page and its assets, self-contained so they carry no data), and
   `/api/agent-mcp` + `/api/agent-mcp/*` (ADR 0070, the server-side MCP surface; fails closed **401** on the
   per-agent key, enforced by **middleware over the prefix** because one endpoint serves `initialize`,
-  `tools/list` and `tools/call` alike) — every other browser surface stays fully Easy-Auth-gated. **Count
+  `tools/list` and `tools/call` alike), and `/api/local-bridge` (ADR 0076, the local-bridge WebSocket; an
+  **exact** entry; fails closed **401** on the per-server bridge key before the upgrade is even looked at) —
+  every other browser surface stays fully Easy-Auth-gated. **Count
   the entries in the Bicep before repeating a number from here**: this sentence has been stale twice.
 - **The matching rule (ADR 0042 — this is the trap that shipped a dead feature):** an entry is an **exact**
   match unless it ends in `/*`. A bare `/api/share` does **not** cover `/api/share/{token}`, and a bare
@@ -1853,10 +1859,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   directory, never `GetUserId`),
   `tests/Agent42.Tests/AgentApiTests.cs` (`AgentRun_MissingOrUnknownKey_Returns401`, `ShareLink_UnknownToken_Returns404`),
   `tests/Agent42.Tests/EasyAuthExclusionTests.cs` (the matcher and the covered/uncovered assertions),
+  `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs` (`AuthenticateAsync`, 401 before the upgrade check),
   `.agentic/decisions/0002-entra-easy-auth-gate.md`, `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`,
   `.agentic/decisions/0035-read-only-share-links.md`,
   `.agentic/decisions/0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md`
-- **Verified:** 2026-08-20
+- **Verified:** 2026-09-17
 
 ### A scripted whole-file rewrite silently converts the checkout from CRLF to LF and `dotnet format` fails on every line
 
@@ -3347,3 +3354,108 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ModelProviderTests.cs` (`ReasoningModel_WiresTheReasoningRequest`),
   `.agentic/decisions/0071-show-reasoning-output.md`
 - **Verified:** 2026-09-13
+
+### A local-bridge key hash is GRAIN-OWNED — `SaveAsync` carries it unconditionally, and revocation must also close the live socket
+
+- **Claim:** `StoredMcpServer.BridgeKeyHash` (ADR 0076) is neither a setting nor `KnownToolNames`-style
+  metadata with a `?? prev` clause: `UserMcpConfigGrain.SaveAsync` copies the stored hash forward
+  **unconditionally** and stores none on insert. Both obvious alternatives are bugs — dropping the line lets
+  every rename or disable silently kill the key (`ToStored` builds a fresh record with no hash), and a
+  `?? prev` clause makes the hash impossible to clear. Only `MintBridgeKeyAsync` / `ClearBridgeKeyAsync` /
+  `DeleteAsync` change it, doing the directory work **inside the grain** in ADR 0022's per-operation order
+  (regenerate deregisters the OLD hash first). And the directory is consulted **only at upgrade**, so a
+  socket that authenticated before a Regenerate, delete, disable or switch-away keeps serving until
+  something closes it: every revoking management write calls `LocalBridgeRegistry.EvictAsync`, resolved
+  with `GetService` because most `MapAgentApi` hosts register no registry. A rename of an enabled bridge
+  server deliberately does **not** evict. The endpoint also re-reads the overlay and demands the exact
+  stored hash, so an orphaned directory entry cannot authenticate either.
+- **Evidence:** `src/Agent42.Agents/Mcp/UserMcpConfigGrain.cs` (`SaveAsync`, `MintBridgeKeyAsync`),
+  `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (`SyncBridgeKeyAsync`, `EvictBridgeAsync`),
+  `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs` (`AuthenticateAsync`),
+  `tests/Agent42.Tests/UserMcpConfigGrainTests.cs` (`Edit_PreservesBridgeKeyHash`, `MintBridgeKey_RegenerateRevokesOld`),
+  `tests/Agent42.Tests/LocalBridgeApiTests.cs` (`ManagementWrites_CloseLiveSocket`),
+  `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md`
+- **Verified:** 2026-09-17
+
+### The bridge key is accepted from the `X-Api-Key` HEADER only — never add a query-string fallback
+
+- **Claim:** `/api/local-bridge` is on `excludedPaths`, and the one thing keeping a **web page** from opening
+  that socket with a stolen or guessed key is that browsers cannot set custom headers on a WebSocket. A
+  `?key=` fallback — the usual fix when some WebSocket client "can't send headers" — removes that, and puts
+  the key in access logs as well. `Endpoint_FailsClosed("query-string")` pins the 401. The same reasoning is
+  why the helper takes the key from `AGENT42_BRIDGE_KEY` and refuses `--key`: argv is visible to every
+  process that can list this one.
+- **Evidence:** `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs`, `tools/Agent42.LocalBridge/BridgeOptions.cs`,
+  `tests/Agent42.Tests/LocalBridgeEndpointTests.cs` (`Endpoint_FailsClosed`),
+  `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Client_KeyFromEnvHeaderOnly`)
+- **Verified:** 2026-09-17
+
+### Nothing in a browser tab can relay to BrowserOS neo — any `Origin` gets a 403
+
+- **Claim:** measured on neo 0.0.53: an `initialize` with no `Origin` → 200; with **any** `Origin` (or
+  `Sec-Fetch-*`) → **403**. That is neo's own defence against web pages driving the signed-in browser, and it
+  is why the bridge is a console app rather than a page on our origin — do not try the browser relay again.
+  The flip side: the helper must **never add an `Origin`** upstream. A .NET `HttpClient` sends none by
+  default; `Upstream_SendsNoOrigin` pins that on the production `HttpUpstream` against a real socket. Also
+  measured: neo listens on **9210**, not the 9239 its docs name — take the URL as config.
+- **Evidence:** `tools/Agent42.LocalBridge/UpstreamChannel.cs` (`HttpUpstream`),
+  `tools/Agent42.LocalBridge/BridgeOptions.cs` (`DefaultUpstream`),
+  `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Upstream_SendsNoOrigin`),
+  `.agentic/specs/completed/plan-browseros-neo-as-an-mcp-tool.md` ("Option D")
+- **Verified:** 2026-09-17
+
+### The bridge confirmation gate: exact `readOnlyHint: true` only, URL-shaped args still prompt, and the prompt is sanitized and never truncated
+
+- **Claim:** the helper's `ConfirmationGate` is the only control between a model-written call and the user's
+  signed-in browser, so four rules must survive "simplification": **(1)** a call passes unprompted only when
+  the relayed `tools/list` said `readOnlyHint` is exactly `true` — neo leaves `navigate`, `act`, `evaluate`
+  and `run` **unannotated**, so treating a missing hint as read-only would wave through arbitrary JavaScript;
+  **(2)** a read-only call whose string arguments look like a URL (`scheme:` or `//`) still prompts —
+  "read-only" is the upstream's claim and a page load is an outbound channel (measured: none of neo's
+  read-only tools takes one today; the rule is defence in depth); **(3)** the prompt strips C0/C1 controls
+  including ESC and Unicode **Cf** (bidi overrides) — an ANSI sequence can repaint the tool name — and shows
+  the arguments **in full**, denying past 20,000 characters, because a prefix lets a payload hide behind a
+  harmless start; **(4)** a deny is answered by the helper as a JSON-RPC **result** with `isError`, not a
+  protocol error, so the model can explain it. The console prompt also discards input typed before it
+  appeared, so a stale `y` never approves an unseen call — which means a scripted test must send its answer
+  **after** the prompt shows (a piped answer that arrives during `dotnet run`'s build is dropped).
+- **Evidence:** `tools/Agent42.LocalBridge/ConfirmationGate.cs`, `tools/Agent42.LocalBridge/Program.cs`
+  (`ConsolePrompt`), `tests/Agent42.Tests/LocalBridgeHelperTests.cs`,
+  `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md` (Verification — 0 ESC and 0 U+202E
+  bytes on the real terminal)
+- **Verified:** 2026-09-17
+
+### A bridge that connects after a chat activated is invisible to it — invalidate on CONNECT, rate-limited, never on disconnect
+
+- **Claim:** `AgentGrain` resolves MCP tools once per activation and the provider caches them per overlay
+  version, so a helper that connects later would stay invisible to new activations until some config write.
+  `LocalBridgeEndpoint` therefore calls `InvalidateToolCacheAsync` (ADR 0069) on connect — but at most once
+  per `LocalBridgeLimits.InvalidateMinInterval` per server, and **never on disconnect**: each bump is a
+  Cosmos write, and with two retained versions two bumps dispose the warm sockets of the user's **other** MCP
+  servers, so a flapping helper (idle timeouts, revision swaps, two helpers replacing each other) would turn
+  into write-and-teardown churn. The accepted cost: after a disconnect with no reconnect, a new activation
+  can get a cache hit whose bridged tools fail when called. A warm grain already holding the tools needs
+  the channel transport to fault on socket loss, or a pending call hangs the non-reentrant turn —
+  `SocketDrop_FaultsPendingCall` is mutation-checked against the `FaultAll` in `LocalBridgeSession.RunAsync`.
+- **Evidence:** `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs` (`InvalidateToolCacheAsync`),
+  `src/Agent42.Backend/Mcp/LocalBridgeRegistry.cs` (`TryClaimInvalidation`),
+  `src/Agent42.Backend/Mcp/LocalBridgeSession.cs` (`RunAsync`),
+  `tests/Agent42.Tests/LocalBridgeEndpointTests.cs` (`Connect_InvalidatesToolCache_RateLimited`),
+  `tests/Agent42.Tests/LocalBridgeKestrelTests.cs` (`SocketDrop_FaultsPendingCall`)
+- **Verified:** 2026-09-17
+
+### MCP SDK 2.2.0 opens with a `server/discover` probe that waits 5 s — and a custom `TransportBase` must `SetDisconnected` in `DisposeAsync`
+
+- **Claim:** two measured facts about writing an MCP transport or a fake server on `ModelContextProtocol.Core`
+  2.2.0. **(1)** With `ProtocolVersion` unset, `McpClient.CreateAsync` first sends `server/discover` (the
+  `2026-07-28` revision) and falls back to `initialize` only on an error **or after `DiscoverProbeTimeout`
+  (5 s)**. A fake server that silently ignores unknown methods makes every connect take 5 s — the tests still
+  pass, just slowly, which hides it (measured: 5090 ms; answering `-32601 Method not found` → 121 ms). Real
+  neo answers the probe (276 ms). **(2)** `TransportBase.DisposeAsync` is abstract, and an override that does
+  not call `SetDisconnected()` makes `McpClient.DisposeAsync` **never return** (measured: the spike hung
+  until killed). `SetDisconnected(ex)` also faults a pending request in about 1 ms, which is what
+  `LocalBridgeChannelTransport.Fault` relies on.
+- **Evidence:** `src/Agent42.Backend/Mcp/LocalBridgeChannelTransport.cs` (`DisposeAsync`, `Fault`),
+  `tests/Agent42.Tests/LocalBridgeTestSupport.cs` (`FakeBridgeHelper.HandleAsync` — the `-32601` answer),
+  `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md` (Verification)
+- **Verified:** 2026-09-17

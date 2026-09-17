@@ -203,6 +203,10 @@ builder.Services.AddSingleton<McpOAuthTokenResolver>();
 // IMcpConnectionFactory — DevHost's real shape before its offline fake — degrades to a curated 503 instead
 // of breaking route matching for the whole host.
 builder.Services.AddSingleton<McpConnectionTester>();
+// The local bridge (ADR 0076): a LocalBridge MCP server is reached over a socket its helper opened to
+// /api/local-bridge. AddLocalBridge DECORATES the IMcpConnectionFactory registered above, so it must stay
+// below it — ProjectLayoutTests.Hosts_RegisterLocalBridge pins the order.
+builder.Services.AddLocalBridge();
 // Uploaded agent skills (ADR 0049). The two registrations are NOT equivalent, and the asymmetry is
 // deliberate: IUserSkillProvider is an AgentGrain constructor dependency, so it is MANDATORY in every
 // host that activates the grain (the IUserMcpToolProvider / IPushNotificationSender shape — miss it and
@@ -566,6 +570,11 @@ app.UseOrleansDashboardOwnerGate();
 // anonymously reachable. Same ordering rule as the dashboard gate above: ABOVE UseDefaultFiles/
 // UseStaticFiles, so it cannot be bypassed by a file later dropped under that path in wwwroot.
 app.UseAgentMcpKeyGate();
+
+// The local-bridge socket (ADR 0076). Also on excludedPaths, so its endpoint self-enforces the bridge key.
+// Only its UseWebSockets half is order-sensitive (the route is an endpoint); it sits here so every public,
+// self-enforcing surface is wired in one place.
+app.UseLocalBridge();
 
 app.MapDefaultEndpoints();
 

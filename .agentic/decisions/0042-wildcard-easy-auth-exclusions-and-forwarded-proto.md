@@ -10,6 +10,11 @@ extends: []
 
 # Wildcard `excludedPaths` entries, and trusting the ingress's `X-Forwarded-Proto`
 
+> **Extended by [ADR 0076](0076-local-bridge-for-machine-local-mcp-servers.md) (2026-09-17) — a seventh
+> entry, `/api/local-bridge`, deliberately EXACT** (the route has no sub-paths), relying on the
+> exact-unless-`/*` rule measured here. Whether the ingress passes a WebSocket `Upgrade` through an excluded
+> path is not something this ADR measured; 0076 carries that as a post-deploy check.
+
 ## Context
 ADR 0035 shipped read-only share links whose entire premise is *"anyone with the link can open it, no
 sign-in"*. **In production they hit the Entra login page instead.** Two independent defects, both in

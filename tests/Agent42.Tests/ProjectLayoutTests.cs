@@ -565,6 +565,39 @@ public sealed class ProjectLayoutTests
     }
 
     /// <summary>
+    /// AC22 (ADR 0076). Both silo hosts must register the local bridge and map its endpoint, and
+    /// <c>AddLocalBridge()</c> must come <b>after</b> the inner <c>IMcpConnectionFactory</c> it decorates —
+    /// registered before it, the decorator would wrap nothing and throw at startup, or (were that throw ever
+    /// softened) the later registration would silently win and every bridge server would read as "not
+    /// connected" forever. The placement beside the other excluded-path wiring (above the static-file
+    /// middleware) is a readability convention rather than a correctness rule — the route is an endpoint and
+    /// only its <c>UseWebSockets</c> half is order-sensitive — but it keeps every public surface in one place.
+    /// No test executes <c>Program.cs</c>, hence source text.
+    /// </summary>
+    [Theory]
+    [InlineData("src/Agent42.Backend/Program.cs")]
+    [InlineData("tools/Agent42.DevHost/Program.cs")]
+    public void Hosts_RegisterLocalBridge(string relativePath)
+    {
+        var program = StrippedSource(
+            Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+        var inner = program.IndexOf("AddSingleton<IMcpConnectionFactory", StringComparison.Ordinal);
+        var decorator = program.IndexOf("AddLocalBridge()", StringComparison.Ordinal);
+        Assert.True(inner >= 0, $"{relativePath} registers no IMcpConnectionFactory.");
+        Assert.True(decorator > inner, $"{relativePath} must call AddLocalBridge() after registering IMcpConnectionFactory.");
+        Assert.Equal(decorator, program.LastIndexOf("AddLocalBridge()", StringComparison.Ordinal));
+        Assert.Equal(inner, program.LastIndexOf("AddSingleton<IMcpConnectionFactory", StringComparison.Ordinal));
+
+        var use = program.IndexOf("app.UseLocalBridge()", StringComparison.Ordinal);
+        Assert.True(use >= 0, $"{relativePath} does not map the local-bridge endpoint.");
+        foreach (var later in new[] { "app.UseDefaultFiles()", "app.UseStaticFiles()" })
+        {
+            Assert.True(program.IndexOf(later, StringComparison.Ordinal) > use, $"{later} runs before UseLocalBridge() in {relativePath}.");
+        }
+    }
+
+    /// <summary>
     /// AC 10 (ADR 0062). Both silo hosts must register the dashboard — the endpoints exist either way,
     /// but with no <c>AddDashboard()</c> on the silo they have no cluster services to read, so the page
     /// fails at runtime rather than at build time.

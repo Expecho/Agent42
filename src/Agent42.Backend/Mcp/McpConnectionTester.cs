@@ -72,7 +72,7 @@ public sealed class McpConnectionTester
         }
 
         if (!Enum.TryParse<McpAuthMode>(server.Auth, ignoreCase: true, out var mode)
-            || mode is not (McpAuthMode.None or McpAuthMode.Header or McpAuthMode.ClientCredentials or McpAuthMode.InteractiveOAuth))
+            || mode is not (McpAuthMode.None or McpAuthMode.Header or McpAuthMode.ClientCredentials or McpAuthMode.InteractiveOAuth or McpAuthMode.LocalBridge))
         {
             return McpTestOutcome.Failure($"auth mode {server.Auth} is not yet supported");
         }
@@ -110,6 +110,12 @@ public sealed class McpConnectionTester
                 // version cache (which is what keeps the cache a chat-path concern only).
                 await DisposeQuietlyAsync(connection.Connection, server);
             }
+        }
+        catch (LocalBridgeNotConnectedException)
+        {
+            // A distinct diagnosis (ADR 0076), like the OAuth one above: the user's next action is to start the
+            // helper on their machine, not to fix a URL — "could not connect" would point them the wrong way.
+            return McpTestOutcome.Failure("local bridge not connected");
         }
         catch (Exception ex)
         {

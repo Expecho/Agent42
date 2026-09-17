@@ -56,12 +56,17 @@ public sealed class UserMcpConfigGrain : Grain, IUserMcpConfigGrain
                 // them — and the tool picker loses its per-tool checkboxes until that user's next chat
                 // reconnects. Edit_PreservesKnownToolNames pins it.
                 KnownToolNames = server.KnownToolNames ?? prev.KnownToolNames,
+                // Unconditional, not `?? prev`: the hash is grain-owned (ADR 0076). ToStored rebuilds the record
+                // from a request that carries no hash, so without this every edit would silently kill the bridge
+                // key; with `??` instead, nothing could ever clear it. Only Mint/Clear/Delete change it.
+                BridgeKeyHash = prev.BridgeKeyHash,
             };
             servers[existing] = stored;
         }
         else
         {
-            stored = server;
+            // An insert never arrives with a hash — a key exists only once MintBridgeKeyAsync has registered it.
+            stored = server with { BridgeKeyHash = null };
             servers.Add(stored);
         }
 
@@ -72,10 +77,57 @@ public sealed class UserMcpConfigGrain : Grain, IUserMcpConfigGrain
     public async Task DeleteAsync(string id)
     {
         var servers = _state.State.Config.Servers.ToList();
-        if (servers.RemoveAll(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase)) > 0)
+        var removed = servers.Find(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase));
+        if (removed is null)
         {
-            await BumpAsync(_state.State.Config with { Servers = servers });
+            return;
         }
+
+        // Delete order (ADR 0022): write FIRST, then deregister. A mid-failure leaves an orphan directory
+        // entry, which the bridge endpoint still rejects because the server it names no longer exists.
+        servers.Remove(removed);
+        await BumpAsync(_state.State.Config with { Servers = servers });
+        await DeregisterAsync(removed.BridgeKeyHash);
+    }
+
+    public async Task<string?> MintBridgeKeyAsync(string serverId)
+    {
+        var servers = _state.State.Config.Servers.ToList();
+        var index = IndexOf(servers, serverId);
+        if (index < 0 || servers[index].Auth != nameof(McpAuthMode.LocalBridge))
+        {
+            return null;
+        }
+
+        // Regenerate order (ADR 0022) — the OPPOSITE of clear/delete, deliberately: deregister the OLD hash
+        // first, so any crash from here on leaves the old key dead rather than a revoked key still resolving.
+        await DeregisterAsync(servers[index].BridgeKeyHash);
+
+        var (raw, hash) = BridgeKey.Generate();
+        servers[index] = servers[index] with { BridgeKeyHash = hash };
+
+        // Not BumpAsync: the hash is not connection config (see IUserMcpConfigGrain.MintBridgeKeyAsync).
+        _state.State.Config = _state.State.Config with { Servers = servers };
+        await _state.WriteStateAsync();
+
+        await GrainFactory.GetGrain<ILocalBridgeKeyDirectoryGrain>(hash).RegisterAsync(this.GetPrimaryKeyString(), servers[index].Id);
+        return raw;
+    }
+
+    public async Task ClearBridgeKeyAsync(string serverId)
+    {
+        var servers = _state.State.Config.Servers.ToList();
+        var index = IndexOf(servers, serverId);
+        var hash = index < 0 ? null : servers[index].BridgeKeyHash;
+        if (string.IsNullOrEmpty(hash))
+        {
+            return;
+        }
+
+        servers[index] = servers[index] with { BridgeKeyHash = null };
+        _state.State.Config = _state.State.Config with { Servers = servers };
+        await _state.WriteStateAsync();
+        await DeregisterAsync(hash);
     }
 
     public async Task RecordToolNamesAsync(string serverId, IReadOnlyList<string> toolNames)
@@ -111,6 +163,14 @@ public sealed class UserMcpConfigGrain : Grain, IUserMcpConfigGrain
     }
 
     public Task InvalidateToolCacheAsync() => BumpAsync(_state.State.Config);
+
+    private static int IndexOf(List<StoredMcpServer> servers, string id) =>
+        servers.FindIndex(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase));
+
+    private Task DeregisterAsync(string? hash) =>
+        string.IsNullOrEmpty(hash)
+            ? Task.CompletedTask
+            : GrainFactory.GetGrain<ILocalBridgeKeyDirectoryGrain>(hash).DeregisterAsync();
 
     private static string? Keep(string? incoming, string? stored) =>
         string.IsNullOrEmpty(incoming) ? stored : incoming;

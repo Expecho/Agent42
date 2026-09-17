@@ -1,0 +1,177 @@
+# Publishes the Agent42 local bridge helper (tools/Agent42.LocalBridge, ADR 0076) as a GitHub Release:
+# one self-contained, single-file executable per platform, so a user downloads it and runs it with no
+# .NET installed. The helper is never deployed with the app — deploy.yml builds the backend image only and
+# triggers on pushes to main, never on these tags.
+#
+# Release by pushing a tag:   git tag local-bridge-v1.0.0 && git push origin local-bridge-v1.0.0
+# or run it manually with a version (it creates the tag on the chosen commit).
+#
+# The self-contained/single-file settings live in the csproj (applied whenever a runtime identifier is
+# given), so `dotnet publish -r <rid> -c Release` on a laptop builds the same asset.
+#
+# macOS assets are built ON macOS: the SDK ad-hoc signs the apphost only on a macOS host, and Apple
+# Silicon refuses to run an unsigned binary. Nothing is code-signed or notarized beyond that, so Windows
+# SmartScreen and macOS Gatekeeper will warn on first run — the release notes say how to proceed.
+name: Release local bridge
+
+on:
+  push:
+    tags: ['local-bridge-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without the prefix (e.g. 1.0.0) — creates tag local-bridge-v<version>'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-local-bridge-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  PROJECT: tools/Agent42.LocalBridge/Agent42.LocalBridge.csproj
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="local-bridge-v${INPUT_VERSION#v}"
+          fi
+          version="${tag#local-bridge-v}"
+          # SemVer only: the version is stamped into the binary and shown by --version.
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$version' is not a SemVer version (from tag '$tag')."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create the release (if it does not exist yet)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists; assets will be replaced."
+            exit 0
+          fi
+          prerelease=""
+          if [[ "$VERSION" == *-* ]]; then prerelease="--prerelease"; fi
+          cat > notes.md <<'NOTES'
+          The Agent42 local bridge lets your Agent42 chats use an MCP server that runs only on your computer
+          (for example BrowserOS neo). See ADR 0076 and docs/features/remote-mcp-servers.md.
+
+          **Download** the archive for your platform, extract it, and run:
+
+          ```
+          # Windows (PowerShell)
+          $env:AGENT42_BRIDGE_KEY = "<the key Agent42 showed you>"
+          .\Agent42.LocalBridge.exe --server https://chat.agent42.nl
+
+          # macOS / Linux
+          export AGENT42_BRIDGE_KEY="<the key Agent42 showed you>"
+          ./Agent42.LocalBridge --server https://chat.agent42.nl
+          ```
+
+          No .NET installation is needed. The executables are **not code-signed**: on Windows choose
+          *More info → Run anyway* in SmartScreen; on macOS run `xattr -d com.apple.quarantine Agent42.LocalBridge`
+          once after extracting. Verify a download against `SHA256SUMS.txt`.
+          NOTES
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "Agent42 local bridge $VERSION" \
+            --notes-file notes.md $prerelease
+
+  publish:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64,     os: ubuntu-latest, archive: zip }
+          - { rid: win-arm64,   os: ubuntu-latest, archive: zip }
+          - { rid: linux-x64,   os: ubuntu-latest, archive: tar.gz }
+          - { rid: linux-arm64, os: ubuntu-latest, archive: tar.gz }
+          - { rid: osx-x64,     os: macos-latest,  archive: tar.gz }
+          - { rid: osx-arm64,   os: macos-latest,  archive: tar.gz }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.create-release.outputs.tag }}
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish ${{ matrix.rid }}
+        env:
+          RID: ${{ matrix.rid }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: dotnet publish "$PROJECT" -c Release -r "$RID" -p:Version="$VERSION" -o "out/$RID"
+
+      - name: Package
+        id: package
+        shell: bash
+        env:
+          RID: ${{ matrix.rid }}
+          ARCHIVE: ${{ matrix.archive }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          name="agent42-local-bridge-$VERSION-$RID.$ARCHIVE"
+          cd "out/$RID"
+          # The single-file executable is the whole product; nothing else in the folder is needed.
+          if [ "$ARCHIVE" = "zip" ]; then
+            zip -j "$GITHUB_WORKSPACE/$name" Agent42.LocalBridge.exe
+          else
+            chmod +x Agent42.LocalBridge
+            tar -czf "$GITHUB_WORKSPACE/$name" Agent42.LocalBridge
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test (native runners only)
+        if: matrix.rid == 'linux-x64' || (runner.os == 'macOS' && matrix.rid == 'osx-arm64')
+        shell: bash
+        env:
+          RID: ${{ matrix.rid }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          actual="$("out/$RID/Agent42.LocalBridge" --version)"
+          echo "--version printed: $actual"
+          [ "$actual" = "$VERSION" ]
+
+      - name: Upload to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+          NAME: ${{ steps.package.outputs.name }}
+        run: gh release upload "$TAG" "$NAME" --clobber
+
+  checksums:
+    needs: [create-release, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Attach SHA256SUMS.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+        run: |
+          mkdir assets && cd assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'agent42-local-bridge-*'
+          sha256sum agent42-local-bridge-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
