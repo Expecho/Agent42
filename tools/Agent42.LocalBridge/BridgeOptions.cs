@@ -20,6 +20,7 @@ public sealed record BridgeOptions(Uri Server, Uri Upstream, string Key, IReadOn
         Agent42 local bridge — lets your Agent42 chats use an MCP server that listens only on this machine.
 
         Usage: Agent42.LocalBridge --server <https://your-agent42> [--upstream <url>] [--auto-approve <tool,tool>]
+               Agent42.LocalBridge --version
 
           --server        Agent42 base URL, e.g. https://chat.agent42.nl (required)
           --upstream      Local MCP endpoint (default http://127.0.0.1:9210/mcp — see chrome://browseros/mcp)

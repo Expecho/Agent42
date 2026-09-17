@@ -119,11 +119,18 @@ ADR 0076. Some MCP servers — BrowserOS neo, which drives your signed-in browse
 so a browser tab cannot relay either. Choose **Local bridge** as the auth mode instead:
 
 1. Save the server (no endpoint). The dialog shows a **bridge key once** and the command to run.
-2. On your computer, set `AGENT42_BRIDGE_KEY` to that key and run
-   `dotnet run --project tools/Agent42.LocalBridge -- --server https://chat.agent42.nl`
+2. Download the helper for your platform from the
+   [GitHub Releases](https://github.com/Expecho/Agent42/releases?q=local-bridge&expanded=true)
+   (`agent42-local-bridge-<version>-<platform>` — Windows, macOS and Linux, x64 and arm64). It is a single
+   self-contained executable: **no .NET install needed**. It is not code-signed, so Windows SmartScreen
+   asks you to confirm (*More info → Run anyway*) and on macOS you run
+   `xattr -d com.apple.quarantine Agent42.LocalBridge` once. `SHA256SUMS.txt` sits next to the downloads.
+3. On your computer, set `AGENT42_BRIDGE_KEY` to that key and run
+   `./Agent42.LocalBridge --server https://chat.agent42.nl`
    (`--upstream <url>` if your server is not on `http://127.0.0.1:9210/mcp`; see
-   `chrome://browseros/mcp`; `--auto-approve tool,tool` to skip prompts for named tools).
-3. Press **Test** — it reports the tool count, or "local bridge not connected" while the helper is off.
+   `chrome://browseros/mcp`; `--auto-approve tool,tool` to skip prompts for named tools; `--version`).
+   From a checkout, `dotnet run --project tools/Agent42.LocalBridge -- --server …` does the same.
+4. Press **Test** — it reports the tool count, or "local bridge not connected" while the helper is off.
 
 ```mermaid
 flowchart LR
@@ -171,3 +178,4 @@ stops. A chat that was already open when the helper connected picks the tools up
 | Endpoints | `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (`/api/mcp-servers`, `/api/mcp/oauth/*`) |
 | Local bridge (backend) | `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs`, `LocalBridgeSession.cs`, `LocalBridgeConnectionFactory.cs`, `LocalBridgeRegistry.cs` |
 | Local bridge (helper) | `tools/Agent42.LocalBridge/BridgeClient.cs`, `ConfirmationGate.cs`, `UpstreamChannel.cs` |
+| Local bridge release | `.github/workflows/release-local-bridge.yml` (tag `local-bridge-vX.Y.Z`) |

@@ -10,6 +10,21 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Agent42.LocalBridge</RootNamespace>
+    <!-- Overridden by the release workflow from the tag (local-bridge-vX.Y.Z); a local build says "dev". -->
+    <Version>0.0.0-dev</Version>
+  </PropertyGroup>
+
+  <!-- Published as ONE self-contained executable per platform (.github/workflows/release-local-bridge.yml),
+       so a user downloads a GitHub Release asset and runs it with no .NET installed. Conditional on a
+       runtime identifier: plain `dotnet build`/`dotnet test` (no RID) stay framework-dependent, which
+       SelfContained would otherwise break. `dotnet publish -r win-x64 -c Release` reproduces a release
+       asset locally. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>

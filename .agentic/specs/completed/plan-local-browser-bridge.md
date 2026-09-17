@@ -538,3 +538,9 @@ Where the shipped code differs from the plan above, and why. ADR 0076 is the aut
    `tabs new`, leaving an `about:blank` tab (page 2) in the user's browser. The test now asserts the close.
 10. **Plan-listed doc targets not changed:** `docs/integrations/README.md` needed nothing (its MCP mention is
     the calendar note). The browseros research spec was moved to `specs/completed/` with a superseded note.
+11. **Distribution added after the first review (user request): GitHub Releases, not `dotnet run`.** The plan
+    listed a signed installer / `dotnet tool` as out of scope and assumed `dotnet run`. The helper now ships as
+    a self-contained single-file executable per platform from `.github/workflows/release-local-bridge.yml`
+    (tag `local-bridge-vX.Y.Z`), with RID-conditional publish settings in the csproj, a `--version` flag, a
+    releases link in the key panel, and `LocalBridgeReleaseTests` pinning the source text. Code signing stays
+    out of scope. See ADR 0076 "Distribution".

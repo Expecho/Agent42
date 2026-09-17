@@ -228,7 +228,9 @@ async function testMcpServer(id, target) {
 // is rendered here and nowhere else, with the command that uses it (ADR 0076).
 function showBridgeKey(key) {
   mcpBridgeKeyValue.textContent = key;
-  mcpBridgeCommand.textContent = `dotnet run --project tools/Agent42.LocalBridge -- --server ${location.origin}`;
+  // The released self-contained executable (release-local-bridge.yml). "./" works in macOS/Linux shells and
+  // in PowerShell (which resolves the .exe); cmd.exe would need "Agent42.LocalBridge.exe" instead.
+  mcpBridgeCommand.textContent = `./Agent42.LocalBridge --server ${location.origin}`;
   mcpBridgeKeyCopyBtn.textContent = "Copy";
   mcpBridgeKeyReveal.hidden = false;
 }

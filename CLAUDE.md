@@ -293,7 +293,10 @@ to document a mechanical rule, add a lint rule instead.
 - Machine-local MCP servers through a local bridge (ADR 0076, **amends 0002/0024/0042/0070**, extends 0022):
   a new MCP auth mode, **`LocalBridge`**, reaches a server that listens only on the user's own machine
   (BrowserOS neo today, measured on `127.0.0.1:9210`, not the documented 9239). A console app,
-  **`tools/Agent42.LocalBridge`** (run by the user, **never deployed**), dials **out** to
+  **`tools/Agent42.LocalBridge`** (run by the user, **never deployed**; shipped as a self-contained single-file
+  executable per platform on GitHub Releases by `.github/workflows/release-local-bridge.yml` — push a
+  `local-bridge-vX.Y.Z` tag; the SelfContained/PublishSingleFile settings are **RID-conditional** in the csproj
+  so the solution build stays framework-dependent), dials **out** to
   **`/api/local-bridge`** (mapped for any method — RFC 8441 WebSockets arrive as `CONNECT`) — the app's
   **first WebSocket** and the **seventh `excludedPaths` entry,
   deliberately exact** — and relays MCP JSON-RPC over **channels** (one socket, one upstream session per

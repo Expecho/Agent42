@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace Agent42.LocalBridge;
 
 /// <summary>
@@ -7,8 +9,21 @@ namespace Agent42.LocalBridge;
 /// </summary>
 public static class Program
 {
+    /// <summary>The release version, stamped from the tag by the release workflow; <c>0.0.0-dev</c> locally.</summary>
+    public static string Version =>
+        typeof(Program).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
+        ?? "dev";
+
     public static async Task<int> Main(string[] args)
     {
+        if (args is ["--version"])
+        {
+            Console.WriteLine(Version);
+            return 0;
+        }
+
+        Log($"Agent42 local bridge {Version}");
         var (options, error) = BridgeOptions.Parse(args, Environment.GetEnvironmentVariable);
         if (options is null)
         {

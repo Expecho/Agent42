@@ -101,6 +101,20 @@ any `tools/call` that is not declared read-only, **the helper asks the person at
 - The console reader is one background thread; each prompt discards lines typed before it appeared, so a
   stale `y` can never approve a call the user has not seen.
 
+### Distribution (user request, 2026-09-17)
+
+The helper is downloaded, not built: `.github/workflows/release-local-bridge.yml` publishes one
+**self-contained, single-file** executable per platform (win-x64/arm64, linux-x64/arm64, osx-x64/arm64,
+compressed, ~38 MB) as a GitHub Release when a **`local-bridge-vX.Y.Z`** tag is pushed (or on manual dispatch
+with a version, which creates the tag). The version is stamped from the tag and printed by `--version`; the
+native runners smoke-test that. `SHA256SUMS.txt` is attached. Windows and Linux assets are cross-published
+from Ubuntu; **macOS assets are built on a macOS runner**, where the SDK ad-hoc signs the apphost that Apple
+Silicon requires. The SelfContained/PublishSingleFile settings live in the csproj **conditional on a runtime
+identifier**, so `dotnet publish -r <rid>` reproduces an asset locally while the solution's plain
+build/test stays framework-dependent. `deploy.yml` is untouched: it triggers on pushes to `main` only and its
+Dockerfile never copies the helper. The UI's key panel links to the releases page and shows
+`./Agent42.LocalBridge --server <origin>`.
+
 ## Alternatives considered
 
 - **Reach the user's machine from production** (tunnel, port-forward, a public neo). Rejected in the prior
@@ -122,6 +136,13 @@ any `tools/call` that is not declared read-only, **the helper asks the person at
 - **Regenerate through the upsert** (ADR 0022's `regenerateKey` on PUT). Rejected for this surface only: it
   would force a Save, and a Save re-runs the auto-test and (on disable/switch) evicts the socket.
 - **A distributed socket registry.** Out of scope — see consequences.
+- **Distribute as `dotnet run` from a checkout, or as a `dotnet tool`.** Rejected (user decision): both need
+  a .NET SDK/runtime on the machine being driven. A framework-dependent single file was rejected for the same
+  reason; self-contained costs ~38 MB per asset, which is the price of "download and run".
+- **Sign and notarize the executables.** Deferred: it needs certificates and secrets this repo does not have.
+  The release notes and docs tell the user how to get past SmartScreen and Gatekeeper instead.
+- **Attach assets with the `upload-artifact`/`action-gh-release` actions.** Not used: every step uses the
+  preinstalled `gh` CLI with the workflow token, so the release adds no third-party action to pin.
 
 ## Consequences
 
@@ -153,7 +174,7 @@ any `tools/call` that is not declared read-only, **the helper asks the person at
 - **Tool schemas ride every turn** (~31 KB for neo) — on GitHub Models' 16k input cap, narrowing is a
   practical requirement.
 - **No new package, secret, Cosmos container or migration** (trailing `[Id(14)]`). New: one grain type
-  (`localbridgekeydirectory`), one project under `tools/` (never deployed), `sw.js` `CACHE` → `v38`.
+  (`localbridgekeydirectory`), one project under `tools/` (never deployed — released, see Distribution), `sw.js` `CACHE` → `v38`.
 
 ## Verification
 
@@ -216,3 +237,10 @@ binary; it was redone with a string mutation after `RunAsync` was split.)
 - **The keep-alive timeout firing on a genuinely dead path** (sleep, Wi-Fi loss) — configured on both sides,
   but only a reset connection was exercised; no test simulates a silent black hole.
 - **A model actually receiving and explaining a deny result** — no model runs offline.
+- **The release workflow itself** — it runs only on a tag, so nothing here has executed it. Measured locally
+  instead: `dotnet publish -c Release -r win-x64|linux-x64|osx-arm64 -p:Version=0.1.0-test` with the csproj
+  settings alone gives ONE file each (38.4 / 40.1 / 37.3 MB, no separate `.pdb`); the win-x64 `.exe` printed
+  `0.1.0-test` for `--version`, connected to DevHost, closed each channel cleanly when its upstream was down
+  (neo had been closed by then, so Test said "could not connect"), and exited 1 on the 401 after Regenerate.
+  **Not verified:** that the osx assets actually launch on a Mac (the ad-hoc signing claim is the SDK's
+  documented macOS-host behaviour, not something run here), the arm64 assets, and the first real release run.
