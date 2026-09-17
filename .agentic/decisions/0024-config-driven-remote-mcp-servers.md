@@ -7,6 +7,13 @@ tags: [mcp, tools, per-user, egress, security, agent-framework]
 
 # Title: Config-driven remote MCP servers — per-user, encrypted, gated by one `mcp` tool key
 
+> **Amended by [ADR 0076](0076-local-bridge-for-machine-local-mcp-servers.md) (2026-09-17) — a server that
+> dials in.** A new auth mode, `LocalBridge`, reaches an MCP server that listens only on the user's machine:
+> a helper there opens a WebSocket to `/api/local-bridge` and the backend speaks MCP over it. Such a server
+> has **no endpoint** (validation exempts that mode only), its credential is a grain-owned bridge-key hash
+> rather than a secret this API encrypts, and revoking writes close its live socket. Everything below still
+> governs it — it yields ordinary `McpServerTools`, gated, truncated and best-effort like any other server.
+
 > **Amended by [ADR 0064](0064-mcp-connection-test-endpoint.md) (2026-09-04) — management endpoints are no
 > longer socket-free.** The management routes below were pure config CRUD that never opened a connection;
 > `POST /api/mcp-servers/{id}/test` now connects to one named server **on explicit user request**, so the

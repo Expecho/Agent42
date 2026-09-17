@@ -18,7 +18,14 @@ public enum McpAuthMode
     ClientCredentials,
 
     /// <summary>OAuth2 authorization_code + PKCE, app-driven, requires a human (Phase 3).</summary>
-    InteractiveOAuth
+    InteractiveOAuth,
+
+    /// <summary>
+    /// Reverse-connected (ADR 0076): the server listens only on the user's own machine, and the
+    /// <c>Agent42.LocalBridge</c> helper there dials <c>/api/local-bridge</c> with a bridge key and relays
+    /// MCP over that socket. There is no endpoint to dial and no credential to send.
+    /// </summary>
+    LocalBridge
 }
 
 /// <summary>
@@ -72,6 +79,14 @@ public enum McpAuthMode
 /// <para>Trailing and optional, so an overlay persisted before it existed deserializes with seeding
 /// disabled — no migration, and every existing server ships unchanged.</para>
 /// </param>
+/// <param name="BridgeKeyHash">
+/// SHA-256 of the <see cref="McpAuthMode.LocalBridge"/> key (ADR 0076), or null. <b>Server-minted
+/// metadata, owned by the grain</b>: <see cref="IUserMcpConfigGrain.SaveAsync"/> carries the stored value
+/// forward <i>unconditionally</i> and never writes it, and only <see cref="IUserMcpConfigGrain.MintBridgeKeyAsync"/>,
+/// <see cref="IUserMcpConfigGrain.ClearBridgeKeyAsync"/> and <see cref="IUserMcpConfigGrain.DeleteAsync"/>
+/// change it — each keeping the global directory in step. Not a <c>?? prev</c> clause: that would make
+/// clearing impossible, since null would mean "keep". Trailing and optional — no migration.
+/// </param>
 [GenerateSerializer]
 [Alias("Agent42.Agents.StoredMcpServer")]
 public sealed record StoredMcpServer(
@@ -93,7 +108,9 @@ public sealed record StoredMcpServer(
     // ── Discovered metadata, never a user selection — see the param doc above ──
     [property: Id(12)] IReadOnlyList<string>? KnownToolNames = null,
     // ── A user SETTING (ADR 0067), not metadata — must not gain a Keep clause ──
-    [property: Id(13)] bool SeedsFetchableUrls = false);
+    [property: Id(13)] bool SeedsFetchableUrls = false,
+    // ── Grain-owned metadata (ADR 0076) — SaveAsync always preserves, never writes ──
+    [property: Id(14)] string? BridgeKeyHash = null);
 
 /// <summary>
 /// A user's remote-MCP-server overlay: the servers they added and a monotonically-increasing

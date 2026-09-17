@@ -269,4 +269,83 @@ public sealed class McpServersAssetsTests
         Assert.Contains("mcpSeedsUrlsInput.checked = server?.seedsFetchableUrls ?? false;", app);
         Assert.Contains("seedsFetchableUrls: mcpSeedsUrlsInput.checked,", app);
     }
+
+    // AC32 (ADR 0076): Local bridge is an auth option, and choosing it hides the endpoint AND drops its
+    // `required` — a hidden required input still blocks the submit, just without a visible bubble.
+    [Fact]
+    public async Task McpDialog_LocalBridgeHidesTheEndpointAndItsRequiredFlag()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("<option value=\"LocalBridge\">", html);
+        Assert.Contains("id=\"mcpEndpointField\"", html);
+        Assert.Contains("id=\"mcpBridgeSection\"", html);
+
+        var sync = app[app.IndexOf("function syncMcpAuthUi()", StringComparison.Ordinal)..];
+        sync = sync[..sync.IndexOf("\nfunction ", 1, StringComparison.Ordinal)];
+        Assert.Contains("mcpEndpointField.hidden = isBridge;", sync);
+        Assert.Contains("mcpEndpointInput.required = !isBridge;", sync);
+        Assert.Contains("mcpBridgeSection.hidden = !isBridge;", sync);
+    }
+
+    // AC32: the save path sends a blank endpoint for Local bridge instead of bailing out on it.
+    [Fact]
+    public async Task SaveFlow_AllowsABlankEndpointForLocalBridgeOnly()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+        var saveBody = SaveBody(app);
+
+        Assert.Contains("endpoint: isBridge ? \"\" : mcpEndpointInput.value.trim(),", saveBody);
+        Assert.Contains("if (!payload.name || (!isBridge && !payload.endpoint)) return;", saveBody);
+        Assert.DoesNotContain("if (!payload.name || !payload.endpoint) return;", saveBody);
+    }
+
+    // AC32: the key is shown once — from the save response or the regenerate response — never from GET, and
+    // a new dialog never inherits the previous server's key.
+    [Fact]
+    public async Task BridgeKey_IsShownOnceAndRegeneratedThroughItsOwnRoute()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("id=\"mcpBridgeKeyReveal\" hidden", html);
+        Assert.Contains("id=\"mcpBridgeRegenerateBtn\"", html);
+        Assert.Contains("if (saved.bridgeKey)", SaveBody(app));
+        Assert.Contains("/bridge-key`, { method: \"POST\" }", app);
+
+        var open = app[app.IndexOf("function openMcpDialog(", StringComparison.Ordinal)..];
+        open = open[..open.IndexOf("\nfunction ", 1, StringComparison.Ordinal)];
+        Assert.Contains("hideBridgeKey();", open);
+
+        var load = app[app.IndexOf("export async function loadMcpServers()", StringComparison.Ordinal)..];
+        load = load[..load.IndexOf("\n}", StringComparison.Ordinal)];
+        Assert.DoesNotContain("bridgeKey", load);
+    }
+
+    // AC32: the save that MINTED a bridge key does not auto-test — no helper can hold that key yet, so the
+    // dial could only report "local bridge not connected" (ADR 0064's OAuth-no-token reasoning). The gate
+    // must sit before the auto-test and render the save as the success it is. The disabled and OAuth
+    // carve-outs above stay in place.
+    [Fact]
+    public async Task SaveFlow_DoesNotAutoTestTheSaveThatMintedABridgeKey()
+    {
+        var saveBody = SaveBody(await _fixture.GetAppScriptAsync());
+
+        var gate = saveBody.IndexOf("if (mintedBridgeKey)", StringComparison.Ordinal);
+        var autoTest = saveBody.IndexOf("await testMcpServer(editingMcpId, mcpTestResult)", StringComparison.Ordinal);
+        Assert.True(gate >= 0, "the save-path auto-test must be skipped on the save that minted a bridge key.");
+        Assert.True(autoTest > gate, "the bridge gate must precede (and short-circuit) the auto-test.");
+        Assert.Contains("mintedBridgeKey = true;", saveBody[..gate]);
+
+        var verdict = saveBody[gate..autoTest];
+        Assert.Contains("ok: true", verdict);
+        Assert.Contains("return;", verdict);
+    }
+
+    private static string SaveBody(string app)
+    {
+        var start = app.IndexOf("async function saveMcpServer()", StringComparison.Ordinal);
+        return app[start..app.IndexOf("async function deleteMcpServer", start, StringComparison.Ordinal)];
+    }
 }

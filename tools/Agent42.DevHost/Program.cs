@@ -142,6 +142,10 @@ builder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
 builder.Services.AddSingleton<IMcpConnectionFactory>(new OfflineMcpConnectionFactory());
 builder.Services.AddSingleton<McpOAuthTokenResolver>();
 builder.Services.AddSingleton<McpConnectionTester>();
+// The local bridge (ADR 0076): a LocalBridge MCP server is reached over a socket its helper opened to
+// /api/local-bridge. AddLocalBridge DECORATES the IMcpConnectionFactory registered above, so it must stay
+// below it — ProjectLayoutTests.Hosts_RegisterLocalBridge pins the order.
+builder.Services.AddLocalBridge();
 
 // In-memory attachment store: no Azure Storage offline. The canned client ignores image
 // content, so uploads still round-trip for the display proxy and history rendering.
@@ -223,6 +227,11 @@ var app = builder.Build();
 
 app.UseOrleansDashboardOwnerGate();
 app.UseAgentMcpKeyGate();
+
+// The local-bridge socket (ADR 0076). Also on excludedPaths, so its endpoint self-enforces the bridge key.
+// Only its UseWebSockets half is order-sensitive (the route is an endpoint); it sits here so every public,
+// self-enforcing surface is wired in one place.
+app.UseLocalBridge();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

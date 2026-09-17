@@ -1,6 +1,6 @@
 /* Agent 42 — remote MCP servers (ADR 0024/0025/0026), incl. the connection test (ADR 0064). Split out of app.js (ADR 0041). */
 
-import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpConnectBtn, mcpDialog, mcpEnabledInput, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpSeedsUrlsInput, mcpScopesField, mcpScopesInput, mcpServerList, mcpTabResult, mcpTestBtn, mcpTestResult, profileTabs } from "./dom.js";
+import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpBridgeCommand, mcpBridgeKeyCopyBtn, mcpBridgeKeyReveal, mcpBridgeKeyValue, mcpBridgeRegenerateBtn, mcpBridgeSection, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpConnectBtn, mcpDialog, mcpEnabledInput, mcpEndpointField, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpSeedsUrlsInput, mcpScopesField, mcpScopesInput, mcpServerList, mcpTabResult, mcpTestBtn, mcpTestResult, profileTabs } from "./dom.js";
 import { enterPrefsDetail, openProfileDialog } from "./profile.js";
 import { refreshToolCatalog } from "./tools.js";
 
@@ -52,12 +52,14 @@ function renderMcpServers() {
     // Endpoint + auth + a key glyph when a secret is stored (never the secret) + a pause glyph when off.
     // For OAuth, a connection state (🔗 connected / not connected) instead of the key glyph.
     const isOAuth = server.auth === "InteractiveOAuth";
-    const bits = [server.endpoint, server.auth];
-    if (server.hasHeaderValue || server.hasClientSecret) bits.push("🔑");
+    // A local-bridge server has no endpoint (ADR 0076): name where it lives instead of an empty first bit.
+    const isBridge = server.auth === "LocalBridge";
+    const bits = isBridge ? ["local bridge"] : [server.endpoint, server.auth];
+    if (server.hasHeaderValue || server.hasClientSecret || server.hasBridgeKey) bits.push("🔑");
     if (isOAuth) bits.push(server.hasToken ? "🔗 connected" : "not connected");
     if (!server.enabled) bits.push("⏸ off");
     sub.textContent = bits.join(" · ");
-    sub.title = server.endpoint;
+    sub.title = isBridge ? "reached through the Agent42 local bridge on your machine" : server.endpoint;
     meta.append(name, sub);
 
     // Interactive-OAuth servers get a Connect (or Reconnect) action that starts the sign-in flow. Full
@@ -96,11 +98,18 @@ function renderMcpServers() {
 
 // Each auth mode reveals only the fields it needs: Header → header name/value; ClientCredentials →
 // authority/clientId/clientSecret/scopes; InteractiveOAuth → clientId (optional) + scopes, plus a note;
-// None → nothing.
+// None → nothing. LocalBridge (ADR 0076) → no endpoint at all, and the bridge-key section instead.
 function syncMcpAuthUi() {
   const isHeader = mcpAuthSelect.value === "Header";
   const isCc = mcpAuthSelect.value === "ClientCredentials";
   const isOAuth = mcpAuthSelect.value === "InteractiveOAuth";
+  const isBridge = mcpAuthSelect.value === "LocalBridge";
+  mcpEndpointField.hidden = isBridge;
+  // A hidden `required` input still blocks form submission — the browser just cannot show the bubble.
+  mcpEndpointInput.required = !isBridge;
+  mcpBridgeSection.hidden = !isBridge;
+  // Regenerate needs a STORED bridge server; a new one gets its first key from the save itself.
+  mcpBridgeRegenerateBtn.hidden = !(isBridge && storedMcpServer(editingMcpId)?.auth === "LocalBridge");
   mcpHeaderNameField.hidden = !isHeader;
   mcpHeaderValueField.hidden = !isHeader;
   mcpAuthorityField.hidden = !isCc;
@@ -132,6 +141,7 @@ function openMcpDialog(server) {
   mcpClientIdInput.value = server?.clientId ?? "";
   mcpClientSecretInput.value = ""; // never prefilled — write-only (blank = keep on edit)
   mcpScopesInput.value = (server?.scopes ?? []).join(" ");
+  hideBridgeKey(); // a key is shown once, for the server it was minted for — never carried into another form
   syncMcpAuthUi();
   mcpCancelBtn.textContent = "Cancel"; // a previous save may have relabelled it to Close
 
@@ -214,13 +224,47 @@ async function testMcpServer(id, target) {
   if (outcome.ok) await refreshToolCatalog();
 }
 
+// The raw bridge key exists in plaintext exactly once — in the response to the write that minted it — so it
+// is rendered here and nowhere else, with the command that uses it (ADR 0076).
+function showBridgeKey(key) {
+  mcpBridgeKeyValue.textContent = key;
+  mcpBridgeCommand.textContent = `dotnet run --project tools/Agent42.LocalBridge -- --server ${location.origin}`;
+  mcpBridgeKeyCopyBtn.textContent = "Copy";
+  mcpBridgeKeyReveal.hidden = false;
+}
+
+function hideBridgeKey() {
+  mcpBridgeKeyReveal.hidden = true;
+  mcpBridgeKeyValue.textContent = "";
+}
+
+// Rotates the key without a Save (a Save would also re-run the auto-test). The server closes the socket the
+// old key opened, so a running helper reconnects, is refused, and stops.
+async function regenerateBridgeKey() {
+  if (!editingMcpId) return;
+  if (!confirm("Regenerate this server's bridge key? The current key stops working and a running local bridge disconnects.")) return;
+  try {
+    const res = await fetch(`/api/mcp-servers/${encodeURIComponent(editingMcpId)}/bridge-key`, { method: "POST" });
+    if (!res.ok) {
+      mcpError.textContent = (await res.text()) || "Could not regenerate the bridge key.";
+      mcpError.hidden = false;
+      return;
+    }
+    const saved = await res.json();
+    if (saved.bridgeKey) showBridgeKey(saved.bridgeKey);
+    clearTestResult(mcpTestResult);
+  } catch { /* silo may be unreachable; the old key is unchanged */ }
+}
+
 async function saveMcpServer() {
   const isHeader = mcpAuthSelect.value === "Header";
   const isCc = mcpAuthSelect.value === "ClientCredentials";
   const isOAuth = mcpAuthSelect.value === "InteractiveOAuth";
+  const isBridge = mcpAuthSelect.value === "LocalBridge";
   const payload = {
     name: mcpNameInput.value.trim(),
-    endpoint: mcpEndpointInput.value.trim(),
+    // A local-bridge server has no endpoint; the server stores "" and validation exempts only that mode.
+    endpoint: isBridge ? "" : mcpEndpointInput.value.trim(),
     auth: mcpAuthSelect.value,
     enabled: mcpEnabledInput.checked,
     // A plain setting: unlike the write-only secrets, false really means off, so unticking turns seeding
@@ -236,12 +280,13 @@ async function saveMcpServer() {
     // Scopes are space- or comma-separated in the UI; the API stores a list.
     scopes: (isCc || isOAuth) ? mcpScopesInput.value.split(/[\s,]+/).filter(Boolean) : null,
   };
-  if (!payload.name || !payload.endpoint) return;
+  if (!payload.name || (!isBridge && !payload.endpoint)) return;
 
   const url = editingMcpId
     ? `/api/mcp-servers/${encodeURIComponent(editingMcpId)}`
     : "/api/mcp-servers";
   const method = editingMcpId ? "PUT" : "POST";
+  let mintedBridgeKey = false;
   try {
     const res = await fetch(url, {
       method,
@@ -261,12 +306,18 @@ async function saveMcpServer() {
     editingMcpId = saved.id ?? editingMcpId;
     syncMcpTestBtn();
     syncMcpConnectBtn();
+    // Present only on the save that MINTED a bridge key (create, or a switch to Local bridge).
+    if (saved.bridgeKey) {
+      showBridgeKey(saved.bridgeKey);
+      mintedBridgeKey = true;
+    }
   } catch { return; /* silo may be unreachable; leave the dialog open */ }
 
   // The dialog stays open so the auto-test below has somewhere to report. Cancel becomes Close: the save
   // already happened, so "Cancel" would misdescribe what the button does.
   mcpCancelBtn.textContent = "Close";
   await loadMcpServers();
+  syncMcpAuthUi(); // the server is stored now, so a Local bridge one can offer Regenerate
   // UNCONDITIONAL, and it must stay that way (ADR 0026): a save whose auto-test then FAILS must still update
   // the pickers, because the server's own checkbox is driven by the save, not by reachability. Do not move
   // this inside the test's success branch.
@@ -292,6 +343,13 @@ async function saveMcpServer() {
   // loadMcpServers() above, so it is fresh; a RECONNECT of an already-connected server still auto-tests.
   if (mcpAuthSelect.value === "InteractiveOAuth" && !storedMcpServer(editingMcpId)?.hasToken) {
     renderTestResult(mcpTestResult, { ok: true, toolCount: 0, reason: "saved. Press Connect to sign in — this server is not usable until you do." });
+    return;
+  }
+  // ...and EXCEPT on the save that minted a local-bridge key (ADR 0076), for the OAuth reason above: the key
+  // was created a moment ago, so no helper can be connected with it yet — the dial could only say "local
+  // bridge not connected". A later save of the same server auto-tests as usual.
+  if (mintedBridgeKey) {
+    renderTestResult(mcpTestResult, { ok: true, toolCount: 0, reason: "saved. Copy the key, start the local bridge on your computer, then press Test." });
     return;
   }
   await testMcpServer(editingMcpId, mcpTestResult);
@@ -338,6 +396,15 @@ export function wireMcp() {
   });
   mcpConnectBtn.addEventListener("click", () => {
     if (editingMcpId) startMcpOAuth(editingMcpId);
+  });
+  mcpBridgeRegenerateBtn.addEventListener("click", regenerateBridgeKey);
+  mcpBridgeKeyCopyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(mcpBridgeKeyValue.textContent);
+      mcpBridgeKeyCopyBtn.textContent = "Copied";
+    } catch {
+      /* clipboard blocked (insecure context / permission) — the key is visible to select manually */
+    }
   });
   mcpForm.addEventListener("submit", (e) => {
     e.preventDefault();

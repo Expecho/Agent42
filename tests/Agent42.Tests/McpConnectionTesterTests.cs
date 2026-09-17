@@ -19,9 +19,9 @@ public sealed class McpConnectionTesterTests(SharedClusterFixture fixture) : Sha
         new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance);
     private readonly McpOAuthClient _oauth = new(new HttpClient());
 
-    private McpConnectionTester NewTester(McpOAuthClient? oauth = null) => new(
+    private McpConnectionTester NewTester(McpOAuthClient? oauth = null, IMcpConnectionFactory? connections = null) => new(
         Cluster.GrainFactory,
-        _connections,
+        connections ?? _connections,
         _protector,
         new McpOAuthTokenResolver(Cluster.GrainFactory, _protector, oauth ?? _oauth,
             NullLogger<McpOAuthTokenResolver>.Instance),
@@ -57,6 +57,24 @@ public sealed class McpConnectionTesterTests(SharedClusterFixture fixture) : Sha
         Assert.True(outcome!.Ok);
         Assert.Equal("ok", outcome.Reason);
         Assert.Equal(["tool_a"], outcome.ToolNames);
+    }
+
+    // ADR 0076 AC15: a LocalBridge server whose helper is not connected gets its own curated reason — through
+    // the real decorator over an empty registry, exactly as the silo wires it — never "could not connect".
+    [Fact]
+    public async Task Tester_ReportsBridgeNotConnected()
+    {
+        const string user = "mcp-test-bridge-down";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await grain.SaveAsync(new StoredMcpServer("b", "Neo", "", nameof(McpAuthMode.LocalBridge), Enabled: true));
+        Assert.NotNull(await grain.MintBridgeKeyAsync("b"));
+        var decorated = new LocalBridgeConnectionFactory(_connections, new LocalBridgeRegistry(), NullLoggerFactory.Instance);
+
+        var outcome = await NewTester(connections: decorated).TestAsync(user, "b", CancellationToken.None);
+
+        Assert.NotNull(outcome);
+        Assert.False(outcome.Ok);
+        Assert.Equal("local bridge not connected", outcome.Reason);
     }
 
     // AC2: the MCP server's response body is response-controlled, so a failure NEVER reflects the exception

@@ -9,15 +9,17 @@ tags: [auth, azure, container-apps]
 
 > **Amended by [ADR 0022](0022-per-agent-api-key-and-async-run-endpoint.md) (2026-07-17),
 > [ADR 0035](0035-read-only-share-links.md) (2026-07-30),
-> [ADR 0042](0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md) (2026-08-20) and
-> [ADR 0070](0070-expose-stored-agents-as-an-mcp-server.md) (2026-09-11) — six carve-outs.**
+> [ADR 0042](0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md) (2026-08-20),
+> [ADR 0070](0070-expose-stored-agents-as-an-mcp-server.md) (2026-09-11) and
+> [ADR 0076](0076-local-bridge-for-machine-local-mcp-servers.md) (2026-09-17) — seven carve-outs.**
 > `globalValidation.excludedPaths` now holds `/api/agent-run`, `/api/share/*`, `/shared`, `/shared/*`,
-> `/api/agent-mcp` and `/api/agent-mcp/*`.
+> `/api/agent-mcp`, `/api/agent-mcp/*` and `/api/local-bridge`.
 > Each is NOT ingress-gated and each therefore SELF-ENFORCES access in the handler and fails closed:
 > `/api/agent-run` on a per-agent API key (401), the share routes on the share token (404), `/shared*`
 > is the static public viewer, which carries no data of its own, and the MCP pair on the same per-agent key
 > (401) — enforced by MIDDLEWARE over the prefix, not in a handler, because one endpoint serves the whole
-> JSON-RPC surface. Every other endpoint (all UI + API) stays
+> JSON-RPC surface — and `/api/local-bridge` (an exact entry, the first WebSocket) on a per-server
+> bridge key (401). Every other endpoint (all UI + API) stays
 > fully Easy-Auth-gated, so the "no auth code in handlers" consequence below holds everywhere except those
 > self-enforcing paths. **The matching rule is exact-unless-`/*`** — see ADR 0042; assuming prefix matching
 > is what made ADR 0035 non-functional in production, and `EasyAuthExclusionTests` now guards the list.

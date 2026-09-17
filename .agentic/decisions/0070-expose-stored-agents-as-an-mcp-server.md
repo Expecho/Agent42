@@ -8,6 +8,13 @@ extends: [0024]
 amends: [0002, 0022, 0036, 0042, 0068]
 ---
 
+> **Amended by [ADR 0076](0076-local-bridge-for-machine-local-mcp-servers.md) (2026-09-17).** A turn run
+> through this surface may now use a user's **local-bridge** MCP tools — actions in the owner's signed-in
+> browser — because `WithoutMemoryOrPush` removes no MCP keys and any turn kind may use a connected bridge
+> (a user decision). Every non-read-only call still meets the confirmation prompt on the owner's machine,
+> but a key holder can now cause that prompt to appear, and read-only tools (page text, browsing history)
+> run without one.
+
 > **Amended by [ADR 0075](0075-model-invoked-push-notification.md) (2026-09-16).** 0075 adds a
 > model-invoked `send_push_notification` tool that may fire from any path, including the `ChatAsync` this
 > surface drains — which would have reversed the "lands in the owner's sidebar **silently**" property

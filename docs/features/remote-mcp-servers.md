@@ -1,7 +1,7 @@
 # Remote MCP servers
 
 > Connect your own remote HTTP MCP servers; their tools become available to the agent with no
-> extra setup. ADRs 0024 · 0025 · 0026.
+> extra setup. ADRs 0024 · 0025 · 0026 · 0076.
 
 ## What it is
 
@@ -9,7 +9,8 @@ A signed-in user adds remote HTTP **MCP (Model Context Protocol)** servers in
 **Preferences → MCP servers**. Their tools appear to the agent with **no per-server code** —
 every MCP server speaks the same discovery protocol, and its tools convert to `AITool`. Auth
 options: **none**, a **static header**, **client-credentials** (MSAL), or an **interactive
-OAuth** sign-in flow. Secrets are stored encrypted. Each server can be turned on/off
+OAuth** sign-in flow — or a **local bridge** for a server that runs only on your own machine.
+Secrets are stored encrypted. Each server can be turned on/off
 individually in the tool picker.
 
 ## How it works
@@ -111,6 +112,34 @@ if (mode == McpAuthMode.Header && ...)
   redirect delegate blocks). Manual prereq: register the callback URI in each provider's app
   registration.
 
+## Local bridge (a server on your own machine)
+
+ADR 0076. Some MCP servers — BrowserOS neo, which drives your signed-in browser — listen only on
+`127.0.0.1`, where production cannot reach them, and neo refuses any request that carries an `Origin`,
+so a browser tab cannot relay either. Choose **Local bridge** as the auth mode instead:
+
+1. Save the server (no endpoint). The dialog shows a **bridge key once** and the command to run.
+2. On your computer, set `AGENT42_BRIDGE_KEY` to that key and run
+   `dotnet run --project tools/Agent42.LocalBridge -- --server https://chat.agent42.nl`
+   (`--upstream <url>` if your server is not on `http://127.0.0.1:9210/mcp`; see
+   `chrome://browseros/mcp`; `--auto-approve tool,tool` to skip prompts for named tools).
+3. Press **Test** — it reports the tool count, or "local bridge not connected" while the helper is off.
+
+```mermaid
+flowchart LR
+    MODEL[cloud model] --> GRAIN[AgentGrain] --> CLIENT["McpClient over a bridge channel"]
+    CLIENT -- "wss /api/local-bridge (X-Api-Key)" --- HELPER["Agent42.LocalBridge on your machine"]
+    HELPER -->|"confirm unless readOnlyHint: true"| NEO["local MCP server (neo)"]
+```
+
+The helper dials **out**, so nothing on your machine is exposed. Before relaying any tool call that the
+server has not declared read-only it **asks you in its console**, showing the full (sanitized) arguments;
+declining, not answering within 60 s, or arguments too large to review all return an error result the
+model can read. Read-only tools — page text, screenshots, **browsing history** — run without asking and
+their output goes to the model, so narrow the server's tools and keep "let links from this server be
+opened and read" off. **Regenerate key** rotates the key and disconnects the running helper, which then
+stops. A chat that was already open when the helper connected picks the tools up on its next activation.
+
 ## How the Agent Framework fits
 
 - MCP tools arrive from the SDK as `AIFunction`s and merge directly into the `List<AITool>` that
@@ -140,3 +169,5 @@ if (mode == McpAuthMode.Header && ...)
 | Encryption | `src/Agent42.Backend/Mcp/McpSecretProtector.cs` |
 | Auth | `src/Agent42.Backend/Mcp/McpAuthHeader.cs`, `McpOAuth.cs` |
 | Endpoints | `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (`/api/mcp-servers`, `/api/mcp/oauth/*`) |
+| Local bridge (backend) | `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs`, `LocalBridgeSession.cs`, `LocalBridgeConnectionFactory.cs`, `LocalBridgeRegistry.cs` |
+| Local bridge (helper) | `tools/Agent42.LocalBridge/BridgeClient.cs`, `ConfirmationGate.cs`, `UpstreamChannel.cs` |
