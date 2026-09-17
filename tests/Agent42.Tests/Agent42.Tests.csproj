@@ -21,6 +21,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Agent42.Agents\Agent42.Agents.csproj" />
     <ProjectReference Include="..\..\src\Agent42.Backend\Agent42.Backend.csproj" />
+    <!-- The local bridge helper (ADR 0076). Its types under test are public: this repo has no InternalsVisibleTo. -->
+    <ProjectReference Include="..\..\tools\Agent42.LocalBridge\Agent42.LocalBridge.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -30,13 +30,18 @@ public interface IUserMcpConfigGrain : IGrainWithStringKey
     /// <summary>
     /// Upserts one server by <see cref="StoredMcpServer.Id"/> and bumps the version. A blank ciphertext
     /// on any secret field of an existing server keeps that server's stored ciphertext, and a null
-    /// <see cref="StoredMcpServer.KnownToolNames"/> keeps the stored names. Returns the stored server (with
-    /// any retained ciphertext and names).
+    /// <see cref="StoredMcpServer.KnownToolNames"/> keeps the stored names. The incoming
+    /// <see cref="StoredMcpServer.BridgeKeyHash"/> is always ignored: an update carries the stored one
+    /// forward and an insert stores none (ADR 0076 — see <see cref="MintBridgeKeyAsync"/>). Returns the
+    /// stored server (with any retained ciphertext, names and hash).
     /// </summary>
     [Alias("SaveAsync")]
     Task<StoredMcpServer> SaveAsync(StoredMcpServer server);
 
-    /// <summary>Removes the server with <paramref name="id"/>, bumping the version only if one was removed.</summary>
+    /// <summary>
+    /// Removes the server with <paramref name="id"/>, bumping the version only if one was removed, and
+    /// deregisters its bridge-key hash if it had one (ADR 0076).
+    /// </summary>
     [Alias("DeleteAsync")]
     Task DeleteAsync(string id);
 
@@ -79,4 +84,26 @@ public interface IUserMcpConfigGrain : IGrainWithStringKey
     /// </summary>
     [Alias("InvalidateToolCacheAsync")]
     Task InvalidateToolCacheAsync();
+
+    /// <summary>
+    /// Mints a fresh local-bridge key for <paramref name="serverId"/> (ADR 0076), stores only its hash,
+    /// registers it in <see cref="ILocalBridgeKeyDirectoryGrain"/>, and returns the raw key — the only
+    /// time it is ever visible. Returns <c>null</c> when the server is unknown or is not
+    /// <see cref="McpAuthMode.LocalBridge"/>. Over an existing hash this is a <b>regenerate</b>: the old
+    /// hash is deregistered FIRST (ADR 0022's order), so a crash leaves the old key dead, never live.
+    ///
+    /// <para>Does not bump the version: the hash is not connection config the tool provider reads, and a
+    /// bump would tear down the user's other warm MCP sockets. Revoking a <i>live</i> socket is the
+    /// caller's job (the API evicts it from the registry).</para>
+    /// </summary>
+    [Alias("MintBridgeKeyAsync")]
+    Task<string?> MintBridgeKeyAsync(string serverId);
+
+    /// <summary>
+    /// Clears the server's bridge-key hash and deregisters it (write first, then deregister — a
+    /// mid-failure leaves an orphan entry the endpoint's hash re-check still rejects). A no-op when the
+    /// server is unknown or has no hash.
+    /// </summary>
+    [Alias("ClearBridgeKeyAsync")]
+    Task ClearBridgeKeyAsync(string serverId);
 }

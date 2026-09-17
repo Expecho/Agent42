@@ -43,6 +43,7 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         "Agent42.Agents.AgentRegistryState",
         "Agent42.Agents.AgentKeyDirectoryState",
         "Agent42.Agents.ConversationIndexState",
+        "Agent42.Agents.LocalBridgeKeyDirectoryState",
         "Agent42.Agents.ShareLinkDirectoryState",
         "Agent42.Agents.UsageRollupState",
         "Agent42.Agents.UserMcpConfigState",
@@ -404,6 +405,19 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         // covers it: an absent key must bind to the constructor default. Reading OFF is what makes "every
         // existing server ships with seeding disabled" true at rest rather than merely in the code.
         Assert.False(server.SeedsFetchableUrls);
+    }
+
+    // AC4 (ADR 0076): [Id(14)] BridgeKeyHash is the third trailing member appended to StoredMcpServer after
+    // documents already existed. Same mechanism, same golden: an absent key binds to null, so every existing
+    // server reads as having no bridge key — which is also correct, since none of them is LocalBridge.
+    [Fact]
+    public void StoredMcpServer_WithoutBridgeKeyHash_Deserializes()
+    {
+        var restored = Serializer().Deserialize<UserMcpConfigState>(new BinaryData(PreKnownToolNamesMcpConfigJson));
+
+        var server = Assert.Single(restored.Config.Servers);
+        Assert.Equal("cipher-token", server.TokenCiphertext);
+        Assert.Null(server.BridgeKeyHash);
     }
 
     /// <summary>

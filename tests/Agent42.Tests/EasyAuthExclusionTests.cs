@@ -122,6 +122,13 @@ public sealed class EasyAuthExclusionTests
     // signed-in user's OWN stored server with that user's decrypted secrets — so it must stay behind Easy
     // Auth, or an anonymous caller would resolve to the local-dev principal and probe their servers.
     [InlineData("/api/mcp-servers/test-id/test")]
+    // The local-bridge MANAGEMENT routes (ADR 0076) stay gated: they mint, show and revoke bridge keys for the
+    // signed-in user. Only the socket itself, /api/local-bridge, is carved out — and exactly.
+    [InlineData("/api/mcp-servers")]
+    [InlineData("/api/mcp-servers/server-id")]
+    [InlineData("/api/mcp-servers/server-id/bridge-key")]
+    [InlineData("/api/local-bridge/")]
+    [InlineData("/api/local-bridge/x")]
     // Custom conversation groups (ADR 0073). Every one of these takes the userId from GetUserId() and
     // keys the conversation-index grain with it, so a route reachable outside Easy Auth would resolve to
     // the local-dev principal — handing one phantom identity the power to rename, reorder and DELETE
@@ -160,6 +167,12 @@ public sealed class EasyAuthExclusionTests
     public void Exclusions_CoverTheAgentMcpSurface(string path)
         => Assert.True(IsExcluded(ExcludedPaths(), path), Because(path, ExcludedPaths()));
 
+    // ADR 0076. The helper's WebSocket authenticates with its bridge key, never an Entra session. An exact
+    // entry: the route has no sub-paths, so the rows above prove nothing past it is carved out.
+    [Fact]
+    public void Exclusions_CoverTheLocalBridgeSocket()
+        => Assert.True(IsExcluded(ExcludedPaths(), "/api/local-bridge"), Because("/api/local-bridge", ExcludedPaths()));
+
     [Fact]
     public void BarePrefixEntry_DoesNotCoverSubPaths()
     {
@@ -181,6 +194,7 @@ public sealed class EasyAuthExclusionTests
     // ADR 0070: the wildcard prefix keeps its trailing slash, so it cannot bleed onto a neighbouring stem.
     [InlineData("/api/agent-mcpzzz")]
     [InlineData("/api/agent-mcp-admin")]
+    [InlineData("/api/local-bridgezzz")]
     public void WildcardEntry_DoesNotMatchANameStem(string path)
     {
         // Measured: the wildcard prefix includes the trailing slash, so it cannot bleed onto a sibling route

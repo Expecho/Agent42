@@ -105,9 +105,10 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 servers.Add(new McpServerTools(server.Id, [], server.KnownToolNames, server.SeedsFetchableUrls));
             }
 
-            // None/Header (Phase 1), ClientCredentials (Phase 2), and InteractiveOAuth (Phase 3) connect.
+            // None/Header (Phase 1), ClientCredentials (Phase 2), InteractiveOAuth (Phase 3) and LocalBridge
+            // (ADR 0076 — the decorated factory throws at once when its helper is not connected) connect.
             if (!Enum.TryParse<McpAuthMode>(server.Auth, ignoreCase: true, out var mode)
-                || mode is not (McpAuthMode.None or McpAuthMode.Header or McpAuthMode.ClientCredentials or McpAuthMode.InteractiveOAuth))
+                || mode is not (McpAuthMode.None or McpAuthMode.Header or McpAuthMode.ClientCredentials or McpAuthMode.InteractiveOAuth or McpAuthMode.LocalBridge))
             {
                 Skip($"auth mode {server.Auth} is not yet supported");
                 continue;
@@ -155,6 +156,12 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 // user, and FetchableUrls is per-conversation state.
                 servers.Add(new McpServerTools(server.Id, tools, discovered, server.SeedsFetchableUrls));
                 connections.Add(connection.Connection);
+            }
+            catch (LocalBridgeNotConnectedException)
+            {
+                // The expected state whenever the user's machine is off (ADR 0076) — an information line, not a
+                // warning with a stack trace on every activation.
+                Skip("local bridge not connected");
             }
             catch (Exception ex)
             {

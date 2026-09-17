@@ -251,6 +251,9 @@ public sealed class SerializationCompatibilityTests
         // Secondary evidence regardless — this is the BINARY path. The data-at-rest guard is
         // GrainStorageSerializerTests.UserMcpConfigDocument_WrittenBeforeKnownToolNames_*.
         Assert.Null(actual.KnownToolNames);
+
+        // ADR 0076 appended [Id(14)] BridgeKeyHash the same way; the same pre-feature blob reads it as null.
+        Assert.Null(actual.BridgeKeyHash);
     }
 
     // AC2: in-flight OAuth authorizations (ADR 0025); a lost CodeVerifier breaks the PKCE exchange.

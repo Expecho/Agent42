@@ -336,6 +336,11 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
       //                       matches the bare prefix AND its trailing-slash form, and a bare entry here
       //                       matches EXACTLY. Without the wildcard a client posting to /api/agent-mcp/ gets
       //                       the login page — the ADR 0035 failure, exactly.
+      //   • /api/local-bridge — the local-bridge WebSocket (ADR 0076): a helper on the user's own machine
+      //                       authenticates with its per-server bridge key in X-Api-Key, never an Entra session.
+      //                       LocalBridgeEndpoint self-enforces and fails closed. EXACT, not /*: the route has no
+      //                       sub-paths. Unmeasured in production: that the ingress and Easy Auth pass the
+      //                       Upgrade through on an excluded path — ADR 0076 carries the post-deploy check.
       excludedPaths: [
         '/api/agent-run'
         '/api/share/*'
@@ -343,6 +348,7 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
         '/shared/*'
         '/api/agent-mcp'
         '/api/agent-mcp/*'
+        '/api/local-bridge'
       ]
     }
     identityProviders: {

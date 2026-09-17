@@ -741,7 +741,9 @@
                placeholder="e.g. Dataverse" required />
       </label>
 
-      <label class="agent-form__field">
+      <!-- Hidden for Local bridge (ADR 0076), which has no endpoint — syncMcpAuthUi also drops `required`
+           from the input, or the browser would block the save on a field the user cannot see. -->
+      <label class="agent-form__field" id="mcpEndpointField">
         <span class="agent-form__label">// endpoint</span>
         <input class="agent-form__input" type="url" id="mcpEndpoint"
                placeholder="https://example.com/mcp" required />
@@ -765,6 +767,7 @@
           <option value="Header">Static header (API key / bearer)</option>
           <option value="ClientCredentials">Entra ID client credentials (Dataverse)</option>
           <option value="InteractiveOAuth">Interactive OAuth (sign in)</option>
+          <option value="LocalBridge">Local bridge (a server on your own machine)</option>
         </select>
       </label>
 
@@ -805,6 +808,19 @@
       </label>
 
       <p class="agent-form__note" id="mcpOAuthNote" hidden>Client id is optional (the server may register one for you). Save the server, then press <b>Connect</b> below to sign in — your conversation and its tool results then flow through this server.</p>
+
+      <!-- Local bridge (ADR 0076). The key is revealed ONCE — on the save that minted it, or after
+           Regenerate — because only its hash is stored. -->
+      <section class="agent-form__section" id="mcpBridgeSection" hidden>
+        <p class="agent-form__note">For an MCP server that listens only on your computer, such as BrowserOS neo. Run the Agent42 local bridge there: it connects out to Agent42 and asks you before any tool call that is not marked read-only. Read-only tools — including reading pages and your browsing history — run without asking and are sent to the model, so narrow this server's tools if that is too much.</p>
+        <button class="agent-form__btn" type="button" id="mcpBridgeRegenerateBtn" hidden>Regenerate key</button>
+        <div class="agent-key" id="mcpBridgeKeyReveal" hidden>
+          <code class="agent-key__value" id="mcpBridgeKeyValue"></code>
+          <button class="agent-form__btn" type="button" id="mcpBridgeKeyCopyBtn">Copy</button>
+          <p class="agent-form__note">Copy it now — it won't be shown again. On your computer, <a href="https://github.com/Expecho/Agent42/releases?q=local-bridge&amp;expanded=true" target="_blank" rel="noopener noreferrer" id="mcpBridgeDownloadLink">download the local bridge</a> for your platform (no .NET needed), set the key as <code>AGENT42_BRIDGE_KEY</code> and run:</p>
+          <code class="agent-key__value" id="mcpBridgeCommand"></code>
+        </div>
+      </section>
 
       <p class="agent-form__error" id="mcpError" hidden></p>
 

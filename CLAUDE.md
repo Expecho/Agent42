@@ -290,6 +290,45 @@ to document a mechanical rule, add a lint rule instead.
   rate limiting**. No new secret, Cosmos container, grain, folder or Bicep beyond those two entries. Shell
   cache bumped `agent42-shell-v33` → `-v34`. The DevHost leg **was** run with a **real MCP client** plus
   headless Chrome, and five mutations were checked (the timeout one rejects the obvious implementation).
+- Machine-local MCP servers through a local bridge (ADR 0076, **amends 0002/0024/0042/0070**, extends 0022):
+  a new MCP auth mode, **`LocalBridge`**, reaches a server that listens only on the user's own machine
+  (BrowserOS neo today, measured on `127.0.0.1:9210`, not the documented 9239). A console app,
+  **`tools/Agent42.LocalBridge`** (run by the user, **never deployed**; shipped as a self-contained single-file
+  executable per platform on GitHub Releases by `.github/workflows/release-local-bridge.yml` — push a
+  `local-bridge-vX.Y.Z` tag; the SelfContained/PublishSingleFile settings are **RID-conditional** in the csproj
+  so the solution build stays framework-dependent), dials **out** to
+  **`/api/local-bridge`** (mapped for any method — RFC 8441 WebSockets arrive as `CONNECT`) — the app's
+  **first WebSocket** and the **seventh `excludedPaths` entry,
+  deliberately exact** — and relays MCP JSON-RPC over **channels** (one socket, one upstream session per
+  channel; caps 16 channels / 1 MiB per frame, overflow closes the channel, never the bridge). The backend
+  stays the MCP client (`LocalBridgeChannelTransport` is a `TransportBase`), so bridged tools are ordinary
+  `McpServerTools` — gated, truncated, seeded and best-effort like any other server — via a
+  `LocalBridgeConnectionFactory` that **decorates** `IMcpConnectionFactory` and must be registered **after**
+  it in both silo hosts (`Hosts_RegisterLocalBridge`). A server whose helper is not connected throws at once
+  and Test says **"local bridge not connected"**. **The control is on the user's machine:** the helper asks
+  before relaying any `tools/call` whose tool is not declared `readOnlyHint: true` — neo leaves `navigate`,
+  `act`, `evaluate` and `run` unannotated — and also before a read-only call with a URL-shaped argument;
+  denies (and 60 s silence, and arguments past 20,000 chars — never truncated) are answered **by the helper**
+  as `isError` tool results; the prompt strips ESC/C1 and Unicode Cf. **Headline consequence:** a web page
+  the agent reads can steer actions in the signed-in browser, and read-only tools (page text, **browsing
+  history**) run unprompted and reach the cloud model — narrow the server (ADR 0058) and leave
+  `SeedsFetchableUrls` off. Any turn kind may use a connected bridge (user decision), so **`/api/agent-mcp`
+  and `/api/agent-run` key holders can now trigger browser actions** (each write still prompts) — that is the
+  0070 amendment. Auth is a per-server **bridge key** (`sk_bridge_`, shown once, SHA-256 in a trailing
+  **`StoredMcpServer [Id(14)] BridgeKeyHash`**, no migration, resolved through a global
+  `ILocalBridgeKeyDirectoryGrain`), accepted **from the `X-Api-Key` header only** (a query string would let
+  a web page open the socket) and re-checked against the overlay on every upgrade. Four traps, all in
+  gotchas: the hash is **grain-owned** (`SaveAsync` carries it unconditionally; only Mint/Clear/Delete change
+  it); the directory is read only at upgrade, so **every revoking write evicts the live socket** (resolved
+  with `GetService`); a late-connecting bridge is invisible to an activated chat, so connect **invalidates
+  the tool cache, rate-limited, never on disconnect**; and MCP SDK 2.2.0's **`server/discover` probe waits
+  5 s** on a server that drops it, while a `TransportBase.DisposeAsync` without `SetDisconnected` never
+  returns. Regenerate is its own route (`POST /api/mcp-servers/{id}/bridge-key`); the save that mints a key
+  skips the auto-test. **Single replica is load-bearing a second time** (the registry is in-process). No new
+  package, secret or Cosmos container; one grain type; shell cache `agent42-shell-v37` → `-v38`. Verified
+  against **real neo** (opt-in `LocalBridgeLiveTests`, `AGENT42_BRIDGE_E2E=1`), the real console prompt,
+  and the DevHost UI with the real helper; **unverified until deploy:** that the ACA ingress and Easy Auth
+  pass a WebSocket `Upgrade` on an excluded path (post-deploy check in ADR 0076) and the ingress idle timeout.
 - User location (ADR 0012): a `get_current_location` tool returning the user's coordinates and a
   reverse-geocoded street address. `navigator.geolocation` is a *browser* API and tools run server-side,
   and the chat path is a one-way NDJSON stream — so a tool cannot ask the browser for a fix mid-turn. The
@@ -846,7 +885,9 @@ to document a mechanical rule, add a lint rule instead.
   cannot perform the sign-in, so the probe could only ever say `not connected (no OAuth token yet)`, an accurate
   message rendered as a failure at the one moment the user cannot act on it (the dialog is `showModal()`, so the
   list row's Connect glyph is inert beneath it). That shipped in 0064 and was reported as a bug; the dialog now
-  carries its own **Connect** button sharing one `startMcpOAuth()` with the row. **The amendment to 0024 is narrow and worth stating exactly:** the
+  carries its own **Connect** button sharing one `startMcpOAuth()` with the row. (ADR 0076 adds a **third**
+  carve-out for the same reason: the save that **mints a local-bridge key** is not auto-tested, since no
+  helper can hold that key yet.) **The amendment to 0024 is narrow and worth stating exactly:** the
   management endpoints were pure config CRUD that never opened a socket, and one of them now does, on explicit
   request. **ADR 0058's `GET /api/tools` rule is NOT weakened** — that rule was never "never connect", it was
   "never connect *on a page load, for every server, implicitly*", and both of its measured objections (~10 s
@@ -987,9 +1028,9 @@ to document a mechanical rule, add a lint rule instead.
   `POST/GET/DELETE /api/conversations/{id}/share` (Easy Auth); public routes `GET /api/share/{token}` and
   `/api/share/{token}/attachments/{attachmentId}` are on **`excludedPaths`** (with the self-contained static
   viewer under `wwwroot/shared/`), **self-enforce** the token, take userId+conversation
-  from the directory (**never `GetUserId`**), and **fail closed → 404**. **The six entries are
-  `/api/agent-run`, `/api/share/*`, `/shared`, `/shared/*` and — since ADR 0070 — `/api/agent-mcp` +
-  `/api/agent-mcp/*`; the list was corrected by ADR 0042, which is required
+  from the directory (**never `GetUserId`**), and **fail closed → 404**. **The seven entries are
+  `/api/agent-run`, `/api/share/*`, `/shared`, `/shared/*`, — since ADR 0070 — `/api/agent-mcp` +
+  `/api/agent-mcp/*`, and — since ADR 0076, deliberately exact — `/api/local-bridge`; the list was corrected by ADR 0042, which is required
   reading before editing it:** `excludedPaths` matches a path **exactly** unless the entry ends in
   `/*`, so the bare `/api/share` + `/shared` this feature originally shipped gated every URL a recipient
   loads and made it **non-functional in production**; `EasyAuthExclusionTests` now pins the measured
@@ -1206,8 +1247,8 @@ to document a mechanical rule, add a lint rule instead.
   touch-only one. Groups are capped at **50** per user (ADR 0004's 2 MB item), a `null` `GroupId` clears
   while an **unknown one is a no-op** (not a silent clear), and deleting a group **ungroups its chats and
   deletes none**. Incognito chats (ADR 0034) are structurally ungroupable. No new secret, container,
-  Cosmos container, Bicep or `excludedPaths` change (the list stays at **six**, with four new negative
-  rows proving it) and no package. Shell cache bumped `agent42-shell-v36` → `-v37`; `AgentApi.cs`'s
+  Cosmos container, Bicep or `excludedPaths` change (the list stayed at **six** then — ADR 0076 has since made it
+  seven — with four new negative rows proving it) and no package. Shell cache bumped `agent42-shell-v36` → `-v37`; `AgentApi.cs`'s
   route-count comment was wrong and is recounted to **63** with its counting rule stated. The DevHost browser leg **was** run
   (headless Chrome over CDP against a clean DevHost, **21/21** UI + **9/9** drag + **4/4** touch, both themes) and ADR 0073 records the measured
   values — including the two that no source-text guard can reach: a real mouse press **does** arm

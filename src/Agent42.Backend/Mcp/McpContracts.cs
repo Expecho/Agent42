@@ -8,19 +8,23 @@ namespace Agent42.Backend;
 // ClientSecret/Scopes). Enabled toggles the server without deleting it. Phase 3 adds the OAuth fields.
 // SeedsFetchableUrls is the ADR 0067 per-server opt-in: it is a SETTING, so it rides every upsert and a
 // missing/false value really means "off" (unlike the write-only secrets, where blank means "keep").
+// Endpoint is nullable because a LocalBridge server (ADR 0076) has none — validation still requires it for
+// every other mode.
 public record McpServerUpsertRequest(
-    string Name, string Endpoint, string Auth, bool Enabled,
+    string Name, string? Endpoint, string Auth, bool Enabled,
     string? HeaderName = null, string? HeaderValue = null,
     string? Authority = null, string? ClientId = null, string? ClientSecret = null,
     IReadOnlyList<string>? Scopes = null, bool SeedsFetchableUrls = false);
 
 // What GET/POST/PUT return for an MCP server: everything EXCEPT the secrets, which are masked to
 // HasHeaderValue/HasClientSecret so no ciphertext (or plaintext) reaches the client. Authority/ClientId/
-// Scopes are non-secret and returned so the edit form can prefill them.
+// Scopes are non-secret and returned so the edit form can prefill them. BridgeKey (ADR 0076) is the raw
+// local-bridge key, set ONLY on the response to the write that minted it (create, switch-to, regenerate) —
+// shown once, like an ADR 0022 agent key; HasBridgeKey is the masked flag every other response carries.
 public record McpServerResponse(
     string Id, string Name, string Endpoint, string Auth, bool Enabled, string? HeaderName, bool HasHeaderValue,
     string? Authority = null, string? ClientId = null, IReadOnlyList<string>? Scopes = null, bool HasClientSecret = false,
-    bool HasToken = false, bool SeedsFetchableUrls = false);
+    bool HasToken = false, bool SeedsFetchableUrls = false, bool HasBridgeKey = false, string? BridgeKey = null);
 
 // The GET /api/mcp-servers payload: the user's overlay servers (masked).
 public record McpServersResponse(IReadOnlyList<McpServerResponse> Servers);

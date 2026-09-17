@@ -236,4 +236,93 @@ public sealed class UserMcpConfigGrainTests(SharedClusterFixture fixture) : Shar
         Assert.False(disabled.SeedsFetchableUrls);
         Assert.False(Assert.Single((await grain.GetAsync()).Servers).SeedsFetchableUrls);
     }
+
+    private static StoredMcpServer Bridge(string id = "bridge1") => new(
+        Id: id, Name: "Neo", Endpoint: "", Auth: nameof(McpAuthMode.LocalBridge), Enabled: true);
+
+    private ILocalBridgeKeyDirectoryGrain Directory(string raw) =>
+        Cluster.GrainFactory.GetGrain<ILocalBridgeKeyDirectoryGrain>(BridgeKey.Hash(raw));
+
+    // AC5 (ADR 0076): the bridge-key hash is grain-owned. An edit built from a request (no hash on it) keeps
+    // the stored hash, and a record that DOES carry a hash cannot plant one — neither on update nor on insert.
+    [Fact]
+    public async Task Edit_PreservesBridgeKeyHash()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("bridge-keep-user");
+        var inserted = await grain.SaveAsync(Bridge() with { BridgeKeyHash = "planted" });
+        Assert.Null(inserted.BridgeKeyHash);
+
+        var raw = await grain.MintBridgeKeyAsync("bridge1");
+        Assert.NotNull(raw);
+        var hash = BridgeKey.Hash(raw);
+
+        var renamed = await grain.SaveAsync(Bridge() with { Name = "renamed" });
+        Assert.Equal(hash, renamed.BridgeKeyHash);
+
+        var planted = await grain.SaveAsync(Bridge() with { BridgeKeyHash = "planted" });
+        Assert.Equal(hash, planted.BridgeKeyHash);
+        Assert.Equal(hash, Assert.Single((await grain.GetAsync()).Servers).BridgeKeyHash);
+    }
+
+    // Minting is refused for a server that is not LocalBridge, or that does not exist.
+    [Fact]
+    public async Task MintBridgeKey_RefusesNonBridgeAndUnknownServers()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("bridge-refuse-user");
+        await grain.SaveAsync(Server());
+
+        Assert.Null(await grain.MintBridgeKeyAsync("srv1"));
+        Assert.Null(await grain.MintBridgeKeyAsync("missing"));
+        Assert.Null(Assert.Single((await grain.GetAsync()).Servers).BridgeKeyHash);
+    }
+
+    // AC6: regenerate deregisters the OLD hash (it stops resolving) and registers the new one; minting does
+    // not bump the version (the hash is not connection config the tool provider reads).
+    [Fact]
+    public async Task MintBridgeKey_RegenerateRevokesOld()
+    {
+        const string user = "bridge-regen-user";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await grain.SaveAsync(Bridge());
+        var version = await grain.GetVersionAsync();
+
+        var first = await grain.MintBridgeKeyAsync("bridge1");
+        Assert.NotNull(first);
+        Assert.StartsWith("sk_bridge_", first);
+        Assert.Equal(new LocalBridgeKeyOwner(user, "bridge1"), await Directory(first).ResolveAsync());
+
+        var second = await grain.MintBridgeKeyAsync("bridge1");
+        Assert.NotNull(second);
+        Assert.NotEqual(first, second);
+        Assert.Null(await Directory(first).ResolveAsync());
+        Assert.Equal(new LocalBridgeKeyOwner(user, "bridge1"), await Directory(second).ResolveAsync());
+        Assert.Equal(BridgeKey.Hash(second), Assert.Single((await grain.GetAsync()).Servers).BridgeKeyHash);
+        Assert.Equal(version, await grain.GetVersionAsync());
+    }
+
+    // AC6: clear and delete each deregister, and clear leaves the server in place with no hash.
+    [Fact]
+    public async Task ClearAndDelete_Deregister()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("bridge-clear-user");
+        await grain.SaveAsync(Bridge("a"));
+        await grain.SaveAsync(Bridge("b"));
+        var keyA = await grain.MintBridgeKeyAsync("a");
+        var keyB = await grain.MintBridgeKeyAsync("b");
+        Assert.NotNull(keyA);
+        Assert.NotNull(keyB);
+
+        await grain.ClearBridgeKeyAsync("a");
+        Assert.Null(await Directory(keyA).ResolveAsync());
+        Assert.Null((await grain.GetAsync()).Servers.Single(s => s.Id == "a").BridgeKeyHash);
+
+        await grain.DeleteAsync("b");
+        Assert.Null(await Directory(keyB).ResolveAsync());
+        Assert.DoesNotContain((await grain.GetAsync()).Servers, s => s.Id == "b");
+
+        // All three are no-ops on an unknown id or a server with no hash.
+        await grain.ClearBridgeKeyAsync("a");
+        await grain.ClearBridgeKeyAsync("missing");
+        await grain.DeleteAsync("missing");
+    }
 }
