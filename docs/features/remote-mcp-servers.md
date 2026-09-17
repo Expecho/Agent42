@@ -178,4 +178,4 @@ stops. A chat that was already open when the helper connected picks the tools up
 | Endpoints | `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (`/api/mcp-servers`, `/api/mcp/oauth/*`) |
 | Local bridge (backend) | `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs`, `LocalBridgeSession.cs`, `LocalBridgeConnectionFactory.cs`, `LocalBridgeRegistry.cs` |
 | Local bridge (helper) | `tools/Agent42.LocalBridge/BridgeClient.cs`, `ConfirmationGate.cs`, `UpstreamChannel.cs` |
-| Local bridge release | `.github/workflows/release-local-bridge.yml` (tag `local-bridge-vX.Y.Z`) |
+| Local bridge release | `.github/workflows/release-local-bridge.yml` (automatic patch release when the helper changes on `main`; or tag `local-bridge-vX.Y.Z`) |

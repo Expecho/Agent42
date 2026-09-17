@@ -105,8 +105,15 @@ any `tools/call` that is not declared read-only, **the helper asks the person at
 
 The helper is downloaded, not built: `.github/workflows/release-local-bridge.yml` publishes one
 **self-contained, single-file** executable per platform (win-x64/arm64, linux-x64/arm64, osx-x64/arm64,
-compressed, ~38 MB) as a GitHub Release when a **`local-bridge-vX.Y.Z`** tag is pushed (or on manual dispatch
-with a version, which creates the tag). The version is stamped from the tag and printed by `--version`; the
+compressed, ~38 MB) as a GitHub Release. It starts **automatically when a push to `main` changes
+`tools/Agent42.LocalBridge/**` or `Directory.Packages.props`** (which pins the helper's MCP SDK — so an
+unrelated package bump also cuts an identical patch release, accepted so a dependency fix is never missed):
+the next **patch** after the highest stable `local-bridge-v*` tag, or `1.0.0`, is tagged on that commit.
+Pushing a **`local-bridge-vX.Y.Z`** tag, or a manual dispatch with a version, chooses the version instead
+(majors, minors, pre-releases); automatic runs continue from the highest stable tag. The tag a run creates
+does not start another run (events from `GITHUB_TOKEN` trigger no workflows), and one un-cancellable
+concurrency group serializes runs so two quick pushes cannot claim the same version — GitHub keeps only the
+newest pending run, so a middle push may be folded into the next release. The version is stamped from the tag and printed by `--version`; the
 native runners smoke-test that. `SHA256SUMS.txt` is attached. Windows and Linux assets are cross-published
 from Ubuntu; **macOS assets are built on a macOS runner**, where the SDK ad-hoc signs the apphost that Apple
 Silicon requires. The SelfContained/PublishSingleFile settings live in the csproj **conditional on a runtime
