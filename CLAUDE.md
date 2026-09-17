@@ -294,8 +294,9 @@ to document a mechanical rule, add a lint rule instead.
   a new MCP auth mode, **`LocalBridge`**, reaches a server that listens only on the user's own machine
   (BrowserOS neo today, measured on `127.0.0.1:9210`, not the documented 9239). A console app,
   **`tools/Agent42.LocalBridge`** (run by the user, **never deployed**; shipped as a self-contained single-file
-  executable per platform on GitHub Releases by `.github/workflows/release-local-bridge.yml` — push a
-  `local-bridge-vX.Y.Z` tag; the SelfContained/PublishSingleFile settings are **RID-conditional** in the csproj
+  executable per platform on GitHub Releases by `.github/workflows/release-local-bridge.yml` — automatically, as the next
+  patch version, whenever a push to `main` changes the helper or `Directory.Packages.props`, or at a chosen
+  version via a `local-bridge-vX.Y.Z` tag; the SelfContained/PublishSingleFile settings are **RID-conditional** in the csproj
   so the solution build stays framework-dependent), dials **out** to
   **`/api/local-bridge`** (mapped for any method — RFC 8441 WebSockets arrive as `CONNECT`) — the app's
   **first WebSocket** and the **seventh `excludedPaths` entry,
