@@ -54,6 +54,27 @@ public sealed class LocalBridgeReleaseTests
         Assert.Contains("--version", workflow);
     }
 
+    // A change to the helper on main releases itself: a path-filtered push trigger picks the next patch after
+    // the highest STABLE tag. One un-cancellable concurrency group is what keeps two quick pushes from racing
+    // for the same version.
+    [Fact]
+    public void Workflow_ReleasesAutomaticallyWhenTheHelperChangesOnMain()
+    {
+        var workflow = Workflow();
+        var on = workflow[workflow.IndexOf("\non:", StringComparison.Ordinal)..workflow.IndexOf("\npermissions:", StringComparison.Ordinal)];
+
+        Assert.Contains("branches: [main]", on);
+        Assert.Contains("- tools/Agent42.LocalBridge/**", on);
+        Assert.Contains("- Directory.Packages.props", on);
+        Assert.DoesNotContain("- src/", on); // backend changes never cut a helper release
+
+        Assert.Contains("group: release-local-bridge\n", workflow.ReplaceLineEndings("\n"));
+        Assert.Contains("cancel-in-progress: false", workflow);
+        Assert.Contains("matching-refs/tags/local-bridge-v", workflow);
+        Assert.Contains("grep -E '^[0-9]+\\.[0-9]+\\.[0-9]+$' | sort -V | tail -n 1", workflow);
+        Assert.Contains("next=\"$major.$minor.$((patch + 1))\"", workflow);
+    }
+
     // The helper is never deployed: the deploy workflow must not start on a release tag, and the backend image
     // must not pick the helper up.
     [Fact]

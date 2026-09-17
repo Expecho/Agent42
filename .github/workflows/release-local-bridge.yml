@@ -3,8 +3,20 @@
 # .NET installed. The helper is never deployed with the app — deploy.yml builds the backend image only and
 # triggers on pushes to main, never on these tags.
 #
-# Release by pushing a tag:   git tag local-bridge-v1.0.0 && git push origin local-bridge-v1.0.0
-# or run it manually with a version (it creates the tag on the chosen commit).
+# Three ways a release starts:
+#   1. Automatically, when a push to main changes the helper (the `paths` below): the next PATCH version
+#      after the highest stable local-bridge-v* tag (1.0.0 if there is none) is tagged and released.
+#   2. Pushing a tag, to choose the version yourself (a new major/minor, or a pre-release):
+#        git tag local-bridge-v2.0.0 && git push origin local-bridge-v2.0.0
+#      Later automatic releases continue from it (2.0.1, …).
+#   3. Running it manually with a version (it creates the tag on the chosen commit).
+# The tag an automatic or manual run creates does NOT start a second run: events caused by the workflow's own
+# GITHUB_TOKEN never trigger workflows. Runs are serialized (one concurrency group), so quick successive pushes
+# never race for the same version; GitHub keeps only the NEWEST pending run, so of three rapid pushes the middle
+# one may be skipped — the release then simply contains the latest code.
+#
+# Directory.Packages.props is in `paths` because it pins the helper's MCP SDK; a bump of any other package
+# also cuts a (harmless, identical-behaviour) patch release — accepted, so a dependency fix is never missed.
 #
 # The self-contained/single-file settings live in the csproj (applied whenever a runtime identifier is
 # given), so `dotnet publish -r <rid> -c Release` on a laptop builds the same asset.
@@ -16,6 +28,10 @@ name: Release local bridge
 
 on:
   push:
+    branches: [main]
+    paths:
+      - tools/Agent42.LocalBridge/**
+      - Directory.Packages.props
     tags: ['local-bridge-v*']
   workflow_dispatch:
     inputs:
@@ -26,8 +42,10 @@ on:
 permissions:
   contents: write
 
+# One queue for every trigger: an automatic run must see the tag the previous run created before it picks
+# the next version. Never cancel — a half-published release is worse than a late one.
 concurrency:
-  group: release-local-bridge-${{ github.ref }}-${{ inputs.version }}
+  group: release-local-bridge
   cancel-in-progress: false
 
 env:
@@ -44,12 +62,28 @@ jobs:
 
       - id: meta
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             tag="$GITHUB_REF_NAME"
-          else
+          elif [ -n "$INPUT_VERSION" ]; then
             tag="local-bridge-v${INPUT_VERSION#v}"
+          else
+            # A push to main that changed the helper: next patch after the highest STABLE release tag.
+            # Read from the remote, not the checkout (a shallow clone has no tags). Pre-release tags are
+            # ignored, so 1.2.0-beta.1 never becomes the base of an automatic 1.2.1.
+            latest="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/local-bridge-v" --paginate \
+                        --jq '.[].ref | sub("^refs/tags/local-bridge-v"; "")' \
+                      | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+            if [ -z "$latest" ]; then
+              next="1.0.0"
+            else
+              IFS=. read -r major minor patch <<< "$latest"
+              next="$major.$minor.$((patch + 1))"
+            fi
+            echo "Latest stable release: ${latest:-none}; releasing $next."
+            tag="local-bridge-v$next"
           fi
           version="${tag#local-bridge-v}"
           # SemVer only: the version is stamped into the binary and shown by --version.

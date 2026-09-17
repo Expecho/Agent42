@@ -544,3 +544,5 @@ Where the shipped code differs from the plan above, and why. ADR 0076 is the aut
     (tag `local-bridge-vX.Y.Z`), with RID-conditional publish settings in the csproj, a `--version` flag, a
     releases link in the key panel, and `LocalBridgeReleaseTests` pinning the source text. Code signing stays
     out of scope. See ADR 0076 "Distribution".
+    Later the same day it became automatic too: a push to `main` that changes the helper (or
+    `Directory.Packages.props`) releases the next patch version; tags and manual dispatch still pick a version.
