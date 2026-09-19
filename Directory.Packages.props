@@ -22,6 +22,7 @@
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.4" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.9.0" />
     <PackageVersion Include="Azure.ResourceManager.CognitiveServices" Version="1.5.2" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
     <!-- Security pin, not a feature dependency. Azure.Extensions.AspNetCore.DataProtection.Blobs

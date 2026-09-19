@@ -109,6 +109,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | `GOOGLE_MAPS_API_KEY` | Location returns coordinates without an address (ADR 0012) |
 | `HINDSIGHT_API_KEY` | No long-term memory, and zero calls are made. This is the operator's egress switch (ADR 0056/0057) |
 | `VAPID_PRIVATE_KEY` | Web Push is hidden (ADR 0028) |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | No App Insights export. The app boots and sends telemetry to OTLP only (ADR 0077) |
 | `Dashboard:OwnerOid` (committed, currently blank) | `/dashboard` denies everyone. **Never set it to `local-dev`** (ADR 0062) |
 | MCP OAuth redirect URI `https://chat.agent42.nl/api/mcp/oauth/callback` | Must be registered in each provider's app registration (ADR 0025) |
 
@@ -153,7 +154,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Area | ADRs |
 |------|------|
 | Core: grain per conversation, auth, persona snapshot, blob attachments, profile | 0001, 0002, 0003, 0004, 0005 |
-| Telemetry, `/logs` console, usage dashboard, Orleans dashboard | 0009, 0010, 0031, 0054, 0062 |
+| Telemetry, `/logs` console, usage dashboard, Orleans dashboard, App Insights export | 0009, 0010, 0031, 0054, 0062, 0077 |
 | Identity alias (second Entra account, an **authorization grant**) | 0074 |
 | Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools | 0013, 0014, 0015, 0017, 0018, 0019, 0033 |
 | Image generation, speech (STT/TTS/voice loop), reasoning output | 0006, 0020, 0037, 0038, 0071 |

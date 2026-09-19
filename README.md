@@ -220,7 +220,7 @@ app runs on Azure Container Apps behind Entra ID Easy Auth at chat.agent42.nl.
 Several manual prerequisites live outside the code as GitHub Actions secrets — required
 ones (`AzureOpenAI:ApiKey`, `SEARXNG_SECRET`) and optional feature keys
 (`GOOGLE_MAPS_API_KEY`, `CONTEXT_API_KEY`, `VAPID_PRIVATE_KEY`,
-`HINDSIGHT_API_KEY`). Integrations needing setup outside this repo have a step-by-step
+`HINDSIGHT_API_KEY`, `APPLICATIONINSIGHTS_CONNECTION_STRING`). Integrations needing setup outside this repo have a step-by-step
 guide in [`docs/integrations/`](docs/integrations/README.md). See `.agentic/gotchas.md`
 before touching infra: Cosmos region/containers, the custom domain, RBAC grants, and the
 search sidecar all carry constraints that are invisible in the code.

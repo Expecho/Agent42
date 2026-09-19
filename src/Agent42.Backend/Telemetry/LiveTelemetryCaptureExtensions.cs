@@ -12,9 +12,10 @@ namespace Agent42.Backend;
 ///
 /// <para>Capture is deliberately <b>additive and exporter-independent</b>: it adds a processor to each
 /// signal and a second metric reader. It touches nothing about what the app already ships to the OTLP
-/// collector <b>with one deliberate exception</b> — the unconditional <c>AddMeter(OtelSourceName)</c>
-/// below, which subscribes the chat client's gen_ai histograms for the first time and so reaches the OTLP
-/// exporter as well as the ring, because both readers hang off the one <c>MeterProvider</c>. That is the
+/// collector and Application Insights <b>with one deliberate exception</b> — the unconditional
+/// <c>AddMeter(OtelSourceName)</c> below, which subscribes the chat client's gen_ai histograms and so
+/// reaches every metric exporter (OTLP, and App Insights when configured) as well as the ring, because all
+/// readers hang off the one <c>MeterProvider</c>. That is the
 /// point of it, and it is the only registration here that is not gated on <c>addInstrumentation</c>.
 /// Measured facts this rests on — a second
 /// <c>PeriodicExportingMetricReader</c> alongside the OTLP one captures the full instrument set; calling
@@ -83,11 +84,11 @@ public static class LiveTelemetryCaptureExtensions
                 // missing-meter diagnostic, just a permanently empty token series. MeterNamingTests pins the
                 // naming rule in both directions so a library bump cannot reintroduce that quietly.
                 //
-                // It belongs HERE rather than beside Program.cs's AddSource(OtelSourceName) so that both
-                // hosts subscribe from one place and cannot drift — and because nothing in the suite runs
-                // Program.cs, so a registration there is untestable by construction. The price is stated in
+                // It belongs HERE rather than beside the Backend's AddSource(OtelSourceName) in
+                // BackendTelemetryExtensions so that both hosts subscribe from one place and cannot drift.
+                // The price is stated in
                 // the class summary: this single line does change what the Backend ships to its OTLP
-                // collector, since both readers hang off the one MeterProvider.
+                // collector and to Application Insights, since every reader hangs off the one MeterProvider.
                 //
                 // The Agent Framework layer adds nothing further to subscribe to — Microsoft.Agents.AI
                 // 1.19.0 contains no System.Diagnostics.Metrics references at all and is trace-only.

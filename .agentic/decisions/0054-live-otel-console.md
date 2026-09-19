@@ -7,6 +7,12 @@ tags: [observability, opentelemetry, diagnostics, frontend, privacy]
 
 # Title: A live OpenTelemetry console at `/logs`
 
+> **Amended by [ADR 0077](0077-app-insights-export-content-stripped.md) (2026-09-19).** The Context
+> below says "in production the only sink is an OTLP export". That is no longer true: traces and metrics
+> also go to Application Insights when a connection string is configured. Chat content is stripped from
+> the traces there, and logs never go there. The console itself is unchanged: it still sees full
+> content, because its span processor runs before the stripping fan-out, which is registered last.
+
 ## Context
 
 Agent42 emits traces, logs and metrics through OpenTelemetry, but there was **no in-app way to look at

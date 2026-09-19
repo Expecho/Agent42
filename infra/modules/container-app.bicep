@@ -89,6 +89,10 @@ param contextApiKey string = ''
 param hindsightApiKey string = ''
 
 @secure()
+@description('Application Insights connection string. OPTIONAL, exactly like googleMapsApiKey: when empty, neither the secret nor the env var below is emitted, and the app exports to the OTLP collector only.')
+param appInsightsConnectionString string = ''
+
+@secure()
 @description('VAPID private key for Web Push notifications (ADR 0028). OPTIONAL, exactly like googleMapsApiKey/contextApiKey: when empty, neither the secret nor the env var below is emitted, and push simply stays disabled (GET /api/push/config returns enabled:false, the UI hides the toggle) rather than failing to deploy. Not on the availability path. The matching public key + subject are non-secret and committed in appsettings.json.')
 param vapidPrivateKey string = ''
 
@@ -185,6 +189,14 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
                 value: hindsightApiKey
               }
             ],
+        empty(appInsightsConnectionString)
+          ? []
+          : [
+              {
+                name: 'appinsights-connection-string'
+                value: appInsightsConnectionString
+              }
+            ],
         empty(vapidPrivateKey)
           ? []
           : [
@@ -220,6 +232,10 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             // of http/protobuf would silently send to the wrong format. Harmless when otlpEndpoint is
             // empty — no exporter is registered in that case (see ServiceDefaults AddOpenTelemetryExporters).
             { name: 'OTEL_EXPORTER_OTLP_PROTOCOL', value: 'grpc' }
+            // The Azure Monitor exporter's Statsbeat sends SDK health to Microsoft-owned ingestion keys,
+            // which is egress outside the operator's boundary. Its option is internal, so this variable is
+            // the only switch. Unconditional: harmless when no connection string is set.
+            { name: 'APPLICATIONINSIGHTS_STATSBEAT_DISABLED', value: 'true' }
             // The SearXNG sidecar below. Containers in one Container App share a network namespace,
             // so it is reached over localhost and is unreachable from outside by construction — no
             // second ingress, and Easy Auth still fronts the only exposed port (ADR 0002).
@@ -248,7 +264,12 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           // shape. Supplying it is what turns the always-on per-turn egress ON.
           empty(hindsightApiKey)
             ? []
-            : [{ name: 'Hindsight__ApiKey', secretRef: 'hindsight-api-key' }])
+            : [{ name: 'Hindsight__ApiKey', secretRef: 'hindsight-api-key' }],
+          // Application Insights: traces (chat content stripped) and metrics, alongside OTLP. Emitted only
+          // when supplied: with no connection string the app exports to OTLP only and starts normally.
+          empty(appInsightsConnectionString)
+            ? []
+            : [{ name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }])
         }
         // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume and no API
         // key. NOT private, though — SearXNG is a *meta*search engine and forwards every query on to

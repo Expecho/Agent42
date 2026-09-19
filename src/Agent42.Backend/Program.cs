@@ -11,14 +11,9 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.AI;
 using OpenTelemetry.Instrumentation.AspNetCore;
-using OpenTelemetry.Trace;
 using Orleans.Dashboard;
 
 const string OtelSourceName = LiveTelemetryCaptureExtensions.OtelSourceName;
-
-// The application dimension of the usage dashboard (ADR 0031). Agent42 is one service and agent name
-// is not on the span, so this is a constant; per-agent attribution is a future OTEL-native add.
-const string UsageApplication = "Agent42";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,27 +25,15 @@ var usageChannel = Channel.CreateBounded<UsageEvent>(
 builder.Services.AddSingleton(usageChannel.Reader);
 builder.Services.AddHostedService<UsageIngestionService>();
 
-// OTel logging, metrics and tracing (OTLP exporter) via Aspire service defaults.
+// OTel logging, metrics and tracing via Aspire service defaults: OTLP, plus Application Insights metrics
+// when APPLICATIONINSIGHTS_CONNECTION_STRING is set.
 builder.AddServiceDefaults();
-builder.Services.AddOpenTelemetry()
-    .WithTracing(tracing => tracing
-        .AddSource(OtelSourceName)
-        // Carry the user.* identity to downstream/in-grain spans (ADR 0010): the processor stamps
-        // every started span from the identity a request-scoped middleware writes into Orleans
-        // RequestContext (see app.Use below). Complements — does not replace — the server-span
-        // EnrichWithHttpRequest above, which owns the one span that starts before that middleware.
-        .AddProcessor(new UserTelemetrySpanProcessor())
-        // Project the gen_ai chat/execute_tool spans (already on OtelSourceName) into the usage
-        // rollups (ADR 0031). OnEnd-only, non-blocking — enqueues to usageChannel.
-        .AddProcessor(new UsageSpanProcessor(usageChannel.Writer, UsageApplication)));
 
-// The live telemetry console at /logs (ADR 0054): a bounded in-memory ring filled by in-process capture
-// components. addInstrumentation stays FALSE here — AddServiceDefaults() above already registered the
-// AspNetCore/Http/Runtime instrumentation, and registering it twice risks duplicate spans. Capture is
-// otherwise purely additive, with one deliberate exception it owns for both hosts: the unconditional
-// AddMeter(OtelSourceName) that subscribes the chat client's gen_ai histograms, which do reach the OTLP
-// collector from here. That is a subscription this app never had — see the method's own summary.
-builder.AddLiveTelemetryCapture();
+// The Backend's span processors (user.* identity, usage rollups), the live telemetry console at /logs
+// (ADR 0054) and, LAST, the Application Insights trace fan-out that strips chat content. One method,
+// because the order is load-bearing and nothing in the suite runs this file. Right after
+// AddServiceDefaults(), before anything else registers a trace processor.
+builder.AddBackendTelemetry(usageChannel.Writer);
 
 // Identity aliases (ADR 0074): an additional Entra object id resolving to the object id that owns the
 // data, so one person's two accounts reach one dataset with no data movement. Built ONCE here, because

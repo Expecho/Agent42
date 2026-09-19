@@ -38,6 +38,7 @@ public sealed class ConfigHealthTests
         ("Geocoding:GoogleApiKey", "SECRET-google-key"),
         ("ContextScrape:ApiKey", "SECRET-context-key"),
         ("Hindsight:ApiKey", "SECRET-hindsight-key"),
+        ("APPLICATIONINSIGHTS_CONNECTION_STRING", "InstrumentationKey=SECRET-appinsights-key;IngestionEndpoint=https://x/"),
     ];
 
     private static ConfigCheck Find(ConfigHealthReport report, string key) =>
@@ -262,6 +263,23 @@ public sealed class ConfigHealthTests
         // Free, unlike the geocoding and context.dev probes — /health is unauthenticated.
         Assert.False(Find(configured, "probe:hindsight").Billable);
         Assert.Equal(ConfigHealth.Skipped, Find(configured, "probe:hindsight").Status);
+    }
+
+    // Application Insights export is optional: absent means OTLP only, which is a warning and never an
+    // error. The connection string carries the ingestion key, so it must not appear in the report.
+    [Fact]
+    public void ConfigHealth_ReportsAppInsightsConnectionString()
+    {
+        const string key = "APPLICATIONINSIGHTS_CONNECTION_STRING";
+        var configured = ConfigHealth.BuildStatic(Config(AllSecretsSet), Env(), Push(enabled: true));
+        Assert.Equal(ConfigHealth.Ok, Find(configured, key).Status);
+        Assert.DoesNotContain("SECRET-appinsights-key", JsonSerializer.Serialize(configured));
+
+        var without = ConfigHealth.BuildStatic(
+            Config(AllSecretsSet.Where(e => e.Key != key).ToArray()), Env(), Push(enabled: true));
+        var missing = Find(without, key);
+        Assert.Equal(ConfigHealth.Warning, missing.Status);
+        Assert.Contains("OTLP collector only", missing.Message);
     }
 
 }

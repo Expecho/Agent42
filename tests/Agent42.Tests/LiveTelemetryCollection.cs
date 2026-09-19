@@ -45,6 +45,10 @@ namespace Agent42.Tests;
 /// shape). It reproduces far more readily under <c>--collect:"XPlat Code Coverage"</c>, which is the CI
 /// path, because the instrumented host build holds the listener open for seconds rather than
 /// milliseconds.</para>
+///
+/// <para><c>AzureMonitorTraceExportTests</c> joined with the Application Insights export: it builds
+/// capture hosts and emits gen_ai spans on <c>OtelSourceName</c>. Its assertions are scoped to their own
+/// trace or source for the reason above.</para>
 /// </summary>
 [CollectionDefinition("LiveTelemetry")]
 public sealed class LiveTelemetryCollection;
