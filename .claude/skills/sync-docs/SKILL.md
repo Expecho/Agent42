@@ -31,7 +31,10 @@ For each changed file, check:
 4. **Specs** — does the diff complete a plan in `.agentic/specs/`? → move it to
    `completed/`.
 5. **CLAUDE.md** — did commands, ports, or hard-rule-relevant facts change? → update
-   the table (and verify the new command runs).
+   the table (and verify the new command runs). A new ADR gets a number in the
+   "Feature map" row for its area, and a new secret or manual step gets a row in
+   "Manual prerequisites". Never add a per-feature write-up to CLAUDE.md: that
+   belongs in the ADR and in gotchas.
 
 ## Step 3 — Anti-bloat rule
 
