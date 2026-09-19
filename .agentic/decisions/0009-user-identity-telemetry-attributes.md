@@ -13,6 +13,10 @@ tags: [telemetry, observability, privacy, auth]
 > from the principal-name header and `user.email`/`user.full_name`/`user.roles` from the claims blob,
 > none of which passes through the alias — so every span still names the account that signed in.
 
+> **Extended by [ADR 0077](0077-app-insights-export-content-stripped.md) (2026-09-19).** The PII
+> trade-off below names "both OTLP collectors". Application Insights is now a **third** sink for the
+> `user.*` attributes: they are on its allowlist, while chat content is stripped.
+
 ## Context
 Agent42 is a multi-user system (two Entra users today, behind Easy Auth — ADR 0002)
 whose traces carried **no user attribution**: a span could not be tied to whose request

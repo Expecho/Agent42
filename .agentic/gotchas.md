@@ -633,6 +633,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   collector, attributed to them by name. If you enable that flag, scrub or filter `url.full` for the
   geocoding client first. Note this cuts the other way too: any *new* named client whose query string holds
   a secret is protected only by the same default.
+  **Since ADR 0077 an un-redaction would also leak to Application Insights**, with 90-day retention in
+  Log Analytics. Its content strip touches gen_ai spans only, so HTTP client spans reach it exactly as
+  they reach OTLP. That already includes one recorded residual: `GuardedDocumentFetcher`'s span carries
+  the host and path of a **model-chosen** URL (ADR 0077 Consequences).
 - **And it never redacts the PATH. Any new client whose PATH carries an identifier that names a HUMAN
   needs its span suppressed — the query-string default above will not save it.** Combined with the
   `user.*` stamping above, such a span joins one named human to another in the collector, with no env
@@ -2565,8 +2569,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `AddSource` inside that branch reads as the natural home for it and would leave production exactly as
   broken while the offline host looked fine, which is why `CaptureWiring_CollectsTheChatClientTokenHistogram`
   is a `[Theory]` over **both** values rather than a fact. It is also the one line of that method that
-  changes what the Backend ships to its **OTLP collector** — the class summary's "purely additive" claim
-  carries an explicit exception for it — because both metric readers hang off one `MeterProvider`.
+  changes what the Backend ships to its **OTLP collector and to Application Insights** (ADR 0077). The
+  class summary's "purely additive" claim carries an explicit exception for it, because every metric
+  reader hangs off one `MeterProvider`. The histograms' attributes are metadata (model, token type,
+  operation), so App Insights receiving them is intended.
   It sits there rather than in `Program.cs` for a second reason worth knowing before moving it back:
   **nothing in the suite runs `Program.cs`**, so a registration there is untestable by construction *and*
   scores 0% on the new-code coverage gate (ADR 0050).
@@ -2585,6 +2591,46 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`_otelSourceName`),
   `tests/Agent42.Tests/MeterNamingTests.cs`
 - **Verified:** 2026-08-27
+
+### Stripping chat content for ONE sink mutates the span EVERY sink shares — the fan-out's six traps
+
+- **Claim:** Application Insights must not receive chat content, and its exporter has no attribute
+  filter, so `TraceExportFanOutExporter` strips the `Activity` in place (ADR 0077). Processors pass the
+  **same instances** to every exporter, and each batch processor exports on its own worker thread. So the
+  strip is race-free only because of the six facts below. Break one and content either leaks or quietly
+  vanishes from the home collector and `/logs`:
+  1. **One processor, sequential sinks.** One export processor runs the OTLP exporters, then the strip,
+     then Azure Monitor. A second batch processor for App Insights would strip while OTLP is still
+     serialising.
+  2. **A `Batch<Activity>` is single-pass.** It drains a circular buffer, so a second enumeration yields
+     0 items while `Count` still reads N, and the exporter returns `Success`. Materialise the batch once
+     and give each exporter a fresh `new Batch<Activity>(array, count)`.
+  3. **Hand-built exporters need the provider's resource.** `ParentProvider`'s setter is internal, so an
+     exporter the provider never saw has no `service.name` on OTLP and no `ai.cloud.role` in App Insights.
+     `TraceExportFanOutProcessor` is a `CompositeProcessor` whose `SimpleActivityExportProcessor` children
+     exist only to receive the resource and to own shutdown. Its `OnEnd` goes to the export processor
+     alone, which is shut down first, so the last batch drains before the inner exporters close.
+     **Never make it a provider's FIRST processor.** In OTel 1.18, when the provider's current processor
+     is a `CompositeProcessor`, every later `AddProcessor` is appended to it as a child. The overridden
+     `OnStart`/`OnEnd` would then starve every processor registered after it, silently.
+  4. **No sampler.** `AddAzureMonitorTraceExporter` installs a rate-limited sampler (5 traces/s) that
+     dropped even the first span in the spike. The fan-out builds `AzureMonitorTraceExporter` directly.
+     Don't "simplify" it back to the extension method.
+  5. **Registration order is pipeline order, until `UseOtlpExporter`.** In OTel 1.18 only
+     `UseOtlpExporter` sets a non-zero `PipelineWeight`, which sorts it after everything else. Never
+     introduce it: it would silently reorder the pipeline. (It also throws next to `AddOtlpExporter`.)
+  6. **The fan-out is the LAST `OnEnd` reader.** A batch worker can export a span while the ending thread
+     is still in `OnEnd` of later processors. `UsageSpanProcessor` and `LiveSpanProcessor` register after
+     `AddServiceDefaults()`, so `AddBackendTelemetry` adds the fan-out after both. Any new processor that
+     reads tags in `OnEnd` goes BEFORE it in that method. `FanOutRegisteredLast_LiveConsoleKeepsContent`
+     runs the fan-out in Simple mode, which turns a misordering into a deterministic failure instead of
+     a race the test would usually win.
+  With a connection string set, the fan-out owns the trace OTLP exporters and ServiceDefaults registers
+  none, so dropping `AddBackendTelemetry` loses **every** trace, the home collector's included.
+- **Evidence:** `src/Agent42.ServiceDefaults/AzureMonitorTraceExport.cs`,
+  `src/Agent42.Backend/Telemetry/BackendTelemetryExtensions.cs`,
+  `tests/Agent42.Tests/AzureMonitorTraceExportTests.cs`, `tests/Agent42.Tests/OtelConfigurationTests.cs`
+- **Verified:** 2026-09-19
 
 ### A diagnostics console watches itself, and the obvious log filter blinds it instead
 
@@ -2803,8 +2849,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **The actual fix for an emptiness assertion is to SCOPE it to the source under test** (see
   `OtelConfigurationTests`, which now filters on
   `s.Source == LiveTelemetryCaptureExtensions.OtelSourceName`). That is not a weakened assertion: nothing
-  in that test emits on `OtelSourceName`, and the one class that does is serialised with it by the
-  collection, so a span there would still be a real defect. Measured **4/4 green under `--collect`**
+  in that test emits on `OtelSourceName`, and the classes that do (`MeterNamingTests`,
+  `AzureMonitorTraceExportTests`) are serialised with it by the collection, so a span there would still
+  be a real defect. Measured **4/4 green under `--collect`**
   after scoping, where it was 0/2. The collection additions were kept — they are correct on their own
   terms — but they are not what fixed it. Note the failure is far likelier under coverage
   instrumentation, because the instrumented host build holds the listener open for **seconds** rather

@@ -121,6 +121,15 @@ public static class ConfigHealth
         // metered by nobody, so it costs the operator nothing to press the button.
         checks.Add(NotProbed(GroupOptional, ProbeHindsight, "Hindsight reachability", billable: false));
 
+        // Application Insights: traces (chat content stripped) and metrics, on top of OTLP. Absent is a
+        // supported state: the app then exports to OTLP only. The connection string carries the ingestion
+        // key, so like every other value here it is never echoed.
+        checks.Add(PresenceCheck(GroupOptional, AzureMonitorTraceExport.ConnectionStringKey,
+            config[AzureMonitorTraceExport.ConnectionStringKey],
+            present: "configured — traces (without chat content) and metrics also go to Application Insights",
+            missing: "not set — telemetry goes to the OTLP collector only",
+            missingStatus: Warning));
+
         // Web Push: derive from PushConfig.Enabled — the single source of the "push is on" fact (both VAPID
         // keys required). Never recompute from the raw keys.
         checks.Add(new ConfigCheck(GroupOptional, "Push:Vapid", push.Enabled ? Ok : Warning,

@@ -16,20 +16,33 @@ public sealed class LiveTelemetryCaptureWiringTests
     private static string ReadHost(params string[] relativePath) =>
         File.ReadAllText(Path.Combine([RepoRoot(), .. relativePath]));
 
+    // The Backend registers capture through its telemetry composition method, which Program.cs calls: the
+    // order of the Backend's trace processors is load-bearing (the App Insights fan-out must come last),
+    // so it lives in one testable method rather than inline in Program.cs.
+    private static string ReadBackendComposition() =>
+        ReadHost("src", "Agent42.Backend", "Telemetry", "BackendTelemetryExtensions.cs");
+
     [Fact]
     public void BothHosts_RegisterLiveTelemetryCapture()
     {
-        var backend = ReadHost("src", "Agent42.Backend", "Program.cs");
+        var backendProgram = ReadHost("src", "Agent42.Backend", "Program.cs");
+        var backend = ReadBackendComposition();
         var devHost = ReadHost("tools", "Agent42.DevHost", "Program.cs");
 
+        Assert.Contains("builder.AddBackendTelemetry(", backendProgram, StringComparison.Ordinal);
         Assert.Contains("AddLiveTelemetryCapture(", backend, StringComparison.Ordinal);
         Assert.Contains("AddLiveTelemetryCapture(", devHost, StringComparison.Ordinal);
+
+        // Exactly one registration in the Backend: a second call in Program.cs would add a second ring
+        // processor, and one placed after the composition would run after the App Insights fan-out.
+        Assert.DoesNotContain("AddLiveTelemetryCapture(", backendProgram, StringComparison.Ordinal);
     }
 
     [Fact]
     public void OnlyDevHost_AsksCaptureToAddInstrumentation()
     {
-        var backend = ReadHost("src", "Agent42.Backend", "Program.cs");
+        var backendProgram = ReadHost("src", "Agent42.Backend", "Program.cs");
+        var backend = ReadBackendComposition();
         var devHost = ReadHost("tools", "Agent42.DevHost", "Program.cs");
 
         // DevHost deliberately does NOT call AddServiceDefaults() — that would drag in resilience
@@ -40,7 +53,8 @@ public sealed class LiveTelemetryCaptureWiringTests
         // The Backend must NOT: AddServiceDefaults() has already registered AspNetCore/Http/Runtime
         // instrumentation there, and registering it twice risks duplicate spans. The logging provider's
         // additivity was measured; instrumentation additivity is deliberately not assumed.
-        Assert.DoesNotContain("AddLiveTelemetryCapture(addInstrumentation: true)", backend, StringComparison.Ordinal);
+        Assert.DoesNotContain("addInstrumentation: true", backend, StringComparison.Ordinal);
+        Assert.DoesNotContain("addInstrumentation: true", backendProgram, StringComparison.Ordinal);
         Assert.Contains("AddLiveTelemetryCapture();", backend, StringComparison.Ordinal);
     }
 

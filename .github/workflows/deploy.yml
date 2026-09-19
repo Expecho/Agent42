@@ -96,6 +96,7 @@ jobs:
               googleMapsApiKey="${{ secrets.GOOGLE_MAPS_API_KEY }}" \
               contextApiKey="${{ secrets.CONTEXT_API_KEY }}" \
               hindsightApiKey="${{ secrets.HINDSIGHT_API_KEY }}" \
+              appInsightsConnectionString="${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}" \
               vapidPrivateKey="${{ secrets.VAPID_PRIVATE_KEY }}" \
               cosmosLocation="northeurope" \
               otlpEndpoint="http://home.peterbons.nl:4317" \
