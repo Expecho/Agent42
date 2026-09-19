@@ -1,3 +1,4 @@
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,8 +20,8 @@ public static class Extensions
 {
     private const string HealthEndpointPath = "/health";
     private const string AlivenessEndpointPath = "/alive";
-    private const string LocalCollectorEndpointKey = "Otel:LocalCollector:Endpoint";
-    private const string LocalCollectorHeadersKey = "Otel:LocalCollector:Headers";
+    internal const string LocalCollectorEndpointKey = "Otel:LocalCollector:Endpoint";
+    internal const string LocalCollectorHeadersKey = "Otel:LocalCollector:Headers";
 
     public static TBuilder AddServiceDefaults<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
@@ -84,9 +85,22 @@ public static class Extensions
 
     private static TBuilder AddOpenTelemetryExporters<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
+        // Application Insights (the ADR on App Insights export) gets metrics here and traces through the
+        // fan-out the host registers LAST (AzureMonitorTraceExport.AddTraceExportFanOut), which then owns the
+        // trace OTLP exporters too. Never logs: Warning+ templates carry model-chosen search queries and URLs.
+        // Registered BEFORE the early return below, so an App-Insights-only setup still exports.
+        var connectionString = builder.Configuration[AzureMonitorTraceExport.ConnectionStringKey];
+        var toAppInsights = !string.IsNullOrWhiteSpace(connectionString);
+        if (toAppInsights)
+        {
+            AzureMonitorTraceExport.AddAzureMonitorOptions(builder.Services, connectionString!);
+            builder.Services.AddOpenTelemetry().WithMetrics(metrics => metrics.AddAzureMonitorMetricExporter());
+        }
+
         // Endpoint 1: the env-var endpoint (Aspire dashboard locally, the Bicep otlpEndpoint in prod).
-        // AddOtlpExporter() with no options reads the standard OTEL_EXPORTER_OTLP_* env vars — the same
-        // source the previous UseOtlpExporter() used — so this endpoint behaves exactly as before.
+        // AddOtlpExporter() with no options binds the standard OTEL_EXPORTER_OTLP_* keys from IConfiguration
+        // (which includes the env vars) — the same source the previous UseOtlpExporter() used — so this
+        // endpoint behaves exactly as before.
         var hasEnvEndpoint = !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
 
         // Endpoint 2: an optional secondary OTLP/gRPC collector, exported to ALONGSIDE endpoint 1 and
@@ -96,17 +110,6 @@ public static class Extensions
         var localEndpoint = builder.Configuration[LocalCollectorEndpointKey];
         var localHeaders = builder.Configuration[LocalCollectorHeadersKey];
         var addLocalCollector = !string.IsNullOrWhiteSpace(localEndpoint);
-
-        // OTLP headers are a comma-separated "key=value" string; omitted when none configured.
-        void ConfigureLocalCollector(OtlpExporterOptions options)
-        {
-            options.Endpoint = new Uri(localEndpoint!);
-            options.Protocol = OtlpExportProtocol.Grpc;
-            if (!string.IsNullOrWhiteSpace(localHeaders))
-            {
-                options.Headers = localHeaders;
-            }
-        }
 
         if (!hasEnvEndpoint && !addLocalCollector)
         {
@@ -129,7 +132,7 @@ public static class Extensions
 
             if (addLocalCollector)
             {
-                addLocalExporter(ConfigureLocalCollector);
+                addLocalExporter(options => ConfigureLocalCollector(options, localEndpoint!, localHeaders));
             }
         }
 
@@ -142,16 +145,30 @@ public static class Extensions
             .WithMetrics(metrics =>
                 AddConfiguredExporters(() => metrics.AddOtlpExporter(), configure => metrics.AddOtlpExporter(configure)))
             .WithTracing(tracing =>
-                AddConfiguredExporters(() => tracing.AddOtlpExporter(), configure => tracing.AddOtlpExporter(configure)));
-
-        // Uncomment the following lines to enable the Azure Monitor exporter (requires the Azure.Monitor.OpenTelemetry.AspNetCore package)
-        //if (!string.IsNullOrEmpty(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-        //{
-        //    builder.Services.AddOpenTelemetry()
-        //       .UseAzureMonitor();
-        //}
+            {
+                // With App Insights on, the fan-out owns the trace OTLP exporters: it must export each span
+                // to OTLP BEFORE it strips the span for App Insights.
+                if (!toAppInsights)
+                {
+                    AddConfiguredExporters(() => tracing.AddOtlpExporter(), configure => tracing.AddOtlpExporter(configure));
+                }
+            });
 
         return builder;
+    }
+
+    /// <summary>
+    /// The optional secondary collector: always OTLP/gRPC. OTLP headers are a comma-separated
+    /// "key=value" string, omitted when none are configured.
+    /// </summary>
+    internal static void ConfigureLocalCollector(OtlpExporterOptions options, string endpoint, string? headers)
+    {
+        options.Endpoint = new Uri(endpoint);
+        options.Protocol = OtlpExportProtocol.Grpc;
+        if (!string.IsNullOrWhiteSpace(headers))
+        {
+            options.Headers = headers;
+        }
     }
 
     public static TBuilder AddDefaultHealthChecks<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder

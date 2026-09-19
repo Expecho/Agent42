@@ -48,6 +48,10 @@ param contextApiKey string = ''
 param hindsightApiKey string = ''
 
 @secure()
+@description('Connection string of the existing Application Insights resource agent-42-appinsights (the APPLICATIONINSIGHTS_CONNECTION_STRING GitHub Actions secret). OPTIONAL, like googleMapsApiKey: when empty the app exports to the OTLP collector only. When set, traces with chat content stripped and metrics also go to Application Insights; logs never do. The resource is not managed here: it already exists, and connection-string ingestion needs no role assignment.')
+param appInsightsConnectionString string = ''
+
+@secure()
 @description('VAPID private key for Web Push notifications (ADR 0028 — the VAPID_PRIVATE_KEY GitHub Actions secret). A manual prerequisite, but deliberately OPTIONAL like googleMapsApiKey/contextApiKey (no @minLength, empty default): an absent key must NOT fail the deployment. It is not on the availability path — the app starts fine without it and push simply stays disabled (the UI hides the toggle). The matching public key + subject are non-secret and committed in appsettings.json.')
 param vapidPrivateKey string = ''
 
@@ -194,6 +198,7 @@ module containerApp 'modules/container-app.bicep' = {
     googleMapsApiKey: googleMapsApiKey
     contextApiKey: contextApiKey
     hindsightApiKey: hindsightApiKey
+    appInsightsConnectionString: appInsightsConnectionString
     vapidPrivateKey: vapidPrivateKey
     cosmosAccountEndpoint: cosmos.outputs.documentEndpoint
     blobEndpoint: storage.outputs.blobEndpoint
