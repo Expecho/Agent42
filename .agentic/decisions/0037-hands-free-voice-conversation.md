@@ -18,6 +18,18 @@ extends: [0006]
 > Everything else here stays authoritative, including the teardown path (exiting voice mode aborts
 > locally only, deliberately: the reader wants to stop listening, not to cut the answer short).
 
+> **Amended by [ADR 0079](0079-half-duplex-voice-on-speakers.md) (2026-09-20) — the mic no longer stays
+> live while speaking, unless the reply is going to a headset.** "Barge-in works because the mic stays
+> live while speaking" is now true only on a detected headset. On speakers the mic is **closed from
+> auto-send until the reply has finished**, because the residual below — "the assistant can hear itself"
+> — turned out to be the loop answering its own words, and `isSelfOrEcho` could not be made tight enough
+> to stop it. Talking over the reply is replaced there by Esc, the stop button (ADR 0078) or the voice
+> button. **The whole barge-in path stays in the code and is what runs on a headset**: `bargeIn`,
+> `isSelfOrEcho`, `lastSubmitted` and `spokenText` are untouched, and so is the local-abort-first ordering
+> the amendment above pins. The residual recorded here is therefore retired on the speaker path and
+> unchanged on the headset path — and "headphones remain the clean guarantee" is now literally what the
+> code keys on.
+
 ## Context
 Dictation (ADR 0006) gave the composer a *listen* half: tap `#micBtn`, speak, watch interim
 text stream into `#promptInput`, review, and send by hand. The user now wants a genuine
