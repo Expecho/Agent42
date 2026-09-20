@@ -10,7 +10,7 @@ import { profile } from "./profile.js";
 import { streaming, voice } from "./send.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, renderSidebar } from "./sidebar.js";
-import { addAgentImage, addCopyButton, addMessage, clearThread, fillUserBubble, scrollToBottom, setAgentMarkdown, setEmptyVisible } from "./thread.js";
+import { addAgentImage, addCopyButton, addMessage, clearThread, fillUserBubble, replayToolCalls, scrollToBottom, setAgentMarkdown, setEmptyVisible } from "./thread.js";
 import { allToolKeys, setChatTools } from "./tools.js";
 
 export let activeId = crypto.randomUUID();
@@ -88,6 +88,9 @@ function renderTurns(id, turns) {
       addCopyButton(msg, turn.text);
       // An assistant turn may carry a generated image (ADR 0020); re-render it above the prose.
       for (const att of turn.attachments ?? []) addAgentImage(msg, id, att.id, att.fileName);
+      // ...and the tool calls it made (ADR 0080), as the same folded section the live turn showed.
+      // Order within this arm is irrelevant: the group self-positions above .prose.
+      replayToolCalls(msg, turn.toolCalls);
     }
   }
   scrollToBottom();

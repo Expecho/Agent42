@@ -886,6 +886,30 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0020-image-generation-model-capability.md`
 - **Verified:** 2026-07-17
 
+### A tool result never arrives on the message that made the call — never match the two in one forward pass
+
+- **Claim:** a `FunctionResultContent` always comes back on a **later, tool-role message**, never on the
+  assistant message carrying its `FunctionCallContent`. So anything that walks the session once and matches
+  results against calls "still open" is correct only while the call message carries **nothing but calls** —
+  which is what `FakeChatClient` and `CannedChatClient` both emit, and what the entry above describes. A real
+  provider may emit `content` **and** `tool_calls` on one assistant message (OpenAI routinely does). That
+  message then projects to a real turn, a forward-only matcher flushes the chain onto it immediately, and the
+  result arriving one message later has nothing left to match against — so it is **dropped silently**, and
+  the replayed chip (ADR 0080) shows an input and no result, permanently. Nothing throws and no test built on
+  the canned clients can see it: their tool-call message is text-free by construction
+  (`GetStreamingResponseAsync` yields the call and `yield break`s). **So collect results over the whole
+  history FIRST, keyed by `CallId`, and join them onto each call** — position-blind, one extra pass, and
+  simpler than the stateful match it replaces. To exercise the shape at all, `FakeChatClient` needs a trigger
+  that puts a `TextContent` alongside the call (`NarratingCallTrigger`); without one the defect is
+  structurally untestable.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`CollectToolResults`, `HarvestToolCalls`,
+  `AttachPendingToolCalls` — all reached from `GetHistoryAsync`),
+  `tests/Agent42.Tests/FakeChatClient.cs` (`NarratingCallTrigger`, `NarratedCallText`, the narrating branch in
+  `GetStreamingResponseAsync`), `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`ANarratedToolCall_StillCarriesItsResult` — fails if the join goes back to forward-only),
+  `.agentic/decisions/0080-replay-tool-calls-from-history.md`
+- **Verified:** 2026-09-20
+
 ### Image request shape: send NO `response_format` (gpt-image-1 400s), and NO `api-version` (Azure won't work)
 
 - **`response_format` must NOT be sent.** The current OpenAI image model **`gpt-image-1` rejects

@@ -75,7 +75,8 @@ public sealed class ToolCallFoldAssetsTests(StaticAssetsServerFixture fixture)
     /// <para>The <c>done</c> arm covers a normal turn, but three others never see a <c>done</c>: a voice
     /// barge-in (<c>AbortError</c>, ADR 0037), a stream that died and was recovered (ADR 0046), and an
     /// outright failure. Each would otherwise leave a pulsing lamp over an expanded chain of chips —
-    /// permanently, since tool chips are live-only and <c>renderTurns</c> never replays them.</para>
+    /// until a reload — which, since ADR 0080, does replay the chips and does heal the group. This is what
+    /// settles it without one.</para>
     ///
     /// <para>The <c>finally</c> is the only construct that covers all four, so that is what this pins —
     /// scoped to the block, because <c>finishToolCalls</c> is legitimately called from the done arm too
@@ -119,6 +120,72 @@ public sealed class ToolCallFoldAssetsTests(StaticAssetsServerFixture fixture)
         // it is the destructuring pattern and the brace-depth extractor would stop at its close.
         var complete = CodeOnly(Section(app, "export function completeToolCall", "export function finishToolCalls"));
         Assert.Contains("item.closest(\".msg__toolgroup\")", complete);
+    }
+
+    /// <summary>
+    /// ADR 0080 AC7 — <b>both</b> painters of a stored <c>ChatTurn</c> replay the turn's tool calls,
+    /// through the one shared helper.
+    ///
+    /// <para><c>renderTurns</c> is the obvious one (a reopened chat, and the offline-cache replay).
+    /// <c>recoverPersistedReply</c> is the one that gets missed: it re-reads the same
+    /// <c>/messages</c> payload after a stream died (ADR 0046) and repaints into an already-rendered
+    /// bubble. ADR 0046 justified its missing chips by equivalence with a reload — once a reload replays
+    /// them, that equivalence only holds if recovery replays them too.</para>
+    ///
+    /// <para>The <c>renderTurns</c> marker is the full signature deliberately: <c>shared/viewer.js</c>
+    /// has a <c>renderTurns</c> of its own. It is outside <c>/js/</c> and so is not in this corpus today,
+    /// but a bare name would be a trap the day that changes.</para>
+    /// </summary>
+    [Fact]
+    public async Task BothHistoryPainters_ReplayToolCalls()
+    {
+        var app = await fixture.GetAppScriptAsync();
+
+        Assert.Contains("replayToolCalls",
+            CodeOnly(StaticAssetsServerFixture.Body(app, "function renderTurns(id, turns)")));
+        Assert.Contains("replayToolCalls",
+            CodeOnly(StaticAssetsServerFixture.Body(app, "async function recoverPersistedReply")));
+    }
+
+    /// <summary>
+    /// ADR 0080 AC8 — every replayed call is completed, so none can pulse forever.
+    ///
+    /// <para>A tool that returned null replays with a null result, and so does any call the history holds
+    /// no result for. Gate <c>completeToolCall</c> on that result and the chip stays <c>is-running</c> in a
+    /// transcript that is finished — <c>finishToolCalls</c> clears the GROUP's lamp, not the chip's. So
+    /// the call must be unconditional, which is what the negative assertion pins: the helper never
+    /// inspects the result at all.</para>
+    ///
+    /// <para><c>CodeOnly</c> is required, not decorative — the comment above the loop explains this exact
+    /// rule and names <c>toolResult</c> while doing so.</para>
+    /// </summary>
+    [Fact]
+    public async Task EveryReplayedCall_IsCompleted()
+    {
+        var app = await fixture.GetAppScriptAsync();
+
+        var replay = CodeOnly(StaticAssetsServerFixture.Body(app, "export function replayToolCalls"));
+        Assert.Contains("completeToolCall", replay);
+        Assert.DoesNotContain("toolResult", replay);
+    }
+
+    /// <summary>
+    /// ADR 0080 AC9 — a recovered turn does not double-render chips it already painted live.
+    ///
+    /// <para>Neither primitive is idempotent: <c>addToolCall</c> appends a chip unconditionally and
+    /// <c>completeToolCall</c> appends a result body unconditionally, so a naive loop over a bubble that
+    /// already holds pre-disconnect chips duplicates the chips AND gives the finished ones two results.
+    /// The helper therefore keys on the call id and skips only what is already <c>is-done</c> — which is
+    /// also what lets it heal a chip the disconnect left running.</para>
+    /// </summary>
+    [Fact]
+    public async Task ReplayDeduplicates_ByCallId()
+    {
+        var app = await fixture.GetAppScriptAsync();
+
+        var replay = CodeOnly(StaticAssetsServerFixture.Body(app, "export function replayToolCalls"));
+        Assert.Contains("data-call-id", replay);
+        Assert.Contains("is-done", replay);
     }
 
     /// <summary>

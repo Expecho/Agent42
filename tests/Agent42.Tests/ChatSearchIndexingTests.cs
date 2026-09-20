@@ -143,6 +143,11 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/search-noduplicates-conv");
 
         await CollectAsync(agent.ChatAsync("first duplicable turn", null));
+        // A TOOL-CALLING turn in the middle (ADR 0080). Tool calls are projected onto an existing
+        // assistant turn and must add no turn of their own — if they ever did, the live path and
+        // ReindexAsync would number everything after this point differently and, because the ordinal is
+        // half of the Cosmos document id (ADR 0061), silently double-index forever without throwing.
+        await CollectAsync(agent.ChatAsync("look up a duplicable fact", null));
         await CollectAsync(agent.ChatAsync("second duplicable turn", null));
 
         var afterLive = await _reader.SearchAsync(user, "duplicable", 100);

@@ -169,6 +169,6 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Calendar: now an external MCP server (0053 superseded) | 0063 |
 | Push: away replies, model-invoked | 0028, 0075 |
 | Conversations: incognito, share links, follow-ups, pins, groups, chat search, stream recovery, stop generation | 0034, 0035, 0036, 0045, 0046, 0047, 0061, 0073, 0078 |
-| PWA and UI: share target, offline cache, composer, topbar, long press, prefs rail, tool-call folding | 0023, 0032, 0043, 0044, 0052, 0065, 0072 |
+| PWA and UI: share target, offline cache, composer, topbar, long press, prefs rail, tool-call folding | 0023, 0032, 0043, 0044, 0052, 0065, 0072, 0080 |
 | Config health tab | 0029 |
 | Layout and quality: feature folders, ES modules, gates, complexity, test clusters | 0039, 0040, 0041, 0050, 0051, 0055 |

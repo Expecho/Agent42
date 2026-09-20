@@ -122,8 +122,9 @@ export function addCopyButton(msg, rawText) {
   bubble.appendChild(btn);
 }
 
-// Marks a turn the user stopped (ADR 0078). Live-only, like tool chips and reasoning: a reload shows the
-// partial reply as ordinary text, because nothing about "stopped" is persisted.
+// Marks a turn the user stopped (ADR 0078). Live-only, like reasoning (ADR 0071) and the usage line — but
+// no longer like tool chips, which ADR 0080 moved out of that set. A reload shows the partial reply as
+// ordinary text, because nothing about "stopped" is persisted.
 //
 // The two branches are not cosmetic. With text, the note goes inside the bubble — after the copy button,
 // which captured the raw reply by closure, so the note can never end up on the clipboard. Without text,
@@ -312,6 +313,33 @@ export function finishToolCalls(msg) {
   if (!group) return;
   group.classList.remove("is-running");
   if (group.classList.contains("is-grouped")) group.open = false;
+}
+
+// Repaints a finished turn's tool chips from the history the server projected (ADR 0080), so a reopened
+// chat shows the same folded section the live turn showed. THE one replay path, shared by both painters
+// of a stored ChatTurn: renderTurns (conversations.js — a reopened chat, and the offline-cache replay)
+// and recoverPersistedReply (send.js — a turn whose stream died, ADR 0046).
+//
+// That second caller is why the de-dupe exists and why it branches on three states rather than looping.
+// Its bubble may ALREADY hold chips that arrived before the disconnect, and neither primitive is
+// idempotent: addToolCall appends unconditionally, so re-adding duplicates the chip, and completeToolCall
+// appends its result block unconditionally, so re-completing a finished chip gives it two result bodies.
+// Skipping only the chips that are already done also HEALS the one the disconnect left pulsing.
+//
+// completeToolCall runs for every call, never conditionally on a result being present. A tool that
+// returned null has no result to show, and a call the history holds no result for at all would otherwise
+// replay stuck is-running, pulsing forever in a finished transcript — finishToolCalls clears the group's
+// lamp, not the chip's. Passing every call through marks it done and simply appends no result body.
+export function replayToolCalls(msg, calls) {
+  for (const call of calls ?? []) {
+    const existing = call.toolCallId
+      ? msg.querySelector(`.tool-call[data-call-id="${CSS.escape(call.toolCallId)}"]`)
+      : null;
+    if (existing?.classList.contains("is-done")) continue;
+    if (!existing) addToolCall(msg, call);
+    completeToolCall(msg, call);
+  }
+  finishToolCalls(msg);
 }
 
 function appendToolIo(item, label, json) {

@@ -1199,16 +1199,35 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             return Task.FromResult<IReadOnlyList<ChatTurn>>([]);
         }
 
+        // Results FIRST, over the whole history, because a call's result never arrives on the message
+        // that made the call — it comes back on a later tool-role message. Matching them in one forward
+        // pass would drop the result of any call that shared a message with text: that message projects
+        // to a real turn, the chain flushes onto it immediately, and the result then arrives with nothing
+        // left to match against. A model emitting `content` and `tool_calls` together is an ordinary
+        // provider shape, so that is a silently empty chip on a common path, not a corner case.
+        var toolResults = CollectToolResults(messages);
+
         var turns = new List<ChatTurn>();
         var userTurnIndex = 0;
+        // The tool-call chain currently open: filled as the walk passes the assistant message that made
+        // the calls, flushed onto the assistant turn that finally speaks (ADR 0080). Nothing here adds,
+        // removes or reorders a turn — search ordinals (ADR 0061) and stream recovery (ADR 0046) both
+        // count this list.
+        var pendingToolCalls = new List<ChatToolCall>();
         foreach (var message in messages)
         {
+            // Harvest BEFORE projecting, so a model that emits text and a call in the SAME message
+            // gets its own chips — which is where the live renderer puts them (above that bubble).
+            HarvestToolCalls(message, pendingToolCalls, toolResults);
+
             // The two roles are projected separately because they resolve their images differently:
             // a user turn joins TurnAttachments POSITIONALLY (so it must advance the index even when
             // the turn is then skipped), while an assistant turn looks its image up by id.
             var turn = message.Role == ChatRole.User
                 ? ProjectUserTurn(message, ref userTurnIndex)
                 : message.Role == ChatRole.Assistant ? ProjectAssistantTurn(message) : null;
+
+            turn = AttachPendingToolCalls(message, turn, pendingToolCalls);
 
             if (turn is not null)
             {
@@ -1217,6 +1236,73 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
 
         return Task.FromResult<IReadOnlyList<ChatTurn>>(turns);
+    }
+
+    // Every tool result in the history, keyed by the call it answers. Whole-history and position-blind on
+    // purpose — see the call site. Call ids are unique per call, so the last writer only ever wins over an
+    // identical entry.
+    private static Dictionary<string, string?> CollectToolResults(List<ChatMessage> messages)
+    {
+        var results = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var message in messages)
+        {
+            foreach (var content in message.Contents)
+            {
+                if (content is FunctionResultContent result)
+                {
+                    results[result.CallId] = SerializeOrNull(result.Result);
+                }
+            }
+        }
+
+        return results;
+    }
+
+    // One message's tool calls, harvested into the open chain with their results already joined on.
+    // Serialized with the same SerializeOrNull the live stream uses, so a replayed payload is
+    // byte-identical to the one that was streamed.
+    //
+    // A call with no entry in <paramref name="results"/> keeps a null ToolResult and still replays, as a
+    // completed chip with no result body — see ChatToolCall.
+    private static void HarvestToolCalls(
+        ChatMessage message, List<ChatToolCall> pending, Dictionary<string, string?> results)
+    {
+        foreach (var content in message.Contents)
+        {
+            if (content is FunctionCallContent call)
+            {
+                pending.Add(new ChatToolCall(
+                    call.CallId,
+                    call.Name,
+                    SerializeOrNull(call.Arguments),
+                    results.GetValueOrDefault(call.CallId)));
+            }
+        }
+    }
+
+    // Flushes the open chain onto the assistant turn that answers it, emptying it either way.
+    //
+    // The one deliberate drop (ADR 0080): a chain still open at a USER turn is discarded, because its
+    // reply never materialised and its chips have no bubble to live in. A call whose result is missing is
+    // NOT dropped — it flushes with a null ToolResult and the frontend completes it anyway, rather than
+    // leaving the chip pulsing in a finished transcript.
+    private static ChatTurn? AttachPendingToolCalls(
+        ChatMessage message, ChatTurn? turn, List<ChatToolCall> pending)
+    {
+        if (message.Role == ChatRole.User)
+        {
+            pending.Clear();
+            return turn;
+        }
+
+        if (turn is null || pending.Count == 0)
+        {
+            return turn;
+        }
+
+        var calls = pending.ToArray();
+        pending.Clear();
+        return turn with { ToolCalls = calls };
     }
 
     // One user turn, or null when it carries neither text nor an image and should not be shown.

@@ -10,7 +10,7 @@ import { currentLocationForSend } from "./location.js";
 import { applyModelAvailability } from "./models.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, refreshConversations } from "./sidebar.js";
-import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, finishToolCalls, markStopped, renderReasoning, renderSuggestions, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
+import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, finishToolCalls, markStopped, renderReasoning, renderSuggestions, replayToolCalls, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
 
 export let streaming = false;
 // Stops live speech dictation. Reassigned via setStopSpeech() by wireSpeech() in speech.js when
@@ -76,6 +76,10 @@ async function recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)
       // An assistant turn may carry a generated image (ADR 0020) — the live `image` event for it
       // went down with the stream, so re-render from the history exactly as a reload would.
       for (const att of last.attachments ?? []) addAgentImage(agentMsg, convId, att.id, att.fileName);
+      // Same for the tool calls (ADR 0080). This bubble may already hold the chips that arrived BEFORE
+      // the disconnect, which is why the shared helper de-dupes by call id rather than appending — and
+      // why a chip the disconnect left pulsing gets healed here rather than staying stuck.
+      replayToolCalls(agentMsg, last.toolCalls);
       cachePut("messages:" + convId, turns); // keep the offline mirror in step (ADR 0032)
       return true;
     }
@@ -278,9 +282,10 @@ export async function send(prompt) {
     // heals it, since reasoning is never persisted and so never replayed. A no-op on a turn that never
     // reasoned, and idempotent, so the `done` arm calling it first costs nothing.
     finishReasoning(agentMsg);
-    // The tool group settles on exactly the same four tails and for the same reason: an interrupted or
-    // failed turn would otherwise be left with a pulsing lamp over an expanded chain of chips, and tool
-    // chips are live-only (renderTurns never replays them), so nothing heals it either.
+    // The tool group settles on exactly the same four tails and for nearly the same reason: an interrupted
+    // or failed turn would otherwise be left with a pulsing lamp over an expanded chain of chips. Since
+    // ADR 0080 a reload DOES heal it — but only a reload, and this is what settles it in the session the
+    // user is actually sitting in.
     finishToolCalls(agentMsg);
     document.removeEventListener("visibilitychange", onVisibilityChange);
     sendAbort = null;
