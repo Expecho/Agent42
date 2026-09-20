@@ -10,6 +10,8 @@ namespace Agent42.Backend;
 public record ShareLinkResponse(string? Url);
 
 // The public GET /api/share/{token} payload (ADR 0035): the conversation title, the agent name when it is an
-// agent chat (else null), and the full current read-only history (the same ChatTurn shape the authenticated
-// /messages route returns).
+// agent chat (else null), and the full current read-only history. Reuses the ChatTurn DTO the authenticated
+// /messages route returns, but NOT with the same contents: the endpoint strips ToolCalls before responding
+// (ADR 0080 — tool arguments and results are withheld from a public link). Anything added to ChatTurn from
+// now on has to say which side of that line it falls on.
 public record SharedConversationResponse(string Title, string? AgentName, IReadOnlyList<ChatTurn> Turns);

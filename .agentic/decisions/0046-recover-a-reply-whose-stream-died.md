@@ -79,9 +79,11 @@ socket mid-reply with `SO_LINGER 0`, and asserts the reply lands in the history 
 - **An incognito chat is never recovered.** ADR 0034 turns are never written, so `recoverPersistedReply`
   returns immediately — otherwise every ephemeral failure would poll for half a minute for something
   that cannot exist.
-- **A recovered turn loses its live-only detail**: tool-call rows already rendered stay, but ones that
-  arrived after the disconnect, the token-usage line and the ADR 0036 follow-up chips do not come back.
-  That is exactly what a reload gives, and the reply itself is complete.
+- **A recovered turn loses its live-only detail**: the token-usage line and the ADR 0036 follow-up chips do
+  not come back. That is exactly what a reload gives, and the reply itself is complete. *(Tool-call rows
+  were in that list until ADR 0080. They now come back — recovery calls the same `replayToolCalls` helper a
+  reload does, which is what keeps the equivalence claimed here true. It is in fact a strict improvement:
+  re-completing anything not already done **heals** a chip the disconnect left pulsing.)*
 - **A turn slower than ~30 s still shows the error.** Self-healing rather than wrong: the conversation is
   in the sidebar and opening it renders the reply.
 - **Abandoning a turn has never saved the generation**, and this decision now depends on that. Closing a

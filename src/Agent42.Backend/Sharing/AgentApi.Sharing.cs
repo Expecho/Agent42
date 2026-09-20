@@ -49,7 +49,8 @@ public static partial class AgentApi
 
         // The shared conversation's title, optional agent name, and full CURRENT history (a live read-only view:
         // future turns appear until the owner revokes). Reuses the ChatTurn/AttachmentRef DTOs the authenticated
-        // /messages route returns (AttachmentRef.BlobPath stays [JsonIgnore] — the page only ever gets ids).
+        // /messages route returns (AttachmentRef.BlobPath stays [JsonIgnore] — the page only ever gets ids),
+        // MINUS the tool calls — see the strip below.
         app.MapGet("/api/share/{token}", async (string token, IGrainFactory grains) =>
         {
             var target = await grains.GetGrain<IShareLinkDirectoryGrain>(ShareToken.Hash(token)).ResolveAsync();
@@ -59,6 +60,15 @@ public static partial class AgentApi
             }
 
             var turns = await grains.GetGrain<IAgentGrain>(AgentKey(target.UserId, target.ConversationId)).GetHistoryAsync();
+
+            // Tool calls are withheld from a public link (ADR 0080). Their arguments and results carry search
+            // queries, fetched URLs and MCP payloads; widening a public link to include them is an ADR 0013
+            // egress decision that was declined. Stripped SERVER-side and not by [JsonIgnore]: the viewer
+            // ignoring the field is not the same as not sending it (it would still be one DevTools tab away),
+            // and [JsonIgnore] would hide it from the OWNER's /messages response too, which is where the
+            // replay this strip exists to limit actually happens.
+            turns = [.. turns.Select(turn => turn with { ToolCalls = null })];
+
             var info = (await grains.GetGrain<IConversationIndexGrain>(target.UserId).GetConversationsAsync())
                 .FirstOrDefault(c => c.Id == target.ConversationId);
             return Results.Json(new SharedConversationResponse(info?.Title ?? "Shared conversation", info?.AgentName, turns));

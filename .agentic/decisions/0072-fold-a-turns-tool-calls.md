@@ -11,8 +11,9 @@ amends: []
 # A turn's tool calls fold into one counted disclosure once there are more than three
 
 > **Do not write "following ADR 0071".** The reasoning disclosure (0071) and this one look alike — both are
-> a `<details>` above `.prose`, both are live-only, both are settled from `send.js`'s `done` arm *and* its
-> `finally` — but their default states are **opposite for a reason**. Reasoning is collapsed from the first
+> a `<details>` above `.prose`, both are settled from `send.js`'s `done` arm *and* its `finally` — but their
+> default states are **opposite for a reason**. (They were also both live-only when this was written; ADR
+> 0080 replays the tool group from history, so that half of the resemblance is gone too.) Reasoning is collapsed from the first
 > delta because the thinking is not what the user asked for; a tool group is **open while it streams**,
 > because the running chips are the only progress indicator a long tool chain has. Copying 0071's
 > collapsed-on-creation shape here would hide exactly the thing the user is waiting on.
@@ -23,9 +24,10 @@ Since the feature shipped, every `toolCallStart` has appended its own chip to a 
 (`thread.js`), one per call, for the life of the turn. That was written when a turn made one or two calls.
 It no longer does: an MCP server (ADR 0024/0058), a seeded-URL read (ADR 0067) or a web-search-then-fetch
 chain (ADR 0011/0027) routinely produce five or more in a single turn, and on a phone the reply is then
-below the fold behind a wall of chips the user has already read. Tool chips are **live-only** — `renderTurns`
-never replays them — so the clutter is confined to the turn being streamed, which is also the turn the user
-is staring at.
+below the fold behind a wall of chips the user has already read. At the time of this ADR tool chips were
+**live-only** — `renderTurns` never replayed them — so the clutter was confined to the turn being streamed,
+which is also the turn the user is staring at. **ADR 0080 ended that**: a reloaded chat now replays the same
+section, which is affordable precisely because of the fold this ADR introduced.
 
 ## Decision
 
@@ -46,8 +48,10 @@ it crossed the threshold**. A turn of three calls or fewer therefore renders exa
   turn, to solve a problem that turn does not have.
 - **Collapse as soon as the threshold is crossed, mid-stream.** Rejected for the reason in the callout
   above: during the turn the chips *are* the progress bar.
-- **Cap the list and drop the oldest chips.** Rejected — a tool call that scrolled away is unrecoverable
-  (nothing persists it), and the folded summary keeps every one of them one click away instead.
+- **Cap the list and drop the oldest chips.** Rejected — the folded summary keeps every one of them one
+  click away instead. *(The reason originally given here, "a tool call that scrolled away is unrecoverable
+  (nothing persists it)", was wrong: `FunctionCallContent`/`FunctionResultContent` have been in the session
+  all along. ADR 0080 projects them out. The rejection stands on its remaining half.)*
 
 ## Consequences
 
@@ -59,7 +63,10 @@ it crossed the threshold**. A turn of three calls or fewer therefore renders exa
   `open = false` in both `toolGroup` and `syncToolGroup`.
 - `finishToolCalls` is wired into the `finally` as well as the `done` arm, for the reason ADR 0071 gives for
   `finishReasoning`: three tails never see a `done` (a voice barge-in, ADR 0037; a recovered stream, ADR
-  0046; an outright failure), and nothing heals a stuck group afterwards because chips are never replayed.
+  0046; an outright failure), and within the live turn nothing else settles the group. *(The reason first
+  given here — "chips are never replayed" — no longer holds after ADR 0080: a reload, and now a recovered
+  stream, do replay and do heal a stuck group. The `finally` stays anyway, because it is what settles the
+  group **during the session the user is in**, without waiting for a reload.)*
   The guard for this is **narrowed to `send`'s own body first** — three other modules contain a `finally`,
   and a bare `"} finally {"` marker can anchor in one of them and widen the slice far enough to swallow
   `send.js`'s `import` line, which names `finishToolCalls` and makes the assertion vacuous. That was
@@ -75,8 +82,8 @@ it crossed the threshold**. A turn of three calls or fewer therefore renders exa
 - The offline browser leg **was** run (headless Chrome over CDP against DevHost, both themes): a real
   one-call turn through `send.js` renders flat and ungrouped exactly as before (`summaryDrawn: "none"`,
   `grouped: false`), a synthetic five-call turn streams open (`is-running`, lamp pulsing, `"5 tool calls"`)
-  and folds to `open: false` with every chip hidden and the lamp green. What DevHost cannot show is a real
-  model producing more than two tool calls in one turn — `CannedChatClient` tops out at the ADR 0067 seeding
-  chain — so the above-threshold path was driven through the shipped `thread.js` functions directly rather
-  than off a real stream. Deliberately not fixed by adding a canned five-call demo: that is DevHost surface
-  bought for one screenshot.
+  and folds to `open: false` with every chip hidden and the lamp green. The above-threshold path was driven
+  through the shipped `thread.js` functions directly rather than off a real stream, because at the time
+  `CannedChatClient` topped out at the ADR 0067 seeding chain. *(Stale as of ADR 0075: the push-cap demo
+  emits `MaxPushesPerTurn + 1` = four calls in one turn on the trigger `"spam notifications"`
+  (`CannedChatClient.cs`), which is above the threshold. ADR 0080's browser leg used it.)*
