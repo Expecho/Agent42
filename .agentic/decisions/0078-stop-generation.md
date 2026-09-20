@@ -10,6 +10,15 @@ amends: [0037, 0043]
 
 # A stop button that cancels the turn server-side and keeps what it streamed
 
+> **Amended by [ADR 0079](0079-half-duplex-voice-on-speakers.md) (2026-09-20) — the stop button gains a
+> second effect in voice mode.** Stopping the server does not stop the *speaking*: a voice turn plays out
+> of a queue of sentences already fetched, so a stopped reply kept being read aloud. `voice.js` adds its
+> own listener on `#stopBtn` that cancels playback and hands the mic back. It deliberately does **not**
+> call `stopGeneration` — the handler in `send.js` is what does that, and two handlers would mean two
+> POSTs. Since ADR 0079 closes the mic while the assistant speaks, this button is also one of the three
+> gestures that replace talking over a reply. Everything here stays authoritative, including the
+> abort-before-the-awaited-stop ordering, which is what makes the voice interrupt immediate.
+
 ## Context
 
 The chat had no way to stop a reply. The client-side half of one already existed — `sendAbort`, the

@@ -55,6 +55,30 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   upstream precedent: `react-speech-recognition` `RecognitionManager.js`
 - **Verified:** 2026-07-09
 
+### Muting the voice loop's mic: `abort()` not `stop()`, gate the keep-alive, and a stuck turn is now deaf
+
+- **Claim:** voice mode closes the mic while the assistant speaks (ADR 0079), and four things hold that
+  together — each of them the kind of detail a tidy-up removes. **(1)** `muteMic` calls `vr.abort()`, never
+  `vr.stop()`: `stop()` finalizes and still delivers the trailing final of the utterance just auto-sent,
+  which is half of what the mute exists to silence. **(2)** The mute happens in `trySubmit`, **at
+  auto-send**, not when TTS starts — the other half arrives during `thinking`, before a single token. **(3)**
+  ADR 0037's `end` keep-alive (`if (active) vr.start()`) restarts recognition whenever Chrome ends it; it
+  **must** stay gated on `!muted`, or the mic re-opens ~a second after closing and the whole feature is
+  silently inert while every source-text guard still passes. That same handler is the self-heal for
+  `unmuteMic`'s `start()` throwing while the abort's `end` is still in flight. **(4)** `maybeArmListening`
+  has to **retry** — before ADR 0079 losing the "stream done, nothing speaking" race only mislabelled the
+  state and the user could still talk; now it leaves the loop **deaf**, so an empty reply or a late-settling
+  stream must recover on its own. And the detector is a **label** heuristic over strictly the
+  `deviceId === "default"` output: matching any listed device keeps the mic live whenever a headset is
+  merely connected while sound comes out of the speakers. Unknown always means speakers.
+  **Runtime-unverified** — no browser was reachable when it was written, and `enumerateDevices()` labels
+  are worded by the OS, so the `console.debug("[voice] audio output:", …)` line is the first thing to read
+  if muting misfires. Like all the speech wiring, the C# guards are source-text only (no JS runner in repo).
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/voice.js` (`muteMic`, `unmuteMic`, `refreshOutputKind`,
+  `maybeArmListening`, the `end` handler), `tests/Agent42.Tests/VoiceConversationAssetsTests.cs`,
+  `.agentic/decisions/0079-half-duplex-voice-on-speakers.md` (its Unverified section)
+- **Verified:** 2026-09-20
+
 ### A browser's upload Content-Type is unreliable for documents — resolve by extension
 
 - **Claim:** the document-upload handler must NOT trust `IFormFile.ContentType` alone. Windows has
