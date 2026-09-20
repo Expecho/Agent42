@@ -302,6 +302,108 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains(history, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
     }
 
+    // ADR 0080 AC1 — the projection. A tool-calling turn's calls come back ATTACHED to the assistant
+    // reply that answered them, with name, input and result, so a reopened chat can repaint the chips
+    // the live turn showed. The payloads are the same strings the stream emitted — both sides go through
+    // SerializeOrNull — which is what lets the replay path hand them straight to addToolCall with no
+    // mapping layer.
+    [Fact]
+    public async Task History_CarriesTheTurnsToolCalls()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("tool-replay-user/tool-replay-conv");
+
+        await CollectAsync(agent.ChatAsync("look up the answer", null));
+
+        var history = await agent.GetHistoryAsync();
+
+        var assistant = Assert.Single(history.Where(t => t.Role == "assistant"));
+        var call = Assert.Single(assistant.ToolCalls!);
+        Assert.Equal("web-search-call-1", call.ToolCallId);
+        Assert.Equal(ToolCatalog.WebSearch, call.ToolName);
+        Assert.Contains("look up the answer", call.ToolInput);
+        Assert.False(string.IsNullOrWhiteSpace(call.ToolResult));
+
+        // The prompt is untouched: chips belong to the reply, never to the user turn.
+        Assert.All(history.Where(t => t.Role == "user"), t => Assert.Null(t.ToolCalls));
+    }
+
+    // ADR 0080 AC2 — the load-bearing invariant. Attaching tool calls must never add, remove or reorder a
+    // turn: ProjectForSearch numbers turns by their POSITION in this list and that ordinal is half of the
+    // Cosmos document id (ADR 0061), while recoverPersistedReply gates on `turns.length >= priorTurns + 2`
+    // (send.js, ADR 0046). Neither throws when the count shifts — they just diverge silently, forever.
+    //
+    // Four calls in one turn, from four separate assistant messages, must land as ONE assistant turn
+    // carrying four ToolCalls. Without a subscribed device the push tool is never registered and the fake
+    // emits no calls at all, so the setup call is what keeps this non-vacuous (precedent: PushTool_* above).
+    [Fact]
+    public async Task AMultiCallTurn_AddsNoExtraTurns()
+    {
+        await SubscribeDeviceAsync("tool-count-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("tool-count-user/tool-count-conv");
+
+        await CollectAsync(agent.ChatAsync(FakeChatClient.PushCapTrigger, null));
+
+        var history = await agent.GetHistoryAsync();
+
+        Assert.Equal(2, history.Count);
+        Assert.Equal("user", history[0].Role);
+        Assert.Null(history[0].ToolCalls);
+        Assert.Equal("assistant", history[1].Role);
+
+        var calls = history[1].ToolCalls!;
+        Assert.Equal(PushToolLimits.MaxPushesPerTurn + 1, calls.Count);
+        // Distinct ids, each matched to its OWN result — four calls sharing one id would collapse into
+        // one chip in the browser and mismatch every result on the way through.
+        Assert.Equal(calls.Count, calls.Select(c => c.ToolCallId).Distinct().Count());
+        Assert.All(calls, c => Assert.False(string.IsNullOrWhiteSpace(c.ToolResult)));
+    }
+
+    // ADR 0080 — a model that NARRATES while it calls still gets a chip with its result.
+    //
+    // The regression this pins: when the call rides on an assistant message that also carries text, that
+    // message projects to a real turn, so a forward-only match flushes the call the moment it is seen —
+    // and the result, which arrives on the NEXT (tool-role) message, then has nothing left to match
+    // against and is dropped. Silently: the chip replays with an input and no result, forever. A model
+    // returning `content` alongside `tool_calls` is an ordinary provider shape, not a corner case, so the
+    // projection collects results over the whole history first rather than in the same forward pass.
+    //
+    // Caught by the critic pass, not by the plan — its AC table had no criterion for this shape.
+    [Fact]
+    public async Task ANarratedToolCall_StillCarriesItsResult()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("tool-narrate-user/tool-narrate-conv");
+
+        await CollectAsync(agent.ChatAsync(FakeChatClient.NarratingCallTrigger, null));
+
+        var history = await agent.GetHistoryAsync();
+
+        // The chips belong to the turn that made them — the narrating bubble, not the later answer.
+        var narrating = Assert.Single(history.Where(t => t.ToolCalls is { Count: > 0 }));
+        Assert.Contains(FakeChatClient.NarratedCallText, narrating.Text);
+
+        var call = Assert.Single(narrating.ToolCalls!);
+        Assert.Equal(ToolCatalog.WebSearch, call.ToolName);
+        Assert.False(string.IsNullOrWhiteSpace(call.ToolInput));
+        Assert.False(string.IsNullOrWhiteSpace(call.ToolResult));
+    }
+
+    // ADR 0080 AC6 — degradation is free, and asserted rather than engineered. Moving a tool-calling
+    // conversation onto a tools-less model runs StripToolHistory (ADR 0013), which removes the tool
+    // content from the session outright; the projection then finds nothing to attach and the reply
+    // renders exactly as it did before this change. No code guards this — this test does.
+    [Fact]
+    public async Task AfterStrippingToolHistory_HistoryCarriesNoToolCalls()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("tool-strip-user/tool-strip-conv");
+
+        await CollectAsync(agent.ChatAsync("look up the answer", null));
+        Assert.Contains(await agent.GetHistoryAsync(), t => t.ToolCalls is { Count: > 0 });
+
+        await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.NoToolsNoVisionModel));
+
+        Assert.All(await agent.GetHistoryAsync(), t => Assert.Null(t.ToolCalls));
+    }
+
     [Fact]
     public async Task ConversationIndex_ListsTouchedConversations_MostRecentFirst()
     {

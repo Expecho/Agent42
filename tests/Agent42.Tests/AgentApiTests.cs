@@ -1035,6 +1035,69 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.Null(afterOwner!.Url);
     }
 
+    // The conversation both tool-call share tests below drive. They share it deliberately: AC4's
+    // non-disclosure claim is only worth something about a history that demonstrably HAS tool calls,
+    // and AC5 is that precondition promoted to its own criterion.
+    private const string ToolCallShareConversation = "share-toolcalls-conversation";
+
+    // Drives one web_search turn through the HTTP chat route and returns the OWNER's view of it.
+    private async Task<List<ChatTurn>> ChatWithAToolCallAsync(string id)
+    {
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{id}", new ChatRequest("look up the answer", null)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync(); // drain so the turn persists
+        }
+
+        return (await Client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages"))!;
+    }
+
+    // ADR 0080 AC5: the owner's own /messages route carries the turn's tool calls — this is what the
+    // reopened chat replays its chips from.
+    [Fact]
+    public async Task Messages_CarryToolCalls()
+    {
+        var turns = await ChatWithAToolCallAsync(ToolCallShareConversation);
+
+        Assert.NotEmpty(turns);
+        // Not Single: this conversation is shared with ShareLink_DisclosesNoToolCalls, which drives a turn
+        // of its own, so the count depends on execution order — the claim under test does not.
+        var calls = turns.Where(t => t.ToolCalls is { Count: > 0 }).SelectMany(t => t.ToolCalls!).ToList();
+        Assert.NotEmpty(calls);
+        Assert.All(calls, call =>
+        {
+            Assert.Equal(ToolCatalog.WebSearch, call.ToolName);
+            Assert.False(string.IsNullOrWhiteSpace(call.ToolInput));
+            Assert.False(string.IsNullOrWhiteSpace(call.ToolResult));
+        });
+
+        // One assistant turn per tool-calling turn — the projection attaches, it never appends.
+        Assert.All(turns.Where(t => t.ToolCalls is not null), t => Assert.Equal("assistant", t.Role));
+    }
+
+    // ADR 0080 AC4: a PUBLIC share link discloses no tool calls. Tool arguments and results carry search
+    // queries, fetched URLs and MCP payloads; widening a public link to include them is an ADR 0013 egress
+    // extension that was declined (and it makes ADR 0035's "anything it contains" no longer literal).
+    //
+    // The owner's view is asserted FIRST, on the same conversation, so this cannot pass vacuously: over a
+    // tool-less history every Assert.Null below holds even with the strip deleted.
+    [Fact]
+    public async Task ShareLink_DisclosesNoToolCalls()
+    {
+        var owned = await ChatWithAToolCallAsync(ToolCallShareConversation);
+        Assert.Contains(owned, t => t.ToolCalls is { Count: > 0 });
+
+        var created = await (await Client.PostAsync($"/api/conversations/{ToolCallShareConversation}/share", null))
+            .Content.ReadFromJsonAsync<ShareLinkResponse>();
+        var shared = await Client.GetFromJsonAsync<SharedConversationResponse>(
+            $"/api/share/{TokenFromShareUrl(created!.Url!)}");
+
+        // Same turns — the strip removes a FIELD, never a turn — and not one tool call among them.
+        Assert.NotNull(shared);
+        Assert.Equal(owned.Count, shared!.Turns.Count);
+        Assert.All(shared.Turns, t => Assert.Null(t.ToolCalls));
+    }
+
     // An unknown/garbage token fails closed → 404 (never discloses existence), on both public routes.
     [Fact]
     public async Task ShareLink_UnknownToken_Returns404()

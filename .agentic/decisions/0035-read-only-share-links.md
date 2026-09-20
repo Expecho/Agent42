@@ -109,6 +109,10 @@ Mirror ADR 0022's two-grain split, plus a self-contained public viewer page.
   history** — text, images, and anything it contains (the user's street address per ADR 0012,
   document-derived assistant text, web-fetched content) — to **anyone holding the link, outside the Entra
   tenant**. The view is **live** (future turns appear until revoked); **revocation is the only control**.
+  *(No longer literal since ADR 0080: a turn's **tool calls** are projected onto `ChatTurn` for the owner
+  and stripped from this response. Their arguments and results carry search queries, fetched URLs and MCP
+  payloads, and widening a public link to include them was declined. They are the first `ChatTurn` content
+  deliberately withheld here; anything added must say which side of that line it falls on.)*
   Minting requires an explicit press, and deleting a conversation also revokes its link.
 - The public routes are a new **inbound** surface and, like `/api/agent-run`, must forever self-enforce +
   fail closed; the ingress carve-out is a deploy-time property (not unit-testable — TestServer has no Easy

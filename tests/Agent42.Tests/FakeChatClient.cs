@@ -240,7 +240,19 @@ public sealed partial class FakeChatClient : IChatClient
         var call = SelectToolCall(messages, options);
         if (call is not null)
         {
-            yield return new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent> { call });
+            // One assistant message carrying TEXT **and** the call, on the narrating trigger only. That is
+            // an ordinary provider shape (OpenAI returns `content` alongside `tool_calls`) and it is the
+            // one the ADR 0080 projection can get wrong: the message projects to a real turn, so a
+            // forward-only match would flush the call before its result arrives on the next tool message.
+            // Every other trigger keeps the historical call-only shape.
+            var contents = new List<AIContent>();
+            if (LastUserText(list)?.Contains(NarratingCallTrigger, StringComparison.OrdinalIgnoreCase) == true)
+            {
+                contents.Add(new TextContent(NarratedCallText));
+            }
+
+            contents.Add(call);
+            yield return new ChatResponseUpdate(ChatRole.Assistant, contents);
             yield break;
         }
 
@@ -671,6 +683,16 @@ public sealed partial class FakeChatClient : IChatClient
         return null;
     }
 
+    /// <summary>
+    /// Makes the assistant message that carries the tool call ALSO carry text, so the ADR 0080 history
+    /// projection is exercised against a model that narrates while it calls. Reuses the web_search call
+    /// from the trigger table; only the message SHAPE differs.
+    /// </summary>
+    public const string NarratingCallTrigger = "narrate and search";
+
+    /// <summary>The text that rides along with the call on <see cref="NarratingCallTrigger"/>.</summary>
+    public const string NarratedCallText = "Let me look that up for you.";
+
     /// <summary>The registered name of the model-invoked push tool (ADR 0075).</summary>
     public const string PushToolName = "send_push_notification";
 
@@ -932,6 +954,9 @@ public sealed partial class FakeChatClient : IChatClient
         ("read the broken document", _ => BuildReadBrokenWebDocumentCall()),
         ("read the manual", BuildReadWebDocumentCall),
         ("look up", BuildWebSearchCall),
+        // ADR 0080: same web_search call, but emitted on a message that also carries text (see the
+        // narrating branch in GetStreamingResponseAsync). Contains no earlier trigger as a substring.
+        ("narrate and search", BuildWebSearchCall),
         ("schedule a location check", _ => BuildLocationReminderCall()),
         ("where am i", _ => BuildGetCurrentLocationCall()),
         // send_push_notification (ADR 0075). Appended last and worded so none of them is a substring of any
