@@ -3336,8 +3336,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ### `reply` is NOT the persistence path — it feeds the follow-up call, and the two fail differently
 
+> **One exception since ADR 0078 (2026-09-20):** on the STOPPED branch `reply` *is* the persistence path,
+> because a cancelled Agent Framework run leaves the session empty and there is nothing else to write —
+> see "A cancelled Agent Framework run persists NOTHING". Everything below still holds for every other
+> turn, and the distinction it draws is what makes that exception safe to reason about.
+
 - **Claim:** `ChatCoreAsync` accumulates the assistant's text into a `reply` StringBuilder, and it is
-  natural — and wrong — to read that as "the turn being assembled for storage". It is not. `reply`'s only
+  natural — and wrong — to read that as "the turn being assembled for storage". It is not. Apart from the
+  stopped branch above, `reply`'s only
   consumers are `SuggestFollowUpsAsync` / `GenerateFollowUpsAsync` (ADR 0036); the session is persisted
   from `SerializeSessionAsync(_session)`, which Agent Framework fills from the response message
   **independently of anything `ProjectStreamedContent` does**. The first draft of the ADR 0071 plan built
@@ -3505,3 +3511,72 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/LocalBridgeTestSupport.cs` (`FakeBridgeHelper.HandleAsync` — the `-32601` answer),
   `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md` (Verification)
 - **Verified:** 2026-09-17
+
+### A cancelled Agent Framework run persists NOTHING — so a stopped turn is appended by hand, and `reply` becomes the persistence path
+
+- **Claim:** "cancel the model run, catch it, and let the code fall through to the existing persist" is the
+  obvious shape for a stop button, and it silently destroys the turn. **Measured on Agent Framework 1.19**
+  (spike, 2026-09-20: fake slow `IChatClient` + `InMemoryChatHistoryProvider` mirroring `BuildAgent`):
+  after cancelling `RunStreamingAsync` mid-stream, `SerializeSessionAsync` returns
+  `{"stateBag":{"InMemoryChatHistoryProvider":{"messages":[]}}}` — **empty, not partial: no user message
+  and no reply text.** The control run returns both messages. AF notifies the history provider only at
+  *end of run* (`NotifyProvidersOfNewMessagesAtEndOfRunAsync`); the cancellation path takes
+  `NotifyProvidersOfFailureAtEndOfRunAsync` and rethrows. **Cancelling during a tool call gives the same
+  empty session** — which also means a dangling `FunctionCallContent` is impossible here, the opposite of
+  the risk it looks like. Persisting at that point therefore writes the turn *away*, and since the
+  endpoint stamps the title **before** the turn runs, the result is the ADR 0070 shape: a conversation
+  listed with a title and no messages.
+  **So the turn is appended by hand**, by mutating the `List<ChatMessage>` that `TryGetInMemoryChatHistory`
+  hands back — the same list `AgentGrain.Retention.cs` prunes from. Measured to serialize, survive
+  serialize → JSON → deserialize, and arrive at the model in order on the next turn. Three things ride on
+  that append and are invisible at the call site: (1) **`reply` IS the persistence path on this one
+  branch** — the "`reply` is NOT the persistence path" entry stays true everywhere else, and this is its
+  single exception, because the framework hands us nothing else; (2) the append **bypasses both storage
+  filters**, which is safe only because the user message is the one `BuildUserTurnAsync` built (not an
+  injected `AIContextProvider` message) and `reply` accumulates text only (reasoning goes to its own
+  event) — state that, do not re-derive it; (3) `TurnAttachments` needs no attention because
+  `BuildUserTurnAsync` appended this turn's entry *before* the run, so appending the user message is what
+  **restores** the 1:1 positional join. The same fact kills the "just discard a stopped turn" option: it
+  would leave that entry dangling.
+  **`TryGetInMemoryChatHistory` returning false is harmless at every other call site and harmful here** —
+  falling through would commit an empty session over a conversation that had one, so this caller logs and
+  skips the persist instead.
+  **Mutation-checked:** replacing the append with `true` turns 7 of the 12 `StopGenerationTests` red.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`AppendStoppedTurnToSession`,
+  `TryPrepareStoppedTurn`, the call site's comment), `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs`
+  (the same list, and its header on the round-trip property),
+  `tests/Agent42.Tests/StopGenerationTests.cs`, `.agentic/decisions/0078-stop-generation.md`
+- **Verified:** 2026-09-20
+
+### The stop handle is NOT a turn-scoped field, an iterator cannot catch around a `yield`, and `StopAsync` must interleave
+
+- **Claim:** four traps in wiring cancellation into `AgentGrain`, none visible in the code that depends on
+  them. **(1) The handle cannot follow the turn-scoped-field ritual.** `_turnLocation`, `_ephemeral`,
+  `_interactiveTurn` and `_webDocumentIngested` carry a *value* and are blindly assigned per turn;
+  `_turnCts` carries the *identity of a running turn*, and two turns share one activation — `ChatAsync`
+  suspends between `yield return`s, so a fired reminder or an `EnqueuePromptAsync` run executes in the gap
+  (the same fact the `_turnLocation` entry rests on). Assign it blindly and a background turn steals the
+  handle, so the user's press cancels **that** turn instead; clear it blindly and one turn's disposal
+  faults another turn's live run; give `ReceiveReminder` the usual reset line and a reminder firing
+  mid-stream **silently disarms the stop button**. The shape that works is publish-by-identity
+  (`_turnCts ??= mine`, only when `_interactiveTurn`) and unpublish-by-identity
+  (`if (ReferenceEquals(_turnCts, mine))`), with **no** `ReceiveReminder` site — the one field in that
+  block deliberately absent from the reset ritual. **Mutation-checked:** dropping the `_interactiveTurn`
+  gate turns exactly one test red (`Stop_DoesNotCancelABackgroundTurn`), so that test is the whole guard.
+  **(2) `ChatCoreAsync` cannot catch the cancellation** — CS1626 forbids `yield return` inside a `try`
+  with a `catch` (a try/`finally` is fine), so the streaming loop had to move into its own iterator with
+  the catch wrapping `MoveNextAsync()` alone and every yield outside it. AF's own
+  `ChatClientAgent.RunCoreStreamingAsync` is built that way for the same reason. **(3) `StopAsync` must be
+  `[AlwaysInterleave]`** — on the interface declaration, which is where Orleans reads it — because a turn
+  has long stretches where the activation really is busy (before the first token, across a tool call) and
+  a plain call queues behind them; and it must **not** be `[OneWay]`, which returns before the grain runs
+  the method and swallows failures the client's fallback needs to see. **(4) `Cancel()` is not inert:**
+  it throws `ObjectDisposedException` after disposal and runs registered callbacks **inline on the grain's
+  thread**, so `CancelAsync()` inside a try/catch is what keeps a working button press from surfacing as a
+  failed grain call — and the unpublish must happen before the `using` disposes the source.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_turnCts` remarks, `StopAsync`,
+  `PublishStopHandle`, `UnpublishStopHandle`, `StreamModelReplyAsync`),
+  `src/Agent42.Agents/Conversations/IAgentGrain.cs` (`StopAsync`'s attributes and their remarks),
+  `tests/Agent42.Tests/StopGenerationTests.cs` (`Stop_DoesNotCancelABackgroundTurn`,
+  `Stop_AfterTheTurnEnded_DoesNotAffectTheNextTurn`), `.agentic/decisions/0078-stop-generation.md`
+- **Verified:** 2026-09-20

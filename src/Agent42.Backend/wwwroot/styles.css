@@ -1535,6 +1535,50 @@ body {
 .composer__voice[data-state="thinking"] { opacity: 0.85; }
 .composer__voice[data-state="speaking"] { animation: pulse 0.7s ease-in-out infinite; }
 
+/* stop generating (ADR 0078) — the mic's resting box, but it reads as live rather than available,
+   because it is only ever on screen while a reply is streaming.
+
+   Visibility is the `hidden` ATTRIBUTE, toggled by send.js, and that is deliberate: `opacity: 0`
+   removes the paint and keeps the hit test, which is the trap ADR 0052 paid for on the conversation
+   rows — a thumb on the right edge of the composer would have pressed a control nobody could see. */
+
+.composer__stop {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--amber-deep);
+  border-radius: 9px;
+  background: var(--amber-glow);
+  color: var(--amber);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.composer__stop:hover { background: var(--line-soft); }
+.composer__stop:active { transform: translateY(1px); }
+
+/* "Stopped." under a partial reply, inside the bubble. */
+
+.msg__stopped {
+  margin-top: 8px;
+  color: var(--ink-dim);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* The turn was stopped before the reply began, so there is no assistant bubble to put this in — and
+   deliberately so: a bubble here would break the 1:1 between rendered .msg elements and stored turns
+   that the ADR 0046 stream recovery measures against. Live-only, like tool chips and reasoning. */
+
+.thread__stopped {
+  margin: 4px 0 12px;
+  color: var(--ink-dim);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
 .composer__previews {
   display: flex;
   flex-wrap: wrap;

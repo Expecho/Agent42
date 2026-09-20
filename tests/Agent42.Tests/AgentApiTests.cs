@@ -175,6 +175,70 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.DoesNotContain(conversations, c => c.Id == "api-pin-does-not-exist");
     }
 
+    // Routing and idempotence only — this one stays green even if the handler never calls the grain, and
+    // that is all it claims. The stop itself is proved by the test below (over HTTP) and by
+    // StopGenerationTests (at the grain).
+    [Fact]
+    public async Task StopChat_Returns204()
+    {
+        // Silent for the same reason the pin route is (ADR 0078): by the time a press arrives the turn may
+        // have finished on its own, so "there was nothing to stop" is not an error the client can act on.
+        var stop = await Client.PostAsync("/api/chat/api-stop-nothing-in-flight/stop", content: null);
+
+        Assert.Equal(HttpStatusCode.NoContent, stop.StatusCode);
+    }
+
+    // ADR 0078 on the wire, which is the half no C# test above reaches: `stopped` is the field send.js
+    // dispatches on to mark the bubble, and nothing in the endpoint spells it — the record is serialized
+    // directly, so renaming the property would break the button with every other test still green. It also
+    // pins the nullable shape: a completed turn must OMIT the field, not send `"stopped":false`, or every
+    // per-token delta of every turn carries it.
+    [Fact]
+    public async Task ChatEndpoint_StreamsStoppedFlagOnlyWhenStopped()
+    {
+        const string conversationId = "api-stop-midstream-conversation";
+        var gates = Fixture.Cluster.Silos
+            .Select(silo => Fixture.Cluster.GetSiloServiceProvider(silo.SiloAddress)
+                .GetRequiredService<FakeChatClient>().OpenStreamGate())
+            .ToList();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/chat/{conversationId}")
+        {
+            Content = JsonContent.Create(new ChatRequest("tell me a long story", null)),
+        };
+
+        // ResponseHeadersRead, or the client would buffer the whole turn before we could stop it.
+        using var chat = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        chat.EnsureSuccessStatusCode();
+
+        await Task.WhenAny(gates.Select(g => g.Reached.Task));
+        var stop = await Client.PostAsync($"/api/chat/{conversationId}/stop", content: null);
+        Assert.Equal(HttpStatusCode.NoContent, stop.StatusCode);
+        foreach (var gate in gates)
+        {
+            gate.Release.TrySetResult();
+        }
+
+        var lines = (await chat.Content.ReadAsStringAsync())
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonDocument.Parse(line).RootElement)
+            .ToList();
+
+        var done = lines[^1];
+        Assert.Equal("done", done.GetProperty("type").GetString());
+        Assert.True(done.GetProperty("stopped").GetBoolean());
+
+        // Every other event omits it entirely — including the deltas, which is the reason the property is
+        // nullable rather than a plain bool.
+        Assert.DoesNotContain(lines[..^1], e => e.TryGetProperty("stopped", out _));
+
+        // And the partial reply is on the server, not just on the wire.
+        var history = await Client.GetFromJsonAsync<List<ChatTurn>>(
+            $"/api/conversations/{conversationId}/messages");
+        Assert.Equal(2, history!.Count);
+        Assert.DoesNotContain("help you today?", history[1].Text ?? "", StringComparison.Ordinal);
+    }
+
     // AC4 (ADR 0071): reasoning reaches the browser as its own NDJSON event, typed "reasoning".
     //
     // The WIRE SHAPE is the contract send.js dispatches on, and nothing in the endpoint spells it — the

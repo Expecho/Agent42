@@ -48,6 +48,51 @@ public sealed class ComposerAssetsTests
         Assert.DoesNotContain("composer__send", styles);
     }
 
+    // ADR 0078 — the stop control. It lives where the send button used to, which is only acceptable while
+    // it stays transient: served hidden, revealed for the duration of a turn. Anchored on its neighbours
+    // for the same anti-vacuity reason as AC1 above.
+    [Fact]
+    public async Task StopButton_IsServedHiddenAndLabelled()
+    {
+        var index = await _client.GetStringAsync("/");
+
+        Assert.Contains("id=\"stopBtn\"", index);
+        Assert.Contains("aria-label=\"Stop generating\"", index);
+        Assert.Contains("id=\"voiceBtn\"", index);
+
+        // `hidden`, not opacity: an invisible-but-clickable control on the right edge of the composer is
+        // the ADR 0052 hit-test trap, and a thumb would find it.
+        var stop = index[index.IndexOf("id=\"stopBtn\"", StringComparison.Ordinal)..];
+        Assert.Contains("hidden", stop[..stop.IndexOf('>')]);
+
+        var styles = await _client.GetStringAsync("/styles.css");
+        Assert.Contains("composer__stop", styles);
+        Assert.Contains("thread__stopped", styles);
+    }
+
+    // The point of the feature: the button reaches the SERVER. A stop that only aborted the fetch would
+    // leave the model running, the tokens spent and the whole reply persisted — so this assertion, not the
+    // button's existence, is what distinguishes ADR 0078 from the abort that was already there.
+    [Fact]
+    public async Task SendJs_StopsGenerationServerSide()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("/stop", app);
+        Assert.Contains("export async function stopGeneration", app);
+
+        // Revealed for the turn and hidden again when it ends, in send()'s own finally — the one place
+        // that runs on every tail (done, abort, recovery, failure).
+        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt)");
+        Assert.Contains("stopBtn.hidden = false", send);
+        Assert.Contains("stopBtn.hidden = true", send);
+
+        // The SERVER decides whether the turn counts as stopped, so the label follows the `done` event
+        // rather than the click: a press landing on the last token stopped nothing.
+        Assert.Contains("chunk.stopped", send);
+        Assert.Contains("markStopped(agentMsg, answer.length > 0)", send);
+    }
+
     // AC2 — no module still reaches for the removed element. The two positives prove models.js and
     // send.js are genuinely IN the corpus; without them a degraded import walk would pass this test
     // against a corpus that never contained either file (see the class remark).

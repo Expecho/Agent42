@@ -51,6 +51,34 @@ public interface IAgentGrain : IGrainWithStringKey
         UserLocation? location = null, bool ephemeral = false, bool interactive = true);
 
     /// <summary>
+    /// Stops the turn a browser is currently streaming from this activation (ADR 0078), and is a
+    /// silent no-op when there is none. The turn does not vanish: the model run is cancelled, and
+    /// whatever text had already streamed is written to the session as a normal turn — so what the
+    /// user saw is what the conversation keeps.
+    ///
+    /// <para><see cref="AlwaysInterleaveAttribute"/> is load-bearing, and it belongs on this
+    /// declaration rather than the implementation (Orleans reads it here). A streaming grain method
+    /// runs as a series of interleaving <c>MoveNext</c> requests, but a turn has long gaps where the
+    /// activation is genuinely busy — before the first token, and across a tool call — and a plain
+    /// call would queue behind those, arriving after the turn it was meant to stop.</para>
+    ///
+    /// <para><b>Deliberately NOT <see cref="OneWay"/></b>, unlike
+    /// <see cref="EnqueuePromptAsync"/>: a one-way call returns before the grain runs the method and
+    /// swallows failures, which would make the client's "the stop call failed, fall back to aborting
+    /// the fetch" branch unreachable.</para>
+    ///
+    /// <para>Reaches a live browser turn only, and background turns are out of reach for two different
+    /// reasons worth keeping straight. <c>/api/agent-run</c> and ADR 0070's <c>ask_agent</c> drain the same
+    /// core as a browser turn, so their model run does carry a token — they simply never publish the
+    /// handle. A fired reminder does not come through that core at all (it calls <c>RunAsync</c> directly,
+    /// with no token), so it is not cancellable even in principle. Both are deliberate: nobody is watching
+    /// those turns, and cancelling one would be a turn lost for no one's benefit.</para>
+    /// </summary>
+    [Alias("StopAsync")]
+    [AlwaysInterleave]
+    Task StopAsync();
+
+    /// <summary>
     /// Returns the qualified model id this conversation is currently using, so the UI can
     /// restore the picker to the right selection when a conversation is reopened.
     /// </summary>
