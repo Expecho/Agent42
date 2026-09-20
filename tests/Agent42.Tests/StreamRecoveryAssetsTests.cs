@@ -64,6 +64,27 @@ public sealed class StreamRecoveryAssetsTests
         Assert.Contains("const priorTurns = thread.querySelectorAll(\".msg\").length;", prelude);
     }
 
+    // ADR 0078 lands inside this ADR's blast radius, and this is the guard for it. `priorTurns` counts
+    // rendered .msg elements against stored turns, so the two must stay 1:1. A turn stopped before its
+    // first token stores ONE turn (the prompt alone, no assistant message), so leaving its empty agent
+    // bubble on screen would skew the yardstick by one for the rest of the session — and every later
+    // backgrounded turn would then be painted "Transmission failed" over a reply that persisted fine,
+    // which is the exact lie this ADR exists to remove. markStopped therefore replaces that bubble with a
+    // non-.msg notice, and the class name is what makes the difference load-bearing.
+    [Fact]
+    public async Task StoppedWithNoText_DropsTheAgentBubble()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        var markStopped = StaticAssetsServerFixture.Body(app, "export function markStopped(msg, hasText)");
+
+        // The no-text branch takes the bubble out of the thread…
+        Assert.Contains("msg.replaceWith(note)", markStopped);
+        // …and what replaces it is deliberately NOT a .msg element.
+        Assert.Contains("thread__stopped", markStopped);
+        Assert.DoesNotContain("\"msg ", markStopped);
+    }
+
     // Recovery is a SUCCESS: the reply is on the server, so the turn's tail must run too — the persona is
     // bound (pendingAgentId cleared, or the next turn rebinds) and the conversation is shareable
     // (ADR 0044's topbar button). Only the error branch is left to paint a failure.

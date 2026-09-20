@@ -21,6 +21,20 @@ public static partial class AgentApi
     {
         app.MapPost("/api/chat/{conversationId}", ChatAsync);
 
+        // Stops the turn this conversation is currently streaming (ADR 0078). A separate request rather
+        // than the chat connection dying, and that separation is the whole point: an aborted connection is
+        // what a backgrounded PWA produces on every turn, and the server must keep going there (ADR 0046).
+        // Only an explicit press means stop.
+        //
+        // 204 either way, and deliberately: by the time this arrives the turn may have finished on its own,
+        // and telling the client it "failed" would only invite a retry of a race it cannot win.
+        app.MapPost("/api/chat/{conversationId}/stop", async (
+            string conversationId, IGrainFactory grains, HttpContext http) =>
+        {
+            await grains.GetGrain<IAgentGrain>(AgentKey(http.GetUserId(), conversationId)).StopAsync();
+            return Results.NoContent();
+        });
+
         // The signed-in user's conversations, most recently used first.
         app.MapGet("/api/conversations", (IGrainFactory grains, HttpContext http) =>
             grains.GetGrain<IConversationIndexGrain>(http.GetUserId()).GetConversationsAsync());

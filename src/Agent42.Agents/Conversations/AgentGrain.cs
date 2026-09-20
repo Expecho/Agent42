@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Agents.AI;
@@ -27,6 +28,12 @@ namespace Agent42.Agents;
 /// Filing the reminder callback under <c>Scheduling/</c> would split that pair across files, which
 /// is exactly the reading failure those gotchas exist to prevent. Only the schedule/cancel tool
 /// methods live in <c>Scheduling/AgentGrain.Scheduling.cs</c>.</para>
+///
+/// <para><b><c>_turnCts</c> (ADR 0078) sits in that same field block but is NOT part of that
+/// ritual</b>, and <see cref="ReceiveReminder"/> deliberately does not reset it. It is published and
+/// unpublished by identity, because it names a running turn rather than carrying a value — see its
+/// own remarks, which are the thing to read before adding a fifth turn-scoped field of either
+/// kind.</para>
 /// </summary>
 public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 {
@@ -214,6 +221,32 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// for the ACTIVATION, so it is cleared in that method's <c>finally</c>.
     /// </summary>
     private bool _interactiveTurn;
+
+    /// <summary>
+    /// The stop handle for the turn a browser is currently streaming (ADR 0078): the
+    /// <see cref="CancellationTokenSource"/> whose token that turn's model run is bound to.
+    /// <see cref="StopAsync"/> cancels it; everything else leaves it alone.
+    ///
+    /// <para><b>This is NOT a member of the turn-scoped clear ritual above, and copying that shape
+    /// here would be a bug.</b> Those fields carry a value and are blindly assigned per turn; this one
+    /// carries the IDENTITY of a running turn, and two turns can be in flight on one activation —
+    /// <see cref="ChatAsync"/> suspends between <c>yield return</c>s, so a fired reminder or an
+    /// <see cref="EnqueuePromptAsync"/> run executes in the gap (the very fact the
+    /// <see cref="_turnLocation"/> remarks rest on). Assign it blindly and an
+    /// <see cref="EnqueuePromptAsync"/> run — which drains the same core, so it reaches the publish —
+    /// steals the handle, and the user's stop cancels <i>that</i> turn instead; clear it blindly and one
+    /// turn's disposal faults another turn's live run. (A fired reminder cannot steal it: it never comes
+    /// through that core. It can still interfere, which is what the next paragraph is about.)</para>
+    ///
+    /// <para>So it is published <b>by identity</b> and only by an interactive turn — <c>_turnCts ??=
+    /// mine</c> on the way in, and <c>if (ReferenceEquals(_turnCts, mine))</c> on the way out — and
+    /// <see cref="ReceiveReminder"/> deliberately has <b>no</b> reset line for it. Adding one would let
+    /// a reminder firing mid-stream silently disarm the user's stop button, which is the opposite of
+    /// what that reset does for every other field in this block. For the same reason the publish reads a
+    /// flag <i>captured</i> at the top of <c>ChatCoreAsync</c> rather than <see cref="_interactiveTurn"/>
+    /// itself, which a background turn starting in one of those gaps would have set to false.</para>
+    /// </summary>
+    private CancellationTokenSource? _turnCts;
 
     /// <summary>
     /// True when <c>read_web_document</c> ingested a document during the turn currently running, so the
@@ -461,6 +494,38 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
     }
 
+    public async Task StopAsync()
+    {
+        // Read the handle once: [AlwaysInterleave] means this call can land at any await point of the
+        // turn, including the moment ChatCoreAsync's finally is unpublishing it.
+        var cts = _turnCts;
+        if (cts is null)
+        {
+            // No browser turn in flight on this activation (or the only turn running is a background
+            // one, which never publishes). Silently nothing — the client cannot know, and a 404/409
+            // would only tempt it into retrying a race it cannot win.
+            return;
+        }
+
+        try
+        {
+            // CancelAsync, and guarded, because Cancel() is NOT the inert call it reads as: it throws
+            // ObjectDisposedException if the owning turn has since disposed the source, and it runs
+            // registered callbacks INLINE on this grain's thread — an AggregateException from any of
+            // them (HttpClient and the framework both register on the run token) would otherwise
+            // surface as a failed grain call for a button press that did its job.
+            await cts.CancelAsync();
+            _logger.LogInformation(
+                "Agent grain {GrainKey} stopped the turn in flight at the user's request",
+                this.GetPrimaryKeyString());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex, "Agent grain {GrainKey} could not cancel the turn in flight", this.GetPrimaryKeyString());
+        }
+    }
+
     public async Task EnqueuePromptAsync(string message, IReadOnlyList<AttachmentRef>? attachments)
     {
         // A background (agent-run) turn has no browser and no location — clear _turnLocation before
@@ -538,6 +603,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // resets the field itself; see the _pushesThisTurn remarks. This runs before the first yield, so
         // it takes effect as soon as either caller starts enumerating.
         _pushesThisTurn = 0;
+
+        // Captured here, before the first yield, and never re-read (ADR 0078). _interactiveTurn is one of
+        // the blindly-assigned turn-scoped fields — EnqueuePromptAsync sets it false and never restores it —
+        // and this method suspends at its yields, so a background turn starting in one of those gaps would
+        // leave the field false when this turn resumes. Reading it at publish time would then skip the
+        // publish and leave the user's stop button silently dead for a turn that is still streaming. (The
+        // follow-up gate further down still reads the field; that exposure is pre-existing, and it costs a
+        // skipped suggestion rather than a dead control.)
+        var interactive = _interactiveTurn;
 
         _logger.LogInformation(
             "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s), location: {HasLocation})",
@@ -627,16 +701,50 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         // Accumulate the reply text (only) so we can feed the last exchange to the follow-up
         // suggestion call after the turn — cheaper than re-reading the serialized session.
+        //
+        // NOT the persistence path on a normal turn: the framework fills the session from its own response
+        // message. The one exception is a STOPPED turn (ADR 0078), where the framework persists nothing and
+        // this accumulator is what AppendStoppedTurnToSession writes.
         var reply = new StringBuilder();
 
-        await foreach (AgentResponseUpdate update in _agent.RunStreamingAsync([userMessage], _session))
+        // This turn's stop handle (ADR 0078). EVERY turn gets a token — that costs nothing — but only an
+        // interactive one publishes the handle (from the flag captured at the top, never re-read), and
+        // publishing never steals one that is already there — see the _turnCts remarks for why identity
+        // rather than assignment is the whole safety argument.
+        using var turnCts = new CancellationTokenSource();
+        PublishStopHandle(turnCts, interactive);
+
+        var outcome = new TurnOutcome();
+        try
         {
-            // The projection is a plain iterator because it must not be an ASYNC one; usage updates
-            // produce no event at all, they only accumulate into `tokens`.
-            foreach (var evt in ProjectStreamedUpdate(update, reply, tokens))
+            await foreach (var evt in StreamModelReplyAsync(userMessage, reply, tokens, outcome, turnCts.Token))
             {
                 yield return evt;
             }
+        }
+        finally
+        {
+            // Before the persist, not after: once the last event is out there is nothing left to stop,
+            // and leaving the handle up would let a late press cancel nothing while logging that it did.
+            UnpublishStopHandle(turnCts);
+        }
+
+        // A stopped turn is persisted like any other — but the framework hands us NOTHING to persist.
+        // Measured on Agent Framework 1.19: a cancelled RunStreamingAsync notifies the history provider
+        // of a failure and rethrows, so the session is left EMPTY — not partial, empty: no user message
+        // and no reply. Persisting at this point without appending would therefore write away the whole
+        // turn, and since the title is stamped by the endpoint BEFORE the turn runs, the result is a
+        // conversation listed with a title and no messages (the ADR 0070 failure shape). So the turn is
+        // appended by hand, and this is the ONE branch on which `reply` is the persistence path.
+        if (!TryPrepareStoppedTurn(outcome, userMessage, reply))
+        {
+            // The history was unreachable, so there is nothing coherent to write. Skip the persist rather
+            // than commit an empty session over a conversation that had one — and note this also skips the
+            // ADR 0066 rebuild below, so a web document ingested during this turn is dropped. Both are
+            // acceptable: every session here is built with an InMemoryChatHistoryProvider, so reaching this
+            // branch at all means something about the session is already broken.
+            yield return tokens.ToDoneEvent(stopped: true);
+            yield break;
         }
 
         await PersistTurnUnlessEphemeralAsync();
@@ -652,12 +760,144 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // the turn. Emitted BEFORE Done, after the reply is fully streamed. Skipped on the agent-run/reminder
         // drain (_interactiveTurn is false there) and on an empty reply. The generator uses a throwaway
         // message list and never touches _session, so nothing is persisted.
-        if (await SuggestFollowUpsAsync(message, reply) is { Count: > 0 } suggestions)
+        //
+        // A stopped turn is gated inside the helper too, beside the other three conditions.
+        if (await SuggestFollowUpsAsync(message, reply, outcome.Stopped) is { Count: > 0 } suggestions)
         {
             yield return new AgentStreamEvent(AgentStreamEventType.Suggestions, Suggestions: suggestions);
         }
 
-        yield return tokens.ToDoneEvent();
+        yield return tokens.ToDoneEvent(outcome.Stopped);
+    }
+
+    // Makes this turn stoppable from outside, for a browser turn only. `??=` rather than `=`: if a turn is
+    // already published, THIS turn is the one that started while that one was suspended at a yield, and
+    // overwriting would hand the user's stop button to the wrong turn.
+    private void PublishStopHandle(CancellationTokenSource turnCts, bool interactive)
+    {
+        if (interactive)
+        {
+            _turnCts ??= turnCts;
+        }
+    }
+
+    // Clears the handle only if it is still OURS. A turn that never published (background) or whose handle
+    // was never taken up leaves the field exactly as it found it — so one turn ending can never disarm
+    // another turn's stop button. Runs before the `using` disposes the source, which is the order that
+    // keeps StopAsync from ever seeing a disposed one through the field.
+    private void UnpublishStopHandle(CancellationTokenSource turnCts)
+    {
+        if (ReferenceEquals(_turnCts, turnCts))
+        {
+            _turnCts = null;
+        }
+    }
+
+    // The model run, as a separate iterator so the cancellation can be CAUGHT: C# forbids a `yield return`
+    // inside a `try` that has a `catch` (CS1626), so the catch has to wrap MoveNextAsync alone with every
+    // yield outside it. That is also why this cannot stay an `await foreach` in ChatCoreAsync, and it is the
+    // same shape Agent Framework's own ChatClientAgent.RunCoreStreamingAsync uses, for the same reason.
+    //
+    // The outcome rides a class rather than an out/ref parameter for the same reason TurnTokenTotals is
+    // one — an iterator method cannot hand out a `ref`.
+    private async IAsyncEnumerable<AgentStreamEvent> StreamModelReplyAsync(
+        ChatMessage userMessage, StringBuilder reply, TurnTokenTotals tokens, TurnOutcome outcome,
+        [EnumeratorCancellation] CancellationToken turnToken)
+    {
+        var updates = _agent
+            .RunStreamingAsync([userMessage], _session, null, turnToken)
+            .GetAsyncEnumerator(turnToken);
+
+        try
+        {
+            while (true)
+            {
+                AgentResponseUpdate update;
+                try
+                {
+                    if (!await updates.MoveNextAsync())
+                    {
+                        break;
+                    }
+
+                    update = updates.Current;
+                }
+                catch (OperationCanceledException)
+                {
+                    // The user pressed stop (ADR 0078) — surfaced as a TaskCanceledException, hence the
+                    // base type. This is NOT a failure and NOT the end of the turn: the caller still
+                    // appends and persists what streamed, so the partial reply outlives the cancellation.
+                    outcome.Stopped = true;
+                    break;
+                }
+
+                // The projection is a plain iterator because it must not be an ASYNC one; usage updates
+                // produce no event at all, they only accumulate into `tokens`.
+                foreach (var evt in ProjectStreamedUpdate(update, reply, tokens))
+                {
+                    yield return evt;
+                }
+            }
+        }
+        finally
+        {
+            await updates.DisposeAsync();
+        }
+    }
+
+    // True when the turn may be persisted: it ran to completion (nothing to prepare), or it was stopped and
+    // its partial turn has been appended to the session. False only in the one case where persisting would
+    // destroy rather than record — see AppendStoppedTurnToSession.
+    private bool TryPrepareStoppedTurn(TurnOutcome outcome, ChatMessage userMessage, StringBuilder reply)
+        => !outcome.Stopped || AppendStoppedTurnToSession(userMessage, reply);
+
+    // Writes a stopped turn into the session by hand, because the framework wrote nothing (see the call
+    // site). Returns false when the history cannot be reached, which is the one caller for which the usual
+    // harmless early-return would be harmful.
+    //
+    // Appending here bypasses both storage filters (Tools/AgentGrain.BuildAgent.cs), and that is safe
+    // rather than lucky: `userMessage` is the one BuildUserTurnAsync built, not an injected
+    // AIContextProvider message, so StorageInputRequestMessageFilter would have kept it verbatim; and
+    // `reply` accumulates TEXT only — a reasoning model's thinking goes to its own event and never lands
+    // there — so StorageInputResponseMessageFilter would have had nothing to strip. TurnAttachments needs
+    // no attention either: BuildUserTurnAsync added this turn's entry before the run, so appending the
+    // user message is what RESTORES the 1:1 join the positional image lookup depends on.
+    private bool AppendStoppedTurnToSession(ChatMessage userMessage, StringBuilder reply)
+    {
+        if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
+        {
+            _logger.LogWarning(
+                "Agent grain {GrainKey} stopped a turn but could not reach the session history; "
+                    + "the turn was not persisted",
+                this.GetPrimaryKeyString());
+            return false;
+        }
+
+        messages.Add(userMessage);
+
+        // No assistant message when nothing was streamed: an empty assistant turn would be sent back to
+        // the provider on every later turn, and some reject one. The prompt still survives, and the client
+        // says the reply never started (ADR 0078).
+        if (reply.Length > 0)
+        {
+            messages.Add(new ChatMessage(ChatRole.Assistant, reply.ToString())
+            {
+                // Mirrors the Name the framework stamps on a normal turn (BuildAgent's ChatClientAgent
+                // options), so a stopped turn is not distinguishable by its author.
+                AuthorName = _state.State.AgentName ?? "Agent42",
+            });
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// How the model run ended, out of band from the events it yielded. Only <c>Stopped</c> for now; it is
+    /// a class rather than a bool return because the producer is an iterator.
+    /// </summary>
+    private sealed class TurnOutcome
+    {
+        public bool Stopped { get; set; }
     }
 
     /// <summary>
@@ -676,12 +916,18 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         /// <summary>
         /// The terminating <c>Done</c> event. A total of zero is reported as <c>null</c>, not 0: the
         /// browser distinguishes "this provider reported no usage" from "this turn cost nothing".
+        ///
+        /// <para><paramref name="stopped"/> is reported the same way — <c>true</c> or absent, never
+        /// <c>false</c> — and it is the flag that settles the race where a reply finishes in the same
+        /// instant the stop button is pressed: that turn completed, and must not be labelled as
+        /// interrupted just because the client asked.</para>
         /// </summary>
-        public AgentStreamEvent ToDoneEvent() => new(
+        public AgentStreamEvent ToDoneEvent(bool stopped = false) => new(
             AgentStreamEventType.Done,
             InputTokens: Input > 0 ? Input : null,
             OutputTokens: Output > 0 ? Output : null,
-            CachedTokens: Cached > 0 ? Cached : null);
+            CachedTokens: Cached > 0 ? Cached : null,
+            Stopped: stopped ? true : null);
     }
 
     // Every event one streamed update produces, in order. A synchronous iterator, so the async iterator
@@ -700,11 +946,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     // Follow-up suggestions (ADR 0036), or null when they are not wanted for this turn. The gating lives
     // HERE rather than at the call site so the model call is still skipped — not merely discarded — on
-    // the agent-run/reminder drain (_interactiveTurn is false there), when the user has opted out, and
-    // on an empty reply. Best-effort beyond that: GenerateFollowUpsAsync owns its try/catch and returns
-    // null on any failure, so a slow or failing suggestion call never breaks the turn.
-    private async Task<IReadOnlyList<string>?> SuggestFollowUpsAsync(string message, StringBuilder reply)
-        => _interactiveTurn && _suggestFollowUpsEnabled && reply.Length > 0
+    // the agent-run/reminder drain (_interactiveTurn is false there), when the user has opted out, on
+    // an empty reply, and on a turn the user STOPPED (ADR 0078 — the fourth gate, and the only one the
+    // empty-reply check does not already cover: a turn stopped after a few words has a non-empty reply,
+    // so without it the answer to a stop would be a second model call about the cancelled answer).
+    // Best-effort beyond that: GenerateFollowUpsAsync owns its try/catch and returns null on any
+    // failure, so a slow or failing suggestion call never breaks the turn.
+    private async Task<IReadOnlyList<string>?> SuggestFollowUpsAsync(
+        string message, StringBuilder reply, bool stopped)
+        => !stopped && _interactiveTurn && _suggestFollowUpsEnabled && reply.Length > 0
             ? await GenerateFollowUpsAsync(message, reply.ToString())
             : null;
 

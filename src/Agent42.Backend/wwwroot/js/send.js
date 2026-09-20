@@ -5,12 +5,12 @@ import { clearPendingAttachments, pendingAttachments } from "./attachments.js";
 import { cachePut } from "./cache.js";
 import { autosize } from "./composer.js";
 import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./conversations.js";
-import { form, incognitoBtn, input, modelSelect, thread } from "./dom.js";
+import { form, incognitoBtn, input, modelSelect, stopBtn, thread } from "./dom.js";
 import { currentLocationForSend } from "./location.js";
 import { applyModelAvailability } from "./models.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, refreshConversations } from "./sidebar.js";
-import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, finishToolCalls, renderReasoning, renderSuggestions, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
+import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, finishToolCalls, markStopped, renderReasoning, renderSuggestions, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
 
 export let streaming = false;
 // Stops live speech dictation. Reassigned via setStopSpeech() by wireSpeech() in speech.js when
@@ -84,10 +84,39 @@ async function recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)
   return false;
 }
 
+// Stops the turn on the SERVER (ADR 0078), which is the whole point: aborting the fetch alone leaves the
+// model running, the tokens spent and the full reply persisted — so the answer you "stopped" is what a
+// reload shows. The server cuts the run short and keeps what it had already streamed, and the stream then
+// ends with a normal `done` carrying `stopped`, so nothing here has to abort on the happy path.
+//
+// `abortLocally` is for voice barge-in (ADR 0037), which needs the deltas to stop arriving THIS instant —
+// its onDelta speaks whatever it is handed, so a round trip's worth of buffered text would still be read
+// aloud over the user. On the button path the abort is only a fallback for a stop call that never landed,
+// so the control always does something visible.
+export async function stopGeneration({ abortLocally = false } = {}) {
+  const convId = activeId;
+  // BEFORE the fetch, and the order is the whole point: `await` on the stop request is a full round trip,
+  // and onDelta keeps speaking every delta that arrives during it. Aborting afterwards would make voice
+  // barge-in stop-only in practice — the server has already cancelled by the time the abort runs — which
+  // is exactly the ADR 0037 property this is here to preserve.
+  if (abortLocally) sendAbort?.abort();
+  try {
+    const res = await fetch(`/api/chat/${encodeURIComponent(convId)}/stop`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  } catch {
+    // Offline, or the request failed. Fall back to the old client-only interruption: the reply on screen
+    // stops growing, which is what the user asked for, even though the server keeps going.
+    sendAbort?.abort();
+  }
+}
+
 export async function send(prompt) {
   stopSpeech(); // capture the dictated prompt and reset the mic before clearing the box
   streaming = true;
   modelSelect.disabled = true;
+  // The stop control exists only while there is something to stop. Revealed here rather than on the first
+  // delta so it covers the wait before the first token — which is exactly when a user reaches for it.
+  stopBtn.hidden = false;
   // Ephemerality is fixed at creation (ADR 0034): once the first prompt goes out, lock the toggle
   // for the life of this chat. "New chat" re-enables it.
   incognitoBtn.disabled = true;
@@ -124,6 +153,8 @@ export async function send(prompt) {
   scrollToBottom();
 
   let answer = "";
+  // Set from the `done` event, so it reflects what the server actually did with the turn.
+  let stopped = false;
   try {
     // In an agent chat the model is pinned server-side, so never send a model (it would
     // switch the conversation off the agent's model). agentId is sent only on the first
@@ -195,12 +226,18 @@ export async function send(prompt) {
           finishReasoning(agentMsg);
           finishToolCalls(agentMsg);
           showUsage(agentMsg, chunk);
+          // The SERVER decides whether this turn counts as stopped (ADR 0078), not the click: a press that
+          // lands as the last token goes out stopped nothing, and labelling that turn would be a lie.
+          if (chunk.stopped) stopped = true;
         }
       }
     }
     setAgentMarkdown(agentMsg, answer);
     // Live-streamed reply is final: capture the raw markdown accumulator by closure for copy.
     addCopyButton(agentMsg, answer);
+    // After the copy button, so the note it appends cannot be captured into the clipboard text. A turn
+    // stopped before its first token loses this bubble entirely — see markStopped.
+    if (stopped) markStopped(agentMsg, answer.length > 0);
     voice.onStreamEnd(); // speak any buffered tail (ADR 0037); no-op when voice mode is off
     // The persona is now bound server-side; don't resend agentId on later turns. Kept on
     // failure so a retry rebinds.
@@ -247,6 +284,7 @@ export async function send(prompt) {
     finishToolCalls(agentMsg);
     document.removeEventListener("visibilitychange", onVisibilityChange);
     sendAbort = null;
+    stopBtn.hidden = true;
     streaming = false;
     modelSelect.disabled = modelSelect.options.length === 0;
     applyModelAvailability(); // keep the composer gated if there's still no model (ADR 0019)
@@ -263,6 +301,15 @@ export function wireSend() {
     if ((!prompt && pendingAttachments.length === 0) || streaming) return;
     send(prompt);
   });
+
+  // The button sits inside the composer form, and what keeps a press from submitting it is `type="button"`
+  // in the markup — not anything here. This listener only asks the server to stop.
+  //
+  // No abort on this path: the stream ends by itself with a `done` carrying `stopped`, which is what marks
+  // the bubble. The fallback inside stopGeneration does abort, and then the AbortError tail runs instead —
+  // so on a failed stop call the reply freezes with no "Stopped." mark, which is the honest outcome (the
+  // server did not stop).
+  stopBtn.addEventListener("click", () => stopGeneration());
 }
 
 export function setStopSpeech(value) {

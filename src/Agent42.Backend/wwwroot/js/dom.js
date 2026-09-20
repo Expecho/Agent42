@@ -13,6 +13,7 @@ export const input = document.getElementById("promptInput");
 export const attachBtn = document.getElementById("attachBtn");
 export const micBtn = document.getElementById("micBtn");
 export const voiceBtn = document.getElementById("voiceBtn");
+export const stopBtn = document.getElementById("stopBtn");
 export const fileInput = document.getElementById("fileInput");
 export const attachmentPreview = document.getElementById("attachmentPreview");
 export const modelSelect = document.getElementById("modelSelect");

@@ -10,6 +10,15 @@ amends: [0023]
 
 # Remove the composer send button; Enter becomes the send control
 
+> **Amended by [ADR 0078](0078-stop-generation.md) (2026-09-20) — the composer frame has a fifth control
+> again.** The stop-generation button this ADR deferred ("a new feature… deserves its own decision") now
+> exists, in the slot the send button vacated. This ADR's "two composer layouts to reason about and to
+> test" objection was weighed and accepted: the control is `hidden` except while a turn is streaming, so
+> it is additive and transient rather than a second permanent layout, and it is proved by source-text
+> guards exactly as the removal was. Everything else stays authoritative — Enter is still the only way to
+> send typed text, `enterkeyhint="send"` still carries touch, and `.composer__hint` still names only keys
+> a soft keyboard does not have.
+
 ## Context
 The composer frame carries five controls — attach, tools, incognito, mic (ADR 0006), voice
 (ADR 0037) — plus a dedicated arrow send button, and it is visibly crowded at narrow widths.

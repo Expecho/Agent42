@@ -9,6 +9,15 @@ extends: [0006]
 
 # Hands-free voice conversation with barge-in (browser-native TTS + auto-listen loop)
 
+> **Amended by [ADR 0078](0078-stop-generation.md) (2026-09-20) — what barge-in stops.** Aborting the
+> fetch stopped only this browser reading the reply: the server ran the turn to completion and persisted
+> a full answer the user had talked over and never heard. Barge-in now also asks the server to stop, so
+> the stored turn is what was actually spoken. **The local abort stays, and is not redundant** — it is
+> what makes the interruption immediate, because `onDelta` speaks whatever it is handed and is gated by
+> `interrupted` only on `onStreamEnd`; waiting for a round trip would read buffered text over the user.
+> Everything else here stays authoritative, including the teardown path (exiting voice mode aborts
+> locally only, deliberately: the reader wants to stop listening, not to cut the answer short).
+
 ## Context
 Dictation (ADR 0006) gave the composer a *listen* half: tap `#micBtn`, speak, watch interim
 text stream into `#promptInput`, review, and send by hand. The user now wants a genuine

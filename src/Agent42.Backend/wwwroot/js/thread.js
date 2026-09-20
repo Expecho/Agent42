@@ -122,6 +122,32 @@ export function addCopyButton(msg, rawText) {
   bubble.appendChild(btn);
 }
 
+// Marks a turn the user stopped (ADR 0078). Live-only, like tool chips and reasoning: a reload shows the
+// partial reply as ordinary text, because nothing about "stopped" is persisted.
+//
+// The two branches are not cosmetic. With text, the note goes inside the bubble — after the copy button,
+// which captured the raw reply by closure, so the note can never end up on the clipboard. Without text,
+// the whole agent bubble is REMOVED and the note becomes a sibling of the messages, because a bubble with
+// nothing in it would leave the thread with two .msg elements for the one turn the server stored — and the
+// ADR 0046 recovery counts .msg elements against stored turns, so from then on every backgrounded turn in
+// this session would be reported as "Transmission failed" over a reply that actually persisted.
+export function markStopped(msg, hasText) {
+  if (hasText) {
+    const bubble = msg.querySelector(".msg__bubble");
+    if (!bubble) return;
+    const note = document.createElement("div");
+    note.className = "msg__stopped";
+    note.textContent = "Stopped.";
+    bubble.appendChild(note);
+    return;
+  }
+
+  const note = document.createElement("p");
+  note.className = "thread__stopped";
+  note.textContent = "Stopped before the reply started.";
+  msg.replaceWith(note);
+}
+
 // Follow-up suggestion chips (up to 3) under a reply. Clicking one sends it immediately as the next
 // message — a click is explicit intent — guarded so it never fires mid-stream. Live-only: not replayed
 // by renderTurns, so they exist only under the freshly streamed turn and are cleared when the next turn

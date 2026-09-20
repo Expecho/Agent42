@@ -48,6 +48,52 @@ public sealed class VoiceConversationAssetsTests
         // runtime interruption is the manual half.
         Assert.Contains("AbortController", app);
         Assert.Contains("sendAbort", app);
+
+        // Since ADR 0078 barge-in does BOTH, and the local abort is the half that cannot be dropped: it is
+        // what makes the interruption immediate, because onDelta speaks whatever it is handed and is not
+        // gated by `interrupted`. Waiting for the server's answer would read a round trip of buffered text
+        // over the user. Pinned as a pair, so replacing the abort with the stop call turns this red.
+        var bargeIn = StaticAssetsServerFixture.Body(app, "function bargeIn(heard)");
+        Assert.Contains("stopGeneration({ abortLocally: true })", bargeIn);
+    }
+
+    // The other half of that pair (ADR 0078): the stop reaches the server, so the turn the user talked over
+    // is stored as what was actually spoken — not as the full reply the model went on to write unheard.
+    [Fact]
+    public async Task AppJs_BargeInAlsoStopsTheServer()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        // Sliced by hand rather than through Body(): stopGeneration's parameter list is a destructured
+        // object, so brace matching from the declaration would return the parameter, not the body.
+        var stopGeneration = Slice(app, "export async function stopGeneration", "export async function send(prompt)");
+        Assert.Contains("/stop`, { method: \"POST\" }", stopGeneration);
+        // And it still falls back to the local abort when the stop call cannot be made, so the control is
+        // never inert offline.
+        Assert.Contains("sendAbort?.abort()", stopGeneration);
+
+        // ORDER, not just presence, and a Contains assertion cannot see it — this is the one that failed
+        // review once already. The local abort has to run BEFORE the awaited stop request: onDelta speaks
+        // whatever it is handed and is not gated by `interrupted`, so aborting after the round trip leaves
+        // the reply being read aloud over the user for its whole duration, which is stop-only barge-in
+        // wearing the right source text.
+        var abortAt = stopGeneration.IndexOf("if (abortLocally) sendAbort?.abort()", StringComparison.Ordinal);
+        var fetchAt = stopGeneration.IndexOf("await fetch(", StringComparison.Ordinal);
+        Assert.True(abortAt >= 0, "the barge-in abort disappeared from stopGeneration");
+        Assert.True(
+            abortAt < fetchAt,
+            "barge-in's local abort must run before the stop request is awaited, or the reply keeps "
+                + "speaking for a full round trip (ADR 0037/0078).");
+    }
+
+    // The text between one declaration and the next, for a function Body()'s brace matching cannot handle.
+    private static string Slice(string source, string from, string to)
+    {
+        var start = source.IndexOf(from, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"'{from}' not found in the front-end script — did it get renamed?");
+        var end = source.IndexOf(to, start, StringComparison.Ordinal);
+        Assert.True(end > start, $"'{to}' no longer follows '{from}' — the slice is wrong.");
+        return source[start..end];
     }
 
     [Fact]
