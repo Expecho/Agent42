@@ -7,14 +7,30 @@ using System.Text.RegularExpressions;
 
 namespace Agent42.LocalBridge;
 
+/// <summary>
+/// What the person at this machine answered. <see cref="AllowForSession"/> allows this call <i>and</i> every
+/// later call of the same tool for as long as the helper runs — the runtime twin of <c>--auto-approve</c>.
+/// </summary>
+public enum ConfirmationAnswer
+{
+    /// <summary>Deny this call. The default for anything that is not an explicit yes.</summary>
+    Deny = 0,
+
+    /// <summary>Allow this call only; the next call of the same tool asks again.</summary>
+    Allow,
+
+    /// <summary>Allow this call and stop asking for this tool until the helper exits.</summary>
+    AllowForSession,
+}
+
 /// <summary>What the person at this machine is asked. Implemented by the console; a seam for tests.</summary>
 public interface IConfirmationPrompt
 {
     /// <summary>
     /// Shows <paramref name="toolName"/> and <paramref name="arguments"/> — both already sanitized, the
-    /// arguments in full — and returns whether the user allowed the call. Cancellation means "no answer".
+    /// arguments in full — and returns what the user answered. Cancellation means "no answer".
     /// </summary>
-    Task<bool> ConfirmAsync(string toolName, string arguments, CancellationToken cancellationToken);
+    Task<ConfirmationAnswer> ConfirmAsync(string toolName, string arguments, CancellationToken cancellationToken);
 }
 
 /// <summary>The gate's verdict on one <c>tools/call</c>. A denial carries the text the model will read.</summary>
@@ -33,6 +49,11 @@ public sealed record GateDecision(bool Allowed, string? DenialText = null)
 /// <c>readOnlyHint: true</c> for that exact tool — an absent hint, <c>false</c>, an unknown tool and a call
 /// before any <c>tools/list</c> all prompt. And "read-only" is only the upstream's claim: a read-only call
 /// whose arguments contain anything URL-shaped prompts too, since a page load can carry data out.</para>
+///
+/// <para><b>…unless the person said so themselves.</b> A prompt answered <c>a</c>
+/// (<see cref="ConfirmationAnswer.AllowForSession"/>) adds that tool to the same set <c>--auto-approve</c>
+/// seeds, so it stops asking until the helper exits. The set is per process and never persisted: it dies
+/// with the helper, and no relayed traffic can add to it — only a person typing at this console can.</para>
 ///
 /// <para><b>The prompt text is attacker-influenced</b> (arguments are model-written, the model reads web
 /// pages), so it is sanitized — control characters including ESC, and Unicode format characters such as
@@ -59,16 +80,19 @@ public sealed partial class ConfirmationGate
     };
 
     private readonly IConfirmationPrompt _prompt;
-    private readonly IReadOnlySet<string> _autoApprove;
     private readonly TimeSpan _timeout;
     private readonly SemaphoreSlim _oneAtATime = new(1, 1);
     private readonly Lock _gate = new();
     private readonly Dictionary<string, bool> _readOnly = new(StringComparer.Ordinal);
 
+    // Seeded from --auto-approve and grown only by an "a" answer at the console. Ordinal, like every other
+    // tool-name comparison here: "Navigate" is a different tool from "navigate" as far as this gate knows.
+    private readonly HashSet<string> _approved;
+
     public ConfirmationGate(IConfirmationPrompt prompt, IReadOnlySet<string>? autoApprove = null, TimeSpan? timeout = null)
     {
         _prompt = prompt;
-        _autoApprove = autoApprove ?? new HashSet<string>(StringComparer.Ordinal);
+        _approved = new HashSet<string>(autoApprove ?? Enumerable.Empty<string>(), StringComparer.Ordinal);
         _timeout = timeout ?? DefaultConfirmTimeout;
     }
 
@@ -105,10 +129,19 @@ public sealed partial class ConfirmationGate
         }
     }
 
+    /// <summary>Whether <paramref name="toolName"/> runs without asking — <c>--auto-approve</c> or an "a" answer.</summary>
+    public bool IsApproved(string toolName)
+    {
+        lock (_gate)
+        {
+            return _approved.Contains(toolName);
+        }
+    }
+
     /// <summary>Reviews one call. Prompts are serialized: a second call waits for the first answer.</summary>
     public async Task<GateDecision> ReviewAsync(string toolName, JsonNode? arguments, CancellationToken cancellationToken)
     {
-        if (_autoApprove.Contains(toolName))
+        if (IsApproved(toolName))
         {
             return GateDecision.Allow;
         }
@@ -127,13 +160,28 @@ public sealed partial class ConfirmationGate
         await _oneAtATime.WaitAsync(cancellationToken);
         try
         {
+            // Prompts are serialized, so the answer to the call ahead of this one may have just approved this
+            // tool for the session. Asking again would be the very repetition "a" exists to end.
+            if (IsApproved(toolName))
+            {
+                return GateDecision.Allow;
+            }
+
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(_timeout);
             try
             {
-                return await _prompt.ConfirmAsync(Sanitize(toolName, keepNewlines: false), shown, timeout.Token)
-                    ? GateDecision.Allow
-                    : GateDecision.Deny(DeclinedText);
+                var answer = await _prompt.ConfirmAsync(Sanitize(toolName, keepNewlines: false), shown, timeout.Token);
+                if (answer == ConfirmationAnswer.AllowForSession)
+                {
+                    // The RAW name: that is what later calls arrive with. The sanitized one is for the eyes.
+                    lock (_gate)
+                    {
+                        _approved.Add(toolName);
+                    }
+                }
+
+                return answer == ConfirmationAnswer.Deny ? GateDecision.Deny(DeclinedText) : GateDecision.Allow;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
