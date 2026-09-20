@@ -63,8 +63,8 @@ public sealed partial class LocalBridgeLiveTests(SharedClusterFixture fixture, I
             output.WriteLine($"tools/list through the bridge: {connection.Tools.Count} tools; negotiated {client.NegotiatedProtocolVersion}");
             Assert.Contains(connection.Tools, t => t.Name == "snapshot");
 
-            // tabs is NOT read-only → prompts; allow it.
-            prompt.Answers.Enqueue(true);
+            // tabs is NOT read-only → prompts. Answer "always": the close below must then run unprompted.
+            prompt.Answers.Enqueue(ConfirmationAnswer.AllowForSession);
             var opened = await client.CallToolAsync("tabs", new Dictionary<string, object?> { ["action"] = "new", ["url"] = "about:blank", ["agentName"] = AgentName });
             var session = SessionOf(opened);
             var page = PageOf(opened);
@@ -80,7 +80,7 @@ public sealed partial class LocalBridgeLiveTests(SharedClusterFixture fixture, I
             Assert.Single(prompt.Seen);
 
             // navigate, DENIED: an isError result the helper wrote itself; the tab does not move.
-            prompt.Answers.Enqueue(false);
+            prompt.Answers.Enqueue(ConfirmationAnswer.Deny);
             var denied = await client.CallToolAsync("navigate", new Dictionary<string, object?>(args) { ["action"] = "url", ["url"] = "https://example.com/" });
             output.WriteLine($"navigate (deny) isError={denied.IsError}: {Text(denied)}");
             Assert.True(denied.IsError);
@@ -90,7 +90,7 @@ public sealed partial class LocalBridgeLiveTests(SharedClusterFixture fixture, I
             Assert.DoesNotContain("Example Domain", afterDeny, StringComparison.Ordinal);
 
             // navigate, ALLOWED: the tab really moves.
-            prompt.Answers.Enqueue(true);
+            prompt.Answers.Enqueue(ConfirmationAnswer.Allow);
             var allowed = await client.CallToolAsync("navigate", new Dictionary<string, object?>(args) { ["action"] = "url", ["url"] = "https://example.com/" });
             output.WriteLine($"navigate (allow) isError={allowed.IsError}: {Text(allowed)[..Math.Min(200, Text(allowed).Length)]}");
             Assert.True(allowed.IsError != true, Text(allowed));
@@ -99,9 +99,10 @@ public sealed partial class LocalBridgeLiveTests(SharedClusterFixture fixture, I
             Assert.Contains("Example Domain", afterAllow, StringComparison.Ordinal);
             Assert.Equal(3, prompt.Seen.Count);
 
-            prompt.Answers.Enqueue(true);
+            // The session approval from the first tabs prompt still stands: no fourth prompt.
             var closed = await client.CallToolAsync("tabs", new Dictionary<string, object?> { ["action"] = "close", ["page"] = page, ["agentName"] = AgentName, ["session"] = session });
             Assert.True(closed.IsError != true, Text(closed));
+            Assert.Equal(3, prompt.Seen.Count);
 
             // Regenerate, exactly as the API does it: the grain rotates the key, the registry closes the socket.
             // The helper reconnects with the old key, meets 401, and stops on its own.
@@ -138,14 +139,14 @@ public sealed partial class LocalBridgeLiveTests(SharedClusterFixture fixture, I
 
     private sealed class QueuedPrompt : IConfirmationPrompt
     {
-        public ConcurrentQueue<bool> Answers { get; } = new();
+        public ConcurrentQueue<ConfirmationAnswer> Answers { get; } = new();
 
         public ConcurrentQueue<(string Tool, string Arguments)> Seen { get; } = new();
 
-        public Task<bool> ConfirmAsync(string toolName, string arguments, CancellationToken cancellationToken)
+        public Task<ConfirmationAnswer> ConfirmAsync(string toolName, string arguments, CancellationToken cancellationToken)
         {
             Seen.Enqueue((toolName, arguments));
-            return Task.FromResult(Answers.TryDequeue(out var answer) && answer);
+            return Task.FromResult(Answers.TryDequeue(out var answer) ? answer : ConfirmationAnswer.Deny);
         }
     }
 

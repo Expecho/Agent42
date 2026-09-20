@@ -3471,11 +3471,20 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   protocol error, so the model can explain it. The console prompt also discards input typed before it
   appeared, so a stale `y` never approves an unseen call — which means a scripted test must send its answer
   **after** the prompt shows (a piped answer that arrives during `dotnet run`'s build is dropped).
-- **Evidence:** `tools/Agent42.LocalBridge/ConfirmationGate.cs`, `tools/Agent42.LocalBridge/Program.cs`
-  (`ConsolePrompt`), `tests/Agent42.Tests/LocalBridgeHelperTests.cs`,
+  **Since 2026-09-20 there is a fifth rule:** the prompt's third answer `a` adds that tool to the **same
+  set `--auto-approve` seeds**, and everything hangs off that being one set — `IsApproved` is checked twice,
+  once before the prompt and again **after** the prompt lock is taken (queued calls of a tool just approved
+  must not ask again), and what is stored is the **raw** tool name, never the sanitized one shown on screen,
+  or every later call would miss the set and prompt. The set is per process, never persisted, and reachable
+  only from a console answer — do not add a persisted "remember my approvals" file, an approve-everything
+  answer, or a way for relayed traffic to write into it.
+- **Evidence:** `tools/Agent42.LocalBridge/ConfirmationGate.cs` (`_approved`, the double `IsApproved`),
+  `tools/Agent42.LocalBridge/Program.cs` (`ConsolePrompt`, `ConsolePrompt.Read`),
+  `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Gate_AllowForSession_*`,
+  `ConsolePrompt_ReadsOnlyTheThreeAnswers`),
   `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md` (Verification — 0 ESC and 0 U+202E
-  bytes on the real terminal)
-- **Verified:** 2026-09-17
+  bytes on the real terminal; the 2026-09-20 amendment block)
+- **Verified:** 2026-09-20
 
 ### A bridge that connects after a chat activated is invisible to it — invalidate on CONNECT, rate-limited, never on disconnect
 

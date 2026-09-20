@@ -10,6 +10,24 @@ amends: [0002, 0024, 0042, 0070]
 
 # Reach a machine-local MCP server through a helper that dials out, and confirm writes on that machine
 
+> **Amended 2026-09-20 (user request) — the prompt takes a third answer, `a`, which pre-approves that one
+> tool for the rest of the helper's run.** The gate as shipped asked again for every call of the same tool,
+> which in practice means answering `y` to `act` or `tabs` a dozen times in one conversation; the user asked
+> for "yes / no / all", where *all* means "stop asking me about a tool I already approved in this session".
+> Implementation: `IConfirmationPrompt` returns a `ConfirmationAnswer` (`Deny` / `Allow` / `AllowForSession`)
+> instead of a `bool`, and `AllowForSession` adds the tool to **the very set `--auto-approve` seeds** — so
+> the reach of the new answer is exactly the reach of the flag that already existed, decided at the prompt
+> instead of at launch. What this ADR ruled out is unchanged: **there is still no approve-everything
+> answer**, `a` names one tool, the set is per process and never persisted (it dies with the helper), and
+> nothing relayed over the socket can add to it — only a person typing at that console can. The **raw** tool
+> name is recorded, not the sanitized one the prompt displayed, since that is what later calls arrive with.
+> Two consequences follow from the serialized prompt: the gate re-checks the set *after* acquiring the
+> prompt lock, so calls already queued behind the prompt that approved them are released rather than asked
+> again; and an `a` on a tool the upstream leaves unhinted (`act`, `evaluate`, `run`) is a standing grant of
+> that tool for the session — the thing this ADR's headline consequence warns about, now reachable in one
+> keystroke. `n` and silence still deny, and only the exact words `y`/`yes` and `a`/`all`/`always` allow
+> anything: a typo is a denial.
+
 ## Context
 
 The user wants Agent42 conversations — running on a cloud model, in production — to drive **BrowserOS
@@ -232,8 +250,23 @@ Likewise, making the helper ignore the `replaced` close reason makes `DisplacedH
 attempt at that mutation added a `false &&` and failed to compile on S3776, so the "passing" run used the old
 binary; it was redone with a string mutation after `RunAsync` was split.)
 
+**The `a` answer (2026-09-20 amendment).** Five deterministic tests in `LocalBridgeHelperTests`:
+`Gate_AllowForSession_StopsAskingForThatToolOnly` (one prompt, then three unprompted calls of that tool,
+while `run` and `Navigate` still prompt), `Gate_AllowOnce_DoesNotApproveTheNextCall` (the `y`/`a`
+distinction), `Gate_AllowForSession_ReleasesCallsAlreadyQueuedBehindThePrompt` (five concurrent calls, one
+prompt), `Gate_AllowForSession_RecordsTheRawToolName`, and `ConsolePrompt_ReadsOnlyTheThreeAnswers` (nine
+inputs; `ya` and `allow` deny). **Mutation check:** making the post-lock re-check compare a name that never
+matches turns exactly `..._ReleasesCallsAlreadyQueuedBehindThePrompt` red (33 passed, 1 failed) — without it
+the queued calls prompt again, which is the repetition the feature removes.
+
 ## Unverified
 
+- **The `a` answer against a real terminal and a real neo.** `LocalBridgeLiveTests` was updated — the first
+  `tabs` prompt now answers `AllowForSession` and the later `tabs close` asserts **no fourth prompt** — but
+  the live test is opt-in (`AGENT42_BRIDGE_E2E=1` + a running neo) and was **not** run for this amendment;
+  neither was the piped-stdin console run that produced the sanitizer evidence above. What ran is the
+  deterministic set. The `ConsolePrompt` line that prints "(… will now run without asking …)" and the new
+  `[y]es once / [n]o / [a]lways for this tool` prompt text are therefore unexercised outside `Read`.
 - **The production premise the whole feature rests on:** that ACA ingress plus the Easy Auth layer pass a
   WebSocket `Upgrade` through on an excluded exact path. ADR 0042's lesson is that `excludedPaths` behaviour
   is proven only after deploy. Post-deploy check: an upgrade to `wss://chat.agent42.nl/api/local-bridge`

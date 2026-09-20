@@ -57,7 +57,8 @@ public static class Program
 /// <summary>
 /// The console confirmation (ADR 0076). The tool name stands alone on its own line, first, so no argument
 /// text can visually replace it; both inputs arrive already sanitized by <see cref="ConfirmationGate"/>.
-/// Only an explicit <c>y</c> allows; anything else — including no answer before the timeout — denies.
+/// Only an explicit <c>y</c> or <c>a</c> allows; anything else — including no answer before the timeout —
+/// denies. <c>a</c> also stops this tool asking again for as long as the helper runs.
 /// </summary>
 public sealed class ConsolePrompt : IConfirmationPrompt
 {
@@ -82,7 +83,7 @@ public sealed class ConsolePrompt : IConfirmationPrompt
         reader.Start();
     }
 
-    public async Task<bool> ConfirmAsync(string toolName, string arguments, CancellationToken cancellationToken)
+    public async Task<ConfirmationAnswer> ConfirmAsync(string toolName, string arguments, CancellationToken cancellationToken)
     {
         while (_lines.Reader.TryRead(out _))
         {
@@ -94,16 +95,21 @@ public sealed class ConsolePrompt : IConfirmationPrompt
         Console.WriteLine($"Tool: {toolName}");
         Console.WriteLine("Arguments:");
         Console.WriteLine(arguments);
-        Console.Write("Allow? [y/N] ");
+        Console.Write("Allow? [y]es once / [n]o / [a]lways for this tool: ");
 
         try
         {
-            var line = await _lines.Reader.ReadAsync(cancellationToken);
-            return string.Equals(line.Trim(), "y", StringComparison.OrdinalIgnoreCase);
+            var answer = Read(await _lines.Reader.ReadAsync(cancellationToken));
+            if (answer == ConfirmationAnswer.AllowForSession)
+            {
+                Console.WriteLine($"({toolName} will now run without asking until this bridge stops)");
+            }
+
+            return answer;
         }
         catch (System.Threading.Channels.ChannelClosedException)
         {
-            return false; // stdin closed: nobody can answer
+            return ConfirmationAnswer.Deny; // stdin closed: nobody can answer
         }
         catch (OperationCanceledException)
         {
@@ -111,4 +117,16 @@ public sealed class ConsolePrompt : IConfirmationPrompt
             throw;
         }
     }
+
+    /// <summary>
+    /// Maps one typed line to an answer. Only the exact words below allow anything; every other line — a
+    /// typo, a stray paste, an empty return — denies, because this is the gate in front of the user's
+    /// signed-in browser and a near-miss must never read as consent.
+    /// </summary>
+    public static ConfirmationAnswer Read(string line) => line.Trim().ToLowerInvariant() switch
+    {
+        "a" or "all" or "always" => ConfirmationAnswer.AllowForSession,
+        "y" or "yes" => ConfirmationAnswer.Allow,
+        _ => ConfirmationAnswer.Deny,
+    };
 }
