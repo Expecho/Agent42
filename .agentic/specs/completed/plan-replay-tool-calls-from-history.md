@@ -363,6 +363,12 @@ Five things came out differently from the written steps.
    "both are live-only", and `ShareContracts.cs` still claimed the share payload was the same shape as
    `/messages`. `CLAUDE.md`'s feature map gained `0080` on the tool-call-folding row.
 
+8. **A gotchas entry was warranted after all.** The plan expected none, on the grounds that the ordinal
+   entry and the cache-bump entry already cover the traps here — correct for everything the plan foresaw.
+   Finding 6 above is a trap neither covers, and the nearest existing entry ("an assistant generated image
+   is id-keyed…") describes only the *canned clients'* call-only message shape, which is precisely what
+   makes the real one invisible. Added: "A tool result never arrives on the message that made the call".
+
 Everything else — the DTO shape and its `[property: Id(n)]`, the three-state de-dupe, the unconditional
 `completeToolCall`, the server-side share strip, the `v40 → v41` bump across both pinned literals, and all
 ten acceptance criteria — landed as written.
