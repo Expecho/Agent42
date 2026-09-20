@@ -86,6 +86,99 @@ public sealed class VoiceConversationAssetsTests
                 + "speaking for a full round trip (ADR 0037/0078).");
     }
 
+    // ── ADR 0079: half-duplex on speakers ────────────────────────────────────────────────────────────
+    // The mic closes at AUTO-SEND, not when speech starts. Both halves of the loop hearing itself live in
+    // that gap: the trailing final of the utterance just sent arrives while "thinking", and the reply
+    // itself arrives while "speaking". Closing it later would fix only the second.
+    [Fact]
+    public async Task AppJs_ClosesTheMicAtAutoSendWhenOnSpeakers()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+        var trySubmit = StaticAssetsServerFixture.Body(app, "function trySubmit()");
+
+        Assert.Contains("if (!outputIsHeadset) muteMic()", trySubmit);
+
+        // abort(), never stop(). stop() finalizes and can still deliver the trailing result of the
+        // utterance just sent — one of the two things being silenced — so the distinction is the feature.
+        var muteMic = StaticAssetsServerFixture.Body(app, "function muteMic()");
+        Assert.Contains("vr.abort()", muteMic);
+        Assert.DoesNotContain("vr.stop()", muteMic);
+    }
+
+    // Chrome ends continuous recognition on its own and the 'end' handler restarts it. Without the muted
+    // guard that restart silently re-opens the mic a second after it closed, and the whole thing is inert.
+    [Fact]
+    public async Task AppJs_DoesNotReopenTheMicWhileMuted()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+        Assert.Contains("if (active && !muted) { try { vr.start(); }", app);
+    }
+
+    // On a headset there is no acoustic path back into the mic, so ADR 0037's spoken barge-in is kept
+    // whole — this is what makes the mute conditional rather than a removal of the feature.
+    [Fact]
+    public async Task AppJs_KeepsSpokenBargeInForHeadsets()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+        var refresh = StaticAssetsServerFixture.Body(app, "async function refreshOutputKind()");
+
+        Assert.Contains("enumerateDevices", refresh);
+        Assert.Contains("audiooutput", refresh);
+        // Strictly the DEFAULT device: matching any listed output would keep the mic live whenever a
+        // headset is merely connected while the sound still comes out of the speakers.
+        Assert.Contains("d.deviceId === \"default\"", refresh);
+        // And the unknown answer is "speakers" — the catch must not leave a stale true standing.
+        Assert.Contains("outputIsHeadset = false", refresh);
+        Assert.Contains("function bargeIn(heard)", app);
+    }
+
+    // What replaces talking over the reply: three gestures, and the stop button deliberately not calling
+    // stopGeneration (send.js's own handler does that — two handlers would mean two POSTs).
+    [Fact]
+    public async Task AppJs_OffersGesturesToCutAReplyShort()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("if (e.key === \"Escape\") interrupt()", app);
+        Assert.Contains("stopBtn.addEventListener(\"click\", () => { silenceAndRearm(); })", app);
+
+        var interrupt = StaticAssetsServerFixture.Body(app, "function interrupt()");
+        Assert.Contains("silenceAndRearm()", interrupt);
+        Assert.Contains("stopGeneration({ abortLocally: true })", interrupt);
+
+        // Re-arming is what hands the mic back; an interrupt that only cancelled the audio would leave a
+        // muted turn deaf, which is worse than the echo it replaced.
+        var silence = StaticAssetsServerFixture.Body(app, "function silenceAndRearm()");
+        Assert.Contains("cancelSpeech()", silence);
+        Assert.Contains("armListening()", silence);
+        Assert.DoesNotContain("stopGeneration", silence);
+    }
+
+    // The re-arm retries. It did not have to before: with the mic live, losing this race only mislabelled
+    // the state. Now it leaves the loop deaf, so a turn that ends with nothing to speak must still recover.
+    [Fact]
+    public async Task AppJs_RetriesTheRearmSoAMutedMicIsNeverStuck()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+        var maybeArm = StaticAssetsServerFixture.Body(app, "function maybeArmListening()");
+
+        Assert.Contains("rearmTimer = setTimeout(maybeArmListening", maybeArm);
+        Assert.Contains("clearTimeout(rearmTimer)", maybeArm);
+    }
+
+    // The tooltip promised "talk over it to interrupt", which is now true only on a headset. User-facing
+    // text that contradicts the code is the doc debt this repo fixes in the same MR.
+    [Fact]
+    public async Task Index_VoiceTooltipNamesTheNewGesture()
+    {
+        var index = await _client.GetStringAsync("/");
+        var title = index[index.IndexOf("id=\"voiceBtn\"", StringComparison.Ordinal)..];
+        title = title[..title.IndexOf('>')];
+
+        Assert.Contains("Esc", title, StringComparison.Ordinal);
+        Assert.DoesNotContain("talk over it to interrupt", title, StringComparison.Ordinal);
+    }
+
     // The text between one declaration and the next, for a function Body()'s brace matching cannot handle.
     private static string Slice(string source, string from, string to)
     {
