@@ -140,6 +140,10 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/api/conversation-groups/group-id")]
     [InlineData("/api/conversation-group-order")]
     [InlineData("/api/conversations/x/group")]
+    // The stop route (ADR 0078) is authenticated by OMISSION — it is not excluded, and nothing about it
+    // self-enforces. Named here because it lives one segment under /api/chat, so a future '/api/chat/*'
+    // entry (say, to let something poll a turn) would hand anyone the power to stop anyone's reply.
+    [InlineData("/api/chat/x/stop")]
     public void Exclusions_DoNotCoverAnyAuthenticatedPath(string path)
     {
         var entries = ExcludedPaths();

@@ -184,6 +184,16 @@
               <path d="M4.5 6v4M7 3.5v9M9.5 5.5v5M12 6.5v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
           </button>
+          <!-- Stop generating (ADR 0078): hidden except while a turn is streaming, which is why it can sit
+               here without reopening ADR 0043's "two composer layouts" objection — it is additive and
+               transient, not a second permanent layout. It stops the SERVER, not just this browser: the
+               reply is cut short and what had arrived is kept. -->
+          <button class="composer__stop" id="stopBtn" type="button" hidden
+                  aria-label="Stop generating" title="Stop generating — keeps the reply so far">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor"/>
+            </svg>
+          </button>
         </div>
         <input type="file" id="fileInput" accept="image/*,application/pdf,.pdf,.docx,.pptx,.xlsx,.txt,.md,text/plain,text/markdown" multiple hidden />
         <div class="composer__footer">

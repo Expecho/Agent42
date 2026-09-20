@@ -70,4 +70,10 @@ public sealed record AgentStreamEvent(
     [property: Id(10)] string? MediaType = null,
     // Set on a Suggestions event: up to 3 short follow-up prompts. Trailing default so every existing
     // positional construction keeps compiling.
-    [property: Id(11)] IReadOnlyList<string>? Suggestions = null);
+    [property: Id(11)] IReadOnlyList<string>? Suggestions = null,
+    // Set on the Done event of a turn the user STOPPED (ADR 0078), so the client can mark that bubble as
+    // interrupted rather than finished. Nullable, and null rather than false when the turn ran to
+    // completion — not a style choice: the NDJSON writer ignores nulls (AgentApi.Conversations.cs), so a
+    // plain bool would add "stopped":false to every per-token delta of every turn. Trailing default so
+    // every existing positional construction keeps compiling.
+    [property: Id(12)] bool? Stopped = null);

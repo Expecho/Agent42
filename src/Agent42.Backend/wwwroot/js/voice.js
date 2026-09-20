@@ -3,7 +3,7 @@
 import { input, voiceBtn } from "./dom.js";
 import { profile } from "./profile.js";
 import { userDefaultSpeechModel } from "./providers.js";
-import { send, sendAbort, setVoice, stopSpeech, streaming } from "./send.js";
+import { send, sendAbort, setVoice, stopGeneration, stopSpeech, streaming } from "./send.js";
 import { SpeechRecognition } from "./speech.js";
 
 // Extends dictation (ADR 0006): SpeechRecognition to listen + speechSynthesis to speak, in a
@@ -250,7 +250,12 @@ export function wireVoice() {
     function bargeIn(heard) {
       interrupted = true;
       cancelSpeech(); // stop the reply mid-word — browser voice or server audio
-      if (sendAbort) sendAbort.abort(); // stop generation mid-stream
+      // Both halves, and neither is redundant. The local abort is what makes the interruption immediate:
+      // onDelta speaks whatever it is handed and is NOT gated by `interrupted`, so waiting for a round trip
+      // would keep reading buffered text over the user. The server stop (ADR 0078) is what makes the stored
+      // turn honest: without it the run continues and the conversation keeps a reply nobody ever heard.
+      // Fire-and-forget — nothing below waits on the network.
+      stopGeneration({ abortLocally: true });
       state = "listening";
       resetTurn();
       finalText = heard;

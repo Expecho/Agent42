@@ -92,8 +92,65 @@ public sealed partial class FakeChatClient : IChatClient
 
     private int _suggestionCalls;
 
+    private StreamGate? _streamGate;
+
     /// <summary>Number of follow-up-suggestion generation calls this (per-silo) client has served.</summary>
     public int SuggestionCalls => Volatile.Read(ref _suggestionCalls);
+
+    /// <summary>
+    /// A hold on the streamed reply, opt-in and inert until a test installs one with
+    /// <see cref="OpenStreamGate"/>. The stream parks once it has yielded exactly
+    /// <see cref="StreamGate.AfterChunks"/> reply chunks, signals <see cref="StreamGate.Reached"/>, and
+    /// waits for <see cref="StreamGate.Release"/> — or for the cancellation token, which is what makes it
+    /// useful for a stop test: the park is where the turn is when the stop lands.
+    ///
+    /// <para><b>Why a gate rather than a timer.</b> <see cref="SlowStreamMarker"/> paces the stream at
+    /// <see cref="SlowStreamChunkDelayMs"/>, which is enough for a test to reach a turn that is still
+    /// arriving, but NOT enough to say "act after exactly one chunk": with three chunks that is a
+    /// ~400 ms window, raced against a shared TestCluster under parallel test classes (ADR 0055). Every
+    /// assertion about a PARTIAL reply — stopped mid-turn (ADR 0078) — needs the exact boundary, or it
+    /// is a flake that passes on a fast machine and lies on a loaded one. <c>AfterChunks: 0</c> parks
+    /// before any text at all, which is the other boundary that matters (stopped during a tool call).</para>
+    /// </summary>
+    public sealed class StreamGate(int afterChunks)
+    {
+        /// <summary>How many reply chunks to let through before parking. 0 parks before the first.</summary>
+        public int AfterChunks { get; } = afterChunks;
+
+        /// <summary>Completes once the stream has reached the park.</summary>
+        public TaskCompletionSource Reached { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Complete this to let the rest of the reply stream.</summary>
+        public TaskCompletionSource Release { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    /// <summary>
+    /// Installs a <see cref="StreamGate"/> for the next streamed reply. Released and cleared by
+    /// <see cref="Reset"/>, so a test that throws cannot wedge the next one behind its gate.
+    /// </summary>
+    public StreamGate OpenStreamGate(int afterChunks = 1)
+    {
+        var gate = new StreamGate(afterChunks);
+        Volatile.Write(ref _streamGate, gate);
+        return gate;
+    }
+
+    /// <summary>
+    /// Releases the installed gate and takes it down, so later turns in the same test stream freely.
+    ///
+    /// <para>A test that runs a SECOND turn after a gated one must call this, and the failure mode if it
+    /// forgets is not a failed assertion: the next turn parks on the same gate and the test hangs until the
+    /// run is killed. Releasing without clearing is not enough — the gate matches on a chunk count, so it
+    /// would catch the next turn at the same boundary.</para>
+    /// </summary>
+    public void CloseStreamGate()
+    {
+        var gate = Volatile.Read(ref _streamGate);
+        Volatile.Write(ref _streamGate, null);
+        gate?.Release.TrySetResult();
+    }
 
     /// <summary>
     /// The full prompt text the most recent follow-up-suggestion call was handed, or null if there has
@@ -115,6 +172,10 @@ public sealed partial class FakeChatClient : IChatClient
         Volatile.Write(ref _suggestionCalls, 0);
         StampResponseCreatedAt = null;
         LastSuggestionPrompt = null;
+
+        // A test that failed mid-gate may have left a stream parked on it, and the cluster is shared across
+        // the class (ADR 0055), so the next test would inherit a wedged turn.
+        CloseStreamGate();
     }
 
     /// <summary>
@@ -170,6 +231,12 @@ public sealed partial class FakeChatClient : IChatClient
         }
 
         messages = list;
+
+        // Gate 0 parks before ANY update goes out — before the tool-call early return and before the echo
+        // prefix, both of which are text. That is the only way to reach a turn whose reply is still empty,
+        // which is what "stopped during a tool call" looks like from the grain's side (ADR 0078).
+        await AwaitStreamGateAsync(0, cancellationToken);
+
         var call = SelectToolCall(messages, options);
         if (call is not null)
         {
@@ -202,6 +269,7 @@ public sealed partial class FakeChatClient : IChatClient
         var faulting = lastUserText is { } faultPrompt
             && faultPrompt.Contains(FaultingStreamMarker, StringComparison.OrdinalIgnoreCase);
 
+        var streamed = 0;
         foreach (var chunk in ReplyChunks)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
@@ -211,15 +279,35 @@ public sealed partial class FakeChatClient : IChatClient
                     "fake provider failure: model endpoint returned 500 for deployment 'secret-deployment'");
             }
 
+            await AwaitStreamGateAsync(++streamed, cancellationToken);
+
             if (slow)
             {
-                await Task.Delay(SlowStreamChunkDelayMs);
+                // The token, deliberately: a compiler-generated async iterator does NOT check the
+                // cancellation token by itself, so an unawaited-token delay makes the whole stream
+                // uncancellable — and a test about stopping a turn mid-reply (ADR 0078) would then
+                // either hang or pass without the feature. A real provider behaves like this version:
+                // the OpenAI SDK passes the token into the HTTP read.
+                await Task.Delay(SlowStreamChunkDelayMs, cancellationToken);
             }
             else
             {
                 await Task.Yield();
             }
         }
+    }
+
+    // Parks the stream at the boundary a test asked for, until it releases it or cancels — see StreamGate.
+    private async Task AwaitStreamGateAsync(int streamed, CancellationToken cancellationToken)
+    {
+        var gate = Volatile.Read(ref _streamGate);
+        if (gate is null || gate.AfterChunks != streamed)
+        {
+            return;
+        }
+
+        gate.Reached.TrySetResult();
+        await gate.Release.Task.WaitAsync(cancellationToken);
     }
 
     // True when the last user message asks for reasoning. Keyed off the USER message, not the whole
