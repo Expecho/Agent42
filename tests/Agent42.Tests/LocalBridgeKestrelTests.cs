@@ -112,8 +112,8 @@ public sealed class LocalBridgeKestrelTests(SharedClusterFixture fixture) : Shar
 
     private sealed class NeverAsked : IConfirmationPrompt
     {
-        public Task<bool> ConfirmAsync(string toolName, string arguments, CancellationToken cancellationToken) =>
-            Task.FromResult(false);
+        public Task<ConfirmationAnswer> ConfirmAsync(string toolName, string arguments, CancellationToken cancellationToken) =>
+            Task.FromResult(ConfirmationAnswer.Deny);
     }
 
     private sealed class NullInner : IMcpConnectionFactory
