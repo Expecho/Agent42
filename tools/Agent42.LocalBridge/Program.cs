@@ -40,7 +40,12 @@ public static class Program
             stop.Cancel();
         };
 
-        var gate = new ConfirmationGate(new ConsolePrompt(), options.AutoApprove);
+        if (options.Yolo)
+        {
+            Log("--yolo: EVERY tool call runs without asking, including ones that drive your signed-in browser.");
+        }
+
+        var gate = new ConfirmationGate(new ConsolePrompt(), options.AutoApprove, allowAll: options.Yolo);
         var client = new BridgeClient(options, new HttpUpstream(options.Upstream), gate, Log);
         return await client.RunAsync(stop.Token) switch
         {

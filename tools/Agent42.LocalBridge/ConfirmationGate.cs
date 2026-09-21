@@ -55,6 +55,10 @@ public sealed record GateDecision(bool Allowed, string? DenialText = null)
 /// seeds, so it stops asking until the helper exits. The set is per process and never persisted: it dies
 /// with the helper, and no relayed traffic can add to it — only a person typing at this console can.</para>
 ///
+/// <para><b>…or started it with <c>--yolo</c>.</b> Then every call passes: no annotation check, no URL check,
+/// no size limit, no prompt. It is fixed at construction — a launch-time choice by the person at this machine,
+/// never an answer at a prompt and never something relayed traffic can switch on.</para>
+///
 /// <para><b>The prompt text is attacker-influenced</b> (arguments are model-written, the model reads web
 /// pages), so it is sanitized — control characters including ESC, and Unicode format characters such as
 /// the bidi override U+202E — and shown <b>in full</b>. A prefix would let a payload hide behind a harmless
@@ -89,9 +93,13 @@ public sealed partial class ConfirmationGate
     // tool-name comparison here: "Navigate" is a different tool from "navigate" as far as this gate knows.
     private readonly HashSet<string> _approved;
 
-    public ConfirmationGate(IConfirmationPrompt prompt, IReadOnlySet<string>? autoApprove = null, TimeSpan? timeout = null)
+    // --yolo. Readonly on purpose: nothing after construction can turn it on.
+    private readonly bool _allowAll;
+
+    public ConfirmationGate(IConfirmationPrompt prompt, IReadOnlySet<string>? autoApprove = null, TimeSpan? timeout = null, bool allowAll = false)
     {
         _prompt = prompt;
+        _allowAll = allowAll;
         _approved = new HashSet<string>(autoApprove ?? Enumerable.Empty<string>(), StringComparer.Ordinal);
         _timeout = timeout ?? DefaultConfirmTimeout;
     }
@@ -141,7 +149,7 @@ public sealed partial class ConfirmationGate
     /// <summary>Reviews one call. Prompts are serialized: a second call waits for the first answer.</summary>
     public async Task<GateDecision> ReviewAsync(string toolName, JsonNode? arguments, CancellationToken cancellationToken)
     {
-        if (IsApproved(toolName))
+        if (_allowAll || IsApproved(toolName))
         {
             return GateDecision.Allow;
         }

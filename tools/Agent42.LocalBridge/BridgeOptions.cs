@@ -2,12 +2,13 @@ namespace Agent42.LocalBridge;
 
 /// <summary>
 /// The helper's configuration (ADR 0076). <c>--server</c> is required, <c>--upstream</c> defaults to where
-/// BrowserOS neo was measured listening, and <c>--auto-approve</c> pre-approves named tools — there is no
-/// "approve everything" switch, and answering <c>a</c> at a prompt pre-approves only the tool being asked
-/// about. The key comes from <see cref="KeyVariable"/> <b>only</b>: an argument would be visible to every
+/// BrowserOS neo was measured listening, and <c>--auto-approve</c> pre-approves named tools. <c>--yolo</c> is
+/// the one approve-everything switch (amendment to ADR 0076): a launch-time choice by the person at this
+/// machine, never an answer at a prompt and never reachable from relayed traffic. Answering <c>a</c> at a
+/// prompt still pre-approves only the tool being asked about. The key comes from <see cref="KeyVariable"/> <b>only</b>: an argument would be visible to every
 /// process that can list this one's command line.
 /// </summary>
-public sealed record BridgeOptions(Uri Server, Uri Upstream, string Key, IReadOnlySet<string> AutoApprove)
+public sealed record BridgeOptions(Uri Server, Uri Upstream, string Key, IReadOnlySet<string> AutoApprove, bool Yolo = false)
 {
     public const string KeyVariable = "AGENT42_BRIDGE_KEY";
 
@@ -20,17 +21,19 @@ public sealed record BridgeOptions(Uri Server, Uri Upstream, string Key, IReadOn
     public const string Usage = """
         Agent42 local bridge — lets your Agent42 chats use an MCP server that listens only on this machine.
 
-        Usage: Agent42.LocalBridge --server <https://your-agent42> [--upstream <url>] [--auto-approve <tool,tool>]
+        Usage: Agent42.LocalBridge --server <https://your-agent42> [--upstream <url>] [--auto-approve <tool,tool>] [--yolo]
                Agent42.LocalBridge --version
 
           --server        Agent42 base URL, e.g. https://chat.agent42.nl (required)
           --upstream      Local MCP endpoint (default http://127.0.0.1:9210/mcp — see chrome://browseros/mcp)
           --auto-approve  Comma-separated tool names that run without asking (default: none)
+          --yolo          Run EVERY tool call without asking — including ones that run JavaScript in your
+                          signed-in browser. Only for sessions you trust end to end.
 
         The bridge key is read from the AGENT42_BRIDGE_KEY environment variable — never from the command line.
         Every tool call not marked read-only by the server asks for confirmation here first. Answer [y]es for
         that one call, [n]o to decline it, or [a]lways to stop being asked about that tool until this
-        bridge stops.
+        bridge stops. With --yolo nothing asks.
         """;
 
     /// <summary>Parses the command line, or returns an error message.</summary>
@@ -39,6 +42,7 @@ public sealed record BridgeOptions(Uri Server, Uri Upstream, string Key, IReadOn
         Uri? server = null;
         var upstream = DefaultUpstream;
         var autoApprove = new HashSet<string>(StringComparer.Ordinal);
+        var yolo = false;
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -56,6 +60,9 @@ public sealed record BridgeOptions(Uri Server, Uri Upstream, string Key, IReadOn
                 case "--auto-approve" when value is not null:
                     autoApprove.UnionWith(value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
                     i++;
+                    break;
+                case "--yolo":
+                    yolo = true;
                     break;
                 case "--key" or "--api-key":
                     return (null, $"Do not pass the key as an argument. Set {KeyVariable} instead.");
@@ -75,7 +82,7 @@ public sealed record BridgeOptions(Uri Server, Uri Upstream, string Key, IReadOn
             return (null, $"Set {KeyVariable} to the bridge key shown when you added the server in Agent42.");
         }
 
-        return (new BridgeOptions(server, upstream, key.Trim(), autoApprove), null);
+        return (new BridgeOptions(server, upstream, key.Trim(), autoApprove, yolo), null);
     }
 
     private static bool TryHttpUri(string? value, out Uri uri) =>

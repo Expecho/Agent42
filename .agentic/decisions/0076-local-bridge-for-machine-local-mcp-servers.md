@@ -28,6 +28,20 @@ amends: [0002, 0024, 0042, 0070]
 > keystroke. `n` and silence still deny, and only the exact words `y`/`yes` and `a`/`all`/`always` allow
 > anything: a typo is a denial.
 
+> **Amended 2026-09-21 (user decision) — `--yolo` turns the gate off for the helper's run.** This reverses
+> the "no approve-everything switch" line below and in the 2026-09-20 block, deliberately: for sessions the
+> user trusts end to end, even one `a` per tool is friction they do not want. With `--yolo` every
+> `tools/call` passes — unhinted tools (`act`, `evaluate`, `run`), URL-shaped arguments and argument sets
+> over the 20,000-character review limit included — and no prompt is shown. The limits that remain are the
+> ones that make it a *person's* choice: it is a **launch-time flag only** (off unless passed; the gate
+> takes it at construction into a `readonly` field), there is still **no approve-everything answer at the
+> prompt**, nothing relayed over the socket can turn it on, and the helper logs a warning line at startup.
+> The headline consequence of this ADR — a prompt-injected page can drive the signed-in browser — is, under
+> `--yolo`, no longer mitigated by anything on the helper side. Tests: `Gate_Yolo_AllowsEveryCallWithoutPrompting`
+> (four calls the gate would stop, zero prompts; the same call on a default gate prompts) and
+> `Options_YoloIsOffUnlessPassed`. **Mutation check:** dropping `_allowAll` from `ReviewAsync` turns exactly
+> the gate test red (35 passed, 1 failed). **Unverified:** the startup warning on a real terminal.
+
 ## Context
 
 The user wants Agent42 conversations — running on a cloud model, in production — to drive **BrowserOS
@@ -111,7 +125,8 @@ any `tools/call` that is not declared read-only, **the helper asks the person at
   (`scheme:` or `//`) — absent hint, `false`, an unknown tool and a call before any listing all prompt.
 - Prompts are serialized and time out after 60 s → deny. A deny is answered **by the helper** with a JSON-RPC
   **result** `{content:[…], isError:true}` on the same id, so the model reads why; the call never reaches the
-  upstream. `--auto-approve <tool,…>` pre-approves named tools; there is no approve-everything switch.
+  upstream. `--auto-approve <tool,…>` pre-approves named tools; there is no approve-everything switch
+  *(superseded 2026-09-21: `--yolo` is one — see the amendment at the top)*.
 - The prompt text is attacker-influenced, so C0/C1 controls (ESC included), DEL and Unicode format
   characters (Cf — the bidi overrides) are stripped, the tool name stands alone on its own line, and the
   arguments are shown **in full**. Past 20,000 characters the call is denied, never truncated — a prefix

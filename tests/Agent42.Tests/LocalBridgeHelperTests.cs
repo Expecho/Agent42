@@ -165,6 +165,36 @@ public sealed class LocalBridgeHelperTests
         Assert.Equal(2, prompt.Calls);
     }
 
+    // --yolo passes everything the gate would otherwise stop — unhinted, URL-bearing and oversized calls —
+    // without ever showing a prompt. Without it the same calls still prompt: the switch is opt-in only.
+    [Fact]
+    public async Task Gate_Yolo_AllowsEveryCallWithoutPrompting()
+    {
+        var prompt = new ScriptedPrompt(answer: ConfirmationAnswer.Deny);
+        var gate = new ConfirmationGate(prompt, allowAll: true);
+        gate.ObserveToolsList(ToolsList(("snapshot", true), ("navigate", false)));
+
+        Assert.True((await gate.ReviewAsync("navigate", Args(new { url = "https://example.com" }), CancellationToken.None)).Allowed);
+        Assert.True((await gate.ReviewAsync("evaluate", Args(new { script = "document.cookie" }), CancellationToken.None)).Allowed);
+        Assert.True((await gate.ReviewAsync("snapshot", Args(new { url = "https://example.com" }), CancellationToken.None)).Allowed);
+        Assert.True((await gate.ReviewAsync("run", Args(new { s = new string('x', ConfirmationGate.MaxReviewableArgChars + 1) }), CancellationToken.None)).Allowed);
+        Assert.Equal(0, prompt.Calls);
+
+        var guarded = new ConfirmationGate(prompt);
+        Assert.False((await guarded.ReviewAsync("evaluate", Args(new { script = "document.cookie" }), CancellationToken.None)).Allowed);
+        Assert.Equal(1, prompt.Calls);
+    }
+
+    [Fact]
+    public void Options_YoloIsOffUnlessPassed()
+    {
+        var env = new Dictionary<string, string?> { [BridgeOptions.KeyVariable] = "sk_bridge_x" };
+
+        Assert.False(BridgeOptions.Parse(["--server", "https://chat.example"], k => env.GetValueOrDefault(k)).Options!.Yolo);
+        Assert.True(BridgeOptions.Parse(["--server", "https://chat.example", "--yolo"], k => env.GetValueOrDefault(k)).Options!.Yolo);
+        Assert.Contains("--yolo", BridgeOptions.Usage, StringComparison.Ordinal);
+    }
+
     // An "a" answer pre-approves that ONE tool for the rest of the process — the runtime twin of
     // --auto-approve. The tool asked about stops prompting; nothing else does.
     [Fact]

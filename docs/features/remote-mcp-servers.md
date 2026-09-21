@@ -128,7 +128,8 @@ so a browser tab cannot relay either. Choose **Local bridge** as the auth mode i
 3. On your computer, set `AGENT42_BRIDGE_KEY` to that key and run
    `./Agent42.LocalBridge --server https://chat.agent42.nl`
    (`--upstream <url>` if your server is not on `http://127.0.0.1:9210/mcp`; see
-   `chrome://browseros/mcp`; `--auto-approve tool,tool` to skip prompts for named tools; `--version`).
+   `chrome://browseros/mcp`; `--auto-approve tool,tool` to skip prompts for named tools; `--yolo` to skip **every** prompt,
+   including for tools that run JavaScript in your signed-in browser; `--version`).
    From a checkout, `dotnet run --project tools/Agent42.LocalBridge -- --server …` does the same.
 4. Press **Test** — it reports the tool count, or "local bridge not connected" while the helper is off.
 
