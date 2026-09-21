@@ -2,6 +2,7 @@
 
 import { chatScroll, emptyState, thread } from "./dom.js";
 import { linkifyPlainText, renderMarkdown } from "./format.js";
+import { mcpOAuthStartUrl } from "./mcp.js";
 import { send, streaming } from "./send.js";
 
 export function clearThread() {
@@ -147,6 +148,31 @@ export function markStopped(msg, hasText) {
   note.className = "thread__stopped";
   note.textContent = "Stopped before the reply started.";
   msg.replaceWith(note);
+}
+
+// An InteractiveOAuth MCP server this conversation uses needs a fresh sign-in (ADR 0081): a block in the bubble
+// (the markStopped shape) with a Reconnect button. It opens the OAuth flow in a NEW tab — the active conversation
+// lives only in a module variable, so the settings flow's full navigation would drop the open chat. The next
+// message picks the tools back up (the grain re-resolves). Live-only: not replayed by renderTurns.
+export function renderMcpReauth(msg, serverId, name) {
+  const bubble = msg.querySelector(".msg__bubble");
+  if (!bubble || !serverId) return;
+  const block = document.createElement("div");
+  block.className = "msg__reauth";
+  const text = document.createElement("span");
+  text.className = "msg__reauth-text";
+  text.textContent = `⚠ ${name || serverId} is disconnected: its sign-in expired.`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "msg__reauth-btn";
+  button.textContent = "Reconnect";
+  button.setAttribute("aria-label", `Reconnect MCP server: ${name || serverId}`);
+  button.addEventListener("click", () => {
+    window.open(mcpOAuthStartUrl(serverId), "_blank", "noopener");
+    text.textContent = "Finish signing in in the new tab, then send your message again.";
+  });
+  block.append(text, button);
+  bubble.appendChild(block);
 }
 
 // Follow-up suggestion chips (up to 3) under a reply. Clicking one sends it immediately as the next

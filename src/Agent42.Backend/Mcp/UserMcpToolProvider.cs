@@ -99,10 +99,10 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             // checkboxes, so a user's partial per-tool selection survives the outage instead of being dropped
             // by the next picker Save. It is also why KnownToolNames is not derived from Tools — here Tools is
             // empty and the names are not.
-            void Skip(string reason)
+            void Skip(string reason, bool reauthRequired = false)
             {
                 _logger.LogInformation("MCP server {Server} for user {User}: {Reason}", server.Name, userId, reason);
-                servers.Add(new McpServerTools(server.Id, [], server.KnownToolNames, server.SeedsFetchableUrls));
+                servers.Add(EmptyGroup(server, reauthRequired));
             }
 
             // None/Header (Phase 1), ClientCredentials (Phase 2), InteractiveOAuth (Phase 3) and LocalBridge
@@ -114,15 +114,13 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 continue;
             }
 
-            // InteractiveOAuth: resolve the current access token (refreshing at connect if near expiry). A
-            // server that has not completed the Connect flow yet has no token — skip it (not connected).
-            string? oauthAccessToken = null;
+            InteractiveOAuthTokenProvider? oauthBearer = null;
             if (mode == McpAuthMode.InteractiveOAuth)
             {
-                oauthAccessToken = await _oauthTokens.ResolveAsync(userId, server, cancellationToken);
-                if (oauthAccessToken is null)
+                (oauthBearer, var skipReason) = await ResolveOAuthBearerAsync(userId, server, cancellationToken);
+                if (oauthBearer is null)
                 {
-                    Skip("not connected (no OAuth token yet)");
+                    Skip(skipReason!, reauthRequired: skipReason == ReauthSkipReason);
                     continue;
                 }
             }
@@ -131,7 +129,7 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             var secrets = new McpConnectionSecrets(
                 _protector.Unprotect(server.HeaderValueCiphertext),
                 _protector.Unprotect(server.ClientSecretCiphertext),
-                oauthAccessToken);
+                oauthBearer);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(ConnectTimeout);
             try
@@ -154,7 +152,9 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 // user's setting, so the provider never derives or defaults it. The harvest itself happens in
                 // the GRAIN, not here: these tool instances are shared across every conversation of this
                 // user, and FetchableUrls is per-conversation state.
-                servers.Add(new McpServerTools(server.Id, tools, discovered, server.SeedsFetchableUrls));
+                servers.Add(new McpServerTools(
+                    server.Id, tools, discovered, server.SeedsFetchableUrls, server.Name,
+                    InteractiveOAuth: oauthBearer is not null));
                 connections.Add(connection.Connection);
             }
             catch (LocalBridgeNotConnectedException)
@@ -171,12 +171,38 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 _logger.LogWarning(ex,
                     "MCP server {Server} for user {User} could not be reached; skipping its tools.",
                     server.Name, userId);
-                servers.Add(new McpServerTools(server.Id, [], server.KnownToolNames, server.SeedsFetchableUrls));
+
+                // The connect's own 401 → renew → retry may have found the grant dead just now (invalid_grant).
+                servers.Add(EmptyGroup(server, reauthRequired: oauthBearer?.State == McpOAuthState.ReauthRequired));
             }
         }
 
         return (servers, connections);
     }
+
+    private const string ReauthSkipReason = "OAuth authorization expired; reconnect needed";
+
+    // InteractiveOAuth: resolve once now, then hand the connection a PER-REQUEST bearer seeded with this resolution
+    // (ADR 0081) — the connection outlives the access token in the version cache, so a static bearer would go stale
+    // there. No bearer means skip, with the reason: never connected (no token yet), or a dead grant, which is
+    // skipped WITHOUT connecting (a connect would only earn a 401) and flagged so the grain can offer Reconnect.
+    private async Task<(InteractiveOAuthTokenProvider? Bearer, string? SkipReason)> ResolveOAuthBearerAsync(
+        string userId, StoredMcpServer server, CancellationToken cancellationToken)
+    {
+        var resolution = await _oauthTokens.ResolveAsync(userId, server.Id, cancellationToken: cancellationToken);
+        return resolution.State switch
+        {
+            McpOAuthState.NotConnected => (null, "not connected (no OAuth token yet)"),
+            McpOAuthState.ReauthRequired => (null, ReauthSkipReason),
+            _ => (new InteractiveOAuthTokenProvider(userId, server.Id, _oauthTokens, resolution), null),
+        };
+    }
+
+    // The group of a server that contributes no tools this activation: it keeps its id (wildcard expansion) and its
+    // previously discovered names (never erased).
+    private static McpServerTools EmptyGroup(StoredMcpServer server, bool reauthRequired = false) =>
+        new(server.Id, [], server.KnownToolNames, server.SeedsFetchableUrls, server.Name, reauthRequired,
+            string.Equals(server.Auth, nameof(McpAuthMode.InteractiveOAuth), StringComparison.OrdinalIgnoreCase));
 
     // Persists the tool names just discovered from a server. Best-effort by design: this is picker metadata,
     // so a storage hiccup must not fail an activation that otherwise has working tools — the names simply stay

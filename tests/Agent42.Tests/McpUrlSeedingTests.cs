@@ -75,6 +75,43 @@ public sealed class McpUrlSeedingTests(SharedClusterFixture fixture) : SharedClu
         }
     }
 
+    // AC13b (ADR 0081) — the reauth-notice wrapper must sit OUTSIDE the harvester. The server's display name is
+    // user-chosen text that ends up in the notice, so naming the server with a URL makes the ordering observable:
+    // nested the wrong way round, the harvester would read the notice as a successful result and seed that URL.
+    [Fact]
+    public async Task A401OnASeedingServer_SeedsNothing()
+    {
+        foreach (var silo in Cluster.Silos)
+        {
+            Cluster.GetSiloServiceProvider(silo.SiloAddress)
+                .GetRequiredService<SingleUserMcpToolProvider>().Servers =
+                [
+                    new McpServerTools(
+                        SeedingServerId,
+                        [AIFunctionFactory.Create(
+                            string (string filter) => throw new HttpRequestException(
+                                "Response status code does not indicate success: 401 (Unauthorized).",
+                                null, System.Net.HttpStatusCode.Unauthorized),
+                            FakeChatClient.SeedingLinkToolName,
+                            "lists the links on a page")],
+                        [FakeChatClient.SeedingLinkToolName],
+                        SeedsFetchableUrls: true,
+                        ServerName: LinkedDocumentUrl,
+                        InteractiveOAuth: true),
+                ];
+        }
+
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("seed-reauth-conversation");
+        var events = await Chat(agent, $"{FakeChatClient.SeedingChainTrigger} a document");
+
+        Assert.Empty((await ReadStateAsync(agent)).SeededFetchableUrls);
+
+        // Non-vacuous: the tool really ran and really returned the notice, carrying the URL-shaped name.
+        var end = events.First(e => e.Type == AgentStreamEventType.ToolCallEnd && e.ToolCallId == "seeding-link-call-1");
+        Assert.Contains(McpReauthNotice.ResultMarker, end.ToolResult);
+        Assert.Contains(LinkedDocumentUrl, end.ToolResult);
+    }
+
     // The grain's persisted state — the only place that can COUNT seeded URLs. Same helper shape as
     // WebDocumentToolTests.ReadStateAsync, and for the same reason.
     private async Task<AgentGrainState> ReadStateAsync(IAgentGrain agent)

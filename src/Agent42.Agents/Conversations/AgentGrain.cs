@@ -168,6 +168,18 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // their conversation grains.
     private IReadOnlyList<McpServerTools> _mcpServers = [];
 
+    // The overlay version _mcpServers was resolved from (ADR 0081). The mid-turn re-resolve compares against it,
+    // so a reconnect elsewhere (the OAuth callback's save bumps the version) brings a dead server's tools back on
+    // the user's next message without a reactivation.
+    private int _mcpVersion;
+
+    // The servers already shown a Reconnect notice on this ACTIVATION (ADR 0081) — at most once per server, so a
+    // user who ignores the button is not nagged on every turn. Deliberately activation-scoped and NOT a member of
+    // the turn-scoped clear ritual; cleared only when the MCP tool set is re-resolved. Only an INTERACTIVE run adds
+    // to it: a background drain that consumed it would hide the notice from the user's next real turn. Which
+    // servers 401'd during a run is a LOCAL (McpReauthTurnObserver), never a field — two runs can be in flight.
+    private readonly HashSet<string> _mcpReauthNotified = new(StringComparer.Ordinal);
+
     // This user's UPLOADED skills (ADR 0049), resolved ONCE on activation from this grain's userId — BEFORE
     // the first BuildAgent, the same ordering hazard as _mcpServers, _chatClientFactory and
     // _userDefaultEnabledTools. BuildAgent merges these with SkillCatalog into one catalog (upload wins on a
@@ -360,7 +372,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // connecting later would have the first chat turn AND every reminder turn on this activation silently
         // omit the user's MCP tools. Same ordering hazard the two resolutions above guard against. Best-effort:
         // the provider connects with a timeout and skips dead servers, so this never fails activation.
-        _mcpServers = (await _mcpToolProvider.GetForUserAsync(_userId, cancellationToken)).Servers;
+        var mcp = await _mcpToolProvider.GetForUserAsync(_userId, cancellationToken);
+        _mcpServers = mcp.Servers;
+        _mcpVersion = mcp.Version;
 
         // Resolve this user's UPLOADED skills (ADR 0049) BEFORE the first BuildAgent below, for exactly the
         // reason above — BuildAgent merges them with the shipped catalog and ReceiveReminder reuses the same
@@ -665,6 +679,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             yield break;
         }
 
+        // A dead-grant MCP server (ADR 0081): first pick up a reconnect made elsewhere, then tell the user about any
+        // server this conversation uses that still needs one — before the model runs, so the button is there even
+        // if the model never tries the missing tools.
+        await ReResolveMcpAfterReconnectAsync(interactive);
+        foreach (var notice in TakeMcpReauthNotices(McpServersNeedingReauth(), interactive))
+        {
+            yield return notice;
+        }
+
         // Images are gated on the model's VISION capability, and this gate is not merely about a turn
         // that would fail anyway (ADR 0013). An image reaches the model as a SAS URL into our PRIVATE
         // attachments container (ADR 0004), and the model's host really does fetch that URL server-side
@@ -715,10 +738,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         PublishStopHandle(turnCts, interactive);
 
         var outcome = new TurnOutcome();
+        var reauth = new McpReauthTurnObserver(_mcpServers);
         try
         {
             await foreach (var evt in StreamModelReplyAsync(userMessage, reply, tokens, outcome, turnCts.Token))
             {
+                reauth.Observe(evt);
                 yield return evt;
             }
         }
@@ -755,19 +780,34 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // method. Site 2 is in ReceiveReminder, which does NOT drain this method.
         await RebuildForIngestedWebDocumentAsync();
 
-        // Follow-up suggestions (interactive path only, opt-out via Preferences). Best-effort: the helper
-        // owns its try/catch and returns null on any failure, so a slow/failing suggestion call never breaks
-        // the turn. Emitted BEFORE Done, after the reply is fully streamed. Skipped on the agent-run/reminder
-        // drain (_interactiveTurn is false there) and on an empty reply. The generator uses a throwaway
-        // message list and never touches _session, so nothing is persisted.
-        //
-        // A stopped turn is gated inside the helper too, beside the other three conditions.
-        if (await SuggestFollowUpsAsync(message, reply, outcome.Stopped) is { Count: > 0 } suggestions)
+        foreach (var evt in await TrailingEventsAsync(message, reply, outcome, reauth, interactive))
         {
-            yield return new AgentStreamEvent(AgentStreamEventType.Suggestions, Suggestions: suggestions);
+            yield return evt;
         }
 
         yield return tokens.ToDoneEvent(outcome.Stopped);
+    }
+
+    // The live-only events between the fully streamed reply and Done. Extracted as one seam so ChatCoreAsync stays
+    // under the S3776 gate (ADR 0050), and in this order:
+    //
+    // 1. Reconnect notices for the servers whose tool call was refused with 401 during this run (ADR 0081) — under
+    //    the answer that explains why the tool did not run.
+    // 2. Follow-up suggestions (interactive path only, opt-out via Preferences). Best-effort: the helper owns its
+    //    try/catch and returns null on any failure, so a slow/failing suggestion call never breaks the turn.
+    //    Skipped on the agent-run/reminder drain (_interactiveTurn is false there) and on an empty reply. The
+    //    generator uses a throwaway message list and never touches _session, so nothing is persisted. A stopped
+    //    turn is gated inside the helper too, beside the other three conditions.
+    private async Task<List<AgentStreamEvent>> TrailingEventsAsync(
+        string message, StringBuilder reply, TurnOutcome outcome, McpReauthTurnObserver reauth, bool interactive)
+    {
+        var events = TakeMcpReauthNotices(reauth.ServerIds, interactive);
+        if (await SuggestFollowUpsAsync(message, reply, outcome.Stopped) is { Count: > 0 } suggestions)
+        {
+            events.Add(new AgentStreamEvent(AgentStreamEventType.Suggestions, Suggestions: suggestions));
+        }
+
+        return events;
     }
 
     // Makes this turn stoppable from outside, for a browser turn only. `??=` rather than `=`: if a turn is
@@ -1502,16 +1542,90 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // no-tools-downgrade strip (ADR 0013) so a rebind onto a no-tools model can't replay tool content.
     private async Task RebindModelAsync(string modelId)
     {
-        var snapshot = await _agent.SerializeSessionAsync(_session);
         _modelId = modelId;
         _state.State.DeploymentName = modelId;
-        _agent = BuildAgent(modelId);
-        _session = await _agent.DeserializeSessionAsync(snapshot);
+        await RebuildAgentPreservingSessionAsync(modelId);
 
         if (!_chatClientFactory.GetCapabilities(modelId).SupportsTools)
         {
             StripToolHistory();
         }
+    }
+
+    // Snapshot → rebuild the agent from the grain's current fields → restore the history. Shared by the no-model
+    // rebind above, the MCP re-resolve below (ADR 0081) and the web-document rebuild (ADR 0066), which change
+    // different inputs to BuildAgent.
+    private async Task RebuildAgentPreservingSessionAsync(string modelId)
+    {
+        var snapshot = await _agent.SerializeSessionAsync(_session);
+        _agent = BuildAgent(modelId);
+        _session = await _agent.DeserializeSessionAsync(snapshot);
+    }
+
+    // Mid-turn MCP recovery (ADR 0081), following the _chatClientFactory re-resolve precedent at the top of
+    // ChatCoreAsync. Runs only when there is something to recover (a group flagged ReauthRequired, whose tools are
+    // therefore missing from the agent), only on an interactive run, and only when no other interactive run is live
+    // — a rebuild swaps _agent/_session, which must never happen under a run still iterating them (the reason
+    // RebuildForIngestedWebDocumentAsync gives). The provider's cache makes an unchanged version a cheap hit.
+    private async Task ReResolveMcpAfterReconnectAsync(bool interactive)
+    {
+        if (!interactive || _turnCts is not null || !_mcpServers.Any(s => s.ReauthRequired))
+        {
+            return;
+        }
+
+        var set = await _mcpToolProvider.GetForUserAsync(_userId);
+        if (set.Version == _mcpVersion)
+        {
+            return;
+        }
+
+        _mcpServers = set.Servers;
+        _mcpVersion = set.Version;
+        _mcpReauthNotified.Clear();
+        await RebuildAgentPreservingSessionAsync(_modelId);
+        _logger.LogInformation(
+            "Agent grain {GrainKey} re-resolved its MCP tools after a reconnect (version {Version})",
+            this.GetPrimaryKeyString(), set.Version);
+    }
+
+    // The flagged servers this conversation actually uses: ANY of its tools enabled (IsMcpToolEnabled), not
+    // IsMcpServerEnabled — a partial per-tool selection (mcp:{id}:{tool}, ADR 0058) must still get the notice.
+    // A model that takes no tools is offered none, so it gets no notice either.
+    private IEnumerable<string> McpServersNeedingReauth()
+    {
+        if (!_mcpServers.Any(s => s.ReauthRequired) || !_chatClientFactory.GetCapabilities(_modelId).SupportsTools)
+        {
+            return [];
+        }
+
+        var enabled = EffectiveEnabledTools().ToHashSet(StringComparer.Ordinal);
+        return _mcpServers
+            .Where(s => s.ReauthRequired
+                && (s.KnownToolNames ?? []).Any(n => ToolCatalog.IsMcpToolEnabled(s.ServerId, n, enabled)))
+            .Select(s => s.ServerId);
+    }
+
+    // One live McpReauthRequired event per server not yet notified on this activation — and nothing at all, not
+    // even the bookkeeping, for a background run (see _mcpReauthNotified).
+    private List<AgentStreamEvent> TakeMcpReauthNotices(IEnumerable<string> serverIds, bool interactive)
+    {
+        var notices = new List<AgentStreamEvent>();
+        if (!interactive)
+        {
+            return notices;
+        }
+
+        foreach (var id in serverIds)
+        {
+            if (_mcpReauthNotified.Add(id))
+            {
+                var name = _mcpServers.FirstOrDefault(s => s.ServerId == id)?.ServerName ?? id;
+                notices.Add(new AgentStreamEvent(AgentStreamEventType.McpReauthRequired, Text: name, McpServerId: id));
+            }
+        }
+
+        return notices;
     }
 
     // Drops function-call and function-result content from the session (ADR 0013). Used when the

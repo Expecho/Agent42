@@ -200,7 +200,7 @@ builder.Services.AddSingleton<ISkillPackageStore, BlobSkillPackageStore>();
 builder.Services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
 // Drives the interactive-OAuth HTTP exchanges (PRM discovery, code→token, refresh — Phase 3) over a plain
 // HttpClient (not DI-resolved, so no AddServiceDefaults resilience inheritance). Used by the /api/mcp/oauth/*
-// endpoints and by the tool provider's connect-time token refresh.
+// endpoints and by McpOAuthTokenResolver, which refreshes per request since ADR 0081.
 builder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
 
 // Document RAG (ADR 0007/0018). There is NO operator embedding generator: the embedding model is

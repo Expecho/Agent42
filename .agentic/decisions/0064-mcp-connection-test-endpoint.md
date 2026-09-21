@@ -10,6 +10,14 @@ amends: [0024, 0026, 0058]
 
 # Tell the user whether a newly added MCP server actually works
 
+> **Amended by [ADR 0081](0081-mcp-oauth-per-request-refresh-and-reconnect.md) (2026-09-21) — OAuth refresh
+> consequences only.** A refreshed token is now persisted by the non-bumping `RecordOAuthTokensAsync`, so the
+> "accepted consequence" below (Test on a near-expiry OAuth server bumps the version) and the "GET would become a
+> write that bumps" reason no longer hold; the rule against connecting from `GET /api/tools` stands on its other
+> reasons. `ResolveOAuthAccessTokenAsync` is now `McpOAuthTokenResolver.ResolveAsync`, and Test calls it with
+> `force: true`, reporting a dead grant as `authorization expired — reconnect this server`. Everything else here
+> stays authoritative. `status: accepted` on purpose.
+
 > **Amends [ADR 0024](0024-config-driven-remote-mcp-servers.md), [ADR 0026](0026-per-mcp-server-selectable-tools.md)
 > and [ADR 0058](0058-per-mcp-tool-selectable-tools.md).** Nothing is overturned. What changes is narrow and
 > must be named exactly: ADR 0024's management endpoints were **pure config CRUD that never opened a socket**,

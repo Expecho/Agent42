@@ -545,11 +545,19 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   the shared `ChatCoreAsync` that both chat callers drain, while the four above carry a *different value*
   per path and can only be set by the caller. Do not "harmonise" it into the three-site pattern; read the
   push-per-turn-counter entry for the reason `ReceiveReminder` still needs its own line.
+  **`_mcpReauthNotified` (ADR 0081) is deliberately ACTIVATION-scoped and is not a member either.** It records
+  which MCP servers were already shown a Reconnect notice, so it must outlive the turn — that is the point —
+  and it is cleared only when the MCP tool set is re-resolved. It is written **only** by an interactive run
+  (the `interactive` local captured at the top of `ChatCoreAsync`), because a background drain that consumed
+  it would hide the notice from the user's next real turn. The *per-run* set of servers that answered 401 is
+  a **local** (`McpReauthTurnObserver`), never a field: two runs can be in flight on one activation, and a
+  field would be wiped or polluted by the other one. Do not "tidy" either into the clear ritual.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_turnLocation`, the `finally` in `ChatAsync`, the
-  clear in `ReceiveReminder`), `tests/Agent42.Tests/AgentGrainTests.cs`
+  clear in `ReceiveReminder`; `_mcpReauthNotified`, `TakeMcpReauthNotices`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`ReceiveReminder_HasNoUserLocation`, `Location_IsTurnScoped_AndNotPersisted`),
-  `.agentic/decisions/0012-user-location-google-geocoding.md`
-- **Verified:** 2026-07-13
+  `tests/Agent42.Tests/McpReauthTests.cs` (`ABackgroundRun_DoesNotConsumeTheNotice`),
+  `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
+- **Verified:** 2026-09-21
 
 ### Ephemeral chat: `_ephemeral` is the same turn-scoped trap, and scheduling must be refused inside the tool
 
@@ -1708,10 +1716,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   breaks routing for *every* endpoint (this bit all six `MapAgentApi` hosts — DevHost 500s + 39 test failures —
   until each registered it). The MCP **endpoint is deliberately NOT SSRF-guarded** (config, not a model/request
   — may be `localhost`), exactly like the user-provider endpoint (see that gotcha).
-  **(4) `RecordToolNamesAsync` is the ONE write that must not bump the version (ADR 0058), and (1) is why.**
-  Every other write goes through `BumpAsync`, and the version is the key the cache in (1) holds **live MCP
-  sockets** under. Discovered tool names are picker metadata, not connection config, so persisting them must
-  not tear down every warm grain's connections for that user. Get the reason right, because a wrong one
+  **(4) Writes that are not connection config must not bump the version, and (1) is why.** The version is
+  the key the cache in (1) holds **live MCP sockets** under, so only a *configuration* write goes through
+  `BumpAsync`. The class today: `RecordToolNamesAsync` (discovered names, ADR 0058), `RecordOAuthTokensAsync`
+  (a refreshed or re-auth-marked OAuth bundle, ADR 0081 — a compare-and-swap, see the OAuth refresh entry)
+  and the bridge-key writes (`MintBridgeKeyAsync`/`ClearBridgeKeyAsync`, ADR 0076). Discovered tool names are
+  picker metadata, not connection config, so persisting them must not tear down every warm grain's
+  connections for that user. Get the reason right, because a wrong one
   invites a "simplification": the method is *also* a no-op when the names are unchanged, and that half alone
   would already stop a bumping write from recurring forever — so "it would bump on every activation" is
   **not** the justification. Even a single genuine name change must not invalidate the socket cache. Do not
@@ -1719,9 +1730,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   "every CONFIGURATION write" for exactly this reason.
   **(5) `GET /api/tools` must NEVER call `IUserMcpToolProvider`.** Two measured reasons: `ConnectAllAsync` is
   a **sequential** `foreach` with a **10 s** timeout per server behind a per-user semaphore, so three dead
-  servers cost ~30 s before the picker is usable; and resolving an InteractiveOAuth token **refreshes and
-  saves it**, so the GET would become a **write** that bumps the version and invalidates the socket cache on
-  a page load. The endpoint reads persisted `KnownToolNames` instead. The cost was a cold-start window, and
+  servers cost ~30 s before the picker is usable; and resolving an InteractiveOAuth token may **refresh** it —
+  a POST to a third-party authorization server and a grain write, as a side effect of a page load. (Since ADR
+  0081 that write no longer bumps the version, so it no longer invalidates the socket cache — but the connect
+  cost and the side effect are reason enough, and **the rule stands**.) The endpoint reads persisted
+  `KnownToolNames` instead. The cost was a cold-start window, and
   **ADR 0064 closed it without weakening this rule**: a newly added server has no per-tool checkboxes until
   that user's next chat activation connects to it **or they press Test** (`POST /api/mcp-servers/{id}/test`,
   which is user-pressed, one named server, and also runs automatically after a successful save). The rule
@@ -1748,10 +1761,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   process-singleton `_caches` and the tools duly appear, which makes a missing-invalidation defect look like
   a stale-process one. Do not conclude the cache is "working" because a restart fixed it. This is the trap to
   read first if a remote server is ever expected to grow tools at runtime.
+  **ADR 0081 added the one in-activation re-resolve, and it is narrow on purpose:** at the top of an
+  interactive `ChatCoreAsync`, only when a group is flagged `ReauthRequired` and no other interactive run is
+  live, the grain re-reads the provider and rebuilds (session preserved) if the version moved — so a reconnect
+  elsewhere brings a dead server's tools back on the next message. It is not a general refresh: an unflagged
+  set is never re-resolved mid-activation.
 - **Evidence:** `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (`RetainedVersionsPerUser`, `EvictBeyondAsync`,
   `GetForUserAsync`'s `cache.TryGet` early return),
-  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_mcpServers` resolved once in `OnActivateAsync`),
-  `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (the endpoint surface — no refresh route),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_mcpServers` resolved once in `OnActivateAsync`;
+  `ReResolveMcpAfterReconnectAsync`), `src/Agent42.Agents/Mcp/UserMcpConfigGrain.cs` (`BumpAsync` and its
+  non-bumping siblings), `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (the endpoint surface — no refresh route),
   `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Mcp` wildcard + `IsMcpServerEnabled`, both absent from `ToolNameToKey`),
   `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent` per-server MCP gate over `_mcpServers`),
   `src/Agent42.Backend/Program.cs` +
@@ -1761,8 +1780,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `PerServerSelection_EnablesOnlySelectedServer`),
   `.agentic/decisions/0024-config-driven-remote-mcp-servers.md`,
   `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`,
-  `.agentic/decisions/0064-mcp-connection-test-endpoint.md`
-- **Verified:** 2026-09-07
+  `.agentic/decisions/0064-mcp-connection-test-endpoint.md`,
+  `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
+- **Verified:** 2026-09-21
 
 ### The MCP connection test: two writers of the tool names, and an empty list ERASES them
 
@@ -1783,10 +1803,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   its own MR); guarding inside the grain is the true one-source fix and was rejected for the same reason.
   Use `RecordToolNamesAsync`, never `SaveAsync` — it deliberately does not bump the version.
   **Three more constraints on the tester, each of which looks optional and is not.** (1) It must resolve OAuth
-  tokens through the **shared** `McpOAuthTokenResolver`: that resolver refreshes within a 2-minute skew and
-  persists the bundle, so a probe that skipped it would report failure on a server the chat path connects to
-  fine — a false negative in a diagnostic tool. Accepted cost: Test on a near-expiry OAuth server bumps the
-  overlay version and invalidates that user's warm socket cache. (2) **A test is not an activation** — dispose
+  tokens through the **shared** `McpOAuthTokenResolver` and connect with the same per-request
+  `InteractiveOAuthTokenProvider` the chat path uses (ADR 0081): that resolver refreshes within a 2-minute
+  skew and persists the bundle (non-bumping), so a probe that skipped it would report failure on a server the
+  chat path connects to fine — a false negative in a diagnostic tool. It calls the resolver with
+  `force: true`, the one caller that retries a bundle already marked `ReauthRequired`, so a mark earned from a
+  one-off upstream lie recovers on a user-pressed Test; a still-dead grant reports the curated
+  `authorization expired — reconnect this server`. (2) **A test is not an activation** — dispose
   in a `finally`, never touch `IUserMcpToolProvider`; that half is pinned *structurally* (reflection over the
   ctor), because "nothing entered the cache" is not observable at runtime. (3) The failure reason is
   **curated, never the exception** (the `ConfigHealth.ProbeAsync` discipline); the detail goes to
@@ -1837,19 +1860,65 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Auth session cookie, so `GetUserId()` works. Manual prereq: the redirect URI
   `https://chat.agent42.nl/api/mcp/oauth/callback` must be registered in each provider's app registration,
   and it is built from `Request.Scheme`/`Host` (relies on forwarded-headers being handled behind the proxy).
-  (2) **Refresh is connect-time, not per-request**, and persisting a refreshed token via `SaveAsync` **bumps
-  the overlay version**, so the next activation does one extra reconnect — accepted churn, not a bug (a
-  per-request `AuthHeaderHandler` refresh was deferred to avoid coupling grain-persist into the connection).
-  The whole token bundle (access + refresh + token endpoint + client id + scopes) rides the encrypted
-  `StoredMcpServer.TokenCiphertext` — no new schema field.
+  (2) **Refresh is PER REQUEST since ADR 0081, and connect-time refresh was never enough.** ADR 0025 stamped
+  a connect-time token as a static header, but `UserMcpToolProvider` caches the live socket keyed only on the
+  config version, so a new activation was a cache hit reusing the expired bearer and the refresh (on the miss
+  path) never ran — the server lost its tools about an hour after sign-in. Now the caller builds an
+  `InteractiveOAuthTokenProvider` over the resolver and the factory wires it into `AuthHeaderHandler` (the
+  factory stays grain-free); a 401 re-resolves and resends the same request once. The refreshed bundle is
+  persisted by the non-bumping compare-and-swap `RecordOAuthTokensAsync` — **never** `SaveAsync`, which would
+  tear down every warm socket each hour. Do not reintroduce a static `Authorization` header for this mode.
+  The whole token bundle (access + refresh + token endpoint + client id + scopes, and since 0081 the
+  `reauth_required_at` mark) rides the encrypted `StoredMcpServer.TokenCiphertext` — no new schema field.
 - **Evidence:** `src/Agent42.Backend/Mcp/McpOAuth.cs` (`McpOAuthClient` discovery/exchange/refresh, `McpPkce`),
   `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (`/api/mcp/oauth/start` + `/callback`, `GetUserId()`-scoped),
   `src/Agent42.Agents/Mcp/UserMcpOAuthPendingGrain.cs` (one-time `TakeAsync`),
-  `src/Agent42.Backend/Mcp/UserMcpToolProvider.cs` (`ResolveOAuthAccessTokenAsync`),
+  `src/Agent42.Backend/Mcp/McpOAuthTokenResolver.cs` (`ResolveAsync`),
+  `src/Agent42.Backend/Mcp/McpAuthHeader.cs` (`InteractiveOAuthTokenProvider`, `AuthHeaderHandler`'s one retry),
+  `src/Agent42.Backend/Mcp/McpConnectionFactory.cs` (InteractiveOAuth on the handler path),
   `tests/Agent42.Tests/McpOAuthEndpointTests.cs` (`OAuthCallback_PersistsEncryptedTokens`),
   `tests/Agent42.Tests/McpOAuthClientTests.cs` (`Pkce_Challenge_MatchesRfc7636Vector`),
-  `.agentic/decisions/0025-mcp-interactive-oauth-app-driven-pkce.md`
-- **Verified:** 2026-07-19
+  `tests/Agent42.Tests/InteractiveOAuthTokenProviderTests.cs` (`PerRequestBearer_RefreshesAnExpiredToken_OnALiveConnection`),
+  `.agentic/decisions/0025-mcp-interactive-oauth-app-driven-pkce.md`,
+  `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
+- **Verified:** 2026-09-21
+
+### MCP OAuth refresh: only `invalid_grant` means "reconnect", every token write is a CAS, and the notice is trusted narrowly
+
+- **Claim:** ADR 0081 made the InteractiveOAuth refresh per request, which opened three traps the code
+  cannot show on its own. **(1) Only `invalid_grant` (RFC 6749 §5.2) marks a server as needing reconnect.**
+  `McpOAuthClient.PostTokenAsync` throws the typed `McpOAuthRefreshRejectedException` for a 4xx whose body
+  says `"error":"invalid_grant"` and nothing else. Any other non-success answer (a 5xx, `invalid_client`) keeps
+  today's `InvalidOperationException`, and a timeout or DNS failure surfaces from `SendAsync` as
+  `TaskCanceledException`/`HttpRequestException`; the resolver catches all of them (unless the caller cancelled),
+  logs, and returns the existing token, marking **nothing**.
+  "Any refresh failure means reconnect" reads like the safe simplification and is the opposite: a transient
+  blip would nag the user to re-consent, worse than the bug being fixed. **(2) Every token write is
+  compare-and-swap, and the refresh re-reads first.** `RecordOAuthTokensAsync(serverId, expected, next)`
+  writes only if the stored ciphertext is still `expected`. The resolver's read → token POST → write is not
+  atomic and the OAuth callback's `SaveAsync` can land inside it; an unconditional write would overwrite a
+  fresh consent with a stale (maybe marked) bundle. A lost swap means someone else wrote first — re-read and
+  use theirs, **never retry the write**. The resolver also re-reads the bundle from the grain before refreshing
+  and single-flights per (user, server) in the singleton: two retained cache versions can hold two live
+  connections, and with a rotating authorization server a refresh from a stale snapshot gets a **false**
+  `invalid_grant`. **(3) The in-turn notice is a marked tool result, trusted only from its own server.** The
+  grain-side `ReauthNoticeMcpTool` turns the SDK's bare `HttpRequestException { StatusCode: Unauthorized }`
+  (measured on `ModelContextProtocol` 2.2.0) into text beginning with `McpReauthNotice.ResultMarker`. Text can
+  be forged — a fetched page or another server's result can begin with the same prefix — so
+  `McpReauthTurnObserver` accepts a marker only when the call id maps back (via its `ToolCallStart`) to a tool
+  of the InteractiveOAuth server the marker names. And the wrapper must stay **outermost**, outside
+  `UrlHarvestingMcpTool`, or the harvester reads the notice as a successful result (ADR 0067).
+- **Evidence:** `src/Agent42.Backend/Mcp/McpOAuth.cs` (`McpOAuthRefreshRejectedException`, `IsInvalidGrant`),
+  `src/Agent42.Backend/Mcp/McpOAuthTokenResolver.cs` (`RefreshAsync`, the per-(user, server) gate),
+  `src/Agent42.Agents/Mcp/UserMcpConfigGrain.cs` (`RecordOAuthTokensAsync`),
+  `src/Agent42.Agents/Mcp/ReauthNoticeMcpTool.cs` (`McpReauthTurnObserver`),
+  `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`WithReauthNotice` outermost),
+  `tests/Agent42.Tests/McpOAuthTokenResolverTests.cs` (`ATransientRefreshFailure_NeverMarksReauth`,
+  `ARefreshLosingTheRace_KeepsTheCallbacksBundle`, `Resolver_SingleFlights_AcrossProviders`),
+  `tests/Agent42.Tests/McpReauthTests.cs` (`AForgedMarker_FromAnotherServersTool_RaisesNoEvent`),
+  `tests/Agent42.Tests/McpUrlSeedingTests.cs` (`A401OnASeedingServer_SeedsNothing`),
+  `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
+- **Verified:** 2026-09-21
 
 ### The API-key directory must be kept in sync per-operation, or a revoked key stays live
 
