@@ -18,6 +18,13 @@
 # Directory.Packages.props is in `paths` because it pins the helper's MCP SDK; a bump of any other package
 # also cuts a (harmless, identical-behaviour) patch release — accepted, so a dependency fix is never missed.
 #
+# The repository has IMMUTABLE RELEASES on: once a release is published, its assets are locked (an upload is
+# rejected with HTTP 422) and its tag can never be reused. So the release is created as a DRAFT, every asset and
+# SHA256SUMS.txt are uploaded to the draft, and the last step publishes it. A draft has no tag yet (GitHub creates
+# it on publish, on the draft's target commit), so the build jobs check out the commit SHA, not the tag. A failed
+# run leaves only a draft — never a published release without binaries — and the next run for that version
+# reuses the draft. A version that is already published cannot be released again: pick the next one.
+#
 # The self-contained/single-file settings live in the csproj (applied whenever a runtime identifier is
 # given), so `dotnet publish -r <rid> -c Release` on a laptop builds the same asset.
 #
@@ -57,6 +64,7 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      sha: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v7
 
@@ -94,14 +102,19 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Create the release (if it does not exist yet)
+      - name: Create the draft release (or reuse the draft a failed run left)
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.tag }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "Release $TAG already exists; assets will be replaced."
+          if draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2> /dev/null)"; then
+            if [ "$draft" != "true" ]; then
+              echo "::error::Release $TAG is already published. Published releases are immutable; release a new version."
+              exit 1
+            fi
+            echo "Draft release $TAG already exists; retargeting it to $GITHUB_SHA, assets will be replaced."
+            gh release edit "$TAG" --target "$GITHUB_SHA"
             exit 0
           fi
           prerelease=""
@@ -126,7 +139,7 @@ jobs:
           *More info → Run anyway* in SmartScreen; on macOS run `xattr -d com.apple.quarantine Agent42.LocalBridge`
           once after extracting. Verify a download against `SHA256SUMS.txt`.
           NOTES
-          gh release create "$TAG" --target "$GITHUB_SHA" --title "Agent42 local bridge $VERSION" \
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "Agent42 local bridge $VERSION" \
             --notes-file notes.md $prerelease
 
   publish:
@@ -145,7 +158,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.create-release.outputs.tag }}
+          # The commit, not the tag: a draft release's tag does not exist until it is published.
+          ref: ${{ needs.create-release.outputs.sha }}
 
       - uses: actions/setup-dotnet@v5
         with:
@@ -195,7 +209,9 @@ jobs:
           NAME: ${{ steps.package.outputs.name }}
         run: gh release upload "$TAG" "$NAME" --clobber
 
-  checksums:
+  # Runs only when every platform uploaded (a failed build leaves the draft unpublished), then publishes the
+  # release: after this step its assets are immutable.
+  finalize:
     needs: [create-release, publish]
     runs-on: ubuntu-latest
     steps:
@@ -209,3 +225,9 @@ jobs:
           sha256sum agent42-local-bridge-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
           gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Publish the release (creates the tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

@@ -140,6 +140,15 @@ build/test stays framework-dependent. `deploy.yml` is untouched: it triggers on 
 Dockerfile never copies the helper. The UI's key panel links to the releases page and shows
 `./Agent42.LocalBridge --server <origin>`.
 
+**Amended 2026-09-21: draft until complete.** The repository has GitHub *immutable releases* on. A published
+release rejects asset uploads (HTTP 422), and its tag can never be reused. The original shape published the
+release first and uploaded afterwards, so 1.0.1 and 1.0.2 were published **without binaries** and cannot be
+repaired. The release is now created as a **draft**, the build jobs upload to the draft, and a final job
+attaches `SHA256SUMS.txt` and publishes the release. That job runs only after every platform has
+succeeded. A draft has no tag until it is published, so the build jobs check out the commit SHA. A failed run
+leaves only a draft, which the next run for that version retargets and reuses. A run for a version that is
+already published fails: publish the next version instead.
+
 ## Alternatives considered
 
 - **Reach the user's machine from production** (tunnel, port-forward, a public neo). Rejected in the prior
