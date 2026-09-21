@@ -3594,14 +3594,17 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   must not ask again), and what is stored is the **raw** tool name, never the sanitized one shown on screen,
   or every later call would miss the set and prompt. The set is per process, never persisted, and reachable
   only from a console answer — do not add a persisted "remember my approvals" file, an approve-everything
-  answer, or a way for relayed traffic to write into it.
+  answer, or a way for relayed traffic to write into it. **Since 2026-09-21 `--yolo` is the one
+  approve-everything path, and it is a launch flag only** (user decision, ADR 0076 amendment): it bypasses
+  rules 1–3 and the size limit wholesale, so it must stay off unless passed, fixed at gate construction
+  (`readonly _allowAll`), and never reachable from a prompt answer or relayed traffic.
 - **Evidence:** `tools/Agent42.LocalBridge/ConfirmationGate.cs` (`_approved`, the double `IsApproved`),
   `tools/Agent42.LocalBridge/Program.cs` (`ConsolePrompt`, `ConsolePrompt.Read`),
   `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Gate_AllowForSession_*`,
-  `ConsolePrompt_ReadsOnlyTheThreeAnswers`),
+  `ConsolePrompt_ReadsOnlyTheThreeAnswers`, `Gate_Yolo_AllowsEveryCallWithoutPrompting`),
   `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md` (Verification — 0 ESC and 0 U+202E
   bytes on the real terminal; the 2026-09-20 amendment block)
-- **Verified:** 2026-09-20
+- **Verified:** 2026-09-21
 
 ### A bridge that connects after a chat activated is invisible to it — invalidate on CONNECT, rate-limited, never on disconnect
 
