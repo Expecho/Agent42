@@ -18,10 +18,16 @@ export async function loadMcpServers() {
   } catch { /* silo may be unreachable; the list refreshes on next open */ }
 }
 
-// The one place the interactive-OAuth sign-in starts, shared by the list row and the dialog button. A full
-// navigation: the server 302s to the identity provider and returns to /api/mcp/oauth/callback.
+// The one source of the interactive-OAuth start URL (ADR 0081): used by the settings flow below (a full
+// navigation) and by the transcript's Reconnect button (thread.js, a NEW tab, so the open chat survives).
+export function mcpOAuthStartUrl(serverId) {
+  return `/api/mcp/oauth/start?serverId=${encodeURIComponent(serverId)}`;
+}
+
+// The one place the settings sign-in starts, shared by the list row and the dialog button. A full navigation:
+// the server 302s to the identity provider and returns to /api/mcp/oauth/callback.
 function startMcpOAuth(serverId) {
-  window.location.href = `/api/mcp/oauth/start?serverId=${encodeURIComponent(serverId)}`;
+  window.location.href = mcpOAuthStartUrl(serverId);
 }
 
 // The masked record for a stored id, or null. Read AFTER loadMcpServers() for a fresh hasToken.
@@ -50,13 +56,14 @@ function renderMcpServers() {
     const sub = document.createElement("span");
     sub.className = "provider-row__sub";
     // Endpoint + auth + a key glyph when a secret is stored (never the secret) + a pause glyph when off.
-    // For OAuth, a connection state (🔗 connected / not connected) instead of the key glyph.
+    // For OAuth, a connection state (🔗 connected / ⚠ reconnect needed / not connected) instead of the key glyph.
+    // "reconnect needed" (ADR 0081): the authorization server rejected the stored grant, so a sign-in is due.
     const isOAuth = server.auth === "InteractiveOAuth";
     // A local-bridge server has no endpoint (ADR 0076): name where it lives instead of an empty first bit.
     const isBridge = server.auth === "LocalBridge";
     const bits = isBridge ? ["local bridge"] : [server.endpoint, server.auth];
     if (server.hasHeaderValue || server.hasClientSecret || server.hasBridgeKey) bits.push("🔑");
-    if (isOAuth) bits.push(server.hasToken ? "🔗 connected" : "not connected");
+    if (isOAuth) bits.push(!server.hasToken ? "not connected" : server.needsReauth ? "⚠ reconnect needed" : "🔗 connected");
     if (!server.enabled) bits.push("⏸ off");
     sub.textContent = bits.join(" · ");
     sub.title = isBridge ? "reached through the Agent42 local bridge on your machine" : server.endpoint;

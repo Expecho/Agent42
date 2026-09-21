@@ -48,9 +48,10 @@ public static partial class AgentApi
 
             // Tool names come from the PERSISTED KnownToolNames, never from a live connection — and that is a
             // deliberate constraint, not a shortcut. Calling IUserMcpToolProvider here would (1) make a GET
-            // take up to 10 s per dead server, sequentially, before the picker is usable, and (2) turn a page
-            // load into a WRITE, because resolving an InteractiveOAuth token refreshes and saves it, bumping
-            // the overlay version and invalidating the live-socket tool cache for every warm grain of the user.
+            // take up to 10 s per dead server, sequentially, before the picker is usable, and (2) give a page load
+            // side effects: resolving an InteractiveOAuth token may refresh it, a POST to a third-party
+            // authorization server plus a grain write. (Since ADR 0081 that write no longer bumps the version, so
+            // it no longer invalidates the live-socket cache — the rule stands on (1) and the side effect.)
             //
             // The same list reaches the grain on McpServerTools.KnownToolNames, so the checkboxes rendered here
             // and the keys AgentGrain.ExpandMcpWildcard projects are one source. They must not drift: a key the

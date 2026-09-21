@@ -188,6 +188,45 @@ public sealed class McpConnectionTesterTests(SharedClusterFixture fixture) : Sha
         Assert.Contains("access-new", _connections.ObservedOAuthTokens); // refreshed token was used to connect
     }
 
+    // AC9 (ADR 0081) — a dead grant gets its own curated reason (the user's next action is Reconnect, not fixing a
+    // URL), never an exception message or the token endpoint's body, and the server is never dialled.
+    [Fact]
+    public async Task Test_ReportsReauthRequired_WithACuratedReason()
+    {
+        const string user = "mcp-test-reauth";
+        await Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user).SaveAsync(OAuthServer("o1",
+            new McpOAuthTokens("access-old", "refresh-1", DateTimeOffset.UtcNow.AddSeconds(10), "https://as.example.com/token", "c", [])));
+        var endpoint = new FakeTokenEndpoint { Respond = FakeTokenEndpoint.InvalidGrant };
+
+        var outcome = await NewTester(new McpOAuthClient(new HttpClient(endpoint))).TestAsync(user, "o1", CancellationToken.None);
+
+        Assert.False(outcome!.Ok);
+        Assert.Equal("authorization expired — reconnect this server", outcome.Reason);
+        Assert.DoesNotContain("revoked", outcome.Reason); // the endpoint's error_description never reaches the browser
+        Assert.Equal(0, _connections.ConnectCount);
+    }
+
+    // AC10 (ADR 0081) — a server marked ReauthRequired (perhaps by a one-off upstream lie) is retried by a user-pressed
+    // Test: the refresh runs despite the mark, succeeds, clears the mark, and the server connects.
+    [Fact]
+    public async Task Test_ForcesARetry_AndClearsTheMark()
+    {
+        const string user = "mcp-test-force";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await grain.SaveAsync(OAuthServer("o1", new McpOAuthTokens("access-old", "refresh-1", DateTimeOffset.UtcNow.AddHours(1),
+            "https://as.example.com/token", "c", [])
+        { ReauthRequiredAt = DateTimeOffset.UtcNow }));
+        var endpoint = new FakeTokenEndpoint();
+
+        var outcome = await NewTester(new McpOAuthClient(new HttpClient(endpoint))).TestAsync(user, "o1", CancellationToken.None);
+
+        Assert.True(outcome!.Ok);
+        Assert.Equal(1, endpoint.Calls);
+        Assert.Contains("access-new", _connections.ObservedOAuthTokens);
+        var stored = McpOAuthTokens.Deserialize(_protector.Unprotect(Assert.Single((await grain.GetAsync()).Servers).TokenCiphertext));
+        Assert.Null(stored!.ReauthRequiredAt);
+    }
+
     // A disabled server is still tested — the user is diagnosing it — but the outcome says so, or "ok" would
     // read as "and it is in use".
     [Fact]
@@ -286,21 +325,26 @@ public sealed class McpConnectionTesterTests(SharedClusterFixture fixture) : Sha
         public Func<StoredMcpServer, IReadOnlyList<AITool>> ToolsFor { get; set; } =
             s => [AIFunctionFactory.Create(() => "ok", $"tool_{s.Id}")];
         public List<string?> ObservedOAuthTokens { get; } = [];
+        public IAuthHeaderProvider? LastOAuthBearer { get; private set; }
         public int ConnectCount { get; private set; }
         public TrackingDisposable? LastDisposable { get; private set; }
 
-        public Task<McpServerConnection> ConnectAsync(
+        public async Task<McpServerConnection> ConnectAsync(
             StoredMcpServer server, McpConnectionSecrets secrets, CancellationToken cancellationToken)
         {
             ConnectCount++;
-            ObservedOAuthTokens.Add(secrets.OAuthAccessToken);
+            // The token the per-request bearer (ADR 0081) would stamp right now, without the "Bearer " prefix.
+            LastOAuthBearer = secrets.OAuthTokenProvider;
+            ObservedOAuthTokens.Add(secrets.OAuthTokenProvider is { } bearer
+                ? (await bearer.GetHeaderValueAsync(cancellationToken))["Bearer ".Length..]
+                : null);
             if (DeadServerIds.Contains(server.Id))
             {
                 throw new InvalidOperationException(SecretExceptionText);
             }
 
             LastDisposable = new TrackingDisposable();
-            return Task.FromResult(new McpServerConnection(ToolsFor(server), LastDisposable));
+            return new McpServerConnection(ToolsFor(server), LastDisposable);
         }
     }
 

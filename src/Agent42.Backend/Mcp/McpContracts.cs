@@ -21,10 +21,13 @@ public record McpServerUpsertRequest(
 // Scopes are non-secret and returned so the edit form can prefill them. BridgeKey (ADR 0076) is the raw
 // local-bridge key, set ONLY on the response to the write that minted it (create, switch-to, regenerate) —
 // shown once, like an ADR 0022 agent key; HasBridgeKey is the masked flag every other response carries.
+// NeedsReauth (ADR 0081): an InteractiveOAuth server whose grant the authorization server rejected (invalid_grant)
+// — the row shows "reconnect needed" instead of "connected".
 public record McpServerResponse(
     string Id, string Name, string Endpoint, string Auth, bool Enabled, string? HeaderName, bool HasHeaderValue,
     string? Authority = null, string? ClientId = null, IReadOnlyList<string>? Scopes = null, bool HasClientSecret = false,
-    bool HasToken = false, bool SeedsFetchableUrls = false, bool HasBridgeKey = false, string? BridgeKey = null);
+    bool HasToken = false, bool SeedsFetchableUrls = false, bool HasBridgeKey = false, string? BridgeKey = null,
+    bool NeedsReauth = false);
 
 // The GET /api/mcp-servers payload: the user's overlay servers (masked).
 public record McpServersResponse(IReadOnlyList<McpServerResponse> Servers);

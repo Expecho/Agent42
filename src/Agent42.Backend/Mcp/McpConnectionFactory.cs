@@ -13,10 +13,12 @@ public sealed record McpServerConnection(IReadOnlyList<AITool> Tools, IAsyncDisp
 
 /// <summary>
 /// The already-decrypted secrets a connection may need, unprotected by the caller (never the ciphertext).
-/// Phase 1: <see cref="HeaderValue"/>. Phase 2: <see cref="ClientSecret"/> (MSAL). Phase 3:
-/// <see cref="OAuthAccessToken"/> — the current (connect-time-refreshed) access token for InteractiveOAuth.
+/// Phase 1: <see cref="HeaderValue"/>. Phase 2: <see cref="ClientSecret"/> (MSAL). InteractiveOAuth:
+/// <see cref="OAuthTokenProvider"/> — the per-request bearer the caller built over the resolver (ADR 0081). It
+/// REPLACED a static access-token field: two ways to pass one credential is how the connect path and the test path
+/// drift apart (ADR 0064).
 /// </summary>
-public sealed record McpConnectionSecrets(string? HeaderValue, string? ClientSecret, string? OAuthAccessToken = null);
+public sealed record McpConnectionSecrets(string? HeaderValue, string? ClientSecret, IAuthHeaderProvider? OAuthTokenProvider = null);
 
 /// <summary>
 /// Connects to a single remote MCP server and returns its tools. A seam (not the concrete SDK types) so the
@@ -41,7 +43,8 @@ public interface IMcpConnectionFactory
 /// builds its own client and the <c>AddServiceDefaults</c> resilience pipeline is never inherited (the "named
 /// HttpClient inherits the retry pipeline" gotcha is avoided by construction). ClientCredentials (Phase 2):
 /// the token is dynamic (MSAL refreshes per request), so it needs an <see cref="AuthHeaderHandler"/> over a
-/// <b>plain <c>new HttpClient</c></b> (not DI-resolved — so again no resilience inheritance).</para>
+/// <b>plain <c>new HttpClient</c></b> (not DI-resolved — so again no resilience inheritance). InteractiveOAuth
+/// (ADR 0081) takes the same handler path with the caller-built <see cref="InteractiveOAuthTokenProvider"/>.</para>
 /// </summary>
 public sealed class McpConnectionFactory : IMcpConnectionFactory
 {
@@ -76,28 +79,24 @@ public sealed class McpConnectionFactory : IMcpConnectionFactory
             };
         }
 
-        // InteractiveOAuth mode: the provider already refreshed the access token at connect time (app-owned
-        // refresh), so it is a static Bearer for this connection's life — stamp it via AdditionalHeaders, no
-        // per-request handler. A mid-life expiry is picked up on the next activation (accepted staleness).
-        if (mode == McpAuthMode.InteractiveOAuth && !string.IsNullOrEmpty(secrets.OAuthAccessToken))
+        // Dynamic auth, stamped per request by AuthHeaderHandler over a plain HttpClient the transport owns. The
+        // plain client is never DI-resolved, so no resilience inheritance. ClientCredentials: an MSAL token.
+        // InteractiveOAuth (ADR 0081): the caller-built resolver-backed provider — which is what keeps this factory
+        // grain-free; a connection outlives its access token, so a static bearer here would go stale in the cache.
+        IAuthHeaderProvider? dynamicAuth = mode switch
         {
-            options.AdditionalHeaders = new Dictionary<string, string>
-            {
-                ["Authorization"] = $"Bearer {secrets.OAuthAccessToken}",
-            };
-        }
-
-        // ClientCredentials mode: a dynamic MSAL token stamped per request by AuthHeaderHandler over a plain
-        // HttpClient the transport owns. The plain client is never DI-resolved, so no resilience inheritance.
-        var transport = mode == McpAuthMode.ClientCredentials
-            ? new HttpClientTransport(
+            McpAuthMode.ClientCredentials => new ClientCredentialsTokenProvider(
+                server.Authority!, server.ClientId!, secrets.ClientSecret!, [.. server.Scopes ?? []]),
+            McpAuthMode.InteractiveOAuth => secrets.OAuthTokenProvider,
+            _ => null,
+        };
+        var transport = dynamicAuth is null
+            ? new HttpClientTransport(options, _loggerFactory)
+            : new HttpClientTransport(
                 options,
-                new HttpClient(new AuthHeaderHandler(new ClientCredentialsTokenProvider(
-                    server.Authority!, server.ClientId!, secrets.ClientSecret!, [.. server.Scopes ?? []]))
-                { InnerHandler = new SocketsHttpHandler() }),
+                new HttpClient(new AuthHeaderHandler(dynamicAuth) { InnerHandler = new SocketsHttpHandler() }),
                 _loggerFactory,
-                ownsHttpClient: true)
-            : new HttpClientTransport(options, _loggerFactory);
+                ownsHttpClient: true);
 
         var client = await McpClient.CreateAsync(transport, loggerFactory: _loggerFactory, cancellationToken: cancellationToken);
         try

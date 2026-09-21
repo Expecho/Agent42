@@ -163,7 +163,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Location | 0012 |
 | Selectable tools: three layers, skills, uploaded skills, memory | 0021, 0048, 0049, 0057 |
 | Long-term memory (Hindsight; **no delete path**) | 0056, 0057 |
-| MCP client: config, OAuth, per-server/per-tool selection, test, URL seeding, local bridge | 0024, 0025, 0026, 0058, 0064, 0067, 0069, 0076 |
+| MCP client: config, OAuth (per-request refresh + in-turn reconnect), per-server/per-tool selection, test, URL seeding, local bridge | 0024, 0025, 0026, 0058, 0064, 0067, 0069, 0076, 0081 |
 | MCP server (agents exposed via `/api/agent-mcp`) | 0070 |
 | Stored agents: history mode, API key + `/api/agent-run`, retention | 0016, 0022, 0068 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |

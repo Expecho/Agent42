@@ -162,6 +162,24 @@ public sealed class UserMcpConfigGrain : Grain, IUserMcpConfigGrain
         await _state.WriteStateAsync();
     }
 
+    public async Task<bool> RecordOAuthTokensAsync(string serverId, string expectedCiphertext, string newCiphertext)
+    {
+        var servers = _state.State.Config.Servers.ToList();
+        var index = IndexOf(servers, serverId);
+        if (index < 0 || !string.Equals(servers[index].TokenCiphertext, expectedCiphertext, StringComparison.Ordinal))
+        {
+            return false; // unknown server, or someone (a concurrent refresh, the OAuth callback) wrote first
+        }
+
+        servers[index] = servers[index] with { TokenCiphertext = newCiphertext };
+
+        // Deliberately NOT BumpAsync — see IUserMcpConfigGrain.RecordOAuthTokensAsync (ADR 0081). A refreshed
+        // token is not connection config; bumping would tear down every warm grain's live MCP sockets.
+        _state.State.Config = _state.State.Config with { Servers = servers };
+        await _state.WriteStateAsync();
+        return true;
+    }
+
     public Task InvalidateToolCacheAsync() => BumpAsync(_state.State.Config);
 
     private static int IndexOf(List<StoredMcpServer> servers, string id) =>
@@ -177,7 +195,8 @@ public sealed class UserMcpConfigGrain : Grain, IUserMcpConfigGrain
 
     // Every CONFIGURATION write bumps the monotonic version, which the per-user tool-provider layer keys its
     // cache on — so a save is picked up on the next grain activation without an app restart.
-    // RecordToolNamesAsync is the one write that deliberately does not go through here.
+    // Writes that are not connection config (RecordToolNamesAsync, RecordOAuthTokensAsync, the bridge-key hash)
+    // deliberately do not go through here.
     private async Task BumpAsync(UserMcpConfig next)
     {
         _state.State.Config = next with { Version = next.Version + 1 };

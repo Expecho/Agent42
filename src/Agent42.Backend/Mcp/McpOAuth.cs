@@ -56,12 +56,35 @@ public sealed record McpOAuthTokens(
     [property: JsonPropertyName("expires_at")] DateTimeOffset? ExpiresAt,
     [property: JsonPropertyName("token_endpoint")] string TokenEndpoint,
     [property: JsonPropertyName("client_id")] string ClientId,
-    [property: JsonPropertyName("scopes")] IReadOnlyList<string> Scopes)
+    [property: JsonPropertyName("scopes")] IReadOnlyList<string> Scopes,
+    // Set when the authorization server answered a refresh with invalid_grant (ADR 0081): a human must sign in
+    // again. Trailing and optional, so an older bundle deserializes it as null; a fresh consent writes a new
+    // bundle without it, which clears the mark for free.
+    [property: JsonPropertyName("reauth_required_at")] DateTimeOffset? ReauthRequiredAt = null)
 {
+    /// <summary>
+    /// Whether a human must sign in again (ADR 0081): the grant was rejected (<see cref="ReauthRequiredAt"/>), or
+    /// the access token has expired with no refresh token to renew it. The ONE rule — the resolver, the provider
+    /// skip, the Test reason and the settings row's badge all read it, so they cannot disagree.
+    /// </summary>
+    public bool RequiresReauth(DateTimeOffset now) =>
+        ReauthRequiredAt is not null
+        || (string.IsNullOrEmpty(RefreshToken) && ExpiresAt is { } expiresAt && expiresAt <= now);
+
     public static McpOAuthTokens? Deserialize(string? json) =>
         string.IsNullOrEmpty(json) ? null : JsonSerializer.Deserialize<McpOAuthTokens>(json);
 
     public string Serialize() => JsonSerializer.Serialize(this);
+}
+
+/// <summary>
+/// The token endpoint answered with <c>invalid_grant</c> (RFC 6749 §5.2): the refresh token is revoked, expired
+/// or otherwise dead, so a human must sign in again (ADR 0081). Carries the status only, never the response body.
+/// </summary>
+public sealed class McpOAuthRefreshRejectedException(int statusCode)
+    : Exception($"Token endpoint rejected the grant (HTTP {statusCode}, invalid_grant).")
+{
+    public int StatusCode { get; } = statusCode;
 }
 
 /// <summary>
@@ -202,6 +225,13 @@ public sealed class McpOAuthClient(HttpClient http)
         var payload = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            // invalid_grant is the ONE failure that means a human must sign in again (RFC 6749 §5.2, ADR 0081) —
+            // typed so the resolver can tell it from a 5xx/timeout/DNS blip, which must never mark the server.
+            if ((int)response.StatusCode is >= 400 and < 500 && IsInvalidGrant(payload))
+            {
+                throw new McpOAuthRefreshRejectedException((int)response.StatusCode);
+            }
+
             throw new InvalidOperationException($"Token endpoint returned {(int)response.StatusCode}: {payload}");
         }
 
@@ -215,6 +245,22 @@ public sealed class McpOAuthClient(HttpClient http)
             : null;
 
         return new McpOAuthTokens(access, refresh, expiresAt, tokenEndpoint.AbsoluteUri, clientId, scopes);
+    }
+
+    private static bool IsInvalidGrant(string payload)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.String
+                && error.GetString() == "invalid_grant";
+        }
+        catch (JsonException)
+        {
+            return false; // a non-JSON error body is not a classified rejection
+        }
     }
 
     private async Task<JsonDocument?> GetJsonAsync(Uri url, CancellationToken cancellationToken)
