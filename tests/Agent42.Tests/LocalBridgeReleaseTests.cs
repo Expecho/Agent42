@@ -75,6 +75,30 @@ public sealed class LocalBridgeReleaseTests
         Assert.Contains("next=\"$major.$minor.$((patch + 1))\"", workflow);
     }
 
+    // The repository has immutable releases on: a published release rejects every asset upload (HTTP 422), which
+    // is how 1.0.1 and 1.0.2 shipped with no binaries. So the release is a draft until the last step, the build
+    // jobs check out the commit (a draft has no tag yet), and an already-published version fails instead of
+    // pretending its assets can be replaced.
+    [Fact]
+    public void Workflow_PublishesTheReleaseOnlyAfterEveryAssetIsUploaded()
+    {
+        var workflow = Workflow().ReplaceLineEndings("\n");
+
+        var create = workflow.IndexOf("gh release create \"$TAG\" --draft --target \"$GITHUB_SHA\"", StringComparison.Ordinal);
+        var upload = workflow.IndexOf("gh release upload \"$TAG\" \"$NAME\"", StringComparison.Ordinal);
+        var checksums = workflow.IndexOf("gh release upload \"$TAG\" SHA256SUMS.txt", StringComparison.Ordinal);
+        var publish = workflow.IndexOf("gh release edit \"$TAG\" --repo \"$GITHUB_REPOSITORY\" --draft=false", StringComparison.Ordinal);
+
+        Assert.True(create >= 0, "the release must be created as a draft");
+        Assert.True(create < upload && upload < checksums && checksums < publish, "publish must be the last release write");
+        Assert.Equal(1, Count(workflow, "--draft=false"));
+        Assert.Contains("needs: [create-release, publish]", workflow); // a failed platform leaves the draft unpublished
+
+        Assert.Contains("ref: ${{ needs.create-release.outputs.sha }}", workflow);
+        Assert.DoesNotContain("ref: ${{ needs.create-release.outputs.tag }}", workflow);
+        Assert.Contains("Published releases are immutable; release a new version.", workflow);
+    }
+
     // The helper is never deployed: the deploy workflow must not start on a release tag, and the backend image
     // must not pick the helper up.
     [Fact]
