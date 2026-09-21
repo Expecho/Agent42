@@ -135,6 +135,23 @@ jobs:
           ./Agent42.LocalBridge --server https://chat.agent42.nl
           ```
 
+          **Options**
+
+          | Switch | What it does |
+          |--------|--------------|
+          | `--server <url>` | Your Agent42 base URL, e.g. `https://chat.agent42.nl`. Required. |
+          | `--upstream <url>` | The local MCP endpoint. Default `http://127.0.0.1:9210/mcp`; check `chrome://browseros/mcp` if yours differs. |
+          | `--auto-approve <tool,tool>` | Tool names that run without asking. Names are case-sensitive. Default: none. |
+          | `--yolo` | Runs **every** tool call without asking, including tools that run JavaScript in your signed-in browser. Use it only for sessions you trust end to end. |
+          | `--version` | Prints the version and exits. |
+
+          The key is read from the `AGENT42_BRIDGE_KEY` environment variable only. `--key` is refused, because a
+          command line is visible to other processes on your machine.
+
+          Every tool call that the server does not mark read-only asks for confirmation in the console first: answer
+          `y` to allow that one call, `n` (or nothing, for 60 seconds) to decline it, or `a` to stop being asked
+          about that tool until the bridge stops.
+
           No .NET installation is needed. The executables are **not code-signed**: on Windows choose
           *More info → Run anyway* in SmartScreen; on macOS run `xattr -d com.apple.quarantine Agent42.LocalBridge`
           once after extracting. Verify a download against `SHA256SUMS.txt`.

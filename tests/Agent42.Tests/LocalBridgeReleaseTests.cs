@@ -113,6 +113,22 @@ public sealed class LocalBridgeReleaseTests
     }
 
     // The UI tells the user where to get it, and what to run.
+    // The release notes are where a downloader learns the switches, so every switch the helper's usage text
+    // lists must appear there too — a new flag that only --help mentions fails here.
+    [Fact]
+    public void ReleaseNotes_DocumentEverySwitch()
+    {
+        var workflow = Workflow();
+        var start = workflow.IndexOf("cat > notes.md", StringComparison.Ordinal);
+        var notes = workflow[start..workflow.IndexOf("gh release create", start, StringComparison.Ordinal)];
+        var switches = System.Text.RegularExpressions.Regex.Matches(Agent42.LocalBridge.BridgeOptions.Usage, @"--[a-z][a-z-]+")
+            .Select(m => m.Value).Distinct().ToList();
+
+        Assert.Contains("--yolo", switches);
+        Assert.All(switches, s => Assert.Contains($"`{s}", notes, StringComparison.Ordinal));
+        Assert.Contains("AGENT42_BRIDGE_KEY", notes, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Ui_PointsAtTheReleaseAndTheReleasedExecutable()
     {
