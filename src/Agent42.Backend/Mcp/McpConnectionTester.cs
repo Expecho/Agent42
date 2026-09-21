@@ -37,6 +37,9 @@ public sealed class McpConnectionTester
     // activation path would, or "works when tested" and "works in a chat" stop meaning the same thing.
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(10);
 
+    // Curated (never an exception or a response body): the grant is dead and the user's next action is Reconnect.
+    internal const string ReauthReason = "authorization expired — reconnect this server";
+
     private readonly IGrainFactory _grains;
     private readonly IMcpConnectionFactory _connectionFactory;
     private readonly IMcpSecretProtector _protector;
@@ -79,20 +82,30 @@ public sealed class McpConnectionTester
 
         // InteractiveOAuth with no stored token has not completed the Connect flow. That is a distinct
         // diagnosis from "could not connect" — the user's next action is Connect, not fixing the URL.
-        string? oauthAccessToken = null;
+        InteractiveOAuthTokenProvider? oauthBearer = null;
         if (mode == McpAuthMode.InteractiveOAuth)
         {
-            oauthAccessToken = await _oauthTokens.ResolveAsync(userId, server, cancellationToken);
-            if (oauthAccessToken is null)
+            // force: a user-pressed Test retries a server marked ReauthRequired against the authorization server, so
+            // a mark earned from a one-off upstream lie recovers here, and a success clears it (ADR 0081).
+            var resolution = await _oauthTokens.ResolveAsync(userId, server.Id, force: true, cancellationToken: cancellationToken);
+            if (resolution.State == McpOAuthState.NotConnected)
             {
                 return McpTestOutcome.Failure("not connected (no OAuth token yet)");
             }
+
+            if (resolution.State == McpOAuthState.ReauthRequired)
+            {
+                return McpTestOutcome.Failure(ReauthReason);
+            }
+
+            // The same per-request bearer the chat path uses (ADR 0081) — one way to pass the credential (ADR 0064).
+            oauthBearer = new InteractiveOAuthTokenProvider(userId, server.Id, _oauthTokens, resolution);
         }
 
         var secrets = new McpConnectionSecrets(
             _protector.Unprotect(server.HeaderValueCiphertext),
             _protector.Unprotect(server.ClientSecretCiphertext),
-            oauthAccessToken);
+            oauthBearer);
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ConnectTimeout);
@@ -122,7 +135,9 @@ public sealed class McpConnectionTester
             // Curated to the browser, detailed to the log — the server's own response body is untrusted text.
             _logger.LogWarning(ex,
                 "Testing MCP server {Server} for user {User} failed.", server.Name, userId);
-            return McpTestOutcome.Failure("could not connect");
+
+            // The connect's own 401 → renew → retry found the grant dead (invalid_grant during this Test).
+            return McpTestOutcome.Failure(oauthBearer?.State == McpOAuthState.ReauthRequired ? ReauthReason : "could not connect");
         }
     }
 

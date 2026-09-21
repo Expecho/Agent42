@@ -71,7 +71,9 @@ public class SharedClusterFixture : IAsyncLifetime
             services.GetRequiredService<FakeChatClient>().Reset();
             services.GetRequiredService<RecordingPushNotificationSender>().Reset();
             services.GetRequiredService<RecordingHindsightClient>().Reset();
-            services.GetRequiredService<SingleUserMcpToolProvider>().Servers = [];
+            var mcp = services.GetRequiredService<SingleUserMcpToolProvider>();
+            mcp.Servers = [];
+            mcp.Version = 0;
             services.GetRequiredService<TestTimeProvider>().Offset = TimeSpan.Zero;
         }
     }

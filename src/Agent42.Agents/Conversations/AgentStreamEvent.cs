@@ -45,6 +45,18 @@ public enum AgentStreamEventType
     /// clear.</para>
     /// </summary>
     Reasoning,
+
+    /// <summary>
+    /// An InteractiveOAuth MCP server this conversation uses needs a human to sign in again (ADR 0081): its grant
+    /// is dead (<c>invalid_grant</c>), or its tool call was refused with 401 after the bearer's own renew-and-retry.
+    /// <see cref="AgentStreamEvent.McpServerId"/> names the server and <see cref="AgentStreamEvent.Text"/> carries
+    /// its display name; the client renders a Reconnect button that opens the OAuth flow in a new tab.
+    ///
+    /// <para><b>Live-only, like <see cref="Suggestions"/> and <see cref="Reasoning"/>.</b> Never appended to the
+    /// reply, never persisted, never replayed from history (ADR 0080 replays tool calls only). Emitted on the
+    /// interactive path only, at most once per server per activation.</para>
+    /// </summary>
+    McpReauthRequired,
 }
 
 /// <summary>
@@ -76,4 +88,7 @@ public sealed record AgentStreamEvent(
     // completion — not a style choice: the NDJSON writer ignores nulls (AgentApi.Conversations.cs), so a
     // plain bool would add "stopped":false to every per-token delta of every turn. Trailing default so
     // every existing positional construction keeps compiling.
-    [property: Id(12)] bool? Stopped = null);
+    [property: Id(12)] bool? Stopped = null,
+    // Set on a McpReauthRequired event (ADR 0081): the server the Reconnect button opens the OAuth flow for.
+    // Trailing default so every existing positional construction keeps compiling.
+    [property: Id(13)] string? McpServerId = null);

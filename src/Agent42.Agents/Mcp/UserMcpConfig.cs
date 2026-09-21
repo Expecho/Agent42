@@ -123,7 +123,8 @@ public sealed record StoredMcpServer(
 /// <see cref="IUserMcpConfigGrain.RecordToolNamesAsync"/> persists discovered
 /// <see cref="StoredMcpServer.KnownToolNames"/> <i>without</i> bumping: names are picker metadata, not
 /// connection config, and bumping would invalidate the live-socket tool cache for every warm grain of that
-/// user on what is merely a re-discovery of the same tools.</para>
+/// user on what is merely a re-discovery of the same tools. <see cref="IUserMcpConfigGrain.RecordOAuthTokensAsync"/>
+/// (a refreshed OAuth bundle, ADR 0081) and the bridge-key writes are in the same class.</para>
 /// </summary>
 [GenerateSerializer]
 [Alias("Agent42.Agents.UserMcpConfig")]

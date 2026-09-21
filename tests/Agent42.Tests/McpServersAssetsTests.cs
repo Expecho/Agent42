@@ -21,6 +21,18 @@ public sealed class McpServersAssetsTests
         _client = fixture.Client;
     }
 
+    // AC12 (ADR 0081) — a server whose grant is dead shows "reconnect needed" in place of "connected", read from the
+    // API's needsReauth flag; and the start URL has one source, exported for the transcript's Reconnect button.
+    [Fact]
+    public async Task Row_ShowsReconnectNeeded_ForAMarkedServer()
+    {
+        var js = await _client.GetStringAsync("/js/mcp.js");
+
+        Assert.Contains("server.needsReauth ? \"⚠ reconnect needed\" : \"🔗 connected\"", js);
+        Assert.Contains("export function mcpOAuthStartUrl(serverId)", js);
+        Assert.Contains("window.location.href = mcpOAuthStartUrl(serverId);", js);
+    }
+
     [Fact]
     public async Task Preferences_HasAnMcpServersTabAndPanel()
     {

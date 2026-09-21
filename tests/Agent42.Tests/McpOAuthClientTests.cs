@@ -42,6 +42,20 @@ public sealed class McpOAuthClientTests
         Assert.Equal("rt", back.RefreshToken);
         Assert.Equal("client-1", back.ClientId);
         Assert.Equal(["s1", "s2"], back.Scopes);
+        Assert.Null(back.ReauthRequiredAt);
+    }
+
+    // ADR 0081 — the re-auth mark rides the bundle: it round-trips, and a bundle written before the field existed
+    // deserializes it as null (no migration).
+    [Fact]
+    public void Tokens_ReauthMark_RoundTrips_AndIsAbsentFromOlderBundles()
+    {
+        var at = DateTimeOffset.Parse("2026-09-21T10:00:00Z");
+        var marked = new McpOAuthTokens("at", "rt", null, "https://as/token", "c", []) { ReauthRequiredAt = at };
+        Assert.Equal(at, McpOAuthTokens.Deserialize(marked.Serialize())!.ReauthRequiredAt);
+
+        const string older = "{\"access_token\":\"at\",\"refresh_token\":\"rt\",\"expires_at\":null,\"token_endpoint\":\"https://as/token\",\"client_id\":\"c\",\"scopes\":[]}";
+        Assert.Null(McpOAuthTokens.Deserialize(older)!.ReauthRequiredAt);
     }
 
     [Fact]

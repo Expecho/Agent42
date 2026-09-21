@@ -10,7 +10,7 @@ import { currentLocationForSend } from "./location.js";
 import { applyModelAvailability } from "./models.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, refreshConversations } from "./sidebar.js";
-import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, finishToolCalls, markStopped, renderReasoning, renderSuggestions, replayToolCalls, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
+import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, finishToolCalls, markStopped, renderMcpReauth, renderReasoning, renderSuggestions, replayToolCalls, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
 
 export let streaming = false;
 // Stops live speech dictation. Reassigned via setStopSpeech() by wireSpeech() in speech.js when
@@ -220,6 +220,9 @@ export async function send(prompt) {
           // An image-generation model produced an image (ADR 0020): render it live in the assistant
           // bubble via the display proxy, exactly like it will re-render on reload.
           addAgentImage(agentMsg, activeId, chunk.attachmentId);
+        } else if (chunk.type === "mcpReauthRequired") {
+          // An MCP server's sign-in expired (ADR 0081): a Reconnect button in the bubble, opening a new tab.
+          renderMcpReauth(agentMsg, chunk.mcpServerId, chunk.text);
         } else if (chunk.type === "suggestions") {
           // Up to 3 clickable follow-up prompts under the reply; clicking one sends it immediately.
           renderSuggestions(agentMsg, chunk.suggestions);

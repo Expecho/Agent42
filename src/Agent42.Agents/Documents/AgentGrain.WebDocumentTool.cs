@@ -280,9 +280,7 @@ public sealed partial class AgentGrain
 
         _webDocumentIngested = false;
 
-        var snapshot = await _agent.SerializeSessionAsync(_session);
-        _agent = BuildAgent(_modelId);
-        _session = await _agent.DeserializeSessionAsync(snapshot);
+        await RebuildAgentPreservingSessionAsync(_modelId);
 
         _logger.LogInformation(
             "Agent grain {GrainKey} rebuilt its agent after ingesting a web document ({Count} total)",

@@ -7,6 +7,13 @@ tags: [mcp, oauth, pkce, auth, security, egress]
 
 # Title: Interactive-OAuth MCP auth — app-driven PKCE with PRM discovery, not the SDK's blocking flow
 
+> **Amended by [ADR 0081](0081-mcp-oauth-per-request-refresh-and-reconnect.md) (2026-09-21) — refresh
+> mechanism only.** Connect-time refresh plus a static bearer never re-ran: the socket cache is keyed on the
+> config version, so an expired token stayed stuck until a config write. The token is now resolved **per
+> request** through `AuthHeaderHandler`, with one retry after a 401. A refreshed bundle is persisted by a
+> non-bumping compare-and-swap write, and only `invalid_grant` marks a server as needing reconnect. PKCE,
+> PRM discovery and the encrypted bundle stay authoritative here. `status: accepted` on purpose.
+
 ## Context
 Phase 3 of config-driven remote MCP servers (ADR 0024) adds interactive OAuth — a human signs in so the
 agent can call a server that needs delegated (not service-principal) access. The `ModelContextProtocol`

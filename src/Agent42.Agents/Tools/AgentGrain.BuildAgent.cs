@@ -187,7 +187,7 @@ public sealed partial class AgentGrain
             {
                 tools.AddRange(server.Tools
                     .Where(t => ToolCatalog.IsMcpToolEnabled(server.ServerId, t.Name, enabled))
-                    .Select(t => WithUrlSeeding(server, t)));
+                    .Select(t => WithReauthNotice(server, WithUrlSeeding(server, t))));
             }
         }
 
@@ -318,6 +318,15 @@ public sealed partial class AgentGrain
     private AITool WithUrlSeeding(McpServerTools server, AITool tool)
         => server.SeedsFetchableUrls && tool is AIFunction fn
             ? new UrlHarvestingMcpTool(fn, server.ServerId, RememberSeededUrlsFromToolResult)
+            : tool;
+
+    // The OUTERMOST MCP wrapper (ADR 0081), outside the URL-seeding one: nested inside it, the harvester would take
+    // the reauth notice for a successful result and ADR 0067's "a failing call seeds nothing" would break. Only an
+    // InteractiveOAuth server's tools are wrapped — a human can fix only that 401 by reconnecting. Extracted for the
+    // same S3776 reason as WithUrlSeeding.
+    private static AITool WithReauthNotice(McpServerTools server, AITool tool)
+        => server.InteractiveOAuth && tool is AIFunction fn
+            ? new ReauthNoticeMcpTool(fn, server.ServerId, server.ServerName)
             : tool;
 
     // The tools this conversation may use, resolved three-layer (ADR 0021): a per-conversation override or an

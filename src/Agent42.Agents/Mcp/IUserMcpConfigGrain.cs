@@ -21,8 +21,9 @@ public interface IUserMcpConfigGrain : IGrainWithStringKey
 
     /// <summary>
     /// The overlay's current version — bumped on every <b>configuration</b> write (<see cref="SaveAsync"/>,
-    /// <see cref="DeleteAsync"/>), but deliberately NOT by <see cref="RecordToolNamesAsync"/>. Cheap poll for
-    /// cache invalidation.
+    /// <see cref="DeleteAsync"/>), but deliberately NOT by the class of writes that are not connection config:
+    /// <see cref="RecordToolNamesAsync"/>, <see cref="RecordOAuthTokensAsync"/> and <see cref="MintBridgeKeyAsync"/>.
+    /// Cheap poll for cache invalidation.
     /// </summary>
     [Alias("GetVersionAsync")]
     Task<int> GetVersionAsync();
@@ -60,6 +61,25 @@ public interface IUserMcpConfigGrain : IGrainWithStringKey
     /// </summary>
     [Alias("RecordToolNamesAsync")]
     Task RecordToolNamesAsync(string serverId, IReadOnlyList<string> toolNames);
+
+    /// <summary>
+    /// Replaces a server's encrypted OAuth bundle (<see cref="StoredMcpServer.TokenCiphertext"/>) with
+    /// <paramref name="newCiphertext"/> <b>only if</b> the stored ciphertext still equals
+    /// <paramref name="expectedCiphertext"/> — a compare-and-swap. Returns false (writing nothing) on an unknown
+    /// server or a mismatch (ADR 0081).
+    ///
+    /// <para><b>Does NOT bump the version</b>, for the same reason as <see cref="RecordToolNamesAsync"/>: the
+    /// version keys the provider's cache of <b>live MCP sockets</b>, and a refreshed token is credential state the
+    /// per-request bearer reads, not connection config. Bumping would tear down every warm grain's connections on
+    /// each hourly refresh.</para>
+    ///
+    /// <para><b>Why compare-and-swap.</b> The resolver's read → token POST → write is not atomic, and the OAuth
+    /// callback's <see cref="SaveAsync"/> can land inside it. An unconditional write would overwrite the user's
+    /// fresh re-consent with a stale (possibly re-auth-marked) bundle. A lost CAS means someone else wrote first:
+    /// the caller re-reads and uses theirs, never retries the write.</para>
+    /// </summary>
+    [Alias("RecordOAuthTokensAsync")]
+    Task<bool> RecordOAuthTokensAsync(string serverId, string expectedCiphertext, string newCiphertext);
 
     /// <summary>
     /// Bumps the version without changing any configuration, so the per-user tool provider re-resolves this

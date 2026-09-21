@@ -4,6 +4,7 @@ using System.Text.Json;
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Agent42.Tests;
 
@@ -267,6 +268,49 @@ public sealed class McpServersApiTests(SharedApiFixture fixture) : SharedCluster
         var server = await SingleServer(await Client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", "user-oauth")));
         Assert.Equal("InteractiveOAuth", server.GetProperty("auth").GetString());
         Assert.False(server.GetProperty("hasToken").GetBoolean());
+    }
+
+    // AC11 (ADR 0081) — an InteractiveOAuth server whose bundle carries the invalid_grant mark reports needsReauth, and
+    // the response still leaks nothing of the bundle: no ciphertext, no access or refresh token.
+    [Fact]
+    public async Task NeedsReauth_IsReported_AndNoSecretLeaks()
+    {
+        const string user = "user-oauth-reauth";
+        var protector = Fixture.App.Services.GetRequiredService<IMcpSecretProtector>();
+        var marked = new McpOAuthTokens("access-secret-value", "refresh-secret-value", DateTimeOffset.UtcNow.AddHours(1),
+            "https://as.example.com/token", "client-1", [])
+        { ReauthRequiredAt = DateTimeOffset.UtcNow };
+        var ciphertext = protector.Protect(marked.Serialize());
+        var config = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await config.SaveAsync(new StoredMcpServer(
+            "o1", "Calendar", "https://mcp.example.com/mcp", nameof(McpAuthMode.InteractiveOAuth), true, TokenCiphertext: ciphertext));
+        await config.SaveAsync(new StoredMcpServer(
+            "o2", "Mail", "https://mail.example.com/mcp", nameof(McpAuthMode.InteractiveOAuth), true,
+            TokenCiphertext: protector.Protect((marked with { ReauthRequiredAt = null }).Serialize())));
+
+        // Expired with no refresh token: the same "needs reauth" rule the resolver applies, so the row agrees with
+        // the transcript's Reconnect notice.
+        await config.SaveAsync(new StoredMcpServer(
+            "o3", "Drive", "https://drive.example.com/mcp", nameof(McpAuthMode.InteractiveOAuth), true,
+            TokenCiphertext: protector.Protect((marked with
+            {
+                ReauthRequiredAt = null,
+                RefreshToken = null,
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            }).Serialize())));
+
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", user));
+        var raw = await response.Content.ReadAsStringAsync();
+
+        using var doc = JsonDocument.Parse(raw);
+        var servers = doc.RootElement.GetProperty("servers").EnumerateArray().ToDictionary(s => s.GetProperty("id").GetString()!);
+        Assert.True(servers["o1"].GetProperty("needsReauth").GetBoolean());
+        Assert.False(servers["o2"].GetProperty("needsReauth").GetBoolean());
+        Assert.True(servers["o3"].GetProperty("needsReauth").GetBoolean());
+        Assert.True(servers["o1"].GetProperty("hasToken").GetBoolean());
+        Assert.DoesNotContain(ciphertext, raw);
+        Assert.DoesNotContain("access-secret-value", raw);
+        Assert.DoesNotContain("refresh-secret-value", raw);
     }
 
     // CRUD is per-user — one user cannot see another's servers, and delete only affects the owner.

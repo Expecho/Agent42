@@ -290,6 +290,58 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
         Assert.Equal("access-new", persisted!.AccessToken);
     }
 
+    // AC8 (ADR 0081) — a server whose grant is marked dead is skipped WITHOUT connecting, keeps its KnownToolNames
+    // (never erased), and its group carries the flag + display name the grain needs for the Reconnect notice. A plain
+    // unreachable server is NOT flagged — that stays a silent skip.
+    [Fact]
+    public async Task AReauthRequiredServer_IsSkipped_AndFlagged()
+    {
+        const string user = "mcp-oauth-reauth-skip";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await grain.SaveAsync(OAuthServer("o1", new McpOAuthTokens("access-old", "refresh-1", DateTimeOffset.UtcNow.AddHours(1),
+            "https://as.example.com/token", "client-1", [])
+        { ReauthRequiredAt = DateTimeOffset.UtcNow }));
+        await grain.RecordToolNamesAsync("o1", ["list_events"]);
+        await grain.SaveAsync(HeaderServer("dead"));
+        _connections.DeadServerIds.Add("dead");
+
+        var set = await NewProvider().GetForUserAsync(user);
+
+        var oauth = set.Servers.Single(s => s.ServerId == "o1");
+        Assert.True(oauth.ReauthRequired);
+        Assert.Equal("oauth-o1", oauth.ServerName);
+        Assert.Empty(oauth.Tools);
+        Assert.Equal(["list_events"], oauth.KnownToolNames);
+        Assert.DoesNotContain(_connections.ObservedOAuthTokens, t => t is not null); // never dialled
+
+        Assert.False(set.Servers.Single(s => s.ServerId == "dead").ReauthRequired);
+    }
+
+    // AC3 (ADR 0081) — persisting a refreshed token does not bump the version, so it does not evict the cached
+    // tool set: the next activation is a cache HIT on the same live connection, whose per-request bearer now
+    // carries the refreshed token. (Before 0081 the refresh went through SaveAsync and forced a reconnect.)
+    [Fact]
+    public async Task ARefresh_DoesNotInvalidateTheToolCache()
+    {
+        const string user = "mcp-oauth-refresh-nobump";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await grain.SaveAsync(OAuthServer("o1", new McpOAuthTokens("access-old", "refresh-1",
+            DateTimeOffset.UtcNow.AddSeconds(10), "https://as.example.com/token", "client-1", [])));
+        var version = await grain.GetVersionAsync();
+        var provider = new UserMcpToolProvider(
+            Cluster.GrainFactory, _connections, _protector,
+            NewTokenResolver(new McpOAuthClient(new HttpClient(new FakeTokenEndpoint()))),
+            NullLogger<UserMcpToolProvider>.Instance);
+
+        var first = await provider.GetForUserAsync(user);
+        var second = await provider.GetForUserAsync(user);
+
+        Assert.Equal(version, await grain.GetVersionAsync());
+        Assert.Same(first, second);
+        Assert.Equal(1, _connections.ConnectCount);
+        Assert.Equal("Bearer access-new", await _connections.LastOAuthBearer!.GetHeaderValueAsync(default));
+    }
+
     private sealed class RefreshStubHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -375,22 +427,27 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
             s => [AIFunctionFactory.Create(() => "ok", $"tool_{s.Id}")];
         public List<string?> ObservedHeaderValues { get; } = [];
         public List<string?> ObservedOAuthTokens { get; } = [];
+        public IAuthHeaderProvider? LastOAuthBearer { get; private set; }
         public int ConnectCount { get; private set; }
         public TrackingDisposable? LastDisposable { get; private set; }
 
-        public Task<McpServerConnection> ConnectAsync(
+        public async Task<McpServerConnection> ConnectAsync(
             StoredMcpServer server, McpConnectionSecrets secrets, CancellationToken cancellationToken)
         {
             ConnectCount++;
             ObservedHeaderValues.Add(secrets.HeaderValue);
-            ObservedOAuthTokens.Add(secrets.OAuthAccessToken);
+            // The token the per-request bearer (ADR 0081) would stamp right now, without the "Bearer " prefix.
+            LastOAuthBearer = secrets.OAuthTokenProvider;
+            ObservedOAuthTokens.Add(secrets.OAuthTokenProvider is { } bearer
+                ? (await bearer.GetHeaderValueAsync(cancellationToken))["Bearer ".Length..]
+                : null);
             if (DeadServerIds.Contains(server.Id))
             {
                 throw new InvalidOperationException("simulated dead server");
             }
 
             LastDisposable = new TrackingDisposable();
-            return Task.FromResult(new McpServerConnection(ToolsFor(server), LastDisposable));
+            return new McpServerConnection(ToolsFor(server), LastDisposable);
         }
     }
 

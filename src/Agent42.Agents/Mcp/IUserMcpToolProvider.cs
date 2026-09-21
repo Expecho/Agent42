@@ -30,11 +30,26 @@ namespace Agent42.Agents;
 /// <c>BuildAgent</c> reads it to decide whether to wrap this server's tools in the harvesting delegate;
 /// nothing else does. Defaults to <c>false</c>, so a group built without it seeds nothing.
 /// </param>
+/// <param name="ServerName">The server's display name, for the in-turn Reconnect notice (ADR 0081).</param>
+/// <param name="ReauthRequired">
+/// The server's OAuth grant is dead (<c>invalid_grant</c>, ADR 0081): it was skipped WITHOUT connecting, so
+/// <see cref="Tools"/> is empty while <see cref="KnownToolNames"/> stand. The grain turns this into a live
+/// <c>McpReauthRequired</c> event — the one skipped-server state a human must resolve. An unreachable server is
+/// NOT flagged: that stays a silent skip.
+/// </param>
+/// <param name="InteractiveOAuth">
+/// The server authenticates with InteractiveOAuth — the only mode a human can fix by reconnecting, so the only one
+/// whose tools <c>BuildAgent</c> wraps in <see cref="ReauthNoticeMcpTool"/> (ADR 0081). A 401 from a Header-mode
+/// server is a configuration fault, and offering Reconnect there would send the user nowhere.
+/// </param>
 public sealed record McpServerTools(
     string ServerId,
     IReadOnlyList<AITool> Tools,
     IReadOnlyList<string>? KnownToolNames = null,
-    bool SeedsFetchableUrls = false);
+    bool SeedsFetchableUrls = false,
+    string? ServerName = null,
+    bool ReauthRequired = false,
+    bool InteractiveOAuth = false);
 
 /// <summary>
 /// The MCP tools resolved for a user, grouped per server, plus the overlay <see cref="Version"/> they were
@@ -106,6 +121,13 @@ public sealed class SingleUserMcpToolProvider : IUserMcpToolProvider
     /// <summary>The server id the <see cref="Tools"/> convenience assigns.</summary>
     public const string DefaultServerId = "offline";
 
+    /// <summary>
+    /// The overlay version reported with <see cref="Servers"/>. Settable so a test can simulate a reconnect
+    /// elsewhere (a config write bumps the real version) and observe the grain's mid-turn re-resolve (ADR 0081);
+    /// reset to 0 by the shared test fixture.
+    /// </summary>
+    public int Version { get; set; }
+
     public Task<McpToolSet> GetForUserAsync(string userId, CancellationToken cancellationToken = default)
-        => Task.FromResult(new McpToolSet(Servers, 0));
+        => Task.FromResult(new McpToolSet(Servers, Version));
 }

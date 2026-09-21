@@ -127,6 +127,35 @@ public sealed class UserMcpConfigGrainTests(SharedClusterFixture fixture) : Shar
         Assert.Equal(["alpha", "beta"], stored.KnownToolNames);
     }
 
+    // AC2 (ADR 0081) — persisting a refreshed OAuth bundle does NOT bump the version: the version keys the live-
+    // socket cache, and an hourly token refresh must not tear down every warm grain's connections.
+    [Fact]
+    public async Task RecordOAuthTokens_DoesNotBumpTheVersion()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-nobump-user");
+        await grain.SaveAsync(Server() with { Auth = nameof(McpAuthMode.InteractiveOAuth), TokenCiphertext = "bundle-1" });
+        var version = await grain.GetVersionAsync();
+
+        Assert.True(await grain.RecordOAuthTokensAsync("srv1", "bundle-1", "bundle-2"));
+
+        Assert.Equal(version, await grain.GetVersionAsync());
+        Assert.Equal("bundle-2", Assert.Single((await grain.GetAsync()).Servers).TokenCiphertext);
+    }
+
+    // AC2b (ADR 0081) — the token write is compare-and-swap: a stale expected ciphertext (the OAuth callback wrote a
+    // fresh consent in between) or an unknown server writes nothing, so a refresh can never clobber a re-consent.
+    [Fact]
+    public async Task RecordOAuthTokens_StaleExpected_WritesNothing()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-oauth-cas-user");
+        await grain.SaveAsync(Server() with { Auth = nameof(McpAuthMode.InteractiveOAuth), TokenCiphertext = "fresh-consent" });
+
+        Assert.False(await grain.RecordOAuthTokensAsync("srv1", "stale-read", "stale-refresh"));
+        Assert.False(await grain.RecordOAuthTokensAsync("missing", "fresh-consent", "x"));
+
+        Assert.Equal("fresh-consent", Assert.Single((await grain.GetAsync()).Servers).TokenCiphertext);
+    }
+
     // The deliberate counterpart to the test above: an explicit, user-pressed invalidation DOES bump, because
     // the provider's cache hit returns without connecting and nothing else can dislodge it. It must change the
     // version and nothing else — a server list altered here would make a diagnostic action a config write.
