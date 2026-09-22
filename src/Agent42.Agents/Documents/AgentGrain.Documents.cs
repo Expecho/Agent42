@@ -32,8 +32,12 @@ public sealed partial class AgentGrain
     // TextSearchProvider injects (AgentRequestMessageSourceType.AIContextProvider) and messages replayed
     // from history (ChatHistory) — the framework's own default only excludes the latter. See ChatHistoryProvider
     // wiring in BuildAgent and the Step 1 spike for why persisting the injected excerpts breaks serialization.
+    //
+    // It also drops the research loop's own feedback messages (ADR 0082). EXTENDED, never replaced: a filter that
+    // forgets the ChatHistory exclusion makes every loop re-invocation store the original question and the prior
+    // answer a second time (measured).
     private static readonly Func<IEnumerable<ChatMessage>, IEnumerable<ChatMessage>> ExcludeInjectedContextMessages =
-        messages => messages.Where(m => !IsInjectedOrReplayed(m));
+        messages => messages.Where(m => !IsInjectedOrReplayed(m) && !IsResearchLoopFeedback(m));
 
     private static bool IsInjectedOrReplayed(ChatMessage message)
     {

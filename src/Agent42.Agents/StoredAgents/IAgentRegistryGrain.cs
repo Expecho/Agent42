@@ -33,6 +33,14 @@ public interface IAgentRegistryGrain : IGrainWithStringKey
     [Alias("SaveAsync")]
     Task<AgentSaveResult> SaveAsync(AgentDefinition agent, bool regenerateKey = false);
 
+    /// <summary>
+    /// Seeds the built-in research agent (ADR 0082) on <paramref name="model"/>, at most once per user. A no-op
+    /// once seeded (even after the user deleted it) and when <paramref name="model"/> is empty (no provider
+    /// yet, ADR 0019), so the next call after a provider exists seeds it.
+    /// </summary>
+    [Alias("EnsureResearchAgentAsync")]
+    Task EnsureResearchAgentAsync(string model);
+
     /// <summary>Removes a stored agent (and deregisters its key). No-op if it isn't registered.</summary>
     [Alias("DeleteAsync")]
     Task DeleteAsync(string id);

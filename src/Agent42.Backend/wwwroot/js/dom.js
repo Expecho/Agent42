@@ -56,6 +56,7 @@ export const agentDescriptionInput = document.getElementById("agentDescription")
 export const agentModelSelect = document.getElementById("agentModelSelect");
 export const agentSystemPromptInput = document.getElementById("agentSystemPrompt");
 export const agentContinuousInput = document.getElementById("agentContinuous");
+export const agentContinuousNote = document.getElementById("agentContinuousNote");
 export const agentMcpExposedInput = document.getElementById("agentMcpExposed");
 export const agentMcpUrl = document.getElementById("agentMcpUrl");
 export const agentMcpUrlCopyBtn = document.getElementById("agentMcpUrlCopyBtn");

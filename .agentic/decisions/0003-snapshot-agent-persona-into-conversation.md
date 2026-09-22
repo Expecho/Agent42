@@ -7,6 +7,10 @@ tags: [agents, grains, persona]
 
 # Snapshot an agent's persona into the conversation at bind time
 
+> **Amended by [ADR 0082](0082-seeded-research-agent-loop.md) (2026-09-22): the agent's `Kind` is snapshotted too.** A research-kind agent changes how
+> the model runs, so `Kind` is persona and joins the name, prompt, model and tools in `AgentBinding` — editing or
+> deleting the source agent never turns an existing research chat into an ordinary one, or back.
+
 ## Context
 Stored agents (user-defined personas: name, description, model, system prompt) are
 first-class and editable/deletable, but a chat started from an agent must stay stable

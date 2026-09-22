@@ -8,6 +8,14 @@ public sealed class AgentRegistryState
 {
     [Id(0)]
     public List<AgentDefinition> Agents { get; set; } = [];
+
+    /// <summary>
+    /// True once the research agent has been seeded for this user (ADR 0082). Set in the SAME write as the
+    /// insert, so a crash can never seed twice, and never cleared: a user who deletes the research agent does
+    /// not get it back. Trailing and defaulted, so every existing registry reads false and is seeded once.
+    /// </summary>
+    [Id(1)]
+    public bool ResearchAgentSeeded { get; set; }
 }
 
 /// <summary>
@@ -44,23 +52,8 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
 
         if (existing < 0)
         {
-            // ── Insert ── mint a key. Create order (constraint 2): write registry state (carrying the
-            // new hash) FIRST, THEN register the hash. A crash in between leaves the agent with a hash
-            // but no directory entry — the key is simply unusable (user regenerates), never a live
-            // orphan pointing at a stranger's agent.
-            var (raw, hash) = ApiKey.Generate();
-            var inserted = agent with
-            {
-                Id = Guid.NewGuid().ToString(),
-                CreatedAt = now,
-                UpdatedAt = now,
-                ApiKeyHash = hash,
-            };
-            agents.Add(inserted);
-            await _state.WriteStateAsync();
-
-            await Directory(hash).RegisterAsync(userId, inserted.Id);
-            return new AgentSaveResult(inserted, raw);
+            // A request can never create a built-in kind: Kind is set only by seeding (ADR 0082).
+            return await InsertAsync(agent with { Kind = null });
         }
 
         // ── Update ── keep the existing hash by default; the request never carries it (the grain is the
@@ -86,11 +79,16 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             storedHash = newHash;
         }
 
+        // Kind is preserved exactly like the hash: the grain is the authority, the request never carries it
+        // (ADR 0082). A research agent is per-chat only (ADR 0016: a continuous chat is one 2 MB grain, and
+        // research turns are the largest turns there are), so Continuous is forced off rather than trusted.
         var updated = agent with
         {
             CreatedAt = previous.CreatedAt,
             UpdatedAt = now,
             ApiKeyHash = storedHash,
+            Kind = previous.Kind,
+            Continuous = agent.Continuous && !AgentKinds.IsResearch(previous.Kind),
         };
         agents[existing] = updated;
         await _state.WriteStateAsync();
@@ -101,6 +99,50 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
         }
 
         return new AgentSaveResult(updated, plaintext);
+    }
+
+    public async Task EnsureResearchAgentAsync(string model)
+    {
+        // No concrete model means no provider yet (ADR 0019). Seeding with "" would hand the editor the
+        // no-model sentinel it cannot save, so wait: the flag stays false and the next list after the user adds
+        // a provider seeds it.
+        if (_state.State.ResearchAgentSeeded || string.IsNullOrEmpty(model))
+        {
+            return;
+        }
+
+        // The raw key is discarded: nobody asked for one, and the user regenerates to get it (ADR 0022).
+        await InsertAsync(
+            new AgentDefinition(
+                "", ResearchAgentDefaults.Name, ResearchAgentDefaults.Description, model,
+                ResearchAgentDefaults.SystemPrompt, default, default,
+                // ToList, never a collection expression: this list is persisted into IReadOnlyList<string>, and
+                // a spread there is a compiler-internal type the Cosmos serializer cannot read back (rule 2).
+                EnabledTools: ResearchAgentDefaults.EnabledTools.ToList(), Kind: AgentKinds.Research),
+            markResearchSeeded: true);
+    }
+
+    // ── Insert ── mint a key. Create order (constraint 2): write registry state (carrying the new hash) FIRST,
+    // THEN register the hash. A crash in between leaves the agent with a hash but no directory entry — the key is
+    // simply unusable (user regenerates), never a live orphan pointing at a stranger's agent. The seeded flag
+    // rides the SAME write as the insert, so a crash can never seed twice.
+    private async Task<AgentSaveResult> InsertAsync(AgentDefinition agent, bool markResearchSeeded = false)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var (raw, hash) = ApiKey.Generate();
+        var inserted = agent with
+        {
+            Id = Guid.NewGuid().ToString(),
+            CreatedAt = now,
+            UpdatedAt = now,
+            ApiKeyHash = hash,
+        };
+        _state.State.Agents.Add(inserted);
+        _state.State.ResearchAgentSeeded |= markResearchSeeded;
+        await _state.WriteStateAsync();
+
+        await Directory(hash).RegisterAsync(this.GetPrimaryKeyString(), inserted.Id);
+        return new AgentSaveResult(inserted, raw);
     }
 
     public async Task DeleteAsync(string id)

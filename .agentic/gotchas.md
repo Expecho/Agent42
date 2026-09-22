@@ -552,6 +552,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   it would hide the notice from the user's next real turn. The *per-run* set of servers that answered 401 is
   a **local** (`McpReauthTurnObserver`), never a field: two runs can be in flight on one activation, and a
   field would be wiped or polluted by the other one. Do not "tidy" either into the clear ritual.
+  **The research fields (ADR 0082) are not members either.** `_researchInFlight` names a RUNNING turn, so it is
+  published and cleared by identity like `_turnCts` (`??=` in `BeginResearchRun`, cleared only if still ours in
+  `ReleaseResearchRun`, from a `finally` at both run sites). `_researchTodos` describes the CURRENT agent and is
+  reassigned by every `BuildAgent`. The per-run state (boundaries, reply iteration) is a `ResearchRun` keyed by the
+  turn's user message, never a field.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_turnLocation`, the `finally` in `ChatAsync`, the
   clear in `ReceiveReminder`; `_mcpReauthNotified`, `TakeMcpReauthNotices`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`ReceiveReminder_HasNoUserLocation`, `Location_IsTurnScoped_AndNotPersisted`),
@@ -3643,6 +3648,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ### A cancelled Agent Framework run persists NOTHING — so a stopped turn is appended by hand, and `reply` becomes the persistence path
 
+> **Not under a research loop (ADR 0082).** `LoopAgent` persists every iteration that FINISHED, the user message
+> included, so a stop in iteration 2 finds iteration 1 already stored. There the hand-append adds the user message
+> only when no iteration finished, and the reply only when its text came from the unfinished iteration. See
+> "`LoopAgent` persists each iteration MID-TURN".
+
 - **Claim:** "cancel the model run, catch it, and let the code fall through to the existing persist" is the
   obvious shape for a stop button, and it silently destroys the turn. **Measured on Agent Framework 1.19**
   (spike, 2026-09-20: fake slow `IChatClient` + `InMemoryChatHistoryProvider` mirroring `BuildAgent`):
@@ -3709,3 +3719,84 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/StopGenerationTests.cs` (`Stop_DoesNotCancelABackgroundTurn`,
   `Stop_AfterTheTurnEnded_DoesNotAffectTheNextTurn`), `.agentic/decisions/0078-stop-generation.md`
 - **Verified:** 2026-09-20
+
+### `CompactionProvider` freezes the request on AF 1.19 — bound the research prompt with a chat-client REDUCER
+
+- **Claim:** registered as an `AIContextProvider`, `CompactionProvider` + `ContextWindowCompactionStrategy`
+  re-emits the request from its cached message groups once it has run. **Measured over 4 turns (2026-09-22): from
+  turn 2 on, the model was sent the FIRST question again**, and the new question never reached storage
+  (`users=[:question 1]` after four turns, with every re-emitted message tagged `ChatHistory/…CompactionProvider`).
+  It also persists a `messagegroups` state that duplicates un-evicted tool results. Use
+  `new ChatClientBuilder(client).UseChatReducer(strategy.AsChatReducer())` **under** the agent's
+  function-invoking client instead. That bounds each model call (measured: the view stayed at 25.9k chars while
+  history grew to 210k), stores every turn, and adds no session state. It is not `AsChatReducer()` on the history
+  provider, which deletes **stored** history.
+- **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`WithResearchBudget`),
+  `tests/Agent42.Tests/ResearchAgentTests.cs` (`ResearchPrompt_IsBoundedWithRag`),
+  `.agentic/decisions/0082-seeded-research-agent-loop.md`
+- **Verified:** 2026-09-22
+
+### `LoopAgent` persists each iteration MID-TURN — hide the turn while it runs, fold it when it ends
+
+- **Claim:** a `LoopAgent` run is one call to `RunStreamingAsync`, but the inner agent's history provider is
+  notified at the end of **each iteration**. So a research turn is in the session long before it ends, and after
+  it ends the session holds one assistant text per iteration. Left alone, ADR 0046 recovery adopts iteration 1's
+  draft, a reload shows N answers, and a stop duplicates text. The research code keeps "one user turn → one
+  assistant turn" in three places: `GetHistoryAsync` hides the turn while `_researchInFlight` is set (published
+  and cleared by identity, like `_turnCts`); `FoldResearchTurn` strips text from every iteration but the last
+  one that spoke, **exactly once per run**, because the recorded boundaries go stale after it removes messages;
+  and a `TextReset` stream event tells the browser and the MCP runner to drop the draft. There is no
+  iteration marker in the updates (measured). The boundary comes from an observer `DelegateLoopEvaluator`
+  placed FIRST, which returns `Stop()` — that does **not** short-circuit the later evaluators (measured).
+  At the iteration cap, the evaluators are not run after the last iteration.
+- **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`ObserveResearchIteration`,
+  `FoldResearchTurn`, `VisibleHistory`), `src/Agent42.Agents/Conversations/AgentGrain.cs`
+  (`AppendStoppedTurnToSession`), `tests/Agent42.Tests/ResearchAgentTests.cs`
+  (`ResearchTurn_HistoryHasOneAssistantTurn`), `tests/Agent42.Tests/StopGenerationTests.cs`
+  (`Stop_MidResearchLoop_KeepsHistoryConsistent`)
+- **Verified:** 2026-09-22
+
+### A storage request filter must EXTEND `IsInjectedOrReplayed`, never replace it — and loop feedback must be dropped
+
+- **Claim:** `StorageInputRequestMessageFilter` replaces the framework's default, which excludes replayed
+  `ChatHistory` messages. A filter written as "drop X" alone made every `LoopAgent` re-invocation store the
+  original question and the prior answer **a second time** (measured). Separately, the loop's own feedback
+  ("you still have incomplete todo items…") is a `user` message; the framework stored it in some compositions and
+  not in others (measured: stored with `TodoProvider` alone, not with `CompactionProvider` registered). Storing
+  it breaks the `TurnAttachments` 1:1 join, chat-search ordinals and replay. So `ExcludeInjectedContextMessages`
+  also drops `user` messages authored `ResearchLimits.LoopAuthorName` — matching role AND author, because
+  assistant messages carry the (user-editable) agent name.
+- **Evidence:** `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`ExcludeInjectedContextMessages`),
+  `tests/Agent42.Tests/ResearchAgentTests.cs` (`ResearchTurn_HistoryHasOneAssistantTurn`)
+- **Verified:** 2026-09-22
+
+### `AgentRunOptions.AdditionalProperties` is copied into EVERY model call's `ChatOptions`
+
+- **Claim:** it reads like a side channel from the caller to evaluators or middleware, but `ChatClientAgent` copies
+  it into `ChatOptions.AdditionalProperties` of each model call (measured on 1.19), which is the provider request
+  body. Per-run state for the research loop is keyed by the turn's own user `ChatMessage` in a
+  `ConditionalWeakTable` instead: `LoopContext.InitialMessages` holds that very reference (measured).
+- **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`_researchRuns`)
+- **Verified:** 2026-09-22
+
+### A record parameter a Cosmos document lacks binds to `null`, not to its C# default
+
+- **Claim:** `JsonGrainStorageSerializer` (Newtonsoft) builds a record through its constructor and passes `null` for a
+  parameter the document has no key for. **The declared default is ignored.** `string Kind = ""` therefore read
+  back as `null` for every stored agent (`DocumentsWithoutResearchFields_Deserialize` failed with
+  `Expected: "" Actual: null`). Declare a new trailing record parameter nullable, or make every reader tolerate
+  null. Class-shaped state (`AgentGrainState`) keeps its property initializer, so this is about records.
+- **Evidence:** `src/Agent42.Agents/StoredAgents/AgentDefinition.cs` (`Kind`),
+  `tests/Agent42.Tests/GrainStorageSerializerTests.cs` (`DocumentsWithoutResearchFields_Deserialize`)
+- **Verified:** 2026-09-22
+
+### Spiking Agent Framework in a file-based app needs reflection JSON switched back on
+
+- **Claim:** `dotnet run spike.cs` defaults to AOT-style settings, so `SerializeSessionAsync` fails on provider state
+  (compaction, todos) for reasons that do not exist in the repo. Add `#:property PublishAot=false` and
+  `#:property JsonSerializerIsReflectionEnabledByDefault=true`, or the spike reports a false failure. Also: a
+  brand-new `AgentSession` has no history state until its first run completes, so `TryGetInMemoryChatHistory`
+  returns **false** on it — code that reads the history length before a first turn must treat that as 0.
+- **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`BeginResearchRun`),
+  `.agentic/specs/completed/plan-research-agent.md` (Spike results)
+- **Verified:** 2026-09-22

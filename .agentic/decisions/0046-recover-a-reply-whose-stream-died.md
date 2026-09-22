@@ -10,6 +10,12 @@ amends: []
 
 # Recover a reply whose stream died while the app was backgrounded
 
+> **Amended by [ADR 0082](0082-seeded-research-agent-loop.md) (2026-09-22): a research turn is hidden from history until it ends.** `LoopAgent` stores
+> each finished iteration mid-turn, so `GetHistoryAsync` hides the whole turn while it runs and the grain folds
+> it to ONE assistant turn when it ends — recovery still never adopts a draft. The cost: a research turn usually
+> outlasts the ~30 s recovery poll, so a backgrounded one shows "Transmission failed" although it completes and a
+> reload shows it.
+
 ## Context
 Switching away from the installed PWA during a reply and coming back shows **"Transmission failed."**
 Refreshing then shows the complete answer. The reply was never lost — only its delivery was.

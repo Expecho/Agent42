@@ -11,9 +11,23 @@ public static partial class AgentApi
 {
     private static void MapStoredAgentEndpoints(IEndpointRouteBuilder app)
     {
-        // The signed-in user's stored agents, most recently updated first.
-        app.MapGet("/api/agents", (IGrainFactory grains, HttpContext http) =>
-            grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).GetAllAsync());
+        // The signed-in user's stored agents, most recently updated first. Seeds the built-in research agent
+        // first (ADR 0082): once per user, idempotent, and only once the user has a concrete chat model, so a
+        // user with no provider yet gets it on the first list after they add one.
+        //
+        // IServiceProvider rather than IUserChatClientFactoryProvider, for the /api/speech reason: a test host
+        // that registers no factory provider must still route this endpoint, and simply skips the seed.
+        app.MapGet("/api/agents", async (IGrainFactory grains, IServiceProvider services, HttpContext http, CancellationToken ct) =>
+        {
+            var registry = grains.GetGrain<IAgentRegistryGrain>(http.GetUserId());
+            if (services.GetService<IUserChatClientFactoryProvider>() is { } factories)
+            {
+                var model = (await factories.GetForUserAsync(http.GetUserId(), ct)).DefaultModelId;
+                await registry.EnsureResearchAgentAsync(model);
+            }
+
+            return await registry.GetAllAsync();
+        });
 
         // Creates a new stored agent; the registry assigns its id and timestamps, and mints a per-agent
         // API key (ADR 0022) returned ONCE in the response body (only its hash is stored).
@@ -112,7 +126,8 @@ public static partial class AgentApi
         var agentGrain = grains.GetGrain<IAgentGrain>(ownerKey);
         // Snapshot the agent's persona into the conversation (ADR 0003): pins its model + tools for the run.
         await agentGrain.BindAgentAsync(new AgentBinding(
-            definition.Id, definition.Name, definition.SystemPrompt, definition.Model, definition.EnabledTools));
+            definition.Id, definition.Name, definition.SystemPrompt, definition.Model, definition.EnabledTools,
+            definition.Kind));
 
         // Enable retrieval for any ingested document BEFORE the run, so the turn can see it (ADR 0008).
         foreach (var name in documentNames)

@@ -256,7 +256,88 @@ public sealed class StopGenerationTests(SharedClusterFixture fixture) : SharedCl
         Assert.Empty(await agent.GetHistoryAsync());
     }
 
+    // AC15 (ADR 0082): a stop in iteration 2 of a research loop, before iteration 2 produced anything. Iteration 1 is
+    // already in the session — the user message included — so the hand-append must add NOTHING: no second user
+    // message (which would shift every TurnAttachments join after it) and no second copy of iteration 1's text.
+    [Fact]
+    public async Task Stop_MidResearchLoop_KeepsHistoryConsistent()
+    {
+        const string key = "stop-mid-research-conversation";
+        var agent = await ResearchChatAsync(key);
+        var gates = OpenLoopGates();
+
+        var turn = DrainAsync(agent, FakeChatClient.ResearchTrigger);
+        await ReachedAsync(gates);
+        await agent.StopAsync();
+        CloseLoopGates();
+        await turn;
+
+        var history = await agent.GetHistoryAsync();
+        Assert.Collection(
+            history,
+            user => Assert.Equal(FakeChatClient.ResearchTrigger, user.Text),
+            answer =>
+            {
+                Assert.Contains(ReplyTail, answer.Text, StringComparison.Ordinal);
+                Assert.DoesNotContain("[loopfeedback:", answer.Text, StringComparison.Ordinal);
+                Assert.Equal(1, CountOf(answer.Text!, ReplyTail));
+            });
+
+        // It reopens, and the next turn lands right after it: the user count and the attachment join agree.
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+        await DrainAsync(Cluster.GrainFactory.GetGrain<IAgentGrain>(key), "and a plain follow-up");
+        var reopened = await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
+        Assert.Equal(["user", "assistant", "user", "assistant"], reopened.Select(t => t.Role));
+    }
+
+    // The same stop, but after iteration 2 has started its answer: that partial text is the unpersisted tail, so it
+    // IS appended — and it replaces iteration 1's draft, as the live bubble did at the TextReset.
+    [Fact]
+    public async Task Stop_MidResearchAnswer_KeepsTheLaterIterationsTail()
+    {
+        var agent = await ResearchChatAsync("stop-mid-research-answer-conversation");
+        var loopGates = OpenLoopGates();
+
+        var turn = DrainAsync(agent, FakeChatClient.ResearchTrigger);
+        await ReachedAsync(loopGates);
+        var textGates = OpenStreamGates();
+        CloseLoopGates();
+        await ReachedAsync(textGates);
+        await agent.StopAsync();
+        CloseStreamGates();
+        await turn;
+
+        var history = await agent.GetHistoryAsync();
+        Assert.Equal(2, history.Count);
+        Assert.StartsWith("[loopfeedback:1]", history[1].Text, StringComparison.Ordinal);
+        Assert.DoesNotContain(ReplyTail, history[1].Text ?? "", StringComparison.Ordinal);
+    }
+
     // --- helpers -------------------------------------------------------------------------------------
+
+    private async Task<IAgentGrain> ResearchChatAsync(string key)
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.BindAgentAsync(new AgentBinding(
+            "research-agent", ResearchAgentDefaults.Name, ResearchAgentDefaults.SystemPrompt,
+            TestSiloConfigurator.DefaultModel, ResearchAgentDefaults.EnabledTools, AgentKinds.Research));
+        return agent;
+    }
+
+    private List<FakeChatClient.StreamGate> OpenLoopGates() =>
+        [.. Cluster.Silos.Select(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
+            .GetRequiredService<FakeChatClient>().OpenLoopGate())];
+
+    private void CloseLoopGates()
+    {
+        foreach (var silo in Cluster.Silos)
+        {
+            Cluster.GetSiloServiceProvider(silo.SiloAddress).GetRequiredService<FakeChatClient>().CloseLoopGate();
+        }
+    }
+
+    private static int CountOf(string text, string part)
+        => (text.Length - text.Replace(part, "", StringComparison.Ordinal).Length) / part.Length;
 
     // The fake is a per-silo singleton and the grain may activate on any silo, so every silo gets a gate.
     private List<FakeChatClient.StreamGate> OpenStreamGates(int afterChunks = 1) =>

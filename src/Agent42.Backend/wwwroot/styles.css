@@ -839,6 +839,17 @@ body {
   color: var(--amber-deep);
 }
 
+/* The seeded research agent's marker (ADR 0082), between its name and its model. */
+.agent__badge {
+  align-self: flex-start;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+}
+
 .agent__action {
   position: absolute;
   top: 50%;
@@ -1172,6 +1183,52 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* The research agent's live checklist (ADR 0082): the plan, ticked off as the turn works. */
+.msg__todos {
+  margin: 4px 0 12px;
+  padding: 9px 12px;
+  border-left: 2px solid var(--amber-deep);
+  background: var(--bg-inset);
+  border-radius: 0 6px 6px 0;
+  font: 400 12px var(--mono);
+  color: var(--ink-dim);
+}
+
+.msg__todos-heading {
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+}
+
+.msg__todos-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.msg__todo {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+/* A box drawn with a border rather than a ☐/☑ glyph, for the reason the thinking disclosure draws its
+   caret: the mono stack has neither, and the fallback glyph reads differently per platform. */
+.msg__todo::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 3px;
+  border: 1px solid var(--ink-faint);
+  border-radius: 2px;
+}
+
+.msg__todo.is-done { color: var(--ink-faint); text-decoration: line-through; }
+
+.msg__todo.is-done::before { border-color: var(--green); background: var(--green); }
 
 /* The per-turn tool group. Always present once a turn calls a tool; its summary is drawn only once the
    turn crosses the fold threshold, so a one- or two-call turn still reads as a plain list of chips. */

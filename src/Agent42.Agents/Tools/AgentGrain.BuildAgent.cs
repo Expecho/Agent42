@@ -266,11 +266,16 @@ public sealed partial class AgentGrain
             contextProviders.Add(memoryProvider);
         }
 
+        // The research loop (ADR 0082): adds its todo provider for a research-kind chat on a tools-capable model,
+        // and is a no-op otherwise. The two With* calls below wrap the client and the agent the same way. Plain
+        // calls on purpose — S3776 charges branches, not calls, and this method has little headroom.
+        AddResearchProviders(contextProviders, capabilities);
+
         // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
         // state at bind time; a normal chat falls back to the default Agent 42 persona.
         // Old Cosmos state has null persona fields, so existing chats fall back too.
-        return new ChatClientAgent(
-            _chatClientFactory.GetClient(modelId),
+        return WithResearchLoop(new ChatClientAgent(
+            WithResearchBudget(_chatClientFactory.GetClient(modelId)),
             new ChatClientAgentOptions
             {
                 Name = _state.State.AgentName ?? "Agent42",
@@ -300,7 +305,7 @@ public sealed partial class AgentGrain
                     // measured, on both the streaming and the RunAsync path.
                     StorageInputResponseMessageFilter = StripReasoningFromStorage,
                 }),
-            });
+            }), modelId);
     }
 
     // Wraps one SELECTED tool of a URL-seeding MCP server so the URLs in its result seed this conversation's
