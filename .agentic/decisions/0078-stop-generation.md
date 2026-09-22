@@ -10,6 +10,11 @@ amends: [0037, 0043]
 
 # A stop button that cancels the turn server-side and keeps what it streamed
 
+> **Amended by [ADR 0082](0082-seeded-research-agent-loop.md) (2026-09-22): "the framework persists nothing" does not hold under a research loop.**
+> Iterations that finished are already stored, the user message included, so the hand-append adds the user
+> message only when nothing of the turn is stored and the reply only when its text came from the unfinished
+> iteration.
+
 > **Amended by [ADR 0079](0079-half-duplex-voice-on-speakers.md) (2026-09-20) — the stop button gains a
 > second effect in voice mode.** Stopping the server does not stop the *speaking*: a voice turn plays out
 > of a queue of sentences already fetched, so a stopped reply kept being read aloud. `voice.js` adds its

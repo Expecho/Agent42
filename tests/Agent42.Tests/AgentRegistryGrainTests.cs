@@ -146,4 +146,83 @@ public sealed class AgentRegistryGrainTests(SharedClusterFixture fixture) : Shar
 
         Assert.Null(await Cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(hash).ResolveAsync());
     }
+
+    // AC2 (ADR 0082): no concrete model means no seed. The flag stays false, so the first call that DOES carry a
+    // model seeds, and a later one does not seed again.
+    [Fact]
+    public async Task NoModel_DoesNotSeed_ThenSeedsLater()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("registry-research-nomodel");
+
+        await registry.EnsureResearchAgentAsync("");
+        Assert.Empty(await registry.GetAllAsync());
+
+        await registry.EnsureResearchAgentAsync("foundry:gpt-5.4");
+        await registry.EnsureResearchAgentAsync("foundry:gpt-5.4");
+
+        var seeded = Assert.Single(await registry.GetAllAsync());
+        Assert.Equal(AgentKinds.Research, seeded.Kind);
+        Assert.Equal(ResearchAgentDefaults.Name, seeded.Name);
+        Assert.Equal("foundry:gpt-5.4", seeded.Model);
+        Assert.Equal([ToolCatalog.WebSearch], seeded.EnabledTools);
+        Assert.False(seeded.Continuous);
+
+        // It went through the normal insert path, so its ADR 0022 key hash is registered like any other agent's.
+        var owner = await Cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(seeded.ApiKeyHash).ResolveAsync();
+        Assert.Equal(seeded.Id, owner!.AgentId);
+    }
+
+    // AC3 (ADR 0082): a deleted research agent stays deleted, including across a reactivation, which proves the
+    // flag was persisted rather than merely held in memory.
+    [Fact]
+    public async Task DeletedResearchAgent_IsNotReseeded()
+    {
+        const string user = "registry-research-deleted";
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        await registry.EnsureResearchAgentAsync("fake-model");
+        await registry.DeleteAsync(Assert.Single(await registry.GetAllAsync()).Id);
+
+        await registry.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+        var reactivated = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        await reactivated.EnsureResearchAgentAsync("fake-model");
+
+        Assert.Empty(await reactivated.GetAllAsync());
+    }
+
+    // AC4 (ADR 0082): an update can change everything the user owns, but not Kind (the request never carries
+    // it), and a research agent cannot be made continuous.
+    [Fact]
+    public async Task Update_PreservesKind_AndForcesPerChat()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("registry-research-update");
+        await registry.EnsureResearchAgentAsync("fake-model");
+        var seeded = Assert.Single(await registry.GetAllAsync());
+
+        var updated = (await registry.SaveAsync(seeded with
+        {
+            Name = "Deep dive",
+            Kind = null,
+            Continuous = true,
+        })).Agent;
+
+        Assert.Equal("Deep dive", updated.Name);
+        Assert.Equal(AgentKinds.Research, updated.Kind);
+        Assert.False(updated.Continuous);
+        Assert.Equal(seeded.ApiKeyHash, updated.ApiKeyHash);
+    }
+
+    // Kind is set ONLY by seeding (ADR 0082): an insert that claims a kind stores an ordinary agent, and an ordinary
+    // agent can still be continuous.
+    [Fact]
+    public async Task Insert_CannotClaimAKind()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("registry-research-insert");
+
+        var created = (await registry.SaveAsync(new AgentDefinition(
+            "", "Impostor", "", "fake-model", "sys", default, default, Continuous: true,
+            Kind: AgentKinds.Research))).Agent;
+
+        Assert.Null(created.Kind);
+        Assert.True(created.Continuous);
+    }
 }

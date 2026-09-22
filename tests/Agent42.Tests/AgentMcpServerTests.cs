@@ -225,6 +225,25 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         Assert.Equal("list me", listed.Title);
     }
 
+    // AC6 + AC13 (ADR 0082): the seeded research agent's kind reaches the conversation through the MCP bind, and the
+    // caller is handed the FINAL iteration's answer — the one the owner's history shows — not every draft glued on.
+    [Fact]
+    public async Task AskAgent_ResearchAgent_RepliesWithTheFinalIterationOnly()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(Owner);
+        await registry.EnsureResearchAgentAsync(TestSiloConfigurator.DefaultModel);
+        var research = (await registry.GetAllAsync()).Single(a => a.Kind == AgentKinds.Research);
+        var key = (await registry.SaveAsync(research with { McpExposed = true }, regenerateKey: true)).PlaintextApiKey!;
+
+        var reply = await AskAgentAsync(key, FakeChatClient.ResearchTrigger);
+
+        Assert.False(reply.IsError, reply.Text);
+        Assert.StartsWith("[loopfeedback:1]", reply.Text, StringComparison.Ordinal);
+        var binding = await Cluster.GrainFactory
+            .GetGrain<IAgentGrain>($"{Owner}/{reply.ConversationId}").GetAgentBindingAsync();
+        Assert.Equal(AgentKinds.Research, binding!.Kind);
+    }
+
     // ---- Exclusions (C3, C13) ---------------------------------------------------------------------
 
     // AC9. Asserts the EFFECT — zero recalls and zero retains — never the selection list. The repo's own

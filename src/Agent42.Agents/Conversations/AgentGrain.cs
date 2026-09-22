@@ -14,7 +14,8 @@ namespace Agent42.Agents;
 /// so the agent can schedule durable reminders via the <c>schedule_prompt</c> tool.
 ///
 /// <para>This is the CORE part of a class split across feature folders (ADR 0039). It holds every
-/// instance field — every dependency and every turn-scoped flag — plus activation, the chat entry
+/// dependency and every turn-scoped flag (the search and research slices keep their own feature-only fields,
+/// ADR 0061/0082) — plus activation, the chat entry
 /// points and <see cref="ReceiveReminder"/>. The feature slices live beside their feature
 /// (<c>Web/AgentGrain.WebTools.cs</c>, <c>Documents/AgentGrain.Documents.cs</c>, and so on) but all
 /// declare this one namespace: a partial class cannot span namespaces, which is why
@@ -429,6 +430,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _state.State.AgentName = binding.Name;
         _state.State.SystemPrompt = binding.SystemPrompt;
         _state.State.DeploymentName = binding.Model;
+        // Persona, so snapshotted with the rest (ADR 0082 amends ADR 0003): BuildAgent below composes the research
+        // loop from it, and editing the source agent later never changes this chat.
+        _state.State.AgentKind = binding.Kind;
 
         // Snapshot the agent's tools as a CONCRETE set (ADR 0021/0003): a null binding materializes to
         // all-selectable, so the persona is self-contained and never inherits the USER's per-chat default.
@@ -466,7 +470,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         => Task.FromResult(_state.State.AgentId is { Length: > 0 } id
             ? new AgentBinding(
                 id, _state.State.AgentName ?? "", _state.State.SystemPrompt ?? "", _modelId,
-                _state.State.EnabledTools)
+                _state.State.EnabledTools, _state.State.AgentKind)
             : null);
 
     public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(
@@ -737,21 +741,33 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         using var turnCts = new CancellationTokenSource();
         PublishStopHandle(turnCts, interactive);
 
+        // A research-kind chat runs the loop (ADR 0082): this resets its todos and hides the turn from history until
+        // it ends. Null for every other chat, and every research call below is then a no-op.
+        var research = BeginResearchRun(userMessage);
+
         var outcome = new TurnOutcome();
         var reauth = new McpReauthTurnObserver(_mcpServers);
+        var streamEnded = false;
         try
         {
-            await foreach (var evt in StreamModelReplyAsync(userMessage, reply, tokens, outcome, turnCts.Token))
+            await foreach (var evt in StreamModelReplyAsync(userMessage, reply, tokens, outcome, research, turnCts.Token))
             {
                 reauth.Observe(evt);
                 yield return evt;
             }
+
+            streamEnded = true;
         }
         finally
         {
             // Before the persist, not after: once the last event is out there is nothing left to stop,
             // and leaving the handle up would let a late press cancel nothing while logging that it did.
             UnpublishStopHandle(turnCts);
+            // Unhidden here so an abandoned stream cannot leave history hidden for the rest of the activation. On
+            // the normal path the fold below runs before the next await, so no reader sees the unfolded turn. A
+            // research turn that FAILED or was ABANDONED never reaches that fold, yet LoopAgent has already stored
+            // every iteration that finished (ADR 0082), so it is folded here instead.
+            ReleaseResearchRun(research, foldFirst: !streamEnded);
         }
 
         // A stopped turn is persisted like any other — but the framework hands us NOTHING to persist.
@@ -761,7 +777,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // turn, and since the title is stamped by the endpoint BEFORE the turn runs, the result is a
         // conversation listed with a title and no messages (the ADR 0070 failure shape). So the turn is
         // appended by hand, and this is the ONE branch on which `reply` is the persistence path.
-        if (!TryPrepareStoppedTurn(outcome, userMessage, reply))
+        var prepared = TryPrepareStoppedTurn(outcome, userMessage, reply, research);
+
+        // After the stopped-turn append, so a stopped research turn folds its tail in with the rest.
+        FoldResearchRun(research);
+
+        if (!prepared)
         {
             // The history was unreachable, so there is nothing coherent to write. Skip the persist rather
             // than commit an empty session over a conversation that had one — and note this also skips the
@@ -842,7 +863,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // one — an iterator method cannot hand out a `ref`.
     private async IAsyncEnumerable<AgentStreamEvent> StreamModelReplyAsync(
         ChatMessage userMessage, StringBuilder reply, TurnTokenTotals tokens, TurnOutcome outcome,
-        [EnumeratorCancellation] CancellationToken turnToken)
+        ResearchRun? research, [EnumeratorCancellation] CancellationToken turnToken)
     {
         var updates = _agent
             .RunStreamingAsync([userMessage], _session, null, turnToken)
@@ -872,8 +893,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 }
 
                 // The projection is a plain iterator because it must not be an ASYNC one; usage updates
-                // produce no event at all, they only accumulate into `tokens`.
-                foreach (var evt in ProjectStreamedUpdate(update, reply, tokens))
+                // produce no event at all, they only accumulate into `tokens`. A research turn adds its
+                // TextReset and checklist events around it (ADR 0082), which is why this call is async.
+                foreach (var evt in await ProjectUpdateAsync(update, reply, tokens, research))
                 {
                     yield return evt;
                 }
@@ -888,8 +910,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // True when the turn may be persisted: it ran to completion (nothing to prepare), or it was stopped and
     // its partial turn has been appended to the session. False only in the one case where persisting would
     // destroy rather than record — see AppendStoppedTurnToSession.
-    private bool TryPrepareStoppedTurn(TurnOutcome outcome, ChatMessage userMessage, StringBuilder reply)
-        => !outcome.Stopped || AppendStoppedTurnToSession(userMessage, reply);
+    private bool TryPrepareStoppedTurn(
+        TurnOutcome outcome, ChatMessage userMessage, StringBuilder reply, ResearchRun? research)
+        => !outcome.Stopped || AppendStoppedTurnToSession(userMessage, reply, research);
 
     // Writes a stopped turn into the session by hand, because the framework wrote nothing (see the call
     // site). Returns false when the history cannot be reached, which is the one caller for which the usual
@@ -902,7 +925,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // there — so StorageInputResponseMessageFilter would have had nothing to strip. TurnAttachments needs
     // no attention either: BuildUserTurnAsync added this turn's entry before the run, so appending the
     // user message is what RESTORES the 1:1 join the positional image lookup depends on.
-    private bool AppendStoppedTurnToSession(ChatMessage userMessage, StringBuilder reply)
+    //
+    // A research turn (ADR 0082) is the exception to "the framework wrote nothing": each iteration that FINISHED
+    // is already in the session, including the user message. So the user message is appended only when nothing of
+    // the turn is stored, and the reply only when its text came from the iteration that was cut short. Appending
+    // either unconditionally would duplicate it (measured: a stop in iteration 2 left iteration 1 stored whole).
+    // Both checks read the history itself, not only the observer's count, so a stop landing between an iteration
+    // being stored and the observer recording it still cannot double-append.
+    private bool AppendStoppedTurnToSession(ChatMessage userMessage, StringBuilder reply, ResearchRun? research)
     {
         if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
         {
@@ -913,12 +943,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             return false;
         }
 
-        messages.Add(userMessage);
+        if (research?.UserMessageStored(messages.Count) != true)
+        {
+            messages.Add(userMessage);
+        }
 
         // No assistant message when nothing was streamed: an empty assistant turn would be sent back to
         // the provider on every later turn, and some reject one. The prompt still survives, and the client
         // says the reply never started (ADR 0078).
-        if (reply.Length > 0)
+        if (reply.Length > 0 && research?.ReplyIsUnpersisted(messages.Count) != false)
         {
             messages.Add(new ChatMessage(ChatRole.Assistant, reply.ToString())
             {
@@ -1234,10 +1267,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public Task<IReadOnlyList<ChatTurn>> GetHistoryAsync()
     {
-        if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
+        if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? stored) || stored is null)
         {
             return Task.FromResult<IReadOnlyList<ChatTurn>>([]);
         }
+
+        // A research turn still running is hidden whole (ADR 0082): the loop persists each finished iteration
+        // mid-turn, and ADR 0046 recovery must not adopt a draft as the reply.
+        var messages = VisibleHistory(stored);
 
         // Results FIRST, over the whole history, because a call's result never arrives on the message
         // that made the call — it comes back on a later tool-role message. Matching them in one forward
@@ -1479,7 +1516,21 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // A reminder-fired turn is a user turn too, so it must push a (always empty) attachment
         // entry to keep TurnAttachments aligned 1:1 with user turns by index (constraint 11).
         AlignTurnAttachmentsToHistory();
-        await _agent.RunAsync([new ChatMessage(ChatRole.User, info.Prompt)], _session);
+        var prompt = new ChatMessage(ChatRole.User, info.Prompt);
+
+        // The research loop's second run site (ADR 0082): this method does not drain ChatCoreAsync, so it resets
+        // the todos, hides the turn and folds it itself, in the same order.
+        var research = BeginResearchRun(prompt);
+        try
+        {
+            await _agent.RunAsync([prompt], _session);
+        }
+        finally
+        {
+            // In the finally, so a run that fails in a later iteration still folds the iterations it stored.
+            ReleaseResearchRun(research, foldFirst: true);
+        }
+
         _state.State.TurnAttachments.Add([]);
 
         // Retention (ADR 0016), same as the chat path. This site does its OWN serialize — it does not

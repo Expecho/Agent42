@@ -63,7 +63,7 @@ public static class AgentMcpRunner
         // conversation this is a no-op and the binding checked above is the one that runs.
         await agentGrain.BindAgentAsync(new AgentBinding(
             caller.Agent.Id, caller.Agent.Name, caller.Agent.SystemPrompt, caller.Agent.Model,
-            WithoutMemoryOrPush(caller.Agent.EnabledTools)));
+            WithoutMemoryOrPush(caller.Agent.EnabledTools), caller.Agent.Kind));
 
         return await DrainWithinBudgetAsync(
             agentGrain, prompt, id, timeout ?? AgentMcpLimits.RunTimeout, logger);
@@ -134,6 +134,12 @@ public static class AgentMcpRunner
                 if (evt.Type == AgentStreamEventType.TextDelta && evt.Text is { Length: > 0 } text)
                 {
                     reply.Append(text);
+                }
+                else if (evt.Type == AgentStreamEventType.TextReset)
+                {
+                    // A research loop's later iteration started its answer (ADR 0082): the text so far was a
+                    // draft, and the caller gets what the owner's chat history will show — the final answer.
+                    reply.Clear();
                 }
             }
 

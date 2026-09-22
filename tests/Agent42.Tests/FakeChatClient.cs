@@ -170,12 +170,15 @@ public sealed partial class FakeChatClient : IChatClient
     public void Reset()
     {
         Volatile.Write(ref _suggestionCalls, 0);
+        Volatile.Write(ref _judgeCalls, 0);
+        Volatile.Write(ref _largestPromptChars, 0);
         StampResponseCreatedAt = null;
         LastSuggestionPrompt = null;
 
         // A test that failed mid-gate may have left a stream parked on it, and the cluster is shared across
         // the class (ADR 0055), so the next test would inherit a wedged turn.
         CloseStreamGate();
+        CloseLoopGate();
     }
 
     /// <summary>
@@ -193,12 +196,18 @@ public sealed partial class FakeChatClient : IChatClient
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
+        // The research loop's AI judge (ADR 0082) asks for a structured verdict, not a reply.
+        if (JudgeVerdict(messages, options) is { } verdict)
+        {
+            return Task.FromResult(verdict);
+        }
+
         var call = SelectToolCall(messages, options);
         var contents = call is not null
             ? new List<AIContent> { call }
             : new List<AIContent>
             {
-                new TextContent(RequestContextEcho() + InstructionsEcho(messages, options)
+                new TextContent(LoopEcho(messages) + RequestContextEcho() + InstructionsEcho(messages, options)
                     + ToolsEcho(options) + ContextEcho(messages) + ImageEcho(messages)
                     + AllImagesEcho(messages) + EmptyMessageEcho(messages) + ToolResultEcho(messages)
                     + string.Concat(ReplyChunks)),
@@ -231,6 +240,10 @@ public sealed partial class FakeChatClient : IChatClient
         }
 
         messages = list;
+
+        await AwaitLoopGateAsync(list, cancellationToken);
+        RecordPromptSize(list, options);
+        ThrowIfLaterIterationFails(list);
 
         // Gate 0 parks before ANY update goes out — before the tool-call early return and before the echo
         // prefix, both of which are text. That is the only way to reach a turn whose reply is still empty,
@@ -266,7 +279,8 @@ public sealed partial class FakeChatClient : IChatClient
             await Task.Yield();
         }
 
-        var echo = ToolsEcho(options) + RequestContextEcho() + TraceEcho() + InstructionsEcho(messages, options)
+        var echo = LoopEcho(messages) + ToolsEcho(options) + RequestContextEcho() + TraceEcho()
+            + InstructionsEcho(messages, options)
             + ContextEcho(messages) + ImageEcho(messages) + AllImagesEcho(messages)
             + EmptyMessageEcho(messages) + ToolResultEcho(messages);
         if (echo.Length > 0)
@@ -885,6 +899,13 @@ public sealed partial class FakeChatClient : IChatClient
         string text,
         out FunctionCallContent? call)
     {
+        if (text.Contains(ResearchTrigger, StringComparison.OrdinalIgnoreCase)
+            || text.Contains(ResearchNeverDoneTrigger, StringComparison.OrdinalIgnoreCase))
+        {
+            call = NextResearchCall(list, lastUserIndex, options, text);
+            return true;
+        }
+
         // The two-step exfiltration attempt: search for the attacker's domain (whitelisting its HOST),
         // then try to fetch it with the secret in the query string.
         if (text.Contains("exfiltrate", StringComparison.OrdinalIgnoreCase))
@@ -968,6 +989,8 @@ public sealed partial class FakeChatClient : IChatClient
         ("notify me with nothing", _ => BuildBlankPushCall()),
         ("notify me with junk", _ => BuildDirtyPushCall()),
         ("send me a notification", _ => BuildPushCall()),
+        // ADR 0082. Contains neither "cancel" nor "remind", and not the research trigger itself.
+        (ScheduleResearchTrigger, _ => BuildResearchReminderCall()),
     ];
 
     // The last message the USER actually sent.
@@ -978,11 +1001,14 @@ public sealed partial class FakeChatClient : IChatClient
     // user-role message is the excerpt block rather than the prompt — and a fake that keyed on it would
     // silently stop calling tools the moment retrieval switched on, which reads exactly like the tool
     // being broken. A real model sees both messages and answers the user's.
+    //
+    // The research loop's feedback (ADR 0082) is skipped for the same reason: it is a user-role message the user
+    // never wrote, and keying on it would restart every scripted chain at each loop iteration.
     private static int LastUserIndex(IReadOnlyList<ChatMessage> list)
     {
         for (var i = list.Count - 1; i >= 0; i--)
         {
-            if (list[i].Role == ChatRole.User && !IsInjectedContext(list[i]))
+            if (list[i].Role == ChatRole.User && !IsInjectedContext(list[i]) && !IsLoopFeedback(list[i]))
             {
                 return i;
             }

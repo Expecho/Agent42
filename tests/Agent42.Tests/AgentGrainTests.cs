@@ -1005,6 +1005,23 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Empty(await agent.GetScheduledPromptsAsync());
     }
 
+    // AC6 (ADR 0082): the research kind is persona, so it is snapshotted at bind time and survives reactivation.
+    [Fact]
+    public async Task Bind_ResearchKind_Persists()
+    {
+        const string key = "binding-research-kind";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await agent.BindAgentAsync(new AgentBinding(
+            "agent-r", "Research", "You research.", TestSiloConfigurator.DefaultModel, Kind: AgentKinds.Research));
+        Assert.Equal(AgentKinds.Research, (await agent.GetAgentBindingAsync())!.Kind);
+
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        var reactivated = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        Assert.Equal(AgentKinds.Research, (await reactivated.GetAgentBindingAsync())!.Kind);
+    }
+
     // AC2: binding pins the persona + model into the conversation and survives reactivation.
     [Fact]
     public async Task Binding_PinsPersonaAndModel_SurvivesReactivation()

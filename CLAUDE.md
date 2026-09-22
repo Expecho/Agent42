@@ -166,6 +166,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | MCP client: config, OAuth (per-request refresh + in-turn reconnect), per-server/per-tool selection, test, URL seeding, local bridge | 0024, 0025, 0026, 0058, 0064, 0067, 0069, 0076, 0081 |
 | MCP server (agents exposed via `/api/agent-mcp`) | 0070 |
 | Stored agents: history mode, API key + `/api/agent-run`, retention | 0016, 0022, 0068 |
+| Research agent: seeded built-in `Kind`, todo/loop/judge, history fold, live checklist | 0082 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |
 | Push: away replies, model-invoked | 0028, 0075 |
 | Conversations: incognito, share links, follow-ups, pins, groups, chat search, stream recovery, stop generation | 0034, 0035, 0036, 0045, 0046, 0047, 0061, 0073, 0078 |

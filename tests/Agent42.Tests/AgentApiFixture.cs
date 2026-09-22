@@ -30,6 +30,10 @@ public sealed class AgentApiFixture : SharedApiFixture
             new ModelInfo("github:openai/gpt-4o-mini", "github", "GPT-4o mini", "openai/gpt-4o-mini",
                 null, SupportsTools: true, SupportsVision: false),
         ]));
+        // GET /api/agents seeds the research agent on the user's default model (ADR 0082). The endpoint resolves the
+        // per-user factory optionally, so only a host that registers one seeds; this one borrows the silo's.
+        builder.Services.AddSingleton(_ => Cluster.GetSiloServiceProvider(Cluster.Primary!.SiloAddress)
+            .GetRequiredService<IUserChatClientFactoryProvider>());
         builder.Services.AddSingleton(
             new PushConfig(Enabled: true, PublicKey: TestVapidPublicKey, Subject: "mailto:test@agent42"));
         builder.Services.AddSingleton(UserIdAliases.FromConfiguration(

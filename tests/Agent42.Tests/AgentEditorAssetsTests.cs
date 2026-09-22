@@ -37,6 +37,23 @@ public sealed class AgentEditorAssetsTests
         Assert.Contains("continuous: agentContinuousInput.checked", app);
     }
 
+    // AC19 (ADR 0082). The research agent is per-chat only: the editor disables the continuous box and says why,
+    // and the list marks the agent. The server forces the flag off regardless (AgentRegistryGrainTests), so this
+    // guards the half a user sees — a box they can tick that silently does nothing would be worse than a lock.
+    [Fact]
+    public async Task AgentEditor_LocksContinuousForResearch_AndBadgesTheAgent()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("id=\"agentContinuousNote\"", html);
+        var open = StaticAssetsServerFixture.Body(app, "function openAgentDialog");
+        Assert.Contains("agent?.kind === \"research\"", open);
+        Assert.Contains("agentContinuousInput.disabled = research", open);
+        Assert.Contains("agentContinuousNote.textContent", open);
+        Assert.Contains("agent__badge", app);
+    }
+
     // AC17 (ADR 0070). The MCP-exposure toggle, and — the half worth guarding by source text — the
     // regenerate OFFER on the OFF -> ON transition.
     //

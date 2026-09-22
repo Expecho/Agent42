@@ -57,6 +57,25 @@ public enum AgentStreamEventType
     /// interactive path only, at most once per server per activation.</para>
     /// </summary>
     McpReauthRequired,
+
+    /// <summary>
+    /// The research agent's live todo checklist changed (ADR 0082): the whole list rides on
+    /// <see cref="AgentStreamEvent.Todos"/>, so the client replaces rather than patches. Emitted after a tool
+    /// result whenever the list differs from the last one sent.
+    ///
+    /// <para><b>Live-only, like <see cref="Suggestions"/>.</b> Never persisted and never replayed on reload:
+    /// the todo state lives in the session only for the turn that uses it, and is reset when the next turn
+    /// starts.</para>
+    /// </summary>
+    Todos,
+
+    /// <summary>
+    /// A research loop's later iteration started speaking, so the text streamed so far is superseded
+    /// (ADR 0082): the client clears the current bubble's text and keeps its tool calls. The answer of a
+    /// research turn is the last iteration that produced text, and the stored session is folded to match,
+    /// so a reload shows what the live bubble ended with. Carries no payload.
+    /// </summary>
+    TextReset,
 }
 
 /// <summary>
@@ -91,4 +110,7 @@ public sealed record AgentStreamEvent(
     [property: Id(12)] bool? Stopped = null,
     // Set on a McpReauthRequired event (ADR 0081): the server the Reconnect button opens the OAuth flow for.
     // Trailing default so every existing positional construction keeps compiling.
-    [property: Id(13)] string? McpServerId = null);
+    [property: Id(13)] string? McpServerId = null,
+    // Set on a Todos event (ADR 0082): the research agent's whole checklist, in the order the model added it.
+    // Trailing default so every existing positional construction keeps compiling.
+    [property: Id(14)] IReadOnlyList<ResearchTodo>? Todos = null);
