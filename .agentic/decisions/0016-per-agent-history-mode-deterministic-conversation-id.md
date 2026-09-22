@@ -7,6 +7,10 @@ tags: [agents, conversations, history, routing, agent-definition, continuous, se
 
 # Per-agent history mode via a deterministic conversation id
 
+> **Amended by [ADR 0082](0082-seeded-research-agent-loop.md) (2026-09-22): a research agent is per-chat only.** The registry forces `Continuous = false`
+> for it and the editor locks the box — research turns are the largest turns there are, and a continuous chat is
+> one 2 MB grain.
+
 ## Context
 Every stored agent (ADR 0003) starts a **fresh** conversation each time: `startAgentChat` mints
 `crypto.randomUUID()` and the backend keys a grain by whatever id arrives (`AgentApi.cs` `AgentKey`),

@@ -35,6 +35,15 @@ namespace Agent42.Agents;
 /// (ADR 0007), the user's street address (ADR 0012), tool and web content, and prior turns. A key
 /// handed out months ago silently gains that reach the moment this flips on, which is why the editor
 /// offers a regenerate alongside it.</para>
+///
+/// <para><see cref="Kind"/> marks a built-in agent shape: <c>null</c> (the default) is an ordinary user
+/// agent, and <see cref="AgentKinds.Research"/> is the seeded research agent. It is set ONLY by
+/// seeding (<c>IAgentRegistryGrain.EnsureResearchAgentAsync</c>) and preserved across every update, so
+/// no request can set or clear it. Unlike <see cref="Continuous"/> it IS persona: it changes how the
+/// model runs, so it is snapshotted into <see cref="AgentBinding"/>. Trailing and defaulted, so every
+/// stored agent deserializes as an ordinary one with no migration. Nullable rather than <c>""</c> on
+/// purpose: the Cosmos JSON path binds a key a document lacks to <c>null</c>, not to the C# default, so a
+/// non-null declaration would be a lie about every agent stored before it.</para>
 /// </remarks>
 [GenerateSerializer]
 [Alias("Agent42.Agents.AgentDefinition")]
@@ -49,4 +58,5 @@ public sealed record AgentDefinition(
     [property: Id(7)] bool Continuous = false,
     [property: Id(8)] IReadOnlyList<string>? EnabledTools = null,
     [property: Id(9)] string ApiKeyHash = "",
-    [property: Id(10)] bool McpExposed = false);
+    [property: Id(10)] bool McpExposed = false,
+    [property: Id(11)] string? Kind = null);

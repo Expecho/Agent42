@@ -185,6 +185,51 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal(["https://linked.example/seeded-by-an-mcp-result.pdf"], restored.SeededFetchableUrls);
     }
 
+    // AC5 (ADR 0082): the research fields round-trip on the path that matters at rest. The seeded tool list is built
+    // exactly as EnsureResearchAgentAsync builds it: a spread there would be unreadable (the trap pinned below).
+    [Fact]
+    public void ResearchFields_RoundTrip()
+    {
+        var grain = Serializer().Deserialize<AgentGrainState>(
+            Serializer().Serialize(new AgentGrainState { AgentKind = AgentKinds.Research }));
+        Assert.Equal(AgentKinds.Research, grain.AgentKind);
+
+        var registry = Serializer().Deserialize<AgentRegistryState>(Serializer().Serialize(new AgentRegistryState
+        {
+            Agents =
+            [
+                new AgentDefinition(
+                    "a-1", "Research", "", "fake-model", "sys", default, default,
+                    EnabledTools: ResearchAgentDefaults.EnabledTools.ToList(), ApiKeyHash: "h", Kind: AgentKinds.Research),
+            ],
+            ResearchAgentSeeded = true,
+        }));
+        Assert.True(registry.ResearchAgentSeeded);
+        var agent = Assert.Single(registry.Agents);
+        Assert.Equal(AgentKinds.Research, agent.Kind);
+        // The fields beside it did not shift into it.
+        Assert.Equal("h", agent.ApiKeyHash);
+        Assert.False(agent.McpExposed);
+    }
+
+    // AC5 (ADR 0082): documents written before the research fields existed read as ordinary. An agent-state
+    // document binds AgentKind to null, and a registry document binds Kind to null (NOT the C# default: Newtonsoft
+    // passes null for a constructor parameter the document lacks) and the seeded flag to false,
+    // which is what makes every existing user get the research agent exactly once.
+    [Fact]
+    public void DocumentsWithoutResearchFields_Deserialize()
+    {
+        var grain = Serializer().Deserialize<AgentGrainState>(new BinaryData(StoredAgentGrainStateJson));
+        Assert.Null(grain.AgentKind);
+
+        var registry = Serializer().Deserialize<AgentRegistryState>(new BinaryData(PreResearchAgentRegistryJson));
+        Assert.False(registry.ResearchAgentSeeded);
+        var agent = Assert.Single(registry.Agents);
+        Assert.Null(agent.Kind);
+        Assert.Equal("sha256-abc", agent.ApiKeyHash);
+        Assert.True(agent.McpExposed);
+    }
+
     /// <summary>
     /// State a grain builds <b>itself</b> and writes, round-tripped through the real Cosmos serializer.
     ///
@@ -438,6 +483,15 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
     /// </summary>
     private const string PrePinConversationIndexStateJson = """
         {"$id":"1","$type":"Agent42.Agents.ConversationIndexState, Agent42.Agents","Conversations":{"$type":"System.Collections.Generic.List`1[[Agent42.Agents.ConversationInfo, Agent42.Agents]], System.Private.CoreLib","$values":[{"$id":"2","$type":"Agent42.Agents.ConversationInfo, Agent42.Agents","Id":"conv-1","Title":"A golden chat","UpdatedAt":"2026-06-07T08:09:10+00:00","AgentId":"agent-golden","AgentName":"Golden"},{"$id":"3","$type":"Agent42.Agents.ConversationInfo, Agent42.Agents","Id":"conv-2","Title":"A plain chat","UpdatedAt":"2026-06-06T08:09:10+00:00","AgentId":null,"AgentName":null}]}}
+        """;
+
+    /// <summary>
+    /// An <c>agents</c> registry payload in the shape written before ADR 0082 — note the total absence of a
+    /// <c>Kind</c> key on the agent and of <c>ResearchAgentSeeded</c> on the root. Committed rather than generated
+    /// at run time, for the same reason as <see cref="StoredAgentGrainStateJson"/>.
+    /// </summary>
+    private const string PreResearchAgentRegistryJson = """
+        {"$id":"1","$type":"Agent42.Agents.AgentRegistryState, Agent42.Agents","Agents":{"$type":"System.Collections.Generic.List`1[[Agent42.Agents.AgentDefinition, Agent42.Agents]], System.Private.CoreLib","$values":[{"$id":"2","$type":"Agent42.Agents.AgentDefinition, Agent42.Agents","Id":"agent-golden","Name":"Golden","Description":"A stored persona","Model":"foundry:gpt-5.4","SystemPrompt":"Be golden.","CreatedAt":"2026-01-02T03:04:05+00:00","UpdatedAt":"2026-01-03T03:04:05+00:00","Continuous":true,"EnabledTools":{"$type":"System.Collections.Generic.List`1[[System.String, System.Private.CoreLib]], System.Private.CoreLib","$values":["web_search"]},"ApiKeyHash":"sha256-abc","McpExposed":true}]}}
         """;
 
     /// <summary>

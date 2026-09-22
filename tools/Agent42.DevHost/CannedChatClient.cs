@@ -42,8 +42,9 @@ public sealed partial class CannedChatClient : IChatClient
 
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
-        => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant,
-            BuildReply(messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text ?? ""))));
+        => Task.FromResult(IsJudgeCall(messages, options)
+            ? JudgeVerdict()
+            : new ChatResponse(new ChatMessage(ChatRole.Assistant, BuildReply(ResearchPrompt(messages)))));
 
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
@@ -52,12 +53,16 @@ public sealed partial class CannedChatClient : IChatClient
         var call = SelectToolCall(messages, options);
         if (call is not null)
         {
+            // Paced so a research checklist visibly ticks (ADR 0082) instead of arriving complete.
+            await Task.Delay(400, cancellationToken);
             yield return new ChatResponseUpdate(ChatRole.Assistant, [call]);
             yield return new ChatResponseUpdate(ChatRole.Assistant, [BuildUsage(120, 25)]);
             yield break;
         }
 
-        var prompt = messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text ?? "";
+        // The user's own question — not the todo list or RAG excerpts injected as user-role messages, and not a
+        // research loop's feedback (ADR 0082).
+        var prompt = ResearchPrompt(messages);
 
         // Reasoning output (ADR 0071), so the collapsed "thinking" disclosure is exercisable offline.
         // Gated on a prompt marker rather than emitted on every turn, so the ordinary offline reply keeps
@@ -76,7 +81,10 @@ public sealed partial class CannedChatClient : IChatClient
             }
         }
 
-        var reply = BuildReply(prompt);
+        // A research loop's first iteration drafts; the answer comes once the loop's feedback says a step is left.
+        var reply = options?.Tools?.Any(t => t.Name == "todos_add") == true && !messages.Any(IsLoopFeedback)
+            ? $"Drafting an answer to *{prompt}* from the first sources — one step of the plan is still open."
+            : BuildReply(prompt);
         foreach (var chunk in reply.Split(' ').Chunk(4).Select(words => string.Join(' ', words) + " "))
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
@@ -218,6 +226,11 @@ public sealed partial class CannedChatClient : IChatClient
         if (lastUserIndex < 0)
         {
             return null;
+        }
+
+        if (TryResearchCall(list, options, out var research))
+        {
+            return research;
         }
 
         var text = list[lastUserIndex].Text ?? "";

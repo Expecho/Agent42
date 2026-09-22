@@ -7,6 +7,7 @@ import { autosize } from "./composer.js";
 import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./conversations.js";
 import { form, incognitoBtn, input, modelSelect, stopBtn, thread } from "./dom.js";
 import { currentLocationForSend } from "./location.js";
+import { renderResearchTodos } from "./research.js";
 import { applyModelAvailability } from "./models.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, refreshConversations } from "./sidebar.js";
@@ -223,6 +224,14 @@ export async function send(prompt) {
         } else if (chunk.type === "mcpReauthRequired") {
           // An MCP server's sign-in expired (ADR 0081): a Reconnect button in the bubble, opening a new tab.
           renderMcpReauth(agentMsg, chunk.mcpServerId, chunk.text);
+        } else if (chunk.type === "todos") {
+          // The research agent's checklist changed (ADR 0082): the whole list, so render replaces.
+          renderResearchTodos(agentMsg, chunk.todos);
+        } else if (chunk.type === "textReset") {
+          // A later research iteration started its answer (ADR 0082): the text so far was a draft. Clear it and
+          // keep the tool calls, so the bubble ends on what a reload will show.
+          answer = "";
+          setAgentMarkdown(agentMsg, answer, { caret: true });
         } else if (chunk.type === "suggestions") {
           // Up to 3 clickable follow-up prompts under the reply; clicking one sends it immediately.
           renderSuggestions(agentMsg, chunk.suggestions);

@@ -267,6 +267,32 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.Equal("done", lines[^1].GetProperty("type").GetString());
     }
 
+    // AC18/19 (ADR 0082) on the wire: send.js dispatches on "todos" and "textReset", and reads id/title/done off each
+    // todo. Nothing in the endpoint spells any of them, so a renamed enum member or record property would break the
+    // checklist with every grain test still green.
+    [Fact]
+    public async Task ChatEndpoint_StreamsResearchEventsAsNdjson()
+    {
+        var research = (await ListAgentsAsAsync("local-dev")).Single(a => a.Kind == AgentKinds.Research);
+
+        using var chat = await Client.PostAsJsonAsync(
+            "/api/chat/api-research-conversation",
+            new ChatRequest(FakeChatClient.ResearchTrigger, null, AgentId: research.Id));
+        chat.EnsureSuccessStatusCode();
+
+        var lines = (await chat.Content.ReadAsStringAsync())
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonDocument.Parse(line).RootElement)
+            .ToList();
+
+        var todos = lines.Last(e => e.GetProperty("type").GetString() == "todos").GetProperty("todos");
+        var first = todos.EnumerateArray().First();
+        Assert.Equal(1, first.GetProperty("id").GetInt32());
+        Assert.Equal("Find sources", first.GetProperty("title").GetString());
+        Assert.True(first.GetProperty("done").GetBoolean());
+        Assert.Single(lines, e => e.GetProperty("type").GetString() == "textReset");
+    }
+
     // Runs one turn so the conversation is listed in the index, draining the NDJSON stream.
     private async Task StartConversationAsync(string conversationId, string prompt)
     {
@@ -719,6 +745,31 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
 
     // ————— per-agent API key + async run endpoint (ADR 0022) —————
 
+    // AC1 (ADR 0082): a user's first list seeds exactly one research agent on their concrete default model, and the
+    // second list does not add another. A unique principal, so no other test's seed or delete can interfere.
+    [Fact]
+    public async Task FirstList_SeedsOneResearchAgent()
+    {
+        var principal = $"research-seed-{Guid.NewGuid():N}";
+
+        var first = await ListAgentsAsAsync(principal);
+        var second = await ListAgentsAsAsync(principal);
+
+        var research = Assert.Single(first, a => a.Kind == AgentKinds.Research);
+        Assert.Equal(TestSiloConfigurator.DefaultModel, research.Model);
+        Assert.Single(second, a => a.Kind == AgentKinds.Research);
+        Assert.Equal(research.Id, second.Single(a => a.Kind == AgentKinds.Research).Id);
+    }
+
+    private async Task<List<AgentDefinition>> ListAgentsAsAsync(string principalId)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/agents");
+        request.Headers.Add("X-MS-CLIENT-PRINCIPAL-ID", principalId);
+        using var response = await Client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<List<AgentDefinition>>())!;
+    }
+
     // AC2: GET /api/agents never returns a raw key (its prefix must not appear anywhere in the body).
     [Fact]
     public async Task GetAgents_NeverReturnsARawKey()
@@ -754,6 +805,26 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
             .Content.ReadFromJsonAsync<AgentBinding>();
         Assert.NotNull(binding);
         Assert.Equal(agentId, binding!.AgentId);
+    }
+
+    // AC6 (ADR 0082): the agent-run bind carries the research kind, so the background turn runs the loop and lands
+    // as ONE folded assistant turn — the drain path goes through the same ChatCoreAsync as the browser.
+    [Fact]
+    public async Task AgentRun_ResearchAgent_BindsItsKind()
+    {
+        var research = (await ListAgentsAsAsync("local-dev")).Single(a => a.Kind == AgentKinds.Research);
+        var apiKey = (await Fixture.Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("local-dev")
+            .SaveAsync(research, regenerateKey: true)).PlaintextApiKey!;
+
+        using var res = await AgentRunAsync(apiKey, FakeChatClient.ResearchTrigger);
+        var convId = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("conversationId").GetString();
+
+        var turns = await PollMessagesAsync(convId!, t => t.Any(x => x.Role == "assistant"));
+        var answer = Assert.Single(turns, t => t.Role == "assistant");
+        Assert.StartsWith("[loopfeedback:1]", answer.Text, StringComparison.Ordinal);
+        var binding = await (await Client.GetAsync($"/api/conversations/{convId}/agent"))
+            .Content.ReadFromJsonAsync<AgentBinding>();
+        Assert.Equal(AgentKinds.Research, binding!.Kind);
     }
 
     // AC5: missing or unknown X-Api-Key → 401 (fail closed).

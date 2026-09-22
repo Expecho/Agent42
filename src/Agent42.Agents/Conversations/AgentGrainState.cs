@@ -225,4 +225,13 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(13)]
     public List<string> SeededFetchableUrls { get; set; } = [];
+
+    /// <summary>
+    /// The bound agent's built-in shape (<see cref="AgentKinds"/>), snapshotted at bind time like the rest of
+    /// the persona (ADR 0003). <see cref="AgentKinds.Research"/> makes <c>BuildAgent</c> compose the research
+    /// loop. Null for a regular chat and for every conversation stored before it, so they build exactly as
+    /// before. Trailing <c>[Id(14)]</c>, so no migration.
+    /// </summary>
+    [Id(14)]
+    public string? AgentKind { get; set; }
 }

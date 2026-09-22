@@ -3,7 +3,7 @@
 import { clearPendingAttachments } from "./attachments.js";
 import { cacheGet, cachePut } from "./cache.js";
 import { selectConversation, setActiveAgentId, setActiveId, setPendingAgentId } from "./conversations.js";
-import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentDescriptionInput, agentDialog, agentForm, agentFormTitle, agentKeyCopyBtn, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
+import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentContinuousNote, agentDescriptionInput, agentDialog, agentForm, agentFormTitle, agentKeyCopyBtn, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
 import { closeDrawer } from "./drawer.js";
 import { defaultModel, fillModelOptions, modelLabel, selectModel, setModel } from "./models.js";
 import { streaming } from "./send.js";
@@ -61,7 +61,16 @@ export function renderAgents() {
     model.textContent = modelLabel(agent.model);
     model.title = agent.model;
 
-    btn.append(name, model);
+    btn.append(name);
+    // The seeded research agent (ADR 0082) runs a plan/search/reflect loop, which the name alone may not say
+    // once the user has renamed it.
+    if (agent.kind === "research") {
+      const badge = document.createElement("span");
+      badge.className = "agent__badge";
+      badge.textContent = "research";
+      btn.append(badge);
+    }
+    btn.append(model);
 
     const edit = document.createElement("button");
     edit.type = "button";
@@ -122,6 +131,9 @@ export function startAgentChat(agent) {
   input.focus();
 }
 
+// The history-mode note as index.html writes it, restored when the dialog opens on an ordinary agent.
+const CONTINUOUS_NOTE = "All chats started from this agent share one ongoing history.";
+
 function openAgentDialog(agent) {
   editingAgentId = agent?.id ?? null;
   agentFormTitle.textContent = agent ? "Edit agent" : "New agent";
@@ -129,6 +141,14 @@ function openAgentDialog(agent) {
   agentDescriptionInput.value = agent?.description ?? "";
   agentSystemPromptInput.value = agent?.systemPrompt ?? "";
   agentContinuousInput.checked = agent?.continuous ?? false;
+  // A research agent is per-chat only (ADR 0082): its turns are the largest there are, and a continuous chat is
+  // one 2 MB grain (ADR 0016). The server forces it off whatever is sent; the lock says so before a save does.
+  const research = agent?.kind === "research";
+  agentContinuousInput.disabled = research;
+  if (research) agentContinuousInput.checked = false;
+  agentContinuousNote.textContent = research
+    ? "A research agent always starts a fresh chat: its turns are too large to share one ongoing history."
+    : CONTINUOUS_NOTE;
   agentMcpExposedInput.checked = agent?.mcpExposed ?? false;
   // Remembered so saveAgent can spot the OFF -> ON transition (ADR 0070). Read at open rather than from
   // the stored agent at save time, because the list is reloaded asynchronously and could have moved on.
