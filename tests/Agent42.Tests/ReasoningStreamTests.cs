@@ -29,8 +29,8 @@ public class ReasoningStreamTests
 
     /// <summary>
     /// AC1. A DeepSeek-style <c>delta.reasoning_content</c> must arrive as a
-    /// <see cref="TextReasoningContent"/> on the PINNED stack (OpenAI 2.12.0 +
-    /// Microsoft.Extensions.AI.OpenAI 10.9.0).
+    /// <see cref="TextReasoningContent"/> on the pinned client stack (<c>OpenAI</c> +
+    /// <c>Microsoft.Extensions.AI.OpenAI</c>; versions in <c>Directory.Packages.props</c>).
     ///
     /// <para>This is the affirmative twin of <c>StreamingEmptyChoicesTests</c>, and the distinction matters:
     /// that test's <c>found=False</c> was measured against an EMPTY-choices chunk, where absence is correct.
