@@ -162,4 +162,4 @@ self.addEventListener("push", (event) => {
 | Web Push sender | `src/Agent42.Backend/Push/WebPushNotificationSender.cs`, `WebPushClientAdapter.cs` |
 | Send call sites | `src/Agent42.Agents/Push/AgentGrain.Push.cs` (`SendAwayReplyPushAsync`) |
 | Model-invoked tool | `src/Agent42.Agents/Push/AgentGrain.PushTool.cs`, `PushToolLimits.cs` |
-| Endpoints / SW | `src/Agent42.Backend/Push/AgentApi.Push.cs`, `wwwroot/sw.js`, `wwwroot/app.js` |
+| Endpoints / SW | `src/Agent42.Backend/Push/AgentApi.Push.cs`, `wwwroot/sw.js`, `wwwroot/js/push.js` |

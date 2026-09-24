@@ -20,7 +20,7 @@ headers, and its object id becomes the Orleans grain key for everything per-user
 flowchart TD
     subgraph Install
       MAN["manifest.webmanifest (standalone, icons)"] --> INSTALLABLE
-      APP["app.js: register /sw.js on load"] --> SW["SW precaches shell, network-first navigations"]
+      APP["js/pwa.js wirePwa(): register /sw.js on load"] --> SW["SW precaches shell, network-first navigations"]
     end
     subgraph Auth
       EASY["Easy Auth (ACA) — RedirectToLoginPage"] --> HDR["X-MS-CLIENT-PRINCIPAL-* headers"]
@@ -79,6 +79,13 @@ blob defensively (never throws). Locally there is no Easy Auth, so every request
 single `local-dev` pseudo-user — which is exactly why the MCP-OAuth and Share endpoints must
 stay **behind** Easy Auth (an `excludedPaths` carve-out would bind to `local-dev`).
 
+### A second Entra account (ADR 0074)
+
+`Identity:Aliases` is a committed config map from an additional Entra object id to the object id
+that owns the data. `ResolveUserId` applies it for both grain keying and telemetry `user.id`, so
+two accounts see one set of conversations. No data moves. This is an authorization grant: an alias
+gets full access to the owner's data.
+
 ## How the Agent Framework fits
 
 - None directly — auth and the PWA shell are orthogonal to the agent runtime; they gate access
@@ -97,5 +104,5 @@ stay **behind** Easy Auth (an `excludedPaths` carve-out would bind to `local-dev
 |---------|------|
 | Manifest | `src/Agent42.Backend/wwwroot/manifest.webmanifest` |
 | Service worker | `src/Agent42.Backend/wwwroot/sw.js` |
-| SW registration | `src/Agent42.Backend/wwwroot/app.js` |
+| SW registration | `src/Agent42.Backend/wwwroot/js/pwa.js` (`wirePwa`, called from `main.js`) |
 | Identity | `src/Agent42.Backend/Api/CurrentUser.cs` |

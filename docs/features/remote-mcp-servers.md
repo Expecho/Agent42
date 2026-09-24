@@ -108,9 +108,31 @@ if (mode == McpAuthMode.Header && ...)
 
 - **Interactive OAuth** (ADR 0025) is an app-driven authorization-code + PKCE flow with PRM
   discovery across `GET /api/mcp/oauth/start` + `/callback` (both **behind Easy Auth**); tokens
-  are persisted encrypted and refreshed at connect. The SDK's own OAuth is not used (its
-  redirect delegate blocks). Manual prereq: register the callback URI in each provider's app
-  registration.
+  are persisted encrypted. The SDK's own OAuth is not used (its redirect delegate blocks). Manual
+  prereq: register the callback URI in each provider's app registration.
+- **Refresh is per request** (ADR 0081, replacing 0025's connect-time refresh). An
+  `InteractiveOAuthTokenProvider` feeds the bearer to `AuthHeaderHandler` on every request; on a 401
+  it re-resolves once and resends. `McpOAuthTokenResolver` single-flights refreshes per (user,
+  server) and writes the new tokens with a compare-and-swap `RecordOAuthTokensAsync` that never
+  bumps the overlay version (so a refresh never drops live sockets). Only `invalid_grant` means
+  "sign in again": the stream then emits a live-only `McpReauthRequired` event and the transcript
+  shows a **Reconnect** button that opens the OAuth flow in a new tab.
+
+### Test a connection (ADR 0064/0069)
+
+`POST /api/mcp-servers/{id}/test` (`McpConnectionTester`) connects to one stored server, lists its
+tools, records their names, and disconnects. It runs from the dialog's **Test** button, after a
+successful save, and on the OAuth return. `GET /api/tools` still never connects (ADR 0058); the
+test is the user-pressed exception. A test that finds at least one tool calls
+`InvalidateToolCacheAsync`, which bumps the overlay version so warm chats pick up the new tool set.
+A failed or zero-tool test changes nothing.
+
+### Links from a server's results can be fetched (ADR 0067)
+
+`StoredMcpServer.SeedsFetchableUrls` is a per-server opt-in, off by default ("let links from this
+server be opened and read"). When on, `UrlHarvestingMcpTool` harvests http(s) URLs from that
+server's tool results into `AgentGrainState.SeededFetchableUrls` (20 per result, 100 total, oldest
+dropped first), and `fetch_web_page` / `read_web_document` accept them like URLs the user typed.
 
 ## Local bridge (a server on your own machine)
 
@@ -143,7 +165,8 @@ flowchart LR
 The helper dials **out**, so nothing on your machine is exposed. Before relaying any tool call that the
 server has not declared read-only it **asks you in its console**, showing the full (sanitized) arguments;
 declining, not answering within 60 s, or arguments too large to review all return an error result the
-model can read. Read-only tools — page text, screenshots, **browsing history** — run without asking and
+model can read. Answer `a` / `always` to allow that tool for the rest of the helper's session
+(ADR 0076); anything that is not an exact allow word denies. Read-only tools — page text, screenshots, **browsing history** — run without asking and
 their output goes to the model, so narrow the server's tools and keep "let links from this server be
 opened and read" off. **Regenerate key** rotates the key and disconnects the running helper, which then
 stops. A chat that was already open when the helper connected picks the tools up on its next activation.
@@ -177,6 +200,7 @@ stops. A chat that was already open when the helper connected picks the tools up
 | Encryption | `src/Agent42.Backend/Mcp/McpSecretProtector.cs` |
 | Auth | `src/Agent42.Backend/Mcp/McpAuthHeader.cs`, `McpOAuth.cs` |
 | Endpoints | `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (`/api/mcp-servers`, `/api/mcp/oauth/*`) |
+| OAuth refresh / test | `src/Agent42.Backend/Mcp/McpOAuthTokenResolver.cs`, `McpConnectionTester.cs` |
 | Local bridge (backend) | `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs`, `LocalBridgeSession.cs`, `LocalBridgeConnectionFactory.cs`, `LocalBridgeRegistry.cs` |
 | Local bridge (helper) | `tools/Agent42.LocalBridge/BridgeClient.cs`, `ConfirmationGate.cs`, `UpstreamChannel.cs` |
 | Local bridge release | `.github/workflows/release-local-bridge.yml` (automatic patch release when the helper changes on `main`; or tag `local-bridge-vX.Y.Z`) |

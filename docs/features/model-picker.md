@@ -132,4 +132,4 @@ bind time) while a normal chat sends the picker's value.
 | Id parsing | `src/Agent42.Backend/Models/ModelProviderOptions.cs` |
 | Client resolution | `src/Agent42.Backend/Models/ChatClientFactory.cs` |
 | Catalog | `src/Agent42.Backend/Models/ModelCatalog.cs`, `UserModelCatalogProvider.cs` |
-| Endpoints / frontend | `src/Agent42.Backend/Models/AgentApi.Models.cs`, `wwwroot/app.js` |
+| Endpoints / frontend | `src/Agent42.Backend/Models/AgentApi.Models.cs`, `wwwroot/js/models.js` |

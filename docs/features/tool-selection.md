@@ -60,10 +60,10 @@ public const string Location = "location";
 public const string Scheduling = "scheduling";
 public const string Skills = "skills";
 public const string CodeInterpreter = "code_interpreter";
-public const string Memory = "memory";         // ADR 0057 — the first key that is NOT a tool
+public const string Memory = "memory";         // ADR 0057 — the first key that is NOT a tool (see long-term-memory.md)
 ...
 public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-    [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory];
+    [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification];
 ```
 
 ### Three-layer resolution
@@ -95,16 +95,28 @@ public static bool IsToolEnabled(string toolName, ISet<string> enabled)
 
 ### The per-user tool catalog and per-conversation override
 
-`GET /api/tools` returns the static descriptors plus one `mcp:{id}` descriptor per enabled MCP
-server (ADR 0026):
+`GET /api/tools` returns the static descriptors, one `skill:{name}` descriptor per skill (uploaded
+skills shadow shipped ones by name, ADR 0048/0049), and per enabled MCP server one `mcp:{id}`
+descriptor plus one child row per tool it last reported (ADR 0026/0058). Tool names come from the
+persisted `KnownToolNames`, never a live connection, so a page load never waits on a dead server:
 
 ```csharp
 app.MapGet("/api/tools", async (IGrainFactory grains, HttpContext http) =>
 {
-    var overlay = await grains.GetGrain<IUserMcpConfigGrain>(http.GetUserId()).GetAsync();
-    var mcpDescriptors = overlay.Servers.Where(s => s.Enabled)
-        .Select(s => new ToolDescriptor(ToolCatalog.McpServerKey(s.Id), s.Name, RequiresHostedTools: false));
-    return Results.Json<IReadOnlyList<ToolDescriptor>>([.. ToolCatalog.Descriptors, .. mcpDescriptors]);
+    var userId = http.GetUserId();
+    var uploaded = (await grains.GetGrain<IUserSkillsGrain>(userId).GetAsync()).Skills;
+    var skillDescriptors = /* uploaded ∪ shipped (not shadowed), ordered */
+        ... .Select(n => new ToolDescriptor(ToolCatalog.SkillKey(n), n, RequiresHostedTools: false));
+
+    var overlay = await grains.GetGrain<IUserMcpConfigGrain>(userId).GetAsync();
+    var mcpDescriptors = overlay.Servers
+        .Where(s => s.Enabled)
+        .SelectMany(s => new[] { new ToolDescriptor(ToolCatalog.McpServerKey(s.Id), s.Name, RequiresHostedTools: false) }
+            .Concat((s.KnownToolNames ?? []).Select(name => new ToolDescriptor(
+                ToolCatalog.McpToolKey(s.Id, name), name, RequiresHostedTools: false,
+                ParentKey: ToolCatalog.McpServerKey(s.Id)))));
+    return Results.Json<IReadOnlyList<ToolDescriptor>>(
+        [.. ToolCatalog.Descriptors, .. skillDescriptors, .. mcpDescriptors]);
 });
 ```
 
@@ -123,7 +135,11 @@ Server-side `Sanitize` drops invented keys but leaves `null` as `null`:
 public static IReadOnlyList<string>? Sanitize(IReadOnlyList<string>? tools)
     => tools is null
         ? null
-        : [.. AllSelectableToolKeys.Where(tools.Contains), .. tools.Where(IsMcpServerKey).Distinct()];
+        : [
+            .. AllSelectableToolKeys.Where(tools.Contains),
+            .. tools.Where(IsSkillKey).Distinct(),
+            .. tools.Where(IsMcpServerKey).Distinct(),
+        ];
 ```
 
 The `mcp` **wildcard** must be expanded into explicit `mcp:{id}` keys on read

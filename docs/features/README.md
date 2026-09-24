@@ -16,9 +16,11 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 
 | Feature | Page |
 |---------|------|
-| Streaming replies (NDJSON, token-by-token) | [streaming-replies.md](streaming-replies.md) |
-| Conversation history (sidebar, resume, delete) | [conversation-history.md](conversation-history.md) |
+| Streaming replies (NDJSON, live-only events, stop, stream recovery, tool-call folding and replay) | [streaming-replies.md](streaming-replies.md) |
+| Conversation history (sidebar, resume, delete, search, pins, groups, incognito, share links, follow-ups) | [conversation-history.md](conversation-history.md) |
 | Model picker (switch mid-conversation) | [model-picker.md](model-picker.md) |
+| Reasoning output (live-only "thinking") | [reasoning-output.md](reasoning-output.md) |
+| Voice: dictation, hands-free loop, server-side speech | [voice-and-speech.md](voice-and-speech.md) |
 
 ## Bring your own models
 
@@ -33,29 +35,31 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 | Web search (`web_search` + `fetch_web_page`) | [web-search.md](web-search.md) |
 | Current location | [current-location.md](current-location.md) |
 | Scheduled reminders | [scheduled-reminders.md](scheduled-reminders.md) |
-| Skills (markdown playbooks) | [skills.md](skills.md) |
+| Skills (markdown playbooks, per-skill selection, uploads) | [skills.md](skills.md) |
 | Code interpreter (hosted) | [code-interpreter.md](code-interpreter.md) |
 | Choosing which tools an assistant may use | [tool-selection.md](tool-selection.md) |
+| Long-term memory (Hindsight) | [long-term-memory.md](long-term-memory.md) |
 
 ## Files, images & documents
 
 | Feature | Page |
 |---------|------|
 | Image attachments (vision) | [image-attachments.md](image-attachments.md) |
-| Document Q&A (RAG) | [document-qa.md](document-qa.md) |
+| Document Q&A (RAG, incl. `read_web_document`) | [document-qa.md](document-qa.md) |
 | Image generation | [image-generation.md](image-generation.md) |
 
 ## Custom agents
 
 | Feature | Page |
 |---------|------|
-| Build agents, continuous/per-chat memory, external API-key runs | [custom-agents.md](custom-agents.md) |
+| Build agents, continuous/per-chat memory, external API-key runs, MCP exposure | [custom-agents.md](custom-agents.md) |
+| The seeded Research agent: plan/search/reflect loop with a live checklist | [research-agent.md](research-agent.md) |
 
 ## Remote MCP servers
 
 | Feature | Page |
 |---------|------|
-| Add your own tools via MCP (auth options, per-server toggle, local bridge for on-machine servers) | [remote-mcp-servers.md](remote-mcp-servers.md) |
+| Add your own tools via MCP (auth options, OAuth refresh and Reconnect, connection test, per-server toggle, local bridge for on-machine servers) | [remote-mcp-servers.md](remote-mcp-servers.md) |
 
 ## Notifications & sharing (installed Android/Chromium PWA)
 
@@ -63,13 +67,14 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 |---------|------|
 | Push notifications | [push-notifications.md](push-notifications.md) |
 | Android Share sheet | [android-share-target.md](android-share-target.md) |
-| Install as an app + sign-in | [pwa-and-sign-in.md](pwa-and-sign-in.md) |
+| Install as an app + sign-in (incl. identity alias) | [pwa-and-sign-in.md](pwa-and-sign-in.md) |
 
 ## Preferences & account
 
 | Feature | Page |
 |---------|------|
 | Configuration health | [configuration-health.md](configuration-health.md) |
+| Usage dashboard, `/logs` console, Orleans dashboard, App Insights export | [usage-and-diagnostics.md](usage-and-diagnostics.md) |
 
 ---
 
