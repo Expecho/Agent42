@@ -10,20 +10,20 @@
          project and implies PrivateAssets="all", which is exactly right for a build-time analyzer (it
          must never flow to consumers as a dependency).
          Exactly ONE of its ~400 rules is adopted; see .editorconfig for the measurement behind that. -->
-    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.33.0.1635" />
+    <GlobalPackageReference Include="SonarAnalyzer.CSharp" Version="10.34.0.3385" />
   </ItemGroup>
   <ItemGroup>
     <!-- Aspire -->
-    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.2" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.2" />
-    <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.5.2" />
-    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.5.2" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.5.4" />
     <!-- Content parsing + Azure + AI -->
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.4" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.9.0" />
-    <PackageVersion Include="Azure.ResourceManager.CognitiveServices" Version="1.5.2" />
+    <PackageVersion Include="Azure.ResourceManager.CognitiveServices" Version="1.6.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
     <!-- Security pin, not a feature dependency. Azure.Extensions.AspNetCore.DataProtection.Blobs
          -> Microsoft.AspNetCore.DataProtection 10.0.7 drags in System.Security.Cryptography.Xml
@@ -31,16 +31,16 @@
          PackageReference in Agent42.Backend) because Central Package Management does not override a
          transitive version from a PackageVersion entry alone. Drop this pin once the DataProtection
          chain ships a fixed version by itself. -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.11" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.12" />
     <PackageVersion Include="Docnet.Core" Version="2.6.0" />
     <!-- Long-term memory (ADR 0056). Our own package, extracted to a public repo so it is usable outside
          this codebase: https://github.com/Expecho/Hindsight.AgentFramework.Net -->
     <PackageVersion Include="Hindsight.AgentFramework.Net" Version="0.1.0" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
-    <PackageVersion Include="MessagePack" Version="3.1.8" />
+    <PackageVersion Include="MessagePack" Version="3.1.10" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.19.0" />
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.19.0" />
-    <PackageVersion Include="Microsoft.Identity.Client" Version="4.88.0" />
+    <PackageVersion Include="Microsoft.Identity.Client" Version="4.90.0" />
     <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <!-- Held at 2.12.0 deliberately; do NOT let a routine outdated-package sweep
@@ -65,7 +65,7 @@
          System.Security.Cryptography.Xml pin above). -->
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
     <!-- Orleans -->
-    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.12" />
     <!-- The OFFICIAL dashboard (ADR 0062), versioned with the rest of the Orleans stack.
          NOT the community `OrleansDashboard` package, which must never be referenced here:
          8.2.0 throws MissingMethodException out of Silo.StartAsync on Orleans 10.x, so the SILO
@@ -80,16 +80,16 @@
     <PackageVersion Include="Microsoft.Orleans.Server" Version="10.3.1" />
     <PackageVersion Include="Microsoft.Orleans.TestingHost" Version="10.3.1" />
     <!-- Telemetry + resilience (ServiceDefaults) -->
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
-    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.9.0" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.18.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.10.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.19.0" />
     <!-- Tests -->
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="WebPush" Version="1.0.13" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
