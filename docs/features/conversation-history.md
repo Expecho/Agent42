@@ -57,7 +57,9 @@ public async Task TouchAsync(string conversationId, string firstPrompt, string? 
 
 public Task<IReadOnlyList<ConversationInfo>> GetConversationsAsync()
     => Task.FromResult<IReadOnlyList<ConversationInfo>>(
-        [.. _state.State.Conversations.OrderByDescending(c => c.UpdatedAt)]);
+        [.. _state.State.Conversations
+            .OrderByDescending(c => c.Pinned)                 // pins first (ADR 0045)
+            .ThenByDescending(c => c.UpdatedAt)]);
 ```
 
 The three history endpoints are thin grain calls:
@@ -197,6 +199,37 @@ re-render this list independently of the search box (a background refresh, cache
 agent save, a completed send), and any of them would otherwise wipe an active result list while
 it was being read.
 
+### Pins and custom groups (ADR 0045/0073)
+
+`PUT /api/conversations/{id}/pin` sets `ConversationInfo.Pinned`, and the index sorts pinned
+chats first. Custom groups are first-class entities: `ChatGroup(Id, Name, Order)` in
+`ConversationIndexState`, with a nullable `GroupId` on each conversation. A custom group wins over
+the agent group, so a filed agent chat shows in its custom group. The routes are in
+`AgentApi.ChatGroups.cs` (`/api/conversation-groups`, `/api/conversation-group-order`,
+`PUT /api/conversations/{id}/group`), and `wwwroot/js/groups.js` owns the dialogs and the
+drag-and-drop.
+
+### Incognito chats (ADR 0034)
+
+`ChatRequest.Ephemeral` makes a turn that skips `TouchAsync` (so the chat never enters the sidebar)
+and skips the session write in the grain. The turn-scoped `_ephemeral` field is cleared in the
+turn's `finally` and reset on the two persisting entry points. Documents are blocked at the
+composer in an incognito chat, because RAG ingestion writes durable chunks.
+
+### Read-only share links (ADR 0035)
+
+`POST / GET / DELETE /api/conversations/{id}/share` mint, show and revoke a `shr_` token.
+`UserShareLinksGrain` is the owner's list, and the global `ShareLinkDirectoryGrain` maps the token
+hash to `(userId, conversationId)`. The public side (`GET /api/share/{token}`, its attachment
+proxy, and the `/shared` viewer page) is on Easy Auth's `excludedPaths` and self-enforces the
+token; it never calls `GetUserId()`. Deleting a conversation also revokes its link.
+
+### Follow-up suggestions (ADR 0036)
+
+After an interactive reply, the grain makes one extra call on the conversation's model and streams
+up to three follow-up prompts as a `Suggestions` event. Clicking a chip sends it. Suggestions are
+never persisted, and the agent-run and reminder paths skip them.
+
 ## How the Agent Framework fits
 
 - History is **not** stored separately — it lives inside the Agent Framework `AgentSession`.
@@ -229,5 +262,7 @@ it was being read.
 | Search port + in-memory twin | `src/Agent42.Agents/Search/IChatSearchIndex.cs`, `src/Agent42.Agents/Search/InMemoryChatSearchIndex.cs` |
 | Search projection + backfill | `src/Agent42.Agents/Search/AgentGrain.Search.cs` |
 | Search Cosmos adapter | `src/Agent42.Backend/Search/CosmosChatSearchIndex.cs` |
+| Custom groups | `src/Agent42.Backend/Conversations/AgentApi.ChatGroups.cs`, `wwwroot/js/groups.js` |
+| Share links | `src/Agent42.Agents/Sharing/`, `wwwroot/shared/`, `wwwroot/js/sharelinks.js` |
 | Search endpoints | `src/Agent42.Backend/Search/AgentApi.Search.cs` |
 | Frontend | `src/Agent42.Backend/wwwroot/js/sidebar.js`, `src/Agent42.Backend/wwwroot/js/search.js` |

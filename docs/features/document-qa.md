@@ -14,6 +14,17 @@ conversation that has an ingested document.
 Uploaded documents are **ingest-only** — they never become chat attachments (they're off the
 image `UriContent` path).
 
+The model can also pull a document from the web into the same index (ADR 0066): the
+`read_web_document` tool downloads a PDF, Office or text file **from our own container**, ingests
+it into this conversation's index, and returns excerpts that answer the model's `question`. It
+only accepts URLs on the same fetch allowlist as `fetch_web_page` (see
+[Web search](web-search.md), plus opted-in MCP results, ADR 0067), rejects
+`text/html` (that is `fetch_web_page`'s job), and dials through `PrivateAddressGuard`, which
+checks every resolved IP and every redirect hop against private ranges. Limits are in
+`WebDocumentLimits` (10 MB download, 30 s deadline, 10 web documents per conversation). A web
+document counts toward the RAG gate exactly like an uploaded one
+(`DocumentNames.Count + WebDocumentNames.Count > 0`).
+
 ### Prerequisite: a default embedding model (ADR 0030)
 
 RAG needs an **embedding model**, and it is **per-user** — not an operator prerequisite. Add a model
@@ -167,4 +178,5 @@ else
 | Extract / chunk | `src/Agent42.Agents/Documents/DocumentTextExtractor.cs`, `DocumentChunker.cs` |
 | Retrieval provider | `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`BuildDocumentSearchProvider`, `SearchDocumentContextAsync`) |
 | Vector store | `src/Agent42.Backend/Documents/CosmosDocumentIndex.cs`, `src/Agent42.Agents/Documents/InMemoryDocumentIndex.cs` |
+| Web documents (ADR 0066) | `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`, `WebDocumentLimits.cs`, `src/Agent42.Backend/Documents/WebDocumentIngestor.cs`, `src/Agent42.Backend/Web/PrivateAddressGuard.cs` |
 | Wiring | `src/Agent42.Backend/Program.cs` |

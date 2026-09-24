@@ -257,4 +257,4 @@ public static Provider OpenAICompatible(ProviderOptions options, Uri endpoint, s
 | No-op client | `src/Agent42.Backend/Models/NoModelChatClient.cs` |
 | Encryption seam | `src/Agent42.Backend/Models/ProviderSecretProtector.cs` |
 | HTTP API | `src/Agent42.Backend/Models/AgentApi.Models.cs` |
-| Frontend UI | `src/Agent42.Backend/wwwroot/app.js` |
+| Frontend UI | `src/Agent42.Backend/wwwroot/js/providers.js`, `js/models.js` |
