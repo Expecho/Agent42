@@ -8,7 +8,9 @@ using OpenAI.Chat;
 namespace Agent42.Tests;
 
 /// <summary>
-/// Pins the reason <c>OpenAI</c> is held at 2.12.0 in <c>Directory.Packages.props</c>.
+/// Guards against the OpenAI 2.13.0 empty-<c>choices</c> regression, which held <c>OpenAI</c> at 2.12.0
+/// until 2.14.0 passed these tests. Nothing checks this at restore time now, so this test is the only
+/// guard when <c>OpenAI</c> is bumped.
 ///
 /// <para>A streaming chunk may legitimately carry an <b>empty <c>choices</c> array</b>: Azure sends one
 /// as the leading <c>prompt_filter_results</c> chunk, and another as the trailing usage-only chunk.

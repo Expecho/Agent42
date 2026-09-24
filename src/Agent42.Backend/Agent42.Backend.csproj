@@ -18,10 +18,8 @@
     <!-- Transitive security pin only (see Directory.Packages.props); no code references this. -->
     <PackageReference Include="System.Security.Cryptography.Xml" />
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
-    <!-- Direct reference (transitive via Microsoft.Agents.AI.OpenAI, which asks only for >= 10.6.0)
-         so its OpenAI [2.12.0, 2.13.0) range actually binds and keeps the regressed 2.13.0 out at
-         restore time — see the pin note in Directory.Packages.props. Also the home of the
-         AsIChatClient() extensions the multi-provider factory calls; version is centrally pinned. -->
+    <!-- Direct reference: the home of the AsIChatClient() extensions the multi-provider factory
+         calls. Its version is pinned centrally (see the OpenAI note in Directory.Packages.props). -->
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="Microsoft.Identity.Client" />
     <PackageReference Include="Microsoft.Orleans.Server" />

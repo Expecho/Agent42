@@ -2826,7 +2826,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/RecordingPushNotificationSender.cs`, `tests/Agent42.Tests/TestSiloConfigurator.cs`
 - **Verified:** 2026-08-27
 
-### `OpenAI` is pinned to 2.12.0 because 2.13.0 kills any stream with an empty `choices` chunk
+### Any `OpenAI` bump can bring back the 2.13.0 bug that killed streams on an empty `choices` chunk
+
+- **Status (2026-09-24):** The 2.12.0 pin has been **lifted**. `OpenAI` **2.14.0** passes
+  `StreamingEmptyChoicesTests`, and Agent Framework 1.22 / M.E.AI.OpenAI 10.10.0 require `>= 2.13.0`.
+  The restore-time guard described below **is gone**: 10.10.0 has no upper bound. That leaves the test
+  as the only guard, so run it before accepting any `OpenAI` bump. What follows is the original
+  mechanism, kept because a recurrence would look exactly like this.
 
 - **Claim:** `Microsoft.Extensions.AI.OpenAI` probes `"$.choices[0].delta.reasoning_content"` on
   **every** streaming update (it exists to surface DeepSeek-style `reasoning_content`), and
@@ -2848,10 +2854,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   itself refuses 2.13.0 — a restore error there is the guard working, not a broken lockfile. Lift
   the pin only against a released `OpenAI` whose `PropagateGet` bounds-checks, with that test green.
 - **Evidence:** `Directory.Packages.props` (the pin + its note),
-  `src/Agent42.Backend/Agent42.Backend.csproj` (the direct 10.9.0 reference that makes the range bind),
   `tests/Agent42.Tests/StreamingEmptyChoicesTests.cs`,
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` — the affected path)
-- **Verified:** 2026-08-27
+- **Verified:** 2026-09-24 (2.14.0 green; pin lifted)
 
 ### The memory provider is built at ACTIVATION but the incognito gate is per-TURN — it must be a delegate
 
