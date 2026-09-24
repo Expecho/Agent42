@@ -1,7 +1,8 @@
 # Custom agents
 
 > Build named agents with their own persona and tool set; run them per-chat or in continuous
-> memory; and drive them from outside the browser with a per-agent API key. ADRs 0003 · 0016 · 0022.
+> memory; and drive them from outside the browser with a per-agent API key, or call them as an MCP
+> tool. Every user also gets a seeded Research agent. ADRs 0003 · 0016 · 0022 · 0068 · 0070 · 0082.
 
 ## What it is
 
@@ -12,6 +13,12 @@
 - **Run from outside the browser** — each agent gets its own API key (shown once) and a
   fire-and-forget endpoint, so a webhook / cron / n8n can hand it a prompt and files with no
   browser session. The result shows up as a new conversation you open later.
+- **Call it from another MCP host** — an agent can be exposed over `/api/agent-mcp` (ADR 0070), so
+  Claude Desktop, Copilot or any MCP client holding its API key calls it as an `ask_agent` tool and
+  gets the reply back.
+- **A built-in Research agent** — seeded per user (ADR 0082); it plans a question into steps,
+  searches, and checks its own answer, with a live checklist in the chat. See
+  [Research agent](research-agent.md).
 
 ## How it works
 
@@ -130,6 +137,30 @@ _state.State.EnabledTools =
     [.. ToolCatalog.Sanitize(binding.EnabledTools ?? ToolCatalog.AllSelectableToolKeys)!];
 ```
 
+### Continuous history is pruned to 24 hours (ADR 0068)
+
+A continuous chat is one grain that re-serializes its whole session into one Cosmos item (2 MB cap,
+ADR 0004). So on **every persisted turn**, `ApplyRetentionAsync` hard-deletes messages older than a
+fixed 24-hour window (`RetentionLimits`) from a continuous agent chat. Per-chat agents are not pruned.
+Deleting the conversation is still the full reset.
+
+### Exposed as an MCP server (ADR 0070)
+
+`AgentDefinition.McpExposed` opts an agent into `/api/agent-mcp`, an Easy-Auth-excluded endpoint that
+self-enforces the agent's API key. The MCP surface is one tool, `ask_agent` (`AgentMcpTools`). Unlike
+`/api/agent-run`, the call waits and returns the reply plus a conversation id the caller can continue.
+`AgentMcpRunner` binds the persona with **memory and push notifications removed** from the tool
+selection (`WithoutMemoryOrPush`): a memory bank spans all the owner's conversations, so a key holder
+must not read or write it. The turn lands silently in the owner's sidebar. Turning exposure on upgrades
+an already-distributed key from "can send" to "can read replies", so the editor offers a key
+regeneration next to the toggle.
+
+### The seeded Research agent (ADR 0082)
+
+Every user also gets a seeded "Research" agent: an ordinary `AgentDefinition` with `Kind = "research"`,
+which only seeding can set and which forces per-chat mode. Its plan/search/reflect loop, live checklist
+and one-turn fold are covered in [Research agent](research-agent.md).
+
 ## How the Agent Framework fits
 
 - `BindAgentAsync` drives the framework `ChatClientAgent`'s `Name` and `Instructions` from the
@@ -175,3 +206,5 @@ _state.State.EnabledTools =
 | Registry / directory grains | `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs`, `AgentKeyDirectoryGrain.cs` |
 | Endpoints | `src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs` (`/api/agents`, `/api/agent-run`) |
 | Background run / bind | `src/Agent42.Agents/Conversations/AgentGrain.cs` (`EnqueuePromptAsync`, `BindAgentAsync`) |
+| MCP exposure | `src/Agent42.Backend/Mcp/AgentMcpTools.cs`, `AgentMcpRunner.cs`, `AgentMcpServerRegistration.cs` |
+| Research agent seeding | `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs` (`EnsureResearchAgentAsync`); the loop is in [research-agent.md](research-agent.md) |

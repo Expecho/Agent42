@@ -24,7 +24,7 @@ sequenceDiagram
     participant OS as Android Share sheet
     participant SW as Service worker
     participant IDB as IndexedDB
-    participant APP as app.js
+    participant APP as sharetarget.js
 
     OS->>SW: POST /share (multipart)
     SW->>IDB: stash {title,text,url,files}
@@ -72,7 +72,7 @@ if (req.method === "POST" && url.pathname === "/share") { event.respondWith(hand
 if (req.method !== "GET") return;
 ```
 
-### app.js reads the stash and opens the picker
+### sharetarget.js reads the stash and opens the picker
 
 ```javascript
 async function initShare() {
@@ -123,4 +123,4 @@ The stash is read **once** (get-then-delete) so a reload isn't a re-share.
 |---------|------|
 | Manifest | `src/Agent42.Backend/wwwroot/manifest.webmanifest` |
 | SW interception | `src/Agent42.Backend/wwwroot/sw.js` |
-| App handling | `src/Agent42.Backend/wwwroot/app.js` (`initShare`, `applyShare`) |
+| App handling | `src/Agent42.Backend/wwwroot/js/sharetarget.js` (`initShare`, `applyShare`) |

@@ -41,6 +41,7 @@ public record ModelCapabilities(
 List<AITool> tools =
 [
     schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime, getCurrentLocation,
+    readWebDocument, sendPushNotification,
 ];
 if (capabilities.SupportsHostedTools)
 {

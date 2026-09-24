@@ -15,8 +15,8 @@ against this turn's attachment, else the most recent image in the conversation. 
 Image generation runs a **different API** (`IImageGenerationService` over the OpenAI SDK
 `ImageClient`, not the chat client), so `ChatCoreAsync` branches to it **before** the vision
 gate. The result is saved to the same `attachments` blob container on the assistant side, and
-the turn is recorded into the session via a one-shot adapter (Agent Framework 1.13 has no
-append-without-inference API). The assistant image is **id-keyed** at the message level.
+the turn is recorded into the session via a one-shot adapter (Agent Framework had no
+append-without-inference API when this was built, on 1.13). The assistant image is **id-keyed** at the message level.
 
 ```mermaid
 flowchart TD
@@ -97,8 +97,8 @@ if (AssistantImageRef(message) is { } generated)
 - Image generation uses a **different** API (`IImageGenerationService` over the SDK
   `ImageClient`), **not** the model's `IChatClient` — so it must branch before the framework
   chat call.
-- To append a user+assistant pair into an `AgentSession` **without inference** (AF 1.13 has no
-  such API), the code fabricates the assistant reply with a one-shot `IChatClient` adapter
+- To append a user+assistant pair into an `AgentSession` **without inference** (AF had no
+  such API when this was built, on 1.13), the code fabricates the assistant reply with a one-shot `IChatClient` adapter
   (`ImageGenerationChatClient`) and calls `ChatClientAgent.RunAsync`, letting the framework
   append both turns so the session serializes like any other turn.
 - The interface is named `IImageGenerationService` (not `IImageGenerator`) to avoid a collision

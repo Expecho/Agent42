@@ -19,7 +19,7 @@ event type.
 
 ```mermaid
 sequenceDiagram
-    participant B as Browser (app.js)
+    participant B as Browser (js/send.js)
     participant API as AgentApi (POST /api/chat)
     participant G as AgentGrain
     participant AF as ChatClientAgent (AF)
@@ -42,8 +42,19 @@ sequenceDiagram
 
 ### The event contract
 
-Events are `TextDelta`, `ToolCallStart`, `ToolCallEnd`, `Image`, `Done`. The wire format is
-camelCase with nulls omitted:
+The core events are `TextDelta`, `ToolCallStart`, `ToolCallEnd`, `Image` and `Done`
+(`AgentStreamEventType`). Several later ones are **live-only**: they are never persisted and
+never replayed from history.
+
+| Event | What it carries | ADR |
+|-------|-----------------|-----|
+| `Suggestions` | Up to 3 follow-up prompts, sent just before `Done` on interactive turns | 0036 |
+| `Reasoning` | Reasoning text, shown in a collapsed disclosure ([Reasoning output](reasoning-output.md)) | 0071 |
+| `McpReauthRequired` | The id of an OAuth MCP server whose grant is dead; the UI shows **Reconnect** | 0081 |
+| `Todos` | The [Research agent](research-agent.md)'s whole checklist, whenever a tool call changed it | 0082 |
+| `TextReset` | A later research iteration started speaking; the client clears the draft | 0082 |
+
+The wire format is camelCase with nulls omitted:
 
 ```csharp
 private static readonly JsonSerializerOptions StreamEventJson = new(JsonSerializerOptions.Web)
@@ -134,6 +145,29 @@ for (;;) {
 }
 ```
 
+### Stopping a reply (ADR 0078)
+
+The Stop button calls `POST /api/chat/{conversationId}/stop` → `IAgentGrain.StopAsync()`, which
+cancels the turn's `CancellationTokenSource`. The framework persists nothing on a cancelled run, so
+the grain catches the cancellation, appends the partial turn to the session by hand, and persists
+it like any other. The stream ends with a normal `Done` carrying `stopped: true`. What the user saw
+is what the conversation keeps.
+
+### A stream that dies mid-reply (ADR 0046)
+
+A backgrounded PWA can lose its connection while the grain keeps running the turn to completion.
+Recovery is client-side only: on a non-abort stream failure, `send()` re-reads the conversation
+history and adopts the persisted reply into the bubble it was streaming into. Only if nothing shows
+up does it paint the error.
+
+### Tool calls in the UI (ADR 0072/0080)
+
+Each turn's tool chips live in one `<details>` group. Once a turn makes more than 3 calls the group
+gets an "N tool calls" summary, and it collapses when the turn ends. On reload, `GetHistoryAsync`
+projects the stored calls onto each assistant turn (`ChatTurn.ToolCalls`, `ChatToolCall` DTO) in
+exactly the live `toolCallStart`/`toolCallEnd` shape, so the replay feeds the same
+`addToolCall`/`completeToolCall` functions.
+
 ## How the Agent Framework fits
 
 - The grain wraps an `AIAgent` (`ChatClientAgent`) and an `AgentSession`.
@@ -162,4 +196,4 @@ for (;;) {
 | Event DTO | `src/Agent42.Agents/Conversations/AgentStreamEvent.cs` |
 | Streaming core | `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatCoreAsync`) |
 | Grain contract | `src/Agent42.Agents/Conversations/IAgentGrain.cs` |
-| Frontend reader | `src/Agent42.Backend/wwwroot/app.js` (`send()`) |
+| Frontend reader | `src/Agent42.Backend/wwwroot/js/send.js` (`send()`, `stopGeneration()`) |
