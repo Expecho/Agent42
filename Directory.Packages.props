@@ -40,7 +40,7 @@
     <PackageVersion Include="MessagePack" Version="3.1.10" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.22.0" />
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.22.0" />
-    <PackageVersion Include="Microsoft.Identity.Client" Version="4.90.0" />
+    <PackageVersion Include="Microsoft.Identity.Client" Version="4.90.1" />
     <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <!-- Before bumping, run StreamingEmptyChoicesTests. OpenAI 2.13.0 regressed
@@ -83,7 +83,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.19.0" />
     <!-- Tests -->
-    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <PackageVersion Include="coverlet.collector" Version="10.1.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="WebPush" Version="1.0.13" />
     <PackageVersion Include="xunit" Version="2.9.3" />
