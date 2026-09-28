@@ -101,7 +101,7 @@ public class SharedApiFixture : SharedClusterFixture
     /// API infers each endpoint's parameters when the route is mapped, and a service parameter it cannot
     /// resolve is treated as a request body — which breaks routing for the WHOLE host, not just that route.
     /// </summary>
-    protected static void AddRouteMatcherServices(IServiceCollection services)
+    internal static void AddRouteMatcherServices(IServiceCollection services)
     {
         // /api/providers and /api/mcp-servers encrypt secrets before the grain (ADR 0018 / 0024); an
         // ephemeral key ring is fine here because nothing is persisted beyond the run.
