@@ -2833,6 +2833,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   The restore-time guard described below **is gone**: 10.10.0 has no upper bound. That leaves the test
   as the only guard, so run it before accepting any `OpenAI` bump. What follows is the original
   mechanism, kept because a recurrence would look exactly like this.
+- **And the pair must match on the Responses path too (2026-09-28).** M.E.AI.OpenAI **10.10.0** against
+  `OpenAI` 2.14.0 threw `TypeLoadException` (`OpenAI.Responses.GlobalMcpToolCallApprovalPolicy`) out of
+  `OpenAIResponsesChatClient.ToResponseTool` on **every Responses turn that carried any tool** — prod
+  Foundry's path — before a byte left the process. Restore and every offline test were green, because no
+  adapter test sent tools. **10.10.1** fixes it; `ResponsesToolMappingTests` now guards it (red on 10.10.0),
+  so run it alongside `StreamingEmptyChoicesTests` before any bump of either package.
 
 - **Claim:** `Microsoft.Extensions.AI.OpenAI` probes `"$.choices[0].delta.reasoning_content"` on
   **every** streaming update (it exists to surface DeepSeek-style `reasoning_content`), and
@@ -2853,10 +2859,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Microsoft.Extensions.AI.OpenAI` 10.9.0 reference declares `OpenAI [2.12.0, 2.13.0)`, so restore
   itself refuses 2.13.0 — a restore error there is the guard working, not a broken lockfile. Lift
   the pin only against a released `OpenAI` whose `PropagateGet` bounds-checks, with that test green.
-- **Evidence:** `Directory.Packages.props` (the pin + its note),
+- **Evidence:** `Directory.Packages.props` (the pin + its note), `tests/Agent42.Tests/ResponsesToolMappingTests.cs`,
   `tests/Agent42.Tests/StreamingEmptyChoicesTests.cs`,
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` — the affected path)
-- **Verified:** 2026-09-24 (2.14.0 green; pin lifted)
+- **Verified:** 2026-09-28 (2.14.0 green; pin lifted; M.E.AI.OpenAI 10.10.1 for the Responses tool mapping)
 
 ### The memory provider is built at ACTIVATION but the incognito gate is per-TURN — it must be a delegate
 

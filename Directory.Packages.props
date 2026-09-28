@@ -55,8 +55,10 @@
     <!-- A direct reference. The multi-provider factory calls its AsIChatClient() extensions itself.
          It needs a matching PackageReference in Agent42.Backend: under CPM, a PackageVersion entry
          alone does not override a transitive version (the same reason as the
-         System.Security.Cryptography.Xml pin above). -->
-    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.0" />
+         System.Security.Cryptography.Xml pin above). Before bumping it or OpenAI, also run
+         ResponsesToolMappingTests: 10.10.0 against OpenAI 2.14.0 threw TypeLoadException
+         (GlobalMcpToolCallApprovalPolicy) on every Responses turn that carried a tool. -->
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.1" />
     <!-- Orleans -->
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.12" />
     <!-- The OFFICIAL dashboard (ADR 0062), versioned with the rest of the Orleans stack.
