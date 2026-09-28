@@ -1323,7 +1323,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   against that list; dispatch the workflow instead. #166, a `Directory.Packages.props`-only fix for a prod
   outage, merged without deploying because the pin was not yet in the list. A new root-level file a
   Dockerfile COPYs must join the list — `DeployTriggerTests` fails the build if it does not.
-- **Evidence:** `.github/workflows/deploy.yml` (`on.push.paths`), `src/Agent42.Backend/Dockerfile`,
+- **Evidence:** `.github/workflows/deploy.yml` (its push `paths` list), `src/Agent42.Backend/Dockerfile`,
   `tests/Agent42.Tests/DeployTriggerTests.cs`
 - **Verified:** 2026-09-28
 
