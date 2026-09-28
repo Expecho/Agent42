@@ -3,9 +3,13 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # Everything the images are built from. The backend Dockerfile also COPYs root-level files, so a
+    # change to ONLY those (a package pin fix) must deploy too — DeployTriggerTests holds this line.
     paths:
       - src/**
       - infra/**
+      - Directory.Packages.props
+      - .dockerignore
       - .github/workflows/deploy.yml
   workflow_dispatch:
 
