@@ -13,8 +13,9 @@ There is no manual deploy path — never run `az deployment group create` or
 
 ## How it deploys
 
-1. **Trigger:** push to `main` touching `src/**`, `infra/**`, or the workflow file —
-   or a manual `workflow_dispatch`. Merging a PR into `main` is the normal deploy.
+1. **Trigger:** push to `main` touching `src/**`, `infra/**`, `Directory.Packages.props`,
+   `.dockerignore`, or the workflow file — or a manual `workflow_dispatch`. Merging a PR into
+   `main` is the normal deploy, but a PR touching none of those paths does NOT deploy.
 2. **build-and-push:** builds `src/Agent42.Backend/Dockerfile`, tags with the first
    12 chars of the SHA, pushes to ACR `crexpechohosting`.
 3. **deploy:** `az deployment group create` of `infra/main.bicep` into RG `rg-agent42`

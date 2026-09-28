@@ -1315,6 +1315,18 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `.github/workflows/deploy.yml`
 - **Verified:** 2026-07-06
 
+### A merge to `main` deploys only when it touches what the images are built from
+
+- **Claim:** `deploy.yml` is path-filtered (`src/**`, `infra/**`, `Directory.Packages.props`,
+  `.dockerignore`, the workflow itself), so a merge that changes only tests, docs, `.agentic/` or other
+  root files **does not deploy** — never tell the user "merging ships it" without checking the diff
+  against that list; dispatch the workflow instead. #166, a `Directory.Packages.props`-only fix for a prod
+  outage, merged without deploying because the pin was not yet in the list. A new root-level file a
+  Dockerfile COPYs must join the list — `DeployTriggerTests` fails the build if it does not.
+- **Evidence:** `.github/workflows/deploy.yml` (its push `paths` list), `src/Agent42.Backend/Dockerfile`,
+  `tests/Agent42.Tests/DeployTriggerTests.cs`
+- **Verified:** 2026-09-28
+
 ### Minimal-API handlers returning a bare string serve text/plain, not JSON
 
 - **Claim:** an endpoint whose handler returns `string` (e.g. `GetSelectedModelAsync()`'s
