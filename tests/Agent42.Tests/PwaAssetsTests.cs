@@ -253,7 +253,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v44", sw);
+        Assert.Contains("agent42-shell-v45", sw);
     }
 
     // Rich rendering (ADR 0083): SHELL holds only the eager renderer + highlight.js. The lazy libs stay out —
@@ -271,6 +271,9 @@ public sealed class PwaAssetsTests
 
         Assert.Contains("/shared/lib/richtext.js", entries);
         Assert.Contains("/shared/lib/highlight/highlight.min.js", entries);
+        // The artifact pane script is eager (index.html loads it as a classic script), so it IS in SHELL: a missing
+        // entry would leave an offline app with no cards rather than with a lazy load that retries.
+        Assert.Contains("/shared/lib/artifactpane.js", entries);
         Assert.DoesNotContain(entries, e => e.Contains("mermaid", StringComparison.Ordinal));
         Assert.DoesNotContain(entries, e => e.Contains("katex", StringComparison.Ordinal));
         Assert.DoesNotContain(entries, e => e.Contains("/chart/", StringComparison.Ordinal));

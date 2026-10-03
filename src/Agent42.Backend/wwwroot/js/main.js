@@ -7,6 +7,7 @@
    list below is asserted by name in ProjectLayoutTests. */
 
 import { agents, loadAgents, renderAgents, setAgents, setIncognito, wireAgents } from "./agents.js";
+import { wireArtifacts } from "./artifacts.js";
 import { wireAttachments } from "./attachments.js";
 import { cacheGet } from "./cache.js";
 import { wireComposer } from "./composer.js";
@@ -63,6 +64,7 @@ async function hydrateFromCache() {
 wireShareLinks();
 wireAgents();
 wireAttachments();
+wireArtifacts();
 wireConversations();
 wireSearch();
 wireGroups();

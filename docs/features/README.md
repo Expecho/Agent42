@@ -21,6 +21,7 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 | Model picker (switch mid-conversation) | [model-picker.md](model-picker.md) |
 | Reasoning output (live-only "thinking") | [reasoning-output.md](reasoning-output.md) |
 | Rich inline rendering (diagrams, code, math, charts) | [rich-rendering.md](rich-rendering.md) |
+| Artifacts (pages, apps, SVG, documents and code in a sandboxed side pane, with versions) | [artifacts.md](artifacts.md) |
 | Voice: dictation, hands-free loop, server-side speech | [voice-and-speech.md](voice-and-speech.md) |
 
 ## Bring your own models

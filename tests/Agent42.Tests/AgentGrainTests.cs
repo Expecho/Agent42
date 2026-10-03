@@ -1870,8 +1870,18 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         // while a real model never writes its instructions into the session. Measured off the stored text
         // itself, so JSON escaping and line endings cannot skew it. The ceiling is about tool results, and
         // that is unchanged. Headroom is thin (~500 bytes): the hint's "\n\n" separators still count.
-        Assert.InRange(bytes - EchoedRenderingHintBytes(state.State.SerializedSession!), 1, 256 * 1024);
+        //
+        // The echoed TOOL LIST is excluded for the same reason: the fake writes [tools:…] into every stored reply,
+        // so each new tool name costs once per turn here (the three artifact tools tipped it over 256 KB by 422
+        // bytes), while a real model never writes its tool list into the session.
+        var session = state.State.SerializedSession!;
+        Assert.InRange(bytes - EchoedRenderingHintBytes(session) - EchoedToolListBytes(session), 1, 256 * 1024);
     }
+
+    // The bytes of every [tools:…] echo FakeChatClient wrote into stored replies. Measured off the stored text.
+    private static int EchoedToolListBytes(string session)
+        => System.Text.RegularExpressions.Regex.Matches(session, @"\[tools:[^\]]*\]")
+            .Sum(m => System.Text.Encoding.UTF8.GetByteCount(m.Value));
 
     // ---- User location (ADR 0012) ----
 

@@ -107,6 +107,10 @@ public static partial class AgentApi
         string conversationId, string attachmentId, IAttachmentStore attachments, HttpContext http)
     {
         var content = await attachments.OpenReadAsync(AgentKey(http.GetUserId(), conversationId), attachmentId);
+
+        // nosniff: this route serves ANY id under the owner key with its stored media type. Artifact blobs are
+        // octet-stream so they never render here; this keeps a browser from sniffing one into HTML regardless.
+        http.Response.Headers.XContentTypeOptions = "nosniff";
         return content is null
             ? Results.NotFound()
             : Results.File(content.Bytes, content.MediaType);

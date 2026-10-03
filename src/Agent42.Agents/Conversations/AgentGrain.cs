@@ -1172,6 +1172,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         // Retention (ADR 0016): stamp every message, then delete whole turns that fell outside the window
         // — continuous chats only. Before the serialize, so the pruned session is what gets written.
+        CompactArtifactCalls();
         var pruned = await ApplyRetentionAsync();
 
         var serializedSession = await _agent.SerializeSessionAsync(_session);
@@ -1379,7 +1380,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         var calls = pending.ToArray();
         pending.Clear();
-        return turn with { ToolCalls = calls };
+        return turn with { ToolCalls = calls, Artifacts = ArtifactsFromToolCalls(calls) };
     }
 
     // One user turn, or null when it carries neither text nor an image and should not be shown.
@@ -1445,6 +1446,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // in the system prompt (ADR 0066).
         _state.State.WebDocumentNames.Clear();
         _state.State.WebDocumentUrls.Clear();
+        // The metadata goes; the blobs stay, the same gap attachments have (no blob delete on purge).
+        _state.State.Artifacts.Clear();
         _state.State.SerializedSession = null;
         _state.State.DeploymentName = null;
         await _state.ClearStateAsync();
@@ -1535,6 +1538,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         // Retention (ADR 0016), same as the chat path. This site does its OWN serialize — it does not
         // delegate to PersistTurnUnlessEphemeralAsync — so the call has to be repeated here.
+        CompactArtifactCalls();
         var pruned = await ApplyRetentionAsync();
 
         var serializedSession = await _agent.SerializeSessionAsync(_session);

@@ -68,6 +68,12 @@ public sealed class EasyAuthExclusionTests
         Assert.True(
             IsExcluded(entries, $"/api/share/{SampleToken}/attachments/att-1"),
             Because("the multi-segment attachment route", entries));
+
+        // The artifact share routes (artifact pane) sit under the same wildcard, so they needed NO bicep change.
+        Assert.True(IsExcluded(entries, $"/api/share/{SampleToken}/artifacts"), Because("the artifact list", entries));
+        Assert.True(
+            IsExcluded(entries, $"/api/share/{SampleToken}/artifacts/art_1/versions/1/frame"),
+            Because("the artifact frame route", entries));
     }
 
     [Theory]
@@ -144,6 +150,9 @@ public sealed class EasyAuthExclusionTests
     // self-enforces. Named here because it lives one segment under /api/chat, so a future '/api/chat/*'
     // entry (say, to let something poll a turn) would hand anyone the power to stop anyone's reply.
     [InlineData("/api/chat/x/stop")]
+    // The owner artifact routes serve model-written source and script; they stay behind Easy Auth.
+    [InlineData("/api/conversations/x/artifacts")]
+    [InlineData("/api/conversations/x/artifacts/art_1/versions/1/frame")]
     public void Exclusions_DoNotCoverAnyAuthenticatedPath(string path)
     {
         var entries = ExcludedPaths();

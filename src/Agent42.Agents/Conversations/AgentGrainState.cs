@@ -234,4 +234,14 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(14)]
     public string? AgentKind { get; set; }
+
+    /// <summary>
+    /// The artifacts the model created in this conversation, keyed by <see cref="ArtifactRecord.Id"/>. Only
+    /// metadata: each version's source is a blob (ADR 0004). Written by the artifact tools and persisted by the
+    /// end-of-turn <c>WriteStateAsync</c>, never by the tools themselves, so a crash in between orphans a blob
+    /// rather than leaving a ref to nothing. Trailing <c>[Id(15)]</c>, so old Cosmos state deserializes this as
+    /// an empty dictionary.
+    /// </summary>
+    [Id(15)]
+    public Dictionary<string, ArtifactRecord> Artifacts { get; set; } = [];
 }

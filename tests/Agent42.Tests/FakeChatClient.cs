@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Agent42.Agents;
 using Microsoft.Agents.AI;
@@ -282,7 +283,7 @@ public sealed partial class FakeChatClient : IChatClient
         var echo = LoopEcho(messages) + ToolsEcho(options) + RequestContextEcho() + TraceEcho()
             + InstructionsEcho(messages, options)
             + ContextEcho(messages) + ImageEcho(messages) + AllImagesEcho(messages)
-            + EmptyMessageEcho(messages) + ToolResultEcho(messages);
+            + EmptyMessageEcho(messages) + ToolResultEcho(messages) + ScriptedResultEcho(list);
         if (echo.Length > 0)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, echo);
@@ -498,6 +499,30 @@ public sealed partial class FakeChatClient : IChatClient
 
         var joined = string.Join(" | ", results);
         return $"[tool:{(joined.Length > 400 ? joined[..400] : joined)}] ";
+    }
+
+    /// <summary>Brackets the result of a scripted call (<see cref="CallToolPrompt"/>) in the reply.</summary>
+    public const string ScriptedResultOpen = "[call-result:";
+
+    /// <summary>Closes <see cref="ScriptedResultOpen"/>.</summary>
+    public const string ScriptedResultClose = ":call-result]";
+
+    // This turn's tool results, on a scripted turn only. ToolResultEcho cannot serve: it joins every
+    // result in the whole history and cuts at 400 characters, so a later result is hidden behind earlier ones.
+    private static string ScriptedResultEcho(IReadOnlyList<ChatMessage> list)
+    {
+        var lastUser = LastUserIndex(list);
+        if (lastUser < 0 || (list[lastUser].Text ?? "").IndexOf(CallToolMarker, StringComparison.Ordinal) < 0)
+        {
+            return "";
+        }
+
+        var results = string.Join(" | ", list.Skip(lastUser + 1).SelectMany(m => m.Contents)
+            .OfType<FunctionResultContent>().Select(r => r.Result?.ToString()));
+
+        // Capped, because this reply is persisted like any other: echoing a 60 KB result in full would put it
+        // back into the session that a test is measuring.
+        return ScriptedResultOpen + (results.Length > 2000 ? results[..2000] : results) + ScriptedResultClose + " ";
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
@@ -859,6 +884,13 @@ public sealed partial class FakeChatClient : IChatClient
             return null;
         }
 
+        // A scripted call with exact arguments, consulted before the trigger table so its JSON can contain any
+        // trigger phrase. Only for a tool the model was given — see the guard at the top.
+        if (TryScriptedCall(text, options) is { } scripted)
+        {
+            return scripted;
+        }
+
         // Ordering is load-bearing and is now the TABLE's order, checked top to bottom (ADR 0050 —
         // this used to be a chain of a dozen `if (text.Contains(...))` branches). The precedence rules
         // that were spread across comments on those branches are all still here, and the table makes
@@ -953,6 +985,53 @@ public sealed partial class FakeChatClient : IChatClient
 
         call = null;
         return false;
+    }
+
+    /// <summary>
+    /// The marker of a scripted call: <see cref="CallToolPrompt"/> writes it, followed by the tool name and its
+    /// arguments as JSON. Lets a test drive a tool with exact arguments (the artifact tools' refusals each need
+    /// different ones) without a trigger per case.
+    /// </summary>
+    public const string CallToolMarker = "[[call-tool]]";
+
+    // The scripted calls, by the token their prompt carries. The arguments live here rather than in the prompt
+    // because the user message is persisted: a 60 KB content argument written into it would sit in the session
+    // and defeat any test of what the session holds. A real model writes the arguments itself.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> ScriptedCalls = new();
+
+    /// <summary>A user prompt that makes the fake call <paramref name="toolName"/> with <paramref name="args"/>.</summary>
+    public static string CallToolPrompt(string toolName, object args)
+    {
+        var token = Guid.NewGuid().ToString("N")[..12];
+        ScriptedCalls[token] = JsonSerializer.Serialize(new { name = toolName, args });
+        return CallToolMarker + token;
+    }
+
+    // The arguments stay JsonElements, which is what a real provider's parsed arguments are.
+    private static FunctionCallContent? TryScriptedCall(string text, ChatOptions? options)
+    {
+        var at = text.IndexOf(CallToolMarker, StringComparison.Ordinal);
+        if (at < 0)
+        {
+            return null;
+        }
+
+        var token = text[(at + CallToolMarker.Length)..].Trim();
+        if (!ScriptedCalls.TryGetValue(token, out var script))
+        {
+            return null;
+        }
+
+        using var doc = JsonDocument.Parse(script);
+        var name = doc.RootElement.GetProperty("name").GetString()!;
+        if (options?.Tools?.Any(t => t.Name == name) != true)
+        {
+            return null;
+        }
+
+        var args = doc.RootElement.GetProperty("args").EnumerateObject()
+            .ToDictionary(p => p.Name, p => (object?)p.Value.Clone());
+        return new FunctionCallContent("scripted-call-" + Guid.NewGuid().ToString("N")[..8], name, args);
     }
 
     // The trigger → tool-call table, in precedence order. See SelectToolCall for why the order matters.

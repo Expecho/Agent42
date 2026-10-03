@@ -2,8 +2,8 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v44";
-const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/attachments.js",
+const CACHE = "agent42-shell-v45";
+const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/artifacts.js", "/js/attachments.js",
   "/js/cache.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
   "/js/drawer.js", "/js/format.js", "/js/groups.js", "/js/location.js", "/js/main.js", "/js/mcp.js",
   "/js/models.js", "/js/profile.js", "/js/providers.js", "/js/push.js", "/js/pwa.js",
@@ -14,7 +14,7 @@ const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/attachme
   // Rich rendering (ADR 0083): only the EAGER part. mermaid/KaTeX/Chart.js are lazy and reach the cache at
   // runtime through stale-while-revalidate; a 5 MB mermaid in this all-or-nothing addAll would slow install
   // and add a failure point.
-  "/shared/lib/richtext.js", "/shared/lib/highlight/highlight.min.js",
+  "/shared/lib/richtext.js", "/shared/lib/artifactpane.js", "/shared/lib/highlight/highlight.min.js",
   "/shared/lib/highlight/github.min.css", "/shared/lib/highlight/github-dark.min.css",
   "/manifest.webmanifest", "/icons/icon-192.png",
   "/icons/icon-512.png", "/icons/icon-maskable-512.png"];

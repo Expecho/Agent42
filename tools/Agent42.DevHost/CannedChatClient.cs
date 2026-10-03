@@ -332,6 +332,11 @@ public sealed partial class CannedChatClient : IChatClient
             return BuildPushCall(null);
         }
 
+        if (ArtifactCall(list, lastUserIndex, text, options) is { } artifact)
+        {
+            return artifact;
+        }
+
         // Ordering is load-bearing: "reminder" contains the substring "remind", so the cancel
         // checks MUST precede the schedule check — do not reorder these branches. The two push triggers
         // above sit outside that constraint rather than ahead of it: neither contains "cancel" or
@@ -362,6 +367,111 @@ public sealed partial class CannedChatClient : IChatClient
 
         return null;
     }
+
+    /// <summary>Creates a small HTML artifact that demonstrates the sandbox (a canvas, and a fetch that fails).</summary>
+    public const string ArtifactTrigger = "make an artifact";
+
+    /// <summary>Updates the most recent artifact in this chat to a second version.</summary>
+    public const string ArtifactUpdateTrigger = "update the artifact";
+
+    /// <summary>Creates a markdown artifact.</summary>
+    public const string MarkdownArtifactTrigger = "make a markdown artifact";
+
+    /// <summary>Creates a code artifact whose source contains a triple-backtick run.</summary>
+    public const string CodeArtifactTrigger = "make a code artifact";
+
+    // The artifact tools, offline. Worded to collide with nothing else here (no "cancel", "remind" or "look up"), and
+    // extracted so SelectToolCall stays under S3776. Like FakeChatClient: no call for a tool the model was not given.
+    private static FunctionCallContent? ArtifactCall(
+        IReadOnlyList<ChatMessage> list, int lastUserIndex, string text, ChatOptions? options)
+    {
+        if (options?.Tools?.Any(t => t.Name == "create_artifact") is not true)
+        {
+            return null;
+        }
+
+        if (text.Contains(ArtifactUpdateTrigger, StringComparison.OrdinalIgnoreCase))
+        {
+            return LastArtifactId(list, lastUserIndex) is { } id
+                ? new("canned-artifact-update", "update_artifact", new Dictionary<string, object?>
+                {
+                    ["artifactId"] = id,
+                    ["content"] = DemoPage("#4fa3ff", "v2"),
+                    ["title"] = "Sandbox demo (v2)",
+                })
+                : null;
+        }
+
+        (string Kind, string Title, string Content, string? Language)? artifact =
+            text.Contains(MarkdownArtifactTrigger, StringComparison.OrdinalIgnoreCase)
+                ? ("markdown", "Release notes", DemoMarkdown, null)
+                : text.Contains(CodeArtifactTrigger, StringComparison.OrdinalIgnoreCase)
+                    ? ("code", "fence.py", DemoCode, "python")
+                    : text.Contains(ArtifactTrigger, StringComparison.OrdinalIgnoreCase)
+                        ? ("html", "Sandbox demo", DemoPage("#ffb13d", "v1"), null)
+                        : null;
+
+        return artifact is { } a
+            ? new("canned-artifact-create", "create_artifact", new Dictionary<string, object?>
+            {
+                ["kind"] = a.Kind,
+                ["title"] = a.Title,
+                ["content"] = a.Content,
+                ["language"] = a.Language,
+            })
+            : null;
+    }
+
+    // The newest artifact id in an earlier tool result (create_artifact returns {"artifactId":"art_…"}).
+    private static string? LastArtifactId(IReadOnlyList<ChatMessage> list, int lastUserIndex)
+        => list.Take(lastUserIndex)
+            .SelectMany(m => m.Contents.OfType<FunctionResultContent>())
+            .Select(r => ArtifactIdInResult().Match(r.Result?.ToString() ?? ""))
+            .LastOrDefault(m => m.Success)?.Value;
+
+    [GeneratedRegex("art_[0-9a-f]{12}")]
+    private static partial Regex ArtifactIdInResult();
+
+    private const string DemoMarkdown = """
+        # Release notes
+
+        - **Artifacts** open in a side pane
+        - Versions are kept
+
+        $e^{i\pi}+1=0$
+        """;
+
+    // The source contains a markdown fence on purpose: the pane must render it as code, not break out of a fence.
+    private const string DemoCode = """
+        # a source that contains a markdown fence
+        FENCE = "```"
+
+
+        def wrap(code):
+            return f"{FENCE}\n{code}\n{FENCE}"
+        """;
+
+    // A page that draws on a canvas, then tries the three things the sandbox must stop and prints what happened.
+    private static string DemoPage(string color, string label) => $$"""
+        <!doctype html>
+        <html><head><meta charset="utf-8"><title>Sandbox demo</title>
+        <style>body{font:14px system-ui;margin:16px;background:#111;color:#eee}canvas{border:1px solid #444}li{margin:4px 0}</style>
+        </head><body>
+        <h1>Sandbox demo {{label}}</h1>
+        <canvas id="c" width="320" height="160"></canvas>
+        <ul id="out"></ul>
+        <script>
+          const ctx = document.getElementById("c").getContext("2d");
+          for (let i = 0; i < 12; i++) { ctx.fillStyle = "{{color}}"; ctx.globalAlpha = (i + 1) / 12; ctx.fillRect(i * 26, 160 - i * 12, 22, i * 12); }
+          const out = document.getElementById("out");
+          const say = (t) => { const li = document.createElement("li"); li.textContent = t; out.appendChild(li); };
+          say("origin: " + location.origin);
+          try { say("cookie: " + document.cookie); } catch (e) { say("cookie blocked: " + e.name); }
+          try { localStorage.setItem("x", "1"); say("localStorage worked"); } catch (e) { say("localStorage blocked: " + e.name); }
+          fetch("/api/conversations").then(() => say("fetch /api WORKED (bad)"), (e) => say("fetch /api blocked: " + e.message));
+        </script>
+        </body></html>
+        """;
 
     // A push call. `ordinal` suffixes the title and varies the CallId for the multi-call cap case; null
     // means the single-call case, where one hardcoded id is fine (every other builder here does that).

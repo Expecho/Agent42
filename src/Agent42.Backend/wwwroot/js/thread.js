@@ -1,5 +1,6 @@
 /* Agent 42 — thread rendering — messages, tool calls, token usage. Split out of app.js (ADR 0041). */
 
+import { closeArtifactPane } from "./artifacts.js";
 import { chatScroll, emptyState, thread } from "./dom.js";
 import { linkifyPlainText, renderMarkdown } from "./format.js";
 import { mcpOAuthStartUrl } from "./mcp.js";
@@ -7,6 +8,7 @@ import { send, streaming } from "./send.js";
 
 export function clearThread() {
   thread.querySelectorAll(".msg").forEach((el) => el.remove());
+  closeArtifactPane(); // every chat switch and new chat clears the thread, and the pane belongs to the old one
 }
 
 export function setEmptyVisible(visible) {
