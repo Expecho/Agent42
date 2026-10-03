@@ -58,7 +58,7 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
             new[]
             {
                 "web_search", "location", "scheduling", "code_interpreter", "memory", "read_web_document",
-                "push_notification", "skill:scheduledprompt", "skill:websearch",
+                "push_notification", "artifacts", "skill:scheduledprompt", "skill:websearch",
             }.Order(),
             keys.Order());
 

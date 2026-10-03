@@ -3,6 +3,7 @@ id: 0004
 date: 2026-07-08
 status: accepted
 tags: [attachments, storage, grains, multimodal]
+amended_by: 0084   # artifacts: artifact tool-call content is compacted out of the session at the persist sites
 ---
 
 # Store image attachments in blob storage, send them to the model as SAS URLs

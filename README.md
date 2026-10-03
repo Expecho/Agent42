@@ -28,6 +28,8 @@ diagrams and code — see [`docs/features/`](docs/features/README.md). Features 
 - **Reasoning** — reasoning models show their thinking in a collapsed section above the reply.
 - **Rich replies** — Mermaid diagrams, highlighted code with a copy button per block, LaTeX math
   and charts render inline, in the chat and in share links.
+- **Artifacts** — the model builds pages, small apps, SVG diagrams, documents and code files that open
+  in a sandboxed side pane, with versions, copy and download; share links show them too.
 - **Follow-up suggestions** — up to three suggested next prompts under each reply; tap one to
   send it.
 - **Conversation history** — every chat is saved and listed in the sidebar, so you can leave

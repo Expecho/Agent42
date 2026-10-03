@@ -78,7 +78,7 @@ public static partial class AgentApi
         // user-scoped /api/conversations/{id}/attachments/{id} proxy: the owner + conversation come from the
         // directory (never GetUserId), so the page never holds a blob SAS and can only read blobs under the
         // shared conversation's own key. Fails closed → 404.
-        app.MapGet("/api/share/{token}/attachments/{attachmentId}", async (string token, string attachmentId, IAttachmentStore attachments, IGrainFactory grains) =>
+        app.MapGet("/api/share/{token}/attachments/{attachmentId}", async (string token, string attachmentId, IAttachmentStore attachments, IGrainFactory grains, HttpContext http) =>
         {
             var target = await grains.GetGrain<IShareLinkDirectoryGrain>(ShareToken.Hash(token)).ResolveAsync();
             if (target is null)
@@ -87,10 +87,49 @@ public static partial class AgentApi
             }
 
             var content = await attachments.OpenReadAsync(AgentKey(target.UserId, target.ConversationId), attachmentId);
+
+            // nosniff: an artifact blob is stored as octet-stream so it can never render here, and this keeps a
+            // browser from sniffing any blob under the shared key into HTML on the app origin either.
+            http.Response.Headers.XContentTypeOptions = "nosniff";
             return content is null ? Results.NotFound() : Results.File(content.Bytes, content.MediaType);
         });
 
+        // The shared conversation's artifacts (every artifact and version in its state, consistent with a LIVE
+        // view: later turns appear too). Token-scoped analogues of the owner routes in AgentApi.Artifacts.cs, and
+        // the same rules as the two routes above: owner from the directory, never GetUserId, fail closed to 404.
+        // The version routes go through ServeArtifactVersionAsync, so they send the same sandbox headers and serve
+        // only ids that exist in the shared conversation's state.
+        app.MapGet("/api/share/{token}/artifacts", async (string token, IGrainFactory grains) =>
+        {
+            var target = await grains.GetGrain<IShareLinkDirectoryGrain>(ShareToken.Hash(token)).ResolveAsync();
+            return target is null
+                ? Results.NotFound()
+                : Results.Json(await grains.GetGrain<IAgentGrain>(AgentKey(target.UserId, target.ConversationId)).GetArtifactsAsync());
+        });
+
+        app.MapGet("/api/share/{token}/artifacts/{artifactId}/versions/{version:int}/content",
+            (string token, string artifactId, int version, IGrainFactory grains, IAttachmentStore attachments, HttpContext http) =>
+                ServeSharedArtifactVersionAsync(token, artifactId, version, frame: false, grains, attachments, http));
+
+        app.MapGet("/api/share/{token}/artifacts/{artifactId}/versions/{version:int}/frame",
+            (string token, string artifactId, int version, IGrainFactory grains, IAttachmentStore attachments, HttpContext http) =>
+                ServeSharedArtifactVersionAsync(token, artifactId, version, frame: true, grains, attachments, http));
+
         // ————— user profile (per-user preferences) —————
+    }
+
+    // A shared artifact version: the headers first (so a 404 is sandboxed too), then the token, then the owner route's
+    // logic under the owner + conversation the directory names.
+    private static async Task<IResult> ServeSharedArtifactVersionAsync(
+        string token, string artifactId, int version, bool frame,
+        IGrainFactory grains, IAttachmentStore attachments, HttpContext http)
+    {
+        AddArtifactHeaders(http.Response);
+        var target = await grains.GetGrain<IShareLinkDirectoryGrain>(ShareToken.Hash(token)).ResolveAsync();
+        return target is null
+            ? Results.NotFound()
+            : await ServeArtifactVersionAsync(
+                AgentKey(target.UserId, target.ConversationId), artifactId, version, frame, grains, attachments, http);
     }
 
     // The public share URL for a token (ADR 0035): the token rides the URL FRAGMENT so it stays out of the

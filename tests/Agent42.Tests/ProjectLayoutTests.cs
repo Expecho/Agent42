@@ -94,7 +94,7 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Agents",
             [
-                "Attachments", "Conversations", "Documents", "ImageGeneration", "Location",
+                "Artifacts", "Attachments", "Conversations", "Documents", "ImageGeneration", "Location",
                 "Mcp", "Memory", "Models", "Push", "Research", "Scheduling", "Search", "Sharing", "Skills",
                 "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web",
             ]
@@ -102,7 +102,7 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Backend",
             [
-                "Api", "Attachments", "Configuration", "Conversations", "Documents",
+                "Api", "Artifacts", "Attachments", "Configuration", "Conversations", "Documents",
                 "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
                 "Search", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users",
                 "Web", "wwwroot",
@@ -146,6 +146,7 @@ public sealed class ProjectLayoutTests
         "Memory/AgentGrain.Memory.cs",
         "Search/AgentGrain.Search.cs",
         "Research/AgentGrain.Research.cs",
+        "Artifacts/AgentGrain.ArtifactTools.cs",
     ];
 
     // Each part exists where planned and really is a part of the one AgentGrain class.
