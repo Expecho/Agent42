@@ -129,6 +129,16 @@ public static class ToolCatalog
     public const string PushNotification = "push_notification";
 
     /// <summary>
+    /// Model-created artifacts — the <c>create_artifact</c>, <c>update_artifact</c> and <c>read_artifact</c> tools: a
+    /// standalone HTML page, an SVG, a long markdown document or a code file the user opens in a side pane, with
+    /// versions. Appended LAST for the order-stability reason <see cref="PushNotification"/> gives, and like every key
+    /// added after the fact it <b>lands OFF for anyone who has ever pressed Save</b> (ADR 0021). A null binding (a
+    /// stored agent with no tool list, <c>/api/agent-run</c>, an MCP-server consumer) gets it ON, which is accepted:
+    /// the tools return ids in text and the artifacts stay viewable in that conversation.
+    /// </summary>
+    public const string Artifacts = "artifacts";
+
+    /// <summary>
     /// The agent-skills <b>wildcard</b> ("all skills") meta-key (per-skill selectable tools, amends 0021).
     /// Each skill is individually selectable as a per-skill key <c>skill:{name}</c> (see
     /// <see cref="SkillKey"/>) — both the ones shipped in <see cref="SkillCatalog"/> and the ones the user
@@ -178,7 +188,7 @@ public static class ToolCatalog
     /// today's "every tool on" behaviour with no migration.
     /// </summary>
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification];
+        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification, Artifacts];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
     // web_search is intentionally the key for BOTH the SearXNG shims and HostedWebSearchTool — the hosted
@@ -194,6 +204,9 @@ public static class ToolCatalog
         ["fetch_web_page"] = WebSearch,
         [ReadWebDocument] = ReadWebDocument,
         ["send_push_notification"] = PushNotification,
+        ["create_artifact"] = Artifacts,
+        ["update_artifact"] = Artifacts,
+        ["read_artifact"] = Artifacts,
         [CodeInterpreter] = CodeInterpreter,
         ["get_current_location"] = Location,
         ["schedule_prompt"] = Scheduling,
@@ -247,6 +260,10 @@ public static class ToolCatalog
         // reply appearing in the chat.
         new(PushNotification, "Push notifications", RequiresHostedTools: false,
             Description: "Lets the assistant send a notification to your devices when something is worth interrupting you for."),
+        // Artifacts is LAST for the same order-stability reason. RequiresHostedTools is false: no hosted tool
+        // provides it, so it registers on both capability branches.
+        new(Artifacts, "Artifacts", RequiresHostedTools: false,
+            Description: "Lets the assistant build pages, apps, diagrams and documents you open in a side pane, with versions."),
     ];
 
     /// <summary>The logical key for a registered tool name, or null (e.g. <c>get_date</c>, or an unmapped tool).</summary>

@@ -1,6 +1,7 @@
 /* Agent 42 — sending & streaming. Split out of app.js (ADR 0041). */
 
 import { ephemeral } from "./agents.js";
+import { artifactCardFromToolCall, renderArtifactCards } from "./artifacts.js";
 import { clearPendingAttachments, pendingAttachments } from "./attachments.js";
 import { cachePut } from "./cache.js";
 import { autosize } from "./composer.js";
@@ -81,6 +82,8 @@ async function recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)
       // the disconnect, which is why the shared helper de-dupes by call id rather than appending — and
       // why a chip the disconnect left pulsing gets healed here rather than staying stuck.
       replayToolCalls(agentMsg, last.toolCalls);
+      // ...and the artifact cards, de-duped per artifact version like the chips.
+      renderArtifactCards(agentMsg, convId, last.artifacts);
       cachePut("messages:" + convId, turns); // keep the offline mirror in step (ADR 0032)
       return true;
     }
@@ -160,6 +163,8 @@ export async function send(prompt) {
   let answer = "";
   // Set from the `done` event, so it reflects what the server actually did with the turn.
   let stopped = false;
+  // toolCallEnd carries no tool name, and an artifact card needs it (read_artifact's result looks the same).
+  const toolNames = new Map();
   try {
     // In an agent chat the model is pinned server-side, so never send a model (it would
     // switch the conversation off the agent's model). agentId is sent only on the first
@@ -214,9 +219,11 @@ export async function send(prompt) {
           // speech model configured (ADR 0038) it would pay a third party per character to do it.
           renderReasoning(agentMsg, chunk.text);
         } else if (chunk.type === "toolCallStart") {
+          toolNames.set(chunk.toolCallId, chunk.toolName);
           addToolCall(agentMsg, chunk);
         } else if (chunk.type === "toolCallEnd") {
           completeToolCall(agentMsg, chunk);
+          artifactCardFromToolCall(agentMsg, convId, toolNames.get(chunk.toolCallId), chunk.toolResult);
         } else if (chunk.type === "image") {
           // An image-generation model produced an image (ADR 0020): render it live in the assistant
           // bubble via the display proxy, exactly like it will re-render on reload.

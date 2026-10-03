@@ -121,6 +121,7 @@ public sealed partial class AgentGrain
         {
             // Retention (ADR 0016). INSIDE the if, unlike the other two sites: this one guards _ephemeral
             // with a real block rather than an early return, and an incognito turn must not prune.
+            CompactArtifactCalls();
             var pruned = await ApplyRetentionAsync();
 
             var serializedSession = await _agent.SerializeSessionAsync(_session);

@@ -3,6 +3,7 @@ id: 0013
 date: 2026-07-14
 status: accepted
 tags: [models, providers, github-models, openai-compatible, config, security, data-egress, capabilities]
+amended_by: 0084   # artifacts: accepted self-navigation egress from sandboxed artifact pages
 ---
 
 # A provider/model catalog: any OpenAI-compatible endpoint, named by a qualified `provider:model` id

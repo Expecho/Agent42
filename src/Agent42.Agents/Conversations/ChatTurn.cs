@@ -15,4 +15,8 @@ public sealed record ChatTurn(
     [property: Id(2)] IReadOnlyList<AttachmentRef>? Attachments = null,
     // Assistant turns only, null when the turn called no tools (ADR 0080). Stripped before the
     // public share response — see AgentApi.Sharing.cs.
-    [property: Id(3)] IReadOnlyList<ChatToolCall>? ToolCalls = null);
+    [property: Id(3)] IReadOnlyList<ChatToolCall>? ToolCalls = null,
+    // Assistant turns only, null when the turn created or updated no artifact. Projected from the
+    // same tool-call harvest as ToolCalls, but KEPT by the share response, which is why it is its own
+    // field rather than something a client parses out of ToolCalls.
+    [property: Id(4)] IReadOnlyList<ArtifactInfo>? Artifacts = null);

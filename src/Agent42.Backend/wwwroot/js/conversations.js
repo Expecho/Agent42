@@ -1,6 +1,7 @@
 /* Agent 42 — conversation switching. Split out of app.js (ADR 0041). */
 
 import { lockPicker, setIncognito, unlockPicker } from "./agents.js";
+import { renderArtifactCards } from "./artifacts.js";
 import { clearPendingAttachments } from "./attachments.js";
 import { cacheGet, cachePut } from "./cache.js";
 import { input, newChatBtn } from "./dom.js";
@@ -91,6 +92,8 @@ function renderTurns(id, turns) {
       // ...and the tool calls it made (ADR 0080), as the same folded section the live turn showed.
       // Order within this arm is irrelevant: the group self-positions above .prose.
       replayToolCalls(msg, turn.toolCalls);
+      // ...and the artifacts it created or updated, as cards under the prose.
+      renderArtifactCards(msg, id, turn.artifacts);
     }
   }
   scrollToBottom();

@@ -149,6 +149,13 @@ public interface IAgentGrain : IGrainWithStringKey
     Task PurgeAsync();
 
     /// <summary>
+    /// Returns this conversation's artifacts, oldest first, with every version's metadata. The artifact routes
+    /// read it to serve only ids that exist in this conversation, whatever id a client asks for.
+    /// </summary>
+    [Alias("GetArtifactsAsync")]
+    Task<IReadOnlyList<ArtifactRecord>> GetArtifactsAsync();
+
+    /// <summary>
     /// Re-projects this conversation into the chat search index (ADR 0061) and returns how many
     /// turns were indexed. Idempotent — ordinals come from the same <see cref="GetHistoryAsync"/>
     /// projection the live write path uses, so a re-run overwrites rather than duplicates.

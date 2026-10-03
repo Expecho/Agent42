@@ -145,6 +145,9 @@ public sealed partial class AgentGrain
         [
             schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime, getCurrentLocation,
             readWebDocument, sendPushNotification,
+            // The three artifact tools, built in their own part: unconditional like push, since no hosted tool
+            // provides them. A spread, not inline, because this method has little S3776 headroom.
+            .. ArtifactTools(),
         ];
         if (capabilities.SupportsHostedTools)
         {

@@ -3,7 +3,7 @@ id: 0035
 date: 2026-07-30
 status: accepted
 tags: [agents, conversations, sharing, public-endpoint, easy-auth, excluded-paths, egress, frontend]
-amended_by: 0083   # rich rendering: the viewer also loads lib/richtext.js + highlight.js
+amended_by: [0083, 0084]   # 0083 rich rendering (viewer loads lib/richtext.js + highlight.js); 0084 share links serve sandboxed artifacts
 ---
 
 # Read-only share links for conversations

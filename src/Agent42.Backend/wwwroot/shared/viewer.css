@@ -359,3 +359,193 @@ body {
   border-top: 1px dashed var(--line);
   margin: 1.5em 0;
 }
+
+/* ————— artifacts: cards in the bubble, and the side pane (shared/lib/artifactpane.js) —————
+   Copied from styles.css (see the header); keep the two in sync. The pane is fixed over the right edge. On a wide
+   screen the page makes room for it (body padding), and at the 760px breakpoint it becomes a full-screen sheet.
+   z-index 40: above the mobile drawer (30), below the usage view (100) and every <dialog> (top layer). */
+
+.artifact-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.artifact-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 10px);
+  background: var(--bg-inset);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.artifact-card:hover,
+.artifact-card:focus-visible { border-color: var(--amber); }
+
+.artifact-card__icon {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--amber);
+}
+
+.artifact-card__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.artifact-card__meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.artifact-pane {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 48vw);
+  border-left: 1px solid var(--line);
+  background: var(--bg-raised);
+  color: var(--ink);
+}
+
+@media (min-width: 761px) {
+  html.has-artifact-pane body { padding-right: min(720px, 48vw); }
+}
+
+.artifact-pane__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.artifact-pane__titlebox {
+  flex: 1;
+  min-width: 0;
+}
+
+.artifact-pane__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.artifact-pane__kind {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.artifact-pane__version {
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.artifact-pane__btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-dim);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.artifact-pane__btn:hover,
+.artifact-pane__btn:focus-visible {
+  border-color: var(--line);
+  color: var(--amber);
+}
+
+.artifact-pane__body,
+.artifact-pane__list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* The artifact chose its own colors, so the frame gets a plain white page under it rather than the theme. */
+.artifact-pane__frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.artifact-pane__doc { padding: 16px 20px; }
+
+.artifact-pane__code {
+  margin: 0;
+  padding: 16px;
+  min-height: 100%;
+  background: var(--bg-inset);
+  font-family: var(--mono);
+  font-size: 13px;
+  white-space: pre;
+}
+
+.artifact-pane__note {
+  padding: 16px 20px;
+  color: var(--ink-dim);
+}
+
+.artifact-pane__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.artifact-pane__item:hover,
+.artifact-pane__item:focus-visible { background: var(--amber-glow); }
+
+.artifact-pane__item-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .artifact-pane {
+    width: auto;
+    left: 0;
+    border-left: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

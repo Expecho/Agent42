@@ -3859,3 +3859,56 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` (`renderChart`), `tests/Agent42.Tests/PwaAssetsTests.cs`,
   `.agentic/decisions/0083-rich-inline-rendering.md`
 - **Verified:** 2026-10-03
+
+### Artifact tool ARGUMENTS are persisted too, so they are compacted after the turn
+
+- **Claim:** the "tool RETURN value is persisted" entry covers results. `create_artifact`/`update_artifact` carry
+  the whole artifact source in their ARGUMENTS, and the `FunctionCallContent` stays in the session as well. Ten
+  revisions of a 60 KB app would put 600 KB of dead text into the 2 MB item (ADR 0004), re-sent every turn, until
+  the conversation bricks in prod only. `CompactArtifactCalls` therefore runs at the three post-turn persist sites
+  (beside `ApplyRetentionAsync`). It replaces each call's `content` with `ArtifactLimits.Stub(id, v)` and each
+  `read_artifact` result with the same stub. It replaces the content object rather than editing the argument
+  dictionary, and joins results by `CallId`. Measured on AF 1.22: a 60 KB call's session went from 60 603 to 630
+  bytes, and the next turn still pairs the call with its result. A new artifact-like tool (anything whose
+  arguments hold a document) needs the same treatment. A cap on what one call may carry is not enough, because
+  every call stays.
+- **Test-harness trap:** a fake that puts the arguments in the USER prompt, or echoes results into its reply,
+  persists the very bytes the test measures. `FakeChatClient.CallToolPrompt` keeps arguments in a side table, and
+  `ScriptedResultEcho` is capped for that reason.
+- **Evidence:** `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs` (`CompactArtifactCalls`),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (the two persist sites),
+  `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`, `tests/Agent42.Tests/ArtifactToolTests.cs`
+  (`ArtifactUpdates_DoNotBlowTheSessionSizeBudget`, `CompactedArtifactCall_NextTurnSucceeds` — both fail with
+  compaction disabled), `.agentic/decisions/0084-artifact-pane.md`
+- **Verified:** 2026-10-03
+
+### `/frame` safety is the CSP `sandbox` HEADER, not the iframe attribute
+
+- **Claim:** `<iframe sandbox="allow-scripts">` protects only the embedded case. Anyone can open
+  `…/artifacts/{a}/versions/{n}/frame` as a top-level page, where no attribute exists, and model-written script
+  would then run on the app origin with the Easy Auth cookie. That is stored XSS a prompt injection can plant. The
+  protection is `AgentApi.ArtifactCsp` on EVERY response of the artifact routes, failures included. Its
+  `sandbox allow-scripts` directive (never `allow-same-origin`) gives an opaque origin, `connect-src 'none'` stops
+  fetch/XHR/WebSocket, and `form-action 'none'` stops a cookie-bearing form post (never `'self'`, measured useless
+  in the SearXNG entry). Still open by design (ADR 0084): self-navigation, and a framed navigation to a same-origin
+  GET carries the cookie. So a new authenticated GET with a side effect is reachable from an artifact. Keep side
+  effects off GET, or record the measurement in ADR 0084.
+- **Evidence:** `src/Agent42.Backend/Artifacts/AgentApi.Artifacts.cs` (`ArtifactCsp`, `AddArtifactHeaders`),
+  `src/Agent42.Backend/wwwroot/shared/lib/artifactpane.js` (`renderBody`), `tests/Agent42.Tests/ArtifactsApiTests.cs`
+  (`Frame_And_Content_SendSandboxHeaders`), `tests/Agent42.Tests/ArtifactAssetsTests.cs`,
+  `.agentic/decisions/0084-artifact-pane.md`
+- **Verified:** 2026-10-03
+
+### Artifact blobs are stored as octet-stream because the attachment proxies serve ANY id
+
+- **Claim:** `/api/conversations/{c}/attachments/{id}` and the public `/api/share/{token}/attachments/{id}` return
+  any blob under the owner key with its STORED media type and no CSP. An artifact saved as `text/html` or
+  `image/svg+xml` would render there on the app origin, for an anonymous share visitor too. So artifact bytes are
+  always saved as `application/octet-stream` (the kind lives in `ArtifactRecord`), both proxies send nosniff, and
+  `ArtifactVersionRef.AttachmentId` is `[JsonIgnore]` so the page never learns the raw id. Any new feature that
+  stores model- or web-authored bytes through `IAttachmentStore` must do the same.
+- **Evidence:** `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs` (`ArtifactMediaType`),
+  `src/Agent42.Backend/Attachments/AgentApi.Attachments.cs`, `src/Agent42.Backend/Sharing/AgentApi.Sharing.cs`,
+  `tests/Agent42.Tests/ArtifactToolTests.cs` (`ArtifactTools_StoreOctetStream`),
+  `tests/Agent42.Tests/ArtifactsApiTests.cs` (`AttachmentProxies_SendNoSniff`)
+- **Verified:** 2026-10-03

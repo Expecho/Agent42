@@ -9,10 +9,10 @@ namespace Agent42.Backend;
 ///
 /// <para>Registration order below is the order the endpoints were declared in before the split, but
 /// nothing depends on it: ASP.NET Core minimal-API routing resolves by template precedence, not by
-/// registration order, and all 64 route registrations are distinct in method + path. That figure
+/// registration order, and all 71 route registrations are distinct in method + path. That figure
 /// counts <c>app.Map{Get,Post,Put,Delete,Methods}(</c> calls across the <c>AgentApi.*.cs</c> parts
 /// only — it deliberately excludes ADR 0070's <c>MapMcp</c>, which is not an <c>AgentApi</c> part.
-/// (It read 58 before ADR 0073 and was wrong by one under either counting rule; the rule is stated
+/// (It read 58 before ADR 0073 and 64 before ADR 0084, which added six; both were off by one. The rule is stated
 /// here now so the next reader can reproduce it.) The one
 /// precedence subtlety in this API is handled by naming, not ordering — <c>PUT /api/default-model</c> is a distinct path rather than
 /// <c>/api/providers/default</c>, because a user-chosen provider key would out-rank the literal
@@ -30,6 +30,7 @@ public static partial class AgentApi
         MapConversationEndpoints(app);
         MapChatGroupEndpoints(app);
         MapAttachmentEndpoints(app);
+        MapArtifactEndpoints(app);
         MapSharingEndpoints(app);
         MapModelEndpoints(app);
         MapToolEndpoints(app);

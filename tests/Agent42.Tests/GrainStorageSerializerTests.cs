@@ -230,6 +230,77 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.True(agent.McpExposed);
     }
 
+    // AC1 (artifact pane): the committed golden predates [Id(15)] Artifacts, so it carries no such key. It must
+    // bind to an EMPTY dictionary, not null: the artifact tools and the list endpoint read it unguarded.
+    [Fact]
+    public void ArtifactsWrittenBefore_FieldExisted_Deserializes()
+    {
+        var restored = Serializer().Deserialize<AgentGrainState>(new BinaryData(StoredAgentGrainStateJson));
+
+        Assert.NotNull(restored.Artifacts);
+        Assert.Empty(restored.Artifacts);
+    }
+
+    // AC1: the forward direction on the path that matters at rest. Two artifacts with two versions each, all with
+    // different values, so a swap between artifacts or versions (or a lost JsonIgnore'd AttachmentId — the
+    // [JsonIgnore] is System.Text.Json's and must NOT hide it from Cosmos) shows up. The version list is built the
+    // way the tool builds it inside the grain, as a List<T>.
+    [Fact]
+    public void Artifacts_RoundTripThroughCosmosJson()
+    {
+        var at = new DateTimeOffset(2026, 10, 3, 12, 0, 0, TimeSpan.Zero);
+        var written = new AgentGrainState
+        {
+            Artifacts = new Dictionary<string, ArtifactRecord>
+            {
+                ["art-a"] = new()
+                {
+                    Id = "art-a",
+                    Kind = ArtifactKind.Html,
+                    Title = "Clock",
+                    CreatedAt = at,
+                    Versions = new List<ArtifactVersionRef> { new(1, "blob-a1", 10, at), new(2, "blob-a2", 20, at.AddMinutes(1)) },
+                },
+                ["art-b"] = new()
+                {
+                    Id = "art-b",
+                    Kind = ArtifactKind.Code,
+                    Title = "Sort",
+                    Language = "python",
+                    CreatedAt = at,
+                    Versions = new List<ArtifactVersionRef> { new(1, "blob-b1", 30, at), new(2, "blob-b2", 40, at) },
+                },
+            },
+        };
+
+        var restored = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(written));
+
+        var a = restored.Artifacts["art-a"];
+        Assert.Equal((ArtifactKind.Html, "Clock", (string?)null), (a.Kind, a.Title, a.Language));
+        Assert.Equal(["blob-a1", "blob-a2"], a.Versions.Select(v => v.AttachmentId));
+        Assert.Equal([10, 20], a.Versions.Select(v => v.SizeBytes));
+        var b = restored.Artifacts["art-b"];
+        Assert.Equal((ArtifactKind.Code, "Sort", "python"), (b.Kind, b.Title, b.Language));
+        Assert.Equal(["blob-b1", "blob-b2"], b.Versions.Select(v => v.AttachmentId));
+        Assert.Equal([1, 2], b.Versions.Select(v => v.Version));
+    }
+
+    // AC1: ChatTurn.Artifacts crosses the grain boundary (Orleans binary) and the HTTP boundary (System.Text.Json,
+    // the shape the frontend reads), so both are checked.
+    [Fact]
+    public void ChatTurn_Artifacts_RoundTrip()
+    {
+        var turn = new ChatTurn("assistant", "here it is", Artifacts: [new ArtifactInfo("art-a", 2, ArtifactKind.Svg, "Logo")]);
+
+        var serializer = Cluster.GetSiloServiceProvider(Cluster.Primary.SiloAddress)
+            .GetRequiredService<Orleans.Serialization.Serializer<ChatTurn>>();
+        var viaOrleans = serializer.Deserialize(serializer.SerializeToArray(turn));
+        Assert.Equal(turn.Artifacts, viaOrleans.Artifacts);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(turn, System.Text.Json.JsonSerializerOptions.Web);
+        Assert.Contains("\"artifacts\":[{\"artifactId\":\"art-a\",\"version\":2,\"kind\":\"svg\",\"title\":\"Logo\"}]", json, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// State a grain builds <b>itself</b> and writes, round-tripped through the real Cosmos serializer.
     ///

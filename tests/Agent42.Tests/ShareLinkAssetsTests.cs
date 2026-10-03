@@ -146,6 +146,27 @@ public sealed class ShareLinkAssetsTests
         Assert.Contains("marked.use({ extensions: rich.mathExtensions })", viewer);
     }
 
+    // AC18 (artifact pane): the viewer loads the SAME pane script as the app, relatively, and points it at the token-
+    // scoped /api/share/{token}/artifacts routes only (which EasyAuthExclusionTests proves are carved out). Cards
+    // come from turn.artifacts, the field the share response keeps while it strips the tool calls.
+    [Fact]
+    public async Task Viewer_RendersArtifactsViaShareRoutes()
+    {
+        var page = await _client.GetStringAsync("/shared/");
+        Assert.Contains("<script src=\"lib/artifactpane.js\"></script>", page);
+        Assert.True(
+            page.IndexOf("<script src=\"lib/artifactpane.js\">", StringComparison.Ordinal)
+                < page.IndexOf("<script src=\"viewer.js\">", StringComparison.Ordinal),
+            "the pane script must load before viewer.js uses it");
+
+        var viewer = await _client.GetStringAsync("/shared/viewer.js");
+        Assert.Contains("const artifactBase = () => `/api/share/${encodeURIComponent(token)}/artifacts`;", viewer);
+        Assert.DoesNotContain("/api/conversations", viewer, StringComparison.Ordinal);
+        Assert.Contains("typeof Agent42ArtifactPane !== \"undefined\"", viewer);
+        Assert.Contains("for (const info of turn.artifacts ?? []) artifactPane?.renderCard(bubble, info);",
+            StaticAssetsServerFixture.Body(viewer, "function renderTurns(turns)"));
+    }
+
     // ADR 0047 — the OS share sheet. Both buttons ship in the markup and Share starts hidden, so a browser
     // without navigator.share (and the pre-JS paint) shows Copy. Bounded at BOTH ends twice over: the button
     // has to sit inside #shareLinkDialog rather than merely somewhere in the document (it would otherwise

@@ -49,6 +49,22 @@
     return html;
   };
 
+  // Artifact cards + pane, shared with the chat app; guarded like the rich renderer. Every route is the token-scoped
+  // /api/share/{token}/artifacts twin, which sends the same CSP sandbox headers as the owner routes.
+  const artifactBase = () => `/api/share/${encodeURIComponent(token)}/artifacts`;
+  const artifactVersion = (id, v) => `${artifactBase()}/${encodeURIComponent(id)}/versions/${encodeURIComponent(v)}`;
+  const artifactPane = typeof Agent42ArtifactPane !== "undefined"
+    ? Agent42ArtifactPane.create({
+      host: document.body,
+      renderMarkdown,
+      urls: {
+        list: () => artifactBase(),
+        content: (id, v) => `${artifactVersion(id, v)}/content`,
+        frame: (id, v) => `${artifactVersion(id, v)}/frame`,
+      },
+    })
+    : null;
+
   // Attachment bytes come through the token-scoped public proxy — the page never holds a blob URL.
   const attachmentUrl = (attachmentId) =>
     `/api/share/${encodeURIComponent(token)}/attachments/${encodeURIComponent(attachmentId)}`;
@@ -126,6 +142,8 @@
         prose.innerHTML = renderMarkdown(turn.text || "");
         if (rich) rich.enhance(prose);
         for (const att of turn.attachments ?? []) addAgentImage(msg, att.id, att.fileName);
+        const bubble = msg.querySelector(".msg__bubble");
+        for (const info of turn.artifacts ?? []) artifactPane?.renderCard(bubble, info);
       }
     }
   }
