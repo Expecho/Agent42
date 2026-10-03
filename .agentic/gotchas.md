@@ -29,6 +29,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-07-06 |
 | Frontend feature module (vanilla JS, no build)  | `src/Agent42.Backend/wwwroot/js/conversations.js` | 2026-08-19 |
 | Frontend composition root (wires every module)  | `src/Agent42.Backend/wwwroot/js/main.js`          | 2026-08-19 |
+| Classic script shared by the app AND the public viewer (window global, guarded consumers) | `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` | 2026-10-03 |
 | Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/Attachments/IAttachmentStore.cs`, `src/Agent42.Agents/Attachments/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` | 2026-07-08 |
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
@@ -3823,3 +3824,38 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`BeginResearchRun`),
   `.agentic/specs/completed/plan-research-agent.md` (Spike results)
 - **Verified:** 2026-09-22
+
+### Rich rendering runs on FINALIZE only — a new streaming call must pass `caret: true`, a new final one must not
+
+- **Claim:** markdown is re-parsed on every stream chunk, so `richtext.js`'s `enhance` (mermaid, highlight, KaTeX,
+  Chart.js) is NOT in `renderMarkdown`. It runs inside `setAgentMarkdown`'s non-caret branch, which makes every
+  non-streaming caller (stream end, stop, error, history, recovery) enhanced with no per-site wiring. The caret flag
+  therefore carries meaning: a new per-chunk call that forgets `{ caret: true }` runs mermaid on half a diagram on
+  every token, and a final render that passes it is never enhanced. `RichTextAssetsTests.Enhance_RunsOnFinalizeOnly`
+  counts the caret calls in the whole app corpus, so a new one fails the test until it is placed deliberately.
+  Comments count as well: don't write the literal `caret: true` in prose.
+- The marked math extensions DO run per chunk, but they only tokenize into `.math-inline`/`.math-block`
+  placeholders. Typesetting is part of `enhance`.
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/thread.js` (`setAgentMarkdown`),
+  `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` (`enhance`, `mathExtensions`),
+  `tests/Agent42.Tests/RichTextAssetsTests.cs`, `.agentic/decisions/0083-rich-inline-rendering.md`
+- **Verified:** 2026-10-03
+
+### The rich-rendering libs live ONLY under `/shared/lib/`, and the heavy ones are lazy and NOT in SHELL
+
+- **Claim:** the chat app and the public viewer share one renderer and one copy of each lib under `/shared/lib/`
+  (the public, Easy-Auth-excluded path). The chat app references `/shared/lib/…` absolutely. The viewer MUST use
+  relative `lib/…`: the literal `/lib/` in `src/Agent42.Backend/wwwroot/shared/index.html` fails
+  `ShareLinkAssetsTests.Viewer_IsSelfContained_NoAuthenticatedAssets`, and that includes text inside an HTML comment.
+  mermaid (5 MB), KaTeX and Chart.js are loaded by `Agent42Rich.loadScript` on first use and cached at runtime by
+  stale-while-revalidate. Adding them to SHELL puts 5 MB into the all-or-nothing `addAll`, and
+  `PwaAssetsTests.ServiceWorkerShell_OmitsLazyLibs` fails. Because that cache is stale-while-revalidate, a lib upgrade
+  that changes its API must **rename the file**.
+- Every consumer reaches `Agent42Rich` through a guard (`typeof`, `globalThis.…?.`). A bare top-level reference in an
+  ES module turns a 404 on `richtext.js` into a ReferenceError, which blanks the app.
+- Chart.js: never set `Chart.defaults.borderColor`. Changing it silently disables the automatic dataset palette, and
+  every uncolored chart renders grey (measured on 4.5.1). Theme the grid through `Chart.defaults.scale.grid.color`.
+- **Evidence:** `src/Agent42.Backend/wwwroot/sw.js` (`SHELL`), `src/Agent42.Backend/wwwroot/shared/index.html`,
+  `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` (`renderChart`), `tests/Agent42.Tests/PwaAssetsTests.cs`,
+  `.agentic/decisions/0083-rich-inline-rendering.md`
+- **Verified:** 2026-10-03

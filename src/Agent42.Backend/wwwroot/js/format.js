@@ -23,6 +23,11 @@ export const LANGUAGES = [
 
 marked.setOptions({ gfm: true, breaks: true });
 
+// Math tokenizing from the shared rich renderer (ADR 0083), a classic global from /shared/lib/richtext.js.
+// Guarded: a 404 or a version-skewed cache on that script must degrade to plain markdown, never throw at
+// module evaluation (which would blank the whole app).
+if (typeof Agent42Rich !== "undefined") marked.use({ extensions: Agent42Rich.mathExtensions });
+
 export const renderMarkdown = (text) =>
   DOMPurify.sanitize(marked.parse(text), { USE_PROFILES: { html: true } });
 

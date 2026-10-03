@@ -268,6 +268,70 @@ body {
   line-height: 1.6;
 }
 
+/* Rich rendering (ADR 0083), added by /shared/lib/richtext.js to a FINALIZED reply: a wrapper so the
+   per-block copy button stays put while the code scrolls, rendered diagrams/charts, typeset math, and the
+   note a failed block gets. The copy button copies the msg__copy look. */
+.prose .rich-code { position: relative; margin: 1em 0; }
+.prose .rich-code > pre { margin: 0; }
+.prose .rich-code > pre code { display: block; padding-right: 28px; }
+
+.rich-code__copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: var(--bg-inset);
+  color: var(--ink-faint);
+  font: 400 15px/1 var(--mono);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.rich-code:hover .rich-code__copy,
+.rich-diagram:hover .rich-code__copy,
+.rich-chart:hover .rich-code__copy,
+.rich-code__copy:focus-visible { opacity: 1; }
+
+.rich-code__copy:hover { background: var(--line-soft); color: var(--amber); }
+
+@media (hover: none) {
+  .rich-code__copy { opacity: 1; }
+}
+
+.prose .rich-diagram,
+.prose .rich-chart {
+  margin: 1em 0;
+  padding: 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.prose .rich-diagram { position: relative; overflow-x: auto; }
+.prose .rich-diagram svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.prose .rich-chart { position: relative; }
+
+.prose .math-block { margin: 1em 0; overflow-x: auto; overflow-y: hidden; }
+
+.prose .rich-error {
+  display: block;
+  margin: -0.6em 0 1em;
+  font: 400 11px/1.4 var(--mono);
+  color: var(--red);
+  white-space: pre-wrap;        /* mermaid's parse error points at the column with a caret line */
+  overflow-wrap: anywhere;
+}
+
+.prose span.rich-error { display: inline; margin: 0 0 0 0.4em; }
+
 .prose table {
   border-collapse: collapse;
   margin: 1em 0;

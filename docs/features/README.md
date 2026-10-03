@@ -20,6 +20,7 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 | Conversation history (sidebar, resume, delete, search, pins, groups, incognito, share links, follow-ups) | [conversation-history.md](conversation-history.md) |
 | Model picker (switch mid-conversation) | [model-picker.md](model-picker.md) |
 | Reasoning output (live-only "thinking") | [reasoning-output.md](reasoning-output.md) |
+| Rich inline rendering (diagrams, code, math, charts) | [rich-rendering.md](rich-rendering.md) |
 | Voice: dictation, hands-free loop, server-side speech | [voice-and-speech.md](voice-and-speech.md) |
 
 ## Bring your own models
