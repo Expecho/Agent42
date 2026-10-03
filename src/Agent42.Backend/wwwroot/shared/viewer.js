@@ -16,6 +16,11 @@
 
   marked.setOptions({ gfm: true, breaks: true });
 
+  // The shared rich renderer (ADR 0083): math tokenizing here, enhance() after each agent turn. Guarded so a
+  // missing lib/richtext.js leaves plain markdown, never a broken page.
+  const rich = typeof Agent42Rich !== "undefined" ? Agent42Rich : null;
+  if (rich) marked.use({ extensions: rich.mathExtensions });
+
   const renderMarkdown = (text) =>
     DOMPurify.sanitize(marked.parse(text), { USE_PROFILES: { html: true } });
 
@@ -117,7 +122,9 @@
       if (turn.role === "user") {
         fillUserBubble(msg, turn.text, turn.attachments);
       } else {
-        msg.querySelector(".prose").innerHTML = renderMarkdown(turn.text || "");
+        const prose = msg.querySelector(".prose");
+        prose.innerHTML = renderMarkdown(turn.text || "");
+        if (rich) rich.enhance(prose);
         for (const att of turn.attachments ?? []) addAgentImage(msg, att.id, att.fileName);
       }
     }

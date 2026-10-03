@@ -1084,6 +1084,64 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains(persona, answer);
     }
 
+    // ADR 0083: the ```chart convention is an appended hint, so it reaches a persona chat (whose prompt REPLACES
+    // the base instructions) as well as a base chat. Asserted on the [sys:…] echo, i.e. on delivery.
+    [Fact]
+    public async Task RenderingHint_ReachesPersonaChat()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("rendering-hint-persona");
+        const string persona = "You are Marvin, and you are depressed about charts.";
+        await agent.BindAgentAsync(new AgentBinding("agent-m", "Marvin", persona, "persona-model"));
+
+        var answer = await ChatTextAsync(agent, "hi");
+
+        Assert.Contains(persona, answer);
+        Assert.Contains("```chart fenced block", answer);
+    }
+
+    [Fact]
+    public async Task RenderingHint_ReachesBaseChat()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("rendering-hint-base");
+
+        var answer = await ChatTextAsync(agent, "hi");
+
+        Assert.Contains("You are Agent 42", answer);
+        Assert.Contains("```chart fenced block", answer);
+    }
+
+    // The UTF-8 bytes the fake's [sys:…] echo spends on the rendering hint across a stored session: each
+    // occurrence measured from its first to its last word as it sits in the serialized text.
+    private static int EchoedRenderingHintBytes(string session)
+    {
+        const string First = "Formatting: replies render";
+        const string Last = "no functions).";
+        var total = 0;
+        for (var at = session.IndexOf(First, StringComparison.Ordinal); at >= 0;
+             at = session.IndexOf(First, at + 1, StringComparison.Ordinal))
+        {
+            var end = session.IndexOf(Last, at, StringComparison.Ordinal);
+            Assert.True(end > at, "an echoed rendering hint is not closed — did its wording change?");
+            total += System.Text.Encoding.UTF8.GetByteCount(session[at..(end + Last.Length)]);
+        }
+
+        return total;
+    }
+
+    private static async Task<string> ChatTextAsync(IAgentGrain agent, string message)
+    {
+        var text = new System.Text.StringBuilder();
+        await foreach (var evt in agent.ChatAsync(message, null))
+        {
+            if (evt.Type == AgentStreamEventType.TextDelta)
+            {
+                text.Append(evt.Text);
+            }
+        }
+
+        return text.ToString();
+    }
+
     // AC4: binding is immutable once set — a second bind can't flip the persona mid-conversation.
     [Fact]
     public async Task BindAgent_IsIdempotent_KeepsFirstPersona()
@@ -1806,7 +1864,13 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         // about 35 bytes a message, 1.2% — which was measured and is what tipped it over 256 KB before
         // the stamp was gated on the conversation being continuous. A regular chat is never pruned, so
         // it never reads a timestamp, so it does not pay for one.
-        Assert.InRange(bytes, 1, 256 * 1024);
+        //
+        // The rendering hint (ADR 0083) is excluded: FakeChatClient echoes its instructions into every reply it
+        // stores ([sys:…]), so the hint lands once per turn here (5,220 bytes measured over these 20 turns),
+        // while a real model never writes its instructions into the session. Measured off the stored text
+        // itself, so JSON escaping and line endings cannot skew it. The ceiling is about tool results, and
+        // that is unchanged. Headroom is thin (~500 bytes): the hint's "\n\n" separators still count.
+        Assert.InRange(bytes - EchoedRenderingHintBytes(state.State.SerializedSession!), 1, 256 * 1024);
     }
 
     // ---- User location (ADR 0012) ----

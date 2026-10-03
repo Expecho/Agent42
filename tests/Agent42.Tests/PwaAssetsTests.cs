@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Agent42.Tests;
 
@@ -252,7 +253,27 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v43", sw);
+        Assert.Contains("agent42-shell-v44", sw);
+    }
+
+    // Rich rendering (ADR 0083): SHELL holds only the eager renderer + highlight.js. The lazy libs stay out —
+    // SHELL is one all-or-nothing addAll, and a 5 MB mermaid there slows install and adds a failure point.
+    // They are still cached at runtime by stale-while-revalidate on first use.
+    [Fact]
+    public async Task ServiceWorkerShell_OmitsLazyLibs()
+    {
+        var sw = await _client.GetStringAsync("/sw.js");
+        var match = Regex.Match(sw, @"const SHELL = \[(.*?)\];",
+            RegexOptions.Singleline);
+        Assert.True(match.Success, "sw.js no longer declares a SHELL array");
+        // The entries only — the array's comments name the lazy libs on purpose.
+        var entries = Regex.Matches(match.Groups[1].Value, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
+
+        Assert.Contains("/shared/lib/richtext.js", entries);
+        Assert.Contains("/shared/lib/highlight/highlight.min.js", entries);
+        Assert.DoesNotContain(entries, e => e.Contains("mermaid", StringComparison.Ordinal));
+        Assert.DoesNotContain(entries, e => e.Contains("katex", StringComparison.Ordinal));
+        Assert.DoesNotContain(entries, e => e.Contains("/chart/", StringComparison.Ordinal));
     }
 
     // Offline read cache (ADR 0032): agents, conversations and previously-opened chat histories are

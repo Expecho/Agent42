@@ -2,7 +2,7 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v43";
+const CACHE = "agent42-shell-v44";
 const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/attachments.js",
   "/js/cache.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
   "/js/drawer.js", "/js/format.js", "/js/groups.js", "/js/location.js", "/js/main.js", "/js/mcp.js",
@@ -10,7 +10,13 @@ const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/attachme
   "/js/research.js", "/js/search.js", "/js/send.js", "/js/sharelinks.js", "/js/sharetarget.js", "/js/sidebar.js", "/js/skills.js",
   "/js/speech.js",
   "/js/tabs.js", "/js/theme.js", "/js/thread.js", "/js/tools.js", "/js/usage.js", "/js/voice.js",
-  "/lib/marked.min.js", "/lib/purify.min.js", "/manifest.webmanifest", "/icons/icon-192.png",
+  "/lib/marked.min.js", "/lib/purify.min.js",
+  // Rich rendering (ADR 0083): only the EAGER part. mermaid/KaTeX/Chart.js are lazy and reach the cache at
+  // runtime through stale-while-revalidate; a 5 MB mermaid in this all-or-nothing addAll would slow install
+  // and add a failure point.
+  "/shared/lib/richtext.js", "/shared/lib/highlight/highlight.min.js",
+  "/shared/lib/highlight/github.min.css", "/shared/lib/highlight/github-dark.min.css",
+  "/manifest.webmanifest", "/icons/icon-192.png",
   "/icons/icon-512.png", "/icons/icon-maskable-512.png"];
 
 self.addEventListener("install", (event) => {

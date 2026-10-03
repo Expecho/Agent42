@@ -94,6 +94,11 @@ export function setAgentMarkdown(msg, text, { caret = false } = {}) {
     const caretEl = document.createElement("span");
     caretEl.className = "caret";
     (prose.lastElementChild ?? prose).appendChild(caretEl);
+  } else {
+    // A final render (stream end, stop, error, history, recovery): diagrams, highlighting, math and charts
+    // (ADR 0083). Never per chunk: every streaming caller asks for the caret. globalThis, not a bare
+    // name, so a missing richtext.js leaves plain markdown instead of a ReferenceError.
+    globalThis.Agent42Rich?.enhance(prose);
   }
 }
 

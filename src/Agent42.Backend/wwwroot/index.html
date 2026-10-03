@@ -7,6 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <!-- Code highlight themes (ADR 0083): richtext.js enables the one matching data-theme. Before styles.css,
+       so the app's own .prose pre code colors win the specificity ties. -->
+  <link rel="stylesheet" href="/shared/lib/highlight/github.min.css" data-hljs-theme="light" />
+  <link rel="stylesheet" href="/shared/lib/highlight/github-dark.min.css" data-hljs-theme="dark" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90' font-family='monospace' fill='%23FFB13D'>42</text></svg>" />
   <link rel="manifest" href="/manifest.webmanifest" />
@@ -1017,6 +1021,10 @@
        marked.setOptions in js/format.js is safe and both stay window globals. -->
   <script src="lib/marked.min.js"></script>
   <script src="lib/purify.min.js"></script>
+  <!-- Rich rendering (ADR 0083): ONE renderer + its libs, shared with the public viewer, so they live under
+       the public /shared/lib/. highlight.js is eager; mermaid/KaTeX/Chart.js are lazy-loaded by richtext.js. -->
+  <script src="/shared/lib/highlight/highlight.min.js"></script>
+  <script src="/shared/lib/richtext.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

@@ -44,7 +44,7 @@ public sealed partial class CannedChatClient : IChatClient
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
         => Task.FromResult(IsJudgeCall(messages, options)
             ? JudgeVerdict()
-            : new ChatResponse(new ChatMessage(ChatRole.Assistant, BuildReply(ResearchPrompt(messages)))));
+            : new ChatResponse(new ChatMessage(ChatRole.Assistant, SelectReply(ResearchPrompt(messages)))));
 
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
@@ -84,7 +84,7 @@ public sealed partial class CannedChatClient : IChatClient
         // A research loop's first iteration drafts; the answer comes once the loop's feedback says a step is left.
         var reply = options?.Tools?.Any(t => t.Name == "todos_add") == true && !messages.Any(IsLoopFeedback)
             ? $"Drafting an answer to *{prompt}* from the first sources — one step of the plan is still open."
-            : BuildReply(prompt);
+            : SelectReply(prompt);
         foreach (var chunk in reply.Split(' ').Chunk(4).Select(words => string.Join(' ', words) + " "))
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
@@ -113,6 +113,66 @@ public sealed partial class CannedChatClient : IChatClient
         "I will give the number, then add a little context about how this app stores conversations, ",
         "since that is what the person running it offline is most likely checking.",
     ];
+
+    // The plain canned reply, or the rich one (ADR 0083) when the prompt carries the marker. A text reply,
+    // not a tool call, so it is chosen here and not in SelectToolCall.
+    private static string SelectReply(string prompt) =>
+        prompt.Contains(RichMarker, StringComparison.OrdinalIgnoreCase) ? RichReply : BuildReply(prompt);
+
+    /// <summary>Prompt marker that makes the canned reply exercise every rich renderer (ADR 0083).</summary>
+    private const string RichMarker = "show rich";
+
+    /// <summary>
+    /// One of each rich block: a mermaid flowchart, highlighted code (one block with a fence inside a string),
+    /// inline/display/bracket math, a currency sentence that must stay text, a bar chart, and a deliberately
+    /// broken diagram whose failure must not stop the rest. A plain constant, not part of the interpolated
+    /// <see cref="BuildReply"/>: the chart's JSON braces would collide with its interpolation holes.
+    /// </summary>
+    private const string RichReply = """
+        Here is everything the renderer can do.
+
+        ```mermaid
+        flowchart LR
+          User[Browser] -->|NDJSON stream| Api[ASP.NET Core]
+          Api --> Grain[(Agent grain)]
+          Grain --> Model{{Model provider}}
+        ```
+
+        ```csharp
+        var fence = "```";
+        await foreach (var chunk in agent.ChatAsync("hi")) { Console.Write(chunk.Text); }
+        ```
+
+        ```js
+        const answer = [6, 7].reduce((a, b) => a * b, 1);
+        console.log(`the answer is ${answer}`);
+        ```
+
+        Euler's identity, inline: $e^{i\pi} + 1 = 0$, and with brackets: \(a^2 + b^2 = c^2\).
+
+        $$
+        \int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}
+
+        \sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}
+        $$
+
+        \[
+        \mathbf{A}\mathbf{x} = \mathbf{b}
+        \]
+
+        Prices stay text: it costs $5 and $10 for the pair.
+
+        ```chart
+        {"type": "bar", "data": {"labels": ["Mon", "Tue", "Wed", "Thu", "Fri"], "datasets": [{"label": "Questions answered", "data": [12, 19, 7, 42, 23]}]}}
+        ```
+
+        ```mermaid
+        flowchart LR
+          this is -->> not valid ((
+        ```
+
+        That last diagram is broken on purpose; it should show its code and an error note.
+        """;
 
     private static FunctionCallContent BuildReminderCall() =>
         new("canned-call-1", "schedule_prompt", new Dictionary<string, object?>
