@@ -281,7 +281,7 @@ public sealed partial class AgentGrain
                 Name = _state.State.AgentName ?? "Agent42",
                 ChatOptions = new ChatOptions
                 {
-                    Instructions = WithDocumentAwareness(_state.State.SystemPrompt ?? Instructions),
+                    Instructions = WithDocumentAwareness(WithRenderingHints(_state.State.SystemPrompt ?? Instructions)),
                     // A model that can't do function tools at all (ADR 0013) gets NO schema — including
                     // the hosted ones — even if it somehow reported SupportsHostedTools.
                     Tools = capabilities.SupportsTools ? tools : [],

@@ -11,6 +11,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <!-- Code highlight themes (ADR 0083): richtext.js enables the one matching data-theme. Before viewer.css so
+       its own .prose pre code colors win the specificity ties. -->
+  <link rel="stylesheet" href="lib/highlight/github.min.css" data-hljs-theme="light" />
+  <link rel="stylesheet" href="lib/highlight/github-dark.min.css" data-hljs-theme="dark" />
   <link rel="stylesheet" href="viewer.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90' font-family='monospace' fill='%23FFB13D'>42</text></svg>" />
   <meta name="theme-color" content="#100f0d" />
@@ -55,6 +59,10 @@
        each through the measured excludedPaths matcher, so what it does ask for is provably carved out. -->
   <script src="lib/marked.min.js"></script>
   <script src="lib/purify.min.js"></script>
+  <!-- The rich renderer (ADR 0083) is the SAME file the chat app loads; it already lives here under /shared/lib.
+       Relative paths only (see the self-containment note below). -->
+  <script src="lib/highlight/highlight.min.js"></script>
+  <script src="lib/richtext.js"></script>
   <script src="viewer.js"></script>
 </body>
 </html>

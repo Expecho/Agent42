@@ -105,6 +105,47 @@ public sealed class ShareLinkAssetsTests
         (await _client.GetAsync("/shared/lib/purify.min.js")).EnsureSuccessStatusCode();
     }
 
+    // The rich-rendering libs (mermaid, KaTeX, Chart.js, highlight.js) are vendored ONCE, under the public
+    // /shared/lib/, and loaded from there by both the chat app and the viewer. A missing file here is a
+    // diagram/formula/chart that silently stays a code block, so each one is fetched for real. The KaTeX
+    // font is the one katex.min.css asks for by relative url(fonts/…).
+    [Theory]
+    [InlineData("/shared/lib/richtext.js")]
+    [InlineData("/shared/lib/highlight/highlight.min.js")]
+    [InlineData("/shared/lib/highlight/github.min.css")]
+    [InlineData("/shared/lib/highlight/github-dark.min.css")]
+    [InlineData("/shared/lib/mermaid/mermaid.min.js")]
+    [InlineData("/shared/lib/katex/katex.min.js")]
+    [InlineData("/shared/lib/katex/katex.min.css")]
+    [InlineData("/shared/lib/katex/fonts/KaTeX_Main-Regular.woff2")]
+    [InlineData("/shared/lib/chart/chart.umd.min.js")]
+    public async Task SharedLibs_AreServed(string path)
+    {
+        var res = await _client.GetAsync(path);
+
+        res.EnsureSuccessStatusCode();
+        Assert.True((await res.Content.ReadAsByteArrayAsync()).Length > 0, $"{path} is empty");
+    }
+
+    // The viewer renders rich content with the SAME renderer as the app (ADR 0083), loaded relative to
+    // /shared/ (an absolute /shared/lib/ path would contain the authenticated "/lib/" marker), and enhances
+    // each agent turn after rendering its markdown.
+    [Fact]
+    public async Task Viewer_UsesSharedRenderer()
+    {
+        var page = await _client.GetStringAsync("/shared/");
+        Assert.Contains("<script src=\"lib/richtext.js\"></script>", page);
+        Assert.Contains("<script src=\"lib/highlight/highlight.min.js\"></script>", page);
+
+        var viewer = await _client.GetStringAsync("/shared/viewer.js");
+        var turns = StaticAssetsServerFixture.Body(viewer, "function renderTurns(turns)");
+        var render = turns.IndexOf("prose.innerHTML = renderMarkdown(", StringComparison.Ordinal);
+        var enhance = turns.IndexOf("rich.enhance(prose)", StringComparison.Ordinal);
+        Assert.True(render >= 0, "renderTurns no longer renders agent markdown");
+        Assert.True(enhance > render, "renderTurns must enhance AFTER rendering the markdown");
+        Assert.Contains("marked.use({ extensions: rich.mathExtensions })", viewer);
+    }
+
     // ADR 0047 — the OS share sheet. Both buttons ship in the markup and Share starts hidden, so a browser
     // without navigator.share (and the pre-JS paint) shows Copy. Bounded at BOTH ends twice over: the button
     // has to sit inside #shareLinkDialog rather than merely somewhere in the document (it would otherwise

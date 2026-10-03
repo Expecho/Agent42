@@ -26,6 +26,8 @@ diagrams and code — see [`docs/features/`](docs/features/README.md). Features 
   group, and reloading a chat replays them.
 - **Stop generation** — stop a reply mid-stream; what you saw is what the conversation keeps.
 - **Reasoning** — reasoning models show their thinking in a collapsed section above the reply.
+- **Rich replies** — Mermaid diagrams, highlighted code with a copy button per block, LaTeX math
+  and charts render inline, in the chat and in share links.
 - **Follow-up suggestions** — up to three suggested next prompts under each reply; tap one to
   send it.
 - **Conversation history** — every chat is saved and listed in the sidebar, so you can leave
