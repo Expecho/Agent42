@@ -7,6 +7,10 @@ tags: [agents, conversations, privacy, ephemeral, incognito, session, persistenc
 
 # Ephemeral ("incognito") chat
 
+> **Amended by [ADR 0085](0085-copilot-agent-kind.md) (2026-10-05): a copilot agent's chat refuses incognito turns.**
+> The Copilot runtime writes its transcript to Blob during the turn, so the grain refuses an ephemeral turn there
+> before anything runs, and the client locks the toggle off.
+
 > **Amended by [ADR 0044](0044-persistent-topbar-action-cluster.md) (2026-08-21) — the toggle moved.**
 > `#incognitoBtn` no longer lives in `.composer__frame`, and no longer "tints the composer frame while
 > engaged": it sits in a persistent top-right action cluster in `.topbar`, and the engaged tint moved to

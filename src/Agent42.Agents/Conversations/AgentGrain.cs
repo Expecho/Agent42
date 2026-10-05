@@ -663,9 +663,16 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 this.GetPrimaryKeyString(), _modelId);
         }
 
-        if (!string.IsNullOrWhiteSpace(model) && model != _modelId)
+        await SwitchModelAsync(model);
+
+        // A copilot chat that cannot run this turn (no agent, or an incognito turn) is refused here, before anything
+        // is written or sent: nothing is persisted and Copilot is never called. After the switch, so a switch onto a
+        // no-tools model (a plain chat) is not refused.
+        if (CopilotTurnRefusal() is { } refusal)
         {
-            await SwitchModelAsync(model);
+            yield return new AgentStreamEvent(AgentStreamEventType.TextDelta, Text: refusal);
+            yield return new AgentStreamEvent(AgentStreamEventType.Done);
+            yield break;
         }
 
         // Image-generation model (ADR 0020): the turn produces an IMAGE, not a chat reply. Branch BEFORE the
@@ -697,8 +704,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // attachments container (ADR 0004), and the model's host really does fetch that URL server-side
         // (the ADR 0013 spike confirmed it) — so handing it to a third-party endpoint that cannot even
         // read images leaks a live credential-bearing URL for nothing. Gate it HERE, in the grain, not
-        // only in the UI: the UI is not a security boundary.
-        var canSeeImages = _chatClientFactory.GetCapabilities(_modelId).SupportsVision;
+        // only in the UI: the UI is not a security boundary. A copilot chat never sees images (CanSeeImages).
+        var canSeeImages = CanSeeImages();
 
         // Refresh the image URLs on PRIOR turns before this model call. Azure OpenAI re-fetches
         // a prior turn's image URL on every subsequent turn (Step 1 spike), and a blob SAS is
@@ -787,8 +794,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             // The history was unreachable, so there is nothing coherent to write. Skip the persist rather
             // than commit an empty session over a conversation that had one — and note this also skips the
             // ADR 0066 rebuild below, so a web document ingested during this turn is dropped. Both are
-            // acceptable: every session here is built with an InMemoryChatHistoryProvider, so reaching this
-            // branch at all means something about the session is already broken.
+            // acceptable: every session here has in-memory history from the start (an InMemoryChatHistoryProvider, or
+            // the copilot mirror, which CopilotChatAgent seeds on create), so reaching this branch at all means
+            // something about the session is already broken.
             yield return tokens.ToDoneEvent(stopped: true);
             yield break;
         }
@@ -1032,9 +1040,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             : null;
 
     // Rehosts the existing conversation on a newly picked model: snapshot the session, rebuild the
-    // agent against the new client, then restore the session so history carries over.
-    private async Task SwitchModelAsync(string model)
+    // agent against the new client, then restore the session so history carries over. A request that picked no
+    // model, or the one already in use, is a no-op (the guard lives here to keep ChatCoreAsync under S3776).
+    private async Task SwitchModelAsync(string? model)
     {
+        if (string.IsNullOrWhiteSpace(model) || model == _modelId)
+        {
+            return;
+        }
+
         var snapshot = await _agent.SerializeSessionAsync(_session);
         _modelId = model;
         _state.State.DeploymentName = model;
@@ -1437,6 +1451,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // DELETE /api/conversations/{id} awaits it synchronously.
         await DeleteSearchIndexForConversationAsync();
 
+        // And Copilot's own transcript of a copilot chat (its SessionFs files), which the session item only points
+        // at. Before ClearStateAsync, which takes the agent kind with it. Best-effort inside.
+        await DeleteCopilotTranscriptAsync();
+
         _state.State.ScheduledPrompts.Clear();
         _state.State.DocumentNames.Clear();
         // The web-fetched lists must be cleared alongside DocumentNames, and for the reason that line
@@ -1511,10 +1529,19 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             await RebindModelAsync(_chatClientFactory.DefaultModelId);
         }
 
+        // A copilot chat with no agent skips the reminder like the no-model case: nothing to run it on. (A reminder
+        // is never incognito, so the other half of CopilotTurnRefusal cannot apply.)
+        if (_copilotUnavailable is not null)
+        {
+            _logger.LogInformation(
+                "Reminder '{Reminder}' fired for conversation {GrainKey} but its copilot agent is unavailable; skipping.",
+                reminderName, this.GetPrimaryKeyString());
+            return;
+        }
+
         // Refresh prior turns' image URLs before this model call too (a reminder can fire on a
         // long-warm grain whose SAS URLs have since expired) — same reason as ChatAsync.
-        await RehydrateAttachmentUrlsAsync(
-            _chatClientFactory.GetCapabilities(_modelId).SupportsVision);
+        await RehydrateAttachmentUrlsAsync(CanSeeImages());
 
         // A reminder-fired turn is a user turn too, so it must push a (always empty) attachment
         // entry to keep TurnAttachments aligned 1:1 with user turns by index (constraint 11).

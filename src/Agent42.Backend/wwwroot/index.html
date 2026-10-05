@@ -250,6 +250,18 @@
                  placeholder="A short note about this persona" />
         </label>
 
+        <!-- The agent's type, chosen on create only (an agent's kind never changes afterwards). -->
+        <div id="agentKindField">
+          <label class="agent-form__field">
+            <span class="agent-form__label">// type</span>
+            <select class="agent-form__input agent-form__select" id="agentKindSelect">
+              <option value="">Standard</option>
+              <option value="copilot">Copilot (GitHub Copilot agent loop)</option>
+            </select>
+          </label>
+          <p class="agent-form__note">A Copilot agent runs on the GitHub Copilot agent loop with your model and tools. Its chats take no documents or images, don't use long-term memory, and can't be incognito.</p>
+        </div>
+
         <label class="agent-form__field">
           <span class="agent-form__label">// model</span>
           <select class="agent-form__input agent-form__select" id="agentModelSelect" required></select>

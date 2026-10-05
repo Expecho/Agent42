@@ -19,6 +19,8 @@
 - **A built-in Research agent** — seeded per user (ADR 0082); it plans a question into steps,
   searches, and checks its own answer, with a live checklist in the chat. See
   [Research agent](research-agent.md).
+- **A Copilot agent** — choose the Copilot type when creating an agent (ADR 0085) to run its chats on the
+  GitHub Copilot agent loop, with your own model and Agent42's tools.
 
 ## How it works
 
@@ -160,6 +162,17 @@ regeneration next to the toggle.
 Every user also gets a seeded "Research" agent: an ordinary `AgentDefinition` with `Kind = "research"`,
 which only seeding can set and which forces per-chat mode. Its plan/search/reflect loop, live checklist
 and one-turn fold are covered in [Research agent](research-agent.md).
+
+### Copilot agents (ADR 0085)
+
+A create may choose the agent's type: Standard, or **Copilot** (`Kind = "copilot"`, create only, never changed
+afterwards, always per-chat). A copilot chat runs on the GitHub Copilot SDK's agent loop instead of a
+`ChatClientAgent`. It uses the user's own provider (BYOK), the same tools and skills the selection grants (no
+built-in shell or file tools in phase 1), and keeps the runtime's transcript in the private `copilot-sessions`
+Blob container. The grain sees the loop only through `ICopilotAgentFactory` (`src/Agent42.Agents/Copilot/`).
+The SDK side, its session store and the runtime's trust boundary are in `src/Agent42.Backend/Copilot/`. A copilot
+chat takes no documents or images and refuses incognito turns. ADR 0085 records why, and how the chat history the
+UI shows (a mirror) can diverge from the transcript the model sees.
 
 ## How the Agent Framework fits
 

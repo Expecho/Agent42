@@ -43,8 +43,9 @@ flowchart TD
 early when the user has no concrete model yet (ADR 0019), so the agent is seeded by the first list
 after a provider is added. A `ResearchAgentSeeded` flag in registry state makes it once-only.
 
-`Kind` is set only by seeding. Create strips it from the request, and update copies it from the
-stored definition. Update also forces `Continuous = false` for a research kind. `Kind` is persona, so
+The research kind is set only by seeding. A create that claims it gets a 400 (a create may claim only
+`copilot`, ADR 0085), and update copies `Kind` from the stored definition. Update also forces
+`Continuous = false` for a research kind. `Kind` is persona, so
 `BindAgentAsync` snapshots it into the conversation (ADR 0003).
 
 ### The loop
@@ -153,7 +154,7 @@ On a research turn the stream carries two extra events (see [Streaming replies](
 
 | Concern | File |
 |---------|------|
-| Kind, defaults, limits | `src/Agent42.Agents/Research/AgentKinds.cs`, `ResearchAgentDefaults.cs`, `ResearchLimits.cs` |
+| Kind, defaults, limits | `src/Agent42.Agents/StoredAgents/AgentKinds.cs`, `src/Agent42.Agents/Research/ResearchAgentDefaults.cs`, `ResearchLimits.cs` |
 | Loop, hide and fold, stream projection | `src/Agent42.Agents/Research/AgentGrain.Research.cs` |
 | Checklist event payload | `src/Agent42.Agents/Research/ResearchTodo.cs`, `src/Agent42.Agents/Conversations/AgentStreamEvent.cs` |
 | Seeding | `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs` (`EnsureResearchAgentAsync`), `src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs` |

@@ -9,6 +9,9 @@ amends: [0003, 0016, 0046, 0078]
 
 # Seed a built-in Research agent that loops plan → search → reflect, with a live checklist
 
+> **Amended by [ADR 0085](0085-copilot-agent-kind.md) (2026-10-05): `Kind` is no longer seed-only.** A create request
+> may claim `copilot` (research and unknown kinds are a 400); every update still preserves the stored kind.
+
 ## Context
 
 The web tools (ADR 0011/0027) and RAG already exist, but no agent plans a question into steps, works through

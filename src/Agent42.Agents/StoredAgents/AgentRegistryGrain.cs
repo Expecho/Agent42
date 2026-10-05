@@ -52,8 +52,15 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
 
         if (existing < 0)
         {
-            // A request can never create a built-in kind: Kind is set only by seeding (ADR 0082).
-            return await InsertAsync(agent with { Kind = null });
+            // A request can never create the research kind: that is set only by seeding (ADR 0082). Copilot is the
+            // one kind a user may choose, on create only; anything else stores an ordinary agent. A per-chat-only
+            // kind is never continuous.
+            var kind = AgentKinds.IsCopilot(agent.Kind) ? AgentKinds.Copilot : null;
+            return await InsertAsync(agent with
+            {
+                Kind = kind,
+                Continuous = agent.Continuous && !AgentKinds.IsPerChatOnly(kind),
+            });
         }
 
         // ── Update ── keep the existing hash by default; the request never carries it (the grain is the
@@ -79,16 +86,16 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             storedHash = newHash;
         }
 
-        // Kind is preserved exactly like the hash: the grain is the authority, the request never carries it
-        // (ADR 0082). A research agent is per-chat only (ADR 0016: a continuous chat is one 2 MB grain, and
-        // research turns are the largest turns there are), so Continuous is forced off rather than trusted.
+        // Kind is preserved exactly like the hash: the grain is the authority, and an update never changes it
+        // (ADR 0082). Research and copilot agents are per-chat only (ADR 0016: a continuous chat is one 2 MB
+        // grain), so Continuous is forced off rather than trusted.
         var updated = agent with
         {
             CreatedAt = previous.CreatedAt,
             UpdatedAt = now,
             ApiKeyHash = storedHash,
             Kind = previous.Kind,
-            Continuous = agent.Continuous && !AgentKinds.IsResearch(previous.Kind),
+            Continuous = agent.Continuous && !AgentKinds.IsPerChatOnly(previous.Kind),
         };
         agents[existing] = updated;
         await _state.WriteStateAsync();

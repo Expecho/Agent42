@@ -31,14 +31,22 @@ public static partial class AgentApi
 
         // Creates a new stored agent; the registry assigns its id and timestamps, and mints a per-agent
         // API key (ADR 0022) returned ONCE in the response body (only its hash is stored).
+        // Kind: null/"" is an ordinary agent and "copilot" is the one kind a user may choose. Research stays
+        // seed-only (ADR 0082), so it is refused here like any unknown kind instead of being silently dropped.
         app.MapPost("/api/agents", async (AgentUpsertRequest request, IGrainFactory grains, HttpContext http) =>
         {
+            if (!AgentKinds.IsUserSelectable(request.Kind))
+            {
+                return Results.Text("Unknown agent kind. Use \"copilot\" or omit it.", "text/plain",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var result = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition("", request.Name, request.Description, request.Model, request.SystemPrompt,
                     default, default, request.Continuous, request.EnabledTools,
                     // By NAME: McpExposed is the eleventh positional parameter and these call sites pass
                     // nine, so a positional append would silently land in ApiKeyHash (ADR 0065's scar).
-                    McpExposed: request.McpExposed));
+                    McpExposed: request.McpExposed, Kind: request.Kind));
             return Results.Json(new AgentSaveResponse(result.Agent, result.PlaintextApiKey));
         });
 
@@ -93,7 +101,7 @@ public static partial class AgentApi
         var prompt = form["prompt"].ToString();
         var files = form.Files;
 
-        if (ValidateAgentRunFiles(files) is { } fileError)
+        if (ValidateAgentRunFiles(files, AgentKinds.IsCopilot(definition?.Kind)) is { } fileError)
         {
             return fileError;
         }
@@ -174,8 +182,9 @@ public static partial class AgentApi
     // Validates EVERY file before a conversation is minted (constraint 13): a batch with any oversize or
     // unsupported file is rejected WHOLE (400), so automation retries cleanly instead of getting a
     // half-processed run. Media type is resolved by extension (the browser lies about .docx - ADR 0007).
-    // Returns null when the batch is acceptable.
-    private static IResult? ValidateAgentRunFiles(IFormFileCollection files)
+    // Returns null when the batch is acceptable. A copilot agent takes no documents (it has no retrieval), so for one
+    // a document is refused here too, before anything is ingested.
+    private static IResult? ValidateAgentRunFiles(IFormFileCollection files, bool copilot)
     {
         foreach (var file in files)
         {
@@ -193,6 +202,11 @@ public static partial class AgentApi
                 return Results.Text(
                     $"'{file.FileName}' is not a supported image or document type.",
                     "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (copilot && !mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Text(CopilotDocumentsRefused, "text/plain", statusCode: StatusCodes.Status400BadRequest);
             }
         }
 

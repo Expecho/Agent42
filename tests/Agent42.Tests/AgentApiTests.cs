@@ -385,6 +385,49 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.DoesNotContain(after!, a => a.Id == created.Id);
     }
 
+    // A create may claim the copilot kind (forced per-chat). Research stays seed-only and an unknown kind is refused
+    // with a 400 instead of being stored as an ordinary agent the caller didn't ask for.
+    [Fact]
+    public async Task CreateAgent_Kind_CopilotAcceptedOthersRejected()
+    {
+        using var copilotRes = await Client.PostAsJsonAsync("/api/agents",
+            new AgentUpsertRequest("Pilot", "", "fake-model", "sys", Continuous: true, Kind: AgentKinds.Copilot));
+        copilotRes.EnsureSuccessStatusCode();
+        var copilot = (await copilotRes.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+        Assert.Equal(AgentKinds.Copilot, copilot.Kind);
+        Assert.False(copilot.Continuous);
+
+        foreach (var kind in new[] { AgentKinds.Research, "made-up" })
+        {
+            using var res = await Client.PostAsJsonAsync("/api/agents",
+                new AgentUpsertRequest("Impostor", "", "fake-model", "sys", Kind: kind));
+            Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        }
+    }
+
+    // PUT ignores Kind: an agent's kind is fixed at create, in both directions.
+    [Fact]
+    public async Task UpdateAgent_IgnoresKind()
+    {
+        var plain = (await (await Client.PostAsJsonAsync("/api/agents",
+            new AgentUpsertRequest("Plain", "", "fake-model", "sys")))
+            .Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+        var copilot = (await (await Client.PostAsJsonAsync("/api/agents",
+            new AgentUpsertRequest("Pilot", "", "fake-model", "sys", Kind: AgentKinds.Copilot)))
+            .Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+
+        var updatedPlain = (await (await Client.PutAsJsonAsync($"/api/agents/{plain.Id}",
+            new AgentUpsertRequest("Plain", "", "fake-model", "sys", Kind: AgentKinds.Copilot)))
+            .Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+        var updatedCopilot = (await (await Client.PutAsJsonAsync($"/api/agents/{copilot.Id}",
+            new AgentUpsertRequest("Pilot", "", "fake-model", "sys", Continuous: true)))
+            .Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+
+        Assert.Null(updatedPlain.Kind);
+        Assert.Equal(AgentKinds.Copilot, updatedCopilot.Kind);
+        Assert.False(updatedCopilot.Continuous);
+    }
+
     // AC6: starting a chat with an agent id binds it; the conversation reports its agent and
     // the agent's pinned model.
     [Fact]
@@ -896,6 +939,52 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.Contains(hits, h => h.FileName == "guide.pdf");
     }
 
+    // AC3 (agent-run path): a copilot agent's kind reaches the conversation through the agent-run bind, and its turn
+    // runs. A document is refused before anything is ingested, because a copilot chat has no retrieval.
+    [Fact]
+    public async Task AgentRun_CopilotAgent_BindsItsKind_AndRefusesDocuments()
+    {
+        var (_, apiKey) = await CreateAgentAsync("Pilot", AgentKinds.Copilot);
+
+        using (var doc = await AgentRunAsync(apiKey, "what does the doc say",
+            (TestDocuments.SampleTwoPagePdf(), DocumentMediaTypes.Pdf, "guide.pdf")))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, doc.StatusCode);
+        }
+
+        using var res = await AgentRunAsync(apiKey, "hello");
+        Assert.Equal(HttpStatusCode.Accepted, res.StatusCode);
+        var convId = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("conversationId").GetString()!;
+        await PollMessagesAsync(convId, t => t.Any(x => x.Role == "assistant"));
+        var binding = await (await Client.GetAsync($"/api/conversations/{convId}/agent"))
+            .Content.ReadFromJsonAsync<AgentBinding>();
+        Assert.Equal(AgentKinds.Copilot, binding!.Kind);
+    }
+
+    // A document uploaded into a copilot chat is refused with a 400 before ingestion (no embedding call is made).
+    [Fact]
+    public async Task CopilotChat_DocumentUpload_IsRefused()
+    {
+        const string convId = "api-copilot-upload";
+        var (agentId, _) = await CreateAgentAsync("Pilot", AgentKinds.Copilot);
+        using (var chat = await Client.PostAsJsonAsync($"/api/chat/{convId}", new ChatRequest("hi", null, agentId)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync();
+        }
+
+        using var form = new MultipartFormDataContent();
+        var part = new ByteArrayContent(TestDocuments.SampleTwoPagePdf());
+        part.Headers.ContentType = new MediaTypeHeaderValue(DocumentMediaTypes.Pdf);
+        form.Add(part, "file", "guide.pdf");
+        using var upload = await Client.PostAsync($"/api/conversations/{convId}/attachments", form);
+
+        Assert.Equal(HttpStatusCode.BadRequest, upload.StatusCode);
+        var index = new InMemoryDocumentIndex();
+        var query = (await new DeterministicEmbeddingGenerator().GenerateAsync(["magrathea"]))[0].Vector;
+        Assert.Empty(await index.SearchAsync($"local-dev/{convId}", query, topK: 3));
+    }
+
     // AC11: a batch with an unsupported (or oversize) file is rejected WHOLE (400) and no conversation
     // is created (constraint 13) — automation retries cleanly rather than getting a half-processed run.
     [Fact]
@@ -913,10 +1002,10 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
     }
 
     // Creates an agent and returns its id + the once-shown raw API key.
-    private async Task<(string Id, string ApiKey)> CreateAgentAsync(string name = "Runner")
+    private async Task<(string Id, string ApiKey)> CreateAgentAsync(string name = "Runner", string? kind = null)
     {
         var body = (await (await Client.PostAsJsonAsync("/api/agents",
-            new AgentUpsertRequest(name, "", "gpt-4o", "You are a runner.")))
+            new AgentUpsertRequest(name, "", "gpt-4o", "You are a runner.", Kind: kind)))
             .Content.ReadFromJsonAsync<AgentSaveResponse>())!;
         return (body.Agent.Id, body.ApiKey!);
     }

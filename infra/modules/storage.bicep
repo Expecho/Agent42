@@ -80,5 +80,18 @@ resource skillPackagesContainer 'Microsoft.Storage/storageAccounts/blobServices/
   }
 }
 
+// The copilot agent kind: the Copilot runtime's own session files (its transcript, workspace and checkpoints), one
+// prefix per conversation ({userId}/{conversationId}/). The AF session in Cosmos only points at them, so without
+// this container a deploy would lose every copilot chat's context. Private and never handed a SAS; reached only by
+// the app MI's account-scoped Storage Blob Data Contributor grant, so it needs NO new role assignment.
+// A fixed literal for the same reason as `skill-packages`: BlobCopilotSessionStore hardcodes the same name.
+resource copilotSessionsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'copilot-sessions'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 output accountName string = account.name
 output blobEndpoint string = account.properties.primaryEndpoints.blob
