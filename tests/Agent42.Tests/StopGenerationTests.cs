@@ -313,6 +313,28 @@ public sealed class StopGenerationTests(SharedClusterFixture fixture) : SharedCl
         Assert.DoesNotContain(ReplyTail, history[1].Text ?? "", StringComparison.Ordinal);
     }
 
+    // AC6 (copilot): a stopped copilot turn is persisted like any other. The mirror writes nothing for a cancelled
+    // run, the same as a ChatClientAgent, so the grain's hand-append is the one writer and the partial reply survives.
+    [Fact]
+    public async Task Stop_CopilotTurn_PersistsPartialReply()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("stop-copilot-conversation");
+        await agent.BindAgentAsync(new AgentBinding(
+            "copilot-agent", "Pilot", "You fly.", TestSiloConfigurator.DefaultModel, null, AgentKinds.Copilot));
+        var gates = OpenStreamGates();
+
+        var turn = DrainAsync(agent, "tell me a long story");
+        await ReachedAsync(gates);
+        await agent.StopAsync();
+        CloseStreamGates();
+        await turn;
+
+        var history = await agent.GetHistoryAsync();
+        Assert.Equal(["user", "assistant"], history.Select(t => t.Role));
+        Assert.Contains(ReplyHead, history[1].Text ?? "", StringComparison.Ordinal);
+        Assert.DoesNotContain(ReplyTail, history[1].Text ?? "", StringComparison.Ordinal);
+    }
+
     // --- helpers -------------------------------------------------------------------------------------
 
     private async Task<IAgentGrain> ResearchChatAsync(string key)

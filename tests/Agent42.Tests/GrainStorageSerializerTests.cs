@@ -185,6 +185,37 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal(["https://linked.example/seeded-by-an-mcp-result.pdf"], restored.SeededFetchableUrls);
     }
 
+    // AC15 (copilot kind): the copilot kind adds NO persisted grain field. Its two records ride the existing
+    // SerializedSession string, which carries Copilot's transcript pointer (sessionId) and the history mirror
+    // (stateBag), and both survive the Cosmos JSON path.
+    [Fact]
+    public async Task CopilotSession_MirrorRoundTripsThroughStorage()
+    {
+        var agent = new CopilotUnavailableAgent("offline");
+        var session = await agent.DeserializeSessionAsync(System.Text.Json.JsonSerializer.SerializeToElement(
+            new { sessionId = "copilot-session-1", stateBag = new Microsoft.Agents.AI.AgentSessionStateBag().Serialize() }));
+        Microsoft.Agents.AI.AgentSessionExtensions.SetInMemoryChatHistory(session,
+        [
+            new Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.User, "hello"),
+            new Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "hi there"),
+        ]);
+        var serialized = System.Text.Json.JsonSerializer.Serialize(await agent.SerializeSessionAsync(session));
+
+        var restored = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(new AgentGrainState
+        {
+            AgentKind = AgentKinds.Copilot,
+            SerializedSession = serialized,
+        }));
+
+        Assert.Equal(AgentKinds.Copilot, restored.AgentKind);
+        var back = await agent.DeserializeSessionAsync(
+            System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(restored.SerializedSession!));
+        Assert.Equal("copilot-session-1",
+            (await agent.SerializeSessionAsync(back)).GetProperty("sessionId").GetString());
+        Assert.True(Microsoft.Agents.AI.AgentSessionExtensions.TryGetInMemoryChatHistory(back, out var mirror));
+        Assert.Equal(["hello", "hi there"], mirror!.Select(m => m.Text));
+    }
+
     // AC5 (ADR 0082): the research fields round-trip on the path that matters at rest. The seeded tool list is built
     // exactly as EnsureResearchAgentAsync builds it: a spread there would be unreadable (the trap pinned below).
     [Fact]

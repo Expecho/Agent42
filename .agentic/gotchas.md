@@ -803,8 +803,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   1.13.0, ADR 0048): `AgentFileSkillsSource` returns an **empty list — it does not throw** — for that
   directory. So the framework enforces `name == directory name`, skill names are unique for free, and a
   renamed directory that forgets its `SKILL.md` drops the skill out of the picker with no error anywhere.
-- **Evidence:** `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent`'s `selectedSkillPaths`
-  gate and its `AIContextProviders` switch),
+- **Evidence:** `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`SelectedSkills`, shared with the copilot
+  composition since ADR 0085, and `BuildAgent`'s `AIContextProviders` switch),
   `src/Agent42.Agents/Tools/SkillCatalog.cs` (`Discover`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`NoToolModel_RegistersNoTools_AndNoSkillsProvider`,
   `NoToolModel_StillGetsDocumentRetrieval`, `SkillsDisabled_DropsLoadSkill_KeepsRetrieval`,
@@ -815,7 +815,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `MemorySelection_IsNotIntersectedWithCapability` — the ADR 0057 three-way arm),
   `.agentic/decisions/0048-per-skill-selectable-tools.md`,
   `.agentic/decisions/0057-memory-as-a-selectable-tool.md`
-- **Verified:** 2026-08-29
+- **Verified:** 2026-10-05
 
 ### The boot chat is not created via `startNewConversation()` — seed its composer state explicitly
 
@@ -1279,10 +1279,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   echo must scope to the `[tools:…]` marker, because the `websearch` skill's description (injected into the
   system prompt) literally names `web_search`/`fetch_web_page`, so those substrings appear in the answer
   even when the tools do not.
-- **Evidence:** `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent`, the `SupportsHostedTools` swap),
+- **Evidence:** `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`SelectableTools`, the `hostedTools` swap; a
+  copilot chat passes `false` and always gets the shims, ADR 0085),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`HostedToolsModel_SwapsWebShimsForHostedTools`, `ToolNames`),
   `.agentic/decisions/0015-hosted-tools-on-responses-path.md`
-- **Verified:** 2026-07-15
+- **Verified:** 2026-10-05
 
 ### Cosmos containers must be pre-declared in Bicep
 
@@ -3912,3 +3913,56 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ArtifactToolTests.cs` (`ArtifactTools_StoreOctetStream`),
   `tests/Agent42.Tests/ArtifactsApiTests.cs` (`AttachmentProxies_SendNoSniff`)
 - **Verified:** 2026-10-03
+
+### The Copilot runtime calls custom tools OFF the grain's scheduler — bind every tool handed to it to the activation
+
+- **Claim:** a `FunctionInvokingChatClient` calls a tool from the turn itself, so Agent42's tools (grain methods that
+  touch `_state`, register reminders and call grains) have always run on the activation. The Copilot runtime calls a
+  custom tool from the SDK's RPC thread instead (measured: a turn started on an exclusive scheduler saw
+  `thread=12 onExclusive=False syncCtx=null`). An unwrapped tool then races grain state, and a reminder registration
+  fails outright. Every `AIFunction` handed to an out-of-process agent must be wrapped in `SchedulerBoundAIFunction`
+  with `TaskScheduler.Current` captured in `BuildAgent`. Mutation-checked: removing the wrap fails
+  `CopilotTool_InvokedFromForeignThread_RunsOnGrainScheduler` and two reminder tests.
+- **Evidence:** `src/Agent42.Agents/Copilot/SchedulerBoundAIFunction.cs`, `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs`
+  (`CopilotFunctions`), `tests/Agent42.Tests/CopilotAgentTests.cs`
+- **Verified:** 2026-10-05
+
+### A Copilot AF session is only a POINTER — its transcript lives in `SessionFs`, and AF 1.22 cannot resume it
+
+- **Claim:** `GitHubCopilotAgent.SerializeSessionAsync` returns `{"sessionId":...,"stateBag":{}}` and nothing else. The
+  model's real history is the runtime's session files (`events.jsonl` about 26 KB per tool turn), which the copilot
+  kind keeps in Blob through `SessionFs` (`copilot-sessions`). Without them a resume throws `Session not found`. So the
+  grain session is NOT a backup of a copilot chat, and the Blob prefix must be deleted with the chat. Agent
+  Framework **1.22.0** drops `CreateSessionFsProvider` when it builds the resume config (turn 2 throws
+  `CreateSessionFsProvider is required ... when CopilotClientOptions.SessionFs is configured`). 1.23.0 copies it, so
+  never move `Microsoft.Agents.AI.GitHub.Copilot` below 1.23.0. Under `CopilotClientMode.Empty`, every session AND
+  resume config must also carry `AvailableTools` (else `ArgumentException`).
+- **Evidence:** `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs`, `Directory.Packages.props` (the AF pin comment),
+  `tests/Agent42.Tests/LiveCopilotTests.cs` (`LiveCopilot_ToolTurn_ResumesFromSessionFs`)
+- **Verified:** 2026-10-05
+
+### A non-`ChatClientAgent` session has NO in-memory history until a run completes — seed it, or a stopped first turn is dropped
+
+- **Claim:** the grain's stopped-turn hand-append (ADR 0078) and every history reader go through
+  `TryGetInMemoryChatHistory`, which is false until something has set the state. A `ChatClientAgent`'s history provider
+  initializes it when a run starts. A custom agent (the copilot mirror, `CopilotChatAgent`) only sets it when a run
+  FINISHES. So a first turn that is stopped finds no history, `AppendStoppedTurnToSession` returns false, and the turn
+  is silently not persisted (measured: `Stop_CopilotTurn_PersistsPartialReply` came back with an empty history). Any
+  `AIAgent` the grain runs that is not a `ChatClientAgent` must seed an empty list on create and on deserialize.
+- **Evidence:** `src/Agent42.Agents/Copilot/CopilotChatAgent.cs` (`WithMirror`),
+  `tests/Agent42.Tests/StopGenerationTests.cs` (`Stop_CopilotTurn_PersistsPartialReply`)
+- **Verified:** 2026-10-05
+
+### `Microsoft.Agents.AI.GitHub.Copilot` downloads the CLI of the SDK it was PACKED with — reference `GitHub.Copilot.SDK` directly
+
+- **Claim:** the runtime binary comes from the SDK's MSBuild targets (downloaded per RID and SHA256-checked). For a
+  project that references the SDK only transitively, the AF package's `buildTransitive` imports the targets of
+  `_MicrosoftAgentsAICopilotSdkPackagedVersion` (1.0.14, so CLI 1.0.85 for AF 1.23.0), not the pinned SDK (1.0.16,
+  CLI 1.0.90). Tests and DevHost silently shipped a different runtime than the Backend until they got a direct
+  `GitHub.Copilot.SDK` `PackageReference`. Every project whose output runs the runtime needs one. Separately, in a
+  file-based spike the SDK's own bundled launch failed (`Copilot runtime wrapper not found ... copilot-runtime.exe`),
+  so spikes and the app pass an explicit `RuntimeConnection.ForStdio(.../runtimes/<rid>/native/copilot)`.
+- **Evidence:** `tests/Agent42.Tests/Agent42.Tests.csproj`, `tools/Agent42.DevHost/Agent42.DevHost.csproj`,
+  `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`RuntimePath`)
+- **Verified:** 2026-10-05
+

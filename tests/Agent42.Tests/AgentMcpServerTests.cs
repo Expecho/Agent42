@@ -244,6 +244,25 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         Assert.Equal(AgentKinds.Research, binding!.Kind);
     }
 
+    // AC3 (MCP path): a copilot agent's kind reaches the conversation through the MCP bind, and the caller gets the
+    // mirrored answer.
+    [Fact]
+    public async Task AskAgent_CopilotAgent_BindsItsKindAndReplies()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(Owner);
+        var saved = await registry.SaveAsync(new AgentDefinition(
+            "", "Pilot", "", TestSiloConfigurator.DefaultModel, "You fly.", default, default,
+            McpExposed: true, Kind: AgentKinds.Copilot));
+
+        var reply = await AskAgentAsync(saved.PlaintextApiKey!, "hello");
+
+        Assert.False(reply.IsError, reply.Text);
+        Assert.False(string.IsNullOrWhiteSpace(reply.Text));
+        var binding = await Cluster.GrainFactory
+            .GetGrain<IAgentGrain>($"{Owner}/{reply.ConversationId}").GetAgentBindingAsync();
+        Assert.Equal(AgentKinds.Copilot, binding!.Kind);
+    }
+
     // ---- Exclusions (C3, C13) ---------------------------------------------------------------------
 
     // AC9. Asserts the EFFECT — zero recalls and zero retains — never the selection list. The repo's own

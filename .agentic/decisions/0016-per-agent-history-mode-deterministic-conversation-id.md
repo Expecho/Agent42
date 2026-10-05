@@ -7,6 +7,9 @@ tags: [agents, conversations, history, routing, agent-definition, continuous, se
 
 # Per-agent history mode via a deterministic conversation id
 
+> **Amended by [ADR 0085](0085-copilot-agent-kind.md) (2026-10-05): a copilot agent is per-chat only too.** The registry
+> forces `Continuous = false` for it and the editor locks the box: its transcript lives outside the grain.
+
 > **Amended by [ADR 0082](0082-seeded-research-agent-loop.md) (2026-09-22): a research agent is per-chat only.** The registry forces `Continuous = false`
 > for it and the editor locks the box — research turns are the largest turns there are, and a continuous chat is
 > one 2 MB grain.

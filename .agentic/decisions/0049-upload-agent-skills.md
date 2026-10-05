@@ -8,6 +8,10 @@ amends: 0048 (per-deployment → per-user, and the "no ordering hazard" clause),
 
 # Title: Upload your own agent skills (`.md` or `.zip`)
 
+> **Amended by [ADR 0085](0085-copilot-agent-kind.md) (2026-10-05): in a copilot chat, uploaded skills are loaded by
+> Copilot natively** (`SkillDirectories`), not by `AgentSkillsProvider`, so `TruncatingSkillsProvider`'s body bound does
+> not apply there; resource files are read through a path-scoped, size-capped `read_skill_resource`.
+
 > **Amends [ADR 0048](0048-per-skill-selectable-tools.md)**, in the style of
 > [ADR 0026](0026-per-mcp-server-selectable-tools.md)/[0042](0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md)/[0044](0044-persistent-topbar-action-cluster.md)/[0047](0047-native-share-for-read-only-links.md).
 > Two of 0048's statements are re-scoped, not overturned: the skills portion of `GET /api/tools`

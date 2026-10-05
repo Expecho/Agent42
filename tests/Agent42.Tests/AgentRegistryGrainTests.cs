@@ -211,18 +211,43 @@ public sealed class AgentRegistryGrainTests(SharedClusterFixture fixture) : Shar
         Assert.Equal(seeded.ApiKeyHash, updated.ApiKeyHash);
     }
 
-    // Kind is set ONLY by seeding (ADR 0082): an insert that claims a kind stores an ordinary agent, and an ordinary
-    // agent can still be continuous.
-    [Fact]
-    public async Task Insert_CannotClaimAKind()
+    // Research is set ONLY by seeding (ADR 0082): an insert that claims it, or an unknown kind, stores an ordinary
+    // agent, and an ordinary agent can still be continuous. Copilot is the one kind a create may claim, and it is
+    // forced per-chat.
+    [Theory]
+    [InlineData(AgentKinds.Research, null, true)]
+    [InlineData("made-up", null, true)]
+    [InlineData(AgentKinds.Copilot, AgentKinds.Copilot, false)]
+    public async Task Insert_CanClaimCopilot_NotResearch(string claimed, string? expectedKind, bool expectedContinuous)
     {
-        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("registry-research-insert");
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>($"registry-kind-insert-{claimed}");
 
         var created = (await registry.SaveAsync(new AgentDefinition(
             "", "Impostor", "", "fake-model", "sys", default, default, Continuous: true,
-            Kind: AgentKinds.Research))).Agent;
+            Kind: claimed))).Agent;
 
-        Assert.Null(created.Kind);
-        Assert.True(created.Continuous);
+        Assert.Equal(expectedKind, created.Kind);
+        Assert.Equal(expectedContinuous, created.Continuous);
+    }
+
+    // An update never changes Kind in either direction: it cannot turn an ordinary agent into a copilot one, and a
+    // copilot agent stays copilot (and per-chat) whatever the request says.
+    [Fact]
+    public async Task Update_PreservesCopilotKind_AndForcesPerChat()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("registry-copilot-update");
+        var copilot = (await registry.SaveAsync(new AgentDefinition(
+            "", "Pilot", "", "fake-model", "sys", default, default, Kind: AgentKinds.Copilot))).Agent;
+        var plain = (await registry.SaveAsync(new AgentDefinition(
+            "", "Plain", "", "fake-model", "sys", default, default))).Agent;
+
+        var updatedCopilot = (await registry.SaveAsync(copilot with { Name = "Pilot 2", Kind = null, Continuous = true })).Agent;
+        var updatedPlain = (await registry.SaveAsync(plain with { Kind = AgentKinds.Copilot, Continuous = true })).Agent;
+
+        Assert.Equal("Pilot 2", updatedCopilot.Name);
+        Assert.Equal(AgentKinds.Copilot, updatedCopilot.Kind);
+        Assert.False(updatedCopilot.Continuous);
+        Assert.Null(updatedPlain.Kind);
+        Assert.True(updatedPlain.Continuous);
     }
 }

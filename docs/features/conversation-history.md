@@ -215,6 +215,9 @@ drag-and-drop.
 and skips the session write in the grain. The turn-scoped `_ephemeral` field is cleared in the
 turn's `finally` and reset on the two persisting entry points. Documents are blocked at the
 composer in an incognito chat, because RAG ingestion writes durable chunks.
+A copilot agent's chat refuses incognito turns altogether (ADR 0085): the Copilot runtime writes its
+transcript to Blob during the turn, so the grain answers an ephemeral turn there with a refusal before
+anything runs, and the client locks the toggle off.
 
 ### Read-only share links (ADR 0035)
 

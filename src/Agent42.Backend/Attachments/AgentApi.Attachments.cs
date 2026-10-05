@@ -77,6 +77,13 @@ public static partial class AgentApi
         string fileName, byte[] bytes, DocumentIngestionService ingestion, IGrainFactory grains,
         string ownerKey, string contentType)
     {
+        // A copilot chat has no document retrieval, so refuse BEFORE ingesting: ingesting would embed the document
+        // through the user's embedding provider for nothing.
+        if (AgentKinds.IsCopilot((await grains.GetGrain<IAgentGrain>(ownerKey).GetAgentBindingAsync())?.Kind))
+        {
+            return Results.Text(CopilotDocumentsRefused, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+        }
+
         int chunkCount;
         try
         {

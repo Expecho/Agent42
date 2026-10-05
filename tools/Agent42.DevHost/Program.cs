@@ -186,6 +186,10 @@ builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
 // fails activation rather than disabling memory.
 builder.Services.AddSingleton(new HindsightIntegration(null));
 
+// Copilot agents offline: the in-process twin runs a copilot chat on the canned client, with no Copilot runtime and
+// no network. The grain resolves the factory optionally; registered so copilot chats work in DevHost.
+builder.Services.AddSingleton<ICopilotAgentFactory, ChatClientCopilotAgentFactory>();
+
 // Web Push offline (ADR 0028): no VAPID keys, so the no-op sender — the async reply paths run end to end
 // but push nothing. Every AgentGrain host must register an IPushNotificationSender or activation fails, and
 // every host that maps MapAgentApi must register PushConfig or /api/push/config's param inference breaks

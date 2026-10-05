@@ -25,6 +25,10 @@ public static partial class AgentApi
     // ingested for retrieval and never stored as attachments (ADR 0007).
     private const long MaxAttachmentBytes = 10 * 1024 * 1024;
 
+    // A copilot agent's chat has no document retrieval (the copilot composition has no context providers), so both
+    // document paths (the browser upload and /api/agent-run) refuse a document with this, before ingesting it.
+    private const string CopilotDocumentsRefused = "A copilot agent's chat doesn't support documents.";
+
     public static IEndpointRouteBuilder MapAgentApi(this IEndpointRouteBuilder app)
     {
         MapConversationEndpoints(app);
