@@ -21,6 +21,9 @@ export let activeId = crypto.randomUUID();
 export let pendingAgentId = null;
 // The agent id of the current chat (fresh or resumed). Drives the picker lock + label only.
 export let activeAgentId = null;
+// The agent kind of the current chat ("research", "copilot", or null for a plain or ordinary agent chat). Set with
+// activeAgentId. The composer reads it: a copilot chat takes no documents.
+export let activeAgentKind = null;
 export async function selectConversation(id) {
   closeDrawer();
   if (streaming || id === activeId) return;
@@ -60,11 +63,13 @@ export async function selectConversation(id) {
     const binding = agentRes.ok ? await agentRes.json() : null;
     if (binding) {
       activeAgentId = binding.agentId;
+      activeAgentKind = binding.kind ?? null;
       pendingAgentId = null;
       setModel(binding.model);
       lockPicker(binding.name, binding.model);
     } else {
       activeAgentId = null;
+      activeAgentKind = null;
       pendingAgentId = null;
       unlockPicker();
     }
@@ -105,6 +110,7 @@ export function startNewConversation() {
   voice.stop(); // exit hands-free mode when switching chats (ADR 0037)
   activeId = crypto.randomUUID();
   activeAgentId = null;
+  activeAgentKind = null;
   pendingAgentId = null;
   // A new regular chat starts from the user's default tool set (ADR 0021); null profile default = all.
   setChatTools(profile.enabledTools ?? allToolKeys());
@@ -134,6 +140,10 @@ export function setActiveId(value) {
 
 export function setActiveAgentId(value) {
   activeAgentId = value;
+}
+
+export function setActiveAgentKind(value) {
+  activeAgentKind = value;
 }
 
 export function setPendingAgentId(value) {

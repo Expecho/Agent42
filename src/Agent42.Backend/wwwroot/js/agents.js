@@ -2,8 +2,8 @@
 
 import { clearPendingAttachments } from "./attachments.js";
 import { cacheGet, cachePut } from "./cache.js";
-import { selectConversation, setActiveAgentId, setActiveId, setPendingAgentId } from "./conversations.js";
-import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentContinuousNote, agentDescriptionInput, agentDialog, agentForm, agentFormTitle, agentKeyCopyBtn, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
+import { selectConversation, setActiveAgentId, setActiveAgentKind, setActiveId, setPendingAgentId } from "./conversations.js";
+import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentContinuousNote, agentDescriptionInput, agentDialog, agentForm, agentFormTitle, agentKeyCopyBtn, agentKindField, agentKindSelect, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
 import { closeDrawer } from "./drawer.js";
 import { defaultModel, fillModelOptions, modelLabel, selectModel, setModel } from "./models.js";
 import { streaming } from "./send.js";
@@ -62,12 +62,12 @@ export function renderAgents() {
     model.title = agent.model;
 
     btn.append(name);
-    // The seeded research agent (ADR 0082) runs a plan/search/reflect loop, which the name alone may not say
-    // once the user has renamed it.
-    if (agent.kind === "research") {
+    // The seeded research agent (ADR 0082) runs a plan/search/reflect loop and a copilot agent runs the GitHub
+    // Copilot loop, which the name alone may not say.
+    if (agent.kind === "research" || agent.kind === "copilot") {
       const badge = document.createElement("span");
       badge.className = "agent__badge";
-      badge.textContent = "research";
+      badge.textContent = agent.kind;
       btn.append(badge);
     }
     btn.append(model);
@@ -121,7 +121,10 @@ export function startAgentChat(agent) {
   // (The continuous branch above returns through selectConversation, which enables share correctly.)
   setTopbarShare(null);
   setActiveAgentId(agent.id);
+  setActiveAgentKind(agent.kind ?? null);
   setPendingAgentId(agent.id);
+  // A copilot chat refuses incognito turns (the runtime records the turn as it runs), so the toggle is locked off.
+  if (agent.kind === "copilot") setIncognito(false, false);
   clearPendingAttachments();
   clearThread();
   setEmptyVisible(true);
@@ -141,14 +144,10 @@ function openAgentDialog(agent) {
   agentDescriptionInput.value = agent?.description ?? "";
   agentSystemPromptInput.value = agent?.systemPrompt ?? "";
   agentContinuousInput.checked = agent?.continuous ?? false;
-  // A research agent is per-chat only (ADR 0082): its turns are the largest there are, and a continuous chat is
-  // one 2 MB grain (ADR 0016). The server forces it off whatever is sent; the lock says so before a save does.
-  const research = agent?.kind === "research";
-  agentContinuousInput.disabled = research;
-  if (research) agentContinuousInput.checked = false;
-  agentContinuousNote.textContent = research
-    ? "A research agent always starts a fresh chat: its turns are too large to share one ongoing history."
-    : CONTINUOUS_NOTE;
+  // The type is chosen on create only: an agent's kind never changes once saved, so the field is hidden on edit.
+  agentKindField.hidden = !!agent;
+  agentKindSelect.value = "";
+  applyKindLock(agent?.kind ?? null);
   agentMcpExposedInput.checked = agent?.mcpExposed ?? false;
   // Remembered so saveAgent can spot the OFF -> ON transition (ADR 0070). Read at open rather than from
   // the stored agent at save time, because the list is reloaded asynchronously and could have moved on.
@@ -177,6 +176,18 @@ function openAgentDialog(agent) {
   agentNameInput.focus();
 }
 
+// A research or copilot agent is per-chat only. Research turns are the largest there are (ADR 0082), a copilot chat's
+// transcript lives outside the grain, and a continuous chat is one 2 MB grain (ADR 0016). The server forces the flag
+// off whatever is sent; the lock says so before a save does. Runs on open and when the create-time type changes.
+function applyKindLock(kind) {
+  const perChatOnly = kind === "research" || kind === "copilot";
+  agentContinuousInput.disabled = perChatOnly;
+  if (perChatOnly) agentContinuousInput.checked = false;
+  agentContinuousNote.textContent = perChatOnly
+    ? `A ${kind} agent always starts a fresh chat: its history can't be shared across chats.`
+    : CONTINUOUS_NOTE;
+}
+
 // Set by the Regenerate-key button so the next save rotates the key (ADR 0022). Reset on every
 // dialog open and after each save, so a plain Save never regenerates.
 let pendingRegenerate = false;
@@ -194,6 +205,8 @@ async function saveAgent() {
     continuous: agentContinuousInput.checked,
     mcpExposed: agentMcpExposedInput.checked,
   };
+  // The type rides a create only; the server ignores it on an update.
+  if (!editingAgentId && agentKindSelect.value) payload.kind = agentKindSelect.value;
   // ADR 0070's headline consequence, surfaced at the one moment the user can act on it. The ADR 0022 key
   // was minted under a WRITE-ONLY contract — it could push a prompt in and read nothing back. Exposing the
   // agent hands the reply out, which can carry RAG excerpts, the user's street address and prior turns of a
@@ -295,6 +308,7 @@ export function wireAgents() {
   // this only ever fires while the flag is still settable.
   incognitoBtn.addEventListener("click", () => setIncognito(!ephemeral));
   addAgentBtn.addEventListener("click", () => openAgentDialog(null));
+  agentKindSelect.addEventListener("change", () => applyKindLock(agentKindSelect.value || null));
   agentCancelBtn.addEventListener("click", () => agentDialog.close());
   agentForm.addEventListener("submit", (e) => {
     e.preventDefault();

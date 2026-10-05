@@ -369,6 +369,10 @@ else
 // HindsightRegistration for what the two branches mean and why this is not inline here.
 builder.Services.AddHindsightMemory(builder.Configuration);
 
+// The copilot agent kind: the GitHub Copilot SDK's agent loop on the user's own provider, with its session files in
+// Blob. See CopilotRegistration and CopilotAgentFactory for the runtime's trust boundary.
+builder.Services.AddCopilotAgents(builder.Configuration);
+
 // Web Push notifications (ADR 0028): a push when an agent replies on an async path (a fired reminder or an
 // agent-run) while the user is away.
 //

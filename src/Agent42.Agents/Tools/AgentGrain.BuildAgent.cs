@@ -25,6 +25,140 @@ public sealed partial class AgentGrain
         // get NO function schema at all.
         var capabilities = _chatClientFactory.GetCapabilities(modelId);
 
+        // The user's selection (ADR 0021), resolved once and shared by both compositions below.
+        var enabled = EffectiveEnabledTools().ToHashSet(StringComparer.Ordinal);
+
+        // A copilot-kind chat on a tools-capable model runs the Copilot SDK's loop instead of a ChatClientAgent. It
+        // has the same tool selection and skill selection, but no context providers (see AgentGrain.Copilot.cs). A
+        // no-tools model falls through to a plain chat, the same rule research follows.
+        if (IsCopilotComposition(capabilities))
+        {
+            return BuildCopilotAgent(modelId, capabilities, enabled);
+        }
+
+        var tools = SelectableTools(capabilities, enabled, hostedTools: capabilities.SupportsHostedTools);
+
+        // Agent Skills: markdown skills read from directory paths — the ones shipped in the image
+        // (SkillCatalog) MERGED with the ones this user uploaded (ADR 0049, _userSkills, resolved on
+        // activation). The provider advertises each skill's name + description in the system prompt and
+        // exposes a `load_skill` tool so the agent pulls the full guidance only when a task matches
+        // (progressive disclosure). This grain has no human-in-the-loop approval step, so load_skill AND
+        // read_skill_resource are auto-approved — see the options below.
+        //
+        // Gated PER SKILL (ADR 0048, the ADR 0026 shape applied to skills): a skill is kept when the
+        // effective selection contains the `skills` wildcard (null==all / legacy) OR that skill's own
+        // `skill:{name}` key — see ToolCatalog.IsSkillEnabled, which cannot tell the two layers apart and
+        // must not. Capability (SupportsTools) is the outer gate, exactly as for the static keys.
+        // AgentFileSkillsSource treats each supplied path as a search root, so handing it the SELECTED
+        // directories is what filters the set (measured, 1.13.0).
+        //
+        // AgentSkillsProvider IS a tool (it exposes load_skill), so a selection that resolves to ZERO skills
+        // must DROP the provider, not merely advertise nothing — leaving it on hands the model a load_skill
+        // schema it can't use, the same trap the no-tools gate closes. That is why the provider is built only
+        // when the path list is non-empty. The RAG TextSearchProvider is NOT a tool and stays on whenever
+        // documents are present, regardless of capability or selection — the asymmetry is the point.
+        var selectedSkillPaths = SelectedSkills(capabilities, enabled).Select(s => s.Path).ToList();
+
+        // The provider's tools return UNBOUNDED text — a whole SKILL.md body, a whole resource file —
+        // straight into the session that becomes one 2 MB-capped Cosmos item (ADR 0004). Measured on 1.13.0:
+        // a 300 KB SKILL.md made load_skill return 300,087 characters. TruncatingSkillsProvider bounds every
+        // one of them, the way UserMcpToolProvider wraps MCP tool results, preserving each tool's name and
+        // schema so the model still calls them correctly. Its factory also carries the script ban and the
+        // two approval flags — see TruncatingSkillsProvider.ForSkillPaths and SkillToolLimits.
+        var skillsProvider = selectedSkillPaths.Count > 0
+            ? TruncatingSkillsProvider.ForSkillPaths(selectedSkillPaths)
+            : null;
+
+        // The context providers, which are NOT tools and are therefore gated differently from the list
+        // above. Built as a list rather than a tuple switch because there are now three independent
+        // conditions: a 3-dimensional switch would be eight unreadable arms, and cognitive_complexity_max
+        // is 15, enforced at build time by S3776.
+        //
+        // The gating asymmetry is the point (ADR 0013), and since ADR 0057 it is a THREE-way split, not a
+        // tools-vs-not one:
+        //   * AgentSkillsProvider IS a tool (it exposes load_skill) — gated by capability AND selection,
+        //     which is why it was already dropped above on a no-tools model.
+        //   * The RAG TextSearchProvider is NOT a tool and has NO catalog key — gated by neither; it stays
+        //     on whenever documents are present (ADR 0008).
+        //   * The Hindsight memory provider is NOT a tool either, but it DOES have a catalog key
+        //     (ToolCatalog.Memory, ADR 0057) — gated by selection but NOT by capability. It is the first
+        //     and only selectable key exempt from the selection ∩ capability intersection, because it never
+        //     passes through the tool list at all: a text-only model with memory selected still gets memory
+        //     (NoToolModel_StillGetsMemory, MemorySelection_IsNotIntersectedWithCapability).
+        //
+        // Memory differs from RAG in a second way worth naming, because it is the property ADR 0008 relied
+        // on and ADR 0056 gave up: RAG is gated per CONVERSATION (DocumentNames.Count > 0), so a
+        // document-free chat makes zero retrieval calls. Memory has no per-conversation analogue —
+        // spanning conversations is the whole feature — so within a selection that keeps it on, it runs on
+        // EVERY turn. ADR 0057 narrows who that is; it does not restore a per-conversation gate.
+        var contextProviders = new List<AIContextProvider>();
+        if (skillsProvider is not null)
+        {
+            contextProviders.Add(skillsProvider);
+        }
+
+        // The per-conversation gate of ADR 0008, WIDENED by ADR 0066 rather than removed: a document that
+        // arrived through read_web_document counts too. A conversation with neither list populated still
+        // makes zero retrieval calls — that property is what ADR 0008 rejected "always-on but ungated" to
+        // keep, and it is intact.
+        if (_state.State.DocumentNames.Count + _state.State.WebDocumentNames.Count > 0)
+        {
+            contextProviders.Add(BuildDocumentSearchProvider());
+        }
+
+        if (BuildMemoryProvider(enabled) is { } memoryProvider)
+        {
+            contextProviders.Add(memoryProvider);
+        }
+
+        // The research loop (ADR 0082): adds its todo provider for a research-kind chat on a tools-capable model,
+        // and is a no-op otherwise. The two With* calls below wrap the client and the agent the same way. Plain
+        // calls on purpose — S3776 charges branches, not calls, and this method has little headroom.
+        AddResearchProviders(contextProviders, capabilities);
+
+        // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
+        // state at bind time; a normal chat falls back to the default Agent 42 persona.
+        // Old Cosmos state has null persona fields, so existing chats fall back too.
+        return WithResearchLoop(new ChatClientAgent(
+            WithResearchBudget(_chatClientFactory.GetClient(modelId)),
+            new ChatClientAgentOptions
+            {
+                Name = _state.State.AgentName ?? "Agent42",
+                ChatOptions = new ChatOptions
+                {
+                    Instructions = WithDocumentAwareness(WithRenderingHints(_state.State.SystemPrompt ?? Instructions)),
+                    // A model that can't do function tools at all (ADR 0013) gets NO schema — including
+                    // the hosted ones — even if it somehow reported SupportsHostedTools.
+                    Tools = capabilities.SupportsTools ? tools : [],
+                },
+                // Built above: skills (a tool, so already dropped on a no-tools model), document RAG
+                // (ADR 0008, per-conversation) and long-term memory (ADR 0056, selectable since ADR 0057 —
+                // gated by the selection but NOT by capability). The reasoning that used to live here is
+                // with the list, so there is one explanation rather than two.
+                AIContextProviders = contextProviders,
+                // The provider injects retrieval as a ChatRole.User message tagged
+                // AgentRequestMessageSourceType.AIContextProvider. Left in the default history store it
+                // would be persisted into the serialized session — and it carries an attribution struct
+                // the default serializer can't handle, so SerializeSessionAsync would throw every turn
+                // (Step 1 spike). Excluding AIContextProvider (and ChatHistory) messages from storage
+                // keeps the session serializable and small (ADR 0004); retrieval still reaches the model.
+                ChatHistoryProvider = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
+                {
+                    StorageInputRequestMessageFilter = ExcludeInjectedContextMessages,
+                    // The response-side twin (ADR 0071): a reasoning model's "thinking" is streamed to the
+                    // client and then discarded, never stored. Without this the framework persists it —
+                    // measured, on both the streaming and the RunAsync path.
+                    StorageInputResponseMessageFilter = StripReasoningFromStorage,
+                }),
+            }), modelId);
+    }
+
+    // The tools this conversation may offer the model: the built-in ones, the ADR 0015 hosted swap when
+    // <paramref name="hostedTools"/>, the user's selection, then the user's MCP tools. Shared by the ChatClientAgent
+    // and the copilot composition, so the two can never disagree about what a selection grants. Extracted from
+    // BuildAgent unchanged, apart from the hosted-tools switch, which a copilot chat turns off.
+    private List<AITool> SelectableTools(ModelCapabilities capabilities, HashSet<string> enabled, bool hostedTools)
+    {
         // The agent's tools. Each is bound to this grain instance, so a tool can reach
         // Orleans (grain factory, reminders, state) directly through `this`.
         var getDateTime = AIFunctionFactory.Create(
@@ -149,7 +283,7 @@ public sealed partial class AgentGrain
             // provides them. A spread, not inline, because this method has little S3776 headroom.
             .. ArtifactTools(),
         ];
-        if (capabilities.SupportsHostedTools)
+        if (hostedTools)
         {
             tools.Add(new HostedWebSearchTool());
             tools.Add(new HostedCodeInterpreterTool());
@@ -167,7 +301,6 @@ public sealed partial class AgentGrain
         // below (Tools = SupportsTools ? … : []) — a text-only model still gets none, and code_interpreter
         // only survives on a hosted model where it was added at all. The skills provider is filtered in the
         // AIContextProviders switch, not here (it is a context provider, not in this list).
-        var enabled = EffectiveEnabledTools().ToHashSet(StringComparer.Ordinal);
         tools = [.. tools.Where(t => ToolCatalog.IsToolEnabled(t.Name, enabled))];
 
         // Remote MCP-server tools (config-driven remote MCP servers) are added AFTER the per-tool
@@ -194,122 +327,16 @@ public sealed partial class AgentGrain
             }
         }
 
-        // Agent Skills: markdown skills read from directory paths — the ones shipped in the image
-        // (SkillCatalog) MERGED with the ones this user uploaded (ADR 0049, _userSkills, resolved on
-        // activation). The provider advertises each skill's name + description in the system prompt and
-        // exposes a `load_skill` tool so the agent pulls the full guidance only when a task matches
-        // (progressive disclosure). This grain has no human-in-the-loop approval step, so load_skill AND
-        // read_skill_resource are auto-approved — see the options below.
-        //
-        // Gated PER SKILL (ADR 0048, the ADR 0026 shape applied to skills): a skill is kept when the
-        // effective selection contains the `skills` wildcard (null==all / legacy) OR that skill's own
-        // `skill:{name}` key — see ToolCatalog.IsSkillEnabled, which cannot tell the two layers apart and
-        // must not. Capability (SupportsTools) is the outer gate, exactly as for the static keys.
-        // AgentFileSkillsSource treats each supplied path as a search root, so handing it the SELECTED
-        // directories is what filters the set (measured, 1.13.0).
-        //
-        // AgentSkillsProvider IS a tool (it exposes load_skill), so a selection that resolves to ZERO skills
-        // must DROP the provider, not merely advertise nothing — leaving it on hands the model a load_skill
-        // schema it can't use, the same trap the no-tools gate closes. That is why the provider is built only
-        // when the path list is non-empty. The RAG TextSearchProvider is NOT a tool and stays on whenever
-        // documents are present, regardless of capability or selection — the asymmetry is the point.
-        var selectedSkillPaths = capabilities.SupportsTools
-            ? MergedSkills().Where(s => ToolCatalog.IsSkillEnabled(s.Name, enabled)).Select(s => s.Path).ToList()
-            : [];
-
-        // The provider's tools return UNBOUNDED text — a whole SKILL.md body, a whole resource file —
-        // straight into the session that becomes one 2 MB-capped Cosmos item (ADR 0004). Measured on 1.13.0:
-        // a 300 KB SKILL.md made load_skill return 300,087 characters. TruncatingSkillsProvider bounds every
-        // one of them, the way UserMcpToolProvider wraps MCP tool results, preserving each tool's name and
-        // schema so the model still calls them correctly. Its factory also carries the script ban and the
-        // two approval flags — see TruncatingSkillsProvider.ForSkillPaths and SkillToolLimits.
-        var skillsProvider = selectedSkillPaths.Count > 0
-            ? TruncatingSkillsProvider.ForSkillPaths(selectedSkillPaths)
-            : null;
-
-        // The context providers, which are NOT tools and are therefore gated differently from the list
-        // above. Built as a list rather than a tuple switch because there are now three independent
-        // conditions: a 3-dimensional switch would be eight unreadable arms, and cognitive_complexity_max
-        // is 15, enforced at build time by S3776.
-        //
-        // The gating asymmetry is the point (ADR 0013), and since ADR 0057 it is a THREE-way split, not a
-        // tools-vs-not one:
-        //   * AgentSkillsProvider IS a tool (it exposes load_skill) — gated by capability AND selection,
-        //     which is why it was already dropped above on a no-tools model.
-        //   * The RAG TextSearchProvider is NOT a tool and has NO catalog key — gated by neither; it stays
-        //     on whenever documents are present (ADR 0008).
-        //   * The Hindsight memory provider is NOT a tool either, but it DOES have a catalog key
-        //     (ToolCatalog.Memory, ADR 0057) — gated by selection but NOT by capability. It is the first
-        //     and only selectable key exempt from the selection ∩ capability intersection, because it never
-        //     passes through the tool list at all: a text-only model with memory selected still gets memory
-        //     (NoToolModel_StillGetsMemory, MemorySelection_IsNotIntersectedWithCapability).
-        //
-        // Memory differs from RAG in a second way worth naming, because it is the property ADR 0008 relied
-        // on and ADR 0056 gave up: RAG is gated per CONVERSATION (DocumentNames.Count > 0), so a
-        // document-free chat makes zero retrieval calls. Memory has no per-conversation analogue —
-        // spanning conversations is the whole feature — so within a selection that keeps it on, it runs on
-        // EVERY turn. ADR 0057 narrows who that is; it does not restore a per-conversation gate.
-        var contextProviders = new List<AIContextProvider>();
-        if (skillsProvider is not null)
-        {
-            contextProviders.Add(skillsProvider);
-        }
-
-        // The per-conversation gate of ADR 0008, WIDENED by ADR 0066 rather than removed: a document that
-        // arrived through read_web_document counts too. A conversation with neither list populated still
-        // makes zero retrieval calls — that property is what ADR 0008 rejected "always-on but ungated" to
-        // keep, and it is intact.
-        if (_state.State.DocumentNames.Count + _state.State.WebDocumentNames.Count > 0)
-        {
-            contextProviders.Add(BuildDocumentSearchProvider());
-        }
-
-        if (BuildMemoryProvider(enabled) is { } memoryProvider)
-        {
-            contextProviders.Add(memoryProvider);
-        }
-
-        // The research loop (ADR 0082): adds its todo provider for a research-kind chat on a tools-capable model,
-        // and is a no-op otherwise. The two With* calls below wrap the client and the agent the same way. Plain
-        // calls on purpose — S3776 charges branches, not calls, and this method has little headroom.
-        AddResearchProviders(contextProviders, capabilities);
-
-        // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
-        // state at bind time; a normal chat falls back to the default Agent 42 persona.
-        // Old Cosmos state has null persona fields, so existing chats fall back too.
-        return WithResearchLoop(new ChatClientAgent(
-            WithResearchBudget(_chatClientFactory.GetClient(modelId)),
-            new ChatClientAgentOptions
-            {
-                Name = _state.State.AgentName ?? "Agent42",
-                ChatOptions = new ChatOptions
-                {
-                    Instructions = WithDocumentAwareness(WithRenderingHints(_state.State.SystemPrompt ?? Instructions)),
-                    // A model that can't do function tools at all (ADR 0013) gets NO schema — including
-                    // the hosted ones — even if it somehow reported SupportsHostedTools.
-                    Tools = capabilities.SupportsTools ? tools : [],
-                },
-                // Built above: skills (a tool, so already dropped on a no-tools model), document RAG
-                // (ADR 0008, per-conversation) and long-term memory (ADR 0056, selectable since ADR 0057 —
-                // gated by the selection but NOT by capability). The reasoning that used to live here is
-                // with the list, so there is one explanation rather than two.
-                AIContextProviders = contextProviders,
-                // The provider injects retrieval as a ChatRole.User message tagged
-                // AgentRequestMessageSourceType.AIContextProvider. Left in the default history store it
-                // would be persisted into the serialized session — and it carries an attribution struct
-                // the default serializer can't handle, so SerializeSessionAsync would throw every turn
-                // (Step 1 spike). Excluding AIContextProvider (and ChatHistory) messages from storage
-                // keeps the session serializable and small (ADR 0004); retrieval still reaches the model.
-                ChatHistoryProvider = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
-                {
-                    StorageInputRequestMessageFilter = ExcludeInjectedContextMessages,
-                    // The response-side twin (ADR 0071): a reasoning model's "thinking" is streamed to the
-                    // client and then discarded, never stored. Without this the framework persists it —
-                    // measured, on both the streaming and the RunAsync path.
-                    StorageInputResponseMessageFilter = StripReasoningFromStorage,
-                }),
-            }), modelId);
+        return tools;
     }
+
+    // The skills that passed the per-skill selection (ADR 0048), from the merged catalog (ADR 0049), or none on a
+    // no-tools model. Shared by both compositions: the ChatClientAgent hands their paths to AgentSkillsProvider and
+    // a copilot chat hands them to Copilot's native skill loader.
+    private List<SkillInfo> SelectedSkills(ModelCapabilities capabilities, HashSet<string> enabled)
+        => capabilities.SupportsTools
+            ? [.. MergedSkills().Where(s => ToolCatalog.IsSkillEnabled(s.Name, enabled))]
+            : [];
 
     // Wraps one SELECTED tool of a URL-seeding MCP server so the URLs in its result seed this conversation's
     // fetchable list (ADR 0067). Applied AFTER the per-tool selection filter, so a deselected tool is never

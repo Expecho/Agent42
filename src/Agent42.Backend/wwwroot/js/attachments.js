@@ -1,7 +1,7 @@
 /* Agent 42 — compose-time attachments (ADR 0004/0007). Split out of app.js (ADR 0041). */
 
 import { ephemeral } from "./agents.js";
-import { activeId } from "./conversations.js";
+import { activeAgentKind, activeId } from "./conversations.js";
 import { attachBtn, attachmentPreview, fileInput } from "./dom.js";
 import { userDefaultEmbeddingModel } from "./providers.js";
 import { streaming } from "./send.js";
@@ -42,6 +42,17 @@ export async function handleFiles(files) {
       pendingNotices.push({
         fileName: file.name,
         message: "Documents can't be attached in an incognito chat — they'd be indexed and stored. Turn off incognito to attach documents.",
+      });
+      renderAttachmentPreview();
+      continue;
+    }
+    // Copilot document gate: a copilot agent's chat has no document retrieval, so a document would be indexed for
+    // nothing. The server refuses it too (before ingesting); this says why without the round trip. Images still
+    // upload, and the server withholds them from the model with its usual notice.
+    if (activeAgentKind === "copilot" && !file.type.startsWith("image/")) {
+      pendingNotices.push({
+        fileName: file.name,
+        message: "A copilot agent's chat doesn't support documents.",
       });
       renderAttachmentPreview();
       continue;

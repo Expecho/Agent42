@@ -37,9 +37,10 @@ namespace Agent42.Agents;
 /// offers a regenerate alongside it.</para>
 ///
 /// <para><see cref="Kind"/> marks a built-in agent shape: <c>null</c> (the default) is an ordinary user
-/// agent, and <see cref="AgentKinds.Research"/> is the seeded research agent. It is set ONLY by
-/// seeding (<c>IAgentRegistryGrain.EnsureResearchAgentAsync</c>) and preserved across every update, so
-/// no request can set or clear it. Unlike <see cref="Continuous"/> it IS persona: it changes how the
+/// agent, <see cref="AgentKinds.Research"/> is the seeded research agent, and <see cref="AgentKinds.Copilot"/>
+/// runs on the GitHub Copilot SDK. Research is set ONLY by seeding
+/// (<c>IAgentRegistryGrain.EnsureResearchAgentAsync</c>). Copilot is the one kind a create request may
+/// claim. Every update preserves the stored kind, so no request can change or clear it. Unlike <see cref="Continuous"/> it IS persona: it changes how the
 /// model runs, so it is snapshotted into <see cref="AgentBinding"/>. Trailing and defaulted, so every
 /// stored agent deserializes as an ordinary one with no migration. Nullable rather than <c>""</c> on
 /// purpose: the Cosmos JSON path binds a key a document lacks to <c>null</c>, not to the C# default, so a

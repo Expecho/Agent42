@@ -28,8 +28,8 @@ this ADR and is recorded in full rather than quietly corrected.
 
 ## Decision
 
-### 1. Twenty top-level feature folders, in a single flat namespace
-`StoredAgents/`, `Attachments/`, `Conversations/`, `Documents/`, `ImageGeneration/`,
+### 1. Twenty-two top-level feature folders, in a single flat namespace
+`StoredAgents/`, `Artifacts/`, `Attachments/`, `Conversations/`, `Copilot/`, `Documents/`, `ImageGeneration/`,
 `Location/`, `Mcp/`, `Memory/`, `Models/`, `Push/`, `Research/`, `Scheduling/`, `Search/`, `Sharing/`, `Speech/`,
 `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`. `Skills/` does not move: its csproj
 `Content Include="Skills\**\*"` glob must keep resolving next to the built assembly — which is also
@@ -37,7 +37,8 @@ why `UserSkills/` (ADR 0049) is a separate folder rather than living under it, s
 there would be shipped as content into the deployed `Skills/` directory.
 
 *(Sixteen at the time of this ADR; `UserSkills/` was added by ADR 0049, `Calendar/` by ADR 0053,
-`Memory/` by ADR 0056, `Search/` by ADR 0061 and `Research/` by ADR 0082 — and `Calendar/` was removed again
+`Memory/` by ADR 0056, `Search/` by ADR 0061, `Research/` by ADR 0082, `Artifacts/` by ADR 0084 (missing from this
+list until ADR 0085) and `Copilot/` by ADR 0085 — and `Calendar/` was removed again
 by ADR 0063, which also added the `Search/` entry ADR 0061 had left out of this list. A folder list is a factual
 inventory, not a decision, so it is corrected in place — `ProjectLayoutTests.ExpectedFolders` asserts
 it by name so the two cannot drift. Correcting the heading's number without the list below it is the
@@ -86,20 +87,25 @@ auto-fixing it would break three projects.
 The `.editorconfig` is deliberately free of whitespace/formatting keys: `dotnet format` is a CI gate, so
 any style key added there reformats the whole repo on the next run.
 
-### 3. `AgentGrain` splits into thirteen partials that live in their feature folders
+### 3. `AgentGrain` splits into eighteen partials that live in their feature folders
 `src/Agent42.Agents/Conversations/AgentGrain.cs` (core) plus
 `src/Agent42.Agents/Conversations/AgentGrain.FollowUps.cs`,
+`src/Agent42.Agents/Conversations/AgentGrain.Retention.cs`,
 `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs`,
 `src/Agent42.Agents/Documents/AgentGrain.Documents.cs`,
+`src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`,
 `src/Agent42.Agents/Web/AgentGrain.WebTools.cs`,
 `src/Agent42.Agents/Location/AgentGrain.LocationTool.cs`,
 `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`,
 `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
 `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs`,
 `src/Agent42.Agents/Push/AgentGrain.Push.cs`,
+`src/Agent42.Agents/Push/AgentGrain.PushTool.cs`,
 `src/Agent42.Agents/Memory/AgentGrain.Memory.cs` (ADR 0056),
-`src/Agent42.Agents/Search/AgentGrain.Search.cs` (ADR 0061) and
-`src/Agent42.Agents/Research/AgentGrain.Research.cs` (ADR 0082).
+`src/Agent42.Agents/Search/AgentGrain.Search.cs` (ADR 0061),
+`src/Agent42.Agents/Research/AgentGrain.Research.cs` (ADR 0082),
+`src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs` (ADR 0084) and
+`src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (ADR 0085).
 
 *(Ten at the time of this ADR. Same in-place-correction rule as the folder list above;
 `ProjectLayoutTests.AgentGrainParts` asserts every path by name.)*
@@ -110,7 +116,7 @@ purely about which file a member lives in.
 Rules that shaped the split:
 - **All instance fields stay in the core part** — every dependency and every turn-scoped flag. *(Since
   broken twice on purpose: `src/Agent42.Agents/Search/AgentGrain.Search.cs` (ADR 0061) and `src/Agent42.Agents/Research/AgentGrain.Research.cs`
-  (ADR 0082) keep the fields only their feature reads beside it. The turn-scoped clear ritual still lives in
+  (ADR 0082) keep the fields only their feature reads beside it, and so does `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (ADR 0085). The turn-scoped clear ritual still lives in
   the core part.)* Three
   static/const members move with their feature by design (`ExcludeInjectedContextMessages`,
   `AssistantImageIdKey`, `WithheldImagePlaceholder`).

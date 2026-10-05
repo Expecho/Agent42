@@ -28,7 +28,7 @@ namespace Agent42.Backend;
 /// keeps this off the SSRF path that <c>fetch_web_page</c> is on (ADR 0011), and it must stay true:
 /// do not let a future change accept an endpoint from anywhere else.</para>
 /// </summary>
-public sealed class MultiProviderChatClientFactory : IChatClientFactory
+public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilotProviderSource
 {
     private readonly IReadOnlyDictionary<string, Provider> _providers;
     private readonly string _defaultProvider;
@@ -153,6 +153,19 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         return provider.SpeechService?.Invoke(model);
     }
 
+    // The copilot agent kind: the same resolution GetClient uses, so a copilot chat reaches exactly the provider and
+    // deployment its ordinary chat client would.
+    public (CopilotProviderSettings Settings, string Model)? GetCopilotProvider(string? modelId)
+    {
+        if (_providers.Count == 0)
+        {
+            return null;
+        }
+
+        var (provider, model, _) = Resolve(modelId);
+        return provider.Copilot is { } settings ? (settings, model) : null;
+    }
+
     // Maps a (possibly legacy, possibly stale) id onto a provider that actually exists.
     private (Provider Provider, string Model, string QualifiedId) Resolve(string? modelId)
     {
@@ -213,9 +226,17 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
         Func<string, IChatClient> client,
         Func<string, IImageGenerationService>? imageService = null,
         Func<string, IEmbeddingGenerator<string, Embedding<float>>>? embeddingGenerator = null,
-        Func<string, ISpeechService>? speechService = null)
+        Func<string, ISpeechService>? speechService = null,
+        CopilotProviderSettings? copilot = null)
     {
         public ProviderOptions Options { get; } = options;
+
+        /// <summary>
+        /// How the Copilot runtime reaches this provider (the copilot agent kind), or null for one built without
+        /// it. Set by <see cref="Foundry"/> and <see cref="OpenAICompatible"/>, the only places that hold the
+        /// endpoint and the decrypted key together.
+        /// </summary>
+        public CopilotProviderSettings? Copilot { get; } = copilot;
 
         public Func<string, IChatClient> Client { get; } = client;
 
@@ -323,7 +344,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
                         .GetResponsesClient()
                         .AsIChatClientWithStoredOutputDisabled(model, includeReasoningEncryptedContent: false),
                     embeddingGenerator: embeddings,
-                    speechService: model => new OpenAISpeechService(responsesClient.GetAudioClient(model)));
+                    speechService: model => new OpenAISpeechService(responsesClient.GetAudioClient(model)),
+                    copilot: CopilotProviderSettings.Foundry(endpoint, apiKey, useResponses: true));
 #pragma warning restore MAAI001
 #pragma warning restore OPENAI001
             }
@@ -351,7 +373,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
                 model => chatClient.GetChatClient(model).AsIChatClient(),
                 embeddingGenerator: embeddings,
                 // Speech (ADR 0038) rides the same /openai/v1 client as chat (see the Responses branch note).
-                speechService: model => new OpenAISpeechService(chatClient.GetAudioClient(model)));
+                speechService: model => new OpenAISpeechService(chatClient.GetAudioClient(model)),
+                copilot: CopilotProviderSettings.Foundry(endpoint, apiKey, useResponses: false));
         }
 
         /// <summary>
@@ -376,7 +399,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory
                 model => client.GetEmbeddingClient(model).AsIEmbeddingGenerator(),
                 // Speech synthesis (ADR 0038) off the same OpenAIClient — GetAudioClient does no I/O, and the
                 // resolver's default-speech pick is the per-model gate, so building it for every model is free.
-                model => new OpenAISpeechService(client.GetAudioClient(model)));
+                model => new OpenAISpeechService(client.GetAudioClient(model)),
+                CopilotProviderSettings.OpenAICompatible(endpoint, apiKey));
         }
     }
 

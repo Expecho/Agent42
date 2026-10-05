@@ -48,10 +48,40 @@ public sealed class AgentEditorAssetsTests
 
         Assert.Contains("id=\"agentContinuousNote\"", html);
         var open = StaticAssetsServerFixture.Body(app, "function openAgentDialog");
-        Assert.Contains("agent?.kind === \"research\"", open);
-        Assert.Contains("agentContinuousInput.disabled = research", open);
-        Assert.Contains("agentContinuousNote.textContent", open);
+        Assert.Contains("applyKindLock(agent?.kind", open);
+        var lockBody = StaticAssetsServerFixture.Body(app, "function applyKindLock");
+        Assert.Contains("kind === \"research\"", lockBody);
+        Assert.Contains("agentContinuousInput.disabled = perChatOnly", lockBody);
+        Assert.Contains("agentContinuousNote.textContent", lockBody);
         Assert.Contains("agent__badge", app);
+    }
+
+    // AC16 (copilot kind). The type is offered on CREATE only and rides the POST; choosing copilot locks the continuous
+    // box like research; a copilot agent is badged; its chat locks incognito off; and the composer refuses a document
+    // in a copilot chat before uploading it. The server enforces each of these too (CopilotAgentTests, AgentApiTests).
+    [Fact]
+    public async Task AgentEditor_OffersCopilotOnCreateOnly_AndGatesItsChat()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("id=\"agentKindSelect\"", html);
+        Assert.Contains("<option value=\"copilot\">", html);
+        var open = StaticAssetsServerFixture.Body(app, "function openAgentDialog");
+        Assert.Contains("agentKindField.hidden = !!agent", open);
+        var save = StaticAssetsServerFixture.Body(app, "async function saveAgent");
+        Assert.Contains("if (!editingAgentId && agentKindSelect.value) payload.kind = agentKindSelect.value", save);
+        Assert.Contains("kind === \"copilot\"", StaticAssetsServerFixture.Body(app, "function applyKindLock"));
+        Assert.Contains("agentKindSelect.addEventListener(\"change\"", app);
+        Assert.Contains("agent.kind === \"copilot\"", app);
+
+        var start = StaticAssetsServerFixture.Body(app, "export function startAgentChat");
+        Assert.Contains("setActiveAgentKind(agent.kind", start);
+        Assert.Contains("setIncognito(false, false)", start);
+        var files = StaticAssetsServerFixture.Body(app, "export async function handleFiles");
+        Assert.Contains("activeAgentKind === \"copilot\"", files);
+        var select = StaticAssetsServerFixture.Body(app, "export async function selectConversation");
+        Assert.Contains("activeAgentKind = binding.kind", select);
     }
 
     // AC17 (ADR 0070). The MCP-exposure toggle, and — the half worth guarding by source text — the

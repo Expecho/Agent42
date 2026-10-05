@@ -98,6 +98,16 @@ public sealed partial class AgentGrain
             return;
         }
 
+        // A copilot chat has no retrieval (AgentGrain.Copilot.cs), so a document there would be named in no
+        // instructions and searched by nothing. The upload and agent-run endpoints refuse it before ingesting; this
+        // is the grain's own line of defence.
+        if (AgentKinds.IsCopilot(_state.State.AgentKind))
+        {
+            _logger.LogWarning("Agent grain {GrainKey} ignored document '{FileName}': a copilot chat has no documents",
+                this.GetPrimaryKeyString(), fileName);
+            return;
+        }
+
         _state.State.DocumentNames.Add(fileName);
 
         // Rebuild the agent so the updated document list reaches the model as instructions —

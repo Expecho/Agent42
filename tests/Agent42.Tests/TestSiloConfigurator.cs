@@ -99,6 +99,11 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             // HindsightIntegration or activation fails; a null Client means no provider is attached at all.
             services.AddSingleton<RecordingHindsightClient>();
             services.AddSingleton(sp => new HindsightIntegration(sp.GetRequiredService<RecordingHindsightClient>()));
+            // The copilot agent kind: the in-process twin behind a recorder, registered as its concrete type too so a
+            // test can read what the grain built. The grain resolves it optionally, so the other configurators need
+            // none; this one does because the copilot tests run here.
+            services.AddSingleton<RecordingCopilotAgentFactory>();
+            services.AddSingleton<ICopilotAgentFactory>(sp => sp.GetRequiredService<RecordingCopilotAgentFactory>());
             // Process-global in-memory stores, shared with the endpoint DI container (constraint 10).
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             // Document ingestion + retrieval stand-ins (ADR 0007): the grain resolves these to

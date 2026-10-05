@@ -7,6 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Direct, not transitive: Microsoft.Agents.AI.GitHub.Copilot's buildTransitive imports the CLI download
+         targets of the SDK version IT was packed against (an older CLI) unless the project references the SDK
+         itself. Without this the output gets a different copilot runtime than the Backend. -->
+    <PackageReference Include="GitHub.Copilot.SDK" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Agent42.Backend\Agent42.Backend.csproj" />
   </ItemGroup>
 
