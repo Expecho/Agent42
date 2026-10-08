@@ -73,9 +73,12 @@ public sealed class SidebarCollapseAssetsTests(StaticAssetsServerFixture fixture
     {
         var styles = await _client.GetStringAsync("/styles.css");
 
-        var desktopAt = styles.IndexOf("@media (min-width: 761px) {\n  html.is-sidebar-collapsed", StringComparison.Ordinal);
+        // Line-ending agnostic: find the first collapsed rule, then the >760px block opening right before it.
+        var firstRuleAt = styles.IndexOf("html.is-sidebar-collapsed .app", StringComparison.Ordinal);
+        Assert.True(firstRuleAt >= 0, "the collapsed rules are missing");
+        var desktopAt = styles.LastIndexOf("@media (min-width: 761px) {", firstRuleAt, StringComparison.Ordinal);
         Assert.True(desktopAt >= 0, "the >760px collapsed block is missing");
-        var block = StaticAssetsServerFixture.Body(styles, "@media (min-width: 761px) {\n  html.is-sidebar-collapsed");
+        var block = StaticAssetsServerFixture.Body(styles[desktopAt..], "@media (min-width: 761px) {");
         Assert.Contains("html.is-sidebar-collapsed .sidebar { display: none; }", block);
         Assert.Contains("html.is-sidebar-collapsed .topbar__menu { display: grid; }", block);
 
