@@ -207,6 +207,8 @@ export const shareLinkRevokeBtn = document.getElementById("shareLinkRevokeBtn");
 export const shareLinkCloseBtn = document.getElementById("shareLinkCloseBtn");
 // Second entry point into the same dialog, in the persistent topbar cluster beside #incognitoBtn.
 export const topbarShareBtn = document.getElementById("topbarShareBtn");
+// The chat's artifacts list (ADR 0084): reaches the artifact pane without a card. Hidden until the chat has one.
+export const artifactsBtn = document.getElementById("artifactsBtn");
 
 // Custom conversation groups (ADR 0073): the transmissions-header "+", the shared create/rename name
 // dialog, and the move-to-group picker that is the touch path for what a mouse does by dragging.

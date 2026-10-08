@@ -70,4 +70,27 @@ public sealed class ArtifactAssetsTests
         Assert.Contains("if (!Pane) return;", adapter);
         Assert.Contains("if (toolName !== \"create_artifact\" && toolName !== \"update_artifact\") return;", adapter);
     }
+
+    // A reopened chat whose cards did not survive in history (ADR 0084: they vanish with their tool messages) must
+    // still reach its artifacts: the topbar button opens the pane on its state-backed list, and opening a chat syncs
+    // the button from the /artifacts list rather than from history.
+    [Fact]
+    public async Task ReopenedChat_ReachesThePane_WithoutACard()
+    {
+        var index = await _client.GetStringAsync("/");
+        Assert.Matches(@"<button[^>]*id=""artifactsBtn""[^>]*\shidden", index);
+
+        var pane = await GetPaneAsync();
+        Assert.Contains("return { renderCard, open, openList, close };", pane);
+
+        var adapter = await _client.GetStringAsync("/js/artifacts.js");
+        var wire = StaticAssetsServerFixture.Body(adapter, "export function wireArtifacts(");
+        Assert.Contains("artifactsBtn.addEventListener(\"click\"", wire);
+        Assert.Contains("pane.openList();", wire);
+        Assert.Contains("artifactsBtn.hidden = true;", StaticAssetsServerFixture.Body(adapter, "export function closeArtifactPane("));
+
+        var conversations = await _client.GetStringAsync("/js/conversations.js");
+        var select = StaticAssetsServerFixture.Body(conversations, "export async function selectConversation(");
+        Assert.Contains("syncArtifactsButton(id);", select);
+    }
 }

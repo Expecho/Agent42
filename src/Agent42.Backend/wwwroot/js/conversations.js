@@ -1,7 +1,7 @@
 /* Agent 42 — conversation switching. Split out of app.js (ADR 0041). */
 
 import { lockPicker, setIncognito, unlockPicker } from "./agents.js";
-import { renderArtifactCards } from "./artifacts.js";
+import { renderArtifactCards, syncArtifactsButton } from "./artifacts.js";
 import { clearPendingAttachments } from "./attachments.js";
 import { cacheGet, cachePut } from "./cache.js";
 import { input, newChatBtn } from "./dom.js";
@@ -51,6 +51,8 @@ export async function selectConversation(id) {
     const turns = await msgRes.json();
     renderTurns(id, turns);
     cachePut("messages:" + id, turns); // mirror this history for offline viewing (ADR 0032)
+    // The Artifacts button reads state, not history: a card can vanish with its tool messages (ADR 0084).
+    syncArtifactsButton(id);
     // Restore the model picker only after the history is on screen, so a failure
     // here can never prevent the conversation itself from rendering.
     if (modelRes.ok) setModel(await modelRes.json());
