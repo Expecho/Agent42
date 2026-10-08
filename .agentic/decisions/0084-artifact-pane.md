@@ -31,8 +31,8 @@ HTML must never run on the app origin with the user's Easy Auth session.
 - **Serving:** `/api/conversations/{c}/artifacts[/{a}/versions/{n}/content|frame]`, plus `/api/share/{token}/…`
   twins. Every response carries `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src
   'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://cdnjs.cloudflare.com; img-src
-  data: blob:; font-src data: https://cdnjs.cloudflare.com; media-src data: blob:; connect-src 'none'; form-action
-  'none'; base-uri 'none'; frame-ancestors 'self'`, plus nosniff, `Referrer-Policy: no-referrer` and
+  data: blob:; font-src data: https://cdnjs.cloudflare.com; media-src data: blob:; frame-src https:; connect-src
+  'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`, plus nosniff, `Referrer-Policy: no-referrer` and
   `Cache-Control: private, no-store`. `/content` is always `text/plain`. `/frame` serves html and svg only (svg
   wrapped in a minimal page). The pane loads it in `<iframe sandbox="allow-scripts">`.
 - **UI:** a shared classic script `src/Agent42.Backend/wwwroot/shared/lib/artifactpane.js`, used by the app (via `src/Agent42.Backend/wwwroot/js/artifacts.js`) and the
@@ -67,6 +67,15 @@ HTML must never run on the app origin with the user's Easy Auth session.
   share viewer loads it. That viewer is anonymous, so the same channel can redirect them to a phishing page. The
   cdnjs allowance also lets any cdnjs-hosted script gadget run, though still inside the sandbox. Nothing here
   claims that no content leaves.
+- **ADR 0013 extension, widened: artifacts may frame any https page (user decision, 2026-10-08).** The original
+  policy had no `frame-src`, so it fell back to `default-src 'none'`, and a model-written video or map embed
+  rendered as Chrome's "This content is blocked". `frame-src https:` now allows it. The nested frame inherits the
+  sandbox flags (opaque origin, no `allow-same-origin`), but the artifact CSP does not govern the embedded
+  document, so an embedded page can make any request, and the embed URL itself can carry conversation content.
+  This deliberately goes around `connect-src 'none'`: data can leave the moment the pane opens, with no
+  navigation, for the owner and for an anonymous share visitor. Alternatives were to keep frames blocked and tell
+  the model (rejected: embeds are wanted) or an allowlist of embed hosts (rejected as too narrow). `http:` stays
+  blocked. Embeds that need cookies or storage may still fail inside the sandbox.
 - **Cookie-bearing same-origin GETs (measured, 2026-10-03).** An opaque-origin frame cannot READ the app, but its
   self-navigation to a same-origin GET still carries the Easy Auth cookie, while `form-action 'none'` stops POSTs.
   Every authenticated GET (29 `MapGet` routes) was reviewed for side effects:

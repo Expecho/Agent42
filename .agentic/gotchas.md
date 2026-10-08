@@ -3890,9 +3890,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   would then run on the app origin with the Easy Auth cookie. That is stored XSS a prompt injection can plant. The
   protection is `AgentApi.ArtifactCsp` on EVERY response of the artifact routes, failures included. Its
   `sandbox allow-scripts` directive (never `allow-same-origin`) gives an opaque origin, `connect-src 'none'` stops
-  fetch/XHR/WebSocket, and `form-action 'none'` stops a cookie-bearing form post (never `'self'`, measured useless
-  in the SearXNG entry). Still open by design (ADR 0084): self-navigation, and a framed navigation to a same-origin
-  GET carries the cookie. So a new authenticated GET with a side effect is reachable from an artifact. Keep side
+  fetch/XHR/WebSocket from the artifact itself, and `form-action 'none'` stops a cookie-bearing form post (never
+  `'self'`, measured useless in the SearXNG entry). Still open by design (ADR 0084): self-navigation, `frame-src
+  https:` (an embedded page is sandboxed but NOT under this CSP, so it can make any request), and a framed
+  navigation to a same-origin GET carries the cookie. So a new authenticated GET with a side effect is reachable from an artifact. Keep side
   effects off GET, or record the measurement in ADR 0084.
 - **Evidence:** `src/Agent42.Backend/Artifacts/AgentApi.Artifacts.cs` (`ArtifactCsp`, `AddArtifactHeaders`),
   `src/Agent42.Backend/wwwroot/shared/lib/artifactpane.js` (`renderBody`), `tests/Agent42.Tests/ArtifactsApiTests.cs`

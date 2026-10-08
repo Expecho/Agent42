@@ -22,13 +22,15 @@ public static partial class AgentApi
     /// <summary>
     /// The policy on every artifact response. The cdnjs allowance lets an artifact load a library (and, accepted,
     /// any script gadget hosted there, still inside the sandbox).
+    /// <c>frame-src https:</c> lets it embed any https page (a video or map embed); the nested frame inherits the
+    /// sandbox, and the embed URL is an accepted egress channel (ADR 0084, user decision 2026-10-08).
     /// </summary>
     public const string ArtifactCsp =
         "sandbox allow-scripts; default-src 'none'; "
         + "script-src 'unsafe-inline' https://cdnjs.cloudflare.com; "
         + "style-src 'unsafe-inline' https://cdnjs.cloudflare.com; "
         + "img-src data: blob:; font-src data: https://cdnjs.cloudflare.com; media-src data: blob:; "
-        + "connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'";
+        + "frame-src https:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'";
 
     private static void MapArtifactEndpoints(IEndpointRouteBuilder app)
     {
