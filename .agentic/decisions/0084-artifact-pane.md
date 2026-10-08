@@ -91,7 +91,9 @@ HTML must never run on the app origin with the user's Easy Auth session.
   read stay under 64 KB of session.
 - `PurgeAsync` clears the metadata, but the blobs stay, the same gap attachments have.
 - Cards can vanish from history with their tool messages (a chain open at a user turn, `StripToolHistory`,
-  retention). The pane's "Artifacts in this chat" list reads state, so no artifact becomes unreachable.
+  retention). The pane's "Artifacts in this chat" list reads state, and the chat app's topbar Artifacts button
+  (`#artifactsBtn`, shown when `/artifacts` is non-empty) opens the pane on that list without a card, so no
+  artifact becomes unreachable. The list inside the pane alone was not enough: the pane opened only from a card.
 - Out of scope, and next: in-pane editing and diff-style updates (phase 3), offline artifacts, closing the
   self-navigation channel (impossible with browser primitives).
 - Spec: `.agentic/specs/completed/plan-artifact-pane.md`.

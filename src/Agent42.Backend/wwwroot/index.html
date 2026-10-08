@@ -122,6 +122,17 @@
               <path d="M6.4 11h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
             </svg>
           </button>
+          <!-- Artifacts in this chat (ADR 0084): opens the artifact pane on its list, so a reopened chat whose cards
+               did not survive in history (or scrolled far up) can still reach its artifacts. Shown by artifacts.js
+               only when the chat holds one. -->
+          <button class="topbar__action" id="artifactsBtn" type="button" hidden
+                  aria-label="Artifacts in this chat" title="Artifacts in this chat">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="2.5" width="12" height="11" rx="1.6" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M9.5 2.5v11" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M11 5.5h1.5M11 8h1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </button>
           <!-- Read-only share link (ADR 0035): a second entry point into the same dialog as the sidebar
                row action — it only OPENS the dialog, and still mints nothing until the user presses
                Create. `disabled` here in the markup because between HTML parse and the deferred module

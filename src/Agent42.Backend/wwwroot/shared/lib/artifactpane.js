@@ -58,7 +58,7 @@
   }
 
   /* create({ host, urls: { list(), content(id, version), frame(id, version) }, renderMarkdown })
-     Builds one pane inside host and returns { renderCard, open, close }. */
+     Builds one pane inside host and returns { renderCard, open, openList, close }. */
   function create({ host, urls, renderMarkdown }) {
     const pane = el("aside", "artifact-pane");
     pane.hidden = true;
@@ -215,11 +215,7 @@
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }, downloadBtn));
-    listBtn.addEventListener("click", async () => {
-      if (!list.hidden) {
-        if (current) show(current.record, current.version);
-        return;
-      }
+    async function showList() {
       try {
         await refresh();
       } catch {
@@ -228,6 +224,28 @@
       renderList();
       body.hidden = true;
       list.hidden = false;
+    }
+
+    // Opens the pane on the "Artifacts in this chat" list: the entry point that does not need a card, because cards
+    // can vanish from history with their tool messages while the artifacts stay in state.
+    async function openList() {
+      pane.hidden = false;
+      document.documentElement.classList.add("has-artifact-pane");
+      body.textContent = ""; // unloads a previous artifact's iframe
+      current = null;
+      title.textContent = "Artifacts";
+      kind.textContent = "";
+      versionSelect.hidden = true;
+      await showList();
+      closeBtn.focus();
+    }
+
+    listBtn.addEventListener("click", async () => {
+      if (!list.hidden) {
+        if (current) show(current.record, current.version);
+        return;
+      }
+      await showList();
     });
     closeBtn.addEventListener("click", close);
     pane.addEventListener("keydown", (e) => {
@@ -260,7 +278,7 @@
       cards.appendChild(card);
     }
 
-    return { renderCard, open, close };
+    return { renderCard, open, openList, close };
   }
 
   window.Agent42ArtifactPane = { create };
