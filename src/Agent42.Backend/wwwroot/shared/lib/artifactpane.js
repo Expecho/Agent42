@@ -8,7 +8,11 @@
    Safety: html and svg artifacts run ONLY in <iframe sandbox="allow-scripts">, whose server response also carries a
    CSP sandbox header (the header is what protects a frame opened as a top-level page). Never add the same-origin flag.
    Fetched source reaches the DOM as textContent, or as markdown through the injected sanitizing renderMarkdown;
-   nothing else. */
+   nothing else.
+
+   Look: /frame injects the app's theme (ArtifactTheme.cs) for the theme passed as ?theme=, so the pane passes the
+   page's current data-theme and reloads a framed artifact when it flips. The full-screen toggle widens the pane over
+   the whole window (a CSS class, not the browser Fullscreen API, so the browser chrome and Escape stay normal). */
 (function () {
   "use strict";
 
@@ -51,6 +55,11 @@
     setTimeout(() => { btn.textContent = original; }, 1500);
   }
 
+  // The theme the page painted (both pages set data-theme on <html> before first paint); dark is the app default.
+  function currentTheme() {
+    return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  }
+
   async function fetchText(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -75,8 +84,10 @@
     const copyBtn = button("artifact-pane__btn", "Copy source", "⧉");
     const downloadBtn = button("artifact-pane__btn", "Download", "↓");
     const listBtn = button("artifact-pane__btn", "Artifacts in this chat", "☰");
+    const fullBtn = button("artifact-pane__btn artifact-pane__full", "Full screen", "⤢");
+    fullBtn.setAttribute("aria-pressed", "false");
     const closeBtn = button("artifact-pane__btn", "Close", "×");
-    head.append(titleBox, versionSelect, copyBtn, downloadBtn, listBtn, closeBtn);
+    head.append(titleBox, versionSelect, copyBtn, downloadBtn, listBtn, fullBtn, closeBtn);
 
     const body = el("div", "artifact-pane__body");
     const list = el("div", "artifact-pane__list");
@@ -86,6 +97,7 @@
 
     let artifacts = [];
     let current = null; // { record, version }
+    let frameTheme = null; // the theme the open frame was rendered in
 
     async function refresh() {
       const res = await fetch(urls.list());
@@ -105,7 +117,8 @@
         frame.setAttribute("sandbox", "allow-scripts");
         frame.setAttribute("referrerpolicy", "no-referrer");
         frame.title = record.title;
-        frame.src = urls.frame(record.id, version);
+        frameTheme = currentTheme();
+        frame.src = `${urls.frame(record.id, version)}?theme=${frameTheme}`;
         body.appendChild(frame);
         return;
       }
@@ -169,7 +182,17 @@
       closeBtn.focus();
     }
 
+    function setFull(on) {
+      pane.classList.toggle("artifact-pane--full", on);
+      document.documentElement.classList.toggle("has-artifact-pane-full", on);
+      fullBtn.setAttribute("aria-pressed", String(on));
+      fullBtn.setAttribute("aria-label", on ? "Exit full screen" : "Full screen");
+      fullBtn.title = on ? "Exit full screen" : "Full screen";
+      fullBtn.textContent = on ? "⤡" : "⤢";
+    }
+
     function close() {
+      setFull(false);
       pane.hidden = true;
       body.textContent = ""; // unloads the iframe, so a closed artifact's script stops running
       current = null;
@@ -247,10 +270,22 @@
       }
       await showList();
     });
+    fullBtn.addEventListener("click", () => setFull(!pane.classList.contains("artifact-pane--full")));
     closeBtn.addEventListener("click", close);
+    // Escape steps back one level: out of full screen first, then closed.
     pane.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") close();
+      if (e.key !== "Escape") return;
+      if (pane.classList.contains("artifact-pane--full")) setFull(false);
+      else close();
     });
+
+    // The frame was rendered for one theme; a theme switch while it is open reloads it in the new one. Markdown and
+    // code follow by themselves, they use the page's CSS.
+    new MutationObserver(() => {
+      const kind = current?.record.kind;
+      if (pane.hidden || body.hidden || (kind !== "html" && kind !== "svg") || currentTheme() === frameTheme) return;
+      show(current.record, current.version);
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
     // One card per artifact version a turn produced. Idempotent per (artifact, version), so a replay over a bubble
     // that already holds the live card (stream recovery) does not duplicate it. beforeOpen lets a page point the

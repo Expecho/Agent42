@@ -30,8 +30,8 @@ HTML must never run on the app origin with the user's Easy Auth session.
   starts with the stub prefix.
 - **Serving:** `/api/conversations/{c}/artifacts[/{a}/versions/{n}/content|frame]`, plus `/api/share/{token}/…`
   twins. Every response carries `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src
-  'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://cdnjs.cloudflare.com; img-src
-  data: blob:; font-src data: https://cdnjs.cloudflare.com; media-src data: blob:; frame-src https:; connect-src
+  'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://cdnjs.cloudflare.com
+  https://fonts.googleapis.com; img-src data: blob:; font-src data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; media-src data: blob:; frame-src https:; connect-src
   'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`, plus nosniff, `Referrer-Policy: no-referrer` and
   `Cache-Control: private, no-store`. `/content` is always `text/plain`. `/frame` serves html and svg only (svg
   wrapped in a minimal page). The pane loads it in `<iframe sandbox="allow-scripts">`.
@@ -76,6 +76,17 @@ HTML must never run on the app origin with the user's Easy Auth session.
   navigation, for the owner and for an anonymous share visitor. Alternatives were to keep frames blocked and tell
   the model (rejected: embeds are wanted) or an allowlist of embed hosts (rejected as too narrow). `http:` stays
   blocked. Embeds that need cookies or storage may still fail inside the sandbox.
+- **Artifacts wear the app's theme (user request, 2026-10-08).** `/frame` injects `ArtifactTheme` first into the
+  artifact's head: the app's tokens (`--bg`, `--ink`, `--amber` …) for the theme the pane passes as `?theme=`, the
+  app fonts, and zero-specificity (`:where()`) element defaults, so the artifact's own CSS still wins. The
+  `create_artifact` description tells the model to style with those tokens. The pane reloads a framed artifact
+  when the page theme flips, and its full-screen toggle is a CSS class, not the browser Fullscreen API. The fonts
+  come from Google Fonts, the app's own source, so the CSP adds `https://fonts.googleapis.com` to `style-src` and
+  `https://fonts.gstatic.com` to `font-src`. **ADR 0013 extension:** an artifact can now also send requests to
+  those two hosts. That adds nothing `frame-src https:` doesn't already allow, and the app shell already loads
+  from them. Rejected: self-hosted fonts, because an opaque-origin frame can't load them without a CORS
+  allowance on the app origin. Also rejected: system font fallbacks only, because the result looks unlike the
+  app.
 - **Cookie-bearing same-origin GETs (measured, 2026-10-03).** An opaque-origin frame cannot READ the app, but its
   self-navigation to a same-origin GET still carries the Easy Auth cookie, while `form-action 'none'` stops POSTs.
   Every authenticated GET (29 `MapGet` routes) was reviewed for side effects:

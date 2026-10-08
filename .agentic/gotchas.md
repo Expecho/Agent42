@@ -3895,7 +3895,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   https:` (an embedded page is sandboxed but NOT under this CSP, so it can make any request), and a framed
   navigation to a same-origin GET carries the cookie. So a new authenticated GET with a side effect is reachable from an artifact. Keep side
   effects off GET, or record the measurement in ADR 0084.
+  `/frame` also injects `ArtifactTheme` into the source. It goes AFTER the doctype and never before it, because a
+  style block ahead of `<!doctype>` puts the page in quirks mode. Its two Google Fonts hosts are the only CSP
+  allowances the theme needs, so keep its tokens in sync with `styles.css`.
 - **Evidence:** `src/Agent42.Backend/Artifacts/AgentApi.Artifacts.cs` (`ArtifactCsp`, `AddArtifactHeaders`),
+  `src/Agent42.Backend/Artifacts/ArtifactTheme.cs`, `tests/Agent42.Tests/ArtifactThemeTests.cs`,
   `src/Agent42.Backend/wwwroot/shared/lib/artifactpane.js` (`renderBody`), `tests/Agent42.Tests/ArtifactsApiTests.cs`
   (`Frame_And_Content_SendSandboxHeaders`), `tests/Agent42.Tests/ArtifactAssetsTests.cs`,
   `.agentic/decisions/0084-artifact-pane.md`

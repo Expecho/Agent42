@@ -24,12 +24,13 @@ public static partial class AgentApi
     /// any script gadget hosted there, still inside the sandbox).
     /// <c>frame-src https:</c> lets it embed any https page (a video or map embed); the nested frame inherits the
     /// sandbox, and the embed URL is an accepted egress channel (ADR 0084, user decision 2026-10-08).
+    /// The two Google Fonts hosts serve the app's own fonts to <see cref="ArtifactTheme"/>.
     /// </summary>
     public const string ArtifactCsp =
         "sandbox allow-scripts; default-src 'none'; "
         + "script-src 'unsafe-inline' https://cdnjs.cloudflare.com; "
-        + "style-src 'unsafe-inline' https://cdnjs.cloudflare.com; "
-        + "img-src data: blob:; font-src data: https://cdnjs.cloudflare.com; media-src data: blob:; "
+        + "style-src 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+        + "img-src data: blob:; font-src data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; media-src data: blob:; "
         + "frame-src https:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'";
 
     private static void MapArtifactEndpoints(IEndpointRouteBuilder app)
@@ -78,7 +79,9 @@ public static partial class AgentApi
             return Results.Text(source, "text/plain; charset=utf-8");
         }
 
-        return Results.Text(artifact.Kind == ArtifactKind.Svg ? WrapSvg(source) : source, "text/html; charset=utf-8");
+        // The app's look goes in first, so the artifact's own CSS wins (ArtifactTheme). The theme is the pane's.
+        var page = artifact.Kind == ArtifactKind.Svg ? WrapSvg(source) : source;
+        return Results.Text(ArtifactTheme.Apply(page, http.Request.Query["theme"]), "text/html; charset=utf-8");
     }
 
     private static void AddArtifactHeaders(HttpResponse response)
@@ -89,7 +92,8 @@ public static partial class AgentApi
         response.Headers.CacheControl = "private, no-store";
     }
 
-    // An svg is framed inside a minimal page, under the same policy, so a scripted svg is contained like html.
+    // An svg is framed inside a minimal page, under the same policy, so a scripted svg is contained like html. The
+    // page is centred on the theme background, and the svg's currentColor is the theme's ink.
     private static string WrapSvg(string svg)
         => "<!doctype html><html><head><meta charset=\"utf-8\"><style>html,body{margin:0;height:100%}"
             + "body{display:flex;align-items:center;justify-content:center}svg{max-width:100%;max-height:100%}"

@@ -108,6 +108,29 @@ public sealed class ArtifactsApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.Equal(HttpStatusCode.OK, (await Get($"/api/conversations/conv/artifacts/{md}/versions/1/content", User)).StatusCode);
     }
 
+    // The frame carries the app's look for the theme the pane asks for (dark by default), inside the artifact's own
+    // head so its doctype stays first; owner and share alike.
+    [Fact]
+    public async Task Frame_InjectsTheAppTheme()
+    {
+        const string User = "art-api-theme";
+        var id = await CreateArtifact(User, "conv", "html", "<!DOCTYPE html><html><head><title>t</title></head><body>hi</body></html>");
+        var token = await Share(User, "conv");
+
+        foreach (var prefix in new[] { "/api/conversations/conv", $"/api/share/{token}" })
+        {
+            var dark = await (await Get($"{prefix}/artifacts/{id}/versions/1/frame", User)).Content.ReadAsStringAsync();
+            Assert.StartsWith("<!DOCTYPE html><html><head>" + ArtifactTheme.Block("dark") + "<title>", dark, StringComparison.Ordinal);
+            Assert.Contains("--bg:#100f0d", dark, StringComparison.Ordinal);
+
+            var light = await (await Get($"{prefix}/artifacts/{id}/versions/1/frame?theme=light", User)).Content.ReadAsStringAsync();
+            Assert.Contains("--bg:#f4efe4", light, StringComparison.Ordinal);
+        }
+
+        // /content stays the raw source.
+        Assert.DoesNotContain("data-agent42-theme", await (await Get($"/api/conversations/conv/artifacts/{id}/versions/1/content", User)).Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     // AC13: both attachment proxies send nosniff. The artifact blob is octet-stream, so even read through the raw
     // proxy it downloads rather than renders.
     [Fact]

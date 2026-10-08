@@ -46,7 +46,11 @@ public sealed partial class AgentGrain
                 + "XHR and WebSockets fail) and no storage, so put all data, CSS and script inline; external "
                 + "libraries may be loaded only from https://cdnjs.cloudflare.com. An <iframe> of an https page (a "
                 + "video or map embed) is allowed, but it inherits the sandbox, so an embed that needs cookies may "
-                + "not work; external images are blocked. Returns the artifact id and "
+                + "not work; external images are blocked. HTML and SVG are shown in the app's theme: the page gets "
+                + "its fonts and these CSS variables, light or dark to match the app: --bg, --bg-raised, --bg-inset "
+                + "(surfaces), --ink, --ink-dim, --ink-faint (text), --line (borders), --amber (accent), --green, "
+                + "--red, --mono, --serif. Style with these variables and currentColor, not fixed colors, and do not "
+                + "set your own page background or font unless the user asks for a different look. Returns the artifact id and "
                 + "version; do not repeat the content in your reply."),
         AIFunctionFactory.Create(
             UpdateArtifactAsync,

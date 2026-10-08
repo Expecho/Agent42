@@ -93,4 +93,25 @@ public sealed class ArtifactAssetsTests
         var select = StaticAssetsServerFixture.Body(conversations, "export async function selectConversation(");
         Assert.Contains("syncArtifactsButton(id);", select);
     }
+
+    // The pane can go full screen and back (Escape steps out of it before closing), and a framed artifact is asked for
+    // in the page's theme, so /frame can inject the app's look (ArtifactTheme). Both pages share the pane, so both
+    // stylesheets carry the full-screen rule.
+    [Fact]
+    public async Task ArtifactPane_GoesFullScreen_AndFramesInTheTheme()
+    {
+        var pane = await GetPaneAsync();
+        Assert.Contains("pane.classList.toggle(\"artifact-pane--full\", on);", StaticAssetsServerFixture.Body(pane, "function setFull("));
+        Assert.Contains("setFull(false);", StaticAssetsServerFixture.Body(pane, "function close("));
+        Assert.Contains("frame.src = `${urls.frame(record.id, version)}?theme=${frameTheme}`;",
+            StaticAssetsServerFixture.Body(pane, "async function renderBody("));
+        Assert.Contains("attributeFilter: [\"data-theme\"]", pane);
+
+        foreach (var css in new[] { "/styles.css", "/shared/viewer.css" })
+        {
+            var sheet = await _client.GetStringAsync(css);
+            Assert.Contains(".artifact-pane--full {", sheet);
+            Assert.DoesNotContain("background: #fff;", StaticAssetsServerFixture.Body(sheet, ".artifact-pane__frame {"));
+        }
+    }
 }
