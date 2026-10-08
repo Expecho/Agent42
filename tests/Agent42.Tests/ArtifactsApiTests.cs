@@ -53,6 +53,10 @@ public sealed class ArtifactsApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.StartsWith("sandbox allow-scripts;", csp, StringComparison.Ordinal);
         Assert.DoesNotContain("allow-same-origin", csp, StringComparison.Ordinal);
         Assert.Contains("connect-src 'none'", csp, StringComparison.Ordinal);
+        // Embeds of https pages are allowed (ADR 0084, 2026-10-08); http: and the wildcard are not.
+        Assert.Contains("frame-src https:;", csp, StringComparison.Ordinal);
+        Assert.DoesNotContain("frame-src *", csp, StringComparison.Ordinal);
+        Assert.DoesNotContain("http:", csp, StringComparison.Ordinal);
         Assert.Contains("form-action 'none'", csp, StringComparison.Ordinal);
         Assert.Equal("nosniff", Assert.Single(response.Headers.GetValues("X-Content-Type-Options")));
         Assert.Equal("no-referrer", Assert.Single(response.Headers.GetValues("Referrer-Policy")));

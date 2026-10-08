@@ -44,7 +44,9 @@ public sealed partial class AgentGrain
                 + "snippets, explanations and anything conversational. To change an existing artifact call "
                 + "update_artifact; do not create a new one. HTML runs in a sandbox with NO network access (fetch, "
                 + "XHR and WebSockets fail) and no storage, so put all data, CSS and script inline; external "
-                + "libraries may be loaded only from https://cdnjs.cloudflare.com. Returns the artifact id and "
+                + "libraries may be loaded only from https://cdnjs.cloudflare.com. An <iframe> of an https page (a "
+                + "video or map embed) is allowed, but it inherits the sandbox, so an embed that needs cookies may "
+                + "not work; external images are blocked. Returns the artifact id and "
                 + "version; do not repeat the content in your reply."),
         AIFunctionFactory.Create(
             UpdateArtifactAsync,
