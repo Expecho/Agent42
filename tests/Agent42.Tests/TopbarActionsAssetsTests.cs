@@ -176,7 +176,8 @@ public sealed class TopbarActionsAssetsTests
     // AC3b (cascade-limited) — the trap this criterion exists for: the desktop sidebar header already
     // renders the identical mark + wordmark, so a naively revealed topbar brand shows "42 AGENT 42"
     // twice, side by side. Both original children are therefore hidden by default and revealed only
-    // inside the ≤760px block, which is pinned here by index ordering.
+    // inside the ≤760px block, which is pinned here by index ordering. The one desktop exception is a
+    // collapsed sidebar (ADR 0086), where the sidebar header is gone; SidebarCollapseAssetsTests pins it.
     [Fact]
     public async Task TopbarBrandAndMenu_AreMobileOnly()
     {
