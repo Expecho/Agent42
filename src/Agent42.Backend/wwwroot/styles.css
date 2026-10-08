@@ -91,8 +91,37 @@ body {
 }
 
 .sidebar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 22px 20px 18px;
   border-bottom: 1px dashed var(--line);
+}
+
+/* Collapses the sidebar on desktop, closes the drawer on mobile (js/drawer.js). Quiet until hovered:
+   it is chrome, not content. */
+.sidebar__collapse {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.sidebar__collapse:hover { background: var(--line-soft); color: var(--amber); border-color: var(--amber-deep); }
+
+.sidebar__collapse:focus-visible {
+  outline: 0;
+  border-color: var(--amber-deep);
+  box-shadow: 0 0 0 1px var(--amber-deep), 0 0 18px var(--amber-glow);
 }
 
 .brand {
@@ -3091,6 +3120,18 @@ body.is-incognito .topbar {
     opacity: 1;
     pointer-events: auto;
   }
+}
+
+/* wide screens: a collapsed sidebar (html.is-sidebar-collapsed, js/drawer.js — a manual choice, or
+   automatic while the window is narrow or the artifact pane is open) gives its column to the chat. The
+   topbar then regains the hamburger to reopen it, and the brand, which would otherwise leave with the
+   sidebar header (the "42 AGENT 42" twice trap of ADR 0044 cannot happen: the sidebar is gone). Scoped
+   to >760px so the class never reaches the mobile drawer. */
+@media (min-width: 761px) {
+  html.is-sidebar-collapsed .app { grid-template-columns: 1fr; }
+  html.is-sidebar-collapsed .sidebar { display: none; }
+  html.is-sidebar-collapsed .topbar__menu { display: grid; }
+  html.is-sidebar-collapsed .topbar__brand { display: inline-flex; }
 }
 
 /* ————— usage dashboard (ADR 0031) ——————————————————

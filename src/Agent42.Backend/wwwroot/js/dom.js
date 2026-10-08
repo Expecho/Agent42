@@ -21,6 +21,7 @@ export const modelField = document.getElementById("modelField");
 export const noModelHint = document.getElementById("noModelHint");
 export const agentLabel = document.getElementById("agentLabel");
 export const menuToggle = document.getElementById("menuToggle");
+export const collapseSidebarBtn = document.getElementById("collapseSidebarBtn");
 export const backdrop = document.getElementById("backdrop");
 export const app = document.querySelector(".app");
 
