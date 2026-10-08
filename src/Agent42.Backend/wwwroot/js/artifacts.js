@@ -3,10 +3,15 @@
    the owner routes and the app's sanitizing renderMarkdown, and feeds it cards from the live stream and from
    history. Every use is guarded, so a 404 on the shared script leaves chats without cards, never a blank app. */
 
+import { artifactsBtn } from "./dom.js";
 import { renderMarkdown } from "./format.js";
 
 let pane = null;
 let paneConvId = null;
+// The conversation the topbar Artifacts button opens the list for; null while the button is hidden.
+let listConvId = null;
+// Bumped on every chat switch, so a late /artifacts answer for a chat the user has left is dropped.
+let generation = 0;
 
 const base = () => `/api/conversations/${encodeURIComponent(paneConvId)}/artifacts`;
 const version = (id, v) => `${base()}/${encodeURIComponent(id)}/versions/${encodeURIComponent(v)}`;
@@ -23,6 +28,32 @@ export function wireArtifacts() {
       frame: (id, v) => `${version(id, v)}/frame`,
     },
   });
+  // The entry point that needs no card: cards can vanish from history with their tool messages (ADR 0084), and a
+  // long chat scrolls them out of sight, while the artifacts themselves stay in state.
+  artifactsBtn.addEventListener("click", () => {
+    if (!listConvId) return;
+    paneConvId = listConvId;
+    pane.openList();
+  });
+}
+
+function showArtifactsButton(convId) {
+  listConvId = convId;
+  artifactsBtn.hidden = false;
+}
+
+// A reopened chat: shows the Artifacts button when the conversation holds any artifact, whether or not one of its
+// cards made it back into history.
+export async function syncArtifactsButton(convId) {
+  if (!pane) return;
+  const current = generation;
+  try {
+    const res = await fetch(`/api/conversations/${encodeURIComponent(convId)}/artifacts`);
+    const list = res.ok ? await res.json() : [];
+    if (current === generation && list.length) showArtifactsButton(convId);
+  } catch {
+    // Offline: the cards history rendered are still a way in.
+  }
 }
 
 // The cards of one stored turn (ChatTurn.artifacts), from a reopened chat or a recovered stream.
@@ -31,6 +62,7 @@ export function renderArtifactCards(msg, convId, cards) {
   const bubble = msg.querySelector(".msg__bubble");
   // The pane follows the conversation of the card that opened it.
   for (const info of cards) pane.renderCard(bubble, info, { beforeOpen: () => { paneConvId = convId; } });
+  showArtifactsButton(convId);
 }
 
 // A live create_artifact / update_artifact result. The result arrives as a JSON string holding the tool's JSON
@@ -49,8 +81,11 @@ export function artifactCardFromToolCall(msg, convId, toolName, toolResult) {
   renderArtifactCards(msg, convId, [value]);
 }
 
-// Switching chats closes the pane: it would otherwise keep showing the previous chat's artifact.
+// Switching chats closes the pane and hides the Artifacts button: both would otherwise keep pointing at the
+// previous chat's artifacts.
 export function closeArtifactPane() {
+  generation++;
+  listConvId = null;
+  artifactsBtn.hidden = true;
   pane?.close();
 }
-
