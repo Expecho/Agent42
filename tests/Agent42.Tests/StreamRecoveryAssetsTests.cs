@@ -55,7 +55,7 @@ public sealed class StreamRecoveryAssetsTests
     {
         var app = await _fixture.GetAppScriptAsync();
 
-        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt)");
+        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
         Assert.Contains("addEventListener(\"visibilitychange\", onVisibilityChange)", send);
         Assert.Contains("removeEventListener(\"visibilitychange\", onVisibilityChange)", send);
         // …and the yardstick the recovered history is measured against is taken BEFORE this turn's two
@@ -93,7 +93,7 @@ public sealed class StreamRecoveryAssetsTests
     {
         var app = await _fixture.GetAppScriptAsync();
 
-        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt)");
+        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
         var start = send.IndexOf("recoverPersistedReply(agentMsg", StringComparison.Ordinal);
         Assert.True(start >= 0, "send() no longer calls recoverPersistedReply");
         var branch = send[start..send.IndexOf("Transmission failed", StringComparison.Ordinal)];

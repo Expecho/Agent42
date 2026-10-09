@@ -161,9 +161,12 @@ export function markStopped(msg, hasText) {
 // (the markStopped shape) with a Reconnect button. It opens the OAuth flow in a NEW tab — the active conversation
 // lives only in a module variable, so the settings flow's full navigation would drop the open chat. The next
 // message picks the tools back up (the grain re-resolves). Live-only: not replayed by renderTurns.
-export function renderMcpReauth(msg, serverId, name) {
+// `watch` (send.js, a watchMcpReconnect) re-sends the turn once every server it names is signed in again; the click
+// arms it, so a notice the user ignores never re-sends anything.
+export function renderMcpReauth(msg, serverId, name, watch = null) {
   const bubble = msg.querySelector(".msg__bubble");
   if (!bubble || !serverId) return;
+  watch?.add(serverId);
   const block = document.createElement("div");
   block.className = "msg__reauth";
   const text = document.createElement("span");
@@ -176,7 +179,10 @@ export function renderMcpReauth(msg, serverId, name) {
   button.setAttribute("aria-label", `Reconnect MCP server: ${name || serverId}`);
   button.addEventListener("click", () => {
     window.open(mcpOAuthStartUrl(serverId), "_blank", "noopener");
-    text.textContent = "Finish signing in in the new tab, then send your message again.";
+    watch?.arm();
+    text.textContent = watch
+      ? "Finish signing in in the new tab. Your message is sent again once you're back."
+      : "Finish signing in in the new tab, then send your message again.";
   });
   block.append(text, button);
   bubble.appendChild(block);

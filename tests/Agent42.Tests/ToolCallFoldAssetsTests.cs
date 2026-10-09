@@ -94,7 +94,7 @@ public sealed class ToolCallFoldAssetsTests(StaticAssetsServerFixture fixture)
     {
         var app = await fixture.GetAppScriptAsync();
 
-        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt)");
+        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
         var tail = CodeOnly(Section(send, "} finally {", "sendAbort = null"));
         Assert.Contains("finishToolCalls", tail);
     }
