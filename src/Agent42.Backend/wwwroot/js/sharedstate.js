@@ -163,8 +163,22 @@ function edit(change, rerender = true) {
   saveTimer = setTimeout(save, SAVE_DELAY_MS);
 }
 
+// One save at a time. An edit made while a save is on the wire waits for it, so it is sent with the version that
+// save returns rather than the stale one, which would 409 and throw the edit away.
+let saving = null;
+
 async function save() {
   saveTimer = null;
+  if (saving) {
+    await saving;
+    if (!saveTimer) save();
+    return;
+  }
+  saving = putState().finally(() => { saving = null; });
+  await saving;
+}
+
+async function putState() {
   const id = convId;
   if (!id) return;
   try {

@@ -4007,7 +4007,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (artifact records, the `TurnAttachments` entry) beside the previous turn's session. `_runsInFlight` is counted at
   BOTH run sites (`ChatCoreAsync`, `ReceiveReminder`) and is not part of the turn-scoped reset ritual; an edit during
   a run sets `_sharedStateDirty`, the end-of-turn writes clear it, and `EndRunAsync` flushes it when the last run
-  ends without writing (a failure). Mutation-checked: writing at once turns
+  ends without writing (a failure). That flush is the one accepted residual: it writes the whole state too, so
+  a failed run's in-memory leftovers (an artifact record) land beside the previous turn's session. A warm
+  activation would write the same on its next turn anyway; it only differs if the silo dies in between. Mutation-checked: writing at once turns
   `UserEdit_DuringATurn_IsNotWrittenMidTurn_AndPersistsAtTurnEnd` red; dropping the flush turns
   `UserEdit_DuringAFailedTurn_IsFlushedByTheLastRun` red. **(3)** `Microsoft.AspNetCore.JsonPatch.SystemTextJson`
   10.0.12, measured: a failing `test` op after a `replace` leaves the replace APPLIED, and an unknown op name is
