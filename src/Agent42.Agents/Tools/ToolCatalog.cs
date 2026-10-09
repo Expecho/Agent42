@@ -232,7 +232,7 @@ public static class ToolCatalog
         [ClientToolLimits.GetBrowserContext] = BrowserTools,
         [SharedStateLimits.UpdateToolName] = SharedState,
         [CodeInterpreter] = CodeInterpreter,
-        ["get_current_location"] = Location,
+        [ClientToolLimits.GetCurrentLocation] = Location,
         ["schedule_prompt"] = Scheduling,
         ["cancel_scheduled_prompt"] = Scheduling,
         ["cancel_all_scheduled_prompts"] = Scheduling,

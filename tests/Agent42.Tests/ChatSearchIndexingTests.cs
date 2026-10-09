@@ -231,7 +231,7 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
 
         var incognito = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/search-imageturn-incognito");
         await CollectAsync(incognito.ChatAsync(
-            "draw a secret wyvern", TestSiloConfigurator.ImageModel, null, null, ephemeral: true));
+            "draw a secret wyvern", TestSiloConfigurator.ImageModel, null, ephemeral: true));
 
         var hits = await _reader.SearchAsync(user, "wyvern", 50);
 

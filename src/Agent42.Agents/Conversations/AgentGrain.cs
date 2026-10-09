@@ -23,7 +23,7 @@ namespace Agent42.Agents;
 /// <c>.editorconfig</c>.</para>
 ///
 /// <para><b><see cref="ReceiveReminder"/> stays here on purpose.</b> The safety of
-/// <c>_turnLocation</c> and <c>_ephemeral</c> rests on TWO clears that must be read together — the
+/// <c>_ephemeral</c> and the other turn-scoped fields rests on TWO clears that must be read together — the
 /// <c>finally</c> in <see cref="ChatAsync"/> and the nulling on entry to
 /// <see cref="ReceiveReminder"/> (see the entries at <c>.agentic/gotchas.md</c> for both flags).
 /// Filing the reminder callback under <c>Scheduling/</c> would split that pair across files, which
@@ -201,31 +201,21 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private IReadOnlyList<SkillInfo> _userSkills = [];
 
     /// <summary>
-    /// The user's position for the turn currently being processed, or null (ADR 0012). Set at the top
-    /// of <see cref="ChatAsync"/> from the position the browser sent with the request.
-    ///
-    /// <para><b>This field lives for the grain ACTIVATION, not the call — so it must be cleared
-    /// explicitly, and it is, in two places.</b> A <c>finally</c> at the end of <c>ChatAsync</c> drops
-    /// it when the turn ends, and <see cref="ReceiveReminder"/> nulls it on entry. Doing nothing on the
-    /// reminder path would <i>not</i> leave it null: a reminder is a separate call on the same
-    /// activation, so after any located chat turn the field is still populated and a scheduled prompt
-    /// would confidently report where the user was hours ago. Non-reentrancy is not the argument that
-    /// makes this safe — <c>ChatAsync</c> is an <c>IAsyncEnumerable</c> method that suspends between
-    /// <c>yield return</c>s — the explicit clear is.</para>
-    ///
-    /// <para>It is deliberately NOT in <see cref="AgentGrainState"/>: a persisted fix would outlive the
-    /// turn it was captured for and have the model reporting last week's position as today's.</para>
-    /// </summary>
-    private UserLocation? _turnLocation;
-
-    /// <summary>
     /// True while an ephemeral (incognito) turn is being processed (ADR 0034). Set at the top of
     /// <see cref="ChatAsync"/> from the flag the browser sent, it makes <see cref="ChatCoreAsync"/> and
     /// <see cref="GenerateImageTurnAsync"/> skip their session-state writes, and makes
     /// <see cref="SchedulePromptAsync"/> refuse (a durable reminder would fire the persisting/pushing
-    /// reminder path). <b>Like <see cref="_turnLocation"/>, this field lives for the grain ACTIVATION,
-    /// not the call, so it is cleared explicitly</b> — in the <c>finally</c> of <see cref="ChatAsync"/> —
-    /// or a warm activation's next (non-ephemeral) turn would silently inherit it and skip its own write.
+    /// reminder path).
+    ///
+    /// <para><b>This field lives for the grain ACTIVATION, not the call — so it must be cleared
+    /// explicitly, and it is.</b> The <c>finally</c> of <see cref="ChatAsync"/> drops it when the turn ends,
+    /// and <see cref="EnqueuePromptAsync"/> and <see cref="ReceiveReminder"/> reset it on entry. Doing nothing
+    /// on the reminder path would <i>not</i> leave it false: a reminder is a separate call on the same
+    /// activation, so after an incognito chat turn the flag would still be set and the reminder would skip
+    /// its own write. Non-reentrancy is not the argument that makes this safe — <c>ChatAsync</c> is an
+    /// <c>IAsyncEnumerable</c> method that suspends between <c>yield return</c>s — the explicit clear is.
+    /// It is the archetype of the turn-scoped fields below (the user's position was the first, until ADR
+    /// 0090 made location a client tool).</para>
     /// </summary>
     private bool _ephemeral;
 
@@ -249,7 +239,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// carries the IDENTITY of a running turn, and two turns can be in flight on one activation —
     /// <see cref="ChatAsync"/> suspends between <c>yield return</c>s, so a fired reminder or an
     /// <see cref="EnqueuePromptAsync"/> run executes in the gap (the very fact the
-    /// <see cref="_turnLocation"/> remarks rest on). Assign it blindly and an
+    /// <see cref="_ephemeral"/> remarks rest on). Assign it blindly and an
     /// <see cref="EnqueuePromptAsync"/> run — which drains the same core, so it reaches the publish —
     /// steals the handle, and the user's stop cancels <i>that</i> turn instead; clear it blindly and one
     /// turn's disposal faults another turn's live run. (A fired reminder cannot steal it: it never comes
@@ -276,7 +266,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// <see cref="ReceiveReminder"/>'s own write. Miss the second and a reminder turn's ingest never
     /// attaches retrieval.</para>
     ///
-    /// <para>Like <see cref="_ephemeral"/> and <see cref="_turnLocation"/> it lives for the grain
+    /// <para>Like <see cref="_ephemeral"/> it lives for the grain
     /// ACTIVATION, not the call, so it is cleared in the same three places: the <c>finally</c> of
     /// <see cref="ChatAsync"/>, and on entry to <see cref="EnqueuePromptAsync"/> and
     /// <see cref="ReceiveReminder"/>. Consuming it clears it too, so a normal turn leaves it false.</para>
@@ -295,7 +285,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// exception: it does <b>not</b> drain <c>ChatCoreAsync</c> (it calls <c>_agent.RunAsync</c>
     /// directly), so it resets the field itself, in its own reset block. Miss that second site and a
     /// REPEATING reminder inherits the previous tick's count and goes permanently silent after three
-    /// pushes, for the life of the activation — the <see cref="_turnLocation"/> bug shape exactly.</para>
+    /// pushes, for the life of the activation — the <see cref="_ephemeral"/> bug shape exactly.</para>
     ///
     /// <para>This is deliberately <b>not</b> the <see cref="_ephemeral"/> shape of "set it in all three
     /// entrypoints". Those fields carry a <i>different value</i> per path, so only the caller knows what
@@ -481,18 +471,16 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
-        UserLocation? location = null, bool ephemeral = false, bool interactive = true,
+        bool ephemeral = false, bool interactive = true,
         IReadOnlyList<string>? clientTools = null)
     {
-        // The position and the ephemeral flag are both turn-scoped, and the fields outlive the call
-        // (see _turnLocation / _ephemeral), so the clears are explicit and in a finally: they must
-        // happen even if the caller abandons the stream half-way (the finally then runs on the
-        // enumerator's disposal), or the next turn — or a reminder firing on this same activation —
-        // would inherit this turn's fix, or skip its own session write.
-        _turnLocation = location is { IsValid: true } ? location : null;
+        // The ephemeral flag is turn-scoped, and the field outlives the call (see _ephemeral), so the
+        // clears are explicit and in a finally: they must happen even if the caller abandons the stream
+        // half-way (the finally then runs on the enumerator's disposal), or the next turn — or a reminder
+        // firing on this same activation — would skip its own session write.
         _ephemeral = ephemeral;
         // This is the live browser-streamed path, so follow-up suggestions may be generated (gated further
-        // by the user preference). Turn-scoped like the two above; cleared in the finally.
+        // by the user preference). Turn-scoped like the one above; cleared in the finally.
         //
         // A caller that DRAINS this stream rather than streaming it to a browser passes false: the MCP
         // surface (ADR 0070) takes the reply text and discards every other event, so a follow-up call
@@ -514,7 +502,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         finally
         {
             CloseClientToolBroker(broker);
-            _turnLocation = null;
             _ephemeral = false;
             _interactiveTurn = false;
             // Consumed inside ChatCoreAsync on the normal path; cleared here for the same
@@ -558,12 +545,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public async Task EnqueuePromptAsync(string message, IReadOnlyList<AttachmentRef>? attachments)
     {
-        // A background (agent-run) turn has no browser and no location — clear _turnLocation before
-        // running, exactly like the reminder path: the field lives for the ACTIVATION, so a prior chat
-        // turn's fix would otherwise leak into this one and have get_current_location report a stale place.
-        // Same reasoning for _ephemeral: an agent-run conversation is always listed and persisted (it is
-        // opened later by its owner), so a stale incognito flag must never make this turn skip its write.
-        _turnLocation = null;
+        // A background (agent-run) turn resets the turn-scoped fields before running, exactly like the
+        // reminder path: they live for the ACTIVATION. An agent-run conversation is always listed and
+        // persisted (it is opened later by its owner), so a stale incognito flag must never make this turn
+        // skip its write.
         _ephemeral = false;
         // A background (agent-run) turn has no live client watching the stream, so follow-up suggestions
         // would be a wasted model call for a discarded event — keep the interactive gate OFF.
@@ -613,7 +598,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // the agent's name; a regular chat leaves it unset so the ingestion span processor falls back to the
     // service constant. Rides Orleans RequestContext like the user.* identity (ADR 0010) — the processor
     // stamps it onto the in-grain chat/tool spans at OnStart. RequestContext is per-call, so this is
-    // naturally turn-scoped (no clear-on-exit hazard like _turnLocation).
+    // naturally turn-scoped (no clear-on-exit hazard like _ephemeral).
     private void PublishUsageApplication()
     {
         if (_state.State.AgentName is { Length: > 0 } name)
@@ -665,8 +650,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         var interactive = _interactiveTurn;
 
         _logger.LogInformation(
-            "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s), location: {HasLocation})",
-            this.GetPrimaryKeyString(), message.Length, attachments?.Count ?? 0, _turnLocation is not null);
+            "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s))",
+            this.GetPrimaryKeyString(), message.Length, attachments?.Count ?? 0);
 
         // No model configured (ADR 0019). The factory is resolved once per activation, so a user who added
         // their FIRST provider after this grain activated still holds the empty factory here — re-resolve to
@@ -1535,10 +1520,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     {
         PublishUsageApplication();
 
-        // A scheduled prompt never knows where the user is. This is NOT a no-op: _turnLocation lives
-        // for the activation, so without it a reminder firing after a located chat turn would still see
-        // that turn's fix and have the model announce the user's position hours later, somewhere else.
-        // _ephemeral is cleared for the same activation-scoped reason: a fired reminder always persists.
+        // These resets are NOT no-ops: the fields live for the activation. _ephemeral is cleared because a
+        // fired reminder always persists, and an incognito chat turn before it must not make it skip its write.
         // _webDocumentIngested likewise (ADR 0066) — this method has its OWN consume site below, and it
         // must consume this turn's ingest, not one inherited from an abandoned chat stream.
         // _pushesThisTurn is reset site 2 of 2 (ADR 0075) and belongs here for a reason specific to this
@@ -1546,7 +1529,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // and this method does not — it calls _agent.RunAsync directly (the same fact the "consume site
         // 2 of 2" comment below rests on). Without this line a repeating reminder inherits the previous
         // tick's count and stops pushing after three, permanently, for the life of the activation.
-        _turnLocation = null;
         _ephemeral = false;
         _webDocumentIngested = false;
         _pushesThisTurn = 0;

@@ -761,7 +761,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     // AC6 — the load-bearing one. The counter resets on the REMINDER path (reset site 2 of 2), which does
     // NOT drain ChatCoreAsync and so cannot inherit reset site 1.
     //
-    // This is the ADR 0012 _turnLocation bug shape: with the ReceiveReminder reset removed, a repeating
+    // This is the turn-scoped-field bug shape (gotchas): with the ReceiveReminder reset removed, a repeating
     // reminder inherits the previous turn's count and goes silent for the life of the activation. The
     // sequence makes that visible — schedule, spend the whole budget on a chat turn, then fire. With the
     // reset the reminder pushes (4 sends); without it the tool refuses AND the away-reply push is
@@ -842,7 +842,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-incognito-user/push-incognito-conv");
 
         var answer = Answer(await CollectAsync(
-            agent.ChatAsync("send me a notification", null, null, null, ephemeral: true)));
+            agent.ChatAsync("send me a notification", null, null, ephemeral: true)));
 
         Assert.Empty(SendsFor("push-incognito-user"));
         Assert.Contains("cannot send a notification from an incognito chat", answer, StringComparison.Ordinal);
@@ -1883,17 +1883,18 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         => System.Text.RegularExpressions.Regex.Matches(session, @"\[tools:[^\]]*\]")
             .Sum(m => System.Text.Encoding.UTF8.GetByteCount(m.Value));
 
-    // ---- User location (ADR 0012) ----
+    // ---- User location (ADR 0012, a client tool since ADR 0090) ----
 
     // A fix on the Dam in Amsterdam. FakeGeocoder resolves any valid fix to one canned address.
     private static UserLocation Dam(DateTimeOffset? capturedAt = null) =>
         new(52.3676, 4.9041, AccuracyMetres: 12, CapturedAt: capturedAt ?? DateTimeOffset.UtcNow);
 
-    // AC1 — a turn that carries a position lets the tool report BOTH the coordinates and the
-    // reverse-geocoded address, and both reach the model (the fake echoes tool results as [tool:…] —
-    // the same discipline as the web-search test: a tool that ran proves plumbing, not delivery).
+    // AC1 — when the browser answers the client tool with a fix, the tool reports BOTH the coordinates and
+    // the reverse-geocoded address, and both reach the model (the fake echoes tool results as [tool:…] —
+    // the same discipline as the web-search test: a tool that ran proves plumbing, not delivery). The call
+    // streams flagged as a client tool, which is what makes the browser answer it at all.
     [Fact]
-    public async Task GetCurrentLocation_ReturnsAddress_WhenTurnCarriesPosition()
+    public async Task GetCurrentLocation_ReturnsAddress_WhenBrowserAnswersAFix()
     {
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("location-conversation");
 
@@ -1901,7 +1902,8 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         var call = events.SingleOrDefault(e => e.Type == AgentStreamEventType.ToolCallStart);
         Assert.NotNull(call);
-        Assert.Equal("get_current_location", call!.ToolName);
+        Assert.Equal(ClientToolLimits.GetCurrentLocation, call!.ToolName);
+        Assert.True(call.ClientTool);
 
         var answer = Answer(events);
         Assert.Contains("[tool:", answer);
@@ -1909,9 +1911,8 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains("52.3676", answer);
     }
 
-    // AC2 — with no position on the turn, the tool must SAY SO rather than invent one, and must tell the
-    // model to ask the user to share it. The tool is the only thing that knows; nothing else in the turn
-    // can surface it.
+    // AC3 — when the browser says the user has not shared their location, the tool must SAY SO rather than
+    // invent one, and must tell the model to ask the user to share it. The raw status is never the result.
     //
     // The assertion anchors on an apostrophe- and quote-free phrase on purpose: a tool result is
     // JSON-serialized on its way to the model, which escapes both — an assertion containing "don't" or
@@ -1921,35 +1922,79 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     {
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("no-location-conversation");
 
-        var answer = Answer(await Chat(agent, "where am i"));
+        var events = await ChatAnsweringLocation(agent, "where am i", """{"status":"not_shared"}""");
+        var answer = Answer(events);
 
         Assert.Contains("has not shared their location", answer);
         // Points the user at the grant control's real home (Preferences) — quote-free so it can't pass
         // vacuously through JSON escaping, and it caught the composer-button copy going stale once already.
         Assert.Contains("Preferences", answer);
         Assert.DoesNotContain(FakeGeocoder.Address, answer);
+        Assert.DoesNotContain("not_shared", ToolResult(events));
     }
 
-    // AC3 — the position is turn-scoped. A later turn WITHOUT one must not see the earlier turn's fix:
-    // the field lives for the ACTIVATION, not the call, so without the explicit clear this second turn
-    // would still confidently answer "Damrak 1".
+    // AC5 — whatever the browser posts that is not a valid fix (out of range, not numbers, not JSON, a
+    // truncated prefix) is "no usable fix": the model is told the device could not get a position, and the
+    // geocoder — the outbound call the SSRF argument is about — never sees it. FakeGeocoder counts every
+    // out-of-range fix it is handed, process-wide, and that count must stay 0.
+    [Theory]
+    [InlineData("""{"latitude":91.5,"longitude":4.9}""")]
+    [InlineData("""{"latitude":52.3,"longitude":-180.5}""")]
+    [InlineData("""{"latitude":"52.3676","longitude":"4.9041"}""")]
+    [InlineData("""{"latitude":1e400,"longitude":4.9041}""")]
+    [InlineData("""{"longitude":4.9041}""")]
+    [InlineData("""[52.3676,4.9041]""")]
+    [InlineData("""{"latitude":52.3676,"longitude":4.90""")]
+    [InlineData("somewhere in Amsterdam")]
+    [InlineData("""{"status":"no_fix"}""")]
+    [InlineData("""{"status":"timeout"}""")]
+    public async Task GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder(string browserAnswer)
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>($"invalid-location-{Guid.NewGuid():N}");
+
+        var result = ToolResult(await ChatAnsweringLocation(agent, "where am i", browserAnswer));
+
+        Assert.Contains("could not get a position", result);
+        Assert.DoesNotContain(FakeGeocoder.Address, result);
+        Assert.DoesNotContain("no street address could be resolved", result);
+        Assert.Equal(0, FakeGeocoder.InvalidCalls);
+    }
+
+    // AC7 — no browser can answer (a turn without one, the shape of a background run, ask_agent and MCP):
+    // the tool answers at once that the location cannot be read, and never claims a position.
+    [Fact]
+    public async Task GetCurrentLocation_NoBrowser_SaysUnavailable()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("no-browser-location-conversation");
+
+        var events = await Chat(agent, "where am i");
+
+        Assert.DoesNotContain(events, e => e.ClientTool == true);
+        var result = ToolResult(events);
+        Assert.Contains("No browser is connected to this chat", result);
+        Assert.DoesNotContain(FakeGeocoder.Address, result);
+    }
+
+    // AC11 — no location state is persisted or carried between turns. A later turn on the same warm
+    // activation, with no browser to answer, must not see the earlier turn's fix: there is no field to
+    // leak it through any more (ADR 0090), and this pins that nothing grows back.
     //
     // Both assertions are made on the turn's OWN ToolCallEnd result, not on the reply text. That is not
     // fussiness: the fake echoes every tool result it can see, and by turn 2 the model legitimately sees
     // turn 1's result replayed from history — so the reply text contains the old address no matter what
-    // the grain does, and an assertion on it would be testing the fake, not the field.
+    // the grain does, and an assertion on it would be testing the fake, not the grain.
     [Fact]
-    public async Task Location_IsTurnScoped_AndNotPersisted()
+    public async Task Location_IsNotPersisted()
     {
         const string Key = "turn-scoped-location-conversation";
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
 
-        // Turn 1 carries a fix and resolves an address.
+        // Turn 1 is answered with a fix and resolves an address.
         Assert.Contains(FakeGeocoder.Address, ToolResult(await ChatAt(agent, "where am i", Dam())));
 
-        // Turn 2, on the same warm activation, carries none.
+        // Turn 2, on the same warm activation, has no browser to answer.
         var second = ToolResult(await Chat(agent, "where am i"));
-        Assert.Contains("has not shared their location", second);
+        Assert.Contains("No browser is connected to this chat", second);
         Assert.DoesNotContain(FakeGeocoder.Address, second);
 
         // The position is never grain STATE. What IS persisted is the tool's return value, which carries
@@ -1963,19 +2008,17 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
                 || p.Name.Contains("Location", StringComparison.OrdinalIgnoreCase));
     }
 
-    // AC4 — the reminder path never claims to know where the user is. This is the bug the plan's first
-    // draft contained: _turnLocation lives for the ACTIVATION, so a reminder firing on the same
-    // activation as a located chat turn would still see that turn's fix and announce the user's position
-    // hours later, somewhere else. The reminder's own prompt asks "where am i" (see FakeChatClient), so
-    // the tool really is invoked on that path — an assertion that never reached the tool would prove
-    // nothing.
+    // AC7 — the reminder path never claims to know where the user is. A reminder has no browser, so the
+    // client tool answers "unavailable", even on the same warm activation as a chat turn whose browser
+    // could answer. The reminder's own prompt asks "where am i" (see FakeChatClient), so the tool really
+    // is invoked on that path — an assertion that never reached the tool would prove nothing.
     [Fact]
     public async Task ReceiveReminder_HasNoUserLocation()
     {
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("reminder-location-conversation");
 
-        // A located turn that also schedules a reminder whose prompt asks where the user is. The
-        // activation now holds a fix.
+        // A chat turn from a browser that can answer the location tool, which schedules a reminder whose
+        // prompt asks where the user is.
         await ChatAt(agent, "schedule a location check", Dam());
 
         // Fire it on that same warm activation.
@@ -1984,7 +2027,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         var history = await agent.GetHistoryAsync();
         var reply = history.Last(t => t.Role == "assistant").Text;
 
-        Assert.Contains("has not shared their location", reply);
+        Assert.Contains("No browser is connected to this chat", reply);
         Assert.DoesNotContain(FakeGeocoder.Address, reply);
     }
 
@@ -1999,13 +2042,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         await using var cluster = await NewClusterAsync<CoordinatesOnlyGeocoderSiloConfigurator>();
         var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("no-geocoder-conversation");
 
-        var events = new List<AgentStreamEvent>();
-        await foreach (var evt in agent.ChatAsync("where am i", null, null, Dam()))
-        {
-            events.Add(evt);
-        }
-
-        var result = ToolResult(events);
+        var result = ToolResult(await ChatAt(agent, "where am i", Dam()));
 
         // The coordinates are there…
         Assert.Contains("52.3676", result);
@@ -2418,8 +2455,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     //
     // An ephemeral turn runs the model normally but never writes its session item, so the conversation
     // leaves no trace in Cosmos (the API layer separately keeps it out of the sidebar index — see
-    // AgentApiTests). The flag rides the chat request into a turn-scoped, non-persisted grain field,
-    // exactly like the user's location (ADR 0012).
+    // AgentApiTests). The flag rides the chat request into a turn-scoped, non-persisted grain field.
 
     // The turn still answers, but nothing is persisted — a fresh grain that only ran an ephemeral turn
     // has an unwritten (null) SerializedSession.
@@ -2429,7 +2465,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         const string key = "ephemeral-nopersist-conversation";
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
-        var events = await CollectAsync(agent.ChatAsync("hi", null, null, null, ephemeral: true));
+        var events = await CollectAsync(agent.ChatAsync("hi", null, null, ephemeral: true));
 
         Assert.False(string.IsNullOrWhiteSpace(Answer(events)), "an ephemeral turn should still answer.");
         Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
@@ -2445,14 +2481,14 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         const string key = "ephemeral-reactivation-conversation";
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
-        await CollectAsync(agent.ChatAsync("this should vanish", null, null, null, ephemeral: true));
+        await CollectAsync(agent.ChatAsync("this should vanish", null, null, ephemeral: true));
         await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
         var history = await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetHistoryAsync();
         Assert.Empty(history);
     }
 
-    // _ephemeral is activation-scoped and cleared in ChatAsync's finally (the location-bug family, gotchas):
+    // _ephemeral is activation-scoped and cleared in ChatAsync's finally (the turn-scoped family, gotchas):
     // a NORMAL turn following an ephemeral one on the SAME activation must persist, or a warm grain would
     // silently keep skipping its writes.
     [Fact]
@@ -2462,11 +2498,11 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         // Turn 1 — ephemeral: writes nothing.
-        await CollectAsync(agent.ChatAsync("incognito turn", null, null, null, ephemeral: true));
+        await CollectAsync(agent.ChatAsync("incognito turn", null, null, ephemeral: true));
         Assert.Null((await SessionStateOf(key)).SerializedSession);
 
         // Turn 2 — normal, same activation: the flag must have been cleared, so this turn persists.
-        await CollectAsync(agent.ChatAsync("on the record now", null, null, null, ephemeral: false));
+        await CollectAsync(agent.ChatAsync("on the record now", null, null, ephemeral: false));
 
         var persisted = (await SessionStateOf(key)).SerializedSession;
         Assert.False(string.IsNullOrEmpty(persisted), "the normal turn after an ephemeral one must persist.");
@@ -2482,7 +2518,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 
         var events = await CollectAsync(
-            agent.ChatAsync("please remind me to drink water", null, null, null, ephemeral: true));
+            agent.ChatAsync("please remind me to drink water", null, null, ephemeral: true));
 
         // The model still tried to schedule…
         var start = Assert.Single(events, e => e.Type == AgentStreamEventType.ToolCallStart);
@@ -2837,14 +2873,32 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         return events;
     }
 
-    // Same, but the turn carries the user's position — the shape a located chat request takes (ADR 0012).
-    private static async Task<List<AgentStreamEvent>> ChatAt(
-        IAgentGrain agent, string message, UserLocation location)
+    // Same, but from a browser that answers get_current_location with this fix (ADR 0090), in the shape
+    // location.js posts it.
+    private static Task<List<AgentStreamEvent>> ChatAt(IAgentGrain agent, string message, UserLocation location)
+        => ChatAnsweringLocation(agent, message, System.Text.Json.JsonSerializer.Serialize(new
+        {
+            latitude = location.Latitude,
+            longitude = location.Longitude,
+            accuracyMetres = location.AccuracyMetres,
+            capturedAt = location.CapturedAt,
+        }));
+
+    // A turn from a browser that runs the location client tool and answers it with `browserAnswer` as soon as
+    // the call streams. An answer that arrives before the tool runs is kept (ClientToolTests), so this needs
+    // no wait. A turn that never calls the tool just drains.
+    private static async Task<List<AgentStreamEvent>> ChatAnsweringLocation(
+        IAgentGrain agent, string message, string browserAnswer)
     {
         var events = new List<AgentStreamEvent>();
-        await foreach (var evt in agent.ChatAsync(message, null, null, location))
+        await foreach (var evt in agent.ChatAsync(
+            message, null, clientTools: [ClientToolLimits.GetCurrentLocation]))
         {
             events.Add(evt);
+            if (evt.ClientTool == true && evt.ToolName == ClientToolLimits.GetCurrentLocation)
+            {
+                Assert.True(await agent.SubmitClientToolResultAsync(evt.ToolCallId!, browserAnswer));
+            }
         }
 
         return events;
@@ -4130,7 +4184,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         await CollectAsync(agent.ChatAsync("the ancient message", null));
 
         Fixture.AdvanceClock(PastTheWindow);
-        await CollectAsync(agent.ChatAsync("an incognito question", null, null, null, ephemeral: true));
+        await CollectAsync(agent.ChatAsync("an incognito question", null, null, ephemeral: true));
 
         // The persisted session is untouched — still holding the turn a persisted turn would have dropped.
         Assert.Contains("the ancient message", await SessionJsonOf(key), StringComparison.Ordinal);

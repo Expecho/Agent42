@@ -1,7 +1,8 @@
 namespace Agent42.Tests;
 
 /// <summary>
-/// Guards the user-location wiring in the composer (ADR 0012). Serves the real Backend <c>wwwroot</c>
+/// Guards the user-location wiring in the page (ADR 0012): since ADR 0090 the browser answers the
+/// <c>get_current_location</c> client tool instead of sending a fix with every chat request. Serves the real Backend <c>wwwroot</c>
 /// through the shared <see cref="StaticAssetsServerFixture"/>, then asserts on the key source strings —
 /// the same shape as <see cref="SpeechInputAssetsTests"/>.
 ///
@@ -39,27 +40,62 @@ public sealed class LocationAssetsTests
         Assert.DoesNotContain("composer__location", styles);
     }
 
-    // AC11 — the send path must never call getCurrentPosition, and never await a fix. An awaited
-    // acquisition would add seconds to EVERY message once the cached fix went stale (a cold GPS lock on
-    // mobile takes seconds), so typing "hi" would pay for a GPS spin-up. The send path reads an
-    // already-cached fix synchronously instead.
+    // AC2 (ADR 0090) — no location is sent on a chat request, and the send path never touches geolocation:
+    // the position leaves the browser only as the answer to the location client tool, when the model asks.
     [Fact]
-    public async Task App_NeverBlocksSendOnGeolocation()
+    public async Task Send_NeverTouchesGeolocation()
     {
         var app = await _fixture.GetAppScriptAsync();
 
-        // The send body attaches the cached fix through the synchronous accessor…
-        Assert.Contains("location: currentLocationForSend()", app);
-
-        // …and that accessor is neither async nor awaiting anything.
-        var accessor = StaticAssetsServerFixture.Body(app, "function currentLocationForSend()");
-        Assert.DoesNotContain("await", accessor);
-        Assert.DoesNotContain("getCurrentPosition", accessor);
-        Assert.DoesNotContain("async function currentLocationForSend", app);
-
-        // The send function itself never asks the browser for a position.
         var send = StaticAssetsServerFixture.Body(app, "async function send(prompt, replay = null)");
         Assert.DoesNotContain("getCurrentPosition", send);
+        Assert.DoesNotContain("location:", send);
+        Assert.DoesNotContain("locationForTool", send);
+        Assert.DoesNotContain("currentLocationForSend", app);
+
+        // The tool is answered through the client-tool handlers instead.
+        Assert.Contains("get_current_location: () => locationForTool()", app);
+    }
+
+    // AC3 (ADR 0090) — the tool checks the grant BEFORE any capture, so a page that is not authorized answers
+    // not_shared without calling getCurrentPosition (no prompt on the Permissions-API leg). A denial on the
+    // capture answers not_shared as well, and clears the stored grant through handlePositionError.
+    [Fact]
+    public async Task LocationTool_ChecksTheGrantBeforeCapturing()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        var tool = StaticAssetsServerFixture.Body(app, "async function locationForTool()");
+        var grant = tool.IndexOf("isCaptureAuthorized()", StringComparison.Ordinal);
+        var capture = tool.IndexOf("readPosition(", StringComparison.Ordinal);
+        Assert.True(grant >= 0 && capture > grant, "the grant check must come before the capture");
+        Assert.Contains("status: \"not_shared\"", tool[..capture]);
+        Assert.Contains("handlePositionError(error)", tool);
+        Assert.Contains("status: \"no_fix\"", tool);
+    }
+
+    // AC4 (ADR 0090) — a stale fix is never returned (the model must not be told the user is somewhere they
+    // left half an hour ago), and the one fresh capture is bounded BELOW the server's wait for an automatic
+    // client tool, so the page answers no_fix before the server gives up on it.
+    [Fact]
+    public async Task LocationTool_DropsStaleFix_AndBoundsTheCapture()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        var fresh = StaticAssetsServerFixture.Body(app, "function isFresh(fix)");
+        Assert.Contains("LOCATION_MAX_AGE_MS", fresh);
+
+        var tool = StaticAssetsServerFixture.Body(app, "async function locationForTool()");
+        Assert.Contains("isFresh(lastFix)", tool);
+        Assert.Contains("readPosition(LOCATION_TOOL_TIMEOUT_MS)", tool);
+        Assert.Contains("timeout: timeoutMs", StaticAssetsServerFixture.Body(app, "function readPosition("));
+
+        var bound = System.Text.RegularExpressions.Regex.Match(app, @"const LOCATION_TOOL_TIMEOUT_MS = (\d+);");
+        Assert.True(bound.Success, "LOCATION_TOOL_TIMEOUT_MS must be a plain number");
+        Assert.True(
+            int.Parse(bound.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)
+                < Agent42.Agents.ClientToolLimits.AutomaticTimeout.TotalMilliseconds,
+            "the tool's capture must end before the server's wait does");
     }
 
     // AC12 — capture is authorized by EITHER leg, and a denial clears the stored grant.
@@ -92,22 +128,8 @@ public sealed class LocationAssetsTests
         Assert.Contains("setStoredGrant(false)", onError);
     }
 
-    // AC14 — a stale fix is dropped, never sent. The model must not be told the user is somewhere they
-    // left half an hour ago.
-    [Fact]
-    public async Task App_DropsStaleFix()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        Assert.Contains("LOCATION_MAX_AGE_MS", app);
-
-        var accessor = StaticAssetsServerFixture.Body(app, "function currentLocationForSend()");
-        Assert.Contains("LOCATION_MAX_AGE_MS", accessor);
-        Assert.Contains("return null", accessor);
-    }
-
     // Capture also runs out of band — on grant, on the tab becoming visible, and on an interval while
-    // it stays visible — which is what keeps a fresh fix in the cache for the send path to find.
+    // it stays visible — which is what lets most location tool calls be answered from the cache at once.
     [Fact]
     public async Task App_RefreshesTheFixInTheBackground()
     {

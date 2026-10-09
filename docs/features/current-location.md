@@ -1,7 +1,8 @@
 # Current location
 
 > A `get_current_location` tool that returns the user's coordinates and a reverse-geocoded
-> street address — for local weather, what's nearby, travel times, and "where am I". ADR 0012.
+> street address — for local weather, what's nearby, travel times, and "where am I". ADR 0012;
+> a client tool since ADR 0090.
 
 ## What it is
 
@@ -12,82 +13,82 @@ address.
 
 > **Two subtle properties keep this safe:** the tool takes **zero parameters** (the model
 > can't inject a location or a URL — it is *not* an SSRF sink), and the position is
-> **turn-scoped** and never persisted (a stored fix would outlive its turn).
+> **never persisted as state** and never sent unless the model asks for it.
 
 ## How it works
 
-`navigator.geolocation` is a *browser* API and tools run *server-side*, and the chat path is a
-one-way NDJSON stream — so a tool cannot ask the browser for a fix mid-turn. Instead the
-position **rides the chat request** into a turn-scoped grain field that is cleared explicitly.
+`navigator.geolocation` is a *browser* API and tools run *server-side*. Since ADR 0090 the tool is a
+**client tool** (ADR 0089): the call streams to the browser, the turn waits, the browser posts its fix,
+and the grain validates and geocodes it. Nothing location-related rides the chat request.
 
 ```mermaid
 sequenceDiagram
-    participant B as Browser (navigator.geolocation)
-    participant API as AgentApi (POST /api/chat)
+    participant B as Browser (location.js)
+    participant API as AgentApi
     participant G as AgentGrain
     participant Geo as GoogleGeocoder
 
-    B->>API: ChatRequest { message, location }
-    API->>API: drop invalid fix
-    API->>G: ChatAsync(message, ..., location)
-    G->>G: _turnLocation = location (try/finally)
+    B->>API: POST /api/chat { message, clientTools: [..., get_current_location] }
+    API->>G: ChatAsync(message, ..., clientTools)
     Note over G: model calls get_current_location
+    G-->>B: toolCallStart { clientTool: true }
+    G->>G: AwaitClientResultAsync (≤ 15 s)
+    B->>B: locationForTool(): grant? fresh cache? else one capture ≤ 10 s
+    B->>API: POST /api/chat/{id}/tool-result { fix | status }
+    API->>G: SubmitClientToolResultAsync
+    G->>G: ParseBrowserFix (numbers + IsValid)
     G->>Geo: ReverseAsync(lat,lng)
     Geo-->>G: formatted address / null
-    G-->>API: JSON coords + address
-    G->>G: finally → _turnLocation = null
+    G-->>B: JSON coords + address (tool result)
 ```
 
-### The tool — zero parameters, reads the turn field
+### The tool — zero parameters, waits on the browser
 
 ```csharp
 var getCurrentLocation = AIFunctionFactory.Create(
     GetCurrentLocationAsync,
-    name: "get_current_location",
-    description: "Get the user's current location: their coordinates and, when it can be resolved, their street address. ...");
+    name: ClientToolLimits.GetCurrentLocation,
+    description: "Get the user's current location from their device: ...");
 ```
 
 ```csharp
 private async Task<string> GetCurrentLocationAsync(CancellationToken cancellationToken)
 {
-    if (_turnLocation is not { } location)
-        return "The user has not shared their location with this conversation ...";
+    var answer = await AwaitClientResultAsync(ClientToolLimits.GetCurrentLocation, cancellationToken);
+    var (location, status) = ParseBrowserFix(answer);
+    if (location is null)
+        return status switch { "not_shared" => NotSharedText, "unavailable" => UnavailableText, _ => NoFixText };
     var place = await _geocoder.ReverseAsync(location, cancellationToken);
-    var result = new { latitude = location.Latitude, longitude = location.Longitude,
-        accuracyMetres = location.AccuracyMetres, address = place?.FormattedAddress,
-        locality = place?.Locality, country = place?.Country,
-        capturedAt = location.CapturedAt?.ToString("o", CultureInfo.InvariantCulture), note = ... };
-    return JsonSerializer.Serialize(result);
+    // ... compact record: coordinates, address, locality, country, capturedAt (absolute), note
 }
 ```
 
-### The turn-scoped field, cleared in a `finally`
+The browser's answer is `{latitude, longitude, accuracyMetres, capturedAt}` or a status:
+`not_shared` (not authorized, or denied), `no_fix` (authorized, no fresh fix). The broker adds
+`unavailable` (no browser: a reminder, a background run, `ask_agent`, MCP, an old cached client) and
+`timeout`. Each becomes plain language telling the model not to guess; the raw status is never the
+result. Anything that is not two in-range numbers is "no usable fix" and never reaches the geocoder.
 
-```csharp
-_turnLocation = location is { IsValid: true } ? location : null;
-try { await foreach (var evt in ChatCoreAsync(message, model, attachments)) yield return evt; }
-finally { _turnLocation = null; }
-```
+### The browser side
 
-The position rides `ChatRequest` into the grain; an invalid fix is dropped at the boundary:
-
-```csharp
-var location = request.Location is { IsValid: true } fix ? fix : null;
-http.Response.ContentType = "application/x-ndjson";
-await foreach (var evt in agent.ChatAsync(request.Message, model, attachmentRefs, location)) { ... }
-```
-
-`UserLocation` is Orleans-serializable and range-validated:
-
-```csharp
-[GenerateSerializer] [Alias("Agent42.Agents.UserLocation")]
-public sealed record UserLocation([property: Id(0)] double Latitude, [property: Id(1)] double Longitude,
-    [property: Id(2)] double? AccuracyMetres = null, [property: Id(3)] DateTimeOffset? CapturedAt = null)
-{
-    public bool IsValid => double.IsFinite(Latitude) && double.IsFinite(Longitude)
-        && Latitude is >= -90 and <= 90 && Longitude is >= -180 and <= 180;
+```js
+export async function locationForTool() {
+  if (!(await isCaptureAuthorized())) return { status: "not_shared" };
+  if (isFresh(lastFix)) return lastFix;                 // ≤ 30 min old
+  try {
+    lastFix = toFix(await readPosition(LOCATION_TOOL_TIMEOUT_MS));   // 10 s, below the server's 15 s
+    return lastFix;
+  } catch (error) {
+    handlePositionError(error);
+    return error?.code === 1 ? { status: "not_shared" } : { status: "no_fix" };
+  }
 }
 ```
+
+The send path never touches geolocation. The background refresh (on grant, on visibility, every
+5 minutes while visible) keeps the cache warm, so most calls are answered at once. The grant is
+two-legged (Permissions API, or a stored flag on WebKit); on WebKit a site permission reset to
+"ask" can still prompt during the tool's capture.
 
 The geocoder degrades to `null` (never throws) when the key is missing or the call fails; DI
 picks `GoogleGeocoder` when a key is present, else `CoordinatesOnlyGeocoder`:
@@ -104,25 +105,27 @@ builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
   `CancellationToken` is supplied by the framework's invocation context and kept out of the
   schema, so the model cannot inject coordinates or an address. That zero-param property is the
   SSRF defence, pinned by a test.
-- It rides the same `ChatClientAgent` tool-call loop as the web tools and is gated by the
-  `location` catalog key.
+- It rides the same `ChatClientAgent` tool-call loop as every tool and is gated by the
+  `location` catalog key — not `browser_tools`, even though it is a client tool, so older saved
+  selections keep it (ADR 0021).
+- Copilot chats never get it: client tools are excluded there (ADR 0089).
 
 ## How Orleans fits
 
-- `_turnLocation` is a **per-activation grain field, deliberately not in `AgentGrainState`** —
-  never persisted. Because the activation outlives a single call and `ChatAsync` is an
-  `IAsyncEnumerable` that suspends between `yield return`s, the field is cleared explicitly in
-  three places (the live `finally`, `EnqueuePromptAsync`, and `ReceiveReminder`) so a later
-  async turn never inherits a stale fix.
-- `UserLocation` crosses the grain boundary, so it carries `[GenerateSerializer]` / `[Id]`.
+- No location state exists on the grain. The fix lives only in one tool call's locals, and
+  `AgentGrainState` has no location field.
+- The wait goes through the per-run client-tool broker (an async local), so a reminder or a
+  background run in a gap of the streaming turn answers `unavailable` instead of reaching the
+  user's browser.
 - `IGeocoder` is a grain-injected singleton.
 
 ## Key files
 
 | Concern | File |
 |---------|------|
-| Tool + turn field | `src/Agent42.Agents/Location/AgentGrain.LocationTool.cs` (`GetCurrentLocationAsync`, `_turnLocation`) |
+| Tool | `src/Agent42.Agents/Location/AgentGrain.LocationTool.cs` (`GetCurrentLocationAsync`, `ParseBrowserFix`) |
+| Client-tool name and wait | `src/Agent42.Agents/ClientTools/ClientToolLimits.cs`, `src/Agent42.Agents/ClientTools/AgentGrain.ClientTools.cs` |
 | Location type | `src/Agent42.Agents/Location/UserLocation.cs` |
 | Geocoder | `src/Agent42.Backend/Location/GoogleGeocoder.cs`, `src/Agent42.Agents/Location/CoordinatesOnlyGeocoder.cs` |
-| Request DTO / endpoint | `src/Agent42.Backend/Conversations/ChatContracts.cs` (`ChatRequest.Location`) |
+| Browser | `src/Agent42.Backend/wwwroot/js/location.js` (`locationForTool`), `src/Agent42.Backend/wwwroot/js/clienttools.js` |
 | DI | `src/Agent42.Backend/Program.cs` |

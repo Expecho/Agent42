@@ -3,9 +3,19 @@ id: 0012
 date: 2026-07-13
 status: accepted
 tags: [location, tools, privacy, pii, geocoding, prompt-injection, frontend, container-apps]
+amended_by: 0090   # the position is now the answer to a client tool; it no longer rides the chat request
 ---
 
 # The user's location as a function tool, carried in on the chat request
+
+> **Amendment (2026-10-09, ADR 0090, `plan-location-as-client-tool`):** the *transport* changed.
+> `get_current_location` is now a client tool (ADR 0089): the browser answers it through `locationForTool()`
+> only when the model calls it, so `ChatRequest.Location`, the `location` parameter of `ChatAsync` and the
+> turn-scoped `_turnLocation` field described below are gone. The "nobody waits for a GPS fix" rule now holds
+> for the send path only; the tool path may take one capture bounded below the server's wait, under an existing
+> grant. Everything else here stands: no parameters, the SSRF argument (its input now arrives via
+> `POST /api/chat/{id}/tool-result`, parsed as numbers and range-checked), the two-legged grant, the privacy
+> costs, and the 5 s geocode timeout with no retries.
 
 ## Context
 Agent 42 could not answer "what's the weather here", "anything good to eat near me", or "what's my

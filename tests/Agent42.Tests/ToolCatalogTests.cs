@@ -203,7 +203,7 @@ public class ToolCatalogTests
         Assert.Equal([ToolCatalog.BrowserTools, ToolCatalog.SharedState], ToolCatalog.AllSelectableToolKeys.TakeLast(2));
         Assert.Equal([ToolCatalog.BrowserTools, ToolCatalog.SharedState], ToolCatalog.Descriptors.TakeLast(2).Select(d => d.Key));
 
-        foreach (var tool in ClientToolLimits.ToolNames)
+        foreach (var tool in BrowserToolNames)
         {
             Assert.Equal(ToolCatalog.BrowserTools, ToolCatalog.KeyFor(tool));
         }
@@ -218,11 +218,31 @@ public class ToolCatalogTests
         var all = ToolCatalog.AllSelectableToolKeys.ToHashSet();
         var saved = new HashSet<string> { ToolCatalog.WebSearch, ToolCatalog.Artifacts };
 
-        foreach (var tool in ClientToolLimits.ToolNames.Append(SharedStateLimits.UpdateToolName))
+        foreach (var tool in BrowserToolNames.Append(SharedStateLimits.UpdateToolName))
         {
             Assert.True(ToolCatalog.IsToolEnabled(tool, all), tool);
             Assert.False(ToolCatalog.IsToolEnabled(tool, saved), tool);
         }
+    }
+
+    // The client tools under browser_tools: every one except get_current_location, which is a client tool (ADR
+    // 0090) but keeps its own location key (Location_IsAClientTool_ButKeepsItsOwnKey).
+    private static IEnumerable<string> BrowserToolNames
+        => ClientToolLimits.ToolNames.Where(t => t != ClientToolLimits.GetCurrentLocation);
+
+    // AC8 (ADR 0090) — get_current_location became a client tool but did NOT move to browser_tools: that would
+    // turn location OFF for everyone who ever pressed Save (ADR 0021). It stays on its own key, ON for an older
+    // saved selection that includes that key.
+    [Fact]
+    public void Location_IsAClientTool_ButKeepsItsOwnKey()
+    {
+        Assert.Contains(ClientToolLimits.GetCurrentLocation, ClientToolLimits.ToolNames);
+        Assert.Equal(ToolCatalog.Location, ToolCatalog.KeyFor(ClientToolLimits.GetCurrentLocation));
+
+        var saved = new HashSet<string> { ToolCatalog.WebSearch, ToolCatalog.Location };
+        Assert.True(ToolCatalog.IsToolEnabled(ClientToolLimits.GetCurrentLocation, saved));
+        Assert.False(ToolCatalog.IsToolEnabled(
+            ClientToolLimits.GetCurrentLocation, new HashSet<string> { ToolCatalog.WebSearch }));
     }
 
     // AC1 — a per-tool key is a per-server key plus a segment, so IsMcpServerKey (a prefix test, deliberately

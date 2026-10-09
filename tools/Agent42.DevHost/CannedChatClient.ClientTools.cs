@@ -17,6 +17,9 @@ public sealed partial class CannedChatClient
     /// <summary>The model reads the browser's context (get_browser_context).</summary>
     public const string BrowserContextTrigger = "browser context";
 
+    /// <summary>The model asks where the user is (get_current_location, a client tool since ADR 0090).</summary>
+    public const string LocationTrigger = "where am i";
+
     /// <summary>The model opens this chat's latest artifact in the pane (control_artifact_pane).</summary>
     public const string ShowArtifactTrigger = "show the artifact";
 
@@ -43,6 +46,7 @@ public sealed partial class CannedChatClient
             _ when Has(text, ConfirmTrigger) => (ClientToolLimits.ConfirmAction,
                 new Dictionary<string, object?> { ["action"] = "Send the quarterly report to the whole team." }),
             _ when Has(text, BrowserContextTrigger) => (ClientToolLimits.GetBrowserContext, []),
+            _ when Has(text, LocationTrigger) => (ClientToolLimits.GetCurrentLocation, []),
             _ when Has(text, ShowArtifactTrigger) && LastArtifactId(list, lastUserIndex) is { } id =>
                 (ClientToolLimits.ControlArtifactPane, new Dictionary<string, object?> { ["action"] = "open", ["artifactId"] = id }),
             _ when Has(text, FullscreenTrigger) => (ClientToolLimits.ControlArtifactPane,

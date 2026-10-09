@@ -16,7 +16,10 @@ public sealed class ClientToolApiTests(SharedApiFixture fixture) : SharedCluster
     private const string IdHeader = "X-MS-CLIENT-PRINCIPAL-ID";
 
     private static readonly string[] AllClientTools =
-        [ClientToolLimits.ConfirmAction, ClientToolLimits.ControlArtifactPane, ClientToolLimits.GetBrowserContext];
+    [
+        ClientToolLimits.ConfirmAction, ClientToolLimits.ControlArtifactPane, ClientToolLimits.GetBrowserContext,
+        ClientToolLimits.GetCurrentLocation,
+    ];
 
     private HttpClient Client => Fixture.Client;
 
@@ -36,12 +39,13 @@ public sealed class ClientToolApiTests(SharedApiFixture fixture) : SharedCluster
         => Client.SendAsync(Request(HttpMethod.Post, $"/api/chat/{conversation}/tool-result", user,
             new { toolCallId = callId, result }));
 
-    // Starts a turn whose model calls confirm_action, and reads the NDJSON stream up to the flagged call. The
-    // response is returned still open, so the turn is genuinely waiting when the test acts.
+    // Starts a turn whose model calls confirm_action (or the client tool `prompt` triggers), and reads the NDJSON
+    // stream up to the flagged call. The response is returned still open, so the turn is genuinely waiting when the
+    // test acts.
     private async Task<(HttpResponseMessage Response, StreamReader Reader, string CallId)> StartConfirmTurnAsync(
-        string user, string conversation)
+        string user, string conversation, string? prompt = null)
     {
-        var prompt = FakeChatClient.CallToolPrompt(ClientToolLimits.ConfirmAction, new { action = "Send the email" });
+        prompt ??= FakeChatClient.CallToolPrompt(ClientToolLimits.ConfirmAction, new { action = "Send the email" });
         var response = await Client.SendAsync(
             Request(HttpMethod.Post, $"/api/chat/{conversation}", user, new ChatRequest(prompt, null, ClientTools: AllClientTools)),
             HttpCompletionOption.ResponseHeadersRead);
@@ -144,6 +148,43 @@ public sealed class ClientToolApiTests(SharedApiFixture fixture) : SharedCluster
         var malformed = Request(HttpMethod.Post, "/api/chat/conv/tool-result", "ct-api-size");
         malformed.Content = new StringContent("""{"result":1}""", Encoding.UTF8, "application/json");
         Assert.Equal(HttpStatusCode.BadRequest, (await Client.SendAsync(malformed)).StatusCode);
+    }
+
+    // AC1 (ADR 0090): get_current_location streams as a client tool, and the fix the browser posts is geocoded
+    // into the tool's result. "where am i" is the fake model's location trigger.
+    [Fact]
+    public async Task Chat_LocationToolCall_StreamsAsClientTool_AndPostedFixGeocodes()
+    {
+        var (response, reader, callId) = await StartConfirmTurnAsync("ct-api-location", "conv", "where am i");
+        using (response)
+        using (reader)
+        {
+            var post = await PostResult("ct-api-location", "conv", callId,
+                new { latitude = 52.3676, longitude = 4.9041, accuracyMetres = 12, capturedAt = DateTimeOffset.UtcNow });
+            Assert.Equal(HttpStatusCode.NoContent, post.StatusCode);
+
+            var rest = await reader.ReadToEndAsync();
+            Assert.Contains(FakeGeocoder.Address, rest, StringComparison.Ordinal);
+            Assert.Contains("52.3676", rest, StringComparison.Ordinal);
+        }
+    }
+
+    // AC5 (ADR 0090): the tool-result POST is now the SSRF input of the geocode call. An out-of-range fix is
+    // accepted as a post (the endpoint does not know tool shapes) but never reaches the geocoder.
+    [Fact]
+    public async Task PostResult_OutOfRangeFix_IsNotGeocoded()
+    {
+        var (response, reader, callId) = await StartConfirmTurnAsync("ct-api-badfix", "conv", "where am i");
+        using (response)
+        using (reader)
+        {
+            await PostResult("ct-api-badfix", "conv", callId, new { latitude = 999, longitude = 4.9041 });
+
+            var rest = await reader.ReadToEndAsync();
+            Assert.Contains("could not get a position", rest, StringComparison.Ordinal);
+            Assert.DoesNotContain(FakeGeocoder.Address, rest, StringComparison.Ordinal);
+            Assert.Equal(0, FakeGeocoder.InvalidCalls);
+        }
     }
 
     [Fact]

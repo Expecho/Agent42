@@ -18,16 +18,23 @@ public static class ClientToolLimits
     public const string GetBrowserContext = "get_browser_context";
 
     /// <summary>
+    /// The user's position (ADR 0090). A client tool, but NOT a <c>browser_tools</c> one: it keeps its own
+    /// <c>location</c> selectable key, so a loop over <see cref="ToolNames"/> must not assume that key.
+    /// </summary>
+    public const string GetCurrentLocation = "get_current_location";
+
+    /// <summary>
     /// Every client tool name. The chat endpoint intersects the browser's advertised list with this, so a client
     /// can only narrow what it supports, never introduce a name.
     /// </summary>
     public static IReadOnlySet<string> ToolNames { get; } =
-        new HashSet<string>([ConfirmAction, ControlArtifactPane, GetBrowserContext], StringComparer.Ordinal);
+        new HashSet<string>(
+            [ConfirmAction, ControlArtifactPane, GetBrowserContext, GetCurrentLocation], StringComparer.Ordinal);
 
     /// <summary>A human reads and answers <c>confirm_action</c>.</summary>
     public static readonly TimeSpan ConfirmTimeout = TimeSpan.FromSeconds(120);
 
-    /// <summary>The other two are answered by code in the page.</summary>
+    /// <summary>The others are answered by code in the page.</summary>
     public static readonly TimeSpan AutomaticTimeout = TimeSpan.FromSeconds(15);
 
     /// <summary>

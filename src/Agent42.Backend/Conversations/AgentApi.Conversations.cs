@@ -152,14 +152,9 @@ public static partial class AgentApi
             model = null;
         }
 
-        // A bad fix is dropped, not rejected: the browser is the only source of a position, and a
-        // nonsense one (or a hand-rolled request body) must cost the user their location for this
-        // turn — not their whole turn. The grain then simply reports the position as unknown.
-        var location = request.Location is { IsValid: true } fix ? fix : null;
-
         http.Response.ContentType = "application/x-ndjson";
         await foreach (var evt in agent.ChatAsync(
-            request.Message, model, attachmentRefs, location, request.Ephemeral,
+            request.Message, model, attachmentRefs, request.Ephemeral,
             clientTools: KnownClientTools(request.ClientTools)))
         {
             await http.Response.WriteAsync(JsonSerializer.Serialize(evt, StreamEventJson) + "\n");

@@ -31,13 +31,9 @@ public interface IAgentGrain : IGrainWithStringKey
     /// model. A bare, unqualified id is a legacy one and resolves against the default provider.
     /// <paramref name="attachments"/> are images to send alongside the text as a multimodal
     /// turn; null or empty is a plain text turn. The default keeps existing 2-arg callers working.
-    /// <paramref name="location"/> is the browser's current position, if it has one and the user has
-    /// authorized sharing it — see <see cref="UserLocation"/> for why a position has to ride the chat
-    /// request rather than be fetched by the tool. It is <b>turn-scoped</b>: the grain never persists
-    /// it, so a later turn without one does not inherit this turn's fix (ADR 0012).
     /// <paramref name="ephemeral"/> is the incognito flag (ADR 0034): when true the turn skips its
-    /// session-state write, so the conversation leaves no trace in Cosmos. Like <paramref name="location"/>
-    /// it is turn-scoped and never persisted. The default keeps existing callers working.
+    /// session-state write, so the conversation leaves no trace in Cosmos. It
+    /// is turn-scoped and never persisted. The default keeps existing callers working.
     ///
     /// <paramref name="interactive"/> is whether a live client is watching this stream (ADR 0070). It
     /// gates the follow-up suggestion call (ADR 0036), which costs one extra model call per turn. A
@@ -52,7 +48,7 @@ public interface IAgentGrain : IGrainWithStringKey
     [Alias("ChatAsync")]
     IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
-        UserLocation? location = null, bool ephemeral = false, bool interactive = true,
+        bool ephemeral = false, bool interactive = true,
         IReadOnlyList<string>? clientTools = null);
 
     /// <summary>

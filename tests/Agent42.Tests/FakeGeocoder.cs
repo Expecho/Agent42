@@ -19,10 +19,26 @@ public sealed class FakeGeocoder : IGeocoder
     /// <summary>The address every valid fix resolves to. Distinctive, so a test can assert on it.</summary>
     public const string Address = "Damrak 1, 1012 LG Amsterdam, Netherlands";
 
+    private static int _invalidCalls;
+
+    /// <summary>
+    /// How many times ANY silo's fake was handed an out-of-range fix. Process-wide, and it must stay 0: the grain
+    /// range-checks the browser's answer before the geocoder sees it (ADR 0090), so this is an invariant every
+    /// parallel test can assert, not a per-test count.
+    /// </summary>
+    public static int InvalidCalls => Volatile.Read(ref _invalidCalls);
+
     public Task<GeocodedPlace?> ReverseAsync(
         UserLocation location, CancellationToken cancellationToken = default)
-        => Task.FromResult<GeocodedPlace?>(
-            location.IsValid ? new GeocodedPlace(Address, "Amsterdam", "Netherlands") : null);
+    {
+        if (!location.IsValid)
+        {
+            Interlocked.Increment(ref _invalidCalls);
+            return Task.FromResult<GeocodedPlace?>(null);
+        }
+
+        return Task.FromResult<GeocodedPlace?>(new GeocodedPlace(Address, "Amsterdam", "Netherlands"));
+    }
 }
 
 /// <summary>
