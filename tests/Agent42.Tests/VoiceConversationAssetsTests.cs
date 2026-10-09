@@ -66,7 +66,7 @@ public sealed class VoiceConversationAssetsTests
 
         // Sliced by hand rather than through Body(): stopGeneration's parameter list is a destructured
         // object, so brace matching from the declaration would return the parameter, not the body.
-        var stopGeneration = Slice(app, "export async function stopGeneration", "export async function send(prompt)");
+        var stopGeneration = Slice(app, "export async function stopGeneration", "export async function send(prompt, replay = null)");
         Assert.Contains("/stop`, { method: \"POST\" }", stopGeneration);
         // And it still falls back to the local abort when the stop call cannot be made, so the control is
         // never inert offline.

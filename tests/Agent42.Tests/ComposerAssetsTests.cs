@@ -83,7 +83,7 @@ public sealed class ComposerAssetsTests
 
         // Revealed for the turn and hidden again when it ends, in send()'s own finally — the one place
         // that runs on every tail (done, abort, recovery, failure).
-        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt)");
+        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
         Assert.Contains("stopBtn.hidden = false", send);
         Assert.Contains("stopBtn.hidden = true", send);
 
