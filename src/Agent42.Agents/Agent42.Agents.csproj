@@ -11,6 +11,7 @@
     <PackageReference Include="DocumentFormat.OpenXml" />
     <PackageReference Include="Hindsight.AgentFramework.Net" />
     <PackageReference Include="Microsoft.Agents.AI" />
+    <PackageReference Include="Microsoft.AspNetCore.JsonPatch.SystemTextJson" />
     <PackageReference Include="Microsoft.Orleans.Sdk" />
     <PackageReference Include="Microsoft.Orleans.Runtime" />
     <PackageReference Include="Microsoft.Orleans.Reminders" />

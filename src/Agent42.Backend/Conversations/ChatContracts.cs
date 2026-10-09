@@ -13,7 +13,7 @@ namespace Agent42.Backend;
 // (new ChatRequest("hi", null)) keep compiling.
 public record ChatRequest(
     string Message, string? Model, string? AgentId = null, IReadOnlyList<string>? AttachmentIds = null,
-    UserLocation? Location = null, bool Ephemeral = false);
+    UserLocation? Location = null, bool Ephemeral = false, IReadOnlyList<string>? ClientTools = null);
 
 // The pinned flag to set on a conversation (ADR 0045). Pinned conversations lead the
 // sidebar listing regardless of recency.

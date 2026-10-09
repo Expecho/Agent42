@@ -313,7 +313,8 @@
       cards.appendChild(card);
     }
 
-    return { renderCard, open, openList, close };
+    // setFull and isOpen let the chat app drive the pane for the model (ADR 0089's control_artifact_pane).
+    return { renderCard, open, openList, close, setFull, isOpen: () => !pane.hidden };
   }
 
   window.Agent42ArtifactPane = { create };

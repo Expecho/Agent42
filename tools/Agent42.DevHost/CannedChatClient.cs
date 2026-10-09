@@ -84,7 +84,7 @@ public sealed partial class CannedChatClient : IChatClient
         // A research loop's first iteration drafts; the answer comes once the loop's feedback says a step is left.
         var reply = options?.Tools?.Any(t => t.Name == "todos_add") == true && !messages.Any(IsLoopFeedback)
             ? $"Drafting an answer to *{prompt}* from the first sources — one step of the plan is still open."
-            : SelectReply(prompt);
+            : ClientToolNote(messages, options) + SelectReply(prompt);
         foreach (var chunk in reply.Split(' ').Chunk(4).Select(words => string.Join(' ', words) + " "))
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
@@ -335,6 +335,12 @@ public sealed partial class CannedChatClient : IChatClient
         if (ArtifactCall(list, lastUserIndex, text, options) is { } artifact)
         {
             return artifact;
+        }
+
+        // Client tools and shared state (ADR 0089): trigger phrases that collide with nothing above or below.
+        if (ClientToolCall(list, lastUserIndex, text, options) is { } clientTool)
+        {
+            return clientTool;
         }
 
         // Ordering is load-bearing: "reminder" contains the substring "remind", so the cancel

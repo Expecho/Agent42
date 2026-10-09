@@ -139,6 +139,23 @@ public static class ToolCatalog
     public const string Artifacts = "artifacts";
 
     /// <summary>
+    /// The client tools (ADR 0089) — <c>confirm_action</c>, <c>control_artifact_pane</c> and
+    /// <c>get_browser_context</c>, which the BROWSER runs. One key for all three: they are one consent ("let the
+    /// assistant use my open browser tab"), and each answers "unavailable" wherever no browser is watching.
+    /// Appended LAST for the order-stability reason <see cref="PushNotification"/> gives, and like every key added
+    /// after the fact it <b>lands OFF for anyone who has ever pressed Save</b> (ADR 0021). Copilot chats never get
+    /// these tools, whatever the selection (ADR 0085's tool thread; see <c>CopilotFunctions</c>).
+    /// </summary>
+    public const string BrowserTools = "browser_tools";
+
+    /// <summary>
+    /// Shared agent↔UI state (ADR 0089) — the <c>update_shared_state</c> tool, and with it the injection of the
+    /// state into the model's instructions. Appended LAST, OFF for anyone who has ever pressed Save (ADR 0021), and
+    /// never offered to a Copilot chat.
+    /// </summary>
+    public const string SharedState = "shared_state";
+
+    /// <summary>
     /// The agent-skills <b>wildcard</b> ("all skills") meta-key (per-skill selectable tools, amends 0021).
     /// Each skill is individually selectable as a per-skill key <c>skill:{name}</c> (see
     /// <see cref="SkillKey"/>) — both the ones shipped in <see cref="SkillCatalog"/> and the ones the user
@@ -188,7 +205,10 @@ public static class ToolCatalog
     /// today's "every tool on" behaviour with no migration.
     /// </summary>
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-        [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification, Artifacts];
+        [
+            WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification,
+            Artifacts, BrowserTools, SharedState,
+        ];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
     // web_search is intentionally the key for BOTH the SearXNG shims and HostedWebSearchTool — the hosted
@@ -207,6 +227,10 @@ public static class ToolCatalog
         ["create_artifact"] = Artifacts,
         ["update_artifact"] = Artifacts,
         ["read_artifact"] = Artifacts,
+        [ClientToolLimits.ConfirmAction] = BrowserTools,
+        [ClientToolLimits.ControlArtifactPane] = BrowserTools,
+        [ClientToolLimits.GetBrowserContext] = BrowserTools,
+        [SharedStateLimits.UpdateToolName] = SharedState,
         [CodeInterpreter] = CodeInterpreter,
         ["get_current_location"] = Location,
         ["schedule_prompt"] = Scheduling,
@@ -264,6 +288,11 @@ public static class ToolCatalog
         // provides it, so it registers on both capability branches.
         new(Artifacts, "Artifacts", RequiresHostedTools: false,
             Description: "Lets the assistant build pages, apps, diagrams and documents you open in a side pane, with versions."),
+        // BrowserTools and SharedState are LAST for the same order-stability reason (ADR 0089).
+        new(BrowserTools, "Browser tools", RequiresHostedTools: false,
+            Description: "Lets the assistant ask you to confirm actions, open artifacts in the pane and read your time zone and selected text."),
+        new(SharedState, "Shared state", RequiresHostedTools: false,
+            Description: "Gives the chat a checklist and notes the assistant and you can both edit."),
     ];
 
     /// <summary>The logical key for a registered tool name, or null (e.g. <c>get_date</c>, or an unmapped tool).</summary>

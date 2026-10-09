@@ -76,6 +76,19 @@ public enum AgentStreamEventType
     /// so a reload shows what the live bubble ended with. Carries no payload.
     /// </summary>
     TextReset,
+
+    /// <summary>
+    /// The conversation's shared state changed (ADR 0089): the WHOLE state rides on
+    /// <see cref="AgentStreamEvent.State"/> (a JSON object, as text) with its version on
+    /// <see cref="AgentStreamEvent.StateVersion"/>, so the client replaces rather than patches. Emitted after a tool
+    /// result whenever the version differs from the last one this run sent.
+    ///
+    /// <para><b>Live-only on the wire</b>, like <see cref="Todos"/>, but the state itself is persisted in
+    /// <see cref="AgentGrainState.SharedStateJson"/> and the client loads it with a GET when a conversation opens.
+    /// A snapshot rather than a delta, deliberately: it is idempotent under recovery and costs nothing at the 16 KB
+    /// cap.</para>
+    /// </summary>
+    StateSnapshot,
 }
 
 /// <summary>
@@ -113,4 +126,12 @@ public sealed record AgentStreamEvent(
     [property: Id(13)] string? McpServerId = null,
     // Set on a Todos event (ADR 0082): the research agent's whole checklist, in the order the model added it.
     // Trailing default so every existing positional construction keeps compiling.
-    [property: Id(14)] IReadOnlyList<ResearchTodo>? Todos = null);
+    [property: Id(14)] IReadOnlyList<ResearchTodo>? Todos = null,
+    // Set on a ToolCallStart whose tool the BROWSER runs (ADR 0089): true only for a client tool on a run that has
+    // a browser to answer it. Null rather than false for the same NDJSON reason as Stopped. Trailing default so
+    // every existing positional construction keeps compiling.
+    [property: Id(15)] bool? ClientTool = null,
+    // Set on a StateSnapshot event (ADR 0089): the whole shared state as JSON text, and its version, which the
+    // client sends back as the base of an edit. Trailing defaults so every existing construction keeps compiling.
+    [property: Id(16)] string? State = null,
+    [property: Id(17)] long? StateVersion = null);

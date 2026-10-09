@@ -1570,6 +1570,104 @@ body {
   margin: 1.5em 0;
 }
 
+/* ————— shared state (ADR 0089) —————
+   The conversation's checklist and notes, above the composer and the same width. Collapsible, and capped in height so
+   a long list never pushes the composer off a phone screen. */
+
+.state-panel {
+  max-width: 780px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.state-panel__header {
+  display: block;
+  width: 100%;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: 400 12px var(--mono);
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.state-panel__header:hover { color: var(--ink-dim); }
+
+.state-panel__body {
+  max-height: 30vh;
+  overflow: auto;
+  padding: 8px 12px;
+  border-left: 2px solid var(--amber-deep);
+  background: var(--bg-inset);
+  border-radius: 0 6px 6px 0;
+  font: 400 13px var(--mono);
+  color: var(--ink-dim);
+}
+
+.state-panel__checklist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.state-panel__item,
+.state-panel__add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.state-panel__title,
+.state-panel__add input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+
+.state-panel__title:focus,
+.state-panel__add input:focus {
+  outline: none;
+  border-bottom-color: var(--amber-deep);
+}
+
+.state-panel__item.is-done .state-panel__title {
+  color: var(--ink-faint);
+  text-decoration: line-through;
+}
+
+.state-panel__remove {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  font: inherit;
+  cursor: pointer;
+}
+
+.state-panel__remove:hover { color: var(--red); }
+
+.state-panel__json {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+
+/* The model's description of the action it wants approved: plain text, kept as written. */
+.confirm-action__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
 /* ————— composer ————— */
 
 .composer {
