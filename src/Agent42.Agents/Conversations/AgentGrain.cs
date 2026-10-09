@@ -129,6 +129,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// </summary>
     private readonly TimeProvider _timeProvider;
 
+    // How long a client tool waits for the browser (ADR 0089). Optional with a production default, exactly like
+    // _timeProvider, so no silo host has to register it; the test silo shortens it.
+    private readonly ClientToolTimeouts _clientToolTimeouts;
+
     private AIAgent _agent = null!;
 
     private AgentSession _session = null!;
@@ -320,7 +324,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         HindsightIntegration memory,
         IPushNotificationSender pushSender,
         ILogger<AgentGrain> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ClientToolTimeouts? clientToolTimeouts = null)
     {
         _state = state;
         _chatClientFactoryProvider = chatClientFactoryProvider;
@@ -338,6 +343,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _pushSender = pushSender;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _clientToolTimeouts = clientToolTimeouts ?? ClientToolTimeouts.Default;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -475,7 +481,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
-        UserLocation? location = null, bool ephemeral = false, bool interactive = true)
+        UserLocation? location = null, bool ephemeral = false, bool interactive = true,
+        IReadOnlyList<string>? clientTools = null)
     {
         // The position and the ephemeral flag are both turn-scoped, and the fields outlive the call
         // (see _turnLocation / _ephemeral), so the clears are explicit and in a finally: they must
@@ -493,15 +500,20 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // flag false directly for the same reason; this parameter is how a caller on THIS method says it.
         _interactiveTurn = interactive;
 
+        // This turn's client-tool broker (ADR 0089), or null when no browser of this turn runs client tools. Owned
+        // by THIS call and registered by identity, never a turn-scoped field: see AgentGrain.ClientTools.cs.
+        var broker = OpenClientToolBroker(interactive, clientTools);
+
         try
         {
-            await foreach (var evt in ChatCoreAsync(message, model, attachments))
+            await foreach (var evt in ChatCoreAsync(message, model, attachments, broker))
             {
                 yield return evt;
             }
         }
         finally
         {
+            CloseClientToolBroker(broker);
             _turnLocation = null;
             _ephemeral = false;
             _interactiveTurn = false;
@@ -610,8 +622,29 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
     }
 
+    // The shared core of a chat run, drained by ChatAsync and EnqueuePromptAsync. This wrapper only counts the run
+    // (ADR 0089): a user edit of the shared state may write at once only while no run is in flight, because a write
+    // serialises the whole grain state (see AgentGrain.SharedState.cs). ReceiveReminder, the other run site, counts
+    // itself.
     private async IAsyncEnumerable<AgentStreamEvent> ChatCoreAsync(
-        string message, string? model, IReadOnlyList<AttachmentRef>? attachments)
+        string message, string? model, IReadOnlyList<AttachmentRef>? attachments, ClientToolBroker? broker = null)
+    {
+        _runsInFlight++;
+        try
+        {
+            await foreach (var evt in ChatTurnAsync(message, model, attachments, broker))
+            {
+                yield return evt;
+            }
+        }
+        finally
+        {
+            await EndRunAsync();
+        }
+    }
+
+    private async IAsyncEnumerable<AgentStreamEvent> ChatTurnAsync(
+        string message, string? model, IReadOnlyList<AttachmentRef>? attachments, ClientToolBroker? broker)
     {
         PublishUsageApplication();
 
@@ -757,7 +790,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         var streamEnded = false;
         try
         {
-            await foreach (var evt in StreamModelReplyAsync(userMessage, reply, tokens, outcome, research, turnCts.Token))
+            await foreach (var evt in StreamModelReplyAsync(
+                userMessage, reply, tokens, outcome, research, broker, turnCts.Token))
             {
                 reauth.Observe(evt);
                 yield return evt;
@@ -871,11 +905,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // one — an iterator method cannot hand out a `ref`.
     private async IAsyncEnumerable<AgentStreamEvent> StreamModelReplyAsync(
         ChatMessage userMessage, StringBuilder reply, TurnTokenTotals tokens, TurnOutcome outcome,
-        ResearchRun? research, [EnumeratorCancellation] CancellationToken turnToken)
+        ResearchRun? research, ClientToolBroker? broker, [EnumeratorCancellation] CancellationToken turnToken)
     {
         var updates = _agent
             .RunStreamingAsync([userMessage], _session, null, turnToken)
             .GetAsyncEnumerator(turnToken);
+
+        // The shared-state version this run last showed the browser (ADR 0089); a change is streamed after the tool
+        // result that carried it.
+        var stateCursor = new SharedStateCursor(_state.State.SharedStateVersion);
 
         try
         {
@@ -884,7 +922,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 AgentResponseUpdate update;
                 try
                 {
-                    if (!await updates.MoveNextAsync())
+                    // Through PullAsync so this run's client-tool broker (ADR 0089) is visible to the tools this
+                    // pull invokes, and to nothing else.
+                    if (!await PullAsync(updates, broker))
                     {
                         break;
                     }
@@ -905,7 +945,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 // TextReset and checklist events around it (ADR 0082), which is why this call is async.
                 foreach (var evt in await ProjectUpdateAsync(update, reply, tokens, research))
                 {
-                    yield return evt;
+                    yield return MarkClientToolCall(evt, broker);
+                }
+
+                if (StateSnapshotAfter(update, stateCursor) is { } snapshot)
+                {
+                    yield return snapshot;
                 }
             }
         }
@@ -1191,6 +1236,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
+        // This write carries any shared-state edit made during the run (ADR 0089), so nothing is left to flush.
+        _sharedStateDirty = false;
         await _state.WriteStateAsync();
 
         // AFTER the durable write, deliberately: once a chat is older than the window most turns prune
@@ -1504,6 +1551,21 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _webDocumentIngested = false;
         _pushesThisTurn = 0;
 
+        // The second run site of the shared-state run count (ADR 0089); ChatCoreAsync is the first.
+        _runsInFlight++;
+        try
+        {
+            await RunReminderAsync(reminderName);
+        }
+        finally
+        {
+            await EndRunAsync();
+        }
+    }
+
+    // The reminder's run, after ReceiveReminder's resets. A separate method only so the run count above can wrap it.
+    private async Task RunReminderAsync(string reminderName)
+    {
         if (!_state.State.ScheduledPrompts.TryGetValue(reminderName, out var info))
         {
             _logger.LogWarning(
@@ -1573,6 +1635,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         _state.State.ScheduledPrompts[reminderName] = info with { TimesFired = info.TimesFired + 1 };
 
+        // This write carries any shared-state edit made during the run (ADR 0089), so nothing is left to flush.
+        _sharedStateDirty = false;
         await _state.WriteStateAsync();
 
         // After the write, for the reason given at the chat site.

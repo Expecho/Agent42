@@ -158,10 +158,20 @@ public static partial class AgentApi
         var location = request.Location is { IsValid: true } fix ? fix : null;
 
         http.Response.ContentType = "application/x-ndjson";
-        await foreach (var evt in agent.ChatAsync(request.Message, model, attachmentRefs, location, request.Ephemeral))
+        await foreach (var evt in agent.ChatAsync(
+            request.Message, model, attachmentRefs, location, request.Ephemeral,
+            clientTools: KnownClientTools(request.ClientTools)))
         {
             await http.Response.WriteAsync(JsonSerializer.Serialize(evt, StreamEventJson) + "\n");
             await http.Response.Body.FlushAsync();
         }
     }
+
+    // The client tools this browser says it can run (ADR 0089), narrowed to the ones the server defines. A client
+    // can only narrow the set, never name a tool of its own, and the known set is tiny, so the result is capped by
+    // construction. A list rather than a lazy query: it crosses the grain boundary.
+    internal static List<string> KnownClientTools(IReadOnlyList<string>? advertised)
+        => advertised is null
+            ? []
+            : [.. advertised.Where(ClientToolLimits.ToolNames.Contains).Distinct(StringComparer.Ordinal)];
 }

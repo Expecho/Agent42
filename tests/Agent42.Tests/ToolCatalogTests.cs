@@ -193,6 +193,38 @@ public class ToolCatalogTests
         Assert.False(ToolCatalog.IsMcpServerKey(ToolCatalog.WebSearch));
     }
 
+    // ── Client tools and shared state (ADR 0089) ───────────────────────────────────────────────────
+
+    // AC9 — both keys are appended LAST (order stability for every existing key), each tool maps to its key, and
+    // both are rendered checkboxes.
+    [Fact]
+    public void BrowserToolsAndSharedState_AreAppendedLast_AndMapTheirTools()
+    {
+        Assert.Equal([ToolCatalog.BrowserTools, ToolCatalog.SharedState], ToolCatalog.AllSelectableToolKeys.TakeLast(2));
+        Assert.Equal([ToolCatalog.BrowserTools, ToolCatalog.SharedState], ToolCatalog.Descriptors.TakeLast(2).Select(d => d.Key));
+
+        foreach (var tool in ClientToolLimits.ToolNames)
+        {
+            Assert.Equal(ToolCatalog.BrowserTools, ToolCatalog.KeyFor(tool));
+        }
+
+        Assert.Equal(ToolCatalog.SharedState, ToolCatalog.KeyFor(SharedStateLimits.UpdateToolName));
+    }
+
+    // AC9 — ON for the null (== all) selection, OFF for a selection saved before the keys existed (ADR 0021).
+    [Fact]
+    public void BrowserToolsAndSharedState_AreOnForNull_AndOffForAnOlderSavedSelection()
+    {
+        var all = ToolCatalog.AllSelectableToolKeys.ToHashSet();
+        var saved = new HashSet<string> { ToolCatalog.WebSearch, ToolCatalog.Artifacts };
+
+        foreach (var tool in ClientToolLimits.ToolNames.Append(SharedStateLimits.UpdateToolName))
+        {
+            Assert.True(ToolCatalog.IsToolEnabled(tool, all), tool);
+            Assert.False(ToolCatalog.IsToolEnabled(tool, saved), tool);
+        }
+    }
+
     // AC1 — a per-tool key is a per-server key plus a segment, so IsMcpServerKey (a prefix test, deliberately
     // not a parser) already admits it. That is the whole reason Sanitize needed no new clause: if this ever
     // fails, per-tool keys are being stripped from every stored selection.

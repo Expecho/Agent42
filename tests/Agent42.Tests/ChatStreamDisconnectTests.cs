@@ -145,4 +145,63 @@ public sealed class ChatStreamDisconnectTests : IAsyncLifetime
         Assert.Contains(turns!, t => t.Role == "user" && t.Text == prompt);
         Assert.Contains(turns!, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
     }
+
+    // AC4 (ADR 0089): the browser's socket dies while a client tool waits (a frozen PWA during a confirm). The turn
+    // keeps waiting, the recovered browser finds the call and answers it over a NEW request, and the turn resumes
+    // and persists with that answer.
+    [Fact]
+    public async Task ClientDisconnectsDuringAClientToolWait_ResultStillResumesAndPersists()
+    {
+        const string id = "reset-during-client-tool-conversation";
+        var prompt = FakeChatClient.CallToolPrompt(ClientToolLimits.ConfirmAction, new { action = "Pay the invoice" });
+        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
+            new ChatRequest(prompt, null, ClientTools: [ClientToolLimits.ConfirmAction])));
+
+        using (var socket = new TcpClient())
+        {
+            await socket.ConnectAsync(IPAddress.Loopback, _port);
+            var stream = socket.GetStream();
+
+            var head = $"POST /api/chat/{id} HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                + $"Content-Type: application/json\r\nContent-Length: {body.Length}\r\n\r\n";
+            await stream.WriteAsync(Encoding.UTF8.GetBytes(head));
+            await stream.WriteAsync(body);
+            await stream.FlushAsync();
+
+            // Until the flagged call is on the wire: the turn is now waiting for this browser.
+            var received = new StringBuilder();
+            var buffer = new byte[256];
+            while (!received.ToString().Contains("\"clientTool\":true", StringComparison.Ordinal))
+            {
+                var read = await stream.ReadAsync(buffer);
+                Assert.NotEqual(0, read);
+                received.Append(Encoding.UTF8.GetString(buffer, 0, read));
+            }
+
+            socket.Client.LingerState = new LingerOption(enable: true, seconds: 0);
+        }
+
+        var pending = await _client.GetFromJsonAsync<List<PendingClientToolCall>>(
+            $"/api/chat/{id}/pending-tool-calls", JsonSerializerOptions.Web);
+        var call = Assert.Single(pending!);
+        var post = await _client.PostAsJsonAsync(
+            $"/api/chat/{id}/tool-result", new { toolCallId = call.ToolCallId, result = new { approved = true } });
+        Assert.Equal(HttpStatusCode.NoContent, post.StatusCode);
+
+        List<ChatTurn>? turns = null;
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            turns = await _client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages");
+            if (turns!.Any(t => t.Role == "assistant"))
+            {
+                break;
+            }
+
+            await Task.Delay(50);
+        }
+
+        var reply = Assert.Single(turns!, t => t.Role == "assistant");
+        Assert.Contains("approved", reply.ToolCalls![0].ToolResult, StringComparison.Ordinal);
+        Assert.Contains("\"approved\":true", reply.Text, StringComparison.Ordinal);
+    }
 }

@@ -244,4 +244,21 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(15)]
     public Dictionary<string, ArtifactRecord> Artifacts { get; set; } = [];
+
+    /// <summary>
+    /// The conversation's shared agent↔UI state (ADR 0089): one JSON object, stored as TEXT, or null when the
+    /// conversation has none. A string rather than a <c>JsonNode</c>: Orleans cannot serialize a <c>JsonNode</c>,
+    /// and a string round-trips through the Cosmos <c>$type</c> JSON unchanged. Capped by
+    /// <see cref="SharedStateLimits"/>. Trailing <c>[Id(16)]</c>, so old Cosmos state reads as null.
+    /// </summary>
+    [Id(16)]
+    public string? SharedStateJson { get; set; }
+
+    /// <summary>
+    /// The optimistic-concurrency version of <see cref="SharedStateJson"/>, incremented on every change by the
+    /// agent or the user. An edit names the version it was based on and is refused when it is stale. Trailing
+    /// <c>[Id(17)]</c>, so old state reads as 0.
+    /// </summary>
+    [Id(17)]
+    public long SharedStateVersion { get; set; }
 }

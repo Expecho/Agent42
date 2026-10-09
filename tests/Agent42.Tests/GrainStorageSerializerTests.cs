@@ -316,6 +316,31 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal([1, 2], b.Versions.Select(v => v.Version));
     }
 
+    // ADR 0089 AC12: the committed golden predates [Id(16)]/[Id(17)], so an existing conversation reads as having no
+    // shared state at version 0.
+    [Fact]
+    public void SharedStateWrittenBefore_FieldExisted_Deserializes()
+    {
+        var restored = Serializer().Deserialize<AgentGrainState>(new BinaryData(StoredAgentGrainStateJson));
+
+        Assert.Null(restored.SharedStateJson);
+        Assert.Equal(0, restored.SharedStateVersion);
+    }
+
+    // ADR 0089 AC12: the state is TEXT holding JSON, and it must come back byte-identical through the Cosmos JSON
+    // path, quotes, nesting, unicode and all, rather than being re-parsed into an object by the serializer.
+    [Fact]
+    public void SharedState_RoundTripsThroughCosmosJson()
+    {
+        const string state = """{"checklist":[{"id":"a","title":"Bel \"Anna\" — café","done":true}],"notes":{"n":1}}""";
+        var written = new AgentGrainState { SharedStateJson = state, SharedStateVersion = 7 };
+
+        var restored = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(written));
+
+        Assert.Equal(state, restored.SharedStateJson);
+        Assert.Equal(7, restored.SharedStateVersion);
+    }
+
     // AC1: ChatTurn.Artifacts crosses the grain boundary (Orleans binary) and the HTTP boundary (System.Text.Json,
     // the shape the frontend reads), so both are checked.
     [Fact]

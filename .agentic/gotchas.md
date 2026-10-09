@@ -3971,3 +3971,53 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`RuntimePath`)
 - **Verified:** 2026-10-05
 
+
+### A client tool's wait: route the broker per RUN, interleave the answer, cap the wait and never the turn
+
+- **Claim:** four traps in pausing a turn on the browser (ADR 0089), none visible at the call site. **(1) The broker
+  must reach the tool per run, never through a field.** A background run (`EnqueuePromptAsync`, a reminder) executes
+  in a gap of the streaming turn, so a field read by `confirm_action` would hand the background run's call to the
+  user's open browser. The broker rides an `AsyncLocal` that `PullAsync` sets around each of the interactive run's
+  own `MoveNextAsync` calls: the iterator body (and FICC's tool invocation) runs under the caller's execution context,
+  so only that run sees it. Measured with a file-based spike on AF 1.23.0 (an interleaved second run saw `null`), and
+  mutation-checked: routing through `_clientToolBrokers` instead turns exactly
+  `BackgroundRun_CannotRouteToTheInteractiveBroker` red. `_clientToolBrokers` is only the by-identity registry the
+  interleaved calls look ids up in; it is not part of the turn-scoped reset ritual. **(2)** `SubmitClientToolResultAsync`
+  (and the pending query) are `[AlwaysInterleave]` on the INTERFACE and not `[OneWay]`: the turn is suspended inside
+  a `MoveNext` waiting for exactly that call, so a queued call deadlocks until the wait times out. **(3)** The call is
+  ANNOUNCED to the broker when its `toolCallStart` is projected, because the browser may answer before the next pull
+  invokes the tool; an answer that completed nothing would be lost. The completion uses
+  `RunContinuationsAsynchronously` so the interleaved call never resumes the turn inline. **(4)** Cap the WAIT
+  (`WaitAsync(timeout, toolToken)` → a normal `{"status":"timeout"}` result), never the turn (the "Bounding a drained
+  agent turn" entry). Orleans delivers the call event at once and keeps the stream alive across a 150 s wait
+  (measured), and ACA's request timeout is 240 s, so `confirm_action`'s 120 s fits. Also: `<dialog>` keeps its old
+  `returnValue` when Esc closes it, so the confirm dialog resets it before `showModal()`, or Esc after an Approve is a yes.
+- **Evidence:** `src/Agent42.Agents/ClientTools/AgentGrain.ClientTools.cs` (`CurrentClientToolBroker`, `PullAsync`,
+  `MarkClientToolCall`, `AwaitClientResultAsync`), `src/Agent42.Agents/ClientTools/ClientToolBroker.cs`,
+  `src/Agent42.Agents/Conversations/IAgentGrain.cs`, `src/Agent42.Backend/wwwroot/js/clienttools.js`
+  (`confirmAction`), `tests/Agent42.Tests/ClientToolTests.cs`, `.agentic/decisions/0089-client-tools-and-shared-state.md`
+- **Verified:** 2026-10-09
+
+### Shared state: text in grain state, no write while a run is in flight, and the patch library is neither atomic nor strict
+
+- **Claim:** (ADR 0089) **(1)** The state is a `string` (`SharedStateJson`), not a `JsonNode`: Orleans cannot
+  serialize a `JsonNode`, and text round-trips through the Cosmos `$type` JSON byte-identical
+  (`SharedState_RoundTripsThroughCosmosJson`). **(2) Nothing may `WriteStateAsync` while a run is in flight.** The
+  write serializes the WHOLE state, so a user's `PUT` written mid-run would persist that run's half-done fields
+  (artifact records, the `TurnAttachments` entry) beside the previous turn's session. `_runsInFlight` is counted at
+  BOTH run sites (`ChatCoreAsync`, `ReceiveReminder`) and is not part of the turn-scoped reset ritual; an edit during
+  a run sets `_sharedStateDirty`, the end-of-turn writes clear it, and `EndRunAsync` flushes it when the last run
+  ends without writing (a failure). That flush is the one accepted residual: it writes the whole state too, so
+  a failed run's in-memory leftovers (an artifact record) land beside the previous turn's session. A warm
+  activation would write the same on its next turn anyway; it only differs if the silo dies in between. Mutation-checked: writing at once turns
+  `UserEdit_DuringATurn_IsNotWrittenMidTurn_AndPersistsAtTurnEnd` red; dropping the flush turns
+  `UserEdit_DuringAFailedTurn_IsFlushedByTheLastRun` red. **(3)** `Microsoft.AspNetCore.JsonPatch.SystemTextJson`
+  10.0.12, measured: a failing `test` op after a `replace` leaves the replace APPLIED, and an unknown op name is
+  silently SKIPPED. `SharedStatePatch` validates op names itself and patches a copy parsed fresh from the stored text.
+  **(4)** The model sees the state as an injected INSTRUCTION each run, which is never stored and never accumulates
+  (the "InvokingContext has no RequestMessages" entry); the delegate also hides it on an incognito turn.
+- **Evidence:** `src/Agent42.Agents/SharedState/AgentGrain.SharedState.cs`, `src/Agent42.Agents/SharedState/SharedStatePatch.cs`,
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatCoreAsync`, `ReceiveReminder`),
+  `tests/Agent42.Tests/SharedStateTests.cs`, `tests/Agent42.Tests/SharedStatePatchTests.cs`,
+  `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
+- **Verified:** 2026-10-09

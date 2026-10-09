@@ -88,9 +88,16 @@ public sealed partial class AgentGrain
         }
     }
 
+    // The tools a Copilot chat never gets, whatever its selection (ADR 0089): the client tools and
+    // update_shared_state wait on, or route through, the grain's own run (an async-local broker, the per-run
+    // snapshot), which Copilot's RPC thread is not part of, and a 120 s wait under its RPC timeout is unmeasured.
+    private static bool IsExcludedFromCopilot(string toolName)
+        => ClientToolLimits.ToolNames.Contains(toolName) || toolName == SharedStateLimits.UpdateToolName;
+
     // The custom tools handed to Copilot. Only AIFunctions, so no hosted tool can arrive (and SelectableTools is asked
     // for the shims anyway). read_web_document is dropped because it feeds the RAG provider a copilot chat does not
-    // have. read_skill_resource is added when a skill is selected (Copilot has no file tool to read one with). A
+    // have, and the ADR 0089 tools by IsExcludedFromCopilot. read_skill_resource is added when a skill is selected
+    // (Copilot has no file tool to read one with). A
     // name the runtime would reject is skipped: one such name fails session creation, which would fail every turn.
     // Each tool is bound to the activation's scheduler, because Copilot calls tools from its own RPC thread.
     private List<AIFunction> CopilotFunctions(
@@ -98,7 +105,7 @@ public sealed partial class AgentGrain
     {
         var candidates = SelectableTools(capabilities, enabled, hostedTools: false)
             .OfType<AIFunction>()
-            .Where(f => f.Name != ToolCatalog.ReadWebDocument)
+            .Where(f => f.Name != ToolCatalog.ReadWebDocument && !IsExcludedFromCopilot(f.Name))
             .ToList();
         if (skills.Count > 0)
         {

@@ -9,6 +9,7 @@ import { closeDrawer } from "./drawer.js";
 import { defaultModel, setModel } from "./models.js";
 import { profile } from "./profile.js";
 import { streaming, voice } from "./send.js";
+import { loadSharedState } from "./sharedstate.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, renderSidebar } from "./sidebar.js";
 import { addAgentImage, addCopyButton, addMessage, clearThread, fillUserBubble, replayToolCalls, scrollToBottom, setAgentMarkdown, setEmptyVisible } from "./thread.js";
@@ -53,6 +54,8 @@ export async function selectConversation(id) {
     cachePut("messages:" + id, turns); // mirror this history for offline viewing (ADR 0032)
     // The Artifacts button reads state, not history: a card can vanish with its tool messages (ADR 0084).
     syncArtifactsButton(id);
+    // Shared state (ADR 0089) is state too, not history: read it on every open.
+    loadSharedState(id);
     // Restore the model picker only after the history is on screen, so a failure
     // here can never prevent the conversation itself from rendering.
     if (modelRes.ok) setModel(await modelRes.json());

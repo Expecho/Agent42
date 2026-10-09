@@ -174,6 +174,10 @@
         </div>
       </div>
 
+      <!-- Shared state (ADR 0089): the conversation's checklist and notes, which the assistant and the user both
+           edit. Rendered by js/sharedstate.js; hidden while the state is empty. -->
+      <section class="state-panel" id="sharedStatePanel" aria-label="Shared state" hidden></section>
+
       <form class="composer" id="composerForm">
         <div class="composer__previews" id="attachmentPreview" hidden></div>
         <div class="composer__frame">
@@ -699,6 +703,21 @@
       <div class="agent-form__actions">
         <button class="agent-form__btn" type="button" id="groupNameCancelBtn">Cancel</button>
         <button class="agent-form__btn agent-form__btn--primary" type="button" id="groupNameSaveBtn">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Client tool confirm_action (ADR 0089): the assistant asks before an irreversible or outward-facing action.
+       The text is the model's own description, set with textContent by js/clienttools.js. Esc declines. -->
+  <dialog class="agent-dialog" id="confirmActionDialog">
+    <form class="agent-form" method="dialog">
+      <h2 class="agent-form__title">The assistant asks for approval</h2>
+      <section class="agent-form__section">
+        <p class="agent-form__note confirm-action__text" id="confirmActionText"></p>
+      </section>
+      <div class="agent-form__actions">
+        <button class="agent-form__btn" type="button" id="confirmActionDeclineBtn">Decline</button>
+        <button class="agent-form__btn agent-form__btn--primary" type="button" id="confirmActionApproveBtn">Approve</button>
       </div>
     </form>
   </dialog>

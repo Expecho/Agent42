@@ -10,6 +10,11 @@ amends: []
 
 # Recover a reply whose stream died while the app was backgrounded
 
+> **Amended by [ADR 0089](0089-client-tools-and-shared-state.md) (2026-10-09): recovery also answers waiting client tool calls.**
+> A turn can now pause on the browser (a `confirm_action`). While `recoverPersistedReply` polls, it also asks
+> `GET /api/chat/{id}/pending-tool-calls` and runs those calls, so a confirm a frozen PWA never showed is shown when
+> the app comes back, within the wait. Still no resumable stream.
+
 > **Amended by [ADR 0082](0082-seeded-research-agent-loop.md) (2026-09-22): a research turn is hidden from history until it ends.** `LoopAgent` stores
 > each finished iteration mid-turn, so `GetHistoryAsync` hides the whole turn while it runs and the grain folds
 > it to ONE assistant turn when it ends — recovery still never adopts a draft. The cost: a research turn usually

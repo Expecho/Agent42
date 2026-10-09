@@ -116,6 +116,9 @@ public sealed partial class AgentGrain
         // calls on purpose — S3776 charges branches, not calls, and this method has little headroom.
         AddResearchProviders(contextProviders, capabilities);
 
+        // Shared state (ADR 0089): shows the model the conversation's state each run, when the selection has it.
+        AddSharedStateProvider(contextProviders, enabled);
+
         // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
         // state at bind time; a normal chat falls back to the default Agent 42 persona.
         // Old Cosmos state has null persona fields, so existing chats fall back too.
@@ -282,6 +285,11 @@ public sealed partial class AgentGrain
             // The three artifact tools, built in their own part: unconditional like push, since no hosted tool
             // provides them. A spread, not inline, because this method has little S3776 headroom.
             .. ArtifactTools(),
+            // The browser-run client tools (ADR 0089), unconditional for the same reason: no hosted tool provides
+            // them. Each answers "unavailable" by itself on a run with no browser, so registering them is safe.
+            .. ClientTools(),
+            // update_shared_state (ADR 0089), unconditional for the same reason; refuses by itself when incognito.
+            SharedStateTool(),
         ];
         if (hostedTools)
         {
