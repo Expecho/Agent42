@@ -131,7 +131,7 @@ public sealed class RichTextAssetsTests
         Assert.True(elseAt >= 0, "setAgentMarkdown lost its non-caret branch");
         Assert.True(enhanceAt > elseAt, "enhance must run only in the non-caret (final) branch");
 
-        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt)");
+        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
         var loop = StaticAssetsServerFixture.Body(send, "for (;;)");
         var loopCalls = Count(loop, "setAgentMarkdown(");
         Assert.True(loopCalls >= 1, "the stream loop no longer renders chunks");

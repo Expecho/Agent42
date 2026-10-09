@@ -9,6 +9,9 @@ amends: [0025, 0064]
 
 # Refresh an MCP OAuth token per request, and offer Reconnect in the turn when the grant is dead
 
+> **Amended by [ADR 0087](0087-resend-the-turn-after-an-mcp-reconnect.md) (2026-10-08): the failed turn is now
+> re-sent by itself** once the Reconnect sign-in finishes. That item is no longer out of scope.
+
 ## Context
 
 ADR 0025 refreshed an InteractiveOAuth token **at connect time** and sent it as a static bearer. It

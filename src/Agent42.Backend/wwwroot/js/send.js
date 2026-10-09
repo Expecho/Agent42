@@ -8,6 +8,7 @@ import { autosize } from "./composer.js";
 import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./conversations.js";
 import { form, incognitoBtn, input, modelSelect, stopBtn, thread } from "./dom.js";
 import { currentLocationForSend } from "./location.js";
+import { watchMcpReconnect } from "./mcp.js";
 import { renderResearchTodos } from "./research.js";
 import { applyModelAvailability } from "./models.js";
 import { setTopbarShare } from "./sharelinks.js";
@@ -32,6 +33,38 @@ export let sendAbort = null;
 // feeds it stream deltas so the reply can be spoken sentence-by-sentence as it arrives. Same seam as
 // stopSpeech above — send.js only ever READS it, at call time (ADR 0041).
 export let voice = { active: false, onDelta: () => {}, onStreamEnd: () => {}, stop: () => {} };
+
+// The newest turn's watch for an MCP sign-in to finish (ADR 0087), or null. One at a time: send()
+// cancels it, so only a turn that is still the user's latest can ever be re-sent.
+let reconnectWatch = null;
+// A re-send whose sign-in finished while its own turn was still streaming (the pre-turn notice comes first, so
+// that is reachable). Run by that turn's finally.
+let deferredResend = null;
+
+// Re-sends a turn whose MCP server needed a fresh sign-in, once the user has done it — the reply ran without that
+// server's tools. The failed turn stays in the history (undoing it would mean rewriting the session); the model
+// simply sees the same prompt again, now with the tools. Re-sent only while the turn is still the newest one, in
+// the conversation that is still open; otherwise the note says the tools are back instead.
+function resendAfterReconnect(prompt, attachments, convId, agentMsg) {
+  const watch = watchMcpReconnect(function resend() {
+    // Any newer send() cancels this watch, so a stream running now is this very turn: wait for it to end.
+    if (streaming && reconnectWatch === watch) {
+      deferredResend = resend;
+      return;
+    }
+    const block = agentMsg.querySelector(".msg__reauth");
+    block?.querySelector(".msg__reauth-btn")?.remove();
+    const note = block?.querySelector(".msg__reauth-text");
+    if (reconnectWatch !== watch || activeId !== convId || !agentMsg.isConnected) {
+      if (note) note.textContent = "Reconnected. Send your message again to use it.";
+      return;
+    }
+    if (note) note.textContent = "Reconnected. Sending your message again…";
+    send(prompt, { attachments });
+  });
+  reconnectWatch = watch;
+  return watch;
+}
 
 // How long recoverPersistedReply() waits for a backgrounded turn to show up in the history.
 // Roughly half a minute, which covers a tool-calling turn that was still running when the app
@@ -118,8 +151,13 @@ export async function stopGeneration({ abortLocally = false } = {}) {
   }
 }
 
-export async function send(prompt) {
-  stopSpeech(); // capture the dictated prompt and reset the mic before clearing the box
+// `replay` re-sends an earlier turn (resendAfterReconnect): its attachments, which are already uploaded to this
+// conversation, and the composer left alone — the user may be typing their next message there.
+export async function send(prompt, replay = null) {
+  reconnectWatch?.cancel(); // a newer turn: the previous one is no longer worth re-sending
+  reconnectWatch = null;
+  deferredResend = null;
+  if (!replay) stopSpeech(); // capture the dictated prompt and reset the mic before clearing the box
   streaming = true;
   modelSelect.disabled = true;
   // The stop control exists only while there is something to stop. Revealed here rather than on the first
@@ -128,14 +166,18 @@ export async function send(prompt) {
   // Ephemerality is fixed at creation (ADR 0034): once the first prompt goes out, lock the toggle
   // for the life of this chat. "New chat" re-enables it.
   incognitoBtn.disabled = true;
-  input.value = "";
-  autosize();
+  if (!replay) {
+    input.value = "";
+    autosize();
+  }
 
   // Snapshot the composed attachments for this turn and clear the strip so the next turn
   // starts clean. They were uploaded to activeId, so they belong to this conversation.
-  const turnAttachments = pendingAttachments;
+  const turnAttachments = replay ? replay.attachments : pendingAttachments;
   const convId = activeId;
-  clearPendingAttachments();
+  if (!replay) clearPendingAttachments();
+  // Created by this turn's first mcpReauthRequired event, if it has one.
+  let turnWatch = null;
 
   // Follow-up suggestion chips are live-only and belong to the newest turn: drop any left over from
   // the previous reply before this turn appends its own.
@@ -229,8 +271,10 @@ export async function send(prompt) {
           // bubble via the display proxy, exactly like it will re-render on reload.
           addAgentImage(agentMsg, activeId, chunk.attachmentId);
         } else if (chunk.type === "mcpReauthRequired") {
-          // An MCP server's sign-in expired (ADR 0081): a Reconnect button in the bubble, opening a new tab.
-          renderMcpReauth(agentMsg, chunk.mcpServerId, chunk.text);
+          // An MCP server's sign-in expired (ADR 0081): a Reconnect button in the bubble, opening a new tab. One
+          // watch for the whole turn, so two servers needing a sign-in re-send it once, after both are back.
+          turnWatch ??= resendAfterReconnect(prompt, turnAttachments, convId, agentMsg);
+          renderMcpReauth(agentMsg, chunk.mcpServerId, chunk.text, turnWatch);
         } else if (chunk.type === "todos") {
           // The research agent's checklist changed (ADR 0082): the whole list, so render replaces.
           renderResearchTodos(agentMsg, chunk.todos);
@@ -314,6 +358,10 @@ export async function send(prompt) {
     applyModelAvailability(); // keep the composer gated if there's still no model (ADR 0019)
     input.focus();
     refreshConversations();
+    // Last, once `streaming` is false: a sign-in that finished mid-turn re-sends now (resendAfterReconnect).
+    const next = deferredResend;
+    deferredResend = null;
+    next?.();
   }
 }
 

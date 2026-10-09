@@ -58,7 +58,7 @@ public sealed class LocationAssetsTests
         Assert.DoesNotContain("async function currentLocationForSend", app);
 
         // The send function itself never asks the browser for a position.
-        var send = StaticAssetsServerFixture.Body(app, "async function send(prompt)");
+        var send = StaticAssetsServerFixture.Body(app, "async function send(prompt, replay = null)");
         Assert.DoesNotContain("getCurrentPosition", send);
     }
 

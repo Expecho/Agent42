@@ -116,7 +116,7 @@ public sealed class TopbarActionsAssetsTests
 
         // In send() it must sit on the success path, gated on !ephemeral — NOT beside the incognitoBtn
         // lock, which runs before the fetch and would light the button up on a turn that never landed.
-        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt)");
+        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
         Assert.Contains("if (!ephemeral) setTopbarShare(", send);
         var lockAt = send.IndexOf("incognitoBtn.disabled = true", StringComparison.Ordinal);
         var fetchAt = send.IndexOf("await fetch(", StringComparison.Ordinal);

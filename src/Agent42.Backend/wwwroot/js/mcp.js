@@ -24,6 +24,52 @@ export function mcpOAuthStartUrl(serverId) {
   return `/api/mcp/oauth/start?serverId=${encodeURIComponent(serverId)}`;
 }
 
+// The OAuth return tab tells the chat tab that a sign-in finished (ADR 0087). Same-origin tabs of one
+// browser only: an installed PWA hands window.open to the system browser, so watchMcpReconnect also re-checks the
+// server list whenever the chat becomes visible again — that path alone is enough, this one just makes it instant.
+const MCP_OAUTH_CHANNEL = "agent42-mcp-oauth";
+
+// Watches for every server added to it to be signed in again, then calls onReconnected ONCE. The server list is the
+// only judge (hasToken && !needsReauth): a channel message or a visibility change merely triggers the check. Armed by
+// the transcript's Reconnect click, cancelled by the next turn (send.js), so at most one watch is live.
+export function watchMcpReconnect(onReconnected) {
+  const pending = new Set();
+  let channel = null;
+  let done = false;
+  const stop = () => {
+    done = true;
+    channel?.close();
+    document.removeEventListener("visibilitychange", onVisible);
+  };
+  const check = async () => {
+    if (done || pending.size === 0) return;
+    try {
+      const res = await fetch("/api/mcp-servers");
+      if (!res.ok || done) return;
+      const servers = (await res.json()).servers ?? [];
+      const ready = [...pending].every((id) => servers.some((s) => s.id === id && s.hasToken && !s.needsReauth));
+      if (!ready || done) return;
+    } catch { return; /* offline or silo unreachable: the next visibility change tries again */ }
+    stop();
+    onReconnected();
+  };
+  const onVisible = () => { if (!document.hidden) check(); };
+  return {
+    add(serverId) { pending.add(serverId); },
+    arm() {
+      if (done || channel) return;
+      if ("BroadcastChannel" in window) {
+        channel = new BroadcastChannel(MCP_OAUTH_CHANNEL);
+        channel.onmessage = (e) => { if (e.data?.result === "connected" && pending.has(e.data.serverId)) check(); };
+      } else {
+        channel = { close() {} }; // marks the watch armed on a browser without BroadcastChannel
+      }
+      document.addEventListener("visibilitychange", onVisible);
+    },
+    cancel: stop,
+  };
+}
+
 // The one place the settings sign-in starts, shared by the list row and the dialog button. A full navigation:
 // the server 302s to the identity provider and returns to /api/mcp/oauth/callback.
 function startMcpOAuth(serverId) {
@@ -393,6 +439,12 @@ export async function initMcpOAuthReturn() {
   // "Connected" should mean "connected AND reachable", so auto-test the server the callback named (ADR
   // 0064). Into the TAB's result line — there is no dialog open on the OAuth return.
   const serverId = params.get("serverId");
+  // Wake the chat tab that opened this one from its Reconnect button, so it can re-send the turn (watchMcpReconnect).
+  if (result === "connected" && serverId && "BroadcastChannel" in window) {
+    const channel = new BroadcastChannel(MCP_OAUTH_CHANNEL);
+    channel.postMessage({ result, serverId });
+    channel.close();
+  }
   if (result === "connected" && serverId) await testMcpServer(serverId, mcpTabResult);
 }
 
