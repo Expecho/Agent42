@@ -81,6 +81,27 @@ export function artifactCardFromToolCall(msg, convId, toolName, toolResult) {
   renderArtifactCards(msg, convId, [value]);
 }
 
+// The pane, driven by the model through control_artifact_pane (ADR 0089). The server has already checked that the
+// artifact exists in this conversation; the pane re-checks against its own list. False when there is no pane.
+export function openArtifactInPane(convId, artifactId, version) {
+  if (!pane) return false;
+  paneConvId = convId;
+  pane.open(artifactId, Number.isInteger(version) ? version : undefined);
+  return true;
+}
+
+// Closes the pane but, unlike closeArtifactPane, keeps the Artifacts button: the chat has not changed.
+export function closeArtifactPaneView() {
+  pane?.close();
+}
+
+// False when no artifact is open, so the model is told rather than a hidden pane being maximized.
+export function setArtifactPaneFull(on) {
+  if (!pane?.isOpen()) return false;
+  pane.setFull(on);
+  return true;
+}
+
 // Switching chats closes the pane and hides the Artifacts button: both would otherwise keep pointing at the
 // previous chat's artifacts.
 export function closeArtifactPane() {

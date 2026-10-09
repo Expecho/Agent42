@@ -156,6 +156,21 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
         Assert.DoesNotContain("get_current_location", narrow);
     }
 
+    // ADR 0089 AC9: a Copilot chat never gets the client tools or update_shared_state, even with every key selected:
+    // they route through the grain's own run, which Copilot's RPC thread is not part of.
+    [Fact]
+    public async Task CopilotFunctions_ExcludeClientAndStateTools()
+    {
+        await CopilotChatAsync("copilot-client-tools", tools: ToolCatalog.AllSelectableToolKeys);
+
+        var tools = LastRequest("copilot-client-tools").Tools.Select(t => t.Name).ToList();
+        Assert.Contains("schedule_prompt", tools);
+        foreach (var excluded in ClientToolLimits.ToolNames.Append(SharedStateLimits.UpdateToolName))
+        {
+            Assert.DoesNotContain(excluded, tools);
+        }
+    }
+
     // AC10: a copilot agent on a no-tools model is a plain chat: no Copilot agent is built, and the turn still runs.
     [Fact]
     public async Task CopilotKind_NoToolsModel_IsPlainAgent()

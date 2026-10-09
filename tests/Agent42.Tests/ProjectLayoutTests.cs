@@ -94,18 +94,18 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Agents",
             [
-                "Artifacts", "Attachments", "Conversations", "Copilot", "Documents", "ImageGeneration", "Location",
-                "Mcp", "Memory", "Models", "Push", "Research", "Scheduling", "Search", "Sharing", "Skills",
-                "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web",
+                "Artifacts", "Attachments", "ClientTools", "Conversations", "Copilot", "Documents", "ImageGeneration",
+                "Location", "Mcp", "Memory", "Models", "Push", "Research", "Scheduling", "Search", "SharedState",
+                "Sharing", "Skills", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web",
             ]
         },
         {
             "Agent42.Backend",
             [
-                "Api", "Artifacts", "Attachments", "Configuration", "Conversations", "Copilot", "Documents",
-                "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
-                "Search", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users",
-                "Web", "wwwroot",
+                "Api", "Artifacts", "Attachments", "ClientTools", "Configuration", "Conversations", "Copilot",
+                "Documents", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
+                "Search", "SharedState", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills",
+                "Users", "Web", "wwwroot",
             ]
         },
     };
@@ -148,6 +148,8 @@ public sealed class ProjectLayoutTests
         "Research/AgentGrain.Research.cs",
         "Artifacts/AgentGrain.ArtifactTools.cs",
         "Copilot/AgentGrain.Copilot.cs",
+        "ClientTools/AgentGrain.ClientTools.cs",
+        "SharedState/AgentGrain.SharedState.cs",
     ];
 
     // Each part exists where planned and really is a part of the one AgentGrain class.
@@ -162,7 +164,7 @@ public sealed class ProjectLayoutTests
         Assert.Contains("partial class AgentGrain", File.ReadAllText(file), StringComparison.Ordinal);
     }
 
-    /// <summary>The sixteen endpoint groups <c>MapAgentApi</c> was split into, and the folder each sits in.</summary>
+    /// <summary>The endpoint groups <c>MapAgentApi</c> was split into, and the folder each sits in.</summary>
     public static TheoryData<string, string> AgentApiParts() => new()
     {
         { "Conversations/AgentApi.Conversations.cs", "MapConversationEndpoints" },
@@ -182,6 +184,8 @@ public sealed class ProjectLayoutTests
         { "UserSkills/AgentApi.UserSkills.cs", "MapUserSkillEndpoints" },
         { "Web/AgentApi.Web.cs", "MapWebEndpoints" },
         { "Search/AgentApi.Search.cs", "MapSearchEndpoints" },
+        { "ClientTools/AgentApi.ClientTools.cs", "MapClientToolEndpoints" },
+        { "SharedState/AgentApi.SharedState.cs", "MapSharedStateEndpoints" },
     };
 
     // Each endpoint group exists, is a partial of the one AgentApi class, and — the part that matters —
@@ -243,6 +247,7 @@ public sealed class ProjectLayoutTests
     {
         { "agents.js", "wireAgents" },
         { "attachments.js", "wireAttachments" },
+        { "clienttools.js", "wireClientTools" },
         { "composer.js", "wireComposer" },
         { "confighealth.js", "wireConfigHealth" },
         { "conversations.js", "wireConversations" },
@@ -259,6 +264,7 @@ public sealed class ProjectLayoutTests
         { "push.js", "initPush" },
         { "pwa.js", "wirePwa" },
         { "send.js", "wireSend" },
+        { "sharedstate.js", "wireSharedState" },
         { "sharelinks.js", "wireShareLinks" },
         { "sharetarget.js", "initShare" },
         { "skills.js", "wireSkills" },

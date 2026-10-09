@@ -81,7 +81,7 @@ public sealed class ArtifactAssetsTests
         Assert.Matches(@"<button[^>]*id=""artifactsBtn""[^>]*\shidden", index);
 
         var pane = await GetPaneAsync();
-        Assert.Contains("return { renderCard, open, openList, close };", pane);
+        Assert.Contains("return { renderCard, open, openList, close, setFull, isOpen: () => !pane.hidden };", pane);
 
         var adapter = await _client.GetStringAsync("/js/artifacts.js");
         var wire = StaticAssetsServerFixture.Body(adapter, "export function wireArtifacts(");

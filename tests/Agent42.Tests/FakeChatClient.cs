@@ -300,13 +300,16 @@ public sealed partial class FakeChatClient : IChatClient
         foreach (var chunk in ReplyChunks)
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
+
+            // The gate first, so a test can hold a FAILING turn in flight and act during it (ADR 0089's
+            // shared-state flush); with no gate installed this is a no-op and the fault comes at once.
+            await AwaitStreamGateAsync(++streamed, cancellationToken);
+
             if (faulting)
             {
                 throw new InvalidOperationException(
                     "fake provider failure: model endpoint returned 500 for deployment 'secret-deployment'");
             }
-
-            await AwaitStreamGateAsync(++streamed, cancellationToken);
 
             if (slow)
             {

@@ -37,6 +37,25 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.False(string.IsNullOrWhiteSpace(model));
     }
 
+    // ADR 0089 (step 1): the endpoint passes the browser's advertised client tools through, narrowed to the ones
+    // the server defines. An unknown name is dropped, so a client advertising only that gets no broker: the call
+    // answers "unavailable" and nothing is flagged for the browser.
+    [Theory]
+    [InlineData(new[] { "no_such_tool", ClientToolLimits.GetBrowserContext }, true)]
+    [InlineData(new[] { "no_such_tool" }, false)]
+    public async Task ChatEndpoint_PassesClientToolsThrough(string[] advertised, bool flagged)
+    {
+        var id = $"api-client-tools-{flagged}";
+        var prompt = FakeChatClient.CallToolPrompt(ClientToolLimits.GetBrowserContext, new { });
+
+        using var chat = await Client.PostAsJsonAsync(
+            $"/api/chat/{id}", new ChatRequest(prompt, null, ClientTools: advertised));
+        var ndjson = await chat.Content.ReadAsStringAsync();
+
+        Assert.Equal(flagged, ndjson.Contains("\"clientTool\":true", StringComparison.Ordinal));
+        Assert.Contains(flagged ? "timeout" : "unavailable", ndjson, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task MessagesEndpoint_ReturnsTheConversationHistoryAsJson()
     {

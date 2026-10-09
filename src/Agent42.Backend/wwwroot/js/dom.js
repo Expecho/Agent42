@@ -224,3 +224,10 @@ export const moveToGroupConvTitle = document.getElementById("moveToGroupConvTitl
 export const moveToGroupList = document.getElementById("moveToGroupList");
 export const moveToGroupSaveBtn = document.getElementById("moveToGroupSaveBtn");
 export const moveToGroupCancelBtn = document.getElementById("moveToGroupCancelBtn");
+// Client tools (ADR 0089): the model asks the user to approve an action.
+export const confirmActionDialog = document.getElementById("confirmActionDialog");
+export const confirmActionText = document.getElementById("confirmActionText");
+export const confirmActionApproveBtn = document.getElementById("confirmActionApproveBtn");
+export const confirmActionDeclineBtn = document.getElementById("confirmActionDeclineBtn");
+// Shared state (ADR 0089): the panel above the composer.
+export const sharedStatePanel = document.getElementById("sharedStatePanel");

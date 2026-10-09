@@ -33,6 +33,10 @@
          chain ships a fixed version by itself. -->
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.12" />
     <PackageVersion Include="Docnet.Core" Version="2.6.0" />
+    <!-- Shared state (ADR 0089): RFC 6902 ops applied to a JsonObject. First-party; SharedStatePatch is the only
+         caller. NOT atomic on its own (measured: a failing `test` op leaves the earlier ops applied), so the
+         caller patches a clone and commits only on success. -->
+    <PackageVersion Include="Microsoft.AspNetCore.JsonPatch.SystemTextJson" Version="10.0.12" />
     <!-- Long-term memory (ADR 0056). Our own package, extracted to a public repo so it is usable outside
          this codebase: https://github.com/Expecho/Hindsight.AgentFramework.Net -->
     <PackageVersion Include="Hindsight.AgentFramework.Net" Version="0.1.0" />

@@ -3,6 +3,7 @@
 import { ephemeral } from "./agents.js";
 import { artifactCardFromToolCall, renderArtifactCards } from "./artifacts.js";
 import { clearPendingAttachments, pendingAttachments } from "./attachments.js";
+import { CLIENT_TOOLS, closeClientToolDialogs, resumePendingClientTools, runClientTool } from "./clienttools.js";
 import { cachePut } from "./cache.js";
 import { autosize } from "./composer.js";
 import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./conversations.js";
@@ -11,6 +12,7 @@ import { currentLocationForSend } from "./location.js";
 import { watchMcpReconnect } from "./mcp.js";
 import { renderResearchTodos } from "./research.js";
 import { applyModelAvailability } from "./models.js";
+import { applyStateSnapshot } from "./sharedstate.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, refreshConversations } from "./sidebar.js";
 import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, finishToolCalls, markStopped, renderMcpReauth, renderReasoning, renderSuggestions, replayToolCalls, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
@@ -92,6 +94,10 @@ async function recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)
   const attempts = backgrounded ? RECOVER_ATTEMPTS : 1;
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, RECOVER_DELAY_MS));
+
+    // A turn still running may be waiting on THIS page for a client tool (ADR 0089): a confirm the frozen PWA never
+    // showed. Answer it, or the turn waits out its timeout and the history below never completes in time.
+    resumePendingClientTools(convId);
 
     let turns = null;
     try {
@@ -231,6 +237,9 @@ export async function send(prompt, replay = null) {
         // conversation, so it leaves no trace. Also keeps it out of the offline cache — an ephemeral
         // chat is never TouchAsync'd, so refreshConversations()/cachePut never see it.
         ephemeral,
+        // The client tools this page can run (ADR 0089). The server defines them and intersects this list with its
+        // own; a call to one the page did not list answers "unavailable" without reaching it.
+        clientTools: CLIENT_TOOLS,
       }),
     });
     if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
@@ -263,6 +272,8 @@ export async function send(prompt, replay = null) {
         } else if (chunk.type === "toolCallStart") {
           toolNames.set(chunk.toolCallId, chunk.toolName);
           addToolCall(agentMsg, chunk);
+          // A tool this page runs (ADR 0089). Not awaited: the reader must keep reading while a dialog is open.
+          if (chunk.clientTool) runClientTool(convId, chunk);
         } else if (chunk.type === "toolCallEnd") {
           completeToolCall(agentMsg, chunk);
           artifactCardFromToolCall(agentMsg, convId, toolNames.get(chunk.toolCallId), chunk.toolResult);
@@ -278,6 +289,9 @@ export async function send(prompt, replay = null) {
         } else if (chunk.type === "todos") {
           // The research agent's checklist changed (ADR 0082): the whole list, so render replaces.
           renderResearchTodos(agentMsg, chunk.todos);
+        } else if (chunk.type === "stateSnapshot") {
+          // The shared state changed (ADR 0089): the whole state, so the panel replaces rather than patches.
+          applyStateSnapshot(convId, chunk.state, chunk.stateVersion);
         } else if (chunk.type === "textReset") {
           // A later research iteration started its answer (ADR 0082): the text so far was a draft. Clear it and
           // keep the tool calls, so the bubble ends on what a reload will show.
@@ -292,6 +306,10 @@ export async function send(prompt, replay = null) {
           // reader drains.
           finishReasoning(agentMsg);
           finishToolCalls(agentMsg);
+          // The turn is over, so a confirm still open (ADR 0089) answers a call nobody waits for any more. Here and
+          // on a recovered reply only, never in the finally: after a failed recovery the server may still be
+          // waiting on that very dialog.
+          closeClientToolDialogs();
           showUsage(agentMsg, chunk);
           // The SERVER decides whether this turn counts as stopped (ADR 0078), not the click: a press that
           // lands as the last token goes out stopped nothing, and labelling that turn would be a lie.
@@ -330,6 +348,7 @@ export async function send(prompt, replay = null) {
     } else if (await recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)) {
       // The stream died but the turn did not. Finish exactly as the success path does — the reply
       // IS on the server, so the persona is bound and the conversation is shareable.
+      closeClientToolDialogs();
       voice.onStreamEnd();
       setPendingAgentId(null);
       setTopbarShare(convId, conversations.find((c) => c.id === convId)?.title ?? "This conversation");

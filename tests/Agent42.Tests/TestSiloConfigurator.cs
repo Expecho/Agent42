@@ -15,6 +15,9 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
     /// <summary>The fully-capable model the grain tests run on unless they pick another.</summary>
     public const string DefaultModel = "fake-model";
 
+    /// <summary>How long a client tool waits for its browser in the test silo (ADR 0089); see the registration.</summary>
+    public static readonly TimeSpan ClientToolWait = TimeSpan.FromSeconds(3);
+
     /// <summary>A model that supports neither tools nor vision — the degraded path of ADR 0013.</summary>
     public const string NoToolsNoVisionModel = "fake:text-only";
 
@@ -87,6 +90,9 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             // is what tests need, not what the grain needs.
             services.AddSingleton<TestTimeProvider>();
             services.AddSingleton<TimeProvider>(sp => sp.GetRequiredService<TestTimeProvider>());
+            // Client-tool waits (ADR 0089), shortened so the timeout path runs in seconds rather than two
+            // minutes. Optional in the grain like the clock above; a test that answers does so at once.
+            services.AddSingleton(new ClientToolTimeouts(ClientToolWait, ClientToolWait));
             services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
             services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
             // Push sender (ADR 0028): the recording stand-in, registered as its concrete type too so a
