@@ -25,7 +25,7 @@ Finding the MCP OAuth routes or the share-link contract meant knowing a line ran
 ### 1. Twenty-six feature folders, flat namespace, same as ADR 0039
 `Api/`, `Artifacts/`, `Attachments/`, `ClientTools/`, `Configuration/`, `Conversations/`, `Copilot/`,
 `Documents/`, `Export/`, `ImageGeneration/`, `Location/`, `Mcp/`, `Memory/`, `Models/`, `Orleans/`, `Push/`, `Search/`,
-`SharedState/`, `Sharing/`, `Speech/`, `StoredAgents/`, `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`.
+`SharedState/`, `Sharing/`, `Speech/`, `StoredAgents/`, `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`, `Webhooks/` (ADR 0094).
 
 *(This heading read "Twelve" while listing seventeen — it had picked up the count of the endpoint
 groups in §3. Corrected, along with `UserSkills/` (ADR 0049), `Calendar/` (ADR 0053) and `Memory/`

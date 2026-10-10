@@ -44,12 +44,17 @@ public interface IAgentGrain : IGrainWithStringKey
     /// <paramref name="clientTools"/> names the client tools (ADR 0089) the browser streaming this turn can run —
     /// already intersected with <see cref="ClientToolLimits.ToolNames"/> by the endpoint. Only an interactive turn
     /// with a non-empty list gets a broker; every other run answers a client tool "unavailable" at once.
+    ///
+    /// <paramref name="replacesLastTurn"/> says this turn re-runs one <see cref="TruncateLastTurnAsync"/> just
+    /// removed (ADR 0092), so the outbound webhook event is marked as superseding the previous one (ADR 0094). A
+    /// parameter, never a field the truncate sets: the two are separate calls, and a background turn running between
+    /// them would consume a field.
     /// </summary>
     [Alias("ChatAsync")]
     IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
         bool ephemeral = false, bool interactive = true,
-        IReadOnlyList<string>? clientTools = null);
+        IReadOnlyList<string>? clientTools = null, bool replacesLastTurn = false);
 
     /// <summary>
     /// Completes a client tool call the interactive turn is waiting on (ADR 0089) with the browser's result, and

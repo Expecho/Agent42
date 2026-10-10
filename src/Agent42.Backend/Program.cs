@@ -369,6 +369,10 @@ else
 // HindsightRegistration for what the two branches mean and why this is not inline here.
 builder.Services.AddHindsightMemory(builder.Configuration);
 
+// Outbound webhooks for stored agents (ADR 0094): a signed POST of every bound, persisted turn to the owner's URL,
+// over a client guarded against private addresses at connect time. See WebhookRegistration.
+builder.Services.AddAgentWebhooks();
+
 // The copilot agent kind: the GitHub Copilot SDK's agent loop on the user's own provider, with its session files in
 // Blob. See CopilotRegistration and CopilotAgentFactory for the runtime's trust boundary.
 builder.Services.AddCopilotAgents(builder.Configuration);

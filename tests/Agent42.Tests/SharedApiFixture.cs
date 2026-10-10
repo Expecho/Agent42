@@ -109,6 +109,9 @@ public class SharedApiFixture : SharedClusterFixture
             new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
         services.AddSingleton<IMcpSecretProtector>(new McpSecretProtector(
             new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
+        // The agent webhook's secret (ADR 0094). Its endpoint resolves this optionally and answers 503 without it.
+        services.AddSingleton<IWebhookSecretProtector>(new WebhookSecretProtector(
+            new EphemeralDataProtectionProvider(), NullLogger<WebhookSecretProtector>.Instance));
         // /api/mcp/oauth/start takes McpOAuthClient as a HANDLER parameter, so it is mandatory for every
         // host — /api/speech and /api/config-health resolve their own dependencies through IServiceProvider
         // precisely to avoid adding to this list.

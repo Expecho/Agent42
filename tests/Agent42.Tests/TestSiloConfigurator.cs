@@ -55,6 +55,8 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
     {
         siloBuilder.AddMemoryGrainStorage(AgentGrain.StorageProviderName);
         siloBuilder.UseInMemoryReminderService();
+        // Inert unless a webhook grain's key carries its marker (ADR 0094 delete-order test).
+        siloBuilder.AddIncomingGrainCallFilter<FailingWebhookClearFilter>();
         siloBuilder.ConfigureServices(services =>
         {
             // Registered as its concrete type too (single instance) so a suggestion-gating test can read
@@ -100,6 +102,10 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             // sender registered or activation fails.
             services.AddSingleton<RecordingPushNotificationSender>();
             services.AddSingleton<IPushNotificationSender>(sp => sp.GetRequiredService<RecordingPushNotificationSender>());
+            // Webhook sender (ADR 0094): the recording stand-in, registered as its concrete type so a test can read
+            // what the webhook grain sent. Every AgentWebhookGrain host needs one registered or activation fails.
+            services.AddSingleton<RecordingAgentWebhookSender>();
+            services.AddSingleton<IAgentWebhookSender>(sp => sp.GetRequiredService<RecordingAgentWebhookSender>());
             // Long-term memory (ADR 0056): the recording stand-in, registered as its concrete type too so a
             // test can read which bank recalled and retained. Every AgentGrain host must register a
             // HindsightIntegration or activation fails; a null Client means no provider is attached at all.

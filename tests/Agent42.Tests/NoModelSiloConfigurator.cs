@@ -64,6 +64,10 @@ public sealed class NoModelSiloConfigurator : ISiloConfigurator
             // silo whose provider can be flipped no-model → model to prove the gate suppressed the send.
             services.AddSingleton<RecordingPushNotificationSender>();
             services.AddSingleton<IPushNotificationSender>(sp => sp.GetRequiredService<RecordingPushNotificationSender>());
+            // Webhook sender (ADR 0094): the recording stand-in, registered as its concrete type so a test can read
+            // what the webhook grain sent. Every AgentWebhookGrain host needs one registered or activation fails.
+            services.AddSingleton<RecordingAgentWebhookSender>();
+            services.AddSingleton<IAgentWebhookSender>(sp => sp.GetRequiredService<RecordingAgentWebhookSender>());
             // Long-term memory (ADR 0056): the recording stand-in, registered as its concrete type too so a
             // test can read which bank recalled and retained. Every AgentGrain host must register a
             // HindsightIntegration or activation fails; a null Client means no provider is attached at all.
