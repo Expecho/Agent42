@@ -43,6 +43,7 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         "Agent42.Agents.AgentRegistryState",
         "Agent42.Agents.AgentKeyDirectoryState",
         "Agent42.Agents.ConversationIndexState",
+        "Agent42.Agents.EmailAddressDirectoryState",
         "Agent42.Agents.LocalBridgeKeyDirectoryState",
         "Agent42.Agents.ShareLinkDirectoryState",
         "Agent42.Agents.UsageRollupState",
@@ -677,4 +678,49 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.NotNull(restored.Deliveries);
         Assert.Empty(restored.Deliveries);
     }
+
+    // ADR 0095 AC17: an agent document written before the email token existed binds EmailToken to null — the agent
+    // simply has no address until a regenerate — and the fields beside it do not shift.
+    [Fact]
+    public void AgentDefinition_PreEmailToken_BindsNull()
+    {
+        var agent = Assert.Single(
+            Serializer().Deserialize<AgentRegistryState>(new BinaryData(PreResearchAgentRegistryJson)).Agents);
+
+        Assert.Null(agent.EmailToken);
+        Assert.Null(agent.Kind);
+        Assert.Equal("sha256-abc", agent.ApiKeyHash);
+        Assert.True(agent.McpExposed);
+    }
+
+    // ADR 0095: the token survives the Cosmos JSON path beside every other trailing field.
+    [Fact]
+    public void AgentDefinition_EmailToken_RoundTripsThroughCosmosJson()
+    {
+        var restored = Serializer().Deserialize<AgentRegistryState>(Serializer().Serialize(new AgentRegistryState
+        {
+            Agents =
+            [
+                new AgentDefinition("a-1", "Mail", "", "fake-model", "sys", default, default,
+                    ApiKeyHash: "h", McpExposed: true, Kind: AgentKinds.Copilot, EmailToken: "agent-abc"),
+            ],
+        }));
+
+        var agent = Assert.Single(restored.Agents);
+        Assert.Equal(("agent-abc", "h", AgentKinds.Copilot, true), (agent.EmailToken, agent.ApiKeyHash, agent.Kind, agent.McpExposed));
+    }
+
+    // ADR 0095: the email directory's committed document still reads. A security-relevant read: a document that stopped
+    // resolving would only make addresses 406, but one that resolved to the wrong owner would hand a stranger the run.
+    [Fact]
+    public void EmailAddressDirectoryState_ReadsCommittedDocument()
+    {
+        var restored = Serializer().Deserialize<EmailAddressDirectoryState>(new BinaryData(StoredEmailAddressDirectoryJson));
+
+        Assert.Equal(("user@example.com", "agent-golden-mail"), (restored.UserId, restored.AgentId));
+    }
+
+    private const string StoredEmailAddressDirectoryJson = """
+        {"$id":"1","$type":"Agent42.Agents.EmailAddressDirectoryState, Agent42.Agents","UserId":"user@example.com","AgentId":"agent-golden-mail"}
+        """;
 }

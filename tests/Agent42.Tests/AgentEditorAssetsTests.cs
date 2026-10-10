@@ -127,6 +127,23 @@ public sealed class AgentEditorAssetsTests
         Assert.Contains("body.apiKey", app);
     }
 
+    [Fact] // ADR 0095 AC18 — the editor shows the inbound address persistently, with a regenerate that sends the flag.
+    public async Task AgentEditor_HasEmailAddressAndRegenerate()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("id=\"agentEmailSection\"", html);
+        Assert.Contains("id=\"agentEmailValue\"", html);
+        Assert.Contains("id=\"agentEmailCopyBtn\"", html);
+        Assert.Contains("id=\"agentRegenerateEmailBtn\"", html);
+
+        Assert.Contains("payload.regenerateEmail = true", app);
+        Assert.Contains("fetch(\"/api/email/config\")", app);
+        // Built from the stored raw token on every open — not a revealed-once value like the key.
+        Assert.Contains("`${agent.emailToken}@${config.domain}`", app);
+    }
+
     [Fact] // AC1/AC2/AC3 — a dedicated API-key tab whose run-endpoint URL shows always, key reveal lands here.
     public async Task AgentEditor_HasApiKeyTab_WithAlwaysVisibleRunUrl()
     {

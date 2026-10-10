@@ -3,7 +3,7 @@
 import { clearPendingAttachments } from "./attachments.js";
 import { cacheGet, cachePut } from "./cache.js";
 import { selectConversation, setActiveAgentId, setActiveAgentKind, setActiveId, setPendingAgentId } from "./conversations.js";
-import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentContinuousNote, agentDescriptionInput, agentDialog, agentForm, agentFormTitle, agentKeyCopyBtn, agentKindField, agentKindSelect, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
+import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentContinuousNote, agentDescriptionInput, agentDialog, agentEmailCopyBtn, agentEmailNote, agentEmailSection, agentEmailValue, agentForm, agentFormTitle, agentKeyCopyBtn, agentKindField, agentKindSelect, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateEmailBtn, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
 import { closeDrawer } from "./drawer.js";
 import { defaultModel, fillModelOptions, modelLabel, selectModel, setModel } from "./models.js";
 import { streaming } from "./send.js";
@@ -166,6 +166,8 @@ function openAgentDialog(agent) {
   agentMcpUrl.textContent = `${location.origin}/api/agent-mcp`;
   agentMcpUrlCopyBtn.textContent = "Copy";
   pendingRegenerate = false;
+  pendingEmailRegenerate = false;
+  renderEmailAddress(agent);
   // Null enabledTools (a new agent, or one saved before ADR 0021) means "all selectable tools".
   renderToolChecks(agentToolChecks, agent?.enabledTools ?? allToolKeys());
   fillModelOptions(agentModelSelect);
@@ -194,6 +196,36 @@ function applyKindLock(kind) {
 // Set by the Regenerate-key button so the next save rotates the key (ADR 0022). Reset on every
 // dialog open and after each save, so a plain Save never regenerates.
 let pendingRegenerate = false;
+
+// Set by the Regenerate-address button so the next save rotates the inbound email address (ADR 0095). Reset like
+// pendingRegenerate, so a plain Save never rotates it.
+let pendingEmailRegenerate = false;
+
+// GET /api/email/config, fetched once: whether inbound email is on, and the domain an agent's token is shown at.
+let emailConfig = null;
+
+async function loadEmailConfig() {
+  if (emailConfig) return emailConfig;
+  try {
+    const res = await fetch("/api/email/config");
+    if (res.ok) emailConfig = await res.json();
+  } catch { /* offline: leave it unknown and try again on the next open */ }
+  return emailConfig ?? { enabled: false, domain: "" };
+}
+
+// The address is shown persistently for a saved agent (it is stored raw, ADR 0095), never revealed-once like the key.
+async function renderEmailAddress(agent) {
+  agentEmailSection.hidden = !agent;
+  agentEmailCopyBtn.textContent = "Copy";
+  if (!agent) return;
+  const config = await loadEmailConfig();
+  const address = config.enabled && agent.emailToken ? `${agent.emailToken}@${config.domain}` : "";
+  agentEmailValue.textContent = address
+    || (config.enabled ? "No address yet. Regenerate to create one." : "Inbound email isn't set up on this server.");
+  agentEmailCopyBtn.hidden = !address;
+  agentRegenerateEmailBtn.hidden = !config.enabled;
+  agentEmailNote.hidden = !config.enabled;
+}
 
 // What the MCP-exposure box read when the dialog was opened, so a save can detect the OFF -> ON
 // transition (ADR 0070) and offer a key rotation for it.
@@ -227,6 +259,7 @@ async function saveAgent() {
   if (toolCatalog.length > 0) payload.enabledTools = readToolChecks(agentToolChecks);
   // Regenerate only on an existing agent (PUT) — a create always mints a fresh key anyway.
   if (editingAgentId && pendingRegenerate) payload.regenerateKey = true;
+  if (editingAgentId && pendingEmailRegenerate) payload.regenerateEmail = true;
   if (!payload.name || !payload.systemPrompt || !payload.model) return;
 
   const url = editingAgentId ? `/api/agents/${encodeURIComponent(editingAgentId)}` : "/api/agents";
@@ -243,6 +276,7 @@ async function saveAgent() {
   } catch { return; /* silo may be unreachable; leave the dialog open */ }
 
   pendingRegenerate = false;
+  pendingEmailRegenerate = false;
   // The save succeeded, so this IS the state now — without adopting it, a dialog that stays open (the
   // key-reveal path below) would re-prompt for a rotation on every subsequent Save.
   mcpExposedWhenOpened = payload.mcpExposed;
@@ -261,6 +295,11 @@ async function saveAgent() {
     agentKeyCopyBtn.textContent = "Copy";
     // A new agent has its id now, so its webhook tab can open up.
     openWebhookPanel(body.agent.id);
+    renderEmailAddress(body.agent);
+  } else if (body && payload.regenerateEmail) {
+    // Stay open on the API tab so the new address can be copied; the old one is already dead.
+    agentTabs.select(2);
+    renderEmailAddress(body.agent);
   } else {
     agentDialog.close();
   }
@@ -327,6 +366,24 @@ export function wireAgents() {
     if (!confirm("Regenerate this agent's API key? The current key stops working immediately.")) return;
     pendingRegenerate = true;
     saveAgent();
+  });
+
+  // Regenerate the inbound email address (ADR 0095): the current address stops working, including in any
+  // forwarding rule that points at it.
+  agentRegenerateEmailBtn.addEventListener("click", () => {
+    if (!editingAgentId) return;
+    if (!confirm("Regenerate this agent's email address? The current address stops working immediately, including in any forwarding rule.")) return;
+    pendingEmailRegenerate = true;
+    saveAgent();
+  });
+
+  agentEmailCopyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(agentEmailValue.textContent);
+      agentEmailCopyBtn.textContent = "Copied";
+    } catch {
+      /* clipboard blocked — the address is visible to select manually */
+    }
   });
 
   agentKeyCopyBtn.addEventListener("click", async () => {

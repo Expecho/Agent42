@@ -10,12 +10,12 @@ namespace Agent42.Backend;
 // set (ADR 0021, a list of ToolCatalog keys, null = all). RegenerateKey (ADR 0022, PUT only)
 // rotates the agent's API key. McpExposed (ADR 0070) opts the agent into the server-side MCP surface.
 // Kind (POST only) may be null or "copilot"; anything else is a 400, and PUT ignores it, because an agent's
-// kind never changes after create.
+// kind never changes after create. RegenerateEmail (ADR 0095, PUT only) rotates the agent's inbound email address.
 // All are trailing defaults so an old-shape client that omits them stores false = per-chat,
 // null = all tools, never regenerates, leaves the agent unexposed, and creates an ordinary agent.
 public record AgentUpsertRequest(string Name, string Description, string Model, string SystemPrompt,
     bool Continuous = false, IReadOnlyList<string>? EnabledTools = null, bool RegenerateKey = false,
-    bool McpExposed = false, string? Kind = null);
+    bool McpExposed = false, string? Kind = null, bool RegenerateEmail = false);
 
 // What POST/PUT /api/agents return (ADR 0022): the stored agent, plus the raw API key IFF one was just
 // minted (create, or update with regenerateKey) — otherwise null. The raw key is shown exactly once and

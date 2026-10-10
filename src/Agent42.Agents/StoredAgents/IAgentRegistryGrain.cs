@@ -29,9 +29,13 @@ public interface IAgentRegistryGrain : IGrainWithStringKey
     /// <b>once</b> (only when just minted); only its hash is persisted. A plain update keeps the
     /// existing hash. The incoming <paramref name="agent"/>'s <see cref="AgentDefinition.ApiKeyHash"/>
     /// is ignored — the grain is the authority on it.</para>
+    ///
+    /// <para>Owns the inbound email token the same way (ADR 0095): minted on insert and, when
+    /// <paramref name="regenerateEmail"/> is set, on update, keeping <see cref="IEmailAddressDirectoryGrain"/> in
+    /// sync. The incoming <see cref="AgentDefinition.EmailToken"/> is ignored too.</para>
     /// </summary>
     [Alias("SaveAsync")]
-    Task<AgentSaveResult> SaveAsync(AgentDefinition agent, bool regenerateKey = false);
+    Task<AgentSaveResult> SaveAsync(AgentDefinition agent, bool regenerateKey = false, bool regenerateEmail = false);
 
     /// <summary>
     /// Seeds the built-in research agent (ADR 0082) on <paramref name="model"/>, at most once per user. A no-op
@@ -41,7 +45,7 @@ public interface IAgentRegistryGrain : IGrainWithStringKey
     [Alias("EnsureResearchAgentAsync")]
     Task EnsureResearchAgentAsync(string model);
 
-    /// <summary>Removes a stored agent (and deregisters its key). No-op if it isn't registered.</summary>
+    /// <summary>Removes a stored agent (and deregisters its key and email address). No-op if it isn't registered.</summary>
     [Alias("DeleteAsync")]
     Task DeleteAsync(string id);
 }
