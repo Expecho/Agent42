@@ -93,6 +93,9 @@ public sealed class DataUrlAttachmentStore : IAttachmentStore
     public Task<AttachmentContent?> OpenReadAsync(string ownerKey, string attachmentId, CancellationToken cancellationToken = default)
         => _inner.OpenReadAsync(ownerKey, attachmentId, cancellationToken);
 
+    public Task<AttachmentRef> CopyAsync(AttachmentRef source, string targetOwnerKey, CancellationToken cancellationToken = default)
+        => _inner.CopyAsync(source, targetOwnerKey, cancellationToken);
+
     public async Task<Uri> GetReadUrlAsync(AttachmentRef reference, CancellationToken cancellationToken = default)
     {
         var ownerKey = reference.BlobPath[..reference.BlobPath.LastIndexOf('/')];
