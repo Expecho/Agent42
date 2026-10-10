@@ -16,6 +16,7 @@ import { wireConfigHealth } from "./confighealth.js";
 import { activeAgentId, activeId, wireConversations } from "./conversations.js";
 import { incognitoBtn, input, toolsBtn } from "./dom.js";
 import { wireDrawer } from "./drawer.js";
+import { wireExport } from "./export.js";
 import { groups, refreshGroups, setGroups, wireGroups } from "./groups.js";
 import { initLocation } from "./location.js";
 import { initMcpOAuthReturn, wireMcp } from "./mcp.js";
@@ -64,6 +65,7 @@ async function hydrateFromCache() {
 /* ————— wiring ————— */
 
 wireShareLinks();
+wireExport();
 wireAgents();
 wireAttachments();
 wireArtifacts();
