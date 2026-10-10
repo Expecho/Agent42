@@ -41,9 +41,10 @@ public interface IAgentGrain : IGrainWithStringKey
     /// call's result could never be read. Turn-scoped like the two above; the default keeps the browser
     /// path and every existing caller unchanged.
     ///
-    /// <paramref name="clientTools"/> names the client tools (ADR 0089) the browser streaming this turn can run —
-    /// already intersected with <see cref="ClientToolLimits.ToolNames"/> by the endpoint. Only an interactive turn
-    /// with a non-empty list gets a broker; every other run answers a client tool "unavailable" at once.
+    /// <paramref name="clientTools"/> names the client tools (ADR 0089) the browser streaming this turn can run, plus
+    /// <c>mcp_elicitation</c> when it can show an MCP elicitation (ADR 0095). The endpoint has already intersected it
+    /// with <see cref="ClientToolLimits.AdvertisableCapabilities"/>. Only an interactive turn with a non-empty list
+    /// gets a broker; every other run answers a client tool "unavailable" and an elicitation <c>cancel</c> at once.
     ///
     /// <paramref name="replacesLastTurn"/> says this turn re-runs one <see cref="TruncateLastTurnAsync"/> just
     /// removed (ADR 0092), so the outbound webhook event is marked as superseding the previous one (ADR 0094). A
@@ -57,8 +58,9 @@ public interface IAgentGrain : IGrainWithStringKey
         IReadOnlyList<string>? clientTools = null, bool replacesLastTurn = false);
 
     /// <summary>
-    /// Completes a client tool call the interactive turn is waiting on (ADR 0089) with the browser's result, and
-    /// returns false when no such call is waiting (unknown, already answered, timed out or stopped).
+    /// Completes a client tool call or an MCP elicitation (ADR 0095, by its <c>elicit_…</c> id) the interactive turn
+    /// is waiting on (ADR 0089) with the browser's result, and returns false when no such call is waiting (unknown,
+    /// already answered, timed out or stopped).
     ///
     /// <para><see cref="AlwaysInterleaveAttribute"/> for the <see cref="StopAsync"/> reason, and more so: the turn
     /// is suspended INSIDE a tool invocation waiting for exactly this call, so a queued call would deadlock until
@@ -70,8 +72,9 @@ public interface IAgentGrain : IGrainWithStringKey
 
     /// <summary>
     /// The client tool calls the interactive turn is waiting on (ADR 0089), so a browser that lost its stream can
-    /// answer them (ADR 0046 recovery). Never a background run's calls: those have no broker. Interleaves, because
-    /// it is asked exactly while a turn is suspended in a wait.
+    /// answer them (ADR 0046 recovery). A waiting MCP elicitation (ADR 0095) is listed too, with tool name
+    /// <c>mcp_elicitation</c>. Never a background run's calls: those have no broker. Interleaves, because it is asked
+    /// exactly while a turn is suspended in a wait.
     /// </summary>
     [Alias("GetPendingClientToolCallsAsync")]
     [AlwaysInterleave]

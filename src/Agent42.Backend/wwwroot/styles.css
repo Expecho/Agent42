@@ -1746,6 +1746,30 @@ body {
   color: var(--ink);
 }
 
+/* MCP elicitation (ADR 0095): the host is the thing to check, so it is the prominent line. */
+.elicitation__fields {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.elicitation__url {
+  margin-top: 12px;
+}
+
+.elicitation__host {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.elicitation__full-url {
+  display: block;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+
 /* ————— composer ————— */
 
 .composer {

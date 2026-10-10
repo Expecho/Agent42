@@ -8,8 +8,11 @@ namespace Agent42.Backend;
 /// One connected MCP server: its raw tools and a handle to dispose the live connection later.
 /// <see cref="UserMcpToolProvider"/> wraps the tools for truncation, then keeps the <see cref="Connection"/>
 /// alive for as long as any grain may hold them, disposing it on cache eviction (the bounded-lifetime policy).
+/// <see cref="Elicitation"/> is the connection's elicitation router (ADR 0095). It is copied onto the group so the
+/// grain can open a scope around each call, and it is null for a connection that declared no elicitation.
 /// </summary>
-public sealed record McpServerConnection(IReadOnlyList<AITool> Tools, IAsyncDisposable Connection);
+public sealed record McpServerConnection(
+    IReadOnlyList<AITool> Tools, IAsyncDisposable Connection, McpElicitationRouter? Elicitation = null);
 
 /// <summary>
 /// The already-decrypted secrets a connection may need, unprotected by the caller (never the ciphertext).
@@ -98,13 +101,15 @@ public sealed class McpConnectionFactory : IMcpConnectionFactory
                 _loggerFactory,
                 ownsHttpClient: true);
 
-        var client = await McpClient.CreateAsync(transport, loggerFactory: _loggerFactory, cancellationToken: cancellationToken);
+        var router = new McpElicitationRouter();
+        var client = await McpClient.CreateAsync(
+            transport, McpElicitationClient.Options(router), _loggerFactory, cancellationToken);
         try
         {
             var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
             // McpClientTool : AIFunction : AITool (Step 0 spike). The provider wraps each for truncation.
             IReadOnlyList<AITool> raw = [.. tools.Cast<AITool>()];
-            return new McpServerConnection(raw, client);
+            return new McpServerConnection(raw, client, router);
         }
         catch
         {
@@ -120,13 +125,25 @@ public sealed class McpConnectionFactory : IMcpConnectionFactory
 /// <see cref="McpToolLimits.MaxToolResultLength"/> before it is persisted into the 2 MB session (ADR 0004).
 /// <see cref="DelegatingAIFunction"/> forwards Name/Description/JsonSchema unchanged (Step 0 spike), so the
 /// model's view of the tool is identical — only the return value is bounded.
+///
+/// <para>It is also where the SDK's -32042 <see cref="ModelContextProtocol.UrlElicitationRequiredException"/>
+/// becomes the Agents layer's <see cref="McpUrlElicitationRequiredException"/> (ADR 0095). Every MCP tool passes
+/// through here, and the grain-side wrapper that handles the exception has no MCP package reference.</para>
 /// </summary>
 internal sealed class TruncatingMcpTool(AIFunction inner) : DelegatingAIFunction(inner)
 {
     protected override async ValueTask<object?> InvokeCoreAsync(
         AIFunctionArguments arguments, CancellationToken cancellationToken)
     {
-        var raw = await base.InvokeCoreAsync(arguments, cancellationToken);
+        object? raw;
+        try
+        {
+            raw = await base.InvokeCoreAsync(arguments, cancellationToken);
+        }
+        catch (ModelContextProtocol.UrlElicitationRequiredException ex)
+        {
+            throw McpElicitationClient.Translate(ex);
+        }
 
         // MCP results surface as a JsonElement (Step 0 spike); ToString() yields its compact JSON. Under
         // budget, return the raw value so structure is preserved; over budget, return a truncated string.

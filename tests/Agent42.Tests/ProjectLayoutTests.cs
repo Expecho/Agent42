@@ -252,6 +252,7 @@ public sealed class ProjectLayoutTests
         { "conversations.js", "wireConversations" },
         { "drawer.js", "wireDrawer" },
         { "editfork.js", "wireEditFork" },
+        { "elicitation.js", "wireElicitation" },
         { "groups.js", "wireGroups" },
         { "location.js", "initLocation" },
         { "mcp.js", "wireMcp" },

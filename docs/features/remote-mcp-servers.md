@@ -134,6 +134,15 @@ server be opened and read"). When on, `UrlHarvestingMcpTool` harvests http(s) UR
 server's tool results into `AgentGrainState.SeededFetchableUrls` (20 per result, 100 total, oldest
 dropped first), and `fetch_web_page` / `read_web_document` accept them like URLs the user typed.
 
+### A server can ask the user for input (ADR 0095)
+
+Agent42 declares MCP elicitation (form and URL mode). When a server asks for input during a tool call, an open
+chat shows a dialog: either a form built from the server's schema, or a link to open. The link opens only on a
+click and shows its host. The answer goes back to the server, and the call carries on. A run with nobody to ask
+(background, reminder, agent-run, Copilot, or a browser that didn't advertise it) answers `cancel`. A remote
+server's request is shown only when no other call to that server is in flight; when calls overlap it is
+`cancel`. Elicitations from a local-bridge server always route exactly.
+
 ## Local bridge (a server on your own machine)
 
 ADR 0076. Some MCP servers — BrowserOS neo, which drives your signed-in browser — listen only on

@@ -23,15 +23,17 @@ public sealed class ClientToolsAssetsTests(StaticAssetsServerFixture fixture)
         Assert.DoesNotContain("await runClientTool", arm, StringComparison.Ordinal);
     }
 
-    // Every tool the server defines is one the page can run, and nothing else is advertised.
+    // Everything the server lets a browser advertise (the client tools plus mcp_elicitation, ADR 0095) is one the
+    // page can handle, and nothing else is advertised.
     [Fact]
     public async Task ClientToolList_MatchesTheServer()
     {
         var app = await fixture.GetAppScriptAsync();
 
         Assert.Contains(
-            "export const CLIENT_TOOLS = [\"confirm_action\", \"control_artifact_pane\", \"get_browser_context\", \"get_current_location\"];",
-            app, StringComparison.Ordinal);
+            "export const CLIENT_TOOLS = [\n  \"confirm_action\", \"control_artifact_pane\", \"get_browser_context\", \"get_current_location\", \"mcp_elicitation\",\n];",
+            app.Replace("\r\n", "\n"), StringComparison.Ordinal);
+        Assert.Equal(5, Agent42.Agents.ClientToolLimits.AdvertisableCapabilities.Count);
         Assert.Equal(4, Agent42.Agents.ClientToolLimits.ToolNames.Count);
     }
 
@@ -95,7 +97,7 @@ public sealed class ClientToolsAssetsTests(StaticAssetsServerFixture fixture)
 
         Assert.Contains("\"/js/clienttools.js\"", sw, StringComparison.Ordinal);
         Assert.Contains("\"/js/sharedstate.js\"", sw, StringComparison.Ordinal);
-        Assert.Contains("agent42-shell-v56", sw, StringComparison.Ordinal);
+        Assert.Contains("agent42-shell-v57", sw, StringComparison.Ordinal);
     }
 
     private static string CodeOnly(string source) =>

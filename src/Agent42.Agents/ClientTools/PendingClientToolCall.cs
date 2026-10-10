@@ -3,7 +3,9 @@ namespace Agent42.Agents;
 /// <summary>
 /// One client tool call the interactive turn is waiting on (ADR 0089), as the browser needs it to answer the call
 /// after its stream died: the same <c>toolCallId</c>/<c>toolName</c>/<c>toolInput</c> shape as the live
-/// <c>toolCallStart</c> chunk, so the frontend handles both through one path. Not grain state.
+/// <c>toolCallStart</c> chunk, so the frontend handles both through one path. Not grain state. A waiting MCP
+/// elicitation (ADR 0095) is listed in the same shape: its <c>elicit_…</c> id, tool name <c>mcp_elicitation</c>, and
+/// the request JSON as the input.
 /// </summary>
 [GenerateSerializer]
 [Alias("Agent42.Agents.PendingClientToolCall")]

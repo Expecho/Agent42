@@ -4042,6 +4042,33 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`confirmAction`), `tests/Agent42.Tests/ClientToolTests.cs`, `.agentic/decisions/0089-client-tools-and-shared-state.md`
 - **Verified:** 2026-10-09
 
+### MCP elicitation: the SDK's handler runs off the grain scheduler, on a per-USER connection, and HTTP loses the async local
+
+- **Claim:** ADR 0095. The elicitation handler runs on the MCP session's thread, on a connection that every
+  conversation of the user shares, so it can neither read `CurrentClientToolBroker` nor touch the broker's no-lock
+  tool-call map. **(1) Routing.** `ElicitingMcpTool` opens a scope on the connection's `McpElicitationRouter` around
+  each call. Measured on SDK 2.2.0: over a **stateful streamable-HTTP** server the session negotiates 2025-11-25 (even
+  though the client defaults to 2026-07-28), and the router's `AsyncLocal` does **not** reach the handler
+  (`handlerSaw=<null>`). Over the local bridge's **stream** transport it negotiates 2026-07-28, and the `AsyncLocal`
+  **does** reach it. Remote servers therefore route by "the only scope in flight on this connection", and any
+  overlapping call to the same server answers `cancel`. Do not "fix" that with a guess. **(2) Thread affinity.** The
+  handler enqueues into the broker's separate, **locked** `McpElicitationQueue`; the grain reads it on its own
+  scheduler. A closed queue must refuse at once (`TryEnqueue` returns null), or an SDK-thread wait hangs after the
+  turn. **(3) Streaming mid-pull.** An elicitation arrives while `MoveNextAsync` is pending, so the loop starts the
+  pull ONCE (`PullAsync(...).AsTask()`, which also keeps the run's async local) and races it against
+  `Arrived`. Awaiting a `ValueTask` twice, or starting a second pull, corrupts the run. This is the first yield taken
+  WHILE a pull is in flight, so a browser that disconnects there disposes the iterator mid-`MoveNextAsync`; the
+  `finally` therefore closes the broker and awaits the pull before `DisposeAsync` (`SettlePendingPullAsync`,
+  `Elicitation_ConsumerDisposesTheStream_AnswersCancel_AndTheNextTurnRuns`). **(4) Both modes must be
+  declared.** A client without the capability makes the server throw "Client does not support elicitation
+  requests.", and a stateless server cannot elicit at all.
+- **Evidence:** `src/Agent42.Agents/Mcp/McpElicitationRouter.cs`, `src/Agent42.Agents/Mcp/ElicitingMcpTool.cs`,
+  `src/Agent42.Agents/ClientTools/McpElicitationQueue.cs`, `src/Agent42.Agents/ClientTools/AgentGrain.ClientTools.cs`
+  (`ElicitationArrivedFirstAsync`), `src/Agent42.Backend/Mcp/McpElicitationClient.cs`,
+  `tests/Agent42.Tests/McpElicitationIntegrationTests.cs`, `tests/Agent42.Tests/McpElicitationTests.cs`,
+  `.agentic/decisions/0095-mcp-elicitation-on-the-client.md`
+- **Verified:** 2026-10-10
+
 ### Shared state: text in grain state, no write while a run is in flight, and the patch library is neither atomic nor strict
 
 - **Claim:** (ADR 0089) **(1)** The state is a `string` (`SharedStateJson`), not a `JsonNode`: Orleans cannot
