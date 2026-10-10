@@ -13,6 +13,8 @@ namespace Agent42.Agents;
 /// (the user approves or declines), <c>control_artifact_pane</c> (open, close or maximize the ADR 0084 pane),
 /// <c>get_browser_context</c> (facts only the browser knows) and <c>get_current_location</c> (ADR 0093; built
 /// with the location tool in <c>Location/AgentGrain.LocationTool.cs</c>, under its own selectable key).
+/// An MCP server's elicitation (ADR 0095) is not a tool but rides the same wire: the run's broker queues it, the
+/// stream emits it while the MCP call is pending, and its answer comes back through the same submit and pending paths.
 ///
 /// <para><b>The broker is routed per RUN, never through a field the tool reads.</b> Two runs can be in flight on
 /// one activation (a reminder or an <c>EnqueuePromptAsync</c> run in a gap of a streaming turn), and a field would
@@ -229,12 +231,65 @@ public sealed partial class AgentGrain
         }
     }
 
+    // An id is either a client tool call or an MCP elicitation (ADR 0095); the two never collide, because an
+    // elicitation's id is minted here as elicit_<guid>.
     public Task<bool> SubmitClientToolResultAsync(string toolCallId, string result)
-        => Task.FromResult(_clientToolBrokers.Exists(b => b.TryComplete(toolCallId, result ?? "")));
+        => Task.FromResult(_clientToolBrokers.Exists(b =>
+            b.TryComplete(toolCallId, result ?? "") || b.Elicitations.TryComplete(toolCallId, result ?? "")));
 
     public Task<IReadOnlyList<PendingClientToolCall>> GetPendingClientToolCallsAsync()
         => Task.FromResult<IReadOnlyList<PendingClientToolCall>>(
-            _clientToolBrokers.SelectMany(b => b.Pending).ToList());
+            _clientToolBrokers.SelectMany(b => b.Pending.Concat(b.Elicitations.Pending)).ToList());
+
+    // The sink an MCP tool call of THIS run shows its elicitations through (ADR 0095), or null when nobody can be
+    // asked: a background run, a Copilot chat (its tools run outside the run's async local) or a browser that did not
+    // advertise the capability. Read inside the tool call, where CurrentClientToolBroker is the run's own.
+    private IMcpElicitationSink? CurrentElicitationSink()
+        => CurrentClientToolBroker.Value is { } broker && broker.Supports(ClientToolLimits.McpElicitation)
+            ? new McpElicitationSink(broker, _clientToolTimeouts.For(ClientToolLimits.McpElicitation), _logger)
+            : null;
+
+    // Waits for the pending pull or for an elicitation to arrive, whichever is first, so the stream loop can emit an
+    // elicitation while the tool that caused it is still running (ADR 0095). True when there are elicitations to
+    // stream; the caller then keeps waiting on the SAME pull, which must not be started twice.
+    private static async Task<bool> ElicitationArrivedFirstAsync(Task<bool> pull, ClientToolBroker? broker)
+    {
+        if (broker is null)
+        {
+            return false;
+        }
+
+        var arrived = broker.Elicitations.Arrived;
+        await Task.WhenAny(pull, arrived);
+        return arrived.IsCompleted;
+    }
+
+    // The consumer went away at an elicitation's yield while that pull was still running (ADR 0095): a disconnected
+    // browser disposes the stream there. An async iterator must not be disposed in the middle of a MoveNextAsync, so
+    // the broker is closed (every wait answers cancel or is cancelled), and the pull is let finish first. Its outcome
+    // belongs to nobody now, so it is only logged.
+    private async Task SettlePendingPullAsync(Task<bool>? pull, ClientToolBroker? broker)
+    {
+        if (pull is null || pull.IsCompleted)
+        {
+            return;
+        }
+
+        broker?.Close();
+        try
+        {
+            await pull;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Agent grain {GrainKey}: an abandoned pull ended with an error",
+                this.GetPrimaryKeyString());
+        }
+    }
+
+    private static AgentStreamEvent ElicitationEvent(PendingMcpElicitation elicitation)
+        => new(AgentStreamEventType.McpElicitation, Text: elicitation.ServerName, ToolCallId: elicitation.ToolCallId,
+            Elicitation: elicitation.Input);
 }
 
 /// <summary>
@@ -248,5 +303,7 @@ public sealed record ClientToolTimeouts(TimeSpan Confirm, TimeSpan Automatic)
     public static ClientToolTimeouts Default { get; } =
         new(ClientToolLimits.ConfirmTimeout, ClientToolLimits.AutomaticTimeout);
 
-    public TimeSpan For(string toolName) => toolName == ClientToolLimits.ConfirmAction ? Confirm : Automatic;
+    /// <summary>A human answers <c>confirm_action</c> and an MCP elicitation (ADR 0095); code answers the rest.</summary>
+    public TimeSpan For(string toolName)
+        => toolName is ClientToolLimits.ConfirmAction or ClientToolLimits.McpElicitation ? Confirm : Automatic;
 }

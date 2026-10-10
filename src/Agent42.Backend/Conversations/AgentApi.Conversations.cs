@@ -269,11 +269,11 @@ public static partial class AgentApi
             outcome = outcome.ToString(),
         });
 
-    // The client tools this browser says it can run (ADR 0089), narrowed to the ones the server defines. A client
-    // can only narrow the set, never name a tool of its own, and the known set is tiny, so the result is capped by
-    // construction. A list rather than a lazy query: it crosses the grain boundary.
+    // The client tools this browser says it can run (ADR 0089), plus mcp_elicitation (ADR 0095), narrowed to the
+    // ones the server defines. A client can only narrow the set, never name a tool of its own, and the known set is
+    // tiny, so the result is capped by construction. A list rather than a lazy query: it crosses the grain boundary.
     internal static List<string> KnownClientTools(IReadOnlyList<string>? advertised)
         => advertised is null
             ? []
-            : [.. advertised.Where(ClientToolLimits.ToolNames.Contains).Distinct(StringComparer.Ordinal)];
+            : [.. advertised.Where(ClientToolLimits.AdvertisableCapabilities.Contains).Distinct(StringComparer.Ordinal)];
 }

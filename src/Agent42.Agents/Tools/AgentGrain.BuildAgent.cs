@@ -333,7 +333,7 @@ public sealed partial class AgentGrain
             {
                 tools.AddRange(server.Tools
                     .Where(t => ToolCatalog.IsMcpToolEnabled(server.ServerId, t.Name, enabled))
-                    .Select(t => WithReauthNotice(server, WithUrlSeeding(server, t))));
+                    .Select(t => WithReauthNotice(server, WithUrlSeeding(server, WithElicitation(server, t)))));
             }
         }
 
@@ -363,6 +363,15 @@ public sealed partial class AgentGrain
     private AITool WithUrlSeeding(McpServerTools server, AITool tool)
         => server.SeedsFetchableUrls && tool is AIFunction fn
             ? new UrlHarvestingMcpTool(fn, server.ServerId, RememberSeededUrlsFromToolResult)
+            : tool;
+
+    // The INNERMOST MCP wrapper (ADR 0095): opens a scope on the connection's elicitation router around each call,
+    // with this run's sink read inside the call (CurrentElicitationSink), so a server's elicitation reaches the browser
+    // of the run that made the call. Innermost so the reauth notice stays outermost and the harvester only ever sees
+    // the host-only -32042 text. Extracted for the same S3776 reason as WithUrlSeeding.
+    private AITool WithElicitation(McpServerTools server, AITool tool)
+        => server.Elicitation is { } router && tool is AIFunction fn
+            ? new ElicitingMcpTool(fn, router, server.ServerName ?? server.ServerId, CurrentElicitationSink)
             : tool;
 
     // The OUTERMOST MCP wrapper (ADR 0081), outside the URL-seeding one: nested inside it, the harvester would take

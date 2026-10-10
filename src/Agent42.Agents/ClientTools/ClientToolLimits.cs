@@ -24,12 +24,27 @@ public static class ClientToolLimits
     public const string GetCurrentLocation = "get_current_location";
 
     /// <summary>
-    /// Every client tool name. The chat endpoint intersects the browser's advertised list with this, so a client
-    /// can only narrow what it supports, never introduce a name.
+    /// Not a model tool: the browser's capability to show an MCP server's elicitation (ADR 0095). It rides the
+    /// client-tool wire (advertised list, pending calls, the tool-result endpoint), which is why it lives here, and it
+    /// is deliberately absent from <see cref="ToolNames"/>, which Copilot and the tool catalog read as model tools.
+    /// </summary>
+    public const string McpElicitation = "mcp_elicitation";
+
+    /// <summary>
+    /// Every client MODEL tool name. Copilot and the tool catalog read it as the set of tools the model can call;
+    /// the chat endpoint intersects the browser's list with <see cref="AdvertisableCapabilities"/> instead.
     /// </summary>
     public static IReadOnlySet<string> ToolNames { get; } =
         new HashSet<string>(
             [ConfirmAction, ControlArtifactPane, GetBrowserContext, GetCurrentLocation], StringComparer.Ordinal);
+
+    /// <summary>
+    /// Everything a browser may advertise: <see cref="ToolNames"/> plus <see cref="McpElicitation"/>. The chat
+    /// endpoint intersects the browser's list with this, so a client can only narrow what it supports, never
+    /// introduce a name.
+    /// </summary>
+    public static IReadOnlySet<string> AdvertisableCapabilities { get; } =
+        new HashSet<string>([.. ToolNames, McpElicitation], StringComparer.Ordinal);
 
     /// <summary>A human reads and answers <c>confirm_action</c>.</summary>
     public static readonly TimeSpan ConfirmTimeout = TimeSpan.FromSeconds(120);

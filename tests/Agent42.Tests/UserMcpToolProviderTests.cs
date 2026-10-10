@@ -101,6 +101,49 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
         Assert.Equal(McpToolLimits.MaxToolResultLength + McpToolLimits.TruncationMarker.Length, result.Length);
     }
 
+    // ADR 0095: the connection's elicitation router travels to the grain on the group, where BuildAgent wraps the
+    // server's tools so each call opens a scope on it.
+    [Fact]
+    public async Task ProviderCopiesTheConnectionsRouterOntoTheGroup()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-router");
+        await grain.SaveAsync(HeaderServer("a"));
+        _connections.Router = new McpElicitationRouter();
+
+        var set = await NewProvider().GetForUserAsync("mcp-tp-router");
+
+        Assert.Same(_connections.Router, Assert.Single(set.Servers).Elicitation);
+    }
+
+    // ADR 0095: the SDK's -32042 leaves the provider's wrapper as the Agents layer's own exception, carrying the URL
+    // elicitations, so the grain-side wrapper can handle it without an MCP package reference.
+    [Fact]
+    public async Task UrlElicitationRequired_IsTranslatedForTheGrain()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>("mcp-tp-32042");
+        await grain.SaveAsync(HeaderServer("a"));
+        _connections.ToolsFor = _ =>
+        [
+            AIFunctionFactory.Create(
+                string () => throw new ModelContextProtocol.UrlElicitationRequiredException("sign in",
+                [
+                    new ModelContextProtocol.Protocol.ElicitRequestParams
+                    {
+                        Mode = "url", Message = "Sign in", Url = "https://example.com/auth", ElicitationId = "e1",
+                    },
+                ]),
+                "tool_a"),
+        ];
+
+        var set = await NewProvider().GetForUserAsync("mcp-tp-32042");
+        var tool = Assert.IsAssignableFrom<AIFunction>(Assert.Single(set.AllTools));
+
+        var ex = await Assert.ThrowsAsync<McpUrlElicitationRequiredException>(
+            () => tool.InvokeAsync(new AIFunctionArguments()).AsTask());
+        var elicitation = Assert.Single(ex.Elicitations);
+        Assert.Equal((McpElicitationLimits.UrlMode, "https://example.com/auth"), (elicitation.Mode, elicitation.Url));
+    }
+
     // AC10: a version bump reconnects and reflects the new server set (config hot-reload, next resolve).
     [Fact]
     public async Task VersionBump_ReloadsTools()
@@ -430,6 +473,7 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
         public IAuthHeaderProvider? LastOAuthBearer { get; private set; }
         public int ConnectCount { get; private set; }
         public TrackingDisposable? LastDisposable { get; private set; }
+        public McpElicitationRouter? Router { get; set; }
 
         public async Task<McpServerConnection> ConnectAsync(
             StoredMcpServer server, McpConnectionSecrets secrets, CancellationToken cancellationToken)
@@ -447,7 +491,7 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
             }
 
             LastDisposable = new TrackingDisposable();
-            return new McpServerConnection(ToolsFor(server), LastDisposable);
+            return new McpServerConnection(ToolsFor(server), LastDisposable, Router);
         }
     }
 

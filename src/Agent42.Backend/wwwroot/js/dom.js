@@ -234,5 +234,15 @@ export const confirmActionDialog = document.getElementById("confirmActionDialog"
 export const confirmActionText = document.getElementById("confirmActionText");
 export const confirmActionApproveBtn = document.getElementById("confirmActionApproveBtn");
 export const confirmActionDeclineBtn = document.getElementById("confirmActionDeclineBtn");
+// MCP elicitation (ADR 0095).
+export const mcpElicitationDialog = document.getElementById("mcpElicitationDialog");
+export const mcpElicitationServer = document.getElementById("mcpElicitationServer");
+export const mcpElicitationMessage = document.getElementById("mcpElicitationMessage");
+export const mcpElicitationFields = document.getElementById("mcpElicitationFields");
+export const mcpElicitationUrlBox = document.getElementById("mcpElicitationUrlBox");
+export const mcpElicitationHost = document.getElementById("mcpElicitationHost");
+export const mcpElicitationUrl = document.getElementById("mcpElicitationUrl");
+export const mcpElicitationDeclineBtn = document.getElementById("mcpElicitationDeclineBtn");
+export const mcpElicitationSubmitBtn = document.getElementById("mcpElicitationSubmitBtn");
 // Shared state (ADR 0089): the panel above the composer.
 export const sharedStatePanel = document.getElementById("sharedStatePanel");

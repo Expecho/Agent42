@@ -899,17 +899,28 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // The shared-state version this run last showed the browser (ADR 0089); a change is streamed after the tool
         // result that carried it.
         var stateCursor = new SharedStateCursor(_state.State.SharedStateVersion);
+        Task<bool>? pull = null;
 
         try
         {
             while (true)
             {
+                // Through PullAsync so this run's client-tool broker (ADR 0089) is visible to the tools this
+                // pull invokes, and to nothing else. Started once and awaited as a task: an MCP elicitation (ADR
+                // 0095) arrives while the pull is pending, and is streamed before the pull is awaited again.
+                pull = PullAsync(updates, broker).AsTask();
+                while (await ElicitationArrivedFirstAsync(pull, broker))
+                {
+                    foreach (var elicitation in broker!.Elicitations.TakeNew())
+                    {
+                        yield return ElicitationEvent(elicitation);
+                    }
+                }
+
                 AgentResponseUpdate update;
                 try
                 {
-                    // Through PullAsync so this run's client-tool broker (ADR 0089) is visible to the tools this
-                    // pull invokes, and to nothing else.
-                    if (!await PullAsync(updates, broker))
+                    if (!await pull)
                     {
                         break;
                     }
@@ -941,6 +952,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
         finally
         {
+            await SettlePendingPullAsync(pull, broker);
             await updates.DisposeAsync();
         }
     }

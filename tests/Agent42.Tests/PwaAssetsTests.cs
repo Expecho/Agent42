@@ -285,7 +285,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v55", sw);
+        Assert.Contains("agent42-shell-v56", sw);
     }
 
     // Rich rendering (ADR 0083): SHELL holds only the eager renderer + highlight.js. The lazy libs stay out —

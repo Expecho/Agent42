@@ -89,6 +89,18 @@ public enum AgentStreamEventType
     /// cap.</para>
     /// </summary>
     StateSnapshot,
+
+    /// <summary>
+    /// An MCP server asks the user for input during a tool call (ADR 0095). <see cref="AgentStreamEvent.Elicitation"/>
+    /// carries the request as JSON (<c>{id, mode, server, message, schema?, url?, host?}</c>),
+    /// <see cref="AgentStreamEvent.ToolCallId"/> the waiting MCP tool's call id and <see cref="AgentStreamEvent.Text"/>
+    /// the server's display name. The browser answers through the client-tool result endpoint with the request's
+    /// <c>id</c>.
+    ///
+    /// <para><b>Live-only</b>, and not a <see cref="ToolCallStart"/>: never a tool chip, never folded (ADR 0072),
+    /// never persisted. A browser whose stream died finds it through the pending-tool-calls GET.</para>
+    /// </summary>
+    McpElicitation,
 }
 
 /// <summary>
@@ -134,4 +146,7 @@ public sealed record AgentStreamEvent(
     // Set on a StateSnapshot event (ADR 0089): the whole shared state as JSON text, and its version, which the
     // client sends back as the base of an edit. Trailing defaults so every existing construction keeps compiling.
     [property: Id(16)] string? State = null,
-    [property: Id(17)] long? StateVersion = null);
+    [property: Id(17)] long? StateVersion = null,
+    // Set on a McpElicitation event (ADR 0095): the request as JSON text. Trailing default so every existing
+    // construction keeps compiling, and null elsewhere so the NDJSON writer omits it.
+    [property: Id(18)] string? Elicitation = null);
