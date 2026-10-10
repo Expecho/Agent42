@@ -2793,6 +2793,10 @@ body {
 .share-link__actions { display: flex; gap: 8px; margin-top: 10px; }
 .share-link__revoke:hover { border-color: var(--red); color: var(--red); }
 
+/* Download a copy (ADR 0091) — anchors dressed as the dialog's buttons. */
+.export-links { display: flex; gap: 8px; margin-top: 6px; }
+.export-links .agent-form__btn { text-decoration: none; display: inline-flex; align-items: center; }
+
 /* model providers (ADR 0018) — reuses the agent-form styling; a few list/row specifics below. */
 .providers__head {
   display: flex;
