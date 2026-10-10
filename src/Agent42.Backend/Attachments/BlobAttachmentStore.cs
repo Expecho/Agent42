@@ -98,6 +98,31 @@ public sealed class BlobAttachmentStore : IAttachmentStore
         }
     }
 
+    // Download, then upload: no copy-source authorization or SAS is involved, so the same code works against the
+    // identity client in production and Azurite locally. A fork copies a bounded set (one conversation's images and
+    // artifact versions), so the extra round trip is not worth a server-side copy's auth dependency.
+    public async Task<AttachmentRef> CopyAsync(
+        AttachmentRef source, string targetOwnerKey, CancellationToken cancellationToken = default)
+    {
+        var download = await _container.GetBlobClient(source.BlobPath).DownloadContentAsync(cancellationToken);
+        var details = download.Value.Details;
+        var blobPath = $"{targetOwnerKey}/{source.Id}";
+        var options = new BlobUploadOptions
+        {
+            HttpHeaders = new BlobHttpHeaders { ContentType = details.ContentType },
+            // Copied verbatim: the file name is already stored encoded.
+            Metadata = details.Metadata,
+        };
+
+        if (_container.CanGenerateSasUri)
+        {
+            await _container.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+        }
+
+        await _container.GetBlobClient(blobPath).UploadAsync(download.Value.Content, options, cancellationToken);
+        return new AttachmentRef(source.Id, blobPath, details.ContentType, ReadFileName(details.Metadata, source.Id));
+    }
+
     public async Task<Uri> GetReadUrlAsync(AttachmentRef reference, CancellationToken cancellationToken = default)
     {
         var blob = _container.GetBlobClient(reference.BlobPath);

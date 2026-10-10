@@ -23,6 +23,9 @@ public sealed class CountingAttachmentStore : IAttachmentStore
     public Task<AttachmentContent?> OpenReadAsync(string ownerKey, string attachmentId, CancellationToken cancellationToken = default)
         => Task.FromResult<AttachmentContent?>(null);
 
+    public Task<AttachmentRef> CopyAsync(AttachmentRef source, string targetOwnerKey, CancellationToken cancellationToken = default)
+        => Task.FromResult(source with { BlobPath = $"{targetOwnerKey}/{source.Id}" });
+
     public Task<Uri> GetReadUrlAsync(AttachmentRef reference, CancellationToken cancellationToken = default)
     {
         var count = ReadUrlCalls.AddOrUpdate(reference.Id, 1, (_, c) => c + 1);

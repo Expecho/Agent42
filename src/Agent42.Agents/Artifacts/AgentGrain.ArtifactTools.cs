@@ -166,7 +166,7 @@ public sealed partial class AgentGrain
         var entry = version is { } wanted ? record.Versions.Find(v => v.Version == wanted) : record.Versions[^1];
         if (entry is null)
         {
-            return $"Artifact {record.Id} has versions 1 to {record.Versions.Count}; there is no version {version}.";
+            return $"Artifact {record.Id} has versions {VersionList(record)}; there is no version {version}.";
         }
 
         var stored = await _attachments.OpenReadAsync(this.GetPrimaryKeyString(), entry.AttachmentId, cancellationToken);
@@ -183,10 +183,12 @@ public sealed partial class AgentGrain
             JsonSerializerOptions.Web);
     }
 
-    // The blob is saved before the version is appended, so a failed upload leaves the record untouched.
+    // The blob is saved before the version is appended, so a failed upload leaves the record untouched. The number
+    // follows the LAST version, not the count: a fork drops a version whose blob is missing (ADR 0092), and a count
+    // would then hand out a number that is already taken.
     private async Task AppendArtifactVersionAsync(ArtifactRecord record, string content, CancellationToken cancellationToken)
     {
-        var version = record.Versions.Count + 1;
+        var version = (record.Versions.Count > 0 ? record.Versions[^1].Version : 0) + 1;
         var bytes = Encoding.UTF8.GetBytes(content);
         var saved = await _attachments.SaveAsync(
             this.GetPrimaryKeyString(), $"{record.Id}-v{version}.bin", ArtifactMediaType, bytes, cancellationToken);
@@ -232,6 +234,10 @@ public sealed partial class AgentGrain
             : null;
     }
 
+    // The version numbers an artifact holds. Not "1 to N": a truncation or a fork can leave a gap (ADR 0092).
+    private static string VersionList(ArtifactRecord record)
+        => string.Join(", ", record.Versions.Select(v => v.Version));
+
     private static string UnknownArtifact(string? artifactId)
         => $"There is no artifact '{artifactId}' in this conversation. Use an artifactId that create_artifact returned.";
 
@@ -250,7 +256,7 @@ public sealed partial class AgentGrain
     // refusal (plain text) projects no card.
     private static string ArtifactResult(ArtifactRecord record)
         => JsonSerializer.Serialize(
-            new ArtifactInfo(record.Id, record.Versions.Count, record.Kind, record.Title), JsonSerializerOptions.Web);
+            new ArtifactInfo(record.Id, record.Versions[^1].Version, record.Kind, record.Title), JsonSerializerOptions.Web);
 
     /// <summary>
     /// Stubs the artifact source out of the session before it is serialized: every <c>create_artifact</c> /

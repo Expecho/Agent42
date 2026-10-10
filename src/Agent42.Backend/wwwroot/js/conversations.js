@@ -6,6 +6,7 @@ import { clearPendingAttachments } from "./attachments.js";
 import { cacheGet, cachePut } from "./cache.js";
 import { input, newChatBtn } from "./dom.js";
 import { closeDrawer } from "./drawer.js";
+import { syncMessageActions } from "./editfork.js";
 import { defaultModel, setModel } from "./models.js";
 import { profile } from "./profile.js";
 import { streaming, voice } from "./send.js";
@@ -78,6 +79,8 @@ export async function selectConversation(id) {
       pendingAgentId = null;
       unlockPicker();
     }
+    // Again, now the agent kind is known: a copilot chat offers no history actions (ADR 0092).
+    syncMessageActions();
   } catch {
     // Offline: render this chat's history from the cache if it was opened while online before.
     // The model/agent/tools siblings simply degrade — the composer can't send offline anyway.
@@ -87,8 +90,9 @@ export async function selectConversation(id) {
 }
 
 // Render a history array (from the network or the offline cache) into the open thread. Extracted
-// so the live path and the offline-cache fallback in selectConversation share one renderer.
-function renderTurns(id, turns) {
+// so the live path and the offline-cache fallback in selectConversation share one renderer, and exported for the
+// edit/regenerate/fork repaint (editfork.js, ADR 0092).
+export function renderTurns(id, turns) {
   for (const turn of turns) {
     const msg = addMessage(turn.role === "user" ? "user" : "agent");
     if (turn.role === "user") {
@@ -106,6 +110,7 @@ function renderTurns(id, turns) {
       renderArtifactCards(msg, id, turn.artifacts);
     }
   }
+  syncMessageActions();
   scrollToBottom();
 }
 

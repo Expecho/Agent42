@@ -4035,3 +4035,48 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ConversationExportApiTests.cs` (every ZIP test goes through TestServer),
   `.agentic/decisions/0091-owner-export-of-conversations.md`
 - **Verified:** 2026-10-10
+
+### A fork must COPY blobs: every proxy resolves a blob by `(ownerKey, id)`, never by id alone
+
+- **Claim:** user images, generated images and artifact versions are stored at `{userId}/{conversationId}/{id}`,
+  and the attachment proxy (`DownloadAttachmentAsync`) and the artifact routes (`ServeArtifactVersionAsync`) look
+  them up under the requesting conversation's key. A conversation that only REFERENCED another conversation's
+  blobs would 404 on every image and artifact. So `InitializeFromForkAsync` copies each kept blob with
+  `IAttachmentStore.CopyAsync`, which keeps the SAME id. That way nothing inside the copied session needs
+  rewriting: `assistantImageId` lives in message properties, and session image URLs are re-minted from
+  `AttachmentRef.BlobPath` every turn. Only `BlobPath` changes. An artifact version holds only an attachment id,
+  so its ref has to be looked up under the SOURCE key first. A version whose blob is missing is dropped, which
+  is why new versions are numbered after the last version rather than after the count. Any new
+  `IAttachmentStore` must implement `CopyAsync`; so must the two test fakes.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (`CopyForkBlobAsync`,
+  `CopyForkArtifactsAsync`), `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` (`CopyAsync`),
+  `tests/Agent42.Tests/ConversationEditForkApiTests.cs` (`Fork_AttachmentsAndArtifacts_AreServedUnderTheForkId`),
+  `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
+- **Verified:** 2026-10-10
+
+### Truncating history removes WHOLE session turns, and re-anchors everything that indexes off them
+
+- **Claim:** edit and regenerate (`TruncateLastTurnAsync`) remove the last session user message and everything
+  after it, the tail mirror of the retention prune. Six things go with it, and each one is a defect if forgotten:
+  1. `GeneratedImages` entries of the removed messages.
+  2. Artifact versions harvested from their create/update RESULTS (joined to calls by `CallId`).
+  3. `TurnAttachments`, which is TRUNCATED to the remaining user-turn count. Never "remove the last entry": a
+     failed run leaves an orphan trailing entry, and removing just that one keeps the real turn's refs and
+     mis-joins the next turn.
+  4. `_ephemeralOrdinals` at or above the new projected count.
+  5. The search index, through `ReconcileSearchIndexAfterPruneAsync(pruned: true)`, since there is no
+     delete-by-ordinal.
+  6. On an incognito truncate of a never-written conversation, no write at all, and `_indexedTurnCount` clamped
+     instead. A conversation with a stored record always takes the persisted path, whatever the client's flag says.
+
+  The blobs of removed artifact versions and images are orphaned (the existing purge gap). Artifact versions can
+  therefore have GAPS, so never describe them as "1 to N".
+
+  The client's position maps to a session position through `ProjectHistory()` only (the
+  `GetHistoryAsync` walk), never a second count. A blank user turn does not project, yet it still opens a session
+  turn. `_runsInFlight` is checked BEFORE the token, because `VisibleHistory` hides a running research turn.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (`RemoveLastTurn`,
+  `TruncateLastTurnAsync`), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ProjectHistory`),
+  `tests/Agent42.Tests/EditRegenerateForkTests.cs` (`Truncate_WithOrphanTurnAttachment_StaysAligned` fails when step
+  3 is "remove the last entry", checked by mutation), `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
+- **Verified:** 2026-10-10
