@@ -9,9 +9,10 @@ namespace Agent42.Agents;
 /// <summary>
 /// Client tools (ADR 0089): tools the model calls and the BROWSER runs. The call streams to the browser as an
 /// ordinary <c>toolCallStart</c> flagged <c>clientTool</c>, the tool waits, the browser posts its result through
-/// <see cref="SubmitClientToolResultAsync"/>, and the turn resumes. There are three: <c>confirm_action</c>
-/// (the user approves or declines), <c>control_artifact_pane</c> (open, close or maximize the ADR 0084 pane) and
-/// <c>get_browser_context</c> (facts only the browser knows).
+/// <see cref="SubmitClientToolResultAsync"/>, and the turn resumes. There are four: <c>confirm_action</c>
+/// (the user approves or declines), <c>control_artifact_pane</c> (open, close or maximize the ADR 0084 pane),
+/// <c>get_browser_context</c> (facts only the browser knows) and <c>get_current_location</c> (ADR 0093; built
+/// with the location tool in <c>Location/AgentGrain.LocationTool.cs</c>, under its own selectable key).
 ///
 /// <para><b>The broker is routed per RUN, never through a field the tool reads.</b> Two runs can be in flight on
 /// one activation (a reminder or an <c>EnqueuePromptAsync</c> run in a gap of a streaming turn), and a field would

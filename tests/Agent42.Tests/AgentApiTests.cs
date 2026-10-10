@@ -77,40 +77,24 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.Contains(turns!, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
     }
 
-    // AC9 — a valid position on the request reaches the grain, and the tool resolves it to an address.
-    // Asserted end-to-end on the NDJSON stream (the address is FakeGeocoder's canned one), because the
-    // whole point of this step is the hand-off from HTTP request to grain call.
+    // AC13 (ADR 0093) — a PWA still running the old cached shell posts a `location` member that ChatRequest no
+    // longer has. System.Text.Json ignores an unknown member by default, so the turn still binds and streams; and
+    // the posted position is NOT used — that old client never advertised the location client tool, so the tool
+    // answers that no browser can read the location, until the service worker swaps the shell.
     [Fact]
-    public async Task Chat_ForwardsLocation()
+    public async Task Chat_OldClientBodyWithLocation_StillBinds()
     {
-        using var chat = await Client.PostAsJsonAsync(
-            "/api/chat/api-location-conversation",
-            new ChatRequest("where am i", null, null, null, new UserLocation(52.3676, 4.9041, 12)));
+        using var body = new StringContent(
+            """{"message":"where am i","model":null,"location":{"latitude":52.3676,"longitude":4.9041,"accuracyMetres":12}}""",
+            System.Text.Encoding.UTF8, "application/json");
+
+        using var chat = await Client.PostAsync("/api/chat/api-old-client-location-conversation", body);
 
         chat.EnsureSuccessStatusCode();
-        var body = await chat.Content.ReadAsStringAsync();
+        var stream = await chat.Content.ReadAsStringAsync();
 
-        Assert.Contains(FakeGeocoder.Address, body);
-    }
-
-    // AC9 — an out-of-range fix is DROPPED, not rejected. A bad position must cost the user their
-    // location for this turn, never their turn: the request still succeeds and the tool simply reports
-    // the position as unknown. (A hand-rolled body is the only way to get here — the browser cannot
-    // produce a latitude of 999.)
-    [Theory]
-    [InlineData(999, 4.9041)]
-    [InlineData(52.3676, 999)]
-    public async Task Chat_DropsOutOfRangeLocation(double latitude, double longitude)
-    {
-        using var chat = await Client.PostAsJsonAsync(
-            $"/api/chat/api-bad-location-{latitude}-{longitude}",
-            new ChatRequest("where am i", null, null, null, new UserLocation(latitude, longitude)));
-
-        chat.EnsureSuccessStatusCode();
-        var body = await chat.Content.ReadAsStringAsync();
-
-        Assert.Contains("has not shared their location", body);
-        Assert.DoesNotContain(FakeGeocoder.Address, body);
+        Assert.Contains("No browser is connected to this chat", stream);
+        Assert.DoesNotContain(FakeGeocoder.Address, stream);
     }
 
     [Fact]
@@ -331,7 +315,7 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         const string normalId = "api-normal-conversation";
 
         using (var chat = await Client.PostAsJsonAsync(
-            $"/api/chat/{ephemeralId}", new ChatRequest("secret", null, null, null, null, Ephemeral: true)))
+            $"/api/chat/{ephemeralId}", new ChatRequest("secret", null, null, null, Ephemeral: true)))
         {
             chat.EnsureSuccessStatusCode();
             await chat.Content.ReadAsStringAsync(); // drain the NDJSON stream

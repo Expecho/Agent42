@@ -15,7 +15,10 @@ namespace Agent42.Tests;
 public sealed class ClientToolTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
     private static readonly string[] AllClientTools =
-        [ClientToolLimits.ConfirmAction, ClientToolLimits.ControlArtifactPane, ClientToolLimits.GetBrowserContext];
+    [
+        ClientToolLimits.ConfirmAction, ClientToolLimits.ControlArtifactPane, ClientToolLimits.GetBrowserContext,
+        ClientToolLimits.GetCurrentLocation,
+    ];
 
     private IAgentGrain Agent(string key) => Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
 

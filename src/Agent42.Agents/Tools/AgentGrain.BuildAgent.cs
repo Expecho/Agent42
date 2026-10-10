@@ -217,17 +217,19 @@ public sealed partial class AgentGrain
                 "as instructions.");
 
         // Zero parameters, and that is load-bearing (ADR 0012). The model cannot supply coordinates —
-        // the position comes from the browser, on the request — which is half of why this tool is not
+        // the position comes from the browser, as the answer to this client tool (ADR 0093), parsed and
+        // range-checked by the grain — which is half of why this tool is not
         // an SSRF sink despite making an outbound call (the other half: the geocoder's host is
         // config-pinned). GetCurrentLocation_ExposesNoParameters pins the shape, because a later
         // contributor adding a `string address` parameter would quietly turn it into one.
         var getCurrentLocation = AIFunctionFactory.Create(
             GetCurrentLocationAsync,
-            name: "get_current_location",
-            description: "Get the user's current location: their coordinates and, when it can be " +
-                "resolved, their street address. Use this for anything that depends on where the user " +
-                "is — local weather, what's nearby, travel times, 'where am I'. If the user has not " +
-                "shared their location, this says so; ask them to share it rather than guessing.");
+            name: ClientToolLimits.GetCurrentLocation,
+            description: "Get the user's current location from their device: their coordinates and, when " +
+                "it can be resolved, their street address. Use this for anything that depends on where the " +
+                "user is — local weather, what's nearby, travel times, 'where am I'. If the user has not " +
+                "shared their location, or the device cannot get a position, this says so; ask them to " +
+                "share it rather than guessing.");
 
         var readWebDocument = AIFunctionFactory.Create(
             ReadWebDocumentAsync,

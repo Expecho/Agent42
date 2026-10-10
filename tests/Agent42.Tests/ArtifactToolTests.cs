@@ -45,7 +45,7 @@ public sealed class ArtifactToolTests(SharedClusterFixture fixture) : SharedClus
 
     private static Task<List<AgentStreamEvent>> Call(IAgentGrain agent, string tool, object args, bool ephemeral = false)
         => CollectAsync(agent.ChatAsync(
-            FakeChatClient.CallToolPrompt(tool, args), TestSiloConfigurator.DefaultModel, null, null, ephemeral));
+            FakeChatClient.CallToolPrompt(tool, args), TestSiloConfigurator.DefaultModel, null, ephemeral));
 
     private static Task<List<AgentStreamEvent>> Create(IAgentGrain agent, string content, string kind = "html", string? language = null)
         => Call(agent, "create_artifact", new { kind, title = "Demo", content, language });

@@ -209,12 +209,11 @@ public sealed class ProjectLayoutTests
     }
 
     // The turn-scoped fields stay in the CORE AgentGrain part. Each is safe only because its declaration
-    // and its clear are read together (see the _turnLocation and _ephemeral entries in gotchas.md);
+    // and its clear are read together (see the turn-scoped-field and _ephemeral entries in gotchas.md);
     // splitting a declaration out to a feature part is the specific regression this catches. Scoped to
-    // these three names on purpose — three static/const members legitimately move with their feature, so
+    // these names on purpose — three static/const members legitimately move with their feature, so
     // a general "only the core declares members" assertion would be false.
     [Theory]
-    [InlineData("_turnLocation")]
     [InlineData("_ephemeral")]
     [InlineData("_interactiveTurn")]
     public void TurnScopedField_IsDeclaredInTheCorePart(string field)

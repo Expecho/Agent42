@@ -203,11 +203,6 @@ public static partial class AgentApi
             model = null;
         }
 
-        // A bad fix is dropped, not rejected: the browser is the only source of a position, and a
-        // nonsense one (or a hand-rolled request body) must cost the user their location for this
-        // turn — not their whole turn. The grain then simply reports the position as unknown.
-        var location = request.Location is { IsValid: true } fix ? fix : null;
-
         // Edit and regenerate (ADR 0092): the last turn goes as LATE as possible — after the persona lookup, the
         // index touch and the bind, any of which may throw — so a failure there never loses the exchange. A refusal
         // answers 409 with no stream. Once removed it is written at once; if the run below then fails, the client
@@ -220,7 +215,7 @@ public static partial class AgentApi
 
         http.Response.ContentType = "application/x-ndjson";
         await foreach (var evt in agent.ChatAsync(
-            request.Message, model, attachmentRefs, location, request.Ephemeral,
+            request.Message, model, attachmentRefs, request.Ephemeral,
             clientTools: KnownClientTools(request.ClientTools)))
         {
             await http.Response.WriteAsync(JsonSerializer.Serialize(evt, StreamEventJson) + "\n");

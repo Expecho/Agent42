@@ -524,26 +524,25 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ### A grain's turn-scoped field lives for the ACTIVATION — clear it explicitly, or a reminder reuses it
 
-- **Claim:** `AgentGrain._turnLocation` holds the user's position for the turn being processed (ADR 0012),
-  and it reads like per-call state. **It is not: a private field lives for the grain *activation*.** So
-  "the reminder path just leaves it null" is *false* — `ReceiveReminder` is a separate call on the same
-  activation, and after any located chat turn the field is still populated. Left alone, a scheduled prompt
-  would confidently announce where the user was hours ago, from somewhere else. **Non-reentrancy is not the
-  argument that makes it safe** either — `ChatAsync` is an `IAsyncEnumerable` method that suspends between
-  `yield return`s. The only thing that makes it safe is clearing it explicitly, and it is cleared in *two*
-  places: a `finally` in `ChatAsync` (which also runs when a client abandons the stream, on the
-  enumerator's disposal) and an assignment to null on entry to `ReceiveReminder`. Each masks the other, so
-  neither is individually load-bearing in the happy path — but remove **both** and
-  `ReceiveReminder_HasNoUserLocation` fails (verified by mutation). Any future per-turn field on this grain
-  inherits this trap; PII especially should not sit in memory between turns.
-  **The family is now four:** `_turnLocation`, `_ephemeral`, `_interactiveTurn` and — since ADR 0066 —
-  `_webDocumentIngested`, all declared together and all cleared in the same three places (`ChatAsync`'s
-  `finally`, and on entry to `EnqueuePromptAsync` and `ReceiveReminder`). Keep them together; the reason
+- **Claim:** `AgentGrain._ephemeral` holds the incognito flag for the turn being processed (ADR 0034), and it
+  reads like per-call state. **It is not: a private field lives for the grain *activation*.** So "the reminder
+  path just leaves it unset" is *false* — `ReceiveReminder` is a separate call on the same activation, and after
+  an incognito chat turn the field would still be set, so the reminder would skip its own write. **Non-reentrancy
+  is not the argument that makes it safe** either — `ChatAsync` is an `IAsyncEnumerable` method that suspends
+  between `yield return`s. The only thing that makes it safe is clearing it explicitly: a `finally` in `ChatAsync`
+  (which also runs when a client abandons the stream, on the enumerator's disposal) and a reset on entry to
+  `EnqueuePromptAsync` and `ReceiveReminder`. Any future per-turn field on this grain inherits this trap; PII
+  especially should not sit in memory between turns — which is why the user's position, the family's first
+  member (ADR 0012), is no longer a field at all: since ADR 0093 the browser answers the
+  `get_current_location` client tool, so the fix lives only in one tool call's locals.
+  **The family is now three:** `_ephemeral`, `_interactiveTurn` and — since ADR 0066 — `_webDocumentIngested`,
+  all declared together and all cleared in the same three places (`ChatAsync`'s `finally`, and on entry to
+  `EnqueuePromptAsync` and `ReceiveReminder`). Keep them together; the reason
   `ReceiveReminder` lives in the core part rather than under `Scheduling/` is that these clears must be
   read as one block.
   **`_pushesThisTurn` (ADR 0075) is declared in that same block but is deliberately NOT a fifth member of
   this rule** — it resets in **two** places, not three, because it always resets to `0` and so belongs in
-  the shared `ChatCoreAsync` that both chat callers drain, while the four above carry a *different value*
+  the shared `ChatCoreAsync` that both chat callers drain, while the three above carry a *different value*
   per path and can only be set by the caller. Do not "harmonise" it into the three-site pattern; read the
   push-per-turn-counter entry for the reason `ReceiveReminder` still needs its own line.
   **`_mcpReauthNotified` (ADR 0081) is deliberately ACTIVATION-scoped and is not a member either.** It records
@@ -558,19 +557,21 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `ReleaseResearchRun`, from a `finally` at both run sites). `_researchTodos` describes the CURRENT agent and is
   reassigned by every `BuildAgent`. The per-run state (boundaries, reply iteration) is a `ResearchRun` keyed by the
   turn's user message, never a field.
-- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_turnLocation`, the `finally` in `ChatAsync`, the
-  clear in `ReceiveReminder`; `_mcpReauthNotified`, `TakeMcpReauthNotices`), `tests/Agent42.Tests/AgentGrainTests.cs`
-  (`ReceiveReminder_HasNoUserLocation`, `Location_IsTurnScoped_AndNotPersisted`),
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_ephemeral`, the `finally` in `ChatAsync`, the
+  resets in `EnqueuePromptAsync` and `ReceiveReminder`; `_mcpReauthNotified`, `TakeMcpReauthNotices`),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists`,
+  `ReceiveReminder_HasNoUserLocation`, `Location_IsNotPersisted`),
+  `tests/Agent42.Tests/ProjectLayoutTests.cs` (`TurnScopedField_IsDeclaredInTheCorePart`),
   `tests/Agent42.Tests/McpReauthTests.cs` (`ABackgroundRun_DoesNotConsumeTheNotice`),
-  `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
-- **Verified:** 2026-09-21
+  `.agentic/decisions/0093-location-as-a-client-tool.md`, `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
+- **Verified:** 2026-10-09
 
 ### Ephemeral chat: `_ephemeral` is the same turn-scoped trap, and scheduling must be refused inside the tool
 
-- **Claim:** the incognito flag (ADR 0034) is a second member of the `_turnLocation` family — a turn-scoped
+- **Claim:** the incognito flag (ADR 0034) is the archetype of the turn-scoped family above — a turn-scoped
   `AgentGrain` field that **lives for the activation** and must be cleared explicitly, or a warm grain's
   next (non-ephemeral) turn silently inherits it and **skips its own `WriteStateAsync`**, losing a chat the
-  user expected to keep. It is cleared in `ChatAsync`'s `finally` (with `_turnLocation`) and defensively
+  user expected to keep. It is cleared in `ChatAsync`'s `finally` and defensively
   reset on entry to the two always-persisting async paths (`EnqueuePromptAsync`, `ReceiveReminder`).
   `EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists` pins this. Two more traps in the same
   feature: **(1)** scheduling is refused **inside `SchedulePromptAsync`** (an early `if (_ephemeral) return
@@ -625,16 +626,20 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   rests on two properties, and **both are load-bearing**: (1) the host is **fixed** (`maps.googleapis.com`,
   config-pinned, never model-supplied), and (2) the tool takes **zero model-supplied parameters** — the
   only variable input is a lat/lon pair from the *browser*, range-validated server-side, and a `double`
-  cannot inject a host. The failure mode is a later contributor dissolving property (2) without noticing:
+  cannot inject a host. Since ADR 0093 that pair arrives as the client tool's answer through
+  `POST /api/chat/{id}/tool-result`, not on the chat request: `ParseBrowserFix` reads it as JSON numbers and
+  checks `UserLocation.IsValid`, and anything else never reaches the geocoder
+  (`GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`, `PostResult_OutOfRangeFix_IsNotGeocoded`). The failure mode is a later contributor dissolving property (2) without noticing:
   adding a `[Description("address to look up")] string` parameter turns this into a genuine SSRF sink
   **while the reassuring comment still sits above it**. A comment cannot defend itself, so the shape is
   pinned by `GetCurrentLocation_ExposesNoParameters`, which asserts the JSON schema the model actually sees
   has no properties. If you ever need the model to name a place, that is *forward* geocoding — a different
   tool, and it needs the guard.
 - **Evidence:** `src/Agent42.Backend/Location/GoogleGeocoder.cs`, `src/Agent42.Agents/Location/AgentGrain.LocationTool.cs`
-  (`GetCurrentLocationAsync`), `tests/Agent42.Tests/AgentGrainTests.cs`
-  (`GetCurrentLocation_ExposesNoParameters`), `.agentic/decisions/0012-user-location-google-geocoding.md`
-- **Verified:** 2026-07-13
+  (`GetCurrentLocationAsync`, `ParseBrowserFix`), `tests/Agent42.Tests/AgentGrainTests.cs`
+  (`GetCurrentLocation_ExposesNoParameters`, `GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`),
+  `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0093-location-as-a-client-tool.md`
+- **Verified:** 2026-10-09
 
 ### WebKit has no geolocation Permissions API — gating on `state === "granted"` is dead on iOS
 
@@ -646,16 +651,18 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (Chrome/Edge/Firefox, desktop + Android), and otherwise a `localStorage` flag set **only after a
   `getCurrentPosition()` actually succeeded** (an already-granted permission resolves without re-prompting,
   so capture under the flag never ambushes the user), cleared on a `PERMISSION_DENIED` (code 1) from any
-  later capture — which is how a revocation in site settings gets noticed. Related and separate: the send
-  path must **never** call `getCurrentPosition()` or await a fix — an awaited high-accuracy acquisition adds
-  seconds to *every* message once the cached fix goes stale, so the fix is refreshed out of band and the
-  send path reads the cache synchronously. The C# asset tests are source-text heuristics (no JS runner in
+  later capture — which is how a revocation in site settings gets noticed. Related and separate (ADR 0093):
+  the send path must **never** touch geolocation — the position is no longer sent with a message at all. The
+  `get_current_location` client tool (`locationForTool`) answers from the out-of-band cache when it is fresh, and
+  otherwise takes ONE capture bounded below the server's wait, **only after `isCaptureAuthorized()`**. On the
+  Permissions-API leg that never prompts; on the WebKit leg the grant is only a stored flag, so a site permission
+  reset to "ask" CAN prompt mid-turn — accepted, and only a device shows it. The C# asset tests are source-text heuristics (no JS runner in
   the repo), so they cannot catch an engine deviation: **retest on a real iOS device** — same class of trap
   as the Chrome-on-Android speech gotcha.
-- **Evidence:** `src/Agent42.Backend/wwwroot/js/location.js` (`isCaptureAuthorized`, `currentLocationForSend`,
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/location.js` (`isCaptureAuthorized`, `locationForTool`,
   `handlePositionError`), `tests/Agent42.Tests/LocationAssetsTests.cs`,
-  `.agentic/decisions/0012-user-location-google-geocoding.md`
-- **Verified:** 2026-07-13
+  `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0093-location-as-a-client-tool.md`
+- **Verified:** 2026-10-09
 
 ### OTel redacts an HttpClient span's query string by default — and one env var un-redacts it
 
@@ -2078,7 +2085,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 - **Claim:** the async run behind `POST /api/agent-run` (ADR 0022, `IAgentGrain.EnqueuePromptAsync`, `[OneWay]`)
   runs its turn by **draining `ChatCoreAsync`** (`await foreach` over it, discarding the streamed events after
-  clearing `_turnLocation` like the reminder path). This is deliberate and load-bearing: `ChatCoreAsync` is
+  resetting the turn-scoped fields like the reminder path). This is deliberate and load-bearing: `ChatCoreAsync` is
   the *only* place that does the no-model guard, the **image-generation branch** (ADR 0020), the **vision
   gate + attachment→`UriContent` materialization** (ADR 0013/0004) and document retrieval. The reminder path
   (`ReceiveReminder`) pushes an **always-empty** attachment list and does none of that — so reusing *it* (the
@@ -2166,10 +2173,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   both **drain** `ChatCoreAsync`, so a single reset at the top of that shared core covers both, and covers
   any future caller of it that a per-entrypoint clear would miss. **`ReceiveReminder` does NOT drain
   `ChatCoreAsync`** — it calls `_agent.RunAsync` directly, the same fact the ADR 0066 "consume site 2 of 2"
-  comment rests on — so it resets the field itself, in its existing `_turnLocation`/`_ephemeral`/
+  comment rests on — so it resets the field itself, in its existing `_ephemeral`/
   `_webDocumentIngested` block. **Miss that second site and a REPEATING reminder inherits the previous
   tick's count and goes permanently silent after three notifications, for the life of the activation** —
-  the ADR 0012 `_turnLocation` bug shape exactly, and worse than it looks because the away-reply push is
+  the turn-scoped-field bug shape exactly (the "lives for the ACTIVATION" entry), and worse than it looks because the away-reply push is
   *also* suppressed when the counter reads non-zero, so such a reminder notifies nothing at all.
   This is deliberately **not** the `_ephemeral` shape of "set it in all three entrypoints": those fields
   carry a *different value* per path so only the caller knows what to set, whereas this one always resets
@@ -2898,7 +2905,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   "nothing was recorded" is satisfied by a provider that never records anything. So
   **`MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` is the load-bearing one** — it is the only test that
   fails in both directions, and deleting it as "redundant with the incognito test" would leave the gate
-  free to be silently stuck off. Same trap as `_turnLocation`.
+  free to be silently stuck off. Same trap as the turn-scoped `_ephemeral` family.
 - **The SELECTION gate added by ADR 0057 is the opposite case, and the asymmetry is deliberate.**
   `BuildMemoryProvider` now takes the effective selection and returns null when it lacks
   `ToolCatalog.Memory` — read at **build time**, as a plain value, not through a delegate. That is
@@ -3715,11 +3722,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 ### The stop handle is NOT a turn-scoped field, an iterator cannot catch around a `yield`, and `StopAsync` must interleave
 
 - **Claim:** four traps in wiring cancellation into `AgentGrain`, none visible in the code that depends on
-  them. **(1) The handle cannot follow the turn-scoped-field ritual.** `_turnLocation`, `_ephemeral`,
+  them. **(1) The handle cannot follow the turn-scoped-field ritual.** `_ephemeral`,
   `_interactiveTurn` and `_webDocumentIngested` carry a *value* and are blindly assigned per turn;
   `_turnCts` carries the *identity of a running turn*, and two turns share one activation — `ChatAsync`
   suspends between `yield return`s, so a fired reminder or an `EnqueuePromptAsync` run executes in the gap
-  (the same fact the `_turnLocation` entry rests on). Assign it blindly and a background turn steals the
+  (the same fact the turn-scoped-field entry rests on). Assign it blindly and a background turn steals the
   handle, so the user's press cancels **that** turn instead; clear it blindly and one turn's disposal
   faults another turn's live run; give `ReceiveReminder` the usual reset line and a reminder firing
   mid-stream **silently disarms the stop button**. The shape that works is publish-by-identity
@@ -3992,6 +3999,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   agent turn" entry). Orleans delivers the call event at once and keeps the stream alive across a 150 s wait
   (measured), and ACA's request timeout is 240 s, so `confirm_action`'s 120 s fits. Also: `<dialog>` keeps its old
   `returnValue` when Esc closes it, so the confirm dialog resets it before `showModal()`, or Esc after an Approve is a yes.
+  **(5) A client tool may keep its own selectable key** (ADR 0093): `get_current_location` is in
+  `ClientToolLimits.ToolNames` but maps to `location`, not `browser_tools` — moving it would turn it OFF for every
+  older saved selection (ADR 0021). So a loop over `ToolNames` must not assume `browser_tools`
+  (`ToolCatalogTests.BrowserToolNames`, `Location_IsAClientTool_ButKeepsItsOwnKey`).
 - **Evidence:** `src/Agent42.Agents/ClientTools/AgentGrain.ClientTools.cs` (`CurrentClientToolBroker`, `PullAsync`,
   `MarkClientToolCall`, `AwaitClientResultAsync`), `src/Agent42.Agents/ClientTools/ClientToolBroker.cs`,
   `src/Agent42.Agents/Conversations/IAgentGrain.cs`, `src/Agent42.Backend/wwwroot/js/clienttools.js`

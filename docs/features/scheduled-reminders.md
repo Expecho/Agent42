@@ -55,8 +55,7 @@ return $"Reminder '{name}' scheduled: first firing in {dueInMinutes} minute(s), 
 public async Task ReceiveReminder(string reminderName, TickStatus status)
 {
     // Turn-scoped fields live for the activation, and this method does NOT drain ChatCoreAsync,
-    // so it resets each one itself (ADR 0012/0034/0066/0075).
-    _turnLocation = null;                                   // a scheduled prompt knows no location
+    // so it resets each one itself (ADR 0034/0066/0075).
     _ephemeral = false;                                     // a fired reminder always persists
     _webDocumentIngested = false;                           // consume this turn's ingest only
     _pushesThisTurn = 0;                                    // else a repeating reminder stops pushing after three

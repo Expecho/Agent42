@@ -570,8 +570,8 @@ public sealed partial class FakeChatClient : IChatClient
             ["url"] = "https://example.com/result-1",
         });
 
-    // The location tool takes NO arguments — the model cannot supply coordinates (ADR 0012), so the
-    // call carries an empty argument dictionary. ToolResultEcho then surfaces whatever the grain
+    // The location tool takes NO arguments — the model cannot supply coordinates (ADR 0012); the browser
+    // answers it as a client tool (ADR 0093). So the call carries an empty argument dictionary. ToolResultEcho then surfaces whatever the grain
     // returned into the reply text, which is what the location tests assert on.
     private static FunctionCallContent BuildGetCurrentLocationCall() =>
         new("location-call-1", "get_current_location", new Dictionary<string, object?>());
@@ -598,7 +598,7 @@ public sealed partial class FakeChatClient : IChatClient
     // Schedules a reminder whose PROMPT asks where the user is. When it later fires, that prompt comes
     // back in as a user message and this client answers it with a get_current_location call — which is
     // what lets ReceiveReminder_HasNoUserLocation observe the tool on the reminder path. Without it,
-    // nothing on that path would ever call the tool, and a stale turn-scoped fix would go unnoticed.
+    // nothing on that path would ever call the tool, and a reminder claiming a position would go unnoticed.
     private static FunctionCallContent BuildLocationReminderCall() =>
         new("location-reminder-call-1", "schedule_prompt", new Dictionary<string, object?>
         {

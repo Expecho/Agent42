@@ -1,10 +1,20 @@
-/* Agent 42 — user location (ADR 0012). Split out of app.js (ADR 0041). */
+/* Agent 42 — user location (ADR 0012). Split out of app.js (ADR 0041).
+
+   Since ADR 0093 the position never rides a chat request: get_current_location is a client tool (ADR 0089), and
+   this page answers it through locationForTool() only when the model calls it. The send path never touches
+   geolocation. The tool path answers from the cached fix when it is fresh, and otherwise may take ONE bounded
+   capture, only under an existing grant. */
 
 import { locationEnableBtn, locationStatus } from "./dom.js";
 
-// A fix older than this is dropped rather than sent: the model must never be told the user is
-// somewhere they left half an hour ago.
+// A fix older than this is never returned: the model must never be told the user is somewhere they
+// left half an hour ago.
 const LOCATION_MAX_AGE_MS = 30 * 60 * 1000;
+// The tool's one fresh capture. Below the server's 15 s wait for an automatic client tool
+// (ClientToolLimits.AutomaticTimeout), so the page answers no_fix before the server gives up on it.
+const LOCATION_TOOL_TIMEOUT_MS = 10000;
+// The background refresh's capture: nobody is waiting on it.
+const LOCATION_REFRESH_TIMEOUT_MS = 15000;
 // Background refresh cadence while the tab is visible. Nobody is ever waiting on these.
 const LOCATION_REFRESH_MS = 5 * 60 * 1000;
 // Set ONLY after a getCurrentPosition() actually succeeded — see the WebKit leg below.
@@ -12,8 +22,8 @@ const LOCATION_GRANT_KEY = "agent42.location.granted";
 
 const geolocationSupported = "geolocation" in navigator;
 
-// The last known fix, refreshed out of band. The send path reads this synchronously and never
-// awaits a new one — see currentLocationForSend().
+// The last known fix, refreshed out of band, so most tool calls are answered at once — see
+// locationForTool().
 let lastFix = null;
 let locationRefreshTimer = null;
 
@@ -27,11 +37,13 @@ let locationRefreshTimer = null;
 //   Leg 1 — Permissions API present (Chrome/Edge/Firefox, desktop + Android): trust state === "granted".
 //   Leg 2 — Permissions API absent/rejecting (WebKit): trust a localStorage flag that we set only
 //           after a getCurrentPosition() has actually SUCCEEDED. A permission the browser has already
-//           granted resolves without re-prompting, so capturing under that flag never ambushes the
-//           user; a PERMISSION_DENIED on any later capture clears it (they revoked it in site
-//           settings) and brings the grant button back.
+//           granted resolves without re-prompting; a PERMISSION_DENIED on any later capture clears it
+//           (they revoked it in site settings) and brings the grant button back. The flag is only a
+//           flag, though: a site permission reset to "ask" still prompts on the next capture, and that
+//           capture can be the tool's, mid-turn (ADR 0093 accepts this).
 //
-// getCurrentPosition() is never called on a send path under either leg.
+// getCurrentPosition() is never called on the send path under either leg, and on the tool path only
+// after isCaptureAuthorized() — so on leg 1 the tool never shows a prompt.
 async function geolocationPermissionStatus() {
   if (!navigator.permissions?.query) return null;
   try {
@@ -64,13 +76,13 @@ async function isCaptureAuthorized() {
   return status ? status.state === "granted" : storedGrant();
 }
 
-function readPosition() {
+function readPosition(timeoutMs = LOCATION_REFRESH_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
-    // enableHighAccuracy is affordable precisely BECAUSE nobody is waiting on this: it runs in the
-    // background, never in the send path, so a cold GPS spin-up costs the user nothing.
+    // enableHighAccuracy is affordable because nobody waits on the background refresh, and the tool's
+    // capture is bounded by timeoutMs below the server's own wait.
     navigator.geolocation.getCurrentPosition(resolve, reject, {
       enableHighAccuracy: true,
-      timeout: 15000,
+      timeout: timeoutMs,
       maximumAge: 60000,
     });
   });
@@ -119,15 +131,26 @@ function stopBackgroundLocationRefresh() {
   }
 }
 
-// THE SEND PATH. Synchronous, and deliberately so: it reads whatever is already cached and returns
-// null if there is nothing fresh. It never calls getCurrentPosition() and never awaits a fix — an
-// awaited GPS acquisition would add seconds to every message once the cached fix went stale, and
-// typing "hi" must not pay for a GPS spin-up. A stale fix is dropped, never sent.
-export function currentLocationForSend() {
-  if (!lastFix) return null;
-  const age = Date.now() - Date.parse(lastFix.capturedAt);
-  if (!Number.isFinite(age) || age > LOCATION_MAX_AGE_MS) return null;
-  return lastFix;
+function isFresh(fix) {
+  if (!fix) return false;
+  const age = Date.now() - Date.parse(fix.capturedAt);
+  return Number.isFinite(age) && age <= LOCATION_MAX_AGE_MS;
+}
+
+// THE TOOL PATH (ADR 0093): the answer to get_current_location, run only when the model calls it. The
+// grant is checked BEFORE any capture, so an unauthorized page answers not_shared without calling
+// getCurrentPosition(). A fresh cached fix is answered at once; otherwise one capture, bounded below the
+// server's wait. A stale fix is never returned. The server validates whatever this sends.
+export async function locationForTool() {
+  if (!(await isCaptureAuthorized())) return { status: "not_shared" };
+  if (isFresh(lastFix)) return lastFix;
+  try {
+    lastFix = toFix(await readPosition(LOCATION_TOOL_TIMEOUT_MS));
+    return lastFix;
+  } catch (error) {
+    handlePositionError(error);
+    return error?.code === 1 ? { status: "not_shared" } : { status: "no_fix" };
+  }
 }
 
 // Reflects the location state in Preferences → General: status text + the Enable button, which
@@ -193,8 +216,8 @@ export async function initLocation() {
 
   await updateLocationControl();
 
-  // Already authorized from an earlier visit: warm the cache now so the first message of the
-  // session can carry a position, without prompting (an already-granted permission resolves silently).
+  // Already authorized from an earlier visit: warm the cache now so the first location tool call of
+  // the session is answered at once, without prompting (an already-granted permission resolves silently).
   if (await isCaptureAuthorized()) {
     await refreshFix();
     startBackgroundLocationRefresh();

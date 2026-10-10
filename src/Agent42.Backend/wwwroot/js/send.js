@@ -9,7 +9,6 @@ import { autosize } from "./composer.js";
 import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./conversations.js";
 import { form, incognitoBtn, input, modelSelect, stopBtn, thread } from "./dom.js";
 import { syncMessageActions } from "./editfork.js";
-import { currentLocationForSend } from "./location.js";
 import { watchMcpReconnect } from "./mcp.js";
 import { renderResearchTodos } from "./research.js";
 import { applyModelAvailability } from "./models.js";
@@ -234,9 +233,6 @@ export async function send(prompt, replay = null) {
         model: isAgentChat ? null : (modelSelect.value || null),
         agentId: pendingAgentId,
         attachmentIds: turnAttachments.map((a) => a.id),
-        // Whatever fix is already cached (ADR 0012) — read synchronously, never awaited. No
-        // geolocation outcome (denied, timed out, unsupported, stale, absent) may delay a chat.
-        location: currentLocationForSend(),
         // Incognito (ADR 0034): the server skips this turn's session write and never lists the
         // conversation, so it leaves no trace. Also keeps it out of the offline cache — an ephemeral
         // chat is never TouchAsync'd, so refreshConversations()/cachePut never see it.

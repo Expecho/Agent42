@@ -23,8 +23,8 @@ sidebar on desktop.
   topbar brand shows with it. This amends ADR 0044 decision 6: the "42 AGENT 42" twice trap cannot occur,
   because the sidebar header is gone. On mobile the same hide button closes the drawer.
 - **Auto.** The sidebar collapses while the window is 761–1100px wide or the artifact pane is open.
-  `js/drawer.js` watches the pane's `html.has-artifact-pane` class with a `MutationObserver`. That keeps
-  `shared/lib/artifactpane.js`, which the public viewer also loads, unaware of the sidebar.
+  `src/Agent42.Backend/wwwroot/js/drawer.js` watches the pane's `html.has-artifact-pane` class with a `MutationObserver`. That keeps
+  `src/Agent42.Backend/wwwroot/shared/lib/artifactpane.js`, which the public viewer also loads, unaware of the sidebar.
 - **Precedence.** An auto trigger acts only when it **starts or stops holding**. Reopening the sidebar by
   hand while a trigger holds therefore sticks until the trigger changes. When a trigger clears, the
   sidebar returns to the user's own last choice.

@@ -129,7 +129,7 @@ public static class AgentMcpRunner
             // interactive: false — nothing is watching this stream, so the follow-up suggestion call
             // (ADR 0036) would be a second model call whose result is discarded (C13).
             await foreach (var evt in agentGrain.ChatAsync(
-                prompt, model: null, attachments: null, location: null, ephemeral: false, interactive: false))
+                prompt, model: null, attachments: null, ephemeral: false, interactive: false))
             {
                 if (evt.Type == AgentStreamEventType.TextDelta && evt.Text is { Length: > 0 } text)
                 {
@@ -199,7 +199,7 @@ public static class AgentMcpRunner
     /// <see cref="ToolCatalog.PushNotification"/> (ADR 0075) removed.
     ///
     /// <para><b>Exclusion happens at BIND time, deliberately, and not through a turn-scoped grain
-    /// field.</b> <c>_turnLocation</c>, <c>_ephemeral</c>, <c>_interactiveTurn</c> and
+    /// field.</b> <c>_ephemeral</c>, <c>_interactiveTurn</c> and
     /// <c>_webDocumentIngested</c> are a family that lives for the <i>activation</i> and is cleared in
     /// three places; any new per-turn field inherits that trap. A binding is materialised into grain
     /// state once and read as a value on every rebuild, so it cannot leak into anyone else's turn.</para>
