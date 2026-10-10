@@ -4021,3 +4021,17 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/SharedStateTests.cs`, `tests/Agent42.Tests/SharedStatePatchTests.cs`,
   `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
 - **Verified:** 2026-10-09
+
+### `ZipArchive` writes synchronously even through its async APIs — never hand it the response body
+
+- **Claim:** in .NET 10.0.9, `ZipArchive.CreateAsync` + `ZipArchiveEntry.OpenAsync` + `DisposeAsync` still do a
+  **synchronous** write: the entry stream's `WrappedStream` has no `DisposeAsync` override, so `Stream.DisposeAsync`
+  falls back to `Dispose`, and `DeflateStream.PurgeBuffers` flushes with a sync `Write`. On a Kestrel or TestServer
+  response body that throws `InvalidOperationException: Synchronous operations are disallowed`. Once headers have
+  been flushed, the client sees only a broken download. Build the archive into a `FileBufferingWriteStream` (memory up
+  to a threshold, then a temp file), then `DrainBufferAsync` it to the body. Don't set `AllowSynchronousIO`, which
+  would block a thread-pool thread for every chunk.
+- **Evidence:** `src/Agent42.Backend/Export/AgentApi.Export.cs` (`ZipResult`),
+  `tests/Agent42.Tests/ConversationExportApiTests.cs` (every ZIP test goes through TestServer),
+  `.agentic/decisions/0091-owner-export-of-conversations.md`
+- **Verified:** 2026-10-10

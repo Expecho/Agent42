@@ -170,7 +170,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Copilot agent kind: GitHub Copilot SDK loop, BYOK, Agent42 tools as custom tools, native skills, SessionFs in Blob, history mirror, phase-1 trust boundary | 0085 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |
 | Push: away replies, model-invoked | 0028, 0075 |
-| Conversations: incognito, share links, follow-ups, pins, groups, chat search, stream recovery, stop generation | 0034, 0035, 0036, 0045, 0046, 0047, 0061, 0073, 0078 |
+| Conversations: incognito, share links, follow-ups, pins, groups, chat search, stream recovery, stop generation, owner export (Markdown/JSON/ZIP, paged export-all) | 0034, 0035, 0036, 0045, 0046, 0047, 0061, 0073, 0078, 0091 |
 | PWA and UI: share target, offline cache, composer, topbar, long press, prefs rail, tool-call folding, rich inline rendering (mermaid/code/math/charts), collapsible sidebar | 0023, 0032, 0043, 0044, 0052, 0065, 0072, 0080, 0083, 0086 |
 | Config health tab | 0029 |
 | Artifacts / canvas: model-created versioned pages, SVG, docs and code in a sandboxed pane; CSP sandbox header; session compaction | 0083, 0084 |

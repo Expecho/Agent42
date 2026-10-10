@@ -206,6 +206,11 @@ export const shareLinkShareBtn = document.getElementById("shareLinkShareBtn");
 export const shareLinkCopyBtn = document.getElementById("shareLinkCopyBtn");
 export const shareLinkRevokeBtn = document.getElementById("shareLinkRevokeBtn");
 export const shareLinkCloseBtn = document.getElementById("shareLinkCloseBtn");
+export const exportMarkdownLink = document.getElementById("exportMarkdownLink");
+export const exportJsonLink = document.getElementById("exportJsonLink");
+export const exportZipLink = document.getElementById("exportZipLink");
+export const exportAllBtn = document.getElementById("exportAllBtn");
+export const exportAllStatus = document.getElementById("exportAllStatus");
 // Second entry point into the same dialog, in the persistent topbar cluster beside #incognitoBtn.
 export const topbarShareBtn = document.getElementById("topbarShareBtn");
 // The chat's artifacts list (ADR 0084): reaches the artifact pane without a card. Hidden until the chat has one.
