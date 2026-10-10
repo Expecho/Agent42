@@ -274,6 +274,8 @@
                 aria-selected="false" aria-controls="panelAgentTools" tabindex="-1">Tools</button>
         <button class="agent-form__tab" type="button" role="tab" id="tabAgentApi"
                 aria-selected="false" aria-controls="panelAgentApi" tabindex="-1">API key</button>
+        <button class="agent-form__tab" type="button" role="tab" id="tabAgentWebhook"
+                aria-selected="false" aria-controls="panelAgentWebhook" tabindex="-1">Webhook</button>
       </div>
 
       <!-- General panel: persona fields + the ADR 0022 per-agent API key (an agent-level access
@@ -372,6 +374,35 @@
             <button class="agent-form__btn" type="button" id="agentKeyCopyBtn">Copy</button>
             <p class="agent-form__note">Copy it now — it won't be shown again. Send it as the <code>X-Api-Key</code> header on <code>POST /api/agent-run</code> to run this agent from outside the browser.</p>
           </div>
+        </section>
+      </div>
+
+      <!-- Outbound webhook (ADR 0094). Kept the LAST tab: saveAgent selects the API-key tab by index 2. Gated on a
+           SAVED agent like #agentKeySection, because the webhook is keyed by the agent id. Every button is
+           type="button" so none of them submits the agent form. The signing secret is revealed once, like the key. -->
+      <div class="agent-form__panel" role="tabpanel" id="panelAgentWebhook" aria-labelledby="tabAgentWebhook" hidden>
+        <p class="agent-form__note" id="agentWebhookUnsaved">Save the agent first, then add a webhook.</p>
+        <section class="agent-form__section" id="agentWebhookSection" hidden>
+          <label class="agent-form__field">
+            <span class="agent-form__label">// webhook url</span>
+            <input class="agent-form__input" type="url" id="agentWebhookUrl" maxlength="2048"
+                   placeholder="https://example.com/agent42-hook" />
+          </label>
+          <p class="agent-form__note">When a chat with this agent finishes a reply, its prompt and the full reply are sent to this URL as a signed POST. That includes chats run by the API key, MCP and reminders. Only add a URL you trust with these conversations.</p>
+          <div class="agent-webhook__actions">
+            <button class="agent-form__btn" type="button" id="agentWebhookSaveBtn">Save webhook</button>
+            <button class="agent-form__btn" type="button" id="agentWebhookTestBtn">Send test</button>
+            <button class="agent-form__btn" type="button" id="agentWebhookRotateBtn">Rotate secret</button>
+            <button class="agent-form__btn" type="button" id="agentWebhookRemoveBtn">Remove</button>
+          </div>
+          <p class="agent-form__note" id="agentWebhookStatus" role="status"></p>
+          <div class="agent-key" id="agentWebhookSecretReveal" hidden>
+            <code class="agent-key__value" id="agentWebhookSecretValue"></code>
+            <button class="agent-form__btn" type="button" id="agentWebhookSecretCopyBtn">Copy</button>
+            <p class="agent-form__note">Copy the signing secret now. It won't be shown again. Check each request's <code>webhook-signature</code> header with it (the Standard Webhooks scheme).</p>
+          </div>
+          <span class="agent-form__label">// recent deliveries</span>
+          <ul class="agent-webhook__log" id="agentWebhookLog"></ul>
         </section>
       </div>
 

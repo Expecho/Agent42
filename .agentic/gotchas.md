@@ -1049,6 +1049,39 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ProvidersApiTests.cs` (`AcceptsLocalhost_RejectsMalformed`)
 - **Verified:** 2026-07-16
 
+### The webhook URL IS SSRF-guarded although it is owner config — the provider-endpoint exemption does not transfer
+
+- **Claim:** the entry above exempts a provider endpoint because it is the owner's own config. A stored agent's
+  outbound webhook URL (ADR 0094) is owner config too, and is guarded anyway. **Send test** and the delivery log
+  make every send a status-code oracle for the container's network, which holds the managed identity IMDS mints
+  tokens for. ADR 0022/0070 key holders trigger sends with no browser session. There is no legitimate private target
+  either. The control is the CONNECT-time guard in `WebhookRegistration.AddAgentWebhooks`
+  (`GuardedDocumentFetcher.CreateHandler(PrivateAddressGuard.IsPubliclyRoutable)`), with `AllowAutoRedirect = false`
+  (a redirect would re-open the URL-string bypass) and `RemoveAllResilienceHandlers` (the sender retries itself).
+  The PUT's private-IP-literal check is UX only: it never sees what a hostname resolves to. DevHost registers the Null
+  sender, because the guard has no local opt-out. Never add one, and never store a response body in the log.
+- **Evidence:** `src/Agent42.Backend/Webhooks/WebhookRegistration.cs`, `src/Agent42.Backend/Webhooks/HttpAgentWebhookSender.cs`,
+  `tests/Agent42.Tests/HttpAgentWebhookSenderTests.cs` (`Send_LoopbackDestination_IsBlockedAndNotRetried`,
+  `Registration_WiresGuardNoRedirectAndNoResilience`)
+- **Verified:** 2026-10-10
+
+### The webhook fires on the PERSISTED flag, never on `_ephemeral`, and at THREE sites
+
+- **Claim:** a stored agent's webhook (ADR 0094) fires from `NotifyAgentWebhookAsync` at three sites, because two run
+  paths never reach the chat persist: (1) `ChatTurnAsync`, gated on what `PersistTurnUnlessEphemeralAsync` RETURNS;
+  (2) the image turn, inside its own `if (!_ephemeral)` block; (3) `RunReminderAsync`, after its own write and
+  BEFORE the `_pushesThisTurn > 0` early return — placed after it, a reminder whose model pushed (ADR 0075) would
+  silently skip the webhook. The chat site must not re-read `_ephemeral`: `EnqueuePromptAsync` reassigns it in the
+  iterator's yields, while the persist's return reflects the read the write itself used. A new run path that persists
+  a turn needs its own call. Edit and regenerate pass `replacesLastTurn` as a `ChatAsync` PARAMETER, never a field the
+  truncate sets: the truncate and the re-run are separate grain calls, and anything running between them would consume
+  a field. Orleans does not order the OneWay deliveries, so the log is in completion order, not turn order.
+- **Evidence:** `src/Agent42.Agents/Webhooks/AgentGrain.Webhooks.cs`, `src/Agent42.Agents/Conversations/AgentGrain.cs`
+  (`ChatTurnAsync`, `RunReminderAsync`), `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
+  `tests/Agent42.Tests/AgentWebhookTurnTests.cs` (`EphemeralTurn_NeverDelivers_NextTurnDoes`,
+  `ReceiveReminder_AfterPush_StillDelivers`, `ImageTurn_DeliversCountWithoutUrls`, `RegeneratedTurn_DeliversWithReplacesFlag`)
+- **Verified:** 2026-10-10
+
 ### A user provider's API key is encrypted, never echoed — and its Data Protection key ring MUST persist
 
 - **Claim:** user provider secrets (ADR 0018) are encrypted with `IDataProtector` **before** they reach the

@@ -11,6 +11,7 @@ import { setTopbarShare } from "./sharelinks.js";
 import { conversations, renderSidebar } from "./sidebar.js";
 import { clearThread, setEmptyVisible } from "./thread.js";
 import { allToolKeys, readToolChecks, renderToolChecks, toolCatalog } from "./tools.js";
+import { openWebhookPanel } from "./webhooks.js";
 
 // Incognito flag for the active chat (ADR 0034). Fixed at chat creation: settable only on a fresh,
 // empty regular chat, then locked once the first message is sent (like the conversation id itself).
@@ -171,6 +172,8 @@ function openAgentDialog(agent) {
   // Preselect the agent's model when editing, otherwise the server default. Uses the same helper as
   // the composer picker rather than a second copy of the append-if-missing logic.
   selectModel(agentModelSelect, agent?.model ?? defaultModel);
+  // The webhook tab is gated on a saved agent, like the key section (ADR 0094).
+  openWebhookPanel(agent?.id ?? null);
   agentTabs.select(0); // always open on the General tab, never a stale Tools tab
   agentDialog.showModal();
   agentNameInput.focus();
@@ -256,6 +259,8 @@ async function saveAgent() {
     agentKeyValue.textContent = body.apiKey;
     agentKeyReveal.hidden = false;
     agentKeyCopyBtn.textContent = "Copy";
+    // A new agent has its id now, so its webhook tab can open up.
+    openWebhookPanel(body.agent.id);
   } else {
     agentDialog.close();
   }

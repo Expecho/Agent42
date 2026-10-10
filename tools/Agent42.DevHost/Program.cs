@@ -196,6 +196,11 @@ builder.Services.AddSingleton<ICopilotAgentFactory, ChatClientCopilotAgentFactor
 // every host that maps MapAgentApi must register PushConfig or /api/push/config's param inference breaks
 // routing for the whole host. Enabled:false, so GET /api/push/config reports the feature off.
 builder.Services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
+
+// Outbound webhooks (ADR 0094): the no-op sender. The real one's private-address guard has no local opt-out on
+// purpose, so DevHost sends nothing and "Send test" reports a 200. Every AgentWebhookGrain host needs a sender.
+builder.Services.AddSingleton<IAgentWebhookSender, NullAgentWebhookSender>();
+builder.Services.AddSingleton<IWebhookSecretProtector, WebhookSecretProtector>();
 builder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
 
 // The server-side MCP surface (ADR 0070), registered offline exactly as in production so the feature is

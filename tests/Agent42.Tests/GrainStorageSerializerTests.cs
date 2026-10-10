@@ -629,4 +629,52 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
     private const string StoredAgentGrainStateJson = """
         {"$id":"1","$type":"Agent42.Agents.AgentGrainState, Agent42.Agents","SerializedSession":"{\"messages\":[{\"role\":\"user\",\"text\":\"golden\"}]}","ScheduledPrompts":{"$id":"2","$type":"System.Collections.Generic.Dictionary`2[[System.String, System.Private.CoreLib],[Agent42.Agents.ReminderInfo, Agent42.Agents]], System.Private.CoreLib","daily-standup":{"$id":"3","$type":"Agent42.Agents.ReminderInfo, Agent42.Agents","Name":"daily-standup","Prompt":"Summarise the standup","DueInMinutes":90.5,"RepeatEveryMinutes":1440.25,"CreatedAt":"2026-01-02T03:04:05+00:00","TimesFired":7}},"DeploymentName":"foundry:gpt-5.4","AgentId":"agent-golden","AgentName":"Golden Agent","SystemPrompt":"You are the golden fixture.","TurnAttachments":{"$id":"4","$type":"System.Collections.Generic.List`1[[System.Collections.Generic.List`1[[Agent42.Agents.AttachmentRef, Agent42.Agents]], System.Private.CoreLib]], System.Private.CoreLib","$values":[{"$id":"5","$type":"System.Collections.Generic.List`1[[Agent42.Agents.AttachmentRef, Agent42.Agents]], System.Private.CoreLib","$values":[{"$id":"6","$type":"Agent42.Agents.AttachmentRef, Agent42.Agents","Id":"att-1","BlobPath":"user/conv/att-1.png","MediaType":"image/png","FileName":"diagram.png"}]}]},"DocumentNames":{"$id":"7","$type":"System.Collections.Generic.List`1[[System.String, System.Private.CoreLib]], System.Private.CoreLib","$values":["handbook.pdf"]},"FetchableUrls":{"$id":"8","$type":"System.Collections.Generic.List`1[[System.String, System.Private.CoreLib]], System.Private.CoreLib","$values":["https://example.com/a"]},"GeneratedImages":{"$id":"9","$type":"System.Collections.Generic.Dictionary`2[[System.String, System.Private.CoreLib],[Agent42.Agents.AttachmentRef, Agent42.Agents]], System.Private.CoreLib","msg-9":{"$id":"10","$type":"Agent42.Agents.AttachmentRef, Agent42.Agents","Id":"gen-1","BlobPath":"user/conv/gen-1.png","MediaType":"image/png","FileName":"generated.png"}},"EnabledTools":{"$id":"11","$type":"System.Collections.Generic.List`1[[System.String, System.Private.CoreLib]], System.Private.CoreLib","$values":["web_search","mcp:server-1"]}}
         """;
+
+    // ADR 0094 AC17: the webhook state on the path that matters at rest, with two log entries holding different
+    // values so a swap shows up, and the log's runtime type checked (the collection-expression gotcha).
+    [Fact]
+    public void AgentWebhookState_RoundTripsThroughCosmosJson()
+    {
+        var at = new DateTimeOffset(2026, 10, 10, 9, 0, 0, TimeSpan.Zero);
+        var written = new AgentWebhookState
+        {
+            Url = "https://hooks.example.com/a",
+            SecretCiphertext = "CfDJ8-cipher",
+            Deliveries = new List<WebhookDeliveryRecord>
+            {
+                new() { At = at, DeliveryId = "d1", Type = AgentWebhookEvent.TurnCompleted, Trigger = "interactive", ConversationId = "c1", StatusCode = 200, Attempts = 1, DurationMs = 12 },
+                new() { At = at.AddMinutes(1), DeliveryId = "d2", Type = AgentWebhookEvent.Test, Error = "timeout", Attempts = 3, DurationMs = 30_000 },
+            },
+        };
+
+        var restored = Serializer().Deserialize<AgentWebhookState>(Serializer().Serialize(written));
+
+        Assert.Equal(("https://hooks.example.com/a", "CfDJ8-cipher"), (restored.Url, restored.SecretCiphertext));
+        Assert.Equal(typeof(List<WebhookDeliveryRecord>), restored.Deliveries.GetType());
+        Assert.Equal(["d1", "d2"], restored.Deliveries.Select(d => d.DeliveryId));
+        Assert.Equal([(int?)200, null], restored.Deliveries.Select(d => d.StatusCode));
+        Assert.Equal([null, "timeout"], restored.Deliveries.Select(d => d.Error));
+        Assert.Equal(["c1", null], restored.Deliveries.Select(d => d.ConversationId));
+        Assert.Equal([1, 3], restored.Deliveries.Select(d => d.Attempts));
+        Assert.Equal(at.AddMinutes(1), restored.Deliveries[1].At);
+    }
+
+    // ADR 0094 AC17: a document carrying nothing but its type still reads, with every default in place — the shape a
+    // future trailing field meets in every document written before it.
+    [Fact]
+    public void AgentWebhookState_DocumentMissingEveryField_Deserializes()
+    {
+        var full = System.Text.Json.Nodes.JsonNode.Parse(Serializer().Serialize(new AgentWebhookState()).ToString())!.AsObject();
+        foreach (var name in full.Select(p => p.Key).Where(k => !k.StartsWith('$')).ToList())
+        {
+            full.Remove(name);
+        }
+
+        var restored = Serializer().Deserialize<AgentWebhookState>(new BinaryData(full.ToJsonString()));
+
+        Assert.Null(restored.Url);
+        Assert.Null(restored.SecretCiphertext);
+        Assert.NotNull(restored.Deliveries);
+        Assert.Empty(restored.Deliveries);
+    }
 }

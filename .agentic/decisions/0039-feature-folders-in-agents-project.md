@@ -31,7 +31,7 @@ this ADR and is recorded in full rather than quietly corrected.
 ### 1. Twenty-four top-level feature folders, in a single flat namespace
 `StoredAgents/`, `Artifacts/`, `Attachments/`, `ClientTools/`, `Conversations/`, `Copilot/`, `Documents/`,
 `ImageGeneration/`, `Location/`, `Mcp/`, `Memory/`, `Models/`, `Push/`, `Research/`, `Scheduling/`, `Search/`,
-`SharedState/`, `Sharing/`, `Speech/`, `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`. `Skills/` does not move: its csproj
+`SharedState/`, `Sharing/`, `Speech/`, `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`, `Webhooks/` (ADR 0094). `Skills/` does not move: its csproj
 `Content Include="Skills\**\*"` glob must keep resolving next to the built assembly — which is also
 why `UserSkills/` (ADR 0049) is a separate folder rather than living under it, since a `.cs` file
 there would be shipped as content into the deployed `Skills/` directory.

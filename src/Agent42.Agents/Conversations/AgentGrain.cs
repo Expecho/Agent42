@@ -472,7 +472,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
         bool ephemeral = false, bool interactive = true,
-        IReadOnlyList<string>? clientTools = null)
+        IReadOnlyList<string>? clientTools = null, bool replacesLastTurn = false)
     {
         // The ephemeral flag is turn-scoped, and the field outlives the call (see _ephemeral), so the
         // clears are explicit and in a finally: they must happen even if the caller abandons the stream
@@ -494,7 +494,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         try
         {
-            await foreach (var evt in ChatCoreAsync(message, model, attachments, broker))
+            await foreach (var evt in ChatCoreAsync(message, model, attachments, broker, replacesLastTurn))
             {
                 yield return evt;
             }
@@ -612,12 +612,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // serialises the whole grain state (see AgentGrain.SharedState.cs). ReceiveReminder, the other run site, counts
     // itself.
     private async IAsyncEnumerable<AgentStreamEvent> ChatCoreAsync(
-        string message, string? model, IReadOnlyList<AttachmentRef>? attachments, ClientToolBroker? broker = null)
+        string message, string? model, IReadOnlyList<AttachmentRef>? attachments, ClientToolBroker? broker = null,
+        bool replacesLastTurn = false)
     {
         _runsInFlight++;
         try
         {
-            await foreach (var evt in ChatTurnAsync(message, model, attachments, broker))
+            await foreach (var evt in ChatTurnAsync(message, model, attachments, broker, replacesLastTurn))
             {
                 yield return evt;
             }
@@ -629,7 +630,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     }
 
     private async IAsyncEnumerable<AgentStreamEvent> ChatTurnAsync(
-        string message, string? model, IReadOnlyList<AttachmentRef>? attachments, ClientToolBroker? broker)
+        string message, string? model, IReadOnlyList<AttachmentRef>? attachments, ClientToolBroker? broker,
+        bool replacesLastTurn)
     {
         PublishUsageApplication();
 
@@ -700,7 +702,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // reaches here: _modelId is non-empty by now (guarded above).
         if (_chatClientFactory.GetCapabilities(_modelId).SupportsImageGeneration)
         {
-            await foreach (var evt in GenerateImageTurnAsync(message, attachments))
+            var webhookTurn = new WebhookTurn(
+                ChatTrigger(interactive), message, "", ImageCount: 1, ReplacesLastTurn: replacesLastTurn);
+            await foreach (var evt in GenerateImageTurnAsync(message, attachments, webhookTurn))
             {
                 yield return evt;
             }
@@ -820,7 +824,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             yield break;
         }
 
-        await PersistTurnUnlessEphemeralAsync();
+        var persisted = await PersistTurnUnlessEphemeralAsync();
+
+        // Outbound webhook (ADR 0094), fire site 1 of 3: gated on what the persist reported, never on _ephemeral.
+        await NotifyAgentWebhookAsync(persisted, new WebhookTurn(
+            ChatTrigger(interactive), message, reply.ToString(), outcome.Stopped, ReplacesLastTurn: replacesLastTurn));
 
         // Consume site 1 of 2 (ADR 0066): if read_web_document ingested during this run, rebuild now that
         // the run is over — the tool could not, because a rebuild swaps _session out from under the
@@ -1211,7 +1219,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     // An ephemeral turn (ADR 0034) runs the model but never writes its session item, so the
     // conversation leaves no trace in Cosmos — the incognito guarantee. Skip the whole serialize.
-    private async Task PersistTurnUnlessEphemeralAsync()
+    // Returns whether the turn was persisted: the outbound webhook's gate (ADR 0094) inherits this read of
+    // _ephemeral, taken after the turn's last yield, rather than re-reading the field.
+    private async Task<bool> PersistTurnUnlessEphemeralAsync()
     {
         if (_ephemeral)
         {
@@ -1223,7 +1233,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
             _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral turn (not persisted)",
                 this.GetPrimaryKeyString());
-            return;
+            return false;
         }
 
         // Retention (ADR 0016): stamp every message, then delete whole turns that fell outside the window
@@ -1249,6 +1259,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
             this.GetPrimaryKeyString());
+        return true;
     }
 
     // Builds the user turn. Images ride alongside the text as UriContent parts pointing at a
@@ -1622,9 +1633,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // The research loop's second run site (ADR 0082): this method does not drain ChatCoreAsync, so it resets
         // the todos, hides the turn and folds it itself, in the same order.
         var research = BeginResearchRun(prompt);
+        AgentResponse response;
         try
         {
-            await _agent.RunAsync([prompt], _session);
+            response = await _agent.RunAsync([prompt], _session);
         }
         finally
         {
@@ -1662,6 +1674,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // that ingested a document would persist the name list and lose the rebuild, leaving retrieval
         // detached for the rest of the activation while the instructions claim the document exists.
         await RebuildForIngestedWebDocumentAsync();
+
+        // Outbound webhook (ADR 0094), fire site 3 of 3: after this method's own write, and BEFORE the push early
+        // return below — a model that pushed during the turn (ADR 0075) must not cost the owner the webhook.
+        await NotifyAgentWebhookAsync(true, new WebhookTurn(
+            AgentWebhookEvent.Triggers.Reminder, info.Prompt, LastAssistantText(response), ReminderName: reminderName));
 
         // Away-reply push (ADR 0028): a scheduled prompt fired with no live client watching. After the
         // persist, so a push only ever follows a durably-recorded reply. No _modelId guard needed — the

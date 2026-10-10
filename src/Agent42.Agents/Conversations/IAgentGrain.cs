@@ -45,12 +45,17 @@ public interface IAgentGrain : IGrainWithStringKey
     /// <c>mcp_elicitation</c> when it can show an MCP elicitation (ADR 0095). The endpoint has already intersected it
     /// with <see cref="ClientToolLimits.AdvertisableCapabilities"/>. Only an interactive turn with a non-empty list
     /// gets a broker; every other run answers a client tool "unavailable" and an elicitation <c>cancel</c> at once.
+    ///
+    /// <paramref name="replacesLastTurn"/> says this turn re-runs one <see cref="TruncateLastTurnAsync"/> just
+    /// removed (ADR 0092), so the outbound webhook event is marked as superseding the previous one (ADR 0094). A
+    /// parameter, never a field the truncate sets: the two are separate calls, and a background turn running between
+    /// them would consume a field.
     /// </summary>
     [Alias("ChatAsync")]
     IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
         bool ephemeral = false, bool interactive = true,
-        IReadOnlyList<string>? clientTools = null);
+        IReadOnlyList<string>? clientTools = null, bool replacesLastTurn = false);
 
     /// <summary>
     /// Completes a client tool call or an MCP elicitation (ADR 0095, by its <c>elicit_…</c> id) the interactive turn

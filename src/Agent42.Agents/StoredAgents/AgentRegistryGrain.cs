@@ -160,6 +160,13 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             return;
         }
 
+        // The webhook is cleared BEFORE anything else (ADR 0094), the opposite of the key order below, on purpose:
+        // conversations outlive their agent (ADR 0003) and keep delivering under its id without consulting this
+        // registry, so a webhook left behind by a mid-failure would keep SENDING content. Clearing first fails safe —
+        // a failed clear throws here and the agent survives, without a webhook at worst.
+        await GrainFactory.GetGrain<IAgentWebhookGrain>(AgentWebhookKeys.KeyFor(this.GetPrimaryKeyString(), id))
+            .ClearAsync();
+
         // Delete order (constraint 2): remove from the registry (write) FIRST, THEN deregister the hash.
         // A mid-failure leaves at worst an orphan directory entry, and the run endpoint re-checks the
         // agent exists after resolving — so a resolved-but-deleted agent still fails closed (401).
