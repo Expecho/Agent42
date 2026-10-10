@@ -71,6 +71,19 @@ export const agentKeyCopyBtn = document.getElementById("agentKeyCopyBtn");
 export const agentRunUrl = document.getElementById("agentRunUrl");
 export const agentRunUrlCopyBtn = document.getElementById("agentRunUrlCopyBtn");
 export const agentCancelBtn = document.getElementById("agentCancelBtn");
+// The agent's outbound webhook panel (ADR 0094).
+export const agentWebhookUnsaved = document.getElementById("agentWebhookUnsaved");
+export const agentWebhookSection = document.getElementById("agentWebhookSection");
+export const agentWebhookUrl = document.getElementById("agentWebhookUrl");
+export const agentWebhookSaveBtn = document.getElementById("agentWebhookSaveBtn");
+export const agentWebhookTestBtn = document.getElementById("agentWebhookTestBtn");
+export const agentWebhookRotateBtn = document.getElementById("agentWebhookRotateBtn");
+export const agentWebhookRemoveBtn = document.getElementById("agentWebhookRemoveBtn");
+export const agentWebhookStatus = document.getElementById("agentWebhookStatus");
+export const agentWebhookSecretReveal = document.getElementById("agentWebhookSecretReveal");
+export const agentWebhookSecretValue = document.getElementById("agentWebhookSecretValue");
+export const agentWebhookSecretCopyBtn = document.getElementById("agentWebhookSecretCopyBtn");
+export const agentWebhookLog = document.getElementById("agentWebhookLog");
 
 export const openProfileBtn = document.getElementById("openProfileBtn");
 export const profileDialog = document.getElementById("profileDialog");
@@ -111,6 +124,8 @@ export const agentTabs = wireTabs([
   [document.getElementById("tabAgentGeneral"), document.getElementById("panelAgentGeneral")],
   [document.getElementById("tabAgentTools"), document.getElementById("panelAgentTools")],
   [document.getElementById("tabAgentApi"), document.getElementById("panelAgentApi")],
+  // APPENDED, never inserted: saveAgent selects the API-key tab as index 2.
+  [document.getElementById("tabAgentWebhook"), document.getElementById("panelAgentWebhook")],
 ]);
 
 export const defaultModelSelect = document.getElementById("defaultModelSelect");

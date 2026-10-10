@@ -38,6 +38,7 @@ import { initTheme } from "./theme.js";
 import { allToolKeys, loadTools, setChatTools, wireTools } from "./tools.js";
 import { wireUsage } from "./usage.js";
 import { wireVoice } from "./voice.js";
+import { wireWebhooks } from "./webhooks.js";
 
 // Paint the last-known agents + conversations from the cache at startup, so an offline (or slow)
 // load shows the user's data before—or instead of—the network fetch resolving. The fire-and-forget
@@ -88,6 +89,7 @@ wireSkills();
 wireUsage();
 wireSpeech();
 wireVoice();
+wireWebhooks();
 wirePwa();
 
 /* ————— init ————— */

@@ -165,7 +165,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Long-term memory (Hindsight; **no delete path**) | 0056, 0057 |
 | MCP client: config, OAuth (per-request refresh + in-turn reconnect + auto re-send), per-server/per-tool selection, test, URL seeding, local bridge | 0024, 0025, 0026, 0058, 0064, 0067, 0069, 0076, 0081, 0087 |
 | MCP server (agents exposed via `/api/agent-mcp`) | 0070 |
-| Stored agents: history mode, API key + `/api/agent-run`, retention | 0016, 0022, 0068 |
+| Stored agents: history mode, API key + `/api/agent-run`, retention, outbound webhook (signed, SSRF-guarded egress) | 0016, 0022, 0068, 0094 |
 | Research agent: seeded built-in `Kind`, todo/loop/judge, history fold, live checklist | 0082 |
 | Copilot agent kind: GitHub Copilot SDK loop, BYOK, Agent42 tools as custom tools, native skills, SessionFs in Blob, history mirror, phase-1 trust boundary | 0085 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |

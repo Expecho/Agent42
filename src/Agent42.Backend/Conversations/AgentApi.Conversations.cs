@@ -216,7 +216,9 @@ public static partial class AgentApi
         http.Response.ContentType = "application/x-ndjson";
         await foreach (var evt in agent.ChatAsync(
             request.Message, model, attachmentRefs, request.Ephemeral,
-            clientTools: KnownClientTools(request.ClientTools)))
+            clientTools: KnownClientTools(request.ClientTools),
+            // An edit or regenerate re-runs the turn just removed: its webhook event says so (ADR 0094).
+            replacesLastTurn: request.ReplaceLastTurn))
         {
             await http.Response.WriteAsync(JsonSerializer.Serialize(evt, StreamEventJson) + "\n");
             await http.Response.Body.FlushAsync();

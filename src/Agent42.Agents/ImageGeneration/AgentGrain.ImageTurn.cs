@@ -31,7 +31,7 @@ public sealed partial class AgentGrain
     // storage, and record a user+assistant turn into the session so it renders in history and drives later
     // edits. Bytes go to blob storage only; the session holds a short UriContent reference + the id (ADR 0004).
     private async IAsyncEnumerable<AgentStreamEvent> GenerateImageTurnAsync(
-        string message, IReadOnlyList<AttachmentRef>? attachments)
+        string message, IReadOnlyList<AttachmentRef>? attachments, WebhookTurn webhookTurn)
     {
         var ownerKey = this.GetPrimaryKeyString();
 
@@ -135,6 +135,10 @@ public sealed partial class AgentGrain
             // unlike the other two, which are an early return and a no-guard-by-design path — so the
             // write goes INSIDE it. Best-effort inside.
             await IndexNewTurnsForSearchAsync();
+
+            // Outbound webhook (ADR 0094), fire site 2 of 3: inside this site's own persist block, because the image
+            // turn never reaches the chat persist. A count only, never the image's URL (credential-bearing).
+            await NotifyAgentWebhookAsync(true, webhookTurn);
 
             _logger.LogInformation("Agent grain {GrainKey} completed an image-generation turn and persisted it",
                 this.GetPrimaryKeyString());

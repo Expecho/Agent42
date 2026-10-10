@@ -123,6 +123,7 @@ public sealed class CapSizedFetcherSiloConfigurator : ISiloConfigurator
             services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
             services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
             services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
+            services.AddSingleton<IAgentWebhookSender, NullAgentWebhookSender>();
             services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
             // Also the source of this silo's IChatSearchIndex (ADR 0061) — a mandatory grain
             // dependency that deliberately rides the one helper every host calls, so it cannot be
