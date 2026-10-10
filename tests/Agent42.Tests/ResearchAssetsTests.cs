@@ -30,7 +30,7 @@ public sealed class ResearchAssetsTests(StaticAssetsServerFixture fixture)
         var sw = await fixture.Client.GetStringAsync("/sw.js");
 
         Assert.Contains("\"/js/research.js\"", sw);
-        Assert.Contains("agent42-shell-v51", sw);
+        Assert.Contains("agent42-shell-v52", sw);
     }
 
     // A todo title is model output that never passes the reply's sanitizer, so the only safe sink is textContent.
