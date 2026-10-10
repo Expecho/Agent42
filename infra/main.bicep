@@ -115,6 +115,12 @@ param authAllowedUserObjectIds array = [
   '4e85e5fd-1130-4498-a29f-d02cad7ca43b' // msn@2000miles.nl
 ]
 
+@description('Account Entra signs in without showing the account picker (ADR 0090). Reach the other allowed account through Sign out. Empty sends no hint.')
+param authLoginHint string = 'peter.bons@aceve.com'
+
+@description('How long an Easy Auth session lasts before Entra is asked again, as a .NET TimeSpan (ADR 0090). The platform default is 08:00:00.')
+param authSessionLifetime string = '14.00:00:00'
+
 // Container Apps bills the PER-REPLICA total, and the sum across all containers in the replica must
 // land on an allowed CPU/memory combination (CPU in 0.25 steps, memory = 2 GiB per CPU). Backend
 // 0.5/1Gi + SearXNG 0.5/1Gi = 1.0 CPU / 2Gi per replica — an allowed pair, and roughly double the
@@ -211,6 +217,8 @@ module containerApp 'modules/container-app.bicep' = {
     authClientSecret: authClientSecret
     authTenantId: authTenantId
     authAllowedUserObjectIds: authAllowedUserObjectIds
+    authLoginHint: authLoginHint
+    authSessionLifetime: authSessionLifetime
     customDomainName: customDomainName
     customDomainCertificateName: customDomainCertificateName
     cpu: containerCpu

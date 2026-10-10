@@ -112,6 +112,18 @@
             </span>
             Usage
           </button>
+          <!-- Sign out (ADR 0090): a plain link to Easy Auth's own endpoint, no JS. It ends the session so the
+               next sign-in can pick the other account, which the configured login_hint otherwise skips past.
+               Production only: DevHost has no Easy Auth, so this 404s locally. -->
+          <a class="sidebar__settings sidebar__signout" id="signOutLink"
+             href="/.auth/logout?post_logout_redirect_uri=/" title="Sign out" aria-label="Sign out">
+            <span class="sidebar__gear" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M6.2 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h2.7M10.3 11l3-3-3-3M13.2 8H6.2"
+                      stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </a>
         </div>
         <span class="dont-panic">DON'T&nbsp;PANIC</span>
       </footer>

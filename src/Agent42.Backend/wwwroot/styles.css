@@ -936,6 +936,12 @@ body {
   justify-content: center;
 }
 
+/* Sign out is a link, icon-only so the two labelled buttons keep their width. */
+.sidebar__footer-actions .sidebar__signout {
+  flex: 0 0 auto;
+  text-decoration: none;
+}
+
 .sidebar__settings {
   display: inline-flex;
   align-items: center;
