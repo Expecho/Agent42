@@ -278,6 +278,10 @@ export async function send(prompt, replay = null) {
           addToolCall(agentMsg, chunk);
           // A tool this page runs (ADR 0089). Not awaited: the reader must keep reading while a dialog is open.
           if (chunk.clientTool) runClientTool(convId, chunk);
+        } else if (chunk.type === "mcpElicitation") {
+          // An MCP server asks the user for input mid-tool (ADR 0095): run as the `mcp_elicitation` client tool under
+          // the request's own id. Not awaited, for the same reason as a client tool call.
+          runClientTool(convId, { toolCallId: elicitationId(chunk.elicitation), toolName: "mcp_elicitation", toolInput: chunk.elicitation });
         } else if (chunk.type === "toolCallEnd") {
           completeToolCall(agentMsg, chunk);
           artifactCardFromToolCall(agentMsg, convId, toolNames.get(chunk.toolCallId), chunk.toolResult);
@@ -430,4 +434,13 @@ export function setStopSpeech(value) {
 
 export function setVoice(value) {
   voice = value;
+}
+
+// The id an elicitation is answered under (ADR 0095), from the request JSON the stream line carries.
+function elicitationId(elicitation) {
+  try {
+    return JSON.parse(elicitation ?? "{}").id ?? null;
+  } catch {
+    return null;
+  }
 }

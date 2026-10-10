@@ -23,6 +23,12 @@ public sealed class ClientToolBroker(IReadOnlyCollection<string> supported)
 
     private int _announced;
 
+    /// <summary>
+    /// The run's MCP elicitations (ADR 0095). Separate from the tool calls because the MCP SDK enqueues from its own
+    /// thread, so it is locked; the tool calls above keep their no-lock, grain-scheduler-only invariant.
+    /// </summary>
+    public McpElicitationQueue Elicitations { get; } = new();
+
     /// <summary>True when the browser of this run said it can run <paramref name="toolName"/>.</summary>
     public bool Supports(string? toolName) => toolName is not null && _supported.Contains(toolName);
 
@@ -58,7 +64,10 @@ public sealed class ClientToolBroker(IReadOnlyCollection<string> supported)
         }
     }
 
-    /// <summary>The run is over: every call still waiting is cancelled and forgotten.</summary>
+    /// <summary>
+    /// The run is over: every call still waiting is cancelled and forgotten, and the elicitation queue closes, so a
+    /// late elicitation is answered <c>cancel</c> at once.
+    /// </summary>
     public void Close()
     {
         foreach (var call in _calls.Values)
@@ -67,6 +76,7 @@ public sealed class ClientToolBroker(IReadOnlyCollection<string> supported)
         }
 
         _calls.Clear();
+        Elicitations.Close();
     }
 
     private PendingCall GetOrAdd(string callId, string toolName, string? input)

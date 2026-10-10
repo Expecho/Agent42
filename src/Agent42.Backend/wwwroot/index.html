@@ -788,6 +788,28 @@
     </form>
   </dialog>
 
+  <!-- An MCP server asks the user for input mid-tool (ADR 0095). Every server-supplied string is set with
+       textContent; a URL request shows the host and the full URL and opens only on the Open click. -->
+  <dialog class="agent-dialog" id="mcpElicitationDialog">
+    <form class="agent-form" method="dialog" novalidate>
+      <h2 class="agent-form__title">An MCP server asks for input</h2>
+      <section class="agent-form__section">
+        <p class="agent-form__note" id="mcpElicitationServer"></p>
+        <p class="confirm-action__text" id="mcpElicitationMessage"></p>
+        <div class="elicitation__fields" id="mcpElicitationFields"></div>
+        <div class="elicitation__url" id="mcpElicitationUrlBox" hidden>
+          <p class="elicitation__host" id="mcpElicitationHost"></p>
+          <code class="elicitation__full-url" id="mcpElicitationUrl"></code>
+        </div>
+        <p class="agent-form__note">Don't enter passwords or other secrets here.</p>
+      </section>
+      <div class="agent-form__actions">
+        <button class="agent-form__btn" type="button" id="mcpElicitationDeclineBtn">Decline</button>
+        <button class="agent-form__btn agent-form__btn--primary" type="button" id="mcpElicitationSubmitBtn">Submit</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- File one conversation into a group (ADR 0073). The touch path for what a mouse does by dragging —
        and the only way to CLEAR a filing, since there is deliberately no "drag back out" drop region.
        The radio list is injected at open time from the user's groups, always led by "No group". -->

@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using Agent42.Agents;
 using Agent42.Backend;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Agent42.Tests;
 
@@ -185,6 +187,74 @@ public sealed class ClientToolApiTests(SharedApiFixture fixture) : SharedCluster
             Assert.DoesNotContain(FakeGeocoder.Address, rest, StringComparison.Ordinal);
             Assert.Equal(0, FakeGeocoder.InvalidCalls);
         }
+    }
+
+    // ADR 0095: a browser that advertises mcp_elicitation keeps it through the endpoint's intersection; the NDJSON
+    // line carries the request, and the answer rides the same tool-result POST (204, then 404 once it was taken).
+    [Fact]
+    public async Task AdvertisedMcpElicitation_IsKept_AndTheAnswerIs204ThenLateIs404()
+    {
+        var router = new McpElicitationRouter();
+        var tool = AIFunctionFactory.Create(
+            async (string q, CancellationToken cancellationToken) =>
+            {
+                Task<McpElicitationAnswer> routed;
+                using (ExecutionContext.SuppressFlow())
+                {
+                    routed = Task.Run(() => router.RouteAsync(
+                        new McpElicitationRequest(McpElicitationLimits.FormMode, "Pick", """{"type":"object","properties":{}}"""),
+                        CancellationToken.None));
+                }
+
+                return (await routed.WaitAsync(cancellationToken)).Action;
+            },
+            "elicit_api_tool",
+            "asks");
+        foreach (var silo in Cluster.Silos)
+        {
+            Cluster.GetSiloServiceProvider(silo.SiloAddress).GetRequiredService<SingleUserMcpToolProvider>().Servers =
+                [new McpServerTools("srv", [tool], [tool.Name], ServerName: "Api Server", Elicitation: router)];
+        }
+
+        var response = await Client.SendAsync(
+            Request(HttpMethod.Post, "/api/chat/elicit", "ct-api-elicit", new ChatRequest(
+                FakeChatClient.CallToolPrompt("elicit_api_tool", new { q = "x" }), null,
+                ClientTools: [ClientToolLimits.McpElicitation, "not_a_tool"])),
+            HttpCompletionOption.ResponseHeadersRead);
+        using (response)
+        using (var reader = new StreamReader(await response.Content.ReadAsStreamAsync()))
+        {
+            string? id = null;
+            while (id is null && await reader.ReadLineAsync() is { } line)
+            {
+                using var doc = JsonDocument.Parse(line);
+                if (doc.RootElement.GetProperty("type").GetString() == "mcpElicitation")
+                {
+                    Assert.Equal("Api Server", doc.RootElement.GetProperty("text").GetString());
+                    using var input = JsonDocument.Parse(doc.RootElement.GetProperty("elicitation").GetString()!);
+                    id = input.RootElement.GetProperty("id").GetString();
+                }
+            }
+
+            Assert.NotNull(id);
+            Assert.Equal(HttpStatusCode.NoContent, (await PostResult("ct-api-elicit", "elicit", id, new { action = "decline" })).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await PostResult("ct-api-elicit", "elicit", id, new { action = "accept" })).StatusCode);
+            Assert.Contains("decline", await reader.ReadToEndAsync(), StringComparison.Ordinal);
+        }
+    }
+
+    // A name the server does not define is dropped: advertising only that gets no broker, so a client tool is not
+    // flagged for the browser and answers "unavailable" at once.
+    [Fact]
+    public async Task UnknownCapability_IsDropped()
+    {
+        var response = await Client.SendAsync(Request(HttpMethod.Post, "/api/chat/unknown-cap", "ct-api-unknown-cap",
+            new ChatRequest(FakeChatClient.CallToolPrompt(ClientToolLimits.ConfirmAction, new { action = "x" }), null,
+                ClientTools: ["not_a_tool"])));
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("\"clientTool\":true", body, StringComparison.Ordinal);
+        Assert.Contains("unavailable", body, StringComparison.Ordinal);
     }
 
     [Fact]

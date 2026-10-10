@@ -151,10 +151,11 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                 // The URL-seeding opt-in (ADR 0067) is copied verbatim off the stored server — it is the
                 // user's setting, so the provider never derives or defaults it. The harvest itself happens in
                 // the GRAIN, not here: these tool instances are shared across every conversation of this
-                // user, and FetchableUrls is per-conversation state.
+                // user, and FetchableUrls is per-conversation state. The elicitation router (ADR 0095) travels
+                // with the group for the same reason: the grain opens a per-call scope on it.
                 servers.Add(new McpServerTools(
                     server.Id, tools, discovered, server.SeedsFetchableUrls, server.Name,
-                    InteractiveOAuth: oauthBearer is not null));
+                    InteractiveOAuth: oauthBearer is not null, Elicitation: connection.Elicitation));
                 connections.Add(connection.Connection);
             }
             catch (LocalBridgeNotConnectedException)

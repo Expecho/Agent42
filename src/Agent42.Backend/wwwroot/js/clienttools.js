@@ -8,11 +8,15 @@
 
 import { closeArtifactPaneView, openArtifactInPane, setArtifactPaneFull } from "./artifacts.js";
 import { confirmActionApproveBtn, confirmActionDeclineBtn, confirmActionDialog, confirmActionText } from "./dom.js";
+import { closeElicitationDialog, showElicitation } from "./elicitation.js";
 import { locationForTool } from "./location.js";
 
-// Every client tool this page can run, by name. Sent as `clientTools` with a chat request; a tool missing here
-// answers "unavailable" on the server without ever reaching the page.
-export const CLIENT_TOOLS = ["confirm_action", "control_artifact_pane", "get_browser_context", "get_current_location"];
+// Every client tool this page can run, by name, plus "mcp_elicitation" (ADR 0095: this page can show an MCP server's
+// request for input). Sent as `clientTools` with a chat request; a name missing here answers "unavailable" (an
+// elicitation: "cancel") on the server without ever reaching the page.
+export const CLIENT_TOOLS = [
+  "confirm_action", "control_artifact_pane", "get_browser_context", "get_current_location", "mcp_elicitation",
+];
 
 const MAX_SELECTION_CHARS = 2000;
 
@@ -32,6 +36,8 @@ const handlers = {
   get_browser_context: browserContext,
   // ADR 0093: the position, only when the model asks. Its own grant check and bounded capture live in location.js.
   get_current_location: () => locationForTool(),
+  // ADR 0095: not a model tool. An MCP server's elicitation, streamed as `mcpElicitation` and answered the same way.
+  mcp_elicitation: (input) => showElicitation(input),
 };
 
 // Runs one flagged call and posts its result. Never throws and is never awaited by the stream reader.
@@ -82,6 +88,7 @@ export async function resumePendingClientTools(convId) {
 // for. Closing it declines, and that answer's 404 is ignored.
 export function closeClientToolDialogs() {
   if (confirmActionDialog?.open) confirmActionDialog.close("stale");
+  closeElicitationDialog();
 }
 
 function parseInput(toolInput) {

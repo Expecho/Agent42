@@ -42,6 +42,11 @@ namespace Agent42.Agents;
 /// whose tools <c>BuildAgent</c> wraps in <see cref="ReauthNoticeMcpTool"/> (ADR 0081). A 401 from a Header-mode
 /// server is a configuration fault, and offering Reconnect there would send the user nowhere.
 /// </param>
+/// <param name="Elicitation">
+/// The live connection's elicitation router (ADR 0095). <c>BuildAgent</c> wraps this server's tools in
+/// <see cref="ElicitingMcpTool"/> so each call opens a scope on it. Null when the server is not connected or the
+/// group is a test fake without one, and then the tools are not wrapped.
+/// </param>
 public sealed record McpServerTools(
     string ServerId,
     IReadOnlyList<AITool> Tools,
@@ -49,7 +54,8 @@ public sealed record McpServerTools(
     bool SeedsFetchableUrls = false,
     string? ServerName = null,
     bool ReauthRequired = false,
-    bool InteractiveOAuth = false);
+    bool InteractiveOAuth = false,
+    McpElicitationRouter? Elicitation = null);
 
 /// <summary>
 /// The MCP tools resolved for a user, grouped per server, plus the overlay <see cref="Version"/> they were
