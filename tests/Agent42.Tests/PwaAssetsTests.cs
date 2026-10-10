@@ -135,6 +135,38 @@ public sealed class PwaAssetsTests
         Assert.True(dashboardGuard < firstRespond, "The /dashboard bypass must precede any respondWith");
     }
 
+    /// <summary>
+    /// ADR 0090. Easy Auth's <c>/.auth/*</c> endpoints are platform redirects, not shell. Without the bypass, an
+    /// offline sign-out would fall through to the navigate branch and paint <c>/index.html</c>, so the app
+    /// would look signed in. Source-text heuristic, like the guards above: proves position, not logic.
+    /// </summary>
+    [Fact]
+    public async Task ServiceWorker_BypassesEasyAuthEndpointsBeforeCaching()
+    {
+        var response = await _client.GetAsync("/sw.js");
+        response.EnsureSuccessStatusCode();
+        var source = await response.Content.ReadAsStringAsync();
+
+        var authGuard = source.IndexOf("startsWith(\"/.auth\")", StringComparison.Ordinal);
+        Assert.True(authGuard >= 0, "Service worker is missing the /.auth bypass guard");
+
+        var firstRespond = source.IndexOf("event.respondWith(", StringComparison.Ordinal);
+        Assert.True(authGuard < firstRespond, "The /.auth bypass must precede any respondWith");
+    }
+
+    /// <summary>
+    /// ADR 0090. Sign out is how the second allowed account is reached once the login hint signs straight in.
+    /// It must be Easy Auth's own logout, and it must land back on the app, which then redirects to Entra.
+    /// </summary>
+    [Fact]
+    public async Task Sidebar_HasASignOutLinkToEasyAuthLogout()
+    {
+        var html = await _client.GetStringAsync("/");
+
+        Assert.Contains("id=\"signOutLink\"", html, StringComparison.Ordinal);
+        Assert.Contains("href=\"/.auth/logout?post_logout_redirect_uri=/\"", html, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("/icons/icon-192.png")]
     [InlineData("/icons/icon-512.png")]
@@ -253,7 +285,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v51", sw);
+        Assert.Contains("agent42-shell-v52", sw);
     }
 
     // Rich rendering (ADR 0083): SHELL holds only the eager renderer + highlight.js. The lazy libs stay out —

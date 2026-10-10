@@ -124,7 +124,7 @@ public sealed class SearchAssetsTests
         // The version moves on with every MR that touches wwwroot/js/ (the tool-call fold took it to
         // v36); what this test owns is that search.js is in SHELL and the cache is not left on a stale
         // version.
-        Assert.Contains("agent42-shell-v51", sw);
+        Assert.Contains("agent42-shell-v52", sw);
         Assert.DoesNotContain("agent42-shell-v32", sw);
     }
 }
