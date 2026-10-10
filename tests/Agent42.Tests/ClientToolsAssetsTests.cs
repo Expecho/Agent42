@@ -30,9 +30,9 @@ public sealed class ClientToolsAssetsTests(StaticAssetsServerFixture fixture)
         var app = await fixture.GetAppScriptAsync();
 
         Assert.Contains(
-            "export const CLIENT_TOOLS = [\"confirm_action\", \"control_artifact_pane\", \"get_browser_context\"];",
+            "export const CLIENT_TOOLS = [\"confirm_action\", \"control_artifact_pane\", \"get_browser_context\", \"get_current_location\"];",
             app, StringComparison.Ordinal);
-        Assert.Equal(3, Agent42.Agents.ClientToolLimits.ToolNames.Count);
+        Assert.Equal(4, Agent42.Agents.ClientToolLimits.ToolNames.Count);
     }
 
     // AC5: stream recovery answers the calls the server is still waiting on (a confirm a frozen PWA never showed).
@@ -95,7 +95,7 @@ public sealed class ClientToolsAssetsTests(StaticAssetsServerFixture fixture)
 
         Assert.Contains("\"/js/clienttools.js\"", sw, StringComparison.Ordinal);
         Assert.Contains("\"/js/sharedstate.js\"", sw, StringComparison.Ordinal);
-        Assert.Contains("agent42-shell-v54", sw, StringComparison.Ordinal);
+        Assert.Contains("agent42-shell-v55", sw, StringComparison.Ordinal);
     }
 
     private static string CodeOnly(string source) =>

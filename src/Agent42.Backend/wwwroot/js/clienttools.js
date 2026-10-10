@@ -8,10 +8,11 @@
 
 import { closeArtifactPaneView, openArtifactInPane, setArtifactPaneFull } from "./artifacts.js";
 import { confirmActionApproveBtn, confirmActionDeclineBtn, confirmActionDialog, confirmActionText } from "./dom.js";
+import { locationForTool } from "./location.js";
 
 // Every client tool this page can run, by name. Sent as `clientTools` with a chat request; a tool missing here
 // answers "unavailable" on the server without ever reaching the page.
-export const CLIENT_TOOLS = ["confirm_action", "control_artifact_pane", "get_browser_context"];
+export const CLIENT_TOOLS = ["confirm_action", "control_artifact_pane", "get_browser_context", "get_current_location"];
 
 const MAX_SELECTION_CHARS = 2000;
 
@@ -29,6 +30,8 @@ const handlers = {
   confirm_action: confirmAction,
   control_artifact_pane: controlArtifactPane,
   get_browser_context: browserContext,
+  // ADR 0093: the position, only when the model asks. Its own grant check and bounded capture live in location.js.
+  get_current_location: () => locationForTool(),
 };
 
 // Runs one flagged call and posts its result. Never throws and is never awaited by the stream reader.

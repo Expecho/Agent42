@@ -26,7 +26,7 @@ sequenceDiagram
     participant LLM as Model endpoint
 
     B->>API: POST /api/chat/{id} {message, model, ...}
-    API->>G: ChatAsync(message, model, attachments, location)
+    API->>G: ChatAsync(message, model, attachments, ephemeral, clientTools)
     G->>AF: RunStreamingAsync([userMessage], session)
     loop each AgentResponseUpdate
         AF->>LLM: (tool-calling loop)
@@ -68,7 +68,9 @@ private static readonly JsonSerializerOptions StreamEventJson = new(JsonSerializ
 
 ```csharp
 http.Response.ContentType = "application/x-ndjson";
-await foreach (var evt in agent.ChatAsync(request.Message, model, attachmentRefs, location))
+await foreach (var evt in agent.ChatAsync(
+    request.Message, model, attachmentRefs, request.Ephemeral,
+    clientTools: KnownClientTools(request.ClientTools)))
 {
     await http.Response.WriteAsync(JsonSerializer.Serialize(evt, StreamEventJson) + "\n");
     await http.Response.Body.FlushAsync();

@@ -570,7 +570,7 @@ public sealed class EditRegenerateForkTests(SharedClusterFixture fixture) : Shar
         IAgentGrain agent, string message, IReadOnlyList<AttachmentRef>? attachments = null, string? model = null,
         bool ephemeral = false)
     {
-        await foreach (var _ in agent.ChatAsync(message, model, attachments, null, ephemeral))
+        await foreach (var _ in agent.ChatAsync(message, model, attachments, ephemeral))
         {
         }
     }

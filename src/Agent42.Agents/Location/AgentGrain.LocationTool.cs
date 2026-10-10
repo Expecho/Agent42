@@ -5,40 +5,64 @@ using Microsoft.Extensions.Logging;
 namespace Agent42.Agents;
 
 /// <summary>
-/// The <c>get_current_location</c> tool (ADR 0012). It reads the turn-scoped <c>_turnLocation</c>
-/// field declared in the core part — the browser fix rides the chat request, because a tool cannot
-/// ask the browser for a position mid-turn. This tool is deliberately NOT an SSRF sink and must not
-/// grow an address guard; see the ADR 0012 gotchas.
+/// The <c>get_current_location</c> tool (ADR 0012, made a client tool by ADR 0093). The browser answers it
+/// through the ADR 0089 round trip only when the model calls it, so the position no longer rides every chat
+/// request. This tool is deliberately NOT an SSRF sink and must not grow an address guard; see the ADR 0012
+/// gotchas.
 /// </summary>
 public sealed partial class AgentGrain
 {
+    private const string NotSharedText =
+        "The user has not shared their location with this conversation, so I don't know " +
+        "where they are. Do not guess or assume a location. Tell the user you need their " +
+        "location and ask them to enable location sharing in Preferences, then try again.";
+
+    private const string NoFixText =
+        "The user's device could not get a position right now, so I don't know where they are. " +
+        "Do not guess or assume a location. Tell the user their location could not be determined " +
+        "and ask them to try again in a moment.";
+
+    private const string UnavailableText =
+        "No browser is connected to this chat right now (for example, this is a scheduled or " +
+        "background run), so the user's location cannot be read. Do not guess or assume a location.";
+
     /// <summary>
     /// Agent tool: reports where the user is (ADR 0012). Exposed to the model as
     /// <c>get_current_location</c>.
     ///
     /// <para><b>It takes no parameters, and must never grow one.</b> The position comes from the
-    /// browser on this turn's request — the model does not get to say where the user is, or to name a
-    /// place to look up. That is what keeps the outbound geocode call from being an SSRF sink (with the
-    /// geocoder's config-pinned host), and it is pinned by <c>GetCurrentLocation_ExposesNoParameters</c>
-    /// rather than by this comment.</para>
+    /// browser, as its answer to this client tool (ADR 0093) — the model does not get to say where the
+    /// user is, or to name a place to look up. The answer is parsed as numbers and range-checked with
+    /// <see cref="UserLocation.IsValid"/> before the geocoder sees it; anything else is "no usable fix".
+    /// That, with the geocoder's config-pinned host, is what keeps the outbound geocode call from being an
+    /// SSRF sink, and it is pinned by <c>GetCurrentLocation_ExposesNoParameters</c> rather than by this
+    /// comment.</para>
     ///
-    /// <para>When the browser sent no position — the user never granted permission, or the fix went
-    /// stale — the model is told so in plain language and asked to prompt the user. The tool is the only
-    /// thing that knows; nothing else in the turn can surface it.</para>
+    /// <para>When there is no position — the user never granted permission, the device could not get a
+    /// fix, or no browser can answer — the model is told so in plain language and told not to guess. The
+    /// raw status JSON is never the result: the model needs the instruction, not the code.</para>
     ///
     /// <para>The <see cref="CancellationToken"/> is <b>not</b> an exception to the zero-parameter rule:
     /// <c>AIFunctionFactory</c> supplies it from the invocation context and keeps it out of the JSON
     /// schema, so the model never sees it and cannot set it. It is here because the grain is
-    /// non-reentrant — an abandoned turn should not hold the activation for the geocode's full timeout.
-    /// The security property is about the <i>schema</i>, which is what AC13 asserts on.</para>
+    /// non-reentrant — an abandoned turn should not hold the activation for the wait or the geocode's full
+    /// timeout. The security property is about the <i>schema</i>, which is what <c>GetCurrentLocation_ExposesNoParameters</c> asserts on.</para>
     /// </summary>
     private async Task<string> GetCurrentLocationAsync(CancellationToken cancellationToken)
     {
-        if (_turnLocation is not { } location)
+        var answer = await AwaitClientResultAsync(ClientToolLimits.GetCurrentLocation, cancellationToken);
+        var (location, status) = ParseBrowserFix(answer);
+        if (location is null)
         {
-            return "The user has not shared their location with this conversation, so I don't know " +
-                "where they are. Do not guess or assume a location. Tell the user you need their " +
-                "location and ask them to enable location sharing in Preferences, then try again.";
+            _logger.LogInformation(
+                "Agent grain {GrainKey} has no usable location from the browser ({Status})",
+                this.GetPrimaryKeyString(), status);
+            return status switch
+            {
+                "not_shared" => NotSharedText,
+                "unavailable" => UnavailableText,
+                _ => NoFixText,
+            };
         }
 
         var place = await _geocoder.ReverseAsync(location, cancellationToken);
@@ -75,4 +99,53 @@ public sealed partial class AgentGrain
 
         return JsonSerializer.Serialize(result);
     }
+
+    /// <summary>
+    /// Reads the browser's answer: a valid fix, or null with the reason. The reason is the browser's own
+    /// <c>status</c> (<c>not_shared</c>, <c>no_fix</c>) or the broker's (<c>unavailable</c>, <c>timeout</c>);
+    /// anything else — not JSON (a truncated answer is a cut prefix), not numbers, out of range — is
+    /// <c>invalid</c> and never reaches the geocoder.
+    /// </summary>
+    private static (UserLocation? Fix, string Status) ParseBrowserFix(string answer)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(answer);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return (null, "invalid");
+            }
+
+            if (root.TryGetProperty("status", out var status))
+            {
+                return (null, status.ValueKind == JsonValueKind.String ? status.GetString() ?? "invalid" : "invalid");
+            }
+
+            var fix = ReadFix(root);
+            return fix is { IsValid: true } ? (fix, "ok") : (null, "invalid");
+        }
+        catch (JsonException)
+        {
+            return (null, "invalid");
+        }
+    }
+
+    private static UserLocation? ReadFix(JsonElement root)
+        => ReadDouble(root, "latitude") is { } latitude && ReadDouble(root, "longitude") is { } longitude
+            ? new UserLocation(latitude, longitude, ReadDouble(root, "accuracyMetres"), ReadInstant(root, "capturedAt"))
+            : null;
+
+    private static double? ReadDouble(JsonElement root, string name)
+        => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+            && value.TryGetDouble(out var number)
+            ? number
+            : null;
+
+    private static DateTimeOffset? ReadInstant(JsonElement root, string name)
+        => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            && DateTimeOffset.TryParse(
+                value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var instant)
+            ? instant
+            : null;
 }

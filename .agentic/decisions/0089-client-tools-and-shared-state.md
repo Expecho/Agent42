@@ -6,6 +6,7 @@ tags: [streaming, tools, frontend, stream-events, shared-state, human-in-the-loo
 supersedes: []
 extends: [0004, 0021, 0082, 0084]
 amends: [0046]
+amended_by: 0093   # get_current_location became a fourth client tool, under its own location key
 ---
 
 # Client (browser-run) tools and shared agent↔UI state on the NDJSON stream
@@ -16,7 +17,8 @@ itself (its revisit trigger 2 names exactly these two). Agent42 owns both ends o
 built on the existing NDJSON stream and the conversation grain. That keeps recovery (0046), stop (0078) and the
 MCP reconnect (0087), which an AG-UI endpoint that bypasses the grain would lose. The three first client tools are
 `confirm_action` (human-in-the-loop approval), `control_artifact_pane` (drive the 0084 pane) and
-`get_browser_context` (time zone, locale, theme, viewport, installed/online, selected text).
+`get_browser_context` (time zone, locale, theme, viewport, installed/online, selected text). ADR 0093 later added a
+fourth, `get_current_location`, which keeps its own `location` selectable key rather than `browser_tools`.
 
 ## Decision
 **Client tools.** The tools are server-defined and registered like any other tool. The browser only advertises

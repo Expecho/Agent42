@@ -24,7 +24,7 @@ fidelity, a ZIP with the files, and "export all".
   The manifest lists blobs that are gone (`missing`) instead of failing.
 - **`GET /api/export?after={id}`**: "export all", **one ZIP part of up to 25 conversations per request**
   (`ExportLimits.BulkBatchSize`). It is keyset-paged on the conversation id. The headers `X-Export-Total`,
-  `X-Export-Part`, `X-Export-Parts` and `X-Export-Next` are set before the body. `wwwroot/js/export.js` follows
+  `X-Export-Part`, `X-Export-Parts` and `X-Export-Next` are set before the body. `src/Agent42.Backend/wwwroot/js/export.js` follows
   `X-Export-Next` and saves each part. A conversation whose gather fails goes into the manifest under `errors`, and
   the part carries on.
 - **Tool calls are kept**, unlike in the public share response (ADR 0035/0080). That strip exists because widening a
