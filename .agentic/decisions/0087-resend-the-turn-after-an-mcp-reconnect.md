@@ -5,6 +5,7 @@ status: accepted
 tags: [mcp, oauth, frontend, stream-events, pwa, no-migration]
 supersedes: []
 amends: [0081]
+amended_by: 0092   # edit/regenerate now rewrite the session tail on an explicit user request; the rejection below is narrowed, not reversed
 ---
 
 # Re-send the turn by itself once the user has reconnected its MCP server from the transcript
@@ -34,6 +35,8 @@ Guards:
 - **Rewind or replace the failed turn on the server.** Rejected: it means rewriting the stored session of a
   grain whose history can grow without bound (ADR 0016/0068). That is high risk, and the only gain is not
   having a duplicate prompt in the history.
+  *Narrowed by ADR 0092:* a user-initiated, token-guarded, tail-only, whole-turn rewrite (edit and
+  regenerate) is now accepted. This automatic re-send still does not rewind anything.
 - **Poll the server list on a timer.** Rejected: it sends requests the user gains nothing from. The user
   coming back to the tab is exactly when the check is useful, and the channel covers desktop instantly.
 - **Only the BroadcastChannel.** Rejected: an installed PWA opens `window.open` in the system browser, and

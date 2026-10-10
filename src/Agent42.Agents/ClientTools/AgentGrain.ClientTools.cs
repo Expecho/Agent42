@@ -109,7 +109,7 @@ public sealed partial class AgentGrain
         }
 
         return version is { } wanted && record.Versions.TrueForAll(v => v.Version != wanted)
-            ? $"Artifact {record.Id} has versions 1 to {record.Versions.Count}; there is no version {wanted}."
+            ? $"Artifact {record.Id} has versions {VersionList(record)}; there is no version {wanted}."
             : null;
     }
 

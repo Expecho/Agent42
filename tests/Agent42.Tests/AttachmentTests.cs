@@ -62,6 +62,27 @@ public sealed class AttachmentTests(SharedApiFixture fixture) : SharedClusterTes
         Assert.Null(await store.OpenReadAsync("user-2/conv-1", reference.Id));
     }
 
+    // ADR 0092 AC18: a fork copies a blob under its own owner key with the same id, bytes, type and name, and the
+    // source stays readable.
+    [Fact]
+    public async Task CopyAsync_PreservesTheAttachment()
+    {
+        var store = new InMemoryAttachmentStore();
+        var bytes = new byte[] { 9, 8, 7 };
+        var source = await store.SaveAsync("user-1/src", "dog.webp", "image/webp", bytes);
+
+        var copy = await store.CopyAsync(source, "user-1/fork");
+
+        Assert.Equal(source.Id, copy.Id);
+        Assert.Equal($"user-1/fork/{source.Id}", copy.BlobPath);
+        Assert.Equal(copy, await store.GetAsync("user-1/fork", source.Id));
+        var copied = await store.OpenReadAsync("user-1/fork", source.Id);
+        Assert.Equal(bytes, copied!.Bytes);
+        Assert.Equal("image/webp", copied.MediaType);
+        Assert.Equal("dog.webp", copied.FileName);
+        Assert.NotNull(await store.OpenReadAsync("user-1/src", source.Id));
+    }
+
     // AC1: uploading an image returns its id + metadata as JSON.
     [Fact]
     public async Task Upload_ReturnsAttachmentMetadataAsJson()

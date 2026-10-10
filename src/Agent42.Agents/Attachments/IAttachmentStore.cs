@@ -48,6 +48,16 @@ public interface IAttachmentStore
     /// a stable placeholder (the offline chat clients ignore image content).
     /// </summary>
     Task<Uri> GetReadUrlAsync(AttachmentRef reference, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Copies a stored attachment under <paramref name="targetOwnerKey"/> with the SAME id, media type and file
+    /// name, and returns the copy's reference (<c>BlobPath = {targetOwnerKey}/{id}</c>). The source is left as it
+    /// is. A conversation fork (ADR 0092) uses this because every proxy resolves a blob by
+    /// <c>(ownerKey, id)</c>: a fork that only referenced the source's blobs would 404. Keeping the id means
+    /// nothing inside the copied session needs rewriting.
+    /// </summary>
+    Task<AttachmentRef> CopyAsync(
+        AttachmentRef source, string targetOwnerKey, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

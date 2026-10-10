@@ -203,4 +203,33 @@ public interface IAgentGrain : IGrainWithStringKey
     /// </summary>
     [Alias("ReindexAsync")]
     Task<int> ReindexAsync();
+
+    /// <summary>
+    /// Removes the conversation's last whole turn (its user message and everything after it) so the caller can
+    /// re-run it: edit and regenerate (ADR 0092). <paramref name="expectedUserTurnCount"/> and
+    /// <paramref name="expectedLastUserTextHash"/> are the concurrency token the client read from
+    /// <see cref="GetHistoryAsync"/>: the number of user turns and the hex SHA-256 of the last one's text. Refused
+    /// with no change while a run is in flight, for a Copilot chat, on a stale token, when no model is configured
+    /// and when there is nothing to remove. <paramref name="ephemeral"/> keeps the removal in memory (ADR 0034).
+    /// </summary>
+    [Alias("TruncateLastTurnAsync")]
+    Task<HistoryEditOutcome> TruncateLastTurnAsync(
+        int expectedUserTurnCount, string expectedLastUserTextHash, bool ephemeral);
+
+    /// <summary>
+    /// Builds a fork of this conversation through the exchange that starts at projected user turn
+    /// <paramref name="throughUserTurn"/> (0-based), without changing this conversation (ADR 0092). Same token and
+    /// refusals as <see cref="TruncateLastTurnAsync"/>.
+    /// </summary>
+    [Alias("CreateForkAsync")]
+    Task<ConversationForkResult> CreateForkAsync(
+        int throughUserTurn, int expectedUserTurnCount, string expectedLastUserTextHash);
+
+    /// <summary>
+    /// Initializes this (new, empty) conversation from a fork payload: copies every kept blob under this
+    /// conversation's key, binds the persona snapshot and writes the session (ADR 0092). Returns false, changing
+    /// nothing, when this conversation already has a session or a persona.
+    /// </summary>
+    [Alias("InitializeFromForkAsync")]
+    Task<bool> InitializeFromForkAsync(ConversationFork fork);
 }
