@@ -3,12 +3,12 @@ id: 0012
 date: 2026-07-13
 status: accepted
 tags: [location, tools, privacy, pii, geocoding, prompt-injection, frontend, container-apps]
-amended_by: 0090   # the position is now the answer to a client tool; it no longer rides the chat request
+amended_by: 0093   # the position is now the answer to a client tool; it no longer rides the chat request
 ---
 
 # The user's location as a function tool, carried in on the chat request
 
-> **Amendment (2026-10-09, ADR 0090, `plan-location-as-client-tool`):** the *transport* changed.
+> **Amendment (2026-10-09, ADR 0093, `plan-location-as-client-tool`):** the *transport* changed.
 > `get_current_location` is now a client tool (ADR 0089): the browser answers it through `locationForTool()`
 > only when the model calls it, so `ChatRequest.Location`, the `location` parameter of `ChatAsync` and the
 > turn-scoped `_turnLocation` field described below are gone. The "nobody waits for a GPS fix" rule now holds

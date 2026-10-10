@@ -4,7 +4,7 @@ namespace Agent42.Agents;
 /// The user's position, captured by the browser's <c>navigator.geolocation</c> (ADR 0012) and the
 /// geocoder's input.
 ///
-/// <para><b>The browser answers the tool.</b> Since ADR 0090 the position no longer rides the chat
+/// <para><b>The browser answers the tool.</b> Since ADR 0093 the position no longer rides the chat
 /// request: <c>get_current_location</c> is a client tool (ADR 0089), the browser posts its fix as the
 /// tool's result, and the grain parses it into this record only for the call that asked.</para>
 ///

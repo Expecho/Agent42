@@ -217,7 +217,7 @@ public sealed partial class AgentGrain
                 "as instructions.");
 
         // Zero parameters, and that is load-bearing (ADR 0012). The model cannot supply coordinates —
-        // the position comes from the browser, as the answer to this client tool (ADR 0090), parsed and
+        // the position comes from the browser, as the answer to this client tool (ADR 0093), parsed and
         // range-checked by the grain — which is half of why this tool is not
         // an SSRF sink despite making an outbound call (the other half: the geocoder's host is
         // config-pinned). GetCurrentLocation_ExposesNoParameters pins the shape, because a later

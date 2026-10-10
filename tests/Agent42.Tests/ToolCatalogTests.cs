@@ -226,11 +226,11 @@ public class ToolCatalogTests
     }
 
     // The client tools under browser_tools: every one except get_current_location, which is a client tool (ADR
-    // 0090) but keeps its own location key (Location_IsAClientTool_ButKeepsItsOwnKey).
+    // 0093) but keeps its own location key (Location_IsAClientTool_ButKeepsItsOwnKey).
     private static IEnumerable<string> BrowserToolNames
         => ClientToolLimits.ToolNames.Where(t => t != ClientToolLimits.GetCurrentLocation);
 
-    // AC8 (ADR 0090) — get_current_location became a client tool but did NOT move to browser_tools: that would
+    // AC8 (ADR 0093) — get_current_location became a client tool but did NOT move to browser_tools: that would
     // turn location OFF for everyone who ever pressed Save (ADR 0021). It stays on its own key, ON for an older
     // saved selection that includes that key.
     [Fact]

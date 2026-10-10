@@ -30,7 +30,7 @@ const handlers = {
   confirm_action: confirmAction,
   control_artifact_pane: controlArtifactPane,
   get_browser_context: browserContext,
-  // ADR 0090: the position, only when the model asks. Its own grant check and bounded capture live in location.js.
+  // ADR 0093: the position, only when the model asks. Its own grant check and bounded capture live in location.js.
   get_current_location: () => locationForTool(),
 };
 

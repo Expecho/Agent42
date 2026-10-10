@@ -18,7 +18,7 @@ public static class ClientToolLimits
     public const string GetBrowserContext = "get_browser_context";
 
     /// <summary>
-    /// The user's position (ADR 0090). A client tool, but NOT a <c>browser_tools</c> one: it keeps its own
+    /// The user's position (ADR 0093). A client tool, but NOT a <c>browser_tools</c> one: it keeps its own
     /// <c>location</c> selectable key, so a loop over <see cref="ToolNames"/> must not assume that key.
     /// </summary>
     public const string GetCurrentLocation = "get_current_location";

@@ -11,7 +11,7 @@ namespace Agent42.Agents;
 /// ordinary <c>toolCallStart</c> flagged <c>clientTool</c>, the tool waits, the browser posts its result through
 /// <see cref="SubmitClientToolResultAsync"/>, and the turn resumes. There are four: <c>confirm_action</c>
 /// (the user approves or declines), <c>control_artifact_pane</c> (open, close or maximize the ADR 0084 pane),
-/// <c>get_browser_context</c> (facts only the browser knows) and <c>get_current_location</c> (ADR 0090; built
+/// <c>get_browser_context</c> (facts only the browser knows) and <c>get_current_location</c> (ADR 0093; built
 /// with the location tool in <c>Location/AgentGrain.LocationTool.cs</c>, under its own selectable key).
 ///
 /// <para><b>The broker is routed per RUN, never through a field the tool reads.</b> Two runs can be in flight on
@@ -110,7 +110,7 @@ public sealed partial class AgentGrain
         }
 
         return version is { } wanted && record.Versions.TrueForAll(v => v.Version != wanted)
-            ? $"Artifact {record.Id} has versions 1 to {record.Versions.Count}; there is no version {wanted}."
+            ? $"Artifact {record.Id} has versions {VersionList(record)}; there is no version {wanted}."
             : null;
     }
 

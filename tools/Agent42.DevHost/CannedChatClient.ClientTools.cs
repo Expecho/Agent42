@@ -17,7 +17,7 @@ public sealed partial class CannedChatClient
     /// <summary>The model reads the browser's context (get_browser_context).</summary>
     public const string BrowserContextTrigger = "browser context";
 
-    /// <summary>The model asks where the user is (get_current_location, a client tool since ADR 0090).</summary>
+    /// <summary>The model asks where the user is (get_current_location, a client tool since ADR 0093).</summary>
     public const string LocationTrigger = "where am i";
 
     /// <summary>The model opens this chat's latest artifact in the pane (control_artifact_pane).</summary>

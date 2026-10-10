@@ -49,6 +49,19 @@ public sealed class InMemoryAttachmentStore : IAttachmentStore
         return Task.FromResult(content);
     }
 
+    public Task<AttachmentRef> CopyAsync(
+        AttachmentRef source, string targetOwnerKey, CancellationToken cancellationToken = default)
+    {
+        if (!Blobs.TryGetValue(source.BlobPath, out var blob))
+        {
+            throw new InvalidOperationException($"Attachment {source.Id} is not in the store.");
+        }
+
+        var blobPath = $"{targetOwnerKey}/{source.Id}";
+        Blobs[blobPath] = blob;
+        return Task.FromResult(new AttachmentRef(source.Id, blobPath, blob.MediaType, blob.FileName));
+    }
+
     // Offline the model URL is never actually fetched (the canned/fake clients ignore image
     // content) and the browser renders via the bytes proxy, not this URL — so a short, stable
     // placeholder is enough. It still travels as a UriContent, so the fake can count it.

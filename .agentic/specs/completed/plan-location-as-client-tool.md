@@ -283,7 +283,7 @@ location in Preferences and send "where am i". Coordinates without an address sh
 
 ### Step 4 — Docs
 Depends on steps 1–3.
-- `/decide`: ADR 0090 (re-check `ls .agentic/decisions`; 0088 is an untracked local file at plan time, 0089 is on
+- `/decide`: ADR 0093 (re-check `ls .agentic/decisions`; 0088 is an untracked local file at plan time, 0089 is on
   main), `amends: [0012, 0089]`. It must record:
   - The premise change.
   - The alternatives: keep the request path, keep it for Copilot only, or client tools under Copilot.
@@ -296,8 +296,8 @@ Depends on steps 1–3.
     - The tool path takes one bounded GPS capture, which can prompt on WebKit if the site permission was reset.
     - The SSRF input now arrives through the tool-result POST, parsed as doubles and range-checked.
     - The turn-scoped family shrinks to three.
-- ADR 0012: an amendment note pointing at 0090, in the style of its 2026-07-17 amendment.
-- ADR 0089: line 17 "The three first client tools" stays true historically. Add one line noting that 0090 adds a
+- ADR 0012: an amendment note pointing at 0093, in the style of its 2026-07-17 amendment.
+- ADR 0089: line 17 "The three first client tools" stays true historically. Add one line noting that 0093 adds a
   fourth.
 - `.agentic/gotchas.md`:
   - The turn-scoped-field entry (~525): the family is now three, re-anchored on `_ephemeral`, and its evidence tests
@@ -312,7 +312,7 @@ Depends on steps 1–3.
 - `docs/features/current-location.md`: rewrite. The whole doc describes the request-borne path and `_turnLocation`
   (lines ~33–38, 53, 67–69, 112, 124, 127).
 - `docs/features/scheduled-reminders.md:59`: drop the `_turnLocation = null;` line from its snippet.
-- `CLAUDE.md`: add 0090 to the Location row of the feature map.
+- `CLAUDE.md`: add 0093 to the Location row of the feature map.
 - `.agentic/specs/plan-deferred-tool-loading.md` (an active, untracked plan): it lists `get_current_location`
   (~83) and cites the `_turnLocation` family (~159, ~212). Add a one-line note there that this plan landed first, and
   that location is now a client tool and the family is three. It is untracked, so this edit stays local unless the
@@ -401,8 +401,8 @@ Executed 2026-10-09 on `feature/location-as-client-tool`. All four steps landed 
   `ClientToolsAssetsTests` pin the cache name, so they moved from `v51` to `v52`. The plan did not list them.
 - **Extra doc debt was paid:**
   - `docs/features/streaming-replies.md` had the old `ChatAsync(…, location)` call.
-  - ADR 0089 got `amended_by: 0090` in its frontmatter.
-  - The CLAUDE.md "Client tools" feature-map row names location and 0090.
+  - ADR 0089 got `amended_by: 0093` in its frontmatter.
+  - The CLAUDE.md "Client tools" feature-map row names location and 0093.
   - The client-tool gotcha gained trap (5), on the own-selectable-key point.
 - **The DevHost check was done over HTTP, not by clicking in a browser.** A script posted "where am i" with
   `clientTools: ["get_current_location"]`, read the flagged call, and posted a fix (coordinates came back without

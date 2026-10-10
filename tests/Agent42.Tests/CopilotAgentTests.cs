@@ -165,7 +165,7 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
 
         var tools = LastRequest("copilot-client-tools").Tools.Select(t => t.Name).ToList();
         Assert.Contains("schedule_prompt", tools);
-        // Named on its own as well (ADR 0090): a Copilot chat has no location, though its picker still shows the key.
+        // Named on its own as well (ADR 0093): a Copilot chat has no location, though its picker still shows the key.
         Assert.DoesNotContain(ClientToolLimits.GetCurrentLocation, tools);
         foreach (var excluded in ClientToolLimits.ToolNames.Append(SharedStateLimits.UpdateToolName))
         {

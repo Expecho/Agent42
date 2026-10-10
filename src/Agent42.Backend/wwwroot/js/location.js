@@ -1,6 +1,6 @@
 /* Agent 42 — user location (ADR 0012). Split out of app.js (ADR 0041).
 
-   Since ADR 0090 the position never rides a chat request: get_current_location is a client tool (ADR 0089), and
+   Since ADR 0093 the position never rides a chat request: get_current_location is a client tool (ADR 0089), and
    this page answers it through locationForTool() only when the model calls it. The send path never touches
    geolocation. The tool path answers from the cached fix when it is fresh, and otherwise may take ONE bounded
    capture, only under an existing grant. */
@@ -40,7 +40,7 @@ let locationRefreshTimer = null;
 //           granted resolves without re-prompting; a PERMISSION_DENIED on any later capture clears it
 //           (they revoked it in site settings) and brings the grant button back. The flag is only a
 //           flag, though: a site permission reset to "ask" still prompts on the next capture, and that
-//           capture can be the tool's, mid-turn (ADR 0090 accepts this).
+//           capture can be the tool's, mid-turn (ADR 0093 accepts this).
 //
 // getCurrentPosition() is never called on the send path under either leg, and on the tool path only
 // after isCaptureAuthorized() — so on leg 1 the tool never shows a prompt.
@@ -137,7 +137,7 @@ function isFresh(fix) {
   return Number.isFinite(age) && age <= LOCATION_MAX_AGE_MS;
 }
 
-// THE TOOL PATH (ADR 0090): the answer to get_current_location, run only when the model calls it. The
+// THE TOOL PATH (ADR 0093): the answer to get_current_location, run only when the model calls it. The
 // grant is checked BEFORE any capture, so an unauthorized page answers not_shared without calling
 // getCurrentPosition(). A fresh cached fix is answered at once; otherwise one capture, bounded below the
 // server's wait. A stale fix is never returned. The server validates whatever this sends.

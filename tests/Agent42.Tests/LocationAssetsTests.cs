@@ -1,7 +1,7 @@
 namespace Agent42.Tests;
 
 /// <summary>
-/// Guards the user-location wiring in the page (ADR 0012): since ADR 0090 the browser answers the
+/// Guards the user-location wiring in the page (ADR 0012): since ADR 0093 the browser answers the
 /// <c>get_current_location</c> client tool instead of sending a fix with every chat request. Serves the real Backend <c>wwwroot</c>
 /// through the shared <see cref="StaticAssetsServerFixture"/>, then asserts on the key source strings —
 /// the same shape as <see cref="SpeechInputAssetsTests"/>.
@@ -40,7 +40,7 @@ public sealed class LocationAssetsTests
         Assert.DoesNotContain("composer__location", styles);
     }
 
-    // AC2 (ADR 0090) — no location is sent on a chat request, and the send path never touches geolocation:
+    // AC2 (ADR 0093) — no location is sent on a chat request, and the send path never touches geolocation:
     // the position leaves the browser only as the answer to the location client tool, when the model asks.
     [Fact]
     public async Task Send_NeverTouchesGeolocation()
@@ -57,7 +57,7 @@ public sealed class LocationAssetsTests
         Assert.Contains("get_current_location: () => locationForTool()", app);
     }
 
-    // AC3 (ADR 0090) — the tool checks the grant BEFORE any capture, so a page that is not authorized answers
+    // AC3 (ADR 0093) — the tool checks the grant BEFORE any capture, so a page that is not authorized answers
     // not_shared without calling getCurrentPosition (no prompt on the Permissions-API leg). A denial on the
     // capture answers not_shared as well, and clears the stored grant through handlePositionError.
     [Fact]
@@ -74,7 +74,7 @@ public sealed class LocationAssetsTests
         Assert.Contains("status: \"no_fix\"", tool);
     }
 
-    // AC4 (ADR 0090) — a stale fix is never returned (the model must not be told the user is somewhere they
+    // AC4 (ADR 0093) — a stale fix is never returned (the model must not be told the user is somewhere they
     // left half an hour ago), and the one fresh capture is bounded BELOW the server's wait for an automatic
     // client tool, so the page answers no_fix before the server gives up on it.
     [Fact]

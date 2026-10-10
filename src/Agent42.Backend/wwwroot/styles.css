@@ -936,6 +936,12 @@ body {
   justify-content: center;
 }
 
+/* Sign out is a link, icon-only so the two labelled buttons keep their width. */
+.sidebar__footer-actions .sidebar__signout {
+  flex: 0 0 auto;
+  text-decoration: none;
+}
+
 .sidebar__settings {
   display: inline-flex;
   align-items: center;
@@ -1124,6 +1130,78 @@ body {
 .msg__copy:focus-visible { opacity: 1; }
 
 .msg__copy:hover { background: var(--line-soft); color: var(--amber); }
+
+/* Edit, regenerate and fork (ADR 0092): a quiet row of text actions under a message, ALWAYS visible rather than
+   hover-revealed — a hover reveal still fires on touch and an opacity-0 button still gets tapped (gotchas.md).
+   Placed by syncMessageActions in editfork.js, and absent while a turn streams. */
+.msg__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.msg__action {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-faint);
+  font: 400 11.5px/1.4 var(--mono);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.msg__action:hover,
+.msg__action:focus-visible { background: var(--line-soft); color: var(--amber); }
+
+/* The inline editor that replaces the last user bubble's content while it is edited. */
+.msg__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: min(60ch, 70vw);
+}
+
+.msg__edit-input {
+  width: 100%;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.msg__edit-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.msg__edit-cancel,
+.msg__edit-send {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: 400 12.5px/1.3 var(--mono);
+  cursor: pointer;
+}
+
+.msg__edit-send { border-color: var(--amber); color: var(--amber); }
+
+.msg__edit-cancel:hover,
+.msg__edit-send:hover { background: var(--line-soft); }
+
+/* A one-line note from an edit, regenerate or fork that could not go ahead (the thread__stopped look). */
+.thread__notice {
+  margin: 4px 0 12px;
+  color: var(--ink-dim);
+  font-size: 0.85rem;
+  font-style: italic;
+}
 
 /* Follow-up suggestion chips under a reply: up to 3 clickable prompts. Clicking one sends it. */
 .msg__suggestions {
@@ -2786,6 +2864,10 @@ body {
 .share-link { margin-top: 14px; }
 .share-link__actions { display: flex; gap: 8px; margin-top: 10px; }
 .share-link__revoke:hover { border-color: var(--red); color: var(--red); }
+
+/* Download a copy (ADR 0091) — anchors dressed as the dialog's buttons. */
+.export-links { display: flex; gap: 8px; margin-top: 6px; }
+.export-links .agent-form__btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 /* model providers (ADR 0018) — reuses the agent-form styling; a few list/row specifics below. */
 .providers__head {

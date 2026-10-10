@@ -83,7 +83,66 @@ public static partial class AgentApi
             return Results.NoContent();
         });
 
+        // Fork from here (ADR 0092): a new listed conversation holding this one through a chosen exchange.
+        app.MapPost("/api/conversations/{conversationId}/fork", ForkConversationAsync);
+
         // ————— read-only share links (ADR 0035) —————
+    }
+
+    // The fork route. The order is the safety argument: the source must be LISTED (one check that refuses an
+    // incognito, unknown or other user's id), the new id is generated here and never taken from the caller, and the
+    // new conversation is listed only AFTER its grain holds the session, so a failure leaves an unlisted grain and
+    // never a listed empty conversation (the ADR 0070 shape).
+    private static async Task<IResult> ForkConversationAsync(
+        string conversationId, ForkRequest request, IGrainFactory grains, HttpContext http)
+    {
+        var userId = http.GetUserId();
+        var index = grains.GetGrain<IConversationIndexGrain>(userId);
+        var source = (await index.GetConversationsAsync()).FirstOrDefault(c => c.Id == conversationId);
+        if (source is null)
+        {
+            return Results.NotFound();
+        }
+
+        var result = await grains.GetGrain<IAgentGrain>(AgentKey(userId, conversationId)).CreateForkAsync(
+            request.ThroughUserTurn, request.ExpectedUserTurnCount, request.ExpectedLastUserTextHash ?? "");
+        if (result is not { Outcome: HistoryEditOutcome.Ok, Fork: { } fork })
+        {
+            return HistoryEditConflict(result.Outcome);
+        }
+
+        var forkId = Guid.NewGuid().ToString();
+        if (!await grains.GetGrain<IAgentGrain>(AgentKey(userId, forkId)).InitializeFromForkAsync(fork))
+        {
+            // A fresh random id names an empty grain, so this is unreachable short of a collision.
+            return Results.Conflict(new { error = "The fork could not be created." });
+        }
+
+        await index.TouchAsync(forkId, ForkTitle(source.Title), source.AgentId, source.AgentName);
+        if (source.GroupId is { } groupId)
+        {
+            await index.SetGroupAsync(forkId, groupId);
+        }
+
+        return Results.Created($"/api/conversations/{forkId}", new ForkResponse(forkId));
+    }
+
+    private const string ForkTitleSuffix = " (fork)";
+
+    // The source title with " (fork)" appended, capped FIRST so the index's 60-character cap
+    // (ConversationIndexGrain.MaxTitleLength) never cuts the suffix off. A source title the index already capped
+    // ends in "…"; that is dropped before measuring and put back when this cut is needed too.
+    private static string ForkTitle(string sourceTitle)
+    {
+        const int maxTitleLength = 60;
+        var title = sourceTitle.Trim().TrimEnd('…').TrimEnd();
+        var room = maxTitleLength - ForkTitleSuffix.Length;
+        if (title.Length > room)
+        {
+            title = title[..(room - 1)].TrimEnd() + "…";
+        }
+
+        return title + ForkTitleSuffix;
     }
 
     // Streaming chat: sends a prompt to the conversation's agent grain and streams
@@ -94,24 +153,16 @@ public static partial class AgentApi
         var userId = http.GetUserId();
         var agent = grains.GetGrain<IAgentGrain>(AgentKey(userId, conversationId));
 
-        // Resolve the ids the client sends back into refs, server-side, so a turn can only
-        // attach images that actually exist under this user's conversation key (never a
-        // client-supplied blob path). Unknown ids are skipped rather than failing the turn.
-        IReadOnlyList<AttachmentRef>? attachmentRefs = null;
-        if (request.AttachmentIds is { Count: > 0 })
+        // Edit and regenerate need the whole concurrency token (ADR 0092); a half token is a malformed request.
+        if (request.ReplaceLastTurn
+            && (request.ExpectedUserTurnCount is null || string.IsNullOrEmpty(request.ExpectedLastUserTextHash)))
         {
-            var resolved = new List<AttachmentRef>();
-            foreach (var id in request.AttachmentIds)
-            {
-                var reference = await attachments.GetAsync(AgentKey(userId, conversationId), id);
-                if (reference is not null)
-                {
-                    resolved.Add(reference);
-                }
-            }
-
-            attachmentRefs = resolved;
+            await Results.BadRequest(new { error = "replaceLastTurn needs expectedUserTurnCount and expectedLastUserTextHash" })
+                .ExecuteAsync(http);
+            return;
         }
+
+        var attachmentRefs = await ResolveAttachmentsAsync(attachments, AgentKey(userId, conversationId), request.AttachmentIds);
 
         // The client sends AgentId only on the first turn of a freshly-started agent chat.
         // Resolve the persona up front (before the index touch) so a new conversation can be
@@ -152,6 +203,16 @@ public static partial class AgentApi
             model = null;
         }
 
+        // Edit and regenerate (ADR 0092): the last turn goes as LATE as possible — after the persona lookup, the
+        // index touch and the bind, any of which may throw — so a failure there never loses the exchange. A refusal
+        // answers 409 with no stream. Once removed it is written at once; if the run below then fails, the client
+        // puts the text back in the composer.
+        if (await ReplaceLastTurnAsync(agent, request) is { } outcome && outcome != HistoryEditOutcome.Ok)
+        {
+            await HistoryEditConflict(outcome).ExecuteAsync(http);
+            return;
+        }
+
         http.Response.ContentType = "application/x-ndjson";
         await foreach (var evt in agent.ChatAsync(
             request.Message, model, attachmentRefs, request.Ephemeral,
@@ -161,6 +222,52 @@ public static partial class AgentApi
             await http.Response.Body.FlushAsync();
         }
     }
+
+    // Resolves the ids the client sends back into refs, server-side, so a turn can only attach images that actually
+    // exist under this user's conversation key (never a client-supplied blob path). Unknown ids are skipped rather
+    // than failing the turn.
+    private static async Task<IReadOnlyList<AttachmentRef>?> ResolveAttachmentsAsync(
+        IAttachmentStore attachments, string ownerKey, IReadOnlyList<string>? ids)
+    {
+        if (ids is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        var resolved = new List<AttachmentRef>();
+        foreach (var id in ids)
+        {
+            if (await attachments.GetAsync(ownerKey, id) is { } reference)
+            {
+                resolved.Add(reference);
+            }
+        }
+
+        return resolved;
+    }
+
+    // Removes the last turn for an edit or regenerate (ADR 0092), or null when this is an ordinary turn. The caller
+    // has already refused a request without both token parts.
+    private static async Task<HistoryEditOutcome?> ReplaceLastTurnAsync(IAgentGrain agent, ChatRequest request)
+        => request.ReplaceLastTurn
+            ? await agent.TruncateLastTurnAsync(
+                request.ExpectedUserTurnCount!.Value, request.ExpectedLastUserTextHash!, request.Ephemeral)
+            : null;
+
+    // The 409 for a refused edit, regenerate or fork (ADR 0092), with a message the UI shows as it is.
+    private static IResult HistoryEditConflict(HistoryEditOutcome outcome)
+        => Results.Conflict(new
+        {
+            error = outcome switch
+            {
+                HistoryEditOutcome.Stale => "This conversation changed in another tab or window. Reload it and try again.",
+                HistoryEditOutcome.Busy => "A reply is still running in this conversation. Wait for it to finish.",
+                HistoryEditOutcome.Unsupported => "Copilot chats cannot be edited, regenerated or forked.",
+                HistoryEditOutcome.NoModel => "No model provider is configured. Add one in Preferences.",
+                _ => "There is no message to replace here.",
+            },
+            outcome = outcome.ToString(),
+        });
 
     // The client tools this browser says it can run (ADR 0089), narrowed to the ones the server defines. A client
     // can only narrow the set, never name a tool of its own, and the known set is tiny, so the result is capped by

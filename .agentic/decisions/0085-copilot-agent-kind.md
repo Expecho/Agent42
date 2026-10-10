@@ -67,7 +67,7 @@ off the grain. One bad tool name fails every turn. Skill resource files are unre
 - **Shell and file tools in phase 1, in the backend container.** Lost: the container holds Cosmos access, the Data
   Protection key ring, the managed identity and every user's data.
 - **Shell and file tools in a same-replica sidecar.** Lost: the sidecar shares `localhost` with the backend, so a
-  shell could call the app port behind Easy Auth and forge `X-MS-CLIENT-PRINCIPAL-ID` (`Api/CurrentUser.cs`).
+  shell could call the app port behind Easy Auth and forge `X-MS-CLIENT-PRINCIPAL-ID` (`src/Agent42.Backend/Api/CurrentUser.cs`).
 - **Accept losing the transcript on deploy** (the runtime's local `session-state/`). Lost: measured, resume after
   wiping it throws `Session not found`, and every deploy wipes it.
 - **An Azure Files mount for the runtime's state.** Lost: new infra, and SQLite over SMB. The spike also showed no

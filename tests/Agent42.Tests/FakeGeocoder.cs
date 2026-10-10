@@ -23,7 +23,7 @@ public sealed class FakeGeocoder : IGeocoder
 
     /// <summary>
     /// How many times ANY silo's fake was handed an out-of-range fix. Process-wide, and it must stay 0: the grain
-    /// range-checks the browser's answer before the geocoder sees it (ADR 0090), so this is an invariant every
+    /// range-checks the browser's answer before the geocoder sees it (ADR 0093), so this is an invariant every
     /// parallel test can assert, not a per-test count.
     /// </summary>
     public static int InvalidCalls => Volatile.Read(ref _invalidCalls);

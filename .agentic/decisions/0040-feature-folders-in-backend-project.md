@@ -22,16 +22,16 @@ Finding the MCP OAuth routes or the share-link contract meant knowing a line ran
 
 ## Decision
 
-### 1. Twenty-five feature folders, flat namespace, same as ADR 0039
+### 1. Twenty-six feature folders, flat namespace, same as ADR 0039
 `Api/`, `Artifacts/`, `Attachments/`, `ClientTools/`, `Configuration/`, `Conversations/`, `Copilot/`,
-`Documents/`, `ImageGeneration/`, `Location/`, `Mcp/`, `Memory/`, `Models/`, `Orleans/`, `Push/`, `Search/`,
+`Documents/`, `Export/`, `ImageGeneration/`, `Location/`, `Mcp/`, `Memory/`, `Models/`, `Orleans/`, `Push/`, `Search/`,
 `SharedState/`, `Sharing/`, `Speech/`, `StoredAgents/`, `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`.
 
 *(This heading read "Twelve" while listing seventeen — it had picked up the count of the endpoint
 groups in §3. Corrected, along with `UserSkills/` (ADR 0049), `Calendar/` (ADR 0053) and `Memory/`
 (ADR 0056), then again for `Search/` (ADR 0061), `Orleans/` (ADR 0062) and the REMOVAL of `Calendar/`
 (ADR 0063), and for `Artifacts/` (ADR 0084, missing until ADR 0085), `Copilot/` (ADR 0085) and `ClientTools/` and
-`SharedState/` (ADR 0089) — `Memory/` holding `HindsightRegistration`, which lives in its own folder because adding
+`SharedState/` (ADR 0089), and `Export/` (ADR 0091) — `Memory/` holding `HindsightRegistration`, which lives in its own folder because adding
 its branch to `Program.cs` inline breached `cognitive_complexity_max`, the same reason
 `DocumentIndexRegistration` sits in `Documents/`. A folder list is a factual inventory, not a
 decision, so it is corrected in place; `ProjectLayoutTests.ExpectedFolders` asserts it by name so the

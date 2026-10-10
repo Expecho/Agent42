@@ -58,6 +58,12 @@ param authTenantId string
 @description('Object ids of the only Entra ID users allowed to sign in. Defense-in-depth next to the assignment requirement on the enterprise app.')
 param authAllowedUserObjectIds array
 
+@description('Account Entra signs in without showing the account picker. Empty sends no hint (ADR 0090).')
+param authLoginHint string
+
+@description('Easy Auth session lifetime as a .NET TimeSpan, e.g. 14.00:00:00 (ADR 0090).')
+param authSessionLifetime string
+
 @description('CPU cores allocated to the backend container, e.g. 0.5.')
 param cpu string
 
@@ -372,6 +378,15 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
         '/api/local-bridge'
       ]
     }
+    // ADR 0090: the session cookie outlives the 8-hour platform default, so a returning user is not sent back
+    // to Entra on every open. The app reads only X-MS-CLIENT-PRINCIPAL (CurrentUser.cs), never an Entra token,
+    // so nothing breaks when the session outlives the tokens it was issued with.
+    login: {
+      cookieExpiration: {
+        convention: 'FixedTime'
+        timeToExpiration: authSessionLifetime
+      }
+    }
     identityProviders: {
       azureActiveDirectory: {
         enabled: true
@@ -379,6 +394,12 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
           clientId: authClientId
           clientSecretSettingName: 'microsoft-provider-authentication-secret'
           openIdIssuer: '${environment().authentication.loginEndpoint}${authTenantId}/v2.0'
+        }
+        // ADR 0090: both allowed accounts live in one tenant, so without a hint Entra shows its account
+        // picker on every sign-in. The hint makes it sign straight in. Reaching the other account means
+        // Sign out (the sidebar link to /.auth/logout) and then choosing it at Entra.
+        login: {
+          loginParameters: empty(authLoginHint) ? [] : [ 'login_hint=${authLoginHint}' ]
         }
         validation: {
           defaultAuthorizationPolicy: {

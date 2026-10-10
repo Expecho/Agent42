@@ -103,7 +103,7 @@ public sealed class ProjectLayoutTests
             "Agent42.Backend",
             [
                 "Api", "Artifacts", "Attachments", "ClientTools", "Configuration", "Conversations", "Copilot",
-                "Documents", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
+                "Documents", "Export", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
                 "Search", "SharedState", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills",
                 "Users", "Web", "wwwroot",
             ]
@@ -251,6 +251,7 @@ public sealed class ProjectLayoutTests
         { "confighealth.js", "wireConfigHealth" },
         { "conversations.js", "wireConversations" },
         { "drawer.js", "wireDrawer" },
+        { "editfork.js", "wireEditFork" },
         { "groups.js", "wireGroups" },
         { "location.js", "initLocation" },
         { "mcp.js", "wireMcp" },

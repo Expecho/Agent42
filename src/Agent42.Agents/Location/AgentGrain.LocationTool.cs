@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace Agent42.Agents;
 
 /// <summary>
-/// The <c>get_current_location</c> tool (ADR 0012, made a client tool by ADR 0090). The browser answers it
+/// The <c>get_current_location</c> tool (ADR 0012, made a client tool by ADR 0093). The browser answers it
 /// through the ADR 0089 round trip only when the model calls it, so the position no longer rides every chat
 /// request. This tool is deliberately NOT an SSRF sink and must not grow an address guard; see the ADR 0012
 /// gotchas.
@@ -31,7 +31,7 @@ public sealed partial class AgentGrain
     /// <c>get_current_location</c>.
     ///
     /// <para><b>It takes no parameters, and must never grow one.</b> The position comes from the
-    /// browser, as its answer to this client tool (ADR 0090) — the model does not get to say where the
+    /// browser, as its answer to this client tool (ADR 0093) — the model does not get to say where the
     /// user is, or to name a place to look up. The answer is parsed as numbers and range-checked with
     /// <see cref="UserLocation.IsValid"/> before the geocoder sees it; anything else is "no usable fix".
     /// That, with the geocoder's config-pinned host, is what keeps the outbound geocode call from being an

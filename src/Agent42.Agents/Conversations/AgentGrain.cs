@@ -215,7 +215,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// its own write. Non-reentrancy is not the argument that makes this safe — <c>ChatAsync</c> is an
     /// <c>IAsyncEnumerable</c> method that suspends between <c>yield return</c>s — the explicit clear is.
     /// It is the archetype of the turn-scoped fields below (the user's position was the first, until ADR
-    /// 0090 made location a client tool).</para>
+    /// 0093 made location a client tool).</para>
     /// </summary>
     private bool _ephemeral;
 
@@ -1313,10 +1313,20 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         value is not null ? JsonSerializer.Serialize(value) : null;
 
     public Task<IReadOnlyList<ChatTurn>> GetHistoryAsync()
+        => Task.FromResult<IReadOnlyList<ChatTurn>>(ProjectHistory().Select(p => p.Turn).ToList());
+
+    /// <summary>
+    /// The one history projection (<see cref="GetHistoryAsync"/>, search ordinals, ADR 0046 recovery), with each
+    /// turn tagged by the SESSION user turn it belongs to: the 0-based index of the user message that opened its
+    /// exchange, or -1 for a turn before the first user message. Edit, regenerate and fork (ADR 0092) map a
+    /// client-visible position to a session position through this walk only, never through a second count
+    /// (gotcha "Chat-search ordinals must come from ONE projection").
+    /// </summary>
+    private List<ProjectedTurn> ProjectHistory()
     {
         if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? stored) || stored is null)
         {
-            return Task.FromResult<IReadOnlyList<ChatTurn>>([]);
+            return [];
         }
 
         // A research turn still running is hidden whole (ADR 0082): the loop persists each finished iteration
@@ -1331,7 +1341,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // provider shape, so that is a silently empty chip on a common path, not a corner case.
         var toolResults = CollectToolResults(messages);
 
-        var turns = new List<ChatTurn>();
+        var turns = new List<ProjectedTurn>();
         var userTurnIndex = 0;
         // The tool-call chain currently open: filled as the walk passes the assistant message that made
         // the calls, flushed onto the assistant turn that finally speaks (ADR 0080). Nothing here adds,
@@ -1355,12 +1365,17 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
             if (turn is not null)
             {
-                turns.Add(turn);
+                // ProjectUserTurn has already advanced the index past this message, so the exchange it opened
+                // (and every assistant turn after it) is one behind.
+                turns.Add(new ProjectedTurn(turn, userTurnIndex - 1));
             }
         }
 
-        return Task.FromResult<IReadOnlyList<ChatTurn>>(turns);
+        return turns;
     }
+
+    /// <summary>One projected turn and the session user turn it belongs to (see <see cref="ProjectHistory"/>).</summary>
+    private sealed record ProjectedTurn(ChatTurn Turn, int SessionUserTurn);
 
     // Every tool result in the history, keyed by the call it answers. Whole-history and position-blind on
     // purpose — see the call site. Call ids are unique per call, so the last writer only ever wins over an

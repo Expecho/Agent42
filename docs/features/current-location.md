@@ -2,7 +2,7 @@
 
 > A `get_current_location` tool that returns the user's coordinates and a reverse-geocoded
 > street address — for local weather, what's nearby, travel times, and "where am I". ADR 0012;
-> a client tool since ADR 0090.
+> a client tool since ADR 0093.
 
 ## What it is
 
@@ -17,7 +17,7 @@ address.
 
 ## How it works
 
-`navigator.geolocation` is a *browser* API and tools run *server-side*. Since ADR 0090 the tool is a
+`navigator.geolocation` is a *browser* API and tools run *server-side*. Since ADR 0093 the tool is a
 **client tool** (ADR 0089): the call streams to the browser, the turn waits, the browser posts its fix,
 and the grain validates and geocodes it. Nothing location-related rides the chat request.
 

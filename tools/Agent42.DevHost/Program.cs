@@ -175,7 +175,7 @@ builder.Services.AddSingleton<IWebDocumentFetcher, InMemoryWebDocumentFetcher>()
 builder.Services.AddSingleton<IDocumentIngestor, WebDocumentIngestor>();
 
 // Location offline (ADR 0012): the get_current_location tool path runs end to end — "where am i" makes the
-// canned model call it, and the browser answers it with its real fix as a client tool (ADR 0090) — but
+// canned model call it, and the browser answers it with its real fix as a client tool (ADR 0093) — but
 // nothing is reverse-geocoded, so no Google API key is needed and no request leaves the machine. The tool
 // reports coordinates without a street address.
 builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();

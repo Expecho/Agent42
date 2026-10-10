@@ -77,7 +77,7 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.Contains(turns!, t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text));
     }
 
-    // AC13 (ADR 0090) — a PWA still running the old cached shell posts a `location` member that ChatRequest no
+    // AC13 (ADR 0093) — a PWA still running the old cached shell posts a `location` member that ChatRequest no
     // longer has. System.Text.Json ignores an unknown member by default, so the turn still binds and streams; and
     // the posted position is NOT used — that old client never advertised the location client tool, so the tool
     // answers that no browser can read the location, until the service worker swaps the shell.

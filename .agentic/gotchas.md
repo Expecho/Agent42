@@ -533,7 +533,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (which also runs when a client abandons the stream, on the enumerator's disposal) and a reset on entry to
   `EnqueuePromptAsync` and `ReceiveReminder`. Any future per-turn field on this grain inherits this trap; PII
   especially should not sit in memory between turns — which is why the user's position, the family's first
-  member (ADR 0012), is no longer a field at all: since ADR 0090 the browser answers the
+  member (ADR 0012), is no longer a field at all: since ADR 0093 the browser answers the
   `get_current_location` client tool, so the fix lives only in one tool call's locals.
   **The family is now three:** `_ephemeral`, `_interactiveTurn` and — since ADR 0066 — `_webDocumentIngested`,
   all declared together and all cleared in the same three places (`ChatAsync`'s `finally`, and on entry to
@@ -563,7 +563,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `ReceiveReminder_HasNoUserLocation`, `Location_IsNotPersisted`),
   `tests/Agent42.Tests/ProjectLayoutTests.cs` (`TurnScopedField_IsDeclaredInTheCorePart`),
   `tests/Agent42.Tests/McpReauthTests.cs` (`ABackgroundRun_DoesNotConsumeTheNotice`),
-  `.agentic/decisions/0090-location-as-a-client-tool.md`, `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
+  `.agentic/decisions/0093-location-as-a-client-tool.md`, `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
 - **Verified:** 2026-10-09
 
 ### Ephemeral chat: `_ephemeral` is the same turn-scoped trap, and scheduling must be refused inside the tool
@@ -626,7 +626,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   rests on two properties, and **both are load-bearing**: (1) the host is **fixed** (`maps.googleapis.com`,
   config-pinned, never model-supplied), and (2) the tool takes **zero model-supplied parameters** — the
   only variable input is a lat/lon pair from the *browser*, range-validated server-side, and a `double`
-  cannot inject a host. Since ADR 0090 that pair arrives as the client tool's answer through
+  cannot inject a host. Since ADR 0093 that pair arrives as the client tool's answer through
   `POST /api/chat/{id}/tool-result`, not on the chat request: `ParseBrowserFix` reads it as JSON numbers and
   checks `UserLocation.IsValid`, and anything else never reaches the geocoder
   (`GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`, `PostResult_OutOfRangeFix_IsNotGeocoded`). The failure mode is a later contributor dissolving property (2) without noticing:
@@ -638,7 +638,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Location/GoogleGeocoder.cs`, `src/Agent42.Agents/Location/AgentGrain.LocationTool.cs`
   (`GetCurrentLocationAsync`, `ParseBrowserFix`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`GetCurrentLocation_ExposesNoParameters`, `GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`),
-  `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0090-location-as-a-client-tool.md`
+  `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0093-location-as-a-client-tool.md`
 - **Verified:** 2026-10-09
 
 ### WebKit has no geolocation Permissions API — gating on `state === "granted"` is dead on iOS
@@ -651,7 +651,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (Chrome/Edge/Firefox, desktop + Android), and otherwise a `localStorage` flag set **only after a
   `getCurrentPosition()` actually succeeded** (an already-granted permission resolves without re-prompting,
   so capture under the flag never ambushes the user), cleared on a `PERMISSION_DENIED` (code 1) from any
-  later capture — which is how a revocation in site settings gets noticed. Related and separate (ADR 0090):
+  later capture — which is how a revocation in site settings gets noticed. Related and separate (ADR 0093):
   the send path must **never** touch geolocation — the position is no longer sent with a message at all. The
   `get_current_location` client tool (`locationForTool`) answers from the out-of-band cache when it is fresh, and
   otherwise takes ONE capture bounded below the server's wait, **only after `isCaptureAuthorized()`**. On the
@@ -661,7 +661,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   as the Chrome-on-Android speech gotcha.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/location.js` (`isCaptureAuthorized`, `locationForTool`,
   `handlePositionError`), `tests/Agent42.Tests/LocationAssetsTests.cs`,
-  `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0090-location-as-a-client-tool.md`
+  `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0093-location-as-a-client-tool.md`
 - **Verified:** 2026-10-09
 
 ### OTel redacts an HttpClient span's query string by default — and one env var un-redacts it
@@ -3999,7 +3999,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   agent turn" entry). Orleans delivers the call event at once and keeps the stream alive across a 150 s wait
   (measured), and ACA's request timeout is 240 s, so `confirm_action`'s 120 s fits. Also: `<dialog>` keeps its old
   `returnValue` when Esc closes it, so the confirm dialog resets it before `showModal()`, or Esc after an Approve is a yes.
-  **(5) A client tool may keep its own selectable key** (ADR 0090): `get_current_location` is in
+  **(5) A client tool may keep its own selectable key** (ADR 0093): `get_current_location` is in
   `ClientToolLimits.ToolNames` but maps to `location`, not `browser_tools` — moving it would turn it OFF for every
   older saved selection (ADR 0021). So a loop over `ToolNames` must not assume `browser_tools`
   (`ToolCatalogTests.BrowserToolNames`, `Location_IsAClientTool_ButKeepsItsOwnKey`).
@@ -4032,3 +4032,62 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/SharedStateTests.cs`, `tests/Agent42.Tests/SharedStatePatchTests.cs`,
   `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
 - **Verified:** 2026-10-09
+
+### `ZipArchive` writes synchronously even through its async APIs — never hand it the response body
+
+- **Claim:** in .NET 10.0.9, `ZipArchive.CreateAsync` + `ZipArchiveEntry.OpenAsync` + `DisposeAsync` still do a
+  **synchronous** write: the entry stream's `WrappedStream` has no `DisposeAsync` override, so `Stream.DisposeAsync`
+  falls back to `Dispose`, and `DeflateStream.PurgeBuffers` flushes with a sync `Write`. On a Kestrel or TestServer
+  response body that throws `InvalidOperationException: Synchronous operations are disallowed`. Once headers have
+  been flushed, the client sees only a broken download. Build the archive into a `FileBufferingWriteStream` (memory up
+  to a threshold, then a temp file), then `DrainBufferAsync` it to the body. Don't set `AllowSynchronousIO`, which
+  would block a thread-pool thread for every chunk.
+- **Evidence:** `src/Agent42.Backend/Export/AgentApi.Export.cs` (`ZipResult`),
+  `tests/Agent42.Tests/ConversationExportApiTests.cs` (every ZIP test goes through TestServer),
+  `.agentic/decisions/0091-owner-export-of-conversations.md`
+- **Verified:** 2026-10-10
+
+### A fork must COPY blobs: every proxy resolves a blob by `(ownerKey, id)`, never by id alone
+
+- **Claim:** user images, generated images and artifact versions are stored at `{userId}/{conversationId}/{id}`,
+  and the attachment proxy (`DownloadAttachmentAsync`) and the artifact routes (`ServeArtifactVersionAsync`) look
+  them up under the requesting conversation's key. A conversation that only REFERENCED another conversation's
+  blobs would 404 on every image and artifact. So `InitializeFromForkAsync` copies each kept blob with
+  `IAttachmentStore.CopyAsync`, which keeps the SAME id. That way nothing inside the copied session needs
+  rewriting: `assistantImageId` lives in message properties, and session image URLs are re-minted from
+  `AttachmentRef.BlobPath` every turn. Only `BlobPath` changes. An artifact version holds only an attachment id,
+  so its ref has to be looked up under the SOURCE key first. A version whose blob is missing is dropped, which
+  is why new versions are numbered after the last version rather than after the count. Any new
+  `IAttachmentStore` must implement `CopyAsync`; so must the two test fakes.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (`CopyForkBlobAsync`,
+  `CopyForkArtifactsAsync`), `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` (`CopyAsync`),
+  `tests/Agent42.Tests/ConversationEditForkApiTests.cs` (`Fork_AttachmentsAndArtifacts_AreServedUnderTheForkId`),
+  `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
+- **Verified:** 2026-10-10
+
+### Truncating history removes WHOLE session turns, and re-anchors everything that indexes off them
+
+- **Claim:** edit and regenerate (`TruncateLastTurnAsync`) remove the last session user message and everything
+  after it, the tail mirror of the retention prune. Six things go with it, and each one is a defect if forgotten:
+  1. `GeneratedImages` entries of the removed messages.
+  2. Artifact versions harvested from their create/update RESULTS (joined to calls by `CallId`).
+  3. `TurnAttachments`, which is TRUNCATED to the remaining user-turn count. Never "remove the last entry": a
+     failed run leaves an orphan trailing entry, and removing just that one keeps the real turn's refs and
+     mis-joins the next turn.
+  4. `_ephemeralOrdinals` at or above the new projected count.
+  5. The search index, through `ReconcileSearchIndexAfterPruneAsync(pruned: true)`, since there is no
+     delete-by-ordinal.
+  6. On an incognito truncate of a never-written conversation, no write at all, and `_indexedTurnCount` clamped
+     instead. A conversation with a stored record always takes the persisted path, whatever the client's flag says.
+
+  The blobs of removed artifact versions and images are orphaned (the existing purge gap). Artifact versions can
+  therefore have GAPS, so never describe them as "1 to N".
+
+  The client's position maps to a session position through `ProjectHistory()` only (the
+  `GetHistoryAsync` walk), never a second count. A blank user turn does not project, yet it still opens a session
+  turn. `_runsInFlight` is checked BEFORE the token, because `VisibleHistory` hides a running research turn.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (`RemoveLastTurn`,
+  `TruncateLastTurnAsync`), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ProjectHistory`),
+  `tests/Agent42.Tests/EditRegenerateForkTests.cs` (`Truncate_WithOrphanTurnAttachment_StaysAligned` fails when step
+  3 is "remove the last entry", checked by mutation), `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
+- **Verified:** 2026-10-10

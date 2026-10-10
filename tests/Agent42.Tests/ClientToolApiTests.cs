@@ -150,7 +150,7 @@ public sealed class ClientToolApiTests(SharedApiFixture fixture) : SharedCluster
         Assert.Equal(HttpStatusCode.BadRequest, (await Client.SendAsync(malformed)).StatusCode);
     }
 
-    // AC1 (ADR 0090): get_current_location streams as a client tool, and the fix the browser posts is geocoded
+    // AC1 (ADR 0093): get_current_location streams as a client tool, and the fix the browser posts is geocoded
     // into the tool's result. "where am i" is the fake model's location trigger.
     [Fact]
     public async Task Chat_LocationToolCall_StreamsAsClientTool_AndPostedFixGeocodes()
@@ -169,7 +169,7 @@ public sealed class ClientToolApiTests(SharedApiFixture fixture) : SharedCluster
         }
     }
 
-    // AC5 (ADR 0090): the tool-result POST is now the SSRF input of the geocode call. An out-of-range fix is
+    // AC5 (ADR 0093): the tool-result POST is now the SSRF input of the geocode call. An out-of-range fix is
     // accepted as a post (the endpoint does not know tool shapes) but never reaches the geocoder.
     [Fact]
     public async Task PostResult_OutOfRangeFix_IsNotGeocoded()

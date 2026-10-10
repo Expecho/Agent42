@@ -1,6 +1,6 @@
 /* Agent 42 — read-only share link (ADR 0035). Split out of app.js (ADR 0041). */
 
-import { shareLinkCloseBtn, shareLinkConvTitle, shareLinkCopyBtn, shareLinkCreateBtn, shareLinkDialog, shareLinkResult, shareLinkRevokeBtn, shareLinkShareBtn, shareLinkUrl, topbarShareBtn } from "./dom.js";
+import { exportJsonLink, exportMarkdownLink, exportZipLink, shareLinkCloseBtn, shareLinkConvTitle, shareLinkCopyBtn, shareLinkCreateBtn, shareLinkDialog, shareLinkResult, shareLinkRevokeBtn, shareLinkShareBtn, shareLinkUrl, topbarShareBtn } from "./dom.js";
 import { streaming } from "./send.js";
 
 let shareLinkConvId = null;
@@ -50,6 +50,11 @@ export async function openShareLink(convId, title) {
                        // render “undefined” and fetch /api/conversations//share
   shareLinkConvId = convId;
   shareLinkConvTitleText = title;
+  // The download links (ADR 0091) ride this dialog's gate: it only opens for a persisted, non-empty chat.
+  const exportBase = `/api/conversations/${encodeURIComponent(convId)}/export?format=`;
+  exportMarkdownLink.href = exportBase + "markdown";
+  exportJsonLink.href = exportBase + "json";
+  exportZipLink.href = exportBase + "zip";
   shareLinkConvTitle.textContent = `“${title}”`;
   renderShareLinkState(null); // optimistic unshared until the fetch resolves
   shareLinkCreateBtn.disabled = false;

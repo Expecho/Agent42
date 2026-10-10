@@ -8,6 +8,7 @@ import { cachePut } from "./cache.js";
 import { autosize } from "./composer.js";
 import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./conversations.js";
 import { form, incognitoBtn, input, modelSelect, stopBtn, thread } from "./dom.js";
+import { syncMessageActions } from "./editfork.js";
 import { watchMcpReconnect } from "./mcp.js";
 import { renderResearchTodos } from "./research.js";
 import { applyModelAvailability } from "./models.js";
@@ -157,13 +158,16 @@ export async function stopGeneration({ abortLocally = false } = {}) {
 }
 
 // `replay` re-sends an earlier turn (resendAfterReconnect): its attachments, which are already uploaded to this
-// conversation, and the composer left alone — the user may be typing their next message there.
+// conversation, and the composer left alone — the user may be typing their next message there. An edit or
+// regenerate (editfork.js, ADR 0092) is a replay with `replaceLastTurn` and the concurrency token: the server
+// removes the last exchange before this turn runs, and if the turn then fails the text goes back in the composer.
 export async function send(prompt, replay = null) {
   reconnectWatch?.cancel(); // a newer turn: the previous one is no longer worth re-sending
   reconnectWatch = null;
   deferredResend = null;
   if (!replay) stopSpeech(); // capture the dictated prompt and reset the mic before clearing the box
   streaming = true;
+  syncMessageActions(); // no edit, regenerate or fork while a turn streams
   modelSelect.disabled = true;
   // The stop control exists only while there is something to stop. Revealed here rather than on the first
   // delta so it covers the wait before the first token — which is exactly when a user reaches for it.
@@ -236,9 +240,13 @@ export async function send(prompt, replay = null) {
         // The client tools this page can run (ADR 0089). The server defines them and intersects this list with its
         // own; a call to one the page did not list answers "unavailable" without reaching it.
         clientTools: CLIENT_TOOLS,
+        // Edit and regenerate (ADR 0092): replace the last exchange, if the history is still the one read.
+        replaceLastTurn: replay?.replaceLastTurn ?? false,
+        expectedUserTurnCount: replay?.expectedUserTurnCount ?? null,
+        expectedLastUserTextHash: replay?.expectedLastUserTextHash ?? null,
       }),
     });
-    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok || !res.body) throw await httpError(res);
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -341,7 +349,7 @@ export async function send(prompt, replay = null) {
     if (err.name === "AbortError") {
       setAgentMarkdown(agentMsg, answer);
       voice.onStreamEnd();
-    } else if (await recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)) {
+    } else if (!(err.status && replay?.replaceLastTurn) && await recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)) {
       // The stream died but the turn did not. Finish exactly as the success path does — the reply
       // IS on the server, so the persona is bound and the conversation is shareable.
       closeClientToolDialogs();
@@ -350,7 +358,14 @@ export async function send(prompt, replay = null) {
       setTopbarShare(convId, conversations.find((c) => c.id === convId)?.title ?? "This conversation");
     } else {
       agentMsg.classList.add("is-error");
-      setAgentMarkdown(agentMsg, `**Transmission failed.** ${err.message ?? err}`);
+      // A refused edit or regenerate (409) is not a transmission failure: the server says why, and changed nothing.
+      setAgentMarkdown(agentMsg, err.status === 409 ? err.message : `**Transmission failed.** ${err.message ?? err}`);
+      // An edit or regenerate that did not produce a reply: the old exchange may already be gone (ADR 0092), so
+      // the text goes back where the user can send it again.
+      if (replay?.replaceLastTurn && !input.value) {
+        input.value = prompt;
+        autosize();
+      }
     }
   } finally {
     // Settle the reasoning disclosure here, not in each tail (ADR 0071). `done` closes it on the happy
@@ -369,6 +384,7 @@ export async function send(prompt, replay = null) {
     sendAbort = null;
     stopBtn.hidden = true;
     streaming = false;
+    syncMessageActions();
     modelSelect.disabled = modelSelect.options.length === 0;
     applyModelAvailability(); // keep the composer gated if there's still no model (ADR 0019)
     input.focus();
@@ -378,6 +394,15 @@ export async function send(prompt, replay = null) {
     deferredResend = null;
     next?.();
   }
+}
+
+// The error for a non-OK chat response, carrying the server's own message when it sent one (a 409 from an edit or
+// regenerate explains itself) and the status, which tells the catch the server answered rather than went away.
+async function httpError(res) {
+  const body = await res.json().catch(() => null);
+  const err = new Error(body?.error ?? `HTTP ${res.status}`);
+  err.status = res.status;
+  return err;
 }
 
 export function wireSend() {

@@ -88,7 +88,7 @@ public sealed partial class AgentGrain
         }
     }
 
-    // The tools a Copilot chat never gets, whatever its selection (ADR 0089): the client tools (since ADR 0090
+    // The tools a Copilot chat never gets, whatever its selection (ADR 0089): the client tools (since ADR 0093
     // including get_current_location, so a Copilot chat has no location) and
     // update_shared_state wait on, or route through, the grain's own run (an async-local broker, the per-run
     // snapshot), which Copilot's RPC thread is not part of, and a 120 s wait under its RPC timeout is unmeasured.

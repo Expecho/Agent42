@@ -1883,7 +1883,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         => System.Text.RegularExpressions.Regex.Matches(session, @"\[tools:[^\]]*\]")
             .Sum(m => System.Text.Encoding.UTF8.GetByteCount(m.Value));
 
-    // ---- User location (ADR 0012, a client tool since ADR 0090) ----
+    // ---- User location (ADR 0012, a client tool since ADR 0093) ----
 
     // A fix on the Dam in Amsterdam. FakeGeocoder resolves any valid fix to one canned address.
     private static UserLocation Dam(DateTimeOffset? capturedAt = null) =>
@@ -1977,7 +1977,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
     // AC11 — no location state is persisted or carried between turns. A later turn on the same warm
     // activation, with no browser to answer, must not see the earlier turn's fix: there is no field to
-    // leak it through any more (ADR 0090), and this pins that nothing grows back.
+    // leak it through any more (ADR 0093), and this pins that nothing grows back.
     //
     // Both assertions are made on the turn's OWN ToolCallEnd result, not on the reply text. That is not
     // fussiness: the fake echoes every tool result it can see, and by turn 2 the model legitimately sees
@@ -2873,7 +2873,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         return events;
     }
 
-    // Same, but from a browser that answers get_current_location with this fix (ADR 0090), in the shape
+    // Same, but from a browser that answers get_current_location with this fix (ADR 0093), in the shape
     // location.js posts it.
     private static Task<List<AgentStreamEvent>> ChatAt(IAgentGrain agent, string message, UserLocation location)
         => ChatAnsweringLocation(agent, message, System.Text.Json.JsonSerializer.Serialize(new

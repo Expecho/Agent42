@@ -112,6 +112,18 @@
             </span>
             Usage
           </button>
+          <!-- Sign out (ADR 0090): a plain link to Easy Auth's own endpoint, no JS. It ends the session so the
+               next sign-in can pick the other account, which the configured login_hint otherwise skips past.
+               Production only: DevHost has no Easy Auth, so this 404s locally. -->
+          <a class="sidebar__settings sidebar__signout" id="signOutLink"
+             href="/.auth/logout?post_logout_redirect_uri=/" title="Sign out" aria-label="Sign out">
+            <span class="sidebar__gear" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M6.2 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h2.7M10.3 11l3-3-3-3M13.2 8H6.2"
+                      stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </a>
         </div>
         <span class="dont-panic">DON'T&nbsp;PANIC</span>
       </footer>
@@ -497,6 +509,16 @@
                 </div>
                 <p class="agent-form__note">Notify me when an agent replies while I'm away — a push to this device (a scheduled prompt or an agent-run reply). Granted per device from your browser.</p>
               </section>
+
+              <!-- Export all conversations (ADR 0091): export.js downloads one ZIP per part, following X-Export-Next. -->
+              <section class="agent-form__section">
+                <span class="agent-form__label">// export</span>
+                <div class="location-row">
+                  <span class="location-row__status" id="exportAllStatus">All conversations</span>
+                  <button class="agent-form__btn" type="button" id="exportAllBtn">Export all conversations</button>
+                </div>
+                <p class="agent-form__note">Downloads every conversation as ZIP files of up to 25 each, with images and artifacts. Incognito chats aren't kept, so they aren't included.</p>
+              </section>
             </div>
 
             <div class="agent-form__panel" role="tabpanel" id="panelTools" aria-labelledby="tabTools" hidden>
@@ -661,7 +683,7 @@
        agent-dialog/agent-form styling. -->
   <dialog class="agent-dialog" id="shareLinkDialog">
     <form class="agent-form" id="shareLinkForm" method="dialog">
-      <h2 class="agent-form__title">Share read-only link</h2>
+      <h2 class="agent-form__title">Share or export</h2>
       <section class="agent-form__section">
         <p class="agent-form__note" id="shareLinkConvTitle"></p>
         <p class="agent-form__note">Anyone with this link can view this conversation — including its images —
@@ -682,6 +704,19 @@
             <button class="agent-form__btn share-link__revoke" type="button" id="shareLinkRevokeBtn">Revoke</button>
           </div>
         </div>
+      </section>
+
+      <!-- Download a copy (ADR 0091): owner-only files, unlike the public link above, so they keep the tool calls.
+           In this dialog rather than a button of their own because the dialog already has the right gate (a
+           persisted, non-empty, non-ephemeral chat). openShareLink sets the hrefs. -->
+      <section class="agent-form__section">
+        <span class="agent-form__label">// download a copy</span>
+        <div class="export-links">
+          <a class="agent-form__btn" id="exportMarkdownLink" href="#" download>Markdown</a>
+          <a class="agent-form__btn" id="exportJsonLink" href="#" download>JSON</a>
+          <a class="agent-form__btn" id="exportZipLink" href="#" download>ZIP</a>
+        </div>
+        <p class="agent-form__note">Just for you, including tool calls. ZIP adds the images and every artifact version. Reasoning and uploaded documents aren't stored, so they aren't included.</p>
       </section>
       <div class="agent-form__actions">
         <button class="agent-form__btn" type="button" id="shareLinkCloseBtn">Close</button>

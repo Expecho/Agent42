@@ -1,5 +1,5 @@
 ---
-id: 0090
+id: 0093
 date: 2026-10-09
 status: accepted
 tags: [location, tools, client-tools, privacy, pii, geocoding, frontend, copilot, no-migration]

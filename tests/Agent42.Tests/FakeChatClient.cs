@@ -194,14 +194,18 @@ public sealed partial class FakeChatClient : IChatClient
     /// </summary>
     public DateTimeOffset? StampResponseCreatedAt { get; set; }
 
-    public Task<ChatResponse> GetResponseAsync(
+    public async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
         // The research loop's AI judge (ADR 0082) asks for a structured verdict, not a reply.
         if (JudgeVerdict(messages, options) is { } verdict)
         {
-            return Task.FromResult(verdict);
+            return verdict;
         }
+
+        // Gate 0 holds the NON-streaming path too, which is the reminder's (RunAsync): the only way to keep a
+        // fired reminder in flight while a test acts (ADR 0092's edit refusals).
+        await AwaitStreamGateAsync(0, cancellationToken);
 
         var call = SelectToolCall(messages, options);
         var contents = call is not null
@@ -225,7 +229,7 @@ public sealed partial class FakeChatClient : IChatClient
             reply.CreatedAt = stamp;
         }
 
-        return Task.FromResult(new ChatResponse(reply));
+        return new ChatResponse(reply);
     }
 
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
@@ -567,7 +571,7 @@ public sealed partial class FakeChatClient : IChatClient
         });
 
     // The location tool takes NO arguments — the model cannot supply coordinates (ADR 0012); the browser
-    // answers it as a client tool (ADR 0090). So the call carries an empty argument dictionary. ToolResultEcho then surfaces whatever the grain
+    // answers it as a client tool (ADR 0093). So the call carries an empty argument dictionary. ToolResultEcho then surfaces whatever the grain
     // returned into the reply text, which is what the location tests assert on.
     private static FunctionCallContent BuildGetCurrentLocationCall() =>
         new("location-call-1", "get_current_location", new Dictionary<string, object?>());
