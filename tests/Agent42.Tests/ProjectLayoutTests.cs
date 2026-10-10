@@ -96,7 +96,7 @@ public sealed class ProjectLayoutTests
             [
                 "Artifacts", "Attachments", "ClientTools", "Conversations", "Copilot", "Documents", "ImageGeneration",
                 "Location", "Mcp", "Memory", "Models", "Push", "Research", "Scheduling", "Search", "SharedState",
-                "Sharing", "Skills", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web",
+                "Sharing", "Skills", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web", "Webhooks",
             ]
         },
         {
@@ -105,7 +105,7 @@ public sealed class ProjectLayoutTests
                 "Api", "Artifacts", "Attachments", "ClientTools", "Configuration", "Conversations", "Copilot",
                 "Documents", "Export", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
                 "Search", "SharedState", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills",
-                "Users", "Web", "wwwroot",
+                "Users", "Web", "Webhooks", "wwwroot",
             ]
         },
     };
@@ -273,6 +273,7 @@ public sealed class ProjectLayoutTests
         { "tools.js", "wireTools" },
         { "usage.js", "wireUsage" },
         { "voice.js", "wireVoice" },
+        { "webhooks.js", "wireWebhooks" },
     };
 
     // The frontend analogue of AgentApiPart_ExistsAndIsRegisteredFromTheCompositionRoot (ADR 0040): a

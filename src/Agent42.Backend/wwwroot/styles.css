@@ -3894,3 +3894,26 @@ body.is-incognito .topbar {
   /* The sheet already fills the screen here. */
   .artifact-pane__full { display: none; }
 }
+
+/* The agent's outbound webhook panel (ADR 0094): the action row wraps on a phone, and the delivery log is a plain
+   monospace list with failed rows marked. */
+.agent-webhook__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-webhook__log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.agent-webhook__row--failed { color: var(--red); }
+
+.agent-webhook__row--empty { opacity: 0.7; }

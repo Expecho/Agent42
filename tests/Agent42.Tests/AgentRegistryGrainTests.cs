@@ -250,4 +250,39 @@ public sealed class AgentRegistryGrainTests(SharedClusterFixture fixture) : Shar
         Assert.Null(updatedPlain.Kind);
         Assert.True(updatedPlain.Continuous);
     }
+
+    // AC9 (ADR 0094): deleting an agent clears its webhook — URL, secret and log.
+    [Fact]
+    public async Task AgentDelete_ClearsWebhook()
+    {
+        const string user = "registry-webhook-delete";
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        var agent = (await registry.SaveAsync(NewAgent())).Agent;
+        var webhook = Cluster.GrainFactory.GetGrain<IAgentWebhookGrain>(AgentWebhookKeys.KeyFor(user, agent.Id));
+        await webhook.SaveAsync("https://hooks.example.com/delete", "secret");
+
+        await registry.DeleteAsync(agent.Id);
+
+        var status = await webhook.GetAsync();
+        Assert.Null(status.Url);
+        Assert.False(status.HasSecret);
+        Assert.Empty(await registry.GetAllAsync());
+    }
+
+    // AC9 (ADR 0094): the clear runs BEFORE the registry write — a clear that throws leaves the agent in place, so a
+    // failure can never strand a live webhook behind a deleted agent.
+    [Fact]
+    public async Task AgentDelete_WhenWebhookClearFails_AgentSurvives()
+    {
+        const string user = "registry-" + FailingWebhookClearFilter.Marker;
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        var agent = (await registry.SaveAsync(NewAgent())).Agent;
+
+        await Assert.ThrowsAnyAsync<Exception>(() => registry.DeleteAsync(agent.Id));
+
+        Assert.Equal(agent.Id, Assert.Single(await registry.GetAllAsync()).Id);
+    }
+
+    private static AgentDefinition NewAgent()
+        => new("", "Hooky", "", "gpt-4o", "You are Hooky.", default, default);
 }
