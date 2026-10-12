@@ -203,6 +203,11 @@ builder.Services.AddSingleton<IAgentWebhookSender, NullAgentWebhookSender>();
 builder.Services.AddSingleton<IWebhookSecretProtector, WebhookSecretProtector>();
 builder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
 
+// Inbound email (ADR 0095) offline: a fixed, PUBLIC dev signing key, so POST /api/email-in is exercisable with curl and
+// a locally computed signature (HMAC-SHA256 of timestamp+token, hex). Never a real key — this file is committed.
+builder.Services.AddSingleton(new EmailConfig(SigningKey: "dev-mailgun-signing-key", Domain: "in.localhost"));
+builder.Services.AddSingleton<MailgunReplayGuard>();
+
 // The server-side MCP surface (ADR 0070), registered offline exactly as in production so the feature is
 // exercisable here: an MCP client can point at http://localhost:61326/api/agent-mcp with an agent's key.
 // Nothing about it is faked — the gate, the key directory and the grain drain are the real ones; only the

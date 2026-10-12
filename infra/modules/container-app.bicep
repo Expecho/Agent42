@@ -102,6 +102,10 @@ param appInsightsConnectionString string = ''
 @description('VAPID private key for Web Push notifications (ADR 0028). OPTIONAL, exactly like googleMapsApiKey/contextApiKey: when empty, neither the secret nor the env var below is emitted, and push simply stays disabled (GET /api/push/config returns enabled:false, the UI hides the toggle) rather than failing to deploy. Not on the availability path. The matching public key + subject are non-secret and committed in appsettings.json.')
 param vapidPrivateKey string = ''
 
+@secure()
+@description('Mailgun HTTP webhook signing key for inbound email (ADR 0095). OPTIONAL in the deploy sense, like contextApiKey: when empty, neither the secret nor the env var below is emitted and the app starts. But POST /api/email-in then answers 503 and accepts nothing - it never skips verification.')
+param mailgunSigningKey string = ''
+
 @description('Minimum replica count. Orleans localhost clustering (used by this single-instance deployment) only supports one instance.')
 param minReplicas int
 
@@ -187,6 +191,14 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
                 value: contextApiKey
               }
             ],
+        empty(mailgunSigningKey)
+          ? []
+          : [
+              {
+                name: 'mailgun-signing-key'
+                value: mailgunSigningKey
+              }
+            ],
         empty(hindsightApiKey)
           ? []
           : [
@@ -258,6 +270,11 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           empty(contextApiKey)
             ? []
             : [{ name: 'ContextScrape__ApiKey', secretRef: 'context-api-key' }],
+          // The Mailgun signing key behind inbound email (ADR 0095). Emitted only when supplied, like the one above,
+          // but its absence is a 503 on /api/email-in, never an unverified accept.
+          empty(mailgunSigningKey)
+            ? []
+            : [{ name: 'Email__MailgunSigningKey', secretRef: 'mailgun-signing-key' }],
           // The VAPID private key behind Web Push (ADR 0028). Emitted only when supplied: with no key
           // push stays disabled and the app starts normally — not on the availability path, so no
           // empty-valued secret is risked (the searxngSecret-vs-optional contrast, like the two above).
@@ -368,6 +385,9 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
       //                       LocalBridgeEndpoint self-enforces and fails closed. EXACT, not /*: the route has no
       //                       sub-paths. Unmeasured in production: that the ingress and Easy Auth pass the
       //                       Upgrade through on an excluded path — ADR 0076 carries the post-deploy check.
+      //   • /api/email-in   — Mailgun's inbound forward (ADR 0095): no Entra session, ever. The handler verifies the
+      //                       Mailgun HMAC, then resolves the agent from the address token in the email directory —
+      //                       never GetUserId — and fails closed. EXACT, not /*: the route takes no sub-paths.
       excludedPaths: [
         '/api/agent-run'
         '/api/share/*'
@@ -376,6 +396,7 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
         '/api/agent-mcp'
         '/api/agent-mcp/*'
         '/api/local-bridge'
+        '/api/email-in'
       ]
     }
     // ADR 0090: the session cookie outlives the 8-hour platform default, so a returning user is not sent back

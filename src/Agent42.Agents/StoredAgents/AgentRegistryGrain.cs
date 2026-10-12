@@ -40,7 +40,7 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
     public Task<AgentDefinition?> GetAsync(string id)
         => Task.FromResult(_state.State.Agents.FirstOrDefault(a => a.Id == id));
 
-    public async Task<AgentSaveResult> SaveAsync(AgentDefinition agent, bool regenerateKey = false)
+    public async Task<AgentSaveResult> SaveAsync(AgentDefinition agent, bool regenerateKey = false, bool regenerateEmail = false)
     {
         var agents = _state.State.Agents;
         var now = DateTimeOffset.UtcNow;
@@ -86,6 +86,14 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             storedHash = newHash;
         }
 
+        // The email token follows the same regenerate order, independently (ADR 0095): the OLD address dies first.
+        var storedEmailToken = previous.EmailToken;
+        if (regenerateEmail)
+        {
+            await DeregisterEmailAsync(previous.EmailToken);
+            storedEmailToken = EmailAddress.Generate().Token;
+        }
+
         // Kind is preserved exactly like the hash: the grain is the authority, and an update never changes it
         // (ADR 0082). Research and copilot agents are per-chat only (ADR 0016: a continuous chat is one 2 MB
         // grain), so Continuous is forced off rather than trusted.
@@ -94,6 +102,7 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             CreatedAt = previous.CreatedAt,
             UpdatedAt = now,
             ApiKeyHash = storedHash,
+            EmailToken = storedEmailToken,
             Kind = previous.Kind,
             Continuous = agent.Continuous && !AgentKinds.IsPerChatOnly(previous.Kind),
         };
@@ -103,6 +112,11 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
         if (regenerateKey)
         {
             await Directory(storedHash).RegisterAsync(userId, updated.Id);
+        }
+
+        if (regenerateEmail)
+        {
+            await EmailDirectory(storedEmailToken!).RegisterAsync(userId, updated.Id);
         }
 
         return new AgentSaveResult(updated, plaintext);
@@ -129,7 +143,7 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             markResearchSeeded: true);
     }
 
-    // ── Insert ── mint a key. Create order (constraint 2): write registry state (carrying the new hash) FIRST,
+    // ── Insert ── mint a key and an email token (ADR 0095). Create order (constraint 2): write registry state (carrying the new hash) FIRST,
     // THEN register the hash. A crash in between leaves the agent with a hash but no directory entry — the key is
     // simply unusable (user regenerates), never a live orphan pointing at a stranger's agent. The seeded flag
     // rides the SAME write as the insert, so a crash can never seed twice.
@@ -137,18 +151,21 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
     {
         var now = DateTimeOffset.UtcNow;
         var (raw, hash) = ApiKey.Generate();
+        var emailToken = EmailAddress.Generate().Token;
         var inserted = agent with
         {
             Id = Guid.NewGuid().ToString(),
             CreatedAt = now,
             UpdatedAt = now,
             ApiKeyHash = hash,
+            EmailToken = emailToken,
         };
         _state.State.Agents.Add(inserted);
         _state.State.ResearchAgentSeeded |= markResearchSeeded;
         await _state.WriteStateAsync();
 
         await Directory(hash).RegisterAsync(this.GetPrimaryKeyString(), inserted.Id);
+        await EmailDirectory(emailToken).RegisterAsync(this.GetPrimaryKeyString(), inserted.Id);
         return new AgentSaveResult(inserted, raw);
     }
 
@@ -176,6 +193,21 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
         if (!string.IsNullOrEmpty(agent.ApiKeyHash))
         {
             await Directory(agent.ApiKeyHash).DeregisterAsync();
+        }
+
+        await DeregisterEmailAsync(agent.EmailToken);
+    }
+
+    // The email directory entry for a raw token (ADR 0095): its own grain type, never the key directory, so an
+    // address can never authenticate as an API key. The registry keeps it in sync on every token change.
+    private IEmailAddressDirectoryGrain EmailDirectory(string token)
+        => GrainFactory.GetGrain<IEmailAddressDirectoryGrain>(EmailAddress.Hash(token));
+
+    private async Task DeregisterEmailAsync(string? token)
+    {
+        if (!string.IsNullOrEmpty(token))
+        {
+            await EmailDirectory(token).DeregisterAsync();
         }
     }
 

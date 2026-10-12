@@ -283,6 +283,63 @@ public sealed class AgentRegistryGrainTests(SharedClusterFixture fixture) : Shar
         Assert.Equal(agent.Id, Assert.Single(await registry.GetAllAsync()).Id);
     }
 
+    // ADR 0095 AC9: create mints an email token that resolves, in the EMAIL directory, to (user, agentId).
+    [Fact]
+    public async Task AgentCreate_MintsResolvableEmailAddress()
+    {
+        const string user = "registry-email-create-user";
+        var created = (await Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user).SaveAsync(NewAgent())).Agent;
+
+        Assert.Matches("^agent-[a-z2-7]{32}$", created.EmailToken);
+        var owner = await Cluster.GrainFactory
+            .GetGrain<IEmailAddressDirectoryGrain>(EmailAddress.Hash(created.EmailToken!)).ResolveAsync();
+        Assert.NotNull(owner);
+        Assert.Equal(user, owner!.UserId);
+        Assert.Equal(created.Id, owner.AgentId);
+    }
+
+    // ADR 0095 AC10: regenerate kills the old address and the new one resolves. A plain update and a KEY regenerate
+    // both keep the address (the grain is the authority; a request carrying a token is ignored).
+    [Fact]
+    public async Task EmailAddress_Regenerate_InvalidatesOld()
+    {
+        const string user = "registry-email-regen-user";
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        var created = (await registry.SaveAsync(NewAgent())).Agent;
+        var oldToken = created.EmailToken!;
+
+        var plain = (await registry.SaveAsync(created with { Name = "Renamed", EmailToken = "agent-forged" })).Agent;
+        var keyRotated = (await registry.SaveAsync(plain, regenerateKey: true)).Agent;
+        Assert.Equal(oldToken, plain.EmailToken);
+        Assert.Equal(oldToken, keyRotated.EmailToken);
+
+        var regenerated = await registry.SaveAsync(keyRotated, regenerateEmail: true);
+
+        Assert.NotEqual(oldToken, regenerated.Agent.EmailToken);
+        Assert.Null(regenerated.PlaintextApiKey);
+        Assert.Equal(keyRotated.ApiKeyHash, regenerated.Agent.ApiKeyHash);
+        Assert.Null(await Cluster.GrainFactory.GetGrain<IEmailAddressDirectoryGrain>(EmailAddress.Hash(oldToken)).ResolveAsync());
+        var owner = await Cluster.GrainFactory
+            .GetGrain<IEmailAddressDirectoryGrain>(EmailAddress.Hash(regenerated.Agent.EmailToken!)).ResolveAsync();
+        Assert.Equal(created.Id, owner?.AgentId);
+    }
+
+    // ADR 0095 AC11: delete deregisters BOTH the API-key and the email directories.
+    [Fact]
+    public async Task AgentDelete_DeregistersBothDirectories()
+    {
+        const string user = "registry-email-delete-user";
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        var created = (await registry.SaveAsync(NewAgent())).Agent;
+        var emailHash = EmailAddress.Hash(created.EmailToken!);
+        Assert.NotNull(await Cluster.GrainFactory.GetGrain<IEmailAddressDirectoryGrain>(emailHash).ResolveAsync());
+
+        await registry.DeleteAsync(created.Id);
+
+        Assert.Null(await Cluster.GrainFactory.GetGrain<IAgentKeyDirectoryGrain>(created.ApiKeyHash).ResolveAsync());
+        Assert.Null(await Cluster.GrainFactory.GetGrain<IEmailAddressDirectoryGrain>(emailHash).ResolveAsync());
+    }
+
     private static AgentDefinition NewAgent()
         => new("", "Hooky", "", "gpt-4o", "You are Hooky.", default, default);
 }
