@@ -12,6 +12,10 @@ amended_by: [0084, 0094]   # 0084 artifacts: accepted self-navigation egress fro
 > A stored agent's owner-configured webhook receives every bound, persisted turn's prompt and reply, signed and
 > SSRF-guarded at connect time (unlike a provider endpoint — 0094 says why). Everything else here is unchanged.
 
+> **Amended by [ADR 0097](0097-agent-fleet-recursive-teams.md) (2026-10-12): a new egress path.** A Copilot agent in
+> an agent fleet task can fetch any URL and use the network from a shell in the container. Each fetch or command is
+> approved by the user, and `Fleet:CopilotAgentsEnabled` switches it off.
+
 > **Amended by [ADR 0017](0017-foundry-provider-api-key-auth.md) (2026-07-16) — credential mechanism
 > only.** The `AzureOpenAI` provider kind is no longer reached with the managed identity: it now
 > authenticates with an Azure OpenAI **API key** (fatal if blank — Foundry is the availability path),
