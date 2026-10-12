@@ -109,6 +109,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | `GOOGLE_MAPS_API_KEY` | Location returns coordinates without an address (ADR 0012) |
 | `HINDSIGHT_API_KEY` | No long-term memory, and zero calls are made. This is the operator's egress switch (ADR 0056/0057) |
 | `VAPID_PRIVATE_KEY` | Web Push is hidden (ADR 0028) |
+| `MAILGUN_SIGNING_KEY` + MX for the in.agent42.nl subdomain → Mailgun + a Route forwarding to `/api/email-in` | `/api/email-in` answers 503 and no inbound email is accepted. The app boots (ADR 0095) |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No App Insights export. The app boots and sends telemetry to OTLP only (ADR 0077) |
 | `Dashboard:OwnerOid` (committed, currently blank) | `/dashboard` denies everyone. **Never set it to `local-dev`** (ADR 0062) |
 | MCP OAuth redirect URI `https://chat.agent42.nl/api/mcp/oauth/callback` | Must be registered in each provider's app registration (ADR 0025) |
@@ -165,7 +166,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Long-term memory (Hindsight; **no delete path**) | 0056, 0057 |
 | MCP client: config, OAuth (per-request refresh + in-turn reconnect + auto re-send), per-server/per-tool selection, test, URL seeding, local bridge, elicitation (form + URL) | 0024, 0025, 0026, 0058, 0064, 0067, 0069, 0076, 0081, 0087, 0095 |
 | MCP server (agents exposed via `/api/agent-mcp`) | 0070 |
-| Stored agents: history mode, API key + `/api/agent-run`, retention, outbound webhook (signed, SSRF-guarded egress) | 0016, 0022, 0068, 0094 |
+| Stored agents: history mode, API key + `/api/agent-run`, retention, outbound webhook (signed, SSRF-guarded egress), inbound email address (Mailgun, untrusted-in) | 0016, 0022, 0068, 0094, 0095 |
 | Research agent: seeded built-in `Kind`, todo/loop/judge, history fold, live checklist | 0082 |
 | Copilot agent kind: GitHub Copilot SDK loop, BYOK, Agent42 tools as custom tools, native skills, SessionFs in Blob, history mirror, phase-1 trust boundary | 0085 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |

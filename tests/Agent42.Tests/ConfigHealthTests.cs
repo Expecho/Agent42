@@ -38,6 +38,7 @@ public sealed class ConfigHealthTests
         ("Geocoding:GoogleApiKey", "SECRET-google-key"),
         ("ContextScrape:ApiKey", "SECRET-context-key"),
         ("Hindsight:ApiKey", "SECRET-hindsight-key"),
+        ("Email:MailgunSigningKey", "SECRET-mailgun-signing-key"),
         ("APPLICATIONINSIGHTS_CONNECTION_STRING", "InstrumentationKey=SECRET-appinsights-key;IngestionEndpoint=https://x/"),
     ];
 
@@ -109,6 +110,20 @@ public sealed class ConfigHealthTests
             Env(), Push(enabled: true));
 
         Assert.Equal(ConfigHealth.Warning, Find(report, "Geocoding:GoogleApiKey").Status);
+    }
+
+    // ADR 0095: the Mailgun signing key is a presence row. Missing is a warning that names the 503, not a degradation.
+    [Fact]
+    public void MailgunSigningKey_PresenceRow_NamesThe503WhenMissing()
+    {
+        var configured = ConfigHealth.BuildStatic(Config(AllSecretsSet), Env(), Push(enabled: true));
+        var without = ConfigHealth.BuildStatic(
+            Config(AllSecretsSet.Where(e => e.Key != "Email:MailgunSigningKey").ToArray()), Env(), Push(enabled: true));
+
+        Assert.Equal(ConfigHealth.Ok, Find(configured, "Email:MailgunSigningKey").Status);
+        var missing = Find(without, "Email:MailgunSigningKey");
+        Assert.Equal(ConfigHealth.Warning, missing.Status);
+        Assert.Contains("503", missing.Message, StringComparison.Ordinal);
     }
 
     // AC3: a malformed endpoint is an error (present but not an absolute URL).

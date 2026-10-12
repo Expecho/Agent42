@@ -48,6 +48,9 @@ public static class GoldenStates
     public static AgentKeyDirectoryState AgentKeyDirectory() =>
         new() { UserId = "user@example.com", AgentId = "agent-golden" };
 
+    public static EmailAddressDirectoryState EmailAddressDirectory() =>
+        new() { UserId = "user@example.com", AgentId = "agent-golden-mail" };
+
     public static ConversationIndexState ConversationIndex() => new()
     {
         Conversations = [new ConversationInfo("conv-1", "A golden chat", Updated, "agent-golden", "Golden")],

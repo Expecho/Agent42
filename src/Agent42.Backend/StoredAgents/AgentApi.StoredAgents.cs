@@ -58,7 +58,7 @@ public static partial class AgentApi
                 new AgentDefinition(id, request.Name, request.Description, request.Model, request.SystemPrompt,
                     default, default, request.Continuous, request.EnabledTools,
                     McpExposed: request.McpExposed),
-                request.RegenerateKey);
+                request.RegenerateKey, request.RegenerateEmail);
             return Results.Json(new AgentSaveResponse(result.Agent, result.PlaintextApiKey));
         });
 
@@ -120,7 +120,8 @@ public static partial class AgentApi
             await StoreAgentRunFilesAsync(files, attachments, ingestion, ownerKey);
         if (storeError is not null)
         {
-            return storeError;
+            // A bad document rejects the WHOLE batch (400) — the same all-or-nothing rule as an unsupported file.
+            return Results.Text(storeError, "text/plain", statusCode: StatusCodes.Status400BadRequest);
         }
 
         // Title from the prompt, else the first file name, else a placeholder (an attachment-only run
@@ -128,10 +129,23 @@ public static partial class AgentApi
         var title = !string.IsNullOrWhiteSpace(prompt)
             ? prompt
             : files.FirstOrDefault()?.FileName ?? "Agent run";
-        await grains.GetGrain<IConversationIndexGrain>(owner.UserId)
+        await StartAgentRunAsync(grains, owner.UserId, definition, conversationId, title, prompt, imageRefs, documentNames);
+
+        // The run is in the background (OneWay); answer 202 with the conversation id.
+        return Results.Accepted($"/api/conversations/{conversationId}/messages", new { conversationId });
+
+    }
+
+    // Lists the conversation, binds the agent and fires its background turn — shared by the agent-run and inbound
+    // email doors (ADR 0022/0095), which differ only in how they authenticate and what they parse.
+    private static async Task StartAgentRunAsync(
+        IGrainFactory grains, string userId, AgentDefinition definition, string conversationId, string title,
+        string prompt, List<AttachmentRef> imageRefs, List<string> documentNames)
+    {
+        await grains.GetGrain<IConversationIndexGrain>(userId)
             .TouchAsync(conversationId, title, definition.Id, definition.Name);
 
-        var agentGrain = grains.GetGrain<IAgentGrain>(ownerKey);
+        var agentGrain = grains.GetGrain<IAgentGrain>(AgentKey(userId, conversationId));
         // Snapshot the agent's persona into the conversation (ADR 0003): pins its model + tools for the run.
         await agentGrain.BindAgentAsync(new AgentBinding(
             definition.Id, definition.Name, definition.SystemPrompt, definition.Model, definition.EnabledTools,
@@ -143,11 +157,8 @@ public static partial class AgentApi
             await agentGrain.RegisterDocumentAsync(name);
         }
 
-        // Fire the background run (OneWay — returns immediately) and answer 202 with the conversation id.
+        // Fire the background run (OneWay — returns immediately).
         await agentGrain.EnqueuePromptAsync(prompt, imageRefs.Count > 0 ? imageRefs : null);
-
-        return Results.Accepted($"/api/conversations/{conversationId}/messages", new { conversationId });
-
     }
 
     // Authenticates an agent-run caller: the API key resolves to an owner through the global directory,
@@ -188,37 +199,42 @@ public static partial class AgentApi
     {
         foreach (var file in files)
         {
-            if (file.Length > MaxAttachmentBytes)
+            if (AgentRunFileError(file, copilot) is { } error)
             {
-                return Results.Text(
-                    $"'{file.FileName}' exceeds the {MaxAttachmentBytes / (1024 * 1024)} MB limit.",
-                    "text/plain", statusCode: StatusCodes.Status400BadRequest);
-            }
-
-            var mediaType = DocumentMediaTypes.ResolveMediaType(file.FileName, file.ContentType);
-            if (!mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
-                && !DocumentMediaTypes.IsSupported(mediaType))
-            {
-                return Results.Text(
-                    $"'{file.FileName}' is not a supported image or document type.",
-                    "text/plain", statusCode: StatusCodes.Status400BadRequest);
-            }
-
-            if (copilot && !mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-            {
-                return Results.Text(CopilotDocumentsRefused, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+                return Results.Text(error, "text/plain", statusCode: StatusCodes.Status400BadRequest);
             }
         }
 
         return null;
     }
 
+    // Why one file cannot ride an agent run, or null when it can. The agent-run door rejects the whole batch on the
+    // first error; the email door skips the file and tells the agent (ADR 0095), so the rule lives in one place.
+    private static string? AgentRunFileError(IFormFile file, bool copilot)
+    {
+        if (file.Length > MaxAttachmentBytes)
+        {
+            return $"'{file.FileName}' exceeds the {MaxAttachmentBytes / (1024 * 1024)} MB limit.";
+        }
+
+        var mediaType = DocumentMediaTypes.ResolveMediaType(file.FileName, file.ContentType);
+        if (!mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+            && !DocumentMediaTypes.IsSupported(mediaType))
+        {
+            return $"'{file.FileName}' is not a supported image or document type.";
+        }
+
+        return copilot && !mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+            ? CopilotDocumentsRefused
+            : null;
+    }
+
     // Stores/ingests each file under the resolved owner+conversation key - the same per-file branch as
     // the browser upload endpoint. Images become attachment refs that ride the run; documents ingest for
     // retrieval (and are registered on the grain by the caller, never sent as attachments - ADR 0007).
-    private static async Task<(List<AttachmentRef> Images, List<string> Documents, IResult? Error)>
+    private static async Task<(List<AttachmentRef> Images, List<string> Documents, string? Error)>
         StoreAgentRunFilesAsync(
-            IFormFileCollection files, IAttachmentStore attachments,
+            IReadOnlyList<IFormFile> files, IAttachmentStore attachments,
             DocumentIngestionService ingestion, string ownerKey)
     {
         // Store/ingest each file under the resolved owner+conversation key — the same per-file branch as
@@ -246,9 +262,9 @@ public static partial class AgentApi
                 }
                 catch (Exception ex) when (ex is EmbeddingModelNotConfiguredException or EmbeddingDimensionMismatchException)
                 {
-                    // A bad document rejects the WHOLE batch (400) — the same all-or-nothing rule as an
-                    // unsupported file. The key holder gets a clear message; no partial run is enqueued.
-                    return (imageRefs, documentNames, Results.Text(ex.Message, "text/plain", statusCode: StatusCodes.Status400BadRequest));
+                    // A bad document rejects the WHOLE batch — the same all-or-nothing rule as an unsupported
+                    // file. The caller picks the status; no partial run is enqueued.
+                    return (imageRefs, documentNames, ex.Message);
                 }
 
                 if (chunkCount > 0)

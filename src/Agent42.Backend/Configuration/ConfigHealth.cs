@@ -130,6 +130,13 @@ public static class ConfigHealth
             missing: "not set — telemetry goes to the OTLP collector only",
             missingStatus: Warning));
 
+        // Inbound email (ADR 0095). Absent is supported for the app, but the endpoint then refuses (503), so the
+        // missing message names the refusal rather than a degradation. Nothing to probe without a delivery.
+        checks.Add(PresenceCheck(GroupOptional, "Email:MailgunSigningKey", config["Email:MailgunSigningKey"],
+            present: "configured — mail to an agent's address runs that agent",
+            missing: "not set — POST /api/email-in answers 503 and no inbound email is accepted",
+            missingStatus: Warning));
+
         // Web Push: derive from PushConfig.Enabled — the single source of the "push is on" fact (both VAPID
         // keys required). Never recompute from the raw keys.
         checks.Add(new ConfigCheck(GroupOptional, "Push:Vapid", push.Enabled ? Ok : Warning,
