@@ -94,7 +94,7 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Agents",
             [
-                "Artifacts", "Attachments", "ClientTools", "Conversations", "Copilot", "Documents", "ImageGeneration",
+                "Artifacts", "Attachments", "ClientTools", "Conversations", "Copilot", "Documents", "Fleet", "ImageGeneration",
                 "Location", "Mcp", "Memory", "Models", "Push", "Research", "Scheduling", "Search", "SharedState",
                 "Sharing", "Skills", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web", "Webhooks",
             ]
@@ -103,7 +103,7 @@ public sealed class ProjectLayoutTests
             "Agent42.Backend",
             [
                 "Api", "Artifacts", "Attachments", "ClientTools", "Configuration", "Conversations", "Copilot",
-                "Documents", "Export", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
+                "Documents", "Export", "Fleet", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
                 "Search", "SharedState", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills",
                 "Users", "Web", "Webhooks", "wwwroot",
             ]
