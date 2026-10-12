@@ -153,6 +153,12 @@ public sealed class EasyAuthExclusionTests
     // The owner artifact routes serve model-written source and script; they stay behind Easy Auth.
     [InlineData("/api/conversations/x/artifacts")]
     [InlineData("/api/conversations/x/artifacts/art_1/versions/1/frame")]
+    // The agent fleet (ADR 0097): every route takes the userId from GetUserId(), and the file route serves
+    // model-written content. The page, the event stream and a download are named separately.
+    [InlineData("/fleet/")]
+    [InlineData("/api/fleet/tasks")]
+    [InlineData("/api/fleet/tasks/x/events")]
+    [InlineData("/api/fleet/tasks/x/files/report.md")]
     public void Exclusions_DoNotCoverAnyAuthenticatedPath(string path)
     {
         var entries = ExcludedPaths();

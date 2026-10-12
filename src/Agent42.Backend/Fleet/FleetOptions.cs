@@ -72,6 +72,9 @@ public sealed class FleetOptions
     /// <summary>The user's catalog model id a plain <c>copilot</c> agent runs on. Empty: the task's model.</summary>
     public string DefaultCopilotModel { get; set; } = "";
 
+    /// <summary>How often an idle event stream gets a comment line, so the ACA ingress does not drop it.</summary>
+    public TimeSpan SseKeepAlive { get; set; } = TimeSpan.FromSeconds(15);
+
     public static FleetOptions From(IConfiguration configuration)
         => configuration.GetSection(SectionName).Get<FleetOptions>() ?? new FleetOptions();
 }
