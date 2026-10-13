@@ -560,3 +560,37 @@ Critic pass on 2026-10-12. Every finding was accepted and fixed in this spec:
 9. Wording: ADR numbering clarified; the elicitation router and sink types named.
 
 No findings rejected.
+
+## Divergence from the plan (execution, 2026-10-12/13)
+
+- **Packages.** `Microsoft.Agents.AI.Declarative` has never been stable, so it is pinned at `1.23.0-rc1`, a recorded
+  exception to hard rule 4 (user decision, ADR 0097 §10). `Workflows` is pinned at `1.23.0`, in step with the family.
+- **ADR number 0097**, not 0096. Open PR #185 still carries a second 0095 and will need 0096.
+- **`fetch_web_page` keeps the chat's exfiltration allowlist.** Only a URL that a search returned or that the user
+  wrote in the task can be fetched (`FleetWebTools`). The plan only said "truncated". MCP results enter agent context,
+  so the control matters as much here.
+- **Web tools follow the user's default tool selection too**, not only MCP (ADR 0021 applied consistently).
+- **Event flush:** once a second, plus at the end. It does not also flush on every non-text event. Replay reads
+  the in-memory unconfirmed snapshot, so freshness doesn't depend on flush timing. The replay merge lives in
+  `FleetEventLog.ReplayAsync`, so the race test drives it directly.
+- **Usage attribution** is set by the SERVICE's background run, so `Run_SetsUserTelemetryContext` is in
+  `FleetTaskServiceTests`, not `FleetTeamRunnerTests`.
+- **A root run with no team ends `failed`** (reason `FleetTeamRunner.NoTeamResult`), not `done` with the fallback
+  text. The engine did the latter. The DevHost smoke run found it, and `NoTeam_EndsFailed_NotDone` covers it.
+  A delegating agent still gets the text back.
+- **`metrics` event folded into `budget`** (it carries input/output tokens and the deepest level). There is no MeterListener.
+- **Copilot fleet agents get no Agent42 custom tools** (engine parity: "no tools section for a Copilot agent"). The
+  policy still auto-approves `PermissionRequestCustomTool`. The runtime environment is `MinimalEnvironment()` plus
+  `PATH`, because a shell needs it.
+- **Workspace notes** (`note_set`) are persisted on the task record (`FleetTaskRecord.Notes`), and a follow-up
+  starts from them.
+- **Critic fixes (2026-10-13):** a stale read can no longer overwrite a finished task as `interrupted` (re-read
+  before the rewrite). Workspace listing and sync skip symbolic links and other reparse points. Answers can name
+  their question (`prompt` carries an `id`, and `POST /answer` takes `questionId`). The ADR frontmatter
+  `amended_by` was added on 0013 and 0085. All are covered in `FleetReviewFixTests`.
+- **AC test names that differ from the table:** AC 13 is `Approval_Change_ThenRun`, `Approval_No_StopsTask`,
+  `Approval_Yes_Runs` and `WriteShellUrl_Asked_AndAlwaysPersistsForTheTaskOnly`. AC 19's `Api_Conflicts` is in
+  `FleetApiTests`. AC 9's `FollowUp_UsesChainAndWorkspace` is in `FleetTaskServiceTests`.
+- **Not verified:** that a live default-mode Copilot session raises write/shell permissions and honours the working
+  directory (no model key in the session). The manual browser check of `/fleet/` was not done, because the Chrome
+  extension wasn't connected. The DevHost API smoke run (submit, SSE replay, record) was done.

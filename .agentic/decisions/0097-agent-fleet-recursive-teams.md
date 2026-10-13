@@ -50,7 +50,7 @@ fleet"), with persisted tasks and follow-ups, using only the user's own models (
    "always for this task". Agent42's own functions (`PermissionRequestCustomTool`) are approved without asking. A kill
    switch, `Fleet:CopilotAgentsEnabled`, removes Copilot agents and the planner's Copilot section.
    **Residual risks, accepted:**
-   - a shell can reach the app port on `localhost` and forge `X-MS-CLIENT-PRINCIPAL-ID` (`Api/CurrentUser.cs`);
+   - a shell can reach the app port on `localhost` and forge `X-MS-CLIENT-PRINCIPAL-ID` (`src/Agent42.Backend/Api/CurrentUser.cs`);
    - the container filesystem is readable by a shell;
    - the network reach is the container's.
 8. **Egress (an ADR 0013 extension).** Fleet content goes to the user's own providers, SearXNG, context.dev and the

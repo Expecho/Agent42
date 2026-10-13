@@ -166,11 +166,11 @@ public sealed partial class FleetTaskService(
         return await GetAsync(userId, taskId, cancellationToken) is null ? FleetOutcome.NotFound : FleetOutcome.Conflict;
     }
 
-    public async Task<FleetOutcome> AnswerAsync(string userId, string taskId, string answer, CancellationToken cancellationToken = default)
+    public async Task<FleetOutcome> AnswerAsync(string userId, string taskId, string answer, int? questionId = null, CancellationToken cancellationToken = default)
     {
         if (RunningOf(userId, taskId) is { } task)
         {
-            return task.Questions.Answer(answer) ? FleetOutcome.Ok : FleetOutcome.Conflict;
+            return task.Questions.Answer(answer, questionId) ? FleetOutcome.Ok : FleetOutcome.Conflict;
         }
 
         return await GetAsync(userId, taskId, cancellationToken) is null ? FleetOutcome.NotFound : FleetOutcome.Conflict;
@@ -272,7 +272,16 @@ public sealed partial class FleetTaskService(
             return record;
         }
 
-        var interrupted = record with
+        // Re-read: the record may be from before a task's final save. A finishing task saves BEFORE it leaves the
+        // registry, so once it is out of the registry the store has its final state, and a stale read must not
+        // overwrite that with interrupted.
+        var current = await store.GetTaskAsync(record.UserId, record.Id, cancellationToken);
+        if (current is not { Status: FleetTaskStatus.Running })
+        {
+            return current ?? record;
+        }
+
+        var interrupted = current with
         {
             Status = FleetTaskStatus.Interrupted,
             Reason = "The app restarted while this task ran.",

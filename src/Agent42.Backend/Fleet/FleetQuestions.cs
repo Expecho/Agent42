@@ -11,6 +11,8 @@ public sealed class FleetQuestions(IFleetEventSink events) : IFleetInteraction
     private readonly SemaphoreSlim _turn = new(1, 1);
     private readonly Lock _gate = new();
     private TaskCompletionSource<string>? _open;
+    private int _openId;
+    private int _lastId;
 
     public bool HasOpenQuestion
     {
@@ -29,9 +31,11 @@ public sealed class FleetQuestions(IFleetEventSink events) : IFleetInteraction
         try
         {
             var answered = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            int id;
             lock (_gate)
             {
                 _open = answered;
+                _openId = id = ++_lastId;
             }
 
             using var cancellation = cancellationToken.Register(() =>
@@ -44,7 +48,7 @@ public sealed class FleetQuestions(IFleetEventSink events) : IFleetInteraction
                 answered.TrySetCanceled(cancellationToken);
             });
 
-            events.Publish("prompt", new { question = question.Trim(), choices = choices.Select(c => new { answer = c.Answer, label = c.Label }), freeTextHint });
+            events.Publish("prompt", new { id, question = question.Trim(), choices = choices.Select(c => new { answer = c.Answer, label = c.Label }), freeTextHint });
             try
             {
                 var answer = await answered.Task;
@@ -63,12 +67,20 @@ public sealed class FleetQuestions(IFleetEventSink events) : IFleetInteraction
         }
     }
 
-    /// <summary>Answers the open question; false when none is open.</summary>
-    public bool Answer(string answer)
+    /// <summary>
+    /// Answers the open question; false when none is open, or when <paramref name="questionId"/> names another one (a
+    /// double click or a stale tab must not answer the next question, which may be a different permission).
+    /// </summary>
+    public bool Answer(string answer, int? questionId = null)
     {
         TaskCompletionSource<string>? question;
         lock (_gate)
         {
+            if (questionId is { } id && id != _openId)
+            {
+                return false;
+            }
+
             question = _open;
             _open = null;
         }

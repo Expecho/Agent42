@@ -377,7 +377,7 @@
 
   async function answer(text) {
     if (!S.selectedTask) return;
-    const r = await api("POST", `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/answer`, { answer: text });
+    const r = await api("POST", `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/answer`, { answer: text, questionId: S.prompt?.id ?? null });
     if (r.ok) { S.prompt = null; renderPrompt(); }
   }
 

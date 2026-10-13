@@ -5,6 +5,7 @@ status: accepted
 tags: [copilot, stored-agents, agent-framework, github-copilot-sdk, sessionfs, blob, byok, tools, skills, egress, trust-boundary, experimental-api, no-migration]
 supersedes: []
 amends: [0082, 0016, 0034, 0049]
+amended_by: [0097]   # 0097 agent fleet: fleet Copilot agents keep built-in tools
 ---
 
 # A user-created "copilot" agent kind that runs the GitHub Copilot SDK's agent loop (phase 1: no built-in tools)

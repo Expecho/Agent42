@@ -50,8 +50,17 @@ public sealed class FleetWorkspace : IDisposable
     public IReadOnlyList<AIFunction> Tools { get; }
     public IReadOnlyDictionary<string, string> Notes => _notes;
 
+    // Symbolic links and other reparse points are skipped, files and directories alike: a Copilot shell could plant
+    // one pointing outside the workspace, and the sync would upload its target for download (ADR 0097).
+    private static readonly EnumerationOptions FilesOnly = new()
+    {
+        RecurseSubdirectories = true,
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = true,
+    };
+
     public List<string> ListFiles() => Directory.Exists(Root)
-        ? [.. Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)
+        ? [.. Directory.EnumerateFiles(Root, "*", FilesOnly)
             .Select(file => Path.GetRelativePath(Root, file).Replace('\\', '/'))
             .Order(StringComparer.Ordinal)]
         : [];

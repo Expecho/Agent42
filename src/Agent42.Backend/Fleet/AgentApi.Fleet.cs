@@ -7,8 +7,8 @@ namespace Agent42.Backend;
 /// <summary>A task the page starts: the request, optionally the done task it follows up, the model and token cap.</summary>
 public sealed record FleetSubmitRequest(string? Task, string? FollowUpOf, string? Model, long? MaxTokens);
 
-/// <summary>The user's answer to a task's open question.</summary>
-public sealed record FleetAnswerRequest(string? Answer);
+/// <summary>The user's answer to a task's open question, optionally naming the question (the <c>prompt</c> event's id).</summary>
+public sealed record FleetAnswerRequest(string? Answer, int? QuestionId = null);
 
 /// <summary>An edited system prompt.</summary>
 public sealed record FleetPromptRequest(string? Text);
@@ -112,7 +112,7 @@ public static partial class AgentApi
 
     private static async Task<IResult> AnswerFleetTask(string id, FleetAnswerRequest request, IServiceProvider services, HttpContext http, CancellationToken ct)
         => services.GetService<FleetTaskService>() is { } fleet
-            ? FleetOutcomeResult(await fleet.AnswerAsync(http.GetUserId(), id, request.Answer ?? "", ct), "No question is open.")
+            ? FleetOutcomeResult(await fleet.AnswerAsync(http.GetUserId(), id, request.Answer ?? "", request.QuestionId, ct), "No question is open.")
             : FleetUnavailable();
 
     /// <summary>
