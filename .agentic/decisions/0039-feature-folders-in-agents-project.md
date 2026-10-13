@@ -28,8 +28,8 @@ this ADR and is recorded in full rather than quietly corrected.
 
 ## Decision
 
-### 1. Twenty-four top-level feature folders, in a single flat namespace
-`StoredAgents/`, `Artifacts/`, `Attachments/`, `ClientTools/`, `Conversations/`, `Copilot/`, `Documents/`,
+### 1. Twenty-six top-level feature folders, in a single flat namespace
+`StoredAgents/`, `Artifacts/`, `Attachments/`, `ClientTools/`, `Conversations/`, `Copilot/`, `Documents/`, `Fleet/` (ADR 0097),
 `ImageGeneration/`, `Location/`, `Mcp/`, `Memory/`, `Models/`, `Push/`, `Research/`, `Scheduling/`, `Search/`,
 `SharedState/`, `Sharing/`, `Speech/`, `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`, `Webhooks/` (ADR 0094). `Skills/` does not move: its csproj
 `Content Include="Skills\**\*"` glob must keep resolving next to the built assembly — which is also
@@ -38,7 +38,7 @@ there would be shipped as content into the deployed `Skills/` directory.
 
 *(Sixteen at the time of this ADR; `UserSkills/` was added by ADR 0049, `Calendar/` by ADR 0053,
 `Memory/` by ADR 0056, `Search/` by ADR 0061, `Research/` by ADR 0082, `Artifacts/` by ADR 0084 (missing from this
-list until ADR 0085), `Copilot/` by ADR 0085, and `ClientTools/` and `SharedState/` by ADR 0089 — and `Calendar/` was removed again
+list until ADR 0085), `Copilot/` by ADR 0085, `ClientTools/` and `SharedState/` by ADR 0089, `Webhooks/` by ADR 0094 and `Fleet/` by ADR 0097 — and `Calendar/` was removed again
 by ADR 0063, which also added the `Search/` entry ADR 0061 had left out of this list. A folder list is a factual
 inventory, not a decision, so it is corrected in place — `ProjectLayoutTests.ExpectedFolders` asserts
 it by name so the two cannot drift. Correcting the heading's number without the list below it is the

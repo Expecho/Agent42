@@ -109,6 +109,11 @@ Each skill and each MCP tool can be switched on or off individually.
   24 hours).
 - **Research agent** — every user gets a built-in Research agent that plans a question into
   steps, searches, checks its own answer, and shows a live checklist while it works.
+- **Agent42 agent fleet** — a page of its own (`/fleet/`, linked from the sidebar) where a planner designs a
+  team of agents for a task, runs it in one of six patterns, lets agents hand sub-tasks to sub-teams, and has a
+  judge score the result and send it back for a fix or a new team. Everything runs on your own models, streams
+  live, survives a reload, and a finished task can be followed up. Copilot agents in a team can write files
+  and run commands, each after you approve it.
 - **Run agents from outside the browser** — each agent gets its own API key (shown once)
   and a fire-and-forget endpoint, so a webhook, cron job, or automation tool (e.g. n8n)
   can hand it a prompt and files with no browser session. The result shows up as a new

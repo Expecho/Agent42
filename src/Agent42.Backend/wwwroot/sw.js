@@ -2,7 +2,7 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v57";
+const CACHE = "agent42-shell-v58";
 const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/artifacts.js", "/js/attachments.js",
   "/js/cache.js", "/js/clienttools.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
   "/js/drawer.js", "/js/editfork.js", "/js/elicitation.js", "/js/export.js", "/js/format.js", "/js/groups.js", "/js/location.js", "/js/main.js", "/js/mcp.js",
@@ -98,6 +98,10 @@ self.addEventListener("fetch", (event) => {
   // shell. An offline sign-out must fail visibly, not paint /index.html as if the session were still alive.
   // Must precede any respondWith, exactly like the guards above.
   if (url.pathname.startsWith("/.auth")) return;
+  // The agent fleet page (ADR 0097) is a standalone page outside SHELL. Its assets stay out of the shared cache, and
+  // an offline /fleet/ navigation must fail visibly rather than paint /index.html, the chat app, in its place. Must
+  // precede any respondWith, exactly like the guards above.
+  if (url.pathname.startsWith("/fleet")) return;
   // Share branch sits AFTER the /api guard (keeps the ADR-0002 invariant / the position test green)
   // and BEFORE the non-GET early-return below (a share is a POST).
   if (req.method === "POST" && url.pathname === "/share") { event.respondWith(handleShare(req)); return; }

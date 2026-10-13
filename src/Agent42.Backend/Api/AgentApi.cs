@@ -55,6 +55,7 @@ public static partial class AgentApi
         MapExportEndpoints(app);
         MapWebhookEndpoints(app);
         MapEmailEndpoints(app);
+        MapFleetEndpoints(app);
 
         return app;
     }

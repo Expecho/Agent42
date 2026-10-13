@@ -203,6 +203,12 @@ public sealed partial class FakeChatClient : IChatClient
             return verdict;
         }
 
+        // The agent fleet's planner, judge and moderator (ADR 0097) follow the task's script.
+        if (FleetReply(messages as IReadOnlyList<ChatMessage> ?? [.. messages], options) is { } fleet)
+        {
+            return fleet;
+        }
+
         // Gate 0 holds the NON-streaming path too, which is the reminder's (RunAsync): the only way to keep a
         // fired reminder in flight while a test acts (ADR 0092's edit refusals).
         await AwaitStreamGateAsync(0, cancellationToken);
@@ -232,9 +238,21 @@ public sealed partial class FakeChatClient : IChatClient
         return new ChatResponse(reply);
     }
 
-    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-        IEnumerable<ChatMessage> messages, ChatOptions? options = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        var list = messages as IReadOnlyList<ChatMessage> ?? [.. messages];
+
+        // The agent fleet's planner, judge and moderator (ADR 0097) follow the task's script. Checked out here, so the
+        // streaming body below stays under the S3776 threshold.
+        return FleetReply(list, options) is { } fleet
+            ? FleetStream(fleet)
+            : StreamCoreAsync(list, options, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<ChatResponseUpdate> StreamCoreAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var list = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
         if (list.Any(m => m.Role == ChatRole.System

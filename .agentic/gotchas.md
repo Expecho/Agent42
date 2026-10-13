@@ -31,6 +31,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Frontend composition root (wires every module)  | `src/Agent42.Backend/wwwroot/js/main.js`          | 2026-08-19 |
 | Classic script shared by the app AND the public viewer (window global, guarded consumers) | `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` | 2026-10-03 |
 | Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/Attachments/IAttachmentStore.cs`, `src/Agent42.Agents/Attachments/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` | 2026-07-08 |
+| Storage with ALL logic over a narrow Blob seam (contract-tested over the in-memory twin) | `src/Agent42.Agents/Fleet/FleetStore.cs`, `src/Agent42.Agents/Fleet/IFleetBlobs.cs`, `src/Agent42.Backend/Fleet/AzureFleetBlobs.cs` | 2026-10-13 |
+| SSE endpoint: replay a persisted log, then live, with a keep-alive | `src/Agent42.Backend/Fleet/AgentApi.Fleet.cs`, `src/Agent42.Backend/Fleet/FleetEventLog.cs` | 2026-10-13 |
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
 | Keyed third-party HTTP client behind an Agents interface | `src/Agent42.Backend/Web/ContextWebPageFetcher.cs`, `src/Agent42.Backend/Location/GoogleGeocoder.cs` | 2026-07-21 |
@@ -4206,3 +4208,88 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/EditRegenerateForkTests.cs` (`Truncate_WithOrphanTurnAttachment_StaysAligned` fails when step
   3 is "remove the last entry", checked by mutation), `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
 - **Verified:** 2026-10-10
+
+### The fleet's event log coalesces streamed text: an append blob holds at most 50,000 blocks
+
+- **Claim:** a fleet task streams one `agent.text`/`agent.thinking` event per token, and its log is an APPEND blob
+  (`{userId}/events/{taskId}.ndjson`). Appending per event would hit the 50,000-block limit within one long task. So
+  `FleetEventLog.FlushAsync` writes at most once a second, merging consecutive text deltas of the same
+  (team, attempt, executor) into ONE line that carries the LAST delta's sequence number. The live fan-out stays per
+  delta. Past `Fleet:MaxEventLogBytes`, text stops being persisted, but structural events (`task.finished`,
+  verdicts, results) still are. Don't "simplify" the flush into a per-event append, and don't renumber merged
+  lines: replay deduplicates by that last sequence number (see the replay entry below).
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetEventLog.cs` (`FlushAsync`, `Coalesce`),
+  `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Events_TextCoalesced_Complete`, `LogCap_DropsTextButKeepsFinished`),
+  `.agentic/decisions/0097-agent-fleet-recursive-teams.md`
+- **Verified:** 2026-10-13
+
+### Fleet replay-then-live: subscribe BEFORE reading the store, and skip at or below the last seq sent
+
+- **Claim:** `/api/fleet/tasks/{id}/events` replays the persisted log and then streams live. Exactly once holds only
+  because `FleetEventLog.Subscribe` registers the live channel and snapshots the not-yet-confirmed events under ONE
+  lock, and only THEN is the store read. Every event is then in the store, the snapshot or the channel, and a store
+  read that overlaps a flush only produces duplicates, which `ReplayAsync` drops by skipping every seq at or below
+  the last one sent. Reading the store first opens a gap. Removing the seq filter produces duplicates (checked by
+  mutation: the race test fails without the snapshot filter).
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetEventLog.cs` (`Subscribe`, `ReplayAsync`),
+  `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`SubscribeAsync`),
+  `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Subscribe_ReplaysThenLive_ExactlyOnce`)
+- **Verified:** 2026-10-13
+
+### A fleet task's `interrupted` status is computed on read, and nothing scans at startup
+
+- **Claim:** the registry of running fleet tasks is in-process (single replica, CLAUDE.md rule 12). A task persisted
+  as `running` that is not in the registry was running when the app stopped. `FleetTaskService.NormalizeAsync`
+  rewrites it as `interrupted` (and saves it) the first time it is read, through `GetAsync`/`ListAsync`. There is
+  deliberately no startup scan of all users' blobs. Two orderings depend on this: a submit adds to the registry
+  BEFORE it saves the `running` record, and a finishing task saves its final record BEFORE it leaves the registry.
+  Reversing either makes a live task read as interrupted. A graceful shutdown (`StopAsync`) persists running tasks
+  as `interrupted` itself, best effort. An interrupted task can't be followed up; the page offers "Run again".
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`SubmitAsync`, `NormalizeAsync`, `StopAsync`),
+  `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`FinishAsync`),
+  `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`RunningNotInRegistry_IsInterrupted_AndPersisted`, `Shutdown_PersistsInterrupted`)
+- **Verified:** 2026-10-13
+
+### Fleet workspace downloads are an XSS sink: attachment, nosniff, never an HTML or SVG type
+
+- **Claim:** workspace files are written by models (and by Copilot shells). `/api/fleet/tasks/{id}/files/{**path}`
+  serves them from the APP ORIGIN, behind Easy Auth, so a file served as `text/html` or `image/svg+xml` would run
+  script with the user's session. `DownloadFleetFile` always sends `Content-Disposition: attachment`,
+  `X-Content-Type-Options: nosniff`, and `text/plain; charset=utf-8` (valid UTF-8, no NUL) or
+  `application/octet-stream`, whatever the extension. Never add a "preview" by content type here: a preview belongs
+  in a sandboxed origin, as the ADR 0084 artifact frame does. Paths with `..`, rooted paths and backslash tricks
+  are refused in `FleetStore.NormalizeWorkspacePath`.
+- **Evidence:** `src/Agent42.Backend/Fleet/AgentApi.Fleet.cs` (`DownloadFleetFile`, `IsUtf8Text`),
+  `src/Agent42.Agents/Fleet/FleetStore.cs` (`NormalizeWorkspacePath`),
+  `tests/Agent42.Tests/FleetApiTests.cs` (`FileDownload_IsAttachment_NoSniff_NotHtml`, `FileDownload_PathTraversal_Refused`)
+- **Verified:** 2026-10-13
+
+### The fleet's Copilot client is NOT ADR 0085's client: don't merge them
+
+- **Claim:** two `CopilotClient`s live in one silo on purpose. `CopilotAgentFactory` (the copilot agent kind) runs
+  `CopilotClientMode.Empty` with a Blob `SessionFs` at `/work`: no built-in tools. `FleetCopilotHost` runs the
+  default mode (`CopilotClientMode.CopilotCli`), so fleet Copilot agents keep the shell, file and URL tools, with no
+  `SessionFs` (fleet sessions are one-shot) and `SessionConfig.WorkingDirectory` set to the task's local workspace.
+  Sharing one client would give copilot-kind chats built-in tools, or fleet agents a virtual filesystem. The fleet
+  environment is `MinimalEnvironment()` plus `PATH` only. Its permission policy is per task, so "always" never
+  outlives the task, and `PermissionRequestCustomTool` is approved without asking (default mode still raises it).
+  The kill switch is `Fleet:CopilotAgentsEnabled`. **Unverified live:** that a default-mode BYOK session raises
+  write/shell permissions and honours the working directory (the spike had no model key).
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`FleetCopilotHost.BuildClientOptions`),
+  `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`BuildClientOptions`),
+  `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs`, `.agentic/decisions/0097-agent-fleet-recursive-teams.md`
+- **Verified:** 2026-10-13
+
+### AF Workflows 1.23: `AgentResponseUpdateEvent` IS a `WorkflowOutputEvent`, and Declarative never throws on bad YAML
+
+- **Claim:** two measured traps for anything that drives Agent Framework workflows or declarative agents (spike of
+  2026-10-12, AF 1.23.0 / Declarative 1.23.0-rc1). (1) `AgentResponseUpdateEvent` derives from
+  `WorkflowOutputEvent`: a loop that ends on "the first `WorkflowOutputEvent`" ends on the first streamed token.
+  Exclude update events first, and match outputs by their `Data` type. (2) `CreateFromYamlAsync` on malformed
+  YAML does NOT throw: it returns an agent with a wrong or empty name. The fleet's "the name in the YAML must
+  match" check is the real invalid-YAML guard; don't remove it as redundant. An unknown function tool loads as a
+  bare `AIFunctionDeclaration`, and a hosted `webSearch` kind as a `HostedWebSearchTool`.
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetTeamRunner.Workflows.cs` (`FinalResult`),
+  `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs` (`CheckAgent`),
+  `tests/Agent42.Tests/FleetTeamRunnerTests.cs` (`InvalidYaml_ErrorsBackToPlanner`, `HostedToolKind_Rejected`)
+- **Verified:** 2026-10-13

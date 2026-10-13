@@ -93,5 +93,18 @@ resource copilotSessionsContainer 'Microsoft.Storage/storageAccounts/blobService
   }
 }
 
+// The agent fleet (ADR 0097): per user, the fleet's tasks, their event logs (append blobs), workspace files and
+// edited prompts ({userId}/tasks|events|workspaces|prompts.json). Private and never handed a SAS. It is reached only
+// through the app MI's account-scoped Storage Blob Data Contributor grant, so it needs NO new role assignment.
+// A fixed literal, like `copilot-sessions`: AzureFleetBlobs hardcodes the same name, and a param here would be a
+// second knob that could drift from the code.
+resource agentFleetContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'agent-fleet'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 output accountName string = account.name
 output blobEndpoint string = account.properties.primaryEndpoints.blob
