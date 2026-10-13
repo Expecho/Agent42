@@ -168,7 +168,8 @@ and one-turn fold are covered in [Research agent](research-agent.md).
 A create may choose the agent's type: Standard, or **Copilot** (`Kind = "copilot"`, create only, never changed
 afterwards, always per-chat). A copilot chat runs on the GitHub Copilot SDK's agent loop instead of a
 `ChatClientAgent`. It uses the user's own provider (BYOK), the same tools and skills the selection grants (no
-built-in shell or file tools in phase 1), and keeps the runtime's transcript in the private `copilot-sessions`
+built-in shell or file tools in phase 1; the [agent fleet](agent-fleet.md)'s Copilot agents are the one exception,
+ADR 0097), and keeps the runtime's transcript in the private `copilot-sessions`
 Blob container. The grain sees the loop only through `ICopilotAgentFactory` (`src/Agent42.Agents/Copilot/`).
 The SDK side, its session store and the runtime's trust boundary are in `src/Agent42.Backend/Copilot/`. A copilot
 chat takes no documents or images and refuses incognito turns. ADR 0085 records why, and how the chat history the
