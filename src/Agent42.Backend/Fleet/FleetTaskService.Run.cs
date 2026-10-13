@@ -46,6 +46,7 @@ public sealed partial class FleetTaskService
             });
             var input = previous is null ? record.Request : await FollowUpInputAsync(record, previous, workspace, run.Prompts);
             result = await new FleetTeamRunner(run).RunAsync(input);
+            failure = result is null ? FleetTeamRunner.NoTeamResult : null;
         }
         catch (OperationCanceledException) when (task.Budget.IsCancelled)
         {

@@ -17,8 +17,11 @@ public sealed partial class FleetTeamRunner(FleetRun run)
 
     private FleetRun Run => run;
 
-    /// <summary>Runs the task as the root team and returns its result.</summary>
-    public Task<string> RunAsync(string task) => RunTeamAsync(task, new FleetTeamContext(0, run.Budget.Token));
+    /// <summary>The text a team without a result hands back, to a delegating agent.</summary>
+    public const string NoTeamResult = "No team could be created for this task.";
+
+    /// <summary>Runs the task as the root team and returns its result, or null when no team could produce one.</summary>
+    public Task<string?> RunAsync(string task) => RunTeamCoreAsync(task, new FleetTeamContext(0, run.Budget.Token));
 
     /// <summary>
     /// Designs a team for the (sub-)task, runs it and returns the team's final result. Up to the judge depth a judge
@@ -26,6 +29,9 @@ public sealed partial class FleetTeamRunner(FleetRun run)
     /// on it. The best scored result is kept.
     /// </summary>
     public async Task<string> RunTeamAsync(string task, FleetTeamContext context)
+        => await RunTeamCoreAsync(task, context) ?? NoTeamResult;
+
+    private async Task<string?> RunTeamCoreAsync(string task, FleetTeamContext context)
     {
         var teamId = $"team-{Interlocked.Increment(ref _lastTeamId)}";
         run.Events.Publish("team.started", new
@@ -48,7 +54,7 @@ public sealed partial class FleetTeamRunner(FleetRun run)
         }
 
         run.Events.Publish("team.finished", new { teamId, result = team.BestResult, failed = team.BestResult is null });
-        return team.BestResult ?? "No team could be created for this task.";
+        return team.BestResult;
     }
 
     // One designed team: plan it, then run it and let it fix its result until it passes or runs out of fix rounds.

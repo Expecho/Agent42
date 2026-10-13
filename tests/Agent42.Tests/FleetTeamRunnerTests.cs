@@ -273,9 +273,13 @@ public class FleetTeamRunnerTests
 
         var result = await h.Runner.RunAsync(Task());
 
-        Assert.Equal("No team could be created for this task.", result);
+        Assert.Null(result);
         Assert.Single(h.Events.Of("attempt.failed"));
         Assert.True(Assert.Single(h.Events.Of("team.finished")).GetProperty("failed").GetBoolean());
+
+        // A delegating agent gets text back rather than nothing.
+        using var sub = new FleetRunHarness(NoReview);
+        Assert.Equal(FleetTeamRunner.NoTeamResult, await sub.Runner.RunTeamAsync(Task(), sub.Root));
     }
 
     [Fact]

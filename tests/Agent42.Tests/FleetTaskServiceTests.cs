@@ -63,6 +63,22 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Equal("task.finished", types[^1]);
     }
 
+    /// <summary>Found in the DevHost smoke run: a task whose planner never produces a team is a failure, not a done
+    /// task with the fallback text as its result, and it can't be followed up.</summary>
+    [Fact]
+    public async Task NoTeam_EndsFailed_NotDone()
+    {
+        var service = Service();
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(Task()));
+        var failed = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Equal(FleetTaskStatus.Failed, failed.Status);
+        Assert.Equal(FleetTeamRunner.NoTeamResult, failed.Reason);
+        Assert.Null(failed.Result);
+        Assert.False(failed.CanFollowUp);
+    }
+
     [Fact]
     public async Task Run_SetsUserTelemetryContext()
     {
