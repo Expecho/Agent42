@@ -679,7 +679,7 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Empty(restored.Deliveries);
     }
 
-    // ADR 0095 AC17: an agent document written before the email token existed binds EmailToken to null — the agent
+    // ADR 0096 AC17: an agent document written before the email token existed binds EmailToken to null — the agent
     // simply has no address until a regenerate — and the fields beside it do not shift.
     [Fact]
     public void AgentDefinition_PreEmailToken_BindsNull()
@@ -693,7 +693,7 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.True(agent.McpExposed);
     }
 
-    // ADR 0095: the token survives the Cosmos JSON path beside every other trailing field.
+    // ADR 0096: the token survives the Cosmos JSON path beside every other trailing field.
     [Fact]
     public void AgentDefinition_EmailToken_RoundTripsThroughCosmosJson()
     {
@@ -710,7 +710,7 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal(("agent-abc", "h", AgentKinds.Copilot, true), (agent.EmailToken, agent.ApiKeyHash, agent.Kind, agent.McpExposed));
     }
 
-    // ADR 0095: the email directory's committed document still reads. A security-relevant read: a document that stopped
+    // ADR 0096: the email directory's committed document still reads. A security-relevant read: a document that stopped
     // resolving would only make addresses 406, but one that resolved to the wrong owner would hand a stranger the run.
     [Fact]
     public void EmailAddressDirectoryState_ReadsCommittedDocument()

@@ -4,7 +4,7 @@ using Agent42.Backend;
 namespace Agent42.Tests;
 
 /// <summary>
-/// Mailgun signature verification and the replay guard (ADR 0095). The known vector is computed independently of
+/// Mailgun signature verification and the replay guard (ADR 0096). The known vector is computed independently of
 /// <see cref="MailgunWebhook.Sign"/> (HMAC-SHA256 over timestamp+token, hex), so a bug in Sign cannot hide behind
 /// IsValid agreeing with itself.
 /// </summary>

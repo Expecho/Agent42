@@ -4,7 +4,7 @@ using System.Text;
 namespace Agent42.Agents;
 
 /// <summary>
-/// Generates, hashes and parses per-agent inbound email tokens (ADR 0095). The single home of all three, so the
+/// Generates, hashes and parses per-agent inbound email tokens (ADR 0096). The single home of all three, so the
 /// minter and the request-time resolver can never disagree on the digest — the same rule as <see cref="ApiKey"/>.
 ///
 /// <para><b>Why this is not <see cref="ApiKey"/>.</b> An API key is base64url, which is case-sensitive. The local part

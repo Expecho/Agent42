@@ -2,7 +2,7 @@
 
 planned-against: main @ 270c94b (refreshed 2026-10-10; first planned against 941127f, see **Refresh notes** at the end)
 
-> **Status: implemented (2026-10-10), ADR 0095.** Where the build departs from the plan below, the
+> **Status: implemented (2026-10-10), ADR 0096.** Where the build departs from the plan below, the
 > **Implementation divergences** section at the end wins. In particular, the AC table's status codes and
 > several test names changed.
 
@@ -356,7 +356,7 @@ conversation appears, an attachment rides through, an uppercased address still r
 bad signature 401s. Record the measured values for the ADR.
 **Verify:** the curl transcript, pasted into the MR.
 
-**Step 12 — Docs.** `/decide` for the ADR (next free number, **0095** at `270c94b`), carrying C1, C2, C3, C5, C11 and D1–D4 and
+**Step 12 — Docs.** `/decide` for the ADR (next free number, **0096** at `270c94b`), carrying C1, C2, C3, C5, C11 and D1–D4 and
 the manual DNS/secret prerequisites; `/gotcha` for **two** entries — the case-insensitive
 alphabet (C2) and the two-directories rule (C1) — and extend the existing per-operation-sync
 gotcha to name the email directory. Add the CLAUDE.md repo-note bullet.
@@ -418,7 +418,7 @@ against the code:
 
 - `AgentDefinition` grew `[Id(10)] McpExposed` (ADR 0070) and `[Id(11)] Kind` (ADR 0082), so
   the email token moves to **`[Id(12)]`** (C3, C8, Step 4, Step 10, AC17).
-- The ADR number is **0095**; 0068 is already the stored-agent retention ADR.
+- The ADR number is **0096**; 0068 is already the stored-agent retention ADR.
 - `sw.js` CACHE is `agent42-shell-v56`; the bump is to **v57**.
 - 22 `AgentApi.*` partials exist, so email is the **23rd**.
 - ADR 0070's `AgentMcpKeyGate` also resolves through `IAgentKeyDirectoryGrain`, which strengthens C1.
@@ -429,7 +429,7 @@ against the code:
 
 ## Implementation divergences (2026-10-10)
 
-What shipped differs from the steps above in these ways. Each is recorded in ADR 0095.
+What shipped differs from the steps above in these ways. Each is recorded in ADR 0096.
 
 - **Status codes (Spike findings D-S1..D-S3).**
   - Accepted is **200**, not 202.

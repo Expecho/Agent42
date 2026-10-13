@@ -1,5 +1,5 @@
 ---
-id: 0095
+id: 0096
 date: 2026-10-10
 status: accepted
 tags: [agents, stored-agents, email, mailgun, inbound, excluded-paths, security, credentials, prompt-injection, orleans, no-migration]
@@ -8,6 +8,10 @@ amends: [0013, 0022]
 ---
 
 # Inbound email triggers a stored agent (Mailgun Routes → `POST /api/email-in`)
+
+> **Renumbered from 0095 on 2026-10-13.** It merged (PR #185) as a second ADR 0095 beside
+> [0095](0095-mcp-elicitation-on-the-client.md) (MCP elicitation, which merged first and keeps the number).
+> Commit messages and PR #185 still say "ADR 0095" for this decision.
 
 ## Context
 The owner wants to send or auto-forward an email to an agent and have it run, attachments included, with no browser

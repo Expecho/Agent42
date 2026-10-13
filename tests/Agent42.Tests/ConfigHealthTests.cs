@@ -112,7 +112,7 @@ public sealed class ConfigHealthTests
         Assert.Equal(ConfigHealth.Warning, Find(report, "Geocoding:GoogleApiKey").Status);
     }
 
-    // ADR 0095: the Mailgun signing key is a presence row. Missing is a warning that names the 503, not a degradation.
+    // ADR 0096: the Mailgun signing key is a presence row. Missing is a warning that names the 503, not a degradation.
     [Fact]
     public void MailgunSigningKey_PresenceRow_NamesThe503WhenMissing()
     {

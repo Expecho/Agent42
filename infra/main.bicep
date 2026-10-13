@@ -56,7 +56,7 @@ param appInsightsConnectionString string = ''
 param vapidPrivateKey string = ''
 
 @secure()
-@description('Mailgun HTTP webhook signing key for inbound email (ADR 0095 - the MAILGUN_SIGNING_KEY GitHub Actions secret). OPTIONAL like contextApiKey (no @minLength, empty default): an absent key must NOT fail the deployment, and the app starts fine. But NOT a graceful degradation: without it POST /api/email-in answers 503 and accepts nothing, because accepting unsigned webhooks would turn an optional secret into an optional security control. MANUAL PREREQS outside this repo: MX for the inbound subdomain pointing at Mailgun (DNS is at the registrar; this template only binds the ACA custom domain), and a Mailgun Route forwarding to https://chat.agent42.nl/api/email-in.')
+@description('Mailgun HTTP webhook signing key for inbound email (ADR 0096 - the MAILGUN_SIGNING_KEY GitHub Actions secret). OPTIONAL like contextApiKey (no @minLength, empty default): an absent key must NOT fail the deployment, and the app starts fine. But NOT a graceful degradation: without it POST /api/email-in answers 503 and accepts nothing, because accepting unsigned webhooks would turn an optional secret into an optional security control. MANUAL PREREQS outside this repo: MX for the inbound subdomain pointing at Mailgun (DNS is at the registrar; this template only binds the ACA custom domain), and a Mailgun Route forwarding to https://chat.agent42.nl/api/email-in.')
 param mailgunSigningKey string = ''
 
 @secure()

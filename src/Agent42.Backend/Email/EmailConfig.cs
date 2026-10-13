@@ -1,7 +1,7 @@
 namespace Agent42.Backend;
 
 /// <summary>
-/// Inbound email configuration (ADR 0095). <see cref="SigningKey"/> is the Mailgun HTTP webhook signing key (a secret,
+/// Inbound email configuration (ADR 0096). <see cref="SigningKey"/> is the Mailgun HTTP webhook signing key (a secret,
 /// <c>Email__MailgunSigningKey</c>); <see cref="Domain"/> is the non-secret inbound domain whose MX points at Mailgun.
 /// </summary>
 public sealed record EmailConfig(string SigningKey, string Domain)

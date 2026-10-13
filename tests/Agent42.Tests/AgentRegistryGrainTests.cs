@@ -283,7 +283,7 @@ public sealed class AgentRegistryGrainTests(SharedClusterFixture fixture) : Shar
         Assert.Equal(agent.Id, Assert.Single(await registry.GetAllAsync()).Id);
     }
 
-    // ADR 0095 AC9: create mints an email token that resolves, in the EMAIL directory, to (user, agentId).
+    // ADR 0096 AC9: create mints an email token that resolves, in the EMAIL directory, to (user, agentId).
     [Fact]
     public async Task AgentCreate_MintsResolvableEmailAddress()
     {
@@ -298,7 +298,7 @@ public sealed class AgentRegistryGrainTests(SharedClusterFixture fixture) : Shar
         Assert.Equal(created.Id, owner.AgentId);
     }
 
-    // ADR 0095 AC10: regenerate kills the old address and the new one resolves. A plain update and a KEY regenerate
+    // ADR 0096 AC10: regenerate kills the old address and the new one resolves. A plain update and a KEY regenerate
     // both keep the address (the grain is the authority; a request carrying a token is ignored).
     [Fact]
     public async Task EmailAddress_Regenerate_InvalidatesOld()
@@ -324,7 +324,7 @@ public sealed class AgentRegistryGrainTests(SharedClusterFixture fixture) : Shar
         Assert.Equal(created.Id, owner?.AgentId);
     }
 
-    // ADR 0095 AC11: delete deregisters BOTH the API-key and the email directories.
+    // ADR 0096 AC11: delete deregisters BOTH the API-key and the email directories.
     [Fact]
     public async Task AgentDelete_DeregistersBothDirectories()
     {

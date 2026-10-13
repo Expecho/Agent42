@@ -64,7 +64,7 @@ public sealed class SerializationCompatibilityTests
     private const string AgentKeyDirectoryStateBlob =
         "IEAhdXNlckBleGFtcGxlLmNvbUEZYWdlbnQtZ29sZGVu4A==";
 
-    // Serialized once from GoldenStates.EmailAddressDirectory() when ADR 0095 added the type, then committed.
+    // Serialized once from GoldenStates.EmailAddressDirectory() when ADR 0096 added the type, then committed.
     private const string EmailAddressDirectoryStateBlob =
         "IEAhdXNlckBleGFtcGxlLmNvbUEjYWdlbnQtZ29sZGVuLW1haWzg";
     private const string ConversationIndexStateBlob =
@@ -149,7 +149,7 @@ public sealed class SerializationCompatibilityTests
         Assert.Equal(expected.AgentId, actual.AgentId);
     }
 
-    // ADR 0095: the global email-token directory — like the key directory, a resolution bug here is a security failure.
+    // ADR 0096: the global email-token directory — like the key directory, a resolution bug here is a security failure.
     [Fact]
     public void EmailAddressDirectoryState_RoundTripsFieldForField()
     {
