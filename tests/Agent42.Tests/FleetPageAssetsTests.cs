@@ -29,6 +29,18 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
         }
     }
 
+    // The page writes (POST/PUT/DELETE). Under no-referrer the browser sends `Origin: null` on those, and Easy Auth
+    // answers with a bare 403 that never reaches the app, so nothing is logged.
+    [Fact]
+    public async Task FleetPage_ReferrerPolicy_KeepsTheOriginOnWrites()
+    {
+        var page = await _client.GetStringAsync("/fleet/");
+
+        var policy = Regex.Match(page, "<meta\\s+name=\"referrer\"\\s+content=\"(?<value>[^\"]+)\"");
+        Assert.True(policy.Success, "The fleet page has no referrer meta");
+        Assert.Equal("same-origin", policy.Groups["value"].Value);
+    }
+
     [Fact]
     public async Task IndexHtml_LinksToFleetPage()
     {

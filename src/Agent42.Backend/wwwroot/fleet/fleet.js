@@ -456,7 +456,8 @@
       await loadTasks();
       selectTask(r.data.taskId);
     } else {
-      composer.err.textContent = r.data?.error || "The task could not be started.";
+      // No error field means something in front of the app answered (Easy Auth, the ingress): show the status.
+      composer.err.textContent = r.data?.error || `The task could not be started (HTTP ${r.status}).`;
     }
   }
 

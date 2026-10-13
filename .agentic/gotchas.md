@@ -4293,3 +4293,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs` (`CheckAgent`),
   `tests/Agent42.Tests/FleetTeamRunnerTests.cs` (`InvalidYaml_ErrorsBackToPlanner`, `HostedToolKind_Rejected`)
 - **Verified:** 2026-10-13
+
+### A page that writes must not set `<meta name="referrer" content="no-referrer">`: its POSTs get `Origin: null` and Easy Auth 403s them
+
+- **Claim:** under a `no-referrer` policy the browser serialises the request origin as `null` (Fetch spec), so every
+  POST, PUT and DELETE from the page carries `Origin: null`. Easy Auth rejects those cookie-session writes with a
+  bare 403: no body, no `Content-Type`, only `X-Ms-Middleware-Request-Id`. The request never reaches the app, so
+  `/logs` shows nothing. GETs carry no `Origin`, so the page loads and reads fine, and only its writes fail. Seen on
+  `/fleet/` (2026-10-13): "Run task" answered 403 in production and 202 on DevHost, which has no Easy Auth. Use
+  `same-origin`: the page's own calls keep their real origin, and nothing leaks cross-site. `/logs` and `/shared`
+  keep `no-referrer` because they only read.
+- **Evidence:** `src/Agent42.Backend/wwwroot/fleet/index.html` (referrer meta),
+  `tests/Agent42.Tests/FleetPageAssetsTests.cs` (`FleetPage_ReferrerPolicy_KeepsTheOriginOnWrites`)
+- **Verified:** 2026-10-13 (the 403 from Easy Auth was observed. The fix is unverified in production until it is deployed.)
