@@ -70,7 +70,11 @@ public sealed class FleetEventMapper(IFleetEventSink events, int maxToolTextLeng
             case FunctionResultContent result:
                 events.Publish("tool.result", new
                 {
-                    teamId, attempt, executorId, agent, callId = result.CallId,
+                    teamId,
+                    attempt,
+                    executorId,
+                    agent,
+                    callId = result.CallId,
                     result = ToText(result.Exception?.Message ?? result.Result),
                     failed = result.Exception is not null,
                 });

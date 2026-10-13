@@ -100,8 +100,16 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
         using var h = new FleetRunHarness(new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1 });
         var run = new FleetRun
         {
-            TaskId = h.Run.TaskId, Options = h.Run.Options, Prompts = h.Run.Prompts, Budget = h.Run.Budget, Workspace = h.Run.Workspace,
-            DefaultModel = h.Run.DefaultModel, Clients = h.Run.Clients, Events = h.Events, Interaction = h.Interaction, Logger = h.Run.Logger,
+            TaskId = h.Run.TaskId,
+            Options = h.Run.Options,
+            Prompts = h.Run.Prompts,
+            Budget = h.Run.Budget,
+            Workspace = h.Run.Workspace,
+            DefaultModel = h.Run.DefaultModel,
+            Clients = h.Run.Clients,
+            Events = h.Events,
+            Interaction = h.Interaction,
+            Logger = h.Run.Logger,
             CopilotFactory = Factory(Host(enabled: false)),
             CopilotEnabled = false,
         };
