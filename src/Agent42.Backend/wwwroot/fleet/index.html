@@ -4,10 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Agent42 agent fleet — Agent 42</title>
-  <!-- The page shows model output of the user's own tasks. Keep it out of search indexes and Referer headers,
-       as /logs does. -->
+  <!-- The page shows model output of the user's own tasks. Keep it out of search indexes and other sites' Referer
+       headers. NOT no-referrer, unlike /logs: under no-referrer the browser sends `Origin: null` on every POST, PUT
+       and DELETE, and Easy Auth answers those with a bare 403 before the app sees them. same-origin keeps the real
+       Origin on the page's own API calls and still sends nothing cross-site. -->
   <meta name="robots" content="noindex, nofollow" />
-  <meta name="referrer" content="no-referrer" />
+  <meta name="referrer" content="same-origin" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
