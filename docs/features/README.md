@@ -56,6 +56,7 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 |---------|------|
 | Build agents, continuous/per-chat memory, external API-key runs, MCP exposure | [custom-agents.md](custom-agents.md) |
 | The seeded Research agent: plan/search/reflect loop with a live checklist | [research-agent.md](research-agent.md) |
+| Agent42 agent fleet: recursive agent teams on their own page (`/fleet/`), judged and followed up | [agent-fleet.md](agent-fleet.md) |
 
 ## Remote MCP servers
 

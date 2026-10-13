@@ -382,6 +382,11 @@ builder.Services.AddInboundEmail(builder.Configuration);
 // Blob. See CopilotRegistration and CopilotAgentFactory for the runtime's trust boundary.
 builder.Services.AddCopilotAgents(builder.Configuration);
 
+// The agent fleet (ADR 0097): recursive agent teams on the user's own models, run in-process (not in a grain) and
+// persisted in the agent-fleet Blob container. After AddCopilotAgents: its Copilot runtime host reuses those options.
+// See FleetRegistration, and ADR 0097 for the Copilot fleet agents' trust boundary.
+builder.Services.AddAgentFleet(builder.Configuration);
+
 // Web Push notifications (ADR 0028): a push when an agent replies on an async path (a fired reminder or an
 // agent-run) while the user is away.
 //

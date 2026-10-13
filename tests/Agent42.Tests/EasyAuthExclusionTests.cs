@@ -157,6 +157,12 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/api/email/config")]
     [InlineData("/api/email-in/")]
     [InlineData("/api/email-in/x")]
+    // The agent fleet (ADR 0097): every route takes the userId from GetUserId(), and the file route serves
+    // model-written content. The page, the event stream and a download are named separately.
+    [InlineData("/fleet/")]
+    [InlineData("/api/fleet/tasks")]
+    [InlineData("/api/fleet/tasks/x/events")]
+    [InlineData("/api/fleet/tasks/x/files/report.md")]
     public void Exclusions_DoNotCoverAnyAuthenticatedPath(string path)
     {
         var entries = ExcludedPaths();

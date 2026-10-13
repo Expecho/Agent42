@@ -5,9 +5,15 @@ status: accepted
 tags: [copilot, stored-agents, agent-framework, github-copilot-sdk, sessionfs, blob, byok, tools, skills, egress, trust-boundary, experimental-api, no-migration]
 supersedes: []
 amends: [0082, 0016, 0034, 0049]
+amended_by: [0097]   # 0097 agent fleet: fleet Copilot agents keep built-in tools
 ---
 
 # A user-created "copilot" agent kind that runs the GitHub Copilot SDK's agent loop (phase 1: no built-in tools)
+
+> **Amended by [ADR 0097](0097-agent-fleet-recursive-teams.md) (2026-10-12): for agent fleet tasks only, Copilot
+> agents keep their built-in tools (shell, file writes, URL fetch) in the backend container.** They use a separate
+> default-mode `CopilotClient` with no `SessionFs`, per-action user approval and a kill switch. This ADR's
+> `Mode.Empty` client and phase-1 boundary are unchanged for the copilot agent kind.
 
 ## Context
 

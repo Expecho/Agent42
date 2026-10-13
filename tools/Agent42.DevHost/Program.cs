@@ -191,6 +191,10 @@ builder.Services.AddSingleton(new HindsightIntegration(null));
 // no network. The grain resolves the factory optionally; registered so copilot chats work in DevHost.
 builder.Services.AddSingleton<ICopilotAgentFactory, ChatClientCopilotAgentFactory>();
 
+// The agent fleet offline (ADR 0097): the in-memory store, so tasks run on the canned client and are gone on restart.
+// Copilot fleet agents are off: there is no Copilot runtime here, and a planner that asks for one gets a load error.
+builder.Services.AddAgentFleetInMemory(builder.Configuration);
+
 // Web Push offline (ADR 0028): no VAPID keys, so the no-op sender — the async reply paths run end to end
 // but push nothing. Every AgentGrain host must register an IPushNotificationSender or activation fails, and
 // every host that maps MapAgentApi must register PushConfig or /api/push/config's param inference breaks

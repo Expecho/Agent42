@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent42 agent fleet — Agent 42</title>
+  <!-- The page shows model output of the user's own tasks. Keep it out of search indexes and Referer headers,
+       as /logs does. -->
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="fleet.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90' font-family='monospace' fill='%23FFB13D'>42</text></svg>" />
+  <meta name="theme-color" content="#100f0d" />
+  <script>
+    // No-FOUC theme resolve (mirrors index.html): the app's cached choice, else the OS preference.
+    (function () {
+      try {
+        var choice = localStorage.getItem("agent42.theme") || "system";
+        var dark = choice === "dark" ||
+          (choice === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = dark ? "#100f0d" : "#f4efe4";
+      } catch (e) { /* localStorage/matchMedia unavailable → CSS dark default stands */ }
+    })();
+  </script>
+</head>
+<body>
+  <header class="fleet__topbar">
+    <a class="fleet__back" href="/" title="Back to the chat">← Agent 42</a>
+    <span class="fleet__brand"><span id="conn" class="conn" title="Not connected"></span><span class="fleet__mark">42</span>AGENT FLEET</span>
+    <select id="taskSelect" aria-label="Task"></select>
+    <button id="newTaskBtn" class="btn" type="button">New task</button>
+    <label class="follow" title="Jump to the team that is working right now"><input type="checkbox" id="follow" checked> Follow live</label>
+    <button id="stopBtn" class="btn danger" type="button" hidden>Stop task</button>
+    <button id="promptsBtn" class="btn" type="button">System prompts</button>
+  </header>
+  <div id="signInBanner" class="banner" hidden>
+    Your session has expired or the server can't be reached. <a href="/">Sign in again</a>
+  </div>
+  <div id="promptBanner" hidden>
+    <div class="q"><b>The fleet asks</b><span id="promptText"></span></div>
+    <form id="promptForm" class="answer-row">
+      <span id="promptChoices" class="choices"></span>
+      <input id="promptInput" autocomplete="off">
+      <button class="btn" type="submit">Send</button>
+    </form>
+  </div>
+  <main>
+    <aside id="tree"></aside>
+    <section id="detail"></section>
+    <section id="agentPanel" hidden aria-label="Agent output"><div id="panelHead" class="panel-head"></div><div id="panelBody"></div></section>
+  </main>
+  <footer>
+    <span>Agents spawned <b id="mAgents">0</b> <span id="mDepth"></span></span>
+    <span>Tokens <b id="mIn">0</b> in / <b id="mOut">0</b> out</span>
+    <div class="budget">
+      <span>Task budget</span>
+      <div class="meter"><div class="meter-label"><span>Tokens</span><span id="tokText">–</span></div><div class="meter-bar"><div id="tokFill" class="meter-fill"></div></div></div>
+      <div class="meter"><div class="meter-label"><span>Agents</span><span id="agText">–</span></div><div class="meter-bar"><div id="agFill" class="meter-fill"></div></div></div>
+    </div>
+  </footer>
+
+  <!-- Sanitizer BEFORE the markdown parser and the page: fleet.js renders model text only through
+       DOMPurify.sanitize(marked.parse(...)). -->
+  <script src="/shared/lib/purify.min.js"></script>
+  <script src="/shared/lib/marked.min.js"></script>
+  <!-- ONE classic script, like /logs: outside wwwroot/js, so no ES-module graph and no CACHE bump of its own. -->
+  <script src="fleet.js"></script>
+</body>
+</html>

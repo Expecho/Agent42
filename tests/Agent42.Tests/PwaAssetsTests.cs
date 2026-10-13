@@ -136,6 +136,24 @@ public sealed class PwaAssetsTests
     }
 
     /// <summary>
+    /// ADR 0097. The agent fleet page is standalone and outside SHELL: an offline <c>/fleet/</c> navigation must not
+    /// fall through to the navigate branch, which would paint <c>/index.html</c> (the chat app) in its place, and
+    /// its assets stay out of the shared cache. Source-text heuristic, like the guards above: proves position.
+    /// </summary>
+    [Fact]
+    public async Task ServiceWorker_FleetNavigationNotServedFromShell()
+    {
+        var source = await _client.GetStringAsync("/sw.js");
+
+        var fleetGuard = source.IndexOf("startsWith(\"/fleet\")", StringComparison.Ordinal);
+        Assert.True(fleetGuard >= 0, "Service worker is missing the /fleet bypass guard");
+
+        var firstRespond = source.IndexOf("event.respondWith(", StringComparison.Ordinal);
+        Assert.True(fleetGuard < firstRespond, "The /fleet bypass must precede any respondWith");
+        Assert.DoesNotContain("\"/fleet", source[..source.IndexOf("self.addEventListener", StringComparison.Ordinal)]);
+    }
+
+    /// <summary>
     /// ADR 0090. Easy Auth's <c>/.auth/*</c> endpoints are platform redirects, not shell. Without the bypass, an
     /// offline sign-out would fall through to the navigate branch and paint <c>/index.html</c>, so the app
     /// would look signed in. Source-text heuristic, like the guards above: proves position, not logic.
@@ -285,7 +303,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v57", sw);
+        Assert.Contains("agent42-shell-v58", sw);
     }
 
     // Rich rendering (ADR 0083): SHELL holds only the eager renderer + highlight.js. The lazy libs stay out —

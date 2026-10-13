@@ -209,7 +209,8 @@ public sealed class CopilotAgentFactory : ICopilotAgentFactory, IAsyncDisposable
             };
     }
 
-    private static string RuntimePath(CopilotRuntimeOptions options)
+    /// <summary>The runtime binary: the configured path, or the one the SDK's build targets copy next to the app.</summary>
+    public static string RuntimePath(CopilotRuntimeOptions options)
     {
         if (!string.IsNullOrWhiteSpace(options.RuntimePath))
         {
