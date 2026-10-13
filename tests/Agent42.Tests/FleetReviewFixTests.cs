@@ -20,8 +20,14 @@ public sealed class FleetReviewFixTests
         var store = new StaleFirstReadStore(new FleetStore(new InMemoryFleetBlobs()));
         var done = new FleetTaskRecord
         {
-            Id = "t1", UserId = "alice", Request = "r", WorkspaceId = "w1", PlannerModel = FleetRunHarness.ModelA,
-            Status = FleetTaskStatus.Done, Result = "the result", StartedAt = DateTimeOffset.UtcNow,
+            Id = "t1",
+            UserId = "alice",
+            Request = "r",
+            WorkspaceId = "w1",
+            PlannerModel = FleetRunHarness.ModelA,
+            Status = FleetTaskStatus.Done,
+            Result = "the result",
+            StartedAt = DateTimeOffset.UtcNow,
         };
         await store.SaveTaskAsync(done);
         var service = new FleetTaskService(store, new FleetOptions(),
