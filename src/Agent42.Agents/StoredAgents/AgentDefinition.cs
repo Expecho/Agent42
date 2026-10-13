@@ -46,7 +46,7 @@ namespace Agent42.Agents;
 /// purpose: the Cosmos JSON path binds a key a document lacks to <c>null</c>, not to the C# default, so a
 /// non-null declaration would be a lie about every agent stored before it.</para>
 ///
-/// <para><see cref="EmailToken"/> is the local part of the agent's inbound email address (ADR 0095), stored
+/// <para><see cref="EmailToken"/> is the local part of the agent's inbound email address (ADR 0096), stored
 /// <b>raw</b> (unlike <see cref="ApiKeyHash"/>) because the owner must read the address again to set up a
 /// forwarding rule — ADR 0035's share-token reasoning. It is a credential in cleartext grain state, so rotation
 /// is the only revocation. The grain is the authority on it, exactly as on the hash: a request never carries it.

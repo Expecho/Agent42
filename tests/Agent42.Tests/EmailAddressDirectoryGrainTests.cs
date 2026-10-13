@@ -4,7 +4,7 @@ using Orleans.Core.Internal;
 namespace Agent42.Tests;
 
 /// <summary>
-/// The global email-token-hash → owner directory (ADR 0095): the same round-trip and persistence contract as
+/// The global email-token-hash → owner directory (ADR 0096): the same round-trip and persistence contract as
 /// <see cref="AgentKeyDirectoryGrainTests"/>, plus the property the separate grain type exists for — a hash
 /// registered here never resolves in the API-key directory.
 /// </summary>

@@ -197,7 +197,7 @@ function applyKindLock(kind) {
 // dialog open and after each save, so a plain Save never regenerates.
 let pendingRegenerate = false;
 
-// Set by the Regenerate-address button so the next save rotates the inbound email address (ADR 0095). Reset like
+// Set by the Regenerate-address button so the next save rotates the inbound email address (ADR 0096). Reset like
 // pendingRegenerate, so a plain Save never rotates it.
 let pendingEmailRegenerate = false;
 
@@ -213,7 +213,7 @@ async function loadEmailConfig() {
   return emailConfig ?? { enabled: false, domain: "" };
 }
 
-// The address is shown persistently for a saved agent (it is stored raw, ADR 0095), never revealed-once like the key.
+// The address is shown persistently for a saved agent (it is stored raw, ADR 0096), never revealed-once like the key.
 async function renderEmailAddress(agent) {
   agentEmailSection.hidden = !agent;
   agentEmailCopyBtn.textContent = "Copy";
@@ -368,7 +368,7 @@ export function wireAgents() {
     saveAgent();
   });
 
-  // Regenerate the inbound email address (ADR 0095): the current address stops working, including in any
+  // Regenerate the inbound email address (ADR 0096): the current address stops working, including in any
   // forwarding rule that points at it.
   agentRegenerateEmailBtn.addEventListener("click", () => {
     if (!editingAgentId) return;

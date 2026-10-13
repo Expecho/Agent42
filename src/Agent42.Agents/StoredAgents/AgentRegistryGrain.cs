@@ -86,7 +86,7 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             storedHash = newHash;
         }
 
-        // The email token follows the same regenerate order, independently (ADR 0095): the OLD address dies first.
+        // The email token follows the same regenerate order, independently (ADR 0096): the OLD address dies first.
         var storedEmailToken = previous.EmailToken;
         if (regenerateEmail)
         {
@@ -143,7 +143,7 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             markResearchSeeded: true);
     }
 
-    // ── Insert ── mint a key and an email token (ADR 0095). Create order (constraint 2): write registry state (carrying the new hash) FIRST,
+    // ── Insert ── mint a key and an email token (ADR 0096). Create order (constraint 2): write registry state (carrying the new hash) FIRST,
     // THEN register the hash. A crash in between leaves the agent with a hash but no directory entry — the key is
     // simply unusable (user regenerates), never a live orphan pointing at a stranger's agent. The seeded flag
     // rides the SAME write as the insert, so a crash can never seed twice.
@@ -198,7 +198,7 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
         await DeregisterEmailAsync(agent.EmailToken);
     }
 
-    // The email directory entry for a raw token (ADR 0095): its own grain type, never the key directory, so an
+    // The email directory entry for a raw token (ADR 0096): its own grain type, never the key directory, so an
     // address can never authenticate as an API key. The registry keeps it in sync on every token change.
     private IEmailAddressDirectoryGrain EmailDirectory(string token)
         => GrainFactory.GetGrain<IEmailAddressDirectoryGrain>(EmailAddress.Hash(token));

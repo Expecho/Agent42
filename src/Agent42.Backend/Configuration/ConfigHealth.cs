@@ -130,7 +130,7 @@ public static class ConfigHealth
             missing: "not set — telemetry goes to the OTLP collector only",
             missingStatus: Warning));
 
-        // Inbound email (ADR 0095). Absent is supported for the app, but the endpoint then refuses (503), so the
+        // Inbound email (ADR 0096). Absent is supported for the app, but the endpoint then refuses (503), so the
         // missing message names the refusal rather than a degradation. Nothing to probe without a delivery.
         checks.Add(PresenceCheck(GroupOptional, "Email:MailgunSigningKey", config["Email:MailgunSigningKey"],
             present: "configured — mail to an agent's address runs that agent",

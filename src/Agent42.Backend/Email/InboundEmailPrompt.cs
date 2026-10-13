@@ -4,7 +4,7 @@ using Agent42.Agents;
 namespace Agent42.Backend;
 
 /// <summary>
-/// Assembles the prompt an inbound email becomes (ADR 0095): <c>From</c> and <c>Subject</c> lines, then the body, then a
+/// Assembles the prompt an inbound email becomes (ADR 0096): <c>From</c> and <c>Subject</c> lines, then the body, then a
 /// note per attachment that could not ride the turn. The recipient address is deliberately left out — it is the
 /// credential, and the prompt is persisted, may be retained by memory (ADR 0056) and is sent to an outbound webhook
 /// (ADR 0094).

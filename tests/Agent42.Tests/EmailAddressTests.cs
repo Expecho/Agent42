@@ -3,7 +3,7 @@ using Agent42.Agents;
 namespace Agent42.Tests;
 
 /// <summary>
-/// The inbound email token helper (ADR 0095). Beyond <see cref="ApiKeyTests"/>' minter/resolver agreement, the
+/// The inbound email token helper (ADR 0096). Beyond <see cref="ApiKeyTests"/>' minter/resolver agreement, the
 /// load-bearing property is case-insensitivity: a local part that arrives uppercased must hash to the same digest, or
 /// every forwarded message would be rejected.
 /// </summary>

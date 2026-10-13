@@ -30,7 +30,7 @@ public interface IAgentRegistryGrain : IGrainWithStringKey
     /// existing hash. The incoming <paramref name="agent"/>'s <see cref="AgentDefinition.ApiKeyHash"/>
     /// is ignored — the grain is the authority on it.</para>
     ///
-    /// <para>Owns the inbound email token the same way (ADR 0095): minted on insert and, when
+    /// <para>Owns the inbound email token the same way (ADR 0096): minted on insert and, when
     /// <paramref name="regenerateEmail"/> is set, on update, keeping <see cref="IEmailAddressDirectoryGrain"/> in
     /// sync. The incoming <see cref="AgentDefinition.EmailToken"/> is ignored too.</para>
     /// </summary>

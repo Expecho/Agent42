@@ -15,7 +15,7 @@ public sealed class EmailAddressDirectoryState
 }
 
 /// <summary>
-/// Global email-token-hash → owner directory (ADR 0095). A near-copy of <see cref="AgentKeyDirectoryGrain"/>'s shape
+/// Global email-token-hash → owner directory (ADR 0096). A near-copy of <see cref="AgentKeyDirectoryGrain"/>'s shape
 /// but its own grain type and state name, so an email token can never resolve as an API key (see
 /// <see cref="IEmailAddressDirectoryGrain"/>). Rides the shared "agent-state" storage provider.
 /// </summary>
