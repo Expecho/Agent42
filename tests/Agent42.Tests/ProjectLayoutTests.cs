@@ -94,7 +94,7 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Agents",
             [
-                "Artifacts", "Attachments", "ClientTools", "Conversations", "Copilot", "Documents", "Fleet", "ImageGeneration",
+                "Artifacts", "Attachments", "ClientTools", "Conversations", "Copilot", "Documents", "Email", "Fleet", "ImageGeneration",
                 "Location", "Mcp", "Memory", "Models", "Push", "Research", "Scheduling", "Search", "SharedState",
                 "Sharing", "Skills", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web", "Webhooks",
             ]
@@ -103,7 +103,7 @@ public sealed class ProjectLayoutTests
             "Agent42.Backend",
             [
                 "Api", "Artifacts", "Attachments", "ClientTools", "Configuration", "Conversations", "Copilot",
-                "Documents", "Export", "Fleet", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
+                "Documents", "Email", "Export", "Fleet", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
                 "Search", "SharedState", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills",
                 "Users", "Web", "Webhooks", "wwwroot",
             ]
@@ -186,6 +186,7 @@ public sealed class ProjectLayoutTests
         { "Search/AgentApi.Search.cs", "MapSearchEndpoints" },
         { "ClientTools/AgentApi.ClientTools.cs", "MapClientToolEndpoints" },
         { "SharedState/AgentApi.SharedState.cs", "MapSharedStateEndpoints" },
+        { "Email/AgentApi.Email.cs", "MapEmailEndpoints" },
     };
 
     // Each endpoint group exists, is a partial of the one AgentApi class, and — the part that matters —

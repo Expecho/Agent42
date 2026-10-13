@@ -1997,11 +1997,17 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   deregister. Keys are 256-bit random, so a single **SHA-256** (no salt, no bcrypt/PBKDF2, no
   `FixedTimeEquals`) is correct — `ApiKey` is the one place that generates *and* hashes, so they can't
   diverge.
+- **Two directories now (ADR 0095).** The registry also owns each agent's inbound email token and syncs
+  `IEmailAddressDirectoryGrain` in the **same three orders, independently**: `regenerateEmail` deregisters the old
+  token's hash first, and `DeleteAsync` deregisters both (after the webhook clear and the registry write). A missed
+  email deregister is worse than a missed key one, because anybody who ever saw the address can use it.
 - **Evidence:** `src/Agent42.Agents/StoredAgents/ApiKey.cs`, `src/Agent42.Agents/StoredAgents/AgentKeyDirectoryGrain.cs`,
   `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs` (`SaveAsync` per-operation ordering, `DeleteAsync`),
   `tests/Agent42.Tests/AgentRegistryGrainTests.cs` (`AgentKey_Regenerate_InvalidatesOldKey`,
-  `AgentDelete_DeregistersKey`), `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
-- **Verified:** 2026-07-17
+  `AgentDelete_DeregistersKey`, `EmailAddress_Regenerate_InvalidatesOld`, `AgentDelete_DeregistersBothDirectories`),
+  `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`,
+  `.agentic/decisions/0095-inbound-email-triggers-a-stored-agent.md`
+- **Verified:** 2026-10-10
 
 ### An Easy-Auth `excludedPaths` endpoint is publicly reachable and must self-enforce auth + fail closed
 
@@ -2020,7 +2026,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `/api/agent-mcp` + `/api/agent-mcp/*` (ADR 0070, the server-side MCP surface; fails closed **401** on the
   per-agent key, enforced by **middleware over the prefix** because one endpoint serves `initialize`,
   `tools/list` and `tools/call` alike), and `/api/local-bridge` (ADR 0076, the local-bridge WebSocket; an
-  **exact** entry; fails closed **401** on the per-server bridge key before the upgrade is even looked at) —
+  **exact** entry; fails closed **401** on the per-server bridge key before the upgrade is even looked at), and
+  `/api/email-in` (ADR 0095, Mailgun's inbound forward; an **exact** entry; **503** with no signing key, **401** on a
+  bad/stale/replayed Mailgun HMAC, then the agent comes from the email directory and an unknown or deleted address is a
+  uniform **406** — Mailgun's never-retry code) —
   every other browser surface stays fully Easy-Auth-gated. **Count
   the entries in the Bicep before repeating a number from here**: this sentence has been stale twice.
 - **The matching rule (ADR 0042 — this is the trap that shipped a dead feature):** an entry is an **exact**
@@ -2043,8 +2052,54 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs` (`AuthenticateAsync`, 401 before the upgrade check),
   `.agentic/decisions/0002-entra-easy-auth-gate.md`, `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`,
   `.agentic/decisions/0035-read-only-share-links.md`,
-  `.agentic/decisions/0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md`
-- **Verified:** 2026-09-17
+  `.agentic/decisions/0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md`,
+  `src/Agent42.Backend/Email/AgentApi.Email.cs`, `tests/Agent42.Tests/EmailApiTests.cs`
+- **Verified:** 2026-10-10
+
+### An inbound email token must be case-insensitive — never reuse `ApiKey`'s base64url
+
+- **Claim:** the local part of an email address is not reliably case-preserving: mail servers and providers normalise
+  it, and people retype it. `ApiKey.Generate()` emits base64url, which is case-sensitive, so a token in that alphabet
+  hashes to a different digest on arrival and **every inbound message is refused while the address looks correct in
+  the UI**. `EmailAddress` uses lowercase base32 and lowercases inside `Hash`, not at the call site, so no caller can
+  forget. The same holds for any future credential that travels in an address or a hostname. `TokenFromAddress` also
+  drops a `+tag` sub-address and unwraps a display name, because forwarding rules produce both.
+- **Evidence:** `src/Agent42.Agents/Email/EmailAddress.cs`, `tests/Agent42.Tests/EmailAddressTests.cs`
+  (`Hash_IsStableAndCaseInsensitive`), `tests/Agent42.Tests/EmailApiTests.cs` (`EmailIn_UppercasedAddress_StillResolves`),
+  `.agentic/decisions/0095-inbound-email-triggers-a-stored-agent.md`
+- **Verified:** 2026-10-10
+
+### Each credential namespace gets its own directory grain type — never register a second credential in the key directory
+
+- **Claim:** `IAgentKeyDirectoryGrain` (ADR 0022) is consulted **by hash alone** from `/api/agent-run` and
+  `AgentMcpKeyGate` (`/api/agent-mcp`). It would be tempting to register the email token's hash there too, since it
+  already maps a hash to `(userId, agentId)`. Doing so turns every email address into a live run and MCP key, and an
+  address is far more exposed than a header key (mail headers, forwarding rules, provider logs). The email token lives
+  in `IEmailAddressDirectoryGrain`, a separate grain type with its own state name, so the two namespaces are disjoint by
+  construction. `AgentKeyOwner` (the return record) is shared; the grain type never is. The same goes for the next
+  credential (a phone number, a Slack id).
+- **Evidence:** `src/Agent42.Agents/Email/IEmailAddressDirectoryGrain.cs`,
+  `tests/Agent42.Tests/EmailAddressDirectoryGrainTests.cs` (`Registration_NeverResolvesInTheApiKeyDirectory`),
+  `tests/Agent42.Tests/EmailApiTests.cs` (`EmailToken_DoesNotAuthenticateAgentRun`),
+  `.agentic/decisions/0095-inbound-email-triggers-a-stored-agent.md`
+- **Verified:** 2026-10-10
+
+### Mailgun treats only 200 as success and retries everything except 406 for 8 hours
+
+- **Claim:** a Mailgun Route forward is retried at increasing intervals for **8 hours** on any status except **200**
+  (success) and **406** (rejected, never retried). So `/api/email-in` answers **200, not 202**: a 202 is not documented
+  as success, and a retried email runs its turn again. Every deliberate rejection of a signed message is **406**, not
+  400/401, or each one becomes a retry storm. 503 (no key) and 401 (bad signature, i.e. a key rotation) are left
+  retryable on purpose, because a retry can succeed. The HMAC covers only `timestamp+token`, **not the body**, so the
+  in-process `MailgunReplayGuard` refuses a reused token, and it **releases** the token on an unexpected exception so
+  Mailgun's retry of a 500 is not refused as a replay. The 8h15m timestamp window exists because the docs do not say
+  whether a retry is re-signed. Re-check both facts against the first real delivery.
+- **Evidence:** `src/Agent42.Backend/Email/AgentApi.Email.cs` (`ReceiveEmailAsync`, `AcceptEmailAsync`),
+  `src/Agent42.Backend/Email/MailgunWebhook.cs`, `src/Agent42.Backend/Email/MailgunReplayGuard.cs`,
+  `tests/Agent42.Tests/MailgunWebhookTests.cs`, `tests/Agent42.Tests/EmailApiTests.cs`,
+  `.agentic/specs/completed/plan-inbound-email-triggers-an-agent.md` (Spike findings),
+  `.agentic/decisions/0095-inbound-email-triggers-a-stored-agent.md`
+- **Verified:** 2026-10-10
 
 ### A scripted whole-file rewrite silently converts the checkout from CRLF to LF and `dotnet format` fails on every line
 

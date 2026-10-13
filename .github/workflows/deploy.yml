@@ -102,6 +102,7 @@ jobs:
               hindsightApiKey="${{ secrets.HINDSIGHT_API_KEY }}" \
               appInsightsConnectionString="${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}" \
               vapidPrivateKey="${{ secrets.VAPID_PRIVATE_KEY }}" \
+              mailgunSigningKey="${{ secrets.MAILGUN_SIGNING_KEY }}" \
               cosmosLocation="northeurope" \
               otlpEndpoint="http://home.peterbons.nl:4317" \
             --query properties.outputs.containerAppPrincipalId.value -o tsv)

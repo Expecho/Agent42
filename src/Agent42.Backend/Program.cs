@@ -373,6 +373,11 @@ builder.Services.AddHindsightMemory(builder.Configuration);
 // over a client guarded against private addresses at connect time. See WebhookRegistration.
 builder.Services.AddAgentWebhooks();
 
+// Inbound email (ADR 0095): Mailgun forwards mail sent to an agent's address to POST /api/email-in. The signing key
+// is an optional secret, but without it the endpoint answers 503 rather than skipping verification. See
+// EmailRegistration.
+builder.Services.AddInboundEmail(builder.Configuration);
+
 // The copilot agent kind: the GitHub Copilot SDK's agent loop on the user's own provider, with its session files in
 // Blob. See CopilotRegistration and CopilotAgentFactory for the runtime's trust boundary.
 builder.Services.AddCopilotAgents(builder.Configuration);

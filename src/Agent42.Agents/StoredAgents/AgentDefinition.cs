@@ -45,6 +45,13 @@ namespace Agent42.Agents;
 /// stored agent deserializes as an ordinary one with no migration. Nullable rather than <c>""</c> on
 /// purpose: the Cosmos JSON path binds a key a document lacks to <c>null</c>, not to the C# default, so a
 /// non-null declaration would be a lie about every agent stored before it.</para>
+///
+/// <para><see cref="EmailToken"/> is the local part of the agent's inbound email address (ADR 0095), stored
+/// <b>raw</b> (unlike <see cref="ApiKeyHash"/>) because the owner must read the address again to set up a
+/// forwarding rule — ADR 0035's share-token reasoning. It is a credential in cleartext grain state, so rotation
+/// is the only revocation. The grain is the authority on it, exactly as on the hash: a request never carries it.
+/// <c>null</c> means none minted yet (agents stored before it get one on their next regenerate); nullable for
+/// the same Cosmos JSON reason as <see cref="Kind"/>.</para>
 /// </remarks>
 [GenerateSerializer]
 [Alias("Agent42.Agents.AgentDefinition")]
@@ -60,4 +67,5 @@ public sealed record AgentDefinition(
     [property: Id(8)] IReadOnlyList<string>? EnabledTools = null,
     [property: Id(9)] string ApiKeyHash = "",
     [property: Id(10)] bool McpExposed = false,
-    [property: Id(11)] string? Kind = null);
+    [property: Id(11)] string? Kind = null,
+    [property: Id(12)] string? EmailToken = null);

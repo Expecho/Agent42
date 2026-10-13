@@ -153,6 +153,10 @@ public sealed class EasyAuthExclusionTests
     // The owner artifact routes serve model-written source and script; they stay behind Easy Auth.
     [InlineData("/api/conversations/x/artifacts")]
     [InlineData("/api/conversations/x/artifacts/art_1/versions/1/frame")]
+    // ADR 0095: only Mailgun's POST target is public. The editor's config read and anything under the route stay gated.
+    [InlineData("/api/email/config")]
+    [InlineData("/api/email-in/")]
+    [InlineData("/api/email-in/x")]
     // The agent fleet (ADR 0097): every route takes the userId from GetUserId(), and the file route serves
     // model-written content. The page, the event stream and a download are named separately.
     [InlineData("/fleet/")]
@@ -192,6 +196,12 @@ public sealed class EasyAuthExclusionTests
     public void Exclusions_CoverTheLocalBridgeSocket()
         => Assert.True(IsExcluded(ExcludedPaths(), "/api/local-bridge"), Because("/api/local-bridge", ExcludedPaths()));
 
+    // ADR 0095. Mailgun's forward carries no Entra session; the handler verifies the HMAC and resolves the agent from
+    // the address token. An exact entry: the route has no sub-paths.
+    [Fact]
+    public void Exclusions_CoverInboundEmail()
+        => Assert.True(IsExcluded(ExcludedPaths(), "/api/email-in"), Because("/api/email-in", ExcludedPaths()));
+
     [Fact]
     public void BarePrefixEntry_DoesNotCoverSubPaths()
     {
@@ -214,6 +224,7 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/api/agent-mcpzzz")]
     [InlineData("/api/agent-mcp-admin")]
     [InlineData("/api/local-bridgezzz")]
+    [InlineData("/api/email-inzzz")]
     public void WildcardEntry_DoesNotMatchANameStem(string path)
     {
         // Measured: the wildcard prefix includes the trailing slash, so it cannot bleed onto a sibling route
