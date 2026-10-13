@@ -5,7 +5,7 @@ using System.Text;
 namespace Agent42.Backend;
 
 /// <summary>
-/// Verifies a Mailgun Routes <c>forward()</c> POST (ADR 0095): HMAC-SHA256 over <c>timestamp + token</c> (no separator),
+/// Verifies a Mailgun Routes <c>forward()</c> POST (ADR 0096): HMAC-SHA256 over <c>timestamp + token</c> (no separator),
 /// keyed by the account's HTTP webhook signing key, hex-encoded, compared to <c>signature</c>.
 ///
 /// <para><b>This compares with <see cref="CryptographicOperations.FixedTimeEquals"/>, unlike <see cref="Agents.ApiKey"/>.</b>

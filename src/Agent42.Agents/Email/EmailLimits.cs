@@ -1,6 +1,6 @@
 namespace Agent42.Agents;
 
-/// <summary>The bounds of inbound email (ADR 0095).</summary>
+/// <summary>The bounds of inbound email (ADR 0096).</summary>
 public static class EmailLimits
 {
     /// <summary>

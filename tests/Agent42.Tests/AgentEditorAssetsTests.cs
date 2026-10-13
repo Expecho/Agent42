@@ -127,7 +127,7 @@ public sealed class AgentEditorAssetsTests
         Assert.Contains("body.apiKey", app);
     }
 
-    [Fact] // ADR 0095 AC18 — the editor shows the inbound address persistently, with a regenerate that sends the flag.
+    [Fact] // ADR 0096 AC18 — the editor shows the inbound address persistently, with a regenerate that sends the flag.
     public async Task AgentEditor_HasEmailAddressAndRegenerate()
     {
         var html = await _client.GetStringAsync("/index.html");

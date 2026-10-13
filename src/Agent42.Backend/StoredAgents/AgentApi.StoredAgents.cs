@@ -137,7 +137,7 @@ public static partial class AgentApi
     }
 
     // Lists the conversation, binds the agent and fires its background turn — shared by the agent-run and inbound
-    // email doors (ADR 0022/0095), which differ only in how they authenticate and what they parse.
+    // email doors (ADR 0022/0096), which differ only in how they authenticate and what they parse.
     private static async Task StartAgentRunAsync(
         IGrainFactory grains, string userId, AgentDefinition definition, string conversationId, string title,
         string prompt, List<AttachmentRef> imageRefs, List<string> documentNames)
@@ -209,7 +209,7 @@ public static partial class AgentApi
     }
 
     // Why one file cannot ride an agent run, or null when it can. The agent-run door rejects the whole batch on the
-    // first error; the email door skips the file and tells the agent (ADR 0095), so the rule lives in one place.
+    // first error; the email door skips the file and tells the agent (ADR 0096), so the rule lives in one place.
     private static string? AgentRunFileError(IFormFile file, bool copilot)
     {
         if (file.Length > MaxAttachmentBytes)

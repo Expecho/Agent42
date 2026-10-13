@@ -6,7 +6,7 @@ namespace Agent42.Tests;
 
 /// <summary>
 /// <see cref="SharedApiFixture"/> for <see cref="EmailApiTests"/>: inbound email ENABLED with a known signing key, so a
-/// test can sign a Mailgun-shaped POST itself (ADR 0095). The base fixture registers no <see cref="EmailConfig"/>, which
+/// test can sign a Mailgun-shaped POST itself (ADR 0096). The base fixture registers no <see cref="EmailConfig"/>, which
 /// is the no-key case <see cref="EmailApiNoKeyTests"/> asserts on.
 /// </summary>
 public sealed class EmailApiFixture : SharedApiFixture

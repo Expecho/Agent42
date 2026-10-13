@@ -3,7 +3,7 @@ using Agent42.Backend;
 
 namespace Agent42.Tests;
 
-/// <summary>The prompt an inbound email becomes (ADR 0095, C9): body-plain first, never HTML, always capped.</summary>
+/// <summary>The prompt an inbound email becomes (ADR 0096, C9): body-plain first, never HTML, always capped.</summary>
 public class InboundEmailPromptTests
 {
     [Fact]

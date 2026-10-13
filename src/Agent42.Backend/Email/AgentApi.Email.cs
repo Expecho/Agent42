@@ -5,7 +5,7 @@ using Microsoft.Extensions.Primitives;
 namespace Agent42.Backend;
 
 /// <summary>
-/// Inbound email (ADR 0095): Mailgun forwards a message sent to an agent's address to <c>POST /api/email-in</c>, which
+/// Inbound email (ADR 0096): Mailgun forwards a message sent to an agent's address to <c>POST /api/email-in</c>, which
 /// runs that agent on it in a new listed conversation — the ADR 0022 agent-run door with the credential carried in the
 /// address instead of a header. On <c>excludedPaths</c>, so it self-enforces and takes the userId from the email
 /// directory, never from GetUserId.
@@ -124,7 +124,7 @@ public static partial class AgentApi
     }
 
     // The first address in `recipient` (the SMTP envelope RCPT TO) whose token resolves in the EMAIL directory to an
-    // agent that still exists. Never the API-key directory (ADR 0095). Lowercasing happens in EmailAddress.Hash.
+    // agent that still exists. Never the API-key directory (ADR 0096). Lowercasing happens in EmailAddress.Hash.
     private static async Task<(AgentKeyOwner? Owner, AgentDefinition? Definition)> ResolveEmailRecipientAsync(
         string? recipient, IGrainFactory grains)
     {

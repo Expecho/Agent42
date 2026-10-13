@@ -1,7 +1,7 @@
 namespace Agent42.Agents;
 
 /// <summary>
-/// A global, cross-user directory mapping an inbound email token's hash to the agent it addresses (ADR 0095). The grain
+/// A global, cross-user directory mapping an inbound email token's hash to the agent it addresses (ADR 0096). The grain
 /// key <b>is</b> the hash, so resolving an arriving address is an O(1) grain get, exactly like
 /// <see cref="IAgentKeyDirectoryGrain"/>.
 ///

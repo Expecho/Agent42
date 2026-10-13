@@ -9,7 +9,7 @@ using Agent42.Backend;
 namespace Agent42.Tests;
 
 /// <summary>
-/// <c>POST /api/email-in</c> (ADR 0095), hosted in-memory against a real cluster: a Mailgun-shaped, locally signed POST
+/// <c>POST /api/email-in</c> (ADR 0096), hosted in-memory against a real cluster: a Mailgun-shaped, locally signed POST
 /// to an agent's address runs that agent in a new conversation of the agent's OWNER (never <c>local-dev</c>), and every
 /// failure is refused with the status Mailgun's retry rule calls for.
 /// </summary>
@@ -135,7 +135,7 @@ public sealed class EmailApiTests(EmailApiFixture fixture) : SharedClusterTests<
         Assert.Contains(hits, h => h.FileName == "guide.pdf");
     }
 
-    // AC7 (diverged, ADR 0095): an unusable attachment is skipped and the agent told, never the whole email dropped —
+    // AC7 (diverged, ADR 0096): an unusable attachment is skipped and the agent told, never the whole email dropped —
     // the sender gets no reply, so a rejected email would vanish without trace.
     [Fact]
     public async Task EmailIn_UnsupportedFile_IsSkippedAndNoted()
@@ -229,7 +229,7 @@ public sealed class EmailApiTests(EmailApiFixture fixture) : SharedClusterTests<
         return (user, (await response.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent);
     }
 
-    // POSTs a Mailgun-shaped multipart form (ADR 0095 spike findings), signed with the fixture's key unless the test
+    // POSTs a Mailgun-shaped multipart form (ADR 0096 spike findings), signed with the fixture's key unless the test
     // overrides a field. No principal header: the endpoint is on excludedPaths and must not need one.
     private async Task<HttpResponseMessage> PostEmailAsync(
         string recipient, string subject = "Hello", string body = "Body text.", string? html = null,
@@ -312,7 +312,7 @@ public sealed class EmailApiTests(EmailApiFixture fixture) : SharedClusterTests<
     }
 }
 
-/// <summary>AC8 (ADR 0095): with no signing key the endpoint answers 503 and accepts nothing, even a well-formed POST.</summary>
+/// <summary>AC8 (ADR 0096): with no signing key the endpoint answers 503 and accepts nothing, even a well-formed POST.</summary>
 public sealed class EmailApiNoKeyTests(SharedApiFixture fixture) : SharedClusterTests<SharedApiFixture>(fixture)
 {
     [Fact]

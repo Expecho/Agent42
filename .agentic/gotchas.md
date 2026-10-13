@@ -1997,7 +1997,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   deregister. Keys are 256-bit random, so a single **SHA-256** (no salt, no bcrypt/PBKDF2, no
   `FixedTimeEquals`) is correct — `ApiKey` is the one place that generates *and* hashes, so they can't
   diverge.
-- **Two directories now (ADR 0095).** The registry also owns each agent's inbound email token and syncs
+- **Two directories now (ADR 0096).** The registry also owns each agent's inbound email token and syncs
   `IEmailAddressDirectoryGrain` in the **same three orders, independently**: `regenerateEmail` deregisters the old
   token's hash first, and `DeleteAsync` deregisters both (after the webhook clear and the registry write). A missed
   email deregister is worse than a missed key one, because anybody who ever saw the address can use it.
@@ -2006,7 +2006,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/AgentRegistryGrainTests.cs` (`AgentKey_Regenerate_InvalidatesOldKey`,
   `AgentDelete_DeregistersKey`, `EmailAddress_Regenerate_InvalidatesOld`, `AgentDelete_DeregistersBothDirectories`),
   `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`,
-  `.agentic/decisions/0095-inbound-email-triggers-a-stored-agent.md`
+  `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
 - **Verified:** 2026-10-10
 
 ### An Easy-Auth `excludedPaths` endpoint is publicly reachable and must self-enforce auth + fail closed
@@ -2027,7 +2027,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   per-agent key, enforced by **middleware over the prefix** because one endpoint serves `initialize`,
   `tools/list` and `tools/call` alike), and `/api/local-bridge` (ADR 0076, the local-bridge WebSocket; an
   **exact** entry; fails closed **401** on the per-server bridge key before the upgrade is even looked at), and
-  `/api/email-in` (ADR 0095, Mailgun's inbound forward; an **exact** entry; **503** with no signing key, **401** on a
+  `/api/email-in` (ADR 0096, Mailgun's inbound forward; an **exact** entry; **503** with no signing key, **401** on a
   bad/stale/replayed Mailgun HMAC, then the agent comes from the email directory and an unknown or deleted address is a
   uniform **406** — Mailgun's never-retry code) —
   every other browser surface stays fully Easy-Auth-gated. **Count
@@ -2066,7 +2066,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   drops a `+tag` sub-address and unwraps a display name, because forwarding rules produce both.
 - **Evidence:** `src/Agent42.Agents/Email/EmailAddress.cs`, `tests/Agent42.Tests/EmailAddressTests.cs`
   (`Hash_IsStableAndCaseInsensitive`), `tests/Agent42.Tests/EmailApiTests.cs` (`EmailIn_UppercasedAddress_StillResolves`),
-  `.agentic/decisions/0095-inbound-email-triggers-a-stored-agent.md`
+  `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
 - **Verified:** 2026-10-10
 
 ### Each credential namespace gets its own directory grain type — never register a second credential in the key directory
@@ -2081,7 +2081,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/Email/IEmailAddressDirectoryGrain.cs`,
   `tests/Agent42.Tests/EmailAddressDirectoryGrainTests.cs` (`Registration_NeverResolvesInTheApiKeyDirectory`),
   `tests/Agent42.Tests/EmailApiTests.cs` (`EmailToken_DoesNotAuthenticateAgentRun`),
-  `.agentic/decisions/0095-inbound-email-triggers-a-stored-agent.md`
+  `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
 - **Verified:** 2026-10-10
 
 ### Mailgun treats only 200 as success and retries everything except 406 for 8 hours
@@ -2098,7 +2098,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Email/MailgunWebhook.cs`, `src/Agent42.Backend/Email/MailgunReplayGuard.cs`,
   `tests/Agent42.Tests/MailgunWebhookTests.cs`, `tests/Agent42.Tests/EmailApiTests.cs`,
   `.agentic/specs/completed/plan-inbound-email-triggers-an-agent.md` (Spike findings),
-  `.agentic/decisions/0095-inbound-email-triggers-a-stored-agent.md`
+  `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
 - **Verified:** 2026-10-10
 
 ### A scripted whole-file rewrite silently converts the checkout from CRLF to LF and `dotnet format` fails on every line
