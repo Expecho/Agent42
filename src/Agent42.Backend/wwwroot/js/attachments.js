@@ -66,7 +66,7 @@ export async function handleFiles(files) {
     if (!userDefaultEmbeddingModel && !file.type.startsWith("image/")) {
       pendingNotices.push({
         fileName: file.name,
-        message: "Add a model marked as an embedding model to a provider and pick it as the default embedding model in Preferences to attach documents.",
+        message: "Add a model marked as an embedding model to a provider and pick it as the default embedding model in Settings to attach documents.",
       });
       renderAttachmentPreview();
       continue;

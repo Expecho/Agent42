@@ -1926,9 +1926,9 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         var answer = Answer(events);
 
         Assert.Contains("has not shared their location", answer);
-        // Points the user at the grant control's real home (Preferences) — quote-free so it can't pass
+        // Points the user at the grant control's real home (Settings) — quote-free so it can't pass
         // vacuously through JSON escaping, and it caught the composer-button copy going stale once already.
-        Assert.Contains("Preferences", answer);
+        Assert.Contains("Settings", answer);
         Assert.DoesNotContain(FakeGeocoder.Address, answer);
         Assert.DoesNotContain("not_shared", ToolResult(events));
     }

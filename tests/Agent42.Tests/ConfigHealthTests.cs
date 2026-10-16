@@ -264,7 +264,7 @@ public sealed class ConfigHealthTests
         // who deselected `memory` in Preferences → Tools makes zero Hindsight calls with this key set. It
         // reports the key as CONFIGURED and points at the per-user control instead.
         Assert.Contains("configured", check.Message);
-        Assert.Contains("Preferences", check.Message);
+        Assert.Contains("Settings", check.Message);
         Assert.DoesNotContain("every non-incognito turn is recalled and retained", check.Message);
 
         var without = ConfigHealth.BuildStatic(

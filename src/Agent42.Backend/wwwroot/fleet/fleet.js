@@ -436,7 +436,7 @@
   function providerGate() {
     return h("div", { class: "card gate" },
       h("b", { text: "Add a model provider first" }),
-      h("div", { class: "muted", text: "The fleet runs on your own models, and none of them supports tools yet. Add a provider with a tool-capable model in Preferences, then come back." }),
+      h("div", { class: "muted", text: "The fleet runs on your own models, and none of them supports tools yet. Add a provider with a tool-capable model in Settings, then come back." }),
       h("div", { style: "margin-top:8px" }, h("a", { href: "/", text: "Open Agent 42 →" })));
   }
 
