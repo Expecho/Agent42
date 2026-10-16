@@ -2,7 +2,7 @@
 
 > A planner designs a team of agents for your task, the team runs, agents can hand sub-tasks to sub-teams of their
 > own, and a judge reviews the result. It has its own page, `/fleet/`, linked from the sidebar as
-> "Fleet" (tooltip "Agent42 agent fleet"). ADR 0097.
+> an icon button with the tooltip "Agent42 agent fleet". ADR 0097.
 
 ## What it is
 

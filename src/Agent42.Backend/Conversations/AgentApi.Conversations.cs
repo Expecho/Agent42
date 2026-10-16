@@ -265,7 +265,7 @@ public static partial class AgentApi
                 HistoryEditOutcome.Stale => "This conversation changed in another tab or window. Reload it and try again.",
                 HistoryEditOutcome.Busy => "A reply is still running in this conversation. Wait for it to finish.",
                 HistoryEditOutcome.Unsupported => "Copilot chats cannot be edited, regenerated or forked.",
-                HistoryEditOutcome.NoModel => "No model provider is configured. Add one in Preferences.",
+                HistoryEditOutcome.NoModel => "No model provider is configured. Add one in Settings.",
                 _ => "There is no message to replace here.",
             },
             outcome = outcome.ToString(),

@@ -48,8 +48,9 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
 
         var link = Regex.Match(index, "<a[^>]*href=\"/fleet/\"[^>]*>(?<body>.*?)</a>", RegexOptions.Singleline);
         Assert.True(link.Success, "index.html has no link to /fleet/");
-        Assert.Contains("Fleet", link.Groups["body"].Value);
+        // Icon-only: the name is the tooltip and the accessible name.
         Assert.Contains("title=\"Agent42 agent fleet\"", link.Value);
+        Assert.Contains("aria-label=\"Agent42 agent fleet\"", link.Value);
         var footer = index[index.IndexOf("sidebar__footer-actions", StringComparison.Ordinal)..];
         Assert.True(footer.IndexOf("href=\"/fleet/\"", StringComparison.Ordinal) < footer.IndexOf("</div>", StringComparison.Ordinal),
             "The fleet link belongs in .sidebar__footer-actions");

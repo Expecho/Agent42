@@ -15,7 +15,7 @@ public sealed partial class AgentGrain
     private const string NotSharedText =
         "The user has not shared their location with this conversation, so I don't know " +
         "where they are. Do not guess or assume a location. Tell the user you need their " +
-        "location and ask them to enable location sharing in Preferences, then try again.";
+        "location and ask them to enable location sharing in Settings, then try again.";
 
     private const string NoFixText =
         "The user's device could not get a position right now, so I don't know where they are. " +

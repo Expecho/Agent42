@@ -11,7 +11,7 @@ namespace Agent42.Agents;
 /// </summary>
 public sealed class EmbeddingModelNotConfiguredException()
     : InvalidOperationException("No embedding model is configured. Add a model marked as an embedding "
-        + "model to a provider and pick it as the default embedding model in Preferences.");
+        + "model to a provider and pick it as the default embedding model in Settings.");
 
 /// <summary>
 /// Thrown at ingest when the chosen embedding model produces vectors of a different dimension than the

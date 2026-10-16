@@ -95,7 +95,7 @@ public sealed partial class AgentGrain
         {
             return "The user has no devices subscribed to notifications, so there was nothing to send to. "
                 + "Tell them what you wanted to notify them about in your reply instead, and mention they "
-                + "can turn notifications on in Preferences if they want them in future.";
+                + "can turn notifications on in Settings if they want them in future.";
         }
 
         // Incremented HERE, on the send — see the budget guard above.
