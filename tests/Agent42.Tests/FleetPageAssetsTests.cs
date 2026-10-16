@@ -99,6 +99,20 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
         Assert.Contains("/api/fleet/tasks/", script);
     }
 
+    // A finished task can be deleted from the page. The button stays hidden while the task runs, since the server
+    // answers 409 then, and the delete is confirmed first because it also removes the task's files.
+    [Fact]
+    public async Task FleetPage_DeletesAFinishedTask()
+    {
+        var page = await _client.GetStringAsync("/fleet/");
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("id=\"deleteBtn\"", page);
+        Assert.Contains("$(\"#deleteBtn\").hidden = !(t && t.status !== \"running\")", script);
+        Assert.Contains("api(\"DELETE\", `/api/fleet/tasks/${encodeURIComponent(id)}`)", script);
+        Assert.Contains("confirm(`Delete task #", script);
+    }
+
     /// <summary>Every event type the backend publishes has a handler on the page, so no part of a run goes unshown.</summary>
     [Fact]
     public async Task FleetJs_HandlesEveryPublishedEventType()
