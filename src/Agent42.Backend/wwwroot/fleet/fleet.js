@@ -358,6 +358,8 @@
   function renderHeader() {
     const t = taskById(S.selectedTask);
     $("#stopBtn").hidden = !(t && t.status === "running");
+    // The server refuses to delete a running task (409): stop it first.
+    $("#deleteBtn").hidden = !(t && t.status !== "running");
     $("#promptsBtn").classList.toggle("active", S.view === "prompts");
   }
 
@@ -970,7 +972,17 @@
 
   $("#promptsBtn").addEventListener("click", () => S.view === "prompts" ? closePrompts() : openPrompts());
   $("#stopBtn").addEventListener("click", () => S.selectedTask && api("POST", `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/stop`));
-  $("#newTaskBtn").addEventListener("click", () => { disconnect(); S.selectedTask = null; S.freshTask = true; resetTaskState(); S.view = "tasks"; invalidate(); composer.ta.focus(); });
+  function newTask() { disconnect(); S.selectedTask = null; S.freshTask = true; resetTaskState(); S.view = "tasks"; invalidate(); composer.ta.focus(); }
+  $("#newTaskBtn").addEventListener("click", newTask);
+  // Deletes the record, its event log and, once no follow-up shares it, the workspace with its files.
+  $("#deleteBtn").addEventListener("click", async () => {
+    const id = S.selectedTask;
+    if (!id || !confirm(`Delete task #${taskNumber(id)}, its log and its files? This cannot be undone.`)) return;
+    const r = await api("DELETE", `/api/fleet/tasks/${encodeURIComponent(id)}`);
+    if (!r.ok) { alert(r.data?.error || `The task could not be deleted (HTTP ${r.status}).`); return; }
+    S.tasks = S.tasks.filter(t => t.id !== id);
+    if (S.selectedTask === id) newTask(); else invalidate();
+  });
   // An empty answer would pick the default, which differs per question: the buttons are for that.
   $("#promptForm").addEventListener("submit", e => { e.preventDefault(); const text = $("#promptInput").value.trim(); if (text) answer(text); else $("#promptInput").focus(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape" && S.panel && S.view === "tasks") closePanel(); });

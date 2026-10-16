@@ -22,7 +22,8 @@
 - **Persistent.** Tasks, results, the event log and workspace files are kept in Blob. Reload the page at any
   moment and it replays the task. A done task can be followed up: a new team gets the earlier requests,
   results and workspace. A task that was running when the app restarted shows as **interrupted** and can be
-  run again.
+  run again. **Delete task** removes a task that is not running, with its log; the workspace and its files go
+  once no follow-up shares them.
 - **Editable prompts.** The planner, delegation, Copilot, judge, retry, follow-up, moderator and Copilot-report
   prompts can be edited per user.
 
