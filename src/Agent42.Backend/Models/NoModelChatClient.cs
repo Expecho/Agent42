@@ -23,7 +23,7 @@ public sealed class NoModelChatClient : IChatClient
     public static readonly NoModelChatClient Instance = new();
 
     private const string Message =
-        "No model provider is configured. Add a model provider in Preferences before chatting (ADR 0019). "
+        "No model provider is configured. Add a model provider in Settings before chatting (ADR 0019). "
         + "This client is a no-op the grain must never actually run — the no-model path is guarded upstream.";
 
     private NoModelChatClient()

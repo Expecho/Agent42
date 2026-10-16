@@ -667,7 +667,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             {
                 yield return new AgentStreamEvent(
                     AgentStreamEventType.TextDelta,
-                    Text: "_No model provider is configured. Add one in Preferences → model providers to "
+                    Text: "_No model provider is configured. Add one in Settings → model providers to "
                         + "start chatting._\n\n");
                 yield return new AgentStreamEvent(AgentStreamEventType.Done);
                 yield break;

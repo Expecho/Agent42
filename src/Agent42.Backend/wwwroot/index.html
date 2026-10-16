@@ -92,7 +92,9 @@
       <footer class="sidebar__footer">
         <div class="sidebar__footer-actions">
           <!-- The agent fleet (ADR 0097): recursive agent teams on a page of its own. A plain link, no JS module. -->
-          <a class="sidebar__settings sidebar__fleet" id="fleetLink" href="/fleet/" title="Agent42 agent fleet">
+          <!-- Every footer action is icon-only; the name is the tooltip (title) and the accessible name (aria-label). -->
+          <a class="sidebar__settings sidebar__fleet" id="fleetLink" href="/fleet/"
+             title="Agent42 agent fleet" aria-label="Agent42 agent fleet">
             <span class="sidebar__gear" aria-hidden="true">
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                 <circle cx="8" cy="3.4" r="1.8" stroke="currentColor" stroke-width="1.3"/>
@@ -101,28 +103,25 @@
                 <path d="M7.1 5 4.3 10.6M8.9 5l2.8 5.6M5.2 12.2h5.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
               </svg>
             </span>
-            Fleet
           </a>
-          <button class="sidebar__settings" id="openProfileBtn" type="button">
+          <button class="sidebar__settings" id="openProfileBtn" type="button" title="Settings" aria-label="Settings">
             <span class="sidebar__gear" aria-hidden="true">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="2.1" stroke="currentColor" stroke-width="1.3"/>
-                <path d="M8 1.4v1.6M8 13v1.6M14.6 8H13M3 8H1.4M12.66 3.34l-1.13 1.13M4.47 11.53l-1.13 1.13M12.66 12.66l-1.13-1.13M4.47 4.47 3.34 3.34"
-                      stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                <circle cx="12" cy="12" r="3"/>
               </svg>
             </span>
-            Preferences
           </button>
-          <!-- Token-usage dashboard (ADR 0031): a dedicated full-page view, not a Preferences tab —
+          <!-- Token-usage dashboard (ADR 0031): a dedicated full-page view, not a Settings tab —
                opened over the whole app via #usageView. -->
-          <button class="sidebar__settings" id="openUsageBtn" type="button">
+          <button class="sidebar__settings" id="openUsageBtn" type="button" title="Usage" aria-label="Usage">
             <span class="sidebar__gear" aria-hidden="true">
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                 <path d="M2.5 13.5V9.2M6.6 13.5V4.6M10.7 13.5V7M14.8 13.5V2.5"
                       stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
               </svg>
             </span>
-            Usage
           </button>
           <!-- Sign out (ADR 0090): a plain link to Easy Auth's own endpoint, no JS. It ends the session so the
                next sign-in can pick the other account, which the configured login_hint otherwise skips past.
@@ -266,7 +265,7 @@
         <!-- Shown when no chat provider is configured (ADR 0019): the picker is empty and the composer
              is gated, so tell the user how to start rather than letting them send into a modelless grain. -->
         <p class="composer__nomodel" id="noModelHint" hidden>
-          No model configured. Add a model provider in Preferences to start chatting.
+          No model configured. Add a model provider in Settings to start chatting.
         </p>
       </form>
     </main>
@@ -449,13 +448,13 @@
     <form class="prefs__form" id="profileForm">
       <header class="prefs__header">
         <div class="prefs__heading">
-          <h2 class="agent-form__title">Preferences</h2>
+          <h2 class="agent-form__title">Settings</h2>
           <p class="prefs__subtitle">Your account settings, applied across every device you sign in from.</p>
         </div>
         <!-- On mobile the footer's Cancel is hidden and this is the only dismiss affordance, so it must
              close the dialog exactly as Cancel does — profileDialog.close(), which is what the existing
              theme-revert-on-close handler listens for. -->
-        <button class="prefs__close" type="button" id="prefsCloseBtn" aria-label="Close preferences">&times;</button>
+        <button class="prefs__close" type="button" id="prefsCloseBtn" aria-label="Close settings">&times;</button>
       </header>
 
       <div class="prefs__body">
@@ -465,7 +464,7 @@
              is .prefs-scoped, because #agentDialog shares .agent-form__tablist / .agent-form__tab and
              nothing in tests/ pins those, so an unscoped edit would mangle it silently. -->
         <nav class="agent-form__tablist" id="profileNav" role="tablist"
-             aria-orientation="vertical" aria-label="Preferences sections">
+             aria-orientation="vertical" aria-label="Settings sections">
           <button class="agent-form__tab" type="button" role="tab" id="tabGeneral"
                   aria-selected="true" aria-controls="panelGeneral" tabindex="0">
             <svg class="prefs__navicon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2 4.5h6M12 4.5h2M2 11.5h2M8 11.5h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/><circle cx="10" cy="4.5" r="2" stroke="currentColor" stroke-width="1.3" fill="none"/><circle cx="6" cy="11.5" r="2" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>

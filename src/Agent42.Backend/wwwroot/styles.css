@@ -924,28 +924,17 @@ body {
   text-align: center;
 }
 
-/* Preferences + Usage sit side by side above the DON'T PANIC strip. */
+/* Fleet, Settings, Usage and Sign out: one row of equal icon-only buttons above the DON'T PANIC strip. Each one's
+   name is its title tooltip. */
 .sidebar__footer-actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
   width: 100%;
-}
-
-/* The agent fleet link (ADR 0097) takes a row of its own above the others: its label is too long to share one. */
-.sidebar__footer-actions .sidebar__fleet {
-  flex: 1 0 100%;
-  text-decoration: none;
 }
 
 .sidebar__footer-actions .sidebar__settings {
   flex: 1;
   justify-content: center;
-}
-
-/* Sign out is a link, icon-only so the two labelled buttons keep their width. */
-.sidebar__footer-actions .sidebar__signout {
-  flex: 0 0 auto;
   text-decoration: none;
 }
 

@@ -114,7 +114,7 @@ public static class ConfigHealth
         // fix it, because absent is the intended state.
         checks.Add(PresenceCheck(GroupOptional, "Hindsight:ApiKey", config["Hindsight:ApiKey"],
             present: "configured — long-term memory is available; each user selects it per chat in "
-                + "Preferences → Tools (ADR 0057), so this key being set does not mean every turn is remembered",
+                + "Settings → Tools (ADR 0057), so this key being set does not mean every turn is remembered",
             missing: "not set — long-term memory is off; the agent recalls and retains nothing",
             missingStatus: Warning));
         // Unlike the geocoding and context.dev probes this one is FREE: /health is unauthenticated and
