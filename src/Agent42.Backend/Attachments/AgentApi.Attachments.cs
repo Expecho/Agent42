@@ -95,6 +95,12 @@ public static partial class AgentApi
             // gates document attachment client-side; this is defense-in-depth for the API.
             return Results.Text(ex.Message, "text/plain", statusCode: StatusCodes.Status400BadRequest);
         }
+        catch (EmbeddingProviderException ex)
+        {
+            // The user's embedding provider refused the call (wrong endpoint, key, throttling). That is an
+            // upstream failure, so 502, with the provider's message for the composer's error chip.
+            return Results.Text(ex.Message, "text/plain", statusCode: StatusCodes.Status502BadGateway);
+        }
 
         // Tell the grain the document exists (only when it yielded searchable text), so the
         // model is made aware of it and automatic retrieval is enabled for the conversation

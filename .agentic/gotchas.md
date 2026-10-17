@@ -1255,8 +1255,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   ships; do not "simplify" it to `ApiKeyCredential` (undocumented Bearer that could regress). **As of
   ADR 0033 the Chat Completions path uses this SAME `/openai/v1` + `api-key`-header policy** (it moved
   off `AzureOpenAIClient`'s classic api-version data plane — see the "Foundry Chat Completions runs over
-  `/openai/v1`" gotcha below); only the **embedding** client still relies on
-  `AzureOpenAIClient(endpoint, AzureKeyCredential)` sending `api-key` itself. (2) **The
+  `/openai/v1`" gotcha below), and since 2026-10-17 so do **embeddings**, at the resource root (same
+  gotcha, trap 2). Nothing in `Provider.Foundry` uses `AzureOpenAIClient` any more. (2) **The
   Foundry key is on the AVAILABILITY PATH — a blank one is FATAL, unlike a third-party provider key.**
   `ModelProviderBuilder.Build` throws when the resolved Foundry key is blank (mirrored in Bicep by a
   `@secure() @minLength(32)` param following the **`searxngSecret` shape** — unconditional secret + env +
@@ -1297,14 +1297,18 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   path shares `/openai/v1` with Responses now, so `ChatClientMetadata.ProviderUri` **cannot** discriminate
   them in a no-I/O test — the handle is instead `GetService(typeof(OpenAI.Chat.ChatClient))` (Chat) vs
   `GetService(typeof(OpenAI.Responses.ResponsesClient))` (Responses), which survives the OTel wrapper the
-  factory applies. (2) the **embedding** generator is *deliberately* left on `AzureOpenAIClient`
-  (`GetEmbeddingClient`), so `AzureOpenAIClient` is still built in `Provider.Foundry` — it just no longer
-  serves chat; if a Foundry embedding model ever hits the same wall, give it the same `/openai/v1`
-  treatment (the v1-embeddings surface was not verified in ADR 0033).
+  factory applies. (2) **Embeddings hit the same wall and moved to v1 too, but at the RESOURCE root,
+  not the configured endpoint.** On a Foundry **project** endpoint (`…/api/projects/{name}`) the classic
+  embeddings call 400s with "API version not supported", which broke every document upload in prod
+  (2026-10-17). A live probe found the project-scoped `/openai/v1` serves `chat/completions` (200) but
+  **404s on `/embeddings`**, while `{resource}/openai/v1/embeddings` answers 200. So
+  `Provider.FoundryEmbeddingsEndpoint` drops the `/api/projects/{name}` suffix before appending
+  `/openai/v1`. Don't "simplify" it to reuse the chat client's base URL.
 - **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.Foundry`, the non-`UseResponses`
-  branch), `tests/Agent42.Tests/ModelProviderTests.cs` (`FoundryChatProvider_UsesV1Surface_NoApiVersion`,
-  `ResponsesProvider_WiresResponsesEndpoint`), `.agentic/decisions/0033-foundry-chat-over-openai-v1.md`
-- **Verified:** 2026-07-25
+  branch, `Provider.FoundryEmbeddingsEndpoint`), `tests/Agent42.Tests/ModelProviderTests.cs` (`FoundryChatProvider_UsesV1Surface_NoApiVersion`,
+  `ResponsesProvider_WiresResponsesEndpoint`, `FoundryEmbeddings_UseV1Surface_AtResourceRoot`),
+  `.agentic/decisions/0033-foundry-chat-over-openai-v1.md`
+- **Verified:** 2026-10-17
 
 ### `HostedWebSearchTool.Name` is `web_search` — it collides with the SearXNG shim, so hosted models SWAP
 

@@ -30,6 +30,14 @@ public sealed class EmbeddingDimensionMismatchException(int expected, int actual
 }
 
 /// <summary>
+/// Thrown at ingest when the embedding model's provider rejects the request: a wrong endpoint, a bad key,
+/// throttling. It wraps the SDK's transport exception, so upload maps it to a readable error instead of
+/// an unhandled 500. The provider is the user's own, so its message is safe to show them.
+/// </summary>
+public sealed class EmbeddingProviderException(string detail, Exception innerException)
+    : InvalidOperationException($"The embedding model's provider rejected the request: {detail}", innerException);
+
+/// <summary>
 /// The no-op <see cref="IEmbeddingGenerator{String, Single}"/> the per-user factory hands out when no
 /// default embedding model is configured — the embedding-side analogue of <c>NoModelChatClient</c>
 /// (ADR 0019). Generating throws <see cref="EmbeddingModelNotConfiguredException"/> rather than
