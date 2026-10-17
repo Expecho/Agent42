@@ -1,3 +1,4 @@
+using System.ClientModel;
 using Agent42.Agents;
 using Microsoft.Extensions.AI;
 
@@ -27,7 +28,7 @@ public sealed class DocumentIngestionService(
     /// this works identically on the browser-upload and the Easy-Auth-excluded <c>/api/agent-run</c> paths.
     /// Throws <see cref="EmbeddingModelNotConfiguredException"/> when the owner has no embedding model, and
     /// <see cref="EmbeddingDimensionMismatchException"/> when its vectors don't fit the store — the upload
-    /// endpoints map both to a clear 4xx.</para>
+    /// endpoints map both to a clear 4xx. A provider error is rethrown as <see cref="EmbeddingProviderException"/>.</para>
     /// <para><paramref name="maxChunks"/> is <c>null</c> (unlimited) on the two browser/agent-run upload
     /// paths, where the user chose the file and the request bounds it. It is set on the
     /// <c>read_web_document</c> path (ADR 0066), where a model-chosen URL can point at a document whose
@@ -60,8 +61,17 @@ public sealed class DocumentIngestionService(
             throw new EmbeddingModelNotConfiguredException();
         }
 
-        var generated = await factory.GetEmbeddingGenerator().GenerateAsync(
-            chunks.Select(c => c.Text), cancellationToken: cancellationToken);
+        GeneratedEmbeddings<Embedding<float>> generated;
+        try
+        {
+            generated = await factory.GetEmbeddingGenerator().GenerateAsync(
+                chunks.Select(c => c.Text), cancellationToken: cancellationToken);
+        }
+        catch (ClientResultException ex)
+        {
+            // The provider answered with an error status. Unwrapped, this escaped the upload as a bare 500.
+            throw new EmbeddingProviderException(ex.Message, ex);
+        }
 
         // Reject a model whose vectors don't fit the store (the prod container is fixed-dimension, ADR 0007)
         // BEFORE any upsert, so a mismatch is a clear message, not a partial write + opaque Cosmos error.

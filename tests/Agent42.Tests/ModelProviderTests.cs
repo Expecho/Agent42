@@ -306,6 +306,37 @@ public class ModelProviderTests
         Assert.EndsWith("/openai/v1", chatUri);
     }
 
+    [Theory] // Regression (prod 2026-10-17): Foundry embeddings went over the classic api-version data plane,
+             // which a Foundry PROJECT endpoint rejects with "API version not supported", so every document
+             // upload 500'd. They now use /openai/v1 at the RESOURCE root: the project-scoped v1 surface
+             // serves chat but has no embeddings route (live probe: 404 there, 200 at the root).
+    [InlineData("https://agent42.services.ai.azure.com/api/projects/Agent%2042", "https://agent42.services.ai.azure.com/openai/v1")]
+    [InlineData("https://agent42.services.ai.azure.com/api/projects/p1/", "https://agent42.services.ai.azure.com/openai/v1")]
+    [InlineData("https://example.openai.azure.com", "https://example.openai.azure.com/openai/v1")]
+    [InlineData("https://example.openai.azure.com/", "https://example.openai.azure.com/openai/v1")]
+    public void FoundryEmbeddingsEndpoint_IsV1AtResourceRoot(string endpoint, string expected)
+    {
+        Assert.Equal(
+            expected,
+            MultiProviderChatClientFactory.Provider.FoundryEmbeddingsEndpoint(new Uri(endpoint)).AbsoluteUri);
+    }
+
+    [Theory] // ...and the Foundry embedding generator is actually WIRED to that endpoint on both chat wire
+             // paths, so a revert to the AzureOpenAIClient data plane fails here. ProviderUri is the no-I/O handle.
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FoundryEmbeddings_UseV1Surface_AtResourceRoot(bool useResponses)
+    {
+        var options = new ProviderOptions { Kind = ProviderKind.AzureOpenAI, UseResponsesApi = useResponses };
+        var provider = MultiProviderChatClientFactory.Provider.Foundry(
+            options, new Uri("https://agent42.services.ai.azure.com/api/projects/Agent%2042"), "key");
+
+        var uri = provider.EmbeddingGenerator!("text-embedding-3-large")
+            .GetService<EmbeddingGeneratorMetadata>()?.ProviderUri?.AbsoluteUri;
+
+        Assert.Equal("https://agent42.services.ai.azure.com/openai/v1", uri?.TrimEnd('/'));
+    }
+
     [Fact] // AC5 — tools/vision stay Full on the Responses flag (orthogonal to the wire API); only the
            // hosted-tools bit tracks it: ON for a Responses Foundry provider, OFF for a plain one.
     public void ResponsesProvider_ReportsHostedTools_ToolsAndVisionUnchanged()

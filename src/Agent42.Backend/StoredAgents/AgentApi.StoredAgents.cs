@@ -260,7 +260,8 @@ public static partial class AgentApi
                 {
                     chunkCount = (await ingestion.IngestAsync(ownerKey, file.FileName, mediaType, bytes)).ChunkCount;
                 }
-                catch (Exception ex) when (ex is EmbeddingModelNotConfiguredException or EmbeddingDimensionMismatchException)
+                catch (Exception ex) when (ex is EmbeddingModelNotConfiguredException or EmbeddingDimensionMismatchException
+                    or EmbeddingProviderException)
                 {
                     // A bad document rejects the WHOLE batch — the same all-or-nothing rule as an unsupported
                     // file. The caller picks the status; no partial run is enqueued.

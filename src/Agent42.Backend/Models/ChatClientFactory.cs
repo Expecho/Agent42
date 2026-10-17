@@ -2,8 +2,6 @@ using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Concurrent;
 using Agent42.Agents;
-using Azure;
-using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Responses;
@@ -22,7 +20,7 @@ namespace Agent42.Backend;
 /// with a custom <c>api-key</c>-header policy, because the OpenAI SDK's default is
 /// <c>Authorization: Bearer</c> (ADR 0017). The Chat path used to go through <c>AzureOpenAIClient</c>'s
 /// classic <c>api-version</c> data plane, but the stable SDK caps that query at 2024-10-21, which newer
-/// Foundry deployments reject; only the embedding client still rides the Azure SDK's own header.</para>
+/// Foundry deployments reject. Embeddings moved off it too, onto <c>/openai/v1</c> at the resource root.</para>
 ///
 /// <para>The endpoint always comes from CONFIG and never from the model or a request. That is what
 /// keeps this off the SSRF path that <c>fetch_web_page</c> is on (ADR 0011), and it must stay true:
@@ -296,15 +294,33 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
             options.Models.Any(m => m.SupportsReasoning
                 && string.Equals(m.Id, model, StringComparison.OrdinalIgnoreCase));
 
+        /// <summary>
+        /// The <c>/openai/v1</c> base for Foundry embeddings: the endpoint with any
+        /// <c>/api/projects/{name}</c> suffix dropped, because the project-scoped v1 surface has no
+        /// embeddings route. The resource key authenticates at the root either way.
+        /// </summary>
+        public static Uri FoundryEmbeddingsEndpoint(Uri endpoint)
+        {
+            var path = endpoint.AbsolutePath;
+            var project = path.IndexOf("/api/projects/", StringComparison.OrdinalIgnoreCase);
+            var root = (project >= 0 ? path[..project] : path).TrimEnd('/');
+            return new UriBuilder(endpoint) { Path = root + "/openai/v1", Query = "" }.Uri;
+        }
+
         /// <summary>An Azure AI Foundry provider, reached with an Azure OpenAI API key (ADR 0017).</summary>
         public static Provider Foundry(ProviderOptions options, Uri endpoint, string apiKey)
         {
-            // Embeddings ALWAYS go through the Azure OpenAI embedding client (there is no Responses embedding
-            // surface), whichever chat wire API the provider uses — so build one AzureOpenAIClient here and
-            // hang the embedding func off it for both branches below.
-            var azureClient = new AzureOpenAIClient(endpoint, new AzureKeyCredential(apiKey));
+            // Embeddings use the same GA /openai/v1 surface and `api-key` policy as chat, whichever chat wire
+            // API the provider uses. They used to go through AzureOpenAIClient's classic data plane, whose
+            // api-version (2024-10-21) a Foundry project endpoint rejects with "API version not supported".
+            // The v1 embeddings route lives at the RESOURCE root only: a project-scoped /openai/v1 serves
+            // chat but 404s on /embeddings (live probe, 2026-10-17), hence FoundryEmbeddingsEndpoint.
+#pragma warning disable OPENAI001
+            var embeddingClient = new OpenAIClient(
+                new ApiKeyHeaderPolicy(apiKey), new OpenAIClientOptions { Endpoint = FoundryEmbeddingsEndpoint(endpoint) });
+#pragma warning restore OPENAI001
             Func<string, IEmbeddingGenerator<string, Embedding<float>>> embeddings =
-                model => azureClient.GetEmbeddingClient(model).AsIEmbeddingGenerator();
+                model => embeddingClient.GetEmbeddingClient(model).AsIEmbeddingGenerator();
 
             if (UseResponses(options))
             {
@@ -359,8 +375,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
             // /openai/v1 with the `api-key`-header policy: Azure reads the resource key from the `api-key`
             // request header there, exactly as on the Responses path (ADR 0017 — do NOT swap it for the
             // OpenAI SDK's ApiKeyCredential, which would send an undocumented Authorization: Bearer).
-            // Embeddings stay on the AzureOpenAIClient above — a separate, opt-in path (ADR 0030) whose
-            // v1 surface is unverified here. No named HttpClient (its AddServiceDefaults retry pipeline
+            // Embeddings have their own v1 client above, at the resource root. No named HttpClient (its AddServiceDefaults retry pipeline
             // would multiply the stall on a non-reentrant AgentGrain turn — see OpenAICompatible below).
             // The endpoint still comes only from config — SSRF invariant intact (ADR 0013).
 #pragma warning disable OPENAI001

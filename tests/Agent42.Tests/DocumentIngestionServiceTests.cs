@@ -1,6 +1,8 @@
+using System.ClientModel;
 using System.Text;
 using Agent42.Agents;
 using Agent42.Backend;
+using Microsoft.Extensions.AI;
 
 namespace Agent42.Tests;
 
@@ -73,6 +75,27 @@ public sealed class DocumentIngestionServiceTests
             Service(index, noEmbeddingProvider).IngestAsync(
                 OwnerKey, "guide.txt", DocumentMediaTypes.PlainText, TextDocument("text")));
 
+        Assert.Empty(index.Upserted);
+    }
+
+    // Regression (prod 2026-10-17): a provider error (there, HTTP 400 "API version not supported") escaped
+    // the upload as an unhandled ClientResultException and a bare 500. It now surfaces as a typed exception
+    // that carries the provider's message, which the upload endpoints map to a readable error. Nothing is upserted.
+    [Fact]
+    public async Task Ingest_ProviderError_ThrowsEmbeddingProviderException_AndDoesNotUpsert()
+    {
+        var failing = new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(
+            NoModelChatClient.Instance,
+            embeddingGenerator: new FailingEmbeddingGenerator(),
+            defaultEmbeddingModelId: "offline-embed"));
+        var index = new FakeIndex(expectedDimensions: null);
+
+        var ex = await Assert.ThrowsAsync<EmbeddingProviderException>(() =>
+            Service(index, failing).IngestAsync(
+                OwnerKey, "guide.txt", DocumentMediaTypes.PlainText, TextDocument("some searchable text here")));
+
+        Assert.Contains("API version not supported", ex.Message);
+        Assert.IsType<ClientResultException>(ex.InnerException);
         Assert.Empty(index.Upserted);
     }
 
@@ -155,6 +178,21 @@ public sealed class DocumentIngestionServiceTests
             => Task.FromResult<IReadOnlyList<DocumentChunk>>([]);
 
         public Task DeleteAsync(string ownerKey, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    // Throws what the OpenAI SDK throws when the provider answers with an error status.
+    private sealed class FailingEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
+    {
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values, EmbeddingGenerationOptions? options = null,
+            CancellationToken cancellationToken = default)
+            => throw new ClientResultException("HTTP 400 (BadRequest)\n\nAPI version not supported");
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class RecordingFactoryProvider(IChatClientFactory factory) : IUserChatClientFactoryProvider
