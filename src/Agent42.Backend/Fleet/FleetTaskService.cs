@@ -4,7 +4,8 @@ using Agent42.Agents;
 namespace Agent42.Backend;
 
 /// <summary>What the page asks for when it starts a task.</summary>
-public sealed record FleetSubmit(string Task, string? FollowUpOf = null, string? Model = null, long? MaxTokens = null);
+public sealed record FleetSubmit(
+    string Task, string? FollowUpOf = null, string? Model = null, long? MaxTokens = null, IReadOnlyList<string>? EnabledTools = null);
 
 /// <summary>How a stop, answer or delete went.</summary>
 public enum FleetOutcome { Ok, NotFound, Conflict }
@@ -80,6 +81,7 @@ public sealed partial class FleetTaskService(
             PlannerModel = model,
             StartedAt = _time.GetUtcNow(),
             MaxTokens = maxTokens,
+            EnabledTools = ToolCatalog.Sanitize(request.EnabledTools),
             Notes = previous?.Notes ?? new Dictionary<string, string>(),
         };
 

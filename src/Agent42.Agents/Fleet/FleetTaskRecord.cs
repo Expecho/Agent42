@@ -30,6 +30,10 @@ public sealed record FleetTaskRecord
     public int Agents { get; init; }
     public long MaxTokens { get; init; }
 
+    /// <summary>This task's tool selection (ADR 0021 keys, sanitized), overriding the user's DEFAULT chat selection,
+    /// or null to follow that default when the run starts (ADR 0099). An empty list means no selectable tools.</summary>
+    public IReadOnlyList<string>? EnabledTools { get; init; }
+
     /// <summary>The workspace notes (<c>note_set</c>) as this task left them, so a follow-up starts from them.</summary>
     public IReadOnlyDictionary<string, string> Notes { get; init; } = new Dictionary<string, string>();
 
