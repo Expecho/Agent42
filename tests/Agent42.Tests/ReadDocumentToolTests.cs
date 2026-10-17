@@ -2,6 +2,7 @@ using System.Text.Json;
 using Agent42.Agents;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Storage;
+using Orleans.TestingHost;
 
 namespace Agent42.Tests;
 
@@ -180,6 +181,24 @@ public sealed class ReadDocumentToolTests(SharedClusterFixture fixture) : Shared
         var chunk10 = chunks[ReadDocumentLimits.ChunksPerPart].Text;
         Assert.False(body.StartsWith(chunk10[..40], StringComparison.Ordinal), "the overlap must be stripped");
         Assert.Contains(body[..40], chunk10, StringComparison.Ordinal);
+    }
+
+    // An index failure is logged and reported to the model; the turn completes (the ReadWebDocumentAsync shape).
+    [Fact]
+    public async Task ReadDocument_IndexFailure_ReturnsAMessage_NeverThrows()
+    {
+        var builder = new TestClusterBuilder(1);
+        builder.AddSiloBuilderConfigurator<WebDocumentProbeSiloConfigurator>();
+        await using var cluster = builder.Build();
+        await cluster.DeployAsync();
+        cluster.GetSiloServiceProvider(cluster.Primary.SiloAddress).GetRequiredService<ProbeDocumentIndex>().FailReads = true;
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("readdoc-outage-user/conv");
+        await agent.RegisterDocumentAsync("report.pdf");
+
+        var events = await Read(agent, "report.pdf");
+
+        Assert.Contains("I could not read 'report.pdf': Injected index outage.", Result(events), StringComparison.Ordinal);
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
     }
 
     // AC7: the constants make the cap a never-binding invariant: a full part of full chunks fits.

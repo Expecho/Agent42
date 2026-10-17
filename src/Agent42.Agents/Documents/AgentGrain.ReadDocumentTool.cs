@@ -147,13 +147,8 @@ public sealed partial class AgentGrain
         result.Result = ReadDocumentLimits.Stub(fileName, part);
     }
 
-    // The call's `part` as the tool bound it: a JsonElement from the wire, a boxed number in-process. Missing or
+    // The call's `part`: a JsonElement from the wire (ToolText gives its raw text), a boxed int in-process. Missing or
     // unparsable means 1, the tool's default.
-    private static int PartArgument(object? value) => value switch
-    {
-        int i => i,
-        long l when l is >= int.MinValue and <= int.MaxValue => (int)l,
-        _ => int.TryParse(ToolText(value), System.Globalization.NumberStyles.Integer,
-            System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : 1,
-    };
+    private static int PartArgument(object? value)
+        => value is int i ? i : int.TryParse(ToolText(value), System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : 1;
 }

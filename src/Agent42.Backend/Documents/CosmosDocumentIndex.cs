@@ -93,57 +93,47 @@ public sealed class CosmosDocumentIndex(
     public async Task<DocumentChunkRange> ReadChunksAsync(
         string ownerKey, string fileName, int startChunkIndex, int count, CancellationToken cancellationToken = default)
     {
-        var options = new QueryRequestOptions { PartitionKey = new PartitionKey(ownerKey) };
-
-        var maxQuery = new QueryDefinition(MaxChunkIndexSql).WithParameter("@fileName", fileName);
-        var maxValues = new List<int?>();
-        using (var maxIterator = _container.GetItemQueryIterator<int?>(maxQuery, requestOptions: options))
-        {
-            while (maxIterator.HasMoreResults)
-            {
-                maxValues.AddRange(await maxIterator.ReadNextAsync(cancellationToken));
-            }
-        }
-
-        var total = TotalChunksFromMax(maxValues);
+        var partition = new PartitionKey(ownerKey);
+        var total = TotalChunksFromMax(await QueryAllAsync<int?>(
+            new QueryDefinition(MaxChunkIndexSql).WithParameter("@fileName", fileName), partition, cancellationToken));
         if (total == 0 || count <= 0)
         {
             return new DocumentChunkRange(total, []);
         }
 
-        var rangeQuery = new QueryDefinition(ReadRangeSql)
-            .WithParameter("@fileName", fileName)
-            .WithParameter("@start", startChunkIndex)
-            .WithParameter("@end", startChunkIndex + count);
-        using var iterator = _container.GetItemQueryIterator<ChunkHit>(rangeQuery, requestOptions: options);
-
-        var chunks = new List<DocumentChunk>();
-        while (iterator.HasMoreResults)
-        {
-            foreach (var hit in await iterator.ReadNextAsync(cancellationToken))
-            {
-                chunks.Add(new DocumentChunk(hit.fileName, hit.page, hit.chunkIndex, hit.text));
-            }
-        }
+        var hits = await QueryAllAsync<ChunkHit>(
+            new QueryDefinition(ReadRangeSql).WithParameter("@fileName", fileName)
+                .WithParameter("@start", startChunkIndex).WithParameter("@end", startChunkIndex + count),
+            partition, cancellationToken);
 
         // Legacy duplicates (a re-upload before re-ingest replaced) share indices; first wins (ADR 0098).
-        return new DocumentChunkRange(total, [.. chunks.DistinctBy(c => c.ChunkIndex)]);
+        return new DocumentChunkRange(total, [.. hits.DistinctBy(h => h.chunkIndex)
+            .Select(h => new DocumentChunk(h.fileName, h.page, h.chunkIndex, h.text))]);
     }
 
     public async Task DeleteFileAsync(string ownerKey, string fileName, CancellationToken cancellationToken = default)
     {
         var partition = new PartitionKey(ownerKey);
-        var query = new QueryDefinition(DeleteFileScanSql).WithParameter("@fileName", fileName);
-        var options = new QueryRequestOptions { PartitionKey = partition };
-        using var iterator = _container.GetItemQueryIterator<IdOnly>(query, requestOptions: options);
+        var ids = await QueryAllAsync<IdOnly>(
+            new QueryDefinition(DeleteFileScanSql).WithParameter("@fileName", fileName), partition, cancellationToken);
+        foreach (var item in ids)
+        {
+            await _container.DeleteItemAsync<ChunkDocument>(item.id, partition, cancellationToken: cancellationToken);
+        }
+    }
 
+    // Drains a single-partition query.
+    private async Task<List<T>> QueryAllAsync<T>(QueryDefinition query, PartitionKey partition, CancellationToken cancellationToken)
+    {
+        using var iterator = _container.GetItemQueryIterator<T>(
+            query, requestOptions: new QueryRequestOptions { PartitionKey = partition });
+        var results = new List<T>();
         while (iterator.HasMoreResults)
         {
-            foreach (var item in await iterator.ReadNextAsync(cancellationToken))
-            {
-                await _container.DeleteItemAsync<ChunkDocument>(item.id, partition, cancellationToken: cancellationToken);
-            }
+            results.AddRange(await iterator.ReadNextAsync(cancellationToken));
         }
+
+        return results;
     }
 
     /// <summary>
