@@ -35,7 +35,7 @@ flowchart LR
   and `read_artifact(artifactId, version?)` are in `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs`.
   `ArtifactLimits` caps a version at 64 KB, an artifact at 20 versions and a chat at 20 artifacts. Over-cap content
   is refused, never truncated.
-- **The session stays small.** After the turn, `CompactArtifactCalls` replaces the `content` argument of every
+- **The session stays small.** After the turn, `CompactToolPayloads` (which also stubs each successful `read_document` part, ADR 0098) replaces the `content` argument of every
   create/update call, and every `read_artifact` result, with a stub. On a later turn the model calls
   `read_artifact` to see the source again.
 - **Two layers keep model HTML off the app origin.** Every artifact route sends `AgentApi.ArtifactCsp`, whose

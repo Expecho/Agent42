@@ -24,7 +24,9 @@ HTML must never run on the app origin with the user's Easy Auth session.
   is `AgentGrainState.Artifacts` (`[Id(15)]`), persisted by the end-of-turn write, never by the tool.
 - **Caps (`ArtifactLimits`):** 64 KB per version, 20 versions per artifact, 20 artifacts per conversation. Over-cap
   content is refused, never truncated.
-- **Session size, branch (a) of the plan: compaction.** At the three post-turn persist sites, beside retention,
+- **Session size, branch (a) of the plan: compaction.** *(Amended by [0098](0098-read-document-sequential-reading.md):
+  there are five persist sites, not three; the pass is now `CompactToolPayloads` and also stubs `read_document`
+  parts.)* At the three post-turn persist sites, beside retention,
   `CompactArtifactCalls` replaces each create/update call's `content` argument, and each `read_artifact` result,
   with a stub (`[stored as artifact {id} v{n}; call read_artifact to see it]`). The tools refuse content that
   starts with the stub prefix.

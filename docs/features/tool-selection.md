@@ -2,12 +2,13 @@
 
 > Choose which tools an assistant may use — a personal default, a per-conversation override, or
 > baked into a custom agent. Availability is also capped by what the chosen model supports.
-> ADRs 0021 · 0026 · 0057 · 0066 · 0075.
+> ADRs 0021 · 0026 · 0057 · 0066 · 0075 · 0098.
 
 ## What it is
 
 You pick which of the curated tools (`web_search`, `location`, `scheduling`, `skills`,
-`code_interpreter`, `memory`, `read_web_document`, `push_notification`, plus your MCP servers) an
+`code_interpreter`, `memory`, `read_web_document`, `push_notification`, `artifacts`, `read_document`,
+`browser_tools`, `shared_state`, plus your MCP servers) an
 assistant may use, remembered at three layers:
 
 - **User default** (Preferences → default tools) — every new regular chat.
@@ -21,7 +22,8 @@ Two keys are worth knowing about specifically, because turning them on grants mo
 `read_web_document` (ADR 0066) lets the assistant fetch a document **from our own container** and keep
 what it finds, and `push_notification` (ADR 0075) lets it put **text it writes itself** on your
 device's lock screen. Both are off in any selection you saved before they shipped — press Save once in
-Preferences → Tools to pick them up.
+Preferences → Tools to pick them up. The same holds for every key added later, `read_document`
+(ADR 0098) included.
 
 **`memory` is the one documented exception to that intersection** (ADR 0057). Long-term memory is not a
 tool — it is an `AIContextProvider` injected before the call — so it never passes through the capability
@@ -63,7 +65,10 @@ public const string CodeInterpreter = "code_interpreter";
 public const string Memory = "memory";         // ADR 0057 — the first key that is NOT a tool (see long-term-memory.md)
 ...
 public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-    [WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification];
+    [
+        WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification,
+        Artifacts, ReadDocument, BrowserTools, SharedState,
+    ];
 ```
 
 ### Three-layer resolution

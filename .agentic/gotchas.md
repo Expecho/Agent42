@@ -204,7 +204,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   ≤ `MaxExcerpts` excerpts totalling ≤ `MaxReturnTextLength` characters. Note its transport cap
   (`MaxDownloadBytes`, 10 MB) really is a transport cap — that tool DOES dial the wire — so this file has
   both kinds again, and they are still different numbers on purpose.
-- **Evidence:** `src/Agent42.Agents/Web/WebToolLimits.cs`,
+  **`read_document` (ADR 0098) is the third budget class**, in `ReadDocumentLimits`: ≤ `MaxPartTextLength`
+  (10 KB) per part and ≤ `MaxPartsPerTurn` (20) parts per turn. It is the first return budget that relies on
+  **compaction** as well as a cap: successful parts are stubbed after the turn (see the compaction entry), so
+  the cap bounds only the in-turn cost.
+- **Evidence:** `src/Agent42.Agents/Web/WebToolLimits.cs`, `src/Agent42.Agents/Documents/ReadDocumentLimits.cs`,
   `src/Agent42.Agents/Documents/WebDocumentLimits.cs`,
   `src/Agent42.Agents/Web/AgentGrain.WebTools.cs` (`BuildFetchPayload`),
   `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs` (`BuildWebDocumentPayload`),
@@ -1581,10 +1585,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `OnDemandFunctionCalling` shape ADR 0008 explicitly rejected, taken deliberately and only because it
   is **additive to** the always-on provider, which takes over from the next model call.
   **Do not write "following ADR 0008" about it.**
-- **Re-reading is prevented, and it has to be.** `CosmosDocumentIndex` gives every chunk a fresh `Guid`
-  id, so a second read of the same URL **duplicates** the document's chunks rather than overwriting them.
-  On the browser-upload path a human decides to upload again; here the trigger is the model, reachable
-  from `/api/agent-run` and from a **repeating reminder**. So the tool short-circuits before the fetch on
+- **Re-reading is prevented, and it still has to be.** Since ADR 0098 re-ingesting a file name **replaces**
+  its chunks (`DocumentIngestionService` deletes them right before the upsert), so a second read no longer
+  duplicates anything. It would still re-fetch and re-embed the whole document, and the trigger is the
+  model, reachable from `/api/agent-run` and from a **repeating reminder**. So the tool short-circuits before the fetch on
   a URL already in `AgentGrainState.WebDocumentUrls`, and the name list is bounded oldest-first
   (`WebDocumentLimits.MaxWebDocuments`) because it is rendered into the instructions every turn.
   Identity is the normalized **URL**, deliberately not the derived name — the name is length-capped and
@@ -3967,22 +3971,28 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Claim:** the "tool RETURN value is persisted" entry covers results. `create_artifact`/`update_artifact` carry
   the whole artifact source in their ARGUMENTS, and the `FunctionCallContent` stays in the session as well. Ten
   revisions of a 60 KB app would put 600 KB of dead text into the 2 MB item (ADR 0004), re-sent every turn, until
-  the conversation bricks in prod only. `CompactArtifactCalls` therefore runs at the three post-turn persist sites
-  (beside `ApplyRetentionAsync`). It replaces each call's `content` with `ArtifactLimits.Stub(id, v)` and each
+  the conversation bricks in prod only. `CompactToolPayloads` (renamed from `CompactArtifactCalls` by ADR 0098)
+  therefore runs at the **five** post-turn persist sites (`AgentGrain.cs` ×2, `AgentGrain.EditFork.cs` ×2,
+  `AgentGrain.ImageTurn.cs` ×1), beside `ApplyRetentionAsync`. It replaces each call's `content` with `ArtifactLimits.Stub(id, v)` and each
   `read_artifact` result with the same stub. It replaces the content object rather than editing the argument
   dictionary, and joins results by `CallId`. Measured on AF 1.22: a 60 KB call's session went from 60 603 to 630
   bytes, and the next turn still pairs the call with its result. A new artifact-like tool (anything whose
   arguments hold a document) needs the same treatment. A cap on what one call may carry is not enough, because
-  every call stays.
+  every call stays. Since ADR 0098 the same pass has a second family: each successful `read_document` part
+  (a result starting with `ReadDocumentLimits.PartHeaderPrefix`) becomes `ReadDocumentLimits.Stub(file, part)`;
+  refusals stay verbatim. Add a new family as a branch of this one pass, never as a sixth call.
 - **Test-harness trap:** a fake that puts the arguments in the USER prompt, or echoes results into its reply,
   persists the very bytes the test measures. `FakeChatClient.CallToolPrompt` keeps arguments in a side table, and
-  `ScriptedResultEcho` is capped for that reason.
-- **Evidence:** `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs` (`CompactArtifactCalls`),
-  `src/Agent42.Agents/Conversations/AgentGrain.cs` (the two persist sites),
+  `ScriptedResultEcho` is capped for that reason (head 2000 + tail 500 characters).
+- **Evidence:** `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs` (`CompactToolPayloads`),
+  `src/Agent42.Agents/Documents/AgentGrain.ReadDocumentTool.cs` (`CompactReadDocumentResult`),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (two persist sites), `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (two),
   `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`, `tests/Agent42.Tests/ArtifactToolTests.cs`
   (`ArtifactUpdates_DoNotBlowTheSessionSizeBudget`, `CompactedArtifactCall_NextTurnSucceeds` — both fail with
-  compaction disabled), `.agentic/decisions/0084-artifact-pane.md`
-- **Verified:** 2026-10-03
+  compaction disabled), `tests/Agent42.Tests/ReadDocumentToolTests.cs` (`ReadDocumentParts_DoNotBlowTheSessionSizeBudget`
+  fails with the `read_document` branch removed), `.agentic/decisions/0084-artifact-pane.md`,
+  `.agentic/decisions/0098-read-document-sequential-reading.md`
+- **Verified:** 2026-10-17
 
 ### `/frame` safety is the CSP `sandbox` HEADER, not the iframe attribute
 

@@ -211,6 +211,7 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
 
         Assert.Equal(builds, RequestsFor("copilot-docs").Count);
         Assert.DoesNotContain(LastRequest("copilot-docs").Tools, t => t.Name == ToolCatalog.ReadWebDocument);
+        Assert.DoesNotContain(LastRequest("copilot-docs").Tools, t => t.Name == ToolCatalog.ReadDocument); // AC11 (ADR 0098)
         Assert.Empty(Silos.SelectMany(s => s.GetRequiredService<RecordingHindsightClient>().RecallsFor("copilot-docs")));
     }
 

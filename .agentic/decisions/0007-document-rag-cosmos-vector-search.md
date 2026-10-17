@@ -43,6 +43,9 @@ containers — a store that tried to create-on-use would hit the same 403 wall a
 providers.
 
 ## Decision
+> **Amended by [0098](0098-read-document-sequential-reading.md):** re-ingesting a file name replaces its chunks,
+> and a selectable `read_document` tool reads a document's chunks in order.
+
 Documents are **ingest-only**. On upload the backend extracts text, chunks it (~1000 chars,
 ~200 overlap), embeds each chunk with Azure OpenAI `text-embedding-3-large`, and upserts it into
 an **Azure Cosmos DB for NoSQL vector container** (`doc-chunks`), partitioned by the

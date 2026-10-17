@@ -48,6 +48,18 @@ public sealed class ProbeDocumentIndex : IDocumentIndex
 
     public Task DeleteAsync(string ownerKey, CancellationToken cancellationToken = default)
         => _inner.DeleteAsync(ownerKey, cancellationToken);
+
+    /// <summary>When set, <see cref="ReadChunksAsync"/> throws: an index outage for <c>read_document</c> (ADR 0098).</summary>
+    public bool FailReads { get; set; }
+
+    public Task<DocumentChunkRange> ReadChunksAsync(
+        string ownerKey, string fileName, int startChunkIndex, int count, CancellationToken cancellationToken = default)
+        => FailReads
+            ? throw new InvalidOperationException("Injected index outage.")
+            : _inner.ReadChunksAsync(ownerKey, fileName, startChunkIndex, count, cancellationToken);
+
+    public Task DeleteFileAsync(string ownerKey, string fileName, CancellationToken cancellationToken = default)
+        => _inner.DeleteFileAsync(ownerKey, fileName, cancellationToken);
 }
 
 /// <summary>

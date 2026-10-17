@@ -83,8 +83,8 @@ public static class WebDocumentLimits
     /// a <b>repeating reminder</b> — neither of which has a human deciding to attach one more file.</para>
     ///
     /// <para>Eviction drops the name, not the indexed chunks: those are removed with the conversation
-    /// (<c>AgentGrain.PurgeAsync</c>). An evicted URL can be read again, which re-ingests it — see the
-    /// idempotence note on <c>AgentGrainState.WebDocumentUrls</c>.</para>
+    /// (<c>AgentGrain.PurgeAsync</c>). An evicted URL can be read again, which re-ingests it and, since
+    /// ADR 0098, replaces its chunks rather than duplicating them.</para>
     /// </summary>
     public const int MaxWebDocuments = 10;
 

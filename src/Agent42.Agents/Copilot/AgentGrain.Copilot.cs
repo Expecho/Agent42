@@ -97,7 +97,7 @@ public sealed partial class AgentGrain
 
     // The custom tools handed to Copilot. Only AIFunctions, so no hosted tool can arrive (and SelectableTools is asked
     // for the shims anyway). read_web_document is dropped because it feeds the RAG provider a copilot chat does not
-    // have, and the ADR 0089 tools by IsExcludedFromCopilot. read_skill_resource is added when a skill is selected
+    // have, read_document because a copilot chat refuses document upload and so has nothing to read (ADR 0098), and the ADR 0089 tools by IsExcludedFromCopilot. read_skill_resource is added when a skill is selected
     // (Copilot has no file tool to read one with). A
     // name the runtime would reject is skipped: one such name fails session creation, which would fail every turn.
     // Each tool is bound to the activation's scheduler, because Copilot calls tools from its own RPC thread.
@@ -106,7 +106,8 @@ public sealed partial class AgentGrain
     {
         var candidates = SelectableTools(capabilities, enabled, hostedTools: false)
             .OfType<AIFunction>()
-            .Where(f => f.Name != ToolCatalog.ReadWebDocument && !IsExcludedFromCopilot(f.Name))
+            .Where(f => f.Name is not (ToolCatalog.ReadWebDocument or ToolCatalog.ReadDocument)
+                && !IsExcludedFromCopilot(f.Name))
             .ToList();
         if (skills.Count > 0)
         {
