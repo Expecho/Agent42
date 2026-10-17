@@ -79,10 +79,10 @@ public sealed partial class AgentGrain
                 "read this document, or ask me to summarise the page with fetch_web_page instead.";
         }
 
-        // Already read in this conversation: do NOT fetch or ingest again. CosmosDocumentIndex gives every
-        // chunk a fresh Guid id, so a second read DUPLICATES the document's chunks rather than overwriting
-        // them — and this tool is model-driven, reachable from /api/agent-run and from a REPEATING
-        // reminder, so without this an hourly reminder re-ingests the same PDF forever. The answer is also
+        // Already read in this conversation: do NOT fetch or ingest again. Re-ingest replaces a name's chunks
+        // (ADR 0098), so this no longer prevents duplicates; it avoids a needless fetch and re-embed. This
+        // tool is model-driven, reachable from /api/agent-run and from a REPEATING reminder, so without this
+        // an hourly reminder re-fetches and re-embeds the same PDF forever. The answer is also
         // simply better: the always-on provider (ADR 0008) is already serving this document.
         if (_state.State.WebDocumentUrls.Contains(Normalize(uri), StringComparer.Ordinal))
         {

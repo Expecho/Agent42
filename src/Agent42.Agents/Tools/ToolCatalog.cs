@@ -139,6 +139,16 @@ public static class ToolCatalog
     public const string Artifacts = "artifacts";
 
     /// <summary>
+    /// Sequential reading of this conversation's ingested documents (ADR 0098) — the <c>read_document</c> tool, a
+    /// one-tool key spelled like its tool, as <see cref="ReadWebDocument"/> is. Inserted before
+    /// <see cref="BrowserTools"/>, which a guard pins as the last entries, and like every key added after the fact
+    /// it <b>lands OFF for anyone who has ever pressed Save</b> (ADR 0021). It reads only this conversation's own
+    /// chunks and sends nothing anywhere. Copilot chats never get it: they hold no documents (see
+    /// <c>CopilotFunctions</c>).
+    /// </summary>
+    public const string ReadDocument = "read_document";
+
+    /// <summary>
     /// The client tools (ADR 0089) — <c>confirm_action</c>, <c>control_artifact_pane</c> and
     /// <c>get_browser_context</c>, which the BROWSER runs. One key for all three: they are one consent ("let the
     /// assistant use my open browser tab"), and each answers "unavailable" wherever no browser is watching.
@@ -207,7 +217,7 @@ public static class ToolCatalog
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
         [
             WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification,
-            Artifacts, BrowserTools, SharedState,
+            Artifacts, ReadDocument, BrowserTools, SharedState,
         ];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
@@ -223,6 +233,7 @@ public static class ToolCatalog
         [WebSearch] = WebSearch,
         ["fetch_web_page"] = WebSearch,
         [ReadWebDocument] = ReadWebDocument,
+        [ReadDocument] = ReadDocument,
         ["send_push_notification"] = PushNotification,
         ["create_artifact"] = Artifacts,
         ["update_artifact"] = Artifacts,
@@ -288,6 +299,10 @@ public static class ToolCatalog
         // provides it, so it registers on both capability branches.
         new(Artifacts, "Artifacts", RequiresHostedTools: false,
             Description: "Lets the assistant build pages, apps, diagrams and documents you open in a side pane, with versions."),
+        // ReadDocument (ADR 0098) sits before BrowserTools, which a guard pins as the last two entries.
+        // RequiresHostedTools is false: no hosted tool reads this conversation's own chunks.
+        new(ReadDocument, "Read whole documents", RequiresHostedTools: false,
+            Description: "Lets the assistant read a document in this chat from start to end, part by part, for summaries and complete lists."),
         // BrowserTools and SharedState are LAST for the same order-stability reason (ADR 0089).
         new(BrowserTools, "Browser tools", RequiresHostedTools: false,
             Description: "Lets the assistant ask you to confirm actions, open artifacts in the pane and read your time zone and selected text."),

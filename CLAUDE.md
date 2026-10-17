@@ -159,7 +159,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out | 0074, 0090 |
 | Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools | 0013, 0014, 0015, 0017, 0018, 0019, 0033 |
 | Image generation, speech (STT/TTS/voice loop), reasoning output | 0006, 0020, 0037, 0038, 0071 |
-| Document RAG, per-user embeddings, web documents into RAG | 0007, 0008, 0030, 0066 |
+| Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces) | 0007, 0008, 0030, 0066, 0098 |
 | Web search (SearXNG sidecar, engines, proxied UI), page scrape (context.dev) | 0011, 0027, 0059, 0060 |
 | Location (a client tool since 0093) | 0012, 0093 |
 | Selectable tools: three layers, skills, uploaded skills, memory | 0021, 0048, 0049, 0057 |

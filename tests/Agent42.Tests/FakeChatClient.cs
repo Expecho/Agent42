@@ -546,8 +546,10 @@ public sealed partial class FakeChatClient : IChatClient
             .OfType<FunctionResultContent>().Select(r => r.Result?.ToString()));
 
         // Capped, because this reply is persisted like any other: echoing a 60 KB result in full would put it
-        // back into the session that a test is measuring.
-        return ScriptedResultOpen + (results.Length > 2000 ? results[..2000] : results) + ScriptedResultClose + " ";
+        // back into the session that a test is measuring. The head AND a short tail survive, so the end of a
+        // long result (read_document's footer, the last of a sequence's results) stays observable.
+        return ScriptedResultOpen + (results.Length > 2500 ? results[..2000] + " … " + results[^500..] : results)
+            + ScriptedResultClose + " ";
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
@@ -1008,8 +1010,50 @@ public sealed partial class FakeChatClient : IChatClient
             return true;
         }
 
+        return TryScriptedSequenceCall(list, lastUserIndex, options, text, out call);
+    }
+
+    /// <summary>
+    /// The marker of a scripted SEQUENCE: <see cref="CallToolSequencePrompt"/> writes it. It starts with
+    /// <see cref="CallToolMarker"/>, so <see cref="ScriptedResultEcho"/> echoes the turn's results as it does for
+    /// a single scripted call.
+    /// </summary>
+    public const string CallToolSequenceMarker = CallToolMarker + "seq-";
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Tool, string[] Args)> ScriptedSequences = new();
+
+    /// <summary>
+    /// A user prompt that makes the fake call <paramref name="toolName"/> once per entry of <paramref name="argsList"/>,
+    /// in order, all in ONE turn — the shape a per-turn cap needs (the push-cap branch's counting rule, generalised).
+    /// </summary>
+    public static string CallToolSequencePrompt(string toolName, IEnumerable<object> argsList)
+    {
+        var token = Guid.NewGuid().ToString("N")[..12];
+        ScriptedSequences[token] = (toolName, [.. argsList.Select(a => JsonSerializer.Serialize(a))]);
+        return CallToolSequenceMarker + token;
+    }
+
+    // Counts this turn's calls of the sequence's tool and emits the next one with a distinct CallId, or ends the
+    // turn (null) once the sequence is spent or the tool was not given.
+    private static bool TryScriptedSequenceCall(
+        IReadOnlyList<ChatMessage> list, int lastUserIndex, ChatOptions? options, string text, out FunctionCallContent? call)
+    {
         call = null;
-        return false;
+        var at = text.IndexOf(CallToolSequenceMarker, StringComparison.Ordinal);
+        if (at < 0 || !ScriptedSequences.TryGetValue(text[(at + CallToolSequenceMarker.Length)..].Trim(), out var sequence))
+        {
+            return false;
+        }
+
+        var made = CountCallsThisTurn(list, lastUserIndex, sequence.Tool);
+        if (made < sequence.Args.Length && options?.Tools?.Any(t => t.Name == sequence.Tool) == true)
+        {
+            using var doc = JsonDocument.Parse(sequence.Args[made]);
+            var args = doc.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.Clone());
+            call = new FunctionCallContent($"sequence-call-{made + 1}-" + Guid.NewGuid().ToString("N")[..6], sequence.Tool, args);
+        }
+
+        return true;
     }
 
     /// <summary>

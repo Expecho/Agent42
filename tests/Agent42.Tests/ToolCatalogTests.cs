@@ -211,6 +211,17 @@ public class ToolCatalogTests
         Assert.Equal(ToolCatalog.SharedState, ToolCatalog.KeyFor(SharedStateLimits.UpdateToolName));
     }
 
+    // AC10 (ADR 0098): read_document is inserted just before the pinned last two, in both lists, with a description.
+    [Fact]
+    public void ReadDocument_SitsBeforeBrowserTools_AndIsDescribed()
+    {
+        Assert.Equal(ToolCatalog.ReadDocument, ToolCatalog.AllSelectableToolKeys[^3]);
+        var descriptor = ToolCatalog.Descriptors[^3];
+        Assert.Equal(ToolCatalog.ReadDocument, descriptor.Key);
+        Assert.False(descriptor.RequiresHostedTools);
+        Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
+    }
+
     // AC9 — ON for the null (== all) selection, OFF for a selection saved before the keys existed (ADR 0021).
     [Fact]
     public void BrowserToolsAndSharedState_AreOnForNull_AndOffForAnOlderSavedSelection()

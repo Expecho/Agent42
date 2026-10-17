@@ -178,7 +178,7 @@ public sealed partial class AgentGrain
 
         await BindForkedSessionAsync(fork.SerializedSession);
 
-        CompactArtifactCalls();
+        CompactToolPayloads();
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
         await _state.WriteStateAsync();
@@ -276,7 +276,7 @@ public sealed partial class AgentGrain
     // documents can only go by dropping the conversation's and re-projecting, since there is no delete-by-ordinal.
     private async Task PersistTruncationAsync()
     {
-        CompactArtifactCalls();
+        CompactToolPayloads();
         await ApplyRetentionAsync();
 
         var serializedSession = await _agent.SerializeSessionAsync(_session);

@@ -160,6 +160,45 @@ public sealed class DocumentIngestionServiceTests
         Assert.Empty(index.Upserted);
     }
 
+    // AC3 (ADR 0098): re-ingesting a file name replaces its chunks. Every ingest restarts chunkIndex at 0, so
+    // without the replace a second copy would interleave with the first in read_document's ordered read.
+    [Fact]
+    public async Task Ingest_SameNameTwice_Replaces()
+    {
+        var index = new InMemoryDocumentIndex();
+        const string owner = "alice/ingest-replace";
+        var service = Service(index, EmbeddingProvider());
+
+        await service.IngestAsync(owner, "a.txt", DocumentMediaTypes.PlainText, TextDocument("first copy of the text"));
+        await service.IngestAsync(owner, "b.txt", DocumentMediaTypes.PlainText, TextDocument("an unrelated file"));
+        await service.IngestAsync(owner, "a.txt", DocumentMediaTypes.PlainText, TextDocument("second copy of the text"));
+
+        var a = await index.ReadChunksAsync(owner, "a.txt", 0, 10);
+        Assert.Equal("second copy of the text", Assert.Single(a.Chunks).Text);
+
+        // A different name is untouched.
+        var b = await index.ReadChunksAsync(owner, "b.txt", 0, 10);
+        Assert.Equal("an unrelated file", Assert.Single(b.Chunks).Text);
+    }
+
+    // AC3: the delete sits AFTER embedding, so a failed re-ingest leaves the old copy intact.
+    [Fact]
+    public async Task Ingest_FailedReembed_KeepsOldChunks()
+    {
+        var index = new FakeIndex(expectedDimensions: null);
+        await Service(index, EmbeddingProvider()).IngestAsync(
+            OwnerKey, "a.txt", DocumentMediaTypes.PlainText, TextDocument("the original copy"));
+
+        var failing = new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(
+            NoModelChatClient.Instance,
+            embeddingGenerator: new FailingEmbeddingGenerator(),
+            defaultEmbeddingModelId: "offline-embed"));
+        await Assert.ThrowsAsync<EmbeddingProviderException>(() => Service(index, failing).IngestAsync(
+            OwnerKey, "a.txt", DocumentMediaTypes.PlainText, TextDocument("a replacement that never lands")));
+
+        Assert.Equal("the original copy", Assert.Single(index.Upserted).Chunk.Text);
+    }
+
     private sealed class FakeIndex(int? expectedDimensions) : IDocumentIndex
     {
         public int? ExpectedDimensions => expectedDimensions;
@@ -178,6 +217,16 @@ public sealed class DocumentIngestionServiceTests
             => Task.FromResult<IReadOnlyList<DocumentChunk>>([]);
 
         public Task DeleteAsync(string ownerKey, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<DocumentChunkRange> ReadChunksAsync(
+            string ownerKey, string fileName, int startChunkIndex, int count, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DocumentChunkRange(0, []));
+
+        public Task DeleteFileAsync(string ownerKey, string fileName, CancellationToken cancellationToken = default)
+        {
+            Upserted.RemoveAll(e => e.Chunk.FileName == fileName);
+            return Task.CompletedTask;
+        }
     }
 
     // Throws what the OpenAI SDK throws when the provider answers with an error status.
