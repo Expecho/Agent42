@@ -284,6 +284,9 @@ public sealed partial class AgentGrain
         [
             schedulePrompt, cancelScheduledPrompt, cancelAllScheduledPrompts, getDateTime, getCurrentLocation,
             readWebDocument, sendPushNotification,
+            // read_document (ADR 0098): sequential reading of this conversation's own chunks, which no hosted
+            // tool provides, so it is unconditional like read_web_document.
+            ReadDocumentTool(),
             // The three artifact tools, built in their own part: unconditional like push, since no hosted tool
             // provides them. A spread, not inline, because this method has little S3776 headroom.
             .. ArtifactTools(),

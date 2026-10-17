@@ -67,4 +67,44 @@ public sealed class InMemoryDocumentIndex : IDocumentIndex
         Store.TryRemove(ownerKey, out _);
         return Task.CompletedTask;
     }
+
+    public Task<DocumentChunkRange> ReadChunksAsync(
+        string ownerKey, string fileName, int startChunkIndex, int count, CancellationToken cancellationToken = default)
+    {
+        if (!Store.TryGetValue(ownerKey, out var bucket))
+        {
+            return Task.FromResult(new DocumentChunkRange(0, []));
+        }
+
+        DocumentChunk[] ordered;
+        lock (bucket)
+        {
+            // Distinct by index, first occurrence wins — the same dedupe the Cosmos twin applies to legacy
+            // duplicate copies (ADR 0098).
+            ordered = [.. bucket
+                .Select(e => e.Chunk)
+                .Where(c => string.Equals(c.FileName, fileName, StringComparison.Ordinal))
+                .DistinctBy(c => c.ChunkIndex)
+                .OrderBy(c => c.ChunkIndex)];
+        }
+
+        var slice = ordered
+            .Where(c => c.ChunkIndex >= startChunkIndex && c.ChunkIndex < startChunkIndex + Math.Max(count, 0))
+            .ToArray();
+
+        return Task.FromResult(new DocumentChunkRange(ordered.Length, slice));
+    }
+
+    public Task DeleteFileAsync(string ownerKey, string fileName, CancellationToken cancellationToken = default)
+    {
+        if (Store.TryGetValue(ownerKey, out var bucket))
+        {
+            lock (bucket)
+            {
+                bucket.RemoveAll(e => string.Equals(e.Chunk.FileName, fileName, StringComparison.Ordinal));
+            }
+        }
+
+        return Task.CompletedTask;
+    }
 }

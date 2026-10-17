@@ -2,7 +2,7 @@
 
 > Drop in PDFs, Office files, or text; the agent automatically pulls the most relevant excerpts
 > into its answers (retrieval-augmented), so you can ask questions about your own documents.
-> ADRs 0007 · 0008.
+> ADRs 0007 · 0008 · 0066 · 0098.
 
 ## What it is
 
@@ -25,6 +25,14 @@ checks every resolved IP and every redirect hop against private ranges. Limits a
 document counts toward the RAG gate exactly like an uploaded one
 (`DocumentNames.Count + WebDocumentNames.Count > 0`).
 
+For whole-document work ("summarise all of it", "list every requirement") the selectable
+`read_document` tool (ADR 0098) reads a document **in chunk order**, ten chunks per part, with the
+overlap between chunks stitched out (`DocumentStitcher`). Excerpts answer targeted questions; this reads
+end to end. At most 20 parts per turn, and each part is stubbed out of the session after its turn, so the
+model takes notes as it reads. A web document's parts are labelled UNTRUSTED. Uploading a file name the
+conversation already holds **replaces** its chunks (on every ingest path), so a re-upload never duplicates
+excerpts.
+
 ### Prerequisite: a default embedding model (ADR 0030)
 
 RAG needs an **embedding model**, and it is **per-user** — not an operator prerequisite. Add a model
@@ -33,7 +41,8 @@ Preferences → Model providers. Until you do, the composer **blocks attaching d
 unaffected). If you clear the embedding model on a conversation that already has documents, replies
 still work — retrieval just **degrades to empty context, never errors**. The model must produce
 **3072-dimension** vectors (the fixed `doc-chunks` container — ingest rejects a mismatch with a clear
-message); switching embedding models means **deleting and re-uploading** existing documents.
+message); switching embedding models means **re-uploading** existing documents (a re-upload of a name replaces its
+chunks, ADR 0098).
 
 ## How it works
 
@@ -83,6 +92,7 @@ public async Task<int> IngestAsync(
     var embedded = chunks
         .Zip(generated, (chunk, embedding) => new EmbeddedChunk(chunk, embedding.Vector)).ToList();
 
+    await index.DeleteFileAsync(ownerKey, fileName, cancellationToken); // re-ingest replaces (ADR 0098)
     await index.UpsertChunksAsync(ownerKey, embedded, cancellationToken);
     return chunks.Count;
 }
@@ -178,5 +188,6 @@ else
 | Extract / chunk | `src/Agent42.Agents/Documents/DocumentTextExtractor.cs`, `DocumentChunker.cs` |
 | Retrieval provider | `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`BuildDocumentSearchProvider`, `SearchDocumentContextAsync`) |
 | Vector store | `src/Agent42.Backend/Documents/CosmosDocumentIndex.cs`, `src/Agent42.Agents/Documents/InMemoryDocumentIndex.cs` |
+| Sequential reading (ADR 0098) | `src/Agent42.Agents/Documents/AgentGrain.ReadDocumentTool.cs`, `ReadDocumentLimits.cs`, `DocumentStitcher.cs` |
 | Web documents (ADR 0066) | `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`, `WebDocumentLimits.cs`, `src/Agent42.Backend/Documents/WebDocumentIngestor.cs`, `src/Agent42.Backend/Web/PrivateAddressGuard.cs` |
 | Wiring | `src/Agent42.Backend/Program.cs` |

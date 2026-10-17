@@ -642,6 +642,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // it takes effect as soon as either caller starts enumerating.
         _pushesThisTurn = 0;
 
+        // The read_document part budget (ADR 0098) has the same two-site shape, for the same reason.
+        _documentPartsRead = 0;
+
         // Captured here, before the first yield, and never re-read (ADR 0078). _interactiveTurn is one of
         // the blindly-assigned turn-scoped fields — EnqueuePromptAsync sets it false and never restores it —
         // and this method suspends at its yields, so a background turn starting in one of those gaps would
@@ -1238,7 +1241,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         // Retention (ADR 0016): stamp every message, then delete whole turns that fell outside the window
         // — continuous chats only. Before the serialize, so the pruned session is what gets written.
-        CompactArtifactCalls();
+        CompactToolPayloads();
         var pruned = await ApplyRetentionAsync();
 
         var serializedSession = await _agent.SerializeSessionAsync(_session);
@@ -1570,6 +1573,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _ephemeral = false;
         _webDocumentIngested = false;
         _pushesThisTurn = 0;
+        _documentPartsRead = 0; // read_document's budget (ADR 0098): reset site 2 of 2, as _pushesThisTurn
 
         // The second run site of the shared-state run count (ADR 0089); ChatCoreAsync is the first.
         _runsInFlight++;
@@ -1648,7 +1652,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         // Retention (ADR 0016), same as the chat path. This site does its OWN serialize — it does not
         // delegate to PersistTurnUnlessEphemeralAsync — so the call has to be repeated here.
-        CompactArtifactCalls();
+        CompactToolPayloads();
         var pruned = await ApplyRetentionAsync();
 
         var serializedSession = await _agent.SerializeSessionAsync(_session);

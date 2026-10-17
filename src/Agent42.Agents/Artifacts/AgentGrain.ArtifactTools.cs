@@ -18,7 +18,7 @@ namespace Agent42.Agents;
 /// leaves a ref to nothing.</para>
 ///
 /// <para><b>The tool-call ARGUMENTS are as big as the artifact</b>, and the session keeps them (ADR 0004's 2 MB
-/// item). <see cref="CompactArtifactCalls"/> stubs them after the turn; see the artifact entry in gotchas.md.</para>
+/// item). <see cref="CompactToolPayloads"/> stubs them after the turn; see the artifact entry in gotchas.md.</para>
 /// </summary>
 public sealed partial class AgentGrain
 {
@@ -259,19 +259,20 @@ public sealed partial class AgentGrain
             new ArtifactInfo(record.Id, record.Versions[^1].Version, record.Kind, record.Title), JsonSerializerOptions.Web);
 
     /// <summary>
-    /// Stubs the artifact source out of the session before it is serialized: every <c>create_artifact</c> /
-    /// <c>update_artifact</c> call's <c>content</c> argument, and every <c>read_artifact</c> result. Within the turn
-    /// the model saw the full text; on a later turn it calls <c>read_artifact</c> again. Without this, ten
+    /// Stubs bulky tool payloads out of the session before it is serialized. Two families: the artifact source —
+    /// every <c>create_artifact</c> / <c>update_artifact</c> call's <c>content</c> argument, and every
+    /// <c>read_artifact</c> result (ADR 0084) — and every successful <c>read_document</c> part (ADR 0098). Within the
+    /// turn the model saw the full text; on a later turn it calls the read tool again. Without this, ten
     /// revisions of a 60 KB app leave 600 KB of dead text in the 2 MB session item (ADR 0004), re-sent every turn.
     ///
-    /// <para>Runs at the three post-turn persist sites, beside <c>ApplyRetentionAsync</c>, and mutates the
+    /// <para>Runs at the five post-turn persist sites, beside <c>ApplyRetentionAsync</c>, and mutates the
     /// <c>TryGetInMemoryChatHistory</c> list in place the way retention does. Measured on Agent Framework 1.22
     /// (spike in the plan): a replaced <see cref="FunctionCallContent"/> survives serialize → JSON → deserialize,
     /// and the next turn still sends the call paired with its result. A call is REPLACED with a copy rather than
     /// having its argument dictionary edited, because the framework may share that dictionary with the live
     /// stream. Idempotent: an already-stubbed call or result is left alone.</para>
     /// </summary>
-    private void CompactArtifactCalls()
+    private void CompactToolPayloads()
     {
         if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
         {
@@ -290,7 +291,7 @@ public sealed partial class AgentGrain
             {
                 if (message.Contents[i] is FunctionCallContent call)
                 {
-                    message.Contents[i] = CompactArtifactCall(call, results.GetValueOrDefault(call.CallId));
+                    message.Contents[i] = CompactToolCall(call, results.GetValueOrDefault(call.CallId));
                 }
             }
         }
@@ -298,8 +299,14 @@ public sealed partial class AgentGrain
 
     // One call, compacted, or the same instance when there is nothing to compact. The result is joined by CallId,
     // never by position: a result arrives on a later message than its call (gotchas.md).
-    private static AIContent CompactArtifactCall(FunctionCallContent call, FunctionResultContent? result)
+    private static AIContent CompactToolCall(FunctionCallContent call, FunctionResultContent? result)
     {
+        if (call.Name == ToolCatalog.ReadDocument)
+        {
+            CompactReadDocumentResult(call, result);
+            return call;
+        }
+
         if (call.Name == ReadArtifactTool)
         {
             if (result is not null && ParseArtifactResult(result.Result) is { } read)

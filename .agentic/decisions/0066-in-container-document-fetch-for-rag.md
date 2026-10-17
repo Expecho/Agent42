@@ -200,6 +200,9 @@ The name list is also **bounded** (`MaxWebDocuments`, oldest dropped first), for
 2 MB item. Two residuals, both accepted: an evicted URL can be read again and its chunks will duplicate;
 and eviction drops the name while the chunks stay indexed until the conversation is deleted.
 
+> **Amended by [0098](0098-read-document-sequential-reading.md):** re-ingesting a file name now replaces its
+> chunks, so a re-read no longer duplicates them. The short-circuit stays, to avoid a needless fetch and re-embed.
+
 ### Limits
 
 `WebDocumentLimits`: **10 MB** download cap (enforced *while streaming* — a `Content-Length` pre-check

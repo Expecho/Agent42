@@ -48,6 +48,13 @@ public sealed class ProbeDocumentIndex : IDocumentIndex
 
     public Task DeleteAsync(string ownerKey, CancellationToken cancellationToken = default)
         => _inner.DeleteAsync(ownerKey, cancellationToken);
+
+    public Task<DocumentChunkRange> ReadChunksAsync(
+        string ownerKey, string fileName, int startChunkIndex, int count, CancellationToken cancellationToken = default)
+        => _inner.ReadChunksAsync(ownerKey, fileName, startChunkIndex, count, cancellationToken);
+
+    public Task DeleteFileAsync(string ownerKey, string fileName, CancellationToken cancellationToken = default)
+        => _inner.DeleteFileAsync(ownerKey, fileName, cancellationToken);
 }
 
 /// <summary>

@@ -85,6 +85,11 @@ public sealed class DocumentIngestionService(
             .Zip(generated, (chunk, embedding) => new EmbeddedChunk(chunk, embedding.Vector))
             .ToList();
 
+        // Re-ingesting a file name REPLACES its chunks (ADR 0098): every ingest restarts chunkIndex at 0, so a
+        // second copy would interleave with the first in read_document's ordered read and double the
+        // retrieval excerpts. The delete sits after embedding and the dimension check, so a failed re-ingest
+        // leaves the old copy intact. Not atomic with the upsert — an accepted residual (ADR 0098).
+        await index.DeleteFileAsync(ownerKey, fileName, cancellationToken);
         await index.UpsertChunksAsync(ownerKey, embedded, cancellationToken);
         return new IngestedDocument(embedded, truncated);
     }

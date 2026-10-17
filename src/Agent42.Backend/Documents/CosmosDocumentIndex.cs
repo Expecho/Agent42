@@ -90,6 +90,93 @@ public sealed class CosmosDocumentIndex(
         }
     }
 
+    public async Task<DocumentChunkRange> ReadChunksAsync(
+        string ownerKey, string fileName, int startChunkIndex, int count, CancellationToken cancellationToken = default)
+    {
+        var options = new QueryRequestOptions { PartitionKey = new PartitionKey(ownerKey) };
+
+        var maxQuery = new QueryDefinition(MaxChunkIndexSql).WithParameter("@fileName", fileName);
+        var maxValues = new List<int?>();
+        using (var maxIterator = _container.GetItemQueryIterator<int?>(maxQuery, requestOptions: options))
+        {
+            while (maxIterator.HasMoreResults)
+            {
+                maxValues.AddRange(await maxIterator.ReadNextAsync(cancellationToken));
+            }
+        }
+
+        var total = TotalChunksFromMax(maxValues);
+        if (total == 0 || count <= 0)
+        {
+            return new DocumentChunkRange(total, []);
+        }
+
+        var rangeQuery = new QueryDefinition(ReadRangeSql)
+            .WithParameter("@fileName", fileName)
+            .WithParameter("@start", startChunkIndex)
+            .WithParameter("@end", startChunkIndex + count);
+        using var iterator = _container.GetItemQueryIterator<ChunkHit>(rangeQuery, requestOptions: options);
+
+        var chunks = new List<DocumentChunk>();
+        while (iterator.HasMoreResults)
+        {
+            foreach (var hit in await iterator.ReadNextAsync(cancellationToken))
+            {
+                chunks.Add(new DocumentChunk(hit.fileName, hit.page, hit.chunkIndex, hit.text));
+            }
+        }
+
+        // Legacy duplicates (a re-upload before re-ingest replaced) share indices; first wins (ADR 0098).
+        return new DocumentChunkRange(total, [.. chunks.DistinctBy(c => c.ChunkIndex)]);
+    }
+
+    public async Task DeleteFileAsync(string ownerKey, string fileName, CancellationToken cancellationToken = default)
+    {
+        var partition = new PartitionKey(ownerKey);
+        var query = new QueryDefinition(DeleteFileScanSql).WithParameter("@fileName", fileName);
+        var options = new QueryRequestOptions { PartitionKey = partition };
+        using var iterator = _container.GetItemQueryIterator<IdOnly>(query, requestOptions: options);
+
+        while (iterator.HasMoreResults)
+        {
+            foreach (var item in await iterator.ReadNextAsync(cancellationToken))
+            {
+                await _container.DeleteItemAsync<ChunkDocument>(item.id, partition, cancellationToken: cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The file's total chunk count, read as <c>MAX(chunkIndex) + 1</c>: indices are contiguous from 0 per
+    /// ingest, and <c>COUNT(1)</c> would over-count legacy duplicate copies. Every query here is
+    /// single-partition (the caller sets the <c>ownerKey</c> partition) and takes <c>fileName</c> as a
+    /// parameter, never interpolated.
+    ///
+    /// <para>Public rather than internal because this repo has no <c>InternalsVisibleTo</c> — the same
+    /// reason as <c>CosmosChatSearchIndex.BuildSearchSql</c>.</para>
+    /// </summary>
+    public const string MaxChunkIndexSql = "SELECT VALUE MAX(c.chunkIndex) FROM c WHERE c.fileName = @fileName";
+
+    /// <summary>
+    /// One part's chunk range. The ORDER BY names a <b>single</b> property on purpose: that is served by the
+    /// default range index, while a multi-property ORDER BY needs a declared composite index or fails with a
+    /// 400 in prod only (the ADR 0061 <c>chat-messages</c> bug). <c>doc-chunks</c> declares none.
+    /// </summary>
+    public const string ReadRangeSql =
+        "SELECT c.fileName, c.page, c.chunkIndex, c.text FROM c "
+        + "WHERE c.fileName = @fileName AND c.chunkIndex >= @start AND c.chunkIndex < @end "
+        + "ORDER BY c.chunkIndex";
+
+    /// <summary>The per-file delete scan behind re-ingest-replaces (ADR 0098).</summary>
+    public const string DeleteFileScanSql = "SELECT c.id FROM c WHERE c.fileName = @fileName";
+
+    /// <summary>
+    /// Maps the <see cref="MaxChunkIndexSql"/> result to a total. <b>On no matching rows Cosmos returns an
+    /// empty result set (or an undefined value), not 0</b>, so both map to 0 — "no readable text".
+    /// </summary>
+    public static int TotalChunksFromMax(IEnumerable<int?> maxValues)
+        => maxValues.FirstOrDefault() is int max ? max + 1 : 0;
+
     // Item shape. Lowercase 'id' is the Cosmos item id; 'ownerKey' is the partition key path
     // (/ownerKey); 'embedding' is the vector path (/embedding) declared in the Bicep vector policy.
     private sealed record ChunkDocument(

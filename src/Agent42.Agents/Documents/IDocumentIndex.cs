@@ -38,4 +38,28 @@ public interface IDocumentIndex
     /// so its indexed document text doesn't outlive it (privacy — see <c>AgentGrain.PurgeAsync</c>).
     /// </summary>
     Task DeleteAsync(string ownerKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns up to <paramref name="count"/> chunks of <paramref name="fileName"/> under
+    /// <paramref name="ownerKey"/>, starting at <paramref name="startChunkIndex"/>, in chunk order — the
+    /// sequential read behind <c>read_document</c> (ADR 0098). Distinct by <see cref="DocumentChunk.ChunkIndex"/>
+    /// (first occurrence wins): a conversation re-uploaded before re-ingest replaced its chunks may hold two
+    /// copies with identical indices. <see cref="DocumentChunkRange.TotalChunks"/> is the file's distinct chunk
+    /// count, <c>0</c> when the file has none.
+    /// </summary>
+    Task<DocumentChunkRange> ReadChunksAsync(
+        string ownerKey, string fileName, int startChunkIndex, int count, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes every chunk of <paramref name="fileName"/> under <paramref name="ownerKey"/> and leaves the
+    /// conversation's other documents alone. Ingest calls it right before upserting, so re-ingesting a file
+    /// name replaces its chunks rather than duplicating them (ADR 0098).
+    /// </summary>
+    Task DeleteFileAsync(string ownerKey, string fileName, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// One ordered slice of a document's chunks plus the document's total distinct chunk count, so the caller
+/// can number parts (<see cref="IDocumentIndex.ReadChunksAsync"/>).
+/// </summary>
+public sealed record DocumentChunkRange(int TotalChunks, IReadOnlyList<DocumentChunk> Chunks);

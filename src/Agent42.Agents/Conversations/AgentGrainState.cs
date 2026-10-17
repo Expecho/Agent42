@@ -183,14 +183,13 @@ public sealed class AgentGrainState
     ///
     /// <para><b>This is the re-read identity, and it is a separate list on purpose.</b> The display name
     /// is derived and length-capped, so two long URLs can flatten to one name; using it as the identity
-    /// would silently refuse to read a genuinely different document. Re-reading is worth preventing
-    /// exactly: <c>CosmosDocumentIndex</c> gives every chunk a fresh <c>Guid</c> id, so a second read
-    /// <b>duplicates</b> all of a document's chunks rather than overwriting them — and the trigger here
-    /// is model-driven, reachable from <c>/api/agent-run</c> and from a <b>repeating reminder</b>, so an
-    /// hourly reminder could otherwise re-ingest the same PDF forever.</para>
+    /// would silently refuse to read a genuinely different document. Re-reading is still worth preventing:
+    /// since ADR 0098 a re-ingest replaces the name's chunks rather than duplicating them, but it would
+    /// re-fetch and re-embed the whole document — and the trigger here is model-driven, reachable from
+    /// <c>/api/agent-run</c> and from a <b>repeating reminder</b>, so an hourly reminder could otherwise
+    /// re-ingest the same PDF forever.</para>
     ///
-    /// <para>The residual, bounded and accepted: a URL evicted by the cap can be read again and its
-    /// chunks will duplicate. Trailing <c>[Id(12)]</c> — old Cosmos state deserializes this as an empty
+    /// <para>A URL evicted by the cap can be read again, which re-ingests (and replaces) it. Trailing <c>[Id(12)]</c> — old Cosmos state deserializes this as an empty
     /// list, so the first read after a deploy is treated as new. Zero migration.</para>
     /// </summary>
     [Id(12)]
