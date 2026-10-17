@@ -70,7 +70,7 @@ public sealed partial class FleetTaskService
         var record = task.Record;
         var factory = await chatClients.GetForUserAsync(record.UserId, task.Budget.Token);
         var prompts = new FleetPromptSet(await store.GetPromptsAsync(record.UserId, task.Budget.Token));
-        var functions = tools is null ? [] : await tools.BuildAsync(record.UserId, record.Request, task.Questions, task.Budget.Token);
+        var functions = tools is null ? [] : await tools.BuildAsync(record.UserId, record.Request, record.EnabledTools, task.Questions, task.Budget.Token);
         var copilotFactory = copilot is null
             ? null
             : new FleetCopilotAgentFactory(copilot, factory, [.. models.Select(m => m.Id)], record.PlannerModel, workspace, prompts,

@@ -134,6 +134,27 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         }
     }
 
+    /// <summary>ADR 0099: the page's override reaches the record and comes back on the task, sanitized.</summary>
+    [Fact]
+    public async Task SubmitTask_EnabledTools_RoundTrips()
+    {
+        const string user = "fleet-tools-1";
+        var response = await Send(HttpMethod.Post, "/api/fleet/tasks", user,
+            new { task = Task(), model = FleetRunHarness.ModelA, enabledTools = new[] { "mcp:s1", "bogus" } });
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var taskId = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("taskId").GetString()!;
+        try
+        {
+            var task = await (await Send(HttpMethod.Get, $"/api/fleet/tasks/{taskId}", user)).Content.ReadFromJsonAsync<JsonElement>();
+
+            Assert.Equal(["mcp:s1"], task.GetProperty("enabledTools").EnumerateArray().Select(e => e.GetString()));
+        }
+        finally
+        {
+            await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/stop", user);
+        }
+    }
+
     [Fact]
     public async Task Api_Conflicts()
     {

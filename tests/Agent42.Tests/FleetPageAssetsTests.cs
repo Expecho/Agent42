@@ -113,6 +113,29 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
         Assert.Contains("confirm(`Delete task #", script);
     }
 
+    /// <summary>ADR 0099: a task follows the chat default unless the picker was changed, and a failed catalog never
+    /// turns into "no tools". The picker offers only the fleet's keys, and MCP names are set as text.</summary>
+    [Fact]
+    public async Task FleetJs_ToolOverride_SentOnlyWhenChanged()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("const toolOverride = () => toolPicker.dirty && S.tools ? readToolPicker() : undefined;", script);
+        Assert.Contains("enabledTools: enabledTools !== undefined ? enabledTools : toolOverride(),", script);
+        Assert.Contains("const fleetToolKey = key => key === \"web_search\" || key.startsWith(\"mcp:\");", script);
+        Assert.Contains("S.tools = tools.ok && profile.ok ? (tools.data || []).filter(t => fleetToolKey(t.key)) : null;", script);
+        Assert.Contains("h(\"span\", { text: row.label })", script);
+    }
+
+    /// <summary>ADR 0099: Run again keeps the task's override (null included) instead of falling back to the picker.</summary>
+    [Fact]
+    public async Task FleetJs_RunAgain_ResendsTaskOverride()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null)", script);
+    }
+
     /// <summary>Every event type the backend publishes has a handler on the page, so no part of a run goes unshown.</summary>
     [Fact]
     public async Task FleetJs_HandlesEveryPublishedEventType()

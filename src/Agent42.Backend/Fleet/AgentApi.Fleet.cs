@@ -4,8 +4,10 @@ using Orleans.Runtime;
 
 namespace Agent42.Backend;
 
-/// <summary>A task the page starts: the request, optionally the done task it follows up, the model and token cap.</summary>
-public sealed record FleetSubmitRequest(string? Task, string? FollowUpOf, string? Model, long? MaxTokens);
+/// <summary>A task the page starts: the request, optionally the done task it follows up, the model, the token cap and
+/// a tool selection overriding the user's default (null follows the default, ADR 0099).</summary>
+public sealed record FleetSubmitRequest(
+    string? Task, string? FollowUpOf, string? Model, long? MaxTokens, IReadOnlyList<string>? EnabledTools = null);
 
 /// <summary>The user's answer to a task's open question, optionally naming the question (the <c>prompt</c> event's id).</summary>
 public sealed record FleetAnswerRequest(string? Answer, int? QuestionId = null);
@@ -84,7 +86,7 @@ public static partial class AgentApi
         // The request's identity, as the middleware put it in RequestContext: the background run re-publishes it.
         var telemetry = RequestContext.Get(UserTelemetryContext.RequestContextKey) as UserTelemetryContext;
         var (taskId, error) = await fleet.SubmitAsync(
-            http.GetUserId(), new FleetSubmit(request.Task ?? "", request.FollowUpOf, request.Model, request.MaxTokens), telemetry, ct);
+            http.GetUserId(), new FleetSubmit(request.Task ?? "", request.FollowUpOf, request.Model, request.MaxTokens, request.EnabledTools), telemetry, ct);
         return taskId is null
             ? Results.Json(new { error }, statusCode: StatusCodes.Status409Conflict)
             : Results.Json(new { taskId }, statusCode: StatusCodes.Status202Accepted);

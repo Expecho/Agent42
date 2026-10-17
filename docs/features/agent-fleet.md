@@ -15,6 +15,10 @@
   result, then a new team builds on it. The best result is kept.
 - **Your models only.** The planner, judge and moderators run on the model you pick. Agents can run on any of
   your tool-capable models. With none, the page shows the same "add a provider" gate as the chat.
+- **Tools per task.** Agents get web search and your MCP tools as your chat default selects them. The composer's
+  **Tools** picker overrides that for one task: it sends a selection only once you change it, and an untouched
+  picker follows the default (ADR 0099). The task header shows "Tools: your defaults" or "Tools: N selected".
+  Run again keeps the task's selection, and a follow-up starts from it.
 - **Approval and questions.** Teams up to `Fleet:ApprovalDepth` ask you to approve their plan. Copilot
   permissions and MCP elicitations are asked the same way: a bar at the top with buttons and a text field.
 - **Bounded.** Every task has a token cap (a default, and a server maximum) and an agent cap. You run one task
@@ -53,7 +57,8 @@ flowchart LR
 - `FleetEventLog` numbers every event, fans it out live, and persists it at most once a second, merging streamed
   text. A subscriber registers before the store is read and skips what it already sent, so a reload sees each
   event exactly once.
-- `FleetToolCatalog` builds the tools from the user's DEFAULT tool selection: web tools (with the chat's
+- `FleetToolCatalog` builds the tools from the task's own selection (`FleetTaskRecord.EnabledTools`), else the
+  user's DEFAULT tool selection (ADR 0099): web tools (with the chat's
   fetch allowlist) and MCP tools with the reauth and elicitation wrappers.
 - Usage counts under your user and the application `Agent42 fleet` in the usage dashboard.
 

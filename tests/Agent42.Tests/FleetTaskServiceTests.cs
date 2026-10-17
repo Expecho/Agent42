@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Agent42.Agents;
 using Agent42.Backend;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent42.Tests;
@@ -26,14 +27,15 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         }
     }
 
-    private FleetTaskService Service(FleetOptions? options = null)
+    private FleetTaskService Service(FleetOptions? options = null, FleetToolCatalog? tools = null, IChatClient? client = null)
     {
         var service = new FleetTaskService(
             _store,
             options ?? new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1 },
-            new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(new FakeChatClient(), FleetRunHarness.ModelA)),
+            new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(client ?? new FakeChatClient(), FleetRunHarness.ModelA)),
             new FixedCatalogs(),
-            NullLogger<FleetTaskService>.Instance);
+            NullLogger<FleetTaskService>.Instance,
+            tools);
         _services.Add(service);
         return service;
     }
@@ -77,6 +79,57 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Equal(FleetTeamRunner.NoTeamResult, failed.Reason);
         Assert.Null(failed.Result);
         Assert.False(failed.CanFollowUp);
+    }
+
+    /// <summary>ADR 0099: no override stores null, so the run follows the user's default when it starts.</summary>
+    [Fact]
+    public async Task Submit_WithoutOverride_StoresNull()
+    {
+        var service = Service();
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Null((await _store.GetTaskAsync(Alice, taskId!))!.EnabledTools);
+    }
+
+    /// <summary>ADR 0099: an override is sanitized like a stored default (unknown keys dropped, catalog order), and
+    /// an empty list stays empty: it means no tools, never "the default".</summary>
+    [Fact]
+    public async Task Submit_WithOverride_StoresSanitizedSelection()
+    {
+        var service = Service();
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan,
+            EnabledTools: ["mcp:s1:lookup", "invented", ToolCatalog.WebSearch, "mcp:s2", ToolCatalog.WebSearch]));
+        await FinishedAsync(service, Alice, taskId!);
+        var (emptyId, _) = await service.SubmitAsync(Alice, new(OnePlan, EnabledTools: []));
+        await FinishedAsync(service, Alice, emptyId!);
+
+        Assert.Equal([ToolCatalog.WebSearch, "mcp:s1:lookup", "mcp:s2"], (await _store.GetTaskAsync(Alice, taskId!))!.EnabledTools!);
+        Assert.Empty((await _store.GetTaskAsync(Alice, emptyId!))!.EnabledTools!);
+    }
+
+    /// <summary>ADR 0099 end to end: the record's override reaches the run's tools (record → <c>BuildRunAsync</c> →
+    /// catalog), seen in the planner's tool list. Without one the run follows the profile default, here web search
+    /// only.</summary>
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task Run_UsesTaskOverride_ElseProfileDefault(bool withOverride, bool expectWebSearch)
+    {
+        var profile = FakeProfileGrainFactory.Create([ToolCatalog.WebSearch]);
+        var catalog = new FleetToolCatalog(profile.Factory, NullLogger<FleetToolCatalog>.Instance, new InMemoryWebSearch(), new InMemoryWebPageFetcher());
+        var client = new SystemPromptRecorder(new FakeChatClient());
+        var service = Service(tools: catalog, client: client);
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, EnabledTools: withOverride ? [] : null));
+        await FinishedAsync(service, Alice, taskId!);
+
+        var planner = client.SystemPrompts.First(p => p.Contains("- write_artifact:", StringComparison.Ordinal));
+        Assert.Equal(expectWebSearch, planner.Contains("- web_search:", StringComparison.Ordinal));
+        Assert.Equal(expectWebSearch, planner.Contains("- fetch_web_page:", StringComparison.Ordinal));
+        Assert.Equal(withOverride ? 0 : 1, profile.Reads);
     }
 
     [Fact]
@@ -450,5 +503,36 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
                 new ModelInfo(NoToolsModel, "fake", null, "t", null, SupportsTools: false, SupportsVision: false),
                 new ModelInfo(EmbeddingModel, "fake", null, "e", null, SupportsTools: true, SupportsVision: false, SupportsEmbeddings: true),
             ]));
+    }
+
+    // Records every system prompt the run's chat calls carry, as instructions or as system messages.
+    private sealed class SystemPromptRecorder(IChatClient inner) : DelegatingChatClient(inner)
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<string> SystemPrompts { get; } = new();
+
+        public override Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            Record(messages, options);
+            return base.GetResponseAsync(messages, options, cancellationToken);
+        }
+
+        public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            Record(messages, options);
+            return base.GetStreamingResponseAsync(messages, options, cancellationToken);
+        }
+
+        private void Record(IEnumerable<ChatMessage> messages, ChatOptions? options)
+        {
+            if (options?.Instructions is { } instructions)
+            {
+                SystemPrompts.Enqueue(instructions);
+            }
+
+            foreach (var message in messages.Where(m => m.Role == ChatRole.System))
+            {
+                SystemPrompts.Enqueue(message.Text);
+            }
+        }
     }
 }

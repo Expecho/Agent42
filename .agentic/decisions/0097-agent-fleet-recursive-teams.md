@@ -5,6 +5,7 @@ status: accepted
 tags: [fleet, agents, agent-framework, workflows, declarative, github-copilot-sdk, blob, sse, egress, trust-boundary, single-replica, usage, prerelease-package, no-migration]
 supersedes: []
 amends: [0085, 0013]
+amended_by: [0099]   # 0099: a task can override the default tool selection (decision 6)
 ---
 
 # Agent42 agent fleet: an in-process recursive team runner outside Orleans, persisted in Blob, with Copilot agents that keep their built-in tools
@@ -39,7 +40,7 @@ fleet"), with persisted tasks and follow-ups, using only the user's own models (
    the task's user at the start of its background `Task`, and the application dimension to `"Agent42 fleet"`. It never
    relies on the POST's flowed ExecutionContext.
 6. **Tools**: the workspace tools, `delegate_to_team`, `web_search`/`fetch_web_page` (truncated), and the user's MCP
-   tools gated by their DEFAULT tool selection (ADR 0021), with the ADR 0081 reauth and ADR 0095 elicitation
+   tools gated by their DEFAULT tool selection (ADR 0021; since ADR 0099 the task's own override, else the default), with the ADR 0081 reauth and ADR 0095 elicitation
    wrappers. An elicitation becomes a fleet question.
 7. **Copilot fleet agents keep Copilot's built-in tools (shell, file writes, URL fetch) in the backend container.**
    **This amends ADR 0085's phase-1 trust boundary for fleet tasks only** (user decision, 2026-10-12). It uses a

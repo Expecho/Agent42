@@ -22,6 +22,8 @@
     panel: null,
     freshTask: true,        // the composer starts a new task, instead of a follow-up on the selected task
     config: null, models: null, files: null,
+    tools: null,            // the fleet's rows of GET /api/tools, or null when it failed (then no override is ever sent)
+    defaultTools: null,     // the user's default chat selection (profile.enabledTools), null meaning all
   };
 
   function resetTaskState() {
@@ -395,10 +397,77 @@
     const hint = h("span", { class: "muted hint" });
     const model = h("select", { "aria-label": "Model" });
     const tokens = h("input", { type: "number", min: "1", step: "100000", "aria-label": "Token cap" });
-    const options = h("div", { class: "composer-options" }, h("label", null, "Model", model), h("label", null, "Token cap", tokens));
+    const toolsSummary = h("summary");
+    const toolsList = h("div", { class: "tool-list" });
+    const tools = h("details", { class: "tool-picker", hidden: true }, toolsSummary, toolsList);
+    const options = h("div", { class: "composer-options" }, h("label", null, "Model", model), h("label", null, "Token cap", tokens), tools);
     const el = h("div", { class: "card composer" }, title, ta, options, h("div", { class: "composer-row" }, hint, err, btn));
-    return { el, ta, err, btn, title, hint, model, tokens };
+    return { el, ta, err, btn, title, hint, model, tokens, tools, toolsSummary, toolsList };
   })();
+
+  // ---------- tools picker (ADR 0099) ----------
+  // A task follows the user's default chat selection unless this picker was changed: only then is an override sent,
+  // so a new MCP server still reaches a task that didn't override (ADR 0021, null == all). It shows only what the
+  // fleet uses, web_search (which gates fetch_web_page too) and the MCP servers with their tools, so a sent override
+  // drops every other key on purpose: it is this task's, never written back to the profile. A local picker, because
+  // this classic script can't import js/tools.js. MCP names are server-supplied: text only.
+  const fleetToolKey = key => key === "web_search" || key.startsWith("mcp:");
+  const toolPicker = { picked: new Set(), dirty: false, target: undefined };
+  const toolChildren = row => (S.tools || []).filter(r => r.parentKey === row.key);
+
+  // Whether a selection grants a row, as ToolCatalog.IsMcpToolEnabled does: the bare mcp, its server's key, or its own.
+  const grants = (selection, row) => selection.has(row.key)
+    || (row.key.startsWith("mcp:") && selection.has("mcp")) || (!!row.parentKey && selection.has(row.parentKey));
+
+  // Starts the picker from an override, or from the user's default for null. A given override stays dirty, so a
+  // follow-up sends it again.
+  function resetToolPicker(override) {
+    const selection = override ?? S.defaultTools;
+    const set = selection && new Set(selection);
+    toolPicker.picked = new Set((S.tools || []).filter(r => !set || grants(set, r)).map(r => r.key));
+    toolPicker.dirty = override != null;
+    renderToolPicker();
+  }
+
+  // The override: a server's own key when all of its tools are ticked (or it has none listed yet, the cold-start
+  // window), so it also grants tools the server adds later; otherwise only its ticked tools.
+  function readToolPicker() {
+    const keys = [];
+    for (const row of (S.tools || []).filter(r => !r.parentKey)) {
+      const on = toolChildren(row).filter(c => toolPicker.picked.has(c.key)).map(c => c.key);
+      if (toolPicker.picked.has(row.key) && on.length === toolChildren(row).length) keys.push(row.key);
+      else keys.push(...on);
+    }
+    return keys;
+  }
+
+  // Sent only when the user changed the picker and the catalog loaded: an empty catalog must not become "no tools".
+  const toolOverride = () => toolPicker.dirty && S.tools ? readToolPicker() : undefined;
+
+  // A server row takes its tools with it; a tool row of an unticked server grants that tool alone. A server whose
+  // last ticked tool goes is unticked too, so a ticked box never sends nothing.
+  function toggleTool(row, on) {
+    for (const key of [row.key, ...(row.parentKey ? [] : toolChildren(row).map(c => c.key))]) {
+      if (on) toolPicker.picked.add(key); else toolPicker.picked.delete(key);
+    }
+    const parent = row.parentKey && (S.tools || []).find(r => r.key === row.parentKey);
+    if (parent && !toolChildren(parent).some(c => toolPicker.picked.has(c.key))) toolPicker.picked.delete(parent.key);
+    toolPicker.dirty = true;
+    renderToolPicker();
+  }
+
+  function renderToolPicker() {
+    const rows = S.tools || [];
+    composer.tools.hidden = rows.length === 0;
+    composer.toolsSummary.textContent = "Tools: " + (toolPicker.dirty ? `${readToolPicker().length} selected` : "your defaults");
+    const check = (row, cls) => h("label", { class: cls },
+      h("input", { type: "checkbox", checked: toolPicker.picked.has(row.key), onchange: e => toggleTool(row, e.target.checked) }),
+      h("span", { text: row.label }));
+    composer.toolsList.replaceChildren(
+      ...rows.filter(r => !r.parentKey).map(row => h("div", { class: "tool-group" },
+        check(row, "tool-row"), toolChildren(row).map(c => check(c, "tool-row child")))),
+      ...(toolPicker.dirty ? [h("a", { class: "switch", text: "Back to your defaults", onclick: () => resetToolPicker(null) })] : []));
+  }
 
   function fillComposerOptions() {
     const models = (S.models?.models || []).filter(toolCapable);
@@ -420,6 +489,8 @@
 
   function updateComposer() {
     const t = followUpTarget();
+    // A follow-up starts from the override of the task it follows up, a new task from the user's default.
+    if (toolPicker.target !== (t?.id ?? null)) { toolPicker.target = t?.id ?? null; resetToolPicker(t?.enabledTools ?? null); }
     const done = S.tasks.find(x => x.canFollowUp && x.id === S.selectedTask);
     composer.el.classList.toggle("follow-up", !!t);
     composer.title.replaceChildren(...(t
@@ -442,7 +513,8 @@
       h("div", { style: "margin-top:8px" }, h("a", { href: "/", text: "Open Agent 42 →" })));
   }
 
-  async function submitTask(text, followUpOf) {
+  // Run again passes the record's enabledTools (null too), which then wins over the picker.
+  async function submitTask(text, followUpOf, enabledTools) {
     const task = (text ?? composer.ta.value).trim();
     if (!task) { composer.ta.focus(); return; }
     composer.btn.disabled = true;
@@ -451,10 +523,11 @@
       followUpOf: followUpOf === undefined ? followUpTarget()?.id : followUpOf,
       model: composer.model.value || null,
       maxTokens: Number(composer.tokens.value) || null,
+      enabledTools: enabledTools !== undefined ? enabledTools : toolOverride(),
     });
     composer.btn.disabled = false;
     if (r.ok) {
-      composer.ta.value = ""; composer.err.textContent = ""; S.freshTask = true; setFollow(true);
+      composer.ta.value = ""; composer.err.textContent = ""; S.freshTask = true; setFollow(true); toolPicker.target = undefined;
       await loadTasks();
       selectTask(r.data.taskId);
     } else {
@@ -551,7 +624,7 @@
     const head = h("div", { class: "card" },
       crumbs,
       h("h1", null, teamLabel(team), h("span", { class: "pill " + status, text: statusText(status) })),
-      h("div", { class: "sub-head" }, `Level ${team.depth} · `, dur(team.started, team.finished)),
+      h("div", { class: "sub-head" }, `Level ${team.depth} · `, dur(team.started, team.finished), team.depth === 0 && task && toolsText(task)),
       clampText("task-" + team.id, "task-text", team.task, 600));
 
     const tabs = team.attempts.length > 1 && h("div", { class: "tabs" }, team.attempts.map(x => h("button", {
@@ -563,12 +636,15 @@
       team.depth === 0 && task && taskFooter(task)));
   }
 
+  // Whether the task ran on the user's default tools or on its own override (ADR 0099).
+  const toolsText = task => ` · Tools: ${task.enabledTools ? `${task.enabledTools.length} selected` : "your defaults"}`;
+
   // A task's own outcome, when no team is shown: its request, result or reason, files and what can be done next.
   function taskSummary(task) {
     return [
       h("div", { class: "card" },
         h("h1", null, `Task #${taskNumber(task.id)}`, h("span", { class: "pill " + task.status, text: statusText(task.status) })),
-        h("div", { class: "sub-head" }, `${task.plannerModel} · `, dur(task.startedAt, task.finishedAt)),
+        h("div", { class: "sub-head" }, `${task.plannerModel} · `, dur(task.startedAt, task.finishedAt), toolsText(task)),
         clampText("task-" + task.id, "task-text", task.request, 600)),
       task.status === "running" && h("div", { class: "card waiting", style: "margin-top:12px" }, h("span", { class: "dot planning" }), "The planner is putting a team together…"),
       taskFooter(task),
@@ -611,7 +687,7 @@
     return ["interrupted", "stopped", "failed"].includes(task?.status) && !running() && h("div", { class: "card follow-up-cta" },
       h("div", null, h("b", { text: task.status === "interrupted" ? "Interrupted by a restart" : "Didn't finish" }),
         h("div", { class: "muted", text: "Run the same request again as a new task." })),
-      h("button", { class: "btn", text: "Run again", onclick: () => submitTask(task.request, task.followUpOf || null) }));
+      h("button", { class: "btn", text: "Run again", onclick: () => submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null) }));
   }
 
   function statusText(s) {
@@ -1000,11 +1076,16 @@
   setInterval(() => document.querySelectorAll("[data-since]:not([data-until])").forEach(el => el.textContent = duration(el.dataset.since)), 1000);
 
   (async function start() {
-    const [config, models] = await Promise.all([api("GET", "/api/fleet/config"), api("GET", "/api/models")]);
+    const [config, models, tools, profile] = await Promise.all([
+      api("GET", "/api/fleet/config"), api("GET", "/api/models"), api("GET", "/api/tools"), api("GET", "/api/profile")]);
     if (!config.ok && config.status !== 503 && !models.ok) $("#signInBanner").hidden = false;
     S.config = config.ok ? config.data : null;
     S.models = models.ok ? models.data : { models: [] };
+    // Without both, the picker stays hidden and tasks follow the default, which the server resolves when they run.
+    S.tools = tools.ok && profile.ok ? (tools.data || []).filter(t => fleetToolKey(t.key)) : null;
+    S.defaultTools = profile.ok ? profile.data?.enabledTools ?? null : null;
     fillComposerOptions();
+    toolPicker.target = undefined;
     await loadTasks();
     // Open the running task, if any: its stream picks up where it is.
     const live = S.tasks.find(t => t.status === "running");

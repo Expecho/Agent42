@@ -7,8 +7,8 @@ namespace Agent42.Backend;
 /// <summary>
 /// The tools a fleet task's agents can name in their YAML besides the workspace tools and <c>delegate_to_team</c>
 /// (ADR 0097): <c>web_search</c> and <c>fetch_web_page</c>, and the user's own MCP tools. <c>SelectableTools</c> is the
-/// grain's and can't be called here, so this is a small catalog of its own. It honours the user's DEFAULT tool
-/// selection (ADR 0021, <c>null == all</c>) for both, and wraps MCP tools as <c>BuildAgent</c> does: the ADR 0095
+/// grain's and can't be called here, so this is a small catalog of its own. It honours the task's own tool selection,
+/// else the user's DEFAULT one (ADR 0099 amending ADR 0097, ADR 0021 <c>null == all</c>), for both, and wraps MCP tools as <c>BuildAgent</c> does: the ADR 0095
 /// elicitation wrapper innermost, the ADR 0081 reauth notice outermost. No URL seeding (ADR 0067): the fleet has
 /// no <c>read_web_document</c>.
 /// </summary>
@@ -19,13 +19,16 @@ public sealed partial class FleetToolCatalog(
     IWebPageFetcher? webPageFetcher = null,
     IUserMcpToolProvider? mcpTools = null)
 {
-    /// <summary>The user's selected tools for a task whose request is <paramref name="request"/>.</summary>
+    /// <summary>
+    /// The selected tools for a task whose request is <paramref name="request"/>: <paramref name="selectionOverride"/>
+    /// when the task has one (the profile is then not read), else the user's default selection (ADR 0099).
+    /// </summary>
     public async Task<IReadOnlyList<AIFunction>> BuildAsync(
-        string userId, string request, IFleetInteraction interaction, CancellationToken cancellationToken)
+        string userId, string request, IReadOnlyList<string>? selectionOverride, IFleetInteraction interaction, CancellationToken cancellationToken)
     {
-        var profile = await grains.GetGrain<IUserProfileGrain>(userId).GetAsync();
+        var selection = selectionOverride ?? (await grains.GetGrain<IUserProfileGrain>(userId).GetAsync()).EnabledTools;
         var servers = mcpTools is null ? [] : (await mcpTools.GetForUserAsync(userId, cancellationToken)).Servers;
-        return Build(profile.EnabledTools, request, servers, interaction);
+        return Build(selection, request, servers, interaction);
     }
 
     /// <summary>
