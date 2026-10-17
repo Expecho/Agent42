@@ -22,7 +22,8 @@ Two keys are worth knowing about specifically, because turning them on grants mo
 `read_web_document` (ADR 0066) lets the assistant fetch a document **from our own container** and keep
 what it finds, and `push_notification` (ADR 0075) lets it put **text it writes itself** on your
 device's lock screen. Both are off in any selection you saved before they shipped — press Save once in
-Preferences → Tools to pick them up.
+Preferences → Tools to pick them up. The same holds for every key added later, `read_document`
+(ADR 0098) included.
 
 **`memory` is the one documented exception to that intersection** (ADR 0057). Long-term memory is not a
 tool — it is an `AIContextProvider` injected before the call — so it never passes through the capability
