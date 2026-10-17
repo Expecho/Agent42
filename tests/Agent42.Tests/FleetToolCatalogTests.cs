@@ -11,8 +11,8 @@ public class FleetToolCatalogTests
 {
     private static readonly ScriptedFleetInteraction Interaction = new();
 
-    private static FleetToolCatalog Catalog(IWebPageFetcher? fetcher = null)
-        => new(null!, NullLogger<FleetToolCatalog>.Instance, new InMemoryWebSearch(), fetcher ?? new InMemoryWebPageFetcher());
+    private static FleetToolCatalog Catalog(IWebPageFetcher? fetcher = null, IGrainFactory? grains = null)
+        => new(grains!, NullLogger<FleetToolCatalog>.Instance, new InMemoryWebSearch(), fetcher ?? new InMemoryWebPageFetcher());
 
     private static AIFunction Tool(string name) => AIFunctionFactory.Create(() => $"{name} ran", name);
 
@@ -33,6 +33,40 @@ public class FleetToolCatalogTests
         var tools = Catalog().Build([ToolCatalog.McpServerKey("s2"), ToolCatalog.WebSearch], "", [ServerOne, ServerTwo], Interaction);
 
         Assert.Equal(["web_search", "fetch_web_page", "gamma"], tools.Select(t => t.Name));
+    }
+
+    /// <summary>ADR 0099: the task's override wins over a default that allows web search.</summary>
+    [Fact]
+    public async Task BuildAsync_Override_BeatsProfileDefault()
+    {
+        var profile = FakeProfileGrainFactory.Create([ToolCatalog.WebSearch]);
+
+        var fromDefault = await Catalog(grains: profile.Factory).BuildAsync("alice", "", null, Interaction, default);
+        var overridden = await Catalog(grains: profile.Factory).BuildAsync("alice", "", ["mcp:s1"], Interaction, default);
+
+        Assert.Equal(["web_search", "fetch_web_page"], fromDefault.Select(t => t.Name));
+        Assert.Empty(overridden);
+    }
+
+    /// <summary>The override path never reads the profile: this catalog has no grain factory at all.</summary>
+    [Fact]
+    public async Task BuildAsync_Override_SkipsProfileRead()
+    {
+        var tools = await Catalog().BuildAsync("alice", "", [ToolCatalog.WebSearch], Interaction, default);
+
+        Assert.Equal(["web_search", "fetch_web_page"], tools.Select(t => t.Name));
+    }
+
+    /// <summary>An empty override means no selectable tools, not "the default" (which here allows everything).</summary>
+    [Fact]
+    public async Task BuildAsync_EmptyOverride_IsNone()
+    {
+        var profile = FakeProfileGrainFactory.Create(null);
+
+        var tools = await Catalog(grains: profile.Factory).BuildAsync("alice", "", [], Interaction, default);
+
+        Assert.Empty(tools);
+        Assert.Equal(0, profile.Reads);
     }
 
     [Fact]

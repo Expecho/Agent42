@@ -46,6 +46,21 @@ public class FleetStoreTests
         Assert.False(tasks[1].CanFollowUp);
     }
 
+    /// <summary>A record written before ADR 0099 has no <c>enabledTools</c>: it loads with null, so it follows the
+    /// user's default tool selection, and "Run again" keeps it that way.</summary>
+    [Fact]
+    public async Task LegacyRecord_WithoutEnabledTools_LoadsAsNull()
+    {
+        await _blobs.PutAsync("alice/tasks/old.json", Encoding.UTF8.GetBytes(
+            """{"id":"old","userId":"alice","request":"r","workspaceId":"w","plannerModel":"foundry:gpt-5","status":"done","result":"x"}"""));
+
+        var task = await _store.GetTaskAsync("alice", "old");
+
+        Assert.NotNull(task);
+        Assert.Null(task.EnabledTools);
+        Assert.True(task.CanFollowUp);
+    }
+
     [Fact]
     public async Task OtherUser_SeesNothing()
     {
