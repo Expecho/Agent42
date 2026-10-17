@@ -71,5 +71,25 @@ without a live check would risk a working path. If a Foundry embedding model eve
 - **Live confirmation is the deploy gate.** The fix is unit-tested with no I/O (the SDK builds the client
   without a network call); the real "api version not supported" symptom clears only against a live
   Foundry account, which is the manual post-deploy check.
+
+## Amendment (2026-10-17): embeddings moved to `/openai/v1` too
+The deferred alternative came due. A user's Foundry provider configured with a **project** endpoint
+(`https://{resource}.services.ai.azure.com/api/projects/{name}`) got `HTTP 400 "API version not
+supported"` on every embeddings call, so every document upload returned 500. Embeddings now use a stable
+`OpenAIClient` with the same `ApiKeyHeaderPolicy`. Nothing in `Provider.Foundry` uses
+`AzureOpenAIClient` any more.
+
+**One difference from chat: the base URL is the resource root.** A live probe that day found:
+
+- the project-scoped `/openai/v1` serves `chat/completions` (200) but returns **404 on `/embeddings`**;
+- `{resource}/openai/v1/embeddings` returns 200 with 3072 dimensions.
+
+So `Provider.FoundryEmbeddingsEndpoint` drops any `/api/projects/{name}` suffix before appending
+`/openai/v1`. The resource key authenticates there, because a project belongs to its resource.
+
+The upload endpoints also stopped leaking provider errors as a bare 500. `DocumentIngestionService` now
+wraps a `ClientResultException` from the generator in `EmbeddingProviderException`. Browser upload maps
+it to 502 with the provider's message, and `/api/agent-run` handles it like its other ingest
+rejections.
 </content>
 </invoke>
