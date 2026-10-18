@@ -30,6 +30,7 @@ public sealed partial record FleetCanvasPage
     /// <summary>True when <paramref name="name"/> is safe as one blob segment and one URL segment.</summary>
     public static bool IsValidName(string? name) => name is not null && NameRule().IsMatch(name);
 
-    [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,63}$", RegexOptions.CultureInvariant)]
+    // \z, not $: $ also matches before a trailing newline, so "report\n" would pass as a segment.
+    [GeneratedRegex(@"^[a-z0-9][a-z0-9-]{0,63}\z", RegexOptions.CultureInvariant)]
     private static partial Regex NameRule();
 }

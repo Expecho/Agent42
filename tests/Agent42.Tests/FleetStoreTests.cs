@@ -193,6 +193,7 @@ public class FleetStoreTests
     [InlineData("A")]
     [InlineData("-a")]
     [InlineData("manifest.json")]
+    [InlineData("a\n")]
     [InlineData("")]
     public async Task Canvas_PutGetList_PerUser_NamesValidated(string badName)
     {

@@ -299,3 +299,6 @@ checked out. How each finding was handled:
   run.
 - **The ADR was written directly** in the `/decide` shape as 0102. The number was checked against `origin/main` and
   the open PRs.
+- **Critic fixes (step 5):** the page-name rule is anchored with `\z`, not `$`. `$` let `"report\n"` through as a
+  raw blob segment. Trailing-newline cases were added to both name tests, and `Write_PruneDeleteFailure_StillCommits`
+  was added.

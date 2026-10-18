@@ -122,6 +122,7 @@ public sealed class FleetCanvasTests : IDisposable
         { "report", ArtifactKind.Markdown, null, 1, "keeps its kind" },
         { "code", ArtifactKind.Code, "Python!", 0, "needs a language" },
         { "Bad/Name", ArtifactKind.Html, null, 0, "is not a valid page name" },
+        { "trailing\n", ArtifactKind.Html, null, 0, "is not a valid page name" },
         { "new-page", ArtifactKind.Html, null, 3, "To create it, pass expectedVersion 0" },
         { "page-cap", ArtifactKind.Html, null, 0, "the limit" },
     };
@@ -204,6 +205,22 @@ public sealed class FleetCanvasTests : IDisposable
         Assert.Single(_events.Of(FleetCanvas.UpdatedEvent));
     }
 
+    /// <summary>A failed prune delete only orphans a blob: the manifest no longer names it, so the write still commits.</summary>
+    [Fact]
+    public async Task Write_PruneDeleteFailure_StillCommits()
+    {
+        for (var v = 0; v < ArtifactLimits.MaxVersionsPerArtifact; v++)
+        {
+            await WriteAsync("report", $"v{v + 1}", v);
+        }
+
+        _blobs.FailDeletes = true;
+        Assert.StartsWith("Stored 'report' version 21", await WriteAsync("report", "v21", ArtifactLimits.MaxVersionsPerArtifact));
+
+        Assert.Equal(Enumerable.Range(2, ArtifactLimits.MaxVersionsPerArtifact), Assert.Single((await _store.GetCanvasManifestAsync(Alice, Workspace)).Pages).Versions);
+        Assert.Equal(21, _events.Of(FleetCanvas.UpdatedEvent).Count());
+    }
+
     [Fact]
     public async Task Load_RestoresPagesFromStore()
     {
@@ -270,6 +287,7 @@ public sealed class FleetCanvasTests : IDisposable
 
         public TimeSpan PutDelay { get; set; }
         public string? FailPutsEndingWith { get; set; }
+        public bool FailDeletes { get; set; }
         public List<string> Log { get; } = [];
 
         public Task<byte[]?> GetAsync(string key, CancellationToken cancellationToken = default) => _inner.GetAsync(key, cancellationToken);
@@ -296,6 +314,11 @@ public sealed class FleetCanvasTests : IDisposable
 
         public Task DeleteAsync(string key, CancellationToken cancellationToken = default)
         {
+            if (FailDeletes)
+            {
+                throw new IOException("blob service unavailable");
+            }
+
             lock (Log)
             {
                 Log.Add($"delete {key}");
