@@ -1,6 +1,7 @@
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -35,6 +36,28 @@ public class UserProviderResolverTests
         // The baseline is untouched — its providers still resolve.
         Assert.Contains("github", resolved.Providers.Keys);
         Assert.Contains("foundry", resolved.Providers.Keys);
+    }
+
+    // ADR 0102 AC5: a stored "Anthropic" overlay parses by name into a built Anthropic provider, not an OpenAI one.
+    [Fact]
+    public void AddsAnthropicProvider()
+    {
+        var overlay = OverlayWith(new StoredProvider(
+            Key: "claude",
+            Kind: "Anthropic",
+            DisplayName: "Claude",
+            Endpoint: "https://api.anthropic.com",
+            ApiKeyCiphertext: _protector.Protect("sk-ant"),
+            Models: [new StoredModel("claude-sonnet-5-5", "Sonnet", SupportsTools: true, SupportsVision: true)],
+            UseResponsesApi: false));
+
+        var resolved = Resolver().Merge(overlay);
+
+        Assert.Equal(ProviderKind.Anthropic, resolved.Providers["claude"].Options.Kind);
+        var model = Assert.Single(resolved.DeclaredModels, m => m.Provider == "claude");
+        Assert.Equal("claude:claude-sonnet-5-5", model.Id);
+        Assert.NotNull(resolved.Providers["claude"].Client("claude-sonnet-5-5")
+            .GetService<AnthropicCompatibilityChatClient>());
     }
 
     // AC2: a Foundry override with a blank key resolves Invalid and falls back to the baseline entry —
