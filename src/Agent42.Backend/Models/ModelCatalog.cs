@@ -144,8 +144,8 @@ public sealed class AzureModelCatalog(
 
 /// <summary>
 /// The catalog the API actually serves: fans out over every configured provider (ADR 0013) —
-/// discovering Foundry accounts via ARM, and OpenAI-compatible providers from their declared model
-/// list, since those are not discovered (a deliberate scope decision, not a limitation of the shape).
+/// discovering Foundry accounts via ARM, and OpenAI-compatible and Anthropic (ADR 0102) providers from their
+/// declared model list, since those are not discovered (a deliberate scope decision, not a limitation of the shape).
 ///
 /// <para>A provider that fails contributes nothing rather than failing the whole catalog — the
 /// per-provider version of the degradation the single-account catalog already had. The default model

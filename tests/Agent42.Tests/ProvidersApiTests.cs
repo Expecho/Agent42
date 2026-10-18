@@ -88,6 +88,51 @@ public sealed class ProvidersApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.Equal(HttpStatusCode.BadRequest, badKind.StatusCode);
     }
 
+    // ADR 0102 AC4: an Anthropic provider is accepted (kind matched case-insensitively; the string is stored as sent,
+    // as for every kind, and the resolver parses it case-insensitively), and the key is masked.
+    [Fact]
+    public async Task Providers_AcceptAnthropic_MaskKey()
+    {
+        var post = await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-anthropic", new
+        {
+            key = "claude",
+            kind = "anthropic",
+            endpoint = "https://api.anthropic.com",
+            apiKey = "sk-ant-secret",
+            models = new[] { new { id = "claude-sonnet-5-5", displayName = "Sonnet", supportsTools = true, supportsVision = true } },
+        }));
+        post.EnsureSuccessStatusCode();
+
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-anthropic"));
+        var raw = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("sk-ant-secret", raw);
+
+        using var doc = JsonDocument.Parse(raw);
+        var provider = doc.RootElement.GetProperty("providers").EnumerateArray().Single();
+        Assert.Equal("Anthropic", provider.GetProperty("kind").GetString(), ignoreCase: true);
+        Assert.True(provider.GetProperty("hasKey").GetBoolean());
+    }
+
+    // ADR 0102 AC4: the unknown-kind message is derived from the enum, so it lists every kind (it once hard-coded two).
+    [Fact]
+    public async Task UnknownKind_MessageListsAllKinds()
+    {
+        var response = await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-b", new
+        {
+            key = "x",
+            kind = "Nonsense",
+            endpoint = "https://example.com",
+            apiKey = "k",
+        }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        foreach (var kind in Enum.GetNames<ProviderKind>())
+        {
+            Assert.Contains($"'{kind}'", body);
+        }
+    }
+
     // AC8 (ADR 0019): a provider that declares NO models is rejected with 400 — a keyed-but-modelless
     // provider would count toward providers.Count yet contribute no default, breaking "providers ⟺ a
     // usable default exists".

@@ -3624,6 +3624,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   the suggestion helper was handed.
   **Mutation-checked:** removing the storage filter fails both `ReasoningText_IsNotPersisted` tests and
   leaves the projection-level tests green.
+  **Never store reasoning for an Anthropic provider either (ADR 0102).** The strip is also what keeps Claude
+  clear of its preserved-thinking check: signed thinking blocks bind to the conversation prefix, so a replayed
+  block after edit/regenerate/fork, compaction or retention pruning gives a 400. Inside one tool loop the
+  thinking block does go back (FICC re-sends it, signature intact), and that needs no storage.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (the `reply` declaration and its comment,
   `SuggestFollowUpsAsync`, `PersistTurnUnlessEphemeralAsync`, `StripReasoningFromStorage`),
   `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (both filters in one options block),
@@ -4370,3 +4374,53 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/fleet/index.html` (referrer meta),
   `tests/Agent42.Tests/FleetPageAssetsTests.cs` (`FleetPage_ReferrerPolicy_KeepsTheOriginOnWrites`)
 - **Verified:** 2026-10-13 (the 403 from Easy Auth was observed. The fix is unverified in production until it is deployed.)
+
+### The Anthropic SDK reads `ANTHROPIC_*` env vars and defaults `max_tokens` to 1024: set both explicitly
+
+- **Claim:** `AnthropicClient` falls back to `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` for
+  any of `ApiKey`/`AuthToken`/`BaseUrl` left unset. A per-user provider would then silently run on an ambient operator
+  credential (or send an extra `Authorization` bearer), against the no-operator-model rule (ADR 0019/0030). Its
+  `AsIChatClient` also sends `max_tokens: 1024` when neither `ChatOptions.MaxOutputTokens` nor `defaultMaxOutputTokens`
+  is set, which truncates a chat reply or a long `create_artifact` argument with no error. `Provider.Anthropic` sets
+  all three (with `AuthToken = null`) and passes `AnthropicLimits.DefaultMaxOutputTokens`. Keep it that way in any new
+  Anthropic client (a Foundry-hosted Claude kind included), and keep the live test's key in
+  `AGENT42_LIVE_ANTHROPIC_KEY`, never `ANTHROPIC_API_KEY`.
+- **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.Anthropic`),
+  `src/Agent42.Backend/Models/AnthropicCompatibilityChatClient.cs` (`AnthropicLimits`),
+  `tests/Agent42.Tests/AnthropicEnvironmentTests.cs` (`AnthropicRequest_UsesStoredKey_NotEnvironment`),
+  `tests/Agent42.Tests/AnthropicProviderTests.cs` (`AnthropicRequest_DefaultsMaxTokens`),
+  `.agentic/decisions/0102-anthropic-provider-kind.md`
+- **Verified:** 2026-10-18
+
+### Current Claude models 400 on forced tool choice, sampling params, disabled thinking and assistant prefill: the shim owns all four
+
+- **Claim:** Opus 5.5, Sonnet 5.5 and Fable 5.1 reject `tool_choice: any` / `{type: tool}` (`ChatToolMode.RequireAny` /
+  `RequireSpecific`), non-default `temperature`/`top_p`/`top_k`, `thinking: {type: disabled}`
+  (`Reasoning.Effort = None`), and a request whose last message is an assistant turn. The SDK forwards every one
+  of them as is. `AnthropicCompatibilityChatClient` rewrites them at the provider boundary, because Agent Framework
+  internals (Magentic manager, `AIJudgeLoopEvaluator`, declarative fleet agents) send them too and cannot be patched.
+  **Never "fix" a call site instead** (for example the fleet moderator's `RequireAny`, which OpenAI providers keep), and
+  never mutate the messages or options the shim is handed: they are the grain's live session history (ADR 0004). Two
+  traps inside the shim: a trailing assistant message that is a **pending tool call** must not get the `"Continue."` turn
+  (it would break `tool_use`/`tool_result` pairing), and a message with tool content must never be dropped (an
+  orphaned `tool_result` is a 400). Its drop rule mirrors what SDK 12.58.0 skips (measured), so re-measure it
+  after an SDK bump.
+- **Evidence:** `src/Agent42.Backend/Models/AnthropicCompatibilityChatClient.cs`,
+  `src/Agent42.Backend/Fleet/ModeratedGroupChatManager.cs` (`ToolMode = ChatToolMode.RequireAny`),
+  `tests/Agent42.Tests/AnthropicCompatibilityChatClientTests.cs`, `tests/Agent42.Tests/ModeratedGroupChatManagerTests.cs`,
+  `.agentic/decisions/0102-anthropic-provider-kind.md`
+- **Verified:** 2026-10-18 (the 400s are the documented model behaviour, unverified live in this repo until
+  `LiveAnthropicChatTests` runs with a key)
+
+### A `RawRepresentationFactory` returning `MessageCreateParams` silently overrides `ModelId` and `MaxOutputTokens`
+
+- **Claim:** when `ChatOptions.RawRepresentationFactory` returns an Anthropic `MessageCreateParams`, the SDK adapter
+  takes `Model` and `MaxTokens` from those params and ignores `ChatOptions.ModelId`/`MaxOutputTokens` and the client's
+  defaults. Both are required, so leaving them out is not an option either. The shim uses this hook only for
+  top-level `cache_control`, and copies the bare model id and `MaxOutputTokens ?? 32 000` in. A new field set this way
+  must get a wire test that proves every other field (tools, system, tool_choice, thinking.display) still arrives,
+  as `Wire_UnderFactory_KeepsEveryField` does.
+- **Evidence:** `src/Agent42.Backend/Models/AnthropicCompatibilityChatClient.cs` (`CachingFactory`),
+  `tests/Agent42.Tests/AnthropicCompatibilityChatClientTests.cs` (`Wire_UnderFactory_KeepsEveryField`,
+  `CallerFactory_KeepsItsParams_GainsCaching`, `ForeignFactory_PassesThrough`)
+- **Verified:** 2026-10-18

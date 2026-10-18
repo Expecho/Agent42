@@ -1,6 +1,9 @@
 namespace Agent42.Backend;
 
-/// <summary>How a provider is reached: an Azure AI Foundry account, or any OpenAI-compatible endpoint.</summary>
+/// <summary>
+/// How a provider is reached: an Azure AI Foundry account, any OpenAI-compatible endpoint, or Anthropic's
+/// native Messages API. Bound and stored BY NAME, so a new member goes at the end and 0 stays Foundry.
+/// </summary>
 public enum ProviderKind
 {
     /// <summary>
@@ -13,11 +16,18 @@ public enum ProviderKind
 
     /// <summary>Any OpenAI-compatible endpoint reached with an API key — GitHub Models, Ollama, vLLM.</summary>
     OpenAICompatible,
+
+    /// <summary>
+    /// Anthropic (Claude) over its native Messages API with an API key (ADR 0102), through the official
+    /// Anthropic SDK's <c>IChatClient</c> wrapped in <c>AnthropicCompatibilityChatClient</c>. Chat only: no
+    /// image, embedding, speech or Copilot runtime. Its models are declared, like an OpenAI-compatible provider's.
+    /// </summary>
+    Anthropic,
 }
 
 /// <summary>
 /// One model a provider offers, declared in config. Declared by <see cref="ProviderKind.OpenAICompatible"/>
-/// providers, and by a <see cref="ProviderKind.AzureOpenAI"/> (Foundry) provider that has discovery off
+/// and <see cref="ProviderKind.Anthropic"/> providers, and by a <see cref="ProviderKind.AzureOpenAI"/> (Foundry) provider that has discovery off
 /// (ADR 0017) — a key-based Foundry provider cannot ARM-discover, so it declares its deployments here.
 /// </summary>
 public sealed class ConfiguredModel
@@ -98,6 +108,7 @@ public sealed class ProviderOptions
 
     /// <summary>
     /// For <see cref="ProviderKind.OpenAICompatible"/>: the inference endpoint. For
+    /// <see cref="ProviderKind.Anthropic"/>: the API base, normally <c>https://api.anthropic.com</c>. For
     /// <see cref="ProviderKind.AzureOpenAI"/>: leave EMPTY — it resolves from <c>AzureOpenAI:Endpoint</c>,
     /// which Bicep threads in and the embedding client also reads. See <see cref="FoundrySettings"/>.
     /// </summary>
@@ -105,7 +116,8 @@ public sealed class ProviderOptions
 
     /// <summary>
     /// A SECRET; never committed — it arrives as <c>Models__Providers__&lt;key&gt;__ApiKey</c>.
-    /// <para>For <see cref="ProviderKind.OpenAICompatible"/> providers this is the endpoint's API key, and
+    /// <para>For <see cref="ProviderKind.OpenAICompatible"/> and <see cref="ProviderKind.Anthropic"/>
+    /// providers this is the endpoint's API key, and
     /// blank is a SUPPORTED state: the provider is skipped with a warning and the app boots on the others
     /// (ADR 0012's degrade precedent, not ADR 0011's fail-the-deploy one — an expired token must not take
     /// the app down).</para>
@@ -139,7 +151,7 @@ public sealed class ProviderOptions
     /// with an <c>api-key</c>-header policy carrying the Azure OpenAI key (ADR 0017, superseding ADR 0014's
     /// managed-identity bearer policy) — and stateless is mandatory, never overridable, because the
     /// grain holds all history client-side (ADR 0004). Ignored on <see cref="ProviderKind.OpenAICompatible"/>
-    /// providers (GitHub Models does not support Responses). Ships <b>off</b> in prod; turning it on is a
+    /// providers (GitHub Models does not support Responses) and on <see cref="ProviderKind.Anthropic"/> ones. Ships <b>off</b> in prod; turning it on is a
     /// separate, deliberate change.
     /// </summary>
     public bool UseResponsesApi { get; set; }

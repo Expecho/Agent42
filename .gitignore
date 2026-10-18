@@ -39,3 +39,4 @@ scratchpad/
 
 # Live-model test credentials (LiveModelChatTests) — never commit.
 live-model.local.json
+live-anthropic.local.json

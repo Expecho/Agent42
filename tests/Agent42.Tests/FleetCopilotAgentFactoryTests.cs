@@ -89,6 +89,28 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
         Assert.StartsWith(FleetCopilotAgentFactory.Unavailable, unmapped.Message);
     }
 
+    // ADR 0102 AC13: a Copilot agent on a Claude model is a load error (the InvalidOperationException LoadAgentsAsync
+    // hands the planner as plan.rejected), because an Anthropic provider has no Copilot mapping. Not a crash.
+    [Fact]
+    public async Task CopilotAgent_OnAnthropicModel_IsRejectedToPlanner()
+    {
+        const string claude = "claude:claude-test";
+        var factory = new FleetCopilotAgentFactory(
+            Host(enabled: true),
+            AnthropicProviderTests.Factory(new RecordingHttpHandler()),
+            [claude],
+            claude,
+            _workspace,
+            FleetPromptSet.Defaults,
+            new FleetCopilotPermissionPolicy(_workspace.Root, new ScriptedFleetInteraction(), CancellationToken.None));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => factory.CreateFromYamlAsync(FakeChatClient.FleetAgentYaml("Dev", model: $"copilot/{claude}")));
+
+        Assert.StartsWith(FleetCopilotAgentFactory.Unavailable, error.Message);
+        Assert.Contains($"The provider of '{claude}' can't be reached", error.Message);
+    }
+
     [Fact]
     public void ModelFor_MapsCopilotHints()
     {

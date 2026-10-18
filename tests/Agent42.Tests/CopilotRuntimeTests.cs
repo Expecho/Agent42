@@ -82,6 +82,30 @@ public sealed class CopilotRuntimeTests
         }
     }
 
+    // ADR 0102 AC14: an Anthropic provider has no Copilot BYOK mapping, so a copilot chat on Claude is refused with
+    // ProviderUnsupported (pick another provider), not failed mid-run.
+    [Fact]
+    public void CopilotKind_OnAnthropicModel_IsProviderUnsupported()
+    {
+        var installed = Path.GetTempFileName();
+        try
+        {
+            var claude = AnthropicProviderTests.Factory(new RecordingHttpHandler());
+            Assert.Null(claude.GetCopilotProvider("claude:claude-test"));
+
+            var factory = new CopilotAgentFactory(
+                new InMemoryCopilotSessionStore(), new CopilotRuntimeOptions { RuntimePath = installed }, NullLoggerFactory.Instance);
+            var request = Request() with { ChatClientFactory = claude, ModelId = "claude:claude-test" };
+
+            var ex = Assert.Throws<CopilotUnavailableException>(() => factory.CreateAgent(request));
+            Assert.Contains("can't be reached by the Copilot runtime", ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(installed);
+        }
+    }
+
     // A server whose image has no runtime binary refuses copilot turns instead of failing them mid-run.
     [Fact]
     public void CreateAgent_RuntimeMissing_IsUnavailable()
