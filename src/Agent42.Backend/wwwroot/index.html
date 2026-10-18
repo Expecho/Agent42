@@ -870,8 +870,12 @@
         <select class="agent-form__input agent-form__select" id="providerKind">
           <option value="OpenAICompatible">OpenAI-compatible (Ollama, vLLM, GitHub…)</option>
           <option value="AzureOpenAI">Azure AI Foundry</option>
+          <option value="Anthropic">Anthropic (Claude)</option>
         </select>
       </label>
+
+      <p class="agent-form__note" id="providerAnthropicNote" hidden>Declare each Claude model with Tools and Vision as
+        it supports them, and tick Reasoning to see Claude's thinking.</p>
 
       <label class="agent-form__field">
         <span class="agent-form__label">// display name</span>

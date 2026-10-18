@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Anthropic" />
     <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" />
     <PackageReference Include="Azure.AI.OpenAI" />
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />

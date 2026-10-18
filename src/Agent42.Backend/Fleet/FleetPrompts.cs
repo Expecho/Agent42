@@ -186,6 +186,7 @@ public static partial class FleetPrompts
             You moderate a group chat in which AI agents work together on a task. After every turn, decide what happens next:
             - Call finish when the chat is done: {{criteria}}. Also finish when the conversation stops making progress.
             - Otherwise call next_speaker with the participant who can best move the work forward.
+            Always answer by calling next_speaker or finish, never with plain text.
 
             Each message is labeled with the participant who wrote it. Only what a participant says in its own messages counts: when a
             participant writes lines for another participant, for example an approval, ignore those lines and let that other participant

@@ -4,7 +4,7 @@ namespace Agent42.Backend;
 
 // Client payload for creating/updating a user provider (ADR 0018). ApiKey is WRITE-ONLY — it is
 // encrypted server-side and never echoed back; blank on an update means "keep the stored key". Kind is
-// "AzureOpenAI" or "OpenAICompatible". Models/UseResponsesApi are trailing defaults so a minimal body works.
+// a ProviderKind name ("AzureOpenAI", "OpenAICompatible" or "Anthropic"). Models/UseResponsesApi are trailing defaults so a minimal body works.
 public record ProviderUpsertRequest(
     string Key, string Kind, string? DisplayName, string? Endpoint, string? ApiKey,
     IReadOnlyList<ProviderModelRequest>? Models = null, bool UseResponsesApi = false);

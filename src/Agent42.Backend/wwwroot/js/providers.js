@@ -1,6 +1,6 @@
 /* Agent 42 — model providers, per-user overlay (ADR 0018/0030/0038). Split out of app.js (ADR 0041). */
 
-import { addModelRowBtn, addProviderBtn, defaultModelSelect, embeddingModelSelect, providerApiKeyInput, providerCancelBtn, providerDialog, providerDisplayNameInput, providerEndpointInput, providerError, providerForm, providerFormTitle, providerKeyInput, providerKindSelect, providerList, providerModelList, providerResponsesApi, providerResponsesField, speechModelSelect } from "./dom.js";
+import { addModelRowBtn, addProviderBtn, defaultModelSelect, embeddingModelSelect, providerApiKeyInput, providerCancelBtn, providerDialog, providerDisplayNameInput, providerEndpointInput, providerError, providerForm, providerFormTitle, providerKeyInput, providerKindSelect, providerList, providerModelList, providerAnthropicNote, providerResponsesApi, providerResponsesField, speechModelSelect } from "./dom.js";
 import { fillModelOptions, loadModels, modelsData, providerGroupLabel, selectModel } from "./models.js";
 
 // The user's own configured providers (their overlay — ADR 0018), fetched masked (hasKey, never the
@@ -205,9 +205,18 @@ function renderProviders() {
     providerList.appendChild(li);
   }
 }
+const ANTHROPIC_ENDPOINT = "https://api.anthropic.com";
+
 // The Responses-API toggle is Foundry-only (ADR 0014) — an OpenAI-compatible provider ignores it.
+// Anthropic (ADR 0102) pre-fills its API base, but only into an EMPTY endpoint: a value the user typed
+// (or a stored one being edited) is never overwritten.
 function syncProviderKindUi() {
-  providerResponsesField.hidden = providerKindSelect.value !== "AzureOpenAI";
+  const kind = providerKindSelect.value;
+  providerResponsesField.hidden = kind !== "AzureOpenAI";
+  providerAnthropicNote.hidden = kind !== "Anthropic";
+  if (kind === "Anthropic" && !providerEndpointInput.value.trim()) {
+    providerEndpointInput.value = ANTHROPIC_ENDPOINT;
+  }
 }
 
 // Appends one editable model row. tools/vision gate what is sent to the model (ADR 0013), so they

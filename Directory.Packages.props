@@ -14,6 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Aspire -->
+    <PackageVersion Include="Anthropic" Version="12.58.0" />
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.5.4" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.5.4" />
     <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.5.4" />

@@ -616,6 +616,87 @@ public class ModelProviderTests
         Assert.Contains("embedding model", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    // ADR 0102 AC2: before the explicit branch, every non-Foundry kind fell through to the OpenAI client, so a new
+    // kind silently built an OpenAI one. The metadata names the SDK that actually answers.
+    [Fact]
+    public void AnthropicKind_BuildsAnthropicClient()
+    {
+        var factory = AnthropicFactory();
+
+        var metadata = factory.GetClient("claude:claude-sonnet-5-5").GetService<ChatClientMetadata>();
+
+        Assert.NotNull(metadata);
+        Assert.Equal("anthropic", metadata.ProviderName);
+        Assert.NotNull(factory.GetClient("claude:claude-sonnet-5-5").GetService<AnthropicCompatibilityChatClient>());
+    }
+
+    [Fact] // ADR 0102 AC3
+    public void AnthropicBlankKey_IsSkipped()
+    {
+        var result = ModelProviderBuilder.TryBuildProvider(
+            "claude", AnthropicOptions(apiKey: "", endpoint: "https://api.anthropic.com"), Configuration());
+
+        Assert.Equal(ProviderBuildStatus.Skipped, result.Status);
+    }
+
+    [Fact] // ADR 0102 AC3
+    public void AnthropicBlankEndpoint_IsInvalid()
+    {
+        var result = ModelProviderBuilder.TryBuildProvider(
+            "claude", AnthropicOptions(apiKey: "sk-ant", endpoint: ""), Configuration());
+
+        Assert.Equal(ProviderBuildStatus.Invalid, result.Status);
+        Assert.Contains("Anthropic provider", result.Error);
+    }
+
+    // ADR 0102 AC6: capabilities are exactly the declared flags (never hosted tools), and the provider carries no
+    // image, embedding, speech or Copilot runtime even when a model is (wrongly) flagged for one.
+    [Fact]
+    public void AnthropicModel_CapabilitiesAreDeclared_NoSideServices()
+    {
+        var factory = AnthropicFactory(
+            defaultEmbeddingModelId: "claude:claude-sonnet-5-5", defaultSpeechModelId: "claude:claude-sonnet-5-5");
+
+        var capabilities = factory.GetCapabilities("claude:claude-sonnet-5-5");
+        Assert.True(capabilities.SupportsTools);
+        Assert.True(capabilities.SupportsVision);
+        Assert.False(capabilities.SupportsHostedTools);
+        Assert.False(capabilities.SupportsImageGeneration);
+
+        // Undeclared → nothing, the safe direction (a vision guess would hand Anthropic a SAS URL).
+        var undeclared = factory.GetCapabilities("claude:claude-unknown");
+        Assert.False(undeclared.SupportsTools);
+        Assert.False(undeclared.SupportsVision);
+
+        Assert.Null(factory.GetImageGenerationService("claude:claude-image"));
+        Assert.IsType<NoEmbeddingGenerator>(factory.GetEmbeddingGenerator());
+        Assert.Null(factory.GetSpeechService());
+        Assert.Null(factory.GetCopilotProvider("claude:claude-sonnet-5-5"));
+    }
+
+    private static ProviderOptions AnthropicOptions(string apiKey = "sk-ant", string endpoint = "https://api.anthropic.com") => new()
+    {
+        Kind = ProviderKind.Anthropic,
+        Endpoint = endpoint,
+        ApiKey = apiKey,
+        Models =
+        [
+            new ConfiguredModel { Id = "claude-sonnet-5-5", SupportsTools = true, SupportsVision = true },
+            new ConfiguredModel { Id = "claude-image", SupportsImageGeneration = true },
+        ],
+    };
+
+    private static MultiProviderChatClientFactory AnthropicFactory(
+        string defaultEmbeddingModelId = "", string defaultSpeechModelId = "")
+    {
+        var setup = ModelProviderBuilder.Build(
+            new ModelProvidersOptions { Default = "claude:claude-sonnet-5-5", Providers = { ["claude"] = AnthropicOptions() } },
+            Configuration());
+        return new MultiProviderChatClientFactory(
+            setup.Providers, "claude:claude-sonnet-5-5", "test", NullLogger<MultiProviderChatClientFactory>.Instance,
+            defaultEmbeddingModelId, defaultSpeechModelId);
+    }
+
     private static MultiProviderChatClientFactory Factory()
     {
         var setup = ModelProviderBuilder.Build(Options(), Configuration());

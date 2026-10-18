@@ -15,12 +15,12 @@ public enum ProviderBuildStatus
     /// <summary>Built into a usable <see cref="MultiProviderChatClientFactory.Provider"/>.</summary>
     Built,
 
-    /// <summary>Deliberately skipped — an OpenAI-compatible provider with no API key. Not an error.</summary>
+    /// <summary>Deliberately skipped — an OpenAI-compatible or Anthropic provider with no API key. Not an error.</summary>
     Skipped,
 
     /// <summary>
-    /// Invalid config (a Foundry provider with no endpoint or no key; an OpenAI-compatible provider
-    /// with no endpoint). <b>Fatal for the operator baseline</b> (<see cref="Build"/> throws — the
+    /// Invalid config (a Foundry provider with no endpoint or no key; an OpenAI-compatible or Anthropic
+    /// provider with no endpoint). <b>Fatal for the operator baseline</b> (<see cref="Build"/> throws — the
     /// blank-Foundry-key rule, ADR 0017), but a <b>per-user overlay override falls back to the baseline
     /// entry</b> instead of throwing (ADR 0018). <see cref="ProviderBuildResult.Error"/> carries why.
     /// </summary>
@@ -144,7 +144,14 @@ public static class ModelProviderBuilder
                     ProviderBuildStatus.Built, foundry, null, [.. DeclaredModels(key, provider)]);
         }
 
-        // An OpenAI-compatible provider with no API key is SKIPPED, not fatal — contrast
+        return TryBuildDeclaredProvider(key, provider);
+    }
+
+    // An OpenAI-compatible or Anthropic provider (ADR 0102): keyed, endpoint-required, models declared. These kinds
+    // share every rule here and differ only in which client they build.
+    private static ProviderBuildResult TryBuildDeclaredProvider(string key, ProviderOptions provider)
+    {
+        // A provider with no API key is SKIPPED, not fatal — contrast
         // SEARXNG_SECRET, which fails the deploy because a crash-looping sidecar takes the backend
         // down with it. A GitHub token that expires must never take the app down: Foundry is the
         // availability path, and a third-party provider is a convenience on top of it.
@@ -156,23 +163,26 @@ public static class ModelProviderBuilder
         if (string.IsNullOrWhiteSpace(provider.Endpoint))
         {
             return Invalid(
-                $"Model provider '{key}' is an OpenAICompatible provider and must declare an Endpoint.");
+                $"Model provider '{key}' is an {provider.Kind} provider and must declare an Endpoint.");
         }
 
-        var compat = MultiProviderChatClientFactory.Provider.OpenAICompatible(
-            provider, new Uri(provider.Endpoint), provider.ApiKey);
+        // An explicit Anthropic branch: before ADR 0102 every non-Foundry kind fell through to the OpenAI client.
+        var built = provider.Kind == ProviderKind.Anthropic
+            ? MultiProviderChatClientFactory.Provider.Anthropic(provider, new Uri(provider.Endpoint), provider.ApiKey)
+            : MultiProviderChatClientFactory.Provider.OpenAICompatible(
+                provider, new Uri(provider.Endpoint), provider.ApiKey);
 
-        // OpenAI-compatible providers are not discovered (a scope decision): their models are the
+        // These providers are not discovered (a scope decision): their models are the
         // ones declared in config, with the capability flags declared alongside them.
         return new ProviderBuildResult(
-            ProviderBuildStatus.Built, compat, null, [.. DeclaredModels(key, provider)]);
+            ProviderBuildStatus.Built, built, null, [.. DeclaredModels(key, provider)]);
     }
 
     private static ProviderBuildResult Invalid(string error) =>
         new(ProviderBuildStatus.Invalid, Error: error);
 
-    // The config-declared models of a non-discovering provider, qualified under its key — used by both
-    // an OpenAI-compatible provider and a non-discovering (key-based) Foundry provider (ADR 0017).
+    // The config-declared models of a non-discovering provider, qualified under its key — used by an
+    // OpenAI-compatible or Anthropic provider and a non-discovering (key-based) Foundry provider (ADR 0017).
     private static IEnumerable<ModelInfo> DeclaredModels(string key, ProviderOptions provider) =>
         provider.Models.Select(m => new ModelInfo(
             Id: ModelId.Qualify(key, m.Id),

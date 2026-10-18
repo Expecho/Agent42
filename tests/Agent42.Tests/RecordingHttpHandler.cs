@@ -20,7 +20,10 @@ public sealed class RecordingHttpHandler : HttpMessageHandler
     /// <param name="Url">The absolute request URL, including the query string.</param>
     /// <param name="Body">The request body, or an empty string when there was none.</param>
     /// <param name="Authorization">The <c>Authorization</c> header value, or null.</param>
-    public sealed record Call(string Method, string Url, string Body, string? Authorization);
+    /// <param name="Headers">Every request header, first value per name (case-insensitive lookup).</param>
+    public sealed record Call(
+        string Method, string Url, string Body, string? Authorization,
+        IReadOnlyDictionary<string, string>? Headers = null);
 
     /// <summary>Every request made through this handler, in order.</summary>
     public List<Call> Recorded { get; } = [];
@@ -36,7 +39,9 @@ public sealed class RecordingHttpHandler : HttpMessageHandler
             request.Method.Method,
             request.RequestUri!.AbsoluteUri,
             request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken),
-            request.Headers.Authorization?.ToString());
+            request.Headers.Authorization?.ToString(),
+            request.Headers.ToDictionary(
+                h => h.Key, h => h.Value.FirstOrDefault() ?? "", StringComparer.OrdinalIgnoreCase));
 
         Recorded.Add(call);
         return Responder(call);
