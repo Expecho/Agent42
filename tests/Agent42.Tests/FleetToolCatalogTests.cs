@@ -89,7 +89,7 @@ public class FleetToolCatalogTests
     [Fact]
     public void InvalidOrTakenNames_Skipped()
     {
-        var odd = new McpServerTools("s3", [Tool("has space"), Tool("web_search"), Tool("write_artifact"), Tool("ok-name")]);
+        var odd = new McpServerTools("s3", [Tool("has space"), Tool("web_search"), Tool("write_artifact"), Tool("canvas_write"), Tool("canvas_edit"), Tool("ok-name")]);
 
         var tools = Catalog().Build(null, "", [odd], Interaction);
 

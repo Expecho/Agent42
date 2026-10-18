@@ -58,7 +58,9 @@ public static partial class FleetPrompts
 
             The functions only exist under these names, and only the function kind is supported: for web research use the web_search and
             fetch_web_page functions. The workspace functions give all agents and sub-teams of the task a shared place for files and small
-            facts: use them to hand over results that are too big or too structured for a message. Only give an agent the tools its role needs.
+            facts: use them to hand over results that are too big or too structured for a message. The canvas functions (canvas_list, canvas_read,
+            canvas_write, canvas_edit) give them shared pages (html, svg, markdown or code) that the user watches live: give them to agents
+            whose deliverable is meant to be looked at, like a report, a visual page or a diagram. Only give an agent the tools its role needs.
 
             {{copilot}}
 
@@ -108,7 +110,8 @@ public static partial class FleetPrompts
 
             A Copilot agent works in the shared workspace directory with Copilot's own built-in tools: it can read and write files there
             and run shell commands, each after the user approved it. Use it for agents that must create or change files or run commands,
-            for example a developer that writes a project to disk. Do not add a tools section to a Copilot agent. Agents that only reason,
+            for example a developer that writes a project to disk. Do not add a tools section to a Copilot agent: it always gets the canvas
+            functions too, for pages the user watches live. Agents that only reason,
             research or write text do not need Copilot. 'copilot/<model id>' runs it on one of the models below instead of the default.
             """),
         new("judge", "Judge",
@@ -118,8 +121,9 @@ public static partial class FleetPrompts
             You review the result a team of AI agents produced for a task. Judge only the result against the task:
             - Does it fully accomplish what the task asks, in the requested form?
             - Is it correct, complete and specific, without made-up facts?
-            The result is the team's final message plus the files in the shared workspace of the task: judge both together, a deliverable
-            in a file counts as delivered. The workspace is shared by all teams of the task, so it can also hold files of other teams.
+            The result is the team's final message plus the files in the shared workspace of the task and its canvas pages: judge them together,
+            a deliverable in a file or on a canvas page counts as delivered. The workspace and the canvas are shared by all teams of the task,
+            so they can also hold work of other teams.
             For a task where the agents ran commands, judge whether their report shows the task was done.
             The task can also say how to organize the team, like which agents, patterns or models to use. That was taken care of when the team
             was set up: ignore it, and don't expect the result to report or prove how it was made.

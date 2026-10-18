@@ -24,6 +24,7 @@ public sealed partial class FleetTaskService
         using var flushing = new CancellationTokenSource();
         var flushLoop = FlushLoopAsync(task, flushing.Token);
         FleetWorkspace? workspace = null;
+        using var canvas = new FleetCanvas(store, record.UserId, record.WorkspaceId, task.Log);
         string? result = null;
         string? failure = null;
         try
@@ -33,6 +34,9 @@ public sealed partial class FleetTaskService
             {
                 await workspace.MaterializeAsync(store, record.UserId, task.Budget.Token);
             }
+
+            // Always loaded: a follow-up reuses the workspace id, so it sees the pages of the tasks before it (ADR 0102).
+            await canvas.LoadAsync(task.Budget.Token);
 
             // task.started stays the log's first event; the ingest reports after it, and the run is built from the
             // record the ingest updated (its Documents decide the document tools).
@@ -48,7 +52,7 @@ public sealed partial class FleetTaskService
                 inputs = record.Inputs,
             });
             record = await IngestInputsAsync(task, workspace);
-            var run = await BuildRunAsync(task, workspace, models);
+            var run = await BuildRunAsync(task, workspace, canvas, models);
             var input = (previous is null ? record.Request : await FollowUpInputAsync(record, previous, workspace, run.Prompts))
                 + AttachedFiles(record);
             result = await new FleetTeamRunner(run).RunAsync(input);
@@ -114,7 +118,7 @@ public sealed partial class FleetTaskService
         return text.ToString();
     }
 
-    private async Task<FleetRun> BuildRunAsync(RunningFleetTask task, FleetWorkspace workspace, IReadOnlyList<ModelInfo> models)
+    private async Task<FleetRun> BuildRunAsync(RunningFleetTask task, FleetWorkspace workspace, FleetCanvas canvas, IReadOnlyList<ModelInfo> models)
     {
         var record = task.Record;
         var factory = await chatClients.GetForUserAsync(record.UserId, task.Budget.Token);
@@ -127,7 +131,7 @@ public sealed partial class FleetTaskService
             : await tools.BuildAsync(record.UserId, record.Request, record.EnabledTools, task.Questions, task.Budget.Token, documentTools);
         var copilotFactory = copilot is null
             ? null
-            : new FleetCopilotAgentFactory(copilot, factory, [.. models.Select(m => m.Id)], record.PlannerModel, workspace, prompts,
+            : new FleetCopilotAgentFactory(copilot, factory, [.. models.Select(m => m.Id)], record.PlannerModel, workspace, canvas, prompts,
                 new FleetCopilotPermissionPolicy(workspace.Root, task.Questions, task.Budget.Token));
         return new FleetRun
         {
@@ -136,6 +140,7 @@ public sealed partial class FleetTaskService
             Prompts = prompts,
             Budget = task.Budget,
             Workspace = workspace,
+            Canvas = canvas,
             DefaultModel = record.PlannerModel,
             Clients = models.ToDictionary(m => m.Id, m => (IChatClient)new FleetBudgetChatClient(factory.GetClient(m.Id), task.Budget)),
             ModelNames = models.ToDictionary(m => m.Id, m => m.DisplayName),

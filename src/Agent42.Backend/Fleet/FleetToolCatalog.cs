@@ -70,6 +70,7 @@ public sealed partial class FleetToolCatalog(
             "write_artifact", "read_artifact", "list_artifacts", "note_set", "note_get", "delegate_to_team",
             FleetDocumentTools.SearchName, FleetDocumentTools.ReadName,
         };
+        names.UnionWith(FleetCanvas.ToolNames);
         var usable = new List<AIFunction>();
         foreach (var tool in tools)
         {

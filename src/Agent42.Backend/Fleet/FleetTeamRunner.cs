@@ -193,9 +193,9 @@ public sealed partial class FleetTeamRunner(FleetRun run)
             },
         });
 
-        // Agents often deliver their work as files, so the judge sees the workspace next to the team's final message.
+        // Agents often deliver their work as files or canvas pages, so the judge sees both next to the team's final message.
         await judge.RunAsync(
-            $"Task:\n{task}\n\nResult of the team:\n{result}\n\n{run.Workspace.Describe()}",
+            $"Task:\n{task}\n\nResult of the team:\n{result}\n\n{run.Workspace.Describe()}\n\n{run.Canvas.Describe()}",
             cancellationToken: context.CancellationToken);
 
         return verdict ?? new FleetVerdict(passingScore, true, "The judge gave no verdict.");
@@ -227,12 +227,12 @@ public sealed partial class FleetTeamRunner(FleetRun run)
     }
 
     /// <summary>
-    /// The functions agents of a team can reference in their YAML: the workspace, the catalog's tools and, below the
-    /// maximum depth, <c>delegate_to_team</c>.
+    /// The functions agents of a team can reference in their YAML: the workspace, the canvas, the catalog's tools and,
+    /// below the maximum depth, <c>delegate_to_team</c>.
     /// </summary>
     public List<AIFunction> AgentFunctions(FleetTeamContext context)
     {
-        List<AIFunction> functions = [.. run.Workspace.Tools, .. run.Tools];
+        List<AIFunction> functions = [.. run.Workspace.Tools, .. run.Canvas.Tools, .. run.Tools];
         if (context.Depth < Options.MaxTeamDepth)
         {
             functions.Add(AIFunctionFactory.Create(
