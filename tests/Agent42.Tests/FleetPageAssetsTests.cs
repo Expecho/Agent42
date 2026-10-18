@@ -128,7 +128,7 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
     }
 
     /// <summary>ADR 0099: Run again keeps the task's override (null included) instead of falling back to the picker.
-    /// ADR 0100: it passes followUpOf when the task has one, else copyInputsOf, so a new task's files come along.</summary>
+    /// ADR 0101: it passes followUpOf when the task has one, else copyInputsOf, so a new task's files come along.</summary>
     [Fact]
     public async Task FleetJs_RunAgain_ResendsTaskOverride()
     {
@@ -138,7 +138,7 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
         Assert.Contains("copyInputsOf: copyInputsOf || null", script);
     }
 
-    /// <summary>ADR 0100: the page posts FormData to the files route only when files are attached, never forces a JSON
+    /// <summary>ADR 0101: the page posts FormData to the files route only when files are attached, never forces a JSON
     /// content-type on it (the browser must set the multipart boundary), and sets file names as text.</summary>
     [Fact]
     public async Task FleetJs_Files_MultipartOnlyWithFiles()

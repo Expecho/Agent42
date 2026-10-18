@@ -6,7 +6,7 @@ using Microsoft.Extensions.AI;
 namespace Agent42.Backend;
 
 /// <summary>
-/// <c>search_documents</c> and <c>read_document</c> over ONE fleet workspace's indexed documents (ADR 0100), one
+/// <c>search_documents</c> and <c>read_document</c> over ONE fleet workspace's indexed documents (ADR 0101), one
 /// instance per run. The owner key is <see cref="FleetTaskService.DocumentOwnerKey"/>, so a task reaches neither
 /// another workspace's documents nor a chat's. The fleet uses a model-invoked search, a scoped exception to ADR 0008's
 /// always-on retrieval: a task runs many agents, and most of them don't need excerpts before every call.

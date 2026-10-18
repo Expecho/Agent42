@@ -49,7 +49,7 @@ public sealed class DocumentIngestionService(
 
     /// <summary>
     /// The chunk → embed → index half of <see cref="IngestAsync"/>, for a caller that has already extracted the
-    /// text (the agent fleet writes a text copy of each document from the same segments, ADR 0100, so a PDF is
+    /// text (the agent fleet writes a text copy of each document from the same segments, ADR 0101, so a PDF is
     /// extracted once). Same owner-key, embedding-model, dimension and replace-on-re-ingest rules.
     /// </summary>
     public async Task<IngestedDocument> IngestSegmentsAsync(

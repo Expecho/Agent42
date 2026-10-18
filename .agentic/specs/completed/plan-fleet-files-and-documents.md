@@ -58,7 +58,7 @@ Follow-ups share the workspace, so they share the files and the store too.
   - A new `FleetDocumentToolsTests`.
   - The existing `read_document` tests (the refactor must keep them green) and `DocumentIngestionServiceTests`.
 - **Docs**:
-  - A new ADR (next free number, 0100 at planning time) that amends 0097 and records the 0008 scoping.
+  - A new ADR (next free number, 0100 at planning time; 0101 after PR #195 took 0100) that amends 0097 and records the 0008 scoping.
   - An amend note on 0097. Its trust-boundary note must mention that uploaded content now reaches Copilot fleet
     agents.
   - The CLAUDE.md feature map rows for the fleet and for document RAG.
@@ -423,4 +423,4 @@ Implemented on `feature/fleet-files-and-documents` on 2026-10-18. Where it diffe
   Test: `FollowUp_TextCopies_StayAccurate`.
 - **Pre-existing gate failure fixed in-branch.** `System.Security.Cryptography.Xml` 10.0.12 had three High advisories
   (`vulnerable_packages: 0`). The pin is bumped to 10.0.13, the feed's latest, and the vulnerable check is clean.
-- **Still open:** the post-deploy ~20 MB Easy Auth body-size check (ADR 0100 Consequences).
+- **Still open:** the post-deploy ~20 MB Easy Auth body-size check (ADR 0101 Consequences).

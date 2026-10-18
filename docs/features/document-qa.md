@@ -2,7 +2,7 @@
 
 > Drop in PDFs, Office files, or text; the agent automatically pulls the most relevant excerpts
 > into its answers (retrieval-augmented), so you can ask questions about your own documents.
-> ADRs 0007 · 0008 · 0066 · 0098 · 0100 (agent fleet task files).
+> ADRs 0007 · 0008 · 0066 · 0098 · 0101 (agent fleet task files).
 
 ## What it is
 
@@ -189,6 +189,6 @@ else
 | Retrieval provider | `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`BuildDocumentSearchProvider`, `SearchDocumentContextAsync`) |
 | Vector store | `src/Agent42.Backend/Documents/CosmosDocumentIndex.cs`, `src/Agent42.Agents/Documents/InMemoryDocumentIndex.cs` |
 | Sequential reading (ADR 0098) | `src/Agent42.Agents/Documents/AgentGrain.ReadDocumentTool.cs`, `DocumentPartReader.cs` (shared with the fleet), `ReadDocumentLimits.cs`, `DocumentStitcher.cs` |
-| Agent fleet documents (ADR 0100) | `src/Agent42.Backend/Fleet/FleetDocumentIngest.cs`, `FleetDocumentTools.cs` (owner key `{userId}/fleet/{workspaceId}`) |
+| Agent fleet documents (ADR 0101) | `src/Agent42.Backend/Fleet/FleetDocumentIngest.cs`, `FleetDocumentTools.cs` (owner key `{userId}/fleet/{workspaceId}`) |
 | Web documents (ADR 0066) | `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`, `WebDocumentLimits.cs`, `src/Agent42.Backend/Documents/WebDocumentIngestor.cs`, `src/Agent42.Backend/Web/PrivateAddressGuard.cs` |
 | Wiring | `src/Agent42.Backend/Program.cs` |

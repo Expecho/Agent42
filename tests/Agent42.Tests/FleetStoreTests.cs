@@ -61,7 +61,7 @@ public class FleetStoreTests
         Assert.True(task.CanFollowUp);
     }
 
-    // ADR 0100: records written before attached files existed load with empty lists, and the lists round-trip.
+    // ADR 0101: records written before attached files existed load with empty lists, and the lists round-trip.
     [Fact]
     public async Task LegacyRecord_WithoutInputs_LoadsEmpty()
     {

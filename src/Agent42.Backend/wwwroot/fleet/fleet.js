@@ -24,7 +24,7 @@
     config: null, models: null, files: null,
     tools: null,            // the fleet's rows of GET /api/tools, or null when it failed (then no override is ever sent)
     defaultTools: null,     // the user's default chat selection (profile.enabledTools), null meaning all
-    attachments: [],        // File objects the composer will send with the next task (ADR 0100)
+    attachments: [],        // File objects the composer will send with the next task (ADR 0101)
     ingested: null,         // the selected task's documents.ingested files, from its event log
   };
 
@@ -418,7 +418,7 @@
     return { el, ta, err, btn, title, hint, model, tokens, tools, toolsSummary, toolsList, chips };
   })();
 
-  // ---------- attached files (ADR 0100) ----------
+  // ---------- attached files (ADR 0101) ----------
   // The server refuses two files of one name, so a file replaces an attached one of the same name (case-insensitive).
   // File names are the user's: text only.
   function addAttachments(list) {
@@ -744,7 +744,7 @@
   }
 
   // An interrupted, stopped or failed task can't be followed up, but its request can run again as a new task. A follow-up
-  // runs again in the shared workspace; a new task gets a new one, so it copies the old task's attached files (ADR 0100).
+  // runs again in the shared workspace; a new task gets a new one, so it copies the old task's attached files (ADR 0101).
   function runAgainCard(task) {
     return ["interrupted", "stopped", "failed"].includes(task?.status) && !running() && h("div", { class: "card follow-up-cta" },
       h("div", null, h("b", { text: task.status === "interrupted" ? "Interrupted by a restart" : "Didn't finish" }),

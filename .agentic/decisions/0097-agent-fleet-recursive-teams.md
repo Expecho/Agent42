@@ -5,7 +5,7 @@ status: accepted
 tags: [fleet, agents, agent-framework, workflows, declarative, github-copilot-sdk, blob, sse, egress, trust-boundary, single-replica, usage, prerelease-package, no-migration]
 supersedes: []
 amends: [0085, 0013]
-amended_by: [0099, 0100]   # 0099: a task can override the default tool selection (decision 6); 0100: attached files + workspace document tools (decision 7)
+amended_by: [0099, 0101]   # 0099: a task can override the default tool selection (decision 6); 0101: attached files + workspace document tools (decision 7)
 ---
 
 # Agent42 agent fleet: an in-process recursive team runner outside Orleans, persisted in Blob, with Copilot agents that keep their built-in tools
@@ -54,7 +54,7 @@ fleet"), with persisted tasks and follow-ups, using only the user's own models (
    - a shell can reach the app port on `localhost` and forge `X-MS-CLIENT-PRINCIPAL-ID` (`src/Agent42.Backend/Api/CurrentUser.cs`);
    - the container filesystem is readable by a shell;
    - the network reach is the container's.
-   **Since ADR 0100** a task can carry user-uploaded files under `inputs/` (with `.txt` copies of PDF and Office
+   **Since ADR 0101** a task can carry user-uploaded files under `inputs/` (with `.txt` copies of PDF and Office
    documents) in the workspace, so a Copilot fleet agent's built-in shell and file tools now read user-uploaded,
    possibly third-party, content too.
 8. **Egress (an ADR 0013 extension).** Fleet content goes to the user's own providers, SearXNG, context.dev and the

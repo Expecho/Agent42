@@ -249,7 +249,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
     private async Task<List<string>> PathsAsync(string user, string workspaceId)
         => [.. (await _store.ListWorkspaceAsync(user, workspaceId)).Select(f => f.Path).Order(StringComparer.Ordinal)];
 
-    /// <summary>ADR 0100: attached files land under inputs/ before the task starts, and the record names them.</summary>
+    /// <summary>ADR 0101: attached files land under inputs/ before the task starts, and the record names them.</summary>
     [Fact]
     public async Task Submit_WithFiles_StoresInputs()
     {
@@ -278,7 +278,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         { "copy of an unknown task", new FleetSubmit("x", CopyInputsOf: "missing") },
     };
 
-    /// <summary>ADR 0100: every file refusal happens before anything is written, so a refused task leaves no blobs.</summary>
+    /// <summary>ADR 0101: every file refusal happens before anything is written, so a refused task leaves no blobs.</summary>
     [Theory]
     [MemberData(nameof(InputRefusals))]
     public async Task Submit_InvalidFiles_RefusedWithoutBlobs(string why, FleetSubmit request)
@@ -294,7 +294,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Empty(await _store.ListWorkspaceAsync(Alice, "w-done-1"));
     }
 
-    /// <summary>ADR 0100: a follow-up's existing workspace files count against the caps too.</summary>
+    /// <summary>ADR 0101: a follow-up's existing workspace files count against the caps too.</summary>
     [Fact]
     public async Task Submit_FollowUp_ExistingFilesCountAgainstTheCaps()
     {
@@ -308,7 +308,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Equal(["report.md"], await PathsAsync(Alice, "w-done-1"));
     }
 
-    /// <summary>ADR 0100: a submit refused by the registry (a task already runs) writes no input blobs.</summary>
+    /// <summary>ADR 0101: a submit refused by the registry (a task already runs) writes no input blobs.</summary>
     [Fact]
     public async Task Submit_Refused_LeavesNoInputs()
     {
@@ -325,7 +325,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.DoesNotContain(await PathsAsync(Alice, tasks[0].WorkspaceId), p => p.StartsWith("inputs/", StringComparison.Ordinal));
     }
 
-    /// <summary>ADR 0100: Run again of a new task copies its inputs (never its generated text copies) into a new
+    /// <summary>ADR 0101: Run again of a new task copies its inputs (never its generated text copies) into a new
     /// workspace; a new file wins on a name clash; another user's task can't be copied.</summary>
     [Fact]
     public async Task Submit_CopyInputsOf_CopiesInputs_OwnOnly()
@@ -354,7 +354,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Equal("new a", Encoding.UTF8.GetString((await _store.GetWorkspaceFileAsync(Alice, done.WorkspaceId, "inputs/a.md"))!));
     }
 
-    /// <summary>ADR 0100: deleting a workspace's last task drops its document chunks BEFORE the workspace; a shared
+    /// <summary>ADR 0101: deleting a workspace's last task drops its document chunks BEFORE the workspace; a shared
     /// workspace keeps them; an index failure leaves the task and the workspace intact for a retry.</summary>
     [Theory]
     [InlineData("last")]
@@ -397,7 +397,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
             .ToDictionary(f => f.GetProperty("name").GetString()!, f => f.Clone());
     }
 
-    /// <summary>ADR 0100: at run start a document is extracted, gets a text copy when it isn't text already, and is
+    /// <summary>ADR 0101: at run start a document is extracted, gets a text copy when it isn't text already, and is
     /// indexed under the workspace's owner key; a non-document is stored only; task.started stays the first event.</summary>
     [Fact]
     public async Task Run_IngestsDocuments_AndStoresOthers()
@@ -427,7 +427,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.True(types.IndexOf("documents.ingested") < types.IndexOf("team.started"));
     }
 
-    /// <summary>ADR 0100: with indexed documents the planner's tool list has the document tools, even with an empty
+    /// <summary>ADR 0101: with indexed documents the planner's tool list has the document tools, even with an empty
     /// tool override, and its input the "Attached files" section; a task without documents gets neither.</summary>
     [Theory]
     [InlineData(true)]
@@ -448,7 +448,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Equal(withFile, input!.Contains("Attached files, in the shared workspace:\n- inputs/notes.md", StringComparison.Ordinal));
     }
 
-    /// <summary>ADR 0100: without an embedding model the task runs with its files (and text copies), nothing is
+    /// <summary>ADR 0101: without an embedding model the task runs with its files (and text copies), nothing is
     /// indexed, and the event says why.</summary>
     [Fact]
     public async Task Run_NoEmbeddingModel_FilesOnly()
@@ -467,7 +467,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Contains("embedding model", notes.GetProperty("reason").GetString());
     }
 
-    /// <summary>ADR 0100: no ingest failure fails the task: a throwing provider or index is that file's reason.</summary>
+    /// <summary>ADR 0101: no ingest failure fails the task: a throwing provider or index is that file's reason.</summary>
     [Theory]
     [InlineData("embedder")]
     [InlineData("index")]
@@ -487,7 +487,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Contains("down", notes.GetProperty("reason").GetString());
     }
 
-    /// <summary>ADR 0100: a text copy that doesn't fit the workspace caps is skipped and reported; the document is
+    /// <summary>ADR 0101: a text copy that doesn't fit the workspace caps is skipped and reported; the document is
     /// still indexed.</summary>
     [Fact]
     public async Task Run_TextCopy_SkippedWhenWorkspaceFull()
@@ -507,7 +507,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.DoesNotContain("inputs/report.docx.txt", await PathsAsync(Alice, done.WorkspaceId));
     }
 
-    /// <summary>ADR 0100: a follow-up inherits the workspace's documents without re-ingesting them, and its input says
+    /// <summary>ADR 0101: a follow-up inherits the workspace's documents without re-ingesting them, and its input says
     /// which files the document tools reach.</summary>
     [Fact]
     public async Task FollowUp_InheritsDocuments()
@@ -528,7 +528,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Contains("'notes.md'", input);
     }
 
-    /// <summary>ADR 0100: a follow-up that re-uploads an indexed name and fails to re-index it drops the stale chunks
+    /// <summary>ADR 0101: a follow-up that re-uploads an indexed name and fails to re-index it drops the stale chunks
     /// and the name, so no tool returns the old version of changed bytes.</summary>
     [Fact]
     public async Task FollowUp_FailedReingest_DropsStaleDocument()
@@ -550,7 +550,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Equal(0, (await index.ReadChunksAsync(ownerKey, "notes.md", 0, 10)).TotalChunks);
     }
 
-    /// <summary>ADR 0100 (critic finding): a follow-up's user file that takes a generated copy's path is the user's from
+    /// <summary>ADR 0101 (critic finding): a follow-up's user file that takes a generated copy's path is the user's from
     /// then on, and a re-uploaded document whose extraction fails loses its old, now stale, text copy.</summary>
     [Theory]
     [InlineData("user file claims the path")]

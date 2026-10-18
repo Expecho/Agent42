@@ -4275,7 +4275,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 - **Claim:** `FleetWorkspace.SyncToStoreAsync` mirrors the local directory to Blob, so every stored file the run
   didn't materialize is deleted by the first sync (after each attempt, and at the end). Anything put into a
-  workspace's Blob before the run starts must therefore be materialized first. The attached files of ADR 0100 are
+  workspace's Blob before the run starts must therefore be materialized first. The attached files of ADR 0101 are
   stored at submit under `inputs/`, so `RunAsync` materializes when `previous is not null || record.Inputs.Count > 0`,
   not only for a follow-up. Seen on this branch: before that change, `Submit_WithFiles_StoresInputs` and
   `Submit_CopyInputsOf_CopiesInputs_OwnOnly` found the inputs gone after the run. A future "write to the workspace
@@ -4283,7 +4283,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetWorkspace.cs` (`SyncCoreAsync`, the delete loop),
   `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`RunAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Submit_WithFiles_StoresInputs`),
-  `.agentic/decisions/0100-fleet-task-files-and-documents.md`
+  `.agentic/decisions/0101-fleet-task-files-and-documents.md`
 - **Verified:** 2026-10-18
 
 ### Fleet workspace downloads are an XSS sink: attachment, nosniff, never an HTML or SVG type
