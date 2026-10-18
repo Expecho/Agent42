@@ -61,6 +61,27 @@ public class FleetStoreTests
         Assert.True(task.CanFollowUp);
     }
 
+    // ADR 0100: records written before attached files existed load with empty lists, and the lists round-trip.
+    [Fact]
+    public async Task LegacyRecord_WithoutInputs_LoadsEmpty()
+    {
+        await _blobs.PutAsync("alice/tasks/old.json", Encoding.UTF8.GetBytes(
+            """{"id":"old","userId":"alice","request":"r","workspaceId":"w","plannerModel":"foundry:gpt-5","status":"done","result":"x"}"""));
+
+        var task = await _store.GetTaskAsync("alice", "old");
+
+        Assert.NotNull(task);
+        Assert.Empty(task.Inputs);
+        Assert.Empty(task.Documents);
+        Assert.Empty(task.TextCopies);
+
+        await _store.SaveTaskAsync(task with { Inputs = ["a.pdf"], Documents = ["a.pdf"], TextCopies = ["inputs/a.pdf.txt"] });
+        var saved = await _store.GetTaskAsync("alice", "old");
+        Assert.Equal(["a.pdf"], saved!.Inputs);
+        Assert.Equal(["a.pdf"], saved.Documents);
+        Assert.Equal(["inputs/a.pdf.txt"], saved.TextCopies);
+    }
+
     [Fact]
     public async Task OtherUser_SeesNothing()
     {

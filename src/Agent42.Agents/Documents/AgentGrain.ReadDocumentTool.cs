@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -44,10 +43,7 @@ public sealed partial class AgentGrain
         var names = ReadableDocumentNames();
         if (!names.Contains(fileName, StringComparer.Ordinal))
         {
-            return names.Count == 0
-                ? "This conversation has no documents to read."
-                : $"There is no document named '{fileName}' in this conversation. Use one of these names exactly: "
-                    + string.Join(", ", names.Select(n => $"'{n}'")) + ".";
+            return DocumentPartReader.UnknownName(fileName, names, "conversation");
         }
 
         if (_documentPartsRead >= ReadDocumentLimits.MaxPartsPerTurn)
@@ -71,60 +67,20 @@ public sealed partial class AgentGrain
         }
     }
 
-    // The fetch → stitch → format half, split from the guard/catch shell above (cognitive_complexity_max 15).
+    // The fetch → stitch → format half (DocumentPartReader, shared with the fleet), split from the guard/catch
+    // shell above (cognitive_complexity_max 15).
     private async Task<string> ReadDocumentPartAsync(string fileName, int part)
     {
-        var start = (Math.Max(part, 1) - 1) * ReadDocumentLimits.ChunksPerPart;
+        var result = await DocumentPartReader.ReadAsync(
+            _documentIndex, this.GetPrimaryKeyString(), fileName, part,
+            untrusted: _state.State.WebDocumentNames.Contains(fileName, StringComparer.Ordinal));
 
-        // One chunk BEFORE the part, used only to strip its overlap from the part's first chunk, never emitted.
-        var readFrom = Math.Max(start - 1, 0);
-        var range = await _documentIndex.ReadChunksAsync(
-            this.GetPrimaryKeyString(), fileName, readFrom, start - readFrom + ReadDocumentLimits.ChunksPerPart);
-
-        if (range.TotalChunks == 0)
+        if (result.IsPart)
         {
-            return $"'{fileName}' has no readable text (it may be a scanned or image-only document), so there is "
-                + "nothing to read.";
+            _documentPartsRead++;
         }
 
-        var totalParts = (range.TotalChunks + ReadDocumentLimits.ChunksPerPart - 1) / ReadDocumentLimits.ChunksPerPart;
-        if (part < 1 || part > totalParts)
-        {
-            return $"'{fileName}' has {totalParts} part(s); part {part} does not exist. Parts are numbered 1 to {totalParts}.";
-        }
-
-        var previous = range.Chunks.FirstOrDefault(c => c.ChunkIndex < start);
-        var chunks = range.Chunks.Where(c => c.ChunkIndex >= start).ToList();
-        var text = DocumentStitcher.Stitch(previous, chunks);
-        if (text.Length > ReadDocumentLimits.MaxPartTextLength)
-        {
-            text = text[..ReadDocumentLimits.MaxPartTextLength] + ReadDocumentLimits.TruncationMarker;
-        }
-
-        _documentPartsRead++;
-        return FormatPart(fileName, part, totalParts, chunks, text);
-    }
-
-    private string FormatPart(string fileName, int part, int totalParts, List<DocumentChunk> chunks, string text)
-    {
-        var header = new StringBuilder($"{ReadDocumentLimits.PartHeaderPrefix}{fileName}' — part {part} of {totalParts}");
-        var pages = chunks.Where(c => c.Page is not null).Select(c => c.Page!.Value).ToList();
-        if (pages.Count > 0)
-        {
-            header.Append(pages.Min() == pages.Max() ? $" (page {pages.Min()})" : $" (pages {pages.Min()}–{pages.Max()})");
-        }
-
-        // ADR 0066's provenance split: a web document's text was authored by whoever controls that URL.
-        if (_state.State.WebDocumentNames.Contains(fileName, StringComparer.Ordinal))
-        {
-            header.Append(" — ").Append(ReadDocumentLimits.UntrustedMarker);
-        }
-
-        var footer = part < totalParts
-            ? $"Call read_document with part {part + 1} to continue."
-            : "This is the last part.";
-
-        return $"{header}\n\n{text}\n\n{footer}";
+        return result.Text;
     }
 
     // Uploaded documents and web-fetched ones: both index under this grain's ownerKey.

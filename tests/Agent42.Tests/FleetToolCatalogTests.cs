@@ -96,6 +96,24 @@ public class FleetToolCatalogTests
         Assert.Equal(["web_search", "fetch_web_page", "ok-name"], tools.Select(t => t.Name));
     }
 
+    /// <summary>ADR 0100: the document tools come first when the task has documents, whatever the selection (even
+    /// an empty override); their names are reserved, so a same-named MCP tool is skipped with or without them.</summary>
+    [Fact]
+    public void Build_DocumentTools_OnlyWithDocuments_Reserved()
+    {
+        var clash = new McpServerTools("s3", [Tool("read_document"), Tool("search_documents"), Tool("delta")]);
+        var documentTools = new[] { Tool(FleetDocumentTools.SearchName), Tool(FleetDocumentTools.ReadName) };
+
+        var with = Catalog().Build([], "", [clash], Interaction, documentTools);
+        var withAll = Catalog().Build(null, "", [clash], Interaction, documentTools);
+        var without = Catalog().Build(null, "", [clash], Interaction);
+
+        Assert.Equal(["search_documents", "read_document"], with.Select(t => t.Name));
+        Assert.Equal(["search_documents", "read_document", "web_search", "fetch_web_page", "delta"], withAll.Select(t => t.Name));
+        Assert.Same(documentTools[1], withAll[1]);
+        Assert.Equal(["web_search", "fetch_web_page", "delta"], without.Select(t => t.Name));
+    }
+
     [Fact]
     public async Task WebFetch_OnlyAllowlistedUrls_AndTruncated()
     {

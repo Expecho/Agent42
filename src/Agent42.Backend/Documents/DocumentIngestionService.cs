@@ -40,6 +40,22 @@ public sealed class DocumentIngestionService(
         CancellationToken cancellationToken = default)
     {
         var segments = extractor.Extract(fileName, mediaType, content);
+        return await IngestSegmentsAsync(ownerKey, fileName, segments, maxChunks, cancellationToken);
+    }
+
+    /// <summary>The extract step of <see cref="IngestAsync"/> on its own, for a caller that also needs the text.</summary>
+    public IReadOnlyList<DocumentSegment> Extract(string fileName, string mediaType, byte[] content)
+        => extractor.Extract(fileName, mediaType, content);
+
+    /// <summary>
+    /// The chunk → embed → index half of <see cref="IngestAsync"/>, for a caller that has already extracted the
+    /// text (the agent fleet writes a text copy of each document from the same segments, ADR 0100, so a PDF is
+    /// extracted once). Same owner-key, embedding-model, dimension and replace-on-re-ingest rules.
+    /// </summary>
+    public async Task<IngestedDocument> IngestSegmentsAsync(
+        string ownerKey, string fileName, IReadOnlyList<DocumentSegment> segments, int? maxChunks = null,
+        CancellationToken cancellationToken = default)
+    {
         var chunks = chunker.Chunk(fileName, segments);
         if (chunks.Count == 0)
         {

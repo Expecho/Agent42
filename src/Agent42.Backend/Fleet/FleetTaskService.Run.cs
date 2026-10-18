@@ -1,3 +1,4 @@
+using System.Text;
 using Agent42.Agents;
 using Microsoft.Extensions.AI;
 using Orleans.Runtime;
@@ -28,12 +29,13 @@ public sealed partial class FleetTaskService
         try
         {
             workspace = new FleetWorkspace(record.WorkspaceId, record.Notes);
-            if (previous is not null)
+            if (previous is not null || record.Inputs.Count > 0)
             {
                 await workspace.MaterializeAsync(store, record.UserId, task.Budget.Token);
             }
 
-            var run = await BuildRunAsync(task, workspace, models);
+            // task.started stays the log's first event; the ingest reports after it, and the run is built from the
+            // record the ingest updated (its Documents decide the document tools).
             task.Log.Publish("task.started", new
             {
                 taskId = record.Id,
@@ -43,8 +45,12 @@ public sealed partial class FleetTaskService
                 maxTokens = record.MaxTokens,
                 workspace = record.WorkspaceId,
                 startedAt = record.StartedAt,
+                inputs = record.Inputs,
             });
-            var input = previous is null ? record.Request : await FollowUpInputAsync(record, previous, workspace, run.Prompts);
+            record = await IngestInputsAsync(task, workspace);
+            var run = await BuildRunAsync(task, workspace, models);
+            var input = (previous is null ? record.Request : await FollowUpInputAsync(record, previous, workspace, run.Prompts))
+                + AttachedFiles(record);
             result = await new FleetTeamRunner(run).RunAsync(input);
             failure = result is null ? FleetTeamRunner.NoTeamResult : null;
         }
@@ -65,12 +71,60 @@ public sealed partial class FleetTaskService
         }
     }
 
+    // Indexes this task's attached files (ADR 0100), reports each file's outcome, and saves the record with the
+    // workspace's new Documents and TextCopies. A task without inputs skips it all.
+    private async Task<FleetTaskRecord> IngestInputsAsync(RunningFleetTask task, FleetWorkspace workspace)
+    {
+        var record = task.Record;
+        if (record.Inputs.Count == 0)
+        {
+            return record;
+        }
+
+        var result = ingestion is null || documents is null
+            ? FleetDocumentIngest.FilesOnly(record, "documents can't be searched on this server")
+            : await new FleetDocumentIngest(ingestion, documents, options, logger).IngestAsync(record, workspace, task.Budget.Token);
+        task.Log.Publish("documents.ingested", new { files = result.Files });
+
+        task.Record = record with { Documents = result.Documents, TextCopies = result.TextCopies };
+        await store.SaveTaskAsync(task.Record, task.Budget.Token);
+        return task.Record;
+    }
+
+    // The input's "Attached files" section (ADR 0100): the inputs, their text copies, and which files the document
+    // tools reach. Empty when the workspace has neither inputs nor documents.
+    private static string AttachedFiles(FleetTaskRecord record)
+    {
+        if (record.Inputs.Count == 0 && record.Documents.Count == 0)
+        {
+            return "";
+        }
+
+        var text = new StringBuilder("\n\nAttached files, in the shared workspace:");
+        foreach (var name in record.Inputs)
+        {
+            var copy = InputPath(name + ".txt");
+            text.Append($"\n- {InputPath(name)}").Append(record.TextCopies.Contains(copy, StringComparer.Ordinal) ? $" (as text: {copy})" : "");
+        }
+
+        text.Append(record.Documents.Count == 0
+            ? "\nNo document can be searched."
+            : "\nThese documents can be searched with search_documents and read part by part with read_document: "
+                + string.Join(", ", record.Documents.Select(d => $"'{d}'")) + ".");
+        return text.ToString();
+    }
+
     private async Task<FleetRun> BuildRunAsync(RunningFleetTask task, FleetWorkspace workspace, IReadOnlyList<ModelInfo> models)
     {
         var record = task.Record;
         var factory = await chatClients.GetForUserAsync(record.UserId, task.Budget.Token);
         var prompts = new FleetPromptSet(await store.GetPromptsAsync(record.UserId, task.Budget.Token));
-        var functions = tools is null ? [] : await tools.BuildAsync(record.UserId, record.Request, record.EnabledTools, task.Questions, task.Budget.Token);
+        var documentTools = documents is null || record.Documents.Count == 0
+            ? []
+            : new FleetDocumentTools(chatClients, documents, record.UserId, record.WorkspaceId, record.Documents, logger).Tools;
+        var functions = tools is null
+            ? documentTools
+            : await tools.BuildAsync(record.UserId, record.Request, record.EnabledTools, task.Questions, task.Budget.Token, documentTools);
         var copilotFactory = copilot is null
             ? null
             : new FleetCopilotAgentFactory(copilot, factory, [.. models.Select(m => m.Id)], record.PlannerModel, workspace, prompts,

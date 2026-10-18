@@ -97,7 +97,7 @@ public sealed class DocumentTextExtractorTests
     public void DocumentMediaTypes_IsSupported_ClassifiesTypes(string? mediaType, bool expected)
         => Assert.Equal(expected, DocumentMediaTypes.IsSupported(mediaType));
 
-    private static byte[] BuildDocx(params string[] paragraphs)
+    internal static byte[] BuildDocx(params string[] paragraphs)
     {
         using var ms = new MemoryStream();
         using (var doc = WordprocessingDocument.Create(ms, DocumentFormat.OpenXml.WordprocessingDocumentType.Document))

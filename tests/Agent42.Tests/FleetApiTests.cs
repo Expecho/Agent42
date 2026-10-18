@@ -27,6 +27,8 @@ public sealed class FleetApiFixture : SharedApiFixture
             ["Fleet:JudgeDepth"] = "-1",
             ["Fleet:MaxConcurrentTasks"] = "50",
             ["Fleet:SseKeepAlive"] = "00:00:00.200",
+            ["Fleet:MaxInputFiles"] = "2",
+            ["Fleet:MaxInputFileBytes"] = "1000",
         }).Build());
     }
 }
@@ -153,6 +155,69 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         {
             await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/stop", user);
         }
+    }
+
+    private static MultipartFormDataContent Form(object? request, params (string Name, byte[] Content)[] files)
+    {
+        var form = new MultipartFormDataContent();
+        if (request is not null)
+        {
+            form.Add(new StringContent(JsonSerializer.Serialize(request)), "request");
+        }
+
+        foreach (var (name, content) in files)
+        {
+            form.Add(new ByteArrayContent(content), "files", name);
+        }
+
+        return form;
+    }
+
+    private Task<HttpResponseMessage> SendForm(string user, MultipartFormDataContent form)
+    {
+        var request = Request(HttpMethod.Post, "/api/fleet/tasks/with-files", user);
+        request.Content = form;
+        return Client.SendAsync(request);
+    }
+
+    /// <summary>ADR 0100: the multipart route stores the files under inputs/ and the record names them.</summary>
+    [Fact]
+    public async Task SubmitWithFiles_Multipart_StoresFiles()
+    {
+        const string user = "fleet-files-1";
+        var response = await SendForm(user, Form(new { task = Task(), model = FleetRunHarness.ModelA }, ("notes.md", Encoding.UTF8.GetBytes("# notes"))));
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var taskId = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("taskId").GetString()!;
+        try
+        {
+            var task = await (await Send(HttpMethod.Get, $"/api/fleet/tasks/{taskId}", user)).Content.ReadFromJsonAsync<JsonElement>();
+
+            Assert.Equal(["notes.md"], task.GetProperty("inputs").EnumerateArray().Select(e => e.GetString()));
+            Assert.Contains(await Store.ListWorkspaceAsync(user, task.GetProperty("workspaceId").GetString()!), f => f.Path == "inputs/notes.md");
+        }
+        finally
+        {
+            await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/stop", user);
+        }
+    }
+
+    /// <summary>ADR 0100: a body over the route's limit is a 413, a form without the request JSON a 400, and nothing
+    /// starts. The fixture's caps make the limit 2 × 1 000 bytes plus the 1 MB form allowance.</summary>
+    [Fact]
+    public async Task SubmitWithFiles_OverLimit_Refused()
+    {
+        const string user = "fleet-files-2";
+
+        var tooLarge = await SendForm(user, Form(new { task = Task() }, ("big.md", new byte[(1024 * 1024) + 10_000])));
+        var noRequest = await SendForm(user, Form(null, ("a.md", [1])));
+        var badJson = await SendForm(user, Form("not an object", ("a.md", [1])));
+        var notMultipart = await Send(HttpMethod.Post, "/api/fleet/tasks/with-files", user, new { task = Task() });
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, tooLarge.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, noRequest.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, badJson.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, notMultipart.StatusCode);
+        Assert.Empty(await Store.ListTasksAsync(user));
     }
 
     [Fact]
