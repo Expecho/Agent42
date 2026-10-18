@@ -2248,6 +2248,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   sites above: both now also carry `&& _pushesThisTurn == 0`, so the generic away-reply push is **suppressed
   when the tool already pushed this turn** (the SW sets no `tag`, so otherwise one reply stacks two entries
   in the shade).
+  **A third origin since ADR 0100: the Settings "Send test" push** (`PushTestNotifier`, `POST /api/push/test`).
+  It runs in the HTTP request, outside any grain, and must **report** its result (`sent`/`gone`/`failed`/
+  `timeout`/`not-registered`), which is the opposite of `WebPushNotificationSender`'s swallow-everything
+  contract. Do not "unify" it with that sender or route it through `IPushNotificationSender`: either the test
+  goes blind or the turn-path sender starts throwing into a persisted turn.
 - **Evidence:** `src/Agent42.Agents/Push/AgentGrain.Push.cs` (`SendAwayReplyPushAsync` itself — but
   note the three facts this gotcha is about are all CALL SITES, which live in the core part:
   `src/Agent42.Agents/Conversations/AgentGrain.cs` has the gated call in `EnqueuePromptAsync`, the
@@ -2261,8 +2266,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `EnqueuePrompt_SuppressesAwayReplyPush_WhenToolAlreadyPushed`),
   `src/Agent42.Agents/Push/AgentGrain.PushTool.cs` (the model-invoked sibling),
   `.agentic/decisions/0028-web-push-when-agent-replies-while-away.md`,
-  `.agentic/decisions/0075-model-invoked-push-notification.md`
-- **Verified:** 2026-09-16
+  `.agentic/decisions/0075-model-invoked-push-notification.md`,
+  `src/Agent42.Backend/Push/PushTestNotifier.cs` + `tests/Agent42.Tests/PushTestNotifierTests.cs` (the
+  reporting test push), `.agentic/decisions/0100-push-test-notification.md`
+- **Verified:** 2026-10-18
 
 ### The push-per-turn counter resets in TWO places — and `ReceiveReminder` is the one that bites
 

@@ -303,7 +303,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v61", sw);
+        Assert.Contains("agent42-shell-v62", sw);
     }
 
     // Rich rendering (ADR 0083): SHELL holds only the eager renderer + highlight.js. The lazy libs stay out —
@@ -473,11 +473,15 @@ public sealed class PwaAssetsTests
         var index = await _client.GetStringAsync("/");
         Assert.Contains("id=\"pushSection\"", index);
         Assert.Contains("id=\"pushToggleBtn\"", index);
+        // The per-device "Send test" button + its live verdict line (presence guard only).
+        Assert.Contains("id=\"pushTestBtn\"", index);
+        Assert.Contains("id=\"pushTestStatus\"", index);
 
         var app = await _fixture.GetAppScriptAsync();
         Assert.Contains("/api/push/config", app);
         Assert.Contains("pushManager.subscribe", app);
         Assert.Contains("open-conversation", app);
+        Assert.Contains("/api/push/test", app);
     }
 
     [Fact]

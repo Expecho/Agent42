@@ -16,6 +16,11 @@ tags: [push-notifications, pwa, service-worker, web-push, vapid, egress, securit
 > RFC 8291 encryption is unchanged, but the payload is no longer just a user-chosen agent name — title and
 > body are now model-authored, conversation-derived text.
 
+> **Amended by [ADR 0100](0100-push-test-notification.md) (2026-10-18).** A third push origin: the user-initiated
+> **Send test** in Settings (`POST /api/push/test`). It pushes fixed text to one subscription already stored for
+> the caller and **reports** the result through its own `PushTestNotifier`. The swallowing sender below is
+> unchanged, and the blind-SSRF property stays limited to stored subscriptions.
+
 # Web Push notification when an agent replies while the user is away
 
 ## Context

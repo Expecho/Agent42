@@ -171,7 +171,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Copilot agent kind: GitHub Copilot SDK loop, BYOK, Agent42 tools as custom tools, native skills, SessionFs in Blob, history mirror, phase-1 trust boundary (set aside for fleet Copilot agents by 0097) | 0085, 0097 |
 | Agent fleet (recursive agent teams, `/fleet/`): in-process runner (not a grain), Blob store + SSE replay, judge/fix/new team, Copilot agents with built-in tools, per-task tool override | 0097, 0099 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |
-| Push: away replies, model-invoked | 0028, 0075 |
+| Push: away replies, model-invoked, user-initiated test push | 0028, 0075, 0100 |
 | Conversations: incognito, share links, follow-ups, pins, groups, chat search, stream recovery, stop generation, owner export (Markdown/JSON/ZIP, paged export-all), edit/regenerate last turn, fork | 0034, 0035, 0036, 0045, 0046, 0047, 0061, 0073, 0078, 0091, 0092 |
 | PWA and UI: share target, offline cache, composer, topbar, long press, prefs rail, tool-call folding, rich inline rendering (mermaid/code/math/charts), collapsible sidebar | 0023, 0032, 0043, 0044, 0052, 0065, 0072, 0080, 0083, 0086 |
 | Config health tab | 0029 |

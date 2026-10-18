@@ -3,6 +3,7 @@ using Agent42.Backend;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent42.Tests;
 
@@ -10,7 +11,7 @@ namespace Agent42.Tests;
 /// <see cref="SharedApiFixture"/> for <see cref="AgentApiTests"/>, which is the one class that reads the
 /// route-matcher registrations back out of the API instead of merely needing them to resolve: two providers
 /// so <c>/api/models</c> can prove the qualified-id contract (ADR 0013), and Web Push ENABLED with a known
-/// key so <c>/api/push/config</c> is assertable (ADR 0028). Both replace a default from the base fixture.
+/// key so <c>/api/push/config</c> and <c>/api/push/test</c> are assertable (ADR 0028). Both replace a default from the base fixture.
 /// </summary>
 public sealed class AgentApiFixture : SharedApiFixture
 {
@@ -21,6 +22,10 @@ public sealed class AgentApiFixture : SharedApiFixture
     // ChatGroupApiTests and SharedClusterSeamTests: an alias whose key nothing sends is inert for them.
     public const string AliasPrincipalOid = "aaaaaaaa-0000-0000-0000-00000000aaaa";
     public const string CanonicalPrincipalOid = "bbbbbbbb-0000-0000-0000-00000000bbbb";
+
+    // The push transport behind POST /api/push/test, so AgentApiTests can assert what was sent without a
+    // real push service. Only the test notifier uses it; nothing else in this host sends pushes.
+    internal FakeWebPushClient PushClient { get; } = new();
 
     protected override void Configure(WebApplicationBuilder builder)
     {
@@ -36,6 +41,8 @@ public sealed class AgentApiFixture : SharedApiFixture
             .GetRequiredService<IUserChatClientFactoryProvider>());
         builder.Services.AddSingleton(
             new PushConfig(Enabled: true, PublicKey: TestVapidPublicKey, Subject: "mailto:test@agent42"));
+        builder.Services.AddSingleton(sp => new PushTestNotifier(
+            sp.GetRequiredService<IGrainFactory>(), PushClient, NullLogger<PushTestNotifier>.Instance));
         builder.Services.AddSingleton(UserIdAliases.FromConfiguration(
             new ConfigurationBuilder()
                 .AddInMemoryCollection([

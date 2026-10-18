@@ -54,6 +54,28 @@ public static partial class AgentApi
             return Results.NoContent();
         });
 
+        // Sends a fixed test notification to THIS device (the Settings "Send test" button) and returns the
+        // push service's verdict. Only an endpoint already stored for the caller is pushed. The notifier is
+        // resolved optionally (the /api/speech pattern): it exists only when push is configured, and a
+        // parameter a host does not register would break routing for the whole host.
+        app.MapPost("/api/push/test", async (PushTestRequest request, IServiceProvider services, HttpContext http, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Endpoint))
+            {
+                return Results.Text(
+                    "endpoint is required.", "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var notifier = services.GetService<PushTestNotifier>();
+            if (notifier is null)
+            {
+                return Results.Text(
+                    "Push is not configured.", "text/plain", statusCode: StatusCodes.Status409Conflict);
+            }
+
+            return Results.Json(await notifier.SendAsync(http.GetUserId(), request.Endpoint, ct));
+        });
+
         // ————— remote MCP servers (per-user overlay, config-driven remote MCP servers) —————
     }
 }

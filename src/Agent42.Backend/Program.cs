@@ -433,6 +433,8 @@ if (pushEnabled)
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(WebPushClientAdapter.HttpClientName),
         vapidSubject, vapidPublicKey, vapidPrivateKey));
     builder.Services.AddSingleton<IPushNotificationSender, WebPushNotificationSender>();
+    // The Settings "Send test" path: one device, reports its result (resolved optionally by /api/push/test).
+    builder.Services.AddSingleton<PushTestNotifier>();
 }
 else
 {

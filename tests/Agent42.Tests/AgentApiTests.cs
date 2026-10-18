@@ -1119,7 +1119,64 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
     [Fact]
     public async Task PushConfig_Disabled_WhenNoKey()
     {
-        // A separate minimal host with push DISABLED — the shared host registers it enabled.
+        await using var app = await StartPushDisabledHostAsync();
+        using var client = app.GetTestClient();
+
+        var config = await client.GetFromJsonAsync<PushConfigResponse>("/api/push/config");
+
+        Assert.NotNull(config);
+        Assert.False(config!.Enabled);
+        Assert.Equal("", config.PublicKey);
+    }
+
+    // AC7 (test push): the caller's stored endpoint gets the test push and the verdict comes back as JSON.
+    // Its own principal, not the shared local-dev fallback that PushSubscriptionEndpoints_Crud writes.
+    [Fact]
+    public async Task PushTest_StoredEndpoint_ReturnsSent()
+    {
+        const string user = "push-test-api-user";
+        const string endpoint = "https://push/api-test";
+        await Cluster.GrainFactory.GetGrain<IUserPushGrain>(user)
+            .AddAsync(new PushSubscription(endpoint, "p256", "auth"));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/push/test")
+        {
+            Content = JsonContent.Create(new PushTestRequest(endpoint)),
+        };
+        request.Headers.Add("X-MS-CLIENT-PRINCIPAL-ID", user);
+        using var response = await Client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<PushTestResponse>();
+        Assert.Equal(new PushTestResponse(PushTestOutcomes.Sent), result);
+        Assert.Contains(endpoint, Fixture.PushClient.Sent);
+    }
+
+    // AC8 (test push): a blank endpoint is rejected before anything is looked up or sent.
+    [Fact]
+    public async Task PushTest_BlankEndpoint_Returns400()
+    {
+        using var response = await Client.PostAsJsonAsync("/api/push/test", new PushTestRequest(" "));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    // AC9 (test push): a host with push off registers no notifier; the endpoint 409s and routing still works.
+    [Fact]
+    public async Task PushTest_PushDisabled_Returns409()
+    {
+        await using var app = await StartPushDisabledHostAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await client.PostAsJsonAsync("/api/push/test", new PushTestRequest("https://push/x"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.True((await client.GetAsync("/api/push/config")).IsSuccessStatusCode);
+    }
+
+    // A separate minimal host with push DISABLED (no notifier, no client) — the shared host registers it enabled.
+    private async Task<WebApplication> StartPushDisabledHostAsync()
+    {
         var appBuilder = WebApplication.CreateSlimBuilder();
         appBuilder.WebHost.UseTestServer();
         appBuilder.Services.AddSingleton<IGrainFactory>(Cluster.GrainFactory);
@@ -1134,16 +1191,10 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         appBuilder.Services.AddDocumentRagFakes();
         appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
-        await using var app = appBuilder.Build();
+        var app = appBuilder.Build();
         app.MapAgentApi();
         await app.StartAsync();
-        using var client = app.GetTestClient();
-
-        var config = await client.GetFromJsonAsync<PushConfigResponse>("/api/push/config");
-
-        Assert.NotNull(config);
-        Assert.False(config!.Enabled);
-        Assert.Equal("", config.PublicKey);
+        return app;
     }
 
     // ---- read-only share links (ADR 0035) ----------------------------------------------------------
