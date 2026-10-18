@@ -13,7 +13,7 @@ public sealed record FleetIngestResult(
     IReadOnlyList<FleetIngestedFile> Files, IReadOnlyList<string> Documents, IReadOnlyList<string> TextCopies);
 
 /// <summary>
-/// Indexes a fleet task's attached files when its run starts (ADR 0100), into the workspace's vector store
+/// Indexes a fleet task's attached files when its run starts (ADR 0101), into the workspace's vector store
 /// (<see cref="FleetTaskService.DocumentOwnerKey"/>). Per document: extract, write a <c>.txt</c> copy next to it when
 /// the original is not text already (so every agent, Copilot ones included, can read it from disk), then chunk, embed
 /// and index. <b>Nothing here fails the task</b>: any error but the task's own cancellation becomes that file's reason.

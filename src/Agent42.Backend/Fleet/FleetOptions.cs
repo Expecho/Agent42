@@ -64,7 +64,7 @@ public sealed class FleetOptions
     /// <summary>Workspace files synced to Blob per workspace.</summary>
     public int MaxWorkspaceFiles { get; set; } = 500;
 
-    /// <summary>Files one task may attach (ADR 0100).</summary>
+    /// <summary>Files one task may attach (ADR 0101).</summary>
     public int MaxInputFiles { get; set; } = 10;
 
     /// <summary>Bytes of one attached file, and of one generated text copy. Chat's upload cap.</summary>

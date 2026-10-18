@@ -4,7 +4,7 @@ namespace Agent42.Agents;
 
 /// <summary>
 /// The fetch → stitch → format core of <c>read_document</c> (ADR 0098), shared by the chat grain's tool and the
-/// agent fleet's (ADR 0100). It reads part <c>p</c> of one file under one owner key in chunk order and renders it
+/// agent fleet's (ADR 0101). It reads part <c>p</c> of one file under one owner key in chunk order and renders it
 /// with the fixed header and footer compaction relies on. The callers own everything around it: which names are
 /// readable, any per-turn cap, and the catch that keeps a failure from bricking the turn or run.
 /// </summary>

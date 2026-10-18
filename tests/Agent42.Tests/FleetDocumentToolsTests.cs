@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Agent42.Tests;
 
 /// <summary>
-/// The fleet's document tools (ADR 0100): <c>search_documents</c> and <c>read_document</c> reach one workspace's
+/// The fleet's document tools (ADR 0101): <c>search_documents</c> and <c>read_document</c> reach one workspace's
 /// documents only, are capped, and turn every failure into a refusal string instead of throwing into the run.
 /// </summary>
 public sealed class FleetDocumentToolsTests
