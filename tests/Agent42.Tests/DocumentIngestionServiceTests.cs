@@ -46,7 +46,7 @@ public sealed class DocumentIngestionServiceTests
         Assert.Equal(index.Upserted.Count, result.Chunks.Count);
     }
 
-    // ADR 0100: the fleet extracts once (for its text copy) and ingests the segments. That path must index
+    // ADR 0101: the fleet extracts once (for its text copy) and ingests the segments. That path must index
     // exactly the chunks the bytes path does.
     [Fact]
     public async Task IngestSegments_MatchesBytesPath()

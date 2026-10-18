@@ -71,7 +71,7 @@ public sealed partial class FleetTaskService
         }
     }
 
-    // Indexes this task's attached files (ADR 0100), reports each file's outcome, and saves the record with the
+    // Indexes this task's attached files (ADR 0101), reports each file's outcome, and saves the record with the
     // workspace's new Documents and TextCopies. A task without inputs skips it all.
     private async Task<FleetTaskRecord> IngestInputsAsync(RunningFleetTask task, FleetWorkspace workspace)
     {
@@ -91,7 +91,7 @@ public sealed partial class FleetTaskService
         return task.Record;
     }
 
-    // The input's "Attached files" section (ADR 0100): the inputs, their text copies, and which files the document
+    // The input's "Attached files" section (ADR 0101): the inputs, their text copies, and which files the document
     // tools reach. Empty when the workspace has neither inputs nor documents.
     private static string AttachedFiles(FleetTaskRecord record)
     {

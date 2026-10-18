@@ -4,7 +4,7 @@ using Agent42.Agents;
 namespace Agent42.Backend;
 
 /// <summary>What the page asks for when it starts a task: with attached files, and the task whose files a Run again
-/// copies into the new workspace (ADR 0100).</summary>
+/// copies into the new workspace (ADR 0101).</summary>
 public sealed record FleetSubmit(
     string Task, string? FollowUpOf = null, string? Model = null, long? MaxTokens = null, IReadOnlyList<string>? EnabledTools = null,
     IReadOnlyList<FleetInputFile>? Files = null, string? CopyInputsOf = null);
@@ -315,7 +315,7 @@ public sealed partial class FleetTaskService(
 
     private sealed class RunningFleetTask(FleetTaskRecord record, FleetBudget budget, FleetEventLog log, FleetQuestions questions) : IDisposable
     {
-        // Replaced once, by the run-start ingest (ADR 0100), before anything else reads it for the run.
+        // Replaced once, by the run-start ingest (ADR 0101), before anything else reads it for the run.
         public FleetTaskRecord Record { get; set; } = record;
         public FleetBudget Budget { get; } = budget;
         public FleetEventLog Log { get; } = log;

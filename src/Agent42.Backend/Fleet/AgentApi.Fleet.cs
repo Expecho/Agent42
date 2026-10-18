@@ -8,7 +8,7 @@ namespace Agent42.Backend;
 
 /// <summary>A task the page starts: the request, optionally the done task it follows up, the model, the token cap,
 /// a tool selection overriding the user's default (null follows the default, ADR 0099), and the task whose attached
-/// files a Run again copies (ADR 0100).</summary>
+/// files a Run again copies (ADR 0101).</summary>
 public sealed record FleetSubmitRequest(
     string? Task, string? FollowUpOf, string? Model, long? MaxTokens, IReadOnlyList<string>? EnabledTools = null,
     string? CopyInputsOf = null);
@@ -90,7 +90,7 @@ public static partial class AgentApi
     private const long FleetFormOverheadBytes = 1024 * 1024;
 
     /// <summary>
-    /// A task with attached files (ADR 0100), as <c>multipart/form-data</c>: a <c>request</c> field with the
+    /// A task with attached files (ADR 0101), as <c>multipart/form-data</c>: a <c>request</c> field with the
     /// <see cref="FleetSubmitRequest"/> JSON and one <c>files</c> part per file. A route of its own, so the raised body
     /// limit, set here before the body is read, never applies to the JSON route.
     /// </summary>

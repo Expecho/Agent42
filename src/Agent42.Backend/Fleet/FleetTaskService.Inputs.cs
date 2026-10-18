@@ -2,11 +2,11 @@ using Agent42.Agents;
 
 namespace Agent42.Backend;
 
-/// <summary>A file the page attached to a task (ADR 0100). <see cref="Name"/> is the browser's file name, unchecked.</summary>
+/// <summary>A file the page attached to a task (ADR 0101). <see cref="Name"/> is the browser's file name, unchecked.</summary>
 public sealed record FleetInputFile(string Name, byte[] Content);
 
 /// <summary>
-/// The attached files of a fleet task (ADR 0100): validated and stored under <c>inputs/</c> in the workspace at
+/// The attached files of a fleet task (ADR 0101): validated and stored under <c>inputs/</c> in the workspace at
 /// submit, before the task starts, and indexed when the run starts (<see cref="FleetDocumentIngest"/>).
 /// </summary>
 public sealed partial class FleetTaskService
@@ -15,7 +15,7 @@ public sealed partial class FleetTaskService
     public const string InputsFolder = "inputs";
 
     /// <summary>The vector-store owner key of a workspace's documents. A chat's key is <c>{userId}/{conversationId}</c>
-    /// and a conversation id has no <c>/</c>, so the two key spaces can't collide (ADR 0100).</summary>
+    /// and a conversation id has no <c>/</c>, so the two key spaces can't collide (ADR 0101).</summary>
     public static string DocumentOwnerKey(string userId, string workspaceId) => $"{userId}/fleet/{workspaceId}";
 
     /// <summary>The workspace path of an attached file.</summary>
@@ -173,7 +173,7 @@ public sealed partial class FleetTaskService
     }
 
     // When this is the workspace's last task, its document chunks go first: a failure here leaves the task and the
-    // workspace intact, so the user can retry, and no chunks outlive the files (ADR 0100).
+    // workspace intact, so the user can retry, and no chunks outlive the files (ADR 0101).
     private async Task DeleteDocumentsIfLastAsync(FleetTaskRecord record, CancellationToken cancellationToken)
     {
         if (documents is null)

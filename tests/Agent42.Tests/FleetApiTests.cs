@@ -180,7 +180,7 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         return Client.SendAsync(request);
     }
 
-    /// <summary>ADR 0100: the multipart route stores the files under inputs/ and the record names them.</summary>
+    /// <summary>ADR 0101: the multipart route stores the files under inputs/ and the record names them.</summary>
     [Fact]
     public async Task SubmitWithFiles_Multipart_StoresFiles()
     {
@@ -201,7 +201,7 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         }
     }
 
-    /// <summary>ADR 0100: a body over the route's limit is a 413, a form without the request JSON a 400, and nothing
+    /// <summary>ADR 0101: a body over the route's limit is a 413, a form without the request JSON a 400, and nothing
     /// starts. The fixture's caps make the limit 2 × 1 000 bytes plus the 1 MB form allowance.</summary>
     [Fact]
     public async Task SubmitWithFiles_OverLimit_Refused()

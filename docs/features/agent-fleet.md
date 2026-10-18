@@ -26,7 +26,7 @@
   `.txt` copy. Agents then get `search_documents` and `read_document`. Without an embedding model, the files are
   still there but nothing is searchable. A "documents.ingested" line per file shows what happened. Follow-ups share
   the files. Run again of a new task copies them into its new workspace. Deleting the workspace's last task deletes
-  the indexed chunks first (ADR 0100).
+  the indexed chunks first (ADR 0101).
 - **Approval and questions.** Teams up to `Fleet:ApprovalDepth` ask you to approve their plan. Copilot
   permissions and MCP elicitations are asked the same way: a bar at the top with buttons and a text field.
 - **Bounded.** Every task has a token cap (a default, and a server maximum) and an agent cap. You run one task
@@ -71,7 +71,7 @@ flowchart LR
   fetch allowlist) and MCP tools with the reauth and elicitation wrappers.
 - `FleetDocumentIngest` indexes a task's inputs when its run starts, and `FleetDocumentTools` gives the agents
   `search_documents` (model-invoked, a fleet-only exception to ADR 0008) and `read_document` (the chat tool's
-  `DocumentPartReader`) over the workspace's owner key `{userId}/fleet/{workspaceId}` (ADR 0100).
+  `DocumentPartReader`) over the workspace's owner key `{userId}/fleet/{workspaceId}` (ADR 0101).
 - Usage counts under your user and the application `Agent42 fleet` in the usage dashboard.
 
 ## Copilot agents (`model: id: copilot`)
@@ -81,7 +81,7 @@ workspace directory inside the backend container. This is the one place ADR 0085
 set aside (ADR 0097). Every write, command and fetch is asked to you ("always for this task" is per task). Reads and
 writes outside the workspace are refused, and the runtime gets a minimal environment. `Fleet:CopilotAgentsEnabled`
 switches it off. The residual risks are in ADR 0097: a shell can reach the app on localhost, read the container's
-files, and use its network. Since ADR 0100 the workspace can hold your uploaded files, so its shell and file tools read
+files, and use its network. Since ADR 0101 the workspace can hold your uploaded files, so its shell and file tools read
 those too.
 
 ## Downloads

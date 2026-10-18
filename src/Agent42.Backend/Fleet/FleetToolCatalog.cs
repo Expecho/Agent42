@@ -6,7 +6,7 @@ namespace Agent42.Backend;
 
 /// <summary>
 /// The tools a fleet task's agents can name in their YAML besides the workspace tools and <c>delegate_to_team</c>
-/// (ADR 0097): the workspace's document tools when it has documents (ADR 0100, never gated by a selection), then
+/// (ADR 0097): the workspace's document tools when it has documents (ADR 0101, never gated by a selection), then
 /// <c>web_search</c> and <c>fetch_web_page</c>, and the user's own MCP tools. <c>SelectableTools</c> is the
 /// grain's and can't be called here, so this is a small catalog of its own. It honours the task's own tool selection,
 /// else the user's DEFAULT one (ADR 0099 amending ADR 0097, ADR 0021 <c>null == all</c>), for both, and wraps MCP tools as <c>BuildAgent</c> does: the ADR 0095
@@ -37,7 +37,7 @@ public sealed partial class FleetToolCatalog(
     /// The catalog for an explicit selection (<c>null</c> means all) and MCP server set. Names outside
     /// <c>^[A-Za-z0-9_-]{1,128}$</c>, and a second tool with a name already taken, are skipped with a warning (the
     /// ADR 0085 finding: one bad name fails every model call). The document tools come first and are never gated by
-    /// the selection; their names are reserved even without them, so an MCP tool can't take one (ADR 0100).
+    /// the selection; their names are reserved even without them, so an MCP tool can't take one (ADR 0101).
     /// </summary>
     public IReadOnlyList<AIFunction> Build(
         IReadOnlyList<string>? selection, string request, IReadOnlyList<McpServerTools> servers, IFleetInteraction interaction,

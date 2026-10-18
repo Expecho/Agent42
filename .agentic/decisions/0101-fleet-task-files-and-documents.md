@@ -1,5 +1,5 @@
 ---
-id: 0100
+id: 0101
 date: 2026-10-18
 status: accepted
 tags: [fleet, documents, rag, embeddings, blob, upload, copilot, egress, no-migration]
