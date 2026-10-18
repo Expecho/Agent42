@@ -81,7 +81,8 @@ public sealed class WebPushNotificationSender : IPushNotificationSender
         }
     }
 
-    private static readonly JsonSerializerOptions PayloadJson = new(JsonSerializerOptions.Web);
+    // Shared with PushTestNotifier so the test push reaches the SW in exactly the shape a real one does.
+    internal static readonly JsonSerializerOptions PayloadJson = new(JsonSerializerOptions.Web);
 
-    private sealed record PushPayload(string Title, string Body, string ConversationId);
+    internal sealed record PushPayload(string Title, string Body, string ConversationId);
 }

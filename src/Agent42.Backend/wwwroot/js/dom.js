@@ -112,6 +112,8 @@ export const locationStatus = document.getElementById("locationStatus");
 export const pushSection = document.getElementById("pushSection");
 export const pushStatus = document.getElementById("pushStatus");
 export const pushToggleBtn = document.getElementById("pushToggleBtn");
+export const pushTestBtn = document.getElementById("pushTestBtn");
+export const pushTestStatus = document.getElementById("pushTestStatus");
 // Preferences + agent dialog tabs. wireTabs (defined near openProfileDialog) takes [tab, panel]
 // pairs in tablist order, attaches the click + keyboard nav, and returns a select(index, focus).
 // Configuration and Skills are APPENDED, never inserted: initMcpOAuthReturn deep-links to
