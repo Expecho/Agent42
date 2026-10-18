@@ -27,15 +27,21 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         }
     }
 
-    private FleetTaskService Service(FleetOptions? options = null, FleetToolCatalog? tools = null, IChatClient? client = null)
+    private FleetTaskService Service(
+        FleetOptions? options = null, FleetToolCatalog? tools = null, IChatClient? client = null,
+        IDocumentIndex? documents = null, IEmbeddingGenerator<string, Embedding<float>>? embeddings = null)
     {
+        var provider = new SingleUserChatClientFactoryProvider(
+            new SingleChatClientFactory(client ?? new FakeChatClient(), FleetRunHarness.ModelA, embeddingGenerator: embeddings));
         var service = new FleetTaskService(
             _store,
             options ?? new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1 },
-            new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(client ?? new FakeChatClient(), FleetRunHarness.ModelA)),
+            provider,
             new FixedCatalogs(),
             NullLogger<FleetTaskService>.Instance,
-            tools);
+            tools,
+            documents: documents,
+            ingestion: documents is null ? null : new DocumentIngestionService(new DocumentTextExtractor(), new DocumentChunker(), provider, documents));
         _services.Add(service);
         return service;
     }
@@ -235,6 +241,344 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Contains("- notes.md", task);
         // The materialized file was synced back, so it is still in the shared workspace.
         Assert.Contains(await _store.ListWorkspaceAsync(Alice, first.WorkspaceId), f => f.Path == "notes.md");
+    }
+
+    private static FleetInputFile File(string name, string text = "Magrathea builds luxury planets for the very rich.")
+        => new(name, Encoding.UTF8.GetBytes(text));
+
+    private async Task<List<string>> PathsAsync(string user, string workspaceId)
+        => [.. (await _store.ListWorkspaceAsync(user, workspaceId)).Select(f => f.Path).Order(StringComparer.Ordinal)];
+
+    /// <summary>ADR 0100: attached files land under inputs/ before the task starts, and the record names them.</summary>
+    [Fact]
+    public async Task Submit_WithFiles_StoresInputs()
+    {
+        var service = Service();
+
+        var (taskId, error) = await service.SubmitAsync(Alice, new(OnePlan, Files: [File(@"C:\docs\notes.md"), File("data.csv", "a,b\n1,2")]));
+        var done = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Null(error);
+        Assert.Equal(["notes.md", "data.csv"], done.Inputs);
+        var paths = await PathsAsync(Alice, done.WorkspaceId);
+        Assert.Contains("inputs/notes.md", paths);
+        Assert.Contains("inputs/data.csv", paths);
+    }
+
+    public static TheoryData<string, FleetSubmit> InputRefusals() => new()
+    {
+        { "too many files", new FleetSubmit("x", Files: [.. Enumerable.Range(0, 3).Select(i => File($"f{i}.md"))]) },
+        { "over the file cap", new FleetSubmit("x", Files: [File("big.md", new string('x', 200))]) },
+        { "empty name", new FleetSubmit("x", Files: [File("folder/")]) },
+        { "dot name", new FleetSubmit("x", Files: [File("..")]) },
+        { "control character", new FleetSubmit("x", Files: [File("a\u0001.md")]) },
+        { "duplicate name", new FleetSubmit("x", Files: [File("a.md"), File("x/A.md")]) },
+        { "over the workspace bytes", new FleetSubmit("x", Files: [File("a.md", new string('x', 90)), File("b.md", new string('x', 90))]) },
+        { "follow-up and copy", new FleetSubmit("x", FollowUpOf: "done-1", CopyInputsOf: "done-1") },
+        { "copy of an unknown task", new FleetSubmit("x", CopyInputsOf: "missing") },
+    };
+
+    /// <summary>ADR 0100: every file refusal happens before anything is written, so a refused task leaves no blobs.</summary>
+    [Theory]
+    [MemberData(nameof(InputRefusals))]
+    public async Task Submit_InvalidFiles_RefusedWithoutBlobs(string why, FleetSubmit request)
+    {
+        await _store.SaveTaskAsync(Record("done-1", Alice, FleetTaskStatus.Done) with { Result = "r" });
+        var service = Service(new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1, MaxInputFiles = 2, MaxInputFileBytes = 100, MaxWorkspaceBytes = 150 });
+
+        var (taskId, error) = await service.SubmitAsync(Alice, request);
+
+        Assert.Null(taskId);
+        Assert.False(string.IsNullOrWhiteSpace(error), why);
+        Assert.Single(await _store.ListTasksAsync(Alice));
+        Assert.Empty(await _store.ListWorkspaceAsync(Alice, "w-done-1"));
+    }
+
+    /// <summary>ADR 0100: a follow-up's existing workspace files count against the caps too.</summary>
+    [Fact]
+    public async Task Submit_FollowUp_ExistingFilesCountAgainstTheCaps()
+    {
+        await _store.SaveTaskAsync(Record("done-1", Alice, FleetTaskStatus.Done) with { Result = "r" });
+        await _store.PutWorkspaceFileAsync(Alice, "w-done-1", "report.md", new byte[120]);
+        var service = Service(new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1, MaxWorkspaceBytes = 150 });
+
+        var (_, error) = await service.SubmitAsync(Alice, new("x", FollowUpOf: "done-1", Files: [File("a.md", new string('x', 40))]));
+
+        Assert.Contains("don't fit", error);
+        Assert.Equal(["report.md"], await PathsAsync(Alice, "w-done-1"));
+    }
+
+    /// <summary>ADR 0100: a submit refused by the registry (a task already runs) writes no input blobs.</summary>
+    [Fact]
+    public async Task Submit_Refused_LeavesNoInputs()
+    {
+        var service = Service(Held);
+        var (first, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await QuestionAsync(service, Alice, first!);
+
+        var (taskId, error) = await service.SubmitAsync(Alice, new(OnePlan, Files: [File("a.md")]));
+
+        Assert.Null(taskId);
+        Assert.Contains("already running", error);
+        var tasks = await _store.ListTasksAsync(Alice);
+        Assert.Single(tasks);
+        Assert.DoesNotContain(await PathsAsync(Alice, tasks[0].WorkspaceId), p => p.StartsWith("inputs/", StringComparison.Ordinal));
+    }
+
+    /// <summary>ADR 0100: Run again of a new task copies its inputs (never its generated text copies) into a new
+    /// workspace; a new file wins on a name clash; another user's task can't be copied.</summary>
+    [Fact]
+    public async Task Submit_CopyInputsOf_CopiesInputs_OwnOnly()
+    {
+        await _store.SaveTaskAsync(Record("src", Alice, FleetTaskStatus.Done) with
+        {
+            Result = "r",
+            Inputs = ["a.md", "b.pdf"],
+            TextCopies = ["inputs/b.pdf.txt"],
+        });
+        await _store.PutWorkspaceFileAsync(Alice, "w-src", "inputs/a.md", Encoding.UTF8.GetBytes("old a"));
+        await _store.PutWorkspaceFileAsync(Alice, "w-src", "inputs/b.pdf", [1, 2, 3]);
+        await _store.PutWorkspaceFileAsync(Alice, "w-src", "inputs/b.pdf.txt", Encoding.UTF8.GetBytes("copy"));
+        await _store.PutWorkspaceFileAsync(Alice, "w-src", "result.md", Encoding.UTF8.GetBytes("out"));
+        var service = Service();
+
+        var (_, bobError) = await service.SubmitAsync(Bob, new(OnePlan, CopyInputsOf: "src"));
+        var (taskId, error) = await service.SubmitAsync(Alice, new(OnePlan, CopyInputsOf: "src", Files: [File("a.md", "new a")]));
+        var done = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Contains("of yours", bobError);
+        Assert.Null(error);
+        Assert.NotEqual("w-src", done.WorkspaceId);
+        Assert.Equal(["a.md", "b.pdf"], done.Inputs.Order(StringComparer.Ordinal));
+        Assert.Equal(["inputs/a.md", "inputs/b.pdf"], (await PathsAsync(Alice, done.WorkspaceId)).Where(p => p.StartsWith("inputs/", StringComparison.Ordinal)));
+        Assert.Equal("new a", Encoding.UTF8.GetString((await _store.GetWorkspaceFileAsync(Alice, done.WorkspaceId, "inputs/a.md"))!));
+    }
+
+    /// <summary>ADR 0100: deleting a workspace's last task drops its document chunks BEFORE the workspace; a shared
+    /// workspace keeps them; an index failure leaves the task and the workspace intact for a retry.</summary>
+    [Theory]
+    [InlineData("last")]
+    [InlineData("shared")]
+    [InlineData("failing")]
+    public async Task Delete_LastTask_DropsIndexChunksFirst(string scenario)
+    {
+        var index = new OrderedDeleteIndex(_store, Alice, "w-t1") { Fail = scenario == "failing" };
+        await _store.SaveTaskAsync(Record("t1", Alice, FleetTaskStatus.Done) with { WorkspaceId = "w-t1" });
+        if (scenario == "shared")
+        {
+            await _store.SaveTaskAsync(Record("t2", Alice, FleetTaskStatus.Done) with { WorkspaceId = "w-t1" });
+        }
+
+        await _store.PutWorkspaceFileAsync(Alice, "w-t1", "inputs/a.md", [1]);
+        var service = Service(documents: index);
+
+        if (scenario == "failing")
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteAsync(Alice, "t1"));
+            Assert.NotNull(await _store.GetTaskAsync(Alice, "t1"));
+            Assert.NotEmpty(await PathsAsync(Alice, "w-t1"));
+            return;
+        }
+
+        Assert.Equal(FleetOutcome.Ok, await service.DeleteAsync(Alice, "t1"));
+        Assert.Equal(scenario == "last" ? [FleetTaskService.DocumentOwnerKey(Alice, "w-t1")] : [], index.Deleted);
+        Assert.True(index.WorkspaceExistedAtDelete);
+        Assert.Equal(scenario == "shared", (await PathsAsync(Alice, "w-t1")).Count > 0);
+    }
+
+    private static FleetInputFile Docx(string name, params string[] paragraphs)
+        => new(name, DocumentTextExtractorTests.BuildDocx(paragraphs));
+
+    // The documents.ingested event's files, by name.
+    private async Task<Dictionary<string, JsonElement>> IngestedAsync(string user, string taskId)
+    {
+        var line = (await _store.ReadEventsAsync(user, taskId)).Single(l => TypeOf(l) == "documents.ingested");
+        return JsonDocument.Parse(line).RootElement.GetProperty("data").GetProperty("files").EnumerateArray()
+            .ToDictionary(f => f.GetProperty("name").GetString()!, f => f.Clone());
+    }
+
+    /// <summary>ADR 0100: at run start a document is extracted, gets a text copy when it isn't text already, and is
+    /// indexed under the workspace's owner key; a non-document is stored only; task.started stays the first event.</summary>
+    [Fact]
+    public async Task Run_IngestsDocuments_AndStoresOthers()
+    {
+        var index = new InMemoryDocumentIndex();
+        var service = Service(documents: index, embeddings: new DeterministicEmbeddingGenerator());
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan,
+            Files: [Docx("report.docx", "Magrathea builds luxury planets."), File("notes.md"), File("data.csv", "a,b")]));
+        var done = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Equal(FleetTaskStatus.Done, done.Status);
+        Assert.Equal(["report.docx", "notes.md"], done.Documents);
+        Assert.Equal(["inputs/report.docx.txt"], done.TextCopies);
+        Assert.Contains("Magrathea", Encoding.UTF8.GetString((await _store.GetWorkspaceFileAsync(Alice, done.WorkspaceId, "inputs/report.docx.txt"))!));
+        var ownerKey = FleetTaskService.DocumentOwnerKey(Alice, done.WorkspaceId);
+        Assert.Equal($"{Alice}/fleet/{done.WorkspaceId}", ownerKey);
+        Assert.True((await index.ReadChunksAsync(ownerKey, "report.docx", 0, 10)).TotalChunks > 0);
+        Assert.True((await index.ReadChunksAsync(ownerKey, "notes.md", 0, 10)).TotalChunks > 0);
+
+        var files = await IngestedAsync(Alice, taskId!);
+        Assert.Equal(FleetDocumentIngest.Indexed, files["report.docx"].GetProperty("status").GetString());
+        Assert.Equal("inputs/report.docx.txt", files["report.docx"].GetProperty("textCopy").GetString());
+        Assert.Equal(FleetDocumentIngest.StoredOnly, files["data.csv"].GetProperty("status").GetString());
+        var types = (await _store.ReadEventsAsync(Alice, taskId!)).Select(TypeOf).ToList();
+        Assert.Equal("task.started", types[0]);
+        Assert.True(types.IndexOf("documents.ingested") < types.IndexOf("team.started"));
+    }
+
+    /// <summary>ADR 0100: with indexed documents the planner's tool list has the document tools, even with an empty
+    /// tool override, and its input the "Attached files" section; a task without documents gets neither.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Run_PlannerSeesDocumentTools(bool withFile)
+    {
+        var client = new SystemPromptRecorder(new FakeChatClient());
+        var service = Service(client: client, documents: new InMemoryDocumentIndex(), embeddings: new DeterministicEmbeddingGenerator());
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, EnabledTools: [], Files: withFile ? [File("notes.md")] : null));
+        await FinishedAsync(service, Alice, taskId!);
+
+        var planner = client.SystemPrompts.First(p => p.Contains("- write_artifact:", StringComparison.Ordinal));
+        Assert.Equal(withFile, planner.Contains("- search_documents:", StringComparison.Ordinal));
+        Assert.Equal(withFile, planner.Contains("- read_document:", StringComparison.Ordinal));
+        var input = JsonDocument.Parse((await _store.ReadEventsAsync(Alice, taskId!)).First(l => TypeOf(l) == "team.started"))
+            .RootElement.GetProperty("data").GetProperty("task").GetString();
+        Assert.Equal(withFile, input!.Contains("Attached files, in the shared workspace:\n- inputs/notes.md", StringComparison.Ordinal));
+    }
+
+    /// <summary>ADR 0100: without an embedding model the task runs with its files (and text copies), nothing is
+    /// indexed, and the event says why.</summary>
+    [Fact]
+    public async Task Run_NoEmbeddingModel_FilesOnly()
+    {
+        var service = Service(documents: new InMemoryDocumentIndex());
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, Files: [File("notes.md"), Docx("report.docx", "Text")]));
+        var done = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Equal(FleetTaskStatus.Done, done.Status);
+        Assert.Empty(done.Documents);
+        Assert.Contains("inputs/notes.md", await PathsAsync(Alice, done.WorkspaceId));
+        Assert.Contains("inputs/report.docx.txt", await PathsAsync(Alice, done.WorkspaceId));
+        var notes = (await IngestedAsync(Alice, taskId!))["notes.md"];
+        Assert.Equal(FleetDocumentIngest.NotIndexed, notes.GetProperty("status").GetString());
+        Assert.Contains("embedding model", notes.GetProperty("reason").GetString());
+    }
+
+    /// <summary>ADR 0100: no ingest failure fails the task: a throwing provider or index is that file's reason.</summary>
+    [Theory]
+    [InlineData("embedder")]
+    [InlineData("index")]
+    public async Task Run_IngestFailure_DoesNotFailTask(string failing)
+    {
+        var index = new FailingIndex { FailUpsert = failing == "index" };
+        var embeddings = new SwitchableEmbeddings { Fail = failing == "embedder" };
+        var service = Service(documents: index, embeddings: embeddings);
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, Files: [File("notes.md")]));
+        var done = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Equal(FleetTaskStatus.Done, done.Status);
+        Assert.Empty(done.Documents);
+        var notes = (await IngestedAsync(Alice, taskId!))["notes.md"];
+        Assert.Equal(FleetDocumentIngest.NotIndexed, notes.GetProperty("status").GetString());
+        Assert.Contains("down", notes.GetProperty("reason").GetString());
+    }
+
+    /// <summary>ADR 0100: a text copy that doesn't fit the workspace caps is skipped and reported; the document is
+    /// still indexed.</summary>
+    [Fact]
+    public async Task Run_TextCopy_SkippedWhenWorkspaceFull()
+    {
+        var docx = Docx("report.docx", string.Join(' ', Enumerable.Repeat("Magrathea builds luxury planets.", 50)));
+        var service = Service(new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1, MaxWorkspaceBytes = docx.Content.Length + 10 },
+            documents: new InMemoryDocumentIndex(), embeddings: new DeterministicEmbeddingGenerator());
+
+        var (taskId, error) = await service.SubmitAsync(Alice, new(OnePlan, Files: [docx]));
+        var done = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Null(error);
+        Assert.Equal(["report.docx"], done.Documents);
+        Assert.Empty(done.TextCopies);
+        var report = (await IngestedAsync(Alice, taskId!))["report.docx"];
+        Assert.Equal("workspace full", report.GetProperty("textCopySkipped").GetString());
+        Assert.DoesNotContain("inputs/report.docx.txt", await PathsAsync(Alice, done.WorkspaceId));
+    }
+
+    /// <summary>ADR 0100: a follow-up inherits the workspace's documents without re-ingesting them, and its input says
+    /// which files the document tools reach.</summary>
+    [Fact]
+    public async Task FollowUp_InheritsDocuments()
+    {
+        var service = Service(documents: new InMemoryDocumentIndex(), embeddings: new DeterministicEmbeddingGenerator());
+        var (firstId, _) = await service.SubmitAsync(Alice, new(OnePlan, Files: [File("notes.md")]));
+        await FinishedAsync(service, Alice, firstId!);
+
+        var (secondId, _) = await service.SubmitAsync(Alice, new(Task(FleetRunHarness.Plan("Sequential", "Editor")), FollowUpOf: firstId));
+        var second = await FinishedAsync(service, Alice, secondId!);
+
+        Assert.Equal(["notes.md"], second.Documents);
+        Assert.Empty(second.Inputs);
+        var events = await _store.ReadEventsAsync(Alice, secondId!);
+        Assert.DoesNotContain(events, l => TypeOf(l) == "documents.ingested");
+        var input = JsonDocument.Parse(events.First(l => TypeOf(l) == "team.started")).RootElement.GetProperty("data").GetProperty("task").GetString();
+        Assert.Contains("search_documents", input);
+        Assert.Contains("'notes.md'", input);
+    }
+
+    /// <summary>ADR 0100: a follow-up that re-uploads an indexed name and fails to re-index it drops the stale chunks
+    /// and the name, so no tool returns the old version of changed bytes.</summary>
+    [Fact]
+    public async Task FollowUp_FailedReingest_DropsStaleDocument()
+    {
+        var index = new InMemoryDocumentIndex();
+        var embeddings = new SwitchableEmbeddings();
+        var service = Service(documents: index, embeddings: embeddings);
+        var (firstId, _) = await service.SubmitAsync(Alice, new(OnePlan, Files: [File("notes.md")]));
+        var first = await FinishedAsync(service, Alice, firstId!);
+        var ownerKey = FleetTaskService.DocumentOwnerKey(Alice, first.WorkspaceId);
+        Assert.True((await index.ReadChunksAsync(ownerKey, "notes.md", 0, 10)).TotalChunks > 0);
+
+        embeddings.Fail = true;
+        var (secondId, _) = await service.SubmitAsync(Alice, new(Task(FleetRunHarness.Plan("Sequential", "Editor")),
+            FollowUpOf: firstId, Files: [File("notes.md", "Changed text about Arthur Dent.")]));
+        var second = await FinishedAsync(service, Alice, secondId!);
+
+        Assert.Empty(second.Documents);
+        Assert.Equal(0, (await index.ReadChunksAsync(ownerKey, "notes.md", 0, 10)).TotalChunks);
+    }
+
+    /// <summary>ADR 0100 (critic finding): a follow-up's user file that takes a generated copy's path is the user's from
+    /// then on, and a re-uploaded document whose extraction fails loses its old, now stale, text copy.</summary>
+    [Theory]
+    [InlineData("user file claims the path")]
+    [InlineData("re-upload fails to extract")]
+    public async Task FollowUp_TextCopies_StayAccurate(string scenario)
+    {
+        var service = Service(documents: new InMemoryDocumentIndex(), embeddings: new DeterministicEmbeddingGenerator());
+        var (firstId, _) = await service.SubmitAsync(Alice, new(OnePlan, Files: [Docx("report.docx", "Magrathea builds planets.")]));
+        var first = await FinishedAsync(service, Alice, firstId!);
+        Assert.Equal(["inputs/report.docx.txt"], first.TextCopies);
+
+        FleetInputFile upload = scenario == "user file claims the path"
+            ? File("report.docx.txt", "The user's own notes.")
+            : new("report.docx", [1, 2, 3]);
+        var (secondId, _) = await service.SubmitAsync(Alice, new(Task(FleetRunHarness.Plan("Sequential", "Editor")), FollowUpOf: firstId, Files: [upload]));
+        var second = await FinishedAsync(service, Alice, secondId!);
+
+        Assert.Empty(second.TextCopies);
+        var stored = await _store.GetWorkspaceFileAsync(Alice, first.WorkspaceId, "inputs/report.docx.txt");
+        if (scenario == "user file claims the path")
+        {
+            Assert.Equal("The user's own notes.", Encoding.UTF8.GetString(stored!));
+        }
+        else
+        {
+            Assert.Null(stored);
+            Assert.Empty(second.Documents);
+        }
     }
 
     [Fact]
@@ -503,6 +847,82 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
                 new ModelInfo(NoToolsModel, "fake", null, "t", null, SupportsTools: false, SupportsVision: false),
                 new ModelInfo(EmbeddingModel, "fake", null, "e", null, SupportsTools: true, SupportsVision: false, SupportsEmbeddings: true),
             ]));
+    }
+
+    // The deterministic generator, or a provider that is down.
+    private sealed class SwitchableEmbeddings : IEmbeddingGenerator<string, Embedding<float>>
+    {
+        private readonly DeterministicEmbeddingGenerator _inner = new();
+
+        public bool Fail { get; set; }
+
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values, EmbeddingGenerationOptions? options = null, CancellationToken cancellationToken = default)
+            => Fail ? throw new HttpRequestException("provider down") : _inner.GenerateAsync(values, options, cancellationToken);
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose() => _inner.Dispose();
+    }
+
+    // The in-memory index, with an upsert that can fail like a Cosmos outage.
+    private sealed class FailingIndex : IDocumentIndex
+    {
+        private readonly InMemoryDocumentIndex _inner = new();
+
+        public bool FailUpsert { get; init; }
+
+        public int? ExpectedDimensions => null;
+
+        public Task UpsertChunksAsync(string ownerKey, IReadOnlyList<EmbeddedChunk> chunks, CancellationToken cancellationToken = default)
+            => FailUpsert ? throw new InvalidOperationException("index down") : _inner.UpsertChunksAsync(ownerKey, chunks, cancellationToken);
+
+        public Task<IReadOnlyList<DocumentChunk>> SearchAsync(string ownerKey, ReadOnlyMemory<float> queryEmbedding, int topK, CancellationToken cancellationToken = default)
+            => _inner.SearchAsync(ownerKey, queryEmbedding, topK, cancellationToken);
+
+        public Task DeleteAsync(string ownerKey, CancellationToken cancellationToken = default)
+            => _inner.DeleteAsync(ownerKey, cancellationToken);
+
+        public Task<DocumentChunkRange> ReadChunksAsync(string ownerKey, string fileName, int startChunkIndex, int count, CancellationToken cancellationToken = default)
+            => _inner.ReadChunksAsync(ownerKey, fileName, startChunkIndex, count, cancellationToken);
+
+        public Task DeleteFileAsync(string ownerKey, string fileName, CancellationToken cancellationToken = default)
+            => _inner.DeleteFileAsync(ownerKey, fileName, cancellationToken);
+    }
+
+    // Records index deletes, and whether the workspace still had its files at that moment (the delete-order check).
+    private sealed class OrderedDeleteIndex(FleetStore store, string user, string workspaceId) : IDocumentIndex
+    {
+        private readonly InMemoryDocumentIndex _inner = new();
+
+        public bool Fail { get; init; }
+        public List<string> Deleted { get; } = [];
+        public bool WorkspaceExistedAtDelete { get; private set; } = true;
+
+        public int? ExpectedDimensions => null;
+
+        public Task UpsertChunksAsync(string ownerKey, IReadOnlyList<EmbeddedChunk> chunks, CancellationToken cancellationToken = default)
+            => _inner.UpsertChunksAsync(ownerKey, chunks, cancellationToken);
+
+        public Task<IReadOnlyList<DocumentChunk>> SearchAsync(string ownerKey, ReadOnlyMemory<float> queryEmbedding, int topK, CancellationToken cancellationToken = default)
+            => _inner.SearchAsync(ownerKey, queryEmbedding, topK, cancellationToken);
+
+        public async Task DeleteAsync(string ownerKey, CancellationToken cancellationToken = default)
+        {
+            if (Fail)
+            {
+                throw new InvalidOperationException("index down");
+            }
+
+            WorkspaceExistedAtDelete = (await store.ListWorkspaceAsync(user, workspaceId, cancellationToken)).Count > 0;
+            Deleted.Add(ownerKey);
+        }
+
+        public Task<DocumentChunkRange> ReadChunksAsync(string ownerKey, string fileName, int startChunkIndex, int count, CancellationToken cancellationToken = default)
+            => _inner.ReadChunksAsync(ownerKey, fileName, startChunkIndex, count, cancellationToken);
+
+        public Task DeleteFileAsync(string ownerKey, string fileName, CancellationToken cancellationToken = default)
+            => _inner.DeleteFileAsync(ownerKey, fileName, cancellationToken);
     }
 
     // Records every system prompt the run's chat calls carry, as instructions or as system messages.

@@ -46,6 +46,24 @@ public sealed class DocumentIngestionServiceTests
         Assert.Equal(index.Upserted.Count, result.Chunks.Count);
     }
 
+    // ADR 0100: the fleet extracts once (for its text copy) and ingests the segments. That path must index
+    // exactly the chunks the bytes path does.
+    [Fact]
+    public async Task IngestSegments_MatchesBytesPath()
+    {
+        var content = TextDocument(string.Join(' ', Enumerable.Repeat("Magrathea builds luxury planets.", 120)));
+        var bytesIndex = new FakeIndex(expectedDimensions: null);
+        var segmentsIndex = new FakeIndex(expectedDimensions: null);
+
+        await Service(bytesIndex, EmbeddingProvider()).IngestAsync(
+            OwnerKey, "guide.txt", DocumentMediaTypes.PlainText, content);
+        var segments = new DocumentTextExtractor().Extract("guide.txt", DocumentMediaTypes.PlainText, content);
+        var result = await Service(segmentsIndex, EmbeddingProvider()).IngestSegmentsAsync(OwnerKey, "guide.txt", segments);
+
+        Assert.True(result.ChunkCount > 1);
+        Assert.Equal(bytesIndex.Upserted.Select(c => c.Chunk), segmentsIndex.Upserted.Select(c => c.Chunk));
+    }
+
     // AC5: a store whose fixed dimension (3072, the prod container) doesn't match the model's vectors rejects
     // the ingest with a clear message BEFORE any upsert — not an opaque Cosmos error.
     [Fact]

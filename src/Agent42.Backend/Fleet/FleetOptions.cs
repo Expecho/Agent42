@@ -64,6 +64,12 @@ public sealed class FleetOptions
     /// <summary>Workspace files synced to Blob per workspace.</summary>
     public int MaxWorkspaceFiles { get; set; } = 500;
 
+    /// <summary>Files one task may attach (ADR 0100).</summary>
+    public int MaxInputFiles { get; set; } = 10;
+
+    /// <summary>Bytes of one attached file, and of one generated text copy. Chat's upload cap.</summary>
+    public long MaxInputFileBytes { get; set; } = 10 * 1024 * 1024;
+
     /// <summary>The kill switch for Copilot fleet agents, which keep Copilot's built-in shell, file and URL tools
     /// in the container (ADR 0097 amends 0085). Off: the planner is not told about them, and a YAML that asks
     /// for one gets a load error.</summary>

@@ -3,9 +3,11 @@ using Agent42.Agents;
 
 namespace Agent42.Backend;
 
-/// <summary>What the page asks for when it starts a task.</summary>
+/// <summary>What the page asks for when it starts a task: with attached files, and the task whose files a Run again
+/// copies into the new workspace (ADR 0100).</summary>
 public sealed record FleetSubmit(
-    string Task, string? FollowUpOf = null, string? Model = null, long? MaxTokens = null, IReadOnlyList<string>? EnabledTools = null);
+    string Task, string? FollowUpOf = null, string? Model = null, long? MaxTokens = null, IReadOnlyList<string>? EnabledTools = null,
+    IReadOnlyList<FleetInputFile>? Files = null, string? CopyInputsOf = null);
 
 /// <summary>How a stop, answer or delete went.</summary>
 public enum FleetOutcome { Ok, NotFound, Conflict }
@@ -26,7 +28,9 @@ public sealed partial class FleetTaskService(
     ILogger<FleetTaskService> logger,
     FleetToolCatalog? tools = null,
     FleetCopilotHost? copilot = null,
-    TimeProvider? time = null) : IHostedService
+    TimeProvider? time = null,
+    IDocumentIndex? documents = null,
+    DocumentIngestionService? ingestion = null) : IHostedService
 {
     /// <summary>The usage dashboard's application dimension for fleet tokens (ADR 0031).</summary>
     public const string ApplicationName = "Agent42 fleet";
@@ -71,6 +75,12 @@ public sealed partial class FleetTaskService(
             return (null, "Only a task of yours that finished well can be followed up.");
         }
 
+        var (inputs, inputError) = await PrepareInputsAsync(userId, request, previous, cancellationToken);
+        if (inputs is null || inputError is not null)
+        {
+            return (null, inputError);
+        }
+
         var record = new FleetTaskRecord
         {
             Id = Guid.NewGuid().ToString("N"),
@@ -83,6 +93,9 @@ public sealed partial class FleetTaskService(
             MaxTokens = maxTokens,
             EnabledTools = ToolCatalog.Sanitize(request.EnabledTools),
             Notes = previous?.Notes ?? new Dictionary<string, string>(),
+            Inputs = [.. inputs.Select(i => i.Name)],
+            Documents = previous?.Documents ?? [],
+            TextCopies = previous?.TextCopies ?? [],
         };
 
         if (Register(record) is { } refusal)
@@ -93,12 +106,14 @@ public sealed partial class FleetTaskService(
         var task = _running[record.Id];
         try
         {
+            await StoreInputsAsync(record, inputs, cancellationToken);
             await store.SaveTaskAsync(record, cancellationToken);
         }
         catch
         {
             _running.TryRemove(record.Id, out _);
             task.Dispose();
+            await DiscardInputsQuietlyAsync(record, ownWorkspace: previous is null);
             throw;
         }
 
@@ -185,11 +200,12 @@ public sealed partial class FleetTaskService(
             return FleetOutcome.Conflict;
         }
 
-        if (await GetAsync(userId, taskId, cancellationToken) is null)
+        if (await GetAsync(userId, taskId, cancellationToken) is not { } record)
         {
             return FleetOutcome.NotFound;
         }
 
+        await DeleteDocumentsIfLastAsync(record, cancellationToken);
         await store.DeleteTaskAsync(userId, taskId, cancellationToken);
         return FleetOutcome.Ok;
     }
@@ -299,7 +315,8 @@ public sealed partial class FleetTaskService(
 
     private sealed class RunningFleetTask(FleetTaskRecord record, FleetBudget budget, FleetEventLog log, FleetQuestions questions) : IDisposable
     {
-        public FleetTaskRecord Record { get; } = record;
+        // Replaced once, by the run-start ingest (ADR 0100), before anything else reads it for the run.
+        public FleetTaskRecord Record { get; set; } = record;
         public FleetBudget Budget { get; } = budget;
         public FleetEventLog Log { get; } = log;
         public FleetQuestions Questions { get; } = questions;

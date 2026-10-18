@@ -37,6 +37,17 @@ public sealed record FleetTaskRecord
     /// <summary>The workspace notes (<c>note_set</c>) as this task left them, so a follow-up starts from them.</summary>
     public IReadOnlyDictionary<string, string> Notes { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>The file names uploaded or copied with THIS task, stored under <c>inputs/</c> in the workspace (ADR 0100).</summary>
+    public IReadOnlyList<string> Inputs { get; init; } = [];
+
+    /// <summary>The workspace's indexed document names, carried forward to a follow-up like <see cref="Notes"/>. The
+    /// fleet's <c>search_documents</c> and <c>read_document</c> reach exactly these (ADR 0100).</summary>
+    public IReadOnlyList<string> Documents { get; init; } = [];
+
+    /// <summary>The workspace paths of the generated <c>.txt</c> copies of the documents, carried forward like
+    /// <see cref="Documents"/>, so a user file that happens to end in <c>.txt</c> is never taken for one.</summary>
+    public IReadOnlyList<string> TextCopies { get; init; } = [];
+
     public bool CanFollowUp => Status == FleetTaskStatus.Done && Result is not null;
 }
 

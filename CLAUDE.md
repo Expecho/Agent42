@@ -159,7 +159,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out | 0074, 0090 |
 | Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools | 0013, 0014, 0015, 0017, 0018, 0019, 0033 |
 | Image generation, speech (STT/TTS/voice loop), reasoning output | 0006, 0020, 0037, 0038, 0071 |
-| Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces) | 0007, 0008, 0030, 0066, 0098 |
+| Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces), fleet workspace documents | 0007, 0008, 0030, 0066, 0098, 0100 |
 | Web search (SearXNG sidecar, engines, proxied UI), page scrape (context.dev) | 0011, 0027, 0059, 0060 |
 | Location (a client tool since 0093) | 0012, 0093 |
 | Selectable tools: three layers, skills, uploaded skills, memory | 0021, 0048, 0049, 0057 |
@@ -169,7 +169,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Stored agents: history mode, API key + `/api/agent-run`, retention, outbound webhook (signed, SSRF-guarded egress), inbound email address (Mailgun, untrusted-in) | 0016, 0022, 0068, 0094, 0096 |
 | Research agent: seeded built-in `Kind`, todo/loop/judge, history fold, live checklist | 0082 |
 | Copilot agent kind: GitHub Copilot SDK loop, BYOK, Agent42 tools as custom tools, native skills, SessionFs in Blob, history mirror, phase-1 trust boundary (set aside for fleet Copilot agents by 0097) | 0085, 0097 |
-| Agent fleet (recursive agent teams, `/fleet/`): in-process runner (not a grain), Blob store + SSE replay, judge/fix/new team, Copilot agents with built-in tools, per-task tool override | 0097, 0099 |
+| Agent fleet (recursive agent teams, `/fleet/`): in-process runner (not a grain), Blob store + SSE replay, judge/fix/new team, Copilot agents with built-in tools, per-task tool override, attached files + workspace-scoped document search | 0097, 0099, 0100 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |
 | Push: away replies, model-invoked, user-initiated test push | 0028, 0075, 0100 |
 | Conversations: incognito, share links, follow-ups, pins, groups, chat search, stream recovery, stop generation, owner export (Markdown/JSON/ZIP, paged export-all), edit/regenerate last turn, fork | 0034, 0035, 0036, 0045, 0046, 0047, 0061, 0073, 0078, 0091, 0092 |

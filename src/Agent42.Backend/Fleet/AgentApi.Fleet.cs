@@ -1,13 +1,17 @@
 using System.Text;
+using System.Text.Json;
 using Agent42.Agents;
+using Microsoft.AspNetCore.Http.Features;
 using Orleans.Runtime;
 
 namespace Agent42.Backend;
 
-/// <summary>A task the page starts: the request, optionally the done task it follows up, the model, the token cap and
-/// a tool selection overriding the user's default (null follows the default, ADR 0099).</summary>
+/// <summary>A task the page starts: the request, optionally the done task it follows up, the model, the token cap,
+/// a tool selection overriding the user's default (null follows the default, ADR 0099), and the task whose attached
+/// files a Run again copies (ADR 0100).</summary>
 public sealed record FleetSubmitRequest(
-    string? Task, string? FollowUpOf, string? Model, long? MaxTokens, IReadOnlyList<string>? EnabledTools = null);
+    string? Task, string? FollowUpOf, string? Model, long? MaxTokens, IReadOnlyList<string>? EnabledTools = null,
+    string? CopyInputsOf = null);
 
 /// <summary>The user's answer to a task's open question, optionally naming the question (the <c>prompt</c> event's id).</summary>
 public sealed record FleetAnswerRequest(string? Answer, int? QuestionId = null);
@@ -27,6 +31,7 @@ public static partial class AgentApi
         app.MapGet("/api/fleet/config", FleetConfig);
         app.MapGet("/api/fleet/tasks", ListFleetTasks);
         app.MapPost("/api/fleet/tasks", SubmitFleetTask);
+        app.MapPost("/api/fleet/tasks/with-files", SubmitFleetTaskWithFiles).DisableAntiforgery();
         app.MapGet("/api/fleet/tasks/{id}", GetFleetTask);
         app.MapDelete("/api/fleet/tasks/{id}", DeleteFleetTask);
         app.MapPost("/api/fleet/tasks/{id}/stop", StopFleetTask);
@@ -77,20 +82,89 @@ public static partial class AgentApi
             : FleetUnavailable();
 
     private static async Task<IResult> SubmitFleetTask(FleetSubmitRequest request, IServiceProvider services, HttpContext http, CancellationToken ct)
+        => services.GetService<FleetTaskService>() is { } fleet
+            ? await SubmitFleetAsync(fleet, request, [], http, ct)
+            : FleetUnavailable();
+
+    /// <summary>The form overhead allowed on top of the files: the boundaries, part headers and the request JSON.</summary>
+    private const long FleetFormOverheadBytes = 1024 * 1024;
+
+    /// <summary>
+    /// A task with attached files (ADR 0100), as <c>multipart/form-data</c>: a <c>request</c> field with the
+    /// <see cref="FleetSubmitRequest"/> JSON and one <c>files</c> part per file. A route of its own, so the raised body
+    /// limit, set here before the body is read, never applies to the JSON route.
+    /// </summary>
+    private static async Task<IResult> SubmitFleetTaskWithFiles(IServiceProvider services, HttpContext http, CancellationToken ct)
     {
         if (services.GetService<FleetTaskService>() is not { } fleet)
         {
             return FleetUnavailable();
         }
 
+        var options = fleet.Options;
+        var limit = Math.Min(options.MaxInputFiles * options.MaxInputFileBytes, options.MaxWorkspaceBytes) + FleetFormOverheadBytes;
+        if (http.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } bodySize)
+        {
+            bodySize.MaxRequestBodySize = limit;
+        }
+
+        if (!http.Request.HasFormContentType)
+        {
+            return FleetBadRequest("Send the task as multipart/form-data.");
+        }
+
+        IFormCollection form;
+        try
+        {
+            form = await http.Request.ReadFormAsync(new FormOptions { MultipartBodyLengthLimit = limit }, ct);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or BadHttpRequestException)
+        {
+            return Results.Json(new { error = "The files are too large for one task." }, statusCode: StatusCodes.Status413PayloadTooLarge);
+        }
+
+        FleetSubmitRequest? request;
+        try
+        {
+            request = JsonSerializer.Deserialize<FleetSubmitRequest>(form["request"].ToString(), JsonSerializerOptions.Web);
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        if (request is null)
+        {
+            return FleetBadRequest("The form needs a 'request' field with the task as JSON.");
+        }
+
+        var files = new List<FleetInputFile>();
+        foreach (var file in form.Files)
+        {
+            using var content = new MemoryStream();
+            await file.CopyToAsync(content, ct);
+            files.Add(new FleetInputFile(file.FileName, content.ToArray()));
+        }
+
+        return await SubmitFleetAsync(fleet, request, files, http, ct);
+    }
+
+    private static async Task<IResult> SubmitFleetAsync(
+        FleetTaskService fleet, FleetSubmitRequest request, IReadOnlyList<FleetInputFile> files, HttpContext http, CancellationToken ct)
+    {
         // The request's identity, as the middleware put it in RequestContext: the background run re-publishes it.
         var telemetry = RequestContext.Get(UserTelemetryContext.RequestContextKey) as UserTelemetryContext;
         var (taskId, error) = await fleet.SubmitAsync(
-            http.GetUserId(), new FleetSubmit(request.Task ?? "", request.FollowUpOf, request.Model, request.MaxTokens, request.EnabledTools), telemetry, ct);
+            http.GetUserId(),
+            new FleetSubmit(request.Task ?? "", request.FollowUpOf, request.Model, request.MaxTokens, request.EnabledTools, files, request.CopyInputsOf),
+            telemetry, ct);
         return taskId is null
             ? Results.Json(new { error }, statusCode: StatusCodes.Status409Conflict)
             : Results.Json(new { taskId }, statusCode: StatusCodes.Status202Accepted);
     }
+
+    private static IResult FleetBadRequest(string error)
+        => Results.Json(new { error }, statusCode: StatusCodes.Status400BadRequest);
 
     private static async Task<IResult> GetFleetTask(string id, IServiceProvider services, HttpContext http, CancellationToken ct)
     {
