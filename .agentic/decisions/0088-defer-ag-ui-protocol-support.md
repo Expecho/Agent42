@@ -12,7 +12,7 @@ AG-UI is an open event protocol between an agent backend and a frontend. The Age
 as `Microsoft.Agents.AI.Hosting.AGUI.AspNetCore`. On 2026-10-09 that package was **preview-only** on NuGet
 (latest `1.24.0-preview.261006.1`), while the repo pins stable `Microsoft.Agents.AI` 1.23.0. Agent42 owns both
 ends of its chat wire. `POST /api/chat/{conversationId}` streams NDJSON (`textDelta`, `reasoning`,
-`toolCallStart`, `toolCallEnd`, `done`) from `AgentApi.Conversations.cs` into `wwwroot/js/send.js` (ADR 0041).
+`toolCallStart`, `toolCallEnd`, `done`) from `AgentApi.Conversations.cs` into `src/Agent42.Backend/wwwroot/js/send.js` (ADR 0041).
 The hard streaming behaviour lives in the conversation grain, not on the wire: turns that outlive the
 connection (0046), stop (0078), MCP reconnect and re-send (0087), and artifacts (0083).
 

@@ -118,6 +118,12 @@ public sealed class FleetReviewFixTests
         public Task<IReadOnlyList<FleetWorkspaceFile>> ListWorkspaceAsync(string userId, string workspaceId, CancellationToken cancellationToken = default) => inner.ListWorkspaceAsync(userId, workspaceId, cancellationToken);
         public Task DeleteWorkspaceFileAsync(string userId, string workspaceId, string path, CancellationToken cancellationToken = default) => inner.DeleteWorkspaceFileAsync(userId, workspaceId, path, cancellationToken);
         public Task DeleteWorkspaceAsync(string userId, string workspaceId, CancellationToken cancellationToken = default) => inner.DeleteWorkspaceAsync(userId, workspaceId, cancellationToken);
+        public Task<FleetCanvasManifest> GetCanvasManifestAsync(string userId, string workspaceId, CancellationToken cancellationToken = default) => inner.GetCanvasManifestAsync(userId, workspaceId, cancellationToken);
+        public Task PutCanvasManifestAsync(string userId, string workspaceId, FleetCanvasManifest manifest, CancellationToken cancellationToken = default) => inner.PutCanvasManifestAsync(userId, workspaceId, manifest, cancellationToken);
+        public Task PutCanvasVersionAsync(string userId, string workspaceId, string name, int version, byte[] content, CancellationToken cancellationToken = default) => inner.PutCanvasVersionAsync(userId, workspaceId, name, version, content, cancellationToken);
+        public Task<byte[]?> GetCanvasVersionAsync(string userId, string workspaceId, string name, int version, CancellationToken cancellationToken = default) => inner.GetCanvasVersionAsync(userId, workspaceId, name, version, cancellationToken);
+        public Task DeleteCanvasVersionAsync(string userId, string workspaceId, string name, int version, CancellationToken cancellationToken = default) => inner.DeleteCanvasVersionAsync(userId, workspaceId, name, version, cancellationToken);
+        public Task DeleteCanvasAsync(string userId, string workspaceId, CancellationToken cancellationToken = default) => inner.DeleteCanvasAsync(userId, workspaceId, cancellationToken);
         public Task<IReadOnlyDictionary<string, string>> GetPromptsAsync(string userId, CancellationToken cancellationToken = default) => inner.GetPromptsAsync(userId, cancellationToken);
         public Task SetPromptsAsync(string userId, IReadOnlyDictionary<string, string> prompts, CancellationToken cancellationToken = default) => inner.SetPromptsAsync(userId, prompts, cancellationToken);
     }

@@ -27,6 +27,12 @@
   still there but nothing is searchable. A "documents.ingested" line per file shows what happened. Follow-ups share
   the files. Run again of a new task copies them into its new workspace. Deleting the workspace's last task deletes
   the indexed chunks first (ADR 0101).
+- **Shared canvas.** Agents, Copilot agents included, write named, versioned pages (html, svg, markdown or code)
+  with `canvas_list`, `canvas_read`, `canvas_write` and `canvas_edit`. A **Canvas** card under the task lists them,
+  while the task runs too, and opens them in the same sandboxed pane as chat artifacts. A page that is open
+  reloads at each new version. A write based on a stale version is refused with the current content, and an edit
+  replaces one unique snippet, so concurrent sub-teams never lose each other's updates. A page keeps its latest 20
+  versions. Follow-ups share the canvas, and the judge sees it (ADR 0102).
 - **Approval and questions.** Teams up to `Fleet:ApprovalDepth` ask you to approve their plan. Copilot
   permissions and MCP elicitations are asked the same way: a bar at the top with buttons and a text field.
 - **Bounded.** Every task has a token cap (a default, and a server maximum) and an agent cap. You run one task
@@ -50,7 +56,10 @@ flowchart LR
   Runner --> WF[Agent Framework workflows]
   Runner --> Judge[judge + submit_verdict]
   WF -- delegate_to_team --> Runner
-  WF --> Tools[workspace, search_documents, read_document,<br/>web_search, fetch_web_page,<br/>your MCP tools, Copilot built-ins]
+  WF --> Tools[workspace, canvas, search_documents, read_document,<br/>web_search, fetch_web_page,<br/>your MCP tools, Copilot built-ins]
+  Tools -- "canvas_write / canvas_edit<br/>(gate + versions)" --> Canvas[FleetCanvas]
+  Canvas --> Blob
+  Page -- "GET …/canvas/{name}/versions/{v}/frame<br/>(sandboxed pane)" --> Blob
   Service -- "run start: FleetDocumentIngest" --> Index[(IDocumentIndex<br/>userId/fleet/workspaceId)]
   Service --> Log[FleetEventLog<br/>coalesced, append blob]
   Log --> Blob[(agent-fleet container)]
@@ -62,7 +71,10 @@ flowchart LR
 - `FleetTeamRunner` is the engine: `RunTeamAsync`, `CreateTeamAsync` (with the `PlanSubmission` tool),
   `JudgeAsync`, `DelegateToTeamAsync`, `BuildWorkflow`, `RunWorkflowAsync` and `RunStagesAsync`.
 - `FleetStore` (`src/Agent42.Agents/Fleet/`) holds the layout over the narrow `IFleetBlobs` seam:
-  `{userId}/tasks/`, `/events/` (append blobs), `/workspaces/{workspaceId}/` and `/prompts.json`.
+  `{userId}/tasks/`, `/events/` (append blobs), `/workspaces/{workspaceId}/`, `/canvas/{workspaceId}/` (outside
+  the workspace prefix, which the sync prunes) and `/prompts.json`.
+- `FleetCanvas` holds a task's canvas pages behind one gate and writes each version through to Blob before it
+  publishes `canvas.updated` (ADR 0102).
 - `FleetEventLog` numbers every event, fans it out live, and persists it at most once a second, merging streamed
   text. A subscriber registers before the store is read and skips what it already sent, so a reload sees each
   event exactly once.
@@ -82,10 +94,12 @@ set aside (ADR 0097). Every write, command and fetch is asked to you ("always fo
 writes outside the workspace are refused, and the runtime gets a minimal environment. `Fleet:CopilotAgentsEnabled`
 switches it off. The residual risks are in ADR 0097: a shell can reach the app on localhost, read the container's
 files, and use its network. Since ADR 0101 the workspace can hold your uploaded files, so its shell and file tools read
-those too.
+those too. Since ADR 0102 it also gets the four canvas tools as custom tools, and only those (its file access covers
+the workspace tools).
 
 ## Downloads
 
 Workspace files are listed under the task and downloaded from `/api/fleet/tasks/{id}/files/{path}`. They are
 model-written, so they are always served as attachments with `nosniff` and a `text/plain` or
-`application/octet-stream` type, never as a page in the app's origin.
+`application/octet-stream` type, never as a page in the app's origin. Canvas pages are the rendered counterpart: they
+are served only through the artifact sandbox headers (ADR 0084's CSP), read-only (ADR 0102).

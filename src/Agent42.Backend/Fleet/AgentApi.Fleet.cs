@@ -39,6 +39,13 @@ public static partial class AgentApi
         app.MapGet("/api/fleet/tasks/{id}/events", StreamFleetEvents);
         app.MapGet("/api/fleet/tasks/{id}/files", ListFleetFiles);
         app.MapGet("/api/fleet/tasks/{id}/files/{**path}", DownloadFleetFile);
+        app.MapGet("/api/fleet/tasks/{id}/canvas", ListFleetCanvas);
+        app.MapGet("/api/fleet/tasks/{id}/canvas/{name}/versions/{version:int}/content",
+            (string id, string name, int version, IServiceProvider services, HttpContext http, CancellationToken ct)
+                => ServeFleetCanvasAsync(id, name, version, frame: false, services, http, ct));
+        app.MapGet("/api/fleet/tasks/{id}/canvas/{name}/versions/{version:int}/frame",
+            (string id, string name, int version, IServiceProvider services, HttpContext http, CancellationToken ct)
+                => ServeFleetCanvasAsync(id, name, version, frame: true, services, http, ct));
         app.MapGet("/api/fleet/prompts", ListFleetPrompts);
         app.MapPut("/api/fleet/prompts/{key}", PutFleetPrompt);
         app.MapDelete("/api/fleet/prompts/{key}", ResetFleetPrompt);
@@ -305,6 +312,68 @@ public static partial class AgentApi
 
         http.Response.Headers.XContentTypeOptions = "nosniff";
         return Results.File(content, IsUtf8Text(content) ? "text/plain; charset=utf-8" : "application/octet-stream", Path.GetFileName(path));
+    }
+
+    /// <summary>The task's canvas pages (ADR 0102), in the shape the artifact pane lists: the page name is the id.</summary>
+    private static async Task<IResult> ListFleetCanvas(string id, IServiceProvider services, HttpContext http, CancellationToken ct)
+    {
+        if (services.GetService<FleetTaskService>() is not { } fleet)
+        {
+            return FleetUnavailable();
+        }
+
+        var userId = http.GetUserId();
+        if (await fleet.GetAsync(userId, id, ct) is not { } task)
+        {
+            return FleetNotFound();
+        }
+
+        var manifest = await fleet.Store.GetCanvasManifestAsync(userId, task.WorkspaceId, ct);
+        return Results.Json(manifest.Pages.Select(p => new
+        {
+            id = p.Name,
+            kind = p.Kind,
+            title = p.Title,
+            language = p.Language,
+            versions = p.Versions.Select(v => new { version = v }),
+        }));
+    }
+
+    /// <summary>
+    /// One canvas page version, read-only, under the chat artifacts' sandbox headers (ADR 0084's serving rules, reused
+    /// by ADR 0102): the headers go on first, so a miss carries them too. The task is resolved owner-scoped, and the
+    /// name and version against the MANIFEST before any blob is read, so a pruned or unknown version is a 404.
+    /// </summary>
+    private static async Task<IResult> ServeFleetCanvasAsync(
+        string id, string name, int version, bool frame, IServiceProvider services, HttpContext http, CancellationToken ct)
+    {
+        AddArtifactHeaders(http.Response);
+        if (services.GetService<FleetTaskService>() is not { } fleet)
+        {
+            return FleetUnavailable();
+        }
+
+        var userId = http.GetUserId();
+        if (await fleet.GetAsync(userId, id, ct) is not { } task)
+        {
+            return Results.NotFound();
+        }
+
+        var page = (await fleet.Store.GetCanvasManifestAsync(userId, task.WorkspaceId, ct)).Pages.FirstOrDefault(p => p.Name == name);
+        if (page is null || !page.Versions.Contains(version) || (frame && !ArtifactKind.IsFramed(page.Kind))
+            || await fleet.Store.GetCanvasVersionAsync(userId, task.WorkspaceId, page.Name, version, ct) is not { } stored)
+        {
+            return Results.NotFound();
+        }
+
+        var source = Encoding.UTF8.GetString(stored);
+        if (!frame)
+        {
+            return Results.Text(source, "text/plain; charset=utf-8");
+        }
+
+        var html = page.Kind == ArtifactKind.Svg ? WrapSvg(source) : source;
+        return Results.Text(ArtifactTheme.Apply(html, http.Request.Query["theme"]), "text/html; charset=utf-8");
     }
 
     /// <summary>True for valid UTF-8 without NUL bytes: such a file is shown as text, anything else is binary.</summary>

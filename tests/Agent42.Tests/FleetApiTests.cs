@@ -118,6 +118,9 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
                 (HttpMethod.Get, $"/api/fleet/tasks/{taskId}/events"),
                 (HttpMethod.Get, $"/api/fleet/tasks/{taskId}/files"),
                 (HttpMethod.Get, $"/api/fleet/tasks/{taskId}/files/report.md"),
+                (HttpMethod.Get, $"/api/fleet/tasks/{taskId}/canvas"),
+                (HttpMethod.Get, $"/api/fleet/tasks/{taskId}/canvas/report/versions/1/content"),
+                (HttpMethod.Get, $"/api/fleet/tasks/{taskId}/canvas/report/versions/1/frame"),
                 (HttpMethod.Delete, $"/api/fleet/tasks/{taskId}"),
                 (HttpMethod.Post, $"/api/fleet/tasks/{taskId}/stop"),
             })
@@ -295,6 +298,103 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
             Assert.Equal(type, response.Content.Headers.ContentType?.MediaType);
             Assert.Equal("attachment", response.Content.Headers.ContentDisposition?.DispositionType);
             Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+        }
+    }
+
+    // A stopped task with three seeded canvas pages: html at v2-v3 (v1 pruned), svg at v1, markdown at v1.
+    private async Task<(string TaskId, string WorkspaceId)> SeedCanvasAsync(string user)
+    {
+        var taskId = await SubmitAndStopAsync(user);
+        var workspaceId = (await Store.GetTaskAsync(user, taskId))!.WorkspaceId;
+        await Store.PutCanvasVersionAsync(user, workspaceId, "app", 2, Encoding.UTF8.GetBytes("<p>v2</p>"));
+        await Store.PutCanvasVersionAsync(user, workspaceId, "app", 3, Encoding.UTF8.GetBytes("<script>alert(1)</script>"));
+        await Store.PutCanvasVersionAsync(user, workspaceId, "logo", 1, Encoding.UTF8.GetBytes("<svg onload=alert(1)/>"));
+        await Store.PutCanvasVersionAsync(user, workspaceId, "notes", 1, Encoding.UTF8.GetBytes("# Notes"));
+        await Store.PutCanvasManifestAsync(user, workspaceId, new FleetCanvasManifest
+        {
+            Pages =
+            [
+                new FleetCanvasPage { Name = "app", Kind = ArtifactKind.Html, Title = "App", Versions = [2, 3] },
+                new FleetCanvasPage { Name = "logo", Kind = ArtifactKind.Svg, Title = "Logo", Versions = [1] },
+                new FleetCanvasPage { Name = "notes", Kind = ArtifactKind.Markdown, Title = "Notes", Versions = [1] },
+            ],
+        });
+        return (taskId, workspaceId);
+    }
+
+    private static void AssertSandboxed(HttpResponseMessage response, string what)
+    {
+        Assert.True(response.Headers.TryGetValues("Content-Security-Policy", out var csp), $"{what}: no CSP");
+        Assert.Equal(AgentApi.ArtifactCsp, string.Join(";", csp!));
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+    }
+
+    [Fact]
+    public async Task Canvas_List_Shape()
+    {
+        const string user = "fleet-canvas-list-1";
+        var (taskId, _) = await SeedCanvasAsync(user);
+
+        var pages = await (await Send(HttpMethod.Get, $"/api/fleet/tasks/{taskId}/canvas", user)).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(3, pages.GetArrayLength());
+        var app = pages[0];
+        Assert.Equal("app", app.GetProperty("id").GetString());
+        Assert.Equal("html", app.GetProperty("kind").GetString());
+        Assert.Equal("App", app.GetProperty("title").GetString());
+        Assert.Equal([2, 3], app.GetProperty("versions").EnumerateArray().Select(v => v.GetProperty("version").GetInt32()));
+    }
+
+    [Fact]
+    public async Task Canvas_Frame_And_Content_SendSandboxHeaders()
+    {
+        const string user = "fleet-canvas-serve-1";
+        var (taskId, _) = await SeedCanvasAsync(user);
+        var root = $"/api/fleet/tasks/{taskId}/canvas";
+
+        var content = await Send(HttpMethod.Get, $"{root}/app/versions/3/content", user);
+        Assert.Equal(HttpStatusCode.OK, content.StatusCode);
+        Assert.Equal("text/plain", content.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("<script>alert(1)</script>", await content.Content.ReadAsStringAsync());
+        AssertSandboxed(content, "content");
+
+        var frame = await Send(HttpMethod.Get, $"{root}/app/versions/3/frame?theme=light", user);
+        Assert.Equal("text/html", frame.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("<script>alert(1)</script>", await frame.Content.ReadAsStringAsync());
+        AssertSandboxed(frame, "frame");
+
+        var svg = await Send(HttpMethod.Get, $"{root}/logo/versions/1/frame", user);
+        Assert.Equal("text/html", svg.Content.Headers.ContentType?.MediaType);
+        Assert.StartsWith("<!doctype html>", await svg.Content.ReadAsStringAsync());
+
+        var markdownFrame = await Send(HttpMethod.Get, $"{root}/notes/versions/1/frame", user);
+        Assert.Equal(HttpStatusCode.NotFound, markdownFrame.StatusCode);
+        AssertSandboxed(markdownFrame, "markdown frame");
+        Assert.Equal("# Notes", await (await Send(HttpMethod.Get, $"{root}/notes/versions/1/content", user)).Content.ReadAsStringAsync());
+    }
+
+    /// <summary>The name and version are resolved against the manifest first: a pruned version (v1 of app, whose blob
+    /// a test could still plant), an unknown page or version, and a name outside the rule are all 404 with the headers.</summary>
+    [Theory]
+    [InlineData("app/versions/1")]
+    [InlineData("app/versions/9")]
+    [InlineData("missing/versions/1")]
+    [InlineData("Bad.Name/versions/1")]
+    [InlineData("manifest.json/versions/1")]
+    public async Task Canvas_Unresolved_404_WithHeaders(string tail)
+    {
+        const string user = "fleet-canvas-miss-1";
+        var (taskId, workspaceId) = (await Store.ListTasksAsync(user)).FirstOrDefault() is { } existing
+            ? (existing.Id, existing.WorkspaceId)
+            : await SeedCanvasAsync(user);
+        await Store.PutCanvasVersionAsync(user, workspaceId, "app", 1, Encoding.UTF8.GetBytes("<p>pruned</p>"));
+
+        foreach (var route in new[] { "content", "frame" })
+        {
+            var response = await Send(HttpMethod.Get, $"/api/fleet/tasks/{taskId}/canvas/{tail}/{route}", user);
+
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            AssertSandboxed(response, $"{tail}/{route}");
         }
     }
 

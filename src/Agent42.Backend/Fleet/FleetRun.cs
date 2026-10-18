@@ -17,6 +17,9 @@ public sealed class FleetRun
     public required FleetBudget Budget { get; init; }
     public required FleetWorkspace Workspace { get; init; }
 
+    /// <summary>The task's shared canvas (ADR 0102), loaded from the store before the run starts.</summary>
+    public required FleetCanvas Canvas { get; init; }
+
     /// <summary>The task's model: the planner, judge, moderator and Magentic manager run on it, and it is the default
     /// of agents whose YAML names none.</summary>
     public required string DefaultModel { get; init; }

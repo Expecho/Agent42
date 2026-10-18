@@ -185,6 +185,65 @@ public class FleetStoreTests
         Assert.Empty(await _store.ListTasksAsync("alice"));
     }
 
+    /// <summary>The canvas lives under its own escaped prefix (outside the workspace), per user, and a page name
+    /// that isn't one safe segment is refused before any blob is touched.</summary>
+    [Theory]
+    [InlineData("../x")]
+    [InlineData("a/b")]
+    [InlineData("A")]
+    [InlineData("-a")]
+    [InlineData("manifest.json")]
+    [InlineData("a\n")]
+    [InlineData("")]
+    public async Task Canvas_PutGetList_PerUser_NamesValidated(string badName)
+    {
+        await _store.PutCanvasVersionAsync("al/ice", "w1", "report", 2, Encoding.UTF8.GetBytes("<p>v2</p>"));
+        await _store.PutCanvasManifestAsync("al/ice", "w1", new FleetCanvasManifest
+        {
+            Pages = [new FleetCanvasPage { Name = "report", Kind = ArtifactKind.Html, Title = "Report", Versions = [1, 2] }],
+        });
+
+        var page = Assert.Single((await _store.GetCanvasManifestAsync("al/ice", "w1")).Pages);
+        Assert.Equal(("report", 2), (page.Name, page.LatestVersion));
+        Assert.Equal("<p>v2</p>", Encoding.UTF8.GetString((await _store.GetCanvasVersionAsync("al/ice", "w1", "report", 2))!));
+        Assert.Null(await _store.GetCanvasVersionAsync("al/ice", "w1", "report", 1));
+
+        Assert.Empty((await _store.GetCanvasManifestAsync("alice", "w1")).Pages);
+        Assert.Null(await _store.GetCanvasVersionAsync("alice", "w1", "report", 2));
+        Assert.Empty(await _store.ListWorkspaceAsync("al/ice", "w1"));
+        var keys = (await _blobs.ListAsync("")).Select(b => b.Key).ToList();
+        Assert.Contains("al%2Fice/canvas/w1/manifest.json", keys);
+        Assert.Contains("al%2Fice/canvas/w1/report/v2", keys);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _store.PutCanvasVersionAsync("alice", "w1", badName, 1, [1]));
+        await Assert.ThrowsAsync<ArgumentException>(() => _store.GetCanvasVersionAsync("alice", "w1", badName, 1));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _store.GetCanvasVersionAsync("alice", "w1", "report", 0));
+    }
+
+    /// <summary>The canvas follows the workspace's lifetime: it goes with the last task that shares it.</summary>
+    [Fact]
+    public async Task DeleteTask_KeepsSharedCanvasUntilLastTask()
+    {
+        var now = DateTimeOffset.UtcNow;
+        await _store.SaveTaskAsync(Task("alice", "a1", "w1", now));
+        await _store.SaveTaskAsync(Task("alice", "a2", "w1", now.AddMinutes(1), followUpOf: "a1"));
+        await _store.PutCanvasVersionAsync("alice", "w1", "page", 1, [1]);
+        await _store.PutCanvasManifestAsync("alice", "w1", new FleetCanvasManifest
+        {
+            Pages = [new FleetCanvasPage { Name = "page", Kind = ArtifactKind.Markdown, Title = "Page", Versions = [1] }],
+        });
+
+        await _store.DeleteTaskAsync("alice", "a1");
+
+        Assert.Single((await _store.GetCanvasManifestAsync("alice", "w1")).Pages);
+        Assert.NotNull(await _store.GetCanvasVersionAsync("alice", "w1", "page", 1));
+
+        await _store.DeleteTaskAsync("alice", "a2");
+
+        Assert.Empty((await _store.GetCanvasManifestAsync("alice", "w1")).Pages);
+        Assert.Empty(await _blobs.ListAsync("alice/canvas/"));
+    }
+
     [Fact]
     public async Task DeleteTask_Unknown_IsNoOp()
         => await _store.DeleteTaskAsync("alice", "missing");

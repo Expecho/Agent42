@@ -22,6 +22,7 @@
     panel: null,
     freshTask: true,        // the composer starts a new task, instead of a follow-up on the selected task
     config: null, models: null, files: null,
+    canvas: null,           // the selected task's canvas pages (ADR 0102), as { taskId, list }
     tools: null,            // the fleet's rows of GET /api/tools, or null when it failed (then no override is ever sent)
     defaultTools: null,     // the user's default chat selection (profile.enabledTools), null meaning all
     attachments: [],        // File objects the composer will send with the next task (ADR 0101)
@@ -78,6 +79,41 @@
     else { el.textContent = text || ""; el.style.whiteSpace = "pre-wrap"; }
   }
   const mdBlock = (cls, text) => { const el = h("div", { class: cls }); setMarkdown(el, text); return el; };
+
+  // The task's canvas pages (ADR 0102) open in the shared sandboxed artifact pane (/shared/lib/artifactpane.js), the
+  // chat's own. Its routes point at the selected task. The pane only says whether it is open, so the open page's name
+  // is tracked here, for canvas.updated to reopen it at the new version.
+  const Pane = window.Agent42ArtifactPane;
+  let canvasPane = null;
+  let canvasOpenName = null;
+  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  function ensureCanvasPane() {
+    if (!Pane) return null;
+    if (!canvasPane) {
+      const page = (name, version, route) =>
+        `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/canvas/${encodeURIComponent(name)}/versions/${version}/${route}`;
+      canvasPane = Pane.create({
+        host: document.body,
+        renderMarkdown: text => markdown ? DOMPurify.sanitize(marked.parse(text || "")) : `<pre>${escapeHtml(text || "")}</pre>`,
+        urls: {
+          list: () => `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/canvas`,
+          content: (name, version) => page(name, version, "content"),
+          frame: (name, version) => page(name, version, "frame"),
+        },
+      });
+    }
+    return canvasPane;
+  }
+  function openCanvasPage(name, version) {
+    const pane = ensureCanvasPane();
+    if (!pane) return;
+    canvasOpenName = name;
+    pane.open(name, version);
+  }
+  function closeCanvasPane() {
+    canvasOpenName = null;
+    canvasPane?.close();
+  }
 
   function clampText(id, cls, text, limit = 900, md = false) {
     const box = md ? mdBlock(cls, text) : h("div", { class: cls, text });
@@ -235,6 +271,12 @@
     "judge.started"(d) { const a = attemptOf(d); if (a) a.status = "judging"; },
     "verdict"(d) { const a = attemptOf(d); if (a) { a.verdict = d; a.status = d.passed ? "passed" : d.willRetry ? "retry" : "failed"; } },
     "budget"(d) { S.budget = d; renderBudget(); return false; },
+    // A committed canvas write: reload the list and, when the pane shows that page, reopen it at the new version.
+    "canvas.updated"(d) {
+      scheduleCanvasLoad();
+      if (canvasOpenName === d.name && canvasPane?.isOpen()) openCanvasPage(d.name, d.version);
+      return false;
+    },
     "prompt"(d) { S.prompt = d; renderPrompt(); return false; },
     "prompt.answered"() { S.prompt = null; renderPrompt(); return false; },
   };
@@ -716,6 +758,7 @@
     return [
       task.result && [h("h2", { text: "Result" }), h("div", { class: "card" }, clampText("result-" + task.id, "result", task.result, 2500, true))],
       task.reason && task.status !== "done" && [h("h2", { text: "Why it ended" }), h("div", { class: "card", text: task.reason })],
+      canvasCard(task),
       filesCard(task),
       followUpCard(task),
       runAgainCard(task),
@@ -728,6 +771,31 @@
     const href = path => `/api/fleet/tasks/${encodeURIComponent(task.id)}/files/${path.split("/").map(encodeURIComponent).join("/")}`;
     return [h("h2", { text: "Workspace files" }), h("div", { class: "card" },
       h("ul", { class: "files" }, files.map(f => h("li", null, h("a", { href: href(f.path), download: f.path.split("/").pop(), text: f.path }), h("span", { class: "size", text: fmtBytes(f.size) })))))];
+  }
+
+  // The canvas pages, while the task runs too, so the user can watch. Names and titles are model-written: text only.
+  function canvasCard(task) {
+    const pages = S.canvas?.taskId === task.id ? S.canvas.list : null;
+    if (!pages || pages.length === 0) return null;
+    const latest = p => p.versions.length ? p.versions[p.versions.length - 1].version : 0;
+    return [h("h2", { text: "Canvas" }), h("div", { class: "card" },
+      h("ul", { class: "files canvas-pages" }, pages.map(p => h("li", null,
+        h("button", { class: "linkish", type: "button", text: p.title, title: `Open ${p.id}`, onclick: () => openCanvasPage(p.id, latest(p)) }),
+        h("span", { class: "size", text: `${p.kind} · v${latest(p)}` })))))];
+  }
+
+  async function loadCanvas() {
+    const id = S.selectedTask;
+    if (!id) return;
+    const r = await api("GET", `/api/fleet/tasks/${encodeURIComponent(id)}/canvas`);
+    if (r.ok && S.selectedTask === id) { S.canvas = { taskId: id, list: r.data || [] }; invalidate(); }
+  }
+
+  // A replayed log holds a canvas.updated per write, so the reloads they ask for are coalesced into one.
+  let canvasLoadTimer = null;
+  function scheduleCanvasLoad() {
+    clearTimeout(canvasLoadTimer);
+    canvasLoadTimer = setTimeout(loadCanvas, 150);
   }
 
   async function loadFiles() {
@@ -1101,16 +1169,18 @@
   function selectTask(taskId) {
     S.view = "tasks"; S.panel = null; S.freshTask = !taskById(taskId)?.canFollowUp;
     S.selectedTask = taskId || null;
-    S.selectedTeam = null; S.selectedAttempt = null; S.files = null;
+    S.selectedTeam = null; S.selectedAttempt = null; S.files = null; S.canvas = null;
+    closeCanvasPane();
     resetTaskState();
     connect(S.selectedTask);
     loadFiles();
+    loadCanvas();
     invalidate();
   }
 
   $("#promptsBtn").addEventListener("click", () => S.view === "prompts" ? closePrompts() : openPrompts());
   $("#stopBtn").addEventListener("click", () => S.selectedTask && api("POST", `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/stop`));
-  function newTask() { disconnect(); S.selectedTask = null; S.freshTask = true; resetTaskState(); S.view = "tasks"; invalidate(); composer.ta.focus(); }
+  function newTask() { disconnect(); closeCanvasPane(); S.selectedTask = null; S.freshTask = true; resetTaskState(); S.view = "tasks"; invalidate(); composer.ta.focus(); }
   $("#newTaskBtn").addEventListener("click", newTask);
   // Deletes the record, its event log and, once no follow-up shares it, the workspace with its files.
   $("#deleteBtn").addEventListener("click", async () => {
