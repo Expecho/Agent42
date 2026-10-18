@@ -151,6 +151,52 @@ public class FleetTeamRunnerTests
         Assert.Equal("The judge gave no verdict.", verdict.GetProperty("feedback").GetString());
     }
 
+    /// <summary>ADR 0102: the canvas tools are agent functions like the workspace tools, so the planner lists them.</summary>
+    [Fact]
+    public void Planner_SeesCanvasTools()
+    {
+        using var h = new FleetRunHarness(NoReview);
+
+        var functions = h.Runner.AgentFunctions(h.Root).Select(f => f.Name).ToList();
+        var instructions = h.Runner.PlannerInstructions(h.Root);
+
+        Assert.All(FleetCanvas.ToolNames, name =>
+        {
+            Assert.Contains(name, functions);
+            Assert.Contains($"- {name}:", instructions);
+        });
+    }
+
+    [Fact]
+    public async Task Judge_InputIncludesCanvas()
+    {
+        using var h = new FleetRunHarness(new FleetOptions { ApprovalDepth = -1, JudgeDepth = 0, MaxAttempts = 1, PassingScore = 7 });
+        await h.Canvas.Tools.Single(t => t.Name == "canvas_write").InvokeAsync(new()
+        {
+            ["name"] = "report",
+            ["kind"] = "markdown",
+            ["content"] = "# Lighthouse haiku",
+            ["expectedVersion"] = 0,
+        });
+        var script = new FakeChatClient.FleetScript([FleetRunHarness.Plan("Sequential", "Writer")], scores: [9]);
+
+        await h.Runner.RunAsync(FakeChatClient.FleetTask("Write a haiku about lighthouses", script));
+
+        var input = Assert.Single(script.JudgeInputs);
+        Assert.Contains("Pages on the canvas (1):", input);
+        Assert.Contains("--- report (markdown, \"report\", version 1)\n# Lighthouse haiku", input);
+    }
+
+    [Fact]
+    public void Prompts_DefaultsMentionCanvas()
+    {
+        var prompts = FleetPromptSet.Defaults;
+
+        Assert.Contains("canvas_write", prompts.Get("planner"));
+        Assert.Contains("always gets the canvas", prompts.Get("copilot"));
+        Assert.Contains("canvas pages", prompts.Get("judge"));
+    }
+
     [Fact]
     public void Delegate_AbsentAtMaxDepth()
     {

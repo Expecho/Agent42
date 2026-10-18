@@ -71,6 +71,8 @@
        DOMPurify.sanitize(marked.parse(...)). -->
   <script src="/shared/lib/purify.min.js"></script>
   <script src="/shared/lib/marked.min.js"></script>
+  <!-- The sandboxed artifact pane shows the canvas pages (ADR 0102); fleet.js guards on window.Agent42ArtifactPane. -->
+  <script src="/shared/lib/artifactpane.js"></script>
   <!-- ONE classic script, like /logs: outside wwwroot/js, so no ES-module graph and no CACHE bump of its own. -->
   <script src="fleet.js"></script>
 </body>

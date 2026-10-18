@@ -243,6 +243,42 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Contains(await _store.ListWorkspaceAsync(Alice, first.WorkspaceId), f => f.Path == "notes.md");
     }
 
+    /// <summary>ADR 0102 end to end: an agent's canvas_write is stored under the canvas prefix and logged as
+    /// canvas.updated, and a follow-up (same workspace) loads the page, so its agent's canvas_edit makes version 2.</summary>
+    [Fact]
+    public async Task Run_CanvasWrite_PersistsAndLogs_FollowUpSeesIt()
+    {
+        var service = Service();
+        var write = new FakeChatClient.FleetScript(
+            [CanvasPlan("Writer")],
+            agentCalls: [("canvas_write", new() { ["name"] = "report", ["kind"] = "markdown", ["content"] = "# Draft", ["expectedVersion"] = 0, ["title"] = "Report" })]);
+        var (firstId, _) = await service.SubmitAsync(Alice, new(FakeChatClient.FleetTask("Write a report", write)));
+        var first = await FinishedAsync(service, Alice, firstId!);
+
+        Assert.Equal(FleetTaskStatus.Done, first.Status);
+        Assert.Equal("# Draft", Encoding.UTF8.GetString((await _store.GetCanvasVersionAsync(Alice, first.WorkspaceId, "report", 1))!));
+        var updated = (await _store.ReadEventsAsync(Alice, firstId!)).Single(l => TypeOf(l) == FleetCanvas.UpdatedEvent);
+        var data = JsonDocument.Parse(updated).RootElement.GetProperty("data");
+        Assert.Equal(("report", 1, "Report"), (data.GetProperty("name").GetString(), data.GetProperty("version").GetInt32(), data.GetProperty("title").GetString()));
+
+        var edit = new FakeChatClient.FleetScript(
+            [CanvasPlan("Editor")],
+            agentCalls: [("canvas_edit", new() { ["name"] = "report", ["oldText"] = "Draft", ["newText"] = "Final" })]);
+        var (secondId, _) = await service.SubmitAsync(Alice, new(FakeChatClient.FleetTask("Finish the report", edit), FollowUpOf: firstId));
+        await FinishedAsync(service, Alice, secondId!);
+
+        var page = Assert.Single((await _store.GetCanvasManifestAsync(Alice, first.WorkspaceId)).Pages);
+        Assert.Equal([1, 2], page.Versions);
+        Assert.Equal("# Final", Encoding.UTF8.GetString((await _store.GetCanvasVersionAsync(Alice, first.WorkspaceId, "report", 2))!));
+    }
+
+    private static object CanvasPlan(string agent) => new
+    {
+        rationale = "fits",
+        pattern = "Sequential",
+        agents = new[] { new { name = agent, yaml = FakeChatClient.FleetAgentYaml(agent, null, "canvas_write", "canvas_edit") } },
+    };
+
     private static FleetInputFile File(string name, string text = "Magrathea builds luxury planets for the very rich.")
         => new(name, Encoding.UTF8.GetBytes(text));
 

@@ -84,6 +84,7 @@ public sealed class FleetCopilotAgentFactory(
     IReadOnlyCollection<string> catalogModels,
     string defaultModel,
     FleetWorkspace workspace,
+    FleetCanvas canvas,
     FleetPromptSet prompts,
     FleetCopilotPermissionPolicy policy) : PromptAgentFactory
 {
@@ -131,7 +132,9 @@ public sealed class FleetCopilotAgentFactory(
     /// One fleet session: the user's provider (BYOK), the agent's instructions appended to Copilot's own prompt, the
     /// task's workspace as working directory, and this task's permission policy. Host discovery (config, custom
     /// instructions, file hooks, the session store) and the large-output spill to a temp file outside the workspace are
-    /// off.
+    /// off. The canvas tools are custom tools (ADR 0102), and <c>AvailableTools</c> stays unset on purpose: the chat
+    /// kind sets it to restrict a <c>Mode.Empty</c> session to its custom tools, and here it would hide the shell and
+    /// file built-ins the fleet's default mode keeps.
     /// </summary>
     public SessionConfig BuildSessionConfig(CopilotProviderSettings settings, string model, string instructions) => new()
     {
@@ -145,6 +148,7 @@ public sealed class FleetCopilotAgentFactory(
         },
         SystemMessage = new SystemMessageConfig { Mode = SystemMessageMode.Append, Content = instructions },
         WorkingDirectory = workspace.Root,
+        Tools = [.. canvas.Tools],
         IncludedBuiltinSkills = [],
         EnableSessionStore = false,
         EnableConfigDiscovery = false,

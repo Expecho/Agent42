@@ -171,6 +171,34 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
         }
     }
 
+    /// <summary>ADR 0102: the canvas opens in the shared artifact pane, loaded before fleet.js and guarded so the page
+    /// works without it; page names and titles are model-written, so they are set as text.</summary>
+    [Fact]
+    public async Task FleetPage_LoadsArtifactPane_Guarded()
+    {
+        var page = await _client.GetStringAsync("/fleet/");
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        var pane = page.IndexOf("<script src=\"/shared/lib/artifactpane.js\"></script>", StringComparison.Ordinal);
+        Assert.True(pane > 0, "The fleet page doesn't load the artifact pane");
+        Assert.True(pane < page.IndexOf("<script src=\"fleet.js\"></script>", StringComparison.Ordinal), "artifactpane.js must load before fleet.js");
+        Assert.Contains("if (!Pane) return null;", script);
+        Assert.Contains("\"canvas.updated\"(d)", script);
+        Assert.Contains("/canvas/${encodeURIComponent(name)}/versions/${version}/${route}", script);
+        Assert.Contains("h(\"button\", { class: \"linkish\", type: \"button\", text: p.title", script);
+    }
+
+    [Fact]
+    public async Task FleetCss_StylesTheArtifactPane()
+    {
+        var css = await _client.GetStringAsync("/fleet/fleet.css");
+
+        Assert.Contains(".artifact-pane {", css);
+        Assert.Contains("html.has-artifact-pane body", css);
+        Assert.Contains(".artifact-pane--full", css);
+        Assert.Contains(".artifact-pane__frame", css);
+    }
+
     [GeneratedRegex(@"\.innerHTML\s*=[^;]*;")]
     private static partial Regex InnerHtmlRegex();
 

@@ -18,11 +18,20 @@ public sealed partial class FakeChatClient
 
     /// <summary>A fleet task script. Plans are <c>submit_team_plan</c> arguments as anonymous objects.</summary>
     public sealed class FleetScript(
-        IReadOnlyList<object> plans, IReadOnlyList<int>? scores = null, long usagePerCall = 0, IReadOnlyList<string>? agentReplies = null)
+        IReadOnlyList<object> plans, IReadOnlyList<int>? scores = null, long usagePerCall = 0, IReadOnlyList<string>? agentReplies = null,
+        IReadOnlyList<(string Name, Dictionary<string, object?> Arguments)>? agentCalls = null)
     {
         private int _plans;
         private int _scores;
         private int _agentReplies;
+        private int _agentCalls;
+
+        /// <summary>Function calls the team's agents make, one per agent turn that doesn't follow a function result, in
+        /// order; once they are used up agents just reply.</summary>
+        public IReadOnlyList<(string Name, Dictionary<string, object?> Arguments)> AgentCalls { get; } = agentCalls ?? [];
+
+        /// <summary>The user text of every judge call, in order.</summary>
+        public ConcurrentQueue<string> JudgeInputs { get; } = new();
 
         /// <summary>Replies of the team's agents, one per agent call, in order; none means the canned reply.</summary>
         public IReadOnlyList<string> AgentReplies { get; } = agentReplies ?? [];
@@ -40,6 +49,9 @@ public sealed partial class FakeChatClient
 
         internal string? NextAgentReply()
             => AgentReplies.Count > 0 ? AgentReplies[Math.Min(Interlocked.Increment(ref _agentReplies) - 1, AgentReplies.Count - 1)] : null;
+
+        internal (string Name, Dictionary<string, object?> Arguments)? NextAgentCall()
+            => Interlocked.Increment(ref _agentCalls) - 1 is var i && i < AgentCalls.Count ? AgentCalls[i] : null;
 
         internal int? NextScore() => Interlocked.Increment(ref _scores) - 1 is var i && i < Scores.Count ? Scores[i] : null;
     }
@@ -83,12 +95,22 @@ public sealed partial class FakeChatClient
             return null;
         }
 
+        var lastResult = list.LastOrDefault()?.Contents.OfType<FunctionResultContent>().FirstOrDefault()?.Result?.ToString();
         if (!tools.Contains("submit_team_plan") && !tools.Contains("submit_verdict"))
         {
+            if (lastResult is null && script.NextAgentCall() is { } call)
+            {
+                return Fleet(new FunctionCallContent(FleetCallId(), call.Name, new Dictionary<string, object?>(call.Arguments)), script);
+            }
+
             return script.NextAgentReply() is { } reply ? Fleet(new TextContent(reply), script) : null;
         }
 
-        var lastResult = list.LastOrDefault()?.Contents.OfType<FunctionResultContent>().FirstOrDefault()?.Result?.ToString();
+        if (tools.Contains("submit_verdict") && lastResult is null)
+        {
+            script.JudgeInputs.Enqueue(string.Join("\n", list.Where(m => m.Role == ChatRole.User).Select(m => m.Text)));
+        }
+
         return tools.Contains("submit_team_plan") ? PlannerReply(script, lastResult) : JudgeReply(script, lastResult);
     }
 

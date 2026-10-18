@@ -16,6 +16,7 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
 {
     private readonly string _fakeRuntime = Path.Combine(Path.GetTempPath(), "fleet-copilot-" + Guid.NewGuid().ToString("N"));
     private readonly FleetWorkspace _workspace = new(Guid.NewGuid().ToString("N"));
+    private readonly FleetCanvas _canvas = new(new FleetStore(new InMemoryFleetBlobs()), "alice", "w1", new RecordingFleetSink());
 
     public FleetCopilotAgentFactoryTests() => File.WriteAllText(_fakeRuntime, "");
 
@@ -23,6 +24,7 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
     {
         File.Delete(_fakeRuntime);
         _workspace.Dispose();
+        _canvas.Dispose();
     }
 
     private FleetCopilotHost Host(bool enabled, string? runtime = null, string defaultCopilotModel = "")
@@ -36,6 +38,7 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
             [FleetRunHarness.ModelA, FleetRunHarness.ModelB],
             FleetRunHarness.ModelA,
             _workspace,
+            _canvas,
             FleetPromptSet.Defaults,
             new FleetCopilotPermissionPolicy(_workspace.Root, new ScriptedFleetInteraction(), CancellationToken.None));
 
@@ -105,6 +108,7 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
             Prompts = h.Run.Prompts,
             Budget = h.Run.Budget,
             Workspace = h.Run.Workspace,
+            Canvas = h.Run.Canvas,
             DefaultModel = h.Run.DefaultModel,
             Clients = h.Run.Clients,
             Events = h.Events,
@@ -148,5 +152,18 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
         Assert.False(config.LargeOutput!.Enabled);
         Assert.Equal(SystemMessageMode.Append, config.SystemMessage!.Mode);
         Assert.Null(config.CreateSessionFsProvider);
+    }
+
+    /// <summary>ADR 0102: the canvas tools are custom tools, and AvailableTools stays null. Setting it would restrict the
+    /// default-mode session to the custom tools and hide the shell and file built-ins.</summary>
+    [Fact]
+    public void SessionConfig_CarriesCanvasTools_KeepsBuiltins()
+    {
+        var settings = CopilotProviderSettings.OpenAICompatible(new Uri("https://api.example/v1"), "key");
+
+        var config = Factory(Host(true)).BuildSessionConfig(settings, "gpt-5", "You build.");
+
+        Assert.Equal(FleetCanvas.ToolNames, config.Tools!.Select(t => t.Name));
+        Assert.Null(config.AvailableTools);
     }
 }

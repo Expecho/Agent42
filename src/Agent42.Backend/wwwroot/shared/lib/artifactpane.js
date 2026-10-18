@@ -43,6 +43,12 @@
     return { html: "html", svg: "svg", markdown: "md" }[record.kind] || "txt";
   }
 
+  // The newest version's NUMBER, not the count: a fleet canvas page prunes its oldest versions (ADR 0102), so its
+  // versions can start above 1.
+  function latestOf(record) {
+    return record.versions.length ? record.versions[record.versions.length - 1].version : 0;
+  }
+
   function fileName(record) {
     const slug = (record.title || "artifact").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     return `${slug || "artifact"}.${extensionOf(record)}`;
@@ -145,7 +151,7 @@
     function fillVersions(record, version) {
       versionSelect.textContent = "";
       for (const v of record.versions) {
-        const option = el("option", null, v.version === record.versions.length ? `v${v.version} (latest)` : `v${v.version}`);
+        const option = el("option", null, v.version === latestOf(record) ? `v${v.version} (latest)` : `v${v.version}`);
         option.value = String(v.version);
         option.selected = v.version === version;
         versionSelect.appendChild(option);
@@ -177,7 +183,7 @@
         showMessage("This artifact is no longer available.");
         return;
       }
-      const wanted = record.versions.some((v) => v.version === version) ? version : record.versions.length;
+      const wanted = record.versions.some((v) => v.version === version) ? version : latestOf(record);
       show(record, wanted);
       closeBtn.focus();
     }
@@ -205,8 +211,8 @@
       for (const record of artifacts) {
         const item = button("artifact-pane__item", `Open ${record.title}`, null);
         item.append(el("span", "artifact-pane__item-title", record.title),
-          el("span", "artifact-pane__item-meta", `${KIND_LABEL[record.kind] || record.kind} · v${record.versions.length}`));
-        item.addEventListener("click", () => show(record, record.versions.length));
+          el("span", "artifact-pane__item-meta", `${KIND_LABEL[record.kind] || record.kind} · v${latestOf(record)}`));
+        item.addEventListener("click", () => show(record, latestOf(record)));
         list.appendChild(item);
       }
     }

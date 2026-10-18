@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -44,6 +45,7 @@ public sealed class FleetRunHarness : IDisposable
         Options = options ?? new FleetOptions { ApprovalDepth = -1 };
         Budget = new FleetBudget(maxTokens, Options.MaxAgentsPerTask, Options.BudgetSoftLimit, Options.MaxConcurrentSubTeamsPerLevel, Options.MaxTeamDepth);
         Workspace = new FleetWorkspace(Guid.NewGuid().ToString("N"));
+        Canvas = new FleetCanvas(Store, "alice", Workspace.WorkspaceId, Events);
         Interaction = new ScriptedFleetInteraction(answers);
         var fake = new FakeChatClient();
         Run = new FleetRun
@@ -53,6 +55,7 @@ public sealed class FleetRunHarness : IDisposable
             Prompts = FleetPromptSet.Defaults,
             Budget = Budget,
             Workspace = Workspace,
+            Canvas = Canvas,
             DefaultModel = ModelA,
             Clients = new Dictionary<string, IChatClient>
             {
@@ -71,6 +74,8 @@ public sealed class FleetRunHarness : IDisposable
     public FleetOptions Options { get; }
     public FleetBudget Budget { get; }
     public FleetWorkspace Workspace { get; }
+    public FleetStore Store { get; } = new(new InMemoryFleetBlobs());
+    public FleetCanvas Canvas { get; }
     public RecordingFleetSink Events { get; } = new();
     public ScriptedFleetInteraction Interaction { get; }
     public FleetRun Run { get; }
@@ -89,6 +94,7 @@ public sealed class FleetRunHarness : IDisposable
     public void Dispose()
     {
         Workspace.Dispose();
+        Canvas.Dispose();
         Budget.Dispose();
     }
 }

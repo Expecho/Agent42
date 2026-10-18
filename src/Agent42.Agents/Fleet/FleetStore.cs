@@ -11,11 +11,14 @@ namespace Agent42.Agents;
 /// {userId}/tasks/{taskId}.json
 /// {userId}/events/{taskId}.ndjson            (append blob)
 /// {userId}/workspaces/{workspaceId}/{path}
+/// {userId}/canvas/{workspaceId}/manifest.json
+/// {userId}/canvas/{workspaceId}/{name}/v{version}
 /// {userId}/prompts.json
 /// </code>
 /// Every id and path segment is escaped with <see cref="Uri.EscapeDataString(string)"/>, so none can add a level or
 /// step out of its own. A workspace path with <c>..</c>, a rooted path or an empty path is refused, never resolved:
-/// these paths come from models and from the download URL.
+/// these paths come from models and from the download URL. The canvas sits OUTSIDE the workspace prefix on purpose:
+/// the workspace sync deletes every stored blob under that prefix that isn't on local disk (ADR 0102).
 /// </summary>
 public sealed class FleetStore(IFleetBlobs blobs) : IFleetStore
 {
@@ -55,6 +58,7 @@ public sealed class FleetStore(IFleetBlobs blobs) : IFleetStore
         if (!others.Any(t => t.WorkspaceId == task.WorkspaceId))
         {
             await DeleteWorkspaceAsync(userId, task.WorkspaceId, cancellationToken);
+            await DeleteCanvasAsync(userId, task.WorkspaceId, cancellationToken);
         }
     }
 
@@ -90,6 +94,34 @@ public sealed class FleetStore(IFleetBlobs blobs) : IFleetStore
     public async Task DeleteWorkspaceAsync(string userId, string workspaceId, CancellationToken cancellationToken = default)
     {
         foreach (var item in await blobs.ListAsync(WorkspacePrefix(userId, workspaceId), cancellationToken))
+        {
+            await blobs.DeleteAsync(item.Key, cancellationToken);
+        }
+    }
+
+    public async Task<FleetCanvasManifest> GetCanvasManifestAsync(string userId, string workspaceId, CancellationToken cancellationToken = default)
+    {
+        var content = await blobs.GetAsync(CanvasManifestKey(userId, workspaceId), cancellationToken);
+        return content is null
+            ? new FleetCanvasManifest()
+            : JsonSerializer.Deserialize<FleetCanvasManifest>(content, JsonOptions) ?? new FleetCanvasManifest();
+    }
+
+    public Task PutCanvasManifestAsync(string userId, string workspaceId, FleetCanvasManifest manifest, CancellationToken cancellationToken = default)
+        => blobs.PutAsync(CanvasManifestKey(userId, workspaceId), JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions), cancellationToken);
+
+    public Task PutCanvasVersionAsync(string userId, string workspaceId, string name, int version, byte[] content, CancellationToken cancellationToken = default)
+        => blobs.PutAsync(CanvasVersionKey(userId, workspaceId, name, version), content, cancellationToken);
+
+    public Task<byte[]?> GetCanvasVersionAsync(string userId, string workspaceId, string name, int version, CancellationToken cancellationToken = default)
+        => blobs.GetAsync(CanvasVersionKey(userId, workspaceId, name, version), cancellationToken);
+
+    public Task DeleteCanvasVersionAsync(string userId, string workspaceId, string name, int version, CancellationToken cancellationToken = default)
+        => blobs.DeleteAsync(CanvasVersionKey(userId, workspaceId, name, version), cancellationToken);
+
+    public async Task DeleteCanvasAsync(string userId, string workspaceId, CancellationToken cancellationToken = default)
+    {
+        foreach (var item in await blobs.ListAsync(CanvasPrefix(userId, workspaceId), cancellationToken))
         {
             await blobs.DeleteAsync(item.Key, cancellationToken);
         }
@@ -145,6 +177,22 @@ public sealed class FleetStore(IFleetBlobs blobs) : IFleetStore
 
     private static string WorkspaceFileKey(string userId, string workspaceId, string path)
         => WorkspacePrefix(userId, workspaceId) + string.Join('/', NormalizeWorkspacePath(path).Select(Uri.EscapeDataString));
+
+    private static string CanvasPrefix(string userId, string workspaceId) => $"{UserPrefix(userId)}canvas/{Escape(workspaceId)}/";
+
+    private static string CanvasManifestKey(string userId, string workspaceId) => $"{CanvasPrefix(userId, workspaceId)}manifest.json";
+
+    // "manifest.json" can't collide with a page, because a page name has no '.'.
+    private static string CanvasVersionKey(string userId, string workspaceId, string name, int version)
+    {
+        if (!FleetCanvasPage.IsValidName(name))
+        {
+            throw new ArgumentException($"'{name}' is not a valid canvas page name.", nameof(name));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfLessThan(version, 1);
+        return $"{CanvasPrefix(userId, workspaceId)}{name}/v{version}";
+    }
 
     private static string PromptsKey(string userId) => $"{UserPrefix(userId)}prompts.json";
 

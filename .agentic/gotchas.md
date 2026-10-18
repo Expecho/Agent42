@@ -4286,6 +4286,32 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0101-fleet-task-files-and-documents.md`
 - **Verified:** 2026-10-18
 
+### The fleet canvas lives OUTSIDE the workspace prefix, because the workspace sync would delete it
+
+- **Claim:** canvas pages are stored at `{user}/canvas/{workspaceId}/manifest.json` and `…/{name}/v{n}`, never under
+  `{user}/workspaces/{workspaceId}/`. `FleetWorkspace.SyncCoreAsync` deletes every stored blob under the workspace
+  prefix that isn't on local disk (the entry above), so a canvas there would vanish after the first attempt. Nor is
+  the canvas on disk: a Copilot shell writes the workspace directory directly and would get around the canvas gate.
+  `FleetStore.DeleteTaskAsync` deletes the canvas prefix next to the workspace, for the last task sharing it. Any new
+  per-workspace Blob data needs the same treatment.
+- **Evidence:** `src/Agent42.Agents/Fleet/FleetStore.cs` (`CanvasPrefix`, `DeleteTaskAsync`),
+  `src/Agent42.Backend/Fleet/FleetCanvas.cs`, `tests/Agent42.Tests/FleetCanvasTests.cs` (`Canvas_SurvivesWorkspaceSync`),
+  `tests/Agent42.Tests/FleetStoreTests.cs` (`DeleteTask_KeepsSharedCanvasUntilLastTask`),
+  `.agentic/decisions/0102-fleet-shared-canvas.md`
+- **Verified:** 2026-10-18
+
+### A fleet Copilot `SessionConfig` must NOT set `AvailableTools`
+
+- **Claim:** the copilot chat kind (`src/Agent42.Backend/Copilot/CopilotAgentFactory.cs`) sets `AvailableTools` to its custom tool names,
+  which restricts a `Mode.Empty` session to exactly those. Copying that into `FleetCopilotAgentFactory.BuildSessionConfig`
+  would restrict a fleet session (default mode) the same way and hide the shell and file built-ins ADR 0097 keeps.
+  The fleet sets only `Tools` (the four canvas tools, ADR 0102). **Unverified live:** that a default-mode BYOK session
+  offers custom `Tools` alongside the built-ins (no Copilot model key).
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`BuildSessionConfig`),
+  `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs` (`SessionConfig_CarriesCanvasTools_KeepsBuiltins`),
+  `.agentic/decisions/0102-fleet-shared-canvas.md`
+- **Verified:** 2026-10-18
+
 ### Fleet workspace downloads are an XSS sink: attachment, nosniff, never an HTML or SVG type
 
 - **Claim:** workspace files are written by models (and by Copilot shells). `/api/fleet/tasks/{id}/files/{**path}`
@@ -4309,8 +4335,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Sharing one client would give copilot-kind chats built-in tools, or fleet agents a virtual filesystem. The fleet
   environment is `MinimalEnvironment()` plus `PATH` only. Its permission policy is per task, so "always" never
   outlives the task, and `PermissionRequestCustomTool` is approved without asking (default mode still raises it).
-  The kill switch is `Fleet:CopilotAgentsEnabled`. **Unverified live:** that a default-mode BYOK session raises
-  write/shell permissions and honours the working directory (the spike had no model key).
+  The kill switch is `Fleet:CopilotAgentsEnabled`. Since ADR 0102 fleet sessions carry the canvas tools as custom
+  `Tools` (see "A fleet Copilot `SessionConfig` must NOT set `AvailableTools`"). **Unverified live:** that a
+  default-mode BYOK session raises write/shell permissions, honours the working directory and offers the custom
+  tools (the spike had no model key).
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`FleetCopilotHost.BuildClientOptions`),
   `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`BuildClientOptions`),
   `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs`, `.agentic/decisions/0097-agent-fleet-recursive-teams.md`
