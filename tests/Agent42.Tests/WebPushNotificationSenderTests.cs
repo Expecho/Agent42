@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -105,30 +104,5 @@ public sealed class WebPushNotificationSenderTests(SharedClusterFixture fixture)
     public async Task NullSender_IsASilentNoOp()
     {
         await new NullPushNotificationSender().SendAsync("any-user", Message());
-    }
-
-    private sealed class FakeWebPushClient : IWebPushClient
-    {
-        public ConcurrentBag<string> Sent { get; } = [];
-
-        /// <summary>Returns an HTTP status to throw as <see cref="PushDeliveryException"/> for a sub, else null.</summary>
-        public Func<PushSubscription, int?> FailStatusFor { get; init; } = _ => null;
-
-        /// <summary>When true for a sub, throws a non-delivery exception to prove nothing escapes.</summary>
-        public Func<PushSubscription, bool> ThrowGenericFor { get; init; } = _ => false;
-
-        public Task SendAsync(PushSubscription subscription, string payload, CancellationToken cancellationToken)
-        {
-            Sent.Add(subscription.Endpoint);
-            if (ThrowGenericFor(subscription))
-            {
-                throw new InvalidOperationException("boom");
-            }
-            if (FailStatusFor(subscription) is int status)
-            {
-                throw new PushDeliveryException(status, new HttpRequestException());
-            }
-            return Task.CompletedTask;
-        }
     }
 }
