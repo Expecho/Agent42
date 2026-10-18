@@ -24,11 +24,13 @@
     config: null, models: null, files: null,
     tools: null,            // the fleet's rows of GET /api/tools, or null when it failed (then no override is ever sent)
     defaultTools: null,     // the user's default chat selection (profile.enabledTools), null meaning all
+    attachments: [],        // File objects the composer will send with the next task (ADR 0100)
+    ingested: null,         // the selected task's documents.ingested files, from its event log
   };
 
   function resetTaskState() {
     S.teams.clear(); S.calls.clear(); S.rootTeamId = null; S.live = null;
-    S.budget = null; S.prompt = null; S.panel = null; dirtyText.clear();
+    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; dirtyText.clear();
     renderPrompt();
     invalidate();
   }
@@ -149,6 +151,7 @@
   // One handler per event type the backend publishes (FleetPageAssetsTests checks every Publish("…") has one).
   const handlers = {
     "task.started"(d, time) { S.live = { status: "running", started: time, model: d.model }; },
+    "documents.ingested"(d) { S.ingested = d.files || []; },
     "task.finished"(d, time) {
       S.live = { status: d.status, finished: time };
       const t = taskById(d.taskId);
@@ -236,12 +239,14 @@
     "prompt.answered"() { S.prompt = null; renderPrompt(); return false; },
   };
 
+  // A FormData body goes as it is: the browser sets its multipart content-type with the boundary.
   async function api(method, path, body) {
+    const form = body instanceof FormData;
     try {
       const res = await fetch(path, {
         method,
-        headers: body === undefined ? {} : { "content-type": "application/json" },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        headers: body === undefined || form ? {} : { "content-type": "application/json" },
+        body: body === undefined ? undefined : form ? body : JSON.stringify(body),
         credentials: "same-origin",
       });
       const text = await res.text();
@@ -401,9 +406,34 @@
     const toolsList = h("div", { class: "tool-list" });
     const tools = h("details", { class: "tool-picker", hidden: true }, toolsSummary, toolsList);
     const options = h("div", { class: "composer-options" }, h("label", null, "Model", model), h("label", null, "Token cap", tokens), tools);
-    const el = h("div", { class: "card composer" }, title, ta, options, h("div", { class: "composer-row" }, hint, err, btn));
-    return { el, ta, err, btn, title, hint, model, tokens, tools, toolsSummary, toolsList };
+    const fileInput = h("input", { type: "file", multiple: true, hidden: true, onchange: e => { addAttachments(e.target.files); e.target.value = ""; } });
+    const chips = h("div", { class: "attachments" });
+    const files = h("div", { class: "composer-files" },
+      h("button", { class: "btn", type: "button", text: "Attach files", onclick: () => fileInput.click() }), fileInput, chips,
+      h("span", { class: "muted hint", text: "Agents read attached files in the workspace. Documents (PDF, Word, PowerPoint, Excel, text) become searchable when you've chosen an embedding model in Settings." }));
+    const el = h("div", { class: "card composer" }, title, ta, files, options, h("div", { class: "composer-row" }, hint, err, btn));
+    el.addEventListener("dragover", e => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); el.classList.add("dropping"); } });
+    el.addEventListener("dragleave", e => { if (!el.contains(e.relatedTarget)) el.classList.remove("dropping"); });
+    el.addEventListener("drop", e => { if (e.dataTransfer?.files?.length) { e.preventDefault(); addAttachments(e.dataTransfer.files); } el.classList.remove("dropping"); });
+    return { el, ta, err, btn, title, hint, model, tokens, tools, toolsSummary, toolsList, chips };
   })();
+
+  // ---------- attached files (ADR 0100) ----------
+  // The server refuses two files of one name, so a file replaces an attached one of the same name (case-insensitive).
+  // File names are the user's: text only.
+  function addAttachments(list) {
+    for (const file of list) {
+      S.attachments = S.attachments.filter(f => f.name.toLowerCase() !== file.name.toLowerCase()).concat(file);
+    }
+    renderAttachments();
+  }
+
+  function renderAttachments() {
+    composer.chips.replaceChildren(...S.attachments.map(f => h("span", { class: "attachment" },
+      h("span", { class: "name", text: f.name }), h("span", { class: "size", text: fmtBytes(f.size) }),
+      h("button", { type: "button", class: "remove", title: "Remove", "aria-label": "Remove " + f.name, text: "×",
+        onclick: () => { S.attachments = S.attachments.filter(x => x !== f); renderAttachments(); } }))));
+  }
 
   // ---------- tools picker (ADR 0099) ----------
   // A task follows the user's default chat selection unless this picker was changed: only then is an override sent,
@@ -513,20 +543,34 @@
       h("div", { style: "margin-top:8px" }, h("a", { href: "/", text: "Open Agent 42 →" })));
   }
 
-  // Run again passes the record's enabledTools (null too), which then wins over the picker.
-  async function submitTask(text, followUpOf, enabledTools) {
+  // Run again passes the record's enabledTools (null too), which then wins over the picker, and the task whose files
+  // it copies (copyInputsOf). Only the composer's own submit sends the attached files: as multipart, to the files
+  // route, and as plain JSON when there are none.
+  async function submitTask(text, followUpOf, enabledTools, copyInputsOf) {
     const task = (text ?? composer.ta.value).trim();
     if (!task) { composer.ta.focus(); return; }
     composer.btn.disabled = true;
-    const r = await api("POST", "/api/fleet/tasks", {
+    const request = {
       task,
       followUpOf: followUpOf === undefined ? followUpTarget()?.id : followUpOf,
       model: composer.model.value || null,
       maxTokens: Number(composer.tokens.value) || null,
       enabledTools: enabledTools !== undefined ? enabledTools : toolOverride(),
-    });
+      copyInputsOf: copyInputsOf || null,
+    };
+    const files = text === undefined ? S.attachments : [];
+    let r;
+    if (files.length > 0) {
+      const form = new FormData();
+      form.append("request", JSON.stringify(request));
+      for (const file of files) form.append("files", file, file.name);
+      r = await api("POST", "/api/fleet/tasks/with-files", form);
+    } else {
+      r = await api("POST", "/api/fleet/tasks", request);
+    }
     composer.btn.disabled = false;
     if (r.ok) {
+      if (files.length > 0) { S.attachments = []; renderAttachments(); }
       composer.ta.value = ""; composer.err.textContent = ""; S.freshTask = true; setFollow(true); toolPicker.target = undefined;
       await loadTasks();
       selectTask(r.data.taskId);
@@ -632,7 +676,7 @@
       onclick: () => { S.selectedAttempt = x.n; setFollow(false); invalidate(); },
     }, h("span", { class: "dot " + x.status }), `Attempt ${x.n}`, x.fix && h("span", { class: "muted", text: "fix" }), x.verdict && h("span", { class: "muted", text: `${x.verdict.score}/10` }))));
 
-    pane.replaceChildren(h("div", { class: "detail-inner" }, top, head, tabs, a ? renderAttempt(team, a) : null,
+    pane.replaceChildren(h("div", { class: "detail-inner" }, top, head, team.depth === 0 && task && attachedCard(task), tabs, a ? renderAttempt(team, a) : null,
       team.depth === 0 && task && taskFooter(task)));
   }
 
@@ -646,9 +690,26 @@
         h("h1", null, `Task #${taskNumber(task.id)}`, h("span", { class: "pill " + task.status, text: statusText(task.status) })),
         h("div", { class: "sub-head" }, `${task.plannerModel} · `, dur(task.startedAt, task.finishedAt), toolsText(task)),
         clampText("task-" + task.id, "task-text", task.request, 600)),
+      attachedCard(task),
       task.status === "running" && h("div", { class: "card waiting", style: "margin-top:12px" }, h("span", { class: "dot planning" }), "The planner is putting a team together…"),
       taskFooter(task),
     ];
+  }
+
+  // The task's attached files with how each was ingested (the documents.ingested event), and which documents the
+  // agents can search. Names are the user's and the reasons the server's: text only.
+  function attachedCard(task) {
+    const files = S.ingested || (task.inputs || []).map(name => ({ name }));
+    if (files.length === 0 && !(task.documents || []).length) return null;
+    const outcome = f => !f.status ? ""
+      : f.status === "indexed" ? `searchable (${f.chunks} ${f.chunks === 1 ? "chunk" : "chunks"})`
+      : f.reason ? `${f.status}: ${f.reason}` : f.status;
+    const copy = f => f.textCopy ? ` · text copy ${f.textCopy}` : f.textCopySkipped ? ` · text copy skipped: ${f.textCopySkipped}` : "";
+    return h("div", { class: "card attached", style: "margin-top:12px" },
+      h("b", { text: "Attached files" }),
+      files.length > 0 && h("ul", { class: "files" }, files.map(f => h("li", null,
+        h("span", { class: "name", text: "inputs/" + f.name }), h("span", { class: "muted", text: [outcome(f), copy(f)].filter(Boolean).join("") })))),
+      (task.documents || []).length > 0 && h("div", { class: "muted", text: "Agents can search: " + task.documents.join(", ") }));
   }
 
   function taskFooter(task) {
@@ -682,12 +743,13 @@
       h("button", { class: "btn primary", text: "Follow up", onclick: () => { S.freshTask = false; updateComposer(); $("#detail").scrollTop = 0; composer.ta.focus(); } }));
   }
 
-  // An interrupted, stopped or failed task can't be followed up, but its request can run again as a new task.
+  // An interrupted, stopped or failed task can't be followed up, but its request can run again as a new task. A follow-up
+  // runs again in the shared workspace; a new task gets a new one, so it copies the old task's attached files (ADR 0100).
   function runAgainCard(task) {
     return ["interrupted", "stopped", "failed"].includes(task?.status) && !running() && h("div", { class: "card follow-up-cta" },
       h("div", null, h("b", { text: task.status === "interrupted" ? "Interrupted by a restart" : "Didn't finish" }),
         h("div", { class: "muted", text: "Run the same request again as a new task." })),
-      h("button", { class: "btn", text: "Run again", onclick: () => submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null) }));
+      h("button", { class: "btn", text: "Run again", onclick: () => submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null, task.followUpOf ? null : task.id) }));
   }
 
   function statusText(s) {

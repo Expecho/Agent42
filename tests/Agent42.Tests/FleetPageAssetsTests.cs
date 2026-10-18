@@ -127,13 +127,30 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
         Assert.Contains("h(\"span\", { text: row.label })", script);
     }
 
-    /// <summary>ADR 0099: Run again keeps the task's override (null included) instead of falling back to the picker.</summary>
+    /// <summary>ADR 0099: Run again keeps the task's override (null included) instead of falling back to the picker.
+    /// ADR 0100: it passes followUpOf when the task has one, else copyInputsOf, so a new task's files come along.</summary>
     [Fact]
     public async Task FleetJs_RunAgain_ResendsTaskOverride()
     {
         var script = await _client.GetStringAsync("/fleet/fleet.js");
 
-        Assert.Contains("submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null)", script);
+        Assert.Contains("submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null, task.followUpOf ? null : task.id)", script);
+        Assert.Contains("copyInputsOf: copyInputsOf || null", script);
+    }
+
+    /// <summary>ADR 0100: the page posts FormData to the files route only when files are attached, never forces a JSON
+    /// content-type on it (the browser must set the multipart boundary), and sets file names as text.</summary>
+    [Fact]
+    public async Task FleetJs_Files_MultipartOnlyWithFiles()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("if (files.length > 0) {", script);
+        Assert.Contains("r = await api(\"POST\", \"/api/fleet/tasks/with-files\", form);", script);
+        Assert.Contains("r = await api(\"POST\", \"/api/fleet/tasks\", request);", script);
+        Assert.Contains("headers: body === undefined || form ? {} : { \"content-type\": \"application/json\" }", script);
+        Assert.Contains("h(\"span\", { class: \"name\", text: f.name })", script);
+        Assert.Contains("const files = text === undefined ? S.attachments : [];", script);
     }
 
     /// <summary>Every event type the backend publishes has a handler on the page, so no part of a run goes unshown.</summary>
