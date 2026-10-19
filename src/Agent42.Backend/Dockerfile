@@ -18,8 +18,23 @@ COPY src/Agent42.ServiceDefaults/ src/Agent42.ServiceDefaults/
 
 RUN dotnet publish src/Agent42.Backend/Agent42.Backend.csproj -c Release -o /app --no-restore
 
+# Node.js for the shell of Copilot fleet agents (ADR 0097). Taken from the official image on the
+# current LTS line, because Ubuntu 24.04's apt `nodejs` is the end-of-life 18.x.
+FROM node:24-bookworm-slim AS node
+
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
+
+# Python 3 and Node.js are runtimes for the built-in shell of Copilot fleet agents (ADR 0097). The
+# app runs non-root, so nothing can be installed at runtime: whatever the shell can run is baked in here.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
 COPY --from=build /app .
 
 USER $APP_UID
