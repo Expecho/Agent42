@@ -51,7 +51,7 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
         // The incognito turn stayed out even though the later turn re-projected the conversation.
         // It IS still in the in-memory session (ADR 0034 promises "not persisted", not "not in
         // memory"), so this only holds because the ephemeral path advances the index cursor past it.
-        // Measured: without SkipIndexingForEphemeralTurnAsync this assertion fails, with the
+        // Measured: without ChatSearchProjection.SkipEphemeralTurnAsync this assertion fails, with the
         // incognito text indexed at ordinal 0.
         Assert.DoesNotContain(hits, hit => hit.Text.Contains("incognito marker"));
     }
@@ -301,7 +301,7 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
     }
 
     // AC15, and the load-bearing one of the four: it is the only test that fails if the reconcile CLEARS
-    // _ephemeralOrdinals instead of remapping them.
+    // the projection's incognito ordinals instead of remapping them.
     //
     // The incognito turn is taken AFTER the clock moves, so the prune drops the older turn and leaves the
     // incognito one resident — an ordinal shift underneath a set of recorded ordinals. Clearing the set

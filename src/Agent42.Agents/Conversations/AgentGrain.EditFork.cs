@@ -59,18 +59,14 @@ public sealed partial class AgentGrain
 
         RemoveLastTurn(messages, userIndices);
         var projectedCount = ProjectHistory().Count;
-        _ephemeralOrdinals.RemoveWhere(ordinal => ordinal >= projectedCount);
 
         // In memory only for a conversation that has never been written (ADR 0034). The flag comes from the client,
         // and a conversation that HAS a stored record must not be left with the removed turn in Cosmos and its index
-        // documents behind, whatever the request says.
-        if (ephemeral && _state.State.SerializedSession is not { Length: > 0 })
-        {
-            // In memory only (ADR 0034): no write and no index call. The cursor is pulled back so the next turn's
-            // ordinals start where the removed turn's did.
-            _indexedTurnCount = Math.Min(_indexedTurnCount, projectedCount);
-        }
-        else
+        // documents behind, whatever the request says. In memory only means no write and no index call: the search
+        // cursor is pulled back instead, so the next turn's ordinals start where the removed turn's did.
+        var inMemoryOnly = ephemeral && _state.State.SerializedSession is not { Length: > 0 };
+        _search.TruncateTo(projectedCount, pullBackCursor: inMemoryOnly);
+        if (!inMemoryOnly)
         {
             await PersistTruncationAsync();
         }
@@ -92,7 +88,7 @@ public sealed partial class AgentGrain
 
         // Incognito turns still in memory (ADR 0034) must never reach a persisted, indexed fork. The route's "listed
         // source" check keeps incognito chats out; this covers a listed chat that also served an incognito turn.
-        if (_ephemeralOrdinals.Count > 0)
+        if (_search.HasEphemeralTurns)
         {
             return new ConversationForkResult(HistoryEditOutcome.Unsupported);
         }
@@ -182,7 +178,7 @@ public sealed partial class AgentGrain
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
         await _state.WriteStateAsync();
-        await IndexNewTurnsForSearchAsync();
+        await _search.IndexNewTurnsAsync();
 
         _logger.LogInformation(
             "Agent grain {GrainKey} initialized from a fork of {Source}", ownerKey, fork.SourceOwnerKey);
@@ -285,8 +281,8 @@ public sealed partial class AgentGrain
         _sharedStateDirty = false;
         await _state.WriteStateAsync();
 
-        await ReconcileSearchIndexAfterPruneAsync(pruned: true);
-        await IndexNewTurnsForSearchAsync();
+        await _search.ReconcileAfterPruneAsync(pruned: true);
+        await _search.IndexNewTurnsAsync();
     }
 
     // Every (artifactId, version) that a create_artifact or update_artifact call in these messages stored. Taken

@@ -260,6 +260,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // sync call sites — dereferences it, so resolving it later would NRE (m4). The userId is
         // everything before the first '/' of the grain key ({userId}/{conversationId}, see AgentApi.AgentKey).
         _userId = UserIdFromGrainKey(this.GetPrimaryKeyString());
+        _search = CreateSearchProjection();
         _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId, cancellationToken);
 
         // An empty factory (the user has configured no chat provider — ADR 0019) has DefaultModelId "".
@@ -313,7 +314,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // AgentApi.AgentKey). The userId is an opaque Easy-Auth principal id with no '/', so a first-'/'
     // split is safe even if a conversation id ever contained one. A key with no '/' (defensive) is
     // treated wholly as the userId.
-    private static string UserIdFromGrainKey(string grainKey)
+    internal static string UserIdFromGrainKey(string grainKey)
     {
         var slash = grainKey.IndexOf('/');
         return slash < 0 ? grainKey : grainKey[..slash];
@@ -322,7 +323,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // The conversationId is everything after the FIRST '/' of the grain key ({userId}/{conversationId}).
     // A key with no '/' (defensive) has no conversation part, so returns the whole key — the push then
     // opens "/" rather than a specific conversation, which is a harmless degradation.
-    private static string ConversationIdFromGrainKey(string grainKey)
+    internal static string ConversationIdFromGrainKey(string grainKey)
     {
         var slash = grainKey.IndexOf('/');
         return slash < 0 ? grainKey : grainKey[(slash + 1)..];
@@ -1120,8 +1121,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             // The incognito turn is still in the IN-MEMORY session (ADR 0034 guarantees "not
             // persisted, not listed", never "not in memory"), so the next normal turn of this same
             // activation would otherwise re-project it straight into the search index. Consume its
-            // ordinals without indexing them — see IndexNewTurnsForSearchAsync (ADR 0061).
-            await SkipIndexingForEphemeralTurnAsync();
+            // ordinals without indexing them — see ChatSearchProjection.SkipEphemeralTurnAsync (ADR 0061).
+            await _search.SkipEphemeralTurnAsync();
 
             _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral turn (not persisted)",
                 this.GetPrimaryKeyString());
@@ -1142,12 +1143,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // AFTER the durable write, deliberately: once a chat is older than the window most turns prune
         // something, so this fires on most turns — a filtered-query delete plus N deletes and N upserts on
         // a non-reentrant grain, which must not sit in front of the write ADR 0046's stream recovery reads.
-        await ReconcileSearchIndexAfterPruneAsync(pruned);
+        await _search.ReconcileAfterPruneAsync(pruned);
 
         // Search projection (ADR 0061). No ephemeral guard needed: the early return above already
         // took the incognito path, so reaching here means the turn is persisted. Best-effort inside.
         // When the reconcile above reset the cursor, this is the re-projection from ordinal 0.
-        await IndexNewTurnsForSearchAsync();
+        await _search.IndexNewTurnsAsync();
 
         _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
             this.GetPrimaryKeyString());
@@ -1411,7 +1412,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // And its indexed messages, so deleted conversation text does not survive in the search
         // projection (ADR 0061). Best-effort and bounded inside: this grain is non-reentrant and
         // DELETE /api/conversations/{id} awaits it synchronously.
-        await DeleteSearchIndexForConversationAsync();
+        await _search.DeleteConversationAsync();
 
         // And Copilot's own transcript of a copilot chat (its SessionFs files), which the session item only points
         // at. Before ClearStateAsync, which takes the agent kind with it. Best-effort inside.
@@ -1547,11 +1548,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         await _state.WriteStateAsync();
 
         // After the write, for the reason given at the chat site.
-        await ReconcileSearchIndexAfterPruneAsync(pruned);
+        await _search.ReconcileAfterPruneAsync(pruned);
 
         // Search projection (ADR 0061). Deliberately NO ephemeral guard here — a fired reminder is never
         // ephemeral and always persists. Best-effort inside.
-        await IndexNewTurnsForSearchAsync();
+        await _search.IndexNewTurnsAsync();
 
         // Consume site 2 of 2 (ADR 0066), and the one that is easy to miss: this method does NOT drain
         // ChatCoreAsync — it calls _agent.RunAsync directly and does its own serialize/write/index —

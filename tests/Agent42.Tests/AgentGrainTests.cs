@@ -328,7 +328,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     }
 
     // ADR 0080 AC2 — the load-bearing invariant. Attaching tool calls must never add, remove or reorder a
-    // turn: ProjectForSearch numbers turns by their POSITION in this list and that ordinal is half of the
+    // turn: ChatSearchProjection.Project numbers turns by their POSITION in this list and that ordinal is half of the
     // Cosmos document id (ADR 0061), while recoverPersistedReply gates on `turns.length >= priorTurns + 2`
     // (send.js, ADR 0046). Neither throws when the count shifts — they just diverge silently, forever.
     //

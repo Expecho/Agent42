@@ -65,7 +65,7 @@ public sealed partial class AgentGrain
     /// <summary>
     /// Stamp, then prune. The single entry point the three persist sites call immediately before their
     /// serialize; returns whether anything was dropped, which the caller passes to
-    /// <see cref="ReconcileSearchIndexAfterPruneAsync"/> AFTER its state write.
+    /// <see cref="ChatSearchProjection.ReconcileAfterPruneAsync"/> AFTER its state write.
     ///
     /// <para>The order is not interchangeable: pruning first would judge this turn's brand-new messages,
     /// which carry no <c>CreatedAt</c> at all, against the window.</para>
@@ -103,7 +103,7 @@ public sealed partial class AgentGrain
     /// ordinals move, so it is the only place the shift and the recorded ordinals are certain to be in
     /// the same frame. Deferring it to a reconcile that may be retried a turn later re-applies an old
     /// shift to ordinals already recorded in the new frame — which indexes incognito text. See
-    /// <c>_searchReconcilePending</c>.</para>
+    /// <c>ChatSearchProjection._reconcilePending</c>.</para>
     ///
     /// <para>Runs before the serialize at each of the three persist sites, so a pruned session is what
     /// gets written rather than something trimmed afterwards. Only deletion reclaims the 2 MB budget
@@ -130,7 +130,7 @@ public sealed partial class AgentGrain
         var after = (await GetHistoryAsync()).Count;
 
         var droppedProjectedTurns = Math.Max(before - after, 0);
-        RemapEphemeralOrdinals(droppedProjectedTurns);
+        _search.RemapAfterPrune(droppedProjectedTurns);
 
         _logger.LogInformation(
             "Agent grain {GrainKey} pruned {Turns} expired turn(s) ({Ordinals} projected) outside the "

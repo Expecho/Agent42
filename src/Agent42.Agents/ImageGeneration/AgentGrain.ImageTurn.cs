@@ -127,12 +127,12 @@ public sealed partial class AgentGrain
             await _state.WriteStateAsync();
 
             // After the write, for the reason given at the chat site.
-            await ReconcileSearchIndexAfterPruneAsync(pruned);
+            await _search.ReconcileAfterPruneAsync(pruned);
 
             // Search projection (ADR 0061). This site really does have an `if (!turn.Ephemeral)` block —
             // unlike the other two, which are an early return and a no-guard-by-design path — so the
             // write goes INSIDE it. Best-effort inside.
-            await IndexNewTurnsForSearchAsync();
+            await _search.IndexNewTurnsAsync();
 
             // Outbound webhook (ADR 0094), fire site 2 of 3: inside this site's own persist block, because the image
             // turn never reaches the chat persist. A count only, never the image's URL (credential-bearing).
@@ -145,7 +145,7 @@ public sealed partial class AgentGrain
         {
             // Same reason as the chat path: consume the ordinals so a later normal turn on this
             // activation cannot re-project this incognito turn into the search index (ADR 0061).
-            await SkipIndexingForEphemeralTurnAsync();
+            await _search.SkipEphemeralTurnAsync();
 
             _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral image-generation turn (not persisted)",
                 this.GetPrimaryKeyString());
