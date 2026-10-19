@@ -262,6 +262,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _userId = UserIdFromGrainKey(this.GetPrimaryKeyString());
         _search = CreateSearchProjection();
         _retention = new HistoryRetention(_timeProvider, _logger, this.GetPrimaryKeyString());
+        _forking = new ConversationForking(_attachments, _logger);
         _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId, cancellationToken);
 
         // An empty factory (the user has configured no chat provider — ADR 0019) has DefaultModelId "".

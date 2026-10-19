@@ -25,8 +25,8 @@ public sealed partial class AgentGrain
     private const string ArtifactMediaType = "application/octet-stream";
 
     // The three tool names, shared with compaction and the history projection.
-    private const string CreateArtifactTool = "create_artifact";
-    private const string UpdateArtifactTool = "update_artifact";
+    internal const string CreateArtifactTool = "create_artifact";
+    internal const string UpdateArtifactTool = "update_artifact";
     private const string ReadArtifactTool = "read_artifact";
 
     // The rules the model obeys are these descriptions (ADR 0067's lesson), so the policy is all here: when an
@@ -349,7 +349,7 @@ public sealed partial class AgentGrain
     /// The id and version in an artifact tool's JSON result, or null for a refusal (plain text) or a stub. Shared by
     /// compaction and the history projection, which therefore agree on what counts as a stored artifact.
     /// </summary>
-    private static ArtifactInfo? ParseArtifactResult(object? result)
+    internal static ArtifactInfo? ParseArtifactResult(object? result)
     {
         var text = ToolText(result);
         if (text is null || !text.StartsWith('{'))
