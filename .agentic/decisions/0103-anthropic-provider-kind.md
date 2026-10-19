@@ -9,6 +9,11 @@ extends: [0013, 0018]
 
 # Anthropic (Claude) is a native provider kind, behind one compatibility shim
 
+> **Amended by [ADR 0104](0104-prompt-prefix-caching.md) (2026-10-19):** two items this ADR listed as out of scope are
+> done. Prompt-prefix stability (memory and shared state moved out of `system`, a memoized image SAS, sorted MCP tools)
+> lets the shim's top-level `cache_control` actually hit, and cache-token reporting covers cached reads on `/usage` plus
+> Anthropic cache **writes** in the per-turn usage line. `cache_control` still comes only from this shim.
+
 ## Context
 On 2026-10-18 the user wanted Claude as a first-class model everywhere a chat model works: chats, stored agents and
 `/api/agent-run`, the research agent, and the agent fleet (planner, judge, moderator, Magentic manager, team agents,

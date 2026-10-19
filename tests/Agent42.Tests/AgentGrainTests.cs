@@ -2572,8 +2572,9 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     }
 
     // BC1: with a client configured, a recalled memory reaches the MODEL on a real grain turn — recall is
-    // queried with the user's message, and the memory lands in the instructions the terminal IChatClient
-    // received ([sys:…]). The bank is the userId off the grain key, not the conversation id (BC5).
+    // queried with the user's message, and the memory lands in a trailing context message the terminal
+    // IChatClient received ([ctx:…]; ADR 0104 moved it out of the instructions). The bank is the userId off the
+    // grain key, not the conversation id (BC5).
     [Fact]
     public async Task AgentChat_InjectsRecalledMemories()
     {
@@ -2585,11 +2586,73 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         var answer = string.Concat(events
             .Where(e => e.Type == AgentStreamEventType.TextDelta)
             .Select(e => e.Text));
-        Assert.Contains("[sys:", answer);
-        Assert.Contains("## Memories", answer);
+        Assert.Contains("[ctx:## Memories", answer);
         Assert.Contains("The user is allergic to shellfish", answer);
         Assert.Equal(["what should I order?"], RecallsFor("memory-inject-user"));
     }
+
+    // AC1 (ADR 0104): recall and shared state change between two turns, and the instructions the model receives —
+    // the front of the cached prefix — are byte-identical. The [sys:…] echo is followed by the [ctx:…] ones.
+    [Fact]
+    public async Task MemoryAndSharedState_DoNotChangeInstructions()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("prefix-stable-user/prefix-stable-conv");
+        await CollectAsync(agent.ChatAsync("hi", null));
+
+        MemoryReturns("Memory A");
+        await agent.SetSharedStateAsync("""{"step":1}""", 0);
+        var first = AnswerText(await CollectAsync(agent.ChatAsync("one", null)));
+
+        MemoryReturns("Memory B, which is different");
+        await agent.SetSharedStateAsync("""{"step":2}""", 1);
+        var second = AnswerText(await CollectAsync(agent.ChatAsync("two", null)));
+
+        Assert.Contains("Memory B", second);
+        Assert.Contains("\"step\":2", second);
+        Assert.Equal(Instructions(first), Instructions(second));
+
+        static string Instructions(string answer)
+        {
+            var start = answer.IndexOf("[sys:", StringComparison.Ordinal);
+            Assert.True(start >= 0, answer);
+            return answer[start..answer.IndexOf("[ctx:", start, StringComparison.Ordinal)];
+        }
+    }
+
+    // AC2 (ADR 0104): the trailing memory and state messages are never stored as user turns in the session.
+    [Fact]
+    public async Task TrailingContext_IsNotPersisted()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("prefix-store-user/prefix-store-conv");
+        await CollectAsync(agent.ChatAsync("hi", null));
+        MemoryReturns("Remembered fact");
+        await agent.SetSharedStateAsync("""{"step":1}""", 0);
+
+        await CollectAsync(agent.ChatAsync("again", null));
+
+        var history = await agent.GetHistoryAsync();
+        Assert.Equal(["hi", "again"], history.Where(t => t.Role == "user").Select(t => t.Text));
+    }
+
+    // AC11 (ADR 0104): a turn whose usage reports Anthropic cache creation carries it on Done, next to the cached
+    // reads; a turn without it leaves the field null (so the NDJSON writer omits it).
+    [Fact]
+    public async Task Done_CarriesCacheWriteTokens()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("cache-write-user/cache-write-conv");
+
+        var done = (await CollectAsync(agent.ChatAsync(FakeChatClient.CacheUsageMarker, null)))
+            .Single(e => e.Type == AgentStreamEventType.Done);
+        var plain = (await CollectAsync(agent.ChatAsync("hello", null)))
+            .Single(e => e.Type == AgentStreamEventType.Done);
+
+        Assert.Equal((800L, 350L), (done.CachedTokens, done.CacheWriteTokens));
+        Assert.Null(plain.CacheWriteTokens);
+    }
+
+    private static string AnswerText(IEnumerable<AgentStreamEvent> events) => string.Concat(events
+        .Where(e => e.Type == AgentStreamEventType.TextDelta)
+        .Select(e => e.Text));
 
     // BC5: the bank is the USER, not the conversation — that is what makes memory span chats. Two different
     // conversations of one user recall from one bank; nothing is ever recalled for a bank named after a
@@ -2674,7 +2737,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Equal(["still answer me"], RecallsFor("memory-failure-user"));
     }
 
-    // The memory provider is NOT a tool — it injects instructions before the call — so like the document
+    // The memory provider is NOT a tool — it injects a context message before the call — so like the document
     // TextSearchProvider it must stay attached on a model that supports no tools at all. Same asymmetry as
     // NoToolModel_StillGetsDocumentRetrieval above, and the same gotcha: AgentSkillsProvider goes when
     // tools go because it exposes load_skill, while these two do not and must not.
@@ -3277,6 +3340,22 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         Assert.Contains("mcp_tool_a", registered);
         Assert.DoesNotContain("mcp_tool_b", registered);
+    }
+
+    // AC5 (ADR 0104): one server's tools reach the model sorted by name, whatever order the server listed them in,
+    // so the cached tools prefix is stable across activations. Servers keep their configured order.
+    [Fact]
+    public async Task McpTools_AreSortedPerServer()
+    {
+        await using var cluster = await NewClusterWithMcpServersAsync(
+            new McpServerTools("srv-z", [FakeMcpTool("mcp_zeta"), FakeMcpTool("mcp_alpha")]),
+            new McpServerTools("srv-a", [FakeMcpTool("mcp_omega"), FakeMcpTool("mcp_beta")]));
+        var agent = cluster.GrainFactory.GetGrain<IAgentGrain>("mcp-sorted");
+        await agent.SetEnabledToolsAsync([ToolCatalog.Mcp]);
+
+        var registered = ToolNames(Answer(await CollectAsync(agent.ChatAsync("hi", TestSiloConfigurator.DefaultModel))));
+
+        Assert.EndsWith("mcp_alpha,mcp_zeta,mcp_beta,mcp_omega", registered, StringComparison.Ordinal);
     }
 
     // AC9 (the Finding-1 regression pin): a null (all) selection must be returned to the picker with the

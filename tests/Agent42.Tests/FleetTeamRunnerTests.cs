@@ -207,6 +207,19 @@ public class FleetTeamRunnerTests
         Assert.DoesNotContain("delegate_to_team", h.Runner.PlannerInstructions(h.Root with { Depth = 2 }));
     }
 
+    // AC13 (ADR 0104): cached input is counted on its own and is NOT added to Tokens — it is a subset of input, so
+    // adding it would make the budget limit count it twice.
+    [Fact]
+    public void AddTokens_CountsCachedSeparately()
+    {
+        using var budget = new FleetBudget(1_000, 5, 0.8, 1, 2);
+
+        budget.AddTokens(new() { InputTokenCount = 600, OutputTokenCount = 50, CachedInputTokenCount = 500 });
+
+        Assert.Equal((600L, 50L, 500L, 650L), (budget.InputTokens, budget.OutputTokens, budget.CachedInputTokens, budget.Tokens));
+        Assert.False(budget.IsCancelled);
+    }
+
     [Fact]
     public async Task Delegate_RefusedAtSoftLimit()
     {

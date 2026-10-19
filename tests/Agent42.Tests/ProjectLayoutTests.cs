@@ -95,7 +95,7 @@ public sealed class ProjectLayoutTests
             "Agent42.Agents",
             [
                 "Artifacts", "Attachments", "ClientTools", "Conversations", "Copilot", "Documents", "Email", "Fleet", "ImageGeneration",
-                "Location", "Mcp", "Memory", "Models", "Push", "Research", "Scheduling", "Search", "SharedState",
+                "Location", "Mcp", "Memory", "Models", "PromptCaching", "Push", "Research", "Scheduling", "Search", "SharedState",
                 "Sharing", "Skills", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web", "Webhooks",
             ]
         },

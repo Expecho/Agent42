@@ -7,6 +7,11 @@ tags: [telemetry, opentelemetry, usage, tokens, dashboard, grains, cosmos, cross
 
 # Token-usage dashboard fed from OpenTelemetry, stored in a global grain
 
+> **Amended by [ADR 0104](0104-prompt-prefix-caching.md) (2026-10-19): cached and reasoning tokens are NOT always 0.** The
+> M.E.AI OTel emitter tags `gen_ai.usage.cache_read.input_tokens` and the reasoning count whenever the provider's
+> `UsageDetails` carry them (`ChatSpan_CarriesCachedAndReasoningTokens`); this ADR's spike provider simply reported
+> none. The dashboard stays OTel-only; only its note and doc comments changed.
+
 ## Context
 There was no in-app view of how many tokens the app consumes, by whom, on which model. A sibling repo
 (`AI.Telemetry.Dashboard`) already solves this shape for many apps: it ingests OpenTelemetry GenAI traces

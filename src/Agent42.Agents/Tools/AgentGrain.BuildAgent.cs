@@ -133,6 +133,9 @@ public sealed partial class AgentGrain
                     // A model that can't do function tools at all (ADR 0013) gets NO schema — including
                     // the hosted ones — even if it somehow reported SupportsHostedTools.
                     Tools = capabilities.SupportsTools ? tools : [],
+                    // ADR 0104: the hashed per-conversation prompt-cache key. The Backend's PromptCacheKeyChatClient
+                    // strips it on every call and sends it only to Azure OpenAI.
+                    AdditionalProperties = new() { [PromptCacheKey.PropertyName] = PromptCacheKey.For(this.GetPrimaryKeyString()) },
                 },
                 // Built above: skills (a tool, so already dropped on a no-tools model), document RAG
                 // (ADR 0008, per-conversation) and long-term memory (ADR 0056, selectable since ADR 0057 —
@@ -330,12 +333,17 @@ public sealed partial class AgentGrain
         // empty group is still ENUMERATED — that is what keeps ExpandMcpWildcard's server list complete). The
         // tools were already truncation-wrapped by the provider (ADR 0004). Capability (SupportsTools) is the
         // outer gate, exactly as for the static keys.
+        //
+        // Each server's tools are sorted by name (ADR 0104): ListToolsAsync guarantees no order, and the tool array
+        // sits in the cached request prefix, so a reshuffle between activations would cost a full cache miss.
+        // Servers keep their stored config order, which only the user changes.
         if (capabilities.SupportsTools)
         {
             foreach (var server in _mcpServers)
             {
                 tools.AddRange(server.Tools
                     .Where(t => ToolCatalog.IsMcpToolEnabled(server.ServerId, t.Name, enabled))
+                    .OrderBy(t => t.Name, StringComparer.Ordinal)
                     .Select(t => WithReauthNotice(server, WithUrlSeeding(server, WithElicitation(server, t)))));
             }
         }

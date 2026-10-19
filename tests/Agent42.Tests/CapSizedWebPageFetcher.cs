@@ -138,7 +138,7 @@ public sealed class CapSizedFetcherSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IGeocoder, FakeGeocoder>();
             // Long-term memory (ADR 0056) OFF on this silo, deliberately — the NullPushNotificationSender
             // choice above, for the same reason. A recorder would attach a real context provider and put a
-            // "## Memories" block into the instructions this silo's session-budget test measures. Still
+            // "## Memories" context message into the replies this silo's session-budget test measures. Still
             // registered: HindsightIntegration is a mandatory grain dependency, so omitting it fails
             // activation rather than disabling memory.
             services.AddSingleton(new HindsightIntegration(null));
