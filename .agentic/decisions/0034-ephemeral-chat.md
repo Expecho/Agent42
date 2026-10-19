@@ -7,6 +7,8 @@ tags: [agents, conversations, privacy, ephemeral, incognito, session, persistenc
 
 # Ephemeral ("incognito") chat
 
+> **Amended by [ADR 0106](0106-agentgrain-services-and-turn-context.md) (2026-10-19): the ephemeral flag is a per-run `TurnContext.Ephemeral`, not the `_ephemeral` field.** There is no clear ritual any more. A reminder or background run that interleaves with an incognito turn cannot unset it, and a tool called outside a run reads the fail-closed context (ephemeral).
+
 > **Amended by [ADR 0085](0085-copilot-agent-kind.md) (2026-10-05): a copilot agent's chat refuses incognito turns.**
 > The Copilot runtime writes its transcript to Blob during the turn, so the grain refuses an ephemeral turn there
 > before anything runs, and the client locks the toggle off.

@@ -179,4 +179,4 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Config health tab | 0029 |
 | Artifacts / canvas: model-created versioned pages, SVG, docs and code in a sandboxed pane; CSP sandbox header; session compaction | 0083, 0084 |
 | Client tools and shared state: browser-run tools (confirm, artifact pane, browser context, location) paused on the stream, per-run broker, shared JSON state with snapshots; why not AG-UI | 0089, 0088, 0093 |
-| Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test | 0039, 0040, 0041, 0050, 0051, 0055, 0105 |
+| Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test, AgentGrain services + per-run TurnContext | 0039, 0040, 0041, 0050, 0051, 0055, 0105, 0106 |
