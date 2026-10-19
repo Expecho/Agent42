@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy policy — Agent 42</title>
+  <link rel="stylesheet" href="legal.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90' font-family='monospace' fill='%23FFB13D'>42</text></svg>" />
+</head>
+<body>
+  <main class="legal">
+    <header class="legal__topbar">
+      <span><span class="legal__mark">42</span>AGENT&nbsp;42</span>
+      <nav class="legal__nav"><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a></nav>
+    </header>
+
+    <h1>Privacy policy</h1>
+    <p class="legal__updated">Last updated: 19 October 2026</p>
+
+    <p>Agent 42 (chat.agent42.nl) is an AI chat service. This page explains what the service stores, where it
+      goes and what you can do about it.</p>
+
+    <p class="legal__note">Agent 42 is invite-only. You can only sign in with a Microsoft account that the operator
+      has explicitly allowed.</p>
+
+    <h2>What we store</h2>
+    <ul>
+      <li><strong>Your account identity.</strong> When you sign in, Microsoft Entra ID passes us your account id,
+        name, email address and roles. We use them to keep your data separate from other users' data.</li>
+      <li><strong>What you create.</strong> Your conversations and messages, uploaded images and documents,
+        stored agents, skills, groups, pins, share links and preferences.</li>
+      <li><strong>Your settings for other services.</strong> The model providers and MCP servers you add, with their
+        API keys and tokens. Keys are stored encrypted.</li>
+      <li><strong>Push subscriptions.</strong> If you turn on notifications, we store the address your browser's
+        push service gives us.</li>
+      <li><strong>Technical logs.</strong> Requests, errors and performance data, labelled with your account
+        identity, which the operator uses to troubleshoot.</li>
+    </ul>
+
+    <h2>Where it is stored</h2>
+    <p>Everything is stored in the operator's Microsoft Azure subscription. Microsoft processes this
+      data on our behalf.</p>
+
+    <h2>Who else receives your data</h2>
+    <p>Agent 42 has no built-in AI model. To use it, you add your own model providers, and the services below only
+      receive data when you use the matching feature.</p>
+    <ul>
+      <li><strong>Your model providers</strong> (for example Azure OpenAI, OpenAI, Anthropic or GitHub Models). They
+        receive the content of the conversation you are having with them, including attachments, tool results and
+        documents relevant to your question. Because you use your own account, the provider's own terms and privacy
+        policy apply.</li>
+      <li><strong>MCP servers you connect.</strong> They receive whatever the model sends to their tools.</li>
+      <li><strong>Web search.</strong> Search queries go through a search proxy that we host ourselves and are
+        forwarded to Google, Bing and DuckDuckGo. Those engines see the query, but not your identity or your IP
+        address.</li>
+      <li><strong>Voice input.</strong> Speech recognition runs in your browser. Some browsers, such as Chrome, send
+        the audio to their own vendor to transcribe it. Read-aloud uses the speech model of your own provider.</li>
+      <li><strong>Location.</strong> Only when you have allowed it and the model asks for it, your browser shares your
+        coordinates. They are passed to your model provider and stored in that conversation like any other tool
+        result.</li>
+      <li><strong>Push notifications.</strong> Notifications are delivered through your browser's push service (for
+        example Google, Mozilla, Apple or Microsoft). The content is encrypted end to end, so the push service cannot
+        read it.</li>
+      <li><strong>Webhooks and inbound email.</strong> If you give a stored agent a webhook, every conversation turn
+        of that agent is sent to the URL you set. If you use an agent's email address, incoming mail is received by
+        Mailgun and passed to us.</li>
+      <li><strong>Share links.</strong> Anyone who has a share link can read that conversation until you revoke the
+        link.</li>
+      <li><strong>Fonts.</strong> The app loads its fonts from Google Fonts, so Google sees your IP address when the
+        app loads.</li>
+    </ul>
+    <p>We do not sell your data, show advertising or use tracking or analytics cookies.</p>
+
+    <h2>Cookies and local storage</h2>
+    <p>We set one session cookie to keep you signed in. Your browser also stores your preferences and an offline copy
+      of the app on your own device.</p>
+
+    <h2>How long we keep it</h2>
+    <ul>
+      <li>Conversations and other content stay until you delete them.</li>
+      <li>Incognito chats are never stored.</li>
+      <li>In the continuous chat of a stored agent, messages older than 24 hours are deleted automatically.</li>
+      <li>Technical logs and diagnostic traces are kept only as long as troubleshooting needs them.</li>
+      <li>To have your whole account deleted, contact us.</li>
+    </ul>
+
+    <h2>Your rights</h2>
+    <p>Under the GDPR you can access, correct, export and delete your data, and object to or restrict how we process
+      it. You can export and delete your conversations yourself in the app. For anything else, contact us. You can
+      also complain to the Dutch data protection authority, the
+      <a href="https://autoriteitpersoonsgegevens.nl" rel="noopener">Autoriteit Persoonsgegevens</a>.</p>
+
+    <h2>Changes</h2>
+    <p>If this policy changes, we update the date at the top of this page.</p>
+  </main>
+</body>
+</html>

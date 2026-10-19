@@ -202,6 +202,23 @@ public sealed class EasyAuthExclusionTests
     public void Exclusions_CoverInboundEmail()
         => Assert.True(IsExcluded(ExcludedPaths(), "/api/email-in"), Because("/api/email-in", ExcludedPaths()));
 
+    // The public privacy policy and terms of service must be readable without signing in. Every same-origin URL the
+    // pages request is checked, so a later link to /styles.css or a font on the gated surface fails here, not in prod.
+    [Fact]
+    public void Exclusions_CoverEverySameOriginUrlTheLegalPagesRequest()
+    {
+        var entries = ExcludedPaths();
+        var urls = LegalPageRequestedUrls();
+
+        // A tautology guard: the two pages, their stylesheet and their cross-links at least.
+        Assert.True(urls.Count >= 3, $"Parsed only {urls.Count} legal page URLs — the extraction broke.");
+
+        foreach (var url in urls)
+        {
+            Assert.True(IsExcluded(entries, url), Because(url, entries));
+        }
+    }
+
     [Fact]
     public void BarePrefixEntry_DoesNotCoverSubPaths()
     {
@@ -225,6 +242,8 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/api/agent-mcp-admin")]
     [InlineData("/api/local-bridgezzz")]
     [InlineData("/api/email-inzzz")]
+    [InlineData("/legalzzz")]
+    [InlineData("/legal-admin")]
     public void WildcardEntry_DoesNotMatchANameStem(string path)
     {
         // Measured: the wildcard prefix includes the trailing slash, so it cannot bleed onto a sibling route
@@ -276,6 +295,23 @@ public sealed class EasyAuthExclusionTests
             .Where(IsSameOrigin);
 
         return markup.Concat(scripted).Select(ResolveAgainstViewer).Distinct().ToList();
+    }
+
+    /// <summary>The legal pages themselves plus every same-origin URL in their markup, resolved against <c>/legal/</c>.</summary>
+    private static IReadOnlyList<string> LegalPageRequestedUrls()
+    {
+        var dir = Path.Combine(RepoRoot(), "src", "Agent42.Backend", "wwwroot", "legal");
+        var pages = new[] { "privacy.html", "terms.html" };
+
+        var markup = pages
+            .SelectMany(page => Regex.Matches(File.ReadAllText(Path.Combine(dir, page)), "(?:src|href)\\s*=\\s*\"([^\"]+)\""))
+            .Select(match => match.Groups[1].Value)
+            .Where(url => IsSameOrigin(url) && !url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase));
+
+        return pages.Concat(markup)
+            .Select(url => new Uri(new Uri("https://placeholder.invalid/legal/"), url).AbsolutePath)
+            .Distinct()
+            .ToList();
     }
 
     private static bool IsSameOrigin(string url) =>

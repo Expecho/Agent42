@@ -154,6 +154,33 @@ public sealed class PwaAssetsTests
     }
 
     /// <summary>
+    /// The public legal pages are standalone and outside SHELL, like <c>/fleet/</c>: an offline <c>/legal/</c>
+    /// navigation must not paint <c>/index.html</c> in their place. Source-text heuristic: proves position.
+    /// </summary>
+    [Fact]
+    public async Task ServiceWorker_LegalNavigationNotServedFromShell()
+    {
+        var source = await _client.GetStringAsync("/sw.js");
+
+        var legalGuard = source.IndexOf("startsWith(\"/legal\")", StringComparison.Ordinal);
+        Assert.True(legalGuard >= 0, "Service worker is missing the /legal bypass guard");
+
+        var firstRespond = source.IndexOf("event.respondWith(", StringComparison.Ordinal);
+        Assert.True(legalGuard < firstRespond, "The /legal bypass must precede any respondWith");
+        Assert.DoesNotContain("\"/legal", source[..source.IndexOf("self.addEventListener", StringComparison.Ordinal)]);
+    }
+
+    [Theory]
+    [InlineData("/legal/privacy.html", "Privacy policy")]
+    [InlineData("/legal/terms.html", "Terms of service")]
+    public async Task LegalPages_AreServed(string path, string heading)
+    {
+        var html = await _client.GetStringAsync(path);
+
+        Assert.Contains($"<h1>{heading}</h1>", html);
+    }
+
+    /// <summary>
     /// ADR 0090. Easy Auth's <c>/.auth/*</c> endpoints are platform redirects, not shell. Without the bypass, an
     /// offline sign-out would fall through to the navigate branch and paint <c>/index.html</c>, so the app
     /// would look signed in. Source-text heuristic, like the guards above: proves position, not logic.

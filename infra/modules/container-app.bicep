@@ -397,6 +397,7 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
         '/api/agent-mcp/*'
         '/api/local-bridge'
         '/api/email-in'
+        '/legal/*'
       ]
     }
     // ADR 0090: the session cookie outlives the 8-hour platform default, so a returning user is not sent back
