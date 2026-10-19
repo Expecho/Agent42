@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Agent42.Agents;
+using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.TestingHost;
@@ -59,6 +60,10 @@ public sealed class CountingStoreSiloConfigurator : ISiloConfigurator
             // The grain resolves the document retrieval stand-ins (ADR 0007) and the web tools (ADR 0011).
             services.AddDocumentRagFakes();
             services.AddWebToolFakes();
+
+            // Last: supplies the host-invariant services and fails the silo at startup, naming the type, if a grain
+            // dependency above is missing (ADR 0105).
+            services.AddAgent42Silo();
         });
     }
 }

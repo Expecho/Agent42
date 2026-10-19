@@ -24,6 +24,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Per-user singleton-preference grain (get/save)  | `src/Agent42.Agents/Users/UserProfileGrain.cs`          | 2026-07-08 |
 | Minimal-API endpoint group                      | `src/Agent42.Backend/Users/AgentApi.Users.cs`      | 2026-08-18 |
 | Endpoint composition root (registers groups)     | `src/Agent42.Backend/Api/AgentApi.cs`             | 2026-08-18 |
+| Host registration (shared invariants + validated ports) | `src/Agent42.Backend/Orleans/Agent42SiloRegistration.cs`, `src/Agent42.Backend/Api/Agent42ApiRegistration.cs` | 2026-10-19 |
 | Grain test (shared TestCluster + fake client)   | `tests/Agent42.Tests/SharedClusterTests.cs`, `tests/Agent42.Tests/UserProfileGrainTests.cs` | 2026-08-27 |
 | API test (shared cluster + one MapAgentApi host) | `tests/Agent42.Tests/SharedApiFixture.cs`, `tests/Agent42.Tests/McpServersApiTests.cs` | 2026-08-27 |
 | Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-07-06 |
@@ -1784,7 +1785,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `IMcpSecretProtector` a route-matcher dependency for the WHOLE host.** Minimal-API infers every endpoint's
   parameters up front, so an `IMcpSecretProtector` handler param that DI can't resolve is treated as a body and
   breaks routing for *every* endpoint (this bit all six `MapAgentApi` hosts — DevHost 500s + 39 test failures —
-  until each registered it). The MCP **endpoint is deliberately NOT SSRF-guarded** (config, not a model/request
+  until each registered it). Since ADR 0105 the host-invariant ones (`IMcpSecretProtector`, `IProviderSecretProtector`,
+  `McpOAuthClient`) come from `AddAgent42Api()`, which every host and `SharedApiFixture` call; a NEW handler-parameter
+  dependency is still not validated by anything, so put an identical one there or resolve it via `GetService`. The MCP **endpoint is deliberately NOT SSRF-guarded** (config, not a model/request
   — may be `localhost`), exactly like the user-provider endpoint (see that gotcha).
   **(4) Writes that are not connection config must not bump the version, and (1) is why.** The version is
   the key the cache in (1) holds **live MCP sockets** under, so only a *configuration* write goes through
@@ -2824,7 +2827,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   operation), so App Insights receiving them is intended.
   It sits there rather than in `Program.cs` for a second reason worth knowing before moving it back:
   **nothing in the suite runs `Program.cs`**, so a registration there is untestable by construction *and*
-  scores 0% on the new-code coverage gate (ADR 0050).
+  scores 0% on the new-code coverage gate (ADR 0050). (ADR 0105 narrows the first half for grain dependencies only: `AddAgent42Silo()`
+  validates them at startup in every host, but the wiring around them is still source-text-guarded at best.)
   **The Agent Framework agent layer emits no metrics at all** and cannot be the fix: `Microsoft.Agents.AI`
   1.19.0 (verified against the assembly — `.AI`, `.Abstractions` and `.OpenAI` all contain zero
   `System.Diagnostics.Metrics` / `CreateHistogram` / `CreateCounter` references) is **trace-only**

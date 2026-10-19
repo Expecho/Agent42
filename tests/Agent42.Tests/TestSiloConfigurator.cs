@@ -1,4 +1,5 @@
 using Agent42.Agents;
+using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.TestingHost;
@@ -124,6 +125,10 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             // Web tools (ADR 0011): canned search + fetch, so the grain's tool path runs with no
             // SearXNG sidecar and no network.
             services.AddWebToolFakes();
+
+            // Last: supplies the host-invariant services and fails the silo at startup, naming the type, if a grain
+            // dependency above is missing (ADR 0105).
+            services.AddAgent42Silo();
         });
     }
 }

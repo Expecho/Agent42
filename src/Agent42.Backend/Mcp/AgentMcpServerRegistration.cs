@@ -15,7 +15,7 @@ namespace Agent42.Backend;
 /// be a third: <c>MapMcp</c> throws outright without <see cref="AddAgentMcpServer"/> in DI. ADR 0062 set
 /// the precedent — the Orleans dashboard maps its own routes from the composition root — and a host that
 /// does not want the surface simply does not call these. Consequently
-/// <c>ProjectLayoutTests.AgentApiPart_ExistsAndIsRegisteredFromTheCompositionRoot</c> does not apply here
+/// <c>AgentApiReachabilityTests</c> (which reflects only <c>AgentApi</c>'s own parts) does not apply here
 /// and must not be extended to cover it.</para>
 ///
 /// <para><b>Split into three members</b> for the reason <see cref="DashboardRegistration"/> gives: the
