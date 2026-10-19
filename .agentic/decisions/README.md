@@ -1,6 +1,9 @@
 # Decision records (ADRs)
 
-One file per decision: `NNNN-short-slug.md` (zero-padded, chronological).
+One file per decision: `NNNN-short-slug.md` (zero-padded, chronological). Each number is used once,
+and the front-matter `id` matches it (`AdrNumberingTests`, in PR checks and again after every merge to
+`main` via `.github/workflows/adr-numbering.yml`). Take the next free number from `origin/main` just
+before merging, not from when you started the branch.
 Created via `/decide` — which also checks for conflicts with existing ADRs and
 handles supersession. Never edit an accepted ADR's decision content; supersede it.
 

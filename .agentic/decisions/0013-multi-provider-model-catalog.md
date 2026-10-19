@@ -16,7 +16,7 @@ amended_by: [0084, 0094, 0097]   # 0084 artifacts: accepted self-navigation egre
 > an agent fleet task can fetch any URL and use the network from a shell in the container. Each fetch or command is
 > approved by the user, and `Fleet:CopilotAgentsEnabled` switches it off.
 
-> **Amended by [ADR 0102](0102-anthropic-provider-kind.md) (2026-10-18): a new provider kind and egress destination.**
+> **Amended by [ADR 0103](0103-anthropic-provider-kind.md) (2026-10-18): a new provider kind and egress destination.**
 > `ProviderKind.Anthropic` reaches Claude over its native Messages API. A user who adds it with their own key sends
 > that conversation's content, tool results and (for a vision model) image SAS URLs to Anthropic. It is per-user and
 > opt-in, like every other provider here.

@@ -6,7 +6,7 @@ using Microsoft.Extensions.AI;
 namespace Agent42.Tests;
 
 /// <summary>
-/// <see cref="AnthropicCompatibilityChatClient"/> (ADR 0102): each rewrite against a recording inner client, then the
+/// <see cref="AnthropicCompatibilityChatClient"/> (ADR 0103): each rewrite against a recording inner client, then the
 /// whole thing through the real SDK on the stub transport, with the shim's <c>RawRepresentationFactory</c> active.
 /// That factory is the riskiest SDK assumption (a <c>MessageCreateParams</c> overrides <c>ChatOptions</c>), so the wire
 /// test pins every field it could swallow.

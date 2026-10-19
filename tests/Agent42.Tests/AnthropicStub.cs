@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace Agent42.Tests;
 
 /// <summary>
-/// Canned Anthropic Messages-API responses for the stub transport (ADR 0102). Nothing here talks to a
+/// Canned Anthropic Messages-API responses for the stub transport (ADR 0103). Nothing here talks to a
 /// network: a <see cref="RecordingHttpHandler"/> records each request body and answers the Nth request with
 /// the Nth canned response, so a test can drive a whole tool loop and then read what went back on the wire.
 /// </summary>

@@ -3624,7 +3624,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   the suggestion helper was handed.
   **Mutation-checked:** removing the storage filter fails both `ReasoningText_IsNotPersisted` tests and
   leaves the projection-level tests green.
-  **Never store reasoning for an Anthropic provider either (ADR 0102).** The strip is also what keeps Claude
+  **Never store reasoning for an Anthropic provider either (ADR 0103).** The strip is also what keeps Claude
   clear of its preserved-thinking check: signed thinking blocks bind to the conversation prefix, so a replayed
   block after edit/regenerate/fork, compaction or retention pruning gives a 400. Inside one tool loop the
   thinking block does go back (FICC re-sends it, signature intact), and that needs no storage.
@@ -4389,7 +4389,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Models/AnthropicCompatibilityChatClient.cs` (`AnthropicLimits`),
   `tests/Agent42.Tests/AnthropicEnvironmentTests.cs` (`AnthropicRequest_UsesStoredKey_NotEnvironment`),
   `tests/Agent42.Tests/AnthropicProviderTests.cs` (`AnthropicRequest_DefaultsMaxTokens`),
-  `.agentic/decisions/0102-anthropic-provider-kind.md`
+  `.agentic/decisions/0103-anthropic-provider-kind.md`
 - **Verified:** 2026-10-18
 
 ### Current Claude models 400 on forced tool choice, sampling params, disabled thinking and assistant prefill: the shim owns all four
@@ -4408,7 +4408,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Models/AnthropicCompatibilityChatClient.cs`,
   `src/Agent42.Backend/Fleet/ModeratedGroupChatManager.cs` (`ToolMode = ChatToolMode.RequireAny`),
   `tests/Agent42.Tests/AnthropicCompatibilityChatClientTests.cs`, `tests/Agent42.Tests/ModeratedGroupChatManagerTests.cs`,
-  `.agentic/decisions/0102-anthropic-provider-kind.md`
+  `.agentic/decisions/0103-anthropic-provider-kind.md`
 - **Verified:** 2026-10-18 (the 400s are the documented model behaviour, unverified live in this repo until
   `LiveAnthropicChatTests` runs with a key)
 

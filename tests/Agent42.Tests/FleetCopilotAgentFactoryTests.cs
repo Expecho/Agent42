@@ -89,7 +89,7 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
         Assert.StartsWith(FleetCopilotAgentFactory.Unavailable, unmapped.Message);
     }
 
-    // ADR 0102 AC13: a Copilot agent on a Claude model is a load error (the InvalidOperationException LoadAgentsAsync
+    // ADR 0103 AC13: a Copilot agent on a Claude model is a load error (the InvalidOperationException LoadAgentsAsync
     // hands the planner as plan.rejected), because an Anthropic provider has no Copilot mapping. Not a crash.
     [Fact]
     public async Task CopilotAgent_OnAnthropicModel_IsRejectedToPlanner()
@@ -101,6 +101,7 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
             [claude],
             claude,
             _workspace,
+            _canvas,
             FleetPromptSet.Defaults,
             new FleetCopilotPermissionPolicy(_workspace.Root, new ScriptedFleetInteraction(), CancellationToken.None));
 

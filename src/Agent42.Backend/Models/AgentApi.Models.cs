@@ -137,7 +137,7 @@ public static partial class AgentApi
 
     // A user provider must be self-contained (it does NOT inherit the operator AzureOpenAI:* config —
     // ADR 0018), so every kind requires an absolute http/https endpoint (an Anthropic provider too: the UI
-    // pre-fills https://api.anthropic.com, one validation rule for all kinds, ADR 0102). localhost/private hosts are
+    // pre-fills https://api.anthropic.com, one validation rule for all kinds, ADR 0103). localhost/private hosts are
     // ACCEPTED on purpose — an Ollama endpoint is a supported target, and this stays off the SSRF path
     // because the endpoint comes from the authenticated user's own config, not a model or a request
     // (ADR 0013). Deliberately no SSRF address-guard. Returns an error message, or null when valid.
@@ -151,7 +151,7 @@ public static partial class AgentApi
 
         if (!Enum.TryParse<ProviderKind>(kind, ignoreCase: true, out _))
         {
-            // Derived from the enum so a new kind can never be left out of the message again (ADR 0102).
+            // Derived from the enum so a new kind can never be left out of the message again (ADR 0103).
             return $"Unknown provider kind '{kind}'. Use one of: {string.Join(", ", Enum.GetNames<ProviderKind>().Select(n => $"'{n}'"))}.";
         }
 

@@ -18,7 +18,7 @@ public enum ProviderKind
     OpenAICompatible,
 
     /// <summary>
-    /// Anthropic (Claude) over its native Messages API with an API key (ADR 0102), through the official
+    /// Anthropic (Claude) over its native Messages API with an API key (ADR 0103), through the official
     /// Anthropic SDK's <c>IChatClient</c> wrapped in <c>AnthropicCompatibilityChatClient</c>. Chat only: no
     /// image, embedding, speech or Copilot runtime. Its models are declared, like an OpenAI-compatible provider's.
     /// </summary>

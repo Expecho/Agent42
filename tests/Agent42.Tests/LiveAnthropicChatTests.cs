@@ -22,7 +22,7 @@ public sealed class LiveAnthropicFactAttribute : FactAttribute
 /// <summary>
 /// Where the live Anthropic test's key lives: the git-ignored <see cref="LocalFileName"/> (<c>key</c>, optional
 /// <c>model</c>), or an environment variable, which wins. Deliberately NOT <c>ANTHROPIC_API_KEY</c>: the SDK reads that
-/// one ambiently, which is exactly what the provider must never rely on (ADR 0102).
+/// one ambiently, which is exactly what the provider must never rely on (ADR 0103).
 /// </summary>
 public static class LiveAnthropicSettings
 {
@@ -57,7 +57,7 @@ public static class LiveAnthropicSettings
 }
 
 /// <summary>
-/// The real-wire twins of the stub-transport tests (ADR 0102 AC16), through the client the factory hands out:
+/// The real-wire twins of the stub-transport tests (ADR 0103 AC16), through the client the factory hands out:
 /// <c>Provider.Anthropic</c> + the shim + <c>ChatClientFactory.Build</c>'s reasoning flag and OTel. Manual: skipped
 /// without a key, and a skip is never a pass.
 /// </summary>

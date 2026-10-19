@@ -1,5 +1,5 @@
 ---
-id: 0102
+id: 0103
 date: 2026-10-18
 status: accepted
 tags: [models, providers, anthropic, claude, reasoning, fleet, copilot, egress, no-migration]
