@@ -341,7 +341,7 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         Assert.NotEmpty(PushSendsFor(Owner));
     }
 
-    // AC11. ChatAsync sets _interactiveTurn = true, and SuggestFollowUpsAsync gates on exactly that — so
+    // AC11. ChatAsync's run is interactive by default, and SuggestFollowUpsAsync gates on exactly that — so
     // draining it without the `interactive: false` parameter pays one extra, permanently discarded model
     // call on EVERY invocation of this surface.
     [Fact]

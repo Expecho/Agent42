@@ -19,7 +19,7 @@ namespace Agent42.Agents;
 /// end-of-turn write clears, and which the last run to finish flushes if that run never wrote (a failure, an
 /// incognito turn, a stopped turn whose history was unreachable).</para>
 ///
-/// <para><b>Incognito has no shared state</b> (ADR 0034). <c>_ephemeral</c> is turn-scoped and nothing persisted
+/// <para><b>Incognito has no shared state</b> (ADR 0034). Incognito is a per-run flag and nothing persisted
 /// says a conversation is incognito, so: the tool refuses on an ephemeral turn (the push-tool precedent), the
 /// injection is skipped on one, and a user edit is refused when the conversation has no saved record.</para>
 /// </summary>
@@ -27,8 +27,8 @@ public sealed partial class AgentGrain
 {
     /// <summary>
     /// How many runs (chat, agent-run or reminder) are in flight on this activation. Counted in a try/finally at
-    /// BOTH run sites — <see cref="ChatCoreAsync"/> and <see cref="ReceiveReminder"/> — and never reset by the
-    /// turn-scoped clear ritual: it counts running turns, like <see cref="_turnCts"/> names one.
+    /// BOTH run sites — <see cref="ChatCoreAsync"/> and <see cref="ReceiveReminder"/>. It is a field, not a
+    /// <see cref="TurnContext"/> value: it counts running turns, like <see cref="_turnCts"/> names one.
     /// </summary>
     private int _runsInFlight;
 
@@ -55,7 +55,7 @@ public sealed partial class AgentGrain
         [Description("The JSON Patch operations, as an array, e.g. [{\"op\":\"add\",\"path\":\"/checklist/-\",\"value\":{\"id\":\"a1\",\"title\":\"Book the venue\",\"done\":false}}].")]
         JsonElement operations)
     {
-        if (_ephemeral)
+        if (TurnContext.CurrentOrClosed.Ephemeral)
         {
             return "This chat is incognito, so it has no shared state: nothing would be kept. Put the information "
                 + "in your reply instead.";
@@ -127,7 +127,8 @@ public sealed partial class AgentGrain
     {
         if (enabled.Contains(ToolCatalog.SharedState))
         {
-            providers.Add(new SharedStateContextProvider(() => _ephemeral ? null : _state.State.SharedStateJson));
+            providers.Add(new SharedStateContextProvider(
+                () => TurnContext.CurrentOrClosed.Ephemeral ? null : _state.State.SharedStateJson));
         }
     }
 

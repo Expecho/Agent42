@@ -12,8 +12,8 @@ namespace Agent42.Agents;
 /// <para>It copies the two Copilot behaviours the grain has to cope with. It keeps its OWN transcript, under its own
 /// state key (<see cref="TranscriptStateKey"/>), separate from the mirror the grain reads, the way Copilot keeps
 /// its own in SessionFs. And it invokes every tool from a thread-pool thread, off the caller's scheduler, the way
-/// Copilot invokes custom tools from its RPC thread. That is what exercises the grain's
-/// <see cref="SchedulerBoundAIFunction"/> marshalling.</para>
+/// Copilot invokes custom tools from its RPC thread, with no ExecutionContext flowed. That is what exercises the
+/// grain's <see cref="SchedulerBoundAIFunction"/> marshalling and its <see cref="TurnContext"/> re-establish.</para>
 /// </summary>
 public sealed class ChatClientCopilotAgentFactory : ICopilotAgentFactory
 {
@@ -39,11 +39,21 @@ public sealed class ChatClientCopilotAgentFactory : ICopilotAgentFactory
         string userId, string conversationId, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
-    // Runs the tool on the thread pool, never inline on the caller's scheduler.
+    // Runs the tool on the thread pool, never inline on the caller's scheduler, and with the caller's ExecutionContext
+    // NOT flowed: the SDK's RPC thread carries none of the turn's async-locals, so the twin must not either, or the
+    // grain's TurnContext re-establish (ADR 0106) would pass here and fail against the real runtime.
     private sealed class OffSchedulerAIFunction(AIFunction inner) : DelegatingAIFunction(inner)
     {
         protected override async ValueTask<object?> InvokeCoreAsync(
             AIFunctionArguments arguments, CancellationToken cancellationToken)
-            => await Task.Run(() => base.InvokeCoreAsync(arguments, cancellationToken).AsTask(), cancellationToken);
+        {
+            Task<object?> call;
+            using (ExecutionContext.SuppressFlow())
+            {
+                call = Task.Run(() => base.InvokeCoreAsync(arguments, cancellationToken).AsTask(), cancellationToken);
+            }
+
+            return await call;
+        }
     }
 }

@@ -59,7 +59,7 @@ public sealed partial class AgentGrain
         // exact opposite of "not listed". This UPHOLDS 0034 rather than amending it. Do not "improve" it
         // into an allow by analogy with images, which persist as accepted blob bytes and are not text on a
         // lock screen.
-        if (_ephemeral)
+        if (TurnContext.CurrentOrClosed.Ephemeral)
         {
             return "I cannot send a notification from an incognito chat. A notification would leave the "
                 + "title and body sitting in the device's notification shade, which is exactly the trace an "
@@ -68,7 +68,8 @@ public sealed partial class AgentGrain
 
         // Per-turn budget (ADR 0075). Refused BEFORE any work, and without incrementing: this is a
         // ceiling on notifications SENT, not on calls attempted.
-        if (_pushesThisTurn >= PushToolLimits.MaxPushesPerTurn)
+        var turn = TurnContext.CurrentOrClosed;
+        if (turn.PushesSent >= PushToolLimits.MaxPushesPerTurn)
         {
             return $"I have already sent {PushToolLimits.MaxPushesPerTurn} notifications during this turn, "
                 + "which is the limit. Do not try again in this turn — put anything else you wanted to say "
@@ -99,7 +100,7 @@ public sealed partial class AgentGrain
         }
 
         // Incremented HERE, on the send — see the budget guard above.
-        _pushesThisTurn++;
+        turn.RecordPushSent();
 
         await _pushSender.SendAsync(
             _userId,
@@ -112,7 +113,7 @@ public sealed partial class AgentGrain
         // it queued to, nothing else. PushTool_DoesNotLogNotificationText pins this.
         _logger.LogInformation(
             "Agent grain {GrainKey} queued a model-invoked push notification to {Devices} device(s) ({Sent} this turn)",
-            this.GetPrimaryKeyString(), devices.Count, _pushesThisTurn);
+            this.GetPrimaryKeyString(), devices.Count, turn.PushesSent);
 
         // "Queued", never "delivered" or "sent to the user" — see the class remarks. The title is echoed
         // so the model can see what actually went out after sanitizing and capping.

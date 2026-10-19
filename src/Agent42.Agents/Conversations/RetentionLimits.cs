@@ -11,7 +11,7 @@ namespace Agent42.Agents;
 /// conversations (<c>AgentMcpLimits.ConversationIdPrefix</c>) were admitted for a sharper version of
 /// the same problem: an external caller reusing one id has no sidebar row and no reason to ever start
 /// a fresh conversation, so nothing else bounds that session. Ordinary browser chats are deliberately
-/// excluded — see the per-message byte cost in <c>AgentGrain.ApplyRetentionAsync</c>.</para>
+/// excluded — see the per-message byte cost in <c>AgentGrain.ApplyRetention</c>.</para>
 ///
 /// <para><b>These bound AGE, not SIZE, so they narrow ADR 0016's failure mode without closing
 /// it.</b> A busy continuous agent — or one oversized tool return, which is persisted verbatim —

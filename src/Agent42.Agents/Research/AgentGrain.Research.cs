@@ -21,8 +21,8 @@ public sealed partial class AgentGrain
 {
     /// <summary>
     /// The todo provider of the CURRENT <see cref="_agent"/>, or null when that agent is not a research
-    /// composition. Set by every <see cref="BuildAgent"/>, so it always describes the agent in use — it is the
-    /// single switch the rest of this file reads.
+    /// composition. Assigned with the agent by every <see cref="BuildAgent"/> (<see cref="ApplyComposition"/>), so it
+    /// always describes the agent in use — it is the single switch the rest of this file reads.
     /// </summary>
     private TodoProvider? _researchTodos;
 
@@ -52,17 +52,19 @@ public sealed partial class AgentGrain
         => message.Role == ChatRole.User
             && string.Equals(message.AuthorName, ResearchLimits.LoopAuthorName, StringComparison.Ordinal);
 
-    // Decides whether the agent being built is a research composition, and adds its todo provider. A no-tools
-    // model gets a plain agent: the todo tools are tools, so the gate that drops every other tool drops these.
-    private void AddResearchProviders(List<AIContextProvider> providers, ModelCapabilities capabilities)
-    {
-        _researchTodos = AgentKinds.IsResearch(_state.State.AgentKind) && capabilities.SupportsTools
+    // The todo provider of the agent being built when it is a research composition, else null. A no-tools model
+    // gets a plain agent: the todo tools are tools, so the gate that drops every other tool drops these.
+    private TodoProvider? ResearchTodosFor(ModelCapabilities capabilities)
+        => AgentKinds.IsResearch(_state.State.AgentKind) && capabilities.SupportsTools
             ? new TodoProvider()
             : null;
 
-        if (_researchTodos is not null)
+    // Adds the research composition's todo provider, when there is one.
+    private static void AddResearchProviders(List<AIContextProvider> providers, TodoProvider? todos)
+    {
+        if (todos is not null)
         {
-            providers.Add(_researchTodos);
+            providers.Add(todos);
         }
     }
 
@@ -74,8 +76,8 @@ public sealed partial class AgentGrain
     // CompactionProvider: on 1.19 it froze the request, so from the second turn on the model was sent the first
     // question again and the real one was never stored (measured, ADR 0082). Stored history is untouched —
     // rule 5 truncation still bounds the session.
-    private IChatClient WithResearchBudget(IChatClient client)
-        => _researchTodos is null
+    private static IChatClient WithResearchBudget(IChatClient client, TodoProvider? todos)
+        => todos is null
             ? client
             : new ChatClientBuilder(client)
                 .UseChatReducer(new ContextWindowCompactionStrategy(
@@ -86,8 +88,8 @@ public sealed partial class AgentGrain
     // the observer never does (it only records the boundary), the todo evaluator keeps going while todos remain,
     // and only then is the judge asked. The judge calls the conversation's own client, so there is no new egress
     // (rule 13), but it is one extra call per finished iteration.
-    private AIAgent WithResearchLoop(ChatClientAgent agent, string modelId)
-        => _researchTodos is null
+    private AIAgent WithResearchLoop(ChatClientAgent agent, string modelId, TodoProvider? todos)
+        => todos is null
             ? agent
             : new LoopAgent(
                 agent,

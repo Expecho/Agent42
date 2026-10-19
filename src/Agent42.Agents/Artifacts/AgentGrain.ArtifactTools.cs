@@ -25,8 +25,8 @@ public sealed partial class AgentGrain
     private const string ArtifactMediaType = "application/octet-stream";
 
     // The three tool names, shared with compaction and the history projection.
-    private const string CreateArtifactTool = "create_artifact";
-    private const string UpdateArtifactTool = "update_artifact";
+    internal const string CreateArtifactTool = "create_artifact";
+    internal const string UpdateArtifactTool = "update_artifact";
     private const string ReadArtifactTool = "read_artifact";
 
     // The rules the model obeys are these descriptions (ADR 0067's lesson), so the policy is all here: when an
@@ -80,7 +80,7 @@ public sealed partial class AgentGrain
         // Incognito (ADR 0034), first: an artifact is model-authored conversation content written to blob with
         // no purge path, which breaks "leaves no trace". The image precedent does not transfer — an image is
         // user-supplied.
-        if (_ephemeral)
+        if (TurnContext.CurrentOrClosed.Ephemeral)
         {
             return "I cannot create artifacts in an incognito chat, because an artifact is stored outside the "
                 + "conversation and would outlive it. Put the content in your reply instead.";
@@ -123,7 +123,7 @@ public sealed partial class AgentGrain
         [Description("A new title, only if it should change.")] string? title = null,
         CancellationToken cancellationToken = default)
     {
-        if (_ephemeral)
+        if (TurnContext.CurrentOrClosed.Ephemeral)
         {
             return "I cannot change artifacts in an incognito chat. Put the content in your reply instead.";
         }
@@ -265,7 +265,7 @@ public sealed partial class AgentGrain
     /// turn the model saw the full text; on a later turn it calls the read tool again. Without this, ten
     /// revisions of a 60 KB app leave 600 KB of dead text in the 2 MB session item (ADR 0004), re-sent every turn.
     ///
-    /// <para>Runs at the five post-turn persist sites, beside <c>ApplyRetentionAsync</c>, and mutates the
+    /// <para>Runs at the five post-turn persist sites, beside <c>ApplyRetention</c>, and mutates the
     /// <c>TryGetInMemoryChatHistory</c> list in place the way retention does. Measured on Agent Framework 1.22
     /// (spike in the plan): a replaced <see cref="FunctionCallContent"/> survives serialize → JSON → deserialize,
     /// and the next turn still sends the call paired with its result. A call is REPLACED with a copy rather than
@@ -349,7 +349,7 @@ public sealed partial class AgentGrain
     /// The id and version in an artifact tool's JSON result, or null for a refusal (plain text) or a stub. Shared by
     /// compaction and the history projection, which therefore agree on what counts as a stored artifact.
     /// </summary>
-    private static ArtifactInfo? ParseArtifactResult(object? result)
+    internal static ArtifactInfo? ParseArtifactResult(object? result)
     {
         var text = ToolText(result);
         if (text is null || !text.StartsWith('{'))

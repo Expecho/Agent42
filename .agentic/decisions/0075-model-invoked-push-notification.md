@@ -10,6 +10,8 @@ amends: [0028, 0070]
 
 # A model-invoked push notification tool
 
+> **Amended by [ADR 0106](0106-agentgrain-services-and-turn-context.md) (2026-10-19): the per-turn push budget is `TurnContext.PushesSent`.** The two reset sites are gone. The away-push gates read the run's own context after the run, and a Copilot run resolves its context through the in-flight registry.
+
 ## Context
 
 ADR 0028 shipped the whole Web Push transport — VAPID keys, the `IUserPushGrain` subscription store, the

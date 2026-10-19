@@ -11,6 +11,8 @@ amended_by: 0093   # get_current_location became a fourth client tool, under its
 
 # Client (browser-run) tools and shared agent↔UI state on the NDJSON stream
 
+> **Amended by [ADR 0106](0106-agentgrain-services-and-turn-context.md) (2026-10-19): the broker async-local is generalised into `TurnContext`.** `CurrentClientToolBroker` is gone, and tools read `TurnContext.CurrentOrClosed.Broker`. The context is set by `PullAsync` and `DisposeRunAsync`, as the broker was.
+
 > **Amended by [ADR 0104](0104-prompt-prefix-caching.md) (2026-10-19): shared state is shown to the model as a trailing
 > user-role message, not an instruction block.** The state changes whenever anyone edits it, and the instructions are the
 > front of the cached prompt prefix. The message is tagged `AIContextProvider`-sourced, so it is still never stored in the

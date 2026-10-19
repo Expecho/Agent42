@@ -14,7 +14,7 @@ namespace Agent42.Tests;
 /// <para><b>What that leaves unmitigated, stated rather than assumed away:</b> Orleans still sees the
 /// skewed <see cref="GetUtcNow"/>, and a +25 h jump is well past the activation collector's default
 /// 2 h <c>CollectionAge</c>. If it collected the grain mid-test, the activation-scoped
-/// <c>_ephemeralOrdinals</c> and <c>_searchReconcilePending</c> would reset and the retention tests
+/// incognito ordinals and reconcile retry of <c>ChatSearchProjection</c> would reset and the retention tests
 /// would pass VACUOUSLY. Measured that it does not: both
 /// <c>Prune_DoesNotIndexAnEphemeralTurn_AfterOrdinalsShift</c> and
 /// <c>Prune_RetriesTheSearchReconcile_AfterAFailedDelete</c> fail when their production code is

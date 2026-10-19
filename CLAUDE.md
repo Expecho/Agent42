@@ -4,7 +4,7 @@
 > Agent Framework agents on Azure OpenAI, with a static web UI, deployed to Azure Container Apps.
 
 **Stack:** .NET 10 · Orleans 10.3 (grains, Cosmos persistence + reminders) · Microsoft Agent
-Framework 1.19 · ASP.NET Core minimal APIs · Aspire 13.5 (local orchestration) · vanilla-JS
+Framework 1.23 · ASP.NET Core minimal APIs · Aspire 13.5 (local orchestration) · vanilla-JS
 frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 
 ## Commands
@@ -130,8 +130,10 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
    `UseForwardedHeaders` must stay the first middleware.
 5. **A tool's return value is persisted into the 2 MB session** (ADR 0004). Truncate it. A continuous
    agent chat is one unbounded grain (ADR 0016/0068).
-6. **Turn-scoped grain fields live for the activation.** Clear them explicitly. `ReceiveReminder` does not
-   drain `ChatCoreAsync`, so each reset is needed in both places (ADR 0012/0034/0075).
+6. **Per-run state is a `TurnContext`, never a grain field (ADR 0106).** Pass it on the grain side, and read
+   `TurnContext.CurrentOrClosed` in tools and providers; a missing context fails closed. Two runs can be in flight
+   on one activation, so a field would be shared by both. A handle that names a running turn (`_turnCts`) is
+   published by identity.
 7. **Registrations (ADR 0105):** a registration identical in every host goes in `AddAgent42Silo()` (grain side) or
    `AddAgent42Api()` (endpoint side); one that varies is a port each host (Backend, DevHost, test silos) registers
    before calling them. `AddAgent42Silo()` fails startup on a missing **direct** grain constructor dependency, but
@@ -179,4 +181,4 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Config health tab | 0029 |
 | Artifacts / canvas: model-created versioned pages, SVG, docs and code in a sandboxed pane; CSP sandbox header; session compaction | 0083, 0084 |
 | Client tools and shared state: browser-run tools (confirm, artifact pane, browser context, location) paused on the stream, per-run broker, shared JSON state with snapshots; why not AG-UI | 0089, 0088, 0093 |
-| Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test | 0039, 0040, 0041, 0050, 0051, 0055, 0105 |
+| Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test, AgentGrain services + per-run TurnContext | 0039, 0040, 0041, 0050, 0051, 0055, 0105, 0106 |
