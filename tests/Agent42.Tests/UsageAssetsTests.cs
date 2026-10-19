@@ -35,6 +35,33 @@ public sealed class UsageAssetsTests
         Assert.Contains("id=\"usageRefresh\"", index);
     }
 
+    // AC10 (ADR 0104): the dashboard no longer claims cached and reasoning always read 0 — the emitter does tag them
+    // (UsageProcessorTests.ChatSpan_CarriesCachedAndReasoningTokens).
+    [Fact]
+    public async Task UsageNote_DoesNotClaimCachedAlwaysZero()
+    {
+        var index = await _client.GetStringAsync("/");
+
+        Assert.DoesNotContain("emits only input/output", index, StringComparison.Ordinal);
+        Assert.Contains("Cached input and reasoning are what each provider reports", index, StringComparison.Ordinal);
+    }
+
+    // AC11 (ADR 0104): the per-turn usage line reads the Done event's cacheWriteTokens, and send.js hands it the chunk.
+    [Fact]
+    public async Task ShowUsage_RendersCacheWrites()
+    {
+        var thread = await _client.GetStringAsync("/js/thread.js");
+        var send = await _client.GetStringAsync("/js/send.js");
+
+        Assert.Contains(
+            "export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheWriteTokens })",
+            thread, StringComparison.Ordinal);
+        Assert.Contains(
+            "if (cacheWriteTokens != null) parts.push(`${cacheWriteTokens.toLocaleString()} cache write`);",
+            thread, StringComparison.Ordinal);
+        Assert.Contains("showUsage(agentMsg, chunk)", send, StringComparison.Ordinal);
+    }
+
     // AC15: the view fetches the reference contract endpoint.
     [Fact]
     public async Task App_FetchesUsageEndpoint()

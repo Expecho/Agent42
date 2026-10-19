@@ -1035,6 +1035,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     }
 
     /// <summary>
+    /// The <c>UsageDetails.AdditionalCounts</c> key under which the Anthropic SDK's <c>IChatClient</c> (12.58.0) reports
+    /// prompt-cache creation tokens. The SDK's own string, so it lives in one place (ADR 0104).
+    /// </summary>
+    public const string CacheCreationInputTokensKey = "CacheCreationInputTokens";
+
+    /// <summary>
     /// One turn's running token totals. A class rather than three locals so
     /// <see cref="ProjectStreamedContent"/> can accumulate into it without <c>ref</c> parameters —
     /// which an iterator method cannot hand out across its own state machine.
@@ -1046,6 +1052,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         public long Output { get; set; }
 
         public long Cached { get; set; }
+
+        /// <summary>Anthropic prompt-cache writes (ADR 0104); no other provider reports them.</summary>
+        public long CacheWrite { get; set; }
 
         /// <summary>
         /// The terminating <c>Done</c> event. A total of zero is reported as <c>null</c>, not 0: the
@@ -1061,7 +1070,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             InputTokens: Input > 0 ? Input : null,
             OutputTokens: Output > 0 ? Output : null,
             CachedTokens: Cached > 0 ? Cached : null,
-            Stopped: stopped ? true : null);
+            Stopped: stopped ? true : null,
+            CacheWriteTokens: CacheWrite > 0 ? CacheWrite : null);
     }
 
     // Every event one streamed update produces, in order. A synchronous iterator, so the async iterator
@@ -1154,6 +1164,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 tokens.Input += usage.Details.InputTokenCount.GetValueOrDefault();
                 tokens.Output += usage.Details.OutputTokenCount.GetValueOrDefault();
                 tokens.Cached += usage.Details.CachedInputTokenCount.GetValueOrDefault();
+                tokens.CacheWrite += usage.Details.AdditionalCounts?.GetValueOrDefault(CacheCreationInputTokensKey) ?? 0;
                 return null;
 
             default:

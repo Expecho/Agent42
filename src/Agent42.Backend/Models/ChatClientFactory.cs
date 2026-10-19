@@ -216,8 +216,11 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
                 options.Reasoning ??= new ReasoningOptions { Output = ReasoningOutput.Summary });
         }
 
+        // The prompt-cache key (ADR 0104) is stripped on every call and sent only to Azure OpenAI. Inside OTel, so the
+        // span sees the caller's options.
         return builder
             .UseOpenTelemetry(sourceName: _otelSourceName, configure: cfg => cfg.EnableSensitiveData = true)
+            .Use(inner => new PromptCacheKeyChatClient(inner, provider.Options))
             .Build();
     }
 

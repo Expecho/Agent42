@@ -22,9 +22,9 @@ public enum UsageEventKind
 /// (<see cref="UsageSpanProjector"/>). Crosses the grain boundary to
 /// <see cref="IUsageRollupGrain.ApplyAsync"/>, so it is Orleans-serializable.
 ///
-/// <para>Cached/reasoning tokens are carried for wire-contract parity with the reference dashboard
-/// but are always 0 in practice: the Microsoft.Extensions.AI 10.6.0 OTel emitter emits only
-/// input/output token attributes (spike-verified 2026-07-22) — see ADR 0031.</para>
+/// <para>Cached/reasoning tokens are whatever the provider reported: the Microsoft.Extensions.AI OTel emitter tags
+/// them when the response's <c>UsageDetails</c> carry them (ADR 0104, <c>ChatSpan_CarriesCachedAndReasoningTokens</c>).
+/// ADR 0031's "always 0" came from its spike provider reporting none, not from the emitter.</para>
 /// </summary>
 [GenerateSerializer]
 [Alias("Agent42.Agents.UsageEvent")]

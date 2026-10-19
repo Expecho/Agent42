@@ -11,6 +11,11 @@ amended_by: 0093   # get_current_location became a fourth client tool, under its
 
 # Client (browser-run) tools and shared agent↔UI state on the NDJSON stream
 
+> **Amended by [ADR 0104](0104-prompt-prefix-caching.md) (2026-10-19): shared state is shown to the model as a trailing
+> user-role message, not an instruction block.** The state changes whenever anyone edits it, and the instructions are the
+> front of the cached prompt prefix. The message is tagged `AIContextProvider`-sourced, so it is still never stored in the
+> session and never accumulates.
+
 ## Context
 AG-UI's two real differentiators are frontend-executed tools and shared state. ADR 0088 deferred the protocol
 itself (its revisit trigger 2 names exactly these two). Agent42 owns both ends of its chat wire, so both can be

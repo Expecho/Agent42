@@ -149,4 +149,8 @@ public sealed record AgentStreamEvent(
     [property: Id(17)] long? StateVersion = null,
     // Set on a McpElicitation event (ADR 0095): the request as JSON text. Trailing default so every existing
     // construction keeps compiling, and null elsewhere so the NDJSON writer omits it.
-    [property: Id(18)] string? Elicitation = null);
+    [property: Id(18)] string? Elicitation = null,
+    // Set on the Done event (ADR 0104): the turn's Anthropic prompt-cache WRITE tokens, which the provider bills above
+    // the normal input rate. Null rather than 0, like CachedTokens, and for the same NDJSON reason as Stopped. Trailing
+    // default so every existing construction keeps compiling.
+    [property: Id(19)] long? CacheWriteTokens = null);

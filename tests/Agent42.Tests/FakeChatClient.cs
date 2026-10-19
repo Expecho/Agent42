@@ -88,6 +88,9 @@ public sealed partial class FakeChatClient : IChatClient
     /// </summary>
     public const string ReasoningOnlyStreamMarker = "think separately";
 
+    /// <summary>Prompt marker that streams a usage report with cache reads and Anthropic-style cache writes (ADR 0104).</summary>
+    public const string CacheUsageMarker = "report cache usage";
+
     /// <summary>The reasoning text <see cref="ReasoningStreamMarker"/> produces.</summary>
     public const string ReasoningText = "The user said hello, so I should greet them back.";
 
@@ -296,7 +299,7 @@ public sealed partial class FakeChatClient : IChatClient
         // the echoes below are themselves TextContent. Emitted after the tool-call early-return above, so a
         // tool-calling turn is unaffected. The branching lives in ReasoningUpdates — extracted because
         // inlining it takes this method past the S3776 threshold of 15, which is at `error` severity.
-        foreach (var update in ReasoningUpdates(list))
+        foreach (var update in ReasoningUpdates(list).Concat(CacheUsageUpdates(list)))
         {
             yield return update;
             await Task.Yield();
@@ -368,6 +371,22 @@ public sealed partial class FakeChatClient : IChatClient
         => LastUserText(messages) is { } text
             && (text.Contains(ReasoningStreamMarker, StringComparison.OrdinalIgnoreCase)
                 || text.Contains(ReasoningOnlyStreamMarker, StringComparison.OrdinalIgnoreCase));
+
+    // A usage report carrying Anthropic-style cache counts (ADR 0104), on the CacheUsageMarker only. Anthropic's SDK puts
+    // cache WRITES in AdditionalCounts under its own key, which the grain sums into the Done event.
+    private static IEnumerable<ChatResponseUpdate> CacheUsageUpdates(IReadOnlyList<ChatMessage> messages)
+    {
+        if (LastUserText(messages)?.Contains(CacheUsageMarker, StringComparison.OrdinalIgnoreCase) == true)
+        {
+            yield return new ChatResponseUpdate(ChatRole.Assistant, [new UsageContent(new UsageDetails
+            {
+                InputTokenCount = 1200,
+                OutputTokenCount = 30,
+                CachedInputTokenCount = 800,
+                AdditionalCounts = new() { [AgentGrain.CacheCreationInputTokensKey] = 350 },
+            })]);
+        }
+    }
 
     // The reasoning updates for this request, or nothing when none was asked for.
     //
@@ -483,26 +502,24 @@ public sealed partial class FakeChatClient : IChatClient
     // arrives as a ChatRole.User message tagged AgentRequestMessageSourceType.AIContextProvider (verified
     // by the Step 1 spike) — the source attribution, not the role, is what distinguishes it from the real
     // user turn. Empty when no context was injected (e.g. a document-free conversation).
+    //
+    // One [ctx:…] per injected message, in request order: since ADR 0104 recalled memories and shared state arrive
+    // the same way (after RAG, when both are on), so the first one alone would hide them.
     private static string ContextEcho(IEnumerable<ChatMessage> messages)
-    {
-        var injected = messages.FirstOrDefault(m =>
-            m.AdditionalProperties is not null
-            && m.AdditionalProperties.TryGetValue(
-                AgentRequestMessageSourceAttribution.AdditionalPropertiesKey, out var value)
-            && value is AgentRequestMessageSourceAttribution attribution
-            && attribution.SourceType == AgentRequestMessageSourceType.AIContextProvider);
-
-        if (injected is not { Text: { Length: > 0 } text })
-        {
-            return "";
-        }
-
-        // Trimmed for the same reason ToolResultEcho is, and it became load-bearing once a document could
-        // be cap-sized (ADR 0066): the injected excerpts are deliberately NOT persisted, but this echo
-        // puts them into the ASSISTANT's reply, which is — so an untrimmed echo inflates the very session
-        // item the budget test measures, purely as a fake artifact.
-        return $"[ctx:{(text.Length > 400 ? text[..400] : text)}] ";
-    }
+        => string.Concat(messages
+            .Where(m =>
+                m.AdditionalProperties is not null
+                && m.AdditionalProperties.TryGetValue(
+                    AgentRequestMessageSourceAttribution.AdditionalPropertiesKey, out var value)
+                && value is AgentRequestMessageSourceAttribution attribution
+                && attribution.SourceType == AgentRequestMessageSourceType.AIContextProvider)
+            .Select(m => m.Text)
+            .Where(text => text.Length > 0)
+            // Trimmed for the same reason ToolResultEcho is, and it became load-bearing once a document could
+            // be cap-sized (ADR 0066): the injected excerpts are deliberately NOT persisted, but this echo
+            // puts them into the ASSISTANT's reply, which is — so an untrimmed echo inflates the very session
+            // item the budget test measures, purely as a fake artifact.
+            .Select(text => $"[ctx:{(text.Length > 400 ? text[..400] : text)}] "));
 
     // Surfaces the tool results the client can see on this invocation as a [tool:…] marker, so a test
     // can assert a tool's output actually came back *to the model* on the follow-up call — the same

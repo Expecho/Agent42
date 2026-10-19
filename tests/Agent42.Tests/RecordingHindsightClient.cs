@@ -11,8 +11,8 @@ namespace Agent42.Tests;
 /// <para>A recorder rather than a stateless fake, because the interesting assertions here are negative:
 /// an incognito turn must neither recall nor retain, and an unconfigured deployment must make no call at
 /// all. Neither is visible in the agent's reply, and neither is distinguishable in
-/// <c>FakeChatClient.InstructionsEcho</c> — "no provider attached" and "attached, recalled nothing" both
-/// produce instructions with no <c>## Memories</c> block.</para>
+/// <c>FakeChatClient.ContextEcho</c> — "no provider attached" and "attached, recalled nothing" both
+/// produce a request with no <c>## Memories</c> message.</para>
 /// <para>Registered as its concrete type in each silo configurator so a test can fetch it from the silo
 /// container, which is the <see cref="RecordingPushNotificationSender"/> shape — not
 /// <c>AddWebToolFakes()</c>, which is for stateless fakes. <see cref="Reset"/> is called from

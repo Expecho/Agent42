@@ -8,8 +8,8 @@ namespace Agent42.Agents;
 
 /// <summary>
 /// Headline tile figures. <see cref="CachedInputTokens"/> is a SUBSET of <see cref="InputTokens"/>
-/// (its own tile, never summed into a total) and is always 0 with the current OTel pipeline
-/// (input/output only — ADR 0031).
+/// (its own tile, never summed into a total), and is 0 for a provider that reports no cached count
+/// (ADR 0031, corrected by ADR 0104).
 /// </summary>
 [GenerateSerializer]
 [Alias("Agent42.Agents.UsageTotals")]

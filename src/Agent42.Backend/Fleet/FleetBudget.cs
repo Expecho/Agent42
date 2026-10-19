@@ -15,6 +15,7 @@ public sealed class FleetBudget : IDisposable
     private readonly Lock _gate = new();
     private long _inputTokens;
     private long _outputTokens;
+    private long _cachedInputTokens;
     private int _agents;
     private int _deepestLevel;
 
@@ -35,6 +36,13 @@ public sealed class FleetBudget : IDisposable
     public int MaxAgents { get; }
     public long InputTokens => Interlocked.Read(ref _inputTokens);
     public long OutputTokens => Interlocked.Read(ref _outputTokens);
+
+    /// <summary>
+    /// Cached input reads (ADR 0104): a SUBSET of <see cref="InputTokens"/>, shown on the page and never added to
+    /// <see cref="Tokens"/>, so the budget limit does not count them twice.
+    /// </summary>
+    public long CachedInputTokens => Interlocked.Read(ref _cachedInputTokens);
+
     public long Tokens => InputTokens + OutputTokens;
     public int Agents => Volatile.Read(ref _agents);
     public int DeepestLevel => Volatile.Read(ref _deepestLevel);
@@ -58,6 +66,7 @@ public sealed class FleetBudget : IDisposable
 
         Interlocked.Add(ref _inputTokens, usage.InputTokenCount ?? 0);
         Interlocked.Add(ref _outputTokens, usage.OutputTokenCount ?? 0);
+        Interlocked.Add(ref _cachedInputTokens, usage.CachedInputTokenCount ?? 0);
         if (HasTokenLimit && Tokens >= MaxTokens)
         {
             Cancel($"the token budget of {MaxTokens:N0} tokens is used up");

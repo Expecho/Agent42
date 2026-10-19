@@ -395,12 +395,14 @@ function appendToolIo(item, label, json) {
   item.appendChild(io);
 }
 
-export function showUsage(msg, { inputTokens, outputTokens, cachedTokens }) {
+export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheWriteTokens }) {
   if (inputTokens == null && outputTokens == null) return;
   const parts = [];
   if (inputTokens != null) parts.push(`${inputTokens.toLocaleString()} in`);
   if (outputTokens != null) parts.push(`${outputTokens.toLocaleString()} out`);
   if (cachedTokens != null) parts.push(`${cachedTokens.toLocaleString()} cached`);
+  // Anthropic prompt-cache writes (ADR 0104), billed above the input rate; no other provider reports them.
+  if (cacheWriteTokens != null) parts.push(`${cacheWriteTokens.toLocaleString()} cache write`);
   const usage = document.createElement("div");
   usage.className = "msg__usage";
   usage.textContent = `tokens · ${parts.join(" · ")}`;

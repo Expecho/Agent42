@@ -104,7 +104,7 @@ public sealed class SharedStateTests(SharedClusterFixture fixture) : SharedClust
         Assert.DoesNotContain("## Shared state", Answer(await CollectAsync(agent.ChatAsync("and now?", null))), StringComparison.Ordinal);
     }
 
-    // AC14: the injection is an instruction for one run, never a stored message.
+    // AC14: the injection is a context message for one run (ADR 0104), never a stored message.
     [Fact]
     public async Task InjectedState_IsNotStoredInHistory()
     {

@@ -20,8 +20,8 @@ namespace Agent42.Tests;
 /// <para>The <see cref="RecordingHindsightClient"/> therefore stays registered and resolvable, but is no
 /// longer reachable by the grain — which is exactly what BC4 needs, because the property under test is
 /// that the provider is never <em>attached</em>: no recall, no retain, no call of any kind. That
-/// distinction is invisible in <c>FakeChatClient.InstructionsEcho</c>, where "no provider attached" and
-/// "attached, recalled nothing" both produce instructions with no <c>## Memories</c> block.</para>
+/// distinction is invisible in <c>FakeChatClient.ContextEcho</c>, where "no provider attached" and
+/// "attached, recalled nothing" both produce a request with no <c>## Memories</c> message.</para>
 /// </summary>
 public sealed class UnconfiguredMemorySiloConfigurator : ISiloConfigurator
 {
