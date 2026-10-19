@@ -14,7 +14,8 @@ argument-hint: "<short description of the decision>"
    the decision, alternatives actually considered (with why each lost), consequences
    including accepted downsides. If alternatives are unknown, ask — an ADR without
    alternatives is a changelog entry, not a decision record.
-3. **Write** `NNNN-<slug>.md` (next number) from `0000-adr-template.md`. Today's
+3. **Write** `NNNN-<slug>.md` (next free number on `origin/main` — fetch first; a parallel branch may
+   have taken it, and `AdrNumberingTests` fails on a duplicate) from `0000-adr-template.md`. Today's
    date, `status: accepted`, meaningful `tags`.
 4. **On supersession:** set `supersedes: NNNN` in the new file AND edit the old ADR
    (`status: superseded`, `superseded_by: MMMM`). Same commit.

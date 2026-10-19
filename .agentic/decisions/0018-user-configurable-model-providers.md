@@ -8,7 +8,7 @@ supersedes: 0013, 0017 (invariant scope only — see "Partial supersession")
 
 # A signed-in user configures their own model providers, without a redeploy
 
-> **Extended by [ADR 0102](0102-anthropic-provider-kind.md) (2026-10-18):** a third user-selectable kind,
+> **Extended by [ADR 0103](0103-anthropic-provider-kind.md) (2026-10-18):** a third user-selectable kind,
 > `Anthropic` (Claude). The same rules apply: an encrypted key, a required absolute http/https endpoint (the UI
 > pre-fills `https://api.anthropic.com`) and declared models.
 

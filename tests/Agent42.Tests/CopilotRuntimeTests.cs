@@ -82,7 +82,7 @@ public sealed class CopilotRuntimeTests
         }
     }
 
-    // ADR 0102 AC14: an Anthropic provider has no Copilot BYOK mapping, so a copilot chat on Claude is refused with
+    // ADR 0103 AC14: an Anthropic provider has no Copilot BYOK mapping, so a copilot chat on Claude is refused with
     // ProviderUnsupported (pick another provider), not failed mid-run.
     [Fact]
     public void CopilotKind_OnAnthropicModel_IsProviderUnsupported()

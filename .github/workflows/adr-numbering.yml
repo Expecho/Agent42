@@ -1,0 +1,25 @@
+# Post-merge ADR numbering check. AdrNumberingTests already runs in pr-checks, but two PRs that each take
+# the next free number both pass there when their CI runs before either merges (#198/#199 both took 0102).
+# Branch protection's "require up to date" would close that race, but it isn't available on this repo's
+# plan, so this re-runs the same test on main after every merge that touches the decisions folder: a
+# collision turns main red (and mails the owner) right after the second merge, instead of going unnoticed.
+name: ADR numbering
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".agentic/decisions/**"
+
+permissions:
+  contents: read
+
+jobs:
+  adr-numbering:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test tests/Agent42.Tests --filter "FullyQualifiedName~AdrNumberingTests"

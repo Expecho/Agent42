@@ -38,7 +38,7 @@ public class UserProviderResolverTests
         Assert.Contains("foundry", resolved.Providers.Keys);
     }
 
-    // ADR 0102 AC5: a stored "Anthropic" overlay parses by name into a built Anthropic provider, not an OpenAI one.
+    // ADR 0103 AC5: a stored "Anthropic" overlay parses by name into a built Anthropic provider, not an OpenAI one.
     [Fact]
     public void AddsAnthropicProvider()
     {

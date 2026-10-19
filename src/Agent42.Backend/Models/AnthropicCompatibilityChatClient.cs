@@ -3,25 +3,25 @@ using Microsoft.Extensions.AI;
 
 namespace Agent42.Backend;
 
-/// <summary>The Anthropic provider's fixed request limits (ADR 0102).</summary>
+/// <summary>The Anthropic provider's fixed request limits (ADR 0103).</summary>
 public static class AnthropicLimits
 {
     /// <summary>
     /// The <c>max_tokens</c> sent when the caller sets no <see cref="ChatOptions.MaxOutputTokens"/>. The SDK's own
     /// fallback is a hard-coded 1024, which would silently truncate a chat reply or a long <c>create_artifact</c>
-    /// argument. Measured on the stub transport that the SDK sends 32 000 non-streamed, too (ADR 0102).
+    /// argument. Measured on the stub transport that the SDK sends 32 000 non-streamed, too (ADR 0103).
     /// </summary>
     public const int DefaultMaxOutputTokens = 32_000;
 
     /// <summary>
     /// The SDK's retry count, set explicitly. It matches the OpenAI SDK's default <c>ClientRetryPolicy</c> (3, read
-    /// from the pinned System.ClientModel), which the other providers keep. The SDK's own default is 2 (ADR 0102).
+    /// from the pinned System.ClientModel), which the other providers keep. The SDK's own default is 2 (ADR 0103).
     /// </summary>
     public const int MaxRetries = 3;
 }
 
 /// <summary>
-/// The single home for the request shapes current Claude models reject (ADR 0102). Applied only inside
+/// The single home for the request shapes current Claude models reject (ADR 0103). Applied only inside
 /// <c>Provider.Anthropic</c>, because Agent Framework internals (Magentic manager, judge loop, declarative agents) can
 /// send these too and cannot be patched at the call site. Per request it:
 /// <list type="bullet">

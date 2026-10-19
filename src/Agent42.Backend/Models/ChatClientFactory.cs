@@ -15,7 +15,7 @@ namespace Agent42.Backend;
 ///
 /// <para>Every provider is now reached with an <b>API key</b> (ADR 0017, superseding ADR 0013/0014's
 /// managed identity for Foundry): a Foundry provider with an Azure OpenAI key, and any OpenAI-compatible
-/// provider — GitHub Models, Ollama, vLLM — with its endpoint's key, and Anthropic (Claude, ADR 0102) through its
+/// provider — GitHub Models, Ollama, vLLM — with its endpoint's key, and Anthropic (Claude, ADR 0103) through its
 /// own SDK with the user's Anthropic key. Both Foundry chat wire paths —
 /// Chat Completions and Responses — run over Foundry's GA <c>/openai/v1</c> surface (no <c>api-version</c>)
 /// with a custom <c>api-key</c>-header policy, because the OpenAI SDK's default is
@@ -86,7 +86,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         // A Foundry deployment is discovered, not declared, so nothing lists its capabilities —
         // assume the full Azure OpenAI feature set, which is what the app assumed before ADR 0013.
         // An OpenAI-compatible or Anthropic model is only as capable as its config entry says (Anthropic never
-        // advertises hosted tools, ADR 0102): an id that is not
+        // advertises hosted tools, ADR 0103): an id that is not
         // in the list at all gets NOTHING, because guessing "true" here is the unsafe direction —
         // SupportsVision: true wrongly hands a third party a SAS URL into our private container.
         if (provider.Options.Kind == ProviderKind.AzureOpenAI)
@@ -200,7 +200,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         // inside each provider's client lambda: this is the one place that already has BOTH the resolved
         // provider and the bare model id, and it is where the other cross-cutting decoration (OTel, below)
         // lives — so one wiring covers Foundry, OpenAI-compatible and Anthropic alike. (On Anthropic it becomes
-        // `thinking.display: "summarized"`, passed through by AnthropicCompatibilityChatClient, ADR 0102.)
+        // `thinking.display: "summarized"`, passed through by AnthropicCompatibilityChatClient, ADR 0103.)
         //
         // Measured on the pinned stack: on the Responses path (ADR 0014, how prod Foundry runs) this becomes
         // `reasoning: {summary: "concise"}` and is the ONLY reason a reasoning model emits any summary at
@@ -236,7 +236,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         /// How the Copilot runtime reaches this provider (the copilot agent kind), or null for one built without
         /// it. Set by <see cref="Foundry"/> and <see cref="OpenAICompatible"/>, the only places that hold the
         /// endpoint and the decrypted key together and map onto a Copilot BYOK provider (<see cref="Anthropic"/>
-        /// leaves it null, so a Copilot agent on Claude is refused, ADR 0102).
+        /// leaves it null, so a Copilot agent on Claude is refused, ADR 0103).
         /// </summary>
         public CopilotProviderSettings? Copilot { get; } = copilot;
 
@@ -245,7 +245,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         /// <summary>
         /// Builds an <see cref="ISpeechService"/> for a speech (text-to-speech) model of this provider
         /// (ADR 0038) — via the Azure/OpenAI <c>GetAudioClient</c>, NOT the chat path. Set on every Foundry and
-        /// OpenAI-compatible provider (an Anthropic one has none, ADR 0102); the per-model gate is the resolver, which only names a model marked
+        /// OpenAI-compatible provider (an Anthropic one has none, ADR 0103); the per-model gate is the resolver, which only names a model marked
         /// <c>SupportsSpeech</c> as the default speech model.
         /// </summary>
         public Func<string, ISpeechService>? SpeechService { get; } = speechService;
@@ -253,7 +253,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         /// <summary>
         /// Builds an <see cref="IEmbeddingGenerator{String, Single}"/> for an embedding model of this provider
         /// (document RAG, ADR 0007) — via the Azure/OpenAI <c>GetEmbeddingClient</c>, NOT the chat/Responses
-        /// path. Set on every Foundry and OpenAI-compatible provider (Anthropic has no embeddings, ADR 0102); the
+        /// path. Set on every Foundry and OpenAI-compatible provider (Anthropic has no embeddings, ADR 0103); the
         /// per-model gate is the resolver, which
         /// only names a model marked <c>SupportsEmbeddings</c> as the default embedding model.
         /// </summary>
@@ -424,7 +424,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         }
 
         /// <summary>
-        /// Anthropic (Claude) over its native Messages API (ADR 0102), through the official SDK's
+        /// Anthropic (Claude) over its native Messages API (ADR 0103), through the official SDK's
         /// <see cref="IChatClient"/>. Not <see cref="OpenAICompatible"/> against Anthropic's compatibility endpoint:
         /// that one drops prompt caching and proper thinking. Each model's client is wrapped in
         /// <see cref="AnthropicCompatibilityChatClient"/>, the single home for the request shapes current Claude

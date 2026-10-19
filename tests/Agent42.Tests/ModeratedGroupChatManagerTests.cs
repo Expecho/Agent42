@@ -6,7 +6,7 @@ using Microsoft.Extensions.AI;
 namespace Agent42.Tests;
 
 /// <summary>
-/// The fleet GroupChat moderator over Claude (ADR 0102). It asks for <c>ToolMode = RequireAny</c>, which current Claude
+/// The fleet GroupChat moderator over Claude (ADR 0103). It asks for <c>ToolMode = RequireAny</c>, which current Claude
 /// models reject, and the Anthropic shim downgrades it to <c>Auto</c>. Under <c>Auto</c> the model may answer in prose,
 /// which silently degrades selection to round-robin; both paths are pinned. The manager's hooks are protected
 /// overrides of a sealed class, so they are invoked by reflection.

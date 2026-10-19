@@ -88,7 +88,7 @@ public sealed class ProvidersApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.Equal(HttpStatusCode.BadRequest, badKind.StatusCode);
     }
 
-    // ADR 0102 AC4: an Anthropic provider is accepted (kind matched case-insensitively; the string is stored as sent,
+    // ADR 0103 AC4: an Anthropic provider is accepted (kind matched case-insensitively; the string is stored as sent,
     // as for every kind, and the resolver parses it case-insensitively), and the key is masked.
     [Fact]
     public async Task Providers_AcceptAnthropic_MaskKey()
@@ -113,7 +113,7 @@ public sealed class ProvidersApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.True(provider.GetProperty("hasKey").GetBoolean());
     }
 
-    // ADR 0102 AC4: the unknown-kind message is derived from the enum, so it lists every kind (it once hard-coded two).
+    // ADR 0103 AC4: the unknown-kind message is derived from the enum, so it lists every kind (it once hard-coded two).
     [Fact]
     public async Task UnknownKind_MessageListsAllKinds()
     {

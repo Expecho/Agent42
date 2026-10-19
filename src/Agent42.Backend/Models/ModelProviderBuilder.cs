@@ -147,7 +147,7 @@ public static class ModelProviderBuilder
         return TryBuildDeclaredProvider(key, provider);
     }
 
-    // An OpenAI-compatible or Anthropic provider (ADR 0102): keyed, endpoint-required, models declared. These kinds
+    // An OpenAI-compatible or Anthropic provider (ADR 0103): keyed, endpoint-required, models declared. These kinds
     // share every rule here and differ only in which client they build.
     private static ProviderBuildResult TryBuildDeclaredProvider(string key, ProviderOptions provider)
     {
@@ -166,7 +166,7 @@ public static class ModelProviderBuilder
                 $"Model provider '{key}' is an {provider.Kind} provider and must declare an Endpoint.");
         }
 
-        // An explicit Anthropic branch: before ADR 0102 every non-Foundry kind fell through to the OpenAI client.
+        // An explicit Anthropic branch: before ADR 0103 every non-Foundry kind fell through to the OpenAI client.
         var built = provider.Kind == ProviderKind.Anthropic
             ? MultiProviderChatClientFactory.Provider.Anthropic(provider, new Uri(provider.Endpoint), provider.ApiKey)
             : MultiProviderChatClientFactory.Provider.OpenAICompatible(
