@@ -265,7 +265,7 @@ public sealed partial class AgentGrain
     /// turn the model saw the full text; on a later turn it calls the read tool again. Without this, ten
     /// revisions of a 60 KB app leave 600 KB of dead text in the 2 MB session item (ADR 0004), re-sent every turn.
     ///
-    /// <para>Runs at the five post-turn persist sites, beside <c>ApplyRetentionAsync</c>, and mutates the
+    /// <para>Runs at the five post-turn persist sites, beside <c>ApplyRetention</c>, and mutates the
     /// <c>TryGetInMemoryChatHistory</c> list in place the way retention does. Measured on Agent Framework 1.22
     /// (spike in the plan): a replaced <see cref="FunctionCallContent"/> survives serialize → JSON → deserialize,
     /// and the next turn still sends the call paired with its result. A call is REPLACED with a copy rather than

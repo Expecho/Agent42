@@ -43,7 +43,7 @@ public sealed partial class AgentGrain
 
         // The LAST SESSION user turn must be the last visible one. A blank last user message (it does not project)
         // means the client cannot see the turn it would be replacing, so nothing is removed.
-        var userIndices = UserTurnIndices(messages);
+        var userIndices = HistoryRetention.UserTurnIndices(messages);
         var lastVisibleUser = projected.LastOrDefault(p => p.Turn.Role == ChatRole.User.Value);
         if (lastVisibleUser is null || lastVisibleUser.SessionUserTurn != userIndices.Count - 1)
         {
@@ -109,7 +109,7 @@ public sealed partial class AgentGrain
         // The cut is the session user message that begins the NEXT exchange, whether or not that message projects,
         // so a blank user turn between visible ones never shifts the boundary.
         var keptUserTurns = visibleUsers[throughUserTurn].SessionUserTurn + 1;
-        var userIndices = UserTurnIndices(messages);
+        var userIndices = HistoryRetention.UserTurnIndices(messages);
         var cut = keptUserTurns < userIndices.Count ? userIndices[keptUserTurns] : messages.Count;
 
         var excluded = messages.GetRange(cut, messages.Count - cut);
@@ -273,7 +273,7 @@ public sealed partial class AgentGrain
     private async Task PersistTruncationAsync()
     {
         CompactToolPayloads();
-        await ApplyRetentionAsync();
+        ApplyRetention();
 
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);

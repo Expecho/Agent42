@@ -261,6 +261,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // everything before the first '/' of the grain key ({userId}/{conversationId}, see AgentApi.AgentKey).
         _userId = UserIdFromGrainKey(this.GetPrimaryKeyString());
         _search = CreateSearchProjection();
+        _retention = new HistoryRetention(_timeProvider, _logger, this.GetPrimaryKeyString());
         _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId, cancellationToken);
 
         // An empty factory (the user has configured no chat provider — ADR 0019) has DefaultModelId "".
@@ -1132,7 +1133,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // Retention (ADR 0016): stamp every message, then delete whole turns that fell outside the window
         // — continuous chats only. Before the serialize, so the pruned session is what gets written.
         CompactToolPayloads();
-        var pruned = await ApplyRetentionAsync();
+        var pruned = ApplyRetention();
 
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
@@ -1536,7 +1537,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // Retention (ADR 0016), same as the chat path. This site does its OWN serialize — it does not
         // delegate to PersistTurnUnlessEphemeralAsync — so the call has to be repeated here.
         CompactToolPayloads();
-        var pruned = await ApplyRetentionAsync();
+        var pruned = ApplyRetention();
 
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);

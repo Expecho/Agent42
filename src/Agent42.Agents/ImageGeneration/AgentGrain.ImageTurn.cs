@@ -120,7 +120,7 @@ public sealed partial class AgentGrain
             // Retention (ADR 0016). INSIDE the if, unlike the other two sites: this one guards ephemeral
             // with a real block rather than an early return, and an incognito turn must not prune.
             CompactToolPayloads();
-            var pruned = await ApplyRetentionAsync();
+            var pruned = ApplyRetention();
 
             var serializedSession = await _agent.SerializeSessionAsync(_session);
             _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
@@ -253,7 +253,7 @@ public sealed partial class AgentGrain
     // for every assistant message it deletes, which is grain state and would otherwise grow unbounded. The
     // blob bytes are deliberately left behind — IAttachmentStore has no delete, and conversation delete
     // already orphans them.
-    private static string? AssistantImageId(ChatMessage message)
+    internal static string? AssistantImageId(ChatMessage message)
         => message.AdditionalProperties?.TryGetValue(AssistantImageIdKey, out var value) == true
             && value?.ToString() is { Length: > 0 } id
             ? id

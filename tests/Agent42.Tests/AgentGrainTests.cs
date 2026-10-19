@@ -1942,7 +1942,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         // inside it; 256 KB catches an unbudgeted tool result long before production would.
         //
         // This ceiling is UNCHANGED by retention stamping (ADR 0068), and that is the point of the gate
-        // in ApplyRetentionAsync rather than a happy accident. This conversation is a regular one, and
+        // in ApplyRetention rather than a happy accident. This conversation is a regular one, and
         // stamping every message here would cost 3,164 bytes on this exact test — 261,106 to 264,270,
         // about 35 bytes a message, 1.2% — which was measured and is what tipped it over 256 KB before
         // the stamp was gated on the conversation being continuous. A regular chat is never pruned, so
@@ -4250,7 +4250,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     //
     // What this DOES and does NOT prove, since the difference was measured rather than assumed: it proves
     // the end-to-end tolerance — a legacy conversation prunes and comes back correct. It does NOT exercise
-    // the Math.Min clamp in RemoveLeadingTurns, because AlignTurnAttachmentsToHistory runs before the run
+    // the Math.Min clamp in HistoryRetention.RemoveLeadingTurns, because AlignTurnAttachmentsToHistory runs before the run
     // on all three persist paths and re-pads the list to the user-turn count before the prune ever sees
     // it. Removing that clamp leaves this test, and the whole suite, green. The clamp is kept as a
     // defensive bound and is documented as one; do not read this test as its guard.

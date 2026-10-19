@@ -342,7 +342,7 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
     // turns are silently skipped. That is precisely the failure ADR 0034 exists to prevent, reached
     // through the machinery added to protect it.
     //
-    // The fix is that the remap happens where the shift happens (in PruneExpiredTurnsAsync) and the
+    // The fix is that the remap happens where the shift happens (in ApplyRetention, from HistoryRetention's delta) and the
     // retry carries a bare bool. Neither AC15 (one prune, delete succeeds) nor AC16 (no ephemeral turn)
     // can reach this state, which is why it needs its own test.
     [Fact]
