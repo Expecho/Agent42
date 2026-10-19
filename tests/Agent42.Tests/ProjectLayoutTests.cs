@@ -240,6 +240,28 @@ public sealed class ProjectLayoutTests
         }
     }
 
+    // AC11 (ADR 0106): BuildAgent writes no field as a side effect. The three switches that describe the composition
+    // are assigned in ApplyComposition and nowhere else, so they can never describe a different agent from the one
+    // in use.
+    [Fact]
+    public void BuildAgent_ReturnsItsCompositionInsteadOfWritingFields()
+    {
+        var assignment = new Regex(@"\b(_researchTodos|_copilotChat|_copilotUnavailable)\s*=(?!=)");
+        var buildAgent = Path.Combine(ProjectDir("Agent42.Agents"), "Tools", "AgentGrain.BuildAgent.cs");
+
+        foreach (var file in SourceFiles("Agent42.Agents").Where(f => f != buildAgent))
+        {
+            Assert.False(assignment.IsMatch(File.ReadAllText(file)), $"{Path.GetFileName(file)} assigns a composition switch");
+        }
+
+        var source = File.ReadAllText(buildAgent);
+        var start = source.IndexOf("private AIAgent ApplyComposition(", StringComparison.Ordinal);
+        Assert.True(start >= 0, "ApplyComposition is missing");
+        var end = source.IndexOf("\n    }", start, StringComparison.Ordinal);
+        Assert.Equal(3, assignment.Matches(source).Count);
+        Assert.All(assignment.Matches(source), m => Assert.InRange(m.Index, start, end));
+    }
+
     // AC4b (ADR 0106): the run's context is read only through the fail-closed accessor. The async-local is private to
     // TurnContext.cs and is read there in exactly one place, CurrentOrClosed; no other file declares one.
     [Fact]

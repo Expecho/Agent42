@@ -16,7 +16,7 @@ namespace Agent42.Agents;
 /// long-term memory or images in phase 1. Those are the providers and the vision path a non-<see cref="ChatClientAgent"/>
 /// cannot take, so documents are refused, <c>read_web_document</c> is not offered, and images are withheld.</para>
 ///
-/// <para><b>Two switches, set by every <see cref="BuildAgent"/></b> like <c>_researchTodos</c>, so they always
+/// <para><b>Two switches, assigned with the agent by every <see cref="BuildAgent"/></b> like <c>_researchTodos</c>, so they always
 /// describe the agent in use: <see cref="_copilotChat"/> (this chat runs the Copilot loop) and
 /// <see cref="_copilotUnavailable"/> (it should, but cannot get one). Neither is turn-scoped.</para>
 /// </summary>
@@ -47,19 +47,15 @@ public sealed partial class AgentGrain
     /// </summary>
     private readonly List<TurnContext> _copilotRuns = [];
 
-    // Decides whether the agent being built is the Copilot composition, and resets both switches. A no-tools model
-    // gets a plain chat: Copilot's whole value is its tool loop, and the same gate drops every other tool.
+    // Decides whether the agent being built is the Copilot composition. A no-tools model gets a plain chat: Copilot's
+    // whole value is its tool loop, and the same gate drops every other tool.
     private bool IsCopilotComposition(ModelCapabilities capabilities)
-    {
-        _copilotChat = AgentKinds.IsCopilot(_state.State.AgentKind) && capabilities.SupportsTools;
-        _copilotUnavailable = null;
-        return _copilotChat;
-    }
+        => AgentKinds.IsCopilot(_state.State.AgentKind) && capabilities.SupportsTools;
 
     // Builds the Copilot composition: the factory's agent wrapped in the history mirror. A missing factory or a
     // refused request yields the session-preserving stand-in instead of failing the activation, because history,
     // binding and every other non-inference path must keep working.
-    private AIAgent BuildCopilotAgent(string modelId, ModelCapabilities capabilities, HashSet<string> enabled)
+    private AgentComposition BuildCopilotAgent(string modelId, ModelCapabilities capabilities, HashSet<string> enabled)
     {
         var name = _state.State.AgentName ?? "Agent42";
         var skills = SelectedSkills(capabilities, enabled);
@@ -80,20 +76,19 @@ public sealed partial class AgentGrain
                 WithRenderingHints(_state.State.SystemPrompt ?? Instructions),
                 CopilotFunctions(capabilities, enabled, skills),
                 [.. skills.Select(s => s.Path)]));
-            return new CopilotChatAgent(inner, name);
+            return AgentComposition.Copilot(new CopilotChatAgent(inner, name), unavailable: null);
         }
         catch (CopilotUnavailableException ex)
         {
             return Unavailable(ex.Message);
         }
 
-        AIAgent Unavailable(string reason)
+        AgentComposition Unavailable(string reason)
         {
-            _copilotUnavailable = reason;
             _logger.LogWarning(
                 "Agent grain {GrainKey} cannot build its copilot agent on model {Model}: {Reason}",
                 this.GetPrimaryKeyString(), modelId, reason);
-            return new CopilotChatAgent(new CopilotUnavailableAgent(reason), name);
+            return AgentComposition.Copilot(new CopilotChatAgent(new CopilotUnavailableAgent(reason), name), reason);
         }
     }
 
