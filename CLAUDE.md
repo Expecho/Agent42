@@ -132,10 +132,12 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
    agent chat is one unbounded grain (ADR 0016/0068).
 6. **Turn-scoped grain fields live for the activation.** Clear them explicitly. `ReceiveReminder` does not
    drain `ChatCoreAsync`, so each reset is needed in both places (ADR 0012/0034/0075).
-7. **Registrations:** a new mandatory grain dependency must be registered in every silo host (Backend,
-   DevHost, tests). For endpoint dependencies, prefer optional `IServiceProvider.GetService` resolution (the
+7. **Registrations (ADR 0105):** a registration identical in every host goes in `AddAgent42Silo()` (grain side) or
+   `AddAgent42Api()` (endpoint side); one that varies is a port each host (Backend, DevHost, test silos) registers
+   before calling them. `AddAgent42Silo()` fails startup on a missing **direct** grain constructor dependency, but
+   not on a transitive one. For endpoint dependencies, prefer optional `IServiceProvider.GetService` resolution (the
    `/api/speech` pattern). A new `AgentApi.*` partial that `MapAgentApi` never calls silently deletes its
-   endpoints.
+   endpoints; `AgentApiReachabilityTests` catches it.
 8. **A named `HttpClient` inherits `AddServiceDefaults`' retry pipeline.** Opt out explicitly, and give a
    proxy its own client.
 9. **S3776 cognitive complexity is a build error at 15** (ADR 0050/0051). Split a feature's registration
@@ -177,4 +179,4 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Config health tab | 0029 |
 | Artifacts / canvas: model-created versioned pages, SVG, docs and code in a sandboxed pane; CSP sandbox header; session compaction | 0083, 0084 |
 | Client tools and shared state: browser-run tools (confirm, artifact pane, browser context, location) paused on the stream, per-run broker, shared JSON state with snapshots; why not AG-UI | 0089, 0088, 0093 |
-| Layout and quality: feature folders, ES modules, gates, complexity, test clusters | 0039, 0040, 0041, 0050, 0051, 0055 |
+| Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test | 0039, 0040, 0041, 0050, 0051, 0055, 0105 |

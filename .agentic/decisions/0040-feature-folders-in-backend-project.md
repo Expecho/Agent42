@@ -10,6 +10,11 @@ extends: [0039]
 
 # Feature folders in `Agent42.Backend`, and `MapAgentApi` split into per-feature partials
 
+> **Amended by [ADR 0105](0105-shared-silo-registration.md) (2026-10-19): §4's guard is now a runtime test.**
+> `AgentApiReachabilityTests` maps each reflected part alone and requires its routes in `MapAgentApi`. The source-text
+> call check is gone; the folder theory, renamed `AgentApiPart_ExistsInItsFeatureFolder`, keeps its list, which had
+> fallen four parts behind and is now pinned equal to the reflected set.
+
 ## Context
 ADR 0039 reorganised `Agent42.Agents` into feature folders with a deliberately flat namespace, and
 explicitly scoped itself out of `Agent42.Backend` ("34 flat files … its own follow-up MR"). This is

@@ -187,14 +187,27 @@ public sealed class ProjectLayoutTests
         { "ClientTools/AgentApi.ClientTools.cs", "MapClientToolEndpoints" },
         { "SharedState/AgentApi.SharedState.cs", "MapSharedStateEndpoints" },
         { "Email/AgentApi.Email.cs", "MapEmailEndpoints" },
+        { "Artifacts/AgentApi.Artifacts.cs", "MapArtifactEndpoints" },
+        { "Export/AgentApi.Export.cs", "MapExportEndpoints" },
+        { "Webhooks/AgentApi.Webhooks.cs", "MapWebhookEndpoints" },
+        { "Fleet/AgentApi.Fleet.cs", "MapFleetEndpoints" },
     };
 
-    // Each endpoint group exists, is a partial of the one AgentApi class, and — the part that matters —
-    // is actually REGISTERED from the composition root. A group that exists but is never called compiles
-    // cleanly and silently removes every endpoint in it, which no build or lint step would notice.
+    // The theory above lists exactly the parts reflection finds, so it cannot fall behind again (it once missed four).
+    [Fact]
+    public void AgentApiParts_MatchesReflectedMapMethods()
+    {
+        var listed = AgentApiParts().Select(row => (string)row[1]).Order(StringComparer.Ordinal);
+        var reflected = AgentApiReachabilityTests.MapMethods().Select(m => m.Name).Order(StringComparer.Ordinal);
+
+        Assert.Equal(reflected, listed);
+    }
+
+    // Each endpoint group exists where its feature folder says, in the flat namespace, as a partial of the one AgentApi
+    // class. That it is actually CALLED from MapAgentApi is checked at runtime by AgentApiReachabilityTests.
     [Theory]
     [MemberData(nameof(AgentApiParts))]
-    public void AgentApiPart_ExistsAndIsRegisteredFromTheCompositionRoot(string relativePath, string mapMethod)
+    public void AgentApiPart_ExistsInItsFeatureFolder(string relativePath, string mapMethod)
     {
         var file = Path.Combine(ProjectDir("Agent42.Backend"), relativePath.Replace('/', Path.DirectorySeparatorChar));
 
@@ -204,9 +217,6 @@ public sealed class ProjectLayoutTests
         var part = File.ReadAllText(file);
         Assert.Contains("partial class AgentApi", part, StringComparison.Ordinal);
         Assert.Contains($"private static void {mapMethod}(IEndpointRouteBuilder app)", part, StringComparison.Ordinal);
-
-        var root = File.ReadAllText(Path.Combine(ProjectDir("Agent42.Backend"), "Api", "AgentApi.cs"));
-        Assert.Contains($"{mapMethod}(app);", root, StringComparison.Ordinal);
     }
 
     // The turn-scoped fields stay in the CORE AgentGrain part. Each is safe only because its declaration
@@ -278,7 +288,7 @@ public sealed class ProjectLayoutTests
         { "webhooks.js", "wireWebhooks" },
     };
 
-    // The frontend analogue of AgentApiPart_ExistsAndIsRegisteredFromTheCompositionRoot (ADR 0040): a
+    // The frontend analogue of AgentApiReachabilityTests (ADR 0040): a
     // module whose wire*() is never called from main.js loads fine, throws nothing, and silently attaches
     // no listeners — that feature's buttons just do nothing, and no build, lint or type check sees it.
     [Theory]
@@ -510,7 +520,7 @@ public sealed class ProjectLayoutTests
     /// breaks routing for <i>every</i> endpoint in that host. <c>MapMcp</c> throws outright without
     /// <c>AddMcpServer().WithHttpTransport()</c>, so folding it into <c>MapAgentApi</c> would take down
     /// eight fixtures at once. Consequently
-    /// <see cref="AgentApiPart_ExistsAndIsRegisteredFromTheCompositionRoot"/> does not apply here and must
+    /// <see cref="AgentApiReachabilityTests"/> does not apply here and must
     /// not be extended to cover it — this test is what records that as a decision rather than an omission.
     /// </para>
     /// </summary>
@@ -610,6 +620,33 @@ public sealed class ProjectLayoutTests
     }
 
     /// <summary>
+    /// AC8 (ADR 0105). Both hosts call the shared registrations, the API half and then the silo half, and only AFTER
+    /// their ports: <c>AddAgent42Silo()</c> validates what is already registered, so a port registered below it reads
+    /// as missing and fails startup. The push sender and the attachment store stand in for "the ports". Source text,
+    /// because nothing in the suite runs <c>Program.cs</c>.
+    /// </summary>
+    [Theory]
+    [InlineData("src/Agent42.Backend/Program.cs")]
+    [InlineData("tools/Agent42.DevHost/Program.cs")]
+    public void Hosts_CallAddAgent42Silo(string relativePath)
+    {
+        var program = StrippedSource(
+            Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+        var api = program.IndexOf("builder.Services.AddAgent42Api();", StringComparison.Ordinal);
+        var silo = program.IndexOf("builder.Services.AddAgent42Silo();", StringComparison.Ordinal);
+        Assert.True(api >= 0, $"{relativePath} does not call AddAgent42Api().");
+        Assert.True(silo > api, $"{relativePath} must call AddAgent42Silo() after AddAgent42Api().");
+        Assert.True(silo < program.IndexOf("builder.UseOrleans(", StringComparison.Ordinal), $"{relativePath} must call AddAgent42Silo() before UseOrleans.");
+
+        foreach (var port in new[] { "AddSingleton<IPushNotificationSender", "AddSingleton<IAttachmentStore" })
+        {
+            var last = program.LastIndexOf(port, StringComparison.Ordinal);
+            Assert.True(last >= 0 && last < silo, $"{relativePath}: {port} must be registered before AddAgent42Silo().");
+        }
+    }
+
+    /// <summary>
     /// AC 10 (ADR 0062). Both silo hosts must register the dashboard — the endpoints exist either way,
     /// but with no <c>AddDashboard()</c> on the silo they have no cluster services to read, so the page
     /// fails at runtime rather than at build time.
@@ -639,6 +676,43 @@ public sealed class ProjectLayoutTests
             var index = source.IndexOf(later, StringComparison.Ordinal);
             Assert.True(index > gate, $"{relativePath}: {later} runs before the dashboard owner gate.");
         }
+    }
+
+    /// <summary>
+    /// AC7 (ADR 0105). Every test silo goes through <c>AddAgent42Silo()</c>, so every cluster start validates the
+    /// grain dependencies. A LAYERED configurator wraps a leaf and gets the call through it; each one is listed here
+    /// with the inner configurator it must call, so a new configurator is either a leaf that calls the method or an
+    /// entry someone added on purpose.
+    /// </summary>
+    [Fact]
+    public void AllSiloConfigurators_CallAddAgent42Silo()
+    {
+        var layered = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ActivityPropagationSiloConfigurator"] = "new TestSiloConfigurator().Configure(",
+            ["UnconfiguredMemorySiloConfigurator"] = "new TestSiloConfigurator().Configure(",
+            ["LiveCopilotSiloConfigurator"] = "new LiveModelSiloConfigurator().Configure(",
+        };
+        var declaration = new Regex(@"\bclass\s+(\w+)\s*:\s*ISiloConfigurator\b");
+
+        var found = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(Path.Combine(RepoRoot(), "tests"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)))
+        {
+            var source = StrippedSource(file);
+            foreach (Match match in declaration.Matches(source))
+            {
+                var name = match.Groups[1].Value;
+                found.Add(name);
+                var next = source.IndexOf(" class ", match.Index + match.Length, StringComparison.Ordinal);
+                var body = source[match.Index..(next < 0 ? source.Length : next)];
+                var expected = layered.GetValueOrDefault(name, "services.AddAgent42Silo()");
+                Assert.True(body.Contains(expected, StringComparison.Ordinal), $"{name} ({Path.GetFileName(file)}) must contain {expected}.");
+            }
+        }
+
+        Assert.True(found.Count >= 10, $"Found only {found.Count} silo configurators; the scan is broken.");
+        Assert.All(layered.Keys, name => Assert.Contains(name, found));
     }
 
     // Comment lines stripped first: this repo explains its own traps in dense prose, and an assertion

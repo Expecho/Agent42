@@ -164,13 +164,6 @@ if (string.IsNullOrWhiteSpace(blobConnection) && !string.IsNullOrWhiteSpace(data
     dataProtection.PersistKeysToAzureBlobStorage(keyRingBlob);
 }
 
-builder.Services.AddSingleton<IProviderSecretProtector, ProviderSecretProtector>();
-
-// Encrypts the secrets of user-configured MCP servers (config-driven remote MCP servers), on the same
-// DP key ring but a distinct protection scope (IMcpSecretProtector's own purpose) so MCP-secret rotation
-// is independent of model-provider keys. DevHost/tests fall through to the default ephemeral ring.
-builder.Services.AddSingleton<IMcpSecretProtector, McpSecretProtector>();
-
 // Per-user MCP tools (config-driven remote MCP servers): the provider connects to the signed-in user's
 // enabled MCP servers and hands the agent grain their tools (resolved on activation, version-cached,
 // best-effort, bounded connection lifetime). The agent grain merges them into BuildAgent's tool list,
@@ -190,27 +183,18 @@ builder.Services.AddSingleton<McpConnectionTester>();
 // /api/local-bridge. AddLocalBridge DECORATES the IMcpConnectionFactory registered above, so it must stay
 // below it — ProjectLayoutTests.Hosts_RegisterLocalBridge pins the order.
 builder.Services.AddLocalBridge();
-// Uploaded agent skills (ADR 0049). The two registrations are NOT equivalent, and the asymmetry is
-// deliberate: IUserSkillProvider is an AgentGrain constructor dependency, so it is MANDATORY in every
-// host that activates the grain (the IUserMcpToolProvider / IPushNotificationSender shape — miss it and
-// every activation fails). ISkillPackageStore is only ever resolved OPTIONALLY, out of IServiceProvider
-// inside the endpoint handler, so a host that omits it degrades to a 409 instead of breaking route
-// matching for the whole host (the /api/speech and /api/config-health pattern).
+// Uploaded agent skills (ADR 0049): the Blob package store. Resolved only OPTIONALLY, out of IServiceProvider
+// inside the endpoint handler, so a host that omits it degrades to a 409 instead of breaking route matching for
+// the whole host (the /api/speech and /api/config-health pattern). The IUserSkillProvider over it is a grain
+// dependency and comes from AddAgent42Silo below.
 builder.Services.AddSingleton<ISkillPackageStore, BlobSkillPackageStore>();
-builder.Services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
-// Drives the interactive-OAuth HTTP exchanges (PRM discovery, code→token, refresh — Phase 3) over a plain
-// HttpClient (not DI-resolved, so no AddServiceDefaults resilience inheritance). Used by the /api/mcp/oauth/*
-// endpoints and by McpOAuthTokenResolver, which refreshes per request since ADR 0081.
-builder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
 
 // Document RAG (ADR 0007/0018). There is NO operator embedding generator: the embedding model is
 // per-user (chosen in Preferences), so ingestion and retrieval resolve their generator from the user's
 // chat-client factory (IUserChatClientFactoryProvider.GetEmbeddingGenerator) — no fixed deployment, no
 // AzureOpenAI:EmbeddingDeploymentName prerequisite. A user with no embedding model configured cannot
-// attach documents (the composer gates it) and RAG retrieval degrades to empty.
-builder.Services.AddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
-builder.Services.AddSingleton<DocumentChunker>();
-builder.Services.AddSingleton<DocumentIngestionService>();
+// attach documents (the composer gates it) and RAG retrieval degrades to empty. The extractor, chunker and
+// ingestion service are host-invariant and come from AddAgent42Silo below.
 
 // The document index (ADR 0007) branches on whether the doc-chunks container is configured;
 // that decision lives with the Documents feature (ADR 0040/0050), not inline here.
@@ -322,13 +306,10 @@ builder.Services.AddSingleton<IWebPageFetcher>(sp => new ContextWebPageFetcher(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient(ContextWebPageFetcher.HttpClientName),
     sp.GetRequiredService<ILogger<ContextWebPageFetcher>>()));
 
-// read_web_document (ADR 0066): the guarded fetcher over the client registered above, plus the ingestion
-// port the tool reaches the Backend-owned pipeline through. Both are mandatory AgentGrain dependencies,
-// so every silo host must register them or activation fails.
+// read_web_document (ADR 0066): the guarded fetcher over the client registered above. A mandatory AgentGrain
+// dependency (AddAgent42Silo checks it); its ingestion port is host-invariant and comes from AddAgent42Silo.
 builder.Services.AddSingleton<IWebDocumentFetcher>(sp => new GuardedDocumentFetcher(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient(GuardedDocumentFetcher.HttpClientName)));
-
-builder.Services.AddSingleton<IDocumentIngestor, WebDocumentIngestor>();
 
 // User location (ADR 0012): reverse-geocoding for the get_current_location tool.
 //
@@ -440,6 +421,12 @@ else
 {
     builder.Services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
 }
+
+// The registrations every host shares (ADR 0105), AFTER every port above: the endpoint invariants (the secret
+// protectors on the Data Protection ring set up above, the OAuth client), then the grain-side ones, which also
+// fail startup naming any grain dependency this host did not register.
+builder.Services.AddAgent42Api();
+builder.Services.AddAgent42Silo();
 
 // Orleans silo: clustering comes from the Aspire Orleans resource when running
 // under Aspire orchestration; localhost clustering is the fallback for a single

@@ -141,6 +141,10 @@ public sealed class LiveModelSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IAttachmentStore, DataUrlAttachmentStore>();
             services.AddDocumentRagFakes();
             services.AddWebToolFakes();
+
+            // Last: supplies the host-invariant services and fails the silo at startup, naming the type, if a grain
+            // dependency above is missing (ADR 0105).
+            services.AddAgent42Silo();
         });
     }
 }

@@ -1,4 +1,5 @@
 using Agent42.Agents;
+using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.TestingHost;
@@ -142,6 +143,10 @@ public sealed class CapSizedFetcherSiloConfigurator : ISiloConfigurator
             // registered: HindsightIntegration is a mandatory grain dependency, so omitting it fails
             // activation rather than disabling memory.
             services.AddSingleton(new HindsightIntegration(null));
+
+            // Last: supplies the host-invariant services and fails the silo at startup, naming the type, if a grain
+            // dependency above is missing (ADR 0105).
+            services.AddAgent42Silo();
         });
     }
 }
