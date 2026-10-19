@@ -130,7 +130,7 @@ public sealed partial class AgentGrain
                 continue;
             }
 
-            functions.Add(new SchedulerBoundAIFunction(function, scheduler, SoleCopilotRun));
+            functions.Add(new SchedulerBoundAIFunction(function, scheduler, () => _copilotRuns));
         }
 
         return functions;
@@ -163,8 +163,6 @@ public sealed partial class AgentGrain
         }
     }
 
-    // The context a Copilot tool call belongs to: the one run in flight, or null when there are none or several.
-    private TurnContext? SoleCopilotRun() => _copilotRuns.Count == 1 ? _copilotRuns[0] : null;
 
     // Whether this turn's images may reach the model: never in a copilot chat (phase 1 has no image path through the
     // Copilot loop), otherwise the model's vision capability (ADR 0013).

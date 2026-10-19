@@ -491,7 +491,7 @@ Both pass on the new code. ADR 0106 records this.
 - **The Copilot test twin now suppresses `ExecutionContext` flow.** `ChatClientCopilotAgentFactory` used to call
   tools with `Task.Run`, which flows the context, so every Copilot grain test would have passed without the
   registry. It now calls them under `SuppressFlow`, so the existing Copilot grain tests exercise the registry. A
-  mutation that made `SoleCopilotRun` return null fails 3 of them.
+  mutation that made the registry lookup return null fails 3 of them.
 - **AC5's two-runs case is a unit test.** `CopilotTool_SeesItsRunsTurnContext`, `CopilotTool_TwoRunsInFlight_Refuses`
   and `CopilotTool_KeepsAFlowedContext` are in `CopilotSeamTests`, over `SchedulerBoundAIFunction`. A Copilot chat
   gets no client tools, so two concurrent Copilot runs cannot be staged on a grain. The grain half is the existing
@@ -524,3 +524,16 @@ Both pass on the new code. ADR 0106 records this.
   planned.
 - **AC4c needed no new test.** `MemorySelected_RecallsAndRetains` already asserts retain after a streamed turn, and it
   passes.
+
+**Diff critic (2026-10-19), all findings handled before the MR:**
+- **F1 (medium), fixed.** A context that flowed into the Copilot RPC thread used to beat the registry, so an SDK
+  that captured the first run's context once would reuse a finished run's budget. The registry is now
+  authoritative: `SchedulerBoundAIFunction` keeps a flowed context only while its run is still in `_copilotRuns`,
+  otherwise it uses the sole run, otherwise `Closed`. New test `CopilotTool_StaleFlowedContext_LosesToTheRegistry`.
+- **F2 (low to medium), fixed.** `docs/features/` was never in the plan's Affected areas, and seven pages, plus two
+  source comments, still named the deleted fields or moved methods.
+- **F3 (low), fixed in the docs.** The grain constructs the services with `new`, so the ADR's claim that the
+  interfaces allow "grain-test fakes" was false. ADR 0106 and `IChatSearchProjection` now say the interfaces name
+  the contract and are where such a seam would go.
+- **F4 (low), accepted.** `TurnScopedState_IsNeverAGrainField` pins the five deleted names, not every possible new
+  per-run field. Rule 6 in CLAUDE.md is the rule; the guard catches only a regression to these names.

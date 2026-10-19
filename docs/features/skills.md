@@ -26,7 +26,7 @@ bound its output, and drops it entirely when no skill is selected.
 flowchart TD
     SHIP["SkillCatalog: shipped Skills/*/SKILL.md"] --> MERGE
     UP["UserSkillsGrain + blob skill-packages<br/>materialized to a temp dir"] --> MERGE
-    MERGE["MergedSkills() (uploads shadow shipped by name)"] --> SEL
+    MERGE["ToolSelection.MergedSkills (uploads shadow shipped by name)"] --> SEL
     subgraph BuildAgent
       SEL{"SupportsTools and<br/>IsSkillEnabled(name)?"} -->|"selected paths"| CONSTRUCT
       CONSTRUCT["TruncatingSkillsProvider.ForSkillPaths(paths)"] --> REG["contextProviders += skillsProvider"]
@@ -42,9 +42,8 @@ per skill: a skill is kept when the selection holds the `skills` wildcard (`null
 legacy selection) or its own `skill:{name}` key:
 
 ```csharp
-var selectedSkillPaths = capabilities.SupportsTools
-    ? MergedSkills().Where(s => ToolCatalog.IsSkillEnabled(s.Name, enabled)).Select(s => s.Path).ToList()
-    : [];
+// ToolSelection.SelectedSkills: none on a no-tools model, else the merged catalog filtered per skill.
+var selectedSkillPaths = SelectedSkills(capabilities, enabled).Select(s => s.Path).ToList();
 
 var skillsProvider = selectedSkillPaths.Count > 0
     ? TruncatingSkillsProvider.ForSkillPaths(selectedSkillPaths)

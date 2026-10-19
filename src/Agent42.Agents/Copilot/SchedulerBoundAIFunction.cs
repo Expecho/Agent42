@@ -17,12 +17,15 @@ namespace Agent42.Agents;
 /// like a normal tool callback.</para>
 ///
 /// <para><b>The run's <see cref="TurnContext"/> (ADR 0106) is re-established here.</b> Nothing flows from the turn to
-/// the RPC thread, so a tool would read <see cref="TurnContext.Closed"/>. When the context did flow it is kept;
-/// otherwise <paramref name="soleRun"/> names the one Copilot run in flight on the activation, or null when there
-/// are none or several, and the tool then runs under <see cref="TurnContext.Closed"/> and refuses.</para>
+/// the RPC thread, so a tool would read <see cref="TurnContext.Closed"/>. The registry of Copilot runs in flight
+/// (<paramref name="runsInFlight"/>, read on the activation's scheduler) is authoritative: a context that did flow is
+/// kept only while its run is still registered, because an SDK that captured one once (a lazily started RPC loop)
+/// would otherwise hand every later call a finished run's budget. Failing that, the one run in flight is used; with
+/// none or several the tool runs under <see cref="TurnContext.Closed"/> and refuses.</para>
 /// </summary>
 public sealed class SchedulerBoundAIFunction(
-    AIFunction inner, TaskScheduler scheduler, Func<TurnContext?> soleRun) : DelegatingAIFunction(inner)
+    AIFunction inner, TaskScheduler scheduler, Func<IReadOnlyList<TurnContext>> runsInFlight)
+    : DelegatingAIFunction(inner)
 {
     protected override async ValueTask<object?> InvokeCoreAsync(
         AIFunctionArguments arguments, CancellationToken cancellationToken)
@@ -44,7 +47,17 @@ public sealed class SchedulerBoundAIFunction(
     private ValueTask<object?> InvokeInRunAsync(
         TurnContext flowed, AIFunctionArguments arguments, CancellationToken cancellationToken)
     {
-        var context = flowed.IsClosed ? soleRun() ?? TurnContext.Closed : flowed;
+        var context = Resolve(flowed, runsInFlight());
         return TurnContext.RunInAsync(context, () => base.InvokeCoreAsync(arguments, cancellationToken));
+    }
+
+    private static TurnContext Resolve(TurnContext flowed, IReadOnlyList<TurnContext> runs)
+    {
+        if (runs.Contains(flowed))
+        {
+            return flowed;
+        }
+
+        return runs.Count == 1 ? runs[0] : TurnContext.Closed;
     }
 }

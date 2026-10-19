@@ -125,7 +125,7 @@ public sealed class CopilotSeamTests
         TaskScheduler? ranOn = null;
         var tool = new SchedulerBoundAIFunction(
             AIFunctionFactory.Create(() => { ranOn = TaskScheduler.Current; return "ok"; }, "probe"), exclusive,
-            () => null);
+            () => []);
 
         var result = await Task.Run(async () => await tool.InvokeAsync());
 
@@ -140,7 +140,7 @@ public sealed class CopilotSeamTests
     public async Task CopilotTool_SeesItsRunsTurnContext()
     {
         var run = TurnContext.ForBackground();
-        var tool = ContextProbe(out var seen, soleRun: () => run);
+        var tool = ContextProbe(out var seen, runsInFlight: [run]);
 
         await TurnContext.RunInAsync(run, async () => await InvokeWithoutFlowAsync(tool));
 
@@ -152,33 +152,48 @@ public sealed class CopilotSeamTests
     [Fact]
     public async Task CopilotTool_TwoRunsInFlight_Refuses()
     {
-        var tool = ContextProbe(out var seen, soleRun: () => null);
+        var tool = ContextProbe(out var seen, runsInFlight: [TurnContext.ForBackground(), TurnContext.ForBackground()]);
 
         await TurnContext.RunInAsync(TurnContext.ForBackground(), async () => await InvokeWithoutFlowAsync(tool));
 
         Assert.Same(TurnContext.Closed, seen());
     }
 
-    // When the context DID flow (an SDK that carries the ExecutionContext), it is kept over the registry.
+    // When the context DID flow (an SDK that carries the ExecutionContext) and its run is still in flight, it is kept,
+    // even with another Copilot run in flight beside it.
     [Fact]
-    public async Task CopilotTool_KeepsAFlowedContext()
+    public async Task CopilotTool_KeepsAFlowedContext_WhileItsRunIsInFlight()
     {
         var run = TurnContext.ForBackground();
-        var tool = ContextProbe(out var seen, soleRun: () => null);
+        var tool = ContextProbe(out var seen, runsInFlight: [TurnContext.ForBackground(), run]);
 
         await TurnContext.RunInAsync(run, async () => await Task.Run(async () => await tool.InvokeAsync()));
 
         Assert.Same(run, seen());
     }
 
-    private static SchedulerBoundAIFunction ContextProbe(out Func<TurnContext?> seen, Func<TurnContext?> soleRun)
+    // A flowed context whose run has ENDED (an SDK loop that captured the first run's context once) must not win: the
+    // registry is authoritative, so the call belongs to the one run actually in flight.
+    [Fact]
+    public async Task CopilotTool_StaleFlowedContext_LosesToTheRegistry()
+    {
+        var finished = TurnContext.ForBackground();
+        var current = TurnContext.ForBackground();
+        var tool = ContextProbe(out var seen, runsInFlight: [current]);
+
+        await TurnContext.RunInAsync(finished, async () => await Task.Run(async () => await tool.InvokeAsync()));
+
+        Assert.Same(current, seen());
+    }
+
+    private static SchedulerBoundAIFunction ContextProbe(out Func<TurnContext?> seen, List<TurnContext> runsInFlight)
     {
         TurnContext? observed = null;
         seen = () => observed;
         return new SchedulerBoundAIFunction(
             AIFunctionFactory.Create(() => { observed = TurnContext.CurrentOrClosed; return "ok"; }, "probe"),
             new ConcurrentExclusiveSchedulerPair().ExclusiveScheduler,
-            soleRun);
+            () => runsInFlight);
     }
 
     private static async Task<object?> InvokeWithoutFlowAsync(AIFunction tool)

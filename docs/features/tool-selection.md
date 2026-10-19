@@ -148,7 +148,7 @@ public static IReadOnlyList<string>? Sanitize(IReadOnlyList<string>? tools)
 ```
 
 The `mcp` **wildcard** must be expanded into explicit `mcp:{id}` keys on read
-(`GetEnabledToolsAsync` → `ExpandMcpWildcard`), or a no-op picker Save would silently disable
+(`GetEnabledToolsAsync` → `ToolSelection.ExpandedEnabledTools`), or a no-op picker Save would silently disable
 every server — the picker has no bare `mcp` checkbox.
 
 ## How the Agent Framework fits

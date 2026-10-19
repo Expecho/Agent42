@@ -48,7 +48,9 @@ retention, edit/fork and tool selection were grain methods that only a silo coul
   per run, so a closure would capture the wrong run.
 - **DI-registered service factories (`IXxxFactory` ports).** Three of the services hold activation-scoped state, so
   a singleton is wrong. A factory port adds a registration to three hosts and about eight test silos (ADR 0105), and
-  nothing about it varies per host. The interfaces exist for unit tests and grain-test fakes only.
+  nothing about it varies per host. The grain constructs each service with `new`, so there is no seam to
+  substitute a fake in a grain test today. The interfaces name each service's contract, and they are the place to add
+  such a seam later. The unit tests construct the concrete classes.
 - **A cached `ToolSelection`.** `EnabledTools` changes at activation, bind, MCP re-resolve, `SetEnabledToolsAsync`
   and fork. A cache needs a rebuild at each of those, and a missed one leaves a tool (or memory egress) ON after the
   user turned it off (ADR 0021, rule 11). Computing the selection per call is cheap.

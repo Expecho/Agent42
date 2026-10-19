@@ -550,9 +550,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   broker, budgets exhausted, mutations ignored. That is the safe direction — do not add a "friendlier" fallback.
   Grain-side code uses its `turn` parameter, never `CurrentOrClosed`.
   **(2) Copilot.** The Copilot SDK invokes custom tools on its RPC thread, where no `ExecutionContext` flows.
-  `SchedulerBoundAIFunction` keeps a flowed context, and otherwise re-establishes it from the grain's by-identity
-  `_copilotRuns` registry (`OpenCopilotRun`/`CloseCopilotRun`) only when **exactly one** Copilot run is in flight
-  (`SoleCopilotRun`); with zero or several the tool runs under `Closed` and refuses. A first-wins slot would hand
+  `SchedulerBoundAIFunction` resolves it from the grain's by-identity `_copilotRuns` registry
+  (`OpenCopilotRun`/`CloseCopilotRun`), which is authoritative: a flowed context is kept only while its run is still
+  registered (an SDK that captured one once would otherwise reuse a finished run's budget), else the run is used only
+  when **exactly one** Copilot run is in flight; with zero or several the tool runs under `Closed` and refuses. A first-wins slot would hand
   one run's tool the other run's budget. The test twin `ChatClientCopilotAgentFactory` calls tools under
   `ExecutionContext.SuppressFlow()` so silo tests take this path.
   **(3) Incognito (ADR 0034).** The tools that would leave a durable trace — `schedule_prompt`,
@@ -572,7 +573,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/Conversations/TurnContext.cs`, `src/Agent42.Agents/Conversations/AgentGrain.cs`
   (`ChatAsync`, `EnqueuePromptAsync`, `ReceiveReminder`, `_mcpReauthNotified`),
   `src/Agent42.Agents/ClientTools/AgentGrain.ClientTools.cs` (`PullAsync`, `DisposeRunAsync`),
-  `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`_copilotRuns`, `SoleCopilotRun`),
+  `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`_copilotRuns`, `OpenCopilotRun`),
   `src/Agent42.Agents/Copilot/SchedulerBoundAIFunction.cs`, `src/Agent42.Agents/Copilot/ChatClientCopilotAgentFactory.cs`,
   `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`, `src/Agent42.Agents/Push/AgentGrain.PushTool.cs`,
   `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`, `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs`,

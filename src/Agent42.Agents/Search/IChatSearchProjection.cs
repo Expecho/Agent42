@@ -3,7 +3,7 @@ namespace Agent42.Agents;
 /// <summary>
 /// The chat-search projection of ONE conversation (ADR 0061/0068), owned by its grain activation (ADR 0106). The grain
 /// calls it at each persist site, in the order its persist pipeline fixes: reconcile after the state write, then index.
-/// An interface so the grain's behaviour can be tested with a fake and the projection without a silo.
+/// The contract the grain calls; the projection itself is unit-tested without a silo.
 /// </summary>
 public interface IChatSearchProjection
 {

@@ -183,7 +183,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // ReceiveReminder reuses that same _agent — so resolving later would have the first chat turn AND every
     // reminder turn on this activation silently ignore the user's uploads.
     //
-    // NOTE this is precisely why ExpandSkillsWildcard is no longer static. ADR 0048 could say the skills
+    // NOTE this is precisely why the skills expansion (ToolSelection.ExpandedEnabledTools) reads the user's uploads
+    // from its context, built from this field. ADR 0048 could say the skills
     // expansion "needs no grain field ... there is no OnActivateAsync ordering hazard here" because
     // SkillCatalog is static and process-wide; making skills per-user re-opens the hazard the MCP expansion
     // already had.
