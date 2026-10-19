@@ -16,11 +16,6 @@ namespace Agent42.Agents;
 /// </summary>
 public sealed partial class AgentGrain
 {
-    // Turn-scoped (rule 6): parts read so far this turn. It always resets to 0, so it follows the two-site
-    // _pushesThisTurn shape — the top of ChatCoreAsync above any yield, and ReceiveReminder's reset block —
-    // not the three-site _webDocumentIngested one (gotchas.md).
-    private int _documentPartsRead;
-
     // The rule the model obeys is this description (rule 11), so the whole policy is here: when to use it, the
     // order, note-taking because earlier parts are compacted away, the per-turn limit, the exact name, untrusted.
     private AITool ReadDocumentTool() =>
@@ -46,7 +41,8 @@ public sealed partial class AgentGrain
             return DocumentPartReader.UnknownName(fileName, names, "conversation");
         }
 
-        if (_documentPartsRead >= ReadDocumentLimits.MaxPartsPerTurn)
+        // The budget is the run's own (TurnContext.DocumentPartsRead, ADR 0106); outside a run it reads exhausted.
+        if (TurnContext.CurrentOrClosed.DocumentPartsRead >= ReadDocumentLimits.MaxPartsPerTurn)
         {
             return $"You have read {ReadDocumentLimits.MaxPartsPerTurn} parts this turn, the limit. Do not call "
                 + $"read_document again now: answer from what you have read, tell the user you stopped before part "
@@ -77,7 +73,7 @@ public sealed partial class AgentGrain
 
         if (result.IsPart)
         {
-            _documentPartsRead++;
+            TurnContext.CurrentOrClosed.RecordDocumentPartRead();
         }
 
         return result.Text;

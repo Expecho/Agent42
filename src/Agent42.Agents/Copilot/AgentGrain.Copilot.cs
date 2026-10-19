@@ -38,6 +38,15 @@ public sealed partial class AgentGrain
     /// </summary>
     private string? _copilotUnavailable;
 
+    /// <summary>
+    /// The contexts of the Copilot runs in flight on this activation (ADR 0106), added and removed by identity like
+    /// <see cref="_clientToolBrokers"/>. The Copilot SDK calls a custom tool on its RPC thread, where the run's
+    /// <see cref="TurnContext"/> does not flow, so <see cref="SchedulerBoundAIFunction"/> resolves it here. Only
+    /// when exactly ONE run is in flight: with two (a reminder firing in a gap of a streamed Copilot turn) nothing
+    /// says which run a call belongs to, so the tool gets <see cref="TurnContext.Closed"/> and refuses.
+    /// </summary>
+    private readonly List<TurnContext> _copilotRuns = [];
+
     // Decides whether the agent being built is the Copilot composition, and resets both switches. A no-tools model
     // gets a plain chat: Copilot's whole value is its tool loop, and the same gate drops every other tool.
     private bool IsCopilotComposition(ModelCapabilities capabilities)
@@ -126,7 +135,7 @@ public sealed partial class AgentGrain
                 continue;
             }
 
-            functions.Add(new SchedulerBoundAIFunction(function, scheduler));
+            functions.Add(new SchedulerBoundAIFunction(function, scheduler, SoleCopilotRun));
         }
 
         return functions;
@@ -135,8 +144,32 @@ public sealed partial class AgentGrain
     // The text to send instead of running a copilot turn, or null to run it. Checked before the turn touches
     // anything: an incognito turn would have Copilot write its transcript to SessionFs during the turn, which the
     // grain cannot undo (the "memory provider is built at ACTIVATION" trap, ADR 0034).
-    private string? CopilotTurnRefusal()
-        => _copilotUnavailable ?? (_copilotChat && _ephemeral ? CopilotIncognitoRefusal : null);
+    private string? CopilotTurnRefusal(TurnContext turn)
+        => _copilotUnavailable ?? (_copilotChat && turn.Ephemeral ? CopilotIncognitoRefusal : null);
+
+    // Registers a run of the Copilot composition, or does nothing (null) for any other agent. Read at run start: a
+    // rebuild during the run cannot change which list entry the run removes.
+    private TurnContext? OpenCopilotRun(TurnContext turn)
+    {
+        if (!_copilotChat)
+        {
+            return null;
+        }
+
+        _copilotRuns.Add(turn);
+        return turn;
+    }
+
+    private void CloseCopilotRun(TurnContext? turn)
+    {
+        if (turn is not null)
+        {
+            _copilotRuns.Remove(turn);
+        }
+    }
+
+    // The context a Copilot tool call belongs to: the one run in flight, or null when there are none or several.
+    private TurnContext? SoleCopilotRun() => _copilotRuns.Count == 1 ? _copilotRuns[0] : null;
 
     // Whether this turn's images may reach the model: never in a copilot chat (phase 1 has no image path through the
     // Copilot loop), otherwise the model's vision capability (ADR 0013).

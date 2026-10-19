@@ -73,6 +73,11 @@ retention, edit/fork and tool selection were grain methods that only a silo coul
     is kept so that a framework change cannot make memory read `Closed` at retain time.
   - Whether the real Copilot SDK flows the run's `ExecutionContext` into a custom tool was **not** measured. The
     registry stays until that is shown.
+- **The interleaving bug was live, not theoretical (measured 2026-10-19).** A streaming turn held on
+  `confirm_action`, with a reminder fired and completed in the gap, was run against the pre-change code and the new
+  code. The tests are `ReminderFiringMidStream_*` in `AgentGrainTests`. On the old code the reminder's reset handed
+  the turn a fresh push budget, and a fourth push ("Turn 4") was sent. Its `_ephemeral = false` also made the resumed
+  incognito turn persist. Both tests pass on the new code.
 - **Residual:** if two Copilot runs are in flight on one activation (a reminder firing in a gap of a streamed Copilot
   turn), `schedule_prompt`, the artifact tools and `send_push_notification` refuse for both runs. Today both runs share
   one counter, so the refusal is strictly safer than the current behaviour.

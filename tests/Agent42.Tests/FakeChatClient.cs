@@ -1037,7 +1037,7 @@ public sealed partial class FakeChatClient : IChatClient
     /// </summary>
     public const string CallToolSequenceMarker = CallToolMarker + "seq-";
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Tool, string[] Args)> ScriptedSequences = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string[] Tools, string[] Args)> ScriptedSequences = new();
 
     /// <summary>
     /// A user prompt that makes the fake call <paramref name="toolName"/> once per entry of <paramref name="argsList"/>,
@@ -1045,8 +1045,18 @@ public sealed partial class FakeChatClient : IChatClient
     /// </summary>
     public static string CallToolSequencePrompt(string toolName, IEnumerable<object> argsList)
     {
+        var args = argsList.ToList();
+        return CallToolsSequencePrompt([.. args.Select(a => (toolName, a))]);
+    }
+
+    /// <summary>
+    /// A user prompt that makes the fake call each <c>(Tool, Args)</c> step in order, all in ONE turn, across tools:
+    /// the shape a test needs to spend part of a budget, hold the turn on a client tool, then spend the rest.
+    /// </summary>
+    public static string CallToolsSequencePrompt(IReadOnlyList<(string Tool, object Args)> steps)
+    {
         var token = Guid.NewGuid().ToString("N")[..12];
-        ScriptedSequences[token] = (toolName, [.. argsList.Select(a => JsonSerializer.Serialize(a))]);
+        ScriptedSequences[token] = ([.. steps.Select(s => s.Tool)], [.. steps.Select(s => JsonSerializer.Serialize(s.Args))]);
         return CallToolSequenceMarker + token;
     }
 
@@ -1062,12 +1072,13 @@ public sealed partial class FakeChatClient : IChatClient
             return false;
         }
 
-        var made = CountCallsThisTurn(list, lastUserIndex, sequence.Tool);
-        if (made < sequence.Args.Length && options?.Tools?.Any(t => t.Name == sequence.Tool) == true)
+        var made = sequence.Tools.Distinct(StringComparer.Ordinal).Sum(tool => CountCallsThisTurn(list, lastUserIndex, tool));
+        if (made < sequence.Args.Length && options?.Tools?.Any(t => t.Name == sequence.Tools[made]) == true)
         {
             using var doc = JsonDocument.Parse(sequence.Args[made]);
             var args = doc.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.Clone());
-            call = new FunctionCallContent($"sequence-call-{made + 1}-" + Guid.NewGuid().ToString("N")[..6], sequence.Tool, args);
+            call = new FunctionCallContent(
+                $"sequence-call-{made + 1}-" + Guid.NewGuid().ToString("N")[..6], sequence.Tools[made], args);
         }
 
         return true;

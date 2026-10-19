@@ -14,27 +14,18 @@ namespace Agent42.Agents;
 /// so the agent can schedule durable reminders via the <c>schedule_prompt</c> tool.
 ///
 /// <para>This is the CORE part of a class split across feature folders (ADR 0039). It holds every
-/// dependency and every turn-scoped flag (the search and research slices keep their own feature-only fields,
-/// ADR 0061/0082) — plus activation, the chat entry
-/// points and <see cref="ReceiveReminder"/>. The feature slices live beside their feature
+/// dependency (the search and research slices keep their own feature-only fields, ADR 0061/0082), plus
+/// activation, the run entry points (<see cref="ChatAsync"/>, <see cref="EnqueuePromptAsync"/> and
+/// <see cref="ReceiveReminder"/>) and the persist pipeline. The feature slices live beside their feature
 /// (<c>Web/AgentGrain.WebTools.cs</c>, <c>Documents/AgentGrain.Documents.cs</c>, and so on) but all
 /// declare this one namespace: a partial class cannot span namespaces, which is why
 /// <c>AgentGrain.*.cs</c> is exempted from the IDE0130 folder/namespace rule in
 /// <c>.editorconfig</c>.</para>
 ///
-/// <para><b><see cref="ReceiveReminder"/> stays here on purpose.</b> The safety of
-/// <c>_ephemeral</c> and the other turn-scoped fields rests on TWO clears that must be read together — the
-/// <c>finally</c> in <see cref="ChatAsync"/> and the nulling on entry to
-/// <see cref="ReceiveReminder"/> (see the entries at <c>.agentic/gotchas.md</c> for both flags).
-/// Filing the reminder callback under <c>Scheduling/</c> would split that pair across files, which
-/// is exactly the reading failure those gotchas exist to prevent. Only the schedule/cancel tool
-/// methods live in <c>Scheduling/AgentGrain.Scheduling.cs</c>.</para>
-///
-/// <para><b><c>_turnCts</c> (ADR 0078) sits in that same field block but is NOT part of that
-/// ritual</b>, and <see cref="ReceiveReminder"/> deliberately does not reset it. It is published and
-/// unpublished by identity, because it names a running turn rather than carrying a value — see its
-/// own remarks, which are the thing to read before adding a fifth turn-scoped field of either
-/// kind.</para>
+/// <para><b>A value of one run is never a field here</b> (ADR 0106). Each run entry creates its
+/// <see cref="TurnContext"/> and passes it down; tools read <see cref="TurnContext.CurrentOrClosed"/>. The
+/// fields that remain name running turns (<c>_turnCts</c>, ADR 0078, published by identity) or are
+/// activation-scoped by design. Read <c>_turnCts</c>'s remarks before adding a field of either kind.</para>
 /// </summary>
 public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 {
@@ -201,45 +192,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private IReadOnlyList<SkillInfo> _userSkills = [];
 
     /// <summary>
-    /// True while an ephemeral (incognito) turn is being processed (ADR 0034). Set at the top of
-    /// <see cref="ChatAsync"/> from the flag the browser sent, it makes <see cref="ChatCoreAsync"/> and
-    /// <see cref="GenerateImageTurnAsync"/> skip their session-state writes, and makes
-    /// <see cref="SchedulePromptAsync"/> refuse (a durable reminder would fire the persisting/pushing
-    /// reminder path).
-    ///
-    /// <para><b>This field lives for the grain ACTIVATION, not the call — so it must be cleared
-    /// explicitly, and it is.</b> The <c>finally</c> of <see cref="ChatAsync"/> drops it when the turn ends,
-    /// and <see cref="EnqueuePromptAsync"/> and <see cref="ReceiveReminder"/> reset it on entry. Doing nothing
-    /// on the reminder path would <i>not</i> leave it false: a reminder is a separate call on the same
-    /// activation, so after an incognito chat turn the flag would still be set and the reminder would skip
-    /// its own write. Non-reentrancy is not the argument that makes this safe — <c>ChatAsync</c> is an
-    /// <c>IAsyncEnumerable</c> method that suspends between <c>yield return</c>s — the explicit clear is.
-    /// It is the archetype of the turn-scoped fields below (the user's position was the first, until ADR
-    /// 0093 made location a client tool).</para>
-    /// </summary>
-    private bool _ephemeral;
-
-    /// <summary>
-    /// True while an INTERACTIVE (browser-streamed) turn is being processed. Gates the extra follow-up
-    /// suggestion model call to the live path only: <see cref="EnqueuePromptAsync"/> (agent-run) and
-    /// <see cref="ReceiveReminder"/> drain the same <see cref="ChatCoreAsync"/>, but their streamed events
-    /// have no listener, so generating suggestions there would be a wasted call for a discarded event.
-    /// Defaults OFF and is set ON only in <see cref="ChatAsync"/>; like <see cref="_ephemeral"/> it lives
-    /// for the ACTIVATION, so it is cleared in that method's <c>finally</c>.
-    /// </summary>
-    private bool _interactiveTurn;
-
-    /// <summary>
     /// The stop handle for the turn a browser is currently streaming (ADR 0078): the
     /// <see cref="CancellationTokenSource"/> whose token that turn's model run is bound to.
     /// <see cref="StopAsync"/> cancels it; everything else leaves it alone.
     ///
-    /// <para><b>This is NOT a member of the turn-scoped clear ritual above, and copying that shape
-    /// here would be a bug.</b> Those fields carry a value and are blindly assigned per turn; this one
-    /// carries the IDENTITY of a running turn, and two turns can be in flight on one activation —
-    /// <see cref="ChatAsync"/> suspends between <c>yield return</c>s, so a fired reminder or an
-    /// <see cref="EnqueuePromptAsync"/> run executes in the gap (the very fact the
-    /// <see cref="_ephemeral"/> remarks rest on). Assign it blindly and an
+    /// <para><b>It names a running turn; it does not carry a value.</b> A value of one run belongs in its
+    /// <see cref="TurnContext"/> (ADR 0106), never in a field. This handle is a field because
+    /// <see cref="StopAsync"/>, a separate grain call, must find the turn. Two turns can be in flight on one
+    /// activation: <see cref="ChatAsync"/> suspends between <c>yield return</c>s, so a fired reminder or an
+    /// <see cref="EnqueuePromptAsync"/> run executes in the gap. Assign it blindly and an
     /// <see cref="EnqueuePromptAsync"/> run — which drains the same core, so it reaches the publish —
     /// steals the handle, and the user's stop cancels <i>that</i> turn instead; clear it blindly and one
     /// turn's disposal faults another turn's live run. (A fired reminder cannot steal it: it never comes
@@ -248,55 +209,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// <para>So it is published <b>by identity</b> and only by an interactive turn — <c>_turnCts ??=
     /// mine</c> on the way in, and <c>if (ReferenceEquals(_turnCts, mine))</c> on the way out — and
     /// <see cref="ReceiveReminder"/> deliberately has <b>no</b> reset line for it. Adding one would let
-    /// a reminder firing mid-stream silently disarm the user's stop button, which is the opposite of
-    /// what that reset does for every other field in this block. For the same reason the publish reads a
-    /// flag <i>captured</i> at the top of <c>ChatCoreAsync</c> rather than <see cref="_interactiveTurn"/>
-    /// itself, which a background turn starting in one of those gaps would have set to false.</para>
+    /// a reminder firing mid-stream silently disarm the user's stop button. The publish reads the turn's own
+    /// <see cref="TurnContext.Interactive"/>, which a background turn starting in one of those gaps cannot
+    /// change.</para>
     /// </summary>
     private CancellationTokenSource? _turnCts;
-
-    /// <summary>
-    /// True when <c>read_web_document</c> ingested a document during the turn currently running, so the
-    /// agent must be rebuilt once that run is over (ADR 0066).
-    ///
-    /// <para>The rebuild cannot happen inside the tool: it swaps <c>_session</c> out from under the
-    /// framework run that is iterating it. So the tool sets this and
-    /// <see cref="RebuildForIngestedWebDocumentAsync"/> consumes it at the <b>two</b> places a run
-    /// completes — after <c>PersistTurnUnlessEphemeralAsync</c> in <see cref="ChatCoreAsync"/>, and after
-    /// <see cref="ReceiveReminder"/>'s own write. Miss the second and a reminder turn's ingest never
-    /// attaches retrieval.</para>
-    ///
-    /// <para>Like <see cref="_ephemeral"/> it lives for the grain
-    /// ACTIVATION, not the call, so it is cleared in the same three places: the <c>finally</c> of
-    /// <see cref="ChatAsync"/>, and on entry to <see cref="EnqueuePromptAsync"/> and
-    /// <see cref="ReceiveReminder"/>. Consuming it clears it too, so a normal turn leaves it false.</para>
-    /// </summary>
-    private bool _webDocumentIngested;
-
-    /// <summary>
-    /// How many push notifications the <c>send_push_notification</c> tool has actually SENT during the
-    /// turn currently running (ADR 0075). Bounded by <see cref="PushToolLimits.MaxPushesPerTurn"/>, and
-    /// also read by the two async paths to suppress their away-reply push when the model already pushed.
-    ///
-    /// <para><b>It resets in exactly TWO places, and that is neither the one nor the three it looks
-    /// like.</b> <see cref="ChatAsync"/> and <see cref="EnqueuePromptAsync"/> both drain
-    /// <see cref="ChatCoreAsync"/>, so the top of that shared core covers both — and covers any future
-    /// caller of it, which a per-entrypoint clear could not. <see cref="ReceiveReminder"/> is the
-    /// exception: it does <b>not</b> drain <c>ChatCoreAsync</c> (it calls <c>_agent.RunAsync</c>
-    /// directly), so it resets the field itself, in its own reset block. Miss that second site and a
-    /// REPEATING reminder inherits the previous tick's count and goes permanently silent after three
-    /// pushes, for the life of the activation — the <see cref="_ephemeral"/> bug shape exactly.</para>
-    ///
-    /// <para>This is deliberately <b>not</b> the <see cref="_ephemeral"/> shape of "set it in all three
-    /// entrypoints". Those fields carry a <i>different value</i> per path, so only the caller knows what
-    /// to set; this one always resets to <c>0</c>, so the shared core is the better site.</para>
-    ///
-    /// <para>Like the fields above it lives for the grain ACTIVATION, not the call. There is no fourth
-    /// path to cover: <c>GenerateFollowUpsAsync</c> (ADR 0036) and <c>RecordImageTurnAsync</c> (ADR 0020)
-    /// both run a model with no <c>Tools</c> at all, and ADR 0070's <c>ask_agent</c> goes through
-    /// <see cref="ChatAsync"/>.</para>
-    /// </summary>
-    private int _pushesThisTurn;
 
     public AgentGrain(
         [PersistentState("agent", StorageProviderName)] IPersistentState<AgentGrainState> state,
@@ -474,27 +391,18 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         bool ephemeral = false, bool interactive = true,
         IReadOnlyList<string>? clientTools = null, bool replacesLastTurn = false)
     {
-        // The ephemeral flag is turn-scoped, and the field outlives the call (see _ephemeral), so the
-        // clears are explicit and in a finally: they must happen even if the caller abandons the stream
-        // half-way (the finally then runs on the enumerator's disposal), or the next turn — or a reminder
-        // firing on this same activation — would skip its own session write.
-        _ephemeral = ephemeral;
-        // This is the live browser-streamed path, so follow-up suggestions may be generated (gated further
-        // by the user preference). Turn-scoped like the one above; cleared in the finally.
-        //
-        // A caller that DRAINS this stream rather than streaming it to a browser passes false: the MCP
-        // surface (ADR 0070) takes the reply text and discards every other event, so a follow-up call
-        // would be a second model call whose result nothing can ever read. EnqueuePromptAsync sets the
-        // flag false directly for the same reason; this parameter is how a caller on THIS method says it.
-        _interactiveTurn = interactive;
-
         // This turn's client-tool broker (ADR 0089), or null when no browser of this turn runs client tools. Owned
         // by THIS call and registered by identity, never a turn-scoped field: see AgentGrain.ClientTools.cs.
         var broker = OpenClientToolBroker(interactive, clientTools);
 
+        // This run's context (ADR 0106). A caller that DRAINS this stream rather than streaming it to a browser
+        // passes interactive false: the MCP surface (ADR 0070) takes the reply text and discards every other
+        // event, so a follow-up call would be a second model call whose result nothing can ever read.
+        var turn = TurnContext.ForChat(ephemeral, interactive, broker);
+
         try
         {
-            await foreach (var evt in ChatCoreAsync(message, model, attachments, broker, replacesLastTurn))
+            await foreach (var evt in ChatCoreAsync(message, model, attachments, turn, replacesLastTurn))
             {
                 yield return evt;
             }
@@ -502,12 +410,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         finally
         {
             CloseClientToolBroker(broker);
-            _ephemeral = false;
-            _interactiveTurn = false;
-            // Consumed inside ChatCoreAsync on the normal path; cleared here for the same
-            // activation-scoped reason as the two above — an abandoned stream must not leave a warm
-            // activation carrying a pending rebuild into someone else's turn (ADR 0066).
-            _webDocumentIngested = false;
         }
     }
 
@@ -545,18 +447,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public async Task EnqueuePromptAsync(string message, IReadOnlyList<AttachmentRef>? attachments)
     {
-        // A background (agent-run) turn resets the turn-scoped fields before running, exactly like the
-        // reminder path: they live for the ACTIVATION. An agent-run conversation is always listed and
-        // persisted (it is opened later by its owner), so a stale incognito flag must never make this turn
-        // skip its write.
-        _ephemeral = false;
-        // A background (agent-run) turn has no live client watching the stream, so follow-up suggestions
-        // would be a wasted model call for a discarded event — keep the interactive gate OFF.
-        _interactiveTurn = false;
-        // Same activation-scoped reason as the two clears above (ADR 0066). This turn drains
-        // ChatCoreAsync, so its own ingest is consumed there; what must not happen is inheriting a
-        // pending rebuild from a chat turn whose stream was abandoned.
-        _webDocumentIngested = false;
+        // An agent-run conversation is always listed and persisted (it is opened later by its owner), and no live
+        // client watches the stream, so its run is never ephemeral and never interactive (ADR 0106).
+        var turn = TurnContext.ForBackground();
 
         try
         {
@@ -566,7 +459,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             // run and the session persist — everything a browser turn does. The streamed events have no
             // listener here (this is OneWay/202), so they are simply discarded; the side effects — the
             // persisted turn — are the point. model: null keeps the bound/current model.
-            await foreach (var _ in ChatCoreAsync(message, model: null, attachments))
+            await foreach (var _ in ChatCoreAsync(message, model: null, attachments, turn))
             {
             }
 
@@ -580,7 +473,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             // no `tag`, so a model-authored "Build finished" followed by the generic "Replied while you
             // were away." would stack as two entries in the shade for one reply. The model's own text is
             // the better of the two, so this generic one yields. The _modelId gate above is untouched.
-            if (!string.IsNullOrEmpty(_modelId) && _pushesThisTurn == 0)
+            if (!string.IsNullOrEmpty(_modelId) && turn.PushesSent == 0)
             {
                 await SendAwayReplyPushAsync();
             }
@@ -598,7 +491,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // the agent's name; a regular chat leaves it unset so the ingestion span processor falls back to the
     // service constant. Rides Orleans RequestContext like the user.* identity (ADR 0010) — the processor
     // stamps it onto the in-grain chat/tool spans at OnStart. RequestContext is per-call, so this is
-    // naturally turn-scoped (no clear-on-exit hazard like _ephemeral).
+    // naturally turn-scoped (no clear-on-exit hazard).
     private void PublishUsageApplication()
     {
         if (_state.State.AgentName is { Length: > 0 } name)
@@ -612,13 +505,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // serialises the whole grain state (see AgentGrain.SharedState.cs). ReceiveReminder, the other run site, counts
     // itself.
     private async IAsyncEnumerable<AgentStreamEvent> ChatCoreAsync(
-        string message, string? model, IReadOnlyList<AttachmentRef>? attachments, ClientToolBroker? broker = null,
+        string message, string? model, IReadOnlyList<AttachmentRef>? attachments, TurnContext turn,
         bool replacesLastTurn = false)
     {
         _runsInFlight++;
         try
         {
-            await foreach (var evt in ChatTurnAsync(message, model, attachments, broker, replacesLastTurn))
+            await foreach (var evt in ChatTurnAsync(message, model, attachments, turn, replacesLastTurn))
             {
                 yield return evt;
             }
@@ -630,29 +523,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     }
 
     private async IAsyncEnumerable<AgentStreamEvent> ChatTurnAsync(
-        string message, string? model, IReadOnlyList<AttachmentRef>? attachments, ClientToolBroker? broker,
+        string message, string? model, IReadOnlyList<AttachmentRef>? attachments, TurnContext turn,
         bool replacesLastTurn)
     {
         PublishUsageApplication();
 
-        // Push budget (ADR 0075), reset site 1 of 2. Here rather than in the two callers because both of
-        // them — ChatAsync and EnqueuePromptAsync — drain this core, so one reset covers both and a future
-        // caller of it cannot forget. ReceiveReminder is the one path that does NOT come through here and
-        // resets the field itself; see the _pushesThisTurn remarks. This runs before the first yield, so
-        // it takes effect as soon as either caller starts enumerating.
-        _pushesThisTurn = 0;
-
-        // The read_document part budget (ADR 0098) has the same two-site shape, for the same reason.
-        _documentPartsRead = 0;
-
-        // Captured here, before the first yield, and never re-read (ADR 0078). _interactiveTurn is one of
-        // the blindly-assigned turn-scoped fields — EnqueuePromptAsync sets it false and never restores it —
-        // and this method suspends at its yields, so a background turn starting in one of those gaps would
-        // leave the field false when this turn resumes. Reading it at publish time would then skip the
-        // publish and leave the user's stop button silently dead for a turn that is still streaming. (The
-        // follow-up gate further down still reads the field; that exposure is pre-existing, and it costs a
-        // skipped suggestion rather than a dead control.)
-        var interactive = _interactiveTurn;
+        var interactive = turn.Interactive;
 
         _logger.LogInformation(
             "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s))",
@@ -691,7 +567,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // A copilot chat that cannot run this turn (no agent, or an incognito turn) is refused here, before anything
         // is written or sent: nothing is persisted and Copilot is never called. After the switch, so a switch onto a
         // no-tools model (a plain chat) is not refused.
-        if (CopilotTurnRefusal() is { } refusal)
+        if (CopilotTurnRefusal(turn) is { } refusal)
         {
             yield return new AgentStreamEvent(AgentStreamEventType.TextDelta, Text: refusal);
             yield return new AgentStreamEvent(AgentStreamEventType.Done);
@@ -707,7 +583,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         {
             var webhookTurn = new WebhookTurn(
                 ChatTrigger(interactive), message, "", ImageCount: 1, ReplacesLastTurn: replacesLastTurn);
-            await foreach (var evt in GenerateImageTurnAsync(message, attachments, webhookTurn))
+            await foreach (var evt in GenerateImageTurnAsync(message, attachments, webhookTurn, turn))
             {
                 yield return evt;
             }
@@ -783,7 +659,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         try
         {
             await foreach (var evt in StreamModelReplyAsync(
-                userMessage, reply, tokens, outcome, research, broker, turnCts.Token))
+                userMessage, reply, tokens, outcome, research, turn, turnCts.Token))
             {
                 reauth.Observe(evt);
                 yield return evt;
@@ -827,9 +703,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             yield break;
         }
 
-        var persisted = await PersistTurnUnlessEphemeralAsync();
+        var persisted = await PersistTurnUnlessEphemeralAsync(turn);
 
-        // Outbound webhook (ADR 0094), fire site 1 of 3: gated on what the persist reported, never on _ephemeral.
+        // Outbound webhook (ADR 0094), fire site 1 of 3: gated on what the persist reported.
         await NotifyAgentWebhookAsync(persisted, new WebhookTurn(
             ChatTrigger(interactive), message, reply.ToString(), outcome.Stopped, ReplacesLastTurn: replacesLastTurn));
 
@@ -837,7 +713,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // the run is over — the tool could not, because a rebuild swaps _session out from under the
         // framework run iterating it. Covers the live chat path AND /api/agent-run, which drains this
         // method. Site 2 is in ReceiveReminder, which does NOT drain this method.
-        await RebuildForIngestedWebDocumentAsync();
+        await RebuildForIngestedWebDocumentAsync(turn);
 
         foreach (var evt in await TrailingEventsAsync(message, reply, outcome, reauth, interactive))
         {
@@ -854,14 +730,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     //    the answer that explains why the tool did not run.
     // 2. Follow-up suggestions (interactive path only, opt-out via Preferences). Best-effort: the helper owns its
     //    try/catch and returns null on any failure, so a slow/failing suggestion call never breaks the turn.
-    //    Skipped on the agent-run/reminder drain (_interactiveTurn is false there) and on an empty reply. The
+    //    Skipped on the agent-run/reminder drain (not interactive) and on an empty reply. The
     //    generator uses a throwaway message list and never touches _session, so nothing is persisted. A stopped
     //    turn is gated inside the helper too, beside the other three conditions.
     private async Task<List<AgentStreamEvent>> TrailingEventsAsync(
         string message, StringBuilder reply, TurnOutcome outcome, McpReauthTurnObserver reauth, bool interactive)
     {
         var events = TakeMcpReauthNotices(reauth.ServerIds, interactive);
-        if (await SuggestFollowUpsAsync(message, reply, outcome.Stopped) is { Count: > 0 } suggestions)
+        if (await SuggestFollowUpsAsync(message, reply, outcome.Stopped, interactive) is { Count: > 0 } suggestions)
         {
             events.Add(new AgentStreamEvent(AgentStreamEventType.Suggestions, Suggestions: suggestions));
         }
@@ -901,8 +777,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // one — an iterator method cannot hand out a `ref`.
     private async IAsyncEnumerable<AgentStreamEvent> StreamModelReplyAsync(
         ChatMessage userMessage, StringBuilder reply, TurnTokenTotals tokens, TurnOutcome outcome,
-        ResearchRun? research, ClientToolBroker? broker, [EnumeratorCancellation] CancellationToken turnToken)
+        ResearchRun? research, TurnContext turn, [EnumeratorCancellation] CancellationToken turnToken)
     {
+        var broker = turn.Broker;
         var updates = _agent
             .RunStreamingAsync([userMessage], _session, null, turnToken)
             .GetAsyncEnumerator(turnToken);
@@ -911,15 +788,16 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // result that carried it.
         var stateCursor = new SharedStateCursor(_state.State.SharedStateVersion);
         Task<bool>? pull = null;
+        var copilotRun = OpenCopilotRun(turn);
 
         try
         {
             while (true)
             {
-                // Through PullAsync so this run's client-tool broker (ADR 0089) is visible to the tools this
+                // Through PullAsync so this run's context (ADR 0106) is visible to the tools and providers this
                 // pull invokes, and to nothing else. Started once and awaited as a task: an MCP elicitation (ADR
                 // 0095) arrives while the pull is pending, and is streamed before the pull is awaited again.
-                pull = PullAsync(updates, broker).AsTask();
+                pull = PullAsync(updates, turn).AsTask();
                 while (await ElicitationArrivedFirstAsync(pull, broker))
                 {
                     foreach (var elicitation in broker!.Elicitations.TakeNew())
@@ -964,7 +842,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         finally
         {
             await SettlePendingPullAsync(pull, broker);
-            await updates.DisposeAsync();
+            await DisposeRunAsync(updates, turn);
+            CloseCopilotRun(copilotRun);
         }
     }
 
@@ -1090,15 +969,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     // Follow-up suggestions (ADR 0036), or null when they are not wanted for this turn. The gating lives
     // HERE rather than at the call site so the model call is still skipped — not merely discarded — on
-    // the agent-run/reminder drain (_interactiveTurn is false there), when the user has opted out, on
+    // the agent-run/reminder drain (not interactive), when the user has opted out, on
     // an empty reply, and on a turn the user STOPPED (ADR 0078 — the fourth gate, and the only one the
     // empty-reply check does not already cover: a turn stopped after a few words has a non-empty reply,
     // so without it the answer to a stop would be a second model call about the cancelled answer).
     // Best-effort beyond that: GenerateFollowUpsAsync owns its try/catch and returns null on any
     // failure, so a slow or failing suggestion call never breaks the turn.
     private async Task<IReadOnlyList<string>?> SuggestFollowUpsAsync(
-        string message, StringBuilder reply, bool stopped)
-        => !stopped && _interactiveTurn && _suggestFollowUpsEnabled && reply.Length > 0
+        string message, StringBuilder reply, bool stopped, bool interactive)
+        => !stopped && interactive && _suggestFollowUpsEnabled && reply.Length > 0
             ? await GenerateFollowUpsAsync(message, reply.ToString())
             : null;
 
@@ -1233,11 +1112,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     // An ephemeral turn (ADR 0034) runs the model but never writes its session item, so the
     // conversation leaves no trace in Cosmos — the incognito guarantee. Skip the whole serialize.
-    // Returns whether the turn was persisted: the outbound webhook's gate (ADR 0094) inherits this read of
-    // _ephemeral, taken after the turn's last yield, rather than re-reading the field.
-    private async Task<bool> PersistTurnUnlessEphemeralAsync()
+    // Returns whether the turn was persisted: the outbound webhook's gate (ADR 0094) inherits this decision.
+    private async Task<bool> PersistTurnUnlessEphemeralAsync(TurnContext turn)
     {
-        if (_ephemeral)
+        if (turn.Ephemeral)
         {
             // The incognito turn is still in the IN-MEMORY session (ADR 0034 guarantees "not
             // persisted, not listed", never "not in memory"), so the next normal turn of this same
@@ -1266,7 +1144,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // a non-reentrant grain, which must not sit in front of the write ADR 0046's stream recovery reads.
         await ReconcileSearchIndexAfterPruneAsync(pruned);
 
-        // Search projection (ADR 0061). No _ephemeral guard needed: the early return above already
+        // Search projection (ADR 0061). No ephemeral guard needed: the early return above already
         // took the incognito path, so reaching here means the turn is persisted. Best-effort inside.
         // When the reconcile above reset the cursor, this is the re-projection from ordinal 0.
         await IndexNewTurnsForSearchAsync();
@@ -1572,25 +1450,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     {
         PublishUsageApplication();
 
-        // These resets are NOT no-ops: the fields live for the activation. _ephemeral is cleared because a
-        // fired reminder always persists, and an incognito chat turn before it must not make it skip its write.
-        // _webDocumentIngested likewise (ADR 0066) — this method has its OWN consume site below, and it
-        // must consume this turn's ingest, not one inherited from an abandoned chat stream.
-        // _pushesThisTurn is reset site 2 of 2 (ADR 0075) and belongs here for a reason specific to this
-        // method: ChatCoreAsync's reset covers ChatAsync and EnqueuePromptAsync because both DRAIN it,
-        // and this method does not — it calls _agent.RunAsync directly (the same fact the "consume site
-        // 2 of 2" comment below rests on). Without this line a repeating reminder inherits the previous
-        // tick's count and stops pushing after three, permanently, for the life of the activation.
-        _ephemeral = false;
-        _webDocumentIngested = false;
-        _pushesThisTurn = 0;
-        _documentPartsRead = 0; // read_document's budget (ADR 0098): reset site 2 of 2, as _pushesThisTurn
+        // A fired reminder always persists and nobody watches it, so its run is background (ADR 0106). A fresh
+        // grain call starts with no current context, so it never inherits a chat turn's.
+        var turn = TurnContext.ForBackground();
 
         // The second run site of the shared-state run count (ADR 0089); ChatCoreAsync is the first.
         _runsInFlight++;
         try
         {
-            await RunReminderAsync(reminderName);
+            await RunReminderAsync(reminderName, turn);
         }
         finally
         {
@@ -1598,8 +1466,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
     }
 
-    // The reminder's run, after ReceiveReminder's resets. A separate method only so the run count above can wrap it.
-    private async Task RunReminderAsync(string reminderName)
+    // The reminder's run. A separate method only so the run count above can wrap it.
+    private async Task RunReminderAsync(string reminderName, TurnContext turn)
     {
         if (!_state.State.ScheduledPrompts.TryGetValue(reminderName, out var info))
         {
@@ -1648,13 +1516,16 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // The research loop's second run site (ADR 0082): this method does not drain ChatCoreAsync, so it resets
         // the todos, hides the turn and folds it itself, in the same order.
         var research = BeginResearchRun(prompt);
+        var copilotRun = OpenCopilotRun(turn);
         AgentResponse response;
         try
         {
-            response = await _agent.RunAsync([prompt], _session);
+            // Inside RunInAsync so the run's tools and providers see this run's context (ADR 0106).
+            response = await TurnContext.RunInAsync(turn, async () => await _agent.RunAsync([prompt], _session));
         }
         finally
         {
+            CloseCopilotRun(copilotRun);
             // In the finally, so a run that fails in a later iteration still folds the iterations it stored.
             ReleaseResearchRun(research, foldFirst: true);
         }
@@ -1678,9 +1549,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // After the write, for the reason given at the chat site.
         await ReconcileSearchIndexAfterPruneAsync(pruned);
 
-        // Search projection (ADR 0061). Deliberately NO _ephemeral guard here — this method clears
-        // _ephemeral on entry because a fired reminder always persists, so adding one would be the
-        // fresh-guard mistake ADR 0034 warns about. Best-effort inside.
+        // Search projection (ADR 0061). Deliberately NO ephemeral guard here — a fired reminder is never
+        // ephemeral and always persists. Best-effort inside.
         await IndexNewTurnsForSearchAsync();
 
         // Consume site 2 of 2 (ADR 0066), and the one that is easy to miss: this method does NOT drain
@@ -1688,7 +1558,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // so ChatCoreAsync's consume site never runs for a reminder turn. Without this call, a reminder
         // that ingested a document would persist the name list and lose the rebuild, leaving retrieval
         // detached for the rest of the activation while the instructions claim the document exists.
-        await RebuildForIngestedWebDocumentAsync();
+        await RebuildForIngestedWebDocumentAsync(turn);
 
         // Outbound webhook (ADR 0094), fire site 3 of 3: after this method's own write, and BEFORE the push early
         // return below — a model that pushed during the turn (ADR 0075) must not cost the owner the webhook.
@@ -1705,7 +1575,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // agent-run path: with no `tag` on the notification the two would stack in the shade for one
         // reply, and the model's own text is the better of the two. The position (after the persist) and
         // the defensive try below are both unchanged.
-        if (_pushesThisTurn > 0)
+        if (turn.PushesSent > 0)
         {
             return;
         }

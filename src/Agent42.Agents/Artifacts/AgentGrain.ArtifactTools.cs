@@ -80,7 +80,7 @@ public sealed partial class AgentGrain
         // Incognito (ADR 0034), first: an artifact is model-authored conversation content written to blob with
         // no purge path, which breaks "leaves no trace". The image precedent does not transfer — an image is
         // user-supplied.
-        if (_ephemeral)
+        if (TurnContext.CurrentOrClosed.Ephemeral)
         {
             return "I cannot create artifacts in an incognito chat, because an artifact is stored outside the "
                 + "conversation and would outlive it. Put the content in your reply instead.";
@@ -123,7 +123,7 @@ public sealed partial class AgentGrain
         [Description("A new title, only if it should change.")] string? title = null,
         CancellationToken cancellationToken = default)
     {
-        if (_ephemeral)
+        if (TurnContext.CurrentOrClosed.Ephemeral)
         {
             return "I cannot change artifacts in an incognito chat. Put the content in your reply instead.";
         }

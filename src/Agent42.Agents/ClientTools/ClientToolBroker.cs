@@ -3,7 +3,7 @@ namespace Agent42.Agents;
 /// <summary>
 /// The client tool calls of ONE interactive run (ADR 0089): call id → the call and the result the browser will
 /// post. Created by <c>ChatAsync</c> only for an interactive turn whose browser advertised client tools, and
-/// reached by the tool through <c>AgentGrain.CurrentClientToolBroker</c>, an <see cref="AsyncLocal{T}"/> set
+/// reached by the tool through the run's <see cref="TurnContext"/> (ADR 0106), which is set
 /// around that run's own pulls. A background run in a gap of this one therefore never sees it.
 ///
 /// <para>A call is <b>announced</b> when its <c>toolCallStart</c> is projected, before the tool is invoked: the

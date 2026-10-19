@@ -20,12 +20,12 @@ public sealed partial class AgentGrain
     //   2. the effective selection does not contain ToolCatalog.Memory — the USER's off switch (ADR 0057).
     // Attached in BuildAgent alongside the RAG provider.
     //
-    // WHY THE SELECTION IS READ HERE, AT BUILD TIME, WHILE _ephemeral BELOW IS NOT. The two gates have
+    // WHY THE SELECTION IS READ HERE, AT BUILD TIME, WHILE INCOGNITO BELOW IS NOT. The two gates have
     // deliberately different lifetimes and folding one into the other is wrong in both directions. The two
     // layers a user changes deliberately both REBUILD the agent — SetEnabledToolsAsync does the explicit
     // snapshot/rebuild/restore/write dance, BindAgentAsync rebuilds, and activation builds from scratch —
-    // so a value read here cannot go stale on them. _ephemeral cannot be read this way at all: it is
-    // turn-scoped, and nothing rebuilds between turns of a warm activation. Do NOT "fix" IsEnabled into
+    // so a value read here cannot go stale on them. Incognito cannot be read this way at all: it is
+    // per run, and nothing rebuilds between turns of a warm activation. Do NOT "fix" IsEnabled into
     // carrying the selection too, and do NOT move this check into a delegate.
     // TogglingMemoryMidChat_DetachesOnTheSameActivation is the guard on the rebuild half.
     //
@@ -43,12 +43,12 @@ public sealed partial class AgentGrain
     //
     // THE ORDERING TRAP, and the reason IsEnabled is a delegate rather than a bool. BuildAgent runs on
     // ACTIVATION and on the five rebuild paths (BindAgentAsync, SwitchModelAsync, RebindModelAsync,
-    // RegisterDocumentAsync, SetEnabledToolsAsync) — never per turn. _ephemeral is turn-scoped: set at the
-    // top of ChatAsync and cleared in its finally. A provider that captured `_ephemeral` as a VALUE here
-    // would freeze whatever the flag happened to be when the agent was built, and then be wrong for every
-    // later turn of a warm activation — silently retaining an incognito chat, or silently refusing to
-    // remember a normal one. Reading it through a closure over `this` defers the question to invoke time.
-    // This is the BuildDocumentSearchProvider shape (a method group closing over the grain). The
+    // RegisterDocumentAsync, SetEnabledToolsAsync) — never per turn. Incognito belongs to the run (its
+    // TurnContext, ADR 0106). A provider that captured it as a VALUE here would freeze whatever it was when
+    // the agent was built, and then be wrong for every later turn of a warm activation — silently retaining
+    // an incognito chat, or silently refusing to remember a normal one. The delegate reads
+    // TurnContext.CurrentOrClosed at invoke time instead, which is the run's own context (both provider hooks
+    // run inside the run's pulls, measured on AF 1.23) and fails closed — memory OFF — outside a run. The
     // regression guard is EphemeralTurn_NeitherRecallsNorRetains + MemoryResumes_OnTheNormalTurnAfterAn-
     // EphemeralOne, and which of the two actually catches a captured value was MEASURED (see the table on
     // those tests): the realistic bug fails both, but a gate stuck permanently OFF fails only
@@ -72,7 +72,7 @@ public sealed partial class AgentGrain
             {
                 BankId = UserIdFromGrainKey(this.GetPrimaryKeyString()),
                 Mission = _memory.Mission,
-                IsEnabled = () => !_ephemeral,
+                IsEnabled = () => !TurnContext.CurrentOrClosed.Ephemeral,
             }));
     }
 }

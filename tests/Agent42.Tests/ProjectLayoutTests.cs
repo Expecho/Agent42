@@ -219,19 +219,43 @@ public sealed class ProjectLayoutTests
         Assert.Contains($"private static void {mapMethod}(IEndpointRouteBuilder app)", part, StringComparison.Ordinal);
     }
 
-    // The turn-scoped fields stay in the CORE AgentGrain part. Each is safe only because its declaration
-    // and its clear are read together (see the turn-scoped-field and _ephemeral entries in gotchas.md);
-    // splitting a declaration out to a feature part is the specific regression this catches. Scoped to
-    // these names on purpose — three static/const members legitimately move with their feature, so
-    // a general "only the core declares members" assertion would be false.
+    // AC1 (ADR 0106): a value of one run is never a grain field. Two runs can be in flight on one activation, so a
+    // field is shared by both, and it needs a hand-written reset at every run entry. These are the names the
+    // turn-scoped family had; a new per-run value goes on TurnContext instead of joining this list.
     [Theory]
     [InlineData("_ephemeral")]
     [InlineData("_interactiveTurn")]
-    public void TurnScopedField_IsDeclaredInTheCorePart(string field)
+    [InlineData("_pushesThisTurn")]
+    [InlineData("_documentPartsRead")]
+    [InlineData("_webDocumentIngested")]
+    public void TurnScopedState_IsNeverAGrainField(string field)
     {
-        var core = Path.Combine(ProjectDir("Agent42.Agents"), "Conversations", "AgentGrain.cs");
+        var declaration = new Regex(
+            $@"^\s*(private|internal|protected|public)\b[^;=(\r\n]*\s{Regex.Escape(field)}\s*[;=]",
+            RegexOptions.Multiline);
 
-        Assert.Matches($@"private\s+[^;\r\n]*\s{Regex.Escape(field)}\s*;", File.ReadAllText(core));
+        foreach (var file in SourceFiles("Agent42.Agents"))
+        {
+            Assert.False(declaration.IsMatch(File.ReadAllText(file)), $"{Path.GetFileName(file)} declares {field}");
+        }
+    }
+
+    // AC4b (ADR 0106): the run's context is read only through the fail-closed accessor. The async-local is private to
+    // TurnContext.cs and is read there in exactly one place, CurrentOrClosed; no other file declares one.
+    [Fact]
+    public void TurnContext_IsReadOnlyThroughTheFailClosedAccessor()
+    {
+        var path = Path.Combine(ProjectDir("Agent42.Agents"), "Conversations", "TurnContext.cs");
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("private static readonly AsyncLocal<TurnContext?> Current", source, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(source, @"\bCurrent\.Value\b(?!\s*=[^=])"));
+        Assert.Contains("CurrentOrClosed => Current.Value ?? Closed", source, StringComparison.Ordinal);
+
+        foreach (var file in SourceFiles("Agent42.Agents").Concat(SourceFiles("Agent42.Backend")).Where(f => f != path))
+        {
+            Assert.DoesNotContain("AsyncLocal<TurnContext", File.ReadAllText(file), StringComparison.Ordinal);
+        }
     }
 
     /* ————— frontend: the ES-module split of app.js (ADR 0041) ————— */

@@ -783,6 +783,89 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Equal(FakeChatClient.PushTitle, sends[^1].Message.Title);
     }
 
+    // AC2 (ADR 0106): a reminder that fires while a streaming turn is suspended runs with its OWN budget and leaves
+    // the streaming turn's alone. The streaming turn pushes twice, holds on confirm_action, the reminder fires and
+    // completes in the gap (asserted, so the interleave is real), then the turn tries two more pushes. Only the first
+    // of those fits the budget of three. With a grain field the reminder's reset handed the turn a fresh budget and
+    // "Turn 4" was sent too.
+    [Fact]
+    public async Task ReminderFiringMidStream_DoesNotResetTheStreamingTurnsPushBudget()
+    {
+        await SubscribeDeviceAsync("push-interleave-user");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("push-interleave-user/push-interleave-conv");
+        await CollectAsync(agent.ChatAsync("schedule a notification", null));
+
+        static (string, object) Push(int n) => (FakeChatClient.PushToolName, new { title = $"Turn {n}", body = "Turn push." });
+        var prompt = FakeChatClient.CallToolsSequencePrompt(
+        [
+            Push(1), Push(2), (ClientToolLimits.ConfirmAction, new { action = "Hold the turn" }), Push(3), Push(4),
+        ]);
+
+        await using (var stream = agent.ChatAsync(prompt, null, clientTools: [ClientToolLimits.ConfirmAction])
+            .GetAsyncEnumerator())
+        {
+            var callId = await HoldOnClientToolAsync(stream);
+
+            await agent.AsReference<IRemindable>().ReceiveReminder("notify-me", default);
+            Assert.Equal(1, Assert.Single(await agent.GetScheduledPromptsAsync()).TimesFired);
+
+            await agent.SubmitClientToolResultAsync(callId, """{"approved":true}""");
+            while (await stream.MoveNextAsync())
+            {
+            }
+        }
+
+        var turnTitles = SendsFor("push-interleave-user").Select(s => s.Message.Title)
+            .Where(t => t.StartsWith("Turn ", StringComparison.Ordinal)).ToList();
+        Assert.Equal(["Turn 1", "Turn 2", "Turn 3"], turnTitles);
+    }
+
+    // AC3 (ADR 0106): a reminder that fires while an incognito turn is suspended does not unset that turn's
+    // incognito. The reminder persists its own turn; the incognito turn must still leave no trace after it resumes.
+    // With a grain field the reminder's reset of the incognito flag made the resumed incognito turn persist.
+    [Fact]
+    public async Task ReminderFiringMidStream_DoesNotUnsetTheStreamingTurnsIncognito()
+    {
+        const string Key = "incognito-interleave-user/incognito-interleave-conv";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+        await CollectAsync(agent.ChatAsync("please remind me to drink water", null));
+        var prompt = FakeChatClient.CallToolPrompt(ClientToolLimits.ConfirmAction, new { action = "Hold the turn" });
+
+        await using (var stream = agent.ChatAsync(
+            prompt, null, ephemeral: true, clientTools: [ClientToolLimits.ConfirmAction]).GetAsyncEnumerator())
+        {
+            var callId = await HoldOnClientToolAsync(stream);
+
+            await agent.AsReference<IRemindable>().ReceiveReminder("drink-water", default);
+            Assert.Equal(1, Assert.Single(await agent.GetScheduledPromptsAsync()).TimesFired);
+
+            await agent.SubmitClientToolResultAsync(callId, """{"approved":true}""");
+            while (await stream.MoveNextAsync())
+            {
+            }
+        }
+
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+        var history = await Cluster.GrainFactory.GetGrain<IAgentGrain>(Key).GetHistoryAsync();
+
+        Assert.DoesNotContain(history, t => t.Role == "user" && t.Text.Contains(FakeChatClient.CallToolMarker, StringComparison.Ordinal));
+        Assert.Equal(2, history.Count(t => t.Role == "user"));
+    }
+
+    // Reads the stream until the client tool's call arrives, which is where the turn suspends.
+    private static async Task<string> HoldOnClientToolAsync(IAsyncEnumerator<AgentStreamEvent> stream)
+    {
+        while (await stream.MoveNextAsync())
+        {
+            if (stream.Current.ClientTool == true)
+            {
+                return stream.Current.ToolCallId!;
+            }
+        }
+
+        throw new InvalidOperationException("The turn ended without calling a client tool.");
+    }
+
     // AC7: with no subscribed devices the model is told plainly and NOTHING is sent. The userId here is
     // seeded by nothing in this class — see SubscribeDeviceAsync's note on the state that does not reset.
     [Fact]
@@ -834,7 +917,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     // AC10: an incognito chat REFUSES the tool and sends nothing (ADR 0034 — it names a Web Push, by
     // itself, as breaking its guarantee). The second half pins the turn-scoped nature of the gate exactly
     // as ReadWebDocument_RefusedOnEphemeralTurn does: the next NORMAL turn on the same warm activation
-    // must succeed, which is the half that fails if _ephemeral is read once and cached.
+    // must succeed, which is the half that fails if the incognito flag is read once and cached.
     [Fact]
     public async Task PushTool_EphemeralChat_RefusesAndSendsNothing()
     {
@@ -2488,9 +2571,8 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Empty(history);
     }
 
-    // _ephemeral is activation-scoped and cleared in ChatAsync's finally (the turn-scoped family, gotchas):
-    // a NORMAL turn following an ephemeral one on the SAME activation must persist, or a warm grain would
-    // silently keep skipping its writes.
+    // Incognito belongs to one run (its TurnContext, ADR 0106): a NORMAL turn following an ephemeral one on the
+    // SAME activation must persist, or a warm grain would silently keep skipping its writes.
     [Fact]
     public async Task EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists()
     {
@@ -2671,12 +2753,12 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Empty(RecallsFor("memory-bank-user/conv-one"));
     }
 
-    // BC2 + BC3 guard the ordering trap: BuildAgent runs on ACTIVATION, never per turn, while _ephemeral is
-    // turn-scoped, so a provider capturing the flag as a VALUE freezes it at whatever it was when the agent
+    // BC2 + BC3 guard the ordering trap: BuildAgent runs on ACTIVATION, never per turn, while incognito is
+    // per run, so a provider capturing the flag as a VALUE freezes it at whatever it was when the agent
     // was built. Which of the two actually catches that was measured (2026-08-28) rather than assumed, by
     // mutating BuildMemoryProvider twice and running the pair:
     //
-    //   capture at build time (the realistic bug — activation has _ephemeral false):  BC2 FAIL, BC3 FAIL
+    //   capture at build time (the realistic bug — activation is not incognito):      BC2 FAIL, BC3 FAIL
     //   gate stuck off       (the capture-of-true direction):                         BC2 pass, BC3 FAIL
     //
     // So BC3 is the load-bearing one — the only test that fails in BOTH directions. BC2 asserts that
@@ -2873,7 +2955,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     // directions where a one-turn version fails in neither.
     //
     // It is also the guard behind reading the selection at BUILD time rather than through a delegate the
-    // way `_ephemeral` must be (see BuildMemoryProvider): the read is safe precisely because
+    // way incognito must be (see BuildMemoryProvider): the read is safe precisely because
     // SetEnabledToolsAsync rebuilds the agent. If someone removes that rebuild, this test is what notices.
     [Fact]
     public async Task TogglingMemoryMidChat_DetachesOnTheSameActivation()
@@ -3283,7 +3365,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     }
 
     // AC4: MCP tools appear on the FIRST turn of a fresh activation (null == all default, no override, no
-    // model switch) — proving _mcpTools was resolved in OnActivateAsync BEFORE the first BuildAgent, not
+    // model switch) — proving _mcpServers was resolved in OnActivateAsync BEFORE the first BuildAgent, not
     // lazily on a later rebuild (the ordering hazard). Mirrors UserDefault_AppliesWhenNoOverride.
     [Fact]
     public async Task McpTools_ResolvedBeforeFirstBuildAgent()

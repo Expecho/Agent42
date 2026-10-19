@@ -124,12 +124,76 @@ public sealed class CopilotSeamTests
         var exclusive = new ConcurrentExclusiveSchedulerPair().ExclusiveScheduler;
         TaskScheduler? ranOn = null;
         var tool = new SchedulerBoundAIFunction(
-            AIFunctionFactory.Create(() => { ranOn = TaskScheduler.Current; return "ok"; }, "probe"), exclusive);
+            AIFunctionFactory.Create(() => { ranOn = TaskScheduler.Current; return "ok"; }, "probe"), exclusive,
+            () => null);
 
         var result = await Task.Run(async () => await tool.InvokeAsync());
 
         Assert.Equal("ok", result?.ToString());
         Assert.Same(exclusive, ranOn);
+    }
+
+    // AC5 (ADR 0106): the Copilot runtime calls a tool on its RPC thread, where the run's context does not flow. The
+    // call is made under SuppressFlow, the honest stand-in for that thread: a plain Task.Run flows the caller's
+    // context and would pass without the re-establish. With exactly one Copilot run in flight, the tool sees it.
+    [Fact]
+    public async Task CopilotTool_SeesItsRunsTurnContext()
+    {
+        var run = TurnContext.ForBackground();
+        var tool = ContextProbe(out var seen, soleRun: () => run);
+
+        await TurnContext.RunInAsync(run, async () => await InvokeWithoutFlowAsync(tool));
+
+        Assert.Same(run, seen());
+    }
+
+    // AC5: with two Copilot runs in flight, nothing says which one a call belongs to, so the tool gets the closed
+    // context (ephemeral, so every trace-leaving tool refuses) rather than the wrong run's budget.
+    [Fact]
+    public async Task CopilotTool_TwoRunsInFlight_Refuses()
+    {
+        var tool = ContextProbe(out var seen, soleRun: () => null);
+
+        await TurnContext.RunInAsync(TurnContext.ForBackground(), async () => await InvokeWithoutFlowAsync(tool));
+
+        Assert.Same(TurnContext.Closed, seen());
+    }
+
+    // When the context DID flow (an SDK that carries the ExecutionContext), it is kept over the registry.
+    [Fact]
+    public async Task CopilotTool_KeepsAFlowedContext()
+    {
+        var run = TurnContext.ForBackground();
+        var tool = ContextProbe(out var seen, soleRun: () => null);
+
+        await TurnContext.RunInAsync(run, async () => await Task.Run(async () => await tool.InvokeAsync()));
+
+        Assert.Same(run, seen());
+    }
+
+    private static SchedulerBoundAIFunction ContextProbe(out Func<TurnContext?> seen, Func<TurnContext?> soleRun)
+    {
+        TurnContext? observed = null;
+        seen = () => observed;
+        return new SchedulerBoundAIFunction(
+            AIFunctionFactory.Create(() => { observed = TurnContext.CurrentOrClosed; return "ok"; }, "probe"),
+            new ConcurrentExclusiveSchedulerPair().ExclusiveScheduler,
+            soleRun);
+    }
+
+    private static async Task<object?> InvokeWithoutFlowAsync(AIFunction tool)
+    {
+        Task<object?> call;
+        using (ExecutionContext.SuppressFlow())
+        {
+            call = Task.Run(async () =>
+            {
+                Assert.Same(TurnContext.Closed, TurnContext.CurrentOrClosed);
+                return await tool.InvokeAsync();
+            });
+        }
+
+        return await call;
     }
 
     // The runtime rejects a custom tool whose name has a '.' or ':' at session.create, which fails every turn, and

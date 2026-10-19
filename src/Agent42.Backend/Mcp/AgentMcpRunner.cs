@@ -198,11 +198,10 @@ public static class AgentMcpRunner
     /// The agent's tool selection with <see cref="ToolCatalog.Memory"/> (ADR 0056/0057) and
     /// <see cref="ToolCatalog.PushNotification"/> (ADR 0075) removed.
     ///
-    /// <para><b>Exclusion happens at BIND time, deliberately, and not through a turn-scoped grain
-    /// field.</b> <c>_ephemeral</c>, <c>_interactiveTurn</c> and
-    /// <c>_webDocumentIngested</c> are a family that lives for the <i>activation</i> and is cleared in
-    /// three places; any new per-turn field inherits that trap. A binding is materialised into grain
-    /// state once and read as a value on every rebuild, so it cannot leak into anyone else's turn.</para>
+    /// <para><b>Exclusion happens at BIND time, deliberately, and not per run.</b> A per-run value lives in the
+    /// run's <c>TurnContext</c> (ADR 0106) and is gone when the run ends. A binding is materialised into grain
+    /// state once and read as a value on every rebuild, so it holds for every run of the conversation and cannot
+    /// leak into anyone else's turn.</para>
     ///
     /// <para><b>Filtered, never rebuilt.</b> A null selection is the <c>null == all</c> sentinel, so it
     /// expands to <see cref="ToolCatalog.AllSelectableToolKeys"/> — which carries the <c>skills</c> and

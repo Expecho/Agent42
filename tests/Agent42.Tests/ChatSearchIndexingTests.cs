@@ -18,8 +18,8 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
     private readonly InMemoryChatSearchIndex _reader = new();
 
     // AC4: an incognito turn writes NOTHING to the index. The three write sites have three different
-    // _ephemeral shapes (an early return, a no-guard-by-design reminder path, and a real
-    // if (!_ephemeral) block), so this covers the one a chat turn actually takes.
+    // incognito shapes (an early return, a no-guard-by-design reminder path, and a real
+    // if (!turn.Ephemeral) block), so this covers the one a chat turn actually takes.
     [Fact]
     public async Task EphemeralTurn_IsNotIndexed()
     {
@@ -33,7 +33,7 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
 
     // AC5: the load-bearing half of the pair. EphemeralTurn_IsNotIndexed asserts that nothing was
     // written, which an indexing path that is broken outright also satisfies — trivially. This one
-    // fails both when the gate is stuck OFF and when _ephemeral is wrongly captured, so it is the
+    // fails both when the gate is stuck OFF and when the incognito flag is wrongly captured, so it is the
     // test that actually proves the flag is turn-scoped rather than activation-scoped.
     [Fact]
     public async Task Indexing_ResumesOnTheNormalTurnAfterAnEphemeralOne()
@@ -218,7 +218,7 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
     }
 
     // AC4 at the THIRD write site. The image-generation path is the only one with a genuine
-    // `if (!_ephemeral)` block — the other two are an early return and a no-guard-by-design reminder
+    // `if (!turn.Ephemeral)` block — the other two are an early return and a no-guard-by-design reminder
     // — and the ADR calls that asymmetry the thing most likely to attract a wrong guard, so both
     // arms are exercised rather than only the chat path's.
     [Fact]
@@ -310,7 +310,7 @@ public sealed class ChatSearchIndexingTests(SharedClusterFixture fixture) : Shar
     //
     // Driven through the grain rather than POST /api/chat/{id}: the endpoint passes its Ephemeral flag
     // straight into this call, so the state constructed is identical, and this class has no API host. What
-    // matters is that it is NOT the agent-run path, which sets _ephemeral = false on entry and mints a GUID
+    // matters is that it is NOT the agent-run path, which is never ephemeral and mints a GUID
     // conversation id — it can never construct this state, and a test written against it would be green
     // whatever the reconcile did.
     [Fact]
