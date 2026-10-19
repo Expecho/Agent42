@@ -57,6 +57,12 @@ fleet"), with persisted tasks and follow-ups, using only the user's own models (
    **Since ADR 0101** a task can carry user-uploaded files under `inputs/` (with `.txt` copies of PDF and Office
    documents) in the workspace, so a Copilot fleet agent's built-in shell and file tools now read user-uploaded,
    possibly third-party, content too.
+   **Since 2026-10-19** the runtime image ships Python 3 (Ubuntu apt `python3`) and Node.js with npm (copied from the
+   official `node:24` LTS image, because Ubuntu 24.04's apt `nodejs` is the end-of-life 18.x), so the shell can run
+   code in more than bash and Perl. Nothing can be installed at runtime, because the app runs as `$APP_UID`: what the
+   shell can run is what `src/Agent42.Backend/Dockerfile` bakes in (`BackendImageRuntimeTests`). This widens the
+   residuals above (a script can do more than a shell one-liner) but adds no new gate or reach. The image grew from
+   982 MB to 1.23 GB (measured locally).
 8. **Egress (an ADR 0013 extension).** Fleet content goes to the user's own providers, SearXNG, context.dev and the
    user's MCP servers, which are all existing paths. **New:** a Copilot fleet agent's built-in URL fetch and shell can
    reach any host from the container, gated by the user's per-action approval and the kill switch.
