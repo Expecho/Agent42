@@ -1,7 +1,7 @@
 namespace Agent42.Tests;
 
 /// <summary>
-/// Guards the provider dialog's Anthropic half (ADR 0102). The repo has no JS test runner, so these assert on source
+/// Guards the provider dialog's Anthropic half (ADR 0103). The repo has no JS test runner, so these assert on source
 /// strings of the real <c>wwwroot</c>; saving an Anthropic provider is checked manually in DevHost.
 /// </summary>
 [Collection("StaticAssets")]

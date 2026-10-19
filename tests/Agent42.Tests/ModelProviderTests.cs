@@ -616,7 +616,7 @@ public class ModelProviderTests
         Assert.Contains("embedding model", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    // ADR 0102 AC2: before the explicit branch, every non-Foundry kind fell through to the OpenAI client, so a new
+    // ADR 0103 AC2: before the explicit branch, every non-Foundry kind fell through to the OpenAI client, so a new
     // kind silently built an OpenAI one. The metadata names the SDK that actually answers.
     [Fact]
     public void AnthropicKind_BuildsAnthropicClient()
@@ -630,7 +630,7 @@ public class ModelProviderTests
         Assert.NotNull(factory.GetClient("claude:claude-sonnet-5-5").GetService<AnthropicCompatibilityChatClient>());
     }
 
-    [Fact] // ADR 0102 AC3
+    [Fact] // ADR 0103 AC3
     public void AnthropicBlankKey_IsSkipped()
     {
         var result = ModelProviderBuilder.TryBuildProvider(
@@ -639,7 +639,7 @@ public class ModelProviderTests
         Assert.Equal(ProviderBuildStatus.Skipped, result.Status);
     }
 
-    [Fact] // ADR 0102 AC3
+    [Fact] // ADR 0103 AC3
     public void AnthropicBlankEndpoint_IsInvalid()
     {
         var result = ModelProviderBuilder.TryBuildProvider(
@@ -649,7 +649,7 @@ public class ModelProviderTests
         Assert.Contains("Anthropic provider", result.Error);
     }
 
-    // ADR 0102 AC6: capabilities are exactly the declared flags (never hosted tools), and the provider carries no
+    // ADR 0103 AC6: capabilities are exactly the declared flags (never hosted tools), and the provider carries no
     // image, embedding, speech or Copilot runtime even when a model is (wrongly) flagged for one.
     [Fact]
     public void AnthropicModel_CapabilitiesAreDeclared_NoSideServices()

@@ -208,7 +208,7 @@ function renderProviders() {
 const ANTHROPIC_ENDPOINT = "https://api.anthropic.com";
 
 // The Responses-API toggle is Foundry-only (ADR 0014) — an OpenAI-compatible provider ignores it.
-// Anthropic (ADR 0102) pre-fills its API base, but only into an EMPTY endpoint: a value the user typed
+// Anthropic (ADR 0103) pre-fills its API base, but only into an EMPTY endpoint: a value the user typed
 // (or a stored one being edited) is never overwritten.
 function syncProviderKindUi() {
   const kind = providerKindSelect.value;

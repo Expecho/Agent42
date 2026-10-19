@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Agent42.Tests;
 
 /// <summary>
-/// Pins the Anthropic SDK's <see cref="IChatClient"/> on the stub transport (ADR 0102). Nothing here talks to a
+/// Pins the Anthropic SDK's <see cref="IChatClient"/> on the stub transport (ADR 0103). Nothing here talks to a
 /// network.
 ///
 /// <para>The signature tests are the plan's Step-1 gate. Within one turn, <see cref="FunctionInvokingChatClient"/>

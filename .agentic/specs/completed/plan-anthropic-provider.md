@@ -36,7 +36,7 @@ current Claude models reject request shapes the app (or Agent Framework internal
   `AnthropicProviderTests.cs` / `AnthropicCompatibilityChatClientTests.cs` / `ModeratedGroupChatManagerTests.cs` /
   `LiveAnthropicChatTests.cs`, and the `.gitignore` entry for the live test's local key file.
 - Docs: new ADR (next free number, **0102 at plan time; re-check, since two numbering collisions already
-  happened, see #197**), `.agentic/gotchas.md` new entries, and the CLAUDE.md feature-map row for "Model providers".
+  happened, see #197**; it collided anyway with the fleet canvas ADR from #198 and was renumbered to 0103), `.agentic/gotchas.md` new entries, and the CLAUDE.md feature-map row for "Model providers".
 
 ## Context & constraints (what the executor cannot cheaply re-derive)
 

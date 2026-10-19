@@ -1,14 +1,14 @@
 # Bring your own models
 
 > User-configurable model providers, encrypted keys, and a user-settable default model.
-> ADRs 0013 · 0017 · 0018 · 0019 · 0020 · 0102.
+> ADRs 0013 · 0017 · 0018 · 0019 · 0020 · 0103.
 
 ## What it is
 
 Agent42 ships with **no built-in chat model**. A signed-in user adds their own model
 providers from **Preferences → model providers** — Azure AI Foundry, any
 OpenAI-compatible endpoint, GitHub Models, a local runtime like Ollama / vLLM, or Anthropic
-(Claude) over its native API (ADR 0102). Keys are
+(Claude) over its native API (ADR 0103). Keys are
 stored **encrypted** (never echoed back), changes take effect **without a restart**, and the
 user picks the **default model** new chats start on. Until at least one provider is added,
 the composer stays gated and the model picker is empty.
@@ -191,7 +191,7 @@ public IChatClient GetClient(string? modelId) =>
 
 Each provider kind constructs a different SDK client. (The third kind, Anthropic, uses the official
 `Anthropic` SDK's `AsIChatClient` wrapped in `AnthropicCompatibilityChatClient`, which rewrites the
-request shapes current Claude models reject; see ADR 0102.) A Foundry provider reaches both chat wire
+request shapes current Claude models reject; see ADR 0103.) A Foundry provider reaches both chat wire
 paths over the GA `/openai/v1` surface (no `api-version`) with an `api-key`-header policy — the Chat
 path used to go through `AzureOpenAIClient`'s classic `api-version` data plane, but the stable SDK
 caps that at `2024-10-21`, which newer deployments reject (ADR 0033). OpenAI-compatible carries the

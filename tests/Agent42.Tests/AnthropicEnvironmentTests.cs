@@ -4,7 +4,7 @@ namespace Agent42.Tests;
 
 /// <summary>
 /// The Anthropic SDK falls back to the <c>ANTHROPIC_API_KEY</c> / <c>ANTHROPIC_AUTH_TOKEN</c> /
-/// <c>ANTHROPIC_BASE_URL</c> environment variables for anything not set explicitly (ADR 0102). A per-user provider
+/// <c>ANTHROPIC_BASE_URL</c> environment variables for anything not set explicitly (ADR 0103). A per-user provider
 /// must use only the user's stored key and endpoint, never an ambient one (no operator model, ADR 0019/0030).
 /// Process environment is global, so these run serialized in their own collection.
 /// </summary>
