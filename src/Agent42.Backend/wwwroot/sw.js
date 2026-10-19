@@ -102,6 +102,9 @@ self.addEventListener("fetch", (event) => {
   // an offline /fleet/ navigation must fail visibly rather than paint /index.html, the chat app, in its place. Must
   // precede any respondWith, exactly like the guards above.
   if (url.pathname.startsWith("/fleet")) return;
+  // The public legal pages (privacy policy, terms) are standalone and outside SHELL, like /fleet: an offline
+  // navigation must fail visibly rather than paint /index.html in their place. Must precede any respondWith.
+  if (url.pathname.startsWith("/legal")) return;
   // Share branch sits AFTER the /api guard (keeps the ADR-0002 invariant / the position test green)
   // and BEFORE the non-GET early-return below (a share is a POST).
   if (req.method === "POST" && url.pathname === "/share") { event.respondWith(handleShare(req)); return; }

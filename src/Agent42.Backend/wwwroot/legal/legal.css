@@ -1,0 +1,74 @@
+/* ————————————————————————————————————————————————
+   Agent 42 · public legal pages (privacy policy, terms of service)
+   Self-contained, like shared/viewer.css: served from /legal/* outside Easy Auth, so these pages
+   depend on nothing behind the login and load no third-party font or script.
+   ———————————————————————————————————————————————— */
+
+:root {
+  --bg: #100f0d;
+  --bg-raised: #171512;
+  --line: #2a2620;
+  --ink: #e9e2d3;
+  --ink-dim: #a89f8c;
+  --amber: #ffb13d;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --serif: Georgia, "Times New Roman", serif;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4efe4;
+    --bg-raised: #fbf7ee;
+    --line: #d6cdb8;
+    --ink: #2a2620;
+    --ink-dim: #5c5647;
+    --amber: #a86611;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 17px/1.6 var(--serif);
+}
+
+.legal {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+.legal__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  font: 600 13px/1 var(--mono);
+  letter-spacing: 0.08em;
+}
+
+.legal__mark { color: var(--amber); margin-right: 8px; }
+
+.legal__nav a { margin-left: 16px; }
+
+h1 { font-size: 2rem; line-height: 1.2; margin: 32px 0 4px; }
+h2 { font-size: 1.25rem; margin: 32px 0 8px; }
+
+.legal__updated { color: var(--ink-dim); font: 13px/1.4 var(--mono); margin: 0 0 24px; }
+
+a { color: var(--amber); }
+
+ul { padding-left: 1.25em; }
+li { margin: 4px 0; }
+
+.legal__note {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 16px;
+}
