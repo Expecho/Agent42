@@ -21,7 +21,7 @@ reminder's reset block wrote over the streaming turn's values. Outside the turn 
 retention, edit/fork and tool selection were grain methods that only a silo could test.
 
 ## Decision
-1. **Per-run state is a `TurnContext`** (`Conversations/TurnContext.cs`, a sealed reference type). One is created at
+1. **Per-run state is a `TurnContext`** (`src/Agent42.Agents/Conversations/TurnContext.cs`, a sealed reference type). One is created at
    each run entry (`ChatAsync`, `EnqueuePromptAsync`, `ReceiveReminder`). On the grain side it is passed
    explicitly as a parameter. Tools and context providers, which cannot take a parameter, read
    `TurnContext.CurrentOrClosed`. That accessor sits over one private `AsyncLocal`, which is set around every

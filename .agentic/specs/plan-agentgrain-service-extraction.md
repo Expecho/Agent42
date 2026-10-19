@@ -462,3 +462,65 @@ Every finding was handled in this revision.
 | L: name the AC6 tests | LOW | **Fixed.** They are enumerated. |
 | L: `RunAsync` line cite (~1645 vs 1654) | LOW | Accepted as cosmetic; the executor re-reads the code. |
 | L: "no ADR-numbering test exists" | LOW | **Rejected.** `tests/Agent42.Tests/AdrNumberingTests.cs` exists, and Step 1 now names it. |
+
+## Implementation notes (executed 2026-10-19, branch `feature/agentgrain-service-extraction`)
+
+**Step 0 spike (AF 1.23.0, fake `IChatClient`, file-based app):** a–f all PASS, g not run (it needs the real
+Copilot CLI, so the registry stays).
+- (a) An async-local set around each `MoveNextAsync` reaches the FICC tool, both `AIContextProvider` hooks and the
+  history storage filter, and tool mutations are visible to the caller.
+- (b) The reminder shape (set once in an async frame before `RunAsync`) works and does not leak.
+- (c) Interleaved runs each see only their own context.
+- (d) It reaches the inner tool of a `LoopAgent`.
+- (f) Code on a thread started under `SuppressFlow` sees null.
+- (e) **One unexpected finding:** `StoreAIContextAsync` (Hindsight retain) runs inside the **final `MoveNextAsync`**,
+  not in `DisposeAsync`, and an early dispose runs no provider hook. `DisposeRunAsync` was kept anyway, as a
+  defensive measure. Hindsight 0.1.0 calls `IsEnabled` in both hooks.
+
+**AC2/AC3: the interleave is real.** The plan's fallback in Step 2b was not needed. A streaming turn held on
+`confirm_action` with a reminder fired in the gap (its `TimesFired` asserted first) was run against the Step 1
+commit in a throwaway worktree, with only the new tests and the fake's helper copied in:
+- `ReminderFiringMidStream_DoesNotResetTheStreamingTurnsPushBudget` failed: "Turn 4" was sent.
+- `ReminderFiringMidStream_DoesNotUnsetTheStreamingTurnsIncognito` failed: the incognito turn was persisted.
+
+Both pass on the new code. ADR 0106 records this.
+
+**Where the implementation diverged from the plan:**
+- **Steps 2a and 2b landed in one commit.** The 2b code was written while the 2a full-suite run was still going.
+  The other steps are one commit each.
+- **The Copilot test twin now suppresses `ExecutionContext` flow.** `ChatClientCopilotAgentFactory` used to call
+  tools with `Task.Run`, which flows the context, so every Copilot grain test would have passed without the
+  registry. It now calls them under `SuppressFlow`, so the existing Copilot grain tests exercise the registry. A
+  mutation that made `SoleCopilotRun` return null fails 3 of them.
+- **AC5's two-runs case is a unit test.** `CopilotTool_SeesItsRunsTurnContext`, `CopilotTool_TwoRunsInFlight_Refuses`
+  and `CopilotTool_KeepsAFlowedContext` are in `CopilotSeamTests`, over `SchedulerBoundAIFunction`. A Copilot chat
+  gets no client tools, so two concurrent Copilot runs cannot be staged on a grain. The grain half is the existing
+  `CopilotTool_InvokedFromForeignThread_RunsOnGrainScheduler`, which now runs with flow suppressed.
+- **`SchedulerBoundAIFunction` resolves the registry on the activation's scheduler.** It reads grain state there,
+  never on the RPC thread, and it keeps a context that did flow.
+- **`CurrentElicitationSink` now also checks `!_copilotChat`.** This keeps a Copilot MCP call from eliciting now that
+  its context can carry a broker. That was the pre-change behaviour, by accident of the context not flowing.
+- **FakeChatClient gained `CallToolsSequencePrompt`,** a scripted sequence across several tools. AC2 needs push ×2,
+  `confirm_action`, push ×2. `CallToolSequencePrompt` delegates to it unchanged.
+- **The search projection takes a history delegate, not a list.** It is constructed with a delegate over the
+  grain's projection (`() => ProjectHistory()…`), not a per-call `SearchProjectionContext` list. The delegate is
+  invoked inside each best-effort try, so a projection failure is still swallowed, as before. A list computed by the
+  caller would have moved that read outside the try.
+- **`ApplyRetentionAsync` became the synchronous `ApplyRetention`.** Nothing in it awaited once `GetHistoryAsync`
+  (a `Task.FromResult`) was replaced by the projection count. The remap now happens in `ApplyRetention`, from the
+  returned delta. It is the same moment the shift happens.
+- **The services are constructed in `OnActivateAsync`** beside `_userId`: `_search`, `_retention` and `_forking`.
+  `_toolSelection` is a readonly field initializer, because it is stateless.
+- **`BuildAgent` kept its name and its seven call sites.** It is `ApplyComposition(ComposeAgent(modelId))`. The plan
+  counted nine sites, but two of those go through `RebuildAgentPreservingSessionAsync`.
+- **`ToolSelectionContext` carries no capabilities.** Capabilities are passed to the calls that need them
+  (`SelectedSkills`, `SelectedMcpTools`). `EffectiveEnabledTools` and `ExpandedEnabledTools` do not depend on them.
+- **A few members changed visibility.** `UserTurnIndices` (on `HistoryRetention`) is `public static`, because the
+  repo has no `InternalsVisibleTo` and the tests call it. `UserIdFromGrainKey`, `ConversationIdFromGrainKey`,
+  `AssistantImageId`, `CreateArtifactTool`, `UpdateArtifactTool` and `ParseArtifactResult` became `internal`, so the
+  services can use them.
+- **ADR bodies keep their historical member names.** The ADRs whose mechanism changed carry an "Amended by 0106"
+  note. The others name members only as history, and no ADR names a file path that moved. ADR 0051 is untouched, as
+  planned.
+- **AC4c needed no new test.** `MemorySelected_RecallsAndRetains` already asserts retain after a streamed turn, and it
+  passes.
