@@ -5,15 +5,10 @@ namespace Agent42.Agents;
 
 /// <summary>
 /// The scheduling tools (<c>schedule_prompt</c> and its cancels), which register durable Orleans
-/// reminders. The reminder CALLBACK is not here: <c>ReceiveReminder</c> stays in the core part
-/// alongside <c>ChatAsync</c>, because the two turn-scoped-field clears must be read together.
+/// reminders. The reminder CALLBACK is not here: <c>ReceiveReminder</c> is a run entry and stays in the core
+/// part beside <c>ChatAsync</c> and <c>EnqueuePromptAsync</c>.
 /// Scheduling is refused for an ephemeral chat (ADR 0034) — a durable reminder would later fire the
-/// persisting, pushing reminder path.
-///
-/// <para><b>Cross-file invariant.</b> That refusal reads the turn-scoped <c>_ephemeral</c> flag, which is
-/// declared AND cleared in the core part (<c>Conversations/AgentGrain.cs</c>); the other half of the same
-/// flag guards a state write in <c>ImageGeneration/AgentGrain.ImageTurn.cs</c>. Read the ephemeral-chat
-/// entry in <c>.agentic/gotchas.md</c> — it names all three files — before changing any one of them.</para>
+/// persisting, pushing reminder path. The refusal reads the run's <see cref="TurnContext"/> (ADR 0106).
 /// </summary>
 public sealed partial class AgentGrain
 {
@@ -34,7 +29,7 @@ public sealed partial class AgentGrain
         // Scheduling is unavailable in an ephemeral chat (ADR 0034): a durable Orleans reminder would fire
         // ReceiveReminder, which persists the session and sends the away-reply Web Push (ADR 0028) — both
         // break the incognito guarantee. Refuse before registering anything, so nothing durable is created.
-        if (_ephemeral)
+        if (TurnContext.CurrentOrClosed.Ephemeral)
         {
             return "Scheduling isn't available in an ephemeral (incognito) chat, because a reminder would " +
                 "have to persist this conversation to fire. Turn off incognito to schedule reminders.";

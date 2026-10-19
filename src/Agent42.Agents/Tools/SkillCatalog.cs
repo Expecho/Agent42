@@ -18,7 +18,7 @@ public sealed record SkillInfo(string Name, string Description, string Path);
 ///
 /// <para><b>The SHIPPED layer, not the whole picture (ADR 0049).</b> This set is per-deployment — skills
 /// ship with the image, so every user sees the same ones — but it is now the <i>base</i> of a per-user
-/// overlay: <c>AgentGrain.MergedSkills()</c> combines it with the skills that user has uploaded
+/// overlay: <c>ToolSelection.MergedSkills</c> combines it with the skills that user has uploaded
 /// (<c>IUserSkillProvider</c>), an upload of the same name <b>shadowing</b> the shipped one, and it is the
 /// merged list that reaches both the picker and the <c>BuildAgent</c> gate. Keep this class shipped-only and
 /// read-only: its <see cref="Lazy{T}"/> is process-wide, so putting a user's uploads in here would serve

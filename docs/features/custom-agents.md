@@ -142,7 +142,7 @@ _state.State.EnabledTools =
 ### Continuous history is pruned to 24 hours (ADR 0068)
 
 A continuous chat is one grain that re-serializes its whole session into one Cosmos item (2 MB cap,
-ADR 0004). So on **every persisted turn**, `ApplyRetentionAsync` hard-deletes messages older than a
+ADR 0004). So on **every persisted turn**, `ApplyRetention` (rules in `HistoryRetention`) hard-deletes messages older than a
 fixed 24-hour window (`RetentionLimits`) from a continuous agent chat. Per-chat agents are not pruned.
 Deleting the conversation is still the full reset.
 

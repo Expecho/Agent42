@@ -212,8 +212,8 @@ drag-and-drop.
 ### Incognito chats (ADR 0034)
 
 `ChatRequest.Ephemeral` makes a turn that skips `TouchAsync` (so the chat never enters the sidebar)
-and skips the session write in the grain. The turn-scoped `_ephemeral` field is cleared in the
-turn's `finally` and reset on the two persisting entry points. Documents are blocked at the
+and skips the session write in the grain. Incognito is the run's own `TurnContext.Ephemeral` (ADR 0106),
+so no later turn or interleaved reminder can inherit or clear it. Documents are blocked at the
 composer in an incognito chat, because RAG ingestion writes durable chunks.
 A copilot agent's chat refuses incognito turns altogether (ADR 0085): the Copilot runtime writes its
 transcript to Blob during the turn, so the grain answers an ephemeral turn there with a refusal before
@@ -263,7 +263,7 @@ never persisted, and the agent-run and reminder paths skip them.
 | Endpoints | `src/Agent42.Backend/Conversations/AgentApi.Conversations.cs` |
 | Cosmos wiring | `src/Agent42.Backend/Program.cs` |
 | Search port + in-memory twin | `src/Agent42.Agents/Search/IChatSearchIndex.cs`, `src/Agent42.Agents/Search/InMemoryChatSearchIndex.cs` |
-| Search projection + backfill | `src/Agent42.Agents/Search/AgentGrain.Search.cs` |
+| Search projection + backfill | `src/Agent42.Agents/Search/ChatSearchProjection.cs` (grain side: `src/Agent42.Agents/Search/AgentGrain.Search.cs`) |
 | Search Cosmos adapter | `src/Agent42.Backend/Search/CosmosChatSearchIndex.cs` |
 | Custom groups | `src/Agent42.Backend/Conversations/AgentApi.ChatGroups.cs`, `wwwroot/js/groups.js` |
 | Share links | `src/Agent42.Agents/Sharing/`, `wwwroot/shared/`, `wwwroot/js/sharelinks.js` |

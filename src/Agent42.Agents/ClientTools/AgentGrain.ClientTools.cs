@@ -19,7 +19,7 @@ namespace Agent42.Agents;
 /// <para><b>The broker is routed per RUN, never through a field the tool reads.</b> Two runs can be in flight on
 /// one activation (a reminder or an <c>EnqueuePromptAsync</c> run in a gap of a streaming turn), and a field would
 /// hand a background run's <c>confirm_action</c> to the user's browser as if their own turn had asked.
-/// <see cref="CurrentClientToolBroker"/> is set around each of the interactive run's own pulls
+/// The broker rides the run's <see cref="TurnContext"/> (ADR 0106), which is set around each of the run's own pulls
 /// (<see cref="PullAsync"/>), so only that run's tool invocations see it (measured, spike 0a in the plan).
 /// <see cref="_clientToolBrokers"/> is the separate, by-identity registry the two interleaved calls look a call id
 /// up in; nothing on the tool side reads it.</para>
@@ -31,12 +31,6 @@ namespace Agent42.Agents;
 /// </summary>
 public sealed partial class AgentGrain
 {
-    /// <summary>
-    /// The broker of the run whose pull is executing, or null. Set only by <see cref="PullAsync"/>; an async local
-    /// rather than a field so that a background run pulled in a gap of the interactive one sees null.
-    /// </summary>
-    private static readonly AsyncLocal<ClientToolBroker?> CurrentClientToolBroker = new();
-
     /// <summary>
     /// The brokers of the interactive runs in flight on this activation, so the interleaved
     /// <see cref="SubmitClientToolResultAsync"/> / <see cref="GetPendingClientToolCallsAsync"/> can find a call.
@@ -122,7 +116,7 @@ public sealed partial class AgentGrain
     // through `cancellationToken`, which rethrows into the stopped-turn path.
     private async Task<string> AwaitClientResultAsync(string toolName, CancellationToken cancellationToken)
     {
-        var broker = CurrentClientToolBroker.Value;
+        var broker = TurnContext.CurrentOrClosed.Broker;
         var call = FunctionInvokingChatClient.CurrentContext?.CallContent;
         if (broker is null || call is null || !broker.Supports(toolName))
         {
@@ -147,15 +141,17 @@ public sealed partial class AgentGrain
         }
     }
 
-    // One pull of a run's update stream, with the run's broker visible to whatever the pull invokes. The async
-    // local is set in THIS method's own execution context, so it reaches the iterator body MoveNextAsync runs (and
-    // its continuations, which capture that context) and nothing after this method returns.
-    private static async ValueTask<bool> PullAsync(
-        IAsyncEnumerator<AgentResponseUpdate> updates, ClientToolBroker? broker)
-    {
-        CurrentClientToolBroker.Value = broker;
-        return await updates.MoveNextAsync();
-    }
+    // One pull of a run's update stream, with the run's context (ADR 0106) visible to whatever the pull invokes. The
+    // context is set in RunInAsync's own execution context, so it reaches the iterator body MoveNextAsync runs (and
+    // its continuations, which capture that context) and nothing after the pull returns.
+    private static ValueTask<bool> PullAsync(IAsyncEnumerator<AgentResponseUpdate> updates, TurnContext turn)
+        => TurnContext.RunInAsync(turn, updates.MoveNextAsync);
+
+    // The run's dispose, under its context too: end-of-run framework and provider code may run there. On AF 1.23 the
+    // providers' store hook (Hindsight retain) runs inside the final pull instead and an early dispose runs none
+    // (measured, ADR 0106), so this is defensive: a framework change must not make memory read Closed at retain.
+    private static ValueTask DisposeRunAsync(IAsyncEnumerator<AgentResponseUpdate> updates, TurnContext turn)
+        => TurnContext.RunInAsync(turn, updates.DisposeAsync);
 
     // Flags a client tool's toolCallStart for the browser and announces the call to the broker, so an answer that
     // arrives before the tool is invoked is kept. Only on a run with a broker that supports the tool (elsewhere the
@@ -242,10 +238,12 @@ public sealed partial class AgentGrain
             _clientToolBrokers.SelectMany(b => b.Pending.Concat(b.Elicitations.Pending)).ToList());
 
     // The sink an MCP tool call of THIS run shows its elicitations through (ADR 0095), or null when nobody can be
-    // asked: a background run, a Copilot chat (its tools run outside the run's async local) or a browser that did not
-    // advertise the capability. Read inside the tool call, where CurrentClientToolBroker is the run's own.
+    // asked: a background run, a Copilot chat (its tools run on the SDK's RPC thread, and a wait there is unmeasured)
+    // or a browser that did not advertise the capability. Read inside the tool call, where the current context is the
+    // run's own.
     private IMcpElicitationSink? CurrentElicitationSink()
-        => CurrentClientToolBroker.Value is { } broker && broker.Supports(ClientToolLimits.McpElicitation)
+        => !_copilotChat && TurnContext.CurrentOrClosed.Broker is { } broker
+            && broker.Supports(ClientToolLimits.McpElicitation)
             ? new McpElicitationSink(broker, _clientToolTimeouts.For(ClientToolLimits.McpElicitation), _logger)
             : null;
 

@@ -62,7 +62,9 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
     }
 
     // AC8: a tool that needs the grain's context (registering a durable reminder fails outside it) works when the
-    // runtime invokes it from a foreign thread.
+    // runtime invokes it from a foreign thread. Also the grain half of ADR 0106's AC5: the twin calls the tool with
+    // no ExecutionContext flowed, so schedule_prompt would read the closed (ephemeral) context and refuse unless the
+    // grain's Copilot run registry re-established this run's.
     [Fact]
     public async Task CopilotTool_InvokedFromForeignThread_RunsOnGrainScheduler()
     {

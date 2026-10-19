@@ -54,21 +54,18 @@ return $"Reminder '{name}' scheduled: first firing in {dueInMinutes} minute(s), 
 ```csharp
 public async Task ReceiveReminder(string reminderName, TickStatus status)
 {
-    // Turn-scoped fields live for the activation, and this method does NOT drain ChatCoreAsync,
-    // so it resets each one itself (ADR 0034/0066/0075).
-    _ephemeral = false;                                     // a fired reminder always persists
-    _webDocumentIngested = false;                           // consume this turn's ingest only
-    _pushesThisTurn = 0;                                    // else a repeating reminder stops pushing after three
+    // This run's own state (ADR 0106): never ephemeral, never interactive, its own push budget and ingest flag.
+    var turn = TurnContext.ForBackground();
     if (!_state.State.ScheduledPrompts.TryGetValue(reminderName, out var info)) { ...; return; }
     // no-model re-resolve (ADR 0019) ... skip if still none
     await RehydrateAttachmentUrlsAsync(_chatClientFactory.GetCapabilities(_modelId).SupportsVision);
     AlignTurnAttachmentsToHistory();
     var prompt = new ChatMessage(ChatRole.User, info.Prompt);
     var research = BeginResearchRun(prompt);                // research loop's second run site (ADR 0082)
-    try { await _agent.RunAsync([prompt], _session); }
+    try { await TurnContext.RunInAsync(turn, async () => await _agent.RunAsync([prompt], _session)); }
     finally { ReleaseResearchRun(research, foldFirst: true); }
     _state.State.TurnAttachments.Add([]);
-    var pruned = await ApplyRetentionAsync();               // continuous-agent 24 h window (ADR 0068)
+    var pruned = ApplyRetention();                          // continuous-agent 24 h window (ADR 0068)
     var serializedSession = await _agent.SerializeSessionAsync(_session);
     _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
     _state.State.ScheduledPrompts[reminderName] = info with { TimesFired = info.TimesFired + 1 };

@@ -9,6 +9,8 @@ amends: [0007, 0066, 0084]
 
 # `read_document`: sequential reading of ingested documents
 
+> **Amended by [ADR 0106](0106-agentgrain-services-and-turn-context.md) (2026-10-19): the per-turn part budget counts on `TurnContext.DocumentPartsRead`.** It does not use a field, so it is no longer reset in each run entry.
+
 ## Context
 Document RAG (ADR 0007/0008) answers targeted questions well and fails at whole-document tasks ("summarise all
 of it", "list every requirement"), because the model only ever sees the top-K excerpts the always-on

@@ -10,6 +10,8 @@ amends: [0011, 0027, 0056]
 
 # `read_web_document`: fetch a web-hosted document in-container and ingest it into conversation RAG
 
+> **Amended by [ADR 0106](0106-agentgrain-services-and-turn-context.md) (2026-10-19): the "a document was ingested this turn" flag is `TurnContext.WebDocumentIngested` on the run's own context.** The consume sites read it after the run, and there is no field to clear.
+
 > **Amends [ADR 0027](0027-hosted-page-scrape-via-context-dev.md) and, through it,
 > [ADR 0011](0011-web-search-self-hosted-searxng-sidecar.md).** ADR 0027 is **not superseded** — its
 > decision governs `fetch_web_page`, which stays on context.dev, untouched by this MR. What changes is

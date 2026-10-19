@@ -10,6 +10,8 @@ extends: []
 
 # Feature folders in `Agent42.Agents` — files move, namespaces deliberately do not
 
+> **Amended by [ADR 0106](0106-agentgrain-services-and-turn-context.md) (2026-10-19): the decoupling this ADR left open is taken.** Per-run values live in a `TurnContext`, not in fields declared in the core part (§3). Search projection, retention, edit/fork and tool selection are per-activation services the grain constructs.
+
 ## Context
 `src/Agent42.Agents` had absorbed roughly twenty ADRs' worth of features onto a completely flat
 layout: 73 `.cs` files in one directory, all in `namespace Agent42.Agents;`, plus a 2070-line

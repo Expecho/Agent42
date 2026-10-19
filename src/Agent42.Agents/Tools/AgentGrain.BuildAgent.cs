@@ -16,9 +16,28 @@ namespace Agent42.Agents;
 /// </summary>
 public sealed partial class AgentGrain
 {
-    // Builds the Agent Framework agent bound to a specific model. Called on activation and again
-    // whenever the conversation switches models.
-    private AIAgent BuildAgent(string modelId)
+    // Stateless (ADR 0106): asked with a context built from the fields at each use, so no rebuild site can leave it stale.
+    private readonly IToolSelection _toolSelection = new ToolSelection();
+
+    // The selection inputs as they are NOW. Built per call: cheap, and the reason the selection cannot go stale.
+    private ToolSelectionContext SelectionContext()
+        => new(_state.State.EnabledTools, _userDefaultEnabledTools, _mcpServers, _userSkills);
+
+    // Builds the Agent Framework agent bound to a specific model and makes it this activation's composition. Called on
+    // activation and again whenever the conversation switches models; every caller assigns the returned agent.
+    private AIAgent BuildAgent(string modelId) => ApplyComposition(ComposeAgent(modelId));
+
+    // The ONE place the composition's switches are assigned (ADR 0106), so nothing inside the build writes a field.
+    private AIAgent ApplyComposition(AgentComposition composition)
+    {
+        _researchTodos = composition.ResearchTodos;
+        _copilotChat = composition.CopilotChat;
+        _copilotUnavailable = composition.CopilotUnavailable;
+        return composition.Agent;
+    }
+
+    // Composes the agent for a model, with the switches that describe it. Reads grain state; writes none.
+    private AgentComposition ComposeAgent(string modelId)
     {
         // Not every model does function calling (ADR 0013): on GitHub Models the OpenAI-published
         // models do, while microsoft/phi-4 rejects a tools request outright. A model that can't must
@@ -111,10 +130,11 @@ public sealed partial class AgentGrain
             contextProviders.Add(memoryProvider);
         }
 
-        // The research loop (ADR 0082): adds its todo provider for a research-kind chat on a tools-capable model,
-        // and is a no-op otherwise. The two With* calls below wrap the client and the agent the same way. Plain
+        // The research loop (ADR 0082): its todo provider for a research-kind chat on a tools-capable model, and
+        // null otherwise. The two With* calls below wrap the client and the agent the same way. Plain
         // calls on purpose — S3776 charges branches, not calls, and this method has little headroom.
-        AddResearchProviders(contextProviders, capabilities);
+        var researchTodos = ResearchTodosFor(capabilities);
+        AddResearchProviders(contextProviders, researchTodos);
 
         // Shared state (ADR 0089): shows the model the conversation's state each run, when the selection has it.
         AddSharedStateProvider(contextProviders, enabled);
@@ -122,8 +142,8 @@ public sealed partial class AgentGrain
         // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
         // state at bind time; a normal chat falls back to the default Agent 42 persona.
         // Old Cosmos state has null persona fields, so existing chats fall back too.
-        return WithResearchLoop(new ChatClientAgent(
-            WithResearchBudget(_chatClientFactory.GetClient(modelId)),
+        var agent = WithResearchLoop(new ChatClientAgent(
+            WithResearchBudget(_chatClientFactory.GetClient(modelId), researchTodos),
             new ChatClientAgentOptions
             {
                 Name = _state.State.AgentName ?? "Agent42",
@@ -156,7 +176,8 @@ public sealed partial class AgentGrain
                     // measured, on both the streaming and the RunAsync path.
                     StorageInputResponseMessageFilter = StripReasoningFromStorage,
                 }),
-            }), modelId);
+            }), modelId, researchTodos);
+        return new AgentComposition(agent, researchTodos, CopilotChat: false, CopilotUnavailable: null);
     }
 
     // The tools this conversation may offer the model: the built-in ones, the ADR 0015 hosted swap when
@@ -317,35 +338,17 @@ public sealed partial class AgentGrain
         // below (Tools = SupportsTools ? … : []) — a text-only model still gets none, and code_interpreter
         // only survives on a hosted model where it was added at all. The skills provider is filtered in the
         // AIContextProviders switch, not here (it is a context provider, not in this list).
-        tools = [.. tools.Where(t => ToolCatalog.IsToolEnabled(t.Name, enabled))];
+        tools = [.. tools.Where(t => _toolSelection.IsSelected(t.Name, enabled))];
 
         // Remote MCP-server tools (config-driven remote MCP servers) are added AFTER the per-tool
-        // IsToolEnabled filter and BEFORE the capability intersection below. They are gated on their OWN
-        // three-level hierarchy — `mcp` (all servers) ⊃ `mcp:{id}` (all tools of one server, ADR 0026) ⊃
-        // `mcp:{id}:{toolName}` (one tool) — not by the catalog map: MCP tool names are user-defined and
-        // dynamic, so they are absent from it and IsToolEnabled would keep them UNCONDITIONALLY (the
-        // unmapped-name rule), bypassing the picker. Any of the three levels grants a tool; see
-        // ToolCatalog.IsMcpToolEnabled, which subsumes IsMcpServerEnabled rather than replacing it.
-        //
-        // Note the filter is per TOOL but the key is built from (server.ServerId, tool.Name) — no key is ever
-        // parsed. A user with zero configured MCP servers has an empty _mcpServers, so nothing is added; a
-        // skipped/unreachable server is an empty group and contributes nothing either (and, importantly, an
-        // empty group is still ENUMERATED — that is what keeps ExpandMcpWildcard's server list complete). The
-        // tools were already truncation-wrapped by the provider (ADR 0004). Capability (SupportsTools) is the
-        // outer gate, exactly as for the static keys.
-        //
-        // Each server's tools are sorted by name (ADR 0104): ListToolsAsync guarantees no order, and the tool array
-        // sits in the cached request prefix, so a reshuffle between activations would cost a full cache miss.
-        // Servers keep their stored config order, which only the user changes.
-        if (capabilities.SupportsTools)
+        // IsToolEnabled filter and BEFORE the capability intersection below. Which ones is the selection's call
+        // (ToolSelection.SelectedMcpTools: their own three-level hierarchy, sorted per server, none on a no-tools
+        // model); the wrappers are the grain's, because each closes over this conversation. A user with zero
+        // configured MCP servers has an empty _mcpServers, so nothing is added. The tools were already
+        // truncation-wrapped by the provider (ADR 0004).
+        foreach (var (server, t) in _toolSelection.SelectedMcpTools(SelectionContext(), capabilities, enabled))
         {
-            foreach (var server in _mcpServers)
-            {
-                tools.AddRange(server.Tools
-                    .Where(t => ToolCatalog.IsMcpToolEnabled(server.ServerId, t.Name, enabled))
-                    .OrderBy(t => t.Name, StringComparer.Ordinal)
-                    .Select(t => WithReauthNotice(server, WithUrlSeeding(server, WithElicitation(server, t)))));
-            }
+            tools.Add(WithReauthNotice(server, WithUrlSeeding(server, WithElicitation(server, t))));
         }
 
         return tools;
@@ -355,9 +358,7 @@ public sealed partial class AgentGrain
     // no-tools model. Shared by both compositions: the ChatClientAgent hands their paths to AgentSkillsProvider and
     // a copilot chat hands them to Copilot's native skill loader.
     private List<SkillInfo> SelectedSkills(ModelCapabilities capabilities, HashSet<string> enabled)
-        => capabilities.SupportsTools
-            ? [.. MergedSkills().Where(s => ToolCatalog.IsSkillEnabled(s.Name, enabled))]
-            : [];
+        => _toolSelection.SelectedSkills(SelectionContext(), capabilities, enabled);
 
     // Wraps one SELECTED tool of a URL-seeding MCP server so the URLs in its result seed this conversation's
     // fetchable list (ADR 0067). Applied AFTER the per-tool selection filter, so a deselected tool is never
@@ -394,16 +395,11 @@ public sealed partial class AgentGrain
             ? new ReauthNoticeMcpTool(fn, server.ServerId, server.ServerName)
             : tool;
 
-    // The tools this conversation may use, resolved three-layer (ADR 0021): a per-conversation override or an
-    // agent snapshot (_state.State.EnabledTools) wins; else the user's default read on activation; else all
-    // selectable tools (the null==all sentinel, today's behaviour). This is INTENT only — for TOOLS, BuildAgent
-    // still intersects it with model capability, which stays the authoritative security gate (ADR
-    // 0013/0015). ToolCatalog.Memory is the one key exempt from that intersection (ADR 0057): it gates a
-    // context provider, not a tool, so it never passes through the Tools filter at all.
-    private IReadOnlyList<string> EffectiveEnabledTools()
-        => _state.State.EnabledTools
-            ?? _userDefaultEnabledTools
-            ?? ToolCatalog.AllSelectableToolKeys;
+    // The tools this conversation may use, resolved three-layer (ADR 0021) by the selection: a per-conversation
+    // override or an agent snapshot (_state.State.EnabledTools) wins; else the user's default read on activation; else
+    // all selectable tools (the null==all sentinel). This is INTENT only — for TOOLS, BuildAgent still intersects it
+    // with model capability, which stays the authoritative security gate (ADR 0013/0015).
+    private IReadOnlyList<string> EffectiveEnabledTools() => _toolSelection.EffectiveEnabledTools(SelectionContext());
 
     public async Task SetEnabledToolsAsync(IReadOnlyList<string>? tools)
     {
@@ -424,123 +420,8 @@ public sealed partial class AgentGrain
             this.GetPrimaryKeyString(), _state.State.EnabledTools is null ? "all" : string.Join(",", _state.State.EnabledTools));
     }
 
-    // Both wildcards are expanded before the effective selection reaches the picker. Each expansion appends
-    // its keys at the TAIL, so composing skills-outermost projects a null (all) selection as
-    // [static keys..., mcp:{id}..., skill:{name}...]. Note this is NOT the order Sanitize produces
-    // (static, then skill:, then mcp:) — the two are independent projections of an unordered set, one for the
-    // picker and one for persistence, and nothing depends on them agreeing. What DOES depend on this order:
-    // BindAgent_SnapshotsEnabledTools and LegacyState_NullEnabledTools_MeansAll use an order-sensitive
-    // Assert.Equal. Both run with zero MCP servers, so they only pin the [static..., skill:{name}...] tail —
-    // which is exactly why the mcp:/skill: relative order has no test and this comment has to be right.
+    // Both wildcards (`mcp`, `skills`) are expanded before the effective selection reaches the picker; see
+    // ToolSelection.ExpandedEnabledTools for the order and the empty-tool-list rule.
     public Task<IReadOnlyList<string>> GetEnabledToolsAsync()
-        => Task.FromResult(ExpandSkillsWildcard(ExpandMcpWildcard(EffectiveEnabledTools())));
-
-    // Expands the MCP wildcards into the explicit keys the picker actually renders, before the effective
-    // selection reaches it (ADR 0026, extended one level down by per-tool selection). TWO levels now:
-    //
-    //   `mcp`            → mcp:{id}          for every server, then each of those in turn →
-    //   `mcp:{id}`       → mcp:{id}:{tool}   for every tool in that server's KnownToolNames
-    //
-    // WHY this is load-bearing: EffectiveEnabledTools materializes AllSelectableToolKeys (which carries the
-    // bare `mcp` wildcard, NOT any mcp:{id}) for every null/all conversation. The picker renders only keys
-    // present in the catalog, and `mcp` has no checkbox there — so a picker Save would drop the wildcard and
-    // add no per-server key, silently disabling EVERY MCP server. The same argument now applies one level
-    // down. The gate (EffectiveEnabledTools, via IsMcpToolEnabled) still honours both raw wildcards, so this
-    // stays a read-only, client-facing projection that never changes what is persisted.
-    //
-    // ⚠ THE ONE RULE THAT MUST NOT BE SIMPLIFIED: a server whose KnownToolNames is empty keeps its bare
-    // mcp:{id} key, UNEXPANDED. Expanding it into nothing would emit a master checkbox with zero children, and
-    // both master states are then wrong — unchecked drops a stored partial selection and silently disables the
-    // server; checked ("all children ticked" being vacuously true over zero children) collapses back to
-    // mcp:{id} and silently re-grants tools the user deliberately deselected. That is the exact failure this
-    // feature exists to avoid, reproduced by the rule meant to close it.
-    // GetEnabledTools_UnknownToolList_KeepsServerKeyIntact pins it.
-    //
-    // Names come from the GROUP's KnownToolNames — never from live Tools. The catalog endpoint reads the same
-    // persisted list, so the picker and this projection cannot disagree; deriving from Tools would diverge the
-    // moment a server is briefly unreachable (empty Tools, names intact) and mint keys with no checkbox.
-    private IReadOnlyList<string> ExpandMcpWildcard(IReadOnlyList<string> effective)
-    {
-        var expanded = effective.Contains(ToolCatalog.Mcp)
-            ? effective
-                .Where(k => k != ToolCatalog.Mcp)
-                .Concat(_mcpServers.Select(s => ToolCatalog.McpServerKey(s.ServerId)))
-            : effective;
-
-        return [.. expanded.SelectMany(ExpandOneServerKey).Distinct(StringComparer.Ordinal)];
-    }
-
-    // One key's projection: a per-server key becomes its per-tool keys when that server's tools are known,
-    // and stays itself otherwise (see the rule above). Anything that is not a per-server key passes through.
-    // Extracted rather than nested so ExpandMcpWildcard stays under the cognitive-complexity gate (ADR 0050).
-    private IEnumerable<string> ExpandOneServerKey(string key)
-    {
-        if (!ToolCatalog.IsMcpServerKey(key))
-        {
-            return [key];
-        }
-
-        var group = _mcpServers.FirstOrDefault(s => key == ToolCatalog.McpServerKey(s.ServerId));
-        return group?.KnownToolNames is { Count: > 0 } names
-            ? names.Select(n => ToolCatalog.McpToolKey(group.ServerId, n))
-            : [key];
-    }
-
-    // Expands the bare `skills` wildcard into a per-skill key (skill:{name}) for each skill in the MERGED
-    // catalog before the effective selection reaches the picker — the exact hazard ExpandMcpWildcard closes
-    // for MCP servers, for the exact same reason: EffectiveEnabledTools materializes AllSelectableToolKeys
-    // (which carries the bare `skills` wildcard, NOT any skill:{name}) for every null/all conversation, the
-    // picker renders only keys present in the catalog, and `skills` has no checkbox there — so a picker Save
-    // would drop the wildcard and add no per-skill key, silently disabling EVERY skill. The gate (via
-    // IsSkillEnabled) still honours the raw wildcard, so this is a read-only, client-facing projection that
-    // never changes what is persisted.
-    //
-    // NOT static, unlike its ADR 0048 form: it reads _userSkills, resolved in OnActivateAsync. ADR 0048's
-    // claim that this expansion "needs no grain field ... there is no OnActivateAsync ordering hazard here"
-    // held only while skills were process-wide; ADR 0049 made them per-user and re-opened the hazard.
-    private IReadOnlyList<string> ExpandSkillsWildcard(IReadOnlyList<string> effective)
-    {
-        if (!effective.Contains(ToolCatalog.Skills))
-        {
-            return effective;
-        }
-
-        return
-        [
-            .. effective
-                .Where(k => k != ToolCatalog.Skills)
-                .Concat(MergedSkills().Select(s => ToolCatalog.SkillKey(s.Name)))
-                .Distinct(StringComparer.Ordinal),
-        ];
-    }
-
-    /// <summary>
-    /// The skills this conversation can see: the shipped catalog OVERLAID with this user's uploads (ADR
-    /// 0049). An upload with the same name as a shipped skill <b>wins</b> — it shadows the built-in
-    /// entirely: name, description, guidance and all.
-    ///
-    /// <para>The comparison is <see cref="StringComparer.OrdinalIgnoreCase"/> even though the framework's own
-    /// name rule is lowercase-only. Two names differing only in case are ONE directory on NTFS and TWO on
-    /// ext4, and a merge that produced a different set on the two would be the same platform-dependence bug
-    /// the shipped catalog's de-dupe tie-break already had to fix — green on Windows, red on Linux. The
-    /// surviving entry's name is emitted verbatim, so a shadowing upload also supplies the key's spelling.</para>
-    ///
-    /// <para>Used by BOTH the provider gate and <see cref="ExpandSkillsWildcard"/>, deliberately: the picker
-    /// and the gate must agree about which skills exist, or a key the user can tick would gate nothing.</para>
-    /// </summary>
-    private IReadOnlyList<SkillInfo> MergedSkills()
-    {
-        if (_userSkills.Count == 0)
-        {
-            return SkillCatalog.Skills;
-        }
-
-        var shadowed = _userSkills.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return
-        [
-            .. _userSkills
-                .Concat(SkillCatalog.Skills.Where(s => !shadowed.Contains(s.Name)))
-                .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase),
-        ];
-    }
+        => Task.FromResult(_toolSelection.ExpandedEnabledTools(SelectionContext()));
 }

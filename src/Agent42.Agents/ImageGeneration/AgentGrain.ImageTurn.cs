@@ -11,11 +11,9 @@ namespace Agent42.Agents;
 /// (<c>assistantImageId</c>) and never joined by assistant-message position, which is not 1:1 with
 /// turns.
 ///
-/// <para><b>Cross-file invariant.</b> <see cref="GenerateImageTurnAsync"/> skips its state write when
-/// the turn-scoped <c>_ephemeral</c> flag is set, but that flag is declared AND cleared in the core
-/// part (<c>Conversations/AgentGrain.cs</c>). Read the ephemeral-chat entry in
-/// <c>.agentic/gotchas.md</c> before touching either half — this is the one documented invariant this
-/// split separates, and it is covered by the named ephemeral regression tests.</para>
+/// <para><see cref="GenerateImageTurnAsync"/> skips its state write on an incognito turn. It reads the run's own
+/// <see cref="TurnContext.Ephemeral"/>, passed in by the caller (ADR 0106), and the named ephemeral regression tests
+/// cover it.</para>
 /// </summary>
 public sealed partial class AgentGrain
 {
@@ -31,7 +29,7 @@ public sealed partial class AgentGrain
     // storage, and record a user+assistant turn into the session so it renders in history and drives later
     // edits. Bytes go to blob storage only; the session holds a short UriContent reference + the id (ADR 0004).
     private async IAsyncEnumerable<AgentStreamEvent> GenerateImageTurnAsync(
-        string message, IReadOnlyList<AttachmentRef>? attachments, WebhookTurn webhookTurn)
+        string message, IReadOnlyList<AttachmentRef>? attachments, WebhookTurn webhookTurn, TurnContext turn)
     {
         var ownerKey = this.GetPrimaryKeyString();
 
@@ -117,24 +115,24 @@ public sealed partial class AgentGrain
         // Ephemeral (ADR 0034): skip the session write. The generated image's bytes still land in the
         // attachments blob container (session-only ephemerality — an accepted, documented limitation),
         // but the conversation itself leaves no trace in Cosmos.
-        if (!_ephemeral)
+        if (!turn.Ephemeral)
         {
-            // Retention (ADR 0016). INSIDE the if, unlike the other two sites: this one guards _ephemeral
+            // Retention (ADR 0016). INSIDE the if, unlike the other two sites: this one guards ephemeral
             // with a real block rather than an early return, and an incognito turn must not prune.
             CompactToolPayloads();
-            var pruned = await ApplyRetentionAsync();
+            var pruned = ApplyRetention();
 
             var serializedSession = await _agent.SerializeSessionAsync(_session);
             _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
             await _state.WriteStateAsync();
 
             // After the write, for the reason given at the chat site.
-            await ReconcileSearchIndexAfterPruneAsync(pruned);
+            await _search.ReconcileAfterPruneAsync(pruned);
 
-            // Search projection (ADR 0061). This site really does have an `if (!_ephemeral)` block —
+            // Search projection (ADR 0061). This site really does have an `if (!turn.Ephemeral)` block —
             // unlike the other two, which are an early return and a no-guard-by-design path — so the
             // write goes INSIDE it. Best-effort inside.
-            await IndexNewTurnsForSearchAsync();
+            await _search.IndexNewTurnsAsync();
 
             // Outbound webhook (ADR 0094), fire site 2 of 3: inside this site's own persist block, because the image
             // turn never reaches the chat persist. A count only, never the image's URL (credential-bearing).
@@ -147,7 +145,7 @@ public sealed partial class AgentGrain
         {
             // Same reason as the chat path: consume the ordinals so a later normal turn on this
             // activation cannot re-project this incognito turn into the search index (ADR 0061).
-            await SkipIndexingForEphemeralTurnAsync();
+            await _search.SkipEphemeralTurnAsync();
 
             _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral image-generation turn (not persisted)",
                 this.GetPrimaryKeyString());
@@ -255,7 +253,7 @@ public sealed partial class AgentGrain
     // for every assistant message it deletes, which is grain state and would otherwise grow unbounded. The
     // blob bytes are deliberately left behind — IAttachmentStore has no delete, and conversation delete
     // already orphans them.
-    private static string? AssistantImageId(ChatMessage message)
+    internal static string? AssistantImageId(ChatMessage message)
         => message.AdditionalProperties?.TryGetValue(AssistantImageIdKey, out var value) == true
             && value?.ToString() is { Length: > 0 } id
             ? id

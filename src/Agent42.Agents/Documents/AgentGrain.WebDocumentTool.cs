@@ -33,7 +33,7 @@ public sealed partial class AgentGrain
     ///
     /// <para><b>It is refused on an incognito turn</b> (ADR 0034), exactly as <c>schedule_prompt</c> is:
     /// ingestion writes durable vector chunks, which is precisely what an ephemeral chat promises not to
-    /// do. The gate is read here, per turn, against <c>_ephemeral</c> — never in <c>BuildAgent</c>, which
+    /// do. The gate is read here, per run, from <see cref="TurnContext.CurrentOrClosed"/> — never in <c>BuildAgent</c>, which
     /// runs before the turn's flag is known.</para>
     ///
     /// <para><b>The excerpts are ranked in process, over the chunks just embedded</b> —
@@ -72,7 +72,7 @@ public sealed partial class AgentGrain
 
         // Incognito (ADR 0034). Refused BEFORE the fetch, so an ephemeral turn makes no outbound request
         // either — not merely no durable write.
-        if (_ephemeral)
+        if (TurnContext.CurrentOrClosed.Ephemeral)
         {
             return "I cannot read a document into an incognito chat. Ingesting a document stores its text " +
                 "for retrieval, which an incognito chat deliberately never does. Start a normal chat to " +
@@ -180,7 +180,7 @@ public sealed partial class AgentGrain
             _state.State.WebDocumentUrls.RemoveAt(0);
         }
 
-        _webDocumentIngested = true;
+        TurnContext.CurrentOrClosed.RecordWebDocumentIngested();
         await _state.WriteStateAsync();
     }
 
@@ -257,7 +257,7 @@ public sealed partial class AgentGrain
                 + "need to read it again.",
         };
 
-    // Consumes the deferred-rebuild flag set by a mid-run ingest, rebuilding the agent so the newly
+    // Consumes the run's deferred-rebuild flag (TurnContext.WebDocumentIngested, ADR 0106) set by a mid-run ingest, rebuilding the agent so the newly
     // ingested document reaches the instructions AND attaches the always-on retrieval provider (ADR 0008)
     // from the next model call onward. Snapshot → rebuild → restore, the same shape as
     // RegisterDocumentAsync and BindAgentAsync; the difference is only WHEN it is safe to run.
@@ -271,14 +271,12 @@ public sealed partial class AgentGrain
     //
     // A plain method call, so it adds NOTHING to either caller's cognitive complexity (S3776 counts
     // branching, not calls) — the branch stays here.
-    private async Task RebuildForIngestedWebDocumentAsync()
+    private async Task RebuildForIngestedWebDocumentAsync(TurnContext turn)
     {
-        if (!_webDocumentIngested)
+        if (!turn.TakeWebDocumentIngested())
         {
             return;
         }
-
-        _webDocumentIngested = false;
 
         await RebuildAgentPreservingSessionAsync(_modelId);
 

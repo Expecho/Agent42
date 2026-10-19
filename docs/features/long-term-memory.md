@@ -37,7 +37,7 @@ flowchart TD
     CFG{"Hindsight:ApiKey set?"} -->|no| NULL["HindsightIntegration(null)<br/>no provider, zero calls"]
     CFG -->|yes| SEL{"selection contains 'memory'?"}
     SEL -->|no| NONE["no provider this chat"]
-    SEL -->|yes| PROV["HindsightMemoryProvider<br/>BankId = userId, IsEnabled = !_ephemeral"]
+    SEL -->|yes| PROV["HindsightMemoryProvider<br/>BankId = userId, IsEnabled = !turn.Ephemeral"]
     PROV --> RECALL["before the model call:<br/>recall(message) → instructions"]
     RECALL --> MODEL["model call"]
     MODEL --> RETAIN["after the turn:<br/>retain(message + reply, async)"]
@@ -82,7 +82,7 @@ private HindsightMemoryProvider? BuildMemoryProvider(ISet<string> enabled)
         {
             BankId = UserIdFromGrainKey(this.GetPrimaryKeyString()),
             Mission = _memory.Mission,
-            IsEnabled = () => !_ephemeral,
+            IsEnabled = () => !TurnContext.CurrentOrClosed.Ephemeral,
         });
 }
 ```
@@ -107,7 +107,7 @@ if (BuildMemoryProvider(enabled) is { } memoryProvider)
 
 | Case | Why |
 |------|-----|
-| Incognito turn | `IsEnabled = () => !_ephemeral` |
+| Incognito turn | `IsEnabled = () => !TurnContext.CurrentOrClosed.Ephemeral` |
 | Image-generation turn | Recorded through a separate one-shot agent with no context providers |
 | An agent called over MCP (`/api/agent-mcp`, ADR 0070) | `WithoutMemoryOrPush` removes the key: a key holder must not read or write the owner's bank |
 | An agent chat bound before the key shipped | The bind snapshot is immutable (ADR 0003), so memory stays off. It fails safe. A continuous agent can only be reset by deleting its chat |
@@ -130,9 +130,8 @@ exemption.
 
 - Nothing is stored in Orleans: the bank lives at Hindsight, keyed by the user id taken from the
   `AgentGrain` key `{userId}/{conversationId}`.
-- The per-turn `_ephemeral` flag is a turn-scoped grain field. It is cleared in `ChatAsync`'s
-  `finally` and reset on `EnqueuePromptAsync` and `ReceiveReminder` (both always persist), which is
-  what keeps a later turn from inheriting "incognito".
+- Incognito is per run: the run's `TurnContext` (ADR 0106), read at invoke time, so a later turn never
+  inherits it. Outside a run the context is closed, which reads as incognito, so memory fails off.
 
 ## Configuration health
 

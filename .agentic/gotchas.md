@@ -18,8 +18,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 | Shape                                          | Exemplar                                          | Verified   |
 |------------------------------------------------|---------------------------------------------------|------------|
-| Orleans grain (state + reminders + agent tools) | `src/Agent42.Agents/Conversations/AgentGrain.cs` | 2026-08-18 |
-| Feature-sliced partial of a large grain          | `src/Agent42.Agents/Web/AgentGrain.WebTools.cs`   | 2026-08-18 |
+| Orleans grain (state + reminders + agent tools) | `src/Agent42.Agents/Conversations/AgentGrain.cs` | 2026-10-19 |
+| Feature-sliced partial of a large grain          | `src/Agent42.Agents/Web/AgentGrain.WebTools.cs`   | 2026-10-19 |
+| Grain-delegated service (per-activation, explicit context, interface for tests) | `src/Agent42.Agents/Search/ChatSearchProjection.cs` | 2026-10-19 |
 | Per-user registry grain (list-in-state)         | `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs`        | 2026-07-07 |
 | Per-user singleton-preference grain (get/save)  | `src/Agent42.Agents/Users/UserProfileGrain.cs`          | 2026-07-08 |
 | Minimal-API endpoint group                      | `src/Agent42.Backend/Users/AgentApi.Users.cs`      | 2026-08-18 |
@@ -247,7 +248,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   never collide — do not "fix" the derivation to hash or encode the id.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/agents.js` (`startAgentChat`),
   `src/Agent42.Agents/StoredAgents/AgentDefinition.cs` (`Continuous`), `src/Agent42.Backend/Api/AgentApi.cs` (`AgentKey`),
-  `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs`, `src/Agent42.Agents/Conversations/RetentionLimits.cs`,
+  `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs` (`IsRetentionWindowed`),
+  `src/Agent42.Agents/Conversations/HistoryRetention.cs`, `src/Agent42.Agents/Conversations/RetentionLimits.cs`,
   `.agentic/decisions/0016-per-agent-history-mode-deterministic-conversation-id.md`,
   `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0003-snapshot-agent-persona-into-conversation.md`
@@ -529,98 +531,68 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `infra/modules/container-app.bicep` (two containers in `template.containers`)
 - **Verified:** 2026-07-12
 
-### A grain's turn-scoped field lives for the ACTIVATION — clear it explicitly, or a reminder reuses it
+### Per-run state is a `TurnContext`, never a grain field — tools reach it only inside the run, and it fails closed
 
-- **Claim:** `AgentGrain._ephemeral` holds the incognito flag for the turn being processed (ADR 0034), and it
-  reads like per-call state. **It is not: a private field lives for the grain *activation*.** So "the reminder
-  path just leaves it unset" is *false* — `ReceiveReminder` is a separate call on the same activation, and after
-  an incognito chat turn the field would still be set, so the reminder would skip its own write. **Non-reentrancy
-  is not the argument that makes it safe** either — `ChatAsync` is an `IAsyncEnumerable` method that suspends
-  between `yield return`s. The only thing that makes it safe is clearing it explicitly: a `finally` in `ChatAsync`
-  (which also runs when a client abandons the stream, on the enumerator's disposal) and a reset on entry to
-  `EnqueuePromptAsync` and `ReceiveReminder`. Any future per-turn field on this grain inherits this trap; PII
-  especially should not sit in memory between turns — which is why the user's position, the family's first
-  member (ADR 0012), is no longer a field at all: since ADR 0093 the browser answers the
-  `get_current_location` client tool, so the fix lives only in one tool call's locals.
-  **The family is now three:** `_ephemeral`, `_interactiveTurn` and — since ADR 0066 — `_webDocumentIngested`,
-  all declared together and all cleared in the same three places (`ChatAsync`'s `finally`, and on entry to
-  `EnqueuePromptAsync` and `ReceiveReminder`). Keep them together; the reason
-  `ReceiveReminder` lives in the core part rather than under `Scheduling/` is that these clears must be
-  read as one block.
-  **`_pushesThisTurn` (ADR 0075) is declared in that same block but is deliberately NOT a fifth member of
-  this rule** — it resets in **two** places, not three, because it always resets to `0` and so belongs in
-  the shared `ChatCoreAsync` that both chat callers drain, while the three above carry a *different value*
-  per path and can only be set by the caller. Do not "harmonise" it into the three-site pattern; read the
-  push-per-turn-counter entry for the reason `ReceiveReminder` still needs its own line.
-  **`_mcpReauthNotified` (ADR 0081) is deliberately ACTIVATION-scoped and is not a member either.** It records
-  which MCP servers were already shown a Reconnect notice, so it must outlive the turn — that is the point —
-  and it is cleared only when the MCP tool set is re-resolved. It is written **only** by an interactive run
-  (the `interactive` local captured at the top of `ChatCoreAsync`), because a background drain that consumed
-  it would hide the notice from the user's next real turn. The *per-run* set of servers that answered 401 is
-  a **local** (`McpReauthTurnObserver`), never a field: two runs can be in flight on one activation, and a
-  field would be wiped or polluted by the other one. Do not "tidy" either into the clear ritual.
-  **The research fields (ADR 0082) are not members either.** `_researchInFlight` names a RUNNING turn, so it is
-  published and cleared by identity like `_turnCts` (`??=` in `BeginResearchRun`, cleared only if still ours in
-  `ReleaseResearchRun`, from a `finally` at both run sites). `_researchTodos` describes the CURRENT agent and is
-  reassigned by every `BuildAgent`. The per-run state (boundaries, reply iteration) is a `ResearchRun` keyed by the
-  turn's user message, never a field.
-- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_ephemeral`, the `finally` in `ChatAsync`, the
-  resets in `EnqueuePromptAsync` and `ReceiveReminder`; `_mcpReauthNotified`, `TakeMcpReauthNotices`),
-  `tests/Agent42.Tests/AgentGrainTests.cs` (`EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists`,
-  `ReceiveReminder_HasNoUserLocation`, `Location_IsNotPersisted`),
-  `tests/Agent42.Tests/ProjectLayoutTests.cs` (`TurnScopedField_IsDeclaredInTheCorePart`),
-  `tests/Agent42.Tests/McpReauthTests.cs` (`ABackgroundRun_DoesNotConsumeTheNotice`),
-  `.agentic/decisions/0093-location-as-a-client-tool.md`, `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
-- **Verified:** 2026-10-09
-
-### Ephemeral chat: `_ephemeral` is the same turn-scoped trap, and scheduling must be refused inside the tool
-
-- **Claim:** the incognito flag (ADR 0034) is the archetype of the turn-scoped family above — a turn-scoped
-  `AgentGrain` field that **lives for the activation** and must be cleared explicitly, or a warm grain's
-  next (non-ephemeral) turn silently inherits it and **skips its own `WriteStateAsync`**, losing a chat the
-  user expected to keep. It is cleared in `ChatAsync`'s `finally` and defensively
-  reset on entry to the two always-persisting async paths (`EnqueuePromptAsync`, `ReceiveReminder`).
-  `EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists` pins this. Two more traps in the same
-  feature: **(1)** scheduling is refused **inside `SchedulePromptAsync`** (an early `if (_ephemeral) return
-  …`), NOT by dropping the tool in `BuildAgent` — `BuildAgent` runs on activation *before* the first request
-  sets `_ephemeral` (the same ordering hazard as `_userDefaultEnabledTools`), so a per-turn tool-list rebuild
-  would be fragile; the in-tool guard has no ordering hazard and registers nothing durable (a reminder would
-  otherwise fire the persisting/pushing `ReceiveReminder`). **(2)** the guarantee is "not persisted, not
-  listed", **not** "not in memory": while the grain is activated its `_session` still holds the chat, so
-  `GET /messages` reflects it live — the trace-free property only shows up after deactivation (asserted via
-  `EphemeralChat_LeavesNoHistory_AfterReactivation`, not an empty `/messages`). Documents are blocked at the
-  composer (RAG writes durable chunks); images are allowed (blob bytes persist — accepted, session-only).
-  **`send_push_notification` (ADR 0075) is the THIRD tool to follow trap (1)** — an early
-  `if (_ephemeral) return …` as its very first guard, for the reason ADR 0034 gives by name: a Web Push by
-  itself breaks the guarantee, because the title and body become a durable plaintext artifact in the OS
-  notification shade and an incognito chat has no sidebar row for the notification to point back at.
-  `PushTool_EphemeralChat_RefusesAndSendsNothing` asserts the turn-scoped half too.
-  **`read_web_document` (ADR 0066) follows trap (1) exactly** — an early `if (_ephemeral) return …` inside
-  the tool, for the same reason and with the same ordering argument, and placed **before the fetch** so an
-  incognito turn makes no outbound request either. `ReadWebDocument_RefusedOnEphemeralTurn` also asserts the
-  turn-scoped half (the next normal turn on the same warm activation succeeds). Note the composer's document
-  block is a *client* gate on uploads and does not cover this path at all — the tool is the only gate here.
-- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_ephemeral`; the `finally` in `ChatAsync`; the guards on
-  the two `WriteStateAsync` calls in `ChatCoreAsync`/`GenerateImageTurnAsync`; the refusal in
-  `SchedulePromptAsync`). **The flag is now split across part files (ADR 0039):** it is declared and
-  cleared in `src/Agent42.Agents/Conversations/AgentGrain.cs`, but the write-skip it guards in
-  `GenerateImageTurnAsync` lives in `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`, and
-  the `SchedulePromptAsync` refusal in
-  `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs` — read all three before changing any one.
-  Also: `src/Agent42.Agents/Conversations/AgentGrain.cs` (the resets in
-  `EnqueuePromptAsync`/`ReceiveReminder`),
-  `src/Agent42.Backend/Conversations/ChatContracts.cs` (`ChatRequest.Ephemeral`, the `TouchAsync` skip),
-  `src/Agent42.Backend/wwwroot/js/agents.js` (`ephemeral`, `setIncognito`), `src/Agent42.Backend/wwwroot/js/attachments.js` (the incognito document gate in
-  `handleFiles`), `tests/Agent42.Tests/AgentGrainTests.cs`
-  (`EphemeralChat_RunsTheTurn_ButPersistsNothing`, `EphemeralChat_LeavesNoHistory_AfterReactivation`,
-  `EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists`,
-  `EphemeralChat_SchedulingIsRefused_NoReminderRegistered`),
-  `tests/Agent42.Tests/AgentApiTests.cs` (`EphemeralChat_IsNotListedInTheSidebar`),
-  `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs` (the `read_web_document` refusal),
-  `src/Agent42.Agents/Push/AgentGrain.PushTool.cs` (the `send_push_notification` refusal),
-  `tests/Agent42.Tests/WebDocumentToolTests.cs` (`ReadWebDocument_RefusedOnEphemeralTurn`),
+- **Claim:** the state of ONE run — incognito, interactive, the client-tool broker, the push and `read_document`
+  budgets, the mid-run web-document ingest — is a `TurnContext` (ADR 0106), created at each run entry
+  (`TurnContext.ForChat` in `ChatAsync`, `TurnContext.ForBackground()` in `EnqueuePromptAsync` and
+  `ReceiveReminder`) and passed explicitly down the grain side as a `turn` parameter. **Never put such state back in
+  a field:** a private field lives for the *activation*, and two runs can be in flight on one activation —
+  `ChatAsync` suspends between `yield return`s, and a reminder or `EnqueuePromptAsync` run executes in that gap.
+  Measured: while these were fields, a reminder firing mid-stream reset the streaming turn's push budget (a fourth
+  push went out) and unset its incognito (the turn persisted). There are no reset rituals any more, because there
+  is nothing turn-valued left to reset.
+  **(1) Reach.** Tools and context providers have no per-run argument, so they read `TurnContext.CurrentOrClosed`:
+  one private `AsyncLocal`, set only by `TurnContext.RunInAsync`, which the grain wraps around every pull and the
+  dispose of a streaming run (`PullAsync`/`DisposeRunAsync`) and around the reminder's `RunAsync`. Code outside
+  those frames (grain code between pulls, a separate grain call, a thread started with flow suppressed) sees
+  `TurnContext.Closed`: ephemeral, no
+  broker, budgets exhausted, mutations ignored. That is the safe direction — do not add a "friendlier" fallback.
+  Grain-side code uses its `turn` parameter, never `CurrentOrClosed`.
+  **(2) Copilot.** The Copilot SDK invokes custom tools on its RPC thread, where no `ExecutionContext` flows.
+  `SchedulerBoundAIFunction` resolves it from the grain's by-identity `_copilotRuns` registry
+  (`OpenCopilotRun`/`CloseCopilotRun`), which is authoritative: a flowed context is kept only while its run is still
+  registered (an SDK that captured one once would otherwise reuse a finished run's budget), else the run is used only
+  when **exactly one** Copilot run is in flight; with zero or several the tool runs under `Closed` and refuses. A first-wins slot would hand
+  one run's tool the other run's budget. The test twin `ChatClientCopilotAgentFactory` calls tools under
+  `ExecutionContext.SuppressFlow()` so silo tests take this path.
+  **(3) Incognito (ADR 0034).** The tools that would leave a durable trace — `schedule_prompt`,
+  `send_push_notification`, `read_web_document` (before the fetch, so no outbound request either), the artifact
+  tools and `update_shared_state` — refuse **inside the tool** (`if (TurnContext.CurrentOrClosed.Ephemeral) return
+  …`), NOT by dropping the tool in `BuildAgent`: `BuildAgent` runs at activation and rebind, not per turn, so a
+  build-time tool list cannot know which run is incognito. Likewise a context provider reads incognito through a
+  delegate at invoke time (memory's `IsEnabled = () => !TurnContext.CurrentOrClosed.Ephemeral`, the shared-state
+  provider's getter), never a value captured at build time. The guarantee is "not persisted, not listed", **not**
+  "not in memory": while the activation lives, `_session` still holds the chat and `GET /messages` reflects it.
+  The write is skipped from the run's own flag at two sites (`PersistTurnUnlessEphemeralAsync(turn)` and the image
+  turn's `GenerateImageTurnAsync(…, turn)`). Documents are blocked only at the composer; for `read_web_document`
+  the tool is the only gate.
+  **What stays a field** names a running turn by identity or is activation-scoped by design: `_turnCts`,
+  `_researchInFlight`, `_clientToolBrokers`, `_runsInFlight`, and `_mcpReauthNotified` (ADR 0081: outlives the turn
+  on purpose, and is written only when `turn.Interactive`, so a background drain never consumes a Reconnect notice).
+- **Evidence:** `src/Agent42.Agents/Conversations/TurnContext.cs`, `src/Agent42.Agents/Conversations/AgentGrain.cs`
+  (`ChatAsync`, `EnqueuePromptAsync`, `ReceiveReminder`, `_mcpReauthNotified`),
+  `src/Agent42.Agents/ClientTools/AgentGrain.ClientTools.cs` (`PullAsync`, `DisposeRunAsync`),
+  `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`_copilotRuns`, `OpenCopilotRun`),
+  `src/Agent42.Agents/Copilot/SchedulerBoundAIFunction.cs`, `src/Agent42.Agents/Copilot/ChatClientCopilotAgentFactory.cs`,
+  `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`, `src/Agent42.Agents/Push/AgentGrain.PushTool.cs`,
+  `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`, `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs`,
+  `src/Agent42.Agents/SharedState/AgentGrain.SharedState.cs`, `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`,
+  `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`, `src/Agent42.Backend/Conversations/ChatContracts.cs`
+  (`ChatRequest.Ephemeral`), `src/Agent42.Backend/wwwroot/js/attachments.js` (the incognito gate in `handleFiles`),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`ReminderFiringMidStream_DoesNotResetTheStreamingTurnsPushBudget`,
+  `ReminderFiringMidStream_DoesNotUnsetTheStreamingTurnsIncognito`,
+  `EphemeralFlag_IsClearedAfterTheTurn_SoTheNextNormalTurnPersists`, `EphemeralChat_RunsTheTurn_ButPersistsNothing`,
+  `EphemeralChat_LeavesNoHistory_AfterReactivation`, `EphemeralChat_SchedulingIsRefused_NoReminderRegistered`,
+  `PushTool_EphemeralChat_RefusesAndSendsNothing`, `EphemeralTurn_NeitherRecallsNorRetains`),
+  `tests/Agent42.Tests/CopilotSeamTests.cs` (`CopilotTool_SeesItsRunsTurnContext`, `CopilotTool_TwoRunsInFlight_Refuses`),
+  `tests/Agent42.Tests/ProjectLayoutTests.cs` (`TurnScopedState_IsNeverAGrainField`,
+  `TurnContext_IsReadOnlyThroughTheFailClosedAccessor`), `tests/Agent42.Tests/WebDocumentToolTests.cs`
+  (`ReadWebDocument_RefusedOnEphemeralTurn`), `tests/Agent42.Tests/McpReauthTests.cs`
+  (`ABackgroundRun_DoesNotConsumeTheNotice`), `tests/Agent42.Tests/AgentApiTests.cs`
+  (`EphemeralChat_IsNotListedInTheSidebar`), `.agentic/decisions/0106-agentgrain-services-and-turn-context.md`,
   `.agentic/decisions/0034-ephemeral-chat.md`
-- **Verified:** 2026-09-04
+- **Verified:** 2026-10-19
 
 ### `get_current_location` is NOT an SSRF sink — and exactly two properties keep it that way
 
@@ -818,8 +790,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   1.13.0, ADR 0048): `AgentFileSkillsSource` returns an **empty list — it does not throw** — for that
   directory. So the framework enforces `name == directory name`, skill names are unique for free, and a
   renamed directory that forgets its `SKILL.md` drops the skill out of the picker with no error anywhere.
-- **Evidence:** `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`SelectedSkills`, shared with the copilot
-  composition since ADR 0085, and `BuildAgent`'s `AIContextProviders` switch),
+- **Evidence:** `src/Agent42.Agents/Tools/ToolSelection.cs` (`SelectedSkills`, shared with the copilot
+  composition since ADR 0085 through the grain's `SelectedSkills` wrapper),
+  `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent`'s `AIContextProviders` switch),
   `src/Agent42.Agents/Tools/SkillCatalog.cs` (`Discover`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`NoToolModel_RegistersNoTools_AndNoSkillsProvider`,
   `NoToolModel_StillGetsDocumentRetrieval`, `SkillsDisabled_DropsLoadSkill_KeepsRetrieval`,
@@ -1073,22 +1046,20 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Registration_WiresGuardNoRedirectAndNoResilience`)
 - **Verified:** 2026-10-10
 
-### The webhook fires on the PERSISTED flag, never on `_ephemeral`, and at THREE sites
+### The webhook fires on the PERSISTED flag, and at THREE sites
 
 - **Claim:** a stored agent's webhook (ADR 0094) fires from `NotifyAgentWebhookAsync` at three sites, because two run
-  paths never reach the chat persist: (1) `ChatTurnAsync`, gated on what `PersistTurnUnlessEphemeralAsync` RETURNS;
-  (2) the image turn, inside its own `if (!_ephemeral)` block; (3) `RunReminderAsync`, after its own write and
-  BEFORE the `_pushesThisTurn > 0` early return — placed after it, a reminder whose model pushed (ADR 0075) would
-  silently skip the webhook. The chat site must not re-read `_ephemeral`: `EnqueuePromptAsync` reassigns it in the
-  iterator's yields, while the persist's return reflects the read the write itself used. A new run path that persists
-  a turn needs its own call. Edit and regenerate pass `replacesLastTurn` as a `ChatAsync` PARAMETER, never a field the
+  paths never reach the chat persist: (1) `ChatTurnAsync`, gated on what `PersistTurnUnlessEphemeralAsync(turn)`
+  RETURNS; (2) the image turn, inside its own `if (!turn.Ephemeral)` block; (3) `RunReminderAsync`, after its own
+  write and BEFORE the `turn.PushesSent > 0` early return — placed after it, a reminder whose model pushed (ADR 0075)
+  would silently skip the webhook. A new run path that persists a turn needs its own call. Edit and regenerate pass `replacesLastTurn` as a `ChatAsync` PARAMETER, never a field the
   truncate sets: the truncate and the re-run are separate grain calls, and anything running between them would consume
   a field. Orleans does not order the OneWay deliveries, so the log is in completion order, not turn order.
 - **Evidence:** `src/Agent42.Agents/Webhooks/AgentGrain.Webhooks.cs`, `src/Agent42.Agents/Conversations/AgentGrain.cs`
   (`ChatTurnAsync`, `RunReminderAsync`), `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
   `tests/Agent42.Tests/AgentWebhookTurnTests.cs` (`EphemeralTurn_NeverDelivers_NextTurnDoes`,
   `ReceiveReminder_AfterPush_StillDelivers`, `ImageTurn_DeliversCountWithoutUrls`, `RegeneratedTurn_DeliversWithReplacesFlag`)
-- **Verified:** 2026-10-10
+- **Verified:** 2026-10-19
 
 ### A user provider's API key is encrypted, never echoed — and its Data Protection key ring MUST persist
 
@@ -1572,8 +1543,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   1. **It must NOT call `RegisterDocumentAsync`.** That does snapshot → `BuildAgent` → restore, i.e. it
      swaps `_session` out from under the framework run currently iterating it. Every other call site is
      an API endpoint *outside* a turn (`AgentApi.Attachments.cs`, `AgentApi.StoredAgents.cs`). The tool
-     sets a turn-scoped `_webDocumentIngested` flag instead and
-     `RebuildForIngestedWebDocumentAsync` runs it after the run completes.
+     calls `TurnContext.CurrentOrClosed.RecordWebDocumentIngested()` instead, and
+     `RebuildForIngestedWebDocumentAsync(turn)` runs the rebuild after the run completes
+     (`TakeWebDocumentIngested()`, so it runs once).
   2. **That consume site exists TWICE, and missing the second is a silent bug.** `ChatCoreAsync` (after
      `PersistTurnUnlessEphemeralAsync`) covers the live chat path and `/api/agent-run`, which drains it.
      **`ReceiveReminder` does not drain `ChatCoreAsync`** — it calls `_agent.RunAsync` directly and does
@@ -1603,9 +1575,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   URL's content. `ReadWebDocument_RanksWithoutQueryingTheIndex` counts index queries for exactly this.
 - **Evidence:** `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`,
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (both consume sites, both commented),
+  `src/Agent42.Agents/Conversations/TurnContext.cs` (`TakeWebDocumentIngested`),
   `tests/Agent42.Tests/WebDocumentToolTests.cs`,
   `.agentic/decisions/0066-in-container-document-fetch-for-rag.md`
-- **Verified:** 2026-09-04
+- **Verified:** 2026-10-19
 
 ### A web-fetched document must never be described as "the user has uploaded" — and its file name is prompt text
 
@@ -1662,7 +1635,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   still no migration) but is **removed from `Descriptors`** (no checkbox). The trap: `GetEnabledToolsAsync`
   returns `AllSelectableToolKeys` for a null selection, which carries the bare `mcp` and **no** `mcp:{id}`.
   The picker renders only catalog keys, so `mcp` has no checkbox — a no-op Save would drop the wildcard and
-  add no per-server key, **silently disabling every MCP server**. So `GetEnabledToolsAsync` **expands** a
+  add no per-server key, **silently disabling every MCP server**. So `GetEnabledToolsAsync` (through
+  `ToolSelection.ExpandedEnabledTools`) **expands** a
   present `mcp` into `mcp:{serverId}` for each of `_mcpServers` before returning (a read-only client-facing
   projection — the gate `EffectiveEnabledTools`/`IsMcpServerEnabled` still honours the raw wildcard), and
   `renderToolChecks` treats a stored `mcp` as "all servers checked" for the editor surfaces. `Sanitize` must
@@ -1679,13 +1653,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **(a)** ~~the expansion needs **no grain field** — `SkillCatalog` is static and process-wide, so there is
   no `OnActivateAsync` ordering hazard here~~ — **INVERTED by ADR 0049.** That held only while skills were
   process-wide. Uploaded skills are per-user, so `ExpandSkillsWildcard` is **no longer `static`**: it reads
-  `_userSkills`, a **FIFTH** field with the identical `OnActivateAsync` hazard, resolved from
+  `ToolSelectionContext.UserSkills`, built from the grain's `_userSkills`, a **FIFTH** field with the identical `OnActivateAsync` hazard, resolved from
   `IUserSkillProvider` before the first `BuildAgent`. Get it wrong and the first chat turn *and every
   reminder turn on that activation* silently ignore the user's uploads. The expansion — and the
   `selectedSkillPaths` gate — both run over the **merged** catalog (`MergedSkills()`: shipped ⊕ uploads,
   upload wins, `OrdinalIgnoreCase`), and they must use the *same* merge or a key the user can tick would
   gate nothing;
-  **(b)** the two expansions **compose in a recorded order** —
+  **(b)** the two expansions **compose in a recorded order** — `ToolSelection.ExpandedEnabledTools` is
   `ExpandSkillsWildcard(ExpandMcpWildcard(effective))`, MCP first and skills outermost — because
   `BindAgent_SnapshotsEnabledTools` and `LegacyState_NullEnabledTools_MeansAll` assert an order-sensitive
   sequence; and
@@ -1745,8 +1719,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `AgentFileSkill.Path`, guarded whole because `Lazy` caches a throw; the `Task.Run` sync-over-async bridge),
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`OnActivateAsync` fetch before the first
   `BuildAgent`, and the `_mcpServers` field),
-  `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`EffectiveEnabledTools`, `ExpandMcpWildcard`,
-  `ExpandSkillsWildcard`, the per-server MCP gate and the per-skill `selectedSkillPaths` gate in
+  `src/Agent42.Agents/Tools/ToolSelection.cs` (`EffectiveEnabledTools`, `ExpandedEnabledTools`, `ExpandMcpWildcard`,
+  `ExpandSkillsWildcard`, `MergedSkills`, `SelectedMcpTools` — the per-server MCP gate),
+  `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`SelectionContext`, the per-skill `selectedSkillPaths` gate in
   `BuildAgent`),
   `src/Agent42.Backend/wwwroot/js/tools.js` (`renderToolChecks`'s four-way `cb.checked`, ADR 0058),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
@@ -1762,7 +1737,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/UserSkills/IUserSkillProvider.cs` + `UserSkillProvider.cs` (the per-user layer),
   `.agentic/decisions/0049-upload-agent-skills.md`,
   `.agentic/decisions/0057-memory-as-a-selectable-tool.md`
-- **Verified:** 2026-08-29
+- **Verified:** 2026-10-19
 
 ### Remote MCP servers: a live-socket cache (bound it), a group-gated catalog exception, and a route-matcher trap
 
@@ -1845,7 +1820,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `ReResolveMcpAfterReconnectAsync`), `src/Agent42.Agents/Mcp/UserMcpConfigGrain.cs` (`BumpAsync` and its
   non-bumping siblings), `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (the endpoint surface — no refresh route),
   `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Mcp` wildcard + `IsMcpServerEnabled`, both absent from `ToolNameToKey`),
-  `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`BuildAgent` per-server MCP gate over `_mcpServers`),
+  `src/Agent42.Agents/Tools/ToolSelection.cs` (`SelectedMcpTools`, the per-server MCP gate `BuildAgent` applies over `_mcpServers`),
   `src/Agent42.Backend/Program.cs` +
   `tools/Agent42.DevHost/Program.cs` (`IMcpSecretProtector` registration),
   `tests/Agent42.Tests/UserMcpToolProviderTests.cs` (`OldVersions_AreEvicted_AndTheirConnectionsDisposed`),
@@ -2186,8 +2161,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 ### The background (agent-run) run must drain `ChatCoreAsync`, not the reminder path, or attachments vanish
 
 - **Claim:** the async run behind `POST /api/agent-run` (ADR 0022, `IAgentGrain.EnqueuePromptAsync`, `[OneWay]`)
-  runs its turn by **draining `ChatCoreAsync`** (`await foreach` over it, discarding the streamed events after
-  resetting the turn-scoped fields like the reminder path). This is deliberate and load-bearing: `ChatCoreAsync` is
+  runs its turn by **draining `ChatCoreAsync`** (`await foreach` over it under its own
+  `TurnContext.ForBackground()`, discarding the streamed events). This is deliberate and load-bearing: `ChatCoreAsync` is
   the *only* place that does the no-model guard, the **image-generation branch** (ADR 0020), the **vision
   gate + attachment→`UriContent` materialization** (ADR 0013/0004) and document retrieval. The reminder path
   (`ReceiveReminder`) pushes an **always-empty** attachment list and does none of that — so reusing *it* (the
@@ -2198,7 +2173,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `ReceiveReminder`'s empty-attachment turn), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`EnqueuePrompt_RunsAndPersistsTurn`, `EnqueuePrompt_WithImage_RecordsAttachmentOnTurn` — both poll),
   `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
-- **Verified:** 2026-07-17
+- **Verified:** 2026-10-19
 
 ### The Web Share Target `respondWith` must sit after the `/api` guard, and the share needs an active SW
 
@@ -2249,7 +2224,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   why it lives in a separate partial (`src/Agent42.Agents/Push/AgentGrain.PushTool.cs`) rather than beside
   `SendAwayReplyPushAsync` — **the file split is the documentation that these are two rules**. Do not merge
   the two files and do not "harmonise" their placement rules. One behaviour change lands on the two call
-  sites above: both now also carry `&& _pushesThisTurn == 0`, so the generic away-reply push is **suppressed
+  sites above: both now also carry `&& turn.PushesSent == 0`, so the generic away-reply push is **suppressed
   when the tool already pushed this turn** (the SW sets no `tag`, so otherwise one reply stacks two entries
   in the shade).
   **A third origin since ADR 0100: the Settings "Send test" push** (`PushTestNotifier`, `POST /api/push/test`).
@@ -2273,36 +2248,27 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0075-model-invoked-push-notification.md`,
   `src/Agent42.Backend/Push/PushTestNotifier.cs` + `tests/Agent42.Tests/PushTestNotifierTests.cs` (the
   reporting test push), `.agentic/decisions/0100-push-test-notification.md`
-- **Verified:** 2026-10-18
+- **Verified:** 2026-10-19
 
-### The push-per-turn counter resets in TWO places — and `ReceiveReminder` is the one that bites
+### The push-per-turn budget is the RUN's, and the away-reply push reads it after the run
 
-- **Claim:** `_pushesThisTurn` (ADR 0075) bounds how many notifications one turn may send, and it resets in
-  exactly **two** places — neither the one nor the three it looks like. `ChatAsync` and `EnqueuePromptAsync`
-  both **drain** `ChatCoreAsync`, so a single reset at the top of that shared core covers both, and covers
-  any future caller of it that a per-entrypoint clear would miss. **`ReceiveReminder` does NOT drain
-  `ChatCoreAsync`** — it calls `_agent.RunAsync` directly, the same fact the ADR 0066 "consume site 2 of 2"
-  comment rests on — so it resets the field itself, in its existing `_ephemeral`/
-  `_webDocumentIngested` block. **Miss that second site and a REPEATING reminder inherits the previous
-  tick's count and goes permanently silent after three notifications, for the life of the activation** —
-  the turn-scoped-field bug shape exactly (the "lives for the ACTIVATION" entry), and worse than it looks because the away-reply push is
-  *also* suppressed when the counter reads non-zero, so such a reminder notifies nothing at all.
-  This is deliberately **not** the `_ephemeral` shape of "set it in all three entrypoints": those fields
-  carry a *different value* per path so only the caller knows what to set, whereas this one always resets
-  to `0`. Two more things verified at implementation time rather than assumed: `ChatCoreAsync` is an
-  `IAsyncEnumerable` iterator, so the reset must sit **above any `yield`** (both callers enumerate
-  immediately, so it then takes effect at once); and there is **no fourth path** —
-  `GenerateFollowUpsAsync` (ADR 0036) and `RecordImageTurnAsync` (ADR 0020) both run a model with **no
-  `Tools`**, and ADR 0070's `ask_agent` goes through `ChatAsync`.
-- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (the `_pushesThisTurn` declaration and its
-  two reset sites — the top of `ChatCoreAsync` and `ReceiveReminder`'s reset block),
-  `src/Agent42.Agents/Push/AgentGrain.PushTool.cs` (the only site that increments it, on the SEND and not
-  on the attempt, so a refused call does not consume budget),
-  `tests/Agent42.Tests/AgentGrainTests.cs` (`PushTool_CounterResetsOnTheReminderPath` — **mutation-checked**:
-  deleting the `ReceiveReminder` reset fails that test and nothing else;
-  `PushTool_CounterResetsOnTheNextTurn`, `PushTool_CapsPushesPerTurn`),
+- **Claim:** `TurnContext.PushesSent` (ADR 0075, ADR 0106) bounds how many notifications one run may send
+  (`PushToolLimits.MaxPushesPerTurn`). Each run entry creates a fresh context, so every run starts at zero and no
+  reset site exists to forget — a repeating reminder cannot inherit the previous tick's count, and a reminder
+  firing mid-stream can no longer hand the streaming turn a fresh budget (`ReminderFiringMidStream_*`). Outside a
+  run the tool sees `TurnContext.Closed`, whose budget reads exhausted, so it refuses. The away-reply push is
+  *also* suppressed when the run's count is non-zero, so a bug that inflated it would make a run notify nothing at
+  all. There is **no fourth path**: `GenerateFollowUpsAsync` (ADR 0036) and `RecordImageTurnAsync` (ADR 0020) both
+  run a model with **no `Tools`**, and ADR 0070's `ask_agent` goes through `ChatAsync`.
+- **Evidence:** `src/Agent42.Agents/Conversations/TurnContext.cs` (`PushesSent`, `RecordPushSent`),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (the `turn.PushesSent` reads in `EnqueuePromptAsync` and
+  `RunReminderAsync`), `src/Agent42.Agents/Push/AgentGrain.PushTool.cs` (the only site that records a push, on the
+  SEND and not on the attempt, so a refused call does not consume budget),
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`PushTool_CounterResetsOnTheReminderPath`,
+  `PushTool_CounterResetsOnTheNextTurn`, `PushTool_CapsPushesPerTurn`,
+  `ReminderFiringMidStream_DoesNotResetTheStreamingTurnsPushBudget`),
   `.agentic/decisions/0075-model-invoked-push-notification.md`
-- **Verified:** 2026-09-16
+- **Verified:** 2026-10-19
 
 ### Config-health: the PROBE path is the leak channel, not the static one — and don't inject `IHttpClientFactory`
 
@@ -2999,29 +2965,30 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 - **Claim:** `HindsightMemoryProvider` (ADR 0056) is constructed in `BuildAgent`, which runs on **activation**
   and on the five rebuild paths (`BindAgentAsync`, `SwitchModelAsync`, `RebindModelAsync`,
-  `RegisterDocumentAsync`, `SetEnabledToolsAsync`) — and **never per turn**. `_ephemeral` is the opposite:
-  turn-scoped, set at the top of `ChatAsync` and cleared in its `finally` (ADR 0034). So the obvious
-  spelling — `new HindsightOptions { … Enabled = !_ephemeral }` — captures whatever the flag happened to be
-  when the agent was built and is then **wrong for every later turn of a warm activation**: an incognito
-  chat gets retained, or a normal chat silently stops being remembered, depending on which way the capture
-  froze. Nothing throws; the tests that pass are the ones you would write first. `HindsightOptions.IsEnabled`
-  is a `Func<bool>` for exactly this reason and Agent42 passes `IsEnabled = () => !_ephemeral` — the
-  `BuildDocumentSearchProvider` shape, a closure over the grain read at invoke time. **Which test actually
+  `RegisterDocumentAsync`, `SetEnabledToolsAsync`) — and **never per turn**. Incognito is the opposite: it is
+  the run's `TurnContext.Ephemeral` (ADR 0034, ADR 0106). So a value captured when the agent was built is
+  **wrong for every later turn of a warm activation**: an incognito chat gets retained, or a normal chat
+  silently stops being remembered, depending on which way the capture froze. Nothing throws; the tests that
+  pass are the ones you would write first. `HindsightOptions.IsEnabled` is a `Func<bool>` for exactly this
+  reason and Agent42 passes `IsEnabled = () => !TurnContext.CurrentOrClosed.Ephemeral`, read at invoke time.
+  Both provider hooks run inside the run's pulls (on AF 1.23 the retain in `StoreAIContextAsync` runs in the
+  final `MoveNextAsync`, not in `DisposeAsync`), so they see the run's own context; a hook reached outside a
+  run sees `Closed` and makes no call. **Which test actually
   catches it, measured rather than assumed** (2026-08-28, by mutating the provider two ways and running the
-  pair): with the value captured at build time — the realistic bug, since `BuildAgent` runs at activation
-  where `_ephemeral` is false — **both** `EphemeralTurn_NeitherRecallsNorRetains` and
+  pair): with the value captured at build time — the realistic bug, since `BuildAgent` runs at activation,
+  outside any incognito turn — **both** `EphemeralTurn_NeitherRecallsNorRetains` and
   `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` fail. With the gate stuck OFF instead (the
   capture-of-true direction), **only `MemoryResumes_…` fails; `EphemeralTurn_…` passes**, because asserting
   "nothing was recorded" is satisfied by a provider that never records anything. So
   **`MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne` is the load-bearing one** — it is the only test that
   fails in both directions, and deleting it as "redundant with the incognito test" would leave the gate
-  free to be silently stuck off. Same trap as the turn-scoped `_ephemeral` family.
+  free to be silently stuck off. Same rule as the "Per-run state is a `TurnContext`" entry.
 - **The SELECTION gate added by ADR 0057 is the opposite case, and the asymmetry is deliberate.**
   `BuildMemoryProvider` now takes the effective selection and returns null when it lacks
   `ToolCatalog.Memory` — read at **build time**, as a plain value, not through a delegate. That is
   correct for the two layers that *rebuild*: `SetEnabledToolsAsync` does the snapshot/rebuild/restore/write
   dance explicitly, `BindAgentAsync` rebuilds, and activation builds from scratch — whereas nothing
-  rebuilds between turns of a warm activation, which is what forces `_ephemeral` into a delegate.
+  rebuilds between turns of a warm activation, which is what forces incognito into a delegate.
   **But the USER-DEFAULT layer is stale by design, and for `memory` that staleness bites harder than for
   any other key.** `_userDefaultEnabledTools` is assigned only in `OnActivateAsync`
   (`AgentGrain.cs:224`), so changing the Preferences default does **not** rebuild a warm grain — the
@@ -3032,21 +2999,20 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   deliberately not fixed there — but do not repeat the flat claim that a build-time read "can never go
   stale". It cannot go stale on the override/agent layers; it can on the user default. **Do not
   "harmonise" the two**: folding the selection into `IsEnabled` is unnecessary indirection, and folding
-  `_ephemeral` into the build-time check is the bug the entry above describes. The guard on the rebuild
+  incognito into the build-time check is the bug the entry above describes. The guard on the rebuild
   half is `TogglingMemoryMidChat_DetachesOnTheSameActivation` — two turns on one activation, and the only
   test in the ADR 0057 set that fails in **both** mutation directions (measured 2026-08-29). Keep the
   `_memory.Client is null` term **first** in that predicate: it is what makes
   `UnconfiguredMemory_MakesNoCalls` assert zero calls rather than failing ones.
-- **Evidence:** `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`,
-  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`_ephemeral` and its `finally`),
-  `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`BuildDocumentSearchProvider`, the shape copied),
+- **Evidence:** `src/Agent42.Agents/Memory/AgentGrain.Memory.cs` (`IsEnabled`),
+  `src/Agent42.Agents/Conversations/TurnContext.cs` (`CurrentOrClosed`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`EphemeralTurn_NeitherRecallsNorRetains`,
   `MemoryResumes_OnTheNormalTurnAfterAnEphemeralOne`,
   `TogglingMemoryMidChat_DetachesOnTheSameActivation`, `MemoryDeselected_NeitherRecallsNorRetains`,
   `MemorySelection_IsNotIntersectedWithCapability`),
   `.agentic/decisions/0056-hindsight-long-term-memory.md`,
-  `.agentic/decisions/0057-memory-as-a-selectable-tool.md`
-- **Verified:** 2026-08-29
+  `.agentic/decisions/0057-memory-as-a-selectable-tool.md`, `.agentic/decisions/0106-agentgrain-services-and-turn-context.md`
+- **Verified:** 2026-10-19
 
 ### `InvokingContext` has no `RequestMessages`, and injected `Instructions` neither come back nor accumulate
 
@@ -3315,11 +3281,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   conversation that ever had a skipped turn (an image-only turn, a turn with neither text nor image),
   because the two schemes agree exactly until the first skip and diverge by one thereafter. The
   projection skips empty-text turns, which is what makes skips ordinary rather than exotic.
-- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.Search.cs` (`ProjectForSearch` — the single
-  projection both paths call), `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
+- **Evidence:** `src/Agent42.Agents/Search/ChatSearchProjection.cs` (`Project` — the single
+  projection both paths call), `src/Agent42.Agents/Search/AgentGrain.Search.cs` (`CreateSearchProjection`, which
+  hands it `ProjectHistory()`), `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
   (`Reindex_AfterLiveIndexing_ProducesNoDuplicates`, `Reindex_IsIdempotent`),
   `.agentic/decisions/0061-searchable-chat-message-projection.md`
-- **Verified:** 2026-09-01
+- **Verified:** 2026-10-19
 
 ### Skipping an incognito turn's index write is NOT enough — it stays in the in-memory session
 
@@ -3329,21 +3296,21 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `GetHistoryAsync()` for the rest of that activation — and the **next normal turn's re-projection
   sweeps it straight into the index**. Guarding only the ephemeral write leaves incognito text in a
   queryable Cosmos container. The fix is to advance the index cursor past the ephemeral turn without
-  indexing it (`SkipIndexingForEphemeralTurnAsync`), which costs the activation's self-heal from that
+  indexing it (`ChatSearchProjection.SkipEphemeralTurnAsync`), which costs the activation's self-heal from that
   point on — deliberately, since re-indexing something incognito is a correctness failure while a
   missed repair is what the reindex endpoint is for. **Measured**, not theorised: without it
   `Indexing_ResumesOnTheNormalTurnAfterAnEphemeralOne` fails with the incognito text indexed at its
   original ordinal.
-  Note also that the three write sites have **three different `_ephemeral` shapes** and must be read
-  before editing: `PersistTurnUnlessEphemeralAsync` is an **early return**, `GenerateImageTurnAsync` is
-  a real `if (!_ephemeral)` block, and `ReceiveReminder` has **no guard at all** — it clears
-  `_ephemeral` on entry because a fired reminder always persists, so adding one there is the
-  fresh-guard mistake ADR 0034 warns about.
-- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.Search.cs`
-  (`SkipIndexingForEphemeralTurnAsync`), `src/Agent42.Agents/Conversations/AgentGrain.cs`,
+  Note also that the three write sites have **three different incognito shapes** and must be read
+  before editing: `PersistTurnUnlessEphemeralAsync(turn)` is an **early return**, `GenerateImageTurnAsync` is
+  a real `if (!turn.Ephemeral)` block, and the reminder path has **no guard at all** — it runs under
+  `TurnContext.ForBackground()`, which is never ephemeral, because a fired reminder always persists; adding
+  one there is the fresh-guard mistake ADR 0034 warns about.
+- **Evidence:** `src/Agent42.Agents/Search/ChatSearchProjection.cs`
+  (`SkipEphemeralTurnAsync`), `src/Agent42.Agents/Conversations/AgentGrain.cs`,
   `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
   `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
-- **Verified:** 2026-09-01
+- **Verified:** 2026-10-19
 
 ### The chat-search write is best-effort — and that is NOT ADR 0008's rejected shape
 
@@ -3359,11 +3326,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   availability dependency. The honest cost is that a dropped write is an *invisible* gap in results,
   which is the same invisibility the backfill decision rejected; what closes it is that
   `POST /api/search/reindex` is user-invocable and idempotent, so a suspected gap is repairable.
-- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.Search.cs`,
+- **Evidence:** `src/Agent42.Agents/Search/ChatSearchProjection.cs` (each index call's own try/catch, including
+  `DeleteConversationAsync`, which `PurgeAsync` awaits),
   `tests/Agent42.Tests/ChatSearchIndexingTests.cs` (`ThrowingIndex_DoesNotBreakTheReply`,
   `ThrowingIndex_DoesNotBreakPurge`),
   `.agentic/decisions/0008-always-on-textsearchprovider-retrieval.md` (Alternatives)
-- **Verified:** 2026-09-01
+- **Verified:** 2026-10-19
 
 ### A multi-property `ORDER BY` needs a composite index, or chat search 400s — and it looks like "no matches"
 
@@ -3504,7 +3472,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   in-memory session** for the rest of the activation (see the "skipping an incognito turn's index write
   is NOT enough" gotcha). `_ephemeralOrdinals` is what keeps it out — and it is now recorded against
   ordinals the prune has just invalidated, so it must be **shifted down by the dropped count**, with
-  negatives discarded. Copying `DeleteSearchIndexForConversationAsync`, which **clears** the set, is the
+  negatives discarded. Copying `DeleteConversationAsync`, which **clears** the set, is the
   natural mistake and is silently wrong: that method clears because the conversation is being purged and
   nothing will be re-projected, while here a live conversation is re-projected immediately afterwards.
   Clearing hands it precisely the text ADR 0034 exists to keep out of Cosmos, at its new ordinal, and
@@ -3514,7 +3482,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   because a shared advance would let the prune drop the incognito turn too and the test would pass
   vacuously.
   **The second way to get this wrong is subtler and shipped once already: remap in the wrong FRAME.** The
-  remap must happen where the shift happens — inside `PruneExpiredTurnsAsync` — and **never** be deferred
+  remap must happen where the shift happens — in the grain's `ApplyRetention()`, right after
+  `HistoryRetention.Apply` returns (`_search.RemapAfterPrune(result.DroppedProjectedTurns)`) — and **never** be deferred
   to the index reconcile, which may be retried a turn later. `_ephemeralOrdinals` records ordinals against
   the projection as it stands *at the moment the ephemeral turn ran*, so an incognito turn taken between a
   failed reconcile and its retry is already in the post-prune frame; re-applying the earlier prune's delta
@@ -3525,13 +3494,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   bug. Guarded by
   `Prune_DoesNotIndexAnEphemeralTurn_TakenBetweenAFailedReconcileAndItsRetry`; neither of the other two
   prune/search tests can reach that state.
-- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.Search.cs` (`RemapEphemeralOrdinals`,
-  `ReconcileSearchIndexAfterPruneAsync`, and `DeleteSearchIndexForConversationAsync` for the contrast),
+- **Evidence:** `src/Agent42.Agents/Search/ChatSearchProjection.cs` (`_ephemeralOrdinals`, `RemapAfterPrune`,
+  `ReconcileAfterPruneAsync`, and `DeleteConversationAsync` for the contrast),
+  `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs` (`ApplyRetention`),
   `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
   (`Prune_DoesNotIndexAnEphemeralTurn_AfterOrdinalsShift`),
   `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
   `.agentic/decisions/0034-ephemeral-chat.md`
-- **Verified:** 2026-09-05
+- **Verified:** 2026-10-19
 
 ### A pruned-turn delta is a PROJECTED-turn count, and a failed index delete is the one thing reindex cannot repair
 
@@ -3549,7 +3519,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
     reasoning that rests explicitly on `ReindexAsync` being a user-invocable repair. `ReindexAsync` only
     **upserts**; `DeleteConversationAsync` is the **sole** removal in the interface. So a swallowed
     delete after a *destructive* prune strands orphaned tail documents that **nothing can ever clean
-    up** — a three-turn conversation returning five hits. Hence `_searchReconcilePending`, retried on
+    up** — a three-turn conversation returning five hits. Hence `ChatSearchProjection._reconcilePending`, retried on
     the next persisted turn, and hence the cursor being reset **only inside the `try`, after the awaited
     delete succeeds**: resetting it anyway would re-project over documents that are still there.
     **The retry is NOT self-healing across a deactivation, and do not let the code's optimism suggest it
@@ -3561,15 +3531,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
     the index is stale in **both** directions — the pruned text is still indexed AND the surviving turn
     is not, because the un-reset cursor sits past the now-shorter history. The next persisted turn
     repairs both. A test asserting "the new turn was indexed anyway" is asserting the wrong thing.
-- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.Search.cs`
-  (`ReconcileSearchIndexAfterPruneAsync`, `_searchReconcilePending`),
-  `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs` (`PruneExpiredTurnsAsync`, the
-  before/after projection), `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
+- **Evidence:** `src/Agent42.Agents/Search/ChatSearchProjection.cs`
+  (`ReconcileAfterPruneAsync`, `_reconcilePending`),
+  `src/Agent42.Agents/Conversations/HistoryRetention.cs` (`Apply` and its before/after
+  `ProjectedTurnCount`), `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs` (`ApplyRetention`, which hands
+  it `ProjectHistory().Count`), `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
   (`Prune_RetriesTheSearchReconcile_AfterAFailedDelete`, `Prune_LeavesNoOrphanedSearchDocuments`,
   `Prune_DoesNotIndexAnEphemeralTurn_TakenBetweenAFailedReconcileAndItsRetry`),
   `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
   `.agentic/decisions/0061-searchable-chat-message-projection.md`
-- **Verified:** 2026-09-05
+- **Verified:** 2026-10-19
 
 
 ### Bounding a drained agent turn: cap the WAIT, never the enumeration — abandoning it LOSES the turn
@@ -3848,7 +3819,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   endpoint stamps the title **before** the turn runs, the result is the ADR 0070 shape: a conversation
   listed with a title and no messages.
   **So the turn is appended by hand**, by mutating the `List<ChatMessage>` that `TryGetInMemoryChatHistory`
-  hands back — the same list `AgentGrain.Retention.cs` prunes from. Measured to serialize, survive
+  hands back — the same list `HistoryRetention` prunes from. Measured to serialize, survive
   serialize → JSON → deserialize, and arrive at the model in order on the next turn. Three things ride on
   that append and are invisible at the call site: (1) **`reply` IS the persistence path on this one
   branch** — the "`reply` is NOT the persistence path" entry stays true everywhere else, and this is its
@@ -3864,26 +3835,24 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   skips the persist instead.
   **Mutation-checked:** replacing the append with `true` turns 7 of the 12 `StopGenerationTests` red.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`AppendStoppedTurnToSession`,
-  `TryPrepareStoppedTurn`, the call site's comment), `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs`
+  `TryPrepareStoppedTurn`, the call site's comment), `src/Agent42.Agents/Conversations/HistoryRetention.cs`
   (the same list, and its header on the round-trip property),
   `tests/Agent42.Tests/StopGenerationTests.cs`, `.agentic/decisions/0078-stop-generation.md`
 - **Verified:** 2026-09-20
 
-### The stop handle is NOT a turn-scoped field, an iterator cannot catch around a `yield`, and `StopAsync` must interleave
+### The stop handle is a field published by identity, an iterator cannot catch around a `yield`, and `StopAsync` must interleave
 
 - **Claim:** four traps in wiring cancellation into `AgentGrain`, none visible in the code that depends on
-  them. **(1) The handle cannot follow the turn-scoped-field ritual.** `_ephemeral`,
-  `_interactiveTurn` and `_webDocumentIngested` carry a *value* and are blindly assigned per turn;
-  `_turnCts` carries the *identity of a running turn*, and two turns share one activation — `ChatAsync`
-  suspends between `yield return`s, so a fired reminder or an `EnqueuePromptAsync` run executes in the gap
-  (the same fact the turn-scoped-field entry rests on). Assign it blindly and a background turn steals the
-  handle, so the user's press cancels **that** turn instead; clear it blindly and one turn's disposal
-  faults another turn's live run; give `ReceiveReminder` the usual reset line and a reminder firing
-  mid-stream **silently disarms the stop button**. The shape that works is publish-by-identity
-  (`_turnCts ??= mine`, only when `_interactiveTurn`) and unpublish-by-identity
-  (`if (ReferenceEquals(_turnCts, mine))`), with **no** `ReceiveReminder` site — the one field in that
-  block deliberately absent from the reset ritual. **Mutation-checked:** dropping the `_interactiveTurn`
-  gate turns exactly one test red (`Stop_DoesNotCancelABackgroundTurn`), so that test is the whole guard.
+  them. **(1) The handle is the one turn-related value that IS a grain field**, because `StopAsync` is a separate
+  grain call and must find it — unlike the per-run values in `TurnContext`. `_turnCts` carries the *identity of a
+  running turn*, and two turns share one activation — `ChatAsync` suspends between `yield return`s, so a fired
+  reminder or an `EnqueuePromptAsync` run executes in the gap (the fact the "Per-run state is a `TurnContext`"
+  entry rests on). Assign it blindly and a background turn steals the handle, so the user's press cancels
+  **that** turn instead; clear it blindly and one turn's disposal faults another turn's live run. The shape that
+  works is publish-by-identity (`_turnCts ??= mine`, only when `turn.Interactive`, in `PublishStopHandle`) and
+  unpublish-by-identity (`if (ReferenceEquals(_turnCts, mine))`, in `UnpublishStopHandle`), with **no**
+  `ReceiveReminder` site. **Mutation-checked:** dropping the interactive gate turns exactly one test red
+  (`Stop_DoesNotCancelABackgroundTurn`), so that test is the whole guard.
   **(2) `ChatCoreAsync` cannot catch the cancellation** — CS1626 forbids `yield return` inside a `try`
   with a `catch` (a try/`finally` is fine), so the streaming loop had to move into its own iterator with
   the catch wrapping `MoveNextAsync()` alone and every yield outside it. AF's own
@@ -3900,7 +3869,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Conversations/IAgentGrain.cs` (`StopAsync`'s attributes and their remarks),
   `tests/Agent42.Tests/StopGenerationTests.cs` (`Stop_DoesNotCancelABackgroundTurn`,
   `Stop_AfterTheTurnEnded_DoesNotAffectTheNextTurn`), `.agentic/decisions/0078-stop-generation.md`
-- **Verified:** 2026-09-20
+- **Verified:** 2026-10-19
 
 ### `CompactionProvider` freezes the request on AF 1.19 — bound the research prompt with a chat-client REDUCER
 
@@ -4025,7 +3994,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   revisions of a 60 KB app would put 600 KB of dead text into the 2 MB item (ADR 0004), re-sent every turn, until
   the conversation bricks in prod only. `CompactToolPayloads` (renamed from `CompactArtifactCalls` by ADR 0098)
   therefore runs at the **five** post-turn persist sites (`AgentGrain.cs` ×2, `AgentGrain.EditFork.cs` ×2,
-  `AgentGrain.ImageTurn.cs` ×1), beside `ApplyRetentionAsync`. It replaces each call's `content` with `ArtifactLimits.Stub(id, v)` and each
+  `AgentGrain.ImageTurn.cs` ×1), beside `ApplyRetention()` where the site has one. It replaces each call's `content` with `ArtifactLimits.Stub(id, v)` and each
   `read_artifact` result with the same stub. It replaces the content object rather than editing the argument
   dictionary, and joins results by `CallId`. Measured on AF 1.22: a 60 KB call's session went from 60 603 to 630
   bytes, and the next turn still pairs the call with its result. A new artifact-like tool (anything whose
@@ -4140,12 +4109,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Claim:** four traps in pausing a turn on the browser (ADR 0089), none visible at the call site. **(1) The broker
   must reach the tool per run, never through a field.** A background run (`EnqueuePromptAsync`, a reminder) executes
   in a gap of the streaming turn, so a field read by `confirm_action` would hand the background run's call to the
-  user's open browser. The broker rides an `AsyncLocal` that `PullAsync` sets around each of the interactive run's
-  own `MoveNextAsync` calls: the iterator body (and FICC's tool invocation) runs under the caller's execution context,
-  so only that run sees it. Measured with a file-based spike on AF 1.23.0 (an interleaved second run saw `null`), and
-  mutation-checked: routing through `_clientToolBrokers` instead turns exactly
+  user's open browser. The broker is the run's `TurnContext.Broker` (ADR 0106), read through
+  `TurnContext.CurrentOrClosed`, which `PullAsync` sets around each of the run's own `MoveNextAsync` calls: the
+  iterator body (and FICC's tool invocation) runs under the caller's execution context, so only that run sees it, and
+  a run with no broker (or no run) gets null. Measured with a file-based spike on AF 1.23.0 (an interleaved second run
+  saw `null`), and mutation-checked: routing through `_clientToolBrokers` instead turns exactly
   `BackgroundRun_CannotRouteToTheInteractiveBroker` red. `_clientToolBrokers` is only the by-identity registry the
-  interleaved calls look ids up in; it is not part of the turn-scoped reset ritual. **(2)** `SubmitClientToolResultAsync`
+  interleaved calls look ids up in. **(2)** `SubmitClientToolResultAsync`
   (and the pending query) are `[AlwaysInterleave]` on the INTERFACE and not `[OneWay]`: the turn is suspended inside
   a `MoveNext` waiting for exactly that call, so a queued call deadlocks until the wait times out. **(3)** The call is
   ANNOUNCED to the broker when its `toolCallStart` is projected, because the browser may answer before the next pull
@@ -4159,16 +4129,17 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `ClientToolLimits.ToolNames` but maps to `location`, not `browser_tools` — moving it would turn it OFF for every
   older saved selection (ADR 0021). So a loop over `ToolNames` must not assume `browser_tools`
   (`ToolCatalogTests.BrowserToolNames`, `Location_IsAClientTool_ButKeepsItsOwnKey`).
-- **Evidence:** `src/Agent42.Agents/ClientTools/AgentGrain.ClientTools.cs` (`CurrentClientToolBroker`, `PullAsync`,
-  `MarkClientToolCall`, `AwaitClientResultAsync`), `src/Agent42.Agents/ClientTools/ClientToolBroker.cs`,
+- **Evidence:** `src/Agent42.Agents/ClientTools/AgentGrain.ClientTools.cs` (`PullAsync`,
+  `MarkClientToolCall`, `AwaitClientResultAsync`), `src/Agent42.Agents/Conversations/TurnContext.cs` (`Broker`),
+  `src/Agent42.Agents/ClientTools/ClientToolBroker.cs`,
   `src/Agent42.Agents/Conversations/IAgentGrain.cs`, `src/Agent42.Backend/wwwroot/js/clienttools.js`
   (`confirmAction`), `tests/Agent42.Tests/ClientToolTests.cs`, `.agentic/decisions/0089-client-tools-and-shared-state.md`
-- **Verified:** 2026-10-09
+- **Verified:** 2026-10-19
 
 ### MCP elicitation: the SDK's handler runs off the grain scheduler, on a per-USER connection, and HTTP loses the async local
 
 - **Claim:** ADR 0095. The elicitation handler runs on the MCP session's thread, on a connection that every
-  conversation of the user shares, so it can neither read `CurrentClientToolBroker` nor touch the broker's no-lock
+  conversation of the user shares, so it can neither read the run's `TurnContext.Broker` nor touch the broker's no-lock
   tool-call map. **(1) Routing.** `ElicitingMcpTool` opens a scope on the connection's `McpElicitationRouter` around
   each call. Measured on SDK 2.2.0: over a **stateful streamable-HTTP** server the session negotiates 2025-11-25 (even
   though the client defaults to 2026-07-28), and the router's `AsyncLocal` does **not** reach the handler
@@ -4199,7 +4170,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`SharedState_RoundTripsThroughCosmosJson`). **(2) Nothing may `WriteStateAsync` while a run is in flight.** The
   write serializes the WHOLE state, so a user's `PUT` written mid-run would persist that run's half-done fields
   (artifact records, the `TurnAttachments` entry) beside the previous turn's session. `_runsInFlight` is counted at
-  BOTH run sites (`ChatCoreAsync`, `ReceiveReminder`) and is not part of the turn-scoped reset ritual; an edit during
+  BOTH run sites (`ChatCoreAsync`, `ReceiveReminder`) and is activation-scoped by design (it counts runs); an edit during
   a run sets `_sharedStateDirty`, the end-of-turn writes clear it, and `EndRunAsync` flushes it when the last run
   ends without writing (a failure). That flush is the one accepted residual: it writes the whole state too, so
   a failed run's in-memory leftovers (an artifact record) land beside the previous turn's session. A warm
@@ -4243,11 +4214,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   so its ref has to be looked up under the SOURCE key first. A version whose blob is missing is dropped, which
   is why new versions are numbered after the last version rather than after the count. Any new
   `IAttachmentStore` must implement `CopyAsync`; so must the two test fakes.
-- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (`CopyForkBlobAsync`,
-  `CopyForkArtifactsAsync`), `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` (`CopyAsync`),
+- **Evidence:** `src/Agent42.Agents/Conversations/ConversationForking.cs` (`CopyForkBlobAsync`,
+  `CopyForkArtifactsAsync`), `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (`InitializeFromForkAsync`),
+  `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` (`CopyAsync`),
   `tests/Agent42.Tests/ConversationEditForkApiTests.cs` (`Fork_AttachmentsAndArtifacts_AreServedUnderTheForkId`),
   `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
-- **Verified:** 2026-10-10
+- **Verified:** 2026-10-19
 
 ### Truncating history removes WHOLE session turns, and re-anchors everything that indexes off them
 
@@ -4258,11 +4230,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   3. `TurnAttachments`, which is TRUNCATED to the remaining user-turn count. Never "remove the last entry": a
      failed run leaves an orphan trailing entry, and removing just that one keeps the real turn's refs and
      mis-joins the next turn.
-  4. `_ephemeralOrdinals` at or above the new projected count.
-  5. The search index, through `ReconcileSearchIndexAfterPruneAsync(pruned: true)`, since there is no
-     delete-by-ordinal.
-  6. On an incognito truncate of a never-written conversation, no write at all, and `_indexedTurnCount` clamped
-     instead. A conversation with a stored record always takes the persisted path, whatever the client's flag says.
+  4. The search projection's incognito ordinals at or above the new projected count
+     (`_search.TruncateTo(projectedCount, pullBackCursor)`).
+  5. The search index, through `_search.ReconcileAfterPruneAsync(pruned: true)` in `PersistTruncationAsync`, since
+     there is no delete-by-ordinal.
+  6. On an incognito truncate of a never-written conversation, no write at all, and the search cursor clamped
+     instead (`pullBackCursor: true`). A conversation with a stored record always takes the persisted path, whatever
+     the client's flag says.
 
   The blobs of removed artifact versions and images are orphaned (the existing purge gap). Artifact versions can
   therefore have GAPS, so never describe them as "1 to N".
@@ -4270,11 +4244,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   The client's position maps to a session position through `ProjectHistory()` only (the
   `GetHistoryAsync` walk), never a second count. A blank user turn does not project, yet it still opens a session
   turn. `_runsInFlight` is checked BEFORE the token, because `VisibleHistory` hides a running research turn.
-- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (`RemoveLastTurn`,
-  `TruncateLastTurnAsync`), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ProjectHistory`),
+- **Evidence:** `src/Agent42.Agents/Conversations/ConversationForking.cs` (`RemoveLastTurn`),
+  `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (`TruncateLastTurnAsync`, `PersistTruncationAsync`),
+  `src/Agent42.Agents/Search/ChatSearchProjection.cs` (`TruncateTo`),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ProjectHistory`),
   `tests/Agent42.Tests/EditRegenerateForkTests.cs` (`Truncate_WithOrphanTurnAttachment_StaysAligned` fails when step
-  3 is "remove the last entry", checked by mutation), `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
-- **Verified:** 2026-10-10
+  3 is "remove the last entry", checked by mutation), `tests/Agent42.Tests/ConversationForkingTests.cs`,
+  `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
+- **Verified:** 2026-10-19
 
 ### The fleet's event log coalesces streamed text: an append blob holds at most 50,000 blocks
 

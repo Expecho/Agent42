@@ -9,9 +9,8 @@ namespace Agent42.Agents;
 /// durably persisted — the chat persist in <c>ChatTurnAsync</c>, the image turn's own write, and the reminder's own
 /// write. Every branch lives in here, so each site stays one unconditional call (S3776, rule 9).
 ///
-/// <para><b>The gate is the PERSISTED flag, never <c>_ephemeral</c>.</b> At the chat site the flag is the return of
-/// <c>PersistTurnUnlessEphemeralAsync</c>, which read <c>_ephemeral</c> after this iterator's last yield; re-reading
-/// the field here would read a value an <c>EnqueuePromptAsync</c> in one of those yields may have reassigned.</para>
+/// <para><b>The gate is the PERSISTED flag.</b> At the chat site the flag is the return of
+/// <c>PersistTurnUnlessEphemeralAsync</c>, which decided from the run's own <see cref="TurnContext"/> (ADR 0106).</para>
 /// </summary>
 public sealed partial class AgentGrain
 {
@@ -52,7 +51,7 @@ public sealed partial class AgentGrain
         => response.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(m.Text))
             ?.Text ?? "";
 
-    // The trigger of a ChatCoreAsync turn, from the interactive flag captured at its top (never _interactiveTurn).
+    // The trigger of a ChatCoreAsync turn, from its TurnContext.Interactive.
     private static string ChatTrigger(bool interactive)
         => interactive ? AgentWebhookEvent.Triggers.Interactive : AgentWebhookEvent.Triggers.Background;
 

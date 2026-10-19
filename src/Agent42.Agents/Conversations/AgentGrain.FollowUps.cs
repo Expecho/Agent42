@@ -7,9 +7,9 @@ namespace Agent42.Agents;
 
 /// <summary>
 /// Follow-up suggestion prompts (ADR 0036): one extra, best-effort model call after an
-/// <b>interactive</b> reply, streamed as a <c>Suggestions</c> event before <c>Done</c>. Gated by the
-/// turn-scoped <c>_interactiveTurn</c> flag declared in the core part, so the agent-run and reminder
-/// drains of the same <c>ChatCoreAsync</c> never spend the call.
+/// <b>interactive</b> reply, streamed as a <c>Suggestions</c> event before <c>Done</c>. Gated by the run's
+/// <see cref="TurnContext.Interactive"/> (ADR 0106), so the agent-run and reminder drains of the same
+/// <c>ChatCoreAsync</c> never spend the call.
 /// </summary>
 public sealed partial class AgentGrain
 {

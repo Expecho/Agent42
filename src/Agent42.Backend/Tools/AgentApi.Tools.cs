@@ -37,7 +37,7 @@ public static partial class AgentApi
             var userId = http.GetUserId();
 
             var uploaded = (await grains.GetGrain<IUserSkillsGrain>(userId).GetAsync()).Skills;
-            // OrdinalIgnoreCase, matching AgentGrain.MergedSkills: the picker and the gate must agree about
+            // OrdinalIgnoreCase, matching ToolSelection.MergedSkills: the picker and the gate must agree about
             // which skills exist, or a key the user can tick would gate nothing.
             var shadowed = uploaded.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var skillDescriptors = uploaded
@@ -54,7 +54,7 @@ public static partial class AgentApi
             // it no longer invalidates the live-socket cache — the rule stands on (1) and the side effect.)
             //
             // The same list reaches the grain on McpServerTools.KnownToolNames, so the checkboxes rendered here
-            // and the keys AgentGrain.ExpandMcpWildcard projects are one source. They must not drift: a key the
+            // and the keys ToolSelection.ExpandedEnabledTools projects are one source. They must not drift: a key the
             // projection mints without a checkbox here is dropped by the very next Save.
             //
             // Consequence worth knowing (the cold-start window): a newly added server has no names until the
