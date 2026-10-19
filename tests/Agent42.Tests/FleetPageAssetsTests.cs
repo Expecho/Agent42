@@ -56,6 +56,17 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
             "The fleet link belongs in .sidebar__footer-actions");
     }
 
+    // AC13 (ADR 0104): the budget metrics show the cached input the budget event now carries.
+    [Fact]
+    public async Task FleetPage_ShowsCachedInputTokens()
+    {
+        var page = await _client.GetStringAsync("/fleet/");
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("<b id=\"mCached\">0</b> cached", page, StringComparison.Ordinal);
+        Assert.Contains("$(\"#mCached\").textContent = nf.format(b?.cachedInputTokens || 0);", script, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task FleetPage_UsesThemeTokensAndSharedLibs()
     {

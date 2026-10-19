@@ -396,6 +396,7 @@
     $("#mAgents").textContent = nf.format(b?.agents || 0);
     $("#mDepth").textContent = b ? `(deepest team level ${b.deepestLevel})` : "";
     $("#mIn").textContent = nf.format(b?.inputTokens || 0);
+    $("#mCached").textContent = nf.format(b?.cachedInputTokens || 0); // a subset of input, not added (ADR 0104)
     $("#mOut").textContent = nf.format(b?.outputTokens || 0);
     $("#tokText").textContent = b ? `${compact.format(b.tokens)} / ${compact.format(b.maxTokens)}` : "–";
     $("#agText").textContent = b ? `${b.agents} / ${b.maxAgents}` : "–";

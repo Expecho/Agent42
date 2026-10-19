@@ -155,9 +155,9 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Area | ADRs |
 |------|------|
 | Core: grain per conversation, auth, persona snapshot, blob attachments, profile | 0001, 0002, 0003, 0004, 0005 |
-| Telemetry, `/logs` console, usage dashboard, Orleans dashboard, App Insights export | 0009, 0010, 0031, 0054, 0062, 0077 |
+| Telemetry, `/logs` console, usage dashboard, Orleans dashboard, App Insights export | 0009, 0010, 0031, 0054, 0062, 0077, 0104 |
 | Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out | 0074, 0090 |
-| Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103 |
+| Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104 |
 | Image generation, speech (STT/TTS/voice loop), reasoning output | 0006, 0020, 0037, 0038, 0071 |
 | Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces), fleet workspace documents | 0007, 0008, 0030, 0066, 0098, 0101 |
 | Web search (SearXNG sidecar, engines, proxied UI), page scrape (context.dev) | 0011, 0027, 0059, 0060 |

@@ -4,6 +4,7 @@ using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Agent42.Backend;
 
@@ -30,14 +31,21 @@ public sealed class BlobAttachmentStore : IAttachmentStore
 
     private readonly BlobServiceClient _serviceClient;
     private readonly BlobContainerClient _container;
+    private readonly TimeProvider _time;
     private readonly SemaphoreSlim _keyLock = new(1, 1);
     private UserDelegationKey? _delegationKey;
     private DateTimeOffset _delegationKeyExpiry;
 
-    public BlobAttachmentStore(BlobServiceClient serviceClient)
+    // The read URL last handed out per blob, with its expiry (ADR 0104). The grain re-signs every image in history
+    // on every turn, and a new SAS query string changes the request's history segment, so every turn after the
+    // first image would be a prompt-cache miss. Bounded by its own (real-clock) expiry; one replica (rule 12).
+    private readonly MemoryCache _readUrls = new(new MemoryCacheOptions());
+
+    public BlobAttachmentStore(BlobServiceClient serviceClient, TimeProvider? timeProvider = null)
     {
         _serviceClient = serviceClient;
         _container = serviceClient.GetBlobContainerClient(ContainerName);
+        _time = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<AttachmentRef> SaveAsync(
@@ -123,7 +131,26 @@ public sealed class BlobAttachmentStore : IAttachmentStore
         return new AttachmentRef(source.Id, blobPath, details.ContentType, ReadFileName(details.Metadata, source.Id));
     }
 
+    // Reuses a URL while at least half its lifetime remains, so whatever is handed out still has 30 minutes, which
+    // covers a turn. Above BOTH signing branches below. The cost: an image-bearing conversation takes one prompt-cache
+    // miss roughly every half hour, when the URL renews.
     public async Task<Uri> GetReadUrlAsync(AttachmentRef reference, CancellationToken cancellationToken = default)
+    {
+        var now = _time.GetUtcNow();
+        if (_readUrls.TryGetValue(reference.BlobPath, out (Uri Url, DateTimeOffset ExpiresOn) memo)
+            && memo.ExpiresOn - now >= ReadUrlLifetime / 2)
+        {
+            return memo.Url;
+        }
+
+        var expiresOn = now.Add(ReadUrlLifetime);
+        var url = await SignReadUrlAsync(reference, now, expiresOn, cancellationToken);
+        _readUrls.Set(reference.BlobPath, (url, expiresOn), ReadUrlLifetime / 2);
+        return url;
+    }
+
+    private async Task<Uri> SignReadUrlAsync(
+        AttachmentRef reference, DateTimeOffset now, DateTimeOffset expiresOn, CancellationToken cancellationToken)
     {
         var blob = _container.GetBlobClient(reference.BlobPath);
         var sasBuilder = new BlobSasBuilder
@@ -132,8 +159,8 @@ public sealed class BlobAttachmentStore : IAttachmentStore
             BlobName = reference.BlobPath,
             Resource = "b",
             // A little slack in the past absorbs clock skew between the app and storage.
-            StartsOn = DateTimeOffset.UtcNow.AddMinutes(-5),
-            ExpiresOn = DateTimeOffset.UtcNow.Add(ReadUrlLifetime),
+            StartsOn = now.AddMinutes(-5),
+            ExpiresOn = expiresOn,
         };
         sasBuilder.SetPermissions(BlobSasPermissions.Read);
 

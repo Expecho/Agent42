@@ -1117,9 +1117,9 @@
         </div>
       </section>
 
-      <!-- Honest note (ADR 0031): the OTel-only ingestion path never sees cache-read/reasoning token
-           counts, so those columns/tile read 0 rather than silently misleading. -->
-      <p class="usage__note">Cached input and reasoning read 0 — the OTel telemetry pipeline emits only input/output token counts (ADR 0031).</p>
+      <!-- Honest note (ADR 0031, corrected by ADR 0104): the OTel emitter tags cached and reasoning tokens
+           whenever the provider reports them, so a 0 here means the provider reported none. -->
+      <p class="usage__note">Cached input and reasoning are what each provider reports; one that reports none reads 0.</p>
 
       <section class="panel" aria-labelledby="usageModelsHeading">
         <h2 class="panel__title" id="usageModelsHeading">Tokens by model</h2>

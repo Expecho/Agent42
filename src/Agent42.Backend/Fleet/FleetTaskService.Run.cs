@@ -280,6 +280,7 @@ public sealed partial class FleetTaskService
             maxTokens = budget.MaxTokens,
             inputTokens = budget.InputTokens,
             outputTokens = budget.OutputTokens,
+            cachedInputTokens = budget.CachedInputTokens,
             agents = budget.Agents,
             maxAgents = budget.MaxAgents,
             deepestLevel = budget.DeepestLevel,

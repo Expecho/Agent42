@@ -10,6 +10,14 @@ amends: [0008]
 
 # Long-term memory across conversations, via a .NET package we publish
 
+> **Amended by [ADR 0104](0104-prompt-prefix-caching.md) (2026-10-19): recall is no longer injected into the system
+> instructions.** `BuildMemoryProvider` wraps the Hindsight provider in `TrailingContextProvider`, so the
+> `## Memories` block arrives as a trailing **user-role message** after the new user turn, keeping the instructions (the
+> front of the cached prompt prefix) stable. Where this ADR says memories are "injected into the system instructions",
+> read that. The trust line changes with it: untrusted recalled memories now carry user-role, not system, authority. The
+> message is still never stored (the history provider's storage filter), and Hindsight 0.1.0 was measured to exclude it
+> from both recall and retain, so there is no feedback loop and `exclude_sources` stays unported.
+
 > **Amended by ADR 0057** — the scope call "not a Preferences UI" (scope call 1 below) and the
 > Alternatives entry "a per-user opt-out, or a `ToolCatalog` key" were **reversed by the user**. Memory
 > is now a selectable tool (`ToolCatalog.Memory`), ON by default, controllable at all three ADR 0021

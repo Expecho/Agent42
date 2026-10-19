@@ -726,10 +726,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `orchestrate_tools` span carrying `input_tokens=140` = exactly the two child chats (100+40). So the
   projector **whitelists `chat` for tokens and `execute_tool` for tool events and DROPS everything else** —
   adding `orchestrate_tools` (or `invoke_agent`) to "capture more" double/triple-counts every multi-turn
-  conversation. Three more facts the same spike pinned, each a silent trap: (1) the emitter emits **only**
-  input/output tokens — **no cache-read, no reasoning** — so those dashboard fields are wire-contract parity
-  only and are always 0 (do not "wire them up" from the span; they aren't there — the grain's `UsageContent`
-  has cached, but that path is deliberately not used); (2) **all three span kinds are already on the
+  conversation. Three more facts the same spike pinned, each a silent trap: (1) **corrected by ADR 0104:** the
+  emitter DOES tag `gen_ai.usage.cache_read.input_tokens` and the reasoning count whenever the response's
+  `UsageDetails` carry them, and the projector already reads both — the spike's provider (GitHub Models) simply
+  reported none, which read as "always 0". Do not add a grain counter for them (ADR 0031 keeps the dashboard
+  OTel-only; `ChatSpan_CarriesCachedAndReasoningTokens` pins the emitter); (2) **all three span kinds are already on the
   registered `Agent42.Backend` source and already OTLP-exported**, so the ingestion processor needs **no new
   `AddSource`** and adds no new export/PII surface — it filters in `OnEnd`; (3) async paths (fired reminders,
   agent-run) have no request identity in `RequestContext`, so their `chat` spans carry no `user.*` and their
@@ -3060,12 +3061,48 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `## Memories` **exactly once per turn** (`instructions length=71`, unchanged) and the held instance was
   **never mutated** — the framework composes a per-run copy, so a warm activation's system prompt does not
   grow without bound even though `BuildAgent` holds one `ChatOptions` for the activation's life.
+  **Since ADR 0104 Agent42 no longer lets memory reach the instructions:** `TrailingContextProvider` turns them into
+  a trailing message (see that entry). The facts above still describe the unwrapped provider; `exclude_sources` still
+  ports as nothing, because Hindsight 0.1.0 ignores `AIContextProvider`-sourced messages in both recall and retain.
 - **Evidence:** `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`,
   `tests/Agent42.Tests/AgentGrainTests.cs` (`AgentChat_InjectsRecalledMemories`),
   https://github.com/Expecho/Hindsight.AgentFramework.Net (`HindsightMemoryProvider`, and
   `Memories_DoNotAccumulateAcrossTurns` / `InjectedMemories_AreNotRetained` in its test suite),
   `.agentic/decisions/0056-hindsight-long-term-memory.md`
 - **Verified:** 2026-08-28
+
+### Per-turn context must never go in the instructions — wrap the provider in `TrailingContextProvider`
+
+- **Claim:** (ADR 0104) every provider caches the longest identical request PREFIX, and `ChatOptions.Instructions`
+  is its first segment. An `AIContextProvider` that returns per-turn `Instructions` (Hindsight's `## Memories`
+  recall, shared state before ADR 0104) changes that segment every turn, so tools and history behind it can never be
+  a cache hit — silently, since every reply is still correct. Anything that varies per turn goes in as a trailing
+  message: return `Messages` from your own provider, or wrap a third-party one in `TrailingContextProvider`. The
+  wrapper's isolated context must CARRY the run's messages (Hindsight's recall query is built from them; an empty
+  context makes recall silently return nothing) and keep only what the inner provider adds after them
+  (`Skip(inputCount)`; `Wrapper_DoesNotEchoInput` fails without it). The trailing message is tagged
+  `AIContextProvider`-sourced, so the storage filter keeps it out of the session and Hindsight 0.1.0 neither recalls
+  with it nor retains it (measured). It also lands after the real user turn, so code that reads "the last user
+  message" of a REQUEST now sees the context message, not the user's text.
+- **Evidence:** `src/Agent42.Agents/PromptCaching/TrailingContextProvider.cs`,
+  `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`, `src/Agent42.Agents/SharedState/AgentGrain.SharedState.cs`,
+  `tests/Agent42.Tests/TrailingContextProviderTests.cs`,
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`MemoryAndSharedState_DoNotChangeInstructions`),
+  `.agentic/decisions/0104-prompt-prefix-caching.md`
+- **Verified:** 2026-10-19
+
+### `GetReadUrlAsync` is memoized per blob — a fresh SAS per call breaks the cached history prefix
+
+- **Claim:** (ADR 0104) the grain re-signs every image URL in history on every turn (a warm grain outlives a SAS), and
+  a SAS query string differs on every signing, so an un-memoized store changes the history segment of every request
+  and ends each prompt-cache hit at the first image. `BlobAttachmentStore` reuses a URL while at least half its
+  one-hour lifetime remains (so a handed-out URL always has 30 minutes) and re-signs after. The memo sits above BOTH
+  signing branches (user-delegation and the Azurite shared key). Don't "simplify" it away, and don't move it into
+  the grain: the store is the one place that knows a URL's expiry. Its clock is an injected `TimeProvider`.
+- **Evidence:** `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` (`GetReadUrlAsync`),
+  `tests/Agent42.Tests/BlobAttachmentStoreReadUrlTests.cs`, `.agentic/decisions/0104-prompt-prefix-caching.md`
+- **Verified:** 2026-10-19
+
 ### A live-telemetry test host captures from a PROCESS-GLOBAL source, so those classes must not run in parallel
 
 - **Claim:** `AddLiveTelemetryCapture` (ADR 0054) subscribes its `LiveTelemetryBuffer` to the
@@ -4167,8 +4204,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `UserEdit_DuringAFailedTurn_IsFlushedByTheLastRun` red. **(3)** `Microsoft.AspNetCore.JsonPatch.SystemTextJson`
   10.0.12, measured: a failing `test` op after a `replace` leaves the replace APPLIED, and an unknown op name is
   silently SKIPPED. `SharedStatePatch` validates op names itself and patches a copy parsed fresh from the stored text.
-  **(4)** The model sees the state as an injected INSTRUCTION each run, which is never stored and never accumulates
-  (the "InvokingContext has no RequestMessages" entry); the delegate also hides it on an incognito turn.
+  **(4)** The model sees the state as an injected trailing user-role MESSAGE each run (ADR 0104; it was an instruction
+  before, which broke the cached prompt prefix on every edit). It is tagged `AIContextProvider`-sourced, so the history
+  provider's storage filter never stores it and it never accumulates; the delegate also hides it on an incognito turn.
 - **Evidence:** `src/Agent42.Agents/SharedState/AgentGrain.SharedState.cs`, `src/Agent42.Agents/SharedState/SharedStatePatch.cs`,
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatCoreAsync`, `ReceiveReminder`),
   `tests/Agent42.Tests/SharedStateTests.cs`, `tests/Agent42.Tests/SharedStatePatchTests.cs`,

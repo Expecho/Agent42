@@ -358,6 +358,21 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Contains("\"artifacts\":[{\"artifactId\":\"art-a\",\"version\":2,\"kind\":\"svg\",\"title\":\"Logo\"}]", json, StringComparison.Ordinal);
     }
 
+    // AC12 (ADR 0104): AgentStreamEvent is never stored, but CacheWriteTokens crosses the grain boundary (Orleans binary)
+    // and the HTTP one (the NDJSON camelCase name showUsage reads), so both are checked.
+    [Fact]
+    public void AgentStreamEvent_CacheWriteTokens_RoundTrip()
+    {
+        var done = new AgentStreamEvent(AgentStreamEventType.Done, InputTokens: 10, CacheWriteTokens: 350);
+
+        var serializer = Cluster.GetSiloServiceProvider(Cluster.Primary!.SiloAddress)
+            .GetRequiredService<Orleans.Serialization.Serializer<AgentStreamEvent>>();
+        Assert.Equal(350, serializer.Deserialize(serializer.SerializeToArray(done))!.CacheWriteTokens);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(done, System.Text.Json.JsonSerializerOptions.Web);
+        Assert.Contains("\"cacheWriteTokens\":350", json, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// State a grain builds <b>itself</b> and writes, round-tripped through the real Cosmos serializer.
     ///

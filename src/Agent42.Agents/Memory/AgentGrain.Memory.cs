@@ -1,11 +1,13 @@
 using Hindsight.AgentFramework;
+using Microsoft.Agents.AI;
 
 namespace Agent42.Agents;
 
 /// <summary>
 /// Long-term memory across conversations (ADR 0056): a Hindsight context provider that recalls this
-/// user's memories into the agent's instructions before each model call and retains the turn's
-/// transcript afterwards. One bank per user, keyed on the userId parsed off the grain key.
+/// user's memories before each model call and retains the turn's transcript afterwards. Since ADR 0104 the
+/// recall reaches the model as a trailing user-role message (<see cref="TrailingContextProvider"/>), not in the
+/// instructions, so it no longer breaks the cached request prefix. One bank per user, keyed on the userId parsed off the grain key.
 ///
 /// Since ADR 0057 it is no longer always-on: it is a selectable tool (ToolCatalog.Memory), gated at the
 /// three ADR 0021 layers on top of the operator's Hindsight:ApiKey.
@@ -54,20 +56,23 @@ public sealed partial class AgentGrain
     //
     // The bank is read from the grain key rather than from _userId so it carries no dependency on
     // OnActivateAsync having run its assignments first.
-    private HindsightMemoryProvider? BuildMemoryProvider(ISet<string> enabled)
+    //
+    // Wrapped in TrailingContextProvider (ADR 0104): Hindsight puts its recall in Instructions, which sit at the
+    // front of the cached request prefix and would change it on every turn.
+    private AIContextProvider? BuildMemoryProvider(ISet<string> enabled)
     {
         if (_memory.Client is null || !enabled.Contains(ToolCatalog.Memory))
         {
             return null;
         }
 
-        return new HindsightMemoryProvider(
+        return new TrailingContextProvider(new HindsightMemoryProvider(
             _memory.Client,
             new HindsightOptions
             {
                 BankId = UserIdFromGrainKey(this.GetPrimaryKeyString()),
                 Mission = _memory.Mission,
                 IsEnabled = () => !_ephemeral,
-            });
+            }));
     }
 }
