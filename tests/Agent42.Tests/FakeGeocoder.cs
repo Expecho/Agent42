@@ -1,4 +1,5 @@
 using Agent42.Agents;
+using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.TestingHost;
@@ -80,6 +81,10 @@ public sealed class CoordinatesOnlyGeocoderSiloConfigurator : ISiloConfigurator
             // Replaces the IGeocoder that AddWebToolFakes just registered (last registration wins for
             // a single resolve) — the point of this silo.
             services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
+
+            // Last: supplies the host-invariant services and fails the silo at startup, naming the type, if a grain
+            // dependency above is missing (ADR 0105).
+            services.AddAgent42Silo();
         });
     }
 }

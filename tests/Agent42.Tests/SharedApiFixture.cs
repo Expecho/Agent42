@@ -112,10 +112,10 @@ public class SharedApiFixture : SharedClusterFixture
         // The agent webhook's secret (ADR 0094). Its endpoint resolves this optionally and answers 503 without it.
         services.AddSingleton<IWebhookSecretProtector>(new WebhookSecretProtector(
             new EphemeralDataProtectionProvider(), NullLogger<WebhookSecretProtector>.Instance));
-        // /api/mcp/oauth/start takes McpOAuthClient as a HANDLER parameter, so it is mandatory for every
-        // host — /api/speech and /api/config-health resolve their own dependencies through IServiceProvider
-        // precisely to avoid adding to this list.
-        services.AddSingleton(new McpOAuthClient(new HttpClient()));
+        // The production endpoint invariants (ADR 0105): McpOAuthClient, which /api/mcp/oauth/start takes as a HANDLER
+        // parameter, and the two protectors, which TryAdd leaves as the ephemeral ones above. /api/speech and
+        // /api/config-health resolve their own dependencies through IServiceProvider precisely to avoid adding to this.
+        services.AddAgent42Api();
         services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
         // /api/models is user-scoped (ADR 0018); the single static catalog stands in for every user.
         services.AddSingleton<IUserModelCatalogProvider>(sp =>

@@ -96,7 +96,6 @@ builder.Services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvide
     ],
 });
 builder.Services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
-builder.Services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
 
 builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel,
 [
@@ -120,18 +119,10 @@ builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel
 builder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
     new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
 
-// Provider secret encryption (ADR 0018): the /api/providers endpoint encrypts keys before the grain.
-// Offline uses the default EPHEMERAL key ring — nothing is persisted, so no blob store is needed. The
-// per-user overlay grain still works (in-memory storage below), so the providers UI is exercisable here.
+// Provider and MCP secret encryption (ADR 0018): the protectors come from AddAgent42Api below, on this ring.
+// Offline uses the default EPHEMERAL key ring — nothing is persisted, so no blob store is needed. The per-user
+// overlay grains still work (in-memory storage below), so the providers and MCP servers UIs are exercisable here.
 builder.Services.AddDataProtection();
-builder.Services.AddSingleton<IProviderSecretProtector, ProviderSecretProtector>();
-// MCP secret encryption (config-driven remote MCP servers): /api/mcp-servers encrypts the header secret
-// before the grain. Same ephemeral offline ring; the per-user MCP overlay grain still works, so the MCP
-// servers CRUD/UI is exercisable here (only overlay→tools reflection is prod-wired).
-builder.Services.AddSingleton<IMcpSecretProtector, McpSecretProtector>();
-// The interactive-OAuth HTTP client (Phase 3) — resolved by the /api/mcp/oauth/* endpoints, exercisable
-// against a real remote MCP server offline (the token is stored in the in-memory overlay grain).
-builder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
 // Connection testing (ADR 0064) over an OFFLINE fake connection factory. The real McpConnectionFactory would
 // dial a live MCP server, which offline means every Test press returns "could not connect" and no leg of the
 // feature is exercisable — so IMcpConnectionFactory (a seam that exists for exactly this) is faked here while
@@ -151,15 +142,12 @@ builder.Services.AddLocalBridge();
 // content, so uploads still round-trip for the display proxy and history rendering.
 builder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
 
-// Document RAG offline (ADR 0007): the real (deterministic, Azure-free) extractor + chunker, a
-// deterministic embedding generator, an in-memory vector index, and the ingestion service — so a
-// document upload → question round-trips locally with no Cosmos or Azure OpenAI.
-builder.Services.AddSingleton<IDocumentTextExtractor, DocumentTextExtractor>();
-builder.Services.AddSingleton<DocumentChunker>();
+// Document RAG offline (ADR 0007): a deterministic embedding generator and an in-memory vector index, so a
+// document upload → question round-trips locally with no Cosmos or Azure OpenAI. The real (Azure-free)
+// extractor, chunker and ingestion service come from AddAgent42Silo below.
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, DeterministicEmbeddingGenerator>();
 builder.Services.AddSingleton<IDocumentIndex, InMemoryDocumentIndex>();
 builder.Services.AddSingleton<IChatSearchIndex, InMemoryChatSearchIndex>();
-builder.Services.AddSingleton<DocumentIngestionService>();
 
 // Web tools offline (ADR 0011): canned search results and canned page text, so the web_search /
 // fetch_web_page tool path renders end to end with no SearXNG sidecar, no Docker and no network.
@@ -168,11 +156,10 @@ builder.Services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
 
 // read_web_document offline (ADR 0066): a canned document instead of a real download, so the whole tool
 // path — allowlist check, ingest into the in-memory vector index, in-process ranking, deferred rebuild —
-// runs with no network. The INGESTOR is the real one (the pipeline is Azure-free and already registered
-// above); only the fetcher differs offline, because only it opens a socket. That is also why no address
+// runs with no network. The INGESTOR is the real one (the pipeline is Azure-free, from AddAgent42Silo
+// below); only the fetcher differs offline, because only it opens a socket. That is also why no address
 // guard is re-implemented here: there is nothing to guard.
 builder.Services.AddSingleton<IWebDocumentFetcher, InMemoryWebDocumentFetcher>();
-builder.Services.AddSingleton<IDocumentIngestor, WebDocumentIngestor>();
 
 // Location offline (ADR 0012): the get_current_location tool path runs end to end — "where am i" makes the
 // canned model call it, and the browser answers it with its real fix as a client tool (ADR 0093) — but
@@ -206,6 +193,11 @@ builder.Services.AddSingleton<IPushNotificationSender, NullPushNotificationSende
 builder.Services.AddSingleton<IAgentWebhookSender, NullAgentWebhookSender>();
 builder.Services.AddSingleton<IWebhookSecretProtector, WebhookSecretProtector>();
 builder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
+
+// The registrations every host shares (ADR 0105), AFTER every port above: the endpoint invariants, then the
+// grain-side ones, which also fail startup naming any grain dependency this host did not register.
+builder.Services.AddAgent42Api();
+builder.Services.AddAgent42Silo();
 
 // Inbound email (ADR 0096) offline: a fixed, PUBLIC dev signing key, so POST /api/email-in is exercisable with curl and
 // a locally computed signature (HMAC-SHA256 of timestamp+token, hex). Never a real key — this file is committed.
