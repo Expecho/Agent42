@@ -33,6 +33,21 @@ public sealed class McpServersAssetsTests
         Assert.Contains("window.location.href = mcpOAuthStartUrl(serverId);", js);
     }
 
+    // The Chrome-extension ADR: the bridge-key panel offers the extension as the second client, inside the one-time
+    // key reveal (the key is pasted into the extension's options), and says plainly what the extension may do.
+    [Fact]
+    public async Task BridgeKeyPanel_MentionsTheChromeExtension()
+    {
+        var html = await _client.GetStringAsync("/index.html");
+
+        var reveal = html.IndexOf("id=\"mcpBridgeKeyReveal\"", StringComparison.Ordinal);
+        var note = html.IndexOf("id=\"mcpBridgeExtensionNote\"", StringComparison.Ordinal);
+        var end = html.IndexOf("</section>", reveal, StringComparison.Ordinal);
+        Assert.True(reveal > 0 && note > reveal && note < end, "the extension note must sit inside the key reveal");
+        Assert.Contains("https://github.com/Expecho/Agent42/releases?q=chrome-extension", html, StringComparison.Ordinal);
+        Assert.Contains("runs page scripts without asking", html, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Preferences_HasAnMcpServersTabAndPanel()
     {

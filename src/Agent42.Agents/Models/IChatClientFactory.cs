@@ -127,7 +127,11 @@ public sealed class SingleChatClientFactory(
     public string DefaultSpeechModelId { get; } =
         speechGenerator is null ? "" : (string.IsNullOrEmpty(defaultSpeechModelId) ? "offline-speech" : defaultSpeechModelId);
 
-    public IChatClient GetClient(string? modelId) => client;
+    // Wrapped like every real provider client (ChatClientFactory.Build), so the offline hosts and the test silos run
+    // the tool-image path too. Without it a test of "no image bytes reach the session" would pass vacuously.
+    private readonly IChatClient _client = new ToolImageChatClient(client);
+
+    public IChatClient GetClient(string? modelId) => _client;
 
     public ModelCapabilities GetCapabilities(string? modelId)
         => capabilities?.Invoke(modelId) ?? ModelCapabilities.Full;

@@ -3712,10 +3712,19 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   the key in access logs as well. `Endpoint_FailsClosed("query-string")` pins the 401. The same reasoning is
   why the helper takes the key from `AGENT42_BRIDGE_KEY` and refuses `--key`: argv is visible to every
   process that can list this one.
-- **Evidence:** `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs`, `tools/Agent42.LocalBridge/BridgeOptions.cs`,
-  `tests/Agent42.Tests/LocalBridgeEndpointTests.cs` (`Endpoint_FailsClosed`),
+  **Since ADR 0109 there is exactly one other place: `Sec-WebSocket-Protocol`, and only under the Chrome
+  extension's exact `Origin`.** A browser WebSocket cannot set `X-Api-Key`, and declarativeNetRequest does not
+  touch an extension's own socket (measured). What keeps pages out is now the **Origin rule**: any present
+  `Origin` other than `LocalBridgeLimits.ExtensionOrigin` is refused even with a valid key, because pages cannot
+  forge `Origin`. Never accept the subprotocol key without that exact Origin, never echo the key back (echo
+  only `agent42-bridge.v1`), and never treat the Origin as a credential: the manifest key is public, and Node can
+  send that header (measured).
+- **Evidence:** `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs` (`ResolveKey`), `tools/Agent42.LocalBridge/BridgeOptions.cs`,
+  `tests/Agent42.Tests/LocalBridgeEndpointTests.cs` (`Endpoint_FailsClosed`,
+  `Endpoint_RejectsAWebPageOrigin_EvenWithAValidKey`, `Endpoint_SubprotocolKey_OnlyFromTheExtensionOrigin`),
+  `tests/Agent42.Tests/LocalBridgeKestrelTests.cs` (`Endpoint_NeverEchoesTheKeyInResponseHeaders`),
   `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Client_KeyFromEnvHeaderOnly`)
-- **Verified:** 2026-09-17
+- **Verified:** 2026-10-20
 
 ### Nothing in a browser tab can relay to BrowserOS neo — any `Origin` gets a 403
 
@@ -3756,13 +3765,78 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   approve-everything path, and it is a launch flag only** (user decision, ADR 0076 amendment): it bypasses
   rules 1–3 and the size limit wholesale, so it must stay off unless passed, fixed at gate construction
   (`readonly _allowAll`), and never reachable from a prompt answer or relayed traffic.
+  **The Chrome extension's gate (`tools/Agent42.ChromeExtension/lib/gate.js`, ADR 0109) ports every rule above,
+  with two recorded divergences:** yolo is a *persisted* options-page checkbox (an extension has no launch), and
+  `evaluate` never prompts (both user decisions). Keep yolo unreachable from relayed traffic. That holds only
+  because of the hard floor in `tools/Agent42.ChromeExtension/lib/config.js`: no tool, `evaluate` included, may act on the extension's own
+  pages, where `chrome.debugger` can evaluate with full `chrome.*` (measured). The "always" set lives in
+  `chrome.storage.session`.
 - **Evidence:** `tools/Agent42.LocalBridge/ConfirmationGate.cs` (`_approved`, the double `IsApproved`),
   `tools/Agent42.LocalBridge/Program.cs` (`ConsolePrompt`, `ConsolePrompt.Read`),
   `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Gate_AllowForSession_*`,
   `ConsolePrompt_ReadsOnlyTheThreeAnswers`, `Gate_Yolo_AllowsEveryCallWithoutPrompting`),
   `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md` (Verification — 0 ESC and 0 U+202E
   bytes on the real terminal; the 2026-09-20 amendment block)
-- **Verified:** 2026-09-21
+- **Verified:** 2026-10-20
+
+### The Chrome extension cannot do three things a console helper can: set a socket header, see a 401, or stay awake on pings
+
+- **Claim:** three measured browser limits shape `tools/Agent42.ChromeExtension` (ADR 0109). Each has an obvious
+  "fix" that is wrong.
+  - **(1) declarativeNetRequest never modifies the extension's OWN WebSocket handshake** (5 rule variants, including
+    one with no conditions). It does modify its `fetch`. A broad DNR rule put `X-Api-Key` on **web pages'** sockets
+    instead, so never "fix" auth with DNR. The key rides the subprotocol (see the header-only entry).
+  - **(2) A refused upgrade is close code 1006 with no status**, so the extension cannot tell a revoked key from a
+    network drop. Its preflight `fetch` (key in `X-Api-Key`) decides: 401 → stop for good, 400 → connect, anything
+    else → back off. Never retry after a 401.
+  - **(3) An MV3 service worker stays alive only on WebSocket *message* traffic.** The server's ping/pong control
+    frames do not count, and a page cannot see them. So the extension sends `{"ch":0,"type":"ping"}` every 20 s,
+    and the backend must answer `pong` on channel 0. Removing the control frames as "unused" by the helper kills
+    the extension within a minute of idling.
+- **Evidence:** `tools/Agent42.ChromeExtension/lib/bridge.js`, `src/Agent42.Backend/Mcp/LocalBridgeSession.cs` (`RouteAsync`),
+  `tests/Agent42.Tests/ChromeExtensionBridgeTests.cs` (`ExtensionCore_StopsOnRevokedKey`,
+  `ExtensionCore_HeartbeatKeepsTheSocketOpen`), `tests/Agent42.Tests/ChromeExtensionScriptTests.cs`
+  (`Manifest_GivesWebPagesNoWayIn`), `.agentic/decisions/0109-chrome-extension-bridge-and-mcp-image-results.md`
+- **Verified:** 2026-10-20
+
+### The extension's hard floor: `chrome.debugger` can script the extension's OWN pages, so no tool may touch them
+
+- **Claim:** measured: `chrome.debugger.attach` + `Runtime.evaluate` works on the extension's own `options.html`, with
+  `chrome.storage` available there. That page holds the bridge key and the yolo switch, and `approve.html` holds the
+  pending approval. So with `evaluate` unprompted (a user decision), the model could approve itself or turn on yolo.
+  `tools/Agent42.ChromeExtension/lib/config.js` `hardFloorRefusal` **fails closed**: only http(s) pages (not the Web Store), a
+  `blob:` judged by the site that created it (`blob:https://bank…` runs as the bank), and a bare `about:blank` pass,
+  and on a blank tab only `navigate`/`manage_tabs` run, because it can inherit an opener's origin. That holds for **every** tool, before the gate **and again at execution** (a tab can navigate
+  while the prompt is open), and under yolo too. It is not a setting. Never make it one, and never move it behind
+  the gate. A related rule: injected page functions in `browser.js` take only their arguments. Content scripts can
+  read `chrome.storage.local`, where the key lives.
+- **Evidence:** `tools/Agent42.ChromeExtension/lib/config.js`, `tools/Agent42.ChromeExtension/lib/tools.js` (`callTool`),
+  `tools/Agent42.ChromeExtension/test/tools.test.mjs` ("no tool acts on the extension's own pages…", "the tab's
+  address is re-checked after the gate"), `tests/Agent42.Tests/ChromeExtensionScriptTests.cs`
+  (`InjectedFunctions_NeverTouchExtensionApis`)
+- **Verified:** 2026-10-20
+
+### A multi-part MCP result is an `AIContent[]`; images are taken out before truncation and shown for ONE turn only
+
+- **Claim:** with ModelContextProtocol 2.2.0, `McpClientTool` returns a `TextContent` for a text-only result and an
+  `AIContent[]` for a multi-part one. The array's `ToString()` is its **type name**, so a `ToString()`-length budget
+  never truncated it, and an image passed through as `DataContent` into the persisted session (both measured, and
+  fixed by ADR 0109's `McpToolResultShaper`). Rules that must survive:
+  - **(1)** shape an `AIContent` list into one bounded string;
+  - **(2)** images go to the run's `TurnContext` (rule 6, never a grain field), and the persisted text holds a
+    placeholder worded from `ToolImagesVisible` (set from `CanSeeImages()`), so a later turn never reads a false
+    "shown";
+  - **(3)** `ToolImageChatClient` inserts them into the **request** only, never mutating the handed messages (they
+    are the live session), as one user message **after the whole tool-result group**. Chat Completions sends an
+    image inside a tool result as JSON text;
+  - **(4)** it sits innermost, **below `UseOpenTelemetry`** (sensitive data on: above it, every span carries the
+    base64), and the single-client factory wraps it too, or every grain test of this is vacuous (mutation-checked).
+
+  Never "fix" a later turn not seeing an old screenshot by persisting it: that is ADR 0004's 2 MB session.
+- **Evidence:** `src/Agent42.Backend/Mcp/McpToolResultShaper.cs`, `src/Agent42.Agents/Models/ToolImageChatClient.cs`,
+  `src/Agent42.Agents/Conversations/TurnContext.cs` (`RecordToolImage`), `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Build`),
+  `src/Agent42.Agents/Models/IChatClientFactory.cs` (`SingleChatClientFactory`), `tests/Agent42.Tests/McpToolImageTests.cs`
+- **Verified:** 2026-10-20
 
 ### A bridge that connects after a chat activated is invisible to it — invalidate on CONNECT, rate-limited, never on disconnect
 

@@ -8,6 +8,11 @@ extends: [0024]
 amends: [0002, 0022, 0036, 0042, 0068]
 ---
 
+> **Amended by [ADR 0109](0109-chrome-extension-bridge-and-mcp-image-results.md) (2026-10-20).** With the Chrome
+> extension connected, a turn run through this surface can make the owner's Chrome run JavaScript **without any
+> prompt** (`evaluate`, a user decision). 0076's "each write still meets the helper's prompt" does not hold for it.
+> Narrow the bridge server's tools (ADR 0058) for agents exposed here.
+
 > **Amended by [ADR 0076](0076-local-bridge-for-machine-local-mcp-servers.md) (2026-09-17).** A turn run
 > through this surface may now use a user's **local-bridge** MCP tools — actions in the owner's signed-in
 > browser — because `WithoutMemoryOrPush` removes no MCP keys and any turn kind may use a connected bridge

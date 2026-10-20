@@ -62,7 +62,7 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 
 | Feature | Page |
 |---------|------|
-| Add your own tools via MCP (auth options, OAuth refresh and Reconnect, connection test, per-server toggle, local bridge for on-machine servers) | [remote-mcp-servers.md](remote-mcp-servers.md) |
+| Add your own tools via MCP (auth options, OAuth refresh and Reconnect, connection test, per-server toggle, local bridge for on-machine servers, the Chrome extension, images from MCP tools) | [remote-mcp-servers.md](remote-mcp-servers.md) |
 
 ## Notifications & sharing (installed Android/Chromium PWA)
 

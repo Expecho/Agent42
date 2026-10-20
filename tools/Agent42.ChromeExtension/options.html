@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Agent42 browser bridge — options</title>
+  <link rel="stylesheet" href="pages.css">
+</head>
+<body>
+  <main>
+    <h1>Agent42 browser bridge</h1>
+    <p class="muted">Lets your Agent42 conversations use this Chrome, with your sign-ins. In Agent42, add an MCP
+      server with authentication <b>Local bridge</b>, then paste its bridge key here.</p>
+
+    <label for="server">Agent42 address</label>
+    <input id="server" type="url" placeholder="https://chat.agent42.nl" autocomplete="off">
+
+    <label for="key">Bridge key</label>
+    <input id="key" type="password" placeholder="sk_bridge_…" autocomplete="off">
+
+    <label for="blocked">Blocked sites</label>
+    <textarea id="blocked" rows="6" placeholder="one site per line, e.g. mybank.example"></textarea>
+    <p class="muted small">No browser action runs on these sites or their subdomains, not even
+      <code>evaluate</code>. The Agent42 site itself is blocked by default.</p>
+
+    <label class="check"><input id="yolo" type="checkbox"> Run every action without asking (not recommended)</label>
+
+    <div class="warning">
+      <p><b>Know what this allows.</b> The agent can see and act on <b>every open tab</b>. Its
+        <code>evaluate</code> tool runs JavaScript in a page <b>without asking</b>, and it can be reached from
+        agent runs, API keys, reminders and inbound email, not only from chats you are watching. Text on a web
+        page can steer the agent. Keep sensitive sites on the blocked list, and narrow this server's tools in
+        Agent42 for agents that others can reach.</p>
+    </div>
+
+    <div class="buttons"><button id="save">Save</button></div>
+    <p id="saved" class="muted" role="status"></p>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

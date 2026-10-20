@@ -613,6 +613,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // only in the UI: the UI is not a security boundary. A copilot chat never sees images (CanSeeImages).
         var canSeeImages = CanSeeImages();
 
+        // The same rule decides whether an MCP tool's images reach the model this run (the Chrome-extension ADR).
+        turn.SetToolImagesVisible(canSeeImages);
+
         // Refresh the image URLs on PRIOR turns before this model call. Azure OpenAI re-fetches
         // a prior turn's image URL on every subsequent turn (Step 1 spike), and a blob SAS is
         // short-lived — but a warm grain serves many turns without reactivating, so this must run
@@ -1515,7 +1518,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         // Refresh prior turns' image URLs before this model call too (a reminder can fire on a
         // long-warm grain whose SAS URLs have since expired) — same reason as ChatAsync.
-        await RehydrateAttachmentUrlsAsync(CanSeeImages());
+        var canSeeImages = CanSeeImages();
+        turn.SetToolImagesVisible(canSeeImages);
+        await RehydrateAttachmentUrlsAsync(canSeeImages);
 
         // A reminder-fired turn is a user turn too, so it must push a (always empty) attachment
         // entry to keep TurnAttachments aligned 1:1 with user turns by index (constraint 11).
