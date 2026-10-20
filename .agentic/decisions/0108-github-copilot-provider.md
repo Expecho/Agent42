@@ -107,10 +107,11 @@ provider and AF `GitHubCopilotAgent`, with a `gho_` token (output in
     as the app's user, so the existing `/proc/<pid>/environ` residual extends to the runtime's memory: the token is not
     in any environment, but a same-user process could in principle read another's memory where ptrace is allowed.
   - Built-in tools stay on for GitHub-mode sessions.
-- **Still open, needing the user's OAuth App** (plan Step 0):
-  - 0.1, an Agent42-OAuth-App token, and the minimum `Scopes` (shipped empty);
-  - 0.2, whether GitHub honours PKCE on the exchange (it is sent);
-  - 0.10, an account without a Copilot plan (the picker then shows none).
+- **Checked on 2026-10-20 with a dev OAuth App** (plan Step 0 results): a token from Agent42's own OAuth App with
+  `Scopes` empty lists the plan's 21 models, so **no scope is needed**; the exchange succeeds with the PKCE verifier
+  sent (whether GitHub *enforces* it is not proven).
+- **Still open:** a copilot chat turn on that token; 0.10, an account without a Copilot plan (the picker then shows
+  none).
 - **Manual prerequisites:** the `GH_OAUTH_CLIENT_SECRET` secret, `GitHub:OAuth:ClientId` in `appsettings.json`, and
   the callback `https://chat.agent42.nl/api/providers/github/callback` registered on the OAuth App.
 - **Out of scope:** revoking the grant at GitHub on disconnect, Copilot quota display, GitHub Enterprise hosts, Copilot's

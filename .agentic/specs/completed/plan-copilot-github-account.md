@@ -412,5 +412,15 @@ Findings:
   `iad` load balancer). **IP-level capture cannot tell telemetry from inference**: the telemetry hosts resolve into
   the same GitHub ranges. So `EnableSessionTelemetry = false` is set and documented, but its effect is UNVERIFIED by
   measurement — the ADR says exactly that. No non-GitHub host was contacted.
-- **Still open (need the user's OAuth App):** 0.1 (a token from Agent42's own OAuth App + minimal scope), 0.2 (PKCE
-  on GitHub's token exchange), 0.10 (an account without a Copilot plan).
+- **0.1 / 0.2, run 2026-10-20 on the full stack** (AppHost, backend on `http://localhost:5284`, a dev OAuth App
+  `Ov23liLlqJgCWOc0f373` with that callback, `GitHub:OAuth:Scopes` empty). `/api/providers/github/start` redirected to
+  `github.com/login/oauth/authorize?client_id=Ov23liLlqJgCWOc0f373&redirect_uri=http%3A%2F%2Flocalhost%3A5284%2Fapi%2Fproviders%2Fgithub%2Fcallback&state=…&code_challenge=…&code_challenge_method=S256&allow_signup=false`.
+  After the user approved, `/api/providers` showed `{"key":"github-copilot","kind":"GitHubCopilot",…,"hasKey":true}`
+  and `/api/models` listed 21 `github-copilot:*` models (`auto`, `claude-opus-5.5`, `gpt-6.1-sol`, …), all
+  `copilotOnly: true`, with `default` empty.
+  - **0.1 PASS for discovery:** the OAuth App's token, with **no scope**, reaches the user's Copilot plan. `Scopes`
+    stays empty. A copilot chat turn on this token has not been run yet (the local user has no ordinary provider,
+    so the composer is gated, as designed).
+  - **0.2 PARTIAL:** the exchange succeeds with `code_verifier` sent. Whether GitHub rejects a wrong verifier was not
+    tested.
+- **Still open:** 0.10 (an account without a Copilot plan).
