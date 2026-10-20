@@ -4,6 +4,8 @@ using Agent42.Backend;
 using GitHub.Copilot;
 using GitHub.Copilot.Rpc;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 #pragma warning disable GHCP001 // The SDK's SessionFs and permission RPC types are [Experimental]; these tests pin them.
@@ -12,8 +14,8 @@ namespace Agent42.Tests;
 
 /// <summary>
 /// The Backend runtime host of the copilot agent kind, without a runtime process: the provider mapping (BYOK), the
-/// permission policy, the client and session options that make up the phase-1 trust boundary, and the SessionFs
-/// provider over the session store.
+/// permission policy, the client and session options in both modes of the built-in tools kill switch (ADR 0107; off is
+/// ADR 0085's phase-1 trust boundary), and the SessionFs provider over the session store.
 /// </summary>
 public sealed class CopilotRuntimeTests
 {
@@ -138,8 +140,8 @@ public sealed class CopilotRuntimeTests
         }
     }
 
-    // AC22: no built-in tools, no GitHub identity, an explicit stdio runtime, a minimal environment that carries none
-    // of the app's variables, the idle backstop, and SessionFs.
+    // AC22 + ADR 0107 AC2: with the switch off, no built-in tools, no GitHub identity, an explicit stdio runtime, a
+    // minimal environment that carries none of the app's variables, the idle backstop, and a virtual SessionFs.
     [Fact]
     public void CopilotClientOptions_MinimalEnvAndIdleTimeout()
     {
@@ -147,9 +149,11 @@ public sealed class CopilotRuntimeTests
         try
         {
             var options = CopilotAgentFactory.BuildClientOptions(
-                new CopilotRuntimeOptions { RuntimePath = "/app/copilot", SessionIdleTimeoutSeconds = 900 });
+                new CopilotRuntimeOptions { RuntimePath = "/app/copilot", SessionIdleTimeoutSeconds = 900, BuiltInToolsEnabled = false });
 
             Assert.Equal(CopilotClientMode.Empty, options.Mode);
+            Assert.Equal("/work", options.SessionFs!.InitialWorkingDirectory);
+            Assert.Equal(SessionFsSetProviderConventions.Posix, options.SessionFs.Conventions);
             Assert.False(options.UseLoggedInUser);
             Assert.Null(options.GitHubToken);
             Assert.IsType<StdioRuntimeConnection>(options.Connection);
@@ -163,6 +167,75 @@ public sealed class CopilotRuntimeTests
         {
             Environment.SetEnvironmentVariable("AZURE_CLIENT_ID", null);
         }
+    }
+
+    // ADR 0107 AC1: with the switch on, default mode (the built-ins), the REAL workspace root as the initial working
+    // directory (a virtual one breaks the shell), the state path unchanged, and the minimal environment plus PATH only.
+    [Fact]
+    public void CopilotClientOptions_BuiltIns_CliModeRealRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "copilot-root-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("AZURE_CLIENT_ID", "should-not-leak");
+        try
+        {
+            var options = CopilotAgentFactory.BuildClientOptions(
+                new CopilotRuntimeOptions { RuntimePath = "/app/copilot", WorkspaceRoot = root + Path.DirectorySeparatorChar });
+
+            Assert.Equal(CopilotClientMode.CopilotCli, options.Mode);
+            Assert.False(options.UseLoggedInUser);
+            Assert.Equal(root, options.SessionFs!.InitialWorkingDirectory);
+            Assert.Equal("/state", options.SessionFs.SessionStatePath);
+            Assert.Equal(
+                OperatingSystem.IsWindows() ? SessionFsSetProviderConventions.Windows : SessionFsSetProviderConventions.Posix,
+                options.SessionFs.Conventions);
+            Assert.Equal(CopilotAgentFactory.MinimalEnvironment().Keys.Append("PATH").Order(), options.Environment!.Keys.Order());
+            Assert.DoesNotContain(options.Environment, e => e.Key.StartsWith("AZURE_", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AZURE_CLIENT_ID", null);
+        }
+    }
+
+    // ADR 0107 AC3: with the switch on, the session works in its own conversation directory, leaves AvailableTools
+    // unset (it would hide the built-ins), and is decided by the workspace policy. Everything else stays as off.
+    [Fact]
+    public async Task SessionConfig_BuiltIns_PerConversationWorkingDirectory_NoAvailableTools()
+    {
+        var settings = CopilotProviderSettings.OpenAICompatible(new Uri("https://x.example"), Key);
+        var workspace = CopilotWorkspacePaths.For(Path.GetTempPath(), "user-1", "conv-1");
+
+        var config = CopilotAgentFactory.BuildSessionConfig(Request(["/skills/websearch"]), settings, "m", workspace);
+
+        Assert.Equal(workspace, config.WorkingDirectory);
+        Assert.Null(config.AvailableTools);
+        Assert.Equal(["get_word"], config.Tools!.Select(t => t.Name));
+        Assert.True(config.EnableSkills);
+        Assert.Empty(config.IncludedBuiltinSkills!);
+        Assert.False(config.EnableConfigDiscovery);
+        Assert.False(config.LargeOutput!.Enabled);
+        var shell = await config.OnPermissionRequest!(Fake<PermissionRequestShell>(), null!);
+        Assert.IsType<PermissionDecisionApproveOnce>(shell);
+    }
+
+    // ADR 0107 AC7: both new keys bind from configuration, defaulting to on and a temp directory.
+    [Fact]
+    public void CopilotOptions_BindFromConfig()
+    {
+        static CopilotRuntimeOptions Bind(Dictionary<string, string?> values)
+        {
+            var services = new ServiceCollection();
+            services.AddCopilotAgents(new ConfigurationBuilder().AddInMemoryCollection(values).Build());
+            return services.BuildServiceProvider().GetRequiredService<CopilotRuntimeOptions>();
+        }
+
+        var set = Bind(new() { ["Copilot:BuiltInToolsEnabled"] = "false", ["Copilot:WorkspaceRoot"] = "/mnt/copilot" });
+        var unset = Bind([]);
+
+        Assert.False(set.BuiltInToolsEnabled);
+        Assert.Equal("/mnt/copilot", set.WorkspaceRoot);
+        Assert.True(unset.BuiltInToolsEnabled);
+        Assert.StartsWith(Path.GetTempPath(), unset.WorkspaceRoot, StringComparison.Ordinal);
     }
 
     // AC24 + AC23 (session half): the runtime's own skills are never included; selected folders turn skills and the
@@ -183,6 +256,7 @@ public sealed class CopilotRuntimeTests
         Assert.False(without.EnableSkills);
         Assert.Null(without.SkillDirectories);
         Assert.Equal(["get_word"], without.AvailableTools!);
+        Assert.Null(with.WorkingDirectory);
         Assert.False(with.EnableSessionStore);
         Assert.False(with.EnableConfigDiscovery);
         Assert.True(with.SkipCustomInstructions);
@@ -243,19 +317,59 @@ public sealed class CopilotRuntimeTests
         Assert.Empty(await store.ListAsync(""));
     }
 
-    // AC13 (store half): deleting a conversation removes every file under its prefix and nothing else.
+    // AC13 (store half) + ADR 0107 AC6: deleting a conversation removes every file under its prefix AND its workspace
+    // directory, and nothing else.
     [Fact]
     public async Task DeleteConversation_RemovesOnlyThatConversation()
     {
-        var store = new InMemoryCopilotSessionStore();
-        await store.WriteAsync(CopilotSessionPaths.ConversationPrefix("u", "c1") + "state/events.jsonl", "x");
-        await store.WriteAsync(CopilotSessionPaths.ConversationPrefix("u", "c1") + "state/workspace.yaml", "x");
-        await store.WriteAsync(CopilotSessionPaths.ConversationPrefix("u", "c10") + "state/events.jsonl", "keep");
-        var factory = new CopilotAgentFactory(store, new CopilotRuntimeOptions(), NullLoggerFactory.Instance);
+        var root = Path.Combine(Path.GetTempPath(), "copilot-del-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new InMemoryCopilotSessionStore();
+            await store.WriteAsync(CopilotSessionPaths.ConversationPrefix("u", "c1") + "state/events.jsonl", "x");
+            await store.WriteAsync(CopilotSessionPaths.ConversationPrefix("u", "c1") + "state/workspace.yaml", "x");
+            await store.WriteAsync(CopilotSessionPaths.ConversationPrefix("u", "c10") + "state/events.jsonl", "keep");
+            var c1 = CopilotWorkspacePaths.For(root, "u", "c1");
+            var c10 = CopilotWorkspacePaths.For(root, "u", "c10");
+            Directory.CreateDirectory(Path.Combine(c1, "sub"));
+            await File.WriteAllTextAsync(Path.Combine(c1, "sub", "a.txt"), "x");
+            Directory.CreateDirectory(c10);
+            var factory = new CopilotAgentFactory(store, new CopilotRuntimeOptions { WorkspaceRoot = root }, NullLoggerFactory.Instance);
 
-        await factory.DeleteConversationAsync("u", "c1");
+            await factory.DeleteConversationAsync("u", "c1");
 
-        Assert.Equal([CopilotSessionPaths.ConversationPrefix("u", "c10") + "state/events.jsonl"], await store.ListAsync(""));
+            Assert.Equal([CopilotSessionPaths.ConversationPrefix("u", "c10") + "state/events.jsonl"], await store.ListAsync(""));
+            Assert.False(Directory.Exists(c1));
+            Assert.True(Directory.Exists(c10));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // ADR 0107 AC6: an id that cannot name a workspace deletes no directory at all, so never the user's or the root.
+    [Fact]
+    public async Task DeleteConversation_DotDotId_DeletesNothing()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "copilot-del-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var user = Path.Combine(root, "u");
+            Directory.CreateDirectory(Path.Combine(user, "c1"));
+            var factory = new CopilotAgentFactory(
+                new InMemoryCopilotSessionStore(), new CopilotRuntimeOptions { WorkspaceRoot = root }, NullLoggerFactory.Instance);
+
+            await factory.DeleteConversationAsync("u", "..");
+            await factory.DeleteConversationAsync("u", ".");
+            await factory.DeleteConversationAsync("..", "..");
+
+            Assert.True(Directory.Exists(Path.Combine(user, "c1")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     // The SDK exposes no public constructor for its permission requests; the policy only looks at the type.

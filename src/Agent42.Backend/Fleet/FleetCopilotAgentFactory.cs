@@ -11,10 +11,11 @@ namespace Agent42.Backend;
 /// <summary>
 /// The Copilot runtime the agent fleet's Copilot agents run on (ADR 0097): ONE lazily created client per silo, in
 /// DEFAULT mode (<see cref="CopilotClientMode.CopilotCli"/>), so its agents keep Copilot's built-in shell, file and URL
-/// tools. It is deliberately NOT ADR 0085's client: that one runs in <c>Mode.Empty</c> with a Blob <c>SessionFs</c> and
-/// <c>/work</c>, and merging the two would give copilot-kind chats built-in tools or fleet agents a virtual
-/// filesystem. Fleet sessions are one-shot and never resumed, so there is no <c>SessionFs</c>; each session works in
-/// its task's local workspace directory. Creating this spawns nothing.
+/// tools. It is deliberately NOT ADR 0085's client: that one has a Blob <c>SessionFs</c> (transcripts that resume
+/// across deploys), auto-approves, and follows its own kill switch (<c>Copilot:BuiltInToolsEnabled</c>, ADR 0107; off
+/// it runs <c>Mode.Empty</c> at a virtual <c>/work</c>). Merging the two would give fleet agents a store-routed
+/// filesystem, or tie one kill switch to the other. Fleet sessions are one-shot and never resumed, so there is no
+/// <c>SessionFs</c>; each session works in its task's local workspace directory. Creating this spawns nothing.
 /// </summary>
 public sealed class FleetCopilotHost : IAsyncDisposable
 {
@@ -46,22 +47,10 @@ public sealed class FleetCopilotHost : IAsyncDisposable
         Mode = CopilotClientMode.CopilotCli,
         Connection = RuntimeConnection.ForStdio(CopilotAgentFactory.RuntimePath(runtime), null),
         UseLoggedInUser = false,
-        Environment = Environment(),
+        Environment = CopilotAgentFactory.ShellEnvironment(),
         SessionIdleTimeoutSeconds = runtime.SessionIdleTimeoutSeconds,
         Logger = logger,
     };
-
-    /// <summary>ADR 0085's minimal environment with <c>PATH</c> added: still no identity, Cosmos or storage variables.</summary>
-    public static IReadOnlyDictionary<string, string> Environment()
-    {
-        var environment = new Dictionary<string, string>(CopilotAgentFactory.MinimalEnvironment());
-        if (System.Environment.GetEnvironmentVariable("PATH") is { Length: > 0 } path)
-        {
-            environment["PATH"] = path;
-        }
-
-        return environment;
-    }
 
     public async ValueTask DisposeAsync()
     {
@@ -133,8 +122,8 @@ public sealed class FleetCopilotAgentFactory(
     /// task's workspace as working directory, and this task's permission policy. Host discovery (config, custom
     /// instructions, file hooks, the session store) and the large-output spill to a temp file outside the workspace are
     /// off. The canvas tools are custom tools (ADR 0102), and <c>AvailableTools</c> stays unset on purpose: the chat
-    /// kind sets it to restrict a <c>Mode.Empty</c> session to its custom tools, and here it would hide the shell and
-    /// file built-ins the fleet's default mode keeps.
+    /// kind sets it (with built-in tools off) to restrict a <c>Mode.Empty</c> session to its custom tools, and here it
+    /// would hide the shell and file built-ins the fleet's default mode keeps.
     /// </summary>
     public SessionConfig BuildSessionConfig(CopilotProviderSettings settings, string model, string instructions) => new()
     {

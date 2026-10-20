@@ -89,8 +89,8 @@ flowchart LR
 ## Copilot agents (`model: id: copilot`)
 
 A Copilot fleet agent runs GitHub Copilot's loop with its **built-in shell, file and URL tools**, in the task's
-workspace directory inside the backend container. This is the one place ADR 0085's "no built-in tools" boundary is
-set aside (ADR 0097). Every write, command and fetch is asked to you ("always for this task" is per task). Reads and
+workspace directory inside the backend container. This set aside ADR 0085's "no built-in tools" boundary (ADR 0097),
+as copilot-kind chats now do too, but auto-approved (ADR 0107). Every write, command and fetch is asked to you ("always for this task" is per task). Reads and
 writes outside the workspace are refused, and the runtime gets a minimal environment. `Fleet:CopilotAgentsEnabled`
 switches it off. The residual risks are in ADR 0097: a shell can reach the app on localhost, read the container's
 files, and use its network. Since ADR 0101 the workspace can hold your uploaded files, so its shell and file tools read

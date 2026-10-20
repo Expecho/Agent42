@@ -3,8 +3,8 @@ using System.Text.RegularExpressions;
 namespace Agent42.Tests;
 
 /// <summary>
-/// The shell of a Copilot fleet agent (ADR 0097) can run only what the backend image bakes in: the app runs as
-/// <c>$APP_UID</c>, so nothing can be installed at runtime. Python 3 and Node.js are installed in the runtime stage
+/// The shell of a Copilot fleet agent or chat (ADR 0097, 0107) can run only what the backend image bakes in: the app
+/// runs as <c>$APP_UID</c>, so nothing can be installed at runtime. Python 3 and Node.js are installed in the runtime stage
 /// on purpose, and a Dockerfile refactor must not drop them silently.
 /// </summary>
 public sealed partial class BackendImageRuntimeTests

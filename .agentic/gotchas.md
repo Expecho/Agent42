@@ -4072,11 +4072,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   grain session is NOT a backup of a copilot chat, and the Blob prefix must be deleted with the chat. Agent
   Framework **1.22.0** drops `CreateSessionFsProvider` when it builds the resume config (turn 2 throws
   `CreateSessionFsProvider is required ... when CopilotClientOptions.SessionFs is configured`). 1.23.0 copies it, so
-  never move `Microsoft.Agents.AI.GitHub.Copilot` below 1.23.0. Under `CopilotClientMode.Empty`, every session AND
-  resume config must also carry `AvailableTools` (else `ArgumentException`).
-- **Evidence:** `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs`, `Directory.Packages.props` (the AF pin comment),
-  `tests/Agent42.Tests/LiveCopilotTests.cs` (`LiveCopilot_ToolTurn_ResumesFromSessionFs`)
-- **Verified:** 2026-10-05
+  never move `Microsoft.Agents.AI.GitHub.Copilot` below 1.23.0. Under `CopilotClientMode.Empty` (the
+  `Copilot:BuiltInToolsEnabled` kill switch OFF), every session AND resume config must also carry `AvailableTools`
+  (else `ArgumentException`). With it ON (ADR 0107), `AvailableTools` must stay UNSET, because it would hide the
+  built-ins. A chat created in one mode resumes in the other (measured both ways, 2026-10-20).
+- **Evidence:** `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`BuildSessionConfig`), `Directory.Packages.props`
+  (the AF pin comment), `tests/Agent42.Tests/LiveCopilotTests.cs` (`LiveCopilot_ToolTurn_ResumesFromSessionFs`,
+  `LiveCopilot_PreexistingSession_ResumesWithWorkspaceShell`)
+- **Verified:** 2026-10-20
 
 ### A non-`ChatClientAgent` session has NO in-memory history until a run completes — seed it, or a stopped first turn is dropped
 
@@ -4325,15 +4328,17 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ### A fleet Copilot `SessionConfig` must NOT set `AvailableTools`
 
-- **Claim:** the copilot chat kind (`src/Agent42.Backend/Copilot/CopilotAgentFactory.cs`) sets `AvailableTools` to its custom tool names,
-  which restricts a `Mode.Empty` session to exactly those. Copying that into `FleetCopilotAgentFactory.BuildSessionConfig`
-  would restrict a fleet session (default mode) the same way and hide the shell and file built-ins ADR 0097 keeps.
-  The fleet sets only `Tools` (the four canvas tools, ADR 0102). **Unverified live:** that a default-mode BYOK session
-  offers custom `Tools` alongside the built-ins (no Copilot model key).
+- **Claim:** with built-in tools OFF, the copilot chat kind (`src/Agent42.Backend/Copilot/CopilotAgentFactory.cs`)
+  sets `AvailableTools` to its custom tool names, which restricts a `Mode.Empty` session to exactly those. Copying
+  that into `FleetCopilotAgentFactory.BuildSessionConfig` (or into the chat's built-ins-ON path, ADR 0107) would
+  restrict a default-mode session the same way and hide the shell and file built-ins. The fleet sets only `Tools`
+  (the four canvas tools, ADR 0102). Measured live for the chat kind on 2026-10-20: a default-mode BYOK session
+  offers custom `Tools` alongside the built-ins (`web_search` and `create`/`powershell` in one chat).
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`BuildSessionConfig`),
   `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs` (`SessionConfig_CarriesCanvasTools_KeepsBuiltins`),
+  `tests/Agent42.Tests/CopilotRuntimeTests.cs` (`SessionConfig_BuiltIns_PerConversationWorkingDirectory_NoAvailableTools`),
   `.agentic/decisions/0102-fleet-shared-canvas.md`
-- **Verified:** 2026-10-18
+- **Verified:** 2026-10-20
 
 ### Fleet workspace downloads are an XSS sink: attachment, nosniff, never an HTML or SVG type
 
@@ -4351,21 +4356,42 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ### The fleet's Copilot client is NOT ADR 0085's client: don't merge them
 
-- **Claim:** two `CopilotClient`s live in one silo on purpose. `CopilotAgentFactory` (the copilot agent kind) runs
-  `CopilotClientMode.Empty` with a Blob `SessionFs` at `/work`: no built-in tools. `FleetCopilotHost` runs the
-  default mode (`CopilotClientMode.CopilotCli`), so fleet Copilot agents keep the shell, file and URL tools, with no
-  `SessionFs` (fleet sessions are one-shot) and `SessionConfig.WorkingDirectory` set to the task's local workspace.
-  Sharing one client would give copilot-kind chats built-in tools, or fleet agents a virtual filesystem. The fleet
-  environment is `MinimalEnvironment()` plus `PATH` only. Its permission policy is per task, so "always" never
-  outlives the task, and `PermissionRequestCustomTool` is approved without asking (default mode still raises it).
-  The kill switch is `Fleet:CopilotAgentsEnabled`. Since ADR 0102 fleet sessions carry the canvas tools as custom
-  `Tools` (see "A fleet Copilot `SessionConfig` must NOT set `AvailableTools`"). **Unverified live:** that a
-  default-mode BYOK session raises write/shell permissions, honours the working directory and offers the custom
-  tools (the spike had no model key).
+- **Claim:** two `CopilotClient`s live in one silo on purpose. `CopilotAgentFactory` (the copilot agent kind) HAS
+  a `SessionFs` (the transcript in Blob, so chats resume across deploys) and auto-approves. With
+  `Copilot:BuiltInToolsEnabled` on (ADR 0107) it runs default mode with a real per-conversation directory on the Azure
+  Files share; off, it runs `CopilotClientMode.Empty` at a virtual `/work`. `FleetCopilotHost` runs default mode
+  with NO `SessionFs` (fleet sessions are one-shot), `SessionConfig.WorkingDirectory` set to the task's local
+  workspace, and a per-task policy that ASKS the user ("always" never outlives the task). Sharing one client would
+  give fleet agents a store-routed filesystem, or tie the chat's kill switch to the fleet's. Both environments are
+  `CopilotAgentFactory.ShellEnvironment()` (`MinimalEnvironment()` plus `PATH`) when built-ins are on, and both
+  approve `PermissionRequestCustomTool` without asking (default mode still raises it). The fleet's kill switch is
+  `Fleet:CopilotAgentsEnabled`. Since ADR 0102 fleet sessions carry the canvas tools as custom `Tools`. Measured
+  live for the chat client (2026-10-20): a default-mode BYOK session raises write and shell permissions, honours
+  the working directory, and offers custom tools.
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`FleetCopilotHost.BuildClientOptions`),
   `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`BuildClientOptions`),
-  `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs`, `.agentic/decisions/0097-agent-fleet-recursive-teams.md`
-- **Verified:** 2026-10-13
+  `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs`, `tests/Agent42.Tests/LiveCopilotTests.cs`,
+  `.agentic/decisions/0097-agent-fleet-recursive-teams.md`, `.agentic/decisions/0107-copilot-chat-builtin-tools.md`
+- **Verified:** 2026-10-20
+
+### A Copilot chat's shell needs a REAL working directory: route only `/state` to the store
+
+- **Claim:** with built-in tools on, the runtime's file tools go through `SessionFs` but its shell runs on the host.
+  A VIRTUAL `SessionFsConfig.InitialWorkingDirectory` (`/work`) breaks every shell command (`os error 267`), and a
+  per-session `WorkingDirectory` does not fix that. So the initial working directory is the real workspace root,
+  each session's `WorkingDirectory` is its real conversation directory, and `CopilotSessionFsProvider` routes ONLY
+  the state path (`CopilotSessionPaths.IsStatePath`: `/state`, `\state`, `C:\state`) to the Blob store, under the keys
+  `Mode.Empty` used. A state path classified as a workspace path would put the transcript on disk and break resume
+  after a deploy. A create under the state path raises NO Write permission, and a shell request's
+  `ResolvedWorkingDirectory` is EMPTY, so the router (not the policy) is what keeps file access inside the
+  workspace, and shell commands cannot be path-checked at all. An outside path must read as NOT FOUND (not access
+  denied): that is how a pre-built-ins chat's `/work` cwd is answered on resume (measured: the runtime stats it,
+  then uses the session's `WorkingDirectory`). Build workspace paths ONLY with `CopilotWorkspacePaths.For`:
+  `Uri.EscapeDataString` keeps `.` and `..`, harmless in a Blob key but an escape on disk.
+- **Evidence:** `src/Agent42.Backend/Copilot/CopilotSessionFsProvider.cs`, `src/Agent42.Backend/Copilot/CopilotWorkspaceFiles.cs`,
+  `src/Agent42.Backend/Copilot/ICopilotSessionStore.cs` (`CopilotSessionPaths.IsStatePath`, `CopilotWorkspacePaths`),
+  `tests/Agent42.Tests/CopilotWorkspaceFsTests.cs`, `.agentic/decisions/0107-copilot-chat-builtin-tools.md`
+- **Verified:** 2026-10-20
 
 ### AF Workflows 1.23: `AgentResponseUpdateEvent` IS a `WorkflowOutputEvent`, and Declarative never throws on bad YAML
 

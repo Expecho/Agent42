@@ -5,7 +5,7 @@ status: accepted
 tags: [fleet, agents, agent-framework, workflows, declarative, github-copilot-sdk, blob, sse, egress, trust-boundary, single-replica, usage, prerelease-package, no-migration]
 supersedes: []
 amends: [0085, 0013]
-amended_by: [0099, 0101]   # 0099: a task can override the default tool selection (decision 6); 0101: attached files + workspace document tools (decision 7)
+amended_by: [0099, 0101, 0107]   # 0099: a task can override the default tool selection (decision 6); 0101: attached files + workspace document tools (decision 7); 0107: copilot chats get built-in tools too, and the managed-identity residual (decision 7)
 ---
 
 # Agent42 agent fleet: an in-process recursive team runner outside Orleans, persisted in Blob, with Copilot agents that keep their built-in tools
@@ -43,7 +43,8 @@ fleet"), with persisted tasks and follow-ups, using only the user's own models (
    tools gated by their DEFAULT tool selection (ADR 0021; since ADR 0099 the task's own override, else the default), with the ADR 0081 reauth and ADR 0095 elicitation
    wrappers. An elicitation becomes a fleet question.
 7. **Copilot fleet agents keep Copilot's built-in tools (shell, file writes, URL fetch) in the backend container.**
-   **This amends ADR 0085's phase-1 trust boundary for fleet tasks only** (user decision, 2026-10-12). It uses a
+   **This amends ADR 0085's phase-1 trust boundary for fleet tasks** (user decision, 2026-10-12; since
+   [ADR 0107](0107-copilot-chat-builtin-tools.md) copilot-kind chats have the built-ins too, auto-approved). It uses a
    SEPARATE `CopilotClient` in default mode (`CopilotClientMode.CopilotCli`), with no `SessionFs` (fleet sessions are
    one-shot), and `SessionConfig.WorkingDirectory` = the task's local workspace directory. The mitigations from 0085
    stay: `MinimalEnvironment()` (no managed identity, Cosmos or storage variables reach the runtime), reads and writes
@@ -53,7 +54,10 @@ fleet"), with persisted tasks and follow-ups, using only the user's own models (
    **Residual risks, accepted:**
    - a shell can reach the app port on `localhost` and forge `X-MS-CLIENT-PRINCIPAL-ID` (`src/Agent42.Backend/Api/CurrentUser.cs`);
    - the container filesystem is readable by a shell;
-   - the network reach is the container's.
+   - the network reach is the container's;
+   - **added by ADR 0107**: the runtime runs as the backend's own user, so an approved shell can read
+     `/proc/<backend pid>/environ` (`IDENTITY_ENDPOINT`, `IDENTITY_HEADER`) and request managed-identity tokens,
+     which reach all app data in Cosmos and Blob. `MinimalEnvironment()` cannot stop that.
    **Since ADR 0101** a task can carry user-uploaded files under `inputs/` (with `.txt` copies of PDF and Office
    documents) in the workspace, so a Copilot fleet agent's built-in shell and file tools now read user-uploaded,
    possibly third-party, content too.

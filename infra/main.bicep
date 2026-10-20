@@ -94,6 +94,12 @@ param storageAccountName string = 'stagent42${uniqueString(resourceGroup().id)}'
 @description('Name of the private blob container that holds conversation image attachments.')
 param attachmentsContainerName string = 'attachments'
 
+@description('Name of the storage account holding the Azure Files share of copilot chats\' workspaces (ADR 0107). Separate from the key-free attachments account, because Container Apps mounts Azure Files with the account key. Globally unique, 3-24 lowercase alphanumeric.')
+param copilotFilesAccountName string = 'stagent42cp${uniqueString(resourceGroup().id)}'
+
+@description('Size cap in GiB of the copilot workspaces share.')
+param copilotFilesShareQuotaGiB int = 10
+
 @description('Endpoint of the existing Azure AI Foundry / Azure OpenAI resource. Kept only as the DORMANT Foundry-provider inheritance source (ProviderSettings.ResolveFoundry): baseline Models:Providers is empty (ADR 0019), so nothing reads it today; a user\'s Foundry provider declares its own. Non-secret; harmless if unused.')
 param azureOpenAIEndpoint string = 'https://agent42.services.ai.azure.com'
 
@@ -190,6 +196,36 @@ module storage 'modules/storage.bicep' = {
   }
 }
 
+// Copilot chats' workspaces (ADR 0107): an Azure Files share, linked into the shared Container Apps environment and
+// mounted into the backend container only.
+module copilotFiles 'modules/copilot-files.bicep' = {
+  name: 'agent42-copilot-files'
+  params: {
+    location: location
+    accountName: copilotFilesAccountName
+    shareName: 'copilot-workspaces'
+    shareQuotaGiB: copilotFilesShareQuotaGiB
+    tags: tags
+  }
+}
+
+resource copilotFilesAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  name: copilotFilesAccountName
+  dependsOn: [copilotFiles]
+}
+
+module copilotEnvironmentStorage 'modules/copilot-environment-storage.bicep' = {
+  name: 'agent42-copilot-environment-storage'
+  scope: resourceGroup(containerAppsEnvironmentResourceGroup)
+  params: {
+    environmentName: containerAppsEnvironmentName
+    storageName: 'agent42-copilot'
+    accountName: copilotFiles.outputs.accountName
+    accountKey: copilotFilesAccount.listKeys().keys[0].value
+    shareName: copilotFiles.outputs.shareName
+  }
+}
+
 module containerApp 'modules/container-app.bicep' = {
   name: 'agent42-container-app'
   params: {
@@ -226,6 +262,7 @@ module containerApp 'modules/container-app.bicep' = {
     authSessionLifetime: authSessionLifetime
     customDomainName: customDomainName
     customDomainCertificateName: customDomainCertificateName
+    copilotEnvironmentStorageName: copilotEnvironmentStorage.outputs.name
     cpu: containerCpu
     memory: containerMemory
     minReplicas: minReplicas
