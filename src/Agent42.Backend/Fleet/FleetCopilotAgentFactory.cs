@@ -46,22 +46,10 @@ public sealed class FleetCopilotHost : IAsyncDisposable
         Mode = CopilotClientMode.CopilotCli,
         Connection = RuntimeConnection.ForStdio(CopilotAgentFactory.RuntimePath(runtime), null),
         UseLoggedInUser = false,
-        Environment = Environment(),
+        Environment = CopilotAgentFactory.ShellEnvironment(),
         SessionIdleTimeoutSeconds = runtime.SessionIdleTimeoutSeconds,
         Logger = logger,
     };
-
-    /// <summary>ADR 0085's minimal environment with <c>PATH</c> added: still no identity, Cosmos or storage variables.</summary>
-    public static IReadOnlyDictionary<string, string> Environment()
-    {
-        var environment = new Dictionary<string, string>(CopilotAgentFactory.MinimalEnvironment());
-        if (System.Environment.GetEnvironmentVariable("PATH") is { Length: > 0 } path)
-        {
-            environment["PATH"] = path;
-        }
-
-        return environment;
-    }
 
     public async ValueTask DisposeAsync()
     {

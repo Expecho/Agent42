@@ -57,14 +57,87 @@ public static class CopilotSessionPaths
     /// </summary>
     public static string KeyFor(string prefix, string path)
     {
-        var segments = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries)
-            .Where(s => s != ".")
-            .ToList();
+        var segments = Segments(path);
         if (segments.Contains(".."))
         {
             throw new UnauthorizedAccessException($"Path '{path}' leaves the session.");
         }
 
         return prefix + string.Join('/', segments);
+    }
+
+    /// <summary>
+    /// Whether a runtime path lies under the session state path (<c>/state</c>), whatever the host's conventions
+    /// (<c>/state/x</c>, <c>\state\x</c>, <c>C:\state\x</c>). With built-in tools on, everything else is the real
+    /// workspace on disk, so a state path classified wrongly would put the transcript on disk and break resume.
+    /// </summary>
+    public static bool IsStatePath(string path)
+        => Segments(path) is [StateSegment, ..] && path.TrimStart() is ['/' or '\\', ..] or [_, ':', ..];
+
+    private const string StateSegment = "state";
+
+    // The path's segments with separators unified, empty and '.' segments dropped, and a leading drive letter removed
+    // (a Windows host's runtime may send one; the store key must stay the one a Posix runtime produces).
+    private static List<string> Segments(string path)
+    {
+        var segments = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Where(s => s != ".")
+            .ToList();
+        if (segments is [{ Length: 2 } drive, ..] && drive[1] == ':' && char.IsAsciiLetter(drive[0]))
+        {
+            segments.RemoveAt(0);
+        }
+
+        return segments;
+    }
+}
+
+/// <summary>
+/// Where one conversation's Copilot workspace lives on disk (the Azure Files share in production), and the one place
+/// that path is built. The working directory, the permission policy's root, the SessionFs router's root and the
+/// delete target all come from <see cref="For"/>, so no caller builds it itself.
+/// </summary>
+public static class CopilotWorkspacePaths
+{
+    /// <summary>Path comparison as the host's filesystem does it: case-insensitive on Windows, ordinal elsewhere.</summary>
+    public static StringComparison Comparison
+        => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    /// <summary>
+    /// <c>{root}/{userId}/{conversationId}</c>, each segment escaped. <see cref="Uri.EscapeDataString"/> leaves
+    /// <c>.</c> and <c>..</c> alone, which is harmless as a Blob key but escapes the root on disk, so those (and a
+    /// trailing dot, which Windows and SMB strip) are refused, and the result is checked to lie strictly under the root.
+    /// </summary>
+    public static string For(string root, string userId, string conversationId)
+    {
+        var fullRoot = Root(root);
+        var path = Path.GetFullPath(Path.Combine(fullRoot, Segment(userId), Segment(conversationId)));
+        if (!IsInside(fullRoot, path) || path.Equals(fullRoot, Comparison))
+        {
+            throw new UnauthorizedAccessException($"Workspace '{path}' leaves '{fullRoot}'.");
+        }
+
+        return path;
+    }
+
+    /// <summary>The canonical form of a root directory: absolute, with no trailing separator.</summary>
+    public static string Root(string directory) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+
+    /// <summary>Whether <paramref name="path"/> (relative paths resolve against the root) is the root or lies under it.</summary>
+    public static bool IsInside(string root, string path)
+    {
+        var fullRoot = Root(root);
+        var fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path, fullRoot));
+        return fullPath.Equals(fullRoot, Comparison)
+            || fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, Comparison);
+    }
+
+    // '*' is the one character EscapeDataString keeps that a Windows or SMB file name cannot hold.
+    private static string Segment(string id)
+    {
+        var segment = Uri.EscapeDataString(id).Replace("*", "%2A", StringComparison.Ordinal);
+        return segment is "" or "." or ".." || segment.EndsWith('.')
+            ? throw new UnauthorizedAccessException($"'{id}' cannot name a workspace directory.")
+            : segment;
     }
 }

@@ -7,7 +7,8 @@ namespace Agent42.Agents;
 /// <c>read_skill_resource</c> for a copilot-kind chat: reads one file from inside a SELECTED skill's folder.
 ///
 /// <para><b>Why it exists.</b> Copilot loads skills natively (its <c>skill</c> tool injects a SKILL.md body), but
-/// under <c>CopilotClientMode.Empty</c> there is no file tool, so a skill's resource files cannot be reached.
+/// under <c>CopilotClientMode.Empty</c> there is no file tool, so a skill's resource files cannot be reached. With
+/// built-in tools on (ADR 0107) the file tools exist but are confined to the chat's workspace, which holds no skills.
 /// Measured: asked for a fact in <c>references/fruit.md</c>, the model called <c>skill</c> six times and then asked
 /// the user to paste the file. Enabling the runtime's general file tools would hand it the container's filesystem,
 /// so this narrow tool does the one read skills need (user decision, 2026-10-05).</para>

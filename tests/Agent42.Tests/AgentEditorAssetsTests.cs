@@ -67,6 +67,8 @@ public sealed class AgentEditorAssetsTests
 
         Assert.Contains("id=\"agentKindSelect\"", html);
         Assert.Contains("<option value=\"copilot\">", html);
+        // ADR 0107: the note says what a copilot agent can do now that it has the runtime's built-in tools.
+        Assert.Contains("It can also run commands, fetch web pages and work with files in its own workspace, without asking.", html);
         var open = StaticAssetsServerFixture.Body(app, "function openAgentDialog");
         Assert.Contains("agentKindField.hidden = !!agent", open);
         var save = StaticAssetsServerFixture.Body(app, "async function saveAgent");

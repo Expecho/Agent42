@@ -5,15 +5,20 @@ status: accepted
 tags: [copilot, stored-agents, agent-framework, github-copilot-sdk, sessionfs, blob, byok, tools, skills, egress, trust-boundary, experimental-api, no-migration]
 supersedes: []
 amends: [0082, 0016, 0034, 0049]
-amended_by: [0097]   # 0097 agent fleet: fleet Copilot agents keep built-in tools
+amended_by: [0097, 0107]   # 0097 agent fleet: fleet Copilot agents keep built-in tools; 0107: copilot chats get them too
 ---
 
-# A user-created "copilot" agent kind that runs the GitHub Copilot SDK's agent loop (phase 1: no built-in tools)
+# A user-created "copilot" agent kind that runs the GitHub Copilot SDK's agent loop (phase 1 shipped without built-in tools)
 
-> **Amended by [ADR 0097](0097-agent-fleet-recursive-teams.md) (2026-10-12): for agent fleet tasks only, Copilot
-> agents keep their built-in tools (shell, file writes, URL fetch) in the backend container.** They use a separate
-> default-mode `CopilotClient` with no `SessionFs`, per-action user approval and a kill switch. This ADR's
-> `Mode.Empty` client and phase-1 boundary are unchanged for the copilot agent kind.
+> **Amended by [ADR 0097](0097-agent-fleet-recursive-teams.md) (2026-10-12): for agent fleet tasks, Copilot agents
+> keep their built-in tools (shell, file writes, URL fetch) in the backend container.** They use a separate
+> default-mode `CopilotClient` with no `SessionFs`, per-action user approval and a kill switch.
+>
+> **Amended by [ADR 0107](0107-copilot-chat-builtin-tools.md) (2026-10-20): copilot-kind chats get the built-in tools
+> too**, auto-approved with no prompts, behind the `Copilot:BuiltInToolsEnabled` kill switch. The chat client moves
+> to default mode with a REAL working directory per conversation on an Azure Files share. The transcript stays in
+> this ADR's `SessionFs` Blob store under the same keys. Decisions 4 (`Mode.Empty`) and 7 (custom tools only) and
+> the phase-1 trust boundary below now describe the kill switch's OFF position.
 
 ## Context
 

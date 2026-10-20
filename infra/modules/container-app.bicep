@@ -121,6 +121,14 @@ param customDomainName string = ''
 @description('Name of the existing managed certificate resource (Microsoft.App/managedEnvironments/managedCertificates, in the same resource group as the environment) backing customDomainName. Azure auto-generates this name (format <domain>-<environment-name>-<timestamp>) when the certificate is first created via `az containerapp hostname bind` or the portal; look it up with `az containerapp env certificate list -n <environmentName> -g <environmentResourceGroup>`. Required when customDomainName is set. If the certificate is ever recreated, this value must be updated to match, or this deployment will unbind the domain again.')
 param customDomainCertificateName string = ''
 
+@description('Name of the environment storage link (Microsoft.App/managedEnvironments/storages) to the Azure Files share of copilot chats\' workspaces (ADR 0107).')
+param copilotEnvironmentStorageName string
+
+// The image runs as $APP_UID (src/Agent42.Backend/Dockerfile), 1654 in the aspnet base image (measured with
+// `docker run --rm mcr.microsoft.com/dotnet/aspnet:10.0 id app`), while an SMB mount is root-owned by default: without
+// these options the app could not write to its own share. SMB has no chmod and no symlinks, so the modes are fixed.
+var copilotWorkspaceMountOptions = 'uid=1654,gid=1654,dir_mode=0700,file_mode=0600'
+
 resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
   name: containerAppName
   location: location
@@ -258,6 +266,8 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             // so it is reached over localhost and is unreachable from outside by construction — no
             // second ingress, and Easy Auth still fronts the only exposed port (ADR 0002).
             { name: 'WebSearch__Endpoint', value: 'http://localhost:8888' }
+            // Copilot chats' workspaces (ADR 0107): the share mounted below, on this container only.
+            { name: 'Copilot__WorkspaceRoot', value: '/mnt/copilot' }
           ],
           // Reverse geocoding for get_current_location (ADR 0012). Emitted only when a key was
           // supplied: with no key the backend registers CoordinatesOnlyGeocoder and starts normally.
@@ -293,6 +303,10 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           empty(appInsightsConnectionString)
             ? []
             : [{ name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }])
+          // The backend ONLY: the SearXNG sidecar has no business with chat files.
+          volumeMounts: [
+            { volumeName: 'copilot-workspaces', mountPath: '/mnt/copilot' }
+          ]
         }
         // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume and no API
         // key. NOT private, though — SearXNG is a *meta*search engine and forwards every query on to
@@ -330,6 +344,15 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             }
             { name: 'SEARXNG_SECRET', secretRef: 'searxng-secret' }
           ]
+        }
+      ]
+      // One replica (rule 12) mounts the share, so the in-process write gates are enough.
+      volumes: [
+        {
+          name: 'copilot-workspaces'
+          storageType: 'AzureFile'
+          storageName: copilotEnvironmentStorageName
+          mountOptions: copilotWorkspaceMountOptions
         }
       ]
       scale: {

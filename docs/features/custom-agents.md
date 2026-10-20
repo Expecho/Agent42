@@ -167,10 +167,12 @@ and one-turn fold are covered in [Research agent](research-agent.md).
 
 A create may choose the agent's type: Standard, or **Copilot** (`Kind = "copilot"`, create only, never changed
 afterwards, always per-chat). A copilot chat runs on the GitHub Copilot SDK's agent loop instead of a
-`ChatClientAgent`. It uses the user's own provider (BYOK), the same tools and skills the selection grants (no
-built-in shell or file tools in phase 1; the [agent fleet](agent-fleet.md)'s Copilot agents are the one exception,
-ADR 0097), and keeps the runtime's transcript in the private `copilot-sessions`
-Blob container. The grain sees the loop only through `ICopilotAgentFactory` (`src/Agent42.Agents/Copilot/`).
+`ChatClientAgent`. It uses the user's own provider (BYOK), the same tools and skills the selection grants, and, since ADR 0107, the
+runtime's own built-in shell, file and URL tools, auto-approved with no prompt. Those work in the chat's own
+directory on an Azure Files share mounted at `/mnt/copilot` (`Copilot:WorkspaceRoot`), and
+`Copilot:BuiltInToolsEnabled` is the server-wide kill switch (off is ADR 0085's phase 1, custom tools only). The
+runtime's transcript stays in the private `copilot-sessions` Blob container. Deleting the chat deletes both. ADR 0107
+lists the accepted risks: the shell runs unattended in the backend container as the app's own user. The grain sees the loop only through `ICopilotAgentFactory` (`src/Agent42.Agents/Copilot/`).
 The SDK side, its session store and the runtime's trust boundary are in `src/Agent42.Backend/Copilot/`. A copilot
 chat takes no documents or images and refuses incognito turns. ADR 0085 records why, and how the chat history the
 UI shows (a mirror) can diverge from the transcript the model sees.
