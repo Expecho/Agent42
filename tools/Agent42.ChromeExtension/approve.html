@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Agent42 wants to act in your browser</title>
+  <link rel="stylesheet" href="pages.css">
+</head>
+<body>
+  <main>
+    <h1>Allow this browser action?</h1>
+    <p class="muted">An Agent42 conversation asked to run this in your Chrome. The arguments are shown in full.
+      Page content the agent read can steer what it asks for, so check where it is going.</p>
+    <p class="label">Tool</p>
+    <p id="tool" class="tool"></p>
+    <p class="label">Where</p>
+    <p id="target"></p>
+    <p class="label">Arguments</p>
+    <pre id="args"></pre>
+    <p id="gone" class="muted" hidden>This request is no longer waiting. You can close this window.</p>
+    <div class="buttons">
+      <button id="deny" class="secondary">Deny</button>
+      <button id="once">Allow once</button>
+      <button id="always" class="secondary">Always allow this tool</button>
+    </div>
+    <p class="muted small">"Always" lasts until you close Chrome. No answer within 60 seconds is a deny.</p>
+  </main>
+  <script type="module" src="approve.js"></script>
+</body>
+</html>

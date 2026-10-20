@@ -18,6 +18,8 @@ public sealed class LocalBridgeContractTests
     {
         { 1, "open", null },
         { 2, "message", JsonRpc },
+        { 0, "ping", null },
+        { 0, "pong", null },
         { 3, "close", null },
     };
 
@@ -51,6 +53,16 @@ public sealed class LocalBridgeContractTests
     [Fact]
     public void ReplacedCloseReason_Matches()
         => Assert.Equal(LocalBridgeLimits.ReplacedCloseReason, BridgeClient.ReplacedCloseReason);
+
+    // The extension heartbeat rides channel 0, which is never an MCP channel: the backend numbers them from 1.
+    [Fact]
+    public void ControlFrames_ParseOnBothSides()
+    {
+        Assert.Equal(0, LocalBridgeEnvelope.ControlChannel);
+        Assert.Equal((LocalBridgeEnvelope.Ping, LocalBridgeEnvelope.Pong), (BridgeEnvelope.Ping, BridgeEnvelope.Pong));
+        Assert.Equal("ping", LocalBridgeEnvelope.TryParse("{\"ch\":0,\"type\":\"ping\"}")?.Type);
+        Assert.Equal("pong", BridgeEnvelope.TryParse("{\"ch\":0,\"type\":\"pong\"}")?.Type);
+    }
 
     [Theory]
     [InlineData("not json")]

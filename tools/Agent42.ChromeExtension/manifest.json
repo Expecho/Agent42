@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Agent42 browser bridge",
+  "version": "0.0.0",
+  "version_name": "dev",
+  "description": "Lets your Agent42 conversations use this Chrome through the Agent42 local bridge.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzP9cMZHIQfT5yRsrwCt08P1uKtogOar/cVE0n84fkVCf/1xaENTOn8qFdzIOIwxpDjmNoyFAHvm2pIdcJ+las940F6me45XWdE+2/rbTRbLJ+QNujgsPzZHe0SiRBsekiiTRBsBsvq/45q8I0mEmyjGYKQd0Dd94J5ZC6n1VsTp3xRo2QSpORA8mGSN4n6tbpkAQr7f7PUrvlw0iMG+i215V0slu7k4SuPNXPfvLgVbjrI/sTIFjTCgbT831OFOv6VjAGOHt+jr6htP+pMH44t5vfsOMlPbjEssw1prqpp0qVTwzWpojaZHk+nvK8Rq3VA3FYwgUw3+9lX8us3xGfwIDAQAB",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Agent42 browser bridge",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "permissions": [
+    "debugger",
+    "tabs",
+    "scripting",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "minimum_chrome_version": "116"
+}

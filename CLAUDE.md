@@ -170,7 +170,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Location (a client tool since 0093) | 0012, 0093 |
 | Selectable tools: three layers, skills, uploaded skills, memory | 0021, 0048, 0049, 0057 |
 | Long-term memory (Hindsight; **no delete path**) | 0056, 0057 |
-| MCP client: config, OAuth (per-request refresh + in-turn reconnect + auto re-send), per-server/per-tool selection, test, URL seeding, local bridge, elicitation (form + URL) | 0024, 0025, 0026, 0058, 0064, 0067, 0069, 0076, 0081, 0087, 0095 |
+| MCP client: config, OAuth (per-request refresh + in-turn reconnect + auto re-send), per-server/per-tool selection, test, URL seeding, local bridge, Chrome extension bridge client + MCP image results, elicitation (form + URL) | 0024, 0025, 0026, 0058, 0064, 0067, 0069, 0076, 0081, 0087, 0095, 0109 |
 | MCP server (agents exposed via `/api/agent-mcp`) | 0070 |
 | Stored agents: history mode, API key + `/api/agent-run`, retention, outbound webhook (signed, SSRF-guarded egress), inbound email address (Mailgun, untrusted-in) | 0016, 0022, 0068, 0094, 0096 |
 | Research agent: seeded built-in `Kind`, todo/loop/judge, history fold, live checklist | 0082 |

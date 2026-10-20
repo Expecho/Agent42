@@ -180,6 +180,50 @@ their output goes to the model, so narrow the server's tools and keep "let links
 opened and read" off. **Regenerate key** rotates the key and disconnects the running helper, which then
 stops. A chat that was already open when the helper connected picks the tools up on its next activation.
 
+### The Chrome extension (your own Chrome, no helper)
+
+ADR 0109. Instead of the helper and neo, the **Agent42 Chrome extension** can be the bridge client: it dials
+the same `/api/local-bridge` with the same key and **is** the MCP server, driving your real Chrome profile with
+your sign-ins.
+
+1. Save a **Local bridge** server as above and copy the key.
+2. Download `agent42-chrome-extension-<version>.zip` from the
+   [GitHub Releases](https://github.com/Expecho/Agent42/releases?q=chrome-extension&expanded=true), unzip it into a
+   folder you keep, open `chrome://extensions`, turn on **Developer mode** and choose **Load unpacked**.
+3. In the extension's options, enter your Agent42 address and paste the key. The badge reads `on` once it is
+   connected, `key` when the key was rejected (it then stops; regenerate and paste again) and `set` while it is
+   not configured.
+4. Press **Test** in Agent42: it lists the extension's 14 tools.
+
+The tools are `list_tabs`, `manage_tabs`, `navigate`, `snapshot`, `find`, `read_text`, `screenshot`, `click`,
+`click_at`, `type`, `key`, `scroll`, `console` and `evaluate`. Actions that change a page open a small approval
+window first, with *Allow once*, *Always allow this tool* (until Chrome closes) or *Deny*. No answer within 60 s is
+a deny. **Know what it allows:**
+- The agent can act on **every open tab**.
+- **`evaluate` runs page JavaScript without asking.**
+- Agent runs, API keys, reminders and inbound email can reach it, not only chats you watch.
+
+Put sensitive sites on the options page's **blocked list** (nothing runs there, `evaluate` included; the Agent42
+site is blocked by default), and narrow the bridge server's tools for agents others can reach. The extension never
+acts on its own pages or on browser-internal pages, whatever the settings. While it drives a tab, Chrome shows a
+"being debugged" banner, and dismissing it stops the extension on that tab until you close the tab.
+The approval window names the tab (title and address) the action targets.
+
+```mermaid
+flowchart LR
+    MODEL[cloud model] --> GRAIN[AgentGrain] --> CLIENT["McpClient over a bridge channel"]
+    CLIENT -- "wss /api/local-bridge (subprotocol key, extension Origin)" --- EXT["Agent42 Chrome extension"]
+    EXT -->|"floor + blocked sites, then approve unless read-only"| TABS["your Chrome tabs"]
+```
+
+### Images from MCP tools
+
+ADR 0109. When an MCP tool returns an image (the extension's `screenshot`, or any other server's), a vision
+model is shown it **for the current turn only**. The conversation stores a short placeholder instead of the
+image. A later turn sees the placeholder, and the model takes a new screenshot if it needs one. A model without
+vision, a copilot chat and a fleet run get "image omitted" and should use `snapshot` or `read_text`. At most the
+latest 3 images of a turn are sent, each at most 1 MiB.
+
 ## How the Agent Framework fits
 
 - MCP tools arrive from the SDK as `AIFunction`s and merge directly into the `List<AITool>` that
@@ -213,3 +257,6 @@ stops. A chat that was already open when the helper connected picks the tools up
 | Local bridge (backend) | `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs`, `LocalBridgeSession.cs`, `LocalBridgeConnectionFactory.cs`, `LocalBridgeRegistry.cs` |
 | Local bridge (helper) | `tools/Agent42.LocalBridge/BridgeClient.cs`, `ConfirmationGate.cs`, `UpstreamChannel.cs` |
 | Local bridge release | `.github/workflows/release-local-bridge.yml` (automatic patch release when the helper changes on `main`; or tag `local-bridge-vX.Y.Z`) |
+| Chrome extension | `tools/Agent42.ChromeExtension/background.js` (composition root), `lib/bridge.js`, `lib/gate.js`, `lib/tools.js`, `lib/config.js`, `browser.js` |
+| Chrome extension release | `.github/workflows/release-chrome-extension.yml` (automatic patch release when the extension changes on `main`; or tag `chrome-extension-vX.Y.Z`) |
+| MCP image results | `src/Agent42.Backend/Mcp/McpToolResultShaper.cs`, `src/Agent42.Agents/Models/ToolImageChatClient.cs` |

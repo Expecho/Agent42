@@ -8,6 +8,11 @@ extends: [0004, 0013, 0031, 0097, 0103]
 amends: [0031, 0056, 0089, 0103]
 ---
 
+> **Amended by [ADR 0109](0109-chrome-extension-bridge-and-mcp-image-results.md) (2026-10-20).** A run that shows the
+> model an MCP tool image inserts it into the request after the tool results, but not into history. The next turn
+> replays history without it, so the **history** prefix diverges at the first screenshot (one cache miss per
+> screenshot turn). The instructions prefix is unaffected.
+
 # Prompt-prefix caching: a stable request prefix, an Azure cache key, and cached tokens reported
 
 ## Context

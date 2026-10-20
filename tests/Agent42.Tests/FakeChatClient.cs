@@ -176,6 +176,7 @@ public sealed partial class FakeChatClient : IChatClient
         Volatile.Write(ref _suggestionCalls, 0);
         Volatile.Write(ref _judgeCalls, 0);
         Volatile.Write(ref _largestPromptChars, 0);
+        Volatile.Write(ref _mostImageParts, 0);
         StampResponseCreatedAt = null;
         LastSuggestionPrompt = null;
 
@@ -196,6 +197,25 @@ public sealed partial class FakeChatClient : IChatClient
     /// <c>RetentionLimits.MaxPlausibleAge</c> clamps.</para>
     /// </summary>
     public DateTimeOffset? StampResponseCreatedAt { get; set; }
+
+    /// <summary>
+    /// The most image parts (<see cref="DataContent"/> with an image media type) any single streamed request carried
+    /// since <see cref="Reset"/>. Tool images are request-only (the Chrome-extension ADR), so this is the one place a
+    /// test can see that an MCP tool's image actually reached "the model".
+    /// </summary>
+    public int MostImagePartsSeen => Volatile.Read(ref _mostImageParts);
+
+    private int _mostImageParts;
+
+    private void ObserveImages(IReadOnlyList<ChatMessage> list)
+    {
+        var parts = list.Sum(m => m.Contents.Count(c => c is DataContent d && d.HasTopLevelMediaType("image")));
+        int seen;
+        while (parts > (seen = Volatile.Read(ref _mostImageParts))
+            && Interlocked.CompareExchange(ref _mostImageParts, parts, seen) != seen)
+        {
+        }
+    }
 
     public async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
@@ -245,6 +265,7 @@ public sealed partial class FakeChatClient : IChatClient
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
         var list = messages as IReadOnlyList<ChatMessage> ?? [.. messages];
+        ObserveImages(list);
 
         // The agent fleet's planner, judge and moderator (ADR 0097) follow the task's script. Checked out here, so the
         // streaming body below stays under the S3776 threshold.

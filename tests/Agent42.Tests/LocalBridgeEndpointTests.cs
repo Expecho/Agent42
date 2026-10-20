@@ -134,6 +134,128 @@ public sealed class LocalBridgeEndpointTests(SharedClusterFixture fixture) : Sha
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    // Chrome extension ADR: a web page's request is refused even with a valid key. Any Origin but the
+    // extension's is refused before the key is looked at, so a page that learned a key still cannot open the socket.
+    [Theory]
+    [InlineData("https://evil.example")]
+    [InlineData("http://localhost:61326")]
+    [InlineData("null")]
+    [InlineData("chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task Endpoint_RejectsAWebPageOrigin_EvenWithAValidKey(string origin)
+    {
+        var (_, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, $"bridge-ep-origin-{origin.Length}");
+        await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, new LocalBridgeRegistry());
+        var request = Get(key);
+        request.Headers.Add("Origin", origin);
+
+        var response = await app.GetTestClient().SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(LocalBridgeEndpoint.RejectionBody, await response.Content.ReadAsStringAsync());
+    }
+
+    // The extension's own Origin passes the rule (400 = authenticated, not an upgrade): its preflight.
+    [Fact]
+    public async Task Endpoint_AcceptsTheExtensionOrigin()
+    {
+        var (_, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, "bridge-ep-ext-origin");
+        await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, new LocalBridgeRegistry());
+        var request = Get(key);
+        request.Headers.Add("Origin", LocalBridgeLimits.ExtensionOrigin);
+
+        var response = await app.GetTestClient().SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    // The console helper sends no Origin at all, and must keep working.
+    [Fact]
+    public async Task Endpoint_AcceptsNoOrigin()
+    {
+        var (_, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, "bridge-ep-no-origin");
+        await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, new LocalBridgeRegistry());
+
+        await using var helper = await LocalBridgeTestHost.ConnectTestServerAsync(app, key);
+
+        Assert.Equal(System.Net.WebSockets.WebSocketState.Open, helper.Socket.State);
+    }
+
+    public static TheoryData<string?, string, bool> SubprotocolCases() => new()
+    {
+        { LocalBridgeLimits.ExtensionOrigin, "{name}, {key}", true },
+        { LocalBridgeLimits.ExtensionOrigin, "{key}, {name}", true },
+        { "https://evil.example", "{name}, {key}", false },
+        { null, "{name}, {key}", false },
+        { LocalBridgeLimits.ExtensionOrigin, "{key}", false },
+        { LocalBridgeLimits.ExtensionOrigin, "{name}, {key}, extra", false },
+    };
+
+    // The extension cannot set X-Api-Key on a WebSocket (and declarativeNetRequest does not touch its own socket,
+    // measured), so its key rides Sec-WebSocket-Protocol, read ONLY under the extension's exact Origin.
+    [Theory]
+    [MemberData(nameof(SubprotocolCases))]
+    public async Task Endpoint_SubprotocolKey_OnlyFromTheExtensionOrigin(string? origin, string protocols, bool accepted)
+    {
+        var (_, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, $"bridge-ep-sub-{origin?.Length}-{protocols.Length}");
+        await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, new LocalBridgeRegistry());
+        var client = app.GetTestServer().CreateWebSocketClient();
+        client.ConfigureRequest = request =>
+        {
+            if (origin is not null)
+            {
+                request.Headers.Origin = origin;
+            }
+
+            request.Headers.SecWebSocketProtocol = protocols
+                .Replace("{name}", LocalBridgeLimits.ExtensionSubprotocol, StringComparison.Ordinal)
+                .Replace("{key}", key, StringComparison.Ordinal);
+        };
+        var uri = new Uri(app.GetTestServer().BaseAddress, LocalBridgeEndpoint.Route);
+
+        if (accepted)
+        {
+            using var socket = await client.ConnectAsync(uri, CancellationToken.None);
+            Assert.Equal(LocalBridgeLimits.ExtensionSubprotocol, socket.SubProtocol);
+            await socket.CloseOutputAsync(System.Net.WebSockets.WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAnyAsync<Exception>(() => client.ConnectAsync(uri, CancellationToken.None));
+            Assert.Contains("401", error.Message, StringComparison.Ordinal);
+        }
+    }
+
+    // The extension heartbeat: a ping on channel 0 is answered with a pong on channel 0.
+    [Fact]
+    public async Task Ping_IsAnsweredWithPong_OnChannelZero()
+    {
+        var (_, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, "bridge-ep-ping");
+        await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, new LocalBridgeRegistry());
+        await using var helper = await LocalBridgeTestHost.ConnectTestServerAsync(app, key);
+
+        await helper.SendAsync(new System.Text.Json.Nodes.JsonObject { ["ch"] = 0, ["type"] = "ping" });
+
+        await LocalBridgeTestHost.WaitUntilAsync(() => !helper.Pongs.IsEmpty, "a pong");
+        Assert.Equal([0], helper.Pongs);
+    }
+
+    // A ping that names an MCP channel is not a heartbeat: ignored, never answered. Frames are handled in order,
+    // so once the channel-0 ping's pong arrives the channel-5 ping before it has been dealt with.
+    [Fact]
+    public async Task Ping_OnANonZeroChannel_IsIgnored()
+    {
+        var (_, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, "bridge-ep-ping-5");
+        await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, new LocalBridgeRegistry());
+        await using var helper = await LocalBridgeTestHost.ConnectTestServerAsync(app, key);
+
+        await helper.SendAsync(new System.Text.Json.Nodes.JsonObject { ["ch"] = 5, ["type"] = "ping" });
+        await helper.SendAsync(new System.Text.Json.Nodes.JsonObject { ["ch"] = 0, ["type"] = "ping" });
+
+        await LocalBridgeTestHost.WaitUntilAsync(() => !helper.Pongs.IsEmpty, "a pong");
+        await Task.Delay(100);
+        Assert.Equal([0], helper.Pongs);
+    }
+
     // AC13: through the unchanged MCP client — initialize, tools/list and tools/call all ride the channel.
     [Fact]
     public async Task ConnectedBridge_ListsAndCallsTools()

@@ -121,8 +121,9 @@ public sealed class McpConnectionFactory : IMcpConnectionFactory
 }
 
 /// <summary>
-/// Wraps an MCP tool (an <see cref="AIFunction"/>) so its serialized result is truncated to
-/// <see cref="McpToolLimits.MaxToolResultLength"/> before it is persisted into the 2 MB session (ADR 0004).
+/// Wraps an MCP tool (an <see cref="AIFunction"/>) so its result is bounded to
+/// <see cref="McpToolLimits.MaxToolResultLength"/> before it is persisted into the 2 MB session (ADR 0004), with any
+/// image taken out and shown to the model for this turn only (<see cref="McpToolResultShaper"/>, ADR 0109).
 /// <see cref="DelegatingAIFunction"/> forwards Name/Description/JsonSchema unchanged (Step 0 spike), so the
 /// model's view of the tool is identical — only the return value is bounded.
 ///
@@ -145,11 +146,7 @@ internal sealed class TruncatingMcpTool(AIFunction inner) : DelegatingAIFunction
             throw McpElicitationClient.Translate(ex);
         }
 
-        // MCP results surface as a JsonElement (Step 0 spike); ToString() yields its compact JSON. Under
-        // budget, return the raw value so structure is preserved; over budget, return a truncated string.
-        var text = raw as string ?? raw?.ToString() ?? "";
-        return text.Length <= McpToolLimits.MaxToolResultLength
-            ? raw
-            : text[..McpToolLimits.MaxToolResultLength] + McpToolLimits.TruncationMarker;
+        return McpToolResultShaper.Shape(
+            raw, TurnContext.CurrentOrClosed, FunctionInvokingChatClient.CurrentContext?.CallContent.CallId);
     }
 }

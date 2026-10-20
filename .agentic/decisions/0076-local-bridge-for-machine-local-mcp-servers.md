@@ -8,6 +8,12 @@ extends: [0022]
 amends: [0002, 0024, 0042, 0070]
 ---
 
+> **Amended by [ADR 0109](0109-chrome-extension-bridge-and-mcp-image-results.md) (2026-10-20): a Chrome extension is a
+> second bridge client.** The key may also ride `Sec-WebSocket-Protocol` (`agent42-bridge.v1, <key>`), but **only** under
+> the extension's exact `Origin`, which the endpoint echoes as the name, never the key. Any other `Origin` is refused even with a
+> valid key. Channel 0 carries `ping`/`pong`. The extension's `evaluate` tool runs **without a prompt** (a user
+> decision), so "each write still meets the helper's prompt" no longer holds for that client: see 0109's Consequences.
+
 # Reach a machine-local MCP server through a helper that dials out, and confirm writes on that machine
 
 > **Amended 2026-09-20 (user request) — the prompt takes a third answer, `a`, which pre-approves that one

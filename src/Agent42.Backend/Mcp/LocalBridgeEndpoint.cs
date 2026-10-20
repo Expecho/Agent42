@@ -7,9 +7,13 @@ namespace Agent42.Backend;
 /// WebSocket. The path is on Easy Auth's <c>excludedPaths</c>, so this endpoint is publicly reachable and
 /// <b>self-enforces, failing closed</b> — the ADR 0022 / ADR 0070 rule.
 ///
-/// <para><b>The key is read from the <c>X-Api-Key</c> header and nowhere else.</b> Never add a query-string
-/// fallback: besides leaking the key into access logs, it would let a <i>web page</i> open this socket —
-/// browsers cannot set custom headers on a WebSocket, which is precisely what keeps every page out.</para>
+/// <para><b>The key is read from the <c>X-Api-Key</c> header</b>, or, for the Agent42 Chrome extension
+/// only, from <c>Sec-WebSocket-Protocol</c> next to <see cref="LocalBridgeLimits.ExtensionSubprotocol"/>.
+/// Never add a query-string fallback: besides leaking the key into access logs, it would let a <i>web
+/// page</i> open this socket. What keeps every page out is the <b>Origin rule</b>: a request carrying an
+/// <c>Origin</c> other than <see cref="LocalBridgeLimits.ExtensionOrigin"/> is refused even with a valid
+/// key, and the subprotocol key is read only under that exact Origin. Web pages cannot forge <c>Origin</c>.
+/// The console helper sends none. The Origin is not a credential (see its doc).</para>
 ///
 /// <para><b>A directory hit is not enough.</b> The owner is re-read from the user's own overlay and the
 /// server must still exist, be enabled, be <see cref="McpAuthMode.LocalBridge"/>, and carry this exact
@@ -26,6 +30,44 @@ public static class LocalBridgeEndpoint
 
     /// <summary>An authenticated bridge: whose server this socket serves, and the key hash it presented.</summary>
     public sealed record Caller(string UserId, string ServerId, string KeyHash);
+
+    /// <summary>The key a request presents, and whether it came in the extension's subprotocol.</summary>
+    public sealed record PresentedKey(string Key, bool ViaSubprotocol);
+
+    /// <summary>
+    /// The key a request presents, or null when there is none or when its <c>Origin</c> is refused. Any
+    /// <c>Origin</c> other than the extension's is a web page (or something posing as one) and is refused
+    /// outright, before the key is even looked at. Under the extension's Origin, the subprotocol list must be
+    /// exactly <see cref="LocalBridgeLimits.ExtensionSubprotocol"/> plus one other value, the key.
+    /// </summary>
+    public static PresentedKey? ResolveKey(HttpRequest request)
+    {
+        var origin = request.Headers.Origin.ToString();
+        var fromExtension = string.Equals(origin, LocalBridgeLimits.ExtensionOrigin, StringComparison.Ordinal);
+        if (origin.Length > 0 && !fromExtension)
+        {
+            return null;
+        }
+
+        var header = request.Headers["X-Api-Key"].ToString();
+        if (header.Length > 0)
+        {
+            return new PresentedKey(header, ViaSubprotocol: false);
+        }
+
+        if (!fromExtension)
+        {
+            return null;
+        }
+
+        var offered = request.Headers.SecWebSocketProtocol
+            .SelectMany(v => (v ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            .ToList();
+        var others = offered.Where(p => p != LocalBridgeLimits.ExtensionSubprotocol).ToList();
+        return offered.Count == 2 && others.Count == 1
+            ? new PresentedKey(others[0], ViaSubprotocol: true)
+            : null;
+    }
 
     /// <summary>Resolves a presented key to its bridge server, or null — at every failing step.</summary>
     public static async Task<Caller?> AuthenticateAsync(string? apiKey, IGrainFactory grains)
@@ -54,7 +96,8 @@ public static class LocalBridgeEndpoint
     {
         var services = http.RequestServices;
         var grains = services.GetRequiredService<IGrainFactory>();
-        var caller = await AuthenticateAsync(http.Request.Headers["X-Api-Key"].ToString(), grains);
+        var presented = ResolveKey(http.Request);
+        var caller = await AuthenticateAsync(presented?.Key, grains);
         if (caller is null)
         {
             http.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -79,6 +122,8 @@ public static class LocalBridgeEndpoint
         {
             KeepAliveInterval = LocalBridgeLimits.KeepAliveInterval,
             KeepAliveTimeout = LocalBridgeLimits.KeepAliveTimeout,
+            // A browser fails the handshake unless one offered subprotocol is echoed. Echo the NAME, never the key.
+            SubProtocol = presented!.ViaSubprotocol ? LocalBridgeLimits.ExtensionSubprotocol : null,
         });
         var session = new LocalBridgeSession(socket, loggerFactory);
 
@@ -90,7 +135,7 @@ public static class LocalBridgeEndpoint
 
         // A revoking write whose eviction ran between the check above and Register found nothing to close.
         // Re-checking after registering closes that window: from here on, eviction can see this socket.
-        if (await AuthenticateAsync(http.Request.Headers["X-Api-Key"].ToString(), grains) is null)
+        if (await AuthenticateAsync(presented.Key, grains) is null)
         {
             registry.Unregister(caller.UserId, caller.ServerId, session);
             await session.CloseAsync("revoked while connecting");
