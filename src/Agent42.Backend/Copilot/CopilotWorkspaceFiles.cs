@@ -63,7 +63,7 @@ internal sealed class CopilotWorkspaceFiles(string workspace)
 
     public void Remove(string path, bool recursive, bool force)
     {
-        var full = Writable(path);
+        var full = Below(path);
         if (Directory.Exists(full))
         {
             Directory.Delete(full, recursive);
@@ -80,7 +80,7 @@ internal sealed class CopilotWorkspaceFiles(string workspace)
 
     public void Rename(string src, string dest)
     {
-        var (from, to) = (Writable(src), Writable(dest));
+        var (from, to) = (Below(src), Below(dest));
         if (Directory.Exists(from))
         {
             Directory.Move(from, to);
@@ -96,6 +96,16 @@ internal sealed class CopilotWorkspaceFiles(string workspace)
 
     private string Writable(string path)
         => TryResolve(path) ?? throw new UnauthorizedAccessException($"'{path}' is outside this conversation's workspace {_root}.");
+
+    // A path strictly below the workspace: the workspace itself is the session's working directory, never removed or
+    // renamed by the runtime (deleting a chat removes it).
+    private string Below(string path)
+    {
+        var full = Writable(path);
+        return full.Equals(_root, CopilotWorkspacePaths.Comparison)
+            ? throw new UnauthorizedAccessException($"'{path}' is this conversation's workspace itself.")
+            : full;
+    }
 
     // The full path when it lies inside the workspace, and so does every symlink on the way to it. SMB has no
     // symlinks, but a local root (dev, live tests) can, and a link must not lead the runtime out.

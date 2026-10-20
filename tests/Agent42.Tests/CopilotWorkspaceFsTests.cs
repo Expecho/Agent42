@@ -103,6 +103,15 @@ public sealed class CopilotWorkspaceFsTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_workspace, "events.jsonl")));
     }
 
+    // The workspace itself is the session's working directory: the runtime can neither remove nor rename it.
+    [Fact]
+    public async Task WorkspaceRoot_CannotBeRemovedOrRenamed()
+    {
+        Assert.NotNull(await _fs.RmAsync(new SessionFsRmRequest { Path = _workspace, Recursive = true, Force = true }, default));
+        Assert.NotNull(await _fs.RenameAsync(new SessionFsRenameRequest { Src = _workspace, Dest = Path.Combine(_workspace, "moved") }, default));
+        Assert.True(Directory.Exists(_workspace));
+    }
+
     // AC4: an id that would step out of the root on disk ('.', '..', a trailing dot SMB strips) cannot name a
     // workspace, and a separator in an id is escaped into one segment.
     [Theory]

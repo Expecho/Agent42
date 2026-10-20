@@ -137,15 +137,16 @@ public sealed class CopilotAgentFactory : ICopilotAgentFactory, IAsyncDisposable
         await gate.WaitAsync(cancellationToken);
         try
         {
-            foreach (var key in await _store.ListAsync(prefix, cancellationToken))
-            {
-                await _store.DeleteAsync(key, cancellationToken);
-            }
-
-            // Whatever the switch says now: a chat may have had a workspace before it was turned off.
+            // Whatever the switch says now: a chat may have had a workspace before it was turned off. First, so an SMB
+            // failure here leaves the transcript too, rather than a workspace nothing points at any more.
             if (TryWorkspace(userId, conversationId) is { } workspace && Directory.Exists(workspace))
             {
                 Directory.Delete(workspace, recursive: true);
+            }
+
+            foreach (var key in await _store.ListAsync(prefix, cancellationToken))
+            {
+                await _store.DeleteAsync(key, cancellationToken);
             }
         }
         finally

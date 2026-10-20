@@ -5,7 +5,7 @@ using GitHub.Copilot.Rpc;
 namespace Agent42.Backend;
 
 // GHCP001: the SDK marks its SessionFs and permission RPC types [Experimental]. The copilot agent kind accepts that
-// exposure (it pins the SDK version and its ADR records the phase-1 scope); the suppression covers this file only.
+// exposure (it pins the SDK version and its ADRs record the scope); the suppression covers this file only.
 #pragma warning disable GHCP001
 
 /// <summary>
