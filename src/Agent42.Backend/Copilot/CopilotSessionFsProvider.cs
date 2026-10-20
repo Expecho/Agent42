@@ -5,7 +5,7 @@ using GitHub.Copilot.Rpc;
 namespace Agent42.Backend;
 
 // GHCP001: the SDK marks its SessionFs and permission RPC types [Experimental]. The copilot agent kind accepts that
-// exposure (it pins the SDK version and its ADR records the phase-1 scope); the suppression covers this file only.
+// exposure (it pins the SDK version and its ADRs record the scope); the suppression covers this file only.
 #pragma warning disable GHCP001
 
 /// <summary>
@@ -22,26 +22,48 @@ namespace Agent42.Backend;
 /// custom provider to serialize writers that touch the same session, and two runs can be in flight on one
 /// conversation (a reminder firing during a chat turn). One replica (rule 12) and one runtime make an in-process
 /// gate enough.</para>
+///
+/// <para><b>With built-in tools on, it routes.</b> Given a <paramref name="workspace"/>, only paths under the state
+/// path (<c>/state</c>, <see cref="CopilotSessionPaths.IsStatePath"/>) go to the store, under exactly the keys they
+/// had before, so existing chats resume. Every other path is the conversation's real workspace directory
+/// (<see cref="CopilotWorkspaceFiles"/>), where the runtime's shell also works: a virtual working directory breaks the
+/// shell (measured: every command failed with <c>os error 267</c>). Without one, every path goes to the store, as in
+/// <c>Mode.Empty</c>.</para>
 /// </summary>
-public sealed class CopilotSessionFsProvider(ICopilotSessionStore store, string prefix, SemaphoreSlim writeGate)
+public sealed class CopilotSessionFsProvider(
+    ICopilotSessionStore store, string prefix, SemaphoreSlim writeGate, string? workspace = null)
     : SessionFsProvider
 {
     private readonly ConcurrentDictionary<string, byte> _directories = new(StringComparer.Ordinal);
+    private readonly CopilotWorkspaceFiles? _disk = workspace is null ? null : new CopilotWorkspaceFiles(workspace);
 
     protected override async Task<string> ReadFileAsync(string path, CancellationToken cancellationToken)
-        => await store.ReadAsync(Key(path), cancellationToken) ?? throw new FileNotFoundException(path);
+        => Disk(path) is { } disk
+            ? await disk.ReadFileAsync(path, cancellationToken)
+            : await store.ReadAsync(Key(path), cancellationToken) ?? throw new FileNotFoundException(path);
 
     protected override Task WriteFileAsync(string path, string content, int? mode, CancellationToken cancellationToken)
-        => Gated(() => store.WriteAsync(Key(path), content, cancellationToken), cancellationToken);
+        => Disk(path) is { } disk
+            ? disk.WriteFileAsync(path, content, cancellationToken)
+            : Gated(() => store.WriteAsync(Key(path), content, cancellationToken), cancellationToken);
 
     protected override Task AppendFileAsync(string path, string content, int? mode, CancellationToken cancellationToken)
-        => Gated(() => store.AppendAsync(Key(path), content, cancellationToken), cancellationToken);
+        => Disk(path) is { } disk
+            ? disk.AppendFileAsync(path, content, cancellationToken)
+            : Gated(() => store.AppendAsync(Key(path), content, cancellationToken), cancellationToken);
 
     protected override async Task<bool> ExistsAsync(string path, CancellationToken cancellationToken)
-        => await store.GetInfoAsync(Key(path), cancellationToken) is not null || await IsDirectoryAsync(path, cancellationToken);
+        => Disk(path) is { } disk
+            ? disk.Exists(path)
+            : await store.GetInfoAsync(Key(path), cancellationToken) is not null || await IsDirectoryAsync(path, cancellationToken);
 
     protected override async Task<SessionFsStatResult> StatAsync(string path, CancellationToken cancellationToken)
     {
+        if (Disk(path) is { } disk)
+        {
+            return disk.Stat(path);
+        }
+
         if (await store.GetInfoAsync(Key(path), cancellationToken) is { } file)
         {
             return new SessionFsStatResult
@@ -65,23 +87,40 @@ public sealed class CopilotSessionFsProvider(ICopilotSessionStore store, string 
 
     protected override Task MakeDirectoryAsync(string path, bool recursive, int? mode, CancellationToken cancellationToken)
     {
-        _directories[Key(path)] = 0;
+        if (Disk(path) is { } disk)
+        {
+            disk.MakeDirectory(path);
+        }
+        else
+        {
+            _directories[Key(path)] = 0;
+        }
+
         return Task.CompletedTask;
     }
 
     protected override async Task<IList<string>> ReadDirectoryAsync(string path, CancellationToken cancellationToken)
-        => [.. (await ChildrenAsync(path, cancellationToken)).Select(c => c.Name)];
+        => [.. (await ReadDirectoryWithTypesAsync(path, cancellationToken)).Select(e => e.Name)];
 
     protected override async Task<IList<SessionFsReaddirWithTypesEntry>> ReadDirectoryWithTypesAsync(
         string path, CancellationToken cancellationToken)
-        => [.. (await ChildrenAsync(path, cancellationToken)).Select(c => new SessionFsReaddirWithTypesEntry
-        {
-            Name = c.Name,
-            Type = c.IsDirectory ? SessionFsReaddirWithTypesEntryType.Directory : SessionFsReaddirWithTypesEntryType.File,
-        })];
+        => Disk(path) is { } disk
+            ? disk.ReadDirectory(path)
+            : [.. (await ChildrenAsync(path, cancellationToken)).Select(c => new SessionFsReaddirWithTypesEntry
+            {
+                Name = c.Name,
+                Type = c.IsDirectory ? SessionFsReaddirWithTypesEntryType.Directory : SessionFsReaddirWithTypesEntryType.File,
+            })];
 
     protected override Task RemoveAsync(string path, bool recursive, bool force, CancellationToken cancellationToken)
-        => Gated(async () =>
+    {
+        if (Disk(path) is { } disk)
+        {
+            disk.Remove(path, recursive, force);
+            return Task.CompletedTask;
+        }
+
+        return Gated(async () =>
         {
             var key = Key(path);
             await store.DeleteAsync(key, cancellationToken);
@@ -92,15 +131,33 @@ public sealed class CopilotSessionFsProvider(ICopilotSessionStore store, string 
 
             _directories.TryRemove(key, out _);
         }, cancellationToken);
+    }
 
-    // Copy, then delete: a store has no rename. Under the gate, so no writer sees the file twice or not at all.
+    // Copy, then delete: a store has no rename. Under the gate, so no writer sees the file twice or not at all. A
+    // rename between the store and the disk is refused: the transcript never leaves the store.
     protected override Task RenameAsync(string src, string dest, CancellationToken cancellationToken)
-        => Gated(async () =>
+    {
+        if (_disk is not null && CopilotSessionPaths.IsStatePath(src) != CopilotSessionPaths.IsStatePath(dest))
+        {
+            throw new UnauthorizedAccessException($"Renaming '{src}' to '{dest}' moves a file in or out of the session state.");
+        }
+
+        if (Disk(src) is { } disk)
+        {
+            disk.Rename(src, dest);
+            return Task.CompletedTask;
+        }
+
+        return Gated(async () =>
         {
             var content = await store.ReadAsync(Key(src), cancellationToken) ?? throw new FileNotFoundException(src);
             await store.WriteAsync(Key(dest), content, cancellationToken);
             await store.DeleteAsync(Key(src), cancellationToken);
         }, cancellationToken);
+    }
+
+    // The workspace when the path belongs on disk; null when it belongs in the store.
+    private CopilotWorkspaceFiles? Disk(string path) => CopilotSessionPaths.IsStatePath(path) ? null : _disk;
 
     private string Key(string path) => CopilotSessionPaths.KeyFor(prefix, path);
 

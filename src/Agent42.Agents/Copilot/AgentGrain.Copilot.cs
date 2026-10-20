@@ -169,8 +169,9 @@ public sealed partial class AgentGrain
     private bool CanSeeImages()
         => !_copilotChat && _chatClientFactory.GetCapabilities(_modelId).SupportsVision;
 
-    // Deletes Copilot's transcript of this conversation (its SessionFs files). Keyed by the KIND, not by
-    // _copilotChat: a copilot chat that is currently on a no-tools model may still have a transcript from earlier.
+    // Deletes Copilot's transcript of this conversation (its SessionFs files) and its workspace directory (ADR 0107).
+    // Keyed by the KIND, not by _copilotChat: a copilot chat that is currently on a no-tools model may still have a
+    // transcript from earlier.
     // Best-effort, like the rest of PurgeAsync: a failure is logged and the purge carries on.
     private async Task DeleteCopilotTranscriptAsync()
     {

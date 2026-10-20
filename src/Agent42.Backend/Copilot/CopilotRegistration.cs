@@ -18,6 +18,8 @@ public static class CopilotRegistration
         {
             RuntimePath = configuration["Copilot:RuntimePath"],
             SessionIdleTimeoutSeconds = configuration.GetValue("Copilot:SessionIdleTimeoutSeconds", 1800),
+            BuiltInToolsEnabled = configuration.GetValue("Copilot:BuiltInToolsEnabled", true),
+            WorkspaceRoot = configuration["Copilot:WorkspaceRoot"] is { Length: > 0 } root ? root : new CopilotRuntimeOptions().WorkspaceRoot,
         });
         // By type, so the container disposes it (and with it the runtime process) on shutdown.
         services.AddSingleton<CopilotAgentFactory>();

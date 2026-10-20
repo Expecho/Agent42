@@ -149,7 +149,8 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
     Wildcards (`mcp`, `skills`) must be expanded before the picker sees them. The rule the model reads is the
     **tool description**, not a `SKILL.md`.
 12. **Single replica is load-bearing** (in-process registries, the `/logs` ring buffer, the local-bridge
-    socket registry, the Copilot SessionFs write gate, the agent fleet's running-task registry). `infra/main.bicep` pins min = max = 1.
+    socket registry, the Copilot SessionFs write gate, the agent fleet's running-task registry, the Copilot chat workspaces
+    share mounted into that one replica). `infra/main.bicep` pins min = max = 1.
 13. **Egress is a design property.** Anything that sends conversation content to a third party is an ADR 0013
     extension and must be recorded as such in its ADR. Don't write "following ADR 0008" for an always-on,
     ungated provider: 0008 rejected that shape.
@@ -172,7 +173,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | MCP server (agents exposed via `/api/agent-mcp`) | 0070 |
 | Stored agents: history mode, API key + `/api/agent-run`, retention, outbound webhook (signed, SSRF-guarded egress), inbound email address (Mailgun, untrusted-in) | 0016, 0022, 0068, 0094, 0096 |
 | Research agent: seeded built-in `Kind`, todo/loop/judge, history fold, live checklist | 0082 |
-| Copilot agent kind: GitHub Copilot SDK loop, BYOK, Agent42 tools as custom tools, native skills, SessionFs in Blob, history mirror, phase-1 trust boundary (set aside for fleet Copilot agents by 0097) | 0085, 0097 |
+| Copilot agent kind: GitHub Copilot SDK loop, BYOK, Agent42 tools as custom tools, native skills, SessionFs in Blob, history mirror, phase-1 trust boundary (set aside for fleet Copilot agents by 0097); built-in shell/file/URL tools in chats, auto-approved, kill switch, Azure Files workspaces (0107) | 0085, 0097, 0107 |
 | Agent fleet (recursive agent teams, `/fleet/`): in-process runner (not a grain), Blob store + SSE replay, judge/fix/new team, Copilot agents with built-in tools, per-task tool override, attached files + workspace-scoped document search, shared canvas (versioned pages, live pane) | 0097, 0099, 0101, 0102 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |
 | Push: away replies, model-invoked, user-initiated test push | 0028, 0075, 0100 |

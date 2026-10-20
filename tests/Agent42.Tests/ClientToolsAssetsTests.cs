@@ -97,7 +97,7 @@ public sealed class ClientToolsAssetsTests(StaticAssetsServerFixture fixture)
 
         Assert.Contains("\"/js/clienttools.js\"", sw, StringComparison.Ordinal);
         Assert.Contains("\"/js/sharedstate.js\"", sw, StringComparison.Ordinal);
-        Assert.Contains("agent42-shell-v65", sw, StringComparison.Ordinal);
+        Assert.Contains("agent42-shell-v66", sw, StringComparison.Ordinal);
     }
 
     private static string CodeOnly(string source) =>
