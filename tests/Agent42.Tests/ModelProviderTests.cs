@@ -757,6 +757,108 @@ public class ModelProviderTests
         })
         .Build();
 
+    // ADR 0108: the stored kind string the Agents layer writes is exactly the enum member's name.
+    [Fact]
+    public void GitHubCopilotKind_MatchesTheAgentsConstant()
+        => Assert.Equal(nameof(ProviderKind.GitHubCopilot), GitHubCopilotProvider.Kind);
+
+    // ADR 0108: no endpoint is needed, and a blank token skips the provider like any keyless one.
+    [Fact]
+    public void GitHubCopilot_NoEndpointBuilds_BlankTokenSkipped()
+    {
+        var built = ModelProviderBuilder.TryBuildProvider(
+            GitHubCopilotProvider.Key, new ProviderOptions { Kind = ProviderKind.GitHubCopilot, ApiKey = "gho_x" }, Configuration());
+        var skipped = ModelProviderBuilder.TryBuildProvider(
+            GitHubCopilotProvider.Key, new ProviderOptions { Kind = ProviderKind.GitHubCopilot, ApiKey = "" }, Configuration());
+
+        Assert.Equal(ProviderBuildStatus.Built, built.Status);
+        Assert.Empty(built.DeclaredModels!);
+        Assert.Equal(ProviderBuildStatus.Skipped, skipped.Status);
+    }
+
+    // ADR 0108 AC7: every path outside the Copilot runtime gets the refusing client — the provider exists, so there is no
+    // silent fallback onto the default model.
+    [Fact]
+    public async Task GitHubCopilotModel_ChatClientRefuses()
+    {
+        var client = GitHubCopilotFactory().GetClient("github-copilot:claude-sonnet-5");
+
+        Assert.NotNull(client.GetService<CopilotOnlyChatClient>());
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => client.GetResponseAsync("hi"));
+        Assert.Equal(CopilotOnlyChatClient.Message, ex.Message);
+    }
+
+    // ADR 0108 AC7b (critic F2): fixed tools-only capabilities, so the grain always builds the copilot composition and
+    // never hands a third party an image or opens image generation.
+    [Fact]
+    public void GitHubCopilotModel_CapabilitiesAreToolsOnly()
+    {
+        var factory = GitHubCopilotFactory();
+
+        var capabilities = factory.GetCapabilities("github-copilot:any-discovered-id");
+
+        Assert.Equal(new ModelCapabilities(SupportsTools: true, SupportsVision: false), capabilities);
+        Assert.Null(factory.GetImageGenerationService("github-copilot:any-discovered-id"));
+    }
+
+    // ADR 0108 AC8 (critic F7): a legacy UNQUALIFIED id resolves against a non-GitHub provider even when the GitHub one is
+    // first in the set; it must never reach the refusing client.
+    [Fact]
+    public void LegacyUnqualifiedId_NeverResolvesToGitHubCopilot()
+    {
+        var factory = GitHubCopilotFactory();
+
+        Assert.Null(factory.GetClient("openai/gpt-4o-mini").GetService<CopilotOnlyChatClient>());
+        Assert.Equal(CopilotProviderSettings.OpenAICompatible(new Uri("https://models.github.ai/inference"), "pat"),
+            factory.GetCopilotProvider("openai/gpt-4o-mini")?.Settings);
+    }
+
+    // ADR 0108 AC7a (critic F3): a Copilot agent pinned to a GitHub model whose provider is gone gets NO settings (a
+    // refusal), never Resolve's fallback onto the default BYOK provider.
+    [Fact]
+    public void DisconnectedGitHubModel_HasNoCopilotProvider()
+    {
+        var factory = Factory();
+
+        Assert.Null(factory.GetCopilotProvider("github-copilot:claude-sonnet-5"));
+    }
+
+    // ADR 0108: the connected provider's Copilot settings sign the session in with the token.
+    [Fact]
+    public void GitHubCopilotModel_CopilotSettingsUseTheGitHubAccount()
+    {
+        var provider = GitHubCopilotFactory().GetCopilotProvider("github-copilot:claude-sonnet-5");
+
+        Assert.NotNull(provider);
+        Assert.True(provider.Value.Settings.UsesGitHubAccount);
+        Assert.Equal("gho_x", provider.Value.Settings.ApiKey);
+        Assert.Equal("claude-sonnet-5", provider.Value.Model);
+        Assert.DoesNotContain("gho_x", provider.Value.Settings.ToString());
+    }
+
+    // The GitHub Copilot provider FIRST in the set (dictionary order), so the fallback-key rule is what is under test.
+    private static MultiProviderChatClientFactory GitHubCopilotFactory()
+    {
+        var options = new ModelProvidersOptions
+        {
+            Default = "github:openai/gpt-4o-mini",
+            Providers =
+            {
+                [GitHubCopilotProvider.Key] = new ProviderOptions { Kind = ProviderKind.GitHubCopilot, ApiKey = "gho_x" },
+                ["github"] = new ProviderOptions
+                {
+                    Kind = ProviderKind.OpenAICompatible,
+                    Endpoint = "https://models.github.ai/inference",
+                    ApiKey = "pat",
+                    Models = [new ConfiguredModel { Id = "openai/gpt-4o-mini", SupportsTools = true }],
+                },
+            },
+        };
+        var setup = ModelProviderBuilder.Build(options, Configuration());
+        return new MultiProviderChatClientFactory(
+            setup.Providers, "", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
+    }
+
     // A terminal pipeline stage: does nothing, so ProcessNext stops here instead of attempting transport.
     private sealed class TerminalPolicy : PipelinePolicy
     {

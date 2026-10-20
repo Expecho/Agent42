@@ -64,13 +64,18 @@ public sealed class CopilotRuntimeOptions
 /// <c>SHA256SUMS.txt</c>, with the version pinned by the package version. A runtime compromise is still a backend
 /// compromise. Phase 2 moves it into a sandbox.</para>
 /// </summary>
-public sealed class CopilotAgentFactory : ICopilotAgentFactory, IAsyncDisposable
+public sealed class CopilotAgentFactory : ICopilotAgentFactory, ICopilotModelLister, IAsyncDisposable
 {
     private const string ProviderUnsupported =
         "_This copilot agent's model provider can't be reached by the Copilot runtime. Pick a model from another "
         + "provider in the agent's settings._\n\n";
 
     private const string RuntimeMissing = "_The Copilot runtime isn't installed on this server._\n\n";
+
+    /// <summary>A GitHub Copilot model whose provider is gone (ADR 0108): refused, never run on another provider.</summary>
+    public const string GitHubNotConnected =
+        "_This copilot agent runs on your GitHub Copilot subscription, but GitHub isn't connected. Sign in with GitHub "
+        + "in Settings → Providers, or pick another model in the agent's settings._\n\n";
 
     // Writers to one conversation's files are serialized (CopilotSessionFsProvider). Striped rather than one gate per
     // conversation, so the set never grows: two conversations sharing a stripe only wait on each other's writes.
@@ -112,7 +117,8 @@ public sealed class CopilotAgentFactory : ICopilotAgentFactory, IAsyncDisposable
         if (request.ChatClientFactory is not ICopilotProviderSource source
             || source.GetCopilotProvider(request.ModelId) is not { } provider)
         {
-            throw new CopilotUnavailableException(ProviderUnsupported);
+            throw new CopilotUnavailableException(
+                GitHubCopilotProvider.IsGitHubModel(request.ModelId) ? GitHubNotConnected : ProviderUnsupported);
         }
 
         var prefix = CopilotSessionPaths.ConversationPrefix(request.UserId, request.ConversationId);
@@ -126,8 +132,29 @@ public sealed class CopilotAgentFactory : ICopilotAgentFactory, IAsyncDisposable
 
         var config = BuildSessionConfig(request, provider.Settings, provider.Model, workspace);
         config.CreateSessionFsProvider = _ => new CopilotSessionFsProvider(_store, prefix, GateFor(prefix), workspace);
-        return new GitHubCopilotAgent(
+        var agent = new GitHubCopilotAgent(
             _client.Value, config, ownsClient: false, name: request.Name, loggerFactory: _loggers);
+        return provider.Settings.UsesGitHubAccount ? new GitHubAuthFailureAgent(agent) : agent;
+    }
+
+    /// <summary>
+    /// The models a GitHub token's Copilot plan allows (ADR 0108), through this silo's chat runtime — the fleet's client
+    /// is a different one and is not used (gotcha "The fleet's Copilot client is NOT ADR 0085's client"). Starting the
+    /// client here may spawn the runtime from a <c>/api/models</c> GET; a concurrent start with an Agent Framework run is
+    /// safe (measured). No runtime binary → no models. A model the plan's policy disables is left out.
+    /// </summary>
+    public async Task<IReadOnlyList<CopilotListedModel>> ListAsync(string gitHubToken, CancellationToken cancellationToken)
+    {
+        if (!_runtimeInstalled.Value)
+        {
+            return [];
+        }
+
+        await _client.Value.StartAsync(cancellationToken);
+        var list = await _client.Value.Rpc.Models.ListAsync(null, gitHubToken, cancellationToken);
+        return [.. list.Models
+            .Where(m => !string.Equals(m.Policy?.State.ToString(), "disabled", StringComparison.OrdinalIgnoreCase))
+            .Select(m => new CopilotListedModel(m.Id, m.Name))];
     }
 
     public async Task DeleteConversationAsync(string userId, string conversationId, CancellationToken cancellationToken = default)
@@ -206,13 +233,9 @@ public sealed class CopilotAgentFactory : ICopilotAgentFactory, IAsyncDisposable
         return new SessionConfig
         {
             Model = model,
-            Provider = new ProviderConfig
-            {
-                Type = settings.Type,
-                BaseUrl = settings.BaseUrl,
-                ApiKey = settings.ApiKey,
-                WireApi = settings.WireApi,
-            },
+            Provider = ProviderFor(settings),
+            GitHubToken = GitHubTokenFor(settings),
+            EnableSessionTelemetry = TelemetryFor(settings),
             SystemMessage = new SystemMessageConfig { Mode = SystemMessageMode.Append, Content = request.Instructions },
             Tools = [.. request.Tools],
             // Mode.Empty exposes exactly these. The runtime's `skill` tool is only there when a skill is selected.
@@ -233,6 +256,28 @@ public sealed class CopilotAgentFactory : ICopilotAgentFactory, IAsyncDisposable
             OnPermissionRequest = workspace is null ? DecidePermission : new CopilotPermissionPolicy(workspace).HandleAsync,
         };
     }
+
+    /// <summary>
+    /// The session's BYOK provider, or null when the session signs in with the user's GitHub account instead (ADR
+    /// 0108). Shared with the fleet's session config.
+    /// </summary>
+    public static ProviderConfig? ProviderFor(CopilotProviderSettings settings) => settings.UsesGitHubAccount
+        ? null
+        : new ProviderConfig { Type = settings.Type, BaseUrl = settings.BaseUrl, ApiKey = settings.ApiKey, WireApi = settings.WireApi };
+
+    /// <summary>
+    /// The session's own GitHub token (ADR 0108), per session and never in <c>CopilotClientOptions</c> (one runtime
+    /// serves every user) or the runtime's environment. It must be on every create AND resume: a resume without it
+    /// fails closed (measured).
+    /// </summary>
+    public static string? GitHubTokenFor(CopilotProviderSettings settings) => settings.UsesGitHubAccount ? settings.ApiKey : null;
+
+    /// <summary>
+    /// GitHub session telemetry: on by default for a GitHub-signed-in session (SDK doc; BYOK always disables it), so it
+    /// is turned off explicitly. Its effect is not measured: a capture showed only GitHub hosts, but the telemetry hosts
+    /// resolve into the same address ranges as inference (ADR 0108).
+    /// </summary>
+    public static bool? TelemetryFor(CopilotProviderSettings settings) => settings.UsesGitHubAccount ? false : null;
 
     /// <summary>
     /// The permission policy with built-in tools off: our own custom tools run (under <c>Mode.Empty</c> the runtime still asks for them,

@@ -113,6 +113,57 @@ public sealed class ProvidersApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.True(provider.GetProperty("hasKey").GetBoolean());
     }
 
+    // ADR 0108 AC11 (critic F4): the GitHub Copilot provider has one writer, the sign-in callback. The generic API
+    // refuses (1) creating the kind, (2) converting the reserved key into another kind, which would keep the stored
+    // token as that kind's key and send it to an endpoint of the caller's choice, and (3) squatting the reserved key.
+    [Theory]
+    [InlineData("POST", "/api/providers", "gh", "GitHubCopilot")]
+    [InlineData("PUT", "/api/providers/github-copilot", "github-copilot", "OpenAICompatible")]
+    [InlineData("POST", "/api/providers", "GitHub-Copilot", "OpenAICompatible")]
+    public async Task GitHubCopilot_DirectWrite_IsRefused(string method, string uri, string key, string kind)
+    {
+        var user = $"user-ghc-{Guid.NewGuid():N}";
+        await Fixture.Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(user).ConnectGitHubCopilotAsync("ciphertext");
+
+        var response = await Client.SendAsync(Request(new HttpMethod(method), uri, user, new
+        {
+            key,
+            kind,
+            endpoint = "https://attacker.example",
+            models = new[] { new { id = "m", supportsTools = true } },
+        }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("Sign in with GitHub", await response.Content.ReadAsStringAsync());
+        var stored = (await Fixture.Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(user).GetAsync()).Providers;
+        var provider = Assert.Single(stored);
+        Assert.Equal(GitHubCopilotProvider.Kind, provider.Kind);
+        Assert.Null(provider.Endpoint);
+    }
+
+    // The same rule where the data lives, so no other caller can write the reserved key; GET masks the connected token.
+    [Fact]
+    public async Task GitHubCopilot_GrainRefusesSave_GetMasksToken()
+    {
+        var user = $"user-ghc-{Guid.NewGuid():N}";
+        var grain = Fixture.Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(user);
+        await grain.ConnectGitHubCopilotAsync("ciphertext-of-the-token");
+
+        await Assert.ThrowsAsync<ArgumentException>(() => grain.SaveAsync(new StoredProvider(
+            GitHubCopilotProvider.Key, "OpenAICompatible", null, "https://x.example", null, [], false)));
+
+        var raw = await (await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", user))).Content.ReadAsStringAsync();
+        Assert.DoesNotContain("ciphertext-of-the-token", raw);
+        using var doc = JsonDocument.Parse(raw);
+        var provider = doc.RootElement.GetProperty("providers").EnumerateArray().Single();
+        Assert.True(provider.GetProperty("hasKey").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, provider.GetProperty("endpoint").ValueKind);
+
+        // Delete (disconnect) stays the generic DELETE.
+        (await Client.SendAsync(Request(HttpMethod.Delete, $"/api/providers/{GitHubCopilotProvider.Key}", user))).EnsureSuccessStatusCode();
+        Assert.Empty((await grain.GetAsync()).Providers);
+    }
+
     // ADR 0103 AC4: the unknown-kind message is derived from the enum, so it lists every kind (it once hard-coded two).
     [Fact]
     public async Task UnknownKind_MessageListsAllKinds()

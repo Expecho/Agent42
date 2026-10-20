@@ -31,7 +31,28 @@ public sealed class UserProviderConfigGrain : Grain, IUserProviderConfigGrain
 
     public Task<int> GetVersionAsync() => Task.FromResult(_state.State.Config.Version);
 
-    public async Task<StoredProvider> SaveAsync(StoredProvider provider)
+    public Task<StoredProvider> SaveAsync(StoredProvider provider)
+    {
+        // The API refuses these first; this is the same rule where the data lives (ADR 0108).
+        if (GitHubCopilotProvider.IsReserved(provider.Key, provider.Kind))
+        {
+            throw new ArgumentException("The GitHub Copilot provider is connected with GitHub sign-in, not saved directly.");
+        }
+
+        return UpsertAsync(provider);
+    }
+
+    public Task<StoredProvider> ConnectGitHubCopilotAsync(string tokenCiphertext)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tokenCiphertext);
+        return UpsertAsync(new StoredProvider(
+            GitHubCopilotProvider.Key, GitHubCopilotProvider.Kind, GitHubCopilotProvider.DisplayName,
+            // A real List, never a collection expression: this is grain state (gotcha "A collection expression into
+            // IReadOnlyList<T> written from INSIDE a grain is unreadable from Cosmos").
+            Endpoint: null, tokenCiphertext, Models: new List<StoredModel>(), UseResponsesApi: false));
+    }
+
+    private async Task<StoredProvider> UpsertAsync(StoredProvider provider)
     {
         var providers = _state.State.Config.Providers.ToList();
         var existing = providers.FindIndex(

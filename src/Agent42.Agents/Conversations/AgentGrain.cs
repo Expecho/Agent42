@@ -550,8 +550,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             {
                 yield return new AgentStreamEvent(
                     AgentStreamEventType.TextDelta,
+                    // GitHub Copilot alone is not enough (ADR 0108): its models run only in Copilot agents.
                     Text: "_No model provider is configured. Add one in Settings → model providers to "
-                        + "start chatting._\n\n");
+                        + "start chatting. GitHub Copilot needs an ordinary provider alongside it._\n\n");
                 yield return new AgentStreamEvent(AgentStreamEventType.Done);
                 yield break;
             }

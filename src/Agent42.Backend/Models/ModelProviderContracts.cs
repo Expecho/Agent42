@@ -48,6 +48,8 @@ public record ProviderModelResponse(
 // The GET /api/providers payload: the user's overlay providers (masked), their optional chat default, their
 // optional embedding default (the "default embedding model" id), and their optional speech default (the
 // "default speech model" id, ADR 0038, null = none configured → the browser voice is used).
+// GitHubSignIn: whether "Sign in with GitHub" (the GitHub Copilot provider, ADR 0108) is configured on this server, so
+// the dialog offers the kind only when it can work.
 public record ProvidersResponse(
     IReadOnlyList<ProviderResponse> Providers, string? Default, string? EmbeddingDefault = null,
-    string? SpeechDefault = null);
+    string? SpeechDefault = null, bool GitHubSignIn = false);

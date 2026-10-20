@@ -25,10 +25,18 @@ public interface IUserProviderConfigGrain : IGrainWithStringKey
     /// <summary>
     /// Upserts one provider by <see cref="StoredProvider.Key"/> and bumps the version. A blank
     /// <see cref="StoredProvider.ApiKeyCiphertext"/> on an existing key keeps its stored ciphertext.
-    /// Returns the stored provider (with the retained ciphertext).
+    /// Returns the stored provider (with the retained ciphertext). Refuses the reserved GitHub Copilot key and kind
+    /// (<see cref="GitHubCopilotProvider.IsReserved"/>): only <see cref="ConnectGitHubCopilotAsync"/> writes those.
     /// </summary>
     [Alias("SaveAsync")]
     Task<StoredProvider> SaveAsync(StoredProvider provider);
+
+    /// <summary>
+    /// Creates or replaces the user's GitHub Copilot provider (ADR 0108) with an already-encrypted GitHub token. The
+    /// one writer is the GitHub sign-in callback. Bumps the version.
+    /// </summary>
+    [Alias("ConnectGitHubCopilotAsync")]
+    Task<StoredProvider> ConnectGitHubCopilotAsync(string tokenCiphertext);
 
     /// <summary>Sets (or clears, with null/blank) the overlay's default model id and bumps the version.</summary>
     [Alias("SetDefaultAsync")]

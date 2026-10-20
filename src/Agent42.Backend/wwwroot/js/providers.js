@@ -1,7 +1,8 @@
 /* Agent 42 — model providers, per-user overlay (ADR 0018/0030/0038). Split out of app.js (ADR 0041). */
 
-import { addModelRowBtn, addProviderBtn, defaultModelSelect, embeddingModelSelect, providerApiKeyInput, providerCancelBtn, providerDialog, providerDisplayNameInput, providerEndpointInput, providerError, providerForm, providerFormTitle, providerKeyInput, providerKindSelect, providerList, providerModelList, providerAnthropicNote, providerResponsesApi, providerResponsesField, speechModelSelect } from "./dom.js";
+import { addModelRowBtn, addProviderBtn, defaultModelSelect, githubSignInBtn, githubSignInNote, embeddingModelSelect, providerApiKeyInput, providerCancelBtn, providerDialog, providerDisplayNameInput, providerEndpointInput, providerError, providerForm, providerFormTitle, providerKeyInput, providerKindSelect, providerList, providerModelList, providerAnthropicNote, providerResponsesApi, profileTabs, providerResponsesField, speechModelSelect } from "./dom.js";
 import { fillModelOptions, loadModels, modelsData, providerGroupLabel, selectModel } from "./models.js";
+import { enterPrefsDetail, openProfileDialog } from "./profile.js";
 
 // The user's own configured providers (their overlay — ADR 0018), fetched masked (hasKey, never the
 // key). Rendered in Preferences; edited through the provider dialog. The key of the one being edited,
@@ -19,6 +20,10 @@ export let userDefaultEmbeddingModel = null;
 // hands-free voice conversation (ADR 0037) speaks its reply via server-side /api/speech; when null it
 // falls back to the browser's speechSynthesis. Independent of userDefaultModel (chat).
 export let userDefaultSpeechModel = null;
+// Whether "Sign in with GitHub" (the GitHub Copilot provider, ADR 0108) is configured on this server.
+let gitHubSignIn = false;
+// The GitHub Copilot provider: written only by the sign-in callback, so it gets no edit button (the API refuses it).
+const GITHUB_COPILOT_KIND = "GitHubCopilot";
 export async function loadProviders() {
   try {
     const res = await fetch("/api/providers");
@@ -28,7 +33,9 @@ export async function loadProviders() {
     userDefaultModel = data.default ?? null;
     userDefaultEmbeddingModel = data.embeddingDefault ?? null;
     userDefaultSpeechModel = data.speechDefault ?? null;
+    gitHubSignIn = data.gitHubSignIn === true;
     renderProviders();
+    syncGitHubSignIn();
     syncDefaultModelSelect();
     syncEmbeddingModelSelect();
     syncSpeechModelSelect();
@@ -183,7 +190,10 @@ function renderProviders() {
     const sub = document.createElement("span");
     sub.className = "provider-row__sub";
     // Endpoint plus a lock glyph when a key is stored — never the key itself (it is never returned).
-    sub.textContent = `${provider.key} · ${provider.endpoint ?? ""}${provider.hasKey ? " · 🔑" : ""}`;
+    const github = provider.kind === GITHUB_COPILOT_KIND;
+    sub.textContent = github
+      ? "your GitHub account · Copilot agents only"
+      : `${provider.key} · ${provider.endpoint ?? ""}${provider.hasKey ? " · 🔑" : ""}`;
     sub.title = provider.endpoint ?? "";
     meta.append(name, sub);
 
@@ -197,14 +207,39 @@ function renderProviders() {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "provider-row__action";
-    del.setAttribute("aria-label", `Delete provider: ${provider.key}`);
+    del.setAttribute("aria-label", github ? "Disconnect GitHub" : `Delete provider: ${provider.key}`);
     del.textContent = "🗑";
     del.addEventListener("click", () => deleteProvider(provider.key));
 
-    li.append(meta, edit, del);
+    if (github) li.append(meta, del);
+    else li.append(meta, edit, del);
     providerList.appendChild(li);
   }
 }
+// The sign-in button shows only when the server can run the flow and the account isn't connected yet; the note
+// explains the add-on (an ordinary provider is still needed, ADR 0108) whenever either is the case.
+function syncGitHubSignIn() {
+  const connected = userProviders.some((p) => p.kind === GITHUB_COPILOT_KIND);
+  githubSignInBtn.hidden = !gitHubSignIn || connected;
+  githubSignInNote.hidden = !gitHubSignIn && !connected;
+}
+
+// Run at init: the GitHub sign-in callback redirects back to /?github=connected|error. Strip the param (so a reload
+// isn't a re-trigger) and open Preferences → Model providers so the new row shows.
+export async function initGitHubSignInReturn() {
+  const params = new URLSearchParams(location.search);
+  const result = params.get("github");
+  if (!result) return;
+  history.replaceState(null, "", location.pathname);
+  if (result === "error") {
+    alert(`Could not sign in with GitHub: ${params.get("reason") || "unknown error"}`);
+  }
+  await openProfileDialog();
+  profileTabs.select(2); // the Model providers tab
+  enterPrefsDetail(2);
+  if (result === "connected") loadModels({ pin: false }); // the plan's models join the Copilot pickers
+}
+
 const ANTHROPIC_ENDPOINT = "https://api.anthropic.com";
 
 // The Responses-API toggle is Foundry-only (ADR 0014) — an OpenAI-compatible provider ignores it.
@@ -392,6 +427,7 @@ export function wireProviders() {
   if (embeddingModelSelect) embeddingModelSelect.addEventListener("change", persistEmbeddingModel);
   if (speechModelSelect) speechModelSelect.addEventListener("change", persistSpeechModel);
   addProviderBtn.addEventListener("click", () => openProviderDialog(null));
+  githubSignInBtn.addEventListener("click", () => { location.href = "/api/providers/github/start"; });
   addModelRowBtn.addEventListener("click", () => addModelRow(null));
   providerKindSelect.addEventListener("change", syncProviderKindUi);
   providerCancelBtn.addEventListener("click", () => providerDialog.close());

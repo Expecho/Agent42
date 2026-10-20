@@ -68,10 +68,18 @@ public sealed partial class FleetTeamRunner
         return run.Prompts.Render("planner",
             ("tools", tools),
             ("delegation", context.Depth < Options.MaxTeamDepth ? run.Prompts.Get("delegation") : ""),
-            ("copilot", run.CopilotEnabled && run.CopilotFactory is not null ? run.Prompts.Get("copilot") : ""),
+            ("copilot", run.CopilotEnabled && run.CopilotFactory is not null ? run.Prompts.Get("copilot") + CopilotModels() : ""),
             ("models", models),
             ("defaultModel", run.DefaultModel));
     }
+
+    // The user's GitHub Copilot models (ADR 0108), appended in code rather than in the editable copilot prompt so a
+    // user's own prompt text keeps working: they run only as a Copilot agent's 'copilot/<id>'.
+    private string CopilotModels() => run.CopilotModelNames.Count == 0
+        ? ""
+        : "\n\nThese models run only as a Copilot agent, as 'copilot/<model id>' (never as an agent's plain model id):\n"
+            + string.Join("\n", run.CopilotModelNames.Keys.Order(StringComparer.OrdinalIgnoreCase)
+                .Select(id => run.CopilotModelNames[id] is { Length: > 0 } name ? $"- {id} ({name})" : $"- {id}"));
 
     /// <summary>Turns YAML into agents: Copilot agents first, then the chat client of the model in the YAML.</summary>
     public PromptAgentFactory CreateAgentFactory(FleetTeamContext context)

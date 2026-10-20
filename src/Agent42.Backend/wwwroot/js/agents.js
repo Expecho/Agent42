@@ -170,7 +170,8 @@ function openAgentDialog(agent) {
   renderEmailAddress(agent);
   // Null enabledTools (a new agent, or one saved before ADR 0021) means "all selectable tools".
   renderToolChecks(agentToolChecks, agent?.enabledTools ?? allToolKeys());
-  fillModelOptions(agentModelSelect);
+  // A copilot agent may also run on the user's GitHub Copilot models (ADR 0108); every other kind may not.
+  fillModelOptions(agentModelSelect, { copilot: agent?.kind === "copilot" });
   // Preselect the agent's model when editing, otherwise the server default. Uses the same helper as
   // the composer picker rather than a second copy of the append-if-missing logic.
   selectModel(agentModelSelect, agent?.model ?? defaultModel);
@@ -352,7 +353,13 @@ export function wireAgents() {
   // this only ever fires while the flag is still settable.
   incognitoBtn.addEventListener("click", () => setIncognito(!ephemeral));
   addAgentBtn.addEventListener("click", () => openAgentDialog(null));
-  agentKindSelect.addEventListener("change", () => applyKindLock(agentKindSelect.value || null));
+  agentKindSelect.addEventListener("change", () => {
+    applyKindLock(agentKindSelect.value || null);
+    // The GitHub Copilot models come and go with the copilot type (ADR 0108); keep the pick when it is still offered.
+    const picked = agentModelSelect.value;
+    fillModelOptions(agentModelSelect, { copilot: agentKindSelect.value === "copilot" });
+    agentModelSelect.value = [...agentModelSelect.options].some((o) => o.value === picked) ? picked : (defaultModel ?? "");
+  });
   agentCancelBtn.addEventListener("click", () => agentDialog.close());
   agentForm.addEventListener("submit", (e) => {
     e.preventDefault();

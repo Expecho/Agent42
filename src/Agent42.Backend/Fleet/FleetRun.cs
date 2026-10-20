@@ -30,6 +30,12 @@ public sealed class FleetRun
     /// <summary>Display names of <see cref="Clients"/>, for the planner prompt.</summary>
     public IReadOnlyDictionary<string, string?> ModelNames { get; init; } = new Dictionary<string, string?>();
 
+    /// <summary>
+    /// The user's GitHub Copilot models (ADR 0108) by qualified id, with display names. They have no chat client: the
+    /// planner is told they run only as <c>copilot/&lt;id&gt;</c>.
+    /// </summary>
+    public IReadOnlyDictionary<string, string?> CopilotModelNames { get; init; } = new Dictionary<string, string?>();
+
     /// <summary>The catalog's tools (web, MCP), besides the workspace tools and <c>delegate_to_team</c>.</summary>
     public IReadOnlyList<AIFunction> Tools { get; init; } = [];
 

@@ -160,6 +160,14 @@ public static class ModelProviderBuilder
             return new ProviderBuildResult(ProviderBuildStatus.Skipped);
         }
 
+        // GitHub Copilot (ADR 0108) has no endpoint and declares no models (they are discovered from the user's plan
+        // by the Copilot model directory), so it is branched off before the endpoint rule.
+        if (provider.Kind == ProviderKind.GitHubCopilot)
+        {
+            return new ProviderBuildResult(
+                ProviderBuildStatus.Built, MultiProviderChatClientFactory.Provider.GitHubCopilot(provider, provider.ApiKey), null, []);
+        }
+
         if (string.IsNullOrWhiteSpace(provider.Endpoint))
         {
             return Invalid(

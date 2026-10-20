@@ -1,7 +1,7 @@
 # Bring your own models
 
 > User-configurable model providers, encrypted keys, and a user-settable default model.
-> ADRs 0013 · 0017 · 0018 · 0019 · 0020 · 0103.
+> ADRs 0013 · 0017 · 0018 · 0019 · 0020 · 0103 · 0108.
 
 ## What it is
 
@@ -12,6 +12,14 @@ OpenAI-compatible endpoint, GitHub Models, a local runtime like Ollama / vLLM, o
 stored **encrypted** (never echoed back), changes take effect **without a restart**, and the
 user picks the **default model** new chats start on. Until at least one provider is added,
 the composer stays gated and the model picker is empty.
+
+> **GitHub Copilot (ADR 0108):** **Sign in with GitHub** on the same tab connects your own GitHub Copilot
+> subscription as the `github-copilot` provider. Its models are listed from your plan, and they run **only in
+> Copilot agents** (copilot-kind chats and fleet Copilot agents): every other picker hides them, and their chat
+> client refuses. It is an add-on, so you still need an ordinary provider for plain chats and the default model.
+> The token is stored encrypted like any key, is sent per Copilot session, and is never the runtime's identity.
+> Delete the row to disconnect. The server needs the OAuth App (`GitHub:OAuth:ClientId` + `GH_OAUTH_CLIENT_SECRET`),
+> or the button is hidden.
 
 > **Embedding models (ADR 0030):** a model can also be marked **embeddings** — document Q&A (RAG)
 > uses whichever embedding model you pick as the **default embedding model** (a second selector on

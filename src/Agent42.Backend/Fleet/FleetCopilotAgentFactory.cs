@@ -100,7 +100,9 @@ public sealed class FleetCopilotAgentFactory(
 
         if (userFactory is not ICopilotProviderSource source || source.GetCopilotProvider(model) is not { } provider)
         {
-            throw new InvalidOperationException($"{Unavailable} The provider of '{model}' can't be reached by the Copilot runtime.");
+            throw new InvalidOperationException(GitHubCopilotProvider.IsGitHubModel(model)
+                ? $"{Unavailable} '{model}' needs the user's GitHub account, which isn't connected."
+                : $"{Unavailable} The provider of '{model}' can't be reached by the Copilot runtime.");
         }
 
         var config = BuildSessionConfig(provider.Settings, provider.Model, $"{promptAgent.Instructions?.ToTemplateString()}\n\n{prompts.Get("copilot-report")}");
@@ -128,13 +130,10 @@ public sealed class FleetCopilotAgentFactory(
     public SessionConfig BuildSessionConfig(CopilotProviderSettings settings, string model, string instructions) => new()
     {
         Model = model,
-        Provider = new ProviderConfig
-        {
-            Type = settings.Type,
-            BaseUrl = settings.BaseUrl,
-            ApiKey = settings.ApiKey,
-            WireApi = settings.WireApi,
-        },
+        // BYOK, or the user's own GitHub account (ADR 0108): the same rule as a copilot chat's session.
+        Provider = CopilotAgentFactory.ProviderFor(settings),
+        GitHubToken = CopilotAgentFactory.GitHubTokenFor(settings),
+        EnableSessionTelemetry = CopilotAgentFactory.TelemetryFor(settings),
         SystemMessage = new SystemMessageConfig { Mode = SystemMessageMode.Append, Content = instructions },
         WorkingDirectory = workspace.Root,
         Tools = [.. canvas.Tools],

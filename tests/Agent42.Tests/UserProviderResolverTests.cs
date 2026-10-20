@@ -247,6 +247,58 @@ public class UserProviderResolverTests
         ],
         UseResponsesApi: false);
 
+    // ADR 0108: a connected GitHub Copilot provider builds with no endpoint and no declared models, and its token is
+    // decrypted into the Copilot settings, the only place it is carried.
+    [Fact]
+    public void GitHubCopilot_BuildsWithoutEndpointOrModels_TokenInCopilotSettings()
+    {
+        var resolved = EmptyResolver().Merge(OverlayWith(GitHubCopilot(_protector.Protect("gho_secret"))));
+
+        var provider = resolved.Providers[GitHubCopilotProvider.Key];
+        Assert.Equal(ProviderKind.GitHubCopilot, provider.Options.Kind);
+        Assert.DoesNotContain(resolved.DeclaredModels, m => m.Provider == GitHubCopilotProvider.Key);
+        Assert.NotNull(provider.Copilot);
+        Assert.True(provider.Copilot.UsesGitHubAccount);
+        Assert.Equal("gho_secret", provider.Copilot.ApiKey);
+    }
+
+    // ADR 0108 decision 5: GitHub Copilot is an add-on. A user whose only provider is GitHub Copilot has NO default,
+    // so the existing no-provider gate applies rather than a plain chat starting on a model that refuses.
+    [Fact]
+    public void GitHubCopilotOnly_HasNoDefault()
+    {
+        var resolved = EmptyResolver().Merge(OverlayWith(GitHubCopilot(_protector.Protect("gho_secret"))));
+
+        Assert.Equal("", resolved.DefaultModelId);
+    }
+
+    // ADR 0108 (critic F8): NamesBuiltProvider only checked that the key is built. A pinned github-copilot default is
+    // ignored, and the next candidate (the first declared model) wins.
+    [Fact]
+    public void PinnedGitHubCopilotDefault_IsIgnored()
+    {
+        var overlay = new UserProviderConfig(
+            [GitHubCopilot(_protector.Protect("gho_secret")), Ollama(_protector.Protect("ollama-key"))],
+            Default: "github-copilot:claude-sonnet-5", Version: 1);
+
+        var resolved = EmptyResolver().Merge(overlay);
+
+        Assert.Equal("ollama:llama3.1", resolved.DefaultModelId);
+    }
+
+    // A blank token (a rotated Data Protection ring decrypts to null) skips the provider, like any keyless one.
+    [Fact]
+    public void GitHubCopilot_UndecryptableToken_IsSkipped()
+    {
+        var resolved = EmptyResolver().Merge(OverlayWith(GitHubCopilot("not-a-ciphertext")));
+
+        Assert.DoesNotContain(GitHubCopilotProvider.Key, resolved.Providers.Keys);
+    }
+
+    private static StoredProvider GitHubCopilot(string ciphertext) => new(
+        GitHubCopilotProvider.Key, GitHubCopilotProvider.Kind, GitHubCopilotProvider.DisplayName,
+        Endpoint: null, ciphertext, Models: [], UseResponsesApi: false);
+
     private UserProviderResolver Resolver() =>
         new(null!, _protector, Baseline(), BaselineDefault);
 
