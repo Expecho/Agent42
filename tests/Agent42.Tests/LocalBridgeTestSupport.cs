@@ -117,6 +117,9 @@ internal sealed class FakeBridgeHelper : IAsyncDisposable
 
     public ConcurrentBag<int> ClosedChannels { get; } = [];
 
+    /// <summary>Every <c>pong</c> control frame received, by the channel it named.</summary>
+    public ConcurrentBag<int> Pongs { get; } = [];
+
     public WebSocketCloseStatus? CloseStatus => _socket.CloseStatus;
 
     /// <summary>Completes when the receive loop ends (the backend closed, or the socket died).</summary>
@@ -169,6 +172,9 @@ internal sealed class FakeBridgeHelper : IAsyncDisposable
                 return;
             case "close":
                 ClosedChannels.Add(channel);
+                return;
+            case "pong":
+                Pongs.Add(channel);
                 return;
         }
 

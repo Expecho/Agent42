@@ -22,6 +22,10 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
+      # ChromeExtensionScriptTests runs the extension's `node --test` suite, which needs Node 22+.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
       - run: dotnet restore Agent42.slnx
       - run: dotnet build Agent42.slnx --no-restore
       - run: dotnet test Agent42.slnx --no-build

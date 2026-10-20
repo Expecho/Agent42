@@ -18,4 +18,18 @@ public static class McpToolLimits
 
     /// <summary>Appended to a tool result when it was cut off at <see cref="MaxToolResultLength"/>.</summary>
     public const string TruncationMarker = "\n\n[truncated]";
+
+    /// <summary>
+    /// Images a run may show the model (the Chrome-extension ADR). Tool images are request-only: they are never
+    /// persisted, and only the latest ones are kept (evicted at record time), because each one is re-sent on every
+    /// model call of the loop.
+    /// </summary>
+    public const int MaxImagesPerRun = 3;
+
+    /// <summary>Largest decoded image an MCP tool may show the model. A bigger one is dropped with a note.</summary>
+    public const int MaxImageBytes = 1024 * 1024;
+
+    /// <summary>The image types shown to the model, each checked against its magic bytes. Anything else is dropped.</summary>
+    public static readonly IReadOnlySet<string> ImageMediaTypes =
+        new HashSet<string>(["image/png", "image/jpeg", "image/webp", "image/gif"], StringComparer.OrdinalIgnoreCase);
 }

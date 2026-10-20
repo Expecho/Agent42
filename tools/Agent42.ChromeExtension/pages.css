@@ -1,0 +1,22 @@
+:root { color-scheme: light dark; --fg: #1d1d1f; --bg: #fff; --muted: #616161; --accent: #1565c0; --warn-bg: #fff3e0; --warn-fg: #8d3b00; --code-bg: #f4f4f5; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg: #ececf1; --bg: #1e1e20; --muted: #a1a1aa; --accent: #64b5f6; --warn-bg: #3a2410; --warn-fg: #ffcc80; --code-bg: #2a2a2e; }
+}
+body { font: 14px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0; }
+main { max-width: 560px; padding: 20px; }
+body.popup { width: 280px; padding: 12px; }
+h1 { font-size: 18px; margin: 0 0 8px; }
+label { display: block; font-weight: 600; margin: 14px 0 4px; }
+label.check { font-weight: 400; display: flex; gap: 8px; align-items: center; }
+input[type=url], input[type=password], textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit; }
+pre, code { background: var(--code-bg); border-radius: 4px; }
+pre { padding: 10px; white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.label { font-weight: 600; margin: 12px 0 2px; }
+.tool { font-weight: 600; font-family: ui-monospace, monospace; margin: 0; }
+.warning { background: var(--warn-bg); color: var(--warn-fg); padding: 8px 12px; border-radius: 6px; }
+.buttons { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+button.secondary { background: transparent; color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }

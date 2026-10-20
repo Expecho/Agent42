@@ -67,7 +67,74 @@ public sealed class TurnContext
     /// </summary>
     public bool WebDocumentIngested { get; private set; }
 
+    /// <summary>
+    /// Whether an MCP tool's images may be shown to the model this run (the Chrome-extension ADR). Set once the run's
+    /// model is decided, from the grain's one vision rule (<c>CanSeeImages</c>: never a copilot chat, otherwise the
+    /// model's vision capability). False until then and always false when closed, so a tool image reached with no
+    /// decision is omitted, which is fail-closed.
+    /// </summary>
+    public bool ToolImagesVisible { get; private set; }
+
+    /// <summary>True when any tool image is waiting to be shown on this run's next model call.</summary>
+    public bool HasToolImages
+    {
+        get
+        {
+            lock (_imagesLock)
+            {
+                return _toolImages.Count > 0;
+            }
+        }
+    }
+
     private int _pushes;
+
+    private readonly Lock _imagesLock = new();
+
+    private readonly List<ToolImage> _toolImages = [];
+
+    /// <summary>Applies the run's vision decision. Ignored when closed.</summary>
+    public void SetToolImagesVisible(bool visible)
+    {
+        if (!IsClosed)
+        {
+            ToolImagesVisible = visible;
+        }
+    }
+
+    /// <summary>
+    /// Records an image an MCP tool returned, to be shown to the model on this run's model calls, never persisted.
+    /// Refused (false) when closed, when images are not visible this run, or without a call id (the Copilot path has
+    /// no function-invoking client, so it has none). At most <see cref="McpToolLimits.MaxImagesPerRun"/> are kept,
+    /// and the oldest is evicted.
+    /// </summary>
+    public bool RecordToolImage(string? callId, ReadOnlyMemory<byte> data, string mediaType)
+    {
+        if (IsClosed || !ToolImagesVisible || string.IsNullOrEmpty(callId))
+        {
+            return false;
+        }
+
+        lock (_imagesLock)
+        {
+            _toolImages.Add(new ToolImage(callId, data, mediaType));
+            while (_toolImages.Count > McpToolLimits.MaxImagesPerRun)
+            {
+                _toolImages.RemoveAt(0);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>The images still kept for <paramref name="callId"/>, in the order they were recorded.</summary>
+    public IReadOnlyList<ToolImage> ToolImagesFor(string callId)
+    {
+        lock (_imagesLock)
+        {
+            return [.. _toolImages.Where(i => string.Equals(i.CallId, callId, StringComparison.Ordinal))];
+        }
+    }
 
     private int _partsRead;
 
@@ -112,6 +179,9 @@ public sealed class TurnContext
 
     /// <summary>A run nobody watches: an agent-run drain or a fired reminder. Never ephemeral, never interactive.</summary>
     public static TurnContext ForBackground() => new(ephemeral: false, interactive: false, broker: null, isClosed: false);
+
+    /// <summary>One image an MCP tool returned during this run: request-only, keyed by the tool call it answers.</summary>
+    public sealed record ToolImage(string CallId, ReadOnlyMemory<byte> Data, string MediaType);
 
     /// <summary>Runs <paramref name="body"/> with <paramref name="context"/> current, without leaking it to the caller.</summary>
     public static async ValueTask<T> RunInAsync<T>(TurnContext context, Func<ValueTask<T>> body)

@@ -21,6 +21,12 @@ public sealed record BridgeEnvelope(
     public const string MessageType = "message";
     public const string Close = "close";
 
+    // Control frames on channel 0, sent by the Chrome extension's heartbeat. This helper never sends a ping
+    // (its WebSocket keep-alive does that job) and its dispatch ignores both; they parse only so the two
+    // envelope copies keep accepting the same frames.
+    public const string Ping = "ping";
+    public const string Pong = "pong";
+
     public string Serialize() => JsonSerializer.Serialize(this);
 
     /// <summary>Parses a frame, or returns null for anything that is not a well-formed envelope.</summary>
@@ -29,7 +35,7 @@ public sealed record BridgeEnvelope(
         try
         {
             var envelope = JsonSerializer.Deserialize<BridgeEnvelope>(json);
-            return envelope is { Type: Open or MessageType or Close } ? envelope : null;
+            return envelope is { Type: Open or MessageType or Close or Ping or Pong } ? envelope : null;
         }
         catch (JsonException)
         {

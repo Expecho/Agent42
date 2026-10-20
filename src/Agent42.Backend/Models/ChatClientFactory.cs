@@ -237,10 +237,12 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         }
 
         // The prompt-cache key (ADR 0104) is stripped on every call and sent only to Azure OpenAI. Inside OTel, so the
-        // span sees the caller's options.
+        // span sees the caller's options. The tool images (the Chrome-extension ADR) go in innermost, below OTel, which
+        // records message contents: above it, every span would carry the image base64.
         return builder
             .UseOpenTelemetry(sourceName: _otelSourceName, configure: cfg => cfg.EnableSensitiveData = true)
             .Use(inner => new PromptCacheKeyChatClient(inner, provider.Options))
+            .Use(inner => new ToolImageChatClient(inner))
             .Build();
     }
 

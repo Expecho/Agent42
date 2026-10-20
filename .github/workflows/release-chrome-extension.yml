@@ -1,0 +1,150 @@
+# Publishes the Agent42 Chrome extension (tools/Agent42.ChromeExtension, a second local-bridge client — ADR 0076 and
+# the Chrome-extension ADR) as a GitHub Release: one zip to unpack and "Load unpacked" in chrome://extensions. It is
+# never deployed with the app (deploy.yml does not copy it) and is not on the Chrome Web Store.
+#
+# Started the same three ways as release-local-bridge.yml:
+#   1. Automatically, when a push to main changes the extension: the next PATCH after the highest stable
+#      chrome-extension-v* tag (1.0.0 if there is none).
+#   2. Pushing a tag to choose the version: git tag chrome-extension-v2.0.0 && git push origin chrome-extension-v2.0.0
+#   3. Running it manually with a version.
+#
+# The repository has IMMUTABLE RELEASES on, so the release is created as a DRAFT, the zip and SHA256SUMS.txt are
+# uploaded to it, and only then is it published (the local-bridge workflow's 2026-09-21 lesson). A failed run leaves
+# a draft that the next run for that version reuses.
+#
+# Chrome's manifest "version" must be one to four dot-separated integers, so a pre-release suffix is moved into
+# "version_name" (shown in chrome://extensions) and "version" keeps the numeric core.
+name: Release Chrome extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/Agent42.ChromeExtension/**
+    tags: ['chrome-extension-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without the prefix (e.g. 1.0.0) — creates tag chrome-extension-v<version>'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-chrome-extension
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "$INPUT_VERSION" ]; then
+            tag="chrome-extension-v${INPUT_VERSION#v}"
+          else
+            latest="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/chrome-extension-v" --paginate \
+                        --jq '.[].ref | sub("^refs/tags/chrome-extension-v"; "")' \
+                      | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+            if [ -z "$latest" ]; then
+              next="1.0.0"
+            else
+              IFS=. read -r major minor patch <<< "$latest"
+              next="$major.$minor.$((patch + 1))"
+            fi
+            echo "Latest stable release: ${latest:-none}; releasing $next."
+            tag="chrome-extension-v$next"
+          fi
+          version="${tag#chrome-extension-v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$version' is not a SemVer version (from tag '$tag')."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Test the extension
+        run: node --test "tools/Agent42.ChromeExtension/test/**/*.test.mjs"
+
+      - name: Create the draft release (or reuse the draft a failed run left)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2> /dev/null)"; then
+            if [ "$draft" != "true" ]; then
+              echo "::error::Release $TAG is already published. Published releases are immutable; release a new version."
+              exit 1
+            fi
+            gh release edit "$TAG" --target "$GITHUB_SHA"
+            exit 0
+          fi
+          prerelease=""
+          if [[ "$VERSION" == *-* ]]; then prerelease="--prerelease"; fi
+          cat > notes.md <<'NOTES'
+          The Agent42 Chrome extension lets your Agent42 conversations use **your own Chrome**, with your sign-ins,
+          through the Agent42 local bridge. See docs/features/remote-mcp-servers.md.
+
+          **Install**
+
+          1. In Agent42, add an MCP server with authentication **Local bridge** and copy the key it shows once.
+          2. Download `agent42-chrome-extension-<version>.zip` and unzip it into a folder you keep.
+          3. Open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked** and pick the folder.
+          4. Open the extension's options, enter your Agent42 address and paste the key.
+
+          **Know what it allows.** The agent can see and act on every open tab. Actions that change a page ask you
+          first, in a small window. Its `evaluate` tool runs JavaScript in a page **without asking**. Agent runs, API
+          keys, reminders and inbound email can reach it, not only chats you are watching, and text on a web page can
+          steer the agent. Put sensitive sites on the options page's blocked list, and narrow the bridge server's
+          tools in Agent42 for agents that others can reach. While Agent42 drives a tab, Chrome shows a
+          "being debugged" banner. Dismissing it stops the extension on that tab until you close the tab.
+
+          To update, unzip the new release over the same folder and press the reload icon in `chrome://extensions`.
+          The extension keeps its id, so its settings survive. Verify a download against `SHA256SUMS.txt`.
+          NOTES
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "Agent42 Chrome extension $VERSION" \
+            --notes-file notes.md $prerelease
+
+      - name: Package (version stamped into the manifest)
+        id: package
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          dir="$RUNNER_TEMP/agent42-chrome-extension"
+          mkdir -p "$dir"
+          # Everything but the tests: the extension has no build step (ADR 0041's no-bundler rule, extended).
+          (cd tools/Agent42.ChromeExtension && tar --exclude=./test -cf - .) | (cd "$dir" && tar -xf -)
+          node -e '
+            const fs = require("fs"); const file = process.argv[1]; const version = process.argv[2];
+            const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+            manifest.version = version.split("-")[0];
+            manifest.version_name = version;
+            fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + "\n");
+          ' "$dir/manifest.json" "$VERSION"
+          name="agent42-chrome-extension-$VERSION.zip"
+          (cd "$dir" && zip -r "$GITHUB_WORKSPACE/$name" .)
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload, attach SHA256SUMS.txt, then publish (creates the tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          NAME: ${{ steps.package.outputs.name }}
+        run: |
+          gh release upload "$TAG" "$NAME" --clobber
+          sha256sum "$NAME" > SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --clobber
+          gh release edit "$TAG" --draft=false

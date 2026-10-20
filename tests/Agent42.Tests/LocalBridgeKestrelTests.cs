@@ -45,6 +45,29 @@ public sealed class LocalBridgeKestrelTests(SharedClusterFixture fixture) : Shar
         await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is null, "the dead bridge to unregister");
     }
 
+    // Chrome extension ADR: a browser fails the handshake unless an offered subprotocol is echoed, and the key is
+    // one of the offered values. Only the fixed name may come back, or the key would land in response headers
+    // and ingress logs. A real socket is used, so the 101's actual headers are inspected.
+    [Fact]
+    public async Task Endpoint_NeverEchoesTheKeyInResponseHeaders()
+    {
+        var registry = new LocalBridgeRegistry();
+        var (_, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, "bridge-kestrel-subprotocol");
+        await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, registry, kestrel: true);
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Origin", LocalBridgeLimits.ExtensionOrigin);
+        socket.Options.AddSubProtocol(LocalBridgeLimits.ExtensionSubprotocol);
+        socket.Options.AddSubProtocol(key);
+        socket.Options.CollectHttpResponseDetails = true;
+
+        await socket.ConnectAsync(LocalBridgeTestHost.KestrelUri(app), CancellationToken.None);
+
+        Assert.Equal(LocalBridgeLimits.ExtensionSubprotocol, socket.SubProtocol);
+        var headers = socket.HttpResponseHeaders!;
+        Assert.DoesNotContain(headers.SelectMany(h => h.Value), v => v.Contains(key, StringComparison.Ordinal));
+        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+    }
+
     // AC17. A second helper for the same server takes over; the first is closed with a policy status and
     // calls route to the second.
     [Fact]

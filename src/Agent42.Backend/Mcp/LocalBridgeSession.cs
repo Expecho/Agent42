@@ -191,6 +191,17 @@ public sealed class LocalBridgeSession : ILocalBridgeConnection
             return;
         }
 
+        if (envelope.Type is LocalBridgeEnvelope.Ping or LocalBridgeEnvelope.Pong)
+        {
+            // The extension's heartbeat: answered on channel 0 only. A pong, or a ping on any other channel, is ignored.
+            if (envelope is { Type: LocalBridgeEnvelope.Ping, Channel: LocalBridgeEnvelope.ControlChannel })
+            {
+                await SendAsync(new LocalBridgeEnvelope(LocalBridgeEnvelope.ControlChannel, LocalBridgeEnvelope.Pong), _stop.Token);
+            }
+
+            return;
+        }
+
         LocalBridgeChannelTransport? channel;
         lock (_gate)
         {

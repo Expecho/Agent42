@@ -6,6 +6,10 @@ tags: [attachments, storage, grains, multimodal]
 amended_by: 0084   # artifacts: artifact tool-call content is compacted out of the session at the persist sites
 ---
 
+> **Amended by [ADR 0109](0109-chrome-extension-bridge-and-mcp-image-results.md) (2026-10-20): MCP tool images are
+> request-only.** They are never stored in Blob storage or the session. The persisted tool result holds a text
+> placeholder, and `ToolImageChatClient` shows the bytes to a vision model on the current run only.
+
 # Store image attachments in blob storage, send them to the model as SAS URLs
 
 ## Context
