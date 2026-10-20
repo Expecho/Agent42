@@ -110,7 +110,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | `HINDSIGHT_API_KEY` | No long-term memory, and zero calls are made. This is the operator's egress switch (ADR 0056/0057) |
 | `VAPID_PRIVATE_KEY` | Web Push is hidden (ADR 0028) |
 | `MAILGUN_SIGNING_KEY` + MX for the in.agent42.nl subdomain → Mailgun + a Route forwarding to `/api/email-in` | `/api/email-in` answers 503 and no inbound email is accepted. The app boots (ADR 0096) |
-| `GH_OAUTH_CLIENT_SECRET` + `GitHub:OAuth:ClientId` (committed, currently blank) + OAuth App callback `https://chat.agent42.nl/api/providers/github/callback` | "Sign in with GitHub" is hidden and `/api/providers/github/start` answers 503. The app boots (ADR 0108) |
+| `GH_OAUTH_CLIENT_SECRET` + `GitHub:OAuth:ClientId` (committed) + OAuth App callback `https://chat.agent42.nl/api/providers/github/callback` | "Sign in with GitHub" is hidden and `/api/providers/github/start` answers 503. The app boots (ADR 0108) |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No App Insights export. The app boots and sends telemetry to OTLP only (ADR 0077) |
 | `Dashboard:OwnerOid` (committed, currently blank) | `/dashboard` denies everyone. **Never set it to `local-dev`** (ADR 0062) |
 | MCP OAuth redirect URI `https://chat.agent42.nl/api/mcp/oauth/callback` | Must be registered in each provider's app registration (ADR 0025) |
