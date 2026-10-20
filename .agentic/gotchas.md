@@ -4469,3 +4469,51 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/AnthropicCompatibilityChatClientTests.cs` (`Wire_UnderFactory_KeepsEveryField`,
   `CallerFactory_KeepsItsParams_GainsCaching`, `ForeignFactory_PassesThrough`)
 - **Verified:** 2026-10-18
+
+### A GitHub Copilot model must never reach an `IChatClient` — the guard is the refusing client, not the picker
+
+- **Claim:** `github-copilot:<model>` ids (ADR 0108) run ONLY on the Copilot runtime with the user's token. The one
+  server-side guard for every other path (plain chat, non-copilot stored agent, research, follow-ups, fleet chat agents)
+  is the provider's `Client` returning `CopilotOnlyChatClient`. Hiding them in the pickers is UX, not the guard, so never
+  "fix" a refusal by giving the kind a real chat client. And `GetCapabilities` for the kind is FIXED tools-only, with no
+  read of `CopilotModelDirectory`: `IsCopilotComposition` builds the copilot composition only when `SupportsTools`, so a
+  capability that followed the discovery cache would turn a copilot chat into a plain `ChatClientAgent` on a TTL miss,
+  which then hits the refusing client. Related: the token is stored like any provider key (see "A user provider's API key
+  is encrypted, never echoed").
+- **Evidence:** `src/Agent42.Backend/Models/CopilotOnlyChatClient.cs`,
+  `src/Agent42.Backend/Models/ChatClientFactory.cs` (`GetCapabilities`, `Provider.GitHubCopilot`),
+  `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`IsCopilotComposition`),
+  `tests/Agent42.Tests/ModelProviderTests.cs` (`GitHubCopilotModel_ChatClientRefuses`,
+  `GitHubCopilotModel_CapabilitiesAreToolsOnly`)
+- **Verified:** 2026-10-20
+
+### The GitHub token goes on every Copilot session create AND resume, never on the client or in its environment
+
+- **Claim:** a GitHub-mode session (ADR 0108) carries the token in `SessionConfig.GitHubToken` with `Provider = null`.
+  The runtime does NOT remember it: a resume without the token fails closed with "No GitHub OAuth token or Copilot HMAC key
+  provided" (measured, SDK 1.0.16), so the AF agent's config must carry it on resume too (it does, since the same
+  `SessionConfig` serves both). Never move it to `CopilotClientOptions.GitHubToken`/`UseLoggedInUser` or the runtime's
+  `Environment` (`GH_TOKEN`/`GITHUB_TOKEN`/`COPILOT_GITHUB_TOKEN`): one runtime serves every user, so that would sign
+  every user's session in as one account, and with built-in tools on the shell could read it.
+- **Evidence:** `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`GitHubTokenFor`, `ProviderFor`, `TelemetryFor`,
+  `BuildClientOptions`), `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`BuildSessionConfig`),
+  `tests/Agent42.Tests/CopilotGitHubAccountTests.cs` (`RuntimeEnvironment_CarriesNoGitHubToken`,
+  `ChatSessionConfig_GitHubMode_TokenNoProviderTelemetryOff`), `.agentic/decisions/0108-github-copilot-provider.md`
+- **Verified:** 2026-10-20
+
+### A disconnected `github-copilot:` id must refuse, not take `Resolve`'s fallback — and the kind is never a default
+
+- **Claim:** `MultiProviderChatClientFactory.Resolve` silently maps a model whose provider key is missing onto the
+  default model (so a conversation never becomes unopenable). For a Copilot agent pinned to a GitHub model that would
+  quietly run the user's Copilot choice on their BYOK default after they disconnect GitHub, so `GetCopilotProvider`
+  returns null for a `github-copilot:` id whose provider is absent, and the factories turn that into "GitHub isn't
+  connected". In the same way, `UserProviderResolver.NamesBuiltProvider` refuses a pinned `github-copilot:` default (being
+  built is not enough), and the factory's fallback provider for legacy UNQUALIFIED ids skips the kind. Either slip lands
+  a plain chat on the refusing client.
+- **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`GetCopilotProvider`, `FallbackProviderKey`),
+  `src/Agent42.Backend/Models/UserProviderResolver.cs` (`NamesBuiltProvider`),
+  `tests/Agent42.Tests/ModelProviderTests.cs` (`DisconnectedGitHubModel_HasNoCopilotProvider`,
+  `LegacyUnqualifiedId_NeverResolvesToGitHubCopilot`), `tests/Agent42.Tests/CopilotGitHubAccountTests.cs`
+  (`CreateAgent_DisconnectedGitHubModel_IsNotConnected`), `tests/Agent42.Tests/UserProviderResolverTests.cs`
+  (`PinnedGitHubCopilotDefault_IsIgnored`)
+- **Verified:** 2026-10-20

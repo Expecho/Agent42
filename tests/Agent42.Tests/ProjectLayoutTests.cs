@@ -191,6 +191,7 @@ public sealed class ProjectLayoutTests
         { "Export/AgentApi.Export.cs", "MapExportEndpoints" },
         { "Webhooks/AgentApi.Webhooks.cs", "MapWebhookEndpoints" },
         { "Fleet/AgentApi.Fleet.cs", "MapFleetEndpoints" },
+        { "Copilot/AgentApi.GitHubCopilot.cs", "MapGitHubCopilotEndpoints" },
     };
 
     // The theory above lists exactly the parts reflection finds, so it cannot fall behind again (it once missed four).

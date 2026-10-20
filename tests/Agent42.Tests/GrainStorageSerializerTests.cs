@@ -49,6 +49,7 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         "Agent42.Agents.UsageRollupState",
         "Agent42.Agents.UserMcpConfigState",
         "Agent42.Agents.UserMcpOAuthPendingState",
+        "Agent42.Agents.UserGitHubOAuthPendingState",
         "Agent42.Agents.UserProfileState",
         "Agent42.Agents.UserProviderConfigState",
         "Agent42.Agents.UserPushState",
@@ -733,6 +734,43 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         var restored = Serializer().Deserialize<EmailAddressDirectoryState>(new BinaryData(StoredEmailAddressDirectoryJson));
 
         Assert.Equal(("user@example.com", "agent-golden-mail"), (restored.UserId, restored.AgentId));
+    }
+
+    // ADR 0108 (CLAUDE.md rule 2): the new pending sign-in state reads back through the Cosmos JSON path.
+    [Fact]
+    public void GitHubOAuthPending_RoundTripsThroughCosmosJson()
+    {
+        var restored = Serializer().Deserialize<UserGitHubOAuthPendingState>(Serializer().Serialize(new UserGitHubOAuthPendingState
+        {
+            Pending = [new GitHubOAuthPending("state-1", "verifier-1", "https://chat.agent42.nl/api/providers/github/callback")],
+        }));
+
+        var pending = Assert.Single(restored.Pending);
+        Assert.Equal(("state-1", "verifier-1"), (pending.State, pending.CodeVerifier));
+    }
+
+    // ADR 0108: the provider the sign-in writes, built exactly as ConnectGitHubCopilotAsync builds it (a real List for
+    // Models, no endpoint), reads back through the Cosmos JSON path.
+    [Fact]
+    public void ConnectedGitHubCopilotProvider_RoundTripsThroughCosmosJson()
+    {
+        var written = new UserProviderConfigState
+        {
+            Config = new UserProviderConfig(
+                new List<StoredProvider>
+                {
+                    new(GitHubCopilotProvider.Key, GitHubCopilotProvider.Kind, GitHubCopilotProvider.DisplayName,
+                        Endpoint: null, "cipher", Models: new List<StoredModel>(), UseResponsesApi: false),
+                },
+                Default: null, Version: 1),
+        };
+
+        var restored = Serializer().Deserialize<UserProviderConfigState>(Serializer().Serialize(written));
+
+        var provider = Assert.Single(restored.Config.Providers);
+        Assert.Equal((GitHubCopilotProvider.Key, GitHubCopilotProvider.Kind, "cipher"), (provider.Key, provider.Kind, provider.ApiKeyCiphertext));
+        Assert.Null(provider.Endpoint);
+        Assert.Empty(provider.Models);
     }
 
     private const string StoredEmailAddressDirectoryJson = """

@@ -27,6 +27,18 @@ public sealed record CopilotProviderSettings(string Type, string BaseUrl, string
     /// <summary>An OpenAI-compatible provider, at its configured endpoint. No Responses surface (ADR 0014).</summary>
     public static CopilotProviderSettings OpenAICompatible(Uri endpoint, string apiKey)
         => new("openai", endpoint.AbsoluteUri, apiKey, "completions");
+
+    /// <summary>The <see cref="Type"/> of <see cref="GitHub"/> settings, which is not a runtime provider type.</summary>
+    public const string GitHubType = "github";
+
+    /// <summary>
+    /// The user's GitHub account (ADR 0108): no BYOK provider at all. <see cref="ApiKey"/> holds the GitHub token, which
+    /// goes into the session's <c>GitHubToken</c>, never into <c>CopilotClientOptions</c> or the runtime's environment.
+    /// </summary>
+    public static CopilotProviderSettings GitHub(string token) => new(GitHubType, "", token, "");
+
+    /// <summary>Whether these settings sign the session in with the user's GitHub account instead of BYOK.</summary>
+    public bool UsesGitHubAccount => Type == GitHubType;
 }
 
 /// <summary>

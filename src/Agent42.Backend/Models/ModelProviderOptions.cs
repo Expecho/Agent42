@@ -23,6 +23,14 @@ public enum ProviderKind
     /// image, embedding, speech or Copilot runtime. Its models are declared, like an OpenAI-compatible provider's.
     /// </summary>
     Anthropic,
+
+    /// <summary>
+    /// The user's own GitHub Copilot subscription (ADR 0108), connected with GitHub sign-in. Its "key" is the GitHub
+    /// token, it has no endpoint, and its models are discovered from the user's plan. They run ONLY on the Copilot
+    /// runtime (copilot-kind chats and fleet Copilot agents, with a per-session <c>GitHubToken</c>), so its chat
+    /// client refuses every request (<see cref="CopilotOnlyChatClient"/>). Never the default model.
+    /// </summary>
+    GitHubCopilot,
 }
 
 /// <summary>

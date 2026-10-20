@@ -45,6 +45,27 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
         Assert.Equal(AgentKinds.Copilot, (await reopened.GetAgentBindingAsync())!.Kind);
     }
 
+    // ADR 0108: follow-up suggestions are a plain chat call on the conversation's model, which a GitHub Copilot model
+    // refuses (CopilotOnlyChatClient). A copilot chat on one makes no such call; on a BYOK model it still does.
+    [Fact]
+    public async Task CopilotTurn_OnGitHubModel_MakesNoFollowUpCall()
+    {
+        int SuggestionCalls() => Silos.Sum(s => s.GetRequiredService<FakeChatClient>().SuggestionCalls);
+
+        var byok = await CollectAsync((await CopilotChatAsync("copilot-followups-byok")).ChatAsync("hi", null));
+        Assert.Contains(byok, e => e.Type == AgentStreamEventType.Suggestions);
+        Assert.Equal(1, SuggestionCalls());
+
+        var agent = await CopilotChatAsync("copilot-followups-github", model: "github-copilot:claude-sonnet-5");
+        var events = await CollectAsync(agent.ChatAsync("hi", null));
+
+        Assert.Equal("github-copilot:claude-sonnet-5", LastRequest("copilot-followups-github").ModelId);
+        Assert.Contains(events, e => e.Type == AgentStreamEventType.TextDelta);
+        Assert.DoesNotContain(events, e => e.Type == AgentStreamEventType.Suggestions);
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+        Assert.Equal(1, SuggestionCalls());
+    }
+
     // AC4 + AC8: a turn streams its tool call and text through the ordinary event types and ends with Done. The twin
     // calls web_search from the thread pool, and the tool records the search URL into grain state. It could not do
     // that off the activation, so a working turn proves the marshalling end to end.

@@ -624,9 +624,11 @@
                 <div class="providers__head">
                   <span class="agent-form__label">// model providers</span>
                   <button class="agent-form__btn" type="button" id="addProviderBtn">Add provider</button>
+                  <button class="agent-form__btn" type="button" id="githubSignInBtn" hidden>Sign in with GitHub</button>
                 </div>
                 <ul class="providers__list" id="providerList"></ul>
                 <p class="agent-form__note">Add an OpenAI-compatible endpoint (Ollama, vLLM…) or another Foundry account. Changes take effect on your next new chat — no restart. Picking a third-party model sends your conversation outside the tenant.</p>
+                <p class="agent-form__note" id="githubSignInNote" hidden>Sign in with GitHub to run your Copilot agents on your own GitHub Copilot subscription. Those models are for Copilot agents only, so you still need an ordinary provider for plain chats. Their conversations go to GitHub.</p>
               </section>
             </div>
 

@@ -110,6 +110,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | `HINDSIGHT_API_KEY` | No long-term memory, and zero calls are made. This is the operator's egress switch (ADR 0056/0057) |
 | `VAPID_PRIVATE_KEY` | Web Push is hidden (ADR 0028) |
 | `MAILGUN_SIGNING_KEY` + MX for the in.agent42.nl subdomain → Mailgun + a Route forwarding to `/api/email-in` | `/api/email-in` answers 503 and no inbound email is accepted. The app boots (ADR 0096) |
+| `GH_OAUTH_CLIENT_SECRET` + `GitHub:OAuth:ClientId` (committed) + OAuth App callback `https://chat.agent42.nl/api/providers/github/callback` | "Sign in with GitHub" is hidden and `/api/providers/github/start` answers 503. The app boots (ADR 0108) |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No App Insights export. The app boots and sends telemetry to OTLP only (ADR 0077) |
 | `Dashboard:OwnerOid` (committed, currently blank) | `/dashboard` denies everyone. **Never set it to `local-dev`** (ADR 0062) |
 | MCP OAuth redirect URI `https://chat.agent42.nl/api/mcp/oauth/callback` | Must be registered in each provider's app registration (ADR 0025) |
@@ -162,7 +163,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Core: grain per conversation, auth, persona snapshot, blob attachments, profile | 0001, 0002, 0003, 0004, 0005 |
 | Telemetry, `/logs` console, usage dashboard, Orleans dashboard, App Insights export | 0009, 0010, 0031, 0054, 0062, 0077, 0104 |
 | Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out | 0074, 0090 |
-| Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104 |
+| Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens), GitHub Copilot kind (Sign in with GitHub, copilot-agents-only models) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104, 0108 |
 | Image generation, speech (STT/TTS/voice loop), reasoning output | 0006, 0020, 0037, 0038, 0071 |
 | Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces), fleet workspace documents | 0007, 0008, 0030, 0066, 0098, 0101 |
 | Web search (SearXNG sidecar, engines, proxied UI), page scrape (context.dev) | 0011, 0027, 0059, 0060 |
@@ -173,7 +174,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | MCP server (agents exposed via `/api/agent-mcp`) | 0070 |
 | Stored agents: history mode, API key + `/api/agent-run`, retention, outbound webhook (signed, SSRF-guarded egress), inbound email address (Mailgun, untrusted-in) | 0016, 0022, 0068, 0094, 0096 |
 | Research agent: seeded built-in `Kind`, todo/loop/judge, history fold, live checklist | 0082 |
-| Copilot agent kind: GitHub Copilot SDK loop, BYOK, Agent42 tools as custom tools, native skills, SessionFs in Blob, history mirror, phase-1 trust boundary (set aside for fleet Copilot agents by 0097); built-in shell/file/URL tools in chats, auto-approved, kill switch, Azure Files workspaces (0107) | 0085, 0097, 0107 |
+| Copilot agent kind: GitHub Copilot SDK loop, BYOK, Agent42 tools as custom tools, native skills, SessionFs in Blob, history mirror, phase-1 trust boundary (set aside for fleet Copilot agents by 0097); built-in shell/file/URL tools in chats, auto-approved, kill switch, Azure Files workspaces (0107); on the user's own GitHub Copilot plan via a per-session token (0108) | 0085, 0097, 0107, 0108 |
 | Agent fleet (recursive agent teams, `/fleet/`): in-process runner (not a grain), Blob store + SSE replay, judge/fix/new team, Copilot agents with built-in tools, per-task tool override, attached files + workspace-scoped document search, shared canvas (versioned pages, live pane) | 0097, 0099, 0101, 0102 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |
 | Push: away replies, model-invoked, user-initiated test push | 0028, 0075, 0100 |

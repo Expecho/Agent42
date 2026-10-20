@@ -97,6 +97,11 @@ files, and use its network. Since ADR 0101 the workspace can hold your uploaded 
 those too. Since ADR 0102 it also gets the four canvas tools as custom tools, and only those (its file access covers
 the workspace tools).
 
+Since ADR 0108 a Copilot agent can also run on your GitHub Copilot plan, as `copilot/github-copilot:<model>`, once you
+have signed in with GitHub. Those models never become the task's model and never get a chat client: the planner,
+judge, manager and ordinary agents stay on your own providers, and the planner sees the plan's models in a separate
+"run only as a Copilot agent" list.
+
 ## Downloads
 
 Workspace files are listed under the task and downloaded from `/api/fleet/tasks/{id}/files/{path}`. They are

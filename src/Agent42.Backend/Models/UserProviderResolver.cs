@@ -189,8 +189,10 @@ public sealed class UserProviderResolver : IUserProviderResolver
             return false;
         }
 
+        // A GitHub Copilot model is never a default (ADR 0108): it runs only in Copilot agents, so a plain chat that
+        // started on it would hit the refusing client. Being built is not enough.
         var (providerKey, _) = ModelId.Parse(modelId, "");
-        return providers.ContainsKey(providerKey);
+        return providers.TryGetValue(providerKey, out var provider) && provider.Options.Kind != ProviderKind.GitHubCopilot;
     }
 
     // A stored (overlay) provider → the same ProviderOptions shape the baseline uses, with the API key

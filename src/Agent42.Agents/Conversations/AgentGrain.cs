@@ -550,8 +550,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             {
                 yield return new AgentStreamEvent(
                     AgentStreamEventType.TextDelta,
+                    // GitHub Copilot alone is not enough (ADR 0108): its models run only in Copilot agents.
                     Text: "_No model provider is configured. Add one in Settings → model providers to "
-                        + "start chatting._\n\n");
+                        + "start chatting. GitHub Copilot needs an ordinary provider alongside it._\n\n");
                 yield return new AgentStreamEvent(AgentStreamEventType.Done);
                 yield break;
             }
@@ -979,9 +980,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // so without it the answer to a stop would be a second model call about the cancelled answer).
     // Best-effort beyond that: GenerateFollowUpsAsync owns its try/catch and returns null on any
     // failure, so a slow or failing suggestion call never breaks the turn.
+    // A GitHub Copilot model (ADR 0108) has no chat client — its provider's client refuses every call — so a
+    // copilot chat on one skips the call rather than log a warning each turn. Running it on another of the user's
+    // models instead would send the exchange to a second provider the user never picked for this chat.
     private async Task<IReadOnlyList<string>?> SuggestFollowUpsAsync(
         string message, StringBuilder reply, bool stopped, bool interactive)
         => !stopped && interactive && _suggestFollowUpsEnabled && reply.Length > 0
+            && !GitHubCopilotProvider.IsGitHubModel(_modelId)
             ? await GenerateFollowUpsAsync(message, reply.ToString())
             : null;
 

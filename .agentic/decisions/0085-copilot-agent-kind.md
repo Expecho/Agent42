@@ -5,7 +5,7 @@ status: accepted
 tags: [copilot, stored-agents, agent-framework, github-copilot-sdk, sessionfs, blob, byok, tools, skills, egress, trust-boundary, experimental-api, no-migration]
 supersedes: []
 amends: [0082, 0016, 0034, 0049]
-amended_by: [0097, 0107]   # 0097 agent fleet: fleet Copilot agents keep built-in tools; 0107: copilot chats get them too
+amended_by: [0097, 0107, 0108]   # 0097 agent fleet: fleet Copilot agents keep built-in tools; 0107: copilot chats get them too; 0108: a session may sign in with the user's GitHub account instead of BYOK
 ---
 
 # A user-created "copilot" agent kind that runs the GitHub Copilot SDK's agent loop (phase 1 shipped without built-in tools)
@@ -19,6 +19,10 @@ amended_by: [0097, 0107]   # 0097 agent fleet: fleet Copilot agents keep built-i
 > to default mode with a REAL working directory per conversation on an Azure Files share. The transcript stays in
 > this ADR's `SessionFs` Blob store under the same keys. Decisions 4 (`Mode.Empty`) and 7 (custom tools only) and
 > the phase-1 trust boundary below now describe the kill switch's OFF position.
+>
+> **Amended by [ADR 0108](0108-github-copilot-provider.md) (2026-10-20): a copilot chat may also run on the user's own
+> GitHub Copilot plan.** A `github-copilot:<model>` session sets `GitHubToken` (per session) and no BYOK `Provider`, with
+> session telemetry off. "No GitHub sign-in" below still holds for every BYOK model and for the runtime client itself.
 
 ## Context
 

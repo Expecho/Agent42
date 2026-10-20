@@ -27,12 +27,16 @@ public sealed class RecordingCopilotAgentFactory : ICopilotAgentFactory
     /// <summary>Makes every later request for <paramref name="conversationId"/> throw <see cref="CopilotUnavailableException"/>.</summary>
     public void Refuse(string conversationId, string reason) => _refusals[conversationId] = reason;
 
+    // A GitHub Copilot model (ADR 0108) stands in for the real runtime here: the twin refuses one, so the agent runs on
+    // the silo's default (fake) model instead, and the request is recorded with the GitHub model id the grain asked for.
     public AIAgent CreateAgent(CopilotAgentRequest request)
     {
         _requests.AddOrUpdate(request.ConversationId, _ => [request], (_, list) => { list.Add(request); return list; });
         return _refusals.TryGetValue(request.ConversationId, out var reason)
             ? throw new CopilotUnavailableException(reason)
-            : _twin.CreateAgent(request);
+            : _twin.CreateAgent(GitHubCopilotProvider.IsGitHubModel(request.ModelId)
+                ? request with { ModelId = TestSiloConfigurator.DefaultModel }
+                : request);
     }
 
     public Task DeleteConversationAsync(string userId, string conversationId, CancellationToken cancellationToken = default)
