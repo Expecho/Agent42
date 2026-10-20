@@ -57,6 +57,10 @@ provider and AF `GitHubCopilotAgent`, with a `gho_` token (output in
 5. **Copilot agents only.**
    - **Refusing client.** The provider's chat client is `CopilotOnlyChatClient`, which refuses every request: the one
      server-side guard for plain chats, non-copilot stored agents, research, follow-ups and fleet chat agents.
+   - **No follow-ups.** A copilot chat on one of these models skips follow-up suggestions (ADR 0036), which are a
+     plain chat call on the conversation's model. Running them on another of the user's models would send the
+     exchange to a provider the user didn't pick for this chat. Found in the 2026-10-20 local run, where every turn
+     logged the refusal.
    - **Fixed capabilities.** `GetCapabilities` returns tools-only with no cache read, so a copilot chat always builds
      the copilot composition.
    - **Never a default.** The model is never the default, and the provider is never the fallback provider that legacy
