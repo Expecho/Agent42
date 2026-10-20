@@ -20,8 +20,15 @@ public sealed class ChatClientCopilotAgentFactory : ICopilotAgentFactory
     /// <summary>Where the twin keeps its own transcript in the session's state bag.</summary>
     public const string TranscriptStateKey = "CopilotTwinTranscript";
 
+    /// <summary>A GitHub Copilot model has no chat client to run on, only the real runtime (ADR 0108).</summary>
+    public const string GitHubModelNeedsRuntime =
+        "_This copilot agent runs on a GitHub Copilot model, which needs the Copilot runtime. It isn't available "
+        + "here._\n\n";
+
     public AIAgent CreateAgent(CopilotAgentRequest request)
-        => new ChatClientAgent(
+        => GitHubCopilotProvider.IsGitHubModel(request.ModelId)
+            ? throw new CopilotUnavailableException(GitHubModelNeedsRuntime)
+            : new ChatClientAgent(
             request.ChatClientFactory.GetClient(request.ModelId),
             new ChatClientAgentOptions
             {

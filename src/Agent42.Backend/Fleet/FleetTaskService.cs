@@ -62,6 +62,9 @@ public sealed partial class FleetTaskService(
 
         var catalog = await (await catalogs.GetForUserAsync(userId, cancellationToken)).GetAsync(cancellationToken);
         var models = catalog.Models.Where(IsToolCapable).ToList();
+        // A GitHub Copilot model (ADR 0108) is never the task's model, only a Copilot agent's: it rides along to the run
+        // for the Copilot factory and the planner prompt, after the check below.
+        var copilotOnly = catalog.Models.Where(m => m.CopilotOnly && m.SupportsTools).ToList();
         var model = string.IsNullOrWhiteSpace(request.Model) ? catalog.Default : request.Model;
         if (!models.Any(m => m.Id.Equals(model, StringComparison.Ordinal)))
         {
@@ -121,7 +124,7 @@ public sealed partial class FleetTaskService(
         // or cancelled with, the request that started it.
         using (ExecutionContext.SuppressFlow())
         {
-            task.Completion = Task.Run(() => RunAsync(task, models, previous, telemetry ?? new UserTelemetryContext(userId, null, null, null, null, null)));
+            task.Completion = Task.Run(() => RunAsync(task, [.. models, .. copilotOnly], previous, telemetry ?? new UserTelemetryContext(userId, null, null, null, null, null)));
         }
 
         return (record.Id, null);
@@ -309,9 +312,13 @@ public sealed partial class FleetTaskService(
         return interrupted;
     }
 
-    /// <summary>A model the fleet can run: one that takes tools and is a chat model.</summary>
+    /// <summary>
+    /// A model the fleet can run on a chat client (planner, judge, manager, ordinary agents): one that takes tools and is
+    /// a chat model. A GitHub Copilot model is not (ADR 0108): it runs only as a Copilot agent's <c>copilot/&lt;id&gt;</c>.
+    /// </summary>
     public static bool IsToolCapable(ModelInfo model)
-        => model.SupportsTools && !model.SupportsEmbeddings && !model.SupportsSpeech && !model.SupportsImageGeneration;
+        => model.SupportsTools && !model.SupportsEmbeddings && !model.SupportsSpeech && !model.SupportsImageGeneration
+            && !model.CopilotOnly;
 
     private sealed class RunningFleetTask(FleetTaskRecord record, FleetBudget budget, FleetEventLog log, FleetQuestions questions) : IDisposable
     {

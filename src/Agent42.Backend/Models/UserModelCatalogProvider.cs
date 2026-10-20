@@ -1,3 +1,4 @@
+using Agent42.Agents;
 using Azure.ResourceManager;
 
 namespace Agent42.Backend;
@@ -24,13 +25,17 @@ public sealed class UserModelCatalogProvider : IUserModelCatalogProvider
     private readonly IUserProviderResolver _resolver;
     private readonly ArmClient _armClient;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly CopilotModelDirectory? _copilotModels;
 
+    // The Copilot model directory is optional: a host without the Copilot runtime simply lists no GitHub Copilot models.
     public UserModelCatalogProvider(
-        IUserProviderResolver resolver, ArmClient armClient, ILoggerFactory loggerFactory)
+        IUserProviderResolver resolver, ArmClient armClient, ILoggerFactory loggerFactory,
+        CopilotModelDirectory? copilotModels = null)
     {
         _resolver = resolver;
         _armClient = armClient;
         _loggerFactory = loggerFactory;
+        _copilotModels = copilotModels;
     }
 
     public async Task<IModelCatalog> GetForUserAsync(string userId, CancellationToken cancellationToken = default)
@@ -42,6 +47,15 @@ public sealed class UserModelCatalogProvider : IUserModelCatalogProvider
                 _armClient, d.Key, d.DisplayName, d.Settings, resolved.DefaultModelId,
                 _loggerFactory.CreateLogger<AzureModelCatalog>()))
             .ToList();
+
+        // A connected GitHub Copilot provider (ADR 0108) discovers its plan's models through the Copilot runtime. Its
+        // token is carried only by the provider's Copilot settings.
+        if (_copilotModels is not null
+            && resolved.Providers.TryGetValue(GitHubCopilotProvider.Key, out var github)
+            && github.Copilot is { UsesGitHubAccount: true } settings)
+        {
+            discovering.Add(new CopilotModelCatalog(_copilotModels, settings.ApiKey));
+        }
 
         return new CompositeModelCatalog(
             discovering, resolved.DeclaredModels, resolved.DefaultModelId,

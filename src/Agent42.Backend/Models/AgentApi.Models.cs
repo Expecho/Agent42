@@ -17,11 +17,12 @@ public static partial class AgentApi
         // The signed-in user's OWN configured providers (their overlay — not the operator baseline).
         // Keys are MASKED to a hasKey flag: the ciphertext never leaves the server, and the plaintext
         // never existed here.
-        app.MapGet("/api/providers", async (IGrainFactory grains, HttpContext http) =>
+        app.MapGet("/api/providers", async (IGrainFactory grains, IServiceProvider services, HttpContext http) =>
         {
             var overlay = await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).GetAsync();
             return Results.Json(new ProvidersResponse(
-                [.. overlay.Providers.Select(Mask)], overlay.Default, overlay.EmbeddingDefault, overlay.SpeechDefault));
+                [.. overlay.Providers.Select(Mask)], overlay.Default, overlay.EmbeddingDefault, overlay.SpeechDefault,
+                GitHubSignIn: services.GetService<GitHubOAuthClient>() is { Options.Configured: true }));
         });
 
         // Creates or updates a provider by key. The key is user-chosen and identifies the provider, so
@@ -147,6 +148,13 @@ public static partial class AgentApi
         if (string.IsNullOrWhiteSpace(key) || key.Contains(':'))
         {
             return "Provider key must be non-empty and contain no ':' (it qualifies model ids as key:model).";
+        }
+
+        // The GitHub Copilot provider is written only by the GitHub sign-in callback (ADR 0108). Refusing its key as
+        // well as its kind stops a PUT from converting it into another kind that keeps the stored token as its key.
+        if (GitHubCopilotProvider.IsReserved(key, kind))
+        {
+            return "The GitHub Copilot provider is connected with \"Sign in with GitHub\", not saved here. Delete it to disconnect.";
         }
 
         if (!Enum.TryParse<ProviderKind>(kind, ignoreCase: true, out _))

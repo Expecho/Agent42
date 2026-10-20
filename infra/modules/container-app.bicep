@@ -91,6 +91,10 @@ param googleMapsApiKey string = ''
 @description('API key for the hosted context.dev page-scrape API behind fetch_web_page (ADR 0027). OPTIONAL, exactly like googleMapsApiKey: when empty, neither the secret nor the env var below is emitted, and fetch_web_page degrades to a per-call failure rather than failing to deploy. Not on the availability path.')
 param contextApiKey string = ''
 
+@secure()
+@description('Client secret of the GitHub OAuth App behind "Sign in with GitHub" (ADR 0108). OPTIONAL, exactly like contextApiKey: when empty, neither the secret nor the env var below is emitted, and the sign-in answers 503 rather than the deployment failing. Not on the availability path.')
+param githubOAuthClientSecret string = ''
+
 @description('API key for the Hindsight long-term-memory service (ADR 0056). OPTIONAL, exactly like googleMapsApiKey/contextApiKey/vapidPrivateKey: when empty, neither the secret nor the env var below is emitted, and long-term memory is simply off rather than the deployment failing. Not on the availability path.')
 param hindsightApiKey string = ''
 
@@ -199,6 +203,14 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
                 value: contextApiKey
               }
             ],
+        empty(githubOAuthClientSecret)
+          ? []
+          : [
+              {
+                name: 'github-oauth-client-secret'
+                value: githubOAuthClientSecret
+              }
+            ],
         empty(mailgunSigningKey)
           ? []
           : [
@@ -280,6 +292,11 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           empty(contextApiKey)
             ? []
             : [{ name: 'ContextScrape__ApiKey', secretRef: 'context-api-key' }],
+          // The GitHub OAuth App secret behind "Sign in with GitHub" (ADR 0108). Emitted only when supplied: without it
+          // the GitHub Copilot provider is simply not offered.
+          empty(githubOAuthClientSecret)
+            ? []
+            : [{ name: 'GitHub__OAuth__ClientSecret', secretRef: 'github-oauth-client-secret' }],
           // The Mailgun signing key behind inbound email (ADR 0096). Emitted only when supplied, like the one above,
           // but its absence is a 503 on /api/email-in, never an unverified accept.
           empty(mailgunSigningKey)

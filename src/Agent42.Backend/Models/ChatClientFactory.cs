@@ -56,9 +56,11 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         // "" when no speech model is configured (resolver sets a non-empty id only for a declared speech model,
         // ADR 0038). The /api/speech endpoint gates on GetSpeechService() being non-null — see GetSpeechService.
         DefaultSpeechModelId = defaultSpeechModelId;
+        // Never the GitHub Copilot provider while another exists (ADR 0108): it is what a legacy UNQUALIFIED id
+        // resolves against, and that would land on the refusing client.
         _defaultProvider = providers.Count == 0
             ? ""
-            : ModelId.Parse(defaultModelId, providers.Keys.First()).Provider;
+            : ModelId.Parse(defaultModelId, FallbackProviderKey(providers)).Provider;
         _otelSourceName = otelSourceName;
         _logger = logger;
     }
@@ -96,6 +98,14 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
             // exactly when it runs Responses. Tools/vision stay Full either way (they are orthogonal
             // to the wire API); only the hosted-tools bit tracks the Responses switch.
             return ModelCapabilities.Full with { SupportsHostedTools = Provider.UseResponses(provider.Options) };
+        }
+
+        // A GitHub Copilot model (ADR 0108) is discovered, not declared, and only ever runs on the Copilot runtime,
+        // which needs SupportsTools to build the copilot composition at all (IsCopilotComposition). Fixed, with NO
+        // read of the discovery cache: a cache miss must never turn a copilot chat into a plain one.
+        if (provider.Options.Kind == ProviderKind.GitHubCopilot)
+        {
+            return new ModelCapabilities(SupportsTools: true, SupportsVision: false);
         }
 
         var configured = provider.Options.Models
@@ -162,9 +172,19 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
             return null;
         }
 
+        // A GitHub Copilot id whose provider is gone (disconnected, or skipped) must not take Resolve's fallback onto
+        // the default BYOK model: the user picked their Copilot plan, so refuse instead (ADR 0108).
+        if (GitHubCopilotProvider.IsGitHubModel(modelId) && !_providers.ContainsKey(GitHubCopilotProvider.Key))
+        {
+            return null;
+        }
+
         var (provider, model, _) = Resolve(modelId);
         return provider.Copilot is { } settings ? (settings, model) : null;
     }
+
+    private static string FallbackProviderKey(IReadOnlyDictionary<string, Provider> providers)
+        => providers.FirstOrDefault(p => p.Value.Options.Kind != ProviderKind.GitHubCopilot).Key ?? providers.Keys.First();
 
     // Maps a (possibly legacy, possibly stale) id onto a provider that actually exists.
     private (Provider Provider, string Model, string QualifiedId) Resolve(string? modelId)
@@ -465,6 +485,14 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
                 model => new AnthropicCompatibilityChatClient(
                     client.AsIChatClient(model, AnthropicLimits.DefaultMaxOutputTokens), model));
         }
+
+        /// <summary>
+        /// The user's GitHub Copilot subscription (ADR 0108): no endpoint, no chat client (every model gets
+        /// <see cref="CopilotOnlyChatClient"/>), and Copilot settings that sign the session in with the GitHub token.
+        /// No image, embedding or speech funcs.
+        /// </summary>
+        public static Provider GitHubCopilot(ProviderOptions options, string token)
+            => new(options, _ => CopilotOnlyChatClient.Instance, copilot: CopilotProviderSettings.GitHub(token));
     }
 
     /// <summary>

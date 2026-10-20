@@ -35,7 +35,8 @@ export async function loadModels({ pin = true } = {}) {
 // The streaming lock wins while a turn is in flight: a mid-turn call (saveProvider() fires one) must not
 // disable the box the user may already be typing their next prompt into. send()'s finally re-applies it.
 export function applyModelAvailability() {
-  const hasModel = (modelsData.models ?? []).length > 0;
+  // GitHub Copilot models (ADR 0108) don't count: they run only in Copilot agents, so a GitHub-only user is still gated.
+  const hasModel = (modelsData.models ?? []).some((m) => !m.copilotOnly);
   noModelHint.hidden = hasModel;
   if (!streaming) input.disabled = !hasModel;
 }
@@ -59,11 +60,13 @@ export function providerGroupLabel(m) {
 }
 
 // Fills a <select> with the available models, grouped by provider. Shared by the composer picker AND
-// the agent dialog — both get the grouping, and neither hand-rolls its own option list.
-export function fillModelOptions(select) {
+// the agent dialog — both get the grouping, and neither hand-rolls its own option list. GitHub Copilot models
+// (copilotOnly, ADR 0108) run only in Copilot agents, so they are left out unless the caller asks for them.
+export function fillModelOptions(select, { copilot = false } = {}) {
   select.innerHTML = "";
   const groups = new Map();
   for (const m of modelsData.models ?? []) {
+    if (m.copilotOnly && !copilot) continue;
     const provider = m.provider ?? "";
     if (!groups.has(provider)) {
       const group = document.createElement("optgroup");
@@ -87,10 +90,13 @@ export function fillModelOptions(select) {
 export function selectModel(select, id) {
   if (!id) return;
   if (![...select.options].some((o) => o.value === id)) {
+    // A Copilot agent's chat on a GitHub Copilot model (ADR 0108): the model exists, it is only left out of this
+    // picker, so it is labelled with its provider rather than as unavailable.
+    const known = (modelsData.models ?? []).find((m) => m.id === id && m.copilotOnly);
     let unknown = select.querySelector("optgroup[data-unknown]");
     if (!unknown) {
       unknown = document.createElement("optgroup");
-      unknown.label = "Unavailable";
+      unknown.label = known ? providerGroupLabel(known) : "Unavailable";
       unknown.setAttribute("data-unknown", "");
       select.appendChild(unknown);
     }

@@ -125,7 +125,9 @@ builder.Services.AddSingleton<IModelCatalog>(sp => new CompositeModelCatalog(
 builder.Services.AddSingleton<IUserModelCatalogProvider>(sp => new UserModelCatalogProvider(
     sp.GetRequiredService<IUserProviderResolver>(),
     sp.GetRequiredService<ArmClient>(),
-    sp.GetRequiredService<ILoggerFactory>()));
+    sp.GetRequiredService<ILoggerFactory>(),
+    // Optional: registered by AddCopilotAgents. Lists a connected GitHub Copilot plan's models (ADR 0108).
+    sp.GetService<CopilotModelDirectory>()));
 
 // Blob-backed attachment store (ADR 0004): durable image bytes live in blob storage, never in
 // the serialized session. Prefer an Aspire-provided connection (Azurite under the AppHost);

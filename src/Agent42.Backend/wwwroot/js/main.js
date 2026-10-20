@@ -24,7 +24,7 @@ import { initLocation } from "./location.js";
 import { initMcpOAuthReturn, wireMcp } from "./mcp.js";
 import { loadModels } from "./models.js";
 import { profile, wireProfile } from "./profile.js";
-import { loadProviders, wireProviders } from "./providers.js";
+import { initGitHubSignInReturn, loadProviders, wireProviders } from "./providers.js";
 import { initPush } from "./push.js";
 import { wirePwa } from "./pwa.js";
 import { wireSend } from "./send.js";
@@ -128,4 +128,5 @@ initLocation();
 initPush(); // wires the push toggle + the SW open-conversation message handler (ADR 0028)
 initShare(); // opens the destination picker when this load is an Android share hand-off
 initMcpOAuthReturn(); // surfaces the result when this load is an OAuth callback return
+initGitHubSignInReturn(); // likewise for the GitHub sign-in callback (ADR 0108)
 input.focus();

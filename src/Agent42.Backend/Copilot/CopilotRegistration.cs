@@ -24,5 +24,18 @@ public static class CopilotRegistration
         // By type, so the container disposes it (and with it the runtime process) on shutdown.
         services.AddSingleton<CopilotAgentFactory>();
         services.AddSingleton<ICopilotAgentFactory>(sp => sp.GetRequiredService<CopilotAgentFactory>());
+        // GitHub Copilot model discovery (ADR 0108) rides the same runtime; UserModelCatalogProvider takes it optionally.
+        services.AddSingleton<ICopilotModelLister>(sp => sp.GetRequiredService<CopilotAgentFactory>());
+        // "Sign in with GitHub" (ADR 0108). Always registered here; blank options make it answer 503. A plain HttpClient,
+        // so no AddServiceDefaults retry pipeline (rule 8).
+        services.AddSingleton(new GitHubOAuthClient(new HttpClient(), new GitHubOAuthOptions
+        {
+            ClientId = configuration["GitHub:OAuth:ClientId"] ?? "",
+            ClientSecret = configuration["GitHub:OAuth:ClientSecret"] ?? "",
+            Scopes = configuration["GitHub:OAuth:Scopes"] ?? "",
+        }));
+        services.AddSingleton(sp => new CopilotModelDirectory(
+            sp.GetRequiredService<ICopilotModelLister>(), TimeProvider.System,
+            sp.GetRequiredService<ILogger<CopilotModelDirectory>>()));
     }
 }

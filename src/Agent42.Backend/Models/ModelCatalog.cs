@@ -33,7 +33,10 @@ public record ModelInfo(
     // (StoredProvider/ProviderOptions.DisplayName), surfaced on /api/models so the picker can LABEL each
     // provider optgroup with it. null → the frontend falls back to the provider key. Distinct from
     // <see cref="DisplayName"/>, which names the MODEL; this names the group the model sits under.
-    string? ProviderDisplayName = null);
+    string? ProviderDisplayName = null,
+    // Trailing default so existing constructions stay valid; true only for a GitHub Copilot model (ADR 0108), which runs
+    // only in Copilot agents. Pickers hide it everywhere else; the server-side guard is CopilotOnlyChatClient.
+    bool CopilotOnly = false);
 
 /// <summary>The models the picker can choose from, plus the current default.</summary>
 public record ModelCatalogResult(string Default, IReadOnlyList<ModelInfo> Models);

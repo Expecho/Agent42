@@ -38,6 +38,7 @@ public static partial class AgentApi
         MapArtifactEndpoints(app);
         MapSharingEndpoints(app);
         MapModelEndpoints(app);
+        MapGitHubCopilotEndpoints(app);
         MapToolEndpoints(app);
         MapStoredAgentEndpoints(app);
         MapUserEndpoints(app);

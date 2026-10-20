@@ -177,6 +177,12 @@ The SDK side, its session store and the runtime's trust boundary are in `src/Age
 chat takes no documents or images and refuses incognito turns. ADR 0085 records why, and how the chat history the
 UI shows (a mirror) can diverge from the transcript the model sees.
 
+Since ADR 0108 a copilot agent can also run on **your GitHub Copilot subscription**: after **Sign in with GitHub**
+(Preferences → model providers), the agent editor offers your plan's `github-copilot:<model>` models for the Copilot
+type only. Such a session signs in with your token instead of a BYOK provider, with GitHub session telemetry off. If
+you disconnect GitHub, the agent refuses ("GitHub isn't connected") rather than running on another model, and a token
+GitHub rejects gets a "Sign in with GitHub again" reply.
+
 ## How the Agent Framework fits
 
 - `BindAgentAsync` drives the framework `ChatClientAgent`'s `Name` and `Instructions` from the
