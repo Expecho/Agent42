@@ -4,7 +4,8 @@ using Agent42.Agents;
 namespace Agent42.Backend;
 
 /// <summary>Backoff and timing knobs for <see cref="ChatGatewayService"/>; tests shrink them.</summary>
-public sealed record ChatGatewayTimings(TimeSpan BackoffBase, TimeSpan BackoffMax, TimeSpan HealthySessionAge)
+public sealed record ChatGatewayTimings(
+    TimeSpan BackoffBase, TimeSpan BackoffMax, TimeSpan HealthySessionAge, TimeSpan? ParticipantTimeout = null)
 {
     public static readonly ChatGatewayTimings Default = new(TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(1));
 }
@@ -33,6 +34,7 @@ public sealed class ChatGatewayService(
     IChatGatewaySecretProtector protector,
     IChatInboundSink sink,
     IChatGatewayLease lease,
+    IEnumerable<IChatGatewayLeaseParticipant> participants,
     ChatSessionRegistry sessions,
     TimeProvider timeProvider,
     ILogger<ChatGatewayService> logger,
@@ -41,6 +43,8 @@ public sealed class ChatGatewayService(
     private readonly Dictionary<string, IChatPlatformAdapter> _adapters = adapters.ToDictionary(a => a.Kind, StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConnectionRunner> _runners = new(StringComparer.Ordinal);
     private readonly ChatGatewayTimings _timings = timings ?? ChatGatewayTimings.Default;
+    private readonly IChatGatewayLeaseParticipant[] _participants = participants.ToArray();
+    private readonly TimeSpan _participantTimeout = (timings ?? ChatGatewayTimings.Default).ParticipantTimeout ?? TimeSpan.FromSeconds(15);
     private readonly SemaphoreSlim _gate = new(1, 1);
     private volatile bool _holdsLease;
     private volatile bool _acquired;
@@ -69,6 +73,7 @@ public sealed class ChatGatewayService(
             catch (Exception ex)
             {
                 logger.LogError(ex, "The chat gateway failed; restarting it.");
+                await NotifyParticipantsAsync(renewed: false);
                 await StopAllAsync();
                 await Task.Delay(Backoff(5), timeProvider, stoppingToken);
             }
@@ -79,6 +84,7 @@ public sealed class ChatGatewayService(
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         await base.StopAsync(cancellationToken);
+        await NotifyParticipantsAsync(renewed: false);
         await StopAllAsync();
         if (_acquired)
         {
@@ -124,6 +130,7 @@ public sealed class ChatGatewayService(
         _holdsLease = true;
         try
         {
+            await NotifyParticipantsAsync(renewed: true);
             await StartAllAsync();
             while (await RenewAfterIntervalAsync(stoppingToken))
             {
@@ -132,6 +139,9 @@ public sealed class ChatGatewayService(
         finally
         {
             _holdsLease = false;
+
+            // The participants first: a session whose dispose hangs must not delay stopping what guards the lease.
+            await NotifyParticipantsAsync(renewed: false);
             await StopAllAsync();
         }
     }
@@ -139,7 +149,37 @@ public sealed class ChatGatewayService(
     private async Task<bool> RenewAfterIntervalAsync(CancellationToken stoppingToken)
     {
         await Task.Delay(lease.RenewInterval, timeProvider, stoppingToken);
-        return await lease.RenewAsync(stoppingToken);
+        if (!await lease.RenewAsync(stoppingToken))
+        {
+            return false;
+        }
+
+        await NotifyParticipantsAsync(renewed: true);
+        return true;
+    }
+
+    // Concurrent, each bounded, each caught: one hung or throwing participant must not block the others or the supervisor.
+    private Task NotifyParticipantsAsync(bool renewed)
+        => _participants.Length == 0
+            ? Task.CompletedTask
+            : Task.WhenAll(_participants.Select(participant => NotifyAsync(participant, renewed)));
+
+    private async Task NotifyAsync(IChatGatewayLeaseParticipant participant, bool renewed)
+    {
+        // Deliberately not the stopping token: the lost notification must run on shutdown.
+        using var timeout = new CancellationTokenSource(_participantTimeout, timeProvider);
+        try
+        {
+            var call = Task.Run(
+                () => renewed ? participant.OnLeaseRenewedAsync(timeout.Token) : participant.OnLeaseLostAsync(timeout.Token));
+            await call.WaitAsync(_participantTimeout, timeProvider);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex, "Chat gateway lease participant {Participant} failed or timed out on lease {Event}.",
+                participant.GetType().Name, renewed ? "renewal" : "loss");
+        }
     }
 
     private async Task StartAllAsync()
@@ -262,6 +302,8 @@ public sealed class ChatGatewayService(
         catch (ChatAuthException ex)
         {
             logger.LogWarning("Chat connection {ConnectionId} stopped: {Reason}", connectionId, ex.Message);
+            // Not live from the moment it faulted: a reader that sees the fault must never still see it as connected.
+            runner.Live = false;
             await store.RecordFaultAsync(connectionId, ex.Message, timeProvider.GetUtcNow());
             return SessionOutcome.Stop;
         }

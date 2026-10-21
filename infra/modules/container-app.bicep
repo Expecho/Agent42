@@ -128,6 +128,12 @@ param customDomainCertificateName string = ''
 @description('Name of the environment storage link (Microsoft.App/managedEnvironments/storages) to the Azure Files share of copilot chats\' workspaces (ADR 0107).')
 param copilotEnvironmentStorageName string
 
+@description('Name of the environment storage link to the Azure Files share of the signal-cli store of the chat gateway (ADR 0111, phase 3).')
+param signalEnvironmentStorageName string
+
+@description('Whether the chat gateway offers Signal. Off, the share is still mounted but nothing reads it and no daemon starts.')
+param signalEnabled bool = false
+
 // The image runs as $APP_UID (src/Agent42.Backend/Dockerfile), 1654 in the aspnet base image (measured with
 // `docker run --rm mcr.microsoft.com/dotnet/aspnet:10.0 id app`), while an SMB mount is root-owned by default: without
 // these options the app could not write to its own share. SMB has no chmod and no symlinks, so the modes are fixed.
@@ -280,6 +286,10 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             { name: 'WebSearch__Endpoint', value: 'http://localhost:8888' }
             // Copilot chats' workspaces (ADR 0107): the share mounted below, on this container only.
             { name: 'Copilot__WorkspaceRoot', value: '/mnt/copilot' }
+            // Signal (ADR 0111, phase 3): the signal-cli account store mounted below, read only by the daemon the backend
+            // runs as a child process under the gateway lease. Dormant unless signalEnabled.
+            { name: 'ChatGateway__Signal__Enabled', value: string(signalEnabled) }
+            { name: 'ChatGateway__Signal__DataDir', value: '/mnt/signal' }
           ],
           // Reverse geocoding for get_current_location (ADR 0012). Emitted only when a key was
           // supplied: with no key the backend registers CoordinatesOnlyGeocoder and starts normally.
@@ -323,6 +333,7 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           // The backend ONLY: the SearXNG sidecar has no business with chat files.
           volumeMounts: [
             { volumeName: 'copilot-workspaces', mountPath: '/mnt/copilot' }
+            { volumeName: 'signal-data', mountPath: '/mnt/signal' }
           ]
         }
         // Self-hosted metasearch backing the web_search tool (ADR 0011): free at any volume and no API
@@ -369,6 +380,14 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           name: 'copilot-workspaces'
           storageType: 'AzureFile'
           storageName: copilotEnvironmentStorageName
+          mountOptions: copilotWorkspaceMountOptions
+        }
+        // The signal-cli store: same owner and modes as the workspaces. Plan Step 24 decides whether `nobrl` is needed for
+        // SQLite's WAL locks on SMB; until it has, Signal stays off.
+        {
+          name: 'signal-data'
+          storageType: 'AzureFile'
+          storageName: signalEnvironmentStorageName
           mountOptions: copilotWorkspaceMountOptions
         }
       ]

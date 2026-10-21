@@ -75,7 +75,15 @@ public sealed class UserChatConnectionsGrain : Grain, IUserChatConnectionsGrain
             c.WorkspaceId = identity.WorkspaceId;
             c.PollOffset = 0;
             c.FaultReason = null;
+            c.PendingSignalNumber = null;
             OpenPairing(c, now);
+        });
+
+    public Task<ChatConnection?> SetPendingSignalNumberAsync(string connectionId, string? number, DateTimeOffset now)
+        => MutateAsync(connectionId, c =>
+        {
+            c.PendingSignalNumber = number;
+            c.UpdatedAt = now;
         });
 
     public Task<ChatConnection?> RepairAsync(string connectionId, DateTimeOffset now)

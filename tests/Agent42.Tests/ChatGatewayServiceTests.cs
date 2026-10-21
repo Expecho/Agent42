@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.AspNetCore.DataProtection;
@@ -11,7 +12,7 @@ namespace Agent42.Tests;
 /// </summary>
 public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : SharedClusterTests(fixture)
 {
-    private static readonly ChatGatewayTimings Fast = new(TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(40), TimeSpan.FromMinutes(1));
+    private static readonly ChatGatewayTimings Fast = new(TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(40), TimeSpan.FromMinutes(1), TimeSpan.FromMilliseconds(300));
     private static readonly DateTimeOffset Now = new(2026, 10, 21, 12, 0, 0, TimeSpan.Zero);
     private readonly IChatGatewaySecretProtector _protector = new ChatGatewaySecretProtector(
         new EphemeralDataProtectionProvider(), NullLogger<ChatGatewaySecretProtector>.Instance);
@@ -127,6 +128,95 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         Assert.False(gateway.Service.HoldsLease);
     }
 
+    // AC27: the participant hears about the loss BEFORE the sessions stop, so a hung session dispose can't delay the kill.
+    [Fact]
+    public async Task LeaseLost_NotifiesParticipants_BeforeSessionsStop()
+    {
+        var (_, connectionId) = await NewConnectionAsync();
+        var authority = new FakeLeaseAuthority();
+        var adapter = new FakeChatPlatformAdapter();
+        var participant = new RecordingParticipant();
+        await using var gateway = await StartAsync(adapter, authority, [participant]);
+        await Until(() => gateway.Service.IsLive(connectionId));
+        var session = adapter.SessionFor(connectionId)!;
+        var hang = new TaskCompletionSource();
+        session.DisposeHang = hang;
+
+        authority.StealForever();
+
+        try
+        {
+            await Until(() => participant.Count("lost") > 0);
+            Assert.False(session.Disposed);
+        }
+        finally
+        {
+            hang.SetResult();
+        }
+
+        await Until(() => session.Disposed);
+    }
+
+    [Fact]
+    public async Task Renew_NotifiesParticipants()
+    {
+        var participant = new RecordingParticipant();
+        await using var gateway = await StartAsync(new FakeChatPlatformAdapter(), new FakeLeaseAuthority(), [participant]);
+
+        await Until(() => participant.Count("renewed") >= 3);
+
+        Assert.Equal(0, participant.Count("lost"));
+    }
+
+    // AC27: shutdown tells the participants before the lease is released.
+    [Fact]
+    public async Task Stop_NotifiesBeforeRelease()
+    {
+        var order = new ConcurrentQueue<string>();
+        var participant = new RecordingParticipant(order);
+        var gateway = await StartAsync(new FakeChatPlatformAdapter(), new FakeLeaseAuthority(), [participant], order);
+        await Until(() => participant.Count("renewed") > 0);
+
+        await gateway.DisposeAsync();
+
+        var events = order.ToArray();
+        var release = Array.IndexOf(events, "release");
+        Assert.True(release >= 0, string.Join(",", events));
+        Assert.Contains("lost", events[..release]);
+        Assert.DoesNotContain("lost", events[(release + 1)..]);
+    }
+
+    [Fact]
+    public async Task StoppingTwice_NotifiesHarmlessly()
+    {
+        var participant = new RecordingParticipant { ThrowOnLost = true };
+        var gateway = await StartAsync(new FakeChatPlatformAdapter(), new FakeLeaseAuthority(), [participant]);
+        await Until(() => participant.Count("renewed") > 0);
+
+        await gateway.Service.StopAsync(CancellationToken.None);
+        await gateway.Service.StopAsync(CancellationToken.None);
+        await gateway.DisposeAsync();
+
+        Assert.True(participant.Count("lost") >= 2);
+    }
+
+    [Fact]
+    public async Task AHungParticipant_DoesNotStopTheOthers()
+    {
+        var hung = new RecordingParticipant { HangOnLost = true };
+        var fine = new RecordingParticipant();
+        var (_, connectionId) = await NewConnectionAsync();
+        var authority = new FakeLeaseAuthority();
+        var adapter = new FakeChatPlatformAdapter();
+        await using var gateway = await StartAsync(adapter, authority, [hung, fine]);
+        await Until(() => gateway.Service.IsLive(connectionId));
+
+        authority.StealForever();
+
+        await Until(() => fine.Count("lost") > 0);
+        Assert.Equal(1, hung.Count("lost"));
+    }
+
     [Fact]
     public async Task Restart_AppliesNewCredentials()
     {
@@ -188,11 +278,13 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         return (userId, created.Id);
     }
 
-    private async Task<RunningGateway> StartAsync(FakeChatPlatformAdapter adapter, FakeLeaseAuthority authority)
+    private async Task<RunningGateway> StartAsync(
+        FakeChatPlatformAdapter adapter, FakeLeaseAuthority authority,
+        IChatGatewayLeaseParticipant[]? participants = null, ConcurrentQueue<string>? leaseLog = null)
     {
         var service = new ChatGatewayService(
-            Cluster.GrainFactory, [adapter], _protector, new NullInboundSink(), new FakeChatGatewayLease(authority),
-            new ChatSessionRegistry(), TimeProvider.System, NullLogger<ChatGatewayService>.Instance, Fast);
+            Cluster.GrainFactory, [adapter], _protector, new NullInboundSink(), new FakeChatGatewayLease(authority, leaseLog),
+            participants ?? [], new ChatSessionRegistry(), TimeProvider.System, NullLogger<ChatGatewayService>.Instance, Fast);
         await service.StartAsync(CancellationToken.None);
         return new RunningGateway(service);
     }
@@ -226,6 +318,43 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
             _disposed = true;
             await Service.StopAsync(CancellationToken.None);
             Service.Dispose();
+        }
+    }
+
+    private sealed class RecordingParticipant(ConcurrentQueue<string>? order = null) : IChatGatewayLeaseParticipant
+    {
+        private readonly ConcurrentQueue<string> _events = new();
+
+        public bool ThrowOnLost { get; init; }
+
+        public bool HangOnLost { get; init; }
+
+        public int Count(string name) => _events.Count(e => e == name);
+
+        public Task OnLeaseRenewedAsync(CancellationToken cancellationToken)
+        {
+            Record("renewed");
+            return Task.CompletedTask;
+        }
+
+        public async Task OnLeaseLostAsync(CancellationToken cancellationToken)
+        {
+            Record("lost");
+            if (HangOnLost)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+
+            if (ThrowOnLost)
+            {
+                throw new InvalidOperationException("participant failed");
+            }
+        }
+
+        private void Record(string name)
+        {
+            _events.Enqueue(name);
+            order?.Enqueue(name);
         }
     }
 
@@ -287,9 +416,11 @@ public sealed class FakeLeaseAuthority
 }
 
 /// <summary>A scripted <see cref="IChatGatewayLease"/> over a shared <see cref="FakeLeaseAuthority"/>.</summary>
-public sealed class FakeChatGatewayLease(FakeLeaseAuthority authority) : IChatGatewayLease
+public sealed class FakeChatGatewayLease(FakeLeaseAuthority authority, ConcurrentQueue<string>? log = null) : IChatGatewayLease
 {
     public TimeSpan RenewInterval => TimeSpan.FromMilliseconds(20);
+
+    public TimeSpan Duration => TimeSpan.FromMilliseconds(60);
 
     public async Task AcquireAsync(CancellationToken cancellationToken)
     {
@@ -303,6 +434,7 @@ public sealed class FakeChatGatewayLease(FakeLeaseAuthority authority) : IChatGa
 
     public Task ReleaseAsync(CancellationToken cancellationToken)
     {
+        log?.Enqueue("release");
         authority.Release(this);
         return Task.CompletedTask;
     }

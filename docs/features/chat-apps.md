@@ -1,7 +1,7 @@
 # Chat apps
 
-> Talk to Agent 42 from your own bot on a chat app. Telegram, Slack and Discord today; WhatsApp and Signal are planned
-> (ADR 0111).
+> Talk to Agent 42 from your own bot on a chat app. Telegram, Slack and Discord today; Signal is built but off until the
+> operator turns it on; WhatsApp is planned (ADR 0111).
 
 ## What it is
 

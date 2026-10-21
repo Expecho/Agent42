@@ -104,6 +104,10 @@ public sealed class SerializationCompatibilityTests
     private const string ChatRouteStateBlob =
         "IEBTY2hhdC0xMTExMTExMS0yMjIyLTMzMzMtNDQ0NC01NTU1NTU1NTU1NTUBqUEfZm91bmRyeTpncHQtNS40QRlhZ2VudC1nb2xkZW7g";
 
+    // Serialized once from GoldenStates.SignalNumberDirectory() when ADR 0111 phase 3 added the type, then committed.
+    private const string SignalNumberDirectoryStateBlob =
+        "IEAhdXNlckBleGFtcGxlLmNvbUElY29ubi1nb2xkZW4tc2lnbmFsAQMhgABX95VKL98IgQAAAAAAAAAA4OA=";
+
     private const string UserSkillsStateBlob =
         "ICDoMAHDrnj4fVJlYWRPbmx5TGlzdEludGVyZmFjZUNvZGVjYDFbW0FnZW50NDIuQWdlbnRzLlN0b3JlZFVzZXJTa2lsbF1dAAMh6EAPc2tpbGwtMUEPbXlub3Rlc0EZVGFrZXMgbm90ZXMuMQHD2W4+TVJlYWRPbmx5TGlzdEludGVyZmFjZUNvZGVjYDFbW3N0cmluZ11dAAVBEVNLSUxMLm1kQCdyZWZlcmVuY2VzL25vdGVzLm1k4CGAgAC3lqtJ3giBAAAAAAAAAADg4OABEeDg";
 
@@ -410,5 +414,6 @@ public sealed class SerializationCompatibilityTests
         Assert.Equivalent(GoldenStates.UserChatConnections(), Restore<UserChatConnectionsState>(UserChatConnectionsStateBlob), strict: true);
         Assert.Equal(GoldenStates.ChatConnectionDirectory().Entries, Restore<ChatConnectionDirectoryState>(ChatConnectionDirectoryStateBlob).Entries);
         Assert.Equivalent(GoldenStates.ChatRoute(), Restore<ChatRouteState>(ChatRouteStateBlob), strict: true);
+        Assert.Equivalent(GoldenStates.SignalNumberDirectory(), Restore<SignalNumberDirectoryState>(SignalNumberDirectoryStateBlob), strict: true);
     }
 }

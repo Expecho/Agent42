@@ -16,6 +16,9 @@ public interface IChatGatewayLease
     /// <summary>How often <see cref="RenewAsync"/> must be called to keep the lease.</summary>
     TimeSpan RenewInterval { get; }
 
+    /// <summary>How long one acquire or renewal keeps the lease. The Signal daemon's watchdog derives its window from this.</summary>
+    TimeSpan Duration { get; }
+
     /// <summary>Waits until this instance holds the lease. Cancelled on shutdown.</summary>
     Task AcquireAsync(CancellationToken cancellationToken);
 
@@ -36,13 +39,15 @@ public sealed class BlobChatGatewayLease(BlobServiceClient blobs, TimeProvider t
 {
     private const string ContainerName = "chat-gateway";
     private const string BlobName = "lease";
-    private static readonly TimeSpan Duration = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(10);
 
     private readonly string _leaseId = Guid.NewGuid().ToString();
     private BlobLeaseClient? _lease;
 
     public TimeSpan RenewInterval => TimeSpan.FromSeconds(20);
+
+    public TimeSpan Duration => LeaseDuration;
 
     public async Task AcquireAsync(CancellationToken cancellationToken)
     {
@@ -62,7 +67,7 @@ public sealed class BlobChatGatewayLease(BlobServiceClient blobs, TimeProvider t
                     await blob.UploadAsync(BinaryData.FromString(""), overwrite: false, cancellationToken);
                 }
 
-                await _lease.AcquireAsync(Duration, cancellationToken: cancellationToken);
+                await _lease.AcquireAsync(LeaseDuration, cancellationToken: cancellationToken);
                 logger.LogInformation("Chat gateway lease acquired.");
                 return;
             }
@@ -112,7 +117,7 @@ public sealed class BlobChatGatewayLease(BlobServiceClient blobs, TimeProvider t
         }
         catch (RequestFailedException ex)
         {
-            // Not fatal: it expires on its own within Duration.
+            // Not fatal: it expires on its own within LeaseDuration.
             logger.LogWarning(ex, "Chat gateway lease release failed; it will expire on its own.");
         }
     }
@@ -122,6 +127,9 @@ public sealed class BlobChatGatewayLease(BlobServiceClient blobs, TimeProvider t
 public sealed class NoOpChatGatewayLease : IChatGatewayLease
 {
     public TimeSpan RenewInterval => TimeSpan.FromMinutes(5);
+
+    // Never lost, so the length is only what a participant's watchdog derives its window from: a few renew intervals.
+    public TimeSpan Duration => TimeSpan.FromMinutes(15);
 
     public Task AcquireAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

@@ -9,6 +9,12 @@ amends: [0085, 0097]
 
 # Copilot chats get the runtime's built-in tools, auto-approved, with an Azure Files workspace per conversation
 
+> **Amended by [ADR 0111](0111-chat-gateway-for-chat-apps.md), phase 3 (2026-10-21): this account now also holds the
+> chat gateway's signal-cli store** (share `signal-data`, mounted at `/mnt/signal` on the backend only). That store is
+> SQLite over SMB, which this ADR rejected for the Copilot runtime; it is acceptable there because one daemon writes it
+> at a time, under the gateway lease. The built-in shell below can reach that daemon and store, an extension of the
+> accepted risks listed here.
+
 ## Context
 
 Copilot-kind chats (ADR 0085) run the runtime in `CopilotClientMode.Empty`: no shell, no file tools, no URL fetch.

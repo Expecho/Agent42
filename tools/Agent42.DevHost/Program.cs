@@ -218,6 +218,8 @@ if (builder.Configuration["ChatGateway:DiscordApiBaseUrl"] is { Length: > 0 } di
 }
 
 builder.Services.AddChatGateway();
+// Signal (ADR 0111 phase 3): dormant unless ChatGateway:Signal:Enabled; see ChatGatewayRegistration.AddSignalChat.
+builder.Services.AddSignalChat(builder.Configuration);
 
 // The registrations every host shares (ADR 0105), AFTER every port above: the endpoint invariants, then the
 // grain-side ones, which also fail startup naming any grain dependency this host did not register.
