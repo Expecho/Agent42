@@ -204,6 +204,19 @@ if (builder.Configuration["ChatGateway:TelegramApiBaseUrl"] is { Length: > 0 } t
     builder.Services.AddSingleton(new TelegramOptions(new Uri(telegramApi)));
 }
 
+// The same for Slack and Discord (phase 1b): ChatGateway:SlackApiBaseUrl points the Web API (and so Socket Mode, whose
+// URL apps.connections.open returns) at a stand-in; ChatGateway:DiscordApiBaseUrl + ChatGateway:DiscordGatewayUrl point
+// Discord's REST and the real Discord.Net gateway client at one. Unset means the real platforms.
+if (builder.Configuration["ChatGateway:SlackApiBaseUrl"] is { Length: > 0 } slackApi)
+{
+    builder.Services.AddSingleton(new SlackOptions(new Uri(slackApi)));
+}
+
+if (builder.Configuration["ChatGateway:DiscordApiBaseUrl"] is { Length: > 0 } discordApi)
+{
+    builder.Services.AddSingleton(new DiscordOptions(new Uri(discordApi), builder.Configuration["ChatGateway:DiscordGatewayUrl"]));
+}
+
 builder.Services.AddChatGateway();
 
 // The registrations every host shares (ADR 0105), AFTER every port above: the endpoint invariants, then the

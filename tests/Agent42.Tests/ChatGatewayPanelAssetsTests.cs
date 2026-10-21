@@ -73,6 +73,22 @@ public sealed class ChatGatewayPanelAssetsTests(StaticAssetsServerFixture fixtur
         Assert.Contains("messages from anyone else are ignored", html, StringComparison.Ordinal);
     }
 
+    // Phase 1b: Slack's second credential (the xapp- app-level token) is write-only too, shown only for Slack, and sent
+    // with the bot token; a blank field keeps its stored token (Update_WithOneToken_KeepsTheOtherStoredToken).
+    [Fact]
+    public async Task Panel_HasSlacksAppTokenField_WriteOnly()
+    {
+        var html = await fixture.Client.GetStringAsync("/index.html");
+        var module = await fixture.Client.GetStringAsync("/js/chatgateway.js");
+
+        Assert.Matches("""<input[^>]*type="password"[^>]*id="chatAppToken"|<input[^>]*id="chatAppToken"[^>]*type="password" """.Trim(), html);
+        Assert.Matches("""id="chatAppTokenField"[^>]*hidden""", html);
+        Assert.Contains("const needsAppToken = new Set([\"Slack\"]);", module, StringComparison.Ordinal);
+        Assert.Contains("appToken: appToken || null", module, StringComparison.Ordinal);
+        Assert.Contains("Slack:", module, StringComparison.Ordinal);
+        Assert.Contains("Discord:", module, StringComparison.Ordinal);
+    }
+
     // The tab is appended last, so the index pins on MCP (3), Configuration (4) and Skills (5) still hold.
     [Fact]
     public async Task ChatTab_IsTheLastPreferencesTab()

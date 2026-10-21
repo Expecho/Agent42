@@ -18,7 +18,7 @@ This is a sibling of [`docs/features/`](../features/README.md), and the split is
 
 | Integration | Guide | Enables |
 |---|---|---|
-| Chat apps (Telegram; per user, no operator setup) | [chat-apps/](chat-apps/README.md) | Talking to Agent 42 from your own bot (ADR 0111) |
+| Chat apps (Telegram, Slack, Discord; per user, no operator setup) | [chat-apps/](chat-apps/README.md) | Talking to Agent 42 from your own bot (ADR 0111) |
 
 The Google Calendar guide lived here until ADR 0063 moved those tools to a standalone MCP server
 outside this repo. The calendar is now reached like any other remote MCP server (ADR 0024): add it

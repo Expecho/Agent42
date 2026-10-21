@@ -4699,3 +4699,43 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   the Cosmos path does (`ChatConnection_Disabled_StaysDisabledThroughCosmosJson`, mutation-checked).
 - **Evidence:** `src/Agent42.Agents/ChatGateway/ChatConnection.cs`, `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
 - **Verified:** 2026-10-21
+
+### Every Slack Socket Mode envelope must be acked, ignored ones included, and Slack commands start with `!`
+
+- **Claim:** Slack redelivers an envelope that is not acked by its `envelope_id`, and after sustained failures it
+  disables the app's event subscription. Our own edits (`message_changed`), our own sends, reactions and slash-command
+  envelopes are all ignored, and all of them still have to be acked. `SlackSession` therefore acks every envelope
+  BEFORE it parses the payload, so a filter added later can't skip the ack. That includes one too large to read, which
+  is acked from the `envelope_id` in its first or last bytes, since Slack puts `payload` first. A `disconnect` envelope with `warning` or
+  `refresh_requested` is routine (about hourly): reconnect inside the session, because replies go over the Web API and
+  must survive it. Only `link_disabled` is permanent. Separately, Slack's composer takes a leading `/` as one of its
+  own slash commands, so on Slack the command prefix is `!` (`ChatPlatformCapabilities.CommandPrefix`). Any help or
+  pairing text must use the capability's prefix, never a literal `/`.
+- **Evidence:** `src/Agent42.Backend/ChatGateway/Slack/SlackAdapter.cs` (`HandleEnvelopeAsync`),
+  `tests/Agent42.Tests/SlackTests.cs` (`Slack_AcksEveryEnvelope`, mutation-checked; `Slack_Disconnect_Reconnects`)
+- **Verified:** 2026-10-21
+
+### Discord: send with `allowed_mentions` none, and catch 4004 yourself, because Discord.Net reconnects forever
+
+- **Claim:** A Discord message parses every mention in it by default, so model output containing `@everyone` or a
+  role would ping a whole server. `DiscordRestApi` puts `allowed_mentions: {"parse": []}` on every create AND every
+  edit; `Discord_AllowedMentionsNone` pins both and was mutation-checked. Replies use this hand-rolled client, never
+  Discord.Net's REST client, which by default retries and waits out rate-limit buckets inside the library (the inline
+  sleep the streamer forbids). Separately, Discord documents close codes 4004 and 4010–4014 as "Reconnect: false",
+  but Discord.Net's `ConnectionManager` reconnects on every close except 4006/4014's special handling, so a revoked
+  token would retry forever with the panel stuck on "connecting". `DiscordSession` watches `Disconnected` and ends
+  the session with `ChatAuthException` (`Discord_4004_Faults` runs the real client against a local gateway,
+  mutation-checked). With `DiscordSocketConfig.GatewayHost` set, the library makes no REST call to connect, which is
+  what lets tests and DevHost point it at a stand-in.
+- **Evidence:** `src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs`,
+  `src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs` (`IsPermanent`), `tests/Agent42.Tests/DiscordTests.cs`
+- **Verified:** 2026-10-21
+
+### A .NET file-based app (`dotnet run app.cs`) defaults to `PublishAot`, so reflection JSON fails with an empty 500
+
+- **Claim:** A `#:sdk Microsoft.NET.Sdk.Web` file-based app gets `PublishAot=true`, which turns off reflection-based
+  `System.Text.Json`. Any `Results.Ok(new { … })` or anonymous-type body then throws, and with logging cleared it
+  shows only as an empty 500 on every route. Add `#:property PublishAot=false` to a throwaway stand-in or spike (the
+  phase 1b Slack/Discord stand-ins hit it).
+- **Evidence:** the phase 1b DevHost exercise (`.agentic/specs/plan-chat-gateway.md`, "Progress and divergences")
+- **Verified:** 2026-10-21
