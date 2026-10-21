@@ -95,6 +95,10 @@ internal data class ToolResultRequest(val toolCallId: String, val result: JsonEl
 @Serializable
 internal data class SpeechRequest(val text: String)
 
+/** `ToolSelectionRequest` (PUT /api/conversations/{id}/tools): always an explicit list, never null. */
+@Serializable
+internal data class ToolSelectionRequest(val tools: List<String>)
+
 @Serializable
 internal data class UploadResponse(
     val id: String? = null,

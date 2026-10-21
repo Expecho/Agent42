@@ -119,6 +119,7 @@ fun ChatScreen(container: AppContainer, chat: Screen.Chat) {
         )
     }
 
+    ToolsSheet(vm)
     Agent42Background {
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             Row(
@@ -127,7 +128,10 @@ fun ChatScreen(container: AppContainer, chat: Screen.Chat) {
             ) {
                 GhostAction("←", { container.back() }, color = c.ink)
                 Text(chat.title, style = MaterialTheme.typography.titleSmall, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (!chat.agentBound) ModelPicker(vm)
+                if (!chat.agentBound) {
+                    ModelPicker(vm)
+                    GhostAction("tools", vm::openTools)
+                }
                 GhostAction("🎙", { container.navigate(Screen.Voice(chat)) }, enabled = !vm.streaming, color = c.amber)
                 // The web app has no per-conversation link, so this opens its home page (ADR 0114: rich content such as
                 // artifacts and mermaid lives there).

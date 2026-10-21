@@ -23,6 +23,7 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okio.BufferedSource
+import nl.agent42.android.chat.ToolDescriptor
 
 /** A non-2xx answer the caller didn't expect. */
 class ApiException(val code: Int, message: String) : IOException(message)
@@ -65,6 +66,21 @@ class Agent42Api(
     /** The conversation's current model id (the server answers a JSON string). */
     suspend fun conversationModel(conversationId: String): String =
         get("api/conversations/$conversationId/model", String.serializer())
+
+    /** The selectable-tools catalog (ADR 0021): built-ins, skills, MCP servers and their tools. */
+    suspend fun tools(): List<ToolDescriptor> = get("api/tools", ListSerializer(ToolDescriptor.serializer()))
+
+    /** A conversation's EFFECTIVE tool keys (override ?? user default ?? all). */
+    suspend fun conversationTools(conversationId: String): List<String> =
+        get("api/conversations/$conversationId/tools", ListSerializer(String.serializer()))
+
+    /** Saves a conversation's tool override; returns the server-sanitized effective set. */
+    suspend fun setConversationTools(conversationId: String, keys: List<String>): List<String> {
+        val body = json.encodeToString(ToolSelectionRequest.serializer(), ToolSelectionRequest(keys))
+        val request = Request.Builder().url(url("api/conversations/$conversationId/tools")).put(body.toRequestBody(JSON))
+            .also(credentials::applyTo).build()
+        return send(request).use { json.decodeFromString(ListSerializer(String.serializer()), it.body.string()) }
+    }
 
     suspend fun pendingToolCalls(conversationId: String): List<PendingClientToolCall> =
         get("api/chat/$conversationId/pending-tool-calls", ListSerializer(PendingClientToolCall.serializer()))

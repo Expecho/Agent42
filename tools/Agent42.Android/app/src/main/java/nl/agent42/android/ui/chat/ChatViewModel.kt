@@ -31,6 +31,7 @@ import nl.agent42.android.api.UploadResult
 import nl.agent42.android.chat.ChatReducer
 import nl.agent42.android.chat.ClientTools
 import nl.agent42.android.chat.Role
+import nl.agent42.android.chat.ToolPicker
 import nl.agent42.android.chat.UiTurn
 
 /** A file on its way to the next turn: uploading, ready (an image id for `attachmentIds`) or failed. */
@@ -92,6 +93,44 @@ class ChatViewModel(private val container: AppContainer, private val chat: Scree
 
     fun pickModel(id: String) {
         model = id
+    }
+
+    /** The tools sheet's model; null until opened. [toolsVersion] bumps on every change so the sheet recomposes. */
+    var tools by mutableStateOf<ToolPicker?>(null)
+        private set
+    var toolsVersion by mutableStateOf(0)
+        private set
+
+    /** Loads the catalog and this chat's effective selection (ADR 0021). Works before the first message too. */
+    fun openTools() {
+        // Open at once with a loading line: the catalog read takes seconds (it reads the user's MCP config).
+        toolsOpen = true
+        viewModelScope.launch {
+            call {
+                val catalog = api.tools()
+                val selected = api.conversationTools(chat.id)
+                if (toolsOpen) tools = ToolPicker(catalog, selected)
+                toolsVersion++
+            }
+            if (tools == null) toolsOpen = false
+        }
+    }
+
+    var toolsOpen by mutableStateOf(false)
+        private set
+
+    fun closeTools() {
+        toolsOpen = false
+        tools = null
+    }
+
+    /** Toggles one row and saves the whole selection at once, as the web picker does on every change. */
+    fun toggleTool(key: String) {
+        val picker = tools ?: return
+        picker.toggle(key)
+        toolsVersion++
+        val selection = picker.selection()
+        viewModelScope.launch { call { api.setConversationTools(chat.id, selection) } }
     }
 
     fun send(text: String = draft) {
