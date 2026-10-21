@@ -32,6 +32,13 @@ public sealed partial class ChatTurnPipeline
         RequestContext.Set(UserTelemetryContext.RequestContextKey,
             work.Connection.OwnerTelemetry ?? new UserTelemetryContext(work.UserId, null, null, null, null, null));
 
+        var voice = await TranscribeVoiceNoteAsync(work);
+        if (!voice.Proceed)
+        {
+            return;
+        }
+
+        work = work with { Transcript = voice.Transcript };
         var files = AttachableFiles(work.Message);
         if (PromptText(work).Length == 0 && !AnyFileLooksUsable(files))
         {
@@ -171,12 +178,13 @@ public sealed partial class ChatTurnPipeline
             text = text.Replace("@" + bot, "", StringComparison.OrdinalIgnoreCase).Trim();
         }
 
-        return text;
+        return WithTranscript(text.Trim(), work.Transcript);
     }
 
     private static string Title(ChatTurnWork work)
     {
-        var firstLine = PromptText(work).Split('\n', 2)[0].Trim();
+        // A voice note is titled by what was said, without the marker the model sees.
+        var firstLine = (work.Transcript ?? PromptText(work)).Split('\n', 2)[0].Trim();
         if (firstLine.Length == 0 && work.Message.Files.FirstOrDefault(f => !f.IsVoiceNote) is { } file)
         {
             firstLine = FileName(file);

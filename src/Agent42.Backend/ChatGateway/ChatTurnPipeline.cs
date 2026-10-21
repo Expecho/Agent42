@@ -50,6 +50,7 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
     private readonly IUserModelCatalogProvider? _modelCatalogs;
     private readonly IAttachmentStore? _attachments;
     private readonly DocumentIngestionService? _ingestion;
+    private readonly IUserChatClientFactoryProvider? _chatClients;
     private readonly TimeSpan _maxTurnWait;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ChatTurnPipeline> _logger;
@@ -68,8 +69,10 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
         IUserModelCatalogProvider? modelCatalogs = null,
         TimeSpan? maxTurnWait = null,
         IAttachmentStore? attachments = null,
-        DocumentIngestionService? ingestion = null)
+        DocumentIngestionService? ingestion = null,
+        IUserChatClientFactoryProvider? chatClients = null)
     {
+        _chatClients = chatClients;
         _maxTurnWait = maxTurnWait ?? DefaultMaxTurnWait;
         _attachments = attachments;
         _ingestion = ingestion;
@@ -319,7 +322,9 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
 }
 
 /// <summary>One owner message bound for a conversation, with where its reply goes.</summary>
-internal sealed record ChatTurnWork(string UserId, ChatConnection Connection, ChatInboundMessage Message, string RouteKey)
+/// <param name="Transcript">A voice note's transcript, once it has been read (phase 1c).</param>
+internal sealed record ChatTurnWork(
+    string UserId, ChatConnection Connection, ChatInboundMessage Message, string RouteKey, string? Transcript = null)
 {
     public string QueueKey => Connection.Id + "\n" + RouteKey;
 
