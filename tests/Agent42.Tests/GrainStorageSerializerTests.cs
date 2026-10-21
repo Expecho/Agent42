@@ -843,6 +843,66 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Empty(provider.Models);
     }
 
+    // ADR 0111: a provider overlay persisted before SupportsTranscription ([Id(8)]) and TranscriptionDefault ([Id(5)])
+    // existed has neither property in its Cosmos document. It must read back false/null with no migration.
+    [Fact]
+    public void ProviderOverlay_WithoutTranscriptionFields_ReadsBackAsDefaults()
+    {
+        var written = new UserProviderConfigState
+        {
+            Config = new UserProviderConfig(
+                new List<StoredProvider>
+                {
+                    new("mine", "OpenAICompatible", "Mine", "https://api.example/v1", "cipher",
+                        new List<StoredModel> { new("m1", "M1", true, false, SupportsSpeech: true, SupportsTranscription: true) },
+                        UseResponsesApi: false),
+                },
+                Default: "mine:m1", Version: 3, SpeechDefault: "mine:m1", TranscriptionDefault: "mine:m1"),
+        };
+        var json = Serializer().Serialize(written).ToString();
+        var legacy = System.Text.RegularExpressions.Regex.Replace(json, @",?\s*""(SupportsTranscription|TranscriptionDefault)""\s*:\s*(true|"".*?"")", "");
+        Assert.DoesNotContain("Transcription", legacy);
+
+        var restored = Serializer().Deserialize<UserProviderConfigState>(new BinaryData(legacy));
+
+        var model = restored.Config.Providers.Single().Models.Single();
+        Assert.True(model.SupportsSpeech);
+        Assert.False(model.SupportsTranscription);
+        Assert.Null(restored.Config.TranscriptionDefault);
+        Assert.Equal("mine:m1", restored.Config.SpeechDefault);
+    }
+
+    // The new fields, set, survive the Cosmos JSON path (the binary golden predates them and is never regenerated).
+    [Fact]
+    public void ProviderOverlay_TranscriptionFields_RoundTripThroughCosmosJson()
+    {
+        var written = new UserProviderConfigState
+        {
+            Config = new UserProviderConfig(
+                new List<StoredProvider>
+                {
+                    new("mine", "OpenAICompatible", "Mine", "https://api.example/v1", "cipher",
+                        new List<StoredModel>
+                        {
+                            new("whisper-1", "Whisper", false, false, SupportsTranscription: true),
+                            new("tts-1", "TTS", false, false, SupportsSpeech: true),
+                        },
+                        UseResponsesApi: false),
+                },
+                Default: null, Version: 2, SpeechDefault: "mine:tts-1", TranscriptionDefault: "mine:whisper-1"),
+        };
+
+        var restored = Serializer().Deserialize<UserProviderConfigState>(Serializer().Serialize(written));
+
+        Assert.Equal("mine:whisper-1", restored.Config.TranscriptionDefault);
+        Assert.Equal("mine:tts-1", restored.Config.SpeechDefault);
+        var models = restored.Config.Providers.Single().Models;
+        Assert.True(models[0].SupportsTranscription);
+        Assert.False(models[0].SupportsSpeech);
+        Assert.True(models[1].SupportsSpeech);
+        Assert.False(models[1].SupportsTranscription);
+    }
+
     private const string StoredEmailAddressDirectoryJson = """
         {"$id":"1","$type":"Agent42.Agents.EmailAddressDirectoryState, Agent42.Agents","UserId":"user@example.com","AgentId":"agent-golden-mail"}
         """;

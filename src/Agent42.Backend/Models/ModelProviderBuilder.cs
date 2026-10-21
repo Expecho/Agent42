@@ -204,5 +204,6 @@ public static class ModelProviderBuilder
             SupportsEmbeddings: m.SupportsEmbeddings,
             SupportsSpeech: m.SupportsSpeech,
             SupportsReasoning: m.SupportsReasoning,
-            ProviderDisplayName: provider.DisplayName));
+            ProviderDisplayName: provider.DisplayName,
+            SupportsTranscription: m.SupportsTranscription));
 }

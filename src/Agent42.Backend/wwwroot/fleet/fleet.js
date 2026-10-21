@@ -435,7 +435,7 @@
 
   // ---------- composer ----------
   // A model the fleet can run: a chat model that takes tools (FleetTaskService.IsToolCapable).
-  const toolCapable = m => m.supportsTools && !m.supportsEmbeddings && !m.supportsSpeech && !m.supportsImageGeneration;
+  const toolCapable = m => m.supportsTools && !m.supportsEmbeddings && !m.supportsSpeech && !m.supportsTranscription && !m.supportsImageGeneration;
 
   const composer = (() => {
     const ta = h("textarea", { "aria-label": "Task", onkeydown: e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitTask(); } });

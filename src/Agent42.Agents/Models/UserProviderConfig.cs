@@ -30,7 +30,11 @@ public sealed record StoredModel(
     // reply. Unlike embeddings and speech above this is NOT a distinct model kind: it is the same chat
     // model on the same chat client, and the flag only says to ask the provider for a reasoning summary
     // and to expect the extra content part back.
-    [property: Id(7)] bool SupportsReasoning = false);
+    [property: Id(7)] bool SupportsReasoning = false,
+    // Trailing [Id(8)] with a default so an existing overlay deserializes it false with no migration —
+    // true only for a declared TRANSCRIPTION (speech-to-text) model (the chat gateway's voice notes, ADR 0111). A
+    // distinct model KIND like speech above, reached via GetAudioClient not the chat client.
+    [property: Id(8)] bool SupportsTranscription = false);
 
 /// <summary>
 /// One provider in a user's overlay (ADR 0018). Mirrors the Backend's <c>ProviderOptions</c>, but:
@@ -73,11 +77,14 @@ public sealed record UserProviderConfig(
     // Trailing [Id(4)] with a default so an existing overlay deserializes it null with no migration —
     // the user's chosen "default speech model" id (ADR 0038), null = none configured (voice falls back to
     // the browser's speechSynthesis, ADR 0037). Independent of Default/EmbeddingDefault — a distinct kind.
-    [property: Id(4)] string? SpeechDefault = null)
+    [property: Id(4)] string? SpeechDefault = null,
+    // Trailing [Id(5)] with a default so an existing overlay deserializes it null with no migration — the user's
+    // chosen "default transcription model" id, null = none configured (a voice note then gets a curated reply).
+    [property: Id(5)] string? TranscriptionDefault = null)
 {
     /// <summary>
     /// A factory (fresh instance per access), never a cached singleton — a shared static default is
     /// mutated by Orleans' copier and leaks across grains (the same discipline as <c>UserProfile.Empty</c>).
     /// </summary>
-    public static UserProviderConfig Empty => new([], null, 0, null, null);
+    public static UserProviderConfig Empty => new([], null, 0, null, null, null);
 }

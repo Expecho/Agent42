@@ -89,6 +89,14 @@ public sealed class ConfiguredModel
     public bool SupportsSpeech { get; set; }
 
     /// <summary>
+    /// Whether this is a <b>transcription</b> (speech-to-text) model (ADR 0111): the user picks it as the "default
+    /// transcription model" and the chat gateway transcribes a voice note with it, via the provider's
+    /// <c>GetAudioClient</c>. A distinct model kind from chat. Default <c>false</c>. Egress (ADR 0013): the audio
+    /// goes to the user's own endpoint, and only once they pick the model.
+    /// </summary>
+    public bool SupportsTranscription { get; set; }
+
+    /// <summary>
     /// Whether this chat model is a <b>reasoning</b> model that emits its own "thinking" alongside the reply
     /// (ADR 0071). Default <c>false</c>.
     ///
