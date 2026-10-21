@@ -1,6 +1,7 @@
 /* Agent 42 — token-usage dashboard (ADR 0031). Split out of app.js (ADR 0041). */
 
 import { openUsageBtn, usageApplication, usageCloseBtn, usageModelsBody, usageModelsEmpty, usageRange, usageRefresh, usageTiles, usageToolsBody, usageToolsEmpty, usageUser, usageUsersBody, usageUsersEmpty, usageView } from "./dom.js";
+import { formatCost } from "./format.js";
 
 // Handle for the auto-refresh timer, so a new interval selection (or closeUsage) can cancel the
 // previous one — a leaked timer would keep polling /api/usage from the console view.
@@ -8,7 +9,7 @@ let usageRefreshTimer = null;
 // A dedicated full-page overlay (#usageView), not a Preferences tab — fed solely from OTEL GenAI
 // spans. No chart library: the only "chart" is a <div> given a percentage width (the .bar__fill
 // below), same idiom as the sibling AI.Telemetry.Dashboard this view mirrors. Deliberately no
-// total-tokens/cost field anywhere.
+// total-tokens field anywhere. Cost (ADR 0110) is an estimate the server derives from a price table.
 
 const USAGE_UNREPORTED = "unreported";
 const usageNumberFormat = new Intl.NumberFormat();
@@ -39,6 +40,20 @@ function usageNumberCell(value, isErrorCount = false) {
   if (isErrorCount) cell.dataset.nonzero = String((value ?? 0) > 0);
   return cell;
 }
+
+// Estimated cost (ADR 0110): "—" when nothing in the row could be priced, "≥" when only some of it could.
+function usageCostCell(usd, status) {
+  const cell = document.createElement("td");
+  cell.className = "grid__num";
+  cell.textContent = formatCost(usd, status);
+  if (status === "unpriced") cell.title = "No price is known for this model";
+  if (status === "partial") cell.title = "Some calls had no price, so this is a lower bound";
+  return cell;
+}
+
+// An aggregate's status from its sum and unpriced-call count (totals and user rows carry no status of their own).
+const aggregateCostStatus = (usd, unpricedCalls) =>
+  usd == null ? "unpriced" : unpricedCalls > 0 ? "partial" : "priced";
 
 // A proportional bar — the row's value against the max in its table (input+output for
 // models/users, count for tools). A zero max means every row is zero; render an empty track
@@ -75,6 +90,7 @@ function renderUsageModels(models) {
       usageNumberCell(model.reasoningOutputTokens),
       usageNumberCell(model.callCount),
       usageNumberCell(model.errorCount, true),
+      usageCostCell(model.costUsd, model.costStatus),
       usageBarCell(weight(model), max),
     );
     usageModelsBody.appendChild(row);
@@ -114,6 +130,7 @@ function renderUsageUsers(users) {
       usageNumberCell(user.callCount),
       usageNumberCell(user.errorCount, true),
       usageNumberCell(user.toolCallCount),
+      usageCostCell(user.costUsd, aggregateCostStatus(user.costUsd, user.unpricedCallCount)),
       usageBarCell(weight(user), max),
     );
     usageUsersBody.appendChild(row);
@@ -127,6 +144,8 @@ function renderUsage(report) {
   setUsageTile(usageTiles.cached, report.totals?.cachedInputTokens);
   setUsageTile(usageTiles.calls, report.totals?.callCount);
   setUsageTile(usageTiles.errors, report.totals?.errorCount, true);
+  usageTiles.cost.textContent = formatCost(
+    report.totals?.costUsd, aggregateCostStatus(report.totals?.costUsd, report.totals?.unpricedCallCount ?? 0));
   renderUsageModels(report.models ?? []);
   renderUsageTools(report.tools ?? []);
   renderUsageUsers(report.users ?? []);

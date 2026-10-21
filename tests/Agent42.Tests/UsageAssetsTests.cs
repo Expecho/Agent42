@@ -54,12 +54,33 @@ public sealed class UsageAssetsTests
         var send = await _client.GetStringAsync("/js/send.js");
 
         Assert.Contains(
-            "export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheWriteTokens })",
+            "export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheWriteTokens, costUsd, costStatus })",
             thread, StringComparison.Ordinal);
         Assert.Contains(
             "if (cacheWriteTokens != null) parts.push(`${cacheWriteTokens.toLocaleString()} cache write`);",
             thread, StringComparison.Ordinal);
         Assert.Contains("showUsage(agentMsg, chunk)", send, StringComparison.Ordinal);
+    }
+
+    // ADR 0110: the turn line shows a priced turn's estimate and a Copilot turn as included, and never an unpriced
+    // turn as $0; the dashboard has a cost tile and a cost column on the model and user tables.
+    [Fact]
+    public async Task Cost_IsRenderedOnTurnLineAndDashboard()
+    {
+        var thread = await _client.GetStringAsync("/js/thread.js");
+        var usage = await _client.GetStringAsync("/js/usage.js");
+        var format = await _client.GetStringAsync("/js/format.js");
+        var index = await _client.GetStringAsync("/");
+
+        Assert.Contains("if (costStatus === \"priced\") parts.push(`≈ ${formatCost(costUsd, costStatus)}`);", thread, StringComparison.Ordinal);
+        Assert.Contains("included in Copilot plan", thread, StringComparison.Ordinal);
+        Assert.Contains("if (usd == null) return \"—\";", format, StringComparison.Ordinal);
+        Assert.Contains("usageCostCell(model.costUsd, model.costStatus)", usage, StringComparison.Ordinal);
+        Assert.Contains("usageCostCell(user.costUsd, aggregateCostStatus(user.costUsd, user.unpricedCallCount))", usage, StringComparison.Ordinal);
+        Assert.Contains("usageTiles.cost.textContent = formatCost(", usage, StringComparison.Ordinal);
+        Assert.Contains("id=\"usageTileCost\"", index, StringComparison.Ordinal);
+        Assert.Equal(2, index.Split("<th scope=\"col\" class=\"grid__num\">Est. cost</th>").Length - 1);
+        Assert.Contains("Anthropic cache writes count at the input rate here", index, StringComparison.Ordinal);
     }
 
     // AC15: the view fetches the reference contract endpoint.

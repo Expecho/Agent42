@@ -74,6 +74,17 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
     public IChatClient GetClient(string? modelId) =>
         _providers.Count == 0 ? NoModelChatClient.Instance : _clients.GetOrAdd(Resolve(modelId).QualifiedId, Build);
 
+    public (string ProviderKind, string Model) GetPricingIdentity(string? modelId)
+    {
+        if (_providers.Count == 0)
+        {
+            return ("", "");
+        }
+
+        var (provider, model, _) = Resolve(modelId);
+        return (provider.Options.Kind.ToString(), model);
+    }
+
     public ModelCapabilities GetCapabilities(string? modelId)
     {
         // No providers configured (ADR 0019): nothing is capable of anything. Return before Resolve,
@@ -238,9 +249,11 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
 
         // The prompt-cache key (ADR 0104) is stripped on every call and sent only to Azure OpenAI. Inside OTel, so the
         // span sees the caller's options. The tool images (the Chrome-extension ADR) go in innermost, below OTel, which
-        // records message contents: above it, every span would carry the image base64.
+        // records message contents: above it, every span would carry the image base64. The provider-kind tag (ADR 0110)
+        // goes directly inside OTel, where Activity.Current is the chat span.
         return builder
             .UseOpenTelemetry(sourceName: _otelSourceName, configure: cfg => cfg.EnableSensitiveData = true)
+            .Use(inner => new ProviderKindTagChatClient(inner, provider.Options.Kind))
             .Use(inner => new PromptCacheKeyChatClient(inner, provider.Options))
             .Use(inner => new ToolImageChatClient(inner))
             .Build();

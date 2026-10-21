@@ -87,6 +87,19 @@ public sealed class UsageSpanProjectorTests
         Assert.Equal("gpt-req", e!.Model);
     }
 
+    // ADR 0110: the provider-kind tag rides into the event; a span without it (any span before the tag existed)
+    // projects "", which prices as unpriced.
+    [Fact]
+    public void ChatSpan_CarriesProviderKind()
+    {
+        var tagged = UsageSpanProjector.Project(
+            Tags(("gen_ai.operation.name", "chat"), (UsageSpanProjector.ProviderKindTag, "AzureOpenAI")), When, false, App);
+        var untagged = UsageSpanProjector.Project(Tags(("gen_ai.operation.name", "chat")), When, false, App);
+
+        Assert.Equal("AzureOpenAI", tagged!.ProviderKind);
+        Assert.Equal("", untagged!.ProviderKind);
+    }
+
     // AC2: orchestrate_tools (and any non-chat/non-tool op) is IGNORED — the double-count guard.
     [Theory]
     [InlineData("orchestrate_tools")]

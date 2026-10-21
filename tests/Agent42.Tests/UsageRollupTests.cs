@@ -141,7 +141,68 @@ public sealed class UsageRollupTests
         Assert.Equal(0, report.Totals.CachedInputTokens);
         Assert.Equal(0, report.Models[0].CachedInputTokens);
         Assert.Equal(0, report.Models[0].ReasoningOutputTokens);
-        // No 'Total' or 'Cost' member exists on UsageTotals — enforced by the type shape.
+        // No 'Total' member exists on UsageTotals — enforced by the type shape. Cost exists since ADR 0110, and is
+        // null here because the event carried no provider kind (an unpriced call, not a free one).
+        Assert.Null(report.Totals.CostUsd);
+        Assert.Equal(1, report.Totals.UnpricedCallCount);
+    }
+
+    private static UsageEvent Priced(DateTimeOffset ts, string kind, string model, long input, long output, long cached = 0, string user = "ada")
+        => new(UsageEventKind.Token, ts, "Agent42", "openai", model, user, "", input, output, cached, 0, false, kind);
+
+    // ADR 0110: each model row is priced from the table at read time; Copilot is included; an unknown kind or a
+    // legacy bucket with no kind is unpriced; totals sum the priced rows and count the unpriced calls.
+    [Fact]
+    public void Query_ComputesCostPerModelRow()
+    {
+        var state = new UsageRollupState();
+        // gpt-5.4: 2.50 in / 0.25 cached / 15 out. 1M in (400k cached) + 100k out = 1.50 + 0.10 + 1.50 = 3.10
+        state.Apply(Priced(Now, ModelPricing.AzureOpenAIKind, "gpt-5.4-2026-03-05", 1_000_000, 100_000, cached: 400_000));
+        state.Apply(Priced(Now, ModelPricing.GitHubCopilotKind, "gpt-5.4", 5_000, 500, user: "bob"));
+        state.Apply(Priced(Now, "OpenAICompatible", "openai/gpt-4o", 1_000, 100));
+        state.Apply(Token(Now, model: "gpt-5.4")); // pre-ADR-0110 shape: no provider kind
+
+        var report = state.Query("24h", null, null, Now);
+
+        var azure = report.Models.Single(m => m.ProviderKind == ModelPricing.AzureOpenAIKind);
+        Assert.Equal((CostStatus.Priced, 3.10m), (azure.CostStatus, azure.CostUsd));
+        var copilot = report.Models.Single(m => m.ProviderKind == ModelPricing.GitHubCopilotKind);
+        Assert.Equal((CostStatus.Included, 0m), (copilot.CostStatus, copilot.CostUsd));
+        Assert.All(
+            report.Models.Where(m => m.ProviderKind is "" or "OpenAICompatible"),
+            m => Assert.Equal((CostStatus.Unpriced, (decimal?)null), (m.CostStatus, m.CostUsd)));
+
+        Assert.Equal(3.10m, report.Totals.CostUsd);
+        Assert.Equal(2, report.Totals.UnpricedCallCount);
+        var ada = report.Users.Single(u => u.User == "ada");
+        Assert.Equal((3.10m, 2L), (ada.CostUsd, ada.UnpricedCallCount));
+        Assert.Equal((0m, 0L), (report.Users.Single(u => u.User == "bob").CostUsd, report.Users.Single(u => u.User == "bob").UnpricedCallCount));
+    }
+
+    // A row that spans a price's effective date is partial: the calls before the row existed stay unpriced.
+    [Fact]
+    public void Query_RowSpanningAnEffectiveDate_IsPartial()
+    {
+        var state = new UsageRollupState();
+        var march = new DateTimeOffset(2026, 3, 2, 0, 0, 0, TimeSpan.Zero);
+        state.Apply(Priced(march.AddDays(-2), ModelPricing.AzureOpenAIKind, "gpt-5.4", 1_000_000, 0));
+        state.Apply(Priced(march, ModelPricing.AzureOpenAIKind, "gpt-5.4", 1_000_000, 0));
+
+        var row = Assert.Single(state.Query("all", null, null, march).Models);
+
+        Assert.Equal((CostStatus.Partial, 2.5m), (row.CostStatus, row.CostUsd));
+    }
+
+    // The /usage path has no cache-write term (no OTel tag carries Anthropic cache writes), so all uncached input
+    // bills at the input rate. Pinned so the known gap with the turn line is deliberate, not drift.
+    [Fact]
+    public void Query_AnthropicHasNoCacheWriteTerm()
+    {
+        var state = new UsageRollupState();
+        // claude-sonnet-4-6: 3 in / 0.30 read / 15 out. 1M in (600k read) = 400k x 3 + 600k x 0.30 = 1.20 + 0.18
+        state.Apply(Priced(Now, ModelPricing.AnthropicKind, "claude-sonnet-4-6", 1_000_000, 0, cached: 600_000));
+
+        Assert.Equal(1.38m, state.Query("24h", null, null, Now).Totals.CostUsd);
     }
 
     // Applications/Users list the distinct non-empty dimension values for the dropdowns.

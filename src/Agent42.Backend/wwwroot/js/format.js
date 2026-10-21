@@ -68,3 +68,13 @@ export const timeLabel = (iso) => {
     : d.toLocaleDateString([], { month: "short", day: "numeric" }) +
       " · " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
+
+// Estimated cost (ADR 0110), from the server's costUsd + costStatus. Unpriced is "—", never "$0": a model with no
+// price row is unknown, not free. A sub-cent amount keeps two significant digits so a cheap turn does not read $0.00.
+// "partial" means some calls in the aggregate had no price, so the amount is a lower bound.
+export const formatCost = (usd, status) => {
+  if (status === "included") return "included";
+  if (usd == null) return "—";
+  const amount = usd === 0 ? "$0.00" : usd < 0.01 ? `$${Number(usd.toPrecision(2))}` : `$${usd.toFixed(2)}`;
+  return status === "partial" ? `≥ ${amount}` : amount;
+};

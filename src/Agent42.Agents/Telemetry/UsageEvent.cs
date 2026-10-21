@@ -25,6 +25,9 @@ public enum UsageEventKind
 /// <para>Cached/reasoning tokens are whatever the provider reported: the Microsoft.Extensions.AI OTel emitter tags
 /// them when the response's <c>UsageDetails</c> carry them (ADR 0104, <c>ChatSpan_CarriesCachedAndReasoningTokens</c>).
 /// ADR 0031's "always 0" came from its spike provider reporting none, not from the emitter.</para>
+///
+/// <para><see cref="ProviderKind"/> (ADR 0110) is the Backend's <c>ProviderKind</c> by name, or <c>""</c> on a span
+/// that carried no <c>agent42.provider.kind</c> tag — which prices as unpriced, never as a guess.</para>
 /// </summary>
 [GenerateSerializer]
 [Alias("Agent42.Agents.UsageEvent")]
@@ -40,4 +43,5 @@ public sealed record UsageEvent(
     [property: Id(8)] long OutputTokens,
     [property: Id(9)] long CachedInputTokens,
     [property: Id(10)] long ReasoningOutputTokens,
-    [property: Id(11)] bool IsError);
+    [property: Id(11)] bool IsError,
+    [property: Id(12)] string ProviderKind = "");

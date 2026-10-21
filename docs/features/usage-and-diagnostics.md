@@ -2,7 +2,7 @@
 
 > Where to look when you want to know what the app did: a token-usage dashboard, a live
 > OpenTelemetry console at `/logs`, the Orleans dashboard at `/dashboard`, and an optional,
-> content-stripped export to Application Insights. ADRs 0009 · 0010 · 0031 · 0054 · 0062 · 0077.
+> content-stripped export to Application Insights. ADRs 0009 · 0010 · 0031 · 0054 · 0062 · 0077 · 0110.
 
 ## What it is
 
@@ -57,6 +57,26 @@ or does I/O: it writes to a bounded, drop-on-full channel. `UsageIngestionServic
 channel at least every 30 seconds into `UsageRollupGrain.ApplyAsync`. The **application** filter
 is the agent name: `PublishUsageApplication` puts it in the Orleans `RequestContext`, and it is
 stamped on spans as `agent42.application`. The **user** is the email, falling back to name or id.
+
+### Estimated cost (ADR 0110)
+
+Both the per-turn token line and the usage overlay show an **estimated** USD cost. It is derived
+from tokens and a checked-in, effective-dated price table (`ModelPricing`), and is never stored, so
+a price correction is a table edit. The table is keyed on the **provider kind** as well as the model,
+because `gen_ai.provider.name` reads `"openai"` for both Azure OpenAI and OpenAI-compatible endpoints:
+`ProviderKindTagChatClient` stamps `agent42.provider.kind` on each `chat` span, and the token buckets
+keep it.
+
+| Provider kind | Shown as |
+|---------------|----------|
+| Azure OpenAI, Anthropic | `≈ $0.0123` (Azure Global list price; Anthropic list price, cache writes at 1.25× input) |
+| GitHub Copilot | `included` (the user's subscription) |
+| OpenAI-compatible (GitHub Models, Ollama, vLLM), or a model with no row | `—`, never `$0` |
+
+A model missing from the table shows `—` until someone adds a row. A reprice adds a row with a
+later `ValidFrom` and never edits one. Usage recorded before this feature has no provider kind, so
+it stays unpriced. On `/usage`, Anthropic cache writes are billed at the input rate, because no span
+tag carries them; the per-turn line prices them in full.
 
 ### The live console (ADR 0054)
 
@@ -125,6 +145,7 @@ are off.
 | Concern | File |
 |---------|------|
 | Usage projection + grain | `src/Agent42.Agents/Telemetry/UsageSpanProjector.cs`, `UsageRollupGrain.cs` |
+| Price table + cost formula | `src/Agent42.Agents/Telemetry/ModelPricing.cs`, `src/Agent42.Backend/Models/ProviderKindTagChatClient.cs` |
 | Usage ingestion | `src/Agent42.Backend/Telemetry/UsageSpanProcessor.cs`, `UsageIngestionService.cs` |
 | Usage + diagnostics endpoints | `src/Agent42.Backend/Telemetry/AgentApi.Telemetry.cs`, `AgentApi.Diagnostics.cs` |
 | Live buffer | `src/Agent42.Backend/Telemetry/LiveTelemetryBuffer.cs`, `LiveTelemetryContracts.cs` |

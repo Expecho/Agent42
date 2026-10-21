@@ -3,7 +3,7 @@
 import { closeArtifactPane } from "./artifacts.js";
 import { clearSharedState } from "./sharedstate.js";
 import { chatScroll, emptyState, thread } from "./dom.js";
-import { linkifyPlainText, renderMarkdown } from "./format.js";
+import { formatCost, linkifyPlainText, renderMarkdown } from "./format.js";
 import { mcpOAuthStartUrl } from "./mcp.js";
 import { send, streaming } from "./send.js";
 
@@ -395,7 +395,7 @@ function appendToolIo(item, label, json) {
   item.appendChild(io);
 }
 
-export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheWriteTokens }) {
+export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheWriteTokens, costUsd, costStatus }) {
   if (inputTokens == null && outputTokens == null) return;
   const parts = [];
   if (inputTokens != null) parts.push(`${inputTokens.toLocaleString()} in`);
@@ -403,6 +403,10 @@ export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheW
   if (cachedTokens != null) parts.push(`${cachedTokens.toLocaleString()} cached`);
   // Anthropic prompt-cache writes (ADR 0104), billed above the input rate; no other provider reports them.
   if (cacheWriteTokens != null) parts.push(`${cacheWriteTokens.toLocaleString()} cache write`);
+  // Estimated cost (ADR 0110). An unpriced model (no price row, e.g. Ollama or GitHub Models) shows nothing rather
+  // than a misleading $0; a Copilot model is included in the user's plan.
+  if (costStatus === "priced") parts.push(`≈ ${formatCost(costUsd, costStatus)}`);
+  if (costStatus === "included") parts.push("included in Copilot plan");
   const usage = document.createElement("div");
   usage.className = "msg__usage";
   usage.textContent = `tokens · ${parts.join(" · ")}`;

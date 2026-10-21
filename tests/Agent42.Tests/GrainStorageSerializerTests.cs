@@ -318,6 +318,26 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal([1, 2], b.Versions.Select(v => v.Version));
     }
 
+    // ADR 0110: a usage-rollup document written before TokenBucket.ProviderKind existed reads back with "" (unpriced),
+    // and the new field round-trips through the Cosmos JSON path.
+    [Fact]
+    public void TokenBucket_WithoutProviderKind_Deserializes()
+    {
+        var state = new UsageRollupState();
+        state.Apply(new UsageEvent(
+            UsageEventKind.Token, DateTimeOffset.UtcNow, "Agent42", "openai", "gpt-5.4", "ada", "", 10, 5, 0, 0, false, "AzureOpenAI"));
+        var json = Serializer().Serialize(state).ToString();
+        var legacy = System.Text.RegularExpressions.Regex.Replace(json, @",?\s*""ProviderKind""\s*:\s*""AzureOpenAI""", "");
+        Assert.DoesNotContain("ProviderKind", legacy);
+
+        var roundTripped = Serializer().Deserialize<UsageRollupState>(new BinaryData(json));
+        var restored = Serializer().Deserialize<UsageRollupState>(new BinaryData(legacy));
+
+        Assert.Equal("AzureOpenAI", roundTripped.DailyTokens.Values.Single().ProviderKind);
+        Assert.Equal("", restored.DailyTokens.Values.Single().ProviderKind);
+        Assert.Equal(10, restored.DailyTokens.Values.Single().InputTokens);
+    }
+
     // ADR 0089 AC12: the committed golden predates [Id(16)]/[Id(17)], so an existing conversation reads as having no
     // shared state at version 0.
     [Fact]
