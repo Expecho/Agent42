@@ -4171,7 +4171,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 - **Claim:** the runtime binary comes from the SDK's MSBuild targets (downloaded per RID and SHA256-checked). For a
   project that references the SDK only transitively, the AF package's `buildTransitive` imports the targets of
-  `_MicrosoftAgentsAICopilotSdkPackagedVersion` (1.0.14, so CLI 1.0.85 for AF 1.23.0), not the pinned SDK (1.0.16,
+  `_MicrosoftAgentsAICopilotSdkPackagedVersion` (1.0.14, so CLI 1.0.85, for AF 1.23.0 through 1.25.0), not the pinned SDK (1.0.16,
   CLI 1.0.90). Tests and DevHost silently shipped a different runtime than the Backend until they got a direct
   `GitHub.Copilot.SDK` `PackageReference`. Every project whose output runs the runtime needs one. Separately, in a
   file-based spike the SDK's own bundled launch failed (`Copilot runtime wrapper not found ... copilot-runtime.exe`),
