@@ -468,6 +468,32 @@ From `.agentic/quality-gates.yaml` at f027feb:
 
 ## Spike results
 
+### Step 1 — native auth against prod Easy Auth (2026-10-21)
+
+**Candidate B (WebView sign-in + `AppServiceAuthSession` cookie) works, and is chosen.** A and C were not run: B meets
+every criterion, needs no Entra or Bicep change, and A/C would each need a new app registration plus
+`allowedAudiences`.
+
+**From curl** (not a browser), with a cookie copied from a desktop browser. Token redacted; the cookie file was deleted
+after the run.
+
+| Request | Result |
+|---|---|
+| `GET /api/conversations` + cookie | 200 `application/json`, 77 conversations |
+| `GET /api/conversations`, no cookie | **401**, no body, no redirect. Easy Auth sends non-browser clients a 401, not the login redirect. `SignedOutInterceptor` handles both. |
+| `GET /.auth/me` + cookie | 404: no token store (Bicep sets none), so the session expiry can't be read from there |
+| `POST /api/chat/<random>/stop` + cookie, no `Origin` | 204: non-browser POSTs are not rejected (contrast gotcha :4531, which is about `Origin: null`) |
+| cookie value as `X-ZUMO-AUTH` | 401: a different token type |
+
+**On the phone** (A54, throwaway `AuthSpikeActivity`):
+- A WebView loaded `/.auth/login/aad`, and Entra sign-in completed inside it with no embedded-browser block (`authorize` → `login` → back to chat.agent42.nl).
+- `CookieManager.getCookie` returned `AppServiceAuthSession` (length 1366; it's HttpOnly but readable by the app).
+- An `HttpURLConnection` outside the WebView, with that cookie, got 200 and the 77 conversations.
+- The spike app was uninstalled afterwards to drop its session.
+
+**Cost:** the session is FixedTime 14 days (ADR 0090), so there's an in-app re-sign-in at most every 14 days. That
+is what triggers on a 401.
+
 ### Step 2 — voice on the phone (2026-10-21)
 
 **Setup:** Galaxy A54 (SM-A546B), Android 16 / SDK 36, One UI 8.5, locale nl-NL, phone speaker, no headset.
