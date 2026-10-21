@@ -94,6 +94,14 @@ public interface IChatClientFactory
     /// <c>/api/speech</c> endpoint returns 409 when this is <c>null</c>, and the browser falls back.
     /// </summary>
     ISpeechService? GetSpeechService();
+
+    /// <summary>
+    /// The serving provider's kind (the Backend's <c>ProviderKind</c> by name) and the bare model name of
+    /// <paramref name="modelId"/>, which is what <see cref="ModelPricing"/> keys a price on (ADR 0110). The default,
+    /// <c>("", "")</c>, prices nothing, so a factory that does not know its provider (offline hosts, tests) leaves
+    /// every turn unpriced rather than guessing.
+    /// </summary>
+    (string ProviderKind, string Model) GetPricingIdentity(string? modelId) => ("", "");
 }
 
 /// <summary>
@@ -113,8 +121,12 @@ public sealed class SingleChatClientFactory(
     IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
     string defaultEmbeddingModelId = "",
     ISpeechService? speechGenerator = null,
-    string defaultSpeechModelId = "") : IChatClientFactory
+    string defaultSpeechModelId = "",
+    (string ProviderKind, string Model)? pricingIdentity = null) : IChatClientFactory
 {
+    // Offline/tests: unpriced unless a test names the provider kind and model it wants priced (ADR 0110).
+    public (string ProviderKind, string Model) GetPricingIdentity(string? modelId) => pricingIdentity ?? ("", "");
+
     public string DefaultModelId { get; } = defaultModelId;
 
     // Offline/tests: non-empty only when an embedding generator is supplied, so DevHost's RAG round-trips

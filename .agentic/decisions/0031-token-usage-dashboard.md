@@ -7,6 +7,10 @@ tags: [telemetry, opentelemetry, usage, tokens, dashboard, grains, cosmos, cross
 
 # Token-usage dashboard fed from OpenTelemetry, stored in a global grain
 
+> **Amended by [ADR 0110](0110-estimated-cost-from-a-checked-in-price-table.md) (2026-10-21): there IS a cost field
+> now.** An estimated USD cost is derived at query time from a checked-in price table, keyed on a new
+> `agent42.provider.kind` span tag stored on each token bucket. It is never stored; everything else here stands.
+
 > **Amended by [ADR 0104](0104-prompt-prefix-caching.md) (2026-10-19): cached and reasoning tokens are NOT always 0.** The
 > M.E.AI OTel emitter tags `gen_ai.usage.cache_read.input_tokens` and the reasoning count whenever the provider's
 > `UsageDetails` carry them (`ChatSpan_CarriesCachedAndReasoningTokens`); this ADR's spike provider simply reported

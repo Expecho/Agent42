@@ -40,6 +40,7 @@ export const usageTiles = {
   cached: document.getElementById("usageTileCached"),
   calls: document.getElementById("usageTileCalls"),
   errors: document.getElementById("usageTileErrors"),
+  cost: document.getElementById("usageTileCost"),
 };
 export const usageModelsBody = document.getElementById("usageModelsBody");
 export const usageModelsEmpty = document.getElementById("usageModelsEmpty");
