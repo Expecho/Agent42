@@ -215,4 +215,97 @@ public sealed class ChatSearchIndexTests
 
         Assert.Equal(ChatSearchLimits.MaxSearchResults, hits.Count);
     }
+
+    // ADR 0111 AC1: the model asks with keywords, so a turn matching ANY of them is a hit — unlike the
+    // sidebar's whole-substring CONTAINS, where "ingress tls" would miss "tls on the ingress".
+    [Fact]
+    public async Task SearchRanked_MatchesAnyTerm_CaseInsensitive()
+    {
+        const string user = "ranked-any-user";
+        await _index.IndexTurnsAsync(user, "conv-1",
+        [
+            Turn(0, "user", "set up TLS on the cluster"),
+            Turn(1, "assistant", "the Ingress controller needs a cert"),
+            Turn(2, "user", "unrelated small talk"),
+        ]);
+
+        var hits = await _index.SearchRankedAsync(user, ["ingress", "tls"], maxResults: 10);
+
+        Assert.Equal([0, 1], hits.Select(hit => hit.Ordinal).Order());
+    }
+
+    // AC2: the twin's contract is "more distinct terms first", NOT a BM25 order (ADR 0111).
+    [Fact]
+    public async Task SearchRanked_RanksMoreMatchedTermsFirst()
+    {
+        const string user = "ranked-order-user";
+        await _index.IndexTurnsAsync(user, "conv-a", [Turn(0, "user", "ingress only")]);
+        await _index.IndexTurnsAsync(user, "conv-b", [Turn(0, "assistant", "ingress with tls and a cert")]);
+
+        var hits = await _index.SearchRankedAsync(user, ["ingress", "tls", "cert"], maxResults: 10);
+
+        Assert.Equal(["conv-b", "conv-a"], hits.Select(hit => hit.ConversationId));
+    }
+
+    // AC3.
+    [Fact]
+    public async Task SearchRanked_IsOwnerScoped()
+    {
+        await _index.IndexTurnsAsync("ranked-owner-a", "conv-a", [Turn(0, "user", "alice ranked secret")]);
+        await _index.IndexTurnsAsync("ranked-owner-b", "conv-b", [Turn(0, "user", "bob ranked secret")]);
+
+        var hit = Assert.Single(await _index.SearchRankedAsync("ranked-owner-b", ["secret"], maxResults: 10));
+
+        Assert.Equal("conv-b", hit.ConversationId);
+    }
+
+    // AC4.
+    [Fact]
+    public async Task SearchRanked_ClampsToTheResultCeiling()
+    {
+        const string user = "ranked-ceiling-user";
+        var turns = Enumerable
+            .Range(0, ChatSearchLimits.MaxSearchResults + 20)
+            .Select(i => Turn(i, "user", $"needle {i}"))
+            .ToArray();
+        await _index.IndexTurnsAsync(user, "conv-1", turns);
+
+        var hits = await _index.SearchRankedAsync(user, ["needle"], maxResults: int.MaxValue);
+
+        Assert.Equal(ChatSearchLimits.MaxSearchResults, hits.Count);
+    }
+
+    [Fact]
+    public async Task SearchRanked_WithNoTerms_ReturnsNothing()
+    {
+        const string user = "ranked-empty-user";
+        await _index.IndexTurnsAsync(user, "conv-1", [Turn(0, "user", "anything")]);
+
+        Assert.Empty(await _index.SearchRankedAsync(user, [], maxResults: 10));
+    }
+
+    // AC5: a gap (a best-effort write that was dropped) is simply absent, never padded.
+    [Fact]
+    public async Task GetTurns_ReturnsTheRangeInOrdinalOrder_SkippingGaps()
+    {
+        const string user = "turns-range-user";
+        await _index.IndexTurnsAsync(user, "conv-1",
+            [Turn(5, "user", "five"), Turn(1, "user", "one"), Turn(2, "assistant", "two"), Turn(4, "assistant", "four")]);
+        await _index.IndexTurnsAsync(user, "conv-2", [Turn(3, "user", "other conversation")]);
+
+        var turns = await _index.GetTurnsAsync(user, "conv-1", 2, 5);
+
+        Assert.Equal([2, 4, 5], turns.Select(turn => turn.Ordinal));
+        Assert.Equal("two", turns[0].Text);
+        Assert.Equal("assistant", turns[0].Role);
+    }
+
+    // AC3.
+    [Fact]
+    public async Task GetTurns_IsOwnerScoped()
+    {
+        await _index.IndexTurnsAsync("turns-owner-a", "shared-id", [Turn(0, "user", "alice")]);
+
+        Assert.Empty(await _index.GetTurnsAsync("turns-owner-b", "shared-id", 0, 10));
+    }
 }

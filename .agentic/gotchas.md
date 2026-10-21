@@ -3378,6 +3378,36 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   flipped; each fails only the assertion that should catch it)
 - **Verified:** 2026-09-02
 
+### The sidebar search and the model's `search_past_chats` are DIFFERENT queries on purpose — and the twin is not BM25
+
+- **Claim:** `GET /api/search` uses `CONTAINS(c.text, @q, true)`, a whole-substring match, because people type
+  substrings. `search_past_chats` (ADR 0111) uses `SearchRankedAsync`: `FullTextContainsAny` + `ORDER BY RANK
+  FullTextScore`, because models type keywords. Do not "unify" them without an ADR: the sidebar would stop matching
+  phrases, or the tool would almost never match. The in-memory twin ranks by distinct terms matched, then
+  occurrences. It has **no IDF and no stemming**, so a test asserting a Cosmos/BM25 order offline asserts something
+  false. Pin only "any term matches" and "more matched terms first". The Cosmos half is pinned as SQL text
+  (`RankedSearchSql_*`) and executes only in prod. If Cosmos refuses `ORDER BY RANK`, the fallback is one `CONTAINS`
+  per term, ranked with `InMemoryChatSearchIndex.RankByTerms`, inside `CosmosChatSearchIndex` only.
+- **Evidence:** `src/Agent42.Backend/Search/CosmosChatSearchIndex.cs` (`BuildSearchSql`, `BuildRankedSearchSql`),
+  `src/Agent42.Agents/Search/InMemoryChatSearchIndex.cs` (`RankByTerms`), `tests/Agent42.Tests/ChatSearchIndexTests.cs`
+  (`SearchRanked_*`), `.agentic/decisions/0111-past-chats-as-a-model-tool.md`
+- **Verified:** 2026-10-21
+
+### `read_past_chat` reads the search INDEX, never the other conversation's grain
+
+- **Claim:** reading another conversation through `IAgentGrain(other).GetHistoryAsync()` looks simpler and is wrong
+  three ways. (1) When `other` is the current conversation, it is a self-call on a non-reentrant grain, which
+  deadlocks the turn. (2) It activates the target, whose `OnActivateAsync` connects every MCP server of its user. (3) An
+  activation still holds its incognito turns in memory (gotcha above), and the index never does. So the tool reads
+  `IChatSearchIndex.GetTurnsAsync`, accepts that the best-effort index can have gaps, and says so in the result.
+  Every hit is also joined against `IConversationIndexGrain.GetConversationsAsync()`, which drops a conversation the
+  user no longer has, so ADR 0068's permanent orphans never resurface.
+- **Evidence:** `src/Agent42.Agents/Search/AgentGrain.PastChatTools.cs`, `src/Agent42.Agents/Search/PastChatQuery.cs`
+  (`Select`, `FormatRead`), `tests/Agent42.Tests/PastChatToolTests.cs`
+  (`Search_DropsHitsForConversationsNotInTheIndexGrain`, `Search_NeverFindsAnIncognitoTurn`),
+  `.agentic/decisions/0111-past-chats-as-a-model-tool.md`
+- **Verified:** 2026-10-21
+
 ### The community `OrleansDashboard` package does not start the silo on Orleans 10.x — it CRASHES PROD
 
 - **Claim:** there are two packages with almost the same name, and picking the wrong one takes the whole

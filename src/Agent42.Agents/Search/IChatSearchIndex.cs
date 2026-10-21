@@ -49,6 +49,36 @@ public interface IChatSearchIndex
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns up to <paramref name="maxResults"/> of <paramref name="userId"/>'s messages that contain
+    /// <b>any</b> of <paramref name="terms"/>, most relevant first (ADR 0111, the <c>search_past_chats</c> tool).
+    /// Empty for no terms.
+    ///
+    /// <para>A different query from <see cref="SearchAsync"/> on purpose: the sidebar matches the
+    /// substring a user types, the model asks with keywords. Cosmos ranks by BM25
+    /// (<c>ORDER BY RANK FullTextScore</c>, the switch ADR 0061 declared the full-text policy for); the
+    /// in-memory twin ranks by how many terms match and does NOT reproduce BM25's order, so a test may pin
+    /// "any term matches" and "more matched terms first", never a Cosmos order.</para>
+    /// </summary>
+    Task<IReadOnlyList<ChatSearchHit>> SearchRankedAsync(
+        string userId,
+        IReadOnlyList<string> terms,
+        int maxResults,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The indexed turns of one of <paramref name="userId"/>'s conversations with an ordinal in
+    /// <paramref name="fromOrdinal"/>..<paramref name="toOrdinal"/> (inclusive), in ordinal order (ADR 0111,
+    /// the <c>read_past_chat</c> tool). An ordinal that was never indexed is simply absent: the write is
+    /// best-effort (ADR 0061), so a caller must not treat the result as the whole window.
+    /// </summary>
+    Task<IReadOnlyList<ChatSearchTurn>> GetTurnsAsync(
+        string userId,
+        string conversationId,
+        int fromOrdinal,
+        int toOrdinal,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Removes every indexed message of one conversation, so deleting a conversation doesn't leave
     /// its text behind (privacy — called from <c>AgentGrain.PurgeAsync</c>).
     ///

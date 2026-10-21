@@ -83,6 +83,40 @@ public sealed class ChatSearchIndexRegistrationTests
         Assert.Contains("TOP 25", sql);
     }
 
+    // ADR 0111 AC6: the tool's query is any-term + BM25, a DIFFERENT query from the sidebar's CONTAINS.
+    [Fact]
+    public void RankedSearchSql_UsesFullTextContainsAnyAndRank()
+    {
+        var sql = CosmosChatSearchIndex.BuildRankedSearchSql(["ingress", "tls"], 16);
+
+        Assert.Contains("TOP 16", sql);
+        Assert.Contains("WHERE FullTextContainsAny(c.text, \"ingress\", \"tls\")", sql);
+        Assert.Contains("ORDER BY RANK FullTextScore(c.text, [\"ingress\", \"tls\"])", sql);
+    }
+
+    // AC7: the terms are inlined (FullTextScore takes literals), so each must be unable to leave its literal.
+    [Fact]
+    public void RankedSearchSql_EscapesQuotesBackslashesAndBrackets()
+    {
+        var sql = CosmosChatSearchIndex.BuildRankedSearchSql(["a\") OR true OR (\"", "b\\", "c]"], 5);
+
+        Assert.Contains("\"a\\\") OR true OR (\\\"\"", sql);
+        Assert.Contains("\"b\\\\\"", sql);
+        Assert.Contains("\"c]\"", sql);
+        // The array still closes where it should: the only `])` is the end of the FullTextScore call.
+        Assert.EndsWith("])", sql);
+    }
+
+    // AC8.
+    [Fact]
+    public void TurnsSql_FiltersConversationAndOrdinalRange()
+    {
+        Assert.Contains(
+            "WHERE c.conversationId = @conversationId AND c.ordinal >= @from AND c.ordinal <= @to",
+            CosmosChatSearchIndex.TurnsSql);
+        Assert.EndsWith("ORDER BY c.ordinal", CosmosChatSearchIndex.TurnsSql);
+    }
+
     // The delete must filter within the user's partition. This container partitions by /userId, so
     // the whole-partition sweep CosmosDocumentIndex uses would delete every other conversation the
     // user owns — the one place that exemplar deliberately does not transfer.

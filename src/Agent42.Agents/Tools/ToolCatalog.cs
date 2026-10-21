@@ -166,6 +166,16 @@ public static class ToolCatalog
     public const string SharedState = "shared_state";
 
     /// <summary>
+    /// Recall across conversations (ADR 0111) — <c>search_past_chats</c> and <c>read_past_chat</c>, which read the
+    /// user's own chat-search projection (ADR 0061). One key for both: searching without reading is rarely useful,
+    /// and they are one consent ("let the assistant look through my other chats"). Appended LAST for the
+    /// order-stability reason <see cref="PushNotification"/> gives, and like every key added after the fact it
+    /// <b>lands OFF for anyone who has ever pressed Save</b> (ADR 0021). An <c>ask_agent</c> binding strips it
+    /// (ADR 0070), as it strips <see cref="Memory"/>, for the same reason.
+    /// </summary>
+    public const string PastChats = "past_chats";
+
+    /// <summary>
     /// The agent-skills <b>wildcard</b> ("all skills") meta-key (per-skill selectable tools, amends 0021).
     /// Each skill is individually selectable as a per-skill key <c>skill:{name}</c> (see
     /// <see cref="SkillKey"/>) — both the ones shipped in <see cref="SkillCatalog"/> and the ones the user
@@ -217,7 +227,7 @@ public static class ToolCatalog
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
         [
             WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification,
-            Artifacts, ReadDocument, BrowserTools, SharedState,
+            Artifacts, ReadDocument, BrowserTools, SharedState, PastChats,
         ];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
@@ -242,6 +252,8 @@ public static class ToolCatalog
         [ClientToolLimits.ControlArtifactPane] = BrowserTools,
         [ClientToolLimits.GetBrowserContext] = BrowserTools,
         [SharedStateLimits.UpdateToolName] = SharedState,
+        [PastChatLimits.SearchToolName] = PastChats,
+        [PastChatLimits.ReadToolName] = PastChats,
         [CodeInterpreter] = CodeInterpreter,
         [ClientToolLimits.GetCurrentLocation] = Location,
         ["schedule_prompt"] = Scheduling,
@@ -299,15 +311,19 @@ public static class ToolCatalog
         // provides it, so it registers on both capability branches.
         new(Artifacts, "Artifacts", RequiresHostedTools: false,
             Description: "Lets the assistant build pages, apps, diagrams and documents you open in a side pane, with versions."),
-        // ReadDocument (ADR 0098) sits before BrowserTools, which a guard pins as the last two entries.
+        // ReadDocument (ADR 0098) sits before BrowserTools, which a guard pins right after it.
         // RequiresHostedTools is false: no hosted tool reads this conversation's own chunks.
         new(ReadDocument, "Read whole documents", RequiresHostedTools: false,
             Description: "Lets the assistant read a document in this chat from start to end, part by part, for summaries and complete lists."),
-        // BrowserTools and SharedState are LAST for the same order-stability reason (ADR 0089).
+        // BrowserTools and SharedState were appended for the same order-stability reason (ADR 0089).
         new(BrowserTools, "Browser tools", RequiresHostedTools: false,
             Description: "Lets the assistant ask you to confirm actions, open artifacts in the pane and read your time zone and selected text."),
         new(SharedState, "Shared state", RequiresHostedTools: false,
             Description: "Gives the chat a checklist and notes the assistant and you can both edit."),
+        // PastChats (ADR 0111) is LAST for the same order-stability reason. RequiresHostedTools is false: no
+        // hosted tool reads the user's own chat history.
+        new(PastChats, "Past chats", RequiresHostedTools: false,
+            Description: "Lets the assistant search and read your other conversations to recall what was said."),
     ];
 
     /// <summary>The logical key for a registered tool name, or null (e.g. <c>get_date</c>, or an unmapped tool).</summary>
