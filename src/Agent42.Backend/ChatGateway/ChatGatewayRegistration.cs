@@ -39,6 +39,7 @@ public static class ChatGatewayRegistration
             sp.GetRequiredService<IChatGatewaySecretProtector>(),
             sp.GetRequiredService<IChatInboundSink>(),
             sp.GetRequiredService<IChatGatewayLease>(),
+            sp.GetServices<IChatGatewayLeaseParticipant>(),
             sp.GetRequiredService<ChatSessionRegistry>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<ILogger<ChatGatewayService>>()));

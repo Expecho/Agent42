@@ -17,4 +17,7 @@ public interface IChatGatewayControl
 
     /// <summary>Whether a session for the connection is currently open.</summary>
     bool IsLive(string connectionId);
+
+    /// <summary>Whether this instance currently holds the gateway lease. Signal's daemon starts only while it does.</summary>
+    bool HoldsLease { get; }
 }
