@@ -58,6 +58,14 @@ public interface IUserProviderConfigGrain : IGrainWithStringKey
     [Alias("SetSpeechDefaultAsync")]
     Task SetSpeechDefaultAsync(string? speechModelId);
 
+    /// <summary>
+    /// Sets (or clears, with null/blank) the overlay's default <b>transcription</b> (speech-to-text) model id and
+    /// bumps the version. Independent of the chat/embedding/speech defaults; the chat gateway transcribes a voice
+    /// note with it, null = no transcription model (a curated reply).
+    /// </summary>
+    [Alias("SetTranscriptionDefaultAsync")]
+    Task SetTranscriptionDefaultAsync(string? transcriptionModelId);
+
     /// <summary>Removes the provider with <paramref name="key"/>, bumping the version only if one was removed.</summary>
     [Alias("DeleteAsync")]
     Task DeleteAsync(string key);

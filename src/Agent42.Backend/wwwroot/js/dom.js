@@ -164,6 +164,7 @@ export const agentTabs = wireTabs([
 export const defaultModelSelect = document.getElementById("defaultModelSelect");
 export const embeddingModelSelect = document.getElementById("embeddingModelSelect");
 export const speechModelSelect = document.getElementById("speechModelSelect");
+export const transcriptionModelSelect = document.getElementById("transcriptionModelSelect");
 export const providerList = document.getElementById("providerList");
 export const addProviderBtn = document.getElementById("addProviderBtn");
 export const githubSignInBtn = document.getElementById("githubSignInBtn");

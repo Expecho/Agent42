@@ -24,6 +24,10 @@ public record DefaultEmbeddingModelRequest(string? EmbeddingDefault);
 // catalog here — the resolver's EffectiveSpeechDefault is the single validation point.
 public record DefaultSpeechModelRequest(string? SpeechDefault);
 
+// The default TRANSCRIPTION model id (voice notes in chat apps, ADR 0111). Blank clears it; a voice note then gets a
+// curated "add a transcription model" reply. The resolver's EffectiveTranscriptionDefault is the validation point.
+public record DefaultTranscriptionModelRequest(string? TranscriptionDefault);
+
 // SupportsImageGeneration (ADR 0020), SupportsEmbeddings and SupportsSpeech (ADR 0038) and SupportsReasoning
 // (ADR 0071) are trailing defaults so an old-shape client body still binds — an image model produces images
 // instead of chat replies; an embedding model is picked as the "default embedding model" and feeds document
@@ -32,7 +36,7 @@ public record DefaultSpeechModelRequest(string? SpeechDefault);
 public record ProviderModelRequest(
     string Id, string? DisplayName, bool SupportsTools, bool SupportsVision,
     bool SupportsImageGeneration = false, bool SupportsEmbeddings = false, bool SupportsSpeech = false,
-    bool SupportsReasoning = false);
+    bool SupportsReasoning = false, bool SupportsTranscription = false);
 
 // What GET/POST/PUT return for a provider: everything EXCEPT the key, which is masked to HasKey so the
 // ciphertext (and the plaintext) never reach the client (ADR 0018).
@@ -43,7 +47,7 @@ public record ProviderResponse(
 public record ProviderModelResponse(
     string Id, string? DisplayName, bool SupportsTools, bool SupportsVision,
     bool SupportsImageGeneration = false, bool SupportsEmbeddings = false, bool SupportsSpeech = false,
-    bool SupportsReasoning = false);
+    bool SupportsReasoning = false, bool SupportsTranscription = false);
 
 // The GET /api/providers payload: the user's overlay providers (masked), their optional chat default, their
 // optional embedding default (the "default embedding model" id), and their optional speech default (the
@@ -52,4 +56,4 @@ public record ProviderModelResponse(
 // the dialog offers the kind only when it can work.
 public record ProvidersResponse(
     IReadOnlyList<ProviderResponse> Providers, string? Default, string? EmbeddingDefault = null,
-    string? SpeechDefault = null, bool GitHubSignIn = false);
+    string? SpeechDefault = null, string? TranscriptionDefault = null, bool GitHubSignIn = false);

@@ -104,6 +104,12 @@ public interface IChatClientFactory
     ISpeechTranscriptionService? GetTranscriptionService() => null;
 
     /// <summary>
+    /// The qualified id of the user's default <b>transcription</b> model, or <c>""</c> when none is configured.
+    /// <see cref="GetTranscriptionService"/> is non-null exactly when this is set.
+    /// </summary>
+    string DefaultTranscriptionModelId => "";
+
+    /// <summary>
     /// The serving provider's kind (the Backend's <c>ProviderKind</c> by name) and the bare model name of
     /// <paramref name="modelId"/>, which is what <see cref="ModelPricing"/> keys a price on (ADR 0110). The default,
     /// <c>("", "")</c>, prices nothing, so a factory that does not know its provider (offline hosts, tests) leaves
@@ -130,7 +136,8 @@ public sealed class SingleChatClientFactory(
     string defaultEmbeddingModelId = "",
     ISpeechService? speechGenerator = null,
     string defaultSpeechModelId = "",
-    (string ProviderKind, string Model)? pricingIdentity = null) : IChatClientFactory
+    (string ProviderKind, string Model)? pricingIdentity = null,
+    ISpeechTranscriptionService? transcriber = null) : IChatClientFactory
 {
     // Offline/tests: unpriced unless a test names the provider kind and model it wants priced (ADR 0110).
     public (string ProviderKind, string Model) GetPricingIdentity(string? modelId) => pricingIdentity ?? ("", "");
@@ -170,4 +177,9 @@ public sealed class SingleChatClientFactory(
     // The injected synthesizer (tests) or null when none — the null gate is the endpoint's 409, mirroring
     // how the multi-provider factory returns null for an unconfigured speech model.
     public ISpeechService? GetSpeechService() => speechGenerator;
+
+    // The injected transcriber (tests, DevHost) or null: the null gate is the gateway's curated "add a model" reply.
+    public ISpeechTranscriptionService? GetTranscriptionService() => transcriber;
+
+    public string DefaultTranscriptionModelId { get; } = transcriber is null ? "" : "offline-transcription";
 }

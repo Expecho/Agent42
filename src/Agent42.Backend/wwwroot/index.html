@@ -627,6 +627,16 @@
               </section>
 
               <section class="agent-form__section">
+                <label class="agent-form__field">
+                  <span class="agent-form__label">// default transcription model</span>
+                  <!-- Options are built by syncTranscriptionModelSelect() from the models a provider marks as
+                       transcription models (ADR 0111). Empty until one is configured. -->
+                  <select class="agent-form__input agent-form__select" id="transcriptionModelSelect"></select>
+                </label>
+                <p class="agent-form__note">The model that turns voice notes you send to a connected chat app into text. Mark a speech-to-text model as a transcription model on its provider, then pick it here. Without one, a voice note gets a reply asking you to add one. Picking one sends the audio to your provider.</p>
+              </section>
+
+              <section class="agent-form__section">
                 <div class="providers__head">
                   <span class="agent-form__label">// model providers</span>
                   <button class="agent-form__btn" type="button" id="addProviderBtn">Add provider</button>

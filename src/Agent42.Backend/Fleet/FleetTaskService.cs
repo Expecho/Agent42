@@ -317,7 +317,7 @@ public sealed partial class FleetTaskService(
     /// a chat model. A GitHub Copilot model is not (ADR 0108): it runs only as a Copilot agent's <c>copilot/&lt;id&gt;</c>.
     /// </summary>
     public static bool IsToolCapable(ModelInfo model)
-        => model.SupportsTools && !model.SupportsEmbeddings && !model.SupportsSpeech && !model.SupportsImageGeneration
+        => model.SupportsTools && !model.SupportsEmbeddings && !model.SupportsSpeech && !model.SupportsTranscription && !model.SupportsImageGeneration
             && !model.CopilotOnly;
 
     private sealed class RunningFleetTask(FleetTaskRecord record, FleetBudget budget, FleetEventLog log, FleetQuestions questions) : IDisposable
