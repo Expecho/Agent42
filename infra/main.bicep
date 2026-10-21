@@ -104,6 +104,15 @@ param copilotFilesAccountName string = 'stagent42cp${uniqueString(resourceGroup(
 @description('Size cap in GiB of the copilot workspaces share.')
 param copilotFilesShareQuotaGiB int = 10
 
+@description('Whether the chat gateway offers Signal (ADR 0111, phase 3). Off until the Azure Files measurement of plan Step 24 passed. On, the backend runs a signal-cli child process and gets +0.25 CPU / +0.5Gi for its JVM.')
+param signalEnabled bool = false
+
+@description('Backend CPU while Signal is on (containerCpu plus the signal-cli JVM). With SearXNG it must stay an allowed pair.')
+param signalBackendCpu string = '0.75'
+
+@description('Backend memory while Signal is on (containerMemory plus the signal-cli JVM).')
+param signalBackendMemory string = '1.5Gi'
+
 @description('Endpoint of the existing Azure AI Foundry / Azure OpenAI resource. Kept only as the DORMANT Foundry-provider inheritance source (ProviderSettings.ResolveFoundry): baseline Models:Providers is empty (ADR 0019), so nothing reads it today; a user\'s Foundry provider declares its own. Non-secret; harmless if unused.')
 param azureOpenAIEndpoint string = 'https://agent42.services.ai.azure.com'
 
@@ -209,6 +218,8 @@ module copilotFiles 'modules/copilot-files.bicep' = {
     accountName: copilotFilesAccountName
     shareName: 'copilot-workspaces'
     shareQuotaGiB: copilotFilesShareQuotaGiB
+    signalShareName: 'signal-data'
+    signalShareQuotaGiB: 1
     tags: tags
   }
 }
@@ -229,6 +240,25 @@ module copilotEnvironmentStorage 'modules/copilot-environment-storage.bicep' = {
     shareName: copilotFiles.outputs.shareName
   }
 }
+
+// The chat gateway's signal-cli store (ADR 0111, phase 3): a second link, on the same account, to its own share. Always
+// declared, so turning Signal on later changes no infra but the flag.
+module signalEnvironmentStorage 'modules/copilot-environment-storage.bicep' = {
+  name: 'agent42-signal-environment-storage'
+  scope: resourceGroup(containerAppsEnvironmentResourceGroup)
+  params: {
+    environmentName: containerAppsEnvironmentName
+    storageName: 'agent42-signal'
+    accountName: copilotFiles.outputs.accountName
+    accountKey: copilotFilesAccount.listKeys().keys[0].value
+    shareName: copilotFiles.outputs.signalShareName
+  }
+}
+
+// signal-cli's JVM (186 MiB idle, measured in plan Step 24b) gets its own headroom only while Signal is on: 0.75/1.5Gi
+// + SearXNG 0.5/1Gi = 1.25 CPU / 2.5Gi, an allowed pair. Off, the replica stays at 1.0 / 2Gi.
+var backendCpu = signalEnabled ? signalBackendCpu : containerCpu
+var backendMemory = signalEnabled ? signalBackendMemory : containerMemory
 
 module containerApp 'modules/container-app.bicep' = {
   name: 'agent42-container-app'
@@ -268,8 +298,10 @@ module containerApp 'modules/container-app.bicep' = {
     customDomainName: customDomainName
     customDomainCertificateName: customDomainCertificateName
     copilotEnvironmentStorageName: copilotEnvironmentStorage.outputs.name
-    cpu: containerCpu
-    memory: containerMemory
+    signalEnvironmentStorageName: signalEnvironmentStorage.outputs.name
+    signalEnabled: signalEnabled
+    cpu: backendCpu
+    memory: backendMemory
     minReplicas: minReplicas
     maxReplicas: maxReplicas
     tags: tags

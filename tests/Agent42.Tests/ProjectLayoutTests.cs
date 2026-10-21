@@ -193,6 +193,7 @@ public sealed class ProjectLayoutTests
         { "Fleet/AgentApi.Fleet.cs", "MapFleetEndpoints" },
         { "Copilot/AgentApi.GitHubCopilot.cs", "MapGitHubCopilotEndpoints" },
         { "ChatGateway/AgentApi.ChatGateway.cs", "MapChatGatewayEndpoints" },
+        { "ChatGateway/AgentApi.ChatGatewaySignal.cs", "MapChatGatewaySignalEndpoints" },
     };
 
     // The theory above lists exactly the parts reflection finds, so it cannot fall behind again (it once missed four).
@@ -662,6 +663,12 @@ public sealed class ProjectLayoutTests
         Assert.Equal(gateway, program.LastIndexOf("AddChatGateway()", StringComparison.Ordinal));
         Assert.True(program.IndexOf("AddAgent42Silo()", StringComparison.Ordinal) > gateway,
             $"{relativePath} must call AddChatGateway() before AddAgent42Silo().");
+
+        // Signal (ADR 0111 phase 3): registered right after the gateway from configuration, so its flag decides.
+        var signal = program.IndexOf("AddSignalChat(builder.Configuration)", StringComparison.Ordinal);
+        Assert.True(signal > gateway, $"{relativePath} must call AddSignalChat(builder.Configuration) after AddChatGateway().");
+        Assert.True(program.IndexOf("AddAgent42Silo()", StringComparison.Ordinal) > signal,
+            $"{relativePath} must call AddSignalChat before AddAgent42Silo().");
 
         var lease = program.IndexOf("NoOpChatGatewayLease", StringComparison.Ordinal);
         Assert.Equal(noOpLease, lease >= 0);

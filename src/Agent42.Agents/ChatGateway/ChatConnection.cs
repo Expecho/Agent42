@@ -116,6 +116,14 @@ public sealed class ChatConnection
     [Id(22)]
     public UserTelemetryContext? OwnerTelemetry { get; set; }
 
+    /// <summary>
+    /// Signal only (phase 3): the E.164 number a registration was started for and not yet verified. <c>verify</c> reads
+    /// it, so the code alone completes the registration; <see cref="UserChatConnectionsGrain.SetCredentialsAsync"/> clears
+    /// it. Delete reads it too, so an abandoned registration is still unregistered and its claim released.
+    /// </summary>
+    [Id(23)]
+    public string? PendingSignalNumber { get; set; }
+
     /// <summary>Whether a paired owner exists.</summary>
     public bool IsPaired => !string.IsNullOrEmpty(OwnerPlatformUserId);
 

@@ -142,8 +142,32 @@ These are the same on every platform, and each is set in the bot's dialog in **P
   anything the agent quotes from your documents, tools or memory. Only your own messages that mention the bot are
   answered; `/new`, `/stop` and `/help` work without the mention.
 
-## WhatsApp, Signal
+## Signal
 
-Planned (ADR 0111, phases 2 and 3). Each will get a section here when it ships.
+Signal is off unless the operator turned it on (Bicep `signalEnabled`, ADR 0111 phase 3). When it is, Preferences →
+Chat apps offers **Signal**.
+
+Signal has no bot tokens, so the bot is a **spare number of your own**, registered in Agent42:
+
+1. Get a number that can receive a text or a call: a second SIM, a VoIP number, or a landline. **Don't use a number
+   that is on a phone with Signal**: registering it here signs that phone out of Signal.
+2. In Agent42, add a bot, pick **Signal**, give it a name and **Save**. The dialog stays open on the registration steps.
+3. Enter the number in international format (`+31 6 …`) and press **Send me a code**. If Signal asks for a captcha,
+   solve it at [signalcaptchas.org](https://signalcaptchas.org/registration/generate.html), copy the
+   `signalcaptcha://` link it gives you, paste it into the captcha field, and press the button again. **Call me
+   instead** works only after a text was tried.
+4. Enter the six-digit code (and the registration lock PIN, if the number has one) and press **Verify**.
+5. Agent42 shows a pairing code. In Signal, start a chat with your bot's number and send it the code.
+
+Replies arrive as one message after "typing…" (no streaming). Commands start with `/`. In a group, add the bot's number
+and mention it. Voice notes are AAC, which transcription providers may refuse; the bot says so if yours does.
+
+**What is stored where:** replies are end-to-end encrypted to your devices, but the bot number's keys and the messages
+waiting for it live in this Agent42's storage, so whoever runs this Agent42 could read what the bot receives. Your own
+Signal account is never involved. Deleting the bot unregisters the number and deletes its keys.
+
+## WhatsApp
+
+Planned (ADR 0111, phase 2). It will get a section here when it ships.
 
 **No page here contains a secret value.**

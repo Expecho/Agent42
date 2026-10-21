@@ -30,6 +30,20 @@ public interface IChatPlatformAdapter
     Task<IChatPlatformSession> ConnectAsync(ChatConnectionRuntime runtime, IChatInboundSink sink, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// An adapter whose platform keeps state for a connection outside Agent42 that a delete must remove (Signal: the number's
+/// registration and keys in the daemon's store). The delete endpoint calls it after the session stopped. Best effort: it
+/// must never throw, and a failure never undoes the delete.
+/// </summary>
+public interface IChatPlatformCleanup
+{
+    /// <summary>
+    /// Forgets <paramref name="connection"/> on the platform side. <paramref name="credentials"/> are its decrypted
+    /// credentials, or <c>null</c> when it never got any (a registration that was not finished).
+    /// </summary>
+    Task ForgetAsync(ChatConnection connection, ChatCredentials? credentials, CancellationToken cancellationToken);
+}
+
 /// <summary>A live connection to one bot. Every send reports a <see cref="ChatSendResult"/> instead of throwing.</summary>
 public interface IChatPlatformSession : IAsyncDisposable
 {

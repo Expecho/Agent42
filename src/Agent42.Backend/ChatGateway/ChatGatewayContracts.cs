@@ -38,13 +38,22 @@ public sealed record ChatConnectionView(
     string? PairingCode,
     DateTimeOffset? PairingExpiresAt,
     string? FaultReason,
-    bool HomeChatSet);
+    bool HomeChatSet,
+    string? PendingSignalNumber = null);
+
+/// <summary>Starts (or restarts) a Signal number's registration: the number, and a captcha token when Signal asked for one.</summary>
+public sealed record SignalRegisterRequest(string? Number, string? Captcha = null, bool Voice = false);
+
+/// <summary>Finishes a Signal registration with the code Signal sent, and the registration-lock PIN if the number has one.</summary>
+public sealed record SignalVerifyRequest(string? Code, string? Pin = null);
 
 /// <summary>The status strings the panel renders. One home, so the panel tests can pin them.</summary>
 public static class ChatConnectionStatus
 {
     public const string Disabled = "disabled";
     public const string NeedsCredentials = "needs-credentials";
+    public const string NeedsRegistration = "needs-registration";
+    public const string AwaitingCode = "awaiting-code";
     public const string AwaitingPairing = "awaiting-pairing";
     public const string PairingLocked = "pairing-locked";
     public const string Faulted = "faulted";
@@ -64,7 +73,10 @@ public static class ChatConnectionStatus
 
         if (string.IsNullOrEmpty(connection.CredentialsCiphertext))
         {
-            return NeedsCredentials;
+            // Signal is registered, never pasted (ADR 0111 phase 3): its "credentials" step is the registration.
+            return connection.Platform != ChatPlatformKind.Signal ? NeedsCredentials
+                : connection.PendingSignalNumber is null ? NeedsRegistration
+                : AwaitingCode;
         }
 
         if (connection.FaultReason is not null)
@@ -102,6 +114,7 @@ public static class ChatConnectionStatus
             showCode ? connection.PairingCode : null,
             showCode ? connection.PairingExpiresAt : null,
             connection.FaultReason,
-            connection.HomeRouteKey is not null);
+            connection.HomeRouteKey is not null,
+            connection.PendingSignalNumber);
     }
 }

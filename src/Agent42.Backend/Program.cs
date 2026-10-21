@@ -365,6 +365,8 @@ builder.Services.AddInboundEmail(builder.Configuration);
 // endpoint), behind the Blob lease that keeps an overlapping revision from running them twice. See
 // ChatGatewayRegistration.
 builder.Services.AddChatGateway();
+// Signal (ADR 0111 phase 3): dormant unless ChatGateway:Signal:Enabled; see ChatGatewayRegistration.AddSignalChat.
+builder.Services.AddSignalChat(builder.Configuration);
 
 // The copilot agent kind: the GitHub Copilot SDK's agent loop on the user's own provider, with its session files in
 // Blob. See CopilotRegistration and CopilotAgentFactory for the runtime's trust boundary.

@@ -39,6 +39,7 @@ public static class ChatGatewayRegistration
             sp.GetRequiredService<IChatGatewaySecretProtector>(),
             sp.GetRequiredService<IChatInboundSink>(),
             sp.GetRequiredService<IChatGatewayLease>(),
+            sp.GetServices<IChatGatewayLeaseParticipant>(),
             sp.GetRequiredService<ChatSessionRegistry>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<ILogger<ChatGatewayService>>()));
@@ -47,6 +48,28 @@ public static class ChatGatewayRegistration
         services.AddTelegramChat();
         services.AddSlackChat();
         services.AddDiscordChat();
+        return services;
+    }
+
+    /// <summary>
+    /// Signal (phase 3), called by each host right after <see cref="AddChatGateway"/>. Signal ships DORMANT: unless
+    /// <c>ChatGateway:Signal:Enabled</c> is true this registers nothing, so no adapter is offered and no daemon can start
+    /// (plan Step 24's Azure Files measurement gates turning it on). On, it registers the daemon host (a lease participant),
+    /// the JSON-RPC client and the adapter.
+    /// </summary>
+    public static IServiceCollection AddSignalChat(this IServiceCollection services, IConfiguration configuration)
+    {
+        var options = configuration.GetSection(SignalOptions.SectionName).Get<SignalOptions>() ?? new SignalOptions();
+        if (!options.Enabled)
+        {
+            return services;
+        }
+
+        services.AddSingleton(options);
+        services.AddSignalDaemon();
+        SignalRpcClient.AddHttpClients(services);
+        services.AddSingleton<SignalRpcClient>();
+        services.AddSingleton<IChatPlatformAdapter, SignalAdapter>();
         return services;
     }
 

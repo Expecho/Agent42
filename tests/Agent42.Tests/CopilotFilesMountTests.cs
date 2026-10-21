@@ -30,6 +30,27 @@ public sealed class CopilotFilesMountTests
         Assert.Contains("USER $APP_UID", File.ReadAllText(Path.Combine(RepoRoot(), "src", "Agent42.Backend", "Dockerfile")));
     }
 
+    // ADR 0111 phase 3 (AC35): the signal-cli store is the backend's alone, owned by the app uid, and the app is told
+    // where it is. The SearXNG sidecar must never see a Signal key.
+    [Fact]
+    public void SignalStoreMount_BackendOnly_OwnedByAppUid()
+    {
+        var bicep = Bicep("container-app.bicep");
+        var backend = Between(bicep, "name: 'backend'", "name: 'searxng'");
+        var sidecar = Between(bicep, "name: 'searxng'", "scale: {");
+
+        Assert.Contains("{ volumeName: 'signal-data', mountPath: '/mnt/signal' }", backend);
+        Assert.Contains("{ name: 'ChatGateway__Signal__DataDir', value: '/mnt/signal' }", backend);
+        Assert.Contains("{ name: 'ChatGateway__Signal__Enabled', value: string(signalEnabled) }", backend);
+        Assert.DoesNotContain("volumeMounts", sidecar.Split("volumes: [")[0]);
+        Assert.DoesNotContain("Signal", sidecar.Split("volumes: [")[0]);
+
+        var signalVolume = Between(bicep, "name: 'signal-data'", "}");
+        Assert.Contains("storageName: signalEnvironmentStorageName", signalVolume);
+        Assert.Contains("mountOptions: copilotWorkspaceMountOptions", signalVolume);
+        Assert.Contains("name: signalShareName", Bicep("copilot-files.bicep"));
+    }
+
     // The share's account is the one with shared-key access, so the key-free attachments account (ADR 0004) stays so.
     [Fact]
     public void CopilotFilesAccount_IsSeparateFromTheKeyFreeAccount()

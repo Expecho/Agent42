@@ -58,6 +58,8 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         "Agent42.Agents.UserChatConnectionsState",
         "Agent42.Agents.ChatConnectionDirectoryState",
         "Agent42.Agents.ChatRouteState",
+        // ADR 0111 phase 3: the Signal number claim.
+        "Agent42.Agents.SignalNumberDirectoryState",
         // Nested in AgentGrainState (ADR 0111): the conversation's chat origin.
         "Agent42.Agents.ChatOrigin",
     ];
@@ -824,6 +826,33 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal(("conn-golden", 500000007L), (restored.Id, restored.PollOffset));
     }
 
+    // ADR 0111 phase 3 (AC33): a Signal number claim reads back from a committed Cosmos document. Security-relevant: a
+    // claim that resolved to the wrong connection would let one user register over another's number.
+    [Fact]
+    public void SignalNumberDirectoryState_ReadsCommittedDocument()
+    {
+        var restored = Serializer().Deserialize<SignalNumberDirectoryState>(new BinaryData(StoredSignalNumberDirectoryJson));
+
+        Assert.Equivalent(GoldenStates.SignalNumberDirectory(), restored, strict: true);
+    }
+
+    // ADR 0111 phase 3 (AC33, rule 2): the trailing PendingSignalNumber ([Id(23)]) round-trips on the Cosmos JSON path,
+    // and the committed connection document, written before it existed, reads it as null.
+    [Fact]
+    public void ChatConnection_PendingSignalNumber_RoundTripsThroughCosmosJson()
+    {
+        var state = new UserChatConnectionsState
+        {
+            Connections = [new ChatConnection { Id = "c", Platform = "Signal", PendingSignalNumber = "+31612345678" }],
+        };
+
+        var restored = Assert.Single(Serializer().Deserialize<UserChatConnectionsState>(Serializer().Serialize(state)).Connections);
+        var legacy = Assert.Single(Serializer().Deserialize<UserChatConnectionsState>(new BinaryData(StoredUserChatConnectionsJson)).Connections);
+
+        Assert.Equal("+31612345678", restored.PendingSignalNumber);
+        Assert.Null(legacy.PendingSignalNumber);
+    }
+
     [Fact]
     public void ChatDirectoryAndRoute_ReadCommittedDocuments()
     {
@@ -939,6 +968,11 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
     // the golden connection is disabled, and false is omitted (see ChatConnection_Disabled_StaysDisabledThroughCosmosJson).
     private const string StoredUserChatConnectionsJson = """
         {"$id":"1","$type":"Agent42.Agents.UserChatConnectionsState, Agent42.Agents","Connections":{"$type":"System.Collections.Generic.List`1[[Agent42.Agents.ChatConnection, Agent42.Agents]], System.Private.CoreLib","$values":[{"$id":"2","$type":"Agent42.Agents.ChatConnection, Agent42.Agents","Id":"conn-golden","Platform":"Telegram","Name":"My phone","TargetAgentId":"agent-golden","CredentialsCiphertext":"cipher-golden","BotUserId":"7000000001","BotUserName":"agent42_golden_bot","WorkspaceId":"T-golden","OwnerPlatformUserId":"111111111","OwnerWorkspaceId":"T-owner","PairingCode":"ABCDE23456","PairingExpiresAt":"2026-06-07T08:09:10+00:00","PairingFailures":3,"GroupsEnabled":true,"VoiceNotesEnabled":true,"NotificationsEnabled":true,"HomeRouteKey":"111111111","PollOffset":500000007,"FaultReason":"golden fault","CreatedAt":"2026-01-02T03:04:05+00:00","UpdatedAt":"2026-06-07T08:09:10+00:00","OwnerTelemetry":{"$id":"3","$type":"Agent42.Agents.UserTelemetryContext, Agent42.Agents","Id":"user@example.com","Name":"Golden","Email":"user@example.com","FullName":"Golden User","Roles":{"$type":"System.String[], System.Private.CoreLib","$values":["user"]},"Idp":"aad"},"IsPaired":true}]}}
+        """;
+
+    // Serialized once from GoldenStates.SignalNumberDirectory() when ADR 0111 phase 3 added the type, then committed.
+    private const string StoredSignalNumberDirectoryJson = """
+        {"$id":"1","$type":"Agent42.Agents.SignalNumberDirectoryState, Agent42.Agents","UserId":"user@example.com","ConnectionId":"conn-golden-signal","Active":true,"ClaimedAt":"2026-10-21T08:09:10+00:00"}
         """;
 
     private const string StoredChatConnectionDirectoryJson = """

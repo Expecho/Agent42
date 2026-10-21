@@ -49,6 +49,11 @@ public static partial class AgentApi
             return ChatBadRequest("Pick a chat platform this Agent42 supports.");
         }
 
+        if (RefusedPastedCredentials(request.Platform, request.Credentials) is { } refused)
+        {
+            return refused;
+        }
+
         if (await ChatTargetProblemAsync(grains, http, request.TargetAgentId) is { } targetProblem)
         {
             return ChatBadRequest(targetProblem);
@@ -87,6 +92,11 @@ public static partial class AgentApi
         if (await ChatConnections(grains, http).GetAsync(id) is not { } existing)
         {
             return Results.NotFound();
+        }
+
+        if (RefusedPastedCredentials(existing.Platform, request.Credentials) is { } refused)
+        {
+            return refused;
         }
 
         if (await ChatTargetProblemAsync(grains, http, request.TargetAgentId) is { } targetProblem)
@@ -161,14 +171,23 @@ public static partial class AgentApi
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
 
+        // Read first: once deleted, the platform-side cleanup below could no longer learn what to forget (a Signal number).
+        var store = ChatConnections(grains, http);
+        if (await store.GetAsync(id) is not { } connection)
+        {
+            return Results.NotFound();
+        }
+
         // The grain deregisters from the run list before it deletes; only then is the live session stopped, so a
         // restart racing this delete finds nothing to run.
-        if (!await ChatConnections(grains, http).DeleteAsync(id))
+        if (!await store.DeleteAsync(id))
         {
             return Results.NotFound();
         }
 
         await parts.Control.StopAsync(id, http.RequestAborted);
+        // Last, and best effort: the platform forgets the connection (Signal: unregister, delete keys, release the claim).
+        await ForgetChatConnectionAsync(connection, parts, grains, http.RequestAborted);
         return Results.NoContent();
     }
 
