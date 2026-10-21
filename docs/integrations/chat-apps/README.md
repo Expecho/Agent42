@@ -21,9 +21,9 @@ GitHub Actions and no app to register. Everything below is done by the user, in 
 | The panel says "stopped: Telegram rejected the bot token" | The token was revoked in BotFather. Paste the new one. |
 | Someone else messages your bot | Ignored, by design. Only the paired account can talk to it. |
 
-**Groups (coming in phase 1c):** Telegram bots in privacy mode do not see plain `@mentions` in groups, only commands
-addressed to them and replies to their messages. To use the bot in groups, turn privacy mode off in BotFather
-(`/setprivacy`) or make the bot a group admin, and remove and re-add it to the group afterwards.
+**Groups:** turn on **answer in groups when mentioned** in the bot's dialog. Telegram bots in privacy mode do not see
+plain `@mentions` in groups, only commands addressed to them and replies to their messages. So turn privacy mode off in
+BotFather (`/setprivacy`) or make the bot a group admin, and remove and re-add it to the group afterwards.
 
 ## Slack
 
@@ -117,9 +117,30 @@ text through as an ordinary message. Replies can't ping anyone: every message go
 | You can't open a DM with the bot | You don't share a server with it and haven't added it to your apps (step 3). |
 | A message sent while Agent42 was restarting got no answer | Discord doesn't replay missed messages to bots. Send it again. |
 
-**Groups (coming in phase 1c):** in a server channel the bot answers only its paired owner, only when mentioned, and in
-a thread it starts on that message. Because the bot doesn't hold the Message Content intent, a message in that thread
+**Groups:** with **answer in groups when mentioned** on, in a server channel the bot answers only its paired owner,
+only when mentioned, and in a thread it starts on that message. Because the bot doesn't hold the Message Content intent, a message in that thread
 also needs a mention (a reply that pings the bot counts).
+
+## Files, images, voice notes and notifications (every platform)
+
+These are the same on every platform, and each is set in the bot's dialog in **Preferences → Chat apps**.
+
+- **Files.** Send images and documents (the same image and document types the Agent42 upload takes, up to 10 MB each,
+  10 per message). Images go to the model; documents are indexed for search in that conversation. A file that can't be
+  read is skipped, and the bot tells you which one and why.
+- **Generated images** come back as their own message after the reply. On **Slack** this needs the `files:write`
+  scope, which the manifest above includes. An app made from an older manifest needs it added and the app reinstalled.
+- **Voice notes** (**transcribe voice notes**, off by default) are sent to your default **transcription model**. Mark a
+  model as *transcription* in a model provider, then pick it as the default, both under Preferences → Model providers.
+  The bot quotes back what it heard, then answers. Your provider documents mp3, mp4, m4a, wav and webm. Telegram,
+  Discord and WhatsApp send voice notes as Ogg, which isn't on that list; Agent42 sends them anyway, and if your
+  provider refuses them the bot says so.
+- **Notifications** (**deliver notifications here**). Send `/sethome` (`!sethome` on Slack) in the chat that should
+  receive them. Results of scheduled prompts and agent runs, and the agent's own notifications, then also arrive there,
+  next to Web Push. A scheduled prompt in a conversation that started in a chat always answers in that chat.
+- **Groups** (**answer in groups when mentioned**, off by default). Everyone in the group sees the replies, including
+  anything the agent quotes from your documents, tools or memory. Only your own messages that mention the bot are
+  answered; `/new`, `/stop` and `/help` work without the mention.
 
 ## WhatsApp, Signal
 

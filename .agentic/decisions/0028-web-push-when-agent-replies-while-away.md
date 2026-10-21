@@ -21,6 +21,11 @@ tags: [push-notifications, pwa, service-worker, web-push, vapid, egress, securit
 > the caller and **reports** the result through its own `PushTestNotifier`. The swallowing sender below is
 > unchanged, and the blind-SSRF property stays limited to stored subscriptions.
 
+> **Amended by [ADR 0111](0111-chat-gateway-for-chat-apps.md) (2026-10-21, phase 1c): an away reply can also go to a chat.**
+> Next to `SendAwayReplyPushAsync`, at its same two sites and never in `ChatCoreAsync`, the grain hands the reply's text to
+> `IChatDeliverySender`: to the chat the conversation came from, else to the owner's home chat when notifications are on.
+> Web Push itself is unchanged.
+
 # Web Push notification when an agent replies while the user is away
 
 ## Context

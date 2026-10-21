@@ -20,7 +20,7 @@ export let userDefaultEmbeddingModel = null;
 // hands-free voice conversation (ADR 0037) speaks its reply via server-side /api/speech; when null it
 // falls back to the browser's speechSynthesis. Independent of userDefaultModel (chat).
 export let userDefaultSpeechModel = null;
-// The user's default transcription (speech-to-text) model id, or null when none is configured (ADR 0111). The chat
+// The user's default transcription (speech-to-text) model id, or null when none is configured (ADR 0113). The chat
 // gateway transcribes a voice note with it; without one the bot answers a voice note with a curated reply.
 export let userDefaultTranscriptionModel = null;
 // Whether "Sign in with GitHub" (the GitHub Copilot provider, ADR 0108) is configured on this server.
@@ -175,7 +175,7 @@ async function persistSpeechModel() {
 }
 
 // Repaints the transcription-model select from the models a provider marked as transcription models, plus a leading
-// "None" option (ADR 0111). Same idempotent-repaint reasoning as syncSpeechModelSelect().
+// "None" option (ADR 0113). Same idempotent-repaint reasoning as syncSpeechModelSelect().
 export function syncTranscriptionModelSelect() {
   if (!transcriptionModelSelect) return;
   transcriptionModelSelect.innerHTML = "";

@@ -11,7 +11,7 @@ namespace Agent42.Tests;
 /// <summary>
 /// <see cref="OpenAITranscriptionService"/> against a stub transport wired into the SDK client (the same seam
 /// production uses, minus the network): the request shape, the transcript coming back, and a provider refusal becoming
-/// a curated <see cref="SpeechTranscriptionException"/> (ADR 0111).
+/// a curated <see cref="SpeechTranscriptionException"/> (ADR 0113).
 /// </summary>
 public sealed class OpenAITranscriptionServiceTests
 {

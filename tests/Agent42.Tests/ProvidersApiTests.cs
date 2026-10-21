@@ -307,7 +307,7 @@ public sealed class ProvidersApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.False(models[0].GetProperty("supportsSpeech").GetBoolean());
     }
 
-    // ADR 0111: the transcription flag crosses the same four mappings as the reasoning flag (request, ToStored,
+    // ADR 0113: the transcription flag crosses the same four mappings as the reasoning flag (request, ToStored,
     // StoredModel, Mask), and the default round-trips through PUT /api/default-transcription-model and GET.
     [Fact]
     public async Task Providers_AcceptTranscriptionModel_AndDefaultRoundTrips()

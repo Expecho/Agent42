@@ -32,7 +32,7 @@ public sealed record StoredModel(
     // and to expect the extra content part back.
     [property: Id(7)] bool SupportsReasoning = false,
     // Trailing [Id(8)] with a default so an existing overlay deserializes it false with no migration —
-    // true only for a declared TRANSCRIPTION (speech-to-text) model (the chat gateway's voice notes, ADR 0111). A
+    // true only for a declared TRANSCRIPTION (speech-to-text) model (the chat gateway's voice notes, ADR 0113). A
     // distinct model KIND like speech above, reached via GetAudioClient not the chat client.
     [property: Id(8)] bool SupportsTranscription = false);
 

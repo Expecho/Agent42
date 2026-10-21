@@ -898,7 +898,17 @@ any operator input), `chat-apps.md` Signal, and a live check with a real linked 
   - **`/text` in a DM:** Discord doesn't document what happens to an unmatched `/` message. The app registers no
     commands, and none of ours collide with the client's built-ins (`/shrug`, `/me`, `/tableflip`…), so the prefix
     stays `/`. **Unverified until Step 19's live check**; if Discord swallows it, switch to `!` as on Slack.
-- **(g) STT:** deferred to phase 1c, which re-runs it.
+- **(g) STT, run for phase 1c (2026-10-21; OpenAI's speech-to-text guide and Microsoft Learn's Foundry quickstart):**
+  - Both providers document **mp3, mp4, mpeg, mpga, m4a, wav and webm**, at most **25 MB**. **Ogg is on neither
+    list**, and OpenAI's guide says so outright. Telegram, Discord and WhatsApp voice notes are Ogg/Opus. Slack clips
+    are m4a/mp4.
+  - **Decision:** without ffmpeg, Ogg is still sent as itself, and a refusal gets the curated reply
+    (`SpeechTranscriptionFormats`). Step 19 checks live whether it is accepted.
+  - Azure's REST shape is `…/openai/deployments/{name}/audio/transcriptions`. The SDK call is
+    `AudioClient.TranscribeAudioAsync(Stream, fileName, AudioTranscriptionOptions)`, read from the pinned OpenAI
+    2.14.0 XML docs.
+  - OpenAI marks `whisper-1`, `gpt-4o-transcribe` and `gpt-4o-mini-transcribe` deprecated (shutdown 2027-02-26) and
+    recommends `gpt-transcribe`. The user picks the model, so no name is in code.
 - **(d) Token in the path:** the gotcha's `SuppressInstrumentationScope` handler suppresses the HttpClient span. The
   factory's request logging is a separate channel that needs `RemoveAllLoggers()`. Both are proven by
   `TelegramBotApi_NeverLeaksTheToken`, with a control client and both mutations checked. Also found: a token's `:`
@@ -913,7 +923,7 @@ any operator input), `chat-apps.md` Signal, and a live check with a real linked 
 
 ## Progress and divergences
 
-**Phase 1a (Steps 1–10) shipped in PR #212, and phase 1b (Steps 11–13) is below.** Phases 1c, 2 and 3 remain, so this
+**Phase 1a (Steps 1–10) shipped in PR #212, phase 1b (Steps 11–13) in PR #213, and phase 1c (Steps 14–18) is below.** Step 19 and phases 2 and 3 remain, so this
 spec stays in `.agentic/specs/` (not `completed/`) until phase 3 ships. Phase 1a's differences from the plan:
 
 - **No `LoopbackChatAdapter`.** DevHost points the REAL Telegram adapter at a local stand-in for the Bot API
@@ -1016,6 +1026,51 @@ docs; see Spike findings. Differences from the plan:
   - **m6:** back-to-back Slack refreshes are spaced out, so a flapping workspace can't hammer `apps.connections.open`.
   - **m7:** a Discord bot without permission to start threads now answers in the channel instead of failing every
     reply (`Send_WhereThreadsAreForbidden_AnswersInTheChannel`).
+
+### Phase 1c (Steps 14–18), on `feature/chat-gateway-phase-1c` from `main` @ `2d2fc48` (the #213 merge)
+
+**Implemented:** inbound files and outbound images, voice notes over a new per-user transcription model (ADR
+**0113**), the three per-connection toggles in the panel, and proactive delivery to the origin or home chat. The drift
+check since `41f0a41` showed only phases 1a/1b and the past-chats merge (ADR 0112). Steps 15 (model plumbing) and 17
+(delivery) ran as `step-implementer` subagents in worktrees, merged back without conflicts. The contracts they shared
+(`ISpeechTranscriptionService`, `IChatDeliverySender`, `ChatOrigin`) were committed first. Differences from the plan:
+
+- **The agent-run file core gained two overloads instead of being reused as-is.** The plan said "no change expected",
+  but both helpers took `IFormFile`. `AgentRunFileError` now has a metadata overload (name, declared type, length), so
+  the gateway validates before downloading, and `StoreAgentRunFilesAsync` has a byte-level overload. The form overloads
+  delegate to them, and both doors' behaviour is unchanged.
+- **Files: skip-and-note**, as recommended. The owner gets a notice and the model a `[Attachment skipped: …]` line.
+  A no-text, unusable-only message mints nothing. At most 10 files per message. A copilot agent refuses documents.
+- **Images out after the text final**, through `ChatReplyDestination.UploadImage`. The streamer's old "open Agent42"
+  note is now only the fallback for a failed upload. **Slack's manifest gains `files:write`**, so older apps must be
+  reinstalled.
+- **Voice notes are transcribed before the route**, so a failure mints nothing. Exactly one curated reply per failure
+  kind: off, no model, format or size, provider refusal. Ogg is sent despite being undocumented (spike (g)).
+- **The transcription model** mirrors ADR 0038's speech model layer for layer:
+  - `SupportsTranscription` `[Id(8)]` and `TranscriptionDefault` `[Id(5)]`;
+  - `PUT /api/default-transcription-model`;
+  - a 7th positional capability checkbox in `providers.js`, plus a default picker;
+  - the API's model list, plus filtering in `FleetTaskService` / `fleet.js`.
+
+  `IChatClientFactory` gained `GetTranscriptionService()` and `DefaultTranscriptionModelId` as default members, so the
+  other factories need no code.
+- **Delivery registration:** the gateway's `ChatDeliverySender` is registered in `AddChatGateway()`, which both hosts
+  already call before `AddAgent42Silo()`, rather than by a separate line in each `Program.cs`. Test silos register a
+  recording or the Null sender, and `SiloRegistrationTests` lists the port.
+- **Delivery hands off and returns at once** (found in review of the subagent's work, not in the plan). Awaiting a
+  platform send inside the non-reentrant conversation grain could hold it for the streamer's time-box several times
+  over. Pinned by `Sender_HandsOff_WithoutWaitingOnAHungPlatform`.
+- **Reminder placement:** the origin delivery runs before the reminder path's `PushesSent > 0` early return. The home
+  fallback alone is skipped when the model already pushed, so a notification never lands twice.
+- **`send_push_notification` reaches chat only on the sent path.** A user with no Web Push device still gets the
+  tool's refusal and no chat message, which keeps the tool's model-facing contract unchanged. Delivering to chat for a
+  push-less user would need that contract changed; it is a follow-up candidate.
+- **Goldens:** no new golden blobs. The committed `AgentGrainState` / `UserProviderConfig` goldens predate the new
+  fields, so they already are the "document without the field" case. New tests round-trip the populated fields on both
+  serializer paths.
+- **Not done in this MR:** the DevHost exercise of files and voice against platform stand-ins. These paths are
+  covered by the pipeline tests with a fake session and by the adapter tests against local servers. Step 19 checks the
+  real platforms.
 
 ## Acceptance criteria → test mapping
 

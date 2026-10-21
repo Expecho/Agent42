@@ -309,7 +309,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
 
         /// <summary>
         /// Builds an <see cref="ISpeechTranscriptionService"/> for a transcription (speech-to-text) model of this
-        /// provider (ADR 0111), via <c>GetAudioClient</c>. Set on every Foundry and OpenAI-compatible provider; the
+        /// provider (ADR 0113), via <c>GetAudioClient</c>. Set on every Foundry and OpenAI-compatible provider; the
         /// per-model gate is the resolver, which only names a model marked <c>SupportsTranscription</c>.
         /// </summary>
         public Func<string, ISpeechTranscriptionService>? TranscriptionService { get; } = transcriptionService;

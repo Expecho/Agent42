@@ -137,7 +137,7 @@ public static partial class AgentApi
         });
 
         // Sets (or clears, with a blank body) the user's default TRANSCRIPTION (speech-to-text) model, the one the
-        // chat gateway transcribes a voice note with (ADR 0111). Mirrors /api/default-speech-model: the resolver's
+        // chat gateway transcribes a voice note with (ADR 0113). Mirrors /api/default-speech-model: the resolver's
         // read-time EffectiveTranscriptionDefault guard is the single validation point.
         app.MapPut("/api/default-transcription-model", async (DefaultTranscriptionModelRequest request, IGrainFactory grains, HttpContext http) =>
         {

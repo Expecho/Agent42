@@ -13,6 +13,11 @@ commands).
 
 Only the paired owner can talk to the bot. Everyone else, other bots included, is ignored without a reply.
 
+Images and documents sent to the bot ride the turn (a file that can't be read is skipped with a note), images the model
+generates come back as uploads, and voice notes are transcribed by the user's own transcription model (ADR 0113).
+Groups answer the owner only when mentioned. With notifications on, results of scheduled prompts and agent runs, and the
+agent's notifications, are delivered to the chat a conversation came from, or to the home chat set with `/sethome`.
+
 ## How it works
 
 ```mermaid
@@ -61,6 +66,8 @@ sequenceDiagram
 | Slack (Socket Mode, Web API, mrkdwn, the app manifest) | `src/Agent42.Backend/ChatGateway/Slack/` |
 | Discord (gateway via Discord.Net, REST, table conversion) | `src/Agent42.Backend/ChatGateway/Discord/` |
 | Management API | `src/Agent42.Backend/ChatGateway/AgentApi.ChatGateway.cs` |
+| Files, images, voice notes | `src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Files.cs`, `ChatTurnPipeline.Voice.cs` |
+| Delivery to a chat | `src/Agent42.Agents/ChatGateway/AgentGrain.ChatDelivery.cs`, `src/Agent42.Backend/ChatGateway/ChatDeliverySender.cs` |
 | Preferences panel | `src/Agent42.Backend/wwwroot/js/chatgateway.js` |
 
 ## Trying it offline

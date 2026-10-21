@@ -7,7 +7,7 @@ namespace Agent42.Backend;
 /// <summary>
 /// Production <see cref="ISpeechTranscriptionService"/> over the OpenAI SDK <see cref="AudioClient"/>: speech-to-text
 /// via <c>TranscribeAudioAsync(Stream, fileName, options, ct)</c> (OpenAI 2.14.0, checked in <c>OpenAI.xml</c>). The
-/// chat gateway turns a voice note into a turn with it (ADR 0111).
+/// chat gateway turns a voice note into a turn with it (ADR 0113).
 ///
 /// <para>The <see cref="AudioClient"/> comes from the provider's own SDK client, exactly like
 /// <see cref="OpenAISpeechService"/>, NOT an <c>IHttpClientFactory</c> client (a named <c>HttpClient</c> inherits

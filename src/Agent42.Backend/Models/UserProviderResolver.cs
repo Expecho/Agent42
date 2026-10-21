@@ -18,7 +18,7 @@ public sealed record ResolvedProviderSet(
     // when none is configured or the pinned id no longer names a declared speech-capable model. No baseline
     // fallback — an opt-in pick, exactly like the embedding default.
     string SpeechDefaultModelId = "",
-    // The user's chosen default transcription model id (ADR 0111; the chat gateway's voice notes), or "" when none is
+    // The user's chosen default transcription model id (ADR 0113; the chat gateway's voice notes), or "" when none is
     // configured or the pinned id no longer names a declared transcription model. No baseline fallback.
     string TranscriptionDefaultModelId = "");
 
@@ -160,7 +160,7 @@ public sealed class UserProviderResolver : IUserProviderResolver
             : "";
     }
 
-    // The effective transcription default (ADR 0111): the pinned id only when it names a declared TRANSCRIPTION model,
+    // The effective transcription default (ADR 0113): the pinned id only when it names a declared TRANSCRIPTION model,
     // else "". Same discipline as the speech default: an opt-in pick, no fallback.
     private static string EffectiveTranscriptionDefault(UserProviderConfig overlay, IReadOnlyList<ModelInfo> declared)
     {

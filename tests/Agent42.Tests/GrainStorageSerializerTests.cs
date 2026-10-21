@@ -867,7 +867,7 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Empty(provider.Models);
     }
 
-    // ADR 0111: a provider overlay persisted before SupportsTranscription ([Id(8)]) and TranscriptionDefault ([Id(5)])
+    // ADR 0113: a provider overlay persisted before SupportsTranscription ([Id(8)]) and TranscriptionDefault ([Id(5)])
     // existed has neither property in its Cosmos document. It must read back false/null with no migration.
     [Fact]
     public void ProviderOverlay_WithoutTranscriptionFields_ReadsBackAsDefaults()

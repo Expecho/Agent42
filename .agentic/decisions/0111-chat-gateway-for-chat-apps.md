@@ -5,7 +5,7 @@ status: accepted
 tags: [chat-gateway, telegram, slack, discord, whatsapp, signal, egress, pairing, hosted-service, lease, single-replica, no-migration]
 supersedes: []
 extends: [0013, 0016, 0022, 0028, 0075, 0096]
-amends: []
+amends: [0028, 0075]
 ---
 
 # A chat gateway: each user's own bots on chat apps, connected outward from the single replica
@@ -226,3 +226,87 @@ the supervisor, the lease, the state or the endpoints changed: the adapter seam 
   Discord sent every message with `allowed_mentions` none.
 - Not yet verified live: a real Slack app and Discord bot, `/text` pass-through in a Discord DM, and the lease across a
   rollover with Slack and Discord connected (plan Step 19).
+
+## Amendment (2026-10-21): files, voice notes, groups and delivery, phase 1c
+
+### Inbound files: skip and note, not all-or-nothing
+- Files ride the agent-run core (`AgentRunFileError` + `StoreAgentRunFilesAsync`), which gains a metadata overload and a
+  byte-level overload so the gateway can reuse it. Every file is judged from its **metadata** (name, declared type,
+  size) **before** anything is downloaded, then downloaded through the adapter, which pins the platform's own host and
+  caps the read at the 10 MB attachment limit:
+  - Telegram: `getFile`'s `file_size` is checked first, and the token only ever goes to the fixed Bot API base;
+  - Slack: `files.slack.com` with the bot token, no redirects, `text/html` is an auth failure;
+  - Discord: `cdn.discordapp.com` / `media.discordapp.net`, no token.
+- **A file that can't ride is skipped, and both the owner and the model are told why.** The agent-run door rejects a
+  whole batch because automation retries cleanly; a chat user cannot easily resend a mixed batch. This is inbound
+  email's policy (ADR 0096). Images become attachments on the turn. Documents are ingested and **registered before the
+  turn**. A copilot agent refuses documents, as on the other doors. At most 10 files a message.
+- A message with no text and only unusable files gets the reason and mints no conversation. A captionless photo is a
+  turn of its own, titled by the file name.
+
+### Outbound images
+- An image the model generates is uploaded **once, after the text final**, as its own message in the same chat,
+  thread and reply chain:
+  - Telegram `sendPhoto`;
+  - Slack's external upload (`files.getUploadURLExternal`, the bytes to an upload URL that must be on the pinned file
+    host, then `files.completeUploadExternal`; this adds the **`files:write`** scope to the manifest);
+  - Discord a multipart message with `allowed_mentions` still none.
+- An image that can't be sent leaves one note pointing to Agent42, never a retry loop. A failed reply uploads nothing.
+
+### Voice notes
+- See [ADR 0113](0113-server-side-speech-to-text-for-voice-notes.md). They are off per connection by default, use the
+  owner's own transcription model, and are transcribed before the route is touched. Every failure gets one curated
+  reply and no conversation. The transcript is echoed as one quoted line.
+
+### Groups
+- The per-connection toggle is now in the panel, off by default. The toggle's note says that everyone in the group sees
+  the replies, including what the agent quotes from documents, tools or memory. The gate is unchanged from phase 1a:
+  only the owner, and only when the bot is mentioned or replied to. `/new`, `/stop` and `/help` pass without the mention.
+- **Telegram privacy mode:** a bot in a group sees commands, replies to it and messages sent via it, but not a plain
+  `@mention`. The panel and the guide tell the owner to turn privacy off (`/setprivacy`).
+
+### Proactive delivery (section 9 implemented)
+- **The port** `IChatDeliverySender` is per host (ADR 0105). Backend and DevHost get the gateway's implementation from
+  `AddChatGateway()`, which both call before `AddAgent42Silo()` (pinned by `Hosts_RegisterChatGateway`). Test silos
+  register a recording sender or `NullChatDeliverySender`. The grain takes it as a direct constructor dependency, so a
+  host that forgets it fails at startup (`ThrowIfPortsMissing`).
+- **The origin** (`ChatOrigin { ConnectionId, RouteKey }`) is written once, by `SetChatOriginAsync`, when the route
+  mints a conversation and before its first turn. It is a trailing `[Id(18)]` on `AgentGrainState`, defaulting to `null`.
+- **Away replies.** `EnqueuePromptAsync` and the reminder path accumulate the run's text (`TextDelta` appends,
+  `TextReset` clears, bounded by the webhook limit) and hand it over **next to `SendAwayReplyPushAsync`, at its two sites
+  only**:
+  - to the origin chat when its connection is paired and live;
+  - else to the first connection with notifications on and a home route (`/sethome`).
+
+  A web conversation whose model already used `send_push_notification` this turn skips the home fallback, since that
+  notification went home already. A chat-driven turn runs `ChatAsync`, so it never reaches those sites and is never
+  posted twice.
+- **`send_push_notification`** also goes to the home chat, on the sent path only. A user with no Web Push device still
+  gets the tool's refusal and no chat message. The tool's model-facing contract is unchanged.
+- **The hand-off never holds the grain.** The conversation grain is non-reentrant, and a platform send can take the
+  streamer's time-box several times over. `ChatDeliverySender.DeliverAsync` returns at once, and the send runs detached.
+  Incognito never delivers.
+
+### Consequences (phase 1c)
+- **Egress, extended:**
+  - generated images are stored by the chat platform, like the replies;
+  - voice audio goes to the owner's transcription endpoint (ADR 0113);
+  - scheduled results and notifications are written into the origin or home chat, opt-in per connection
+    ("deliver notifications here").
+- More in-process state on rule 12's single replica: the delivery hand-off reaches only sessions live on this replica.
+- Slack apps created before phase 1c need `files:write` added and the app reinstalled before image upload works.
+  Without it, the upload fails and the note points to Agent42.
+
+### Verification (phase 1c)
+- `ChatTurnPipelineTests`:
+  - files: image and document reach the turn; an oversized file is skipped and never fetched; unusable-only files mint
+    nothing; a captionless photo is a turn; a failed download is skipped;
+  - voice: a voice note becomes a turn; one reply per failure kind.
+- `ChatReplyStreamerTests`: images are uploaded once after the final; a failed reply uploads nothing.
+- Adapter rows: Telegram `getFile` and `sendPhoto`, with the token-leak test now covering both; Slack's external upload
+  and its untrusted-URL refusal; Discord's multipart message without mentions.
+- `ChatDeliveryTests`: the write path, origin, home fallback, the push tool, never-twice, incognito, and the hand-off
+  that doesn't wait on a hung platform. The serializer suites cover a state without `Origin`.
+- `ChatGatewayPanelAssetsTests` covers the three toggles and the group warning.
+- Not yet verified live (plan Step 19): uploads on the real platforms, a real transcription model (and Ogg), a
+  scheduled prompt delivered to its origin chat, and Telegram group mentions with privacy mode off.

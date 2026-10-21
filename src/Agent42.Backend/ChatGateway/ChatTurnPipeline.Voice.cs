@@ -3,7 +3,7 @@ using Agent42.Agents;
 namespace Agent42.Backend;
 
 /// <summary>
-/// Voice notes (ADR 0111 phase 1c, over the server-side speech-to-text the transcription ADR adds to ADR 0038). A voice
+/// Voice notes (ADR 0111 phase 1c, over the server-side speech-to-text of ADR 0113, which amends ADR 0038). A voice
 /// note is transcribed BEFORE the route is touched, so a recording that can't be read mints no conversation. The
 /// transcript becomes the turn's text, marked as a voice note for the model, and is echoed back as one quoted line so
 /// the owner sees what was heard (Hermes' <c>stt_echo_transcripts</c>). Any failure gets exactly ONE curated reply,

@@ -38,7 +38,7 @@ public record ModelInfo(
     // only in Copilot agents. Pickers hide it everywhere else; the server-side guard is CopilotOnlyChatClient.
     bool CopilotOnly = false,
     // Trailing default so existing constructions stay valid; true only for a declared transcription (speech-to-text)
-    // model (ADR 0111). Surfaced on /api/models so the "default transcription model" selector can filter to it.
+    // model (ADR 0113). Surfaced on /api/models so the "default transcription model" selector can filter to it.
     bool SupportsTranscription = false);
 
 /// <summary>The models the picker can choose from, plus the current default.</summary>

@@ -217,7 +217,7 @@ public class UserProviderResolverTests
         Assert.Equal("", Resolver().Merge(overlay).SpeechDefaultModelId);
     }
 
-    // ADR 0111 (transcription): the default resolves only when it names a declared TRANSCRIPTION model.
+    // ADR 0113 (transcription): the default resolves only when it names a declared TRANSCRIPTION model.
     [Fact]
     public void TranscriptionDefault_ResolvesToTranscriptionModel()
     {

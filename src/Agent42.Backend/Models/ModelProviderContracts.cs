@@ -24,7 +24,7 @@ public record DefaultEmbeddingModelRequest(string? EmbeddingDefault);
 // catalog here — the resolver's EffectiveSpeechDefault is the single validation point.
 public record DefaultSpeechModelRequest(string? SpeechDefault);
 
-// The default TRANSCRIPTION model id (voice notes in chat apps, ADR 0111). Blank clears it; a voice note then gets a
+// The default TRANSCRIPTION model id (voice notes in chat apps, ADR 0113). Blank clears it; a voice note then gets a
 // curated "add a transcription model" reply. The resolver's EffectiveTranscriptionDefault is the validation point.
 public record DefaultTranscriptionModelRequest(string? TranscriptionDefault);
 

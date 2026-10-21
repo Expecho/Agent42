@@ -1,7 +1,7 @@
 namespace Agent42.Agents;
 
 /// <summary>
-/// Transcribes recorded speech to text (the server-side speech-to-text ADR, amending ADR 0038, which was TTS only).
+/// Transcribes recorded speech to text (ADR 0113, amending ADR 0038, which was TTS only).
 /// The chat gateway (ADR 0111) uses it to turn a voice note into a turn. It runs over the user's own provider with
 /// the transcription model they picked; <b>there is no operator model</b> (ADR 0019/0030), so a user without one gets
 /// <c>null</c> from <see cref="IChatClientFactory.GetTranscriptionService"/> and a curated reply in the chat.
