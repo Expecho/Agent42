@@ -138,6 +138,23 @@ public sealed class TurnContext
 
     private int _partsRead;
 
+    private int _pastChatCalls;
+
+    /// <summary>
+    /// <c>search_past_chats</c> + <c>read_past_chat</c> calls during this run (ADR 0112), bounded by
+    /// <see cref="PastChatLimits.MaxCallsPerTurn"/>. <see cref="int.MaxValue"/> (exhausted) when closed.
+    /// </summary>
+    public int PastChatCalls => IsClosed ? int.MaxValue : _pastChatCalls;
+
+    /// <summary>Counts a past-chat tool call. Ignored when closed.</summary>
+    public void RecordPastChatCall()
+    {
+        if (!IsClosed)
+        {
+            _pastChatCalls++;
+        }
+    }
+
     /// <summary>Counts a sent push. Ignored when closed.</summary>
     public void RecordPushSent()
     {

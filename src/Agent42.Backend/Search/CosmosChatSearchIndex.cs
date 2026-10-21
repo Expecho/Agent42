@@ -13,10 +13,10 @@ namespace Agent42.Backend;
 /// containers, so this class NEVER creates on use — the same wall as the Orleans providers and
 /// <see cref="CosmosDocumentIndex"/>.</para>
 ///
-/// <para><b>v1 queries with <c>CONTAINS</c>, not the full-text functions.</b> The container's
-/// full-text policy is declared anyway because it cannot be added after creation, which makes the
-/// later switch to BM25 (<c>ORDER BY RANK FullTextScore</c>) a query change rather than a second
-/// backfill.</para>
+/// <para><b>The sidebar search queries with <c>CONTAINS</c>, not the full-text functions.</b> The
+/// container's full-text policy was declared at creation because it cannot be added afterwards, and ADR 0112
+/// uses it: the model's <c>search_past_chats</c> ranks by BM25 (<c>ORDER BY RANK FullTextScore</c>) through
+/// <see cref="SearchRankedAsync"/>, a query change with no backfill.</para>
 ///
 /// <para>This is a prod-only path — the offline harness uses <see cref="InMemoryChatSearchIndex"/> —
 /// so it has no unit test, exactly as <see cref="CosmosDocumentIndex"/> has none and for the same
@@ -69,16 +69,59 @@ public sealed class CosmosChatSearchIndex(CosmosClient cosmosClient, string data
         var take = Math.Min(maxResults, ChatSearchLimits.MaxSearchResults);
         var definition = new QueryDefinition(BuildSearchSql(take)).WithParameter("@q", query);
 
+        return [.. (await QueryAsync(userId, definition, cancellationToken))
+            .Select(hit => new ChatSearchHit(hit.conversationId, hit.role, hit.text, hit.ordinal))];
+    }
+
+    public async Task<IReadOnlyList<ChatSearchHit>> SearchRankedAsync(
+        string userId,
+        IReadOnlyList<string> terms,
+        int maxResults,
+        CancellationToken cancellationToken = default)
+    {
+        if (terms.Count == 0 || maxResults <= 0)
+        {
+            return [];
+        }
+
+        // The terms are INLINED as escaped literals, not parameters: FullTextScore's term arguments must be
+        // string literals (ADR 0112). BuildRankedSearchSql JSON-escapes each one, and a test pins that a quote, a
+        // backslash or a bracket cannot leave its literal.
+        var take = Math.Min(maxResults, ChatSearchLimits.MaxSearchResults);
+        var definition = new QueryDefinition(BuildRankedSearchSql(terms, take));
+
+        return [.. (await QueryAsync(userId, definition, cancellationToken))
+            .Select(hit => new ChatSearchHit(hit.conversationId, hit.role, hit.text, hit.ordinal))];
+    }
+
+    public async Task<IReadOnlyList<ChatSearchTurn>> GetTurnsAsync(
+        string userId,
+        string conversationId,
+        int fromOrdinal,
+        int toOrdinal,
+        CancellationToken cancellationToken = default)
+    {
+        var definition = new QueryDefinition(TurnsSql)
+            .WithParameter("@conversationId", conversationId)
+            .WithParameter("@from", fromOrdinal)
+            .WithParameter("@to", toOrdinal);
+
+        return [.. (await QueryAsync(userId, definition, cancellationToken))
+            .Select(hit => new ChatSearchTurn(hit.ordinal, hit.role, hit.text))];
+    }
+
+    // One single-partition query, drained. The partition is the user, so every read is owner-scoped by
+    // construction.
+    private async Task<List<MessageHit>> QueryAsync(
+        string userId, QueryDefinition definition, CancellationToken cancellationToken)
+    {
         var options = new QueryRequestOptions { PartitionKey = new PartitionKey(userId) };
         using var iterator = _container.GetItemQueryIterator<MessageHit>(definition, requestOptions: options);
 
-        var results = new List<ChatSearchHit>();
+        var results = new List<MessageHit>();
         while (iterator.HasMoreResults)
         {
-            foreach (var hit in await iterator.ReadNextAsync(cancellationToken))
-            {
-                results.Add(new ChatSearchHit(hit.conversationId, hit.role, hit.text, hit.ordinal));
-            }
+            results.AddRange(await iterator.ReadNextAsync(cancellationToken));
         }
 
         return results;
@@ -148,6 +191,44 @@ public sealed class CosmosChatSearchIndex(CosmosClient cosmosClient, string data
         // in-memory twin returns a stable one, so the pair would diverge exactly where the ADR says
         // they can only be kept in step deliberately. Matches InMemoryChatSearchIndex's ordering.
         + "ORDER BY c.conversationId, c.ordinal";
+
+    /// <summary>
+    /// The ranked any-term query of <c>search_past_chats</c> (ADR 0112): BM25 over the full-text index that
+    /// ADR 0061 declared at container creation for exactly this switch. <c>ORDER BY RANK</c> is a rank
+    /// clause, not a property list, so it needs no composite index.
+    ///
+    /// <para><b>Each term is inlined as a JSON string literal</b> (<see cref="System.Text.Json.JsonSerializer"/>
+    /// escapes quotes, backslashes and control characters), because <c>FullTextScore</c>'s term arguments must be
+    /// string literals, passed variadically. <paramref name="take"/> is application-clamped, as in <see cref="BuildSearchSql"/>.</para>
+    /// </summary>
+    public static string BuildRankedSearchSql(IReadOnlyList<string> terms, int take)
+    {
+        var literals = string.Join(", ", terms.Select(term => System.Text.Json.JsonSerializer.Serialize(term, LiteralOptions)));
+        return $"SELECT TOP {take} c.conversationId, c.role, c.text, c.ordinal "
+            + $"FROM c WHERE FullTextContainsAny(c.text, {literals}) "
+            // VARIADIC, not an array: the account answers SC2241 to `FullTextScore(c.text, ["a", "b"])` ("the
+            // second through last arguments ... must be literals of type string"), measured 2026-10-21 on prod.
+            // Some current docs show the array form; this account does not accept it.
+            + $"ORDER BY RANK FullTextScore(c.text, {literals})";
+    }
+
+    // The relaxed encoder escapes a quote as \" and a backslash as \\ (both Cosmos string-literal escapes) instead
+    // of the default's "-style escaping of HTML-sensitive characters. It is "unsafe" only for embedding in
+    // HTML, which a SQL string never is; quotes, backslashes and control characters are still escaped.
+    private static readonly System.Text.Json.JsonSerializerOptions LiteralOptions = new()
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    /// <summary>
+    /// The window read of <c>read_past_chat</c> (ADR 0112): one conversation's turns in an ordinal range. A
+    /// single-property <c>ORDER BY</c> is served by the default range index (only <c>/text</c> is excluded),
+    /// so it needs no composite index either.
+    /// </summary>
+    public const string TurnsSql =
+        "SELECT c.conversationId, c.role, c.text, c.ordinal FROM c "
+        + "WHERE c.conversationId = @conversationId AND c.ordinal >= @from AND c.ordinal <= @to "
+        + "ORDER BY c.ordinal";
 
     /// <summary>
     /// The delete scan. It <b>filters by conversationId</b> rather than sweeping the partition:

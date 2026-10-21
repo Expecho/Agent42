@@ -68,6 +68,76 @@ public sealed class InMemoryChatSearchIndex : IChatSearchIndex
         return Task.FromResult<IReadOnlyList<ChatSearchHit>>([.. hits]);
     }
 
+    public Task<IReadOnlyList<ChatSearchHit>> SearchRankedAsync(
+        string userId,
+        IReadOnlyList<string> terms,
+        int maxResults,
+        CancellationToken cancellationToken = default)
+    {
+        if (terms.Count == 0 || maxResults <= 0 || !Store.TryGetValue(userId, out var bucket))
+        {
+            return Task.FromResult<IReadOnlyList<ChatSearchHit>>([]);
+        }
+
+        return Task.FromResult(RankByTerms(bucket.Values, terms, maxResults));
+    }
+
+    /// <summary>
+    /// The twin's ranking (ADR 0112): hits containing any term, ordered by distinct terms matched, then total
+    /// occurrences, then <c>(conversationId, ordinal)</c> so the order is deterministic. Case-insensitive like
+    /// <see cref="SearchAsync"/>. NOT BM25 — no inverse document frequency, no stemming.
+    /// </summary>
+    public static IReadOnlyList<ChatSearchHit> RankByTerms(
+        IEnumerable<ChatSearchHit> candidates, IReadOnlyList<string> terms, int maxResults)
+        => [.. candidates
+            .Select(hit => (Hit: hit, Matched: terms.Count(term => Occurrences(hit.Text, term) > 0),
+                Total: terms.Sum(term => Occurrences(hit.Text, term))))
+            .Where(scored => scored.Matched > 0)
+            .OrderByDescending(scored => scored.Matched)
+            .ThenByDescending(scored => scored.Total)
+            .ThenBy(scored => scored.Hit.ConversationId, StringComparer.Ordinal)
+            .ThenBy(scored => scored.Hit.Ordinal)
+            .Take(Math.Min(maxResults, ChatSearchLimits.MaxSearchResults))
+            .Select(scored => scored.Hit)];
+
+    public Task<IReadOnlyList<ChatSearchTurn>> GetTurnsAsync(
+        string userId,
+        string conversationId,
+        int fromOrdinal,
+        int toOrdinal,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Store.TryGetValue(userId, out var bucket))
+        {
+            return Task.FromResult<IReadOnlyList<ChatSearchTurn>>([]);
+        }
+
+        var turns = bucket.Values
+            .Where(hit => hit.ConversationId == conversationId && hit.Ordinal >= fromOrdinal && hit.Ordinal <= toOrdinal)
+            .OrderBy(hit => hit.Ordinal)
+            .Select(hit => new ChatSearchTurn(hit.Ordinal, hit.Role, hit.Text));
+
+        return Task.FromResult<IReadOnlyList<ChatSearchTurn>>([.. turns]);
+    }
+
+    private static int Occurrences(string text, string term)
+    {
+        if (string.IsNullOrEmpty(term))
+        {
+            return 0;
+        }
+
+        var count = 0;
+        for (var at = text.IndexOf(term, StringComparison.OrdinalIgnoreCase);
+             at >= 0;
+             at = text.IndexOf(term, at + term.Length, StringComparison.OrdinalIgnoreCase))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
     public Task DeleteConversationAsync(
         string userId, string conversationId, CancellationToken cancellationToken = default)
     {

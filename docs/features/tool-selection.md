@@ -8,7 +8,7 @@
 
 You pick which of the curated tools (`web_search`, `location`, `scheduling`, `skills`,
 `code_interpreter`, `memory`, `read_web_document`, `push_notification`, `artifacts`, `read_document`,
-`browser_tools`, `shared_state`, plus your MCP servers) an
+`browser_tools`, `shared_state`, `past_chats`, plus your MCP servers) an
 assistant may use, remembered at three layers:
 
 - **User default** (Preferences → default tools) — every new regular chat.
@@ -67,7 +67,7 @@ public const string Memory = "memory";         // ADR 0057 — the first key tha
 public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
     [
         WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification,
-        Artifacts, ReadDocument, BrowserTools, SharedState,
+        Artifacts, ReadDocument, BrowserTools, SharedState, PastChats,
     ];
 ```
 

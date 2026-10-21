@@ -25,10 +25,25 @@ namespace Agent42.Tests;
 /// </summary>
 public sealed class CompositeIndexMatchesTheSearchQueryTests
 {
-    [Fact]
-    public void EveryMultiPropertyOrderBy_HasAMatchingCompositeIndex()
+    /// <summary>
+    /// Every query the adapter builds (ADR 0112 added two beside the sidebar's). A new SQL builder belongs
+    /// here, so a multi-property ORDER BY on ANY of them fails offline rather than as "no matches" in prod.
+    /// </summary>
+    public static TheoryData<string> Queries => ["search", "ranked", "turns"];
+
+    private static string SqlFor(string query) => query switch
     {
-        var orderBy = OrderByPaths();
+        "search" => CosmosChatSearchIndex.BuildSearchSql(25),
+        "ranked" => CosmosChatSearchIndex.BuildRankedSearchSql(["a", "b"], 25),
+        "turns" => CosmosChatSearchIndex.TurnsSql,
+        _ => throw new ArgumentOutOfRangeException(nameof(query), query, null),
+    };
+
+    [Theory]
+    [MemberData(nameof(Queries))]
+    public void EveryMultiPropertyOrderBy_HasAMatchingCompositeIndex(string query)
+    {
+        var orderBy = OrderByPaths(SqlFor(query));
 
         // Cosmos only requires a composite index once the ORDER BY names two or more properties, so
         // that — not "an ORDER BY exists" — is the condition this encodes. A future single-property
@@ -57,18 +72,29 @@ public sealed class CompositeIndexMatchesTheSearchQueryTests
         Assert.All(orders, order => Assert.Equal("ascending", order));
     }
 
-    /// <summary>
-    /// The ORDER BY path sequence of the shipped search query, as Cosmos index paths
-    /// (<c>c.conversationId</c> becomes <c>/conversationId</c>).
-    /// </summary>
-    private static IReadOnlyList<string> OrderByPaths()
+    // The ranked query orders by a BM25 score, not a property list. It must be recognised as such and not
+    // parsed into bogus paths: "RANK FullTextScore(c.text, \"a\", \"b\")" split on commas would yield three.
+    [Fact]
+    public void RankedSearch_OrdersByRank_NotByAPropertyList()
     {
-        var sql = CosmosChatSearchIndex.BuildSearchSql(25);
+        Assert.Empty(OrderByPaths(SqlFor("ranked")));
+    }
 
+    /// <summary>
+    /// The ORDER BY path sequence of <paramref name="sql"/>, as Cosmos index paths
+    /// (<c>c.conversationId</c> becomes <c>/conversationId</c>). Empty for an <c>ORDER BY RANK</c>, which is
+    /// served by the full-text index and never needs a composite one.
+    /// </summary>
+    private static IReadOnlyList<string> OrderByPaths(string sql)
+    {
         var at = sql.IndexOf("ORDER BY ", StringComparison.Ordinal);
-        Assert.True(at >= 0, "No ORDER BY found in BuildSearchSql — did the query change shape?");
+        Assert.True(at >= 0, "No ORDER BY found in the query — did it change shape?");
 
         var clause = sql[(at + "ORDER BY ".Length)..];
+        if (clause.StartsWith("RANK ", StringComparison.Ordinal))
+        {
+            return [];
+        }
 
         var paths = clause
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
