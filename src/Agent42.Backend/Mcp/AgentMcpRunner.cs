@@ -58,12 +58,12 @@ public static class AgentMcpRunner
         await grains.GetGrain<IConversationIndexGrain>(caller.UserId)
             .TouchAsync(id, prompt, caller.Agent.Id, caller.Agent.Name);
 
-        // Snapshot the persona (ADR 0003), with memory and push notifications removed from the tool
-        // selection (see WithoutMemoryOrPush). Idempotent and immutable-once-bound, so on a continued
+        // Snapshot the persona (ADR 0003), with memory, push notifications and past chats removed from the
+        // tool selection (see WithoutOwnerScopedTools). Idempotent and immutable-once-bound, so on a continued
         // conversation this is a no-op and the binding checked above is the one that runs.
         await agentGrain.BindAgentAsync(new AgentBinding(
             caller.Agent.Id, caller.Agent.Name, caller.Agent.SystemPrompt, caller.Agent.Model,
-            WithoutMemoryOrPush(caller.Agent.EnabledTools), caller.Agent.Kind));
+            WithoutOwnerScopedTools(caller.Agent.EnabledTools), caller.Agent.Kind));
 
         return await DrainWithinBudgetAsync(
             agentGrain, prompt, id, timeout ?? AgentMcpLimits.RunTimeout, logger);
@@ -195,8 +195,9 @@ public static class AgentMcpRunner
     }
 
     /// <summary>
-    /// The agent's tool selection with <see cref="ToolCatalog.Memory"/> (ADR 0056/0057) and
-    /// <see cref="ToolCatalog.PushNotification"/> (ADR 0075) removed.
+    /// The agent's tool selection with <see cref="ToolCatalog.Memory"/> (ADR 0056/0057),
+    /// <see cref="ToolCatalog.PushNotification"/> (ADR 0075) and <see cref="ToolCatalog.PastChats"/> (ADR 0112)
+    /// removed.
     ///
     /// <para><b>Exclusion happens at BIND time, deliberately, and not per run.</b> A per-run value lives in the
     /// run's <c>TurnContext</c> (ADR 0106) and is gone when the run ends. A binding is materialised into grain
@@ -207,10 +208,12 @@ public static class AgentMcpRunner
     /// expands to <see cref="ToolCatalog.AllSelectableToolKeys"/> — which carries the <c>skills</c> and
     /// <c>mcp</c> wildcards. Substituting a hand-written list would silently drop both.</para>
     ///
-    /// <para><b>Why these two and nothing else.</b> A memory bank is the user's, spans every conversation,
+    /// <para><b>Why these three and nothing else.</b> A memory bank is the user's, spans every conversation,
     /// and has no delete path (ADR 0056). Retaining turns an external caller drove would let a key holder
     /// write permanently into the owner's memory, and recall would hand that caller content from the
-    /// owner's unrelated conversations.</para>
+    /// owner's unrelated conversations. The past-chat tools (ADR 0112) are that second risk in a stronger
+    /// form: they return the owner's other conversations VERBATIM, not extracted facts, so a key holder could
+    /// ask the agent to search and quote the owner's whole history.</para>
     ///
     /// <para>Push notifications (ADR 0075) are excluded for a different reason, and one specific to THIS
     /// surface: this ADR chose deliberately that an <c>ask_agent</c> turn lands in the owner's sidebar
@@ -221,14 +224,16 @@ public static class AgentMcpRunner
     /// <c>/api/agent-run</c> keeps the tool, because that surface already notifies by design (the ADR 0028
     /// away-reply push) and notifying is a plausible reason to drive an agent from a cron job.</para>
     ///
-    /// <para><b>It only ever NARROWS.</b> Both keys are dropped from whatever the owner selected; nothing
+    /// <para><b>It only ever NARROWS.</b> The keys are dropped from whatever the owner selected; nothing
     /// is added, and an owner who never enabled them sees no change.</para>
     /// </summary>
-    private static IReadOnlyList<string> WithoutMemoryOrPush(IReadOnlyList<string>? enabledTools)
+    private static IReadOnlyList<string> WithoutOwnerScopedTools(IReadOnlyList<string>? enabledTools)
         => (enabledTools ?? ToolCatalog.AllSelectableToolKeys)
-            .Where(key => !string.Equals(key, ToolCatalog.Memory, StringComparison.Ordinal)
-                && !string.Equals(key, ToolCatalog.PushNotification, StringComparison.Ordinal))
+            .Where(key => !ExcludedFromAskAgent.Contains(key))
             .ToList();
+
+    private static readonly HashSet<string> ExcludedFromAskAgent =
+        new([ToolCatalog.Memory, ToolCatalog.PushNotification, ToolCatalog.PastChats], StringComparer.Ordinal);
 }
 
 /// <summary>

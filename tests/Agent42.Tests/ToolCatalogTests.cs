@@ -195,13 +195,17 @@ public class ToolCatalogTests
 
     // ── Client tools and shared state (ADR 0089) ───────────────────────────────────────────────────
 
-    // AC9 — both keys are appended LAST (order stability for every existing key), each tool maps to its key, and
-    // both are rendered checkboxes.
+    // AC9 — both keys were appended (order stability for every existing key), right before past_chats (ADR 0112)
+    // which came after them; each tool maps to its key, and both are rendered checkboxes.
     [Fact]
     public void BrowserToolsAndSharedState_AreAppendedLast_AndMapTheirTools()
     {
-        Assert.Equal([ToolCatalog.BrowserTools, ToolCatalog.SharedState], ToolCatalog.AllSelectableToolKeys.TakeLast(2));
-        Assert.Equal([ToolCatalog.BrowserTools, ToolCatalog.SharedState], ToolCatalog.Descriptors.TakeLast(2).Select(d => d.Key));
+        Assert.Equal(
+            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats],
+            ToolCatalog.AllSelectableToolKeys.TakeLast(3));
+        Assert.Equal(
+            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats],
+            ToolCatalog.Descriptors.TakeLast(3).Select(d => d.Key));
 
         foreach (var tool in BrowserToolNames)
         {
@@ -211,12 +215,12 @@ public class ToolCatalogTests
         Assert.Equal(ToolCatalog.SharedState, ToolCatalog.KeyFor(SharedStateLimits.UpdateToolName));
     }
 
-    // AC10 (ADR 0098): read_document is inserted just before the pinned last two, in both lists, with a description.
+    // AC10 (ADR 0098): read_document is inserted just before browser_tools, in both lists, with a description.
     [Fact]
     public void ReadDocument_SitsBeforeBrowserTools_AndIsDescribed()
     {
-        Assert.Equal(ToolCatalog.ReadDocument, ToolCatalog.AllSelectableToolKeys[^3]);
-        var descriptor = ToolCatalog.Descriptors[^3];
+        Assert.Equal(ToolCatalog.ReadDocument, ToolCatalog.AllSelectableToolKeys[^4]);
+        var descriptor = ToolCatalog.Descriptors[^4];
         Assert.Equal(ToolCatalog.ReadDocument, descriptor.Key);
         Assert.False(descriptor.RequiresHostedTools);
         Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
@@ -230,6 +234,36 @@ public class ToolCatalogTests
         var saved = new HashSet<string> { ToolCatalog.WebSearch, ToolCatalog.Artifacts };
 
         foreach (var tool in BrowserToolNames.Append(SharedStateLimits.UpdateToolName))
+        {
+            Assert.True(ToolCatalog.IsToolEnabled(tool, all), tool);
+            Assert.False(ToolCatalog.IsToolEnabled(tool, saved), tool);
+        }
+    }
+
+    // ── Past chats (ADR 0112) ──────────────────────────────────────────────────────────────────────────
+
+    // AC21 — appended LAST in both lists, described, not a hosted tool, and the key for BOTH tools.
+    [Fact]
+    public void PastChats_IsSelectable_Described_AndMapsBothTools()
+    {
+        Assert.Equal(ToolCatalog.PastChats, ToolCatalog.AllSelectableToolKeys[^1]);
+        var descriptor = ToolCatalog.Descriptors[^1];
+        Assert.Equal(ToolCatalog.PastChats, descriptor.Key);
+        Assert.False(descriptor.RequiresHostedTools);
+        Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
+
+        Assert.Equal(ToolCatalog.PastChats, ToolCatalog.KeyFor(PastChatLimits.SearchToolName));
+        Assert.Equal(ToolCatalog.PastChats, ToolCatalog.KeyFor(PastChatLimits.ReadToolName));
+    }
+
+    // AC22 — ON for the null (== all) selection, OFF for a selection saved before the key existed (ADR 0021).
+    [Fact]
+    public void PastChats_IsOnForNull_AndOffForAnOlderSavedSelection()
+    {
+        var all = ToolCatalog.AllSelectableToolKeys.ToHashSet();
+        var saved = new HashSet<string> { ToolCatalog.WebSearch, ToolCatalog.Memory };
+
+        foreach (var tool in new[] { PastChatLimits.SearchToolName, PastChatLimits.ReadToolName })
         {
             Assert.True(ToolCatalog.IsToolEnabled(tool, all), tool);
             Assert.False(ToolCatalog.IsToolEnabled(tool, saved), tool);

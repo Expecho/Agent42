@@ -285,6 +285,25 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         Assert.DoesNotContain("a memory that must not reach an external caller", reply.Text, StringComparison.Ordinal);
     }
 
+    // ADR 0112 AC26: an ask_agent binding strips past_chats as it strips memory, asserted as an EFFECT. The owner has
+    // another conversation the search would find, and the agent has a NULL selection (null == all, which includes
+    // past_chats), so this fails if the filter is dropped rather than passing trivially. The positive control (a
+    // browser turn DOES find it) is PastChatToolTests.Search_FindsAnotherConversation_WithTitle.
+    [Fact]
+    public async Task AskAgent_BindingExcludesPastChats()
+    {
+        const string secret = "the owner's private axolotl itinerary";
+        await new InMemoryChatSearchIndex().IndexTurnsAsync(Owner, "mcp-past-chat-secret", [new ChatSearchTurn(0, "user", secret)]);
+        await Cluster.GrainFactory.GetGrain<IConversationIndexGrain>(Owner).TouchAsync("mcp-past-chat-secret", secret);
+        var (_, key) = await CreateExposedAgentAsync("No-recall agent");
+
+        var reply = await AskAgentAsync(
+            key, FakeChatClient.CallToolPrompt(PastChatLimits.SearchToolName, new { query = "axolotl itinerary" }));
+
+        Assert.False(reply.IsError, reply.Text);
+        Assert.DoesNotContain("axolotl", reply.Text, StringComparison.Ordinal);
+    }
+
     // The control for AC9: a normal browser turn on this same cluster DOES recall and retain. Without it,
     // AC9 passes just as well against a cluster whose memory recorder is never wired at all.
     [Fact]

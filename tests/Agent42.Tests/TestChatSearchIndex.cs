@@ -51,6 +51,22 @@ public sealed class TestChatSearchIndex : IChatSearchIndex
             ? Task.FromException<IReadOnlyList<ChatSearchHit>>(error)
             : _inner.SearchAsync(userId, query, maxResults, cancellationToken);
 
+    public Task<IReadOnlyList<ChatSearchHit>> SearchRankedAsync(
+        string userId, IReadOnlyList<string> terms, int maxResults, CancellationToken cancellationToken = default)
+        => Failures.TryGetValue(userId, out var error)
+            ? Task.FromException<IReadOnlyList<ChatSearchHit>>(error)
+            : _inner.SearchRankedAsync(userId, terms, maxResults, cancellationToken);
+
+    public Task<IReadOnlyList<ChatSearchTurn>> GetTurnsAsync(
+        string userId,
+        string conversationId,
+        int fromOrdinal,
+        int toOrdinal,
+        CancellationToken cancellationToken = default)
+        => Failures.TryGetValue(userId, out var error)
+            ? Task.FromException<IReadOnlyList<ChatSearchTurn>>(error)
+            : _inner.GetTurnsAsync(userId, conversationId, fromOrdinal, toOrdinal, cancellationToken);
+
     public Task DeleteConversationAsync(
         string userId, string conversationId, CancellationToken cancellationToken = default)
     {

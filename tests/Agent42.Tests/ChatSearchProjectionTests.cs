@@ -243,6 +243,15 @@ public sealed class ChatSearchProjectionTests
             string userId, string query, int maxResults, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ChatSearchHit>>([]);
 
+        public Task<IReadOnlyList<ChatSearchHit>> SearchRankedAsync(
+            string userId, IReadOnlyList<string> terms, int maxResults, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ChatSearchHit>>([]);
+
+        public Task<IReadOnlyList<ChatSearchTurn>> GetTurnsAsync(
+            string userId, string conversationId, int fromOrdinal, int toOrdinal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ChatSearchTurn>>([]);
+
         public Task DeleteConversationAsync(
             string userId, string conversationId, CancellationToken cancellationToken = default)
         {

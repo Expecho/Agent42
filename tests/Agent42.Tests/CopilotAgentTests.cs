@@ -196,6 +196,18 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
         }
     }
 
+    // ADR 0112 AC24: the past-chat tools reach a Copilot chat through SelectableTools with no exclusion. They need
+    // no browser, document or run-only broker, only the index and a grain call on the activation's scheduler.
+    [Fact]
+    public async Task CopilotFunctions_IncludeThePastChatTools()
+    {
+        await CopilotChatAsync("copilot-past-chats", tools: ToolCatalog.AllSelectableToolKeys);
+
+        var tools = LastRequest("copilot-past-chats").Tools.Select(t => t.Name).ToList();
+        Assert.Contains(PastChatLimits.SearchToolName, tools);
+        Assert.Contains(PastChatLimits.ReadToolName, tools);
+    }
+
     // AC10: a copilot agent on a no-tools model is a plain chat: no Copilot agent is built, and the turn still runs.
     [Fact]
     public async Task CopilotKind_NoToolsModel_IsPlainAgent()

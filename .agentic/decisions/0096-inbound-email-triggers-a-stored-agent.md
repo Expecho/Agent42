@@ -7,6 +7,12 @@ supersedes: []
 amends: [0013, 0022]
 ---
 
+> **Amended by [ADR 0112](0112-past-chats-as-a-model-tool.md) (2026-10-21).** A new key, `past_chats`, lets the model search
+> and read the owner's other conversations, and it is ON for an agent bound with `null == all`. Add it to the
+> mitigation below: point email at an agent whose `EnabledTools` excludes `past_chats` as well as `memory` and the fetch
+> tools, or an emailed instruction can make the agent search the owner's chats and send them out through those
+> channels. The editor note now names it. There is no code gate on this door (0112 records that choice).
+
 # Inbound email triggers a stored agent (Mailgun Routes → `POST /api/email-in`)
 
 > **Renumbered from 0095 on 2026-10-13.** It merged (PR #185) as a second ADR 0095 beside

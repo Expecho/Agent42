@@ -8,6 +8,11 @@ extends: [0024]
 amends: [0002, 0022, 0036, 0042, 0068]
 ---
 
+> **Amended by [ADR 0112](0112-past-chats-as-a-model-tool.md) (2026-10-21).** The bind filter, renamed
+> `WithoutOwnerScopedTools` (it was `WithoutMemoryOrPush`, the name the notes below use), now also removes `past_chats`.
+> Those tools return the owner's other conversations verbatim, which is the recall risk this ADR stripped memory for,
+> in a stronger form.
+
 > **Amended by [ADR 0109](0109-chrome-extension-bridge-and-mcp-image-results.md) (2026-10-20).** With the Chrome
 > extension connected, a turn run through this surface can make the owner's Chrome run JavaScript **without any
 > prompt** (`evaluate`, a user decision). 0076's "each write still meets the helper's prompt" does not hold for it.
