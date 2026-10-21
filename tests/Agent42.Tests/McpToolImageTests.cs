@@ -307,8 +307,20 @@ public sealed class McpToolImageGrainTests(SharedClusterFixture fixture) : Share
         }
     }
 
-    private FakeChatClient Fake() =>
-        Cluster.GetSiloServiceProvider(Cluster.Primary.SiloAddress).GetRequiredService<FakeChatClient>();
+    // Every silo's client: the conversation's grain may activate on either silo, so reading only the primary's counter
+    // made "the image never reached the model" fail whenever placement chose the secondary.
+    private IEnumerable<FakeChatClient> Fakes() =>
+        Cluster.Silos.Select(s => Cluster.GetSiloServiceProvider(s.SiloAddress).GetRequiredService<FakeChatClient>());
+
+    private void ResetFakes()
+    {
+        foreach (var fake in Fakes())
+        {
+            fake.Reset();
+        }
+    }
+
+    private int MostImagePartsSeen() => Fakes().Max(f => f.MostImagePartsSeen);
 
     private async Task<string> SessionJsonOf(string grainKey)
     {
@@ -332,12 +344,12 @@ public sealed class McpToolImageGrainTests(SharedClusterFixture fixture) : Share
     public async Task StoredSession_HoldsNoImageBytes_AfterAScreenshotTurn()
     {
         GiveScreenshotServer();
-        Fake().Reset();
+        ResetFakes();
         const string key = "tool-image-user/conv";
 
         await ChatAsync(key, TestSiloConfigurator.DefaultModel);
 
-        Assert.True(Fake().MostImagePartsSeen >= 1, "the image never reached the model");
+        Assert.True(MostImagePartsSeen() >= 1, "the image never reached the model");
         var session = await SessionJsonOf(key);
         Assert.Contains("[image 1: image/jpeg", session, StringComparison.Ordinal);
         Assert.DoesNotContain(Convert.ToBase64String(McpToolImageTests.Jpeg), session, StringComparison.Ordinal);
@@ -349,12 +361,12 @@ public sealed class McpToolImageGrainTests(SharedClusterFixture fixture) : Share
     public async Task NoVisionModel_GetsNoImage_AndThePlaceholderSaysSo()
     {
         GiveScreenshotServer();
-        Fake().Reset();
+        ResetFakes();
         const string key = "tool-image-novision-user/conv";
 
         await ChatAsync(key, TestSiloConfigurator.NoVisionModel);
 
-        Assert.Equal(0, Fake().MostImagePartsSeen);
+        Assert.Equal(0, MostImagePartsSeen());
         Assert.Contains(McpToolResultShaper.ImageOmitted, await SessionJsonOf(key), StringComparison.Ordinal);
     }
 }

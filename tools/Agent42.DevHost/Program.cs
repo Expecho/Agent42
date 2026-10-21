@@ -194,6 +194,18 @@ builder.Services.AddSingleton<IAgentWebhookSender, NullAgentWebhookSender>();
 builder.Services.AddSingleton<IWebhookSecretProtector, WebhookSecretProtector>();
 builder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
 
+// The chat gateway (ADR 0111) offline: one process is the whole world, so the lease is always held. Real platform
+// adapters are registered too; a bot token pasted here really connects (they are outbound-only, so no tunnel).
+builder.Services.AddSingleton<IChatGatewayLease, NoOpChatGatewayLease>();
+// ChatGateway:TelegramApiBaseUrl points the Telegram adapter at a local stand-in for api.telegram.org, so the whole
+// path (validate, poll, pair, stream, commands) runs offline against the real adapter. Unset means the real Bot API.
+if (builder.Configuration["ChatGateway:TelegramApiBaseUrl"] is { Length: > 0 } telegramApi)
+{
+    builder.Services.AddSingleton(new TelegramOptions(new Uri(telegramApi)));
+}
+
+builder.Services.AddChatGateway();
+
 // The registrations every host shares (ADR 0105), AFTER every port above: the endpoint invariants, then the
 // grain-side ones, which also fail startup naming any grain dependency this host did not register.
 builder.Services.AddAgent42Api();

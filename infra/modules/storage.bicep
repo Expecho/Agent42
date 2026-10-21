@@ -106,5 +106,18 @@ resource agentFleetContainer 'Microsoft.Storage/storageAccounts/blobServices/con
   }
 }
 
+// The chat gateway's single-runner lease (ADR 0111): one empty blob, `chat-gateway/lease`, whose Blob lease decides
+// which app revision runs the chat bots while an old and a new revision overlap during a rollover. Without it, two
+// revisions would both poll Telegram (409 storms) and both answer every Discord message. Reached through the same
+// account-scoped Storage Blob Data Contributor grant, so NO new role assignment. A fixed literal: BlobChatGatewayLease
+// hardcodes the same name.
+resource chatGatewayContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'chat-gateway'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 output accountName string = account.name
 output blobEndpoint string = account.properties.primaryEndpoints.blob

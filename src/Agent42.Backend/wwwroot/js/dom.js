@@ -119,7 +119,7 @@ export const pushTestStatus = document.getElementById("pushTestStatus");
 // pairs in tablist order, attaches the click + keyboard nav, and returns a select(index, focus).
 // Configuration and Skills are APPENDED, never inserted: initMcpOAuthReturn deep-links to
 // select(3) (the MCP tab), so MCP must stay index 3 — a new tab placed before it would shift MCP and
-// break the OAuth return. Append → MCP stays 3, Configuration is 4, Skills is 5.
+// break the OAuth return. Append → MCP stays 3, Configuration is 4, Skills is 5, Chat apps is 6.
 export const profileTabs = wireTabs([
   [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
   [document.getElementById("tabTools"), document.getElementById("panelTools")],
@@ -127,7 +127,30 @@ export const profileTabs = wireTabs([
   [document.getElementById("tabMcp"), document.getElementById("panelMcp")],
   [document.getElementById("tabConfig"), document.getElementById("panelConfig")],
   [document.getElementById("tabSkills"), document.getElementById("panelSkills")],
+  [document.getElementById("tabChat"), document.getElementById("panelChat")],
 ]);
+
+// Chat apps (ADR 0111).
+export const addChatConnectionBtn = document.getElementById("addChatConnectionBtn");
+export const chatConnectionList = document.getElementById("chatConnectionList");
+export const chatDialog = document.getElementById("chatDialog");
+export const chatForm = document.getElementById("chatForm");
+export const chatFormTitle = document.getElementById("chatFormTitle");
+export const chatPlatformSelect = document.getElementById("chatPlatform");
+export const chatSetupNote = document.getElementById("chatSetupNote");
+export const chatNameInput = document.getElementById("chatName");
+export const chatBotTokenInput = document.getElementById("chatBotToken");
+export const chatTargetSelect = document.getElementById("chatTarget");
+export const chatEnabledInput = document.getElementById("chatEnabled");
+export const chatPairingSection = document.getElementById("chatPairingSection");
+export const chatPairingText = document.getElementById("chatPairingText");
+export const chatPairingCodeBox = document.getElementById("chatPairingCodeBox");
+export const chatPairingCode = document.getElementById("chatPairingCode");
+export const chatPairingCopyBtn = document.getElementById("chatPairingCopyBtn");
+export const chatRepairBtn = document.getElementById("chatRepairBtn");
+export const chatError = document.getElementById("chatError");
+export const chatDeleteBtn = document.getElementById("chatDeleteBtn");
+export const chatCancelBtn = document.getElementById("chatCancelBtn");
 export const agentTabs = wireTabs([
   [document.getElementById("tabAgentGeneral"), document.getElementById("panelAgentGeneral")],
   [document.getElementById("tabAgentTools"), document.getElementById("panelAgentTools")],

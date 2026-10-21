@@ -285,6 +285,8 @@ principal; locally everything maps to a single `local-dev` pseudo-user.
 - `POST /api/mcp-servers/{id}/bridge-key` — issue a new local-bridge key
 - `GET /api/mcp/oauth/start` · `GET /api/mcp/oauth/callback` — MCP interactive OAuth flow
 - `/api/local-bridge` — WebSocket the local-bridge helper dials into
+- `GET/POST/PUT/DELETE /api/chat-connections[/{id}]` · `POST /api/chat-connections/{id}/repair` — your chat-app bots
+  (ADR 0111). Not public: the gateway connects OUT to each platform, so it adds no excluded path
 - `GET /api/push/config` · `POST/DELETE /api/push/subscriptions` — Web Push
 - `GET /api/config-health` — configuration health report (never contains a secret value)
 

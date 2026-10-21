@@ -23,6 +23,7 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 | Rich inline rendering (diagrams, code, math, charts) | [rich-rendering.md](rich-rendering.md) |
 | Artifacts (pages, apps, SVG, documents and code in a sandboxed side pane, with versions) | [artifacts.md](artifacts.md) |
 | Voice: dictation, hands-free loop, server-side speech | [voice-and-speech.md](voice-and-speech.md) |
+| Chat apps (your own Telegram bot; more platforms planned) | [chat-apps.md](chat-apps.md) |
 
 ## Bring your own models
 
