@@ -55,6 +55,9 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         "Agent42.Agents.UserPushState",
         "Agent42.Agents.UserShareLinksState",
         "Agent42.Agents.UserSkillsState",
+        "Agent42.Agents.UserChatConnectionsState",
+        "Agent42.Agents.ChatConnectionDirectoryState",
+        "Agent42.Agents.ChatRouteState",
     ];
 
     // The type name a document is keyed on must keep resolving. Hard-coded literals, deliberately: a
@@ -756,6 +759,53 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal(("user@example.com", "agent-golden-mail"), (restored.UserId, restored.AgentId));
     }
 
+    // ADR 0111 (CLAUDE.md rule 2): a user's chat bots read back from a committed Cosmos document, field for field.
+    [Fact]
+    public void UserChatConnectionsState_ReadsCommittedDocument()
+    {
+        var restored = Assert.Single(Serializer().Deserialize<UserChatConnectionsState>(new BinaryData(StoredUserChatConnectionsJson)).Connections);
+        var expected = Assert.Single(GoldenStates.UserChatConnections().Connections);
+
+        Assert.Equivalent(expected, restored, strict: true);
+    }
+
+    // ADR 0111: the Cosmos JSON serializer omits a member holding its CLR default, so a bool whose initialiser differed
+    // from false would flip on every reload. A disabled bot must come back disabled, and an enabled one enabled.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ChatConnection_Disabled_StaysDisabledThroughCosmosJson(bool enabled)
+    {
+        var state = new UserChatConnectionsState { Connections = [new ChatConnection { Id = "c", Platform = "Telegram", Enabled = enabled }] };
+
+        var restored = Serializer().Deserialize<UserChatConnectionsState>(Serializer().Serialize(state));
+
+        Assert.Equal(enabled, Assert.Single(restored.Connections).Enabled);
+    }
+
+    // ADR 0111: a connection stored before OwnerTelemetry ([Id(22)]) existed reads it as null, not as a fault.
+    [Fact]
+    public void ChatConnection_WithoutOwnerTelemetry_Deserializes()
+    {
+        var legacy = System.Text.RegularExpressions.Regex.Replace(StoredUserChatConnectionsJson, @",""OwnerTelemetry"":\{[^}]*\{[^}]*\}[^}]*\}", "");
+        Assert.DoesNotContain("OwnerTelemetry", legacy);
+
+        var restored = Assert.Single(Serializer().Deserialize<UserChatConnectionsState>(new BinaryData(legacy)).Connections);
+
+        Assert.Null(restored.OwnerTelemetry);
+        Assert.Equal(("conn-golden", 500000007L), (restored.Id, restored.PollOffset));
+    }
+
+    [Fact]
+    public void ChatDirectoryAndRoute_ReadCommittedDocuments()
+    {
+        var directory = Serializer().Deserialize<ChatConnectionDirectoryState>(new BinaryData(StoredChatConnectionDirectoryJson));
+        var route = Serializer().Deserialize<ChatRouteState>(new BinaryData(StoredChatRouteJson));
+
+        Assert.Equal(GoldenStates.ChatConnectionDirectory().Entries, directory.Entries);
+        Assert.Equivalent(GoldenStates.ChatRoute(), route, strict: true);
+    }
+
     // ADR 0108 (CLAUDE.md rule 2): the new pending sign-in state reads back through the Cosmos JSON path.
     [Fact]
     public void GitHubOAuthPending_RoundTripsThroughCosmosJson()
@@ -795,5 +845,19 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
 
     private const string StoredEmailAddressDirectoryJson = """
         {"$id":"1","$type":"Agent42.Agents.EmailAddressDirectoryState, Agent42.Agents","UserId":"user@example.com","AgentId":"agent-golden-mail"}
+        """;
+
+    // Serialized once from GoldenStates when ADR 0111 added the chat gateway, then committed. Note the missing "Enabled":
+    // the golden connection is disabled, and false is omitted (see ChatConnection_Disabled_StaysDisabledThroughCosmosJson).
+    private const string StoredUserChatConnectionsJson = """
+        {"$id":"1","$type":"Agent42.Agents.UserChatConnectionsState, Agent42.Agents","Connections":{"$type":"System.Collections.Generic.List`1[[Agent42.Agents.ChatConnection, Agent42.Agents]], System.Private.CoreLib","$values":[{"$id":"2","$type":"Agent42.Agents.ChatConnection, Agent42.Agents","Id":"conn-golden","Platform":"Telegram","Name":"My phone","TargetAgentId":"agent-golden","CredentialsCiphertext":"cipher-golden","BotUserId":"7000000001","BotUserName":"agent42_golden_bot","WorkspaceId":"T-golden","OwnerPlatformUserId":"111111111","OwnerWorkspaceId":"T-owner","PairingCode":"ABCDE23456","PairingExpiresAt":"2026-06-07T08:09:10+00:00","PairingFailures":3,"GroupsEnabled":true,"VoiceNotesEnabled":true,"NotificationsEnabled":true,"HomeRouteKey":"111111111","PollOffset":500000007,"FaultReason":"golden fault","CreatedAt":"2026-01-02T03:04:05+00:00","UpdatedAt":"2026-06-07T08:09:10+00:00","OwnerTelemetry":{"$id":"3","$type":"Agent42.Agents.UserTelemetryContext, Agent42.Agents","Id":"user@example.com","Name":"Golden","Email":"user@example.com","FullName":"Golden User","Roles":{"$type":"System.String[], System.Private.CoreLib","$values":["user"]},"Idp":"aad"},"IsPaired":true}]}}
+        """;
+
+    private const string StoredChatConnectionDirectoryJson = """
+        {"$id":"1","$type":"Agent42.Agents.ChatConnectionDirectoryState, Agent42.Agents","Entries":{"$type":"System.Collections.Generic.List`1[[Agent42.Agents.ChatConnectionRef, Agent42.Agents]], System.Private.CoreLib","$values":[{"$id":"2","$type":"Agent42.Agents.ChatConnectionRef, Agent42.Agents","UserId":"user@example.com","ConnectionId":"conn-golden"}]}}
+        """;
+
+    private const string StoredChatRouteJson = """
+        {"$id":"1","$type":"Agent42.Agents.ChatRouteState, Agent42.Agents","ConversationId":"chat-11111111-2222-3333-4444-555555555555","TurnCount":42,"ModelOverride":"foundry:gpt-5.4","TargetAgentOverride":"agent-golden"}
         """;
 }

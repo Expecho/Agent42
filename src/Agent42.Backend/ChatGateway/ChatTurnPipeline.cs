@@ -1,0 +1,280 @@
+using Agent42.Agents;
+
+namespace Agent42.Backend;
+
+/// <summary>
+/// Everything between a parsed chat message and an Agent42 turn (ADR 0111): dedupe, who may talk, commands, which
+/// conversation, the per-conversation queue, the detached run, and the streamed reply. Adapters hand messages in
+/// through <see cref="IChatInboundSink"/> and own none of this (Hermes' runner/adapter boundary).
+///
+/// <para>The order of the gates is the design:</para>
+/// <list type="number">
+/// <item>Bots and the bot's own echoes are dropped (the self-reply loop).</item>
+/// <item>The message id is claimed, so a redelivery never runs twice.</item>
+/// <item>Before pairing, only a DM carrying the code is acted on. After pairing, <b>only the owner's messages</b> start
+/// anything, in DMs and groups alike; everyone else is ignored silently and creates no state (Hermes #9337: answering
+/// strangers is noise and an info leak).</item>
+/// <item>In a group, the bot must be mentioned or replied to (and groups must be enabled on the connection).</item>
+/// <item>A command runs inline, ahead of any queued turn, so <c>/stop</c> never waits behind the turn it stops.</item>
+/// <item>Anything else is queued on its conversation's FIFO. The queue slot is claimed synchronously, before any
+/// await, so a second message cannot race the first (Hermes' busy-guard rule); different conversations run in
+/// parallel up to <see cref="MaxConcurrentTurns"/>.</item>
+/// </list>
+///
+/// <para>The queue, the guards and the dedupe are in-process: correct only on a single replica (CLAUDE.md rule 12).</para>
+/// </summary>
+public sealed partial class ChatTurnPipeline : IChatInboundSink
+{
+    /// <summary>Turns running at once across every connection.</summary>
+    public const int MaxConcurrentTurns = 8;
+
+    /// <summary>Messages one conversation may have waiting behind its running turn.</summary>
+    public const int MaxQueuedPerRoute = 20;
+
+    private const string LinkedText = "Linked to Agent42. Send a message to start chatting, or {0}help for the commands.";
+    private const string BusyText = "I'm still working through your earlier messages. Send this again in a moment.";
+
+    private readonly IGrainFactory _grains;
+    private readonly InboundDeduper _deduper;
+    private readonly ChatSessionRegistry _sessions;
+    private readonly ChatReplyStreamer _streamer;
+    private readonly Dictionary<string, IChatPlatformAdapter> _adapters;
+    private readonly IUserModelCatalogProvider? _modelCatalogs;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger<ChatTurnPipeline> _logger;
+    private readonly SemaphoreSlim _concurrency = new(MaxConcurrentTurns, MaxConcurrentTurns);
+    private readonly Dictionary<string, Queue<ChatTurnWork>> _queues = new(StringComparer.Ordinal);
+    private readonly Lock _queueGate = new();
+
+    public ChatTurnPipeline(
+        IGrainFactory grains,
+        InboundDeduper deduper,
+        ChatSessionRegistry sessions,
+        ChatReplyStreamer streamer,
+        IEnumerable<IChatPlatformAdapter> adapters,
+        TimeProvider timeProvider,
+        ILogger<ChatTurnPipeline> logger,
+        IUserModelCatalogProvider? modelCatalogs = null)
+    {
+        _grains = grains;
+        _deduper = deduper;
+        _sessions = sessions;
+        _streamer = streamer;
+        _adapters = adapters.ToDictionary(a => a.Kind, StringComparer.Ordinal);
+        _timeProvider = timeProvider;
+        _logger = logger;
+        _modelCatalogs = modelCatalogs;
+    }
+
+    public async Task AcceptAsync(ChatConnectionRuntime runtime, ChatInboundMessage message, CancellationToken cancellationToken)
+    {
+        if (message.SenderIsBot || message.SenderId == runtime.Connection.BotUserId
+            || !_deduper.TryClaim(runtime.ConnectionId, message.PlatformMessageId))
+        {
+            return;
+        }
+
+        try
+        {
+            await AcceptClaimedAsync(runtime, message);
+        }
+        catch (Exception ex)
+        {
+            // Let the platform's redelivery in: this message was never acted on.
+            _deduper.Release(runtime.ConnectionId, message.PlatformMessageId);
+            _logger.LogError(ex, "A chat message on connection {ConnectionId} could not be handled.", runtime.ConnectionId);
+        }
+    }
+
+    private async Task AcceptClaimedAsync(ChatConnectionRuntime runtime, ChatInboundMessage message)
+    {
+        // Fresh, not the session's snapshot: the owner may have paired, or changed the target, since it connected.
+        var store = _grains.GetGrain<IUserChatConnectionsGrain>(runtime.UserId);
+        if (await store.GetAsync(runtime.ConnectionId) is not { } connection)
+        {
+            return;
+        }
+
+        if (!connection.IsPaired)
+        {
+            await TryPairAsync(runtime, connection, store, message);
+            return;
+        }
+
+        if (!IsOwner(connection, message))
+        {
+            return;
+        }
+
+        var capabilities = Capabilities(connection);
+        var command = ChatCommands.Parse(message.Text, capabilities.CommandPrefix, connection.BotUserName);
+        if (!PassesGroupGate(connection, message, command))
+        {
+            return;
+        }
+
+        var work = new ChatTurnWork(runtime.UserId, connection, message, ChatRouteKey.For(message.ChatId, message.ThreadId));
+        if (command is not null)
+        {
+            await RunCommandAsync(work, command);
+        }
+        else if (!TryEnqueue(work))
+        {
+            await ReplyAsync(work, BusyText);
+        }
+    }
+
+    private async Task TryPairAsync(
+        ChatConnectionRuntime runtime, ChatConnection connection, IUserChatConnectionsGrain store, ChatInboundMessage message)
+    {
+        // Pairing is DM-only: a code typed in a group is visible to everyone in it.
+        if (message.ChatType != ChatType.Direct)
+        {
+            return;
+        }
+
+        var outcome = await store.TryPairAsync(
+            runtime.ConnectionId, message.SenderId, message.SenderWorkspaceId, message.Text, _timeProvider.GetUtcNow());
+        if (outcome == ChatPairingOutcome.Paired)
+        {
+            var work = new ChatTurnWork(runtime.UserId, connection, message, ChatRouteKey.For(message.ChatId, message.ThreadId));
+            await ReplyAsync(work, string.Format(LinkedText, Capabilities(connection).CommandPrefix));
+        }
+    }
+
+    private static bool IsOwner(ChatConnection connection, ChatInboundMessage message)
+        => message.SenderId == connection.OwnerPlatformUserId
+            && (connection.OwnerWorkspaceId is null || message.SenderWorkspaceId == connection.OwnerWorkspaceId);
+
+    // In a group, only a message addressed to the bot is for it. /new, /stop and /help pass without the mention, or
+    // they would be unreachable in a busy group (Hermes).
+    private static bool PassesGroupGate(ChatConnection connection, ChatInboundMessage message, ChatCommand? command)
+    {
+        if (message.ChatType == ChatType.Direct)
+        {
+            return true;
+        }
+
+        return connection.GroupsEnabled
+            && (message.MentionsBot || message.RepliesToBot
+                || (command is not null && ChatCommands.AllowedWithoutMention.Contains(command.Name)));
+    }
+
+    // Claims the conversation's slot synchronously: either this message joins the queue behind a running turn, or it
+    // starts the queue's worker. False when the queue is full.
+    private bool TryEnqueue(ChatTurnWork work)
+    {
+        bool start;
+        lock (_queueGate)
+        {
+            if (_queues.TryGetValue(work.QueueKey, out var queue))
+            {
+                if (queue.Count > MaxQueuedPerRoute)
+                {
+                    return false;
+                }
+
+                queue.Enqueue(work);
+                start = false;
+            }
+            else
+            {
+                _queues[work.QueueKey] = new Queue<ChatTurnWork>([work]);
+                start = true;
+            }
+        }
+
+        if (start)
+        {
+            _ = Task.Run(() => DrainQueueAsync(work.QueueKey));
+        }
+
+        return true;
+    }
+
+    // The head of a queue is the running turn; it is dequeued only after it finished, so /stop can drop everything
+    // behind it without touching it.
+    private async Task DrainQueueAsync(string queueKey)
+    {
+        while (true)
+        {
+            ChatTurnWork work;
+            lock (_queueGate)
+            {
+                if (!_queues.TryGetValue(queueKey, out var queue) || queue.Count == 0)
+                {
+                    _queues.Remove(queueKey);
+                    return;
+                }
+
+                work = queue.Peek();
+            }
+
+            await _concurrency.WaitAsync();
+            try
+            {
+                await RunTurnSafelyAsync(work);
+            }
+            finally
+            {
+                _concurrency.Release();
+                lock (_queueGate)
+                {
+                    if (_queues.TryGetValue(queueKey, out var queue) && queue.Count > 0)
+                    {
+                        queue.Dequeue();
+                    }
+                }
+            }
+        }
+    }
+
+    // Drops every message waiting behind the running turn of a conversation. Returns how many were dropped.
+    private int ClearWaiting(string queueKey)
+    {
+        lock (_queueGate)
+        {
+            if (!_queues.TryGetValue(queueKey, out var queue) || queue.Count <= 1)
+            {
+                return 0;
+            }
+
+            var dropped = queue.Count - 1;
+            var running = queue.Dequeue();
+            queue.Clear();
+            queue.Enqueue(running);
+            return dropped;
+        }
+    }
+
+    private ChatPlatformCapabilities Capabilities(ChatConnection connection) => _adapters[connection.Platform].Capabilities;
+
+    private ChatReplyDestination Destination(ChatTurnWork work)
+        => new(() => _sessions.Get(work.Connection.Id), work.Target, Capabilities(work.Connection));
+
+    // A short, single-message reply (command answers, pairing, notices): formatted, plain if the platform rejects the
+    // markup, time-boxed, and never throwing.
+    private async Task ReplyAsync(ChatTurnWork work, string text)
+    {
+        var buffer = new ChatReplyBuffer();
+        buffer.Apply(new AgentStreamEvent(AgentStreamEventType.TextDelta, text));
+        buffer.Complete();
+        var destination = Destination(work) with { Capabilities = Capabilities(work.Connection) with { SupportsEdit = false } };
+        await _streamer.StreamAsync(destination, buffer, CancellationToken.None);
+    }
+}
+
+/// <summary>One owner message bound for a conversation, with where its reply goes.</summary>
+internal sealed record ChatTurnWork(string UserId, ChatConnection Connection, ChatInboundMessage Message, string RouteKey)
+{
+    public string QueueKey => Connection.Id + "\n" + RouteKey;
+
+    /// <summary>
+    /// Replies go to the same chat and thread. In a group the reply quotes the triggering message, so the conversation
+    /// is legible to everyone there; in a DM it does not need to.
+    /// </summary>
+    public ChatTarget Target => new(
+        Message.ChatId,
+        Message.ThreadId,
+        Message.ChatType == ChatType.Group ? Message.PlatformMessageId : null);
+}

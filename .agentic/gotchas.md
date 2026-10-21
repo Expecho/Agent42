@@ -4608,3 +4608,64 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`CreateAgent_DisconnectedGitHubModel_IsNotConnected`), `tests/Agent42.Tests/UserProviderResolverTests.cs`
   (`PinnedGitHubCopilotDefault_IsIgnored`)
 - **Verified:** 2026-10-20
+
+### The Telegram bot token is in the URL PATH: it leaks through HttpClient spans AND logs, and it breaks `new Uri(base, relative)`
+
+- **Claim:** The Bot API accepts the token only in the path (`/bot<token>/sendMessage`, `/file/bot<token>/…`). Three
+  traps follow. First, OpenTelemetry redacts a query string but never a path, so the HttpClient span's `url.full`
+  carries the token into OTLP and App Insights. Second, `IHttpClientFactory` logs "Sending HTTP request … {uri}" for
+  every named client, and those lines reach the owner-visible `/logs` buffer too. Both Telegram clients therefore run
+  inside `TelegramSpanSuppressingHandler` (`SuppressInstrumentationScope`) AND call `RemoveAllLoggers()`, and
+  `TelegramBotApi_NeverLeaksTheToken` captures real spans and real log records, with a control client proving the probe
+  sees a leak when either is removed (both mutation-checked). Third, the token contains a `:`, so
+  `new Uri(baseUrl, "bot123:abc/getMe")` parses `bot123:` as a URI SCHEME and the request throws; build the path as
+  `"./bot…"`. Any new client whose path holds a secret needs all three.
+- **Evidence:** `src/Agent42.Backend/ChatGateway/Telegram/TelegramBotApi.cs`, `tests/Agent42.Tests/TelegramTests.cs`,
+  `.agentic/decisions/0111-chat-gateway-for-chat-apps.md`
+- **Verified:** 2026-10-21
+
+### The chat gateway holds outbound connections, so a revision rollover would run it twice: it needs the lease
+
+- **Claim:** Rule 12 pins one replica, but an ACA rollover runs the old and new revision side by side for a while. Two
+  Telegram pollers fight (409, which the adapter treats as a permanent fault), and two Discord gateway sessions both
+  answer every message. `ChatGatewayService` connects nothing until it holds the Blob lease `chat-gateway/lease`, drops
+  every session the moment a renewal fails, and releases the lease on graceful shutdown. DevHost registers
+  `NoOpChatGatewayLease` BEFORE `AddChatGateway()`, which only `TryAdd`s the Blob lease (`Hosts_RegisterChatGateway`).
+  Anything else that adds an outbound, single-consumer connection needs the same treatment.
+- **Evidence:** `src/Agent42.Backend/ChatGateway/ChatGatewayLease.cs`, `src/Agent42.Backend/ChatGateway/ChatGatewayService.cs`,
+  `infra/modules/storage.bicep` (`chatGatewayContainer`), `tests/Agent42.Tests/ChatGatewayServiceTests.cs`
+  (`LeaseHandover_NoOverlap`, `LostRenewal_DisconnectsEverything`)
+- **Verified:** 2026-10-21
+
+### A chat-driven turn must be `interactive: false`, and chat commands must skip the queue
+
+- **Claim:** `IAgentGrain.ChatAsync` defaults to `interactive: true`, which pauses the stream on a client tool, an MCP
+  elicitation or a suggestion until a browser answers. A chat app never answers, so the turn would hang.
+  `ChatTurnPipeline` passes `interactive: false, ephemeral: false` (`Pipeline_OwnerDm_Replies_AsTheOwner_NonInteractively`
+  counts the suggestion calls and was mutation-checked). Separately, commands run inline in `AcceptAsync`, never through
+  a route's queue: `/stop` queued behind the turn it should stop would wait for that turn to finish. The queue slot is
+  claimed synchronously, before any await, or a second message races the first.
+- **Evidence:** `src/Agent42.Backend/ChatGateway/ChatTurnPipeline.cs`, `src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Turn.cs`,
+  `tests/Agent42.Tests/ChatTurnPipelineTests.cs` (`Pipeline_Stop_BypassesQueue`, `Pipeline_SameRoute_InOrder`)
+- **Verified:** 2026-10-21
+
+### Stream plain frames, format only the final, and never sleep a long rate limit
+
+- **Claim:** `ChatReplyStreamer` edits a placeholder with PLAIN text while a reply streams, because a half-written
+  `**` formats into markup the platform rejects, failing the edit. Only the final frame is formatted, and a `BadFormat`
+  answer is resent plain. A final that is rate limited waits only up to `MaxRetryWait` (30 s): Hermes once slept a
+  97-minute Telegram flood wait verbatim and froze every platform. Every platform call is time-boxed, so a hung platform
+  delays one reply, not the chat's queue, and the turn still persists (`Pipeline_HangingSession_StillPersists`).
+- **Evidence:** `src/Agent42.Backend/ChatGateway/ChatReplyStreamer.cs`, `tests/Agent42.Tests/ChatReplyStreamerTests.cs`
+- **Verified:** 2026-10-21
+
+### Cosmos JSON omits a CLR-default member, so a bool initialised to `true` flips on reload
+
+- **Claim:** The grain-storage JSON serializer leaves out a member that holds its CLR default. A `bool` declared
+  `{ get; set; } = true` and saved as `false` is written with no value, and on read the initialiser puts `true` back.
+  `ChatConnection.Enabled` had exactly that shape, so every disabled bot would have come back enabled after a
+  deactivation; the DevHost golden generation exposed it. Persisted bools in a class-with-initialisers state type must
+  default to `false` (name the property for its false meaning if needed). Binary serialization does not show this; only
+  the Cosmos path does (`ChatConnection_Disabled_StaysDisabledThroughCosmosJson`, mutation-checked).
+- **Evidence:** `src/Agent42.Agents/ChatGateway/ChatConnection.cs`, `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
+- **Verified:** 2026-10-21

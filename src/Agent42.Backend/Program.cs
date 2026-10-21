@@ -361,6 +361,11 @@ builder.Services.AddAgentWebhooks();
 // EmailRegistration.
 builder.Services.AddInboundEmail(builder.Configuration);
 
+// The chat gateway (ADR 0111): each user's own bots on chat platforms, connected OUT from this one replica (no public
+// endpoint), behind the Blob lease that keeps an overlapping revision from running them twice. See
+// ChatGatewayRegistration.
+builder.Services.AddChatGateway();
+
 // The copilot agent kind: the GitHub Copilot SDK's agent loop on the user's own provider, with its session files in
 // Blob. See CopilotRegistration and CopilotAgentFactory for the runtime's trust boundary.
 builder.Services.AddCopilotAgents(builder.Configuration);

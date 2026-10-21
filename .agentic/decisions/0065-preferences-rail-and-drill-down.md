@@ -15,6 +15,9 @@ amends: [0021]
 > description line under each built-in's label. No selection semantics change — not the `null == all`
 > sentinel, not the wildcards, not the capability intersection.
 
+> **Since [ADR 0111](0111-chat-gateway-for-chat-apps.md) the rail has seven sections:** Chat apps is appended last,
+> so MCP stays at index 3 and every rule below holds unchanged. "Six" in the text below is the count at the time.
+
 ## Context
 
 `#profileDialog` was a `min(520px, 92vw)` box whose six sections were a single **non-wrapping flex

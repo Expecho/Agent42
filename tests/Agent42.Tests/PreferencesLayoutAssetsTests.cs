@@ -118,7 +118,7 @@ public sealed class PreferencesLayoutAssetsTests
             .Select(m => m.Groups[1].Value)
             .ToArray();
 
-        Assert.Equal(6, markupOrder.Length);
+        Assert.Equal(7, markupOrder.Length);
         Assert.Equal(arrayOrder, markupOrder);
         Assert.Equal("tabMcp", markupOrder[3]); // and MCP is still the 4th rail item (ADR 0025/0064)
     }

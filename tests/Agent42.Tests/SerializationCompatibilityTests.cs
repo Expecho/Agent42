@@ -94,6 +94,16 @@ public sealed class SerializationCompatibilityTests
     private const string UserShareLinksStateBlob =
         "ICAAAyHoQA1jb252LTFBH3Nocl9nb2xkZW50b2tlbiGAgAC3lqtJ3giBAAAAAAAAAADg4ODg";
 
+    // Serialized once from GoldenStates when ADR 0111 added the chat gateway, then committed.
+    private const string UserChatConnectionsStateBlob =
+        "ICAAAyFAF2Nvbm4tZ29sZGVuQRFUZWxlZ3JhbUERTXkgcGhvbmVBGWFnZW50LWdvbGRlbgEBQRtjaXBoZXItZ29sZGVuQRU3MDAwMDAwMDAxQSVhZ2VudDQyX2dvbGRlbl9ib3RBEVQtZ29sZGVuQRMxMTExMTExMTFBD1Qtb3duZXJBFUFCQ0RFMjM0NTYhgABXyQ1sxN4IgQAAAAAAAAAA4AENAQMBAwEDwR1hB2XNHUEZZ29sZGVuIGZhdWx0IYCAALeWq0neCIEAAAAAAAAAAOAhgABXyQ1sxN4IgQAAAAAAAAAA4CHoQCF1c2VyQGV4YW1wbGUuY29tQQ1Hb2xkZW7BRUEXR29sZGVuIFVzZXIhAANBCXVzZXLgQQdhYWTg4ODg";
+
+    private const string ChatConnectionDirectoryStateBlob =
+        "ICAAAyHoQCF1c2VyQGV4YW1wbGUuY29tQRdjb25uLWdvbGRlbuDg4A==";
+
+    private const string ChatRouteStateBlob =
+        "IEBTY2hhdC0xMTExMTExMS0yMjIyLTMzMzMtNDQ0NC01NTU1NTU1NTU1NTUBqUEfZm91bmRyeTpncHQtNS40QRlhZ2VudC1nb2xkZW7g";
+
     private const string UserSkillsStateBlob =
         "ICDoMAHDrnj4fVJlYWRPbmx5TGlzdEludGVyZmFjZUNvZGVjYDFbW0FnZW50NDIuQWdlbnRzLlN0b3JlZFVzZXJTa2lsbF1dAAMh6EAPc2tpbGwtMUEPbXlub3Rlc0EZVGFrZXMgbm90ZXMuMQHD2W4+TVJlYWRPbmx5TGlzdEludGVyZmFjZUNvZGVjYDFbW3N0cmluZ11dAAVBEVNLSUxMLm1kQCdyZWZlcmVuY2VzL25vdGVzLm1k4CGAgAC3lqtJ3giBAAAAAAAAAADg4OABEeDg";
 
@@ -376,5 +386,14 @@ public sealed class SerializationCompatibilityTests
         Assert.Equal(expected.Description, actual.Description);
         Assert.Equal(expected.Files, actual.Files);
         Assert.Equal(expected.UploadedAt, actual.UploadedAt);
+    }
+
+    // ADR 0111: the chat gateway's three state roots, field for field (every golden member is non-default).
+    [Fact]
+    public void ChatGatewayStates_RoundTripFieldForField()
+    {
+        Assert.Equivalent(GoldenStates.UserChatConnections(), Restore<UserChatConnectionsState>(UserChatConnectionsStateBlob), strict: true);
+        Assert.Equal(GoldenStates.ChatConnectionDirectory().Entries, Restore<ChatConnectionDirectoryState>(ChatConnectionDirectoryStateBlob).Entries);
+        Assert.Equivalent(GoldenStates.ChatRoute(), Restore<ChatRouteState>(ChatRouteStateBlob), strict: true);
     }
 }
