@@ -38,7 +38,19 @@ public sealed class ChatDeliverySender : IChatDeliverySender
         _logger = logger;
     }
 
-    public async Task DeliverAsync(string userId, ChatDelivery delivery, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Hands the delivery off and returns at once. The caller is a conversation grain, which is non-reentrant: awaiting
+    /// a platform send (up to the streamer's time-box per call, retried) would hold that conversation for as long as a
+    /// hung platform takes. The send is detached on the thread pool, out of the grain's scheduler.
+    /// </summary>
+    public Task DeliverAsync(string userId, ChatDelivery delivery, CancellationToken cancellationToken = default)
+    {
+        _ = Task.Run(() => DeliverNowAsync(userId, delivery, CancellationToken.None), CancellationToken.None);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The delivery itself, awaited (tests and the detached hand-off).</summary>
+    public async Task DeliverNowAsync(string userId, ChatDelivery delivery, CancellationToken cancellationToken)
     {
         try
         {

@@ -1103,6 +1103,24 @@
         <span class="agent-form__label">// enabled</span>
       </label>
 
+      <label class="agent-form__field agent-form__field--check">
+        <input class="agent-form__checkbox" type="checkbox" id="chatGroups" />
+        <span class="agent-form__label">// answer in groups when mentioned</span>
+      </label>
+      <p class="agent-form__note" id="chatGroupsNote">Everyone in the group or channel sees the replies, including anything the agent quotes from your documents, tools or memory. Only your own messages that mention the bot are answered; other people's messages never reach your agent. On Telegram, also turn off the bot's privacy mode (@BotFather, /setprivacy), or it can't see mentions.</p>
+
+      <label class="agent-form__field agent-form__field--check">
+        <input class="agent-form__checkbox" type="checkbox" id="chatVoiceNotes" />
+        <span class="agent-form__label">// transcribe voice notes</span>
+      </label>
+      <p class="agent-form__note">Voice notes are sent to your default transcription model (Preferences, model providers) and answered as text.</p>
+
+      <label class="agent-form__field agent-form__field--check">
+        <input class="agent-form__checkbox" type="checkbox" id="chatNotifications" />
+        <span class="agent-form__label">// deliver notifications here</span>
+      </label>
+      <p class="agent-form__note">Results of scheduled prompts and agent runs, and the agent's notifications, also go to the chat where you send the sethome command, next to Web Push.</p>
+
       <section class="agent-form__section" id="chatPairingSection" hidden>
         <p class="agent-form__note" id="chatPairingText"></p>
         <div class="agent-key" id="chatPairingCodeBox" hidden>

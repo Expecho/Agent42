@@ -177,6 +177,23 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
 
     // ---- the gateway's implementation ----
 
+    // The caller is a non-reentrant conversation grain: a hung platform must never hold it. The hand-off returns at
+    // once, and the send still lands once the platform answers.
+    [Fact]
+    public async Task Sender_HandsOff_WithoutWaitingOnAHungPlatform()
+    {
+        var user = NewUser();
+        var sessions = new ChatSessionRegistry();
+        var origin = await ConnectAsync(user, sessions, notifications: false, home: null);
+        origin.Session.Hang = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var handOff = Sender(sessions).DeliverAsync(user, Delivery(ChatDeliveryKind.AwayReply, origin.Connection.Id, "555"));
+
+        Assert.True(handOff.IsCompleted);
+        origin.Session.Hang.SetResult();
+        await ChatGatewayServiceTests.Until(() => origin.Session.Sent.Any(s => s.Op == "send"));
+    }
+
     [Fact]
     public async Task Sender_AwayReply_GoesToItsOrigin_AndKeepsTheThread()
     {
@@ -185,7 +202,7 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
         var origin = await ConnectAsync(user, sessions, notifications: false, home: null);
         var home = await ConnectAsync(user, sessions, notifications: true, home: "999");
 
-        await Sender(sessions).DeliverAsync(user, Delivery(ChatDeliveryKind.AwayReply, origin.Connection.Id, "555#77"));
+        await Sender(sessions).DeliverNowAsync(user, Delivery(ChatDeliveryKind.AwayReply, origin.Connection.Id, "555#77"), CancellationToken.None);
 
         var send = Assert.Single(origin.Session.Sent, s => s.Op == "send");
         Assert.Equal(new ChatTarget("555", "77"), send.Target with { ReplyToMessageId = null });
@@ -202,7 +219,7 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
         var origin = await ConnectAsync(user, sessions, notifications: false, home: null, live: false);
         var home = await ConnectAsync(user, sessions, notifications: true, home: "999");
 
-        await Sender(sessions).DeliverAsync(user, Delivery(ChatDeliveryKind.AwayReply, origin.Connection.Id, "555"));
+        await Sender(sessions).DeliverNowAsync(user, Delivery(ChatDeliveryKind.AwayReply, origin.Connection.Id, "555"), CancellationToken.None);
 
         Assert.Equal(new ChatTarget("999"), Assert.Single(home.Session.Sent, s => s.Op == "send").Target);
 
@@ -211,7 +228,7 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
         var quietOrigin = await ConnectAsync(quietUser, quietSessions, notifications: false, home: null, live: false);
         var quietHome = await ConnectAsync(quietUser, quietSessions, notifications: false, home: "999");
 
-        await Sender(quietSessions).DeliverAsync(quietUser, Delivery(ChatDeliveryKind.AwayReply, quietOrigin.Connection.Id, "555"));
+        await Sender(quietSessions).DeliverNowAsync(quietUser, Delivery(ChatDeliveryKind.AwayReply, quietOrigin.Connection.Id, "555"), CancellationToken.None);
 
         Assert.Empty(quietHome.Session.Sent);
     }
@@ -224,7 +241,7 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
         var origin = await ConnectAsync(user, sessions, notifications: false, home: null);
         var home = await ConnectAsync(user, sessions, notifications: true, home: "999");
 
-        await Sender(sessions).DeliverAsync(user, Delivery(ChatDeliveryKind.Notification, origin.Connection.Id, "555"));
+        await Sender(sessions).DeliverNowAsync(user, Delivery(ChatDeliveryKind.Notification, origin.Connection.Id, "555"), CancellationToken.None);
 
         Assert.Empty(origin.Session.Sent);
         Assert.Equal(new ChatTarget("999"), Assert.Single(home.Session.Sent, s => s.Op == "send").Target);
@@ -241,8 +258,8 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
         // Notifications and a home route, but no live session.
         var offline = await ConnectAsync(user, sessions, notifications: true, home: "888", live: false);
 
-        await Sender(sessions).DeliverAsync(user, Delivery(ChatDeliveryKind.Notification, null, null));
-        await Sender(sessions).DeliverAsync(NewUser(), Delivery(ChatDeliveryKind.AwayReply, "no-such-connection", "1"));
+        await Sender(sessions).DeliverNowAsync(user, Delivery(ChatDeliveryKind.Notification, null, null), CancellationToken.None);
+        await Sender(sessions).DeliverNowAsync(NewUser(), Delivery(ChatDeliveryKind.AwayReply, "no-such-connection", "1"), CancellationToken.None);
 
         Assert.Empty(noRoute.Session.Sent);
         Assert.Empty(off.Session.Sent);

@@ -73,6 +73,30 @@ public sealed class ChatGatewayPanelAssetsTests(StaticAssetsServerFixture fixtur
         Assert.Contains("messages from anyone else are ignored", html, StringComparison.Ordinal);
     }
 
+    // Phase 1c (Step 16, C13): the three per-connection toggles are real inputs that the save sends, and the groups toggle
+    // says in plain words that everyone in the group sees the replies.
+    [Fact]
+    public async Task Panel_HasTheGroupVoiceAndNotificationToggles_AndTheGroupWarning()
+    {
+        var html = await fixture.Client.GetStringAsync("/index.html");
+        var module = await fixture.Client.GetStringAsync("/js/chatgateway.js");
+
+        foreach (var (id, field, input) in new[]
+        {
+            ("chatGroups", "groupsEnabled", "chatGroupsInput"),
+            ("chatVoiceNotes", "voiceNotesEnabled", "chatVoiceNotesInput"),
+            ("chatNotifications", "notificationsEnabled", "chatNotificationsInput"),
+        })
+        {
+            Assert.Matches($"""<input[^>]*type="checkbox"[^>]*id="{id}" """.Trim(), html);
+            Assert.Contains($"{field}: {input}.checked", module, StringComparison.Ordinal);
+            Assert.Contains($"{input}.checked = connection?.{field} ?? false;", module, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("Everyone in the group or channel sees the replies", html, StringComparison.Ordinal);
+        Assert.Contains("/setprivacy", html, StringComparison.Ordinal);
+    }
+
     // Phase 1b: Slack's second credential (the xapp- app-level token) is write-only too, shown only for Slack, and sent
     // with the bot token; a blank field keeps its stored token (Update_WithOneToken_KeepsTheOtherStoredToken).
     [Fact]
