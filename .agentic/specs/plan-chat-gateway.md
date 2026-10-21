@@ -220,7 +220,7 @@ for both projects, `AgentApiParts()`, now 25 rows, and a new `Hosts_RegisterChat
 0110's MR also had to bump), `PreferencesLayoutAssetsTests` (6 → 7 rail sections; `tabMcp` stays at index 3),
 `ConfigHealthAssetsTests` / `UserSkillPickerAssetsTests` (index pins), and phase 2 `EasyAuthExclusionTests`.
 
-**Modified — docs (hard rule 2, same MR as the code they describe):** new ADRs *(re-check numbers; 0111 and 0112 free
+**Modified — docs (hard rule 2, same MR as the code they describe):** new ADRs *(re-check numbers; 0111 is the gateway; 0112 was taken by past-chats on main, so the STT ADR takes the next free number
 at plan time)*: the chat gateway, and server-side speech-to-text (amends 0038). Amendment banners on 0038, 0028/0075
 (delivery beside push) and 0065 (seven sections). Also: 0039/0040 (folder lists; 0040's partial count), `CLAUDE.md`
 (feature-map row; **rule 12** gains the gateway sockets, the deduper, the turn queue, the per-conversation guards and
@@ -735,7 +735,7 @@ chat user can't easily resend a mixed batch; record it in the ADR. Outbound: an 
 **Verify:** `ChatTurnPipelineTests` rows: an image reaches the turn; a document is registered first; an oversized
 file is skipped with a note; an off-host URL is never fetched; a generated image is uploaded once.
 
-**Step 15: Voice notes (ADR 0112).** Add `ISpeechTranscriptionService` + `OpenAITranscriptionService`, per-user
+**Step 15: Voice notes (the STT ADR, next free number).** Add `ISpeechTranscriptionService` + `OpenAITranscriptionService`, per-user
 resolution, the overlay field and the provider dialog field (CACHE bump again if `wwwroot/js` changes). The
 pipeline transcribes before the turn, echoes the transcript and sends one curated reply on failure. Formats are
 per Step 1g.
@@ -767,7 +767,7 @@ implementation (origin route, else home route if notifications are on).
 - incognito never delivers;
 - `GrainStorageSerializerTests` covers a grain state document without `Origin`.
 
-**Step 18: Docs for 1c.** ADR 0112 (+ an amendment banner on 0038), amendment banners on 0028/0075, the ADR 0111
+**Step 18: Docs for 1c.** The STT ADR (+ an amendment banner on 0038), amendment banners on 0028/0075, the ADR 0111
 amendment (files policy, groups), the `chat-apps.md` sections, and the 1c gotchas: the delivery port is per host;
 reply text is accumulated only at the two away-reply sites; a chat-driven turn is never delivered back.
 

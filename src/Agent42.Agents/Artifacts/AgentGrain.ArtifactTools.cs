@@ -307,6 +307,12 @@ public sealed partial class AgentGrain
             return call;
         }
 
+        if (call.Name is PastChatLimits.SearchToolName or PastChatLimits.ReadToolName)
+        {
+            CompactPastChatResult(call, result);
+            return call;
+        }
+
         if (call.Name == ReadArtifactTool)
         {
             if (result is not null && ParseArtifactResult(result.Result) is { } read)

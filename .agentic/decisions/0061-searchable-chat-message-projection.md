@@ -8,6 +8,12 @@ extends: [0004, 0034, 0039]
 amends: []
 ---
 
+> **Amended by [ADR 0112](0112-past-chats-as-a-model-tool.md) (2026-10-21).** The model now searches this projection too
+> (`search_past_chats` / `read_past_chat`), through two new port methods. The BM25 switch below
+> (`ORDER BY RANK FullTextScore`) is now used, by the **tool's** query only (`SearchRankedAsync`). The sidebar keeps
+> `CONTAINS`. The "en-US is GA, no enrollment" claim below is checked by 0112's prod smoke, because current Microsoft
+> docs mention a full-text enrollment.
+
 # Search inside chat history via a plain-text message projection
 
 ## Context
