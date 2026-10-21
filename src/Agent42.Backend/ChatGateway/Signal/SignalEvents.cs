@@ -65,9 +65,21 @@ public static class SignalEvents
             Text: text,
             MentionsBot: MentionsBot(data, botAci),
             RepliesToBot: TryObject(data, "quote", out var quote) && !string.IsNullOrEmpty(botAci) && Str(quote, "authorUuid") == botAci,
-            Files: files,
+            Files: files.Select(f => f with { FileRef = AttachmentRef(chatId, f.FileRef) }).ToList(),
             ReceivedAt: ReceivedAt(timestamp));
     }
+
+    /// <summary>
+    /// An inbound file's opaque ref: the chat it arrived in and the daemon's attachment id. <c>getAttachment</c> needs
+    /// both (the sender or the group, plus the id); neither an ACI, a phone number nor a base64 group id contains '|'.
+    /// </summary>
+    public static string AttachmentRef(string chatId, string attachmentId) => chatId + "|" + attachmentId;
+
+    /// <summary>The inverse of <see cref="AttachmentRef"/>; <c>null</c> for a ref this adapter didn't make.</summary>
+    public static (string ChatId, string AttachmentId)? ParseAttachmentRef(string fileRef)
+        => fileRef.IndexOf('|', StringComparison.Ordinal) is var split and > 0 && split < fileRef.Length - 1
+            ? (fileRef[..split], fileRef[(split + 1)..])
+            : null;
 
     private static bool MentionsBot(JsonElement data, string? botAci)
         => !string.IsNullOrEmpty(botAci)

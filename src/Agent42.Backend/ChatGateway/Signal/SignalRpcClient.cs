@@ -149,7 +149,7 @@ public sealed class SignalRpcClient(IHttpClientFactory httpClients, ISignalDaemo
         parameters["message"] = text;
         if (styles is { Count: > 0 })
         {
-            parameters["textStyle"] = styles;
+            parameters["textStyles"] = styles;
         }
 
         if (attachments is { Count: > 0 })

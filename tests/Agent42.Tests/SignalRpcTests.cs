@@ -75,7 +75,7 @@ public class SignalRpcTests
         Assert.Equal(Aci, Assert.Single(p.GetProperty("recipient").EnumerateArray()).GetString());
         Assert.False(p.TryGetProperty("groupId", out _));
         Assert.Equal("hi there", p.GetProperty("message").GetString());
-        Assert.Equal("0:2:BOLD", Assert.Single(p.GetProperty("textStyle").EnumerateArray()).GetString());
+        Assert.Equal("0:2:BOLD", Assert.Single(p.GetProperty("textStyles").EnumerateArray()).GetString());
         Assert.Equal("data:text/plain;filename=a.txt;base64,aGk=", Assert.Single(p.GetProperty("attachments").EnumerateArray()).GetString());
         Assert.Equal(1700000000123, p.GetProperty("quoteTimestamp").GetInt64());
         Assert.Equal(Aci, p.GetProperty("quoteAuthor").GetString());
@@ -92,7 +92,7 @@ public class SignalRpcTests
         var p = SentBody(handler).GetProperty("params");
         Assert.Equal(GroupId, p.GetProperty("groupId").GetString());
         Assert.False(p.TryGetProperty("recipient", out _));
-        Assert.False(p.TryGetProperty("textStyle", out _));
+        Assert.False(p.TryGetProperty("textStyles", out _));
         Assert.False(p.TryGetProperty("attachments", out _));
         Assert.False(p.TryGetProperty("quoteTimestamp", out _));
     }
@@ -105,7 +105,7 @@ public class SignalRpcTests
 
         await client.SendAsync(Number, Aci, text, styles, null, null, null, CancellationToken.None);
 
-        Assert.Equal("3:2:BOLD", SentBody(handler).GetProperty("params").GetProperty("textStyle")[0].GetString());
+        Assert.Equal("3:2:BOLD", SentBody(handler).GetProperty("params").GetProperty("textStyles")[0].GetString());
     }
 
     [Fact]

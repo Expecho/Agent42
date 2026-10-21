@@ -79,7 +79,9 @@ public class SignalEventsTests
             """));
 
         var file = Assert.Single(message!.Files);
-        Assert.Equal(("att123", "cat.jpg", "image/jpeg", 2048L, false), (file.FileRef, file.FileName, file.DeclaredMediaType, file.Size, file.IsVoiceNote));
+        Assert.Equal((Alice + "|att123", "cat.jpg", "image/jpeg", 2048L, false), (file.FileRef, file.FileName, file.DeclaredMediaType, file.Size, file.IsVoiceNote));
+        Assert.Equal((Alice, "att123"), SignalEvents.ParseAttachmentRef(file.FileRef));
+        Assert.Null(SignalEvents.ParseAttachmentRef("att123"));
     }
 
     [Fact]
