@@ -1,9 +1,14 @@
 package nl.agent42.android
 
+import android.content.ContentResolver
 import android.content.Context
 import android.webkit.CookieManager
 import androidx.compose.runtime.mutableStateListOf
+import java.io.File
+import java.util.UUID
 import nl.agent42.android.api.Agent42Api
+import nl.agent42.android.chat.SharedContent
+import nl.agent42.android.location.LocationSource
 import nl.agent42.android.session.KeystoreSessionStore
 import nl.agent42.android.session.Session
 import okhttp3.OkHttpClient
@@ -22,6 +27,9 @@ sealed interface Screen {
  */
 class AppContainer(context: Context) {
     private val store = KeystoreSessionStore(context)
+    val resolver: ContentResolver = context.contentResolver
+    val location = LocationSource(context)
+    val cacheDir: File = context.cacheDir
     private val http = OkHttpClient()
     private var cachedApi: Pair<Session, Agent42Api>? = null
 
@@ -47,7 +55,21 @@ class AppContainer(context: Context) {
     fun signedIn(cookie: String) {
         update(checkNotNull(session).copy(cookie = cookie))
         resetTo(Screen.Conversations)
+        if (pendingShare != null) navigate(newChat())
     }
+
+    /** A share waiting for a new chat to pick it up; it survives a detour through sign-in. */
+    var pendingShare: SharedContent? = null
+        private set
+
+    fun share(content: SharedContent) {
+        pendingShare = content
+        if (stack.last() != Screen.Server && stack.last() != Screen.SignIn) navigate(newChat())
+    }
+
+    fun takeShare(): SharedContent? = pendingShare.also { pendingShare = null }
+
+    fun newChat() = Screen.Chat(UUID.randomUUID().toString(), "New chat", isNew = true, agentBound = false)
 
     /** Easy Auth turned a request away (a 401, a redirect or an HTML page): drop the cookie and sign in again. */
     fun signedOut() {

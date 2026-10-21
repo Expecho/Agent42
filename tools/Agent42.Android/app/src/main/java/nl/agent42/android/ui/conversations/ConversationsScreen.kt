@@ -28,7 +28,6 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
-import java.util.UUID
 import nl.agent42.android.AppContainer
 import nl.agent42.android.Screen
 import nl.agent42.android.api.ConversationInfo
@@ -49,9 +48,7 @@ fun ConversationsScreen(container: AppContainer) {
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = {
-                container.navigate(Screen.Chat(UUID.randomUUID().toString(), "New chat", isNew = true, agentBound = false))
-            }) { Text("New chat") }
+            ExtendedFloatingActionButton(onClick = { container.navigate(container.newChat()) }) { Text("New chat") }
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {

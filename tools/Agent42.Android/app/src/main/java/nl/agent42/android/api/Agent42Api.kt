@@ -95,6 +95,13 @@ class Agent42Api(
         }
     }
 
+    /** An attachment's bytes (an uploaded or generated image), through the server's user-scoped proxy. */
+    suspend fun attachment(conversationId: String, attachmentId: String): ByteArray {
+        val request = Request.Builder().url(url("api/conversations/$conversationId/attachments/$attachmentId")).get()
+            .also(credentials::applyTo).build()
+        return send(request).use { it.body.bytes() }
+    }
+
     suspend fun upload(conversationId: String, bytes: ByteArray, fileName: String, mediaType: String): UploadResult {
         require(bytes.size <= MAX_ATTACHMENT_BYTES) { "Attachments are limited to 10 MB." }
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)

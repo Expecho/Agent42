@@ -1,14 +1,21 @@
 package nl.agent42.android.ui.chat
 
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -16,12 +23,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -34,20 +42,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.core.net.toUri
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mikepenz.markdown.m3.Markdown
+import java.io.File
+import java.util.UUID
 import nl.agent42.android.AppContainer
 import nl.agent42.android.Screen
 import nl.agent42.android.chat.Role
 import nl.agent42.android.chat.UiTurn
+import nl.agent42.android.location.LocationSource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,9 +71,32 @@ fun ChatScreen(container: AppContainer, chat: Screen.Chat) {
     val vm = viewModel(key = "chat-${chat.id}") { ChatViewModel(container, chat) }
     val context = LocalContext.current
     val list = rememberLazyListState()
+
+    // Only an on-screen chat advertises client tools: it can show a dialog and take a while-in-use fix (ADR 0114).
+    LifecycleResumeEffect(vm) {
+        vm.foreground = true
+        onPauseOrDispose { vm.foreground = false }
+    }
     LaunchedEffect(vm.turns.size, vm.turns.lastOrNull()?.text?.length) {
         if (vm.turns.isNotEmpty()) list.animateScrollToItem(vm.turns.lastIndex)
     }
+
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        vm.answerLocationPermission(grants.values.any { it })
+    }
+    LaunchedEffect(vm.locationPermission) {
+        if (vm.locationPermission != null) permission.launch(LocationSource.PERMISSIONS)
+    }
+    vm.confirm?.let { request ->
+        AlertDialog(
+            onDismissRequest = { vm.answerConfirm(false) },
+            title = { Text("Confirm") },
+            text = { Text(request.text) },
+            confirmButton = { Button(onClick = { vm.answerConfirm(true) }) { Text("Approve") } },
+            dismissButton = { TextButton(onClick = { vm.answerConfirm(false) }) { Text("Decline") } },
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -76,11 +115,13 @@ fun ChatScreen(container: AppContainer, chat: Screen.Chat) {
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
             LazyColumn(state = list, modifier = Modifier.weight(1f).fillMaxWidth()) {
                 itemsIndexed(vm.turns) { index, turn ->
-                    Bubble(turn, isLast = index == vm.turns.lastIndex, onSuggestion = vm::send)
+                    Bubble(vm, turn, isLast = index == vm.turns.lastIndex)
                 }
             }
             vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
-            Composer(streaming = vm.streaming, onSend = vm::send, onStop = vm::stop)
+            vm.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp)) }
+            PendingFiles(vm)
+            Composer(vm, container)
         }
     }
 }
@@ -103,7 +144,7 @@ private fun ModelPicker(vm: ChatViewModel) {
 }
 
 @Composable
-private fun Bubble(turn: UiTurn, isLast: Boolean, onSuggestion: (String) -> Unit) {
+private fun Bubble(vm: ChatViewModel, turn: UiTurn, isLast: Boolean) {
     val user = turn.role == Role.USER
     Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), contentAlignment = if (user) Alignment.CenterEnd else Alignment.CenterStart) {
         Column(
@@ -124,8 +165,11 @@ private fun Bubble(turn: UiTurn, isLast: Boolean, onSuggestion: (String) -> Unit
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            turn.attachments.forEach { Text("📎 ${it.fileName}", style = MaterialTheme.typography.labelMedium) }
-            turn.images.forEach { _ -> Text("🖼 Generated image (open in web)", style = MaterialTheme.typography.labelMedium) }
+            turn.attachments.forEach { attachment ->
+                if (attachment.mediaType.startsWith("image/")) AttachmentImage(vm, attachment.id)
+                else Text("📎 ${attachment.fileName}", style = MaterialTheme.typography.labelMedium)
+            }
+            turn.images.forEach { AttachmentImage(vm, it) }
             turn.todos.forEach { Text((if (it.done) "☑ " else "☐ ") + it.title, style = MaterialTheme.typography.bodySmall) }
             when {
                 user -> Text(turn.text)
@@ -138,11 +182,26 @@ private fun Bubble(turn: UiTurn, isLast: Boolean, onSuggestion: (String) -> Unit
             if (turn.stopped) Text("Stopped", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (isLast && turn.suggestions.isNotEmpty()) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    turn.suggestions.forEach { s -> SuggestionChip(onClick = { onSuggestion(s) }, label = { Text(s) }) }
+                    turn.suggestions.forEach { s -> SuggestionChip(onClick = { vm.send(s) }, label = { Text(s) }) }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun AttachmentImage(vm: ChatViewModel, attachmentId: String) {
+    val bitmap by produceState<android.graphics.Bitmap?>(null, attachmentId) {
+        value = vm.image(attachmentId)?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+    }
+    bitmap?.let {
+        Image(
+            it.asImageBitmap(),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.widthIn(max = 280.dp).heightIn(max = 280.dp),
+        )
+    } ?: Text("🖼 …", style = MaterialTheme.typography.labelMedium)
 }
 
 @Composable
@@ -155,20 +214,55 @@ private fun Reasoning(text: String) {
 }
 
 @Composable
-private fun Composer(streaming: Boolean, onSend: (String) -> Unit, onStop: () -> Unit) {
-    var text by remember { mutableStateOf("") }
-    Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun PendingFiles(vm: ChatViewModel) {
+    if (vm.files.isEmpty()) return
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        vm.files.forEach { file ->
+            InputChip(
+                selected = false,
+                onClick = { vm.removeFile(file.key) },
+                label = {
+                    Text(
+                        when {
+                            file.error != null -> "${file.name}: ${file.error}"
+                            file.uploading -> "${file.name} …"
+                            else -> "${file.name} ✕"
+                        },
+                        maxLines = 1,
+                    )
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun Composer(vm: ChatViewModel, container: AppContainer) {
+    val context = LocalContext.current
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> uris.forEach(vm::attach) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        if (saved) cameraUri?.let(vm::attach)
+    }
+    Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        TextButton(onClick = { pick.launch(arrayOf("*/*")) }, enabled = !vm.streaming) { Text("📎") }
+        TextButton(onClick = {
+            val file = File(container.cacheDir, "camera/${UUID.randomUUID()}.jpg").apply { parentFile?.mkdirs() }
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+            cameraUri = uri
+            camera.launch(uri)
+        }, enabled = !vm.streaming) { Text("📷") }
         OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
+            value = vm.draft,
+            onValueChange = { vm.draft = it },
             placeholder = { Text("Message") },
             maxLines = 6,
             modifier = Modifier.weight(1f),
         )
-        if (streaming) {
-            OutlinedButton(onClick = onStop) { Text("Stop") }
+        if (vm.streaming) {
+            OutlinedButton(onClick = vm::stop) { Text("Stop") }
         } else {
-            Button(onClick = { onSend(text); text = "" }, enabled = text.isNotBlank()) { Text("Send") }
+            Button(onClick = { vm.send() }, enabled = vm.draft.isNotBlank() && vm.files.none { it.uploading }) { Text("Send") }
         }
     }
 }
