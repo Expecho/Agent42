@@ -95,8 +95,9 @@ public static partial class AgentApi
         }
 
         ChatValidatedCredentials? validated = null;
-        if (request.Credentials is { } pasted)
+        if (request.Credentials is { } typed)
         {
+            var pasted = WithStoredTokens(typed, parts.Protector.Unprotect(existing.CredentialsCiphertext));
             var (value, problem) = await ValidateChatCredentialsAsync(parts.Adapters[existing.Platform], pasted, http.RequestAborted);
             if (problem is not null)
             {
@@ -170,6 +171,15 @@ public static partial class AgentApi
         await parts.Control.StopAsync(id, http.RequestAborted);
         return Results.NoContent();
     }
+
+    // On an edit, a token field left blank keeps the stored token, so rotating one of Slack's two tokens doesn't mean
+    // re-pasting the other. The pair is still validated, and stored, as one credential.
+    private static ChatCredentialsRequest WithStoredTokens(ChatCredentialsRequest typed, ChatCredentials? stored)
+        => stored is null
+            ? typed
+            : new ChatCredentialsRequest(
+                string.IsNullOrWhiteSpace(typed.BotToken) ? stored.BotToken : typed.BotToken,
+                string.IsNullOrWhiteSpace(typed.AppToken) ? stored.AppToken : typed.AppToken);
 
     private static async Task<(ChatValidatedCredentials? Value, IResult? Problem)> ValidateChatCredentialsAsync(
         IChatPlatformAdapter adapter, ChatCredentialsRequest pasted, CancellationToken cancellationToken)

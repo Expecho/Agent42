@@ -44,5 +44,9 @@ public class ChatCommandsTests
         var help = ChatCommands.HelpText('!');
 
         Assert.All(ChatCommands.All, c => Assert.Contains("!" + c.Name, help));
+        // Phase 1b: the descriptions name other commands in the platform's prefix too, never a literal '/' on Slack.
+        Assert.DoesNotContain("/", help, StringComparison.Ordinal);
+        Assert.Contains("!model list", help, StringComparison.Ordinal);
+        Assert.Contains("/agent none", ChatCommands.HelpText('/'), StringComparison.Ordinal);
     }
 }

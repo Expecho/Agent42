@@ -1075,6 +1075,13 @@
                placeholder="paste the token" />
       </label>
 
+      <!-- Slack's Socket Mode also needs the app-level token (xapp-); shown only for Slack (ADR 0111). -->
+      <label class="agent-form__field" id="chatAppTokenField" hidden>
+        <span class="agent-form__label">// app-level token</span>
+        <input class="agent-form__input" type="password" id="chatAppToken" autocomplete="off"
+               placeholder="paste the xapp- token" />
+      </label>
+
       <label class="agent-form__field">
         <span class="agent-form__label">// talks to</span>
         <select class="agent-form__input agent-form__select" id="chatTarget"></select>

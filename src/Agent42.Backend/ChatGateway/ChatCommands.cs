@@ -25,13 +25,16 @@ public static partial class ChatCommands
     public const string Status = "status";
     public const string Help = "help";
 
-    /// <summary>Every command, in the order help and Telegram's menu list them.</summary>
+    /// <summary>
+    /// Every command, in the order help and Telegram's menu list them. A description names other commands with
+    /// <c>{0}</c> for the platform's prefix (Slack's is <c>!</c>); read it through <see cref="Describe"/>.
+    /// </summary>
     public static readonly IReadOnlyList<(string Name, string Description)> All =
     [
         (New, "Start a new conversation"),
         (Stop, "Stop the reply in progress"),
-        (Model, "Show or switch the model: /model list, /model <id>, /model default"),
-        (Agent, "Talk to a stored agent: /agent list, /agent <name>, /agent none"),
+        (Model, "Show or switch the model: {0}model list, {0}model <id>, {0}model default"),
+        (Agent, "Talk to a stored agent: {0}agent list, {0}agent <name>, {0}agent none"),
         (SetHome, "Send notifications and scheduled results to this chat"),
         (Status, "Show the model, agent and conversation in use"),
         (Help, "List the commands"),
@@ -76,7 +79,10 @@ public static partial class ChatCommands
 
     /// <summary>The help text, listing every command with this platform's prefix.</summary>
     public static string HelpText(char prefix)
-        => "Commands:\n" + string.Join('\n', All.Select(c => $"{prefix}{c.Name} — {c.Description}"));
+        => "Commands:\n" + string.Join('\n', All.Select(c => $"{prefix}{c.Name} — {Describe(c.Description, prefix)}"));
+
+    /// <summary><paramref name="description"/> with its command references in this platform's prefix.</summary>
+    public static string Describe(string description, char prefix) => string.Format(description, prefix);
 
     [GeneratedRegex("^(?<name>[A-Za-z][A-Za-z0-9_]{0,31})(@(?<bot>[A-Za-z0-9_]{1,64}))?$")]
     private static partial Regex TokenPattern();

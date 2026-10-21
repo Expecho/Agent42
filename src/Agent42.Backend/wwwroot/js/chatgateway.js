@@ -1,11 +1,13 @@
 /* Agent 42 — chat apps (ADR 0111). Mirrors mcp.js: a per-user list of bots in Preferences, each edited in a dialog.
 
    The bot token is write-only: the server only ever says whether one is set, so the token field is always empty when
-   the dialog opens and is sent only when the user typed a new one. After a token is saved the server opens a pairing
+   the dialog opens and is sent only when the user typed a new one. Slack takes two tokens (bot + app-level). Typing
+   either sends both fields; on an edit the server keeps the stored token for a field left blank, then validates and
+   stores the pair as one credential. After a token is saved the server opens a pairing
    window, and the dialog stays open to show the code the owner sends to their bot. */
 
 import { agents } from "./agents.js";
-import { addChatConnectionBtn, chatBotTokenInput, chatCancelBtn, chatConnectionList, chatDeleteBtn, chatDialog, chatEnabledInput, chatError, chatForm, chatFormTitle, chatNameInput, chatPairingCode, chatPairingCodeBox, chatPairingCopyBtn, chatPairingSection, chatPairingText, chatPlatformSelect, chatRepairBtn, chatSetupNote, chatTargetSelect } from "./dom.js";
+import { addChatConnectionBtn, chatAppTokenField, chatAppTokenInput, chatBotTokenInput, chatCancelBtn, chatConnectionList, chatDeleteBtn, chatDialog, chatEnabledInput, chatError, chatForm, chatFormTitle, chatNameInput, chatPairingCode, chatPairingCodeBox, chatPairingCopyBtn, chatPairingSection, chatPairingText, chatPlatformSelect, chatRepairBtn, chatSetupNote, chatTargetSelect } from "./dom.js";
 
 let platforms = [];
 let connections = [];
@@ -14,7 +16,12 @@ let editing = null; // the connection open in the dialog, or null for a new one
 // How to get a token, per platform. Only platforms the server reports are offered.
 const setupNotes = {
   Telegram: "In Telegram, message @BotFather, send /newbot and follow the steps. Paste the token it gives you (it looks like 123456789:ABC…).",
+  Slack: "Create a Slack app from the manifest in the setup guide (docs/integrations/chat-apps), install it to your workspace, and paste its Bot User OAuth Token (xoxb-…) and an app-level token (xapp-…) with connections:write. Commands start with ! in Slack.",
+  Discord: "In the Discord Developer Portal, create an application, open Bot, reset and copy the token, and paste it here. Invite the bot to a server you share, or add it to your apps, so you can DM it.",
 };
+
+// Platforms whose credentials include Slack's app-level token.
+const needsAppToken = new Set(["Slack"]);
 
 // The server's status strings (ChatConnectionStatus) and how the list shows them.
 const statusLabels = {
@@ -101,6 +108,7 @@ function fillPlatforms(selected) {
 
 function syncSetupNote() {
   chatSetupNote.textContent = setupNotes[chatPlatformSelect.value] ?? "";
+  chatAppTokenField.hidden = !needsAppToken.has(chatPlatformSelect.value);
 }
 
 function openChatDialog(connection) {
@@ -110,6 +118,8 @@ function openChatDialog(connection) {
   chatNameInput.value = connection?.name ?? "";
   chatBotTokenInput.value = "";
   chatBotTokenInput.placeholder = connection?.hasCredentials ? "leave blank to keep the stored token" : "paste the token";
+  chatAppTokenInput.value = "";
+  chatAppTokenInput.placeholder = connection?.hasCredentials ? "leave blank to keep the stored token" : "paste the xapp- token";
   fillTargets(connection?.targetAgentId);
   chatEnabledInput.checked = connection?.enabled ?? true;
   chatDeleteBtn.hidden = !connection;
@@ -145,7 +155,8 @@ async function saveChatConnection() {
     notificationsEnabled: editing?.notificationsEnabled ?? false,
   };
   const token = chatBotTokenInput.value.trim();
-  if (token) body.credentials = { botToken: token };
+  const appToken = needsAppToken.has(chatPlatformSelect.value) ? chatAppTokenInput.value.trim() : "";
+  if (token || appToken) body.credentials = { botToken: token, appToken: appToken || null };
 
   setError("");
   try {
