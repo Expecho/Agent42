@@ -166,7 +166,7 @@ public static class ToolCatalog
     public const string SharedState = "shared_state";
 
     /// <summary>
-    /// Recall across conversations (ADR 0111) — <c>search_past_chats</c> and <c>read_past_chat</c>, which read the
+    /// Recall across conversations (ADR 0112) — <c>search_past_chats</c> and <c>read_past_chat</c>, which read the
     /// user's own chat-search projection (ADR 0061). One key for both: searching without reading is rarely useful,
     /// and they are one consent ("let the assistant look through my other chats"). Appended LAST for the
     /// order-stability reason <see cref="PushNotification"/> gives, and like every key added after the fact it
@@ -320,7 +320,7 @@ public static class ToolCatalog
             Description: "Lets the assistant ask you to confirm actions, open artifacts in the pane and read your time zone and selected text."),
         new(SharedState, "Shared state", RequiresHostedTools: false,
             Description: "Gives the chat a checklist and notes the assistant and you can both edit."),
-        // PastChats (ADR 0111) is LAST for the same order-stability reason. RequiresHostedTools is false: no
+        // PastChats (ADR 0112) is LAST for the same order-stability reason. RequiresHostedTools is false: no
         // hosted tool reads the user's own chat history.
         new(PastChats, "Past chats", RequiresHostedTools: false,
             Description: "Lets the assistant search and read your other conversations to recall what was said."),

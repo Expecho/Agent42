@@ -8,7 +8,7 @@ extends: [0024]
 amends: [0002, 0022, 0036, 0042, 0068]
 ---
 
-> **Amended by [ADR 0111](0111-past-chats-as-a-model-tool.md) (2026-10-21).** The bind filter, renamed
+> **Amended by [ADR 0112](0112-past-chats-as-a-model-tool.md) (2026-10-21).** The bind filter, renamed
 > `WithoutOwnerScopedTools` (it was `WithoutMemoryOrPush`, the name the notes below use), now also removes `past_chats`.
 > Those tools return the owner's other conversations verbatim, which is the recall risk this ADR stripped memory for,
 > in a stronger form.

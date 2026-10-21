@@ -195,7 +195,7 @@ public class ToolCatalogTests
 
     // ── Client tools and shared state (ADR 0089) ───────────────────────────────────────────────────
 
-    // AC9 — both keys were appended (order stability for every existing key), right before past_chats (ADR 0111)
+    // AC9 — both keys were appended (order stability for every existing key), right before past_chats (ADR 0112)
     // which came after them; each tool maps to its key, and both are rendered checkboxes.
     [Fact]
     public void BrowserToolsAndSharedState_AreAppendedLast_AndMapTheirTools()
@@ -240,7 +240,7 @@ public class ToolCatalogTests
         }
     }
 
-    // ── Past chats (ADR 0111) ──────────────────────────────────────────────────────────────────────────
+    // ── Past chats (ADR 0112) ──────────────────────────────────────────────────────────────────────────
 
     // AC21 — appended LAST in both lists, described, not a hosted tool, and the key for BOTH tools.
     [Fact]

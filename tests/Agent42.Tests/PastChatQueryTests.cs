@@ -3,7 +3,7 @@ using Agent42.Agents;
 namespace Agent42.Tests;
 
 /// <summary>
-/// ADR 0111 AC10, AC11 and the selection/format rules of the past-chat tools, without a silo: keywords from the
+/// ADR 0112 AC10, AC11 and the selection/format rules of the past-chat tools, without a silo: keywords from the
 /// model's query, which hits survive, and what a result says about a window the index has gaps in.
 /// </summary>
 public sealed class PastChatQueryTests

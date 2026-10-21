@@ -319,7 +319,7 @@ public sealed partial class AgentGrain
             .. ClientTools(),
             // update_shared_state (ADR 0089), unconditional for the same reason; refuses by itself when incognito.
             SharedStateTool(),
-            // search_past_chats + read_past_chat (ADR 0111): the user's own chat-search projection, which no hosted
+            // search_past_chats + read_past_chat (ADR 0112): the user's own chat-search projection, which no hosted
             // tool reads, so unconditional too.
             .. PastChatTools(),
         ];

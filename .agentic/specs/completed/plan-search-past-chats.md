@@ -33,7 +33,7 @@ exist, so the feature is mostly a tool plus two port methods.
 | Copilot | `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` `CopilotFunctions` (~:108). **No code change expected**: new built-ins flow through `SelectableTools`. Pin it with a test |
 | Infra | **None.** `infra/modules/cosmos.bicep` already declares `fullTextPolicy` + `fullTextIndexes` on `/text` (~:184, ~:223). The new queries add no multi-property `ORDER BY`, so no composite index is needed (see Step 3) |
 | Frontend | **None expected.** The picker is data-driven from `/api/tools` (`wwwroot/js/tools.js:28`, `:119`). If the executor finds a tool-name→label map and touches `wwwroot/js/`, bump `CACHE` in `wwwroot/sw.js` (rule 3) |
-| Docs | new ADR `.agentic/decisions/0111-past-chats-as-a-model-tool.md`; amended-by notes in `0070-expose-stored-agents-as-an-mcp-server.md` (the bind-time exclusion now covers `past_chats`), `0061-searchable-chat-message-projection.md` (BM25 now used by the tool path; correct the "GA, no enrollment" claim if Step 0 shows otherwise) and `0096-*.md` (~:81, the "point email at an agent whose EnabledTools excludes memory and the fetch tools" mitigation must now also name `past_chats`); `docs/features/tool-selection.md`; `docs/features/conversation-history.md` (chat search section); CLAUDE.md feature map (add 0111 to the Conversations row next to "chat search"); `.agentic/gotchas.md` (see Step 7) |
+| Docs | new ADR `.agentic/decisions/0112-past-chats-as-a-model-tool.md`; amended-by notes in `0070-expose-stored-agents-as-an-mcp-server.md` (the bind-time exclusion now covers `past_chats`), `0061-searchable-chat-message-projection.md` (BM25 now used by the tool path; correct the "GA, no enrollment" claim if Step 0 shows otherwise) and `0096-*.md` (~:81, the "point email at an agent whose EnabledTools excludes memory and the fetch tools" mitigation must now also name `past_chats`); `docs/features/tool-selection.md`; `docs/features/conversation-history.md` (chat search section); CLAUDE.md feature map (add 0112 to the Conversations row next to "chat search"); `.agentic/gotchas.md` (see Step 7) |
 | Tests | `tests/Agent42.Tests/ChatSearchIndexTests.cs`, `ChatSearchIndexRegistrationTests.cs`, `CompositeIndexMatchesTheSearchQueryTests.cs`, `ToolCatalogTests.cs`, `CopilotAgentTests.cs`, new `PastChatQueryTests.cs`, new `PastChatToolTests.cs` |
 
 ## Context & constraints
@@ -42,9 +42,9 @@ exist, so the feature is mostly a tool plus two port methods.
 - **Corpus: everything the user owns, unlabelled.** Search covers every indexed conversation, including
   stored-agent, continuous-agent, email-started and `/api/agent-run` conversations. Hits are **not** fenced
   or marked untrusted. The user chose this over "own chats only" and "all, labelled untrusted" with the
-  injection trade-off spelled out. Record it in ADR 0111 as an **accepted residual**, and do not quietly
+  injection trade-off spelled out. Record it in ADR 0112 as an **accepted residual**, and do not quietly
   add a fence. Note the asymmetry: `read_document` *does* fence web-fetched text
-  (`DocumentPartReader.ReadAsync(..., untrusted:)`, `AgentGrain.ReadDocumentTool.cs:~70`). ADR 0111 must
+  (`DocumentPartReader.ReadAsync(..., untrusted:)`, `AgentGrain.ReadDocumentTool.cs:~70`). ADR 0112 must
   say why this tool differs (user decision), so a reviewer doesn't "fix" it.
 - **Shape: search + read-around.** Two tools under one key. Both results are compacted out of the session
   after the turn (the ADR 0098 `read_document` precedent).
@@ -54,7 +54,7 @@ exist, so the feature is mostly a tool plus two port methods.
   ADR 0021 it lands **OFF** for anyone who ever pressed Save, and for agents bound before the release
   (the bind snapshot). Document this; do not migrate.
 
-**Design decisions made in planning (record each, with its rejected alternative, in ADR 0111)**
+**Design decisions made in planning (record each, with its rejected alternative, in ADR 0112)**
 - **`read_past_chat` reads the index, not the other conversation's grain.** It uses a new
   `GetTurnsAsync(userId, conversationId, fromOrdinal, toOrdinal)` on `IChatSearchIndex`.
   *Rejected: `IAgentGrain(other).GetHistoryAsync()`.* That approach (a) deadlocks on a self-call when the
@@ -113,13 +113,13 @@ exist, so the feature is mostly a tool plus two port methods.
   safe there: the tools use only `_userId`, the index and a grain call, all of which run on the activation
   scheduler via `SchedulerBoundAIFunction`. They need no browser, document or run-only broker
   (`IsExcludedFromCopilot` rationale, `AgentGrain.Copilot.cs:95-100`). Compaction does not reach Copilot's own
-  SessionFs transcript. That is accepted and noted in ADR 0111.
+  SessionFs transcript. That is accepted and noted in ADR 0112.
 - **Research agent and fleet are out of scope.** `ResearchAgentDefaults.EnabledTools = [WebSearch]` keeps it
   off there, and `FleetToolCatalog` never calls `SelectableTools`.
 - **Incognito chats may *call* the tools.** Reading is not writing, and nothing from an incognito chat is
   ever in the index (ADR 0034/0061), so incognito content can never be *found*.
 
-**Egress and trust (rule 13: ADR 0111 must record both as ADR 0013 extensions / residuals)**
+**Egress and trust (rule 13: ADR 0112 must record both as ADR 0013 extensions / residuals)**
 - **Cross-provider movement.** Providers are per user (ADR 0018). A chat held on Azure OpenAI can now be
   quoted into a chat running on Anthropic or GitHub Copilot, so a provider receives text it never saw. The
   text stays within one user's own providers. With `memory` on, a reply built on recalled text is also
@@ -138,12 +138,12 @@ exist, so the feature is mostly a tool plus two port methods.
     login), can instruct a `null == all` agent bound after release to search the owner's chats and leak the
     result through the agent's outbound channels (fetch, webhook; ADR 0096 ~:78). The plan extends ADR 0096's
     "point email at an agent whose EnabledTools excludes memory and the fetch tools" note to name `past_chats`,
-    and states the same for agent-run in ADR 0111. ADR 0070 itself kept push on `/api/agent-run` while stripping
+    and states the same for agent-run in ADR 0112. ADR 0070 itself kept push on `/api/agent-run` while stripping
     it from `ask_agent`, so per-surface asymmetry has precedent. Extending the bind filter to these two doors
     instead is a small change if the user prefers it at approval.
 - **Titles are a second unfenced channel.** `ConversationIndexGrain.TouchAsync` derives a title from the first
   prompt (capped at 60 chars). For email and agent-run conversations that is attacker-written, and it is
-  printed in every hit header. Record it in the ADR 0111 residual alongside the unlabelled-hits decision.
+  printed in every hit header. Record it in the ADR 0112 residual alongside the unlabelled-hits decision.
 
 **Governing ADRs / gotchas to read first:** ADR 0061 + 0068 (projection, ordinals, best-effort, orphans),
 0021/0057 (selectable keys, `null == all`, lands-OFF), 0098 (read tool + compaction exemplar), 0106
@@ -171,7 +171,7 @@ Also confirm the resolved `Microsoft.Azure.Cosmos` version (3.61.0 in the main c
 changelog; do not guess.
 **Fallback if (a) or (d) fails:** implement `SearchRankedAsync` in the Cosmos adapter as one `CONTAINS`
 query per term (≤ the term cap), scored in-process with the twin's ranking function (shared, pure). The
-port signature does not change, so Steps 1, 2 and 4–7 are unaffected. Record which path shipped in ADR 0111.
+port signature does not change, so Steps 1, 2 and 4–7 are unaffected. Record which path shipped in ADR 0112.
 Steps 1–2 and 4–6 can proceed in parallel with Step 0.
 
 ### Step 1 — Port + in-memory twin + test wrapper
@@ -235,10 +235,10 @@ first. Confirm the tool call and result. The canned LLM may not call tools on it
 the silo tests are the evidence. Do not claim a live check that did not happen.
 
 ### Step 7 — Docs (same MR)
-ADR 0111 via `/decide`: all decisions, rejected alternatives and residuals above, plus the Step 0 outcome.
+ADR 0112 via `/decide`: all decisions, rejected alternatives and residuals above, plus the Step 0 outcome.
 Add amended-by notes to 0061 and 0096. Update `docs/features/tool-selection.md` (new key) and
 `docs/features/conversation-history.md` (the model can now search too, and the sidebar still uses
-`CONTAINS`). Add 0111 to the CLAUDE.md feature map. Add gotchas via `/gotcha`: (1) "the sidebar search and
+`CONTAINS`). Add 0112 to the CLAUDE.md feature map. Add gotchas via `/gotcha`: (1) "the sidebar search and
 the tool search are different queries on purpose (substring vs ranked); don't unify them without an ADR";
 (2) the twin is not BM25, so a test asserting a Cosmos order offline is wrong; (3) `read_past_chat` reads
 the index, never the target grain (deadlock/activation/incognito reasons). Run `/sync-docs`.
@@ -312,7 +312,7 @@ Critic pass, 2026-10-21. All findings were accepted. None were rejected.
 | HIGH | ADR 0070 `ask_agent` binds with `WithoutMemoryOrPush`, so a `null == all` agent would expose `past_chats` to MCP key holders. That is the exact reason memory is stripped there | Added: Affected areas row, Step 5 bullet, AC26, ADR 0070 amended-by note |
 | MED | `/api/agent-run` residual understated; "out of scope" wording inconsistent with ADR 0070's existing gate | Residual rewritten per surface; ask_agent gated, email + agent-run documented-only as the plan default, flagged for the user at approval |
 | MED | Ordering pins `ToolCatalogTests.cs:~201-204`, `:~218` and the `ToolCatalog.cs` comments will break | Named explicitly in Step 5 |
-| LOW | Titles (first prompt, 60 chars) are attacker-written for email/agent-run chats | Added to the ADR 0111 residual |
+| LOW | Titles (first prompt, 60 chars) are attacker-written for email/agent-run chats | Added to the ADR 0112 residual |
 | LOW | One conversation can fill every hit slot; no per-conversation dedupe | Over-fetch at 50 + per-conversation cap, AC27 |
 | LOW | No test for descriptions-as-policy or sidebar SQL unchanged; composite-index test needs a rewrite | AC28, AC29; Step 3 now says rewrite `OrderByPaths()` |
 
@@ -320,7 +320,7 @@ Step 0 outcome (2026-10-21, after the PR opened): the user ran the query in Data
 Cosmos data-plane Data Reader assignment for the user, which the user ran themselves. **`FullTextScore(c.text, [..])`
 (array) is rejected with `SC2241`**: the term arguments must be string literals. `FullTextContainsAny` parsed, and
 there was no enrollment error. The builder now emits the variadic `FullTextScore(c.text, "a", "b")`. A successful
-run of that form is still pending. ADR 0111 records the fallback
+run of that form is still pending. ADR 0112 records the fallback
 (per-term `CONTAINS` ranked by `RankByTerms`, local to `CosmosChatSearchIndex`) for a post-deploy smoke failure.
 
 Diff critic pass, 2026-10-21: no HIGH findings. Fixed: `docs/features/custom-agents.md` still named

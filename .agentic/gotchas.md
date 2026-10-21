@@ -3381,7 +3381,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 ### The sidebar search and the model's `search_past_chats` are DIFFERENT queries on purpose — and the twin is not BM25
 
 - **Claim:** `GET /api/search` uses `CONTAINS(c.text, @q, true)`, a whole-substring match, because people type
-  substrings. `search_past_chats` (ADR 0111) uses `SearchRankedAsync`: `FullTextContainsAny` + `ORDER BY RANK
+  substrings. `search_past_chats` (ADR 0112) uses `SearchRankedAsync`: `FullTextContainsAny` + `ORDER BY RANK
   FullTextScore`, because models type keywords. Do not "unify" them without an ADR: the sidebar would stop matching
   phrases, or the tool would almost never match. The in-memory twin ranks by distinct terms matched, then
   occurrences. It has **no IDF and no stemming**, so a test asserting a Cosmos/BM25 order offline asserts something
@@ -3390,7 +3390,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   per term, ranked with `InMemoryChatSearchIndex.RankByTerms`, inside `CosmosChatSearchIndex` only.
 - **Evidence:** `src/Agent42.Backend/Search/CosmosChatSearchIndex.cs` (`BuildSearchSql`, `BuildRankedSearchSql`),
   `src/Agent42.Agents/Search/InMemoryChatSearchIndex.cs` (`RankByTerms`), `tests/Agent42.Tests/ChatSearchIndexTests.cs`
-  (`SearchRanked_*`), `.agentic/decisions/0111-past-chats-as-a-model-tool.md`
+  (`SearchRanked_*`), `.agentic/decisions/0112-past-chats-as-a-model-tool.md`
 - **Verified:** 2026-10-21
 
 ### `read_past_chat` reads the search INDEX, never the other conversation's grain
@@ -3405,7 +3405,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/Search/AgentGrain.PastChatTools.cs`, `src/Agent42.Agents/Search/PastChatQuery.cs`
   (`Select`, `FormatRead`), `tests/Agent42.Tests/PastChatToolTests.cs`
   (`Search_DropsHitsForConversationsNotInTheIndexGrain`, `Search_NeverFindsAnIncognitoTurn`),
-  `.agentic/decisions/0111-past-chats-as-a-model-tool.md`
+  `.agentic/decisions/0112-past-chats-as-a-model-tool.md`
 - **Verified:** 2026-10-21
 
 ### The community `OrleansDashboard` package does not start the silo on Orleans 10.x — it CRASHES PROD

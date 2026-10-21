@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace Agent42.Agents;
 
 /// <summary>
-/// The past-chat tools (ADR 0111): <c>search_past_chats</c> and <c>read_past_chat</c> give the model the corpus the
+/// The past-chat tools (ADR 0112): <c>search_past_chats</c> and <c>read_past_chat</c> give the model the corpus the
 /// sidebar search already gives the user (ADR 0061), so it can recall what was said in the user's other
 /// conversations. Both read the chat-search PROJECTION, never another conversation's grain: a self-call would
 /// deadlock this non-reentrant grain, activating another conversation connects its MCP servers, and an activation's
@@ -129,7 +129,7 @@ public sealed partial class AgentGrain
         => (await GrainFactory.GetGrain<IConversationIndexGrain>(_userId).GetConversationsAsync())
             .ToDictionary(info => info.Id, StringComparer.Ordinal);
 
-    // Compaction's past-chat branch (ADR 0111): a SUCCESSFUL result (it starts with its header prefix) becomes a stub
+    // Compaction's past-chat branch (ADR 0112): a SUCCESSFUL result (it starts with its header prefix) becomes a stub
     // built from the call's own arguments. A refusal stays verbatim, and a stub no longer starts with the header, so a
     // second pass leaves it alone (the CompactReadDocumentResult shape).
     private static void CompactPastChatResult(FunctionCallContent call, FunctionResultContent? result)

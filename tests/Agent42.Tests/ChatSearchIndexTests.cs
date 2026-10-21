@@ -216,7 +216,7 @@ public sealed class ChatSearchIndexTests
         Assert.Equal(ChatSearchLimits.MaxSearchResults, hits.Count);
     }
 
-    // ADR 0111 AC1: the model asks with keywords, so a turn matching ANY of them is a hit — unlike the
+    // ADR 0112 AC1: the model asks with keywords, so a turn matching ANY of them is a hit — unlike the
     // sidebar's whole-substring CONTAINS, where "ingress tls" would miss "tls on the ingress".
     [Fact]
     public async Task SearchRanked_MatchesAnyTerm_CaseInsensitive()
@@ -234,7 +234,7 @@ public sealed class ChatSearchIndexTests
         Assert.Equal([0, 1], hits.Select(hit => hit.Ordinal).Order());
     }
 
-    // AC2: the twin's contract is "more distinct terms first", NOT a BM25 order (ADR 0111).
+    // AC2: the twin's contract is "more distinct terms first", NOT a BM25 order (ADR 0112).
     [Fact]
     public async Task SearchRanked_RanksMoreMatchedTermsFirst()
     {

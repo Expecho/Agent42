@@ -196,7 +196,7 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
         }
     }
 
-    // ADR 0111 AC24: the past-chat tools reach a Copilot chat through SelectableTools with no exclusion. They need
+    // ADR 0112 AC24: the past-chat tools reach a Copilot chat through SelectableTools with no exclusion. They need
     // no browser, document or run-only broker, only the index and a grain call on the activation's scheduler.
     [Fact]
     public async Task CopilotFunctions_IncludeThePastChatTools()

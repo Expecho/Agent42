@@ -141,7 +141,7 @@ public sealed class TurnContext
     private int _pastChatCalls;
 
     /// <summary>
-    /// <c>search_past_chats</c> + <c>read_past_chat</c> calls during this run (ADR 0111), bounded by
+    /// <c>search_past_chats</c> + <c>read_past_chat</c> calls during this run (ADR 0112), bounded by
     /// <see cref="PastChatLimits.MaxCallsPerTurn"/>. <see cref="int.MaxValue"/> (exhausted) when closed.
     /// </summary>
     public int PastChatCalls => IsClosed ? int.MaxValue : _pastChatCalls;

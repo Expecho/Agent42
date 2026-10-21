@@ -14,7 +14,7 @@ namespace Agent42.Backend;
 /// <see cref="CosmosDocumentIndex"/>.</para>
 ///
 /// <para><b>The sidebar search queries with <c>CONTAINS</c>, not the full-text functions.</b> The
-/// container's full-text policy was declared at creation because it cannot be added afterwards, and ADR 0111
+/// container's full-text policy was declared at creation because it cannot be added afterwards, and ADR 0112
 /// uses it: the model's <c>search_past_chats</c> ranks by BM25 (<c>ORDER BY RANK FullTextScore</c>) through
 /// <see cref="SearchRankedAsync"/>, a query change with no backfill.</para>
 ///
@@ -85,7 +85,7 @@ public sealed class CosmosChatSearchIndex(CosmosClient cosmosClient, string data
         }
 
         // The terms are INLINED as escaped literals, not parameters: FullTextScore's term arguments must be
-        // string literals (ADR 0111). BuildRankedSearchSql JSON-escapes each one, and a test pins that a quote, a
+        // string literals (ADR 0112). BuildRankedSearchSql JSON-escapes each one, and a test pins that a quote, a
         // backslash or a bracket cannot leave its literal.
         var take = Math.Min(maxResults, ChatSearchLimits.MaxSearchResults);
         var definition = new QueryDefinition(BuildRankedSearchSql(terms, take));
@@ -193,7 +193,7 @@ public sealed class CosmosChatSearchIndex(CosmosClient cosmosClient, string data
         + "ORDER BY c.conversationId, c.ordinal";
 
     /// <summary>
-    /// The ranked any-term query of <c>search_past_chats</c> (ADR 0111): BM25 over the full-text index that
+    /// The ranked any-term query of <c>search_past_chats</c> (ADR 0112): BM25 over the full-text index that
     /// ADR 0061 declared at container creation for exactly this switch. <c>ORDER BY RANK</c> is a rank
     /// clause, not a property list, so it needs no composite index.
     ///
@@ -221,7 +221,7 @@ public sealed class CosmosChatSearchIndex(CosmosClient cosmosClient, string data
     };
 
     /// <summary>
-    /// The window read of <c>read_past_chat</c> (ADR 0111): one conversation's turns in an ordinal range. A
+    /// The window read of <c>read_past_chat</c> (ADR 0112): one conversation's turns in an ordinal range. A
     /// single-property <c>ORDER BY</c> is served by the default range index (only <c>/text</c> is excluded),
     /// so it needs no composite index either.
     /// </summary>

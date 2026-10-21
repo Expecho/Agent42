@@ -26,7 +26,7 @@ namespace Agent42.Tests;
 public sealed class CompositeIndexMatchesTheSearchQueryTests
 {
     /// <summary>
-    /// Every query the adapter builds (ADR 0111 added two beside the sidebar's). A new SQL builder belongs
+    /// Every query the adapter builds (ADR 0112 added two beside the sidebar's). A new SQL builder belongs
     /// here, so a multi-property ORDER BY on ANY of them fails offline rather than as "no matches" in prod.
     /// </summary>
     public static TheoryData<string> Queries => ["search", "ranked", "turns"];

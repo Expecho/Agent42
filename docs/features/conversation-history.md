@@ -193,7 +193,7 @@ default is case-sensitive). The container is nonetheless created **with** an `en
 policy, because that policy cannot be added afterwards: switching to BM25 ranking later is then
 a query change rather than a second backfill.
 
-**The model searches it too (ADR 0111).** `search_past_chats` and `read_past_chat` (the `past_chats` tool key)
+**The model searches it too (ADR 0112).** `search_past_chats` and `read_past_chat` (the `past_chats` tool key)
 read this same projection: a ranked any-term query (`SearchRankedAsync`, BM25 on Cosmos) and an ordinal-window read
 (`GetTurnsAsync`). The sidebar keeps `CONTAINS`, because people type substrings and models type keywords. The tool
 reads the index, never another conversation's grain, so incognito turns can never surface, and a dropped write shows up

@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace Agent42.Agents;
 
 /// <summary>
-/// The pure half of the past-chat tools (ADR 0111): keywords from the model's query, which hits survive, and the
+/// The pure half of the past-chat tools (ADR 0112): keywords from the model's query, which hits survive, and the
 /// text the model reads. Split from the grain so each rule is testable without a silo and the tool methods stay
 /// under the cognitive-complexity gate.
 /// </summary>

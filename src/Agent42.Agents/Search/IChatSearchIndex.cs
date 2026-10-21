@@ -50,7 +50,7 @@ public interface IChatSearchIndex
 
     /// <summary>
     /// Returns up to <paramref name="maxResults"/> of <paramref name="userId"/>'s messages that contain
-    /// <b>any</b> of <paramref name="terms"/>, most relevant first (ADR 0111, the <c>search_past_chats</c> tool).
+    /// <b>any</b> of <paramref name="terms"/>, most relevant first (ADR 0112, the <c>search_past_chats</c> tool).
     /// Empty for no terms.
     ///
     /// <para>A different query from <see cref="SearchAsync"/> on purpose: the sidebar matches the
@@ -67,7 +67,7 @@ public interface IChatSearchIndex
 
     /// <summary>
     /// The indexed turns of one of <paramref name="userId"/>'s conversations with an ordinal in
-    /// <paramref name="fromOrdinal"/>..<paramref name="toOrdinal"/> (inclusive), in ordinal order (ADR 0111,
+    /// <paramref name="fromOrdinal"/>..<paramref name="toOrdinal"/> (inclusive), in ordinal order (ADR 0112,
     /// the <c>read_past_chat</c> tool). An ordinal that was never indexed is simply absent: the write is
     /// best-effort (ADR 0061), so a caller must not treat the result as the whole window.
     /// </summary>

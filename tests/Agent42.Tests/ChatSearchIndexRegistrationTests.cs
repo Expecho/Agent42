@@ -83,7 +83,7 @@ public sealed class ChatSearchIndexRegistrationTests
         Assert.Contains("TOP 25", sql);
     }
 
-    // ADR 0111 AC6: the tool's query is any-term + BM25, a DIFFERENT query from the sidebar's CONTAINS.
+    // ADR 0112 AC6: the tool's query is any-term + BM25, a DIFFERENT query from the sidebar's CONTAINS.
     [Fact]
     public void RankedSearchSql_UsesFullTextContainsAnyAndRank()
     {

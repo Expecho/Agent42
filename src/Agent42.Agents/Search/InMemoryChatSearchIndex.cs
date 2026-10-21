@@ -83,7 +83,7 @@ public sealed class InMemoryChatSearchIndex : IChatSearchIndex
     }
 
     /// <summary>
-    /// The twin's ranking (ADR 0111): hits containing any term, ordered by distinct terms matched, then total
+    /// The twin's ranking (ADR 0112): hits containing any term, ordered by distinct terms matched, then total
     /// occurrences, then <c>(conversationId, ordinal)</c> so the order is deterministic. Case-insensitive like
     /// <see cref="SearchAsync"/>. NOT BM25 — no inverse document frequency, no stemming.
     /// </summary>

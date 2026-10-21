@@ -1,7 +1,7 @@
 namespace Agent42.Agents;
 
 /// <summary>
-/// The budgets the past-chat tools run inside (ADR 0111), and the fixed text compaction relies on.
+/// The budgets the past-chat tools run inside (ADR 0112), and the fixed text compaction relies on.
 ///
 /// <para>A tool result is persisted into the single 2 MB Cosmos session item (ADR 0004) and re-sent every later
 /// turn. Three things bound that: the per-result caps below, <see cref="MaxCallsPerTurn"/> for one turn's
@@ -34,7 +34,7 @@ public static class PastChatLimits
         + "conversationId and ordinal exactly as the search result gave them. Returns a few turns before and after "
         + "that ordinal. The text of earlier results is not kept for later turns, so note what you need.";
 
-    /// <summary>Most keywords one search uses; the rest are ignored. Each is a Cosmos literal (ADR 0111).</summary>
+    /// <summary>Most keywords one search uses; the rest are ignored. Each is a Cosmos literal (ADR 0112).</summary>
     public const int MaxTerms = 8;
 
     /// <summary>Longest keyword kept; a longer one is cut.</summary>

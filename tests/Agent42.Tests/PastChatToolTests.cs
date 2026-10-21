@@ -4,7 +4,7 @@ using Agent42.Agents;
 namespace Agent42.Tests;
 
 /// <summary>
-/// The past-chat tools (ADR 0111): <c>search_past_chats</c> and <c>read_past_chat</c> over the user's own chat-search
+/// The past-chat tools (ADR 0112): <c>search_past_chats</c> and <c>read_past_chat</c> over the user's own chat-search
 /// projection. Each test drives a tool through <see cref="FakeChatClient.CallToolPrompt"/>, so it runs exactly as a
 /// model-made call would. Other conversations are seeded straight into the process-global
 /// <see cref="InMemoryChatSearchIndex"/> and listed on the user's <see cref="IConversationIndexGrain"/> (the endpoint

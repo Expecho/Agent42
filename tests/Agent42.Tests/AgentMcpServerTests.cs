@@ -285,7 +285,7 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         Assert.DoesNotContain("a memory that must not reach an external caller", reply.Text, StringComparison.Ordinal);
     }
 
-    // ADR 0111 AC26: an ask_agent binding strips past_chats as it strips memory, asserted as an EFFECT. The owner has
+    // ADR 0112 AC26: an ask_agent binding strips past_chats as it strips memory, asserted as an EFFECT. The owner has
     // another conversation the search would find, and the agent has a NULL selection (null == all, which includes
     // past_chats), so this fails if the filter is dropped rather than passing trivially. The positive control (a
     // browser turn DOES find it) is PastChatToolTests.Search_FindsAnotherConversation_WithTitle.

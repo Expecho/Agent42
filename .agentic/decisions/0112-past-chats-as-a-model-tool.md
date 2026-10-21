@@ -1,5 +1,5 @@
 ---
-id: 0111
+id: 0112
 date: 2026-10-21
 status: accepted
 tags: [search, tools, selection, recall, cosmos, full-text, egress, untrusted, no-migration]

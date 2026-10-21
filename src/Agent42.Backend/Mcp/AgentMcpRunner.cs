@@ -196,7 +196,7 @@ public static class AgentMcpRunner
 
     /// <summary>
     /// The agent's tool selection with <see cref="ToolCatalog.Memory"/> (ADR 0056/0057),
-    /// <see cref="ToolCatalog.PushNotification"/> (ADR 0075) and <see cref="ToolCatalog.PastChats"/> (ADR 0111)
+    /// <see cref="ToolCatalog.PushNotification"/> (ADR 0075) and <see cref="ToolCatalog.PastChats"/> (ADR 0112)
     /// removed.
     ///
     /// <para><b>Exclusion happens at BIND time, deliberately, and not per run.</b> A per-run value lives in the
@@ -211,7 +211,7 @@ public static class AgentMcpRunner
     /// <para><b>Why these three and nothing else.</b> A memory bank is the user's, spans every conversation,
     /// and has no delete path (ADR 0056). Retaining turns an external caller drove would let a key holder
     /// write permanently into the owner's memory, and recall would hand that caller content from the
-    /// owner's unrelated conversations. The past-chat tools (ADR 0111) are that second risk in a stronger
+    /// owner's unrelated conversations. The past-chat tools (ADR 0112) are that second risk in a stronger
     /// form: they return the owner's other conversations VERBATIM, not extracted facts, so a key holder could
     /// ask the agent to search and quote the owner's whole history.</para>
     ///
