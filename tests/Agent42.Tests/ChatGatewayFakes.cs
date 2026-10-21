@@ -82,6 +82,9 @@ public sealed class FakeChatSession(ChatConnectionRuntime runtime, IChatInboundS
     /// <summary>Results to return, in order, before falling back to success.</summary>
     public ConcurrentQueue<ChatSendResult> ScriptedResults { get; } = new();
 
+    /// <summary>When set, <see cref="DisposeAsync"/> waits on it first (a hung platform socket).</summary>
+    public TaskCompletionSource? DisposeHang { get; set; }
+
     public Task Completion => _completion.Task;
 
     public bool Started { get; private set; }
@@ -132,11 +135,15 @@ public sealed class FakeChatSession(ChatConnectionRuntime runtime, IChatInboundS
         return Task.FromResult(Files.TryGetValue(file.FileRef, out var found) && found.Bytes.Length <= maxBytes ? found : null);
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        if (DisposeHang is { } hang)
+        {
+            await hang.Task;
+        }
+
         Disposed = true;
         _completion.TrySetResult();
-        return ValueTask.CompletedTask;
     }
 
     /// <summary>The visible text messages, in order: each sent message's final text after its edits.</summary>
@@ -202,4 +209,6 @@ public sealed class RecordingChatGatewayControl : IChatGatewayControl
     }
 
     public bool IsLive(string connectionId) => Live.Contains(connectionId);
+
+    public bool HoldsLease { get; set; } = true;
 }
