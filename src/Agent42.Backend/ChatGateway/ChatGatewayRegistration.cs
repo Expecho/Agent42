@@ -1,3 +1,4 @@
+using Agent42.Agents;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Agent42.Backend;
@@ -27,6 +28,10 @@ public static class ChatGatewayRegistration
         services.AddSingleton(sp => new ChatReplyStreamer(
             sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<ChatReplyStreamer>>()));
         services.AddSingleton<ChatTurnPipeline>();
+        // The per-host IChatDeliverySender port (ADR 0105, C9), registered here because only a host that runs the
+        // gateway has sessions to deliver into, and ProjectLayoutTests pins that such a host calls this BEFORE
+        // AddAgent42Silo(). A test silo registers a recording or NullChatDeliverySender itself and never calls this.
+        services.AddSingleton<IChatDeliverySender, ChatDeliverySender>();
         services.AddSingleton<IChatInboundSink>(sp => sp.GetRequiredService<ChatTurnPipeline>());
         services.AddSingleton(sp => new ChatGatewayService(
             sp.GetRequiredService<IGrainFactory>(),

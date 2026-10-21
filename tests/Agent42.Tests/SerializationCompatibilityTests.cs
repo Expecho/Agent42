@@ -107,6 +107,21 @@ public sealed class SerializationCompatibilityTests
     private const string UserSkillsStateBlob =
         "ICDoMAHDrnj4fVJlYWRPbmx5TGlzdEludGVyZmFjZUNvZGVjYDFbW0FnZW50NDIuQWdlbnRzLlN0b3JlZFVzZXJTa2lsbF1dAAMh6EAPc2tpbGwtMUEPbXlub3Rlc0EZVGFrZXMgbm90ZXMuMQHD2W4+TVJlYWRPbmx5TGlzdEludGVyZmFjZUNvZGVjYDFbW3N0cmluZ11dAAVBEVNLSUxMLm1kQCdyZWZlcmVuY2VzL25vdGVzLm1k4CGAgAC3lqtJ3giBAAAAAAAAAADg4OABEeDg";
 
+    // ADR 0111 AC21: the trailing [Id(18)] Origin round-trips on the binary path too (the golden above predates it and
+    // reads back with no origin, which AgentGrainState_RoundTripsFieldForField already exercises).
+    [Fact]
+    public void AgentGrainState_Origin_RoundTripsBinary()
+    {
+        var serializer = Services.GetRequiredService<Serializer<AgentGrainState>>();
+        var written = new AgentGrainState { Origin = new ChatOrigin { ConnectionId = "conn-1", RouteKey = "-1001#42" } };
+
+        var restored = serializer.Deserialize(serializer.SerializeToArray(written));
+
+        Assert.NotNull(restored.Origin);
+        Assert.Equal(("conn-1", "-1001#42"), (restored.Origin.ConnectionId, restored.Origin.RouteKey));
+        Assert.Null(Restore<AgentGrainState>(AgentGrainStateBlob).Origin);
+    }
+
     // AC2: the conversation session itself — the 2 MB Cosmos item of ADR 0004, and the only state
     // that carries every feature's per-turn residue at once.
     [Fact]

@@ -68,6 +68,7 @@ public sealed class NoModelSiloConfigurator : ISiloConfigurator
             // what the webhook grain sent. Every AgentWebhookGrain host needs one registered or activation fails.
             services.AddSingleton<RecordingAgentWebhookSender>();
             services.AddSingleton<IAgentWebhookSender>(sp => sp.GetRequiredService<RecordingAgentWebhookSender>());
+            services.AddSingleton<IChatDeliverySender, NullChatDeliverySender>();
             // Long-term memory (ADR 0056): the recording stand-in, registered as its concrete type too so a
             // test can read which bank recalled and retained. Every AgentGrain host must register a
             // HindsightIntegration or activation fails; a null Client means no provider is attached at all.

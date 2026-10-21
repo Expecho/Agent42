@@ -133,6 +133,10 @@ public sealed partial class ChatTurnPipeline
         }
 
         await index.TouchAsync(turn.ConversationId, title, agent?.Id, agent?.Name);
+        // The chat this conversation came from (C9), written once on mint and before the first ChatAsync, so a reminder
+        // or queued run in it can deliver back here. A continued conversation never reaches this method.
+        await _grains.GetGrain<IAgentGrain>($"{work.UserId}/{turn.ConversationId}").SetChatOriginAsync(
+            new ChatOrigin { ConnectionId = work.Connection.Id, RouteKey = work.RouteKey });
         if (agent is not null)
         {
             // Bound only here, on a conversation the route just minted: binding under an existing history would rewrite
