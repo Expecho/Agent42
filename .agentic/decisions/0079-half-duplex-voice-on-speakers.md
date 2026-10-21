@@ -10,6 +10,12 @@ amends: [0037, 0078]
 
 # Close the microphone while the assistant speaks, unless the reply is going to a headset
 
+> **Amended by [ADR 0114](0114-android-companion-app.md) (2026-10-21), for the native Android app only.** On Android
+> the reply plays on the call audio path (`MODE_IN_COMMUNICATION`, `USAGE_VOICE_COMMUNICATION`), where the phone's
+> echo canceller removes it. Measured on the owner's phone: 0 self-echo triggers and talk-over working on the
+> speaker, against 1 self-echo for the browser-like setup. The app therefore keeps the mic live on the speaker. This
+> ADR's rule still governs the browser.
+
 ## Context
 
 ADR 0037 built the hands-free loop on a deliberate choice: **the mic stays live while the assistant

@@ -63,13 +63,15 @@ data class ModelInfo(
     val supportsImageGeneration: Boolean = false,
     val supportsEmbeddings: Boolean = false,
     val supportsSpeech: Boolean = false,
+    // ADR 0113: a speech-to-text model, picked separately, never a chat model.
+    val supportsTranscription: Boolean = false,
     val providerDisplayName: String? = null,
     // ADR 0108: usable only by Copilot agents, so never offered in a chat's model picker.
     val copilotOnly: Boolean = false,
 ) {
-    /** Whether a chat's model picker offers it: a chat model, not an embedding/speech/image/Copilot-only one. */
+    /** Whether a chat's model picker offers it: a chat model, not an embedding/speech/transcription/image/Copilot-only one. */
     val isChatModel: Boolean
-        get() = !copilotOnly && !supportsEmbeddings && !supportsSpeech && !supportsImageGeneration
+        get() = !copilotOnly && !supportsEmbeddings && !supportsSpeech && !supportsTranscription && !supportsImageGeneration
 }
 
 /** `PendingClientToolCall` (GET /api/chat/{id}/pending-tool-calls): calls waiting on this client after a dropped stream. */

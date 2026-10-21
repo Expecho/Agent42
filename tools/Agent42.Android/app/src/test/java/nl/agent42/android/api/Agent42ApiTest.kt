@@ -122,7 +122,8 @@ class Agent42ApiTest {
         val chat = ModelInfo("gpt", "azure")
         val copilot = ModelInfo("c", "github", copilotOnly = true)
         val speech = ModelInfo("tts", "azure", supportsSpeech = true)
+        val transcription = ModelInfo("stt", "azure", supportsTranscription = true)
 
-        assertEquals(listOf(chat), listOf(chat, copilot, speech).filter { it.isChatModel })
+        assertEquals(listOf(chat), listOf(chat, copilot, speech, transcription).filter { it.isChatModel })
     }
 }
