@@ -136,6 +136,7 @@ public sealed class LiveModelSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IUserSkillProvider, UserSkillProvider>();
             services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
             services.AddSingleton<IAgentWebhookSender, NullAgentWebhookSender>();
+            services.AddSingleton<IChatDeliverySender, NullChatDeliverySender>();
             // Mandatory grain dependency; null client = no long-term memory, so no Hindsight egress.
             services.AddSingleton(new HindsightIntegration(null));
             services.AddSingleton<IAttachmentStore, DataUrlAttachmentStore>();

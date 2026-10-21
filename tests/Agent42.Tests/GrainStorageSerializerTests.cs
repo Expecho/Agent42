@@ -58,6 +58,8 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         "Agent42.Agents.UserChatConnectionsState",
         "Agent42.Agents.ChatConnectionDirectoryState",
         "Agent42.Agents.ChatRouteState",
+        // Nested in AgentGrainState (ADR 0111): the conversation's chat origin.
+        "Agent42.Agents.ChatOrigin",
     ];
 
     // The type name a document is keyed on must keep resolving. Hard-coded literals, deliberately: a
@@ -364,6 +366,28 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
 
         Assert.Equal(state, restored.SharedStateJson);
         Assert.Equal(7, restored.SharedStateVersion);
+    }
+
+    // ADR 0111 AC21: the committed golden predates [Id(18)] Origin, so a conversation stored before the chat gateway
+    // delivered reads as a web conversation (no origin), and a document WITHOUT the key must not bind a half-built one.
+    [Fact]
+    public void ChatOrigin_WrittenBeforeFieldExisted_Deserializes()
+    {
+        var restored = Serializer().Deserialize<AgentGrainState>(new BinaryData(StoredAgentGrainStateJson));
+
+        Assert.Null(restored.Origin);
+    }
+
+    // The FORWARD direction on the path that matters at rest: the origin survives the Cosmos JSON round trip.
+    [Fact]
+    public void ChatOrigin_RoundTripsThroughCosmosJson()
+    {
+        var written = new AgentGrainState { Origin = new ChatOrigin { ConnectionId = "conn-1", RouteKey = "-1001#42" } };
+
+        var restored = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(written));
+
+        Assert.NotNull(restored.Origin);
+        Assert.Equal(("conn-1", "-1001#42"), (restored.Origin.ConnectionId, restored.Origin.RouteKey));
     }
 
     // AC1: ChatTurn.Artifacts crosses the grain boundary (Orleans binary) and the HTTP boundary (System.Text.Json,

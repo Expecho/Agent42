@@ -107,6 +107,10 @@ public sealed partial class AgentGrain
             new PushMessage(cleanTitle, cleanBody, ConversationIdFromGrainKey(this.GetPrimaryKeyString())),
             cancellationToken);
 
+        // The home chat, beside Web Push (ADR 0111, C9). Best-effort and never throws; it does not change what the
+        // tool tells the model, which is about devices.
+        await DeliverNotificationToChatAsync(turn, cleanTitle, cleanBody, cancellationToken);
+
         // Never log the title or the body: they are model-authored text about whatever this user is doing,
         // and this repo stamps user identity onto every span (ADR 0010) — the same rule
         // GetCurrentLocationAsync carries for the coordinates. Log that the tool ran and how many devices
