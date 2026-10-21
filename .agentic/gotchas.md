@@ -4644,7 +4644,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Claim:** The Bot API accepts the token only in the path (`/bot<token>/sendMessage`, `/file/bot<token>/…`). Three
   traps follow. First, OpenTelemetry redacts a query string but never a path, so the HttpClient span's `url.full`
   carries the token into OTLP and App Insights. Second, `IHttpClientFactory` logs "Sending HTTP request … {uri}" for
-  every named client, and those lines reach the owner-visible `/logs` buffer too. Both Telegram clients therefore run
+  every named client, and those lines reach the owner-visible `/logs` buffer too. All three Telegram clients (calls, the long poll, files) therefore run
   inside `TelegramSpanSuppressingHandler` (`SuppressInstrumentationScope`) AND call `RemoveAllLoggers()`, and
   `TelegramBotApi_NeverLeaksTheToken` captures real spans and real log records, with a control client proving the probe
   sees a leak when either is removed (both mutation-checked). Third, the token contains a `:`, so
@@ -4729,6 +4729,58 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   what lets tests and DevHost point it at a stand-in.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs`,
   `src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs` (`IsPermanent`), `tests/Agent42.Tests/DiscordTests.cs`
+- **Verified:** 2026-10-21
+
+### Chat delivery is a per-host port, accumulated only at the two away-reply sites, and it must never hold the grain
+
+- **Claim:** `IChatDeliverySender` is a direct `AgentGrain` constructor dependency, so every silo host must register
+  one or startup fails (`ThrowIfPortsMissing`, reflection-based):
+  - Backend and DevHost get the gateway's from `AddChatGateway()`, called before `AddAgent42Silo()`;
+  - every test silo configurator registers `RecordingChatDeliverySender` or `NullChatDeliverySender`.
+
+  The reply text is accumulated only in `EnqueuePromptAsync` and the reminder path, and handed over next to
+  `SendAwayReplyPushAsync` at its two sites. Never in `ChatCoreAsync`: a chat-driven turn runs `ChatAsync`, which is
+  exactly why it is never posted back to the chat twice. The home fallback is skipped when the model already used
+  `send_push_notification` this turn, because that already went home.
+
+  Finally, the conversation grain is non-reentrant. A platform send can take the streamer's 30 s time-box several
+  times over, so `ChatDeliverySender.DeliverAsync` detaches the send and returns at once. Awaiting it would stall the
+  conversation on a hung platform (`Sender_HandsOff_WithoutWaitingOnAHungPlatform`).
+- **Evidence:** `src/Agent42.Agents/ChatGateway/AgentGrain.ChatDelivery.cs`,
+  `src/Agent42.Backend/ChatGateway/ChatDeliverySender.cs`, `tests/Agent42.Tests/ChatDeliveryTests.cs`,
+  `tests/Agent42.Tests/SiloRegistrationTests.cs`
+- **Verified:** 2026-10-21
+
+### Neither OpenAI nor Azure documents Ogg for transcription, and three platforms send voice notes as Ogg/Opus
+
+- **Claim:** Both providers' current docs list mp3, mp4, mpeg, mpga, m4a, wav and webm, at most 25 MB. Telegram, Discord
+  and WhatsApp voice notes are Ogg/Opus, and only Slack's clips (m4a/mp4) are on the list. ffmpeg is out of scope, so
+  `SpeechTranscriptionFormats` still SENDS Ogg as itself and turns a refusal into one curated reply (ADR 0113). Don't
+  "fix" a refusal by renaming the file to a documented extension: the container is still Ogg. If Step 19 shows Ogg is
+  refused, the next step is a remux or ffmpeg, recorded in an ADR. The endpoint keys the format on the file
+  NAME's extension, so a voice note without one gets an extension inferred from its media type.
+- **Evidence:** `src/Agent42.Agents/Speech/ISpeechTranscriptionService.cs` (`SpeechTranscriptionFormats`),
+  `.agentic/decisions/0113-server-side-speech-to-text-for-voice-notes.md`
+- **Verified:** 2026-10-21
+
+### The provider editor's capability checkboxes are positional: append a new flag LAST
+
+- **Claim:** `providers.js` builds each model's capability checkboxes from `capDefs`, and `collectModels` reads them
+  back by destructuring in the same order. They are now
+  `[tools, vision, image, embed, speech, reasoning, transcription]`. A flag inserted mid-list silently shifts every
+  later one onto the wrong field on save. `ReasoningAssetsTests` pins the order.
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/providers.js`, `tests/Agent42.Tests/ReasoningAssetsTests.cs`
+- **Verified:** 2026-10-21
+
+### Slack image upload needs `files:write`, and the upload URL Slack returns is pinned like a download
+
+- **Claim:** Outbound images go through `files.getUploadURLExternal` → POST bytes to the returned `upload_url` →
+  `files.completeUploadExternal` (form-encoded arguments, `channel_id` + `thread_ts`). `SlackWebApi.UploadFileAsync`
+  uses the `upload_url` only when it is on `files.slack.com` over HTTPS (the download pin), so the bot token never goes
+  to a host Slack's answer names. The manifest gained `files:write`. An app created before phase 1c must add it and be
+  reinstalled; until then each upload fails and the reply's note points to Agent42.
+- **Evidence:** `src/Agent42.Backend/ChatGateway/Slack/SlackWebApi.cs`, `tests/Agent42.Tests/SlackTests.cs`
+  (`UploadImage_ToAnUntrustedUploadUrl_SendsNothing`)
 - **Verified:** 2026-10-21
 
 ### A .NET file-based app (`dotnet run app.cs`) defaults to `PublishAot`, so reflection JSON fails with an empty 500

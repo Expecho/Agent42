@@ -211,17 +211,22 @@ public static partial class AgentApi
     // Why one file cannot ride an agent run, or null when it can. The agent-run door rejects the whole batch on the
     // first error; the email door skips the file and tells the agent (ADR 0096), so the rule lives in one place.
     private static string? AgentRunFileError(IFormFile file, bool copilot)
+        => AgentRunFileError(file.FileName, file.ContentType, file.Length, copilot);
+
+    // The same rule from a file's METADATA alone, so a caller that must download the bytes (the chat gateway, ADR 0111)
+    // validates before fetching anything. An unknown length is checked later, by the capped download.
+    internal static string? AgentRunFileError(string fileName, string? declaredType, long? length, bool copilot)
     {
-        if (file.Length > MaxAttachmentBytes)
+        if (length > MaxAttachmentBytes)
         {
-            return $"'{file.FileName}' exceeds the {MaxAttachmentBytes / (1024 * 1024)} MB limit.";
+            return $"'{fileName}' exceeds the {MaxAttachmentBytes / (1024 * 1024)} MB limit.";
         }
 
-        var mediaType = DocumentMediaTypes.ResolveMediaType(file.FileName, file.ContentType);
+        var mediaType = DocumentMediaTypes.ResolveMediaType(fileName, declaredType);
         if (!mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
             && !DocumentMediaTypes.IsSupported(mediaType))
         {
-            return $"'{file.FileName}' is not a supported image or document type.";
+            return $"'{fileName}' is not a supported image or document type.";
         }
 
         return copilot && !mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
@@ -237,6 +242,23 @@ public static partial class AgentApi
             IReadOnlyList<IFormFile> files, IAttachmentStore attachments,
             DocumentIngestionService ingestion, string ownerKey)
     {
+        var contents = new List<AgentRunFileContent>();
+        foreach (var file in files)
+        {
+            using var buffer = new MemoryStream();
+            await file.CopyToAsync(buffer);
+            contents.Add(new AgentRunFileContent(file.FileName, file.ContentType, buffer.ToArray()));
+        }
+
+        return await StoreAgentRunFilesAsync(contents, attachments, ingestion, ownerKey);
+    }
+
+    // The byte-level core the form overload and the chat gateway share.
+    internal static async Task<(List<AttachmentRef> Images, List<string> Documents, string? Error)>
+        StoreAgentRunFilesAsync(
+            IReadOnlyList<AgentRunFileContent> files, IAttachmentStore attachments,
+            DocumentIngestionService ingestion, string ownerKey)
+    {
         // Store/ingest each file under the resolved owner+conversation key — the same per-file branch as
         // the browser upload endpoint. Images become attachment refs that ride the run; documents ingest
         // for retrieval (and are registered on the grain below, never sent as attachments — ADR 0007).
@@ -245,9 +267,7 @@ public static partial class AgentApi
         foreach (var file in files)
         {
             var mediaType = DocumentMediaTypes.ResolveMediaType(file.FileName, file.ContentType);
-            using var buffer = new MemoryStream();
-            await file.CopyToAsync(buffer);
-            var bytes = buffer.ToArray();
+            var bytes = file.Bytes;
 
             if (mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
             {
@@ -277,6 +297,8 @@ public static partial class AgentApi
 
         return (imageRefs, documentNames, null);
     }
-
-
 }
+
+/// <summary>One file's bytes for <see cref="AgentApi.StoreAgentRunFilesAsync(IReadOnlyList{AgentRunFileContent}, IAttachmentStore, DocumentIngestionService, string)"/>.</summary>
+/// <param name="ContentType">The declared type; the extension wins (a browser's or platform's label is unreliable).</param>
+internal sealed record AgentRunFileContent(string FileName, string? ContentType, byte[] Bytes);

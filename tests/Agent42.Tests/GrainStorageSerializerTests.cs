@@ -58,6 +58,8 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         "Agent42.Agents.UserChatConnectionsState",
         "Agent42.Agents.ChatConnectionDirectoryState",
         "Agent42.Agents.ChatRouteState",
+        // Nested in AgentGrainState (ADR 0111): the conversation's chat origin.
+        "Agent42.Agents.ChatOrigin",
     ];
 
     // The type name a document is keyed on must keep resolving. Hard-coded literals, deliberately: a
@@ -364,6 +366,32 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
 
         Assert.Equal(state, restored.SharedStateJson);
         Assert.Equal(7, restored.SharedStateVersion);
+    }
+
+    // ADR 0111 AC21: the committed golden predates [Id(18)] Origin, so a conversation stored before the chat gateway
+    // delivered reads as a web conversation (no origin), and a document WITHOUT the key must not bind a half-built one.
+    [Fact]
+    public void ChatOrigin_WrittenBeforeFieldExisted_Deserializes()
+    {
+        var restored = Serializer().Deserialize<AgentGrainState>(new BinaryData(StoredAgentGrainStateJson));
+
+        Assert.Null(restored.Origin);
+    }
+
+    // The FORWARD direction on the path that matters at rest: the origin survives the Cosmos JSON round trip.
+    [Fact]
+    public void ChatOrigin_RoundTripsThroughCosmosJson()
+    {
+        var written = new AgentGrainState { Origin = new ChatOrigin { ConnectionId = "conn-1", RouteKey = "-1001#42", IsGroup = true } };
+        var dm = new AgentGrainState { Origin = new ChatOrigin { ConnectionId = "conn-2", RouteKey = "555" } };
+
+        var restored = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(written));
+        var restoredDm = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(dm));
+
+        Assert.NotNull(restored.Origin);
+        Assert.Equal(("conn-1", "-1001#42", true), (restored.Origin.ConnectionId, restored.Origin.RouteKey, restored.Origin.IsGroup));
+        // A DM origin is written WITHOUT IsGroup (the CLR default is omitted) and must read back false, never a flip.
+        Assert.False(restoredDm.Origin!.IsGroup);
     }
 
     // AC1: ChatTurn.Artifacts crosses the grain boundary (Orleans binary) and the HTTP boundary (System.Text.Json,
@@ -841,6 +869,66 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal((GitHubCopilotProvider.Key, GitHubCopilotProvider.Kind, "cipher"), (provider.Key, provider.Kind, provider.ApiKeyCiphertext));
         Assert.Null(provider.Endpoint);
         Assert.Empty(provider.Models);
+    }
+
+    // ADR 0113: a provider overlay persisted before SupportsTranscription ([Id(8)]) and TranscriptionDefault ([Id(5)])
+    // existed has neither property in its Cosmos document. It must read back false/null with no migration.
+    [Fact]
+    public void ProviderOverlay_WithoutTranscriptionFields_ReadsBackAsDefaults()
+    {
+        var written = new UserProviderConfigState
+        {
+            Config = new UserProviderConfig(
+                new List<StoredProvider>
+                {
+                    new("mine", "OpenAICompatible", "Mine", "https://api.example/v1", "cipher",
+                        new List<StoredModel> { new("m1", "M1", true, false, SupportsSpeech: true, SupportsTranscription: true) },
+                        UseResponsesApi: false),
+                },
+                Default: "mine:m1", Version: 3, SpeechDefault: "mine:m1", TranscriptionDefault: "mine:m1"),
+        };
+        var json = Serializer().Serialize(written).ToString();
+        var legacy = System.Text.RegularExpressions.Regex.Replace(json, @",?\s*""(SupportsTranscription|TranscriptionDefault)""\s*:\s*(true|"".*?"")", "");
+        Assert.DoesNotContain("Transcription", legacy);
+
+        var restored = Serializer().Deserialize<UserProviderConfigState>(new BinaryData(legacy));
+
+        var model = restored.Config.Providers.Single().Models.Single();
+        Assert.True(model.SupportsSpeech);
+        Assert.False(model.SupportsTranscription);
+        Assert.Null(restored.Config.TranscriptionDefault);
+        Assert.Equal("mine:m1", restored.Config.SpeechDefault);
+    }
+
+    // The new fields, set, survive the Cosmos JSON path (the binary golden predates them and is never regenerated).
+    [Fact]
+    public void ProviderOverlay_TranscriptionFields_RoundTripThroughCosmosJson()
+    {
+        var written = new UserProviderConfigState
+        {
+            Config = new UserProviderConfig(
+                new List<StoredProvider>
+                {
+                    new("mine", "OpenAICompatible", "Mine", "https://api.example/v1", "cipher",
+                        new List<StoredModel>
+                        {
+                            new("whisper-1", "Whisper", false, false, SupportsTranscription: true),
+                            new("tts-1", "TTS", false, false, SupportsSpeech: true),
+                        },
+                        UseResponsesApi: false),
+                },
+                Default: null, Version: 2, SpeechDefault: "mine:tts-1", TranscriptionDefault: "mine:whisper-1"),
+        };
+
+        var restored = Serializer().Deserialize<UserProviderConfigState>(Serializer().Serialize(written));
+
+        Assert.Equal("mine:whisper-1", restored.Config.TranscriptionDefault);
+        Assert.Equal("mine:tts-1", restored.Config.SpeechDefault);
+        var models = restored.Config.Providers.Single().Models;
+        Assert.True(models[0].SupportsTranscription);
+        Assert.False(models[0].SupportsSpeech);
+        Assert.True(models[1].SupportsSpeech);
+        Assert.False(models[1].SupportsTranscription);
     }
 
     private const string StoredEmailAddressDirectoryJson = """

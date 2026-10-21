@@ -89,6 +89,30 @@ public sealed class DiscordRestApi(IHttpClientFactory httpClients, DiscordOption
         return SendAsync(token, HttpMethod.Post, $"channels/{channelId}/messages", body, cancellationToken);
     }
 
+    /// <summary>
+    /// Posts one file as a message (multipart: <c>payload_json</c> plus <c>files[0]</c>), with the same
+    /// <c>allowed_mentions</c> rule as every other message.
+    /// </summary>
+    public async Task<DiscordResponse> CreateMessageWithFileAsync(
+        string token, string channelId, byte[] bytes, string fileName, string mediaType, string? replyTo, CancellationToken cancellationToken)
+    {
+        var payload = new Dictionary<string, object>
+        {
+            ["allowed_mentions"] = NoMentions,
+            ["attachments"] = new[] { new { id = 0, filename = fileName } },
+        };
+        if (replyTo is not null)
+        {
+            payload["message_reference"] = new { message_id = replyTo, fail_if_not_exists = false };
+        }
+
+        var form = new MultipartFormDataContent { { JsonContent.Create(payload), "payload_json" } };
+        var file = new ByteArrayContent(bytes);
+        file.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+        form.Add(file, "files[0]", fileName);
+        return await SendAsync(token, HttpMethod.Post, $"channels/{channelId}/messages", form, cancellationToken);
+    }
+
     public Task<DiscordResponse> EditMessageAsync(string token, string channelId, string messageId, string content, CancellationToken cancellationToken)
         => SendAsync(token, HttpMethod.Patch, $"channels/{channelId}/messages/{messageId}",
             new Dictionary<string, object> { ["content"] = content, ["allowed_mentions"] = NoMentions }, cancellationToken);
@@ -155,7 +179,7 @@ public sealed class DiscordRestApi(IHttpClientFactory httpClients, DiscordOption
         request.Headers.Authorization = new AuthenticationHeaderValue("Bot", token);
         if (body is not null)
         {
-            request.Content = JsonContent.Create(body);
+            request.Content = body as HttpContent ?? JsonContent.Create(body);
         }
 
         using var response = await client.SendAsync(request, cancellationToken);

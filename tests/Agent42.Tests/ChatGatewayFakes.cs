@@ -120,8 +120,17 @@ public sealed class FakeChatSession(ChatConnectionRuntime runtime, IChatInboundS
         ChatTarget target, byte[] bytes, string fileName, string mediaType, CancellationToken cancellationToken)
         => RecordAsync("image", target, fileName, ChatTextFormat.Plain, null, cancellationToken);
 
+    /// <summary>Inbound files by <see cref="ChatInboundFile.FileRef"/>; a ref not here downloads as <c>null</c>.</summary>
+    public ConcurrentDictionary<string, ChatDownloadedFile> Files { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Every <see cref="DownloadAsync"/> call's file ref, in order.</summary>
+    public ConcurrentQueue<string> Downloads { get; } = new();
+
     public Task<ChatDownloadedFile?> DownloadAsync(ChatInboundFile file, long maxBytes, CancellationToken cancellationToken)
-        => Task.FromResult<ChatDownloadedFile?>(null);
+    {
+        Downloads.Enqueue(file.FileRef);
+        return Task.FromResult(Files.TryGetValue(file.FileRef, out var found) && found.Bytes.Length <= maxBytes ? found : null);
+    }
 
     public ValueTask DisposeAsync()
     {

@@ -260,4 +260,12 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(17)]
     public long SharedStateVersion { get; set; }
+
+    /// <summary>
+    /// The chat this conversation was started from (ADR 0111), or null for a web conversation. Written once, by the
+    /// gateway, when its route mints the conversation, so a reminder or queued run can deliver its reply back to that
+    /// chat. Trailing <c>[Id(18)]</c> defaulting to null, so old Cosmos state reads as null (CLAUDE.md rule 2).
+    /// </summary>
+    [Id(18)]
+    public ChatOrigin? Origin { get; set; }
 }

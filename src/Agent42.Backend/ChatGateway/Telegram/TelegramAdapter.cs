@@ -141,14 +141,40 @@ internal sealed class TelegramSession : IChatPlatformSession
     public Task SendTypingAsync(ChatTarget target, CancellationToken cancellationToken)
         => _api.CallAsync(Token, "sendChatAction", TelegramUpdates.WithTarget(target, new Dictionary<string, object> { ["action"] = "typing" }), cancellationToken);
 
-    // Phase 1c (ADR 0111): outbound images are uploaded there; until then the streamer's note points to Agent42.
-    public Task<ChatSendResult> UploadImageAsync(
+    // A generated image as a photo (sendPhoto takes up to 10 MB), in the same chat, topic and reply chain as the text.
+    public async Task<ChatSendResult> UploadImageAsync(
         ChatTarget target, byte[] bytes, string fileName, string mediaType, CancellationToken cancellationToken)
-        => Task.FromResult(ChatSendResult.Fail(ChatSendErrorKind.Unknown));
+    {
+        var fields = new Dictionary<string, string> { ["chat_id"] = target.ChatId };
+        if (target.ThreadId is { } thread)
+        {
+            fields["message_thread_id"] = thread;
+        }
 
-    // Phase 1c (ADR 0111): inbound files are fetched there, from api.telegram.org only.
-    public Task<ChatDownloadedFile?> DownloadAsync(ChatInboundFile file, long maxBytes, CancellationToken cancellationToken)
-        => Task.FromResult<ChatDownloadedFile?>(null);
+        if (target.ReplyToMessageId is { } replyTo && long.TryParse(replyTo, out var replyId))
+        {
+            fields["reply_parameters"] = JsonSerializer.Serialize(new { message_id = replyId, allow_sending_without_reply = true });
+        }
+
+        return (await _api.UploadAsync(Token, "sendPhoto", fields, "photo", bytes, fileName, mediaType, cancellationToken)).ToSendResult();
+    }
+
+    // getFile turns the file_id into a path on api.telegram.org (the only host the token ever goes to, since the base URL
+    // is fixed), then the download is capped. getFile's own size is checked first, so an oversized file is never fetched.
+    public async Task<ChatDownloadedFile?> DownloadAsync(ChatInboundFile file, long maxBytes, CancellationToken cancellationToken)
+    {
+        var info = await _api.CallAsync(Token, "getFile", new { file_id = file.FileRef }, cancellationToken);
+        if (!info.Ok || info.Result.ValueKind != JsonValueKind.Object
+            || !info.Result.TryGetProperty("file_path", out var path) || path.GetString() is not { Length: > 0 } filePath
+            || (info.Result.TryGetProperty("file_size", out var size) && size.GetInt64() > maxBytes))
+        {
+            return null;
+        }
+
+        return await _api.DownloadFileAsync(Token, filePath, maxBytes, cancellationToken) is { } bytes
+            ? new ChatDownloadedFile(bytes, file.FileName ?? Path.GetFileName(filePath), file.DeclaredMediaType)
+            : null;
+    }
 
     public async ValueTask DisposeAsync()
     {

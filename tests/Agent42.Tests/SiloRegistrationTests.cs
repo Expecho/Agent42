@@ -21,7 +21,7 @@ public sealed class SiloRegistrationTests
         typeof(IUserChatClientFactoryProvider), typeof(IUserMcpToolProvider), typeof(IAttachmentStore),
         typeof(IDocumentIndex), typeof(IChatSearchIndex), typeof(IWebSearch), typeof(IWebPageFetcher),
         typeof(IWebDocumentFetcher), typeof(IGeocoder), typeof(HindsightIntegration),
-        typeof(IPushNotificationSender), typeof(IAgentWebhookSender),
+        typeof(IPushNotificationSender), typeof(IAgentWebhookSender), typeof(IChatDeliverySender),
     ];
 
     private static ServiceCollection WithPorts(params Type[] except)
@@ -46,6 +46,7 @@ public sealed class SiloRegistrationTests
         Assert.Contains("IAttachmentStore (needed by AgentGrain)", error.Message, StringComparison.Ordinal);
         Assert.Contains("IPushNotificationSender (needed by AgentGrain)", error.Message, StringComparison.Ordinal);
         Assert.Contains("IAgentWebhookSender (needed by AgentWebhookGrain)", error.Message, StringComparison.Ordinal);
+        Assert.Contains("IChatDeliverySender (needed by AgentGrain)", error.Message, StringComparison.Ordinal);
         // Every missing one, not only the first.
         foreach (var port in Ports)
         {

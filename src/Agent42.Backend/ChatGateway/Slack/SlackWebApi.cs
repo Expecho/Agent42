@@ -72,10 +72,77 @@ public sealed class SlackWebApi(IHttpClientFactory httpClients, SlackOptions opt
     /// <summary>Calls <paramref name="method"/> with a JSON body (or none) under <paramref name="token"/>.</summary>
     public async Task<SlackResponse> CallAsync(string token, string method, object? body, CancellationToken cancellationToken)
     {
-        var client = httpClients.CreateClient(HttpClientName);
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(options.ApiBaseUrl, method));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Content = JsonContent.Create(body ?? new { });
+        return await SendAsync(token, request, cancellationToken);
+    }
+
+    /// <summary>
+    /// Calls <paramref name="method"/> with form-encoded arguments. The external-upload methods take their arguments
+    /// this way (a JSON body is not among the formats they document).
+    /// </summary>
+    public async Task<SlackResponse> CallFormAsync(
+        string token, string method, IReadOnlyDictionary<string, string> arguments, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(options.ApiBaseUrl, method));
+        request.Content = new FormUrlEncodedContent(arguments);
+        return await SendAsync(token, request, cancellationToken);
+    }
+
+    /// <summary>
+    /// Shares <paramref name="bytes"/> as a file in a channel (and thread): <c>files.getUploadURLExternal</c>, the bytes
+    /// to the returned URL, then <c>files.completeUploadExternal</c>. The upload URL is used only when it is on
+    /// <see cref="FilesHost"/> (the same pin as downloads), so the token never goes anywhere else. Needs <c>files:write</c>.
+    /// </summary>
+    public async Task<SlackResponse> UploadFileAsync(
+        string token, string channel, string? threadTs, byte[] bytes, string fileName, CancellationToken cancellationToken)
+    {
+        var ticket = await CallFormAsync(token, "files.getUploadURLExternal", new Dictionary<string, string>
+        {
+            ["filename"] = fileName,
+            ["length"] = bytes.Length.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        }, cancellationToken);
+        if (!ticket.Ok)
+        {
+            return ticket;
+        }
+
+        var uploadUrl = ticket.Body.TryGetProperty("upload_url", out var url) ? url.GetString() : null;
+        var fileId = ticket.Body.TryGetProperty("file_id", out var id) ? id.GetString() : null;
+        if (uploadUrl is null || fileId is null || !IsPinnedFileUrl(uploadUrl, options.FilesBaseUrl))
+        {
+            return new SlackResponse(false, default, "upload_url_not_trusted", 200, null);
+        }
+
+        var client = httpClients.CreateClient(FilesHttpClientName);
+        using (var upload = new HttpRequestMessage(HttpMethod.Post, uploadUrl))
+        {
+            upload.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            upload.Content = new ByteArrayContent(bytes);
+            using var uploaded = await client.SendAsync(upload, cancellationToken);
+            if (!uploaded.IsSuccessStatusCode)
+            {
+                return new SlackResponse(false, default, null, (int)uploaded.StatusCode, uploaded.Headers.RetryAfter?.Delta);
+            }
+        }
+
+        var complete = new Dictionary<string, string>
+        {
+            ["files"] = JsonSerializer.Serialize(new[] { new { id = fileId, title = fileName } }),
+            ["channel_id"] = channel,
+        };
+        if (threadTs is not null)
+        {
+            complete["thread_ts"] = threadTs;
+        }
+
+        return await CallFormAsync(token, "files.completeUploadExternal", complete, cancellationToken);
+    }
+
+    private async Task<SlackResponse> SendAsync(string token, HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var client = httpClients.CreateClient(HttpClientName);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await client.SendAsync(request, cancellationToken);
         var retryAfter = response.Headers.RetryAfter?.Delta;
         if (!response.IsSuccessStatusCode)

@@ -36,7 +36,10 @@ public record ModelInfo(
     string? ProviderDisplayName = null,
     // Trailing default so existing constructions stay valid; true only for a GitHub Copilot model (ADR 0108), which runs
     // only in Copilot agents. Pickers hide it everywhere else; the server-side guard is CopilotOnlyChatClient.
-    bool CopilotOnly = false);
+    bool CopilotOnly = false,
+    // Trailing default so existing constructions stay valid; true only for a declared transcription (speech-to-text)
+    // model (ADR 0113). Surfaced on /api/models so the "default transcription model" selector can filter to it.
+    bool SupportsTranscription = false);
 
 /// <summary>The models the picker can choose from, plus the current default.</summary>
 public record ModelCatalogResult(string Default, IReadOnlyList<ModelInfo> Models);

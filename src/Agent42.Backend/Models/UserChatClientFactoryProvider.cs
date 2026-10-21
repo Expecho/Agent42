@@ -45,7 +45,8 @@ public sealed class UserChatClientFactoryProvider : IUserChatClientFactoryProvid
 
         var factory = new MultiProviderChatClientFactory(
             resolved.Providers, resolved.DefaultModelId, _otelSourceName, _logger,
-            resolved.EmbeddingDefaultModelId, resolved.SpeechDefaultModelId);
+            resolved.EmbeddingDefaultModelId, resolved.SpeechDefaultModelId,
+            resolved.TranscriptionDefaultModelId);
         _cache[userId] = new CachedFactory(resolved.Version, factory);
         return factory;
     }

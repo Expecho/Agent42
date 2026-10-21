@@ -33,7 +33,7 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
 
     private const string LinkedText = "Linked to Agent42. Send a message to start chatting, or {0}help for the commands.";
     private const string BusyText = "I'm still working through your earlier messages. Send this again in a moment.";
-    private const string TextOnlyText = "I can only read text messages here for now. Type your message, or send files from Agent42.";
+    private const string TextOnlyText = "I can read text, images and documents here, but not that kind of message.";
 
     /// <summary>
     /// How long a chat waits for one turn before it moves on (the gotcha "Bounding a drained agent turn: cap the WAIT,
@@ -48,6 +48,9 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
     private readonly ChatReplyStreamer _streamer;
     private readonly Dictionary<string, IChatPlatformAdapter> _adapters;
     private readonly IUserModelCatalogProvider? _modelCatalogs;
+    private readonly IAttachmentStore? _attachments;
+    private readonly DocumentIngestionService? _ingestion;
+    private readonly IUserChatClientFactoryProvider? _chatClients;
     private readonly TimeSpan _maxTurnWait;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ChatTurnPipeline> _logger;
@@ -64,9 +67,15 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
         TimeProvider timeProvider,
         ILogger<ChatTurnPipeline> logger,
         IUserModelCatalogProvider? modelCatalogs = null,
-        TimeSpan? maxTurnWait = null)
+        TimeSpan? maxTurnWait = null,
+        IAttachmentStore? attachments = null,
+        DocumentIngestionService? ingestion = null,
+        IUserChatClientFactoryProvider? chatClients = null)
     {
+        _chatClients = chatClients;
         _maxTurnWait = maxTurnWait ?? DefaultMaxTurnWait;
+        _attachments = attachments;
+        _ingestion = ingestion;
         _grains = grains;
         _deduper = deduper;
         _sessions = sessions;
@@ -129,10 +138,10 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
         {
             await RunCommandAsync(work, command);
         }
-        else if (string.IsNullOrWhiteSpace(message.Text))
+        else if (string.IsNullOrWhiteSpace(message.Text) && message.Files.Count == 0)
         {
-            // A sticker, or a photo or voice note with no caption: phase 1a reads text only (files and voice are 1c), and
-            // an empty prompt would still mint a conversation and spend a model call.
+            // A sticker, a location, a poll: nothing a turn can read, and an empty prompt would still mint a conversation
+            // and spend a model call.
             await ReplyAsync(work, TextOnlyText);
         }
         else if (!TryEnqueue(work))
@@ -313,7 +322,9 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
 }
 
 /// <summary>One owner message bound for a conversation, with where its reply goes.</summary>
-internal sealed record ChatTurnWork(string UserId, ChatConnection Connection, ChatInboundMessage Message, string RouteKey)
+/// <param name="Transcript">A voice note's transcript, once it has been read (phase 1c).</param>
+internal sealed record ChatTurnWork(
+    string UserId, ChatConnection Connection, ChatInboundMessage Message, string RouteKey, string? Transcript = null)
 {
     public string QueueKey => Connection.Id + "\n" + RouteKey;
 

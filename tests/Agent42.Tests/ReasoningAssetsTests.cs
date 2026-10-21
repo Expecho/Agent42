@@ -129,10 +129,10 @@ public sealed class ReasoningAssetsTests(StaticAssetsServerFixture fixture)
         var collectModels = StaticAssetsServerFixture.Body(app, "function collectModels()");
         Assert.Contains("supportsReasoning: reasoning.checked", collectModels);
 
-        // The pairing itself: `reasoning` must be the SIXTH name destructured, matching capDefs' sixth
+        // The pairing itself: `reasoning` must be the SIXTH name (transcription, ADR 0113, is the seventh) destructured, matching capDefs' sixth
         // entry. A name bound at the wrong index compiles, renders and saves — just wrongly.
         Assert.Contains(
-            "const [tools, vision, image, embed, speech, reasoning] =",
+            "const [tools, vision, image, embed, speech, reasoning, transcription] =",
             CodeOnly(collectModels),
             StringComparison.Ordinal);
     }
