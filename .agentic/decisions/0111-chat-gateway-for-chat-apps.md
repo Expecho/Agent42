@@ -2,9 +2,9 @@
 id: 0111
 date: 2026-10-21
 status: accepted
-tags: [chat-gateway, telegram, slack, discord, whatsapp, signal, egress, pairing, hosted-service, lease, single-replica, no-migration]
+tags: [chat-gateway, telegram, slack, discord, whatsapp, signal, signal-cli, azure-files, egress, pairing, hosted-service, lease, single-replica, no-migration]
 supersedes: []
-extends: [0013, 0016, 0022, 0028, 0075, 0096]
+extends: [0013, 0016, 0022, 0028, 0075, 0096, 0107]
 amends: [0028, 0075]
 ---
 
@@ -316,3 +316,146 @@ the supervisor, the lease, the state or the endpoints changed: the adapter seam 
 - `ChatGatewayPanelAssetsTests` covers the three toggles and the group warning.
 - Not yet verified live (plan Step 19): uploads on the real platforms, a real transcription model (and Ogg), a
   scheduled prompt delivered to its origin chat, and Telegram group mentions with privacy mode off.
+
+## Amendment (2026-10-21): Signal through a lease-gated signal-cli, phase 3
+
+Phase 3 ran before phase 2 (WhatsApp), the user's call. It amends section 3 ("each user links their own Signal
+account") and the plan's sidecar. Plan: `.agentic/specs/plan-chat-gateway.md`, section "Phase 3 — Signal, refined plan".
+
+### A dedicated number, not a linked device
+- Each user registers a **spare number of their own** in signal-cli (`register`, then the code Signal sends by text or
+  call, then `verify`). That number is the bot's own Signal account, so pairing, the owner check, DMs and groups work as
+  on the other platforms.
+- **Rejected: a linked device of the user's own account.** Such a device has three problems:
+  - it could reach its owner only through Note-to-Self;
+  - its replies would be sent *as the user*, and phone notifications for them are unreliable (signal-cli
+    `--notify-self`);
+  - the daemon would receive and store **all** of the user's inbound Signal traffic and attachments.
+- **The number is the credential, and it is never pasted.** `POST /api/chat-connections/{id}/signal/register` and
+  `/verify` are the only way one is stored. The generic create and edit endpoints refuse a Signal credential.
+  Otherwise a user could paste another user's registered number, pass the "does the daemon hold it" check, and drive
+  that bot.
+- **One number, one connection.** `ISignalNumberDirectoryGrain` is keyed by the E.164 number. The number is claimed
+  **before** `register` is called, because a `register` over someone else's number would reset their registration.
+  - A pending claim expires after 30 minutes, and a failed `register` releases it, so a number can't be squatted.
+  - A claim another connection holds is answered with a generic 409.
+  - The number is the grain key in clear: a hash of a phone number is brute-forceable.
+- **Delete** happens in this order. Each later step is best effort:
+  1. read the connection first;
+  2. deregister it;
+  3. stop the session;
+  4. have the daemon `unregister` the number and `deleteLocalAccountData`, through the optional `IChatPlatformCleanup`;
+  5. release the claim.
+
+### signal-cli is a child process of the backend, started only under the gateway lease
+- The backend image bundles signal-cli and a JRE 25. It is the JVM build, pinned by version and SHA-256; the GraalVM
+  build is marked experimental upstream.
+- **Rejected: a sidecar container.** The daemon has no HTTP authentication, and its store is SQLite in WAL mode behind
+  Java file locks. A sidecar runs in both revisions during a rollover, so two daemons would share one store with only an
+  unverified SMB lock between them.
+- **The lease notifies participants.** `ChatGatewayService` sends `IChatGatewayLeaseParticipant`s two signals:
+  - "renewed" after acquiring the lease and after every renewal;
+  - "lost" **before** it stops the sessions, so a hung dispose can't delay the kill. It is sent on renewal failure, in
+    the failure path and on shutdown, always before the lease is released.
+- **`SignalDaemon`** starts the process lazily, only while the lease is held, and stops it with SIGTERM, then SIGKILL
+  after 5 s.
+- **A watchdog** stops the daemon when no renewal arrived within `lease duration − renew interval − margin` (35 s for
+  the Blob lease). That closes the window where a hung renewal outlives the lease while a new revision acquires it.
+  `IChatGatewayLease` gained `Duration` for this.
+- **Arguments:** `--config /mnt/signal daemon --http=127.0.0.1:<port> --receive-mode=on-connection --ignore-stories
+  --no-receive-stdout`.
+  - **The loopback bind is load-bearing.** signal-cli validates the Host header only on a loopback bind. Measured:
+    `/api/v1/rpc` with a foreign Host answers 421, while `/api/v1/check` answers 200 regardless.
+  - `on-connection` leaves messages on Signal's server while no event stream is open. The default, `on-start`, would ack
+    them with nobody listening.
+  - There is one event stream per number (`/api/v1/events?account=`). A stream without `account` captures the account
+    list at connect time.
+
+### The store is on Azure Files
+- The store is a second share, `signal-data`, on ADR 0107's key-access account. It is linked into the environment as
+  `agent42-signal` and mounted at `/mnt/signal` on the backend container only.
+- **For this store only, this reverses the "SQLite over SMB" objection of ADR 0085 and ADR 0107.** It holds here because
+  exactly one daemon writes the store at a time, under the lease. The Copilot runtime had no such single-writer
+  guarantee.
+- **Signal ships dormant.** `ChatGateway:Signal:Enabled` (Bicep `signalEnabled`) defaults to false.
+  - Off: `AddSignalChat` registers nothing, no daemon can start, the panel doesn't offer Signal, and the backend keeps
+    its current CPU and memory.
+  - On: the backend gets +0.25 CPU / +0.5Gi for the JVM, which measured 186 MiB idle.
+  - **Turning it on waits for two things:** the plan's Step 24 measurement (WAL on the mount, with and without `nobrl`),
+    and the operator's confirmation of the Copilot-shell risk under Consequences.
+
+### Replies, files and formatting
+- **Final-only.** Signal can edit a message, but its limits are undocumented and every edit notifies again.
+- **Typing** is refreshed every 10 s; Signal clears it after 15 s.
+- **Length:** 2000 characters per message. Signal moves text past 2000 UTF-8 bytes into a long-text attachment.
+- **Formatting:** Markdown becomes plain text plus `textStyles` ranges (BOLD, ITALIC, STRIKETHROUGH, MONOSPACE), in
+  UTF-16 units. Commands start with `/`.
+- **Mentions** come from `mentions[].uuid`, never the text. The U+FFFC placeholder is stripped, so "@bot /new" is a
+  command. A reply in a group quotes the triggering message.
+- **Dedupe:** Signal has no message id, so dedupe is on `sender ACI:timestamp`.
+- **Ignored input:** sync, story, receipt, typing, call and edit envelopes never become turns, and neither do
+  reaction-only or delete-only messages.
+- **Files:** inbound files come through `getAttachment`. The declared size is checked first, and the decoded bytes are
+  capped again. Generated images go out as RFC 2397 data URIs.
+- **Voice notes** are AAC, which the transcription endpoints don't list, so the existing curated format reply is
+  expected (ADR 0113). This is checked live.
+- **Faults:** a send that Signal answers with a proof-required token (a rate-limit captcha) or "unknown account" faults
+  the connection, with a reason the panel shows. Solving the captcha from the panel is out of scope.
+
+### Consequences (phase 3)
+- **Egress (an ADR 0013 extension, opt-in per user).** Replies are end-to-end encrypted to the owner's devices. But the
+  **bot number's** identity keys, and the messages waiting for it, live on the operator's Azure Files share, so the
+  operator can read what the bot receives. The user's own Signal account is never involved. The panel says so.
+- **The Copilot shell can reach the daemon and its store.** ADR 0107's built-in shell runs as the backend's uid, in the
+  backend container.
+  - It can call the unauthenticated daemon on loopback: send as any connected number, and read any number's events.
+  - It can read `/mnt/signal`.
+  - The loopback bind protects against the network, never against that shell.
+
+  This is the same class as ADR 0107's accepted risks: the shell can already forge the principal header and mint
+  managed-identity tokens for all app data. It stays cross-conversation rather than cross-user while only the owner's
+  principals can sign in, and the Copilot kill switch is the response. **It is an extension of those accepted risks,
+  pending the operator's explicit confirmation before `signalEnabled` is turned on.** If it is declined, the
+  alternatives are a separate uid for the JVM (a root entrypoint that drops privileges), or refusing to start Signal
+  while built-in tools are on.
+- **Accepted residual:** any signed-in user can make Signal send a code to an arbitrary number, and sign out that
+  number's phone, by calling `register` on it. Signal's own rate limits bound this, and only the owner's principals can
+  sign in.
+- **Expiry:** signal-cli releases older than three months may stop working, and nothing upgrades it automatically.
+  Config health reads the baked `SIGNAL_CLI_VERSION` and `SIGNAL_CLI_RELEASED`, warns at 75 days and errors at 90.
+- **Licence:** signal-cli is GPL-3.0-only. It runs as a separate program in a private image, which is aggregation, not
+  linking.
+- **Rule 12:** the daemon process is more in-process state on the single replica. The lease now protects a **store**,
+  not only a connection.
+
+### Verification (phase 3)
+- **Tests:**
+  - `SignalEventsTests`, `SignalTextTests`, `SignalRpcTests`, `SignalAdapterTests`, `SignalDaemonTests`;
+  - `SignalRegistrationApiTests`, `SignalNumberDirectoryGrainTests`;
+  - `ChatGatewayServiceTests` (the participant hook);
+  - `SignalImageTests`, `CopilotFilesMountTests`, `ConfigHealthTests`;
+  - the serializer goldens.
+
+  Mutation-checked: the watchdog reset, the number redaction, lost-before-stop, and the pasted-credential refusal.
+- **Measured locally** (signal-cli 0.14.9 in Docker):
+  - every daemon flag is accepted;
+  - `verify` is a JSON-RPC method in multi-account mode;
+  - `listAccounts` returns the ACI;
+  - an unknown account's stream answers 400;
+  - the backend image runs `java` 25 and signal-cli as the app uid;
+  - the daemon shuts down cleanly on SIGTERM.
+- **DevHost, 2026-10-21**, against a stand-in for the daemon:
+  - a pasted number was refused;
+  - a captcha demand was answered with the link;
+  - register, verify and pairing worked;
+  - a stranger and a wrong code were ignored;
+  - a DM was answered with typing, then a styled final;
+  - a duplicate ran once;
+  - `/new` started a new conversation;
+  - a group mention was answered in the group as a quote, and an unmentioned group message was ignored.
+
+  It surfaced one bug, now fixed: `JsonContent`'s chunked body arrived empty, so RPC calls are sent buffered.
+- **Not yet verified:**
+  - the Azure Files measurement (plan Step 24);
+  - everything live (plan Step 31): a real number, `on-connection` holding messages across a daemon restart, AAC voice
+    notes, the long-text attachment, and a revision rollover with the daemon running.

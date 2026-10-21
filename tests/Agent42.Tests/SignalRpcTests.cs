@@ -53,6 +53,20 @@ public class SignalRpcTests
 
     private static JsonElement SentBody(StubHandler handler) => JsonDocument.Parse(handler.Calls[^1].Body!).RootElement;
 
+    // Found in the DevHost exercise: JsonContent streams a chunked body with no Content-Length, which a small HTTP server
+    // can read as empty. Every call is sent buffered, with its length.
+    [Fact]
+    public async Task EveryCall_SendsABufferedJsonBody_WithItsLength()
+    {
+        var (client, handler) = Client((_, _) => Rpc("{}"));
+
+        await client.CallAsync("listAccounts", null, CancellationToken.None);
+
+        var content = handler.Calls[^1].Request.Content!;
+        Assert.Equal("application/json", content.Headers.ContentType!.MediaType);
+        Assert.Equal(handler.Calls[^1].Body!.Length, content.Headers.ContentLength);
+    }
+
     [Fact]
     public async Task ASendToAPerson_PostsRecipientArray_WithStylesAttachmentsAndQuote()
     {

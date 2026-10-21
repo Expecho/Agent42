@@ -1499,7 +1499,7 @@ folded in; none were rejected. One of them (M1) is accepted as a risk, pending t
 
 ## Progress and divergences
 
-**Phase 1a (Steps 1–10) shipped in PR #212, phase 1b (Steps 11–13) in PR #213, and phase 1c (Steps 14–18) is below.** Step 19 and phases 2 and 3 remain, so this
+**Phase 1a (Steps 1–10) shipped in PR #212, phase 1b (Steps 11–13) in PR #213, phase 1c (Steps 14–18) in PR #214, and phase 3 (Steps 23–30, Signal dormant) is below.** Steps 19, 24 and 31 and phase 2 remain, so this
 spec stays in `.agentic/specs/` (not `completed/`) until phase 3 ships. Phase 1a's differences from the plan:
 
 - **No `LoopbackChatAdapter`.** DevHost points the REAL Telegram adapter at a local stand-in for the Bot API
@@ -1658,6 +1658,65 @@ check since `41f0a41` showed only phases 1a/1b and the past-chats merge (ADR 011
 - **Not done in this MR:** the DevHost exercise of files and voice against platform stand-ins. These paths are
   covered by the pipeline tests with a fake session and by the adapter tests against local servers. Step 19 checks the
   real platforms.
+
+### Phase 3 (Steps 23–30), on `feature/chat-gateway-phase-3-signal` from `main` @ `2875f96` (the #214 merge)
+
+**Implemented:** Signal as a dedicated number in a lease-gated signal-cli child process, with its store on Azure Files.
+**Signal ships dormant** (D1). The drift check was clean: HEAD was exactly the planned-against commit. Steps 25 and 26
+ran as `step-implementer` subagents in worktrees and merged back without conflicts, on the shared contracts
+(`SignalOptions`, `ISignalDaemon`) committed first. Steps 27–30 ran in the main session. Step 31 (live) and Step 24 (the
+Azure Files measurement) remain open, and so do Step 19 and phase 2.
+
+Divergences from the plan:
+- **D1: Signal ships dormant, and Step 24 is the user's.** The user asked for the PR to be created and merged without
+  waiting. Creating the throwaway measurement job in the shared `cae-hosting` environment was refused by the session's
+  permission policy. The `signal-data` share and the `agent42-signal` environment link were already created, with the
+  Bicep's names, so the deploy adopts them.
+  - So `ChatGateway:Signal:Enabled` / Bicep `signalEnabled` default to **false**. Off, `AddSignalChat` registers nothing,
+    no daemon can start, the panel doesn't offer Signal, and the backend keeps its CPU and memory.
+  - Turning it on is the user's step, after two things: the Step 24 measurement (commands and YAML under Step 24) and
+    confirming SC7b. The ADR records SC7b as pending that confirmation, not as accepted.
+- **D2: `AddSignalChat(builder.Configuration)` is its own call in each host,** right after `AddChatGateway()`.
+  `Hosts_RegisterChatGateway` pins it. `AddChatGateway()` keeps its signature, which the test also pins.
+- **D3: the lease hook goes slightly past the plan:**
+  - `IChatGatewayLease` gained `Duration`, so the watchdog window is derived, not a literal: 35 s for the Blob lease
+    (60 − 20 − 5), not the plan's 40;
+  - "renewed" is also sent right after acquiring;
+  - `ChatGatewayTimings` gained `ParticipantTimeout`.
+- **D4: Step 24b answered the open questions, and the CLI verify fallback was dropped.** `verify` is a JSON-RPC method in
+  multi-account mode, and `listAccounts` returns the ACI.
+- **D5: JSON-RPC parameter names follow the man page's rule:** a list goes under the plural name. The plan wrote
+  `textStyle`; it is `textStyles`, and `attachments` stays.
+- **D6: `FileRef` is `chatId|attachmentId`,** because `getAttachment` needs the sender or the group as well as the id.
+- **D7: the adapter tests use an `HttpMessageHandler` stub (`SignalDaemonStub`), not a local Kestrel server.** The real
+  `SignalRpcClient` runs over it, with SSE fed through a pipe. "Final-only through the unchanged pipeline" is covered
+  by the existing streamer tests with `SupportsEdit = false` and by the DevHost exercise, not by a new
+  pipeline-level row.
+- **D8: Config health's signal-cli row** is `NotApplicable` while Signal is off. `BuildStatic` gained an optional
+  `TimeProvider` and is otherwise unchanged.
+- **D9: delete calls `deleteLocalAccountData` with `ignoreRegistered`,** so the keys go even when `unregister` failed.
+- **D10: a register on a connection that already has a different number is refused** ("delete it and add a new
+  connection"). A re-register of the same number keeps its active claim.
+- **Found and fixed:**
+  - **The chunked body.** In the DevHost exercise, every RPC body arrived empty: `JsonContent` sends it chunked. Calls
+    are now sent buffered, with a regression test.
+  - **The flaky test.** `ChatGatewayServiceTests.ASessionThatEndsWithAnAuthFailure_FaultsTheConnection` (pre-existing)
+    failed intermittently: the fault was recorded while `Live` was still true. `Live` is now cleared first.
+- **DevHost exercise (2026-10-21):** DevHost ran with `ChatGateway__Signal__Enabled=true` and
+  `ChatGateway__Signal__DaemonUrl` pointed at a Python stand-in for the daemon, in the session scratchpad (not
+  committed). Results:
+  - a pasted Signal number was refused with a 400;
+  - register without a captcha gave a 400 with the link, and with one gave "awaiting-code";
+  - a malformed code gave a 400;
+  - verify opened pairing;
+  - a stranger's message and a wrong code were ignored, and the code paired;
+  - "hello agent" was answered with `sendTyping`, then one `send` with `textStyles`;
+  - the same `sender:timestamp` again ran once;
+  - `/new` answered "Started a new conversation.";
+  - with groups on, an unmentioned group message was ignored, and a mention was answered in the group as a quote;
+  - "@bot /help" (with the real U+FFFC placeholder) ran the command.
+- **Measured:** signal-cli 0.14.9 in Docker (Step 24b), and the built backend image (`java` 25.0.4.1, signal-cli 0.14.9,
+  uid 1654; the daemon starts and stops cleanly on SIGTERM).
 
 ## Acceptance criteria → test mapping
 

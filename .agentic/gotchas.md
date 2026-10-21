@@ -4791,3 +4791,73 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   phase 1b Slack/Discord stand-ins hit it).
 - **Evidence:** the phase 1b DevHost exercise (`.agentic/specs/plan-chat-gateway.md`, "Progress and divergences")
 - **Verified:** 2026-10-21
+
+### The signal-cli daemon has no auth and lives and dies with the gateway lease: told "lost" FIRST, watched by a watchdog
+
+- **Claim:** signal-cli's HTTP daemon has no authentication. It validates the Host header only when it binds a loopback
+  name; on `0.0.0.0` that validation is off. Measured on 0.14.9: `/api/v1/rpc` with a foreign Host answers 421, and
+  `/api/v1/check` answers 200 regardless. So `SignalDaemon` binds `--http=127.0.0.1:<port>`, and that bind is the
+  network control.
+
+  Its store is SQLite in WAL mode behind Java file locks, so two daemons on one store (a revision rollover) would be
+  corruption. That is why it is a child process run only while the gateway lease is held, never a sidecar:
+  - **"Lost" comes before the sessions stop.** `ChatGatewayService` notifies `IChatGatewayLeaseParticipant`s "lost"
+    BEFORE `StopAllAsync`, because a hung session dispose must not delay the kill. It does so on renewal failure, in
+    the failure path and on shutdown, always before releasing the lease. The hook must be idempotent and fast: each
+    call is waited on for at most `ParticipantTimeout`.
+  - **A watchdog stops the daemon** when no "renewed" arrived within `IChatGatewayLease.Duration − RenewInterval −
+    margin`. A hung renewal can outlive the lease while a new revision acquires it. A new lease implementation must
+    report an honest `Duration`.
+  - **"Renewed" is also sent right after acquiring**, or starts stay refused for a whole renew interval after a
+    re-acquire.
+
+  `--receive-mode=on-connection` keeps messages on Signal's server while no event stream is open. The default `on-start`
+  acks them with nobody listening. Open one stream per number (`/api/v1/events?account=`): one without `account`
+  captures the account list at connect time.
+- **Evidence:** `src/Agent42.Backend/ChatGateway/Signal/SignalDaemon.cs`, `src/Agent42.Backend/ChatGateway/ChatGatewayService.cs`,
+  `tests/Agent42.Tests/SignalDaemonTests.cs` (`ARenewal_ResetsTheWatchdog`, mutation-checked),
+  `tests/Agent42.Tests/ChatGatewayServiceTests.cs` (`LeaseLost_NotifiesParticipants_BeforeSessionsStop`, mutation-checked),
+  `.agentic/decisions/0111-chat-gateway-for-chat-apps.md` (phase 3 amendment)
+- **Verified:** 2026-10-21
+
+### A Signal number is registered, never pasted, and claimed before `register`
+
+- **Claim:** For Signal the credential is the bot's E.164 number, and `ValidateAsync` can only check that the daemon
+  holds it. If the generic create or edit endpoint accepted a pasted Signal credential, any user could paste another
+  user's registered number and drive that bot. So both refuse it (`RefusedPastedCredentials`), and only
+  `/signal/verify` stores one.
+
+  Before `register` is even called, the number is claimed in `ISignalNumberDirectoryGrain`. A `register` over someone
+  else's number resets their registration. A pending claim expires after 30 minutes, and a failed `register` releases
+  it. A delete reads the connection FIRST, because after `DeleteAsync` the number (in the credentials, or
+  `PendingSignalNumber` for an unfinished registration) would be gone. Then it stops the session, has the daemon forget
+  the number, and releases the claim.
+- **Evidence:** `src/Agent42.Backend/ChatGateway/AgentApi.ChatGatewaySignal.cs`, `src/Agent42.Agents/ChatGateway/SignalNumberDirectoryGrain.cs`,
+  `tests/Agent42.Tests/SignalRegistrationApiTests.cs` (`PastedSignalCredentials_AreRefused_OnCreateAndEdit`,
+  mutation-checked; `Register_ANumberAnotherConnectionHolds_Is409_AndNeverCallsRegister`)
+- **Verified:** 2026-10-21
+
+### `JsonContent` sends a chunked body with no Content-Length; signal-cli calls are sent buffered
+
+- **Claim:** `JsonContent.Create` serializes while it streams, so the request goes out chunked with no
+  `Content-Length`. The DevHost stand-in read every such body as empty, and every RPC became a call with no method.
+  signal-cli's server is the JDK's small HTTP server, so `SignalRpcClient` sends a `ByteArrayContent` with its length.
+  Use the same for any other small local HTTP peer.
+
+  Two signal-cli JSON-RPC facts were measured or read from source, not from the man page's examples:
+  - **A list goes under the plural name.** `--attachment A B` becomes `"attachments": [...]`, and a list of text styles
+    becomes `"textStyles"`.
+  - **Signal has no message id.** Dedupe and quotes use `sender ACI:timestamp`.
+- **Evidence:** `src/Agent42.Backend/ChatGateway/Signal/SignalRpcClient.cs`, `tests/Agent42.Tests/SignalRpcTests.cs`
+  (`EveryCall_SendsABufferedJsonBody_WithItsLength`), signal-cli's JSON-RPC man page (github.com/AsamK/signal-cli, man/signal-cli-jsonrpc.5.adoc)
+- **Verified:** 2026-10-21
+
+### The backend Dockerfile's signal-cli ARGs must stay before the first FROM
+
+- **Claim:** A Dockerfile `ARG` declared after a `FROM` belongs to that stage only. The signal-cli version, digest and
+  release date are used by two later stages: the download, and the runtime `ENV` that Config health reads. Declared
+  after `FROM node`, they arrived empty. The download URL then 404'd, and `ADD --checksum=sha256:` failed with "invalid
+  checksum digest format", which reads like an ADD limitation but isn't. `SignalImageTests` pins the order and the
+  pinned version, digest and date.
+- **Evidence:** `src/Agent42.Backend/Dockerfile`, `tests/Agent42.Tests/SignalImageTests.cs`
+- **Verified:** 2026-10-21

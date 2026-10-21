@@ -45,6 +45,39 @@ public sealed class ConfigHealthTests
     private static ConfigCheck Find(ConfigHealthReport report, string key) =>
         report.Checks.Single(c => c.Key == key);
 
+    // ————— signal-cli age (ADR 0111 phase 3; AC32) —————
+
+    // Signal expires clients after three months, and nothing upgrades the bundled signal-cli: this row is the reminder.
+    [Theory]
+    [InlineData("2026-10-07", "2026-10-21", ConfigHealth.Ok)]
+    [InlineData("2026-10-07", "2026-12-21", ConfigHealth.Warning)] // 75 days
+    [InlineData("2026-10-07", "2027-01-05", ConfigHealth.Error)] // 90 days
+    public void SignalCli_IsFlaggedAsItAges(string released, string today, string expected)
+    {
+        var report = ConfigHealth.BuildStatic(
+            Config(("ChatGateway:Signal:Enabled", "true"), ("SIGNAL_CLI_VERSION", "0.14.9"), ("SIGNAL_CLI_RELEASED", released)),
+            Env(), Push(), new FixedClock(DateTimeOffset.Parse(today + "T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture)));
+
+        var check = Find(report, "SIGNAL_CLI_RELEASED");
+        Assert.Equal(expected, check.Status);
+        Assert.Contains("signal-cli 0.14.9", check.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SignalCli_IsNotApplicable_WhileSignalIsOff_AndAWarningWhenTheImageDoesNotSay()
+    {
+        var off = ConfigHealth.BuildStatic(Config(("SIGNAL_CLI_RELEASED", "2020-01-01")), Env(), Push());
+        var unknown = ConfigHealth.BuildStatic(Config(("ChatGateway:Signal:Enabled", "true")), Env(), Push());
+
+        Assert.Equal(ConfigHealth.NotApplicable, Find(off, "SIGNAL_CLI_RELEASED").Status);
+        Assert.Equal(ConfigHealth.Warning, Find(unknown, "SIGNAL_CLI_RELEASED").Status);
+    }
+
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
     // ————— Identity aliases (ADR 0074) —————
 
     // An active alias reports ok and says how many, so an operator can tell the feature is on.

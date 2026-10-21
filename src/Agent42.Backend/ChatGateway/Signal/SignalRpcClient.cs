@@ -79,9 +79,14 @@ public sealed class SignalRpcClient(IHttpClientFactory httpClients, ISignalDaemo
         var baseUrl = await daemon.EnsureRunningAsync(cancellationToken);
         var client = httpClients.CreateClient(RpcHttpClientName);
         var body = new { jsonrpc = "2.0", method, @params = parameters, id = Guid.NewGuid().ToString("N") };
+        // A buffered body with a Content-Length, not JsonContent's chunked stream: the daemon's HTTP server is a small JDK
+        // server, and a stand-in found the chunked body empty. Buffering costs nothing at these sizes.
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(baseUrl, "api/v1/rpc"))
         {
-            Content = JsonContent.Create(body, options: JsonOptions),
+            Content = new ByteArrayContent(JsonSerializer.SerializeToUtf8Bytes(body, JsonOptions))
+            {
+                Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json") },
+            },
         };
         try
         {
