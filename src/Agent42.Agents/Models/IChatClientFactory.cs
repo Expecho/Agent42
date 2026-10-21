@@ -96,6 +96,14 @@ public interface IChatClientFactory
     ISpeechService? GetSpeechService();
 
     /// <summary>
+    /// The transcriber for the user's default <b>transcription</b> (speech-to-text) model, or <c>null</c> when none is
+    /// configured. Like <see cref="GetSpeechService"/> it takes no model id: there is one default. The chat gateway
+    /// answers a voice note with a curated "add a transcription model" reply when this is <c>null</c> (ADR 0111). The
+    /// default member keeps every factory that has no transcriber (offline hosts, most tests) honest without code.
+    /// </summary>
+    ISpeechTranscriptionService? GetTranscriptionService() => null;
+
+    /// <summary>
     /// The serving provider's kind (the Backend's <c>ProviderKind</c> by name) and the bare model name of
     /// <paramref name="modelId"/>, which is what <see cref="ModelPricing"/> keys a price on (ADR 0110). The default,
     /// <c>("", "")</c>, prices nothing, so a factory that does not know its provider (offline hosts, tests) leaves
