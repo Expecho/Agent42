@@ -17,6 +17,7 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 | Test | `dotnet test Agent42.slnx` |
 | Lint | `dotnet format Agent42.slnx --verify-no-changes` |
 | Type check | `dotnet build Agent42.slnx` |
+| Android app (test, lint, build) | `./gradlew test lint assembleDebug` in `tools/Agent42.Android` — needs JDK 21 + Android SDK (`ANDROID_HOME`); CI runs it in `.github/workflows/android.yml` |
 
 ## Hard rules
 
@@ -112,6 +113,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | `MAILGUN_SIGNING_KEY` + MX for the in.agent42.nl subdomain → Mailgun + a Route forwarding to `/api/email-in` | `/api/email-in` answers 503 and no inbound email is accepted. The app boots (ADR 0096) |
 | `GH_OAUTH_CLIENT_SECRET` + `GitHub:OAuth:ClientId` (committed) + OAuth App callback `https://chat.agent42.nl/api/providers/github/callback` | "Sign in with GitHub" is hidden and `/api/providers/github/start` answers 503. The app boots (ADR 0108) |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No App Insights export. The app boots and sends telemetry to OTLP only (ADR 0077) |
+| `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` + `ANDROID_KEY_ALIAS` + `ANDROID_KEY_PASSWORD` | The Android app's release job fails and no APK is published. PR checks still run. The key must never change, or installed apps can't update |
 | `Dashboard:OwnerOid` (committed, currently blank) | `/dashboard` denies everyone. **Never set it to `local-dev`** (ADR 0062) |
 | MCP OAuth redirect URI `https://chat.agent42.nl/api/mcp/oauth/callback` | Must be registered in each provider's app registration (ADR 0025) |
 
