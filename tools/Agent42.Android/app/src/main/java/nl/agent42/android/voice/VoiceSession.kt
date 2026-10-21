@@ -65,15 +65,30 @@ class VoiceSession(
     private var silence: Job? = null
     private var turn: Job? = null
 
+    /** Null when Telecom refused the call; then the plain [route] does the audio. */
+    private var telecom: TelecomCall? = TelecomCall(
+        context,
+        object : TelecomCall.Listener {
+            override fun onOutput(output: AudioOutput) = onMain { applyOutput(output) }
+            override fun onSystemMute(muted: Boolean) = onMain { if (muted != this@VoiceSession.muted) toggleMute() }
+            override fun onHold(held: Boolean) = onMain { loop.hold(held) }
+            override fun onDisconnected() = onMain { container.endVoice() }
+            override fun onFailed(error: Throwable) = onMain {
+                telecom = null
+                trace("telecom failed (${error.javaClass.simpleName}), plain audio route instead")
+                applyOutput(route.begin())
+            }
+        },
+    )
+
     companion object {
         /** `adb logcat -s A42VOICE` shows every decision of the call. */
         const val TAG = "A42VOICE"
     }
 
     fun start() {
-        output = route.begin()
-        trace("call started on $output")
-        loop.outputChanged(output)
+        trace("call starting (telecom)")
+        telecom?.start(title, conversationId)
         loop.start()
     }
 
@@ -82,7 +97,7 @@ class VoiceSession(
         loop.hangUp()
         input.release()
         speech.release()
-        route.end()
+        telecom?.hangUp() ?: route.end()
         scope.cancel()
     }
 
@@ -92,8 +107,18 @@ class VoiceSession(
     }
 
     fun toggleSpeaker() {
-        output = route.toggleSpeaker()
-        loop.outputChanged(output)
+        val call = telecom
+        if (call != null) call.toggleSpeaker() else applyOutput(route.toggleSpeaker())
+    }
+
+    private fun applyOutput(value: AudioOutput) {
+        output = value
+        trace("output $value")
+        loop.outputChanged(value)
+    }
+
+    private fun onMain(block: () -> Unit) {
+        scope.launch(Dispatchers.Main) { block() }
     }
 
     override fun listen(on: Boolean) {

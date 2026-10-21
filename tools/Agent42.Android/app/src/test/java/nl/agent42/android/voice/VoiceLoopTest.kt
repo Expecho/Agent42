@@ -54,6 +54,32 @@ class VoiceLoopTest {
         assertEquals("regent het morgen in Utrecht", loop.heard)
     }
 
+    // Measured on the phone: "Ja en … liep dat sprookje af" with a pause sent "Ja en" alone, then the rest barged in and
+    // the model only ever saw "liep dat sprookje af".
+    @Test
+    fun continuingToTalkBeforeAnythingIsSpokenCarriesTheSentWordsIntoTheNextTurn() {
+        ask("Ja en")
+        assertEquals(VoiceState.THINKING, loop.state)
+
+        loop.onHeard("liep dat", final = false)
+        assertTrue(io.calls.contains("stopTurn"))
+        assertEquals("Ja en liep dat", loop.heard)
+
+        loop.onHeard("liep dat sprookje af", final = true)
+        loop.onSilence()
+        assertTrue(io.calls.contains("send:Ja en liep dat sprookje af"))
+    }
+
+    @Test
+    fun interruptingASpokenReplyDoesNotCarryTheQuestion() {
+        ask("vertel een verhaal")
+        loop.onReply(StreamEvent("textDelta", text = "Er was eens een koning."))
+
+        loop.onHeard("nee iets anders", final = true)
+
+        assertEquals("nee iets anders", loop.heard)
+    }
+
     @Test
     fun aOneWordPartialDoesNotInterrupt_butAOneWordFinalDoes() {
         ask("vertel een verhaal")

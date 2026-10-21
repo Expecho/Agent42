@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.Person
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -29,7 +30,13 @@ class VoiceCallService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startForeground(NOTIFICATION_ID, notification(session.title, label(session.state)), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        // phoneCall: a self-managed Telecom call (core-telecom requires it on Android 14+); microphone: the recognizer
+        // keeps listening with the screen off.
+        startForeground(
+            NOTIFICATION_ID,
+            notification(session.title, label(session.state)),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+        )
         session.onState = { state ->
             if (state == VoiceState.ENDED) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -50,14 +57,16 @@ class VoiceCallService : Service() {
         val hangUp = PendingIntent.getService(
             this, 1, Intent(this, VoiceCallService::class.java).setAction(ACTION_HANG_UP), PendingIntent.FLAG_IMMUTABLE,
         )
+        // A CallStyle notification is what Telecom expects for an ongoing call (within 5 s of adding it); it brings the
+        // system's own Hang up button.
+        val caller = Person.Builder().setName("Agent 42 · $title").setImportant(true).build()
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("Agent 42 · $title")
             .setContentText(text)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_CALL)
             .setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, "Hang up", hangUp).build())
+            .setStyle(Notification.CallStyle.forOngoingCall(caller, hangUp))
             .build()
     }
 

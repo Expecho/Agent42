@@ -110,4 +110,7 @@ dependencies {
 
   // Reply rendering: plain markdown natively; mermaid/math/artifacts stay in the web app (ADR 0114)
   implementation(libs.markdown.renderer.m3)
+
+  // Voice call as a self-managed Telecom call: system call UI, lock screen, car/headset hang-up (ADR 0114)
+  implementation(libs.androidx.core.telecom)
 }

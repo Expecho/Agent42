@@ -90,6 +90,27 @@ class VoiceLoop(
         updateMic()
     }
 
+    /**
+     * The system put the call on hold (a real phone call came in) or took it off hold. While held the mic is closed and
+     * nothing is spoken; a reply still streaming is shown but not read aloud, and the loop returns to listening when it
+     * ends. Resuming re-opens the mic.
+     */
+    var held = false
+        private set
+
+    fun hold(value: Boolean) {
+        if (held == value) return
+        held = value
+        io.trace("hold=$value")
+        if (value) {
+            io.stopSpeaking()
+            queued = 0
+            if (state == VoiceState.SPEAKING) enter(VoiceState.THINKING)
+            if (state == VoiceState.THINKING && replyEnded) enter(VoiceState.LISTENING)
+        }
+        updateMic()
+    }
+
     fun outputChanged(value: AudioOutput) {
         output = value
         updateMic()
@@ -173,7 +194,7 @@ class VoiceLoop(
 
     private fun say(text: String) {
         val clean = SpeechText.stripMarkdown(text)
-        if (clean.isEmpty()) return
+        if (clean.isEmpty() || held) return
         // The echo reference is extended BEFORE playback, so a barge-in can compare against it.
         spoken = "$spoken $clean".trim()
         queued++
@@ -182,14 +203,18 @@ class VoiceLoop(
     }
 
     private fun bargeIn(text: String, final: Boolean) {
+        // Talking while it is still THINKING (nothing spoken yet) means the user wasn't done: they paused longer than the
+        // silence window mid-sentence. The stopped turn saves nothing (a cancelled run persists nothing), so what was
+        // sent goes back in front of what follows instead of being lost.
+        val carried = if (state == VoiceState.THINKING && spoken.isEmpty()) "$lastSubmitted " else ""
         // Both halves: the local stop makes it immediate; the server stop keeps the stored turn honest (ADR 0078).
         io.stopSpeaking()
         io.stopTurn()
         sentences.clear()
         queued = 0
         spoken = ""
-        finals = if (final) text else ""
-        heard = text
+        finals = if (final) "$carried$text" else carried.trim()
+        heard = "$carried$text"
         enter(VoiceState.LISTENING)
         io.scheduleSilence(SILENCE_MS)
     }
@@ -207,7 +232,7 @@ class VoiceLoop(
     }
 
     private fun updateMic() {
-        val live = when (state) {
+        val live = !held && when (state) {
             VoiceState.LISTENING -> !muted
             VoiceState.THINKING, VoiceState.SPEAKING -> !muted && policy.listenWhileSpeaking(output)
             else -> false
