@@ -302,6 +302,8 @@ public sealed class ChatGatewayService(
         catch (ChatAuthException ex)
         {
             logger.LogWarning("Chat connection {ConnectionId} stopped: {Reason}", connectionId, ex.Message);
+            // Not live from the moment it faulted: a reader that sees the fault must never still see it as connected.
+            runner.Live = false;
             await store.RecordFaultAsync(connectionId, ex.Message, timeProvider.GetUtcNow());
             return SessionOutcome.Stop;
         }

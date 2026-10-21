@@ -239,8 +239,10 @@ public sealed class SignalRpcClient(IHttpClientFactory httpClients, ISignalDaemo
     public Task<SignalRpcResult> UnregisterAsync(string account, CancellationToken cancellationToken)
         => CallAsync("unregister", Params(("account", account)), cancellationToken);
 
+    // ignoreRegistered: called after unregister, which can fail (a registration never verified, Signal unreachable); the
+    // local keys must go either way, because the connection that owned them is being deleted.
     public Task<SignalRpcResult> DeleteLocalAccountDataAsync(string account, CancellationToken cancellationToken)
-        => CallAsync("deleteLocalAccountData", Params(("account", account)), cancellationToken);
+        => CallAsync("deleteLocalAccountData", Params(("account", account), ("ignoreRegistered", true)), cancellationToken);
 
     /// <summary>
     /// Yields the data of each <c>receive</c> event on this account's SSE stream until it ends. A 400 means the daemon

@@ -20,7 +20,8 @@ namespace Agent42.Backend;
 /// session as a fault, so the panel shows why instead of failing every reply.</item>
 /// </list>
 /// </summary>
-public sealed class SignalAdapter(SignalRpcClient rpc, TimeProvider timeProvider, ILogger<SignalAdapter> logger) : IChatPlatformAdapter
+public sealed class SignalAdapter(SignalRpcClient rpc, TimeProvider timeProvider, ILogger<SignalAdapter> logger)
+    : IChatPlatformAdapter, IChatPlatformCleanup
 {
     // Signal cuts a body past 2000 UTF-8 bytes into a long-text attachment; 2000 UTF-16 units keeps ASCII replies inline,
     // and the attachment covers multibyte overflow. Typing lasts 15 s on Signal, so it is refreshed well inside that.
@@ -54,6 +55,32 @@ public sealed class SignalAdapter(SignalRpcClient rpc, TimeProvider timeProvider
 
     public Task<IChatPlatformSession> ConnectAsync(ChatConnectionRuntime runtime, IChatInboundSink sink, CancellationToken cancellationToken)
         => Task.FromResult<IChatPlatformSession>(new SignalSession(rpc, runtime, sink, timeProvider, logger, cancellationToken));
+
+    // A deleted connection unregisters its number (Signal stops delivering to this daemon) and deletes the keys from the
+    // share. Both are tried whatever the first one answered; neither failure is thrown, and no number is ever logged.
+    public async Task ForgetAsync(ChatConnection connection, ChatCredentials? credentials, CancellationToken cancellationToken)
+    {
+        if ((credentials?.BotToken ?? connection.PendingSignalNumber) is not { Length: > 0 } number)
+        {
+            return;
+        }
+
+        try
+        {
+            var unregistered = await rpc.UnregisterAsync(number, cancellationToken);
+            var deleted = await rpc.DeleteLocalAccountDataAsync(number, cancellationToken);
+            if (!unregistered.Ok || !deleted.Ok)
+            {
+                logger.LogWarning(
+                    "Signal cleanup for connection {ConnectionId} was incomplete (unregister {Unregister}, delete {Delete}).",
+                    connection.Id, unregistered.Code, deleted.Code);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Signal cleanup for connection {ConnectionId} failed.", connection.Id);
+        }
+    }
 }
 
 /// <summary>A live Signal connection: its event-stream loop is <see cref="Completion"/>.</summary>
