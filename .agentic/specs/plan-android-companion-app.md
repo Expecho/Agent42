@@ -466,6 +466,43 @@ From `.agentic/quality-gates.yaml` at f027feb:
 - Wake word.
 - Background location during voice mode.
 
+## Spike results
+
+### Step 2 — voice on the phone (2026-10-21)
+
+**Setup:** Galaxy A54 (SM-A546B), Android 16 / SDK 36, One UI 8.5, locale nl-NL, phone speaker, no headset.
+Throwaway app in the session scratchpad (`VoiceSpike.kt`), run once per mode by the user. Each run: 25 s silent while
+the phone speaks a Dutch paragraph (any transcript is a self-echo trigger), then 20 s of the user talking over it.
+
+**Capabilities:**
+- The default recognizer is `com.google.android.tts/…GoogleTTSRecognitionService`. AEC and NS are available.
+- On-device recognition exists, but **Dutch is not supported on-device**: nl-NL `supported=false`. Only en-US is
+  supported, and it isn't downloaded. With the on-device recognizer every attempt failed with error 12 (language not
+  supported).
+- TTS: Google engine, 16 Dutch voices, 9 of them offline.
+
+**Results** (default recognizer, nl-NL):
+
+| Mode | Self-echo triggers while silent | Heard the user over playback |
+|---|---|---|
+| A: like the browser (USAGE_MEDIA, MODE_NORMAL) | **1**: transcribed its own first sentence verbatim | 1 |
+| B: comm (MODE_IN_COMMUNICATION, speaker via `setCommunicationDevice`, TTS on USAGE_VOICE_COMMUNICATION) | **0** | **2** |
+| C: AEC pipe (own `AudioRecord(VOICE_COMMUNICATION)` + AEC → `EXTRA_AUDIO_SOURCE`) | 0 | 0: the default recognizer never transcribed piped audio |
+
+**Decision input for the ADR:**
+- **Go for full duplex on the speaker with mode B.** Mode A reproduces ADR 0079's self-echo problem exactly; mode B
+  removes it, and talking over still works.
+- Drop the `EXTRA_AUDIO_SOURCE` path.
+- STT runs on Google's network recognizer, because Dutch has no on-device model on this phone. That is the same egress
+  as Chrome's Web Speech today (ADR 0006), so it is not a new ADR 0013 extension. Keep the on-device seam for languages
+  that have a model.
+- Limits:
+  - One run per mode, one phone, one quiet room.
+  - Server MP3 playback (`/api/speech`) was not tested. Step 10 must play it with USAGE_VOICE_COMMUNICATION attributes
+    and re-check self-echo with it.
+  - Error 11 (server disconnected) follows every result. It's harmless and the loop restarts, but step 10 must not
+    surface it.
+
 ## Review
 
 Critic pass on 2026-10-21. There were no ADR contradictions; 1 high, 4 medium and 3 low findings, all
