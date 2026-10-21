@@ -21,7 +21,52 @@ class VoiceLoopTest {
     }
 
     private val io = FakeIo()
-    private val loop = VoiceLoop(io).apply { start() }
+    private var clock = 0L
+    private val loop = VoiceLoop(io, now = { clock }).apply { start() }
+
+    private fun speakAndFinish(reply: String) {
+        loop.onReply(StreamEvent("textDelta", text = reply))
+        loop.onReplyEnded()
+        loop.onSentenceSpoken()
+    }
+
+    @Test
+    fun theRepliesTailHeardRightAfterItEndsIsDropped_notSentAsTheNextTurn() {
+        ask("vertel iets")
+        speakAndFinish("Het regent morgen in Utrecht.")
+        assertEquals(VoiceState.LISTENING, loop.state)
+
+        clock += 500
+        loop.onHeard("regent morgen in Utrecht", final = true)
+
+        assertEquals("", loop.heard)
+        assertEquals(1, io.calls.count { it.startsWith("send:") })
+    }
+
+    @Test
+    fun afterTheEchoWindowTheSameWordsAreTheUsers() {
+        ask("vertel iets")
+        speakAndFinish("Het regent morgen in Utrecht.")
+
+        clock += VoiceLoop.ECHO_TAIL_MS + 1
+        loop.onHeard("regent het morgen in Utrecht", final = true)
+
+        assertEquals("regent het morgen in Utrecht", loop.heard)
+    }
+
+    @Test
+    fun aOneWordPartialDoesNotInterrupt_butAOneWordFinalDoes() {
+        ask("vertel een verhaal")
+        loop.onReply(StreamEvent("textDelta", text = "Er was eens een koning."))
+
+        loop.onHeard("hé", final = false)
+        assertFalse(io.calls.contains("stopTurn"))
+        assertEquals(VoiceState.SPEAKING, loop.state)
+
+        loop.onHeard("stop", final = true)
+        assertTrue(io.calls.contains("stopTurn"))
+        assertEquals(VoiceState.LISTENING, loop.state)
+    }
 
     private fun ask(text: String) {
         loop.onHeard(text, final = true)

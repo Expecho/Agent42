@@ -1,6 +1,7 @@
 package nl.agent42.android.voice
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -64,8 +65,14 @@ class VoiceSession(
     private var silence: Job? = null
     private var turn: Job? = null
 
+    companion object {
+        /** `adb logcat -s A42VOICE` shows every decision of the call. */
+        const val TAG = "A42VOICE"
+    }
+
     fun start() {
         output = route.begin()
+        trace("call started on $output")
         loop.outputChanged(output)
         loop.start()
     }
@@ -150,6 +157,10 @@ class VoiceSession(
 
     override fun cancelSilence() {
         silence?.cancel()
+    }
+
+    override fun trace(message: String) {
+        Log.i(TAG, message)
     }
 
     override fun stateChanged(state: VoiceState) {

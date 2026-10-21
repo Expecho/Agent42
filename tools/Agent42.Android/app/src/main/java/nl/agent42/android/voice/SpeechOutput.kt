@@ -7,6 +7,7 @@ import android.media.MediaPlayer
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
@@ -87,7 +88,9 @@ class SpeechOutput(
     private fun startPump(): Job = scope.launch(Dispatchers.Main) {
         for (item in queue) {
             val bytes = item.audio.await()
+            Log.i(VoiceSession.TAG, "speak via ${if (bytes != null) "server mp3 (${bytes.size} B)" else "platform tts"}: ${item.text}")
             if (bytes != null) playMp3(bytes) else speakLocally(item.text)
+            Log.i(VoiceSession.TAG, "spoken: ${item.text.take(40)}")
             onSentenceSpoken()
         }
     }

@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.util.Log
 
 /**
  * Puts the phone in call audio mode for the voice session (ADR 0114): MODE_IN_COMMUNICATION, transient audio focus
@@ -52,7 +53,8 @@ class AudioRoute(context: Context, private val onChanged: (AudioOutput) -> Unit)
         val pick = devices.firstOrNull { it.type in BLUETOOTH }
             ?: devices.firstOrNull { it.type in WIRED }
             ?: devices.firstOrNull { it.type == if (preferEarpiece) AudioDeviceInfo.TYPE_BUILTIN_EARPIECE else AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-        pick?.let { audio.setCommunicationDevice(it) }
+        val applied = pick?.let { audio.setCommunicationDevice(it) }
+        Log.i(VoiceSession.TAG, "route: mode=${audio.mode} available=${devices.map { it.type }} picked=${pick?.type} applied=$applied")
         return classify(pick)
     }
 

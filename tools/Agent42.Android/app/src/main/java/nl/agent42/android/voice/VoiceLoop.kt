@@ -27,6 +27,9 @@ interface VoiceIo {
     fun scheduleSilence(delayMs: Long)
     fun cancelSilence()
     fun stateChanged(state: VoiceState)
+
+    /** Diagnostics: every decision the loop takes, for logcat. */
+    fun trace(message: String) {}
 }
 
 /**
@@ -37,7 +40,11 @@ interface VoiceIo {
  * Talking over thinking/speaking (when the mic is live) is a barge-in: stop the audio, stop the turn on the server
  * (ADR 0078), and the interrupting words start the next utterance.
  */
-class VoiceLoop(private val io: VoiceIo, var policy: DuplexPolicy = DuplexPolicy()) {
+class VoiceLoop(
+    private val io: VoiceIo,
+    var policy: DuplexPolicy = DuplexPolicy(),
+    private val now: () -> Long = System::currentTimeMillis,
+) {
     var state = VoiceState.IDLE
         private set
     var output = AudioOutput.SPEAKER
@@ -54,6 +61,11 @@ class VoiceLoop(private val io: VoiceIo, var policy: DuplexPolicy = DuplexPolicy
 
     private var finals = ""
     private var lastSubmitted = ""
+
+    // The reply just spoken, and until when its tail may still come back from the recognizer as "heard" (measured:
+    // the recognizer delivers what it picked up of the last sentence after playback ends, i.e. while listening).
+    private var lastReply = ""
+    private var echoGuardUntil = 0L
     private val sentences = SentenceBuffer()
     private var replyEnded = false
     private var queued = 0
@@ -89,13 +101,26 @@ class VoiceLoop(private val io: VoiceIo, var policy: DuplexPolicy = DuplexPolicy
         if (t.isEmpty() || muted) return
         when (state) {
             VoiceState.LISTENING -> {
+                if (now() < echoGuardUntil && SpeechText.isSelfOrEcho(t, "$lastReply $lastSubmitted")) {
+                    io.trace("drop echo tail (final=$final): $t")
+                    return
+                }
                 if (final) finals = "$finals $t".trim()
                 heard = if (final) finals else "$finals $t".trim()
+                io.trace("heard (final=$final): $heard")
                 io.scheduleSilence(SILENCE_MS)
             }
             VoiceState.THINKING, VoiceState.SPEAKING -> {
                 if (!policy.listenWhileSpeaking(output)) return
-                if (!SpeechText.isSelfOrEcho(t, "$spoken $lastSubmitted")) bargeIn(t, final)
+                when {
+                    SpeechText.isSelfOrEcho(t, "$spoken $lastSubmitted") -> io.trace("drop echo while $state (final=$final): $t")
+                    // A one-word partial is too thin to tell the user from a misheard scrap of the reply; wait for more.
+                    !final && SpeechText.wordCount(t) < BARGE_IN_MIN_WORDS -> io.trace("wait, too short to barge in: $t")
+                    else -> {
+                        io.trace("BARGE-IN while $state (final=$final): $t")
+                        bargeIn(t, final)
+                    }
+                }
             }
             else -> Unit
         }
@@ -170,6 +195,12 @@ class VoiceLoop(private val io: VoiceIo, var policy: DuplexPolicy = DuplexPolicy
     }
 
     private fun enter(next: VoiceState) {
+        // Reply finished speaking on its own: guard the next moments against its tail coming back as "heard".
+        if (state == VoiceState.SPEAKING && next == VoiceState.LISTENING) {
+            lastReply = spoken
+            echoGuardUntil = now() + ECHO_TAIL_MS
+        }
+        io.trace("state $state -> $next (output=$output, muted=$muted)")
         state = next
         updateMic()
         io.stateChanged(next)
@@ -187,5 +218,11 @@ class VoiceLoop(private val io: VoiceIo, var policy: DuplexPolicy = DuplexPolicy
     companion object {
         /** End-of-utterance debounce, as voice.js SILENCE_MS. */
         const val SILENCE_MS = 1200L
+
+        /** How long after the reply ends a result that echoes it is still dropped. */
+        const val ECHO_TAIL_MS = 2500L
+
+        /** A partial result needs this many words to interrupt the reply; a final always may. */
+        const val BARGE_IN_MIN_WORDS = 2
     }
 }

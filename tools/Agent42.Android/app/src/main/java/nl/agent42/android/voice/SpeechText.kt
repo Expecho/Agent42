@@ -25,6 +25,8 @@ object SpeechText {
         return words.count { ref.contains(it) }.toDouble() / words.size >= ECHO_OVERLAP
     }
 
+    fun wordCount(text: String): Int = WORD.findAll(text).count()
+
     private val WORD = Regex("\\p{L}+")
     private const val ECHO_OVERLAP = 0.6
 }

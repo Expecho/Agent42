@@ -52,6 +52,16 @@ phone (Galaxy A54, Android 16, nl-NL) on 2026-10-21. The evidence is in
   | Call path (the decision) | 0 | 2 |
 
   Barge-in = stop playback + `POST /api/chat/{id}/stop` (ADR 0078). Reasoning is never spoken (ADR 0071).
+
+  **The call path reduces self-echo; it does not remove it.** In the first real call (the voice build's trace,
+  2026-10-21), the recognizer twice transcribed a sentence of the reply verbatim while it played on the speaker. So the
+  web client's word-overlap check (`isSelfOrEcho`, ported as `SpeechText.isSelfOrEcho`) is **load-bearing**, together
+  with two guards the first build lacked:
+  - a partial result needs **two words** to interrupt (four one-word scraps were held back before the real
+    interruption, *"Wanneer is"*);
+  - for **2.5 s after the reply ends**, a result that echoes it is dropped instead of being sent as the next turn.
+
+  The build without these guards answered its own reply.
 - **STT is the platform recognizer.**
   - Dutch has **no on-device model** on the A54 (`supported=false`). The default recognizer is Google's network
     service, the same egress as Chrome's Web Speech today (ADR 0006), so this is **not** a new ADR 0013 extension.
@@ -82,9 +92,12 @@ phone (Galaxy A54, Android 16, nl-NL) on 2026-10-21. The evidence is in
 ## Consequences
 - **No server change apart from `ChatStreamJson`** (the NDJSON options, made public for the contract test). Adding a
   stream event type now also means a fixture line, or `AndroidStreamContractTests` fails.
-- **The evidence is narrow:** one phone, one run per setup, a quiet room, and the platform voice rather than server
-  MP3s. The voice build must re-check self-echo with `/api/speech` audio on the call path. Another phone may need
-  ADR 0079's fallback (mic closed on the speaker), which the app keeps as a policy.
+- **The evidence is narrow:** one phone, a few runs, a quiet room, and so far only the platform voice (the first call
+  spoke all 14 sentences through `TextToSpeech`, with no server MP3). Server MP3s on the call path still need the same
+  check. Another phone may need ADR 0079's fallback (mic closed on the speaker), which the app keeps as
+  `DuplexPolicy(fullDuplexOnSpeaker = false)`.
+- `adb logcat -s A42VOICE` traces every decision of a call (heard, dropped as echo, too short, barge-in, route, voice
+  path). That is how the guards above were found and verified.
 - **Kotlin code is not under the coverage gate.** No repo tool measures it (ADR 0050). The Gradle unit tests run in
   `android.yml`, but that check is path-filtered, so it isn't a required check.
 - **Deferred:**
