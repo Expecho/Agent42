@@ -40,6 +40,12 @@ public static class ChatGatewayLimits
     /// </summary>
     public const string ConversationIdPrefix = "chat-";
 
+    /// <summary>
+    /// How long a Signal number stays claimed while its registration is unfinished (ADR 0111, phase 3). Long enough to
+    /// solve a captcha and wait for a voice call; short enough that an abandoned registration can't squat a number.
+    /// </summary>
+    public static readonly TimeSpan SignalPendingClaimLifetime = TimeSpan.FromMinutes(30);
+
     /// <summary>Mints a fresh conversation id in the shape <see cref="IsValidConversationId"/> accepts.</summary>
     public static string NewConversationId() => ConversationIdPrefix + Guid.NewGuid().ToString("d");
 
