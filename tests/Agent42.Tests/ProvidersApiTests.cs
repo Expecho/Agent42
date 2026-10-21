@@ -307,6 +307,59 @@ public sealed class ProvidersApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.False(models[0].GetProperty("supportsSpeech").GetBoolean());
     }
 
+    // ADR 0113: the transcription flag crosses the same four mappings as the reasoning flag (request, ToStored,
+    // StoredModel, Mask), and the default round-trips through PUT /api/default-transcription-model and GET.
+    [Fact]
+    public async Task Providers_AcceptTranscriptionModel_AndDefaultRoundTrips()
+    {
+        (await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", "user-transcribe", new
+        {
+            key = "listeners",
+            kind = "OpenAICompatible",
+            displayName = "Listeners",
+            endpoint = "https://listeners.example/v1",
+            apiKey = "transcribe-secret",
+            models = new[]
+            {
+                new { id = "whisper-1", displayName = "Whisper", supportsTools = false, supportsVision = false, supportsTranscription = true },
+                new { id = "plain", displayName = "Plain", supportsTools = true, supportsVision = false, supportsTranscription = false },
+            },
+            useResponsesApi = false,
+        }))).EnsureSuccessStatusCode();
+
+        var put = await Client.SendAsync(Request(HttpMethod.Put, "/api/default-transcription-model", "user-transcribe", new
+        {
+            transcriptionDefault = "listeners:whisper-1",
+        }));
+        Assert.Equal(HttpStatusCode.NoContent, put.StatusCode);
+
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-transcribe"));
+        var raw = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("transcribe-secret", raw);
+        using var doc = JsonDocument.Parse(raw);
+        Assert.Equal("listeners:whisper-1", doc.RootElement.GetProperty("transcriptionDefault").GetString());
+        Assert.True(doc.RootElement.GetProperty("speechDefault").ValueKind == JsonValueKind.Null);
+
+        var models = doc.RootElement.GetProperty("providers").EnumerateArray().Single().GetProperty("models").EnumerateArray().ToList();
+        Assert.True(models[0].GetProperty("supportsTranscription").GetBoolean());
+        Assert.False(models[1].GetProperty("supportsTranscription").GetBoolean());
+        Assert.False(models[0].GetProperty("supportsSpeech").GetBoolean());
+        Assert.False(models[0].GetProperty("supportsReasoning").GetBoolean());
+
+        // Blank clears it; the 200-char cap is enforced.
+        (await Client.SendAsync(Request(HttpMethod.Put, "/api/default-transcription-model", "user-transcribe", new { transcriptionDefault = " " })))
+            .EnsureSuccessStatusCode();
+        using var cleared = JsonDocument.Parse(await (await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", "user-transcribe")))
+            .Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Null, cleared.RootElement.GetProperty("transcriptionDefault").ValueKind);
+
+        var tooLong = await Client.SendAsync(Request(HttpMethod.Put, "/api/default-transcription-model", "user-transcribe", new
+        {
+            transcriptionDefault = new string('x', 201),
+        }));
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+    }
+
     // Reads the overlay default straight off GET /api/providers (ProvidersResponse.Default) — the read
     // side of PUT /api/default-model, which deliberately has no GET of its own.
     private async Task<string?> GetDefaultAsync(string principalId)

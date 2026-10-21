@@ -102,6 +102,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly IPushNotificationSender _pushSender;
 
+    private readonly IChatDeliverySender _chatDelivery;
+
     private readonly ILogger<AgentGrain> _logger;
 
     /// <summary>
@@ -231,6 +233,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         IGeocoder geocoder,
         HindsightIntegration memory,
         IPushNotificationSender pushSender,
+        IChatDeliverySender chatDelivery,
         ILogger<AgentGrain> logger,
         TimeProvider? timeProvider = null,
         ClientToolTimeouts? clientToolTimeouts = null)
@@ -249,6 +252,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _geocoder = geocoder;
         _memory = memory;
         _pushSender = pushSender;
+        _chatDelivery = chatDelivery;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _clientToolTimeouts = clientToolTimeouts ?? ClientToolTimeouts.Default;
@@ -463,8 +467,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             // run and the session persist — everything a browser turn does. The streamed events have no
             // listener here (this is OneWay/202), so they are simply discarded; the side effects — the
             // persisted turn — are the point. model: null keeps the bound/current model.
-            await foreach (var _ in ChatCoreAsync(message, model: null, attachments, turn))
+            var reply = new AwayReplyText();
+            await foreach (var evt in ChatCoreAsync(message, model: null, attachments, turn))
             {
+                reply.Observe(evt);
             }
 
             // Away-reply push (ADR 0028): an agent-run turn completed with a real reply and no live client
@@ -480,6 +486,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             if (!string.IsNullOrEmpty(_modelId) && turn.PushesSent == 0)
             {
                 await SendAwayReplyPushAsync();
+            }
+
+            // Chat delivery (ADR 0111), beside the push and at this site and the reminder's only: the reply text
+            // goes to the origin chat (or the home chat). Same _modelId gate, so the "configure a provider" notice
+            // is never delivered as a reply.
+            if (!string.IsNullOrEmpty(_modelId))
+            {
+                await DeliverAwayReplyToChatAsync(turn, reply.Text);
             }
         }
         catch (Exception ex)
@@ -1604,6 +1618,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // agent-run path: with no `tag` on the notification the two would stack in the shade for one
         // reply, and the model's own text is the better of the two. The position (after the persist) and
         // the defensive try below are both unchanged.
+        //
+        // Chat delivery (ADR 0111) sits BEFORE that early return: the origin chat is not a shade notification, so the
+        // model's own push does not make it redundant (DeliverAwayReplyToChatAsync skips only the home fallback then).
+        await DeliverAwayReplyToChatAsync(turn, LastAssistantText(response));
+
         if (turn.PushesSent > 0)
         {
             return;

@@ -7,7 +7,7 @@
    window, and the dialog stays open to show the code the owner sends to their bot. */
 
 import { agents } from "./agents.js";
-import { addChatConnectionBtn, chatAppTokenField, chatAppTokenInput, chatBotTokenInput, chatCancelBtn, chatConnectionList, chatDeleteBtn, chatDialog, chatEnabledInput, chatError, chatForm, chatFormTitle, chatNameInput, chatPairingCode, chatPairingCodeBox, chatPairingCopyBtn, chatPairingSection, chatPairingText, chatPlatformSelect, chatRepairBtn, chatSetupNote, chatTargetSelect } from "./dom.js";
+import { addChatConnectionBtn, chatAppTokenField, chatAppTokenInput, chatBotTokenInput, chatCancelBtn, chatConnectionList, chatDeleteBtn, chatDialog, chatEnabledInput, chatError, chatGroupsInput, chatNotificationsInput, chatVoiceNotesInput, chatForm, chatFormTitle, chatNameInput, chatPairingCode, chatPairingCodeBox, chatPairingCopyBtn, chatPairingSection, chatPairingText, chatPlatformSelect, chatRepairBtn, chatSetupNote, chatTargetSelect } from "./dom.js";
 
 let platforms = [];
 let connections = [];
@@ -122,6 +122,9 @@ function openChatDialog(connection) {
   chatAppTokenInput.placeholder = connection?.hasCredentials ? "leave blank to keep the stored token" : "paste the xapp- token";
   fillTargets(connection?.targetAgentId);
   chatEnabledInput.checked = connection?.enabled ?? true;
+  chatGroupsInput.checked = connection?.groupsEnabled ?? false;
+  chatVoiceNotesInput.checked = connection?.voiceNotesEnabled ?? false;
+  chatNotificationsInput.checked = connection?.notificationsEnabled ?? false;
   chatDeleteBtn.hidden = !connection;
   setError("");
   renderPairing(connection);
@@ -150,9 +153,9 @@ async function saveChatConnection() {
     name: chatNameInput.value.trim(),
     targetAgentId: chatTargetSelect.value || null,
     enabled: chatEnabledInput.checked,
-    groupsEnabled: editing?.groupsEnabled ?? false,
-    voiceNotesEnabled: editing?.voiceNotesEnabled ?? false,
-    notificationsEnabled: editing?.notificationsEnabled ?? false,
+    groupsEnabled: chatGroupsInput.checked,
+    voiceNotesEnabled: chatVoiceNotesInput.checked,
+    notificationsEnabled: chatNotificationsInput.checked,
   };
   const token = chatBotTokenInput.value.trim();
   const appToken = needsAppToken.has(chatPlatformSelect.value) ? chatAppTokenInput.value.trim() : "";

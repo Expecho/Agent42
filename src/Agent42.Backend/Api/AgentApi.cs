@@ -24,7 +24,7 @@ public static partial class AgentApi
     // Uploads are capped so a single request can't be abused. Images become chat attachments
     // whose bytes live in blob storage, never in the serialized session (ADR 0004); documents are
     // ingested for retrieval and never stored as attachments (ADR 0007).
-    private const long MaxAttachmentBytes = 10 * 1024 * 1024;
+    internal const long MaxAttachmentBytes = 10 * 1024 * 1024;
 
     // A copilot agent's chat has no document retrieval (the copilot composition has no context providers), so both
     // document paths (the browser upload and /api/agent-run) refuse a document with this, before ingesting it.

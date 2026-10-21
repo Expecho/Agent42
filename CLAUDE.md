@@ -167,7 +167,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Telemetry, `/logs` console, usage dashboard + estimated cost (checked-in price table), Orleans dashboard, App Insights export | 0009, 0010, 0031, 0054, 0062, 0077, 0104, 0110 |
 | Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out | 0074, 0090 |
 | Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens), GitHub Copilot kind (Sign in with GitHub, copilot-agents-only models) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104, 0108 |
-| Image generation, speech (STT/TTS/voice loop), reasoning output | 0006, 0020, 0037, 0038, 0071 |
+| Image generation, speech (STT/TTS/voice loop), server-side transcription model (chat voice notes), reasoning output | 0006, 0020, 0037, 0038, 0071, 0113 |
 | Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces), fleet workspace documents | 0007, 0008, 0030, 0066, 0098, 0101 |
 | Web search (SearXNG sidecar, engines, proxied UI), page scrape (context.dev) | 0011, 0027, 0059, 0060 |
 | Location (a client tool since 0093) | 0012, 0093 |
@@ -181,7 +181,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Agent fleet (recursive agent teams, `/fleet/`): in-process runner (not a grain), Blob store + SSE replay, judge/fix/new team, Copilot agents with built-in tools, per-task tool override, attached files + workspace-scoped document search, shared canvas (versioned pages, live pane) | 0097, 0099, 0101, 0102 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |
 | Push: away replies, model-invoked, user-initiated test push | 0028, 0075, 0100 |
-| Chat apps: one in-process gateway, each user's own bots (Telegram, Slack, Discord now; WhatsApp, Signal planned), outbound connections, owner pairing, Blob lease | 0111 |
+| Chat apps: one in-process gateway, each user's own bots (Telegram, Slack, Discord now; WhatsApp, Signal planned), outbound connections, owner pairing, Blob lease, files and images, voice notes, groups, delivery to the origin or home chat | 0111, 0113 |
 | Conversations: incognito, share links, follow-ups, pins, groups, chat search, stream recovery, stop generation, owner export (Markdown/JSON/ZIP, paged export-all), edit/regenerate last turn, fork, past chats as a model tool (search + read, ranked) | 0034, 0035, 0036, 0045, 0046, 0047, 0061, 0073, 0078, 0091, 0092, 0112 |
 | PWA and UI: share target, offline cache, composer, topbar, long press, prefs rail, tool-call folding, rich inline rendering (mermaid/code/math/charts), collapsible sidebar | 0023, 0032, 0043, 0044, 0052, 0065, 0072, 0080, 0083, 0086 |
 | Config health tab | 0029 |

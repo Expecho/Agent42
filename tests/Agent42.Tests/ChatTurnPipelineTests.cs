@@ -365,7 +365,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm(""));
 
-        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("I can only read text messages", StringComparison.Ordinal)));
+        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("I can read text, images and documents here", StringComparison.Ordinal)));
         Assert.Empty(await Index(h).GetConversationsAsync());
     }
 
@@ -386,18 +386,158 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         await Until(async () => (await Agent(h, conversationId).GetHistoryAsync()).Count == 2);
     }
 
+    // AC17: an image rides onto the turn as an attachment; a document is ingested (and registered) before it runs.
+    [Fact]
+    public async Task Pipeline_Files_ImageAndDocumentReachTheTurn()
+    {
+        var h = await PairedAsync();
+        h.Session.Files["img"] = new ChatDownloadedFile([1, 2, 3, 4], "pic.png", "image/png");
+        h.Session.Files["doc"] = new ChatDownloadedFile(TestDocuments.SampleTwoPagePdf(), "guide.pdf", DocumentMediaTypes.Pdf);
+
+        await h.Session.InjectAsync(Dm("look at these", files:
+        [
+            new ChatInboundFile("img", "pic.png", "image/png", 4, false),
+            new ChatInboundFile("doc", "guide.pdf", null, null, false),
+        ]));
+
+        await FinalReplyAsync(h, Reply);
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        var user = Assert.Single(await Agent(h, conversationId).GetHistoryAsync(), t => t.Role == "user");
+        Assert.Equal("look at these", user.Text);
+        Assert.Contains(user.Attachments!, a => a.FileName == "pic.png");
+        var query = (await new DeterministicEmbeddingGenerator().GenerateAsync(["magrathea"]))[0].Vector;
+        Assert.Contains(await new InMemoryDocumentIndex().SearchAsync($"{h.UserId}/{conversationId}", query, topK: 3),
+            hit => hit.FileName == "guide.pdf");
+    }
+
+    // AC17: a file over the cap is refused from its metadata, never downloaded; the owner and the model are both told.
+    [Fact]
+    public async Task Pipeline_Files_OversizedIsSkippedWithANote_AndNeverFetched()
+    {
+        var h = await PairedAsync();
+        h.Session.Files["big"] = new ChatDownloadedFile([1], "huge.pdf", DocumentMediaTypes.Pdf);
+
+        await h.Session.InjectAsync(Dm("read this", files: [new ChatInboundFile("big", "huge.pdf", DocumentMediaTypes.Pdf, 11L * 1024 * 1024, false)]));
+
+        await FinalReplyAsync(h, Reply);
+        Assert.Contains(h.Session.VisibleMessages(), m => m.Contains("'huge.pdf' exceeds the 10 MB limit.", StringComparison.Ordinal));
+        Assert.Empty(h.Session.Downloads);
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        Assert.Contains("[Attachment skipped: 'huge.pdf' exceeds", Assert.Single(await Agent(h, conversationId).GetHistoryAsync(), t => t.Role == "user").Text);
+    }
+
+    // A message with only unusable files gets the reason and mints no conversation.
+    [Fact]
+    public async Task Pipeline_Files_OnlyUnusable_RepliesAndRunsNoTurn()
+    {
+        var h = await PairedAsync();
+
+        await h.Session.InjectAsync(Dm("", files: [new ChatInboundFile("exe", "setup.exe", "application/octet-stream", 10, false)]));
+
+        await Until(() => h.Session.VisibleMessages().Any(m => m.Contains("'setup.exe' is not a supported", StringComparison.Ordinal)));
+        await Task.Delay(200);
+        Assert.Empty(await Index(h).GetConversationsAsync());
+        Assert.Empty(h.Session.Downloads);
+    }
+
+    // A captionless photo is a turn of its own: titled by the file, prompted with what was sent.
+    [Fact]
+    public async Task Pipeline_Files_PhotoWithoutText_IsATurn()
+    {
+        var h = await PairedAsync();
+        h.Session.Files["photo"] = new ChatDownloadedFile([9, 9, 9], "photo.jpg", "image/jpeg");
+
+        await h.Session.InjectAsync(Dm("", files: [new ChatInboundFile("photo", "photo.jpg", "image/jpeg", 3, false)]));
+
+        await FinalReplyAsync(h, Reply);
+        Assert.Equal("photo.jpg", Assert.Single(await Index(h).GetConversationsAsync()).Title);
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        Assert.Equal("The user sent 'photo.jpg'.", Assert.Single(await Agent(h, conversationId).GetHistoryAsync(), t => t.Role == "user").Text);
+    }
+
+    // A download the adapter refuses (off its pinned host, gone, too large in fact) is skipped; the text still runs.
+    [Fact]
+    public async Task Pipeline_Files_FailedDownload_IsSkipped()
+    {
+        var h = await PairedAsync();
+
+        await h.Session.InjectAsync(Dm("and this", files: [new ChatInboundFile("https://evil.example/x.pdf", "x.pdf", DocumentMediaTypes.Pdf, 100, false)]));
+
+        await FinalReplyAsync(h, Reply);
+        Assert.Contains(h.Session.VisibleMessages(), m => m.StartsWith("'x.pdf' couldn't be downloaded", StringComparison.Ordinal));
+    }
+
+    // AC18: a voice note is transcribed by the owner's model, echoed as one quoted line, and becomes the turn.
+    [Fact]
+    public async Task Pipeline_Voice_BecomesATurn_WithTheTranscriptEchoed()
+    {
+        var h = await PairedAsync(voice: true, transcriber: new InMemorySpeechTranscriptionService());
+        h.Session.Files["v"] = new ChatDownloadedFile([1, 2, 3], "voice.ogg", "audio/ogg");
+
+        await h.Session.InjectAsync(Dm("", files: [Voice("v")]));
+
+        await FinalReplyAsync(h, Reply);
+        Assert.Equal("> " + InMemorySpeechTranscriptionService.DefaultTranscript, h.Session.VisibleMessages()[0]);
+        var conversation = Assert.Single(await Index(h).GetConversationsAsync());
+        Assert.Equal(InMemorySpeechTranscriptionService.DefaultTranscript, conversation.Title);
+        Assert.Equal("[Voice note] " + InMemorySpeechTranscriptionService.DefaultTranscript,
+            Assert.Single(await Agent(h, conversation.Id).GetHistoryAsync(), t => t.Role == "user").Text);
+    }
+
+    // AC18: every way a voice note can't be read gets exactly ONE curated reply, mints nothing, and never leaks the
+    // provider's own text.
+    [Theory]
+    [InlineData("off", "Voice notes are turned off")]
+    [InlineData("no-model", "To use voice notes, add a transcription model")]
+    [InlineData("format", "I can't transcribe that kind of recording")]
+    [InlineData("refused", "I couldn't transcribe that voice note")]
+    public async Task Pipeline_Voice_Failure_RepliesOnce_AndRunsNoTurn(string failure, string reply)
+    {
+        ISpeechTranscriptionService? transcriber = failure switch
+        {
+            "no-model" => null,
+            "refused" => new RefusingTranscriber(),
+            _ => new InMemorySpeechTranscriptionService(),
+        };
+        var h = await PairedAsync(voice: failure != "off", transcriber: transcriber);
+        h.Session.Files["v"] = new ChatDownloadedFile([1, 2, 3], "voice.ogg", "audio/ogg");
+
+        await h.Session.InjectAsync(Dm("", files: [failure == "format" ? new ChatInboundFile("v", "clip.flac", "audio/flac", 3, true) : Voice("v")]));
+
+        await Until(() => h.Session.VisibleMessages().Count > 0);
+        await Task.Delay(300);
+        Assert.StartsWith(reply, Assert.Single(h.Session.VisibleMessages()), StringComparison.Ordinal);
+        Assert.DoesNotContain(h.Session.VisibleMessages(), m => m.Contains(RefusingTranscriber.ProviderText, StringComparison.Ordinal));
+        Assert.Empty(await Index(h).GetConversationsAsync());
+        if (failure is "off" or "no-model" or "format")
+        {
+            Assert.Empty(h.Session.Downloads);
+        }
+    }
+
+    private static ChatInboundFile Voice(string fileRef) => new(fileRef, "voice.ogg", "audio/ogg", 3, true);
+
+    private sealed class RefusingTranscriber : ISpeechTranscriptionService
+    {
+        public const string ProviderText = "Invalid file format. Supported formats: [...]";
+
+        public Task<string> TranscribeAsync(byte[] audio, string fileName, string mediaType, CancellationToken cancellationToken = default)
+            => throw new SpeechTranscriptionException("The provider refused that recording.", new InvalidOperationException(ProviderText));
+    }
+
     // ---- harness ----
 
     private sealed record Harness(
         ChatTurnPipeline Pipeline, FakeChatSession Session, ChatSessionRegistry Sessions, string UserId, string ConnectionId);
 
     private async Task<Harness> CreateAsync(
-        string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null, TimeSpan? maxTurnWait = null)
+        string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null, TimeSpan? maxTurnWait = null,
+        bool voice = false, ISpeechTranscriptionService? transcriber = null)
     {
         userId ??= "pipe-user-" + Guid.NewGuid().ToString("N");
         var store = Cluster.GrainFactory.GetGrain<IUserChatConnectionsGrain>(userId);
         var created = await store.CreateAsync(ChatPlatformKind.Telegram,
-            new ChatConnectionSettings { Name = "x", TargetAgentId = targetAgentId, GroupsEnabled = groups }, Now);
+            new ChatConnectionSettings { Name = "x", TargetAgentId = targetAgentId, GroupsEnabled = groups, VoiceNotesEnabled = voice }, Now);
         var connection = (await store.SetCredentialsAsync(created!.Id, "cipher",
             new ChatBotIdentity(FakeChatPlatformAdapter.BotUserId, FakeChatPlatformAdapter.BotUserName), Now))!;
 
@@ -411,7 +551,9 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
             [
                 new ModelInfo(TestSiloConfigurator.DefaultModel, "fake", null, null, null, true, true),
                 new ModelInfo(TestSiloConfigurator.NoVisionModel, "fake", null, null, null, true, false),
-            ])), maxTurnWait);
+            ])), maxTurnWait,
+            SiloServices.GetRequiredService<IAttachmentStore>(), SiloServices.GetRequiredService<DocumentIngestionService>(),
+            new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(new FakeChatClient(), transcriber: transcriber)));
         var runtime = new ChatConnectionRuntime(userId, connection, new ChatCredentials("token"), _ => Task.CompletedTask);
         var session = new FakeChatSession(runtime, pipeline);
         sessions.Set(connection.Id, session);
@@ -419,16 +561,19 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
     }
 
     private async Task<Harness> PairedAsync(
-        string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null, TimeSpan? maxTurnWait = null)
+        string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null, TimeSpan? maxTurnWait = null,
+        bool voice = false, ISpeechTranscriptionService? transcriber = null)
     {
-        var h = await CreateAsync(targetAgentId, groups, callTimeout, userId, maxTurnWait);
+        var h = await CreateAsync(targetAgentId, groups, callTimeout, userId, maxTurnWait, voice, transcriber);
         var code = (await Store(h).GetAsync(h.ConnectionId))!.PairingCode!;
         Assert.Equal(ChatPairingOutcome.Paired, await Store(h).TryPairAsync(h.ConnectionId, Owner, null, code, Now));
         return h;
     }
 
-    private ChatInboundMessage Dm(string text, string sender = Owner, string chat = Owner)
-        => new(NextId(), chat, ChatType.Direct, null, sender, null, false, text, false, false, [], Now);
+    private IServiceProvider SiloServices => Cluster.GetSiloServiceProvider(Cluster.Silos[0].SiloAddress);
+
+    private ChatInboundMessage Dm(string text, string sender = Owner, string chat = Owner, IReadOnlyList<ChatInboundFile>? files = null)
+        => new(NextId(), chat, ChatType.Direct, null, sender, null, false, text, false, false, files ?? [], Now);
 
     private ChatInboundMessage Group(string text, bool mentions, string sender = Owner)
         => new(NextId(), "-1001234567890", ChatType.Group, null, sender, null, false, text, mentions, false, [], Now);

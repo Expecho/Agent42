@@ -10,6 +10,10 @@ extends: [0013, 0018, 0020, 0030]
 
 # Server-side (Azure/OpenAI) text-to-speech for the voice reply, opt-in via a per-user speech model
 
+> **Amended by [ADR 0113](0113-server-side-speech-to-text-for-voice-notes.md) (2026-10-21): server-side STT now exists,
+> for chat voice notes only.** A separate **transcription** model kind mirrors this ADR's speech model
+> (`SupportsTranscription`, `TranscriptionDefault`, `GetTranscriptionService()`). The browser voice loop is unchanged.
+
 ## Context
 The hands-free voice conversation (ADR 0037) speaks replies with the browser's `speechSynthesis`
 — free, tenant-resident, but robotic. The user wants a natural voice: *when a speech model is set

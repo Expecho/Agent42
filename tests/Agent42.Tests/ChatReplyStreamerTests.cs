@@ -198,6 +198,56 @@ public class ChatReplyStreamerTests
         Assert.Equal(["I couldn't answer that."], failedSession.VisibleMessages());
     }
 
+    // AC17: each generated image is uploaded exactly once, after the text final; a failed one leaves one note.
+    [Fact]
+    public async Task GeneratedImages_AreUploadedOnce_AfterTheFinal()
+    {
+        var (session, destination) = Setup(supportsEdit: false);
+        var uploads = new List<string>();
+        destination = destination with
+        {
+            UploadImage = (s, id, t) =>
+            {
+                uploads.Add(id);
+                return id == "broken"
+                    ? Task.FromResult(ChatSendResult.Fail(ChatSendErrorKind.Unknown))
+                    : s.UploadImageAsync(Target, [1], id + ".png", "image/png", t);
+            },
+        };
+        var buffer = new ChatReplyBuffer();
+        buffer.Apply(Text("Here you go."));
+        foreach (var id in new[] { "img-1", "img-1", "broken" })
+        {
+            buffer.Apply(new AgentStreamEvent(AgentStreamEventType.Image, AttachmentId: id));
+        }
+
+        buffer.Complete();
+        await Streamer().StreamAsync(destination, buffer, CancellationToken.None);
+
+        Assert.Equal(["img-1", "broken"], uploads);
+        var ops = session.Sent.Select(s => s.Op).ToList();
+        Assert.Equal(["send", "image", "send"], ops);
+        Assert.Equal("Here you go.", session.VisibleMessages()[0]);
+        Assert.StartsWith("_An image couldn't be sent here.", session.VisibleMessages()[1]);
+    }
+
+    // A reply that failed uploads nothing, even if the model had generated an image before it failed.
+    [Fact]
+    public async Task AFailedReply_UploadsNoImages()
+    {
+        var (session, destination) = Setup(supportsEdit: false);
+        var uploads = 0;
+        destination = destination with { UploadImage = (_, _, _) => { uploads++; return Task.FromResult(ChatSendResult.Ok()); } };
+        var buffer = new ChatReplyBuffer();
+        buffer.Apply(new AgentStreamEvent(AgentStreamEventType.Image, AttachmentId: "img"));
+        buffer.Fail("I couldn't answer that.");
+
+        await Streamer().StreamAsync(destination, buffer, CancellationToken.None);
+
+        Assert.Equal(0, uploads);
+        Assert.Equal(["I couldn't answer that."], session.VisibleMessages());
+    }
+
     private static ChatReplyStreamer Streamer()
         => new(TimeProvider.System, NullLogger<ChatReplyStreamer>.Instance, TimeSpan.FromSeconds(2));
 

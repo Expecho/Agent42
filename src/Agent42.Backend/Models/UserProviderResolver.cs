@@ -17,7 +17,10 @@ public sealed record ResolvedProviderSet(
     // The user's chosen default speech model id (ADR 0038; the voice reply is synthesized from this), or ""
     // when none is configured or the pinned id no longer names a declared speech-capable model. No baseline
     // fallback — an opt-in pick, exactly like the embedding default.
-    string SpeechDefaultModelId = "");
+    string SpeechDefaultModelId = "",
+    // The user's chosen default transcription model id (ADR 0113; the chat gateway's voice notes), or "" when none is
+    // configured or the pinned id no longer names a declared transcription model. No baseline fallback.
+    string TranscriptionDefaultModelId = "");
 
 /// <summary>
 /// Resolves a user's effective (baseline ⊕ overlay) provider set (ADR 0018). An interface so the
@@ -119,7 +122,8 @@ public sealed class UserProviderResolver : IUserProviderResolver
         return new ResolvedProviderSet(
             providers, discovering, declared, EffectiveDefault(overlay, providers, declared), overlay.Version,
             EffectiveEmbeddingDefault(overlay, declared),
-            EffectiveSpeechDefault(overlay, declared));
+            EffectiveSpeechDefault(overlay, declared),
+            EffectiveTranscriptionDefault(overlay, declared));
     }
 
     // The effective embedding default: the pinned id only when it names a declared EMBEDDING-capable model,
@@ -153,6 +157,21 @@ public sealed class UserProviderResolver : IUserProviderResolver
         return declared.Any(m =>
             m.SupportsSpeech && string.Equals(m.Id, overlay.SpeechDefault, StringComparison.OrdinalIgnoreCase))
             ? overlay.SpeechDefault!
+            : "";
+    }
+
+    // The effective transcription default (ADR 0113): the pinned id only when it names a declared TRANSCRIPTION model,
+    // else "". Same discipline as the speech default: an opt-in pick, no fallback.
+    private static string EffectiveTranscriptionDefault(UserProviderConfig overlay, IReadOnlyList<ModelInfo> declared)
+    {
+        if (string.IsNullOrWhiteSpace(overlay.TranscriptionDefault))
+        {
+            return "";
+        }
+
+        return declared.Any(m =>
+            m.SupportsTranscription && string.Equals(m.Id, overlay.TranscriptionDefault, StringComparison.OrdinalIgnoreCase))
+            ? overlay.TranscriptionDefault!
             : "";
     }
 
@@ -215,6 +234,7 @@ public sealed class UserProviderResolver : IUserProviderResolver
             SupportsImageGeneration = m.SupportsImageGeneration,
             SupportsEmbeddings = m.SupportsEmbeddings,
             SupportsSpeech = m.SupportsSpeech,
+            SupportsTranscription = m.SupportsTranscription,
             SupportsReasoning = m.SupportsReasoning,
         })],
     };

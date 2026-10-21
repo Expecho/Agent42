@@ -183,6 +183,23 @@ public sealed class DiscordAdapterTests : IAsyncLifetime
             (create["message_reference"]!["message_id"]!.GetValue<string>(), create["message_reference"]!["fail_if_not_exists"]!.GetValue<bool>()));
     }
 
+    // AC17 + AC16: a generated image is a multipart message (payload_json + files[0]) that still mentions nobody.
+    [Fact]
+    public async Task UploadImage_IsAMultipartMessage_WithoutMentions()
+    {
+        await using var session = await Adapter.ConnectAsync(Runtime(), new RecordingSink(), CancellationToken.None);
+
+        var result = await session.UploadImageAsync(
+            new ChatTarget("1200000000000000001", null, "1300000000000000001"), [1, 2, 3], "chart.png", "image/png", CancellationToken.None);
+
+        Assert.True(result.Success);
+        var body = _server.Requests.Single(r => r.Route == "POST channels/1200000000000000001/messages").Body;
+        Assert.Empty(body["allowed_mentions"]!["parse"]!.AsArray());
+        Assert.Equal(("chart.png", 3L, "chart.png"),
+            (body["files[0].filename"]!.GetValue<string>(), body["files[0].length"]!.GetValue<long>(), body["attachments"]![0]!["filename"]!.GetValue<string>()));
+        Assert.Equal("1300000000000000001", body["message_reference"]!["message_id"]!.GetValue<string>());
+    }
+
     // Step 12: the first reply to a top-level mention starts a thread ON the message and posts into it (the thread has
     // the message's id); the second reply goes straight in; nothing replies across channels to the starter message.
     [Fact]
@@ -408,8 +425,7 @@ public sealed class FakeDiscordServer : IAsyncDisposable
     private async Task HandleRestAsync(string path, HttpContext http)
     {
         var route = $"{http.Request.Method} {path}";
-        var text = await new StreamReader(http.Request.Body).ReadToEndAsync();
-        Requests.Enqueue((route, http.Request.Headers.Authorization.ToString(), text.Length > 0 ? JsonNode.Parse(text)!.AsObject() : []));
+        Requests.Enqueue((route, http.Request.Headers.Authorization.ToString(), await BodyAsync(http.Request)));
         var (status, json) = _scripts.TryGetValue(route, out var queue) && queue.TryDequeue(out var scripted)
             ? scripted
             : (200, Default(http.Request.Method, path));
@@ -419,6 +435,26 @@ public sealed class FakeDiscordServer : IAsyncDisposable
             http.Response.ContentType = "application/json";
             await http.Response.WriteAsync(json);
         }
+    }
+
+    // JSON, or a multipart upload flattened to its payload_json plus "<part>.filename" / "<part>.length" per file.
+    private static async Task<JsonObject> BodyAsync(HttpRequest request)
+    {
+        if (!request.HasFormContentType)
+        {
+            var text = await new StreamReader(request.Body).ReadToEndAsync();
+            return text.Length > 0 ? JsonNode.Parse(text)!.AsObject() : [];
+        }
+
+        var form = await request.ReadFormAsync();
+        var body = JsonNode.Parse(form["payload_json"].ToString())!.AsObject();
+        foreach (var file in form.Files)
+        {
+            body[file.Name + ".filename"] = file.FileName;
+            body[file.Name + ".length"] = file.Length;
+        }
+
+        return body;
     }
 
     private string Default(string method, string path) => (method, path) switch

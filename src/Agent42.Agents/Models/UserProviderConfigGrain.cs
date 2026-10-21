@@ -98,6 +98,12 @@ public sealed class UserProviderConfigGrain : Grain, IUserProviderConfigGrain
         return BumpAsync(_state.State.Config with { SpeechDefault = value });
     }
 
+    public Task SetTranscriptionDefaultAsync(string? transcriptionModelId)
+    {
+        var value = string.IsNullOrWhiteSpace(transcriptionModelId) ? null : transcriptionModelId;
+        return BumpAsync(_state.State.Config with { TranscriptionDefault = value });
+    }
+
     public async Task DeleteAsync(string key)
     {
         var providers = _state.State.Config.Providers.ToList();

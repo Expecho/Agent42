@@ -1,7 +1,7 @@
 /* Agent 42 — model picker (ADR 0013/0018). Split out of app.js (ADR 0041). */
 
 import { input, modelSelect, noModelHint } from "./dom.js";
-import { syncDefaultModelSelect, syncEmbeddingModelSelect, syncSpeechModelSelect } from "./providers.js";
+import { syncDefaultModelSelect, syncEmbeddingModelSelect, syncSpeechModelSelect, syncTranscriptionModelSelect } from "./providers.js";
 import { streaming } from "./send.js";
 
 export let defaultModel = null;
@@ -25,6 +25,7 @@ export async function loadModels({ pin = true } = {}) {
     syncDefaultModelSelect();
     syncEmbeddingModelSelect();
     syncSpeechModelSelect();
+    syncTranscriptionModelSelect();
   } catch { /* leave the picker disabled; chat still uses the server's default model */ }
 }
 

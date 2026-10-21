@@ -41,7 +41,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         string otelSourceName,
         ILogger<MultiProviderChatClientFactory> logger,
         string defaultEmbeddingModelId = "",
-        string defaultSpeechModelId = "")
+        string defaultSpeechModelId = "",
+        string defaultTranscriptionModelId = "")
     {
         // An empty provider set is now a supported state, not a misconfiguration (ADR 0019): a user who
         // has configured no chat provider gets an empty factory whose DefaultModelId is "" and whose
@@ -56,6 +57,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         // "" when no speech model is configured (resolver sets a non-empty id only for a declared speech model,
         // ADR 0038). The /api/speech endpoint gates on GetSpeechService() being non-null — see GetSpeechService.
         DefaultSpeechModelId = defaultSpeechModelId;
+        // "" when no transcription model is configured (the resolver names one only if declared transcription-capable).
+        DefaultTranscriptionModelId = defaultTranscriptionModelId;
         // Never the GitHub Copilot provider while another exists (ADR 0108): it is what a legacy UNQUALIFIED id
         // resolves against, and that would land on the refusing client.
         _defaultProvider = providers.Count == 0
@@ -70,6 +73,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
     public string DefaultEmbeddingModelId { get; }
 
     public string DefaultSpeechModelId { get; }
+
+    public string DefaultTranscriptionModelId { get; }
 
     public IChatClient GetClient(string? modelId) =>
         _providers.Count == 0 ? NoModelChatClient.Instance : _clients.GetOrAdd(Resolve(modelId).QualifiedId, Build);
@@ -174,6 +179,19 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         return provider.SpeechService?.Invoke(model);
     }
 
+    public ISpeechTranscriptionService? GetTranscriptionService()
+    {
+        // No providers, or no transcription model configured -> null: the chat gateway answers a voice note with a
+        // curated "add a transcription model" reply. Same default-id resolution as GetSpeechService.
+        if (_providers.Count == 0 || string.IsNullOrEmpty(DefaultTranscriptionModelId))
+        {
+            return null;
+        }
+
+        var (provider, model, _) = Resolve(DefaultTranscriptionModelId);
+        return provider.TranscriptionService?.Invoke(model);
+    }
+
     // The copilot agent kind: the same resolution GetClient uses, so a copilot chat reaches exactly the provider and
     // deployment its ordinary chat client would.
     public (CopilotProviderSettings Settings, string Model)? GetCopilotProvider(string? modelId)
@@ -266,7 +284,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         Func<string, IImageGenerationService>? imageService = null,
         Func<string, IEmbeddingGenerator<string, Embedding<float>>>? embeddingGenerator = null,
         Func<string, ISpeechService>? speechService = null,
-        CopilotProviderSettings? copilot = null)
+        CopilotProviderSettings? copilot = null,
+        Func<string, ISpeechTranscriptionService>? transcriptionService = null)
     {
         public ProviderOptions Options { get; } = options;
 
@@ -287,6 +306,13 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         /// <c>SupportsSpeech</c> as the default speech model.
         /// </summary>
         public Func<string, ISpeechService>? SpeechService { get; } = speechService;
+
+        /// <summary>
+        /// Builds an <see cref="ISpeechTranscriptionService"/> for a transcription (speech-to-text) model of this
+        /// provider (ADR 0113), via <c>GetAudioClient</c>. Set on every Foundry and OpenAI-compatible provider; the
+        /// per-model gate is the resolver, which only names a model marked <c>SupportsTranscription</c>.
+        /// </summary>
+        public Func<string, ISpeechTranscriptionService>? TranscriptionService { get; } = transcriptionService;
 
         /// <summary>
         /// Builds an <see cref="IEmbeddingGenerator{String, Single}"/> for an embedding model of this provider
@@ -404,6 +430,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
                         .AsIChatClientWithStoredOutputDisabled(model, includeReasoningEncryptedContent: false),
                     embeddingGenerator: embeddings,
                     speechService: model => new OpenAISpeechService(responsesClient.GetAudioClient(model)),
+                    transcriptionService: model => new OpenAITranscriptionService(responsesClient.GetAudioClient(model)),
                     copilot: CopilotProviderSettings.Foundry(endpoint, apiKey, useResponses: true));
 #pragma warning restore MAAI001
 #pragma warning restore OPENAI001
@@ -432,6 +459,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
                 embeddingGenerator: embeddings,
                 // Speech (ADR 0038) rides the same /openai/v1 client as chat (see the Responses branch note).
                 speechService: model => new OpenAISpeechService(chatClient.GetAudioClient(model)),
+                transcriptionService: model => new OpenAITranscriptionService(chatClient.GetAudioClient(model)),
                 copilot: CopilotProviderSettings.Foundry(endpoint, apiKey, useResponses: false));
         }
 
@@ -458,7 +486,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
                 // Speech synthesis (ADR 0038) off the same OpenAIClient — GetAudioClient does no I/O, and the
                 // resolver's default-speech pick is the per-model gate, so building it for every model is free.
                 model => new OpenAISpeechService(client.GetAudioClient(model)),
-                CopilotProviderSettings.OpenAICompatible(endpoint, apiKey));
+                CopilotProviderSettings.OpenAICompatible(endpoint, apiKey),
+                model => new OpenAITranscriptionService(client.GetAudioClient(model)));
         }
 
         /// <summary>

@@ -1,6 +1,6 @@
 /* Agent 42 — model providers, per-user overlay (ADR 0018/0030/0038). Split out of app.js (ADR 0041). */
 
-import { addModelRowBtn, addProviderBtn, defaultModelSelect, githubSignInBtn, githubSignInNote, embeddingModelSelect, providerApiKeyInput, providerCancelBtn, providerDialog, providerDisplayNameInput, providerEndpointInput, providerError, providerForm, providerFormTitle, providerKeyInput, providerKindSelect, providerList, providerModelList, providerAnthropicNote, providerResponsesApi, profileTabs, providerResponsesField, speechModelSelect } from "./dom.js";
+import { addModelRowBtn, addProviderBtn, defaultModelSelect, githubSignInBtn, githubSignInNote, embeddingModelSelect, providerApiKeyInput, providerCancelBtn, providerDialog, providerDisplayNameInput, providerEndpointInput, providerError, providerForm, providerFormTitle, providerKeyInput, providerKindSelect, providerList, providerModelList, providerAnthropicNote, providerResponsesApi, profileTabs, providerResponsesField, speechModelSelect, transcriptionModelSelect } from "./dom.js";
 import { fillModelOptions, loadModels, modelsData, providerGroupLabel, selectModel } from "./models.js";
 import { enterPrefsDetail, openProfileDialog } from "./profile.js";
 
@@ -20,6 +20,9 @@ export let userDefaultEmbeddingModel = null;
 // hands-free voice conversation (ADR 0037) speaks its reply via server-side /api/speech; when null it
 // falls back to the browser's speechSynthesis. Independent of userDefaultModel (chat).
 export let userDefaultSpeechModel = null;
+// The user's default transcription (speech-to-text) model id, or null when none is configured (ADR 0113). The chat
+// gateway transcribes a voice note with it; without one the bot answers a voice note with a curated reply.
+export let userDefaultTranscriptionModel = null;
 // Whether "Sign in with GitHub" (the GitHub Copilot provider, ADR 0108) is configured on this server.
 let gitHubSignIn = false;
 // The GitHub Copilot provider: written only by the sign-in callback, so it gets no edit button (the API refuses it).
@@ -33,12 +36,14 @@ export async function loadProviders() {
     userDefaultModel = data.default ?? null;
     userDefaultEmbeddingModel = data.embeddingDefault ?? null;
     userDefaultSpeechModel = data.speechDefault ?? null;
+    userDefaultTranscriptionModel = data.transcriptionDefault ?? null;
     gitHubSignIn = data.gitHubSignIn === true;
     renderProviders();
     syncGitHubSignIn();
     syncDefaultModelSelect();
     syncEmbeddingModelSelect();
     syncSpeechModelSelect();
+    syncTranscriptionModelSelect();
   } catch { /* silo may be unreachable; the list refreshes on next open */ }
 }
 
@@ -169,6 +174,51 @@ async function persistSpeechModel() {
   userDefaultSpeechModel = value || null;
 }
 
+// Repaints the transcription-model select from the models a provider marked as transcription models, plus a leading
+// "None" option (ADR 0113). Same idempotent-repaint reasoning as syncSpeechModelSelect().
+export function syncTranscriptionModelSelect() {
+  if (!transcriptionModelSelect) return;
+  transcriptionModelSelect.innerHTML = "";
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "None (voice notes are not transcribed)";
+  transcriptionModelSelect.appendChild(none);
+
+  const groups = new Map();
+  for (const m of modelsData.models ?? []) {
+    if (!m.supportsTranscription) continue; // only transcription-capable models are pickable here
+    const provider = m.provider ?? "";
+    if (!groups.has(provider)) {
+      const group = document.createElement("optgroup");
+      group.label = providerGroupLabel(m);
+      groups.set(provider, group);
+      transcriptionModelSelect.appendChild(group);
+    }
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.displayName ?? m.id;
+    groups.get(provider).appendChild(opt);
+  }
+
+  transcriptionModelSelect.value = "";
+  selectModel(transcriptionModelSelect, userDefaultTranscriptionModel);
+}
+
+// Persists the transcription-model pick immediately (no Save button). Blank clears it. A failed save snaps the
+// select back to the stored value.
+async function persistTranscriptionModel() {
+  const value = transcriptionModelSelect.value;
+  try {
+    const res = await fetch("/api/default-transcription-model", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcriptionDefault: value || null }),
+    });
+    if (!res.ok) return syncTranscriptionModelSelect();
+  } catch { return syncTranscriptionModelSelect(); /* silo unreachable — don't show an unsaved value */ }
+  userDefaultTranscriptionModel = value || null;
+}
+
 function renderProviders() {
   providerList.innerHTML = "";
   if (userProviders.length === 0) {
@@ -291,6 +341,7 @@ function addModelRow(model) {
     { label: "embeddings", checked: model?.supportsEmbeddings ?? false },
     { label: "speech", checked: model?.supportsSpeech ?? false },
     { label: "reasoning", checked: model?.supportsReasoning ?? false },
+    { label: "transcription", checked: model?.supportsTranscription ?? false },
   ];
   const capBoxes = [];
   const updateCapsSummary = () => {
@@ -338,7 +389,7 @@ function collectModels() {
     if (!id) continue; // an empty row is dropped, not sent
     // POSITIONAL, and paired by ORDER with capDefs above — a flag added there must be added here too,
     // in the same position, or every flag after the insertion point silently reads the wrong checkbox.
-    const [tools, vision, image, embed, speech, reasoning] =
+    const [tools, vision, image, embed, speech, reasoning, transcription] =
       row.querySelectorAll(".agent-form__checkbox");
     const display = row.querySelector(".provider-model-row__display").value.trim();
     models.push({
@@ -350,6 +401,7 @@ function collectModels() {
       supportsEmbeddings: embed.checked,
       supportsSpeech: speech.checked,
       supportsReasoning: reasoning.checked,
+      supportsTranscription: transcription.checked,
     });
   }
   return models;
@@ -426,6 +478,7 @@ export function wireProviders() {
   defaultModelSelect.addEventListener("change", persistDefaultModel);
   if (embeddingModelSelect) embeddingModelSelect.addEventListener("change", persistEmbeddingModel);
   if (speechModelSelect) speechModelSelect.addEventListener("change", persistSpeechModel);
+  if (transcriptionModelSelect) transcriptionModelSelect.addEventListener("change", persistTranscriptionModel);
   addProviderBtn.addEventListener("click", () => openProviderDialog(null));
   githubSignInBtn.addEventListener("click", () => { location.href = "/api/providers/github/start"; });
   addModelRowBtn.addEventListener("click", () => addModelRow(null));

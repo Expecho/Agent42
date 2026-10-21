@@ -236,4 +236,12 @@ public interface IAgentGrain : IGrainWithStringKey
     /// </summary>
     [Alias("InitializeFromForkAsync")]
     Task<bool> InitializeFromForkAsync(ConversationFork fork);
+
+    /// <summary>
+    /// Records the chat this conversation was started from (ADR 0111) so a reminder or queued run can deliver its
+    /// reply there. Idempotent: written only while no origin is set, so a retried or later call never moves it.
+    /// Called by the chat gateway when its route mints the conversation, before the first turn.
+    /// </summary>
+    [Alias("SetChatOriginAsync")]
+    Task SetChatOriginAsync(ChatOrigin origin);
 }

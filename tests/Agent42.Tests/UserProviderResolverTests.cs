@@ -217,6 +217,83 @@ public class UserProviderResolverTests
         Assert.Equal("", Resolver().Merge(overlay).SpeechDefaultModelId);
     }
 
+    // ADR 0113 (transcription): the default resolves only when it names a declared TRANSCRIPTION model.
+    [Fact]
+    public void TranscriptionDefault_ResolvesToTranscriptionModel()
+    {
+        var overlay = new UserProviderConfig(
+            [OllamaWithTranscription(_protector.Protect("k"))],
+            Default: null, Version: 1, TranscriptionDefault: "ollama:whisper-1");
+
+        Assert.Equal("ollama:whisper-1", Resolver().Merge(overlay).TranscriptionDefaultModelId);
+    }
+
+    [Fact]
+    public void TranscriptionDefault_NamingANonTranscriptionModel_ResolvesEmpty()
+    {
+        // "ollama:tts-1" is a SPEECH model and "ollama:llama3.1" a chat model; neither may become the transcriber.
+        foreach (var id in new[] { "ollama:tts-1", "ollama:llama3.1" })
+        {
+            var overlay = new UserProviderConfig(
+                [OllamaWithTranscription(_protector.Protect("k"))], Default: null, Version: 1, TranscriptionDefault: id);
+
+            Assert.Equal("", Resolver().Merge(overlay).TranscriptionDefaultModelId);
+        }
+    }
+
+    [Fact]
+    public void TranscriptionDefault_NamingAMissingModel_ResolvesEmpty()
+    {
+        var overlay = new UserProviderConfig(
+            [OllamaWithTranscription(_protector.Protect("k"))], Default: null, Version: 1, TranscriptionDefault: "ghost:whisper-1");
+
+        Assert.Equal("", Resolver().Merge(overlay).TranscriptionDefaultModelId);
+    }
+
+    [Fact]
+    public void NoTranscriptionDefault_ResolvesEmpty()
+    {
+        var overlay = OverlayWith(OllamaWithTranscription(_protector.Protect("k")));
+
+        Assert.Equal("", Resolver().Merge(overlay).TranscriptionDefaultModelId);
+    }
+
+    // The factory built from a resolved set hands out a transcriber exactly when the default names a transcription
+    // model, and the transcription model is not a chat model for the fleet's picker either.
+    [Fact]
+    public void Factory_GetTranscriptionService_FollowsTheResolvedDefault()
+    {
+        var withDefault = Resolver().Merge(new UserProviderConfig(
+            [OllamaWithTranscription(_protector.Protect("k"))], Default: null, Version: 1, TranscriptionDefault: "ollama:whisper-1"));
+        var without = Resolver().Merge(OverlayWith(OllamaWithTranscription(_protector.Protect("k"))));
+
+        IChatClientFactory Build(ResolvedProviderSet set) => new MultiProviderChatClientFactory(
+            set.Providers, set.DefaultModelId, "test", NullLogger<MultiProviderChatClientFactory>.Instance,
+            set.EmbeddingDefaultModelId, set.SpeechDefaultModelId, set.TranscriptionDefaultModelId);
+
+        Assert.IsType<OpenAITranscriptionService>(Build(withDefault).GetTranscriptionService());
+        Assert.Equal("ollama:whisper-1", Build(withDefault).DefaultTranscriptionModelId);
+        Assert.Null(Build(without).GetTranscriptionService());
+        Assert.Equal("", Build(without).DefaultTranscriptionModelId);
+        Assert.True(withDefault.DeclaredModels.Single(m => m.Model == "whisper-1").SupportsTranscription);
+        Assert.False(withDefault.DeclaredModels.Single(m => m.Model == "tts-1").SupportsTranscription);
+    }
+
+    // An Ollama provider declaring a chat model, a speech model AND a transcription model.
+    private static StoredProvider OllamaWithTranscription(string? apiKeyCiphertext) => new(
+        Key: "ollama",
+        Kind: "OpenAICompatible",
+        DisplayName: "Local Ollama",
+        Endpoint: "http://localhost:11434/v1",
+        ApiKeyCiphertext: apiKeyCiphertext,
+        Models:
+        [
+            new StoredModel("llama3.1", "Llama 3.1", SupportsTools: true, SupportsVision: false),
+            new StoredModel("tts-1", "TTS 1", SupportsTools: false, SupportsVision: false, SupportsSpeech: true),
+            new StoredModel("whisper-1", "Whisper", SupportsTools: false, SupportsVision: false, SupportsTranscription: true),
+        ],
+        UseResponsesApi: false);
+
     // An Ollama provider declaring a chat model AND a speech-capable model.
     private static StoredProvider OllamaWithSpeech(string? apiKeyCiphertext) => new(
         Key: "ollama",

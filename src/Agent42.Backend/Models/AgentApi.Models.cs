@@ -22,6 +22,7 @@ public static partial class AgentApi
             var overlay = await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).GetAsync();
             return Results.Json(new ProvidersResponse(
                 [.. overlay.Providers.Select(Mask)], overlay.Default, overlay.EmbeddingDefault, overlay.SpeechDefault,
+                overlay.TranscriptionDefault,
                 GitHubSignIn: services.GetService<GitHubOAuthClient>() is { Options.Configured: true }));
         });
 
@@ -134,6 +135,24 @@ public static partial class AgentApi
                 .SetSpeechDefaultAsync(request.SpeechDefault);
             return Results.NoContent();
         });
+
+        // Sets (or clears, with a blank body) the user's default TRANSCRIPTION (speech-to-text) model, the one the
+        // chat gateway transcribes a voice note with (ADR 0113). Mirrors /api/default-speech-model: the resolver's
+        // read-time EffectiveTranscriptionDefault guard is the single validation point.
+        app.MapPut("/api/default-transcription-model", async (DefaultTranscriptionModelRequest request, IGrainFactory grains, HttpContext http) =>
+        {
+            if (request.TranscriptionDefault is { Length: > 200 })
+            {
+                return Results.Text(
+                    "Default transcription model id must be at most 200 characters.",
+                    "text/plain",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId())
+                .SetTranscriptionDefaultAsync(request.TranscriptionDefault);
+            return Results.NoContent();
+        });
     }
 
     // A user provider must be self-contained (it does NOT inherit the operator AzureOpenAI:* config —
@@ -193,7 +212,7 @@ public static partial class AgentApi
             Models: [.. (request.Models ?? []).Select(m =>
                 new StoredModel(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision,
                     m.SupportsImageGeneration, m.SupportsEmbeddings, m.SupportsSpeech,
-                    m.SupportsReasoning))],
+                    m.SupportsReasoning, m.SupportsTranscription))],
             UseResponsesApi: request.UseResponsesApi);
 
     // Never returns the key — only whether one is stored (hasKey). The ciphertext stays server-side.
@@ -204,6 +223,6 @@ public static partial class AgentApi
             Models: [.. p.Models.Select(m =>
                 new ProviderModelResponse(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision,
                     m.SupportsImageGeneration, m.SupportsEmbeddings, m.SupportsSpeech,
-                    m.SupportsReasoning))],
+                    m.SupportsReasoning, m.SupportsTranscription))],
             p.UseResponsesApi);
 }
