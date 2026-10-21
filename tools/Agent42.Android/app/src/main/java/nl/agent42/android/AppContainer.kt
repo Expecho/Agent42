@@ -48,14 +48,30 @@ class AppContainer(private val context: Context) {
         endVoice()
         return VoiceSession(context, this, chat.id, chat.title).also {
             voice = it
+            voiceChat = chat
             it.start()
             VoiceCallService.start(context)
         }
     }
 
+    private var voiceChat: Screen.Chat? = null
+
+    /**
+     * A voice entry point fired (tile, widget, shortcut, assist): back to the call in progress, or a new voice chat.
+     * Before sign-in nothing starts; the app just opens where it is.
+     */
+    fun voiceEntry() {
+        val current = stack.last()
+        if (current == Screen.Server || current == Screen.SignIn) return
+        val ongoing = voiceChat?.takeIf { voice != null }
+        if (current is Screen.Voice && (ongoing == null || current.chat == ongoing)) return
+        navigate(Screen.Voice(ongoing ?: newChat().copy(title = "Voice chat")))
+    }
+
     fun endVoice() {
         val session = voice ?: return
         voice = null
+        voiceChat = null
         session.hangUp()
         voiceEnded++
         if (stack.lastOrNull() is Screen.Voice) back()
