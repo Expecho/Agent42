@@ -639,8 +639,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
 
         // Token usage arrives as UsageContent updates, one per LLM turn (a tool-calling
-        // run has several); accumulate them and report the totals on the Done event.
-        var tokens = new TurnTokenTotals();
+        // run has several); accumulate them and report the totals on the Done event. The pricing identity is resolved
+        // once, here, so the Done event prices the model this turn ran on (ADR 0110).
+        var tokens = new TurnTokenTotals { Pricing = _chatClientFactory.GetPricingIdentity(_modelId) };
 
         // Accumulate the reply text (only) so we can feed the last exchange to the follow-up
         // suggestion call after the turn — cheaper than re-reading the serialized session.
@@ -943,6 +944,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         /// <summary>Anthropic prompt-cache writes (ADR 0104); no other provider reports them.</summary>
         public long CacheWrite { get; set; }
 
+        /// <summary>The provider kind and bare model the turn is priced against (ADR 0110); <c>("", "")</c> prices nothing.</summary>
+        public (string ProviderKind, string Model) Pricing { get; init; } = ("", "");
+
         /// <summary>
         /// The terminating <c>Done</c> event. A total of zero is reported as <c>null</c>, not 0: the
         /// browser distinguishes "this provider reported no usage" from "this turn cost nothing".
@@ -952,13 +956,24 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         /// instant the stop button is pressed: that turn completed, and must not be labelled as
         /// interrupted just because the client asked.</para>
         /// </summary>
-        public AgentStreamEvent ToDoneEvent(bool stopped = false) => new(
-            AgentStreamEventType.Done,
-            InputTokens: Input > 0 ? Input : null,
-            OutputTokens: Output > 0 ? Output : null,
-            CachedTokens: Cached > 0 ? Cached : null,
-            Stopped: stopped ? true : null,
-            CacheWriteTokens: CacheWrite > 0 ? CacheWrite : null);
+        public AgentStreamEvent ToDoneEvent(bool stopped = false)
+        {
+            // A turn with no reported usage carries no cost at all; otherwise priced, included or unpriced (ADR 0110).
+            var cost = Input > 0 || Output > 0
+                ? ModelPricing.Estimate(
+                    Pricing.ProviderKind, Pricing.Model, DateTimeOffset.UtcNow, new TokenCounts(Input, Output, Cached, CacheWrite))
+                : null;
+
+            return new(
+                AgentStreamEventType.Done,
+                InputTokens: Input > 0 ? Input : null,
+                OutputTokens: Output > 0 ? Output : null,
+                CachedTokens: Cached > 0 ? Cached : null,
+                Stopped: stopped ? true : null,
+                CacheWriteTokens: CacheWrite > 0 ? CacheWrite : null,
+                CostUsd: cost?.Usd,
+                CostStatus: cost?.Status);
+        }
     }
 
     // Every event one streamed update produces, in order. A synchronous iterator, so the async iterator

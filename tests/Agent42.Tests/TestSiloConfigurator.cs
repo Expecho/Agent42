@@ -77,7 +77,9 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
                     // The deterministic embedding generator + a stub id, so the grain's document retrieval
                     // (which resolves its generator from this factory) round-trips offline (ADR 0007/0018).
                     embeddingGenerator: sp.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>(),
-                    defaultEmbeddingModelId: "offline-embed"));
+                    defaultEmbeddingModelId: "offline-embed",
+                    // Every turn prices as Claude Sonnet 4.6 (ADR 0110), so Done_PricesTurn can check the money.
+                    pricingIdentity: (ModelPricing.AnthropicKind, "claude-sonnet-4-6")));
             // The grain resolves its factory through the per-user seam (ADR 0018); offline/tests have no
             // overlay store, so the single fake factory stands in for every user.
             services.AddSingleton<IUserChatClientFactoryProvider>(sp =>

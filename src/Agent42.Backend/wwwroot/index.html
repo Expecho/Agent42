@@ -1118,11 +1118,21 @@
           <span class="tile__label">Errors</span>
           <span class="tile__value tile__value--warn" id="usageTileErrors">—</span>
         </div>
+        <div class="tile">
+          <!-- Estimated cost (ADR 0110): derived from tokens and a checked-in price table, never stored. -->
+          <div class="tile__label">
+            Est. cost
+            <span class="tile__hint" title="Estimated from list prices (Azure OpenAI global, Anthropic). Calls of models without a price are not included.">?</span>
+          </div>
+          <span class="tile__value" id="usageTileCost">—</span>
+        </div>
       </section>
 
       <!-- Honest note (ADR 0031, corrected by ADR 0104): the OTel emitter tags cached and reasoning tokens
            whenever the provider reports them, so a 0 here means the provider reported none. -->
       <p class="usage__note">Cached input and reasoning are what each provider reports; one that reports none reads 0.</p>
+      <!-- ADR 0110: the honest limits of the estimate. -->
+      <p class="usage__note" id="usageCostNote">Cost is an estimate from list prices. "—" means no price is known for that model, and "≥" means some calls had none. Anthropic cache writes count at the input rate here; the per-turn line prices them in full.</p>
 
       <section class="panel" aria-labelledby="usageModelsHeading">
         <h2 class="panel__title" id="usageModelsHeading">Tokens by model</h2>
@@ -1139,6 +1149,7 @@
               <th scope="col" class="grid__num">Reasoning</th>
               <th scope="col" class="grid__num">Calls</th>
               <th scope="col" class="grid__num">Errors</th>
+              <th scope="col" class="grid__num">Est. cost</th>
               <th scope="col" class="grid__bar">Share</th>
             </tr>
           </thead>
@@ -1184,6 +1195,7 @@
               <th scope="col" class="grid__num">Calls</th>
               <th scope="col" class="grid__num">Errors</th>
               <th scope="col" class="grid__num">Tool calls</th>
+              <th scope="col" class="grid__num">Est. cost</th>
               <th scope="col" class="grid__bar">Share</th>
             </tr>
           </thead>

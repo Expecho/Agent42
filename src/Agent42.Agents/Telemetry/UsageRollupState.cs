@@ -28,6 +28,12 @@ public sealed class TokenBucket
     [Id(8)] public long ReasoningOutputTokens { get; set; }
     [Id(9)] public long CallCount { get; set; }
     [Id(10)] public long ErrorCount { get; set; }
+
+    /// <summary>
+    /// The serving provider's kind (ADR 0110). <c>""</c> on every bucket written before the tag existed, which prices
+    /// as unpriced: those calls are honestly unknown, and no migration is needed (cross-cutting rule 2).
+    /// </summary>
+    [Id(11)] public string ProviderKind { get; set; } = "";
 }
 
 /// <summary>A tool-call rollup for one (bucket, application, tool, user) cell.</summary>
@@ -115,20 +121,28 @@ public sealed class UsageRollupState
             .Where(b => user is null || b.UserKey == user)
             .ToList();
 
+        var totalCost = CostSum.Of(tokenBuckets);
         var totals = new UsageTotals(
             InputTokens: tokenBuckets.Sum(b => b.InputTokens),
             OutputTokens: tokenBuckets.Sum(b => b.OutputTokens),
             CachedInputTokens: tokenBuckets.Sum(b => b.CachedInputTokens),
             CallCount: tokenBuckets.Sum(b => b.CallCount),
             ErrorCount: tokenBuckets.Sum(b => b.ErrorCount) + toolBuckets.Sum(b => b.ErrorCount),
-            ToolCallCount: toolBuckets.Sum(b => b.Count));
+            ToolCallCount: toolBuckets.Sum(b => b.Count),
+            CostUsd: totalCost.Usd,
+            UnpricedCallCount: totalCost.UnpricedCalls);
 
         var models = tokenBuckets
-            .GroupBy(b => (b.Application, b.Model, b.Provider))
-            .Select(g => new ModelUsage(
-                g.Key.Application, g.Key.Model, g.Key.Provider,
-                g.Sum(b => b.InputTokens), g.Sum(b => b.OutputTokens), g.Sum(b => b.CachedInputTokens),
-                g.Sum(b => b.ReasoningOutputTokens), g.Sum(b => b.CallCount), g.Sum(b => b.ErrorCount)))
+            .GroupBy(b => (b.Application, b.Model, b.Provider, b.ProviderKind))
+            .Select(g =>
+            {
+                var cost = CostSum.Of(g);
+                return new ModelUsage(
+                    g.Key.Application, g.Key.Model, g.Key.Provider,
+                    g.Sum(b => b.InputTokens), g.Sum(b => b.OutputTokens), g.Sum(b => b.CachedInputTokens),
+                    g.Sum(b => b.ReasoningOutputTokens), g.Sum(b => b.CallCount), g.Sum(b => b.ErrorCount),
+                    g.Key.ProviderKind, cost.Usd, cost.Status(g.Key.ProviderKind));
+            })
             .OrderByDescending(m => m.InputTokens + m.OutputTokens)
             .ToList();
 
@@ -149,7 +163,9 @@ public sealed class UsageRollupState
                 tokenBuckets.Where(b => b.UserKey == u).Sum(b => b.ReasoningOutputTokens),
                 tokenBuckets.Where(b => b.UserKey == u).Sum(b => b.CallCount),
                 tokenBuckets.Where(b => b.UserKey == u).Sum(b => b.ErrorCount) + toolBuckets.Where(b => b.UserKey == u).Sum(b => b.ErrorCount),
-                toolBuckets.Where(b => b.UserKey == u).Sum(b => b.Count)))
+                toolBuckets.Where(b => b.UserKey == u).Sum(b => b.Count),
+                CostSum.Of(tokenBuckets.Where(b => b.UserKey == u)).Usd,
+                CostSum.Of(tokenBuckets.Where(b => b.UserKey == u)).UnpricedCalls))
             .OrderByDescending(u => u.InputTokens + u.OutputTokens)
             .ToList();
 
@@ -172,7 +188,7 @@ public sealed class UsageRollupState
 
     private static void ApplyToken(Dictionary<string, TokenBucket> map, long bucket, UsageEvent e)
     {
-        var key = string.Join(KeyDelimiter, bucket, e.Application, e.Provider, e.Model, e.UserKey);
+        var key = string.Join(KeyDelimiter, bucket, e.Application, e.Provider, e.Model, e.UserKey, e.ProviderKind);
         if (!map.TryGetValue(key, out var agg))
         {
             agg = new TokenBucket
@@ -182,6 +198,7 @@ public sealed class UsageRollupState
                 Provider = e.Provider,
                 Model = e.Model,
                 UserKey = e.UserKey,
+                ProviderKind = e.ProviderKind,
             };
             map[key] = agg;
         }
@@ -217,6 +234,46 @@ public sealed class UsageRollupState
         {
             agg.ErrorCount += 1;
         }
+    }
+
+    /// <summary>
+    /// The estimated cost of a set of token buckets (ADR 0110), derived at read time and never stored. Each bucket is
+    /// priced at its own bucket start, so a reprice dates correctly. Included (Copilot) buckets add $0; unpriced ones add
+    /// nothing and are counted instead, so a partial total is visibly partial. There is no cache-write term: no OTel
+    /// tag carries Anthropic cache writes, so /usage bills them at the input rate (the turn line uses 1.25x).
+    /// </summary>
+    private readonly record struct CostSum(decimal? Usd, long UnpricedCalls)
+    {
+        public static CostSum Of(IEnumerable<TokenBucket> buckets)
+        {
+            decimal? usd = null;
+            long unpriced = 0;
+            foreach (var b in buckets)
+            {
+                var estimate = ModelPricing.Estimate(
+                    b.ProviderKind, b.Model, DateTimeOffset.FromUnixTimeSeconds(b.BucketUnixSeconds),
+                    new TokenCounts(b.InputTokens, b.OutputTokens, b.CachedInputTokens));
+                if (estimate.Status == CostStatus.Unpriced)
+                {
+                    unpriced += b.CallCount;
+                }
+                else
+                {
+                    usd = (usd ?? 0m) + (estimate.Usd ?? 0m);
+                }
+            }
+
+            return new CostSum(usd, unpriced);
+        }
+
+        /// <summary>A model row's status. One kind and model per row, so it is mixed only across an effective date.</summary>
+        public string Status(string providerKind) => (Usd, UnpricedCalls) switch
+        {
+            (null, _) => CostStatus.Unpriced,
+            (_, > 0) => CostStatus.Partial,
+            _ when providerKind == ModelPricing.GitHubCopilotKind => CostStatus.Included,
+            _ => CostStatus.Priced,
+        };
     }
 
     private static void Drop<T>(Dictionary<string, T> map, Func<T, bool> aged)

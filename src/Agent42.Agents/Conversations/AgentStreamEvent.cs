@@ -153,4 +153,8 @@ public sealed record AgentStreamEvent(
     // Set on the Done event (ADR 0104): the turn's Anthropic prompt-cache WRITE tokens, which the provider bills above
     // the normal input rate. Null rather than 0, like CachedTokens, and for the same NDJSON reason as Stopped. Trailing
     // default so every existing construction keeps compiling.
-    [property: Id(19)] long? CacheWriteTokens = null);
+    [property: Id(19)] long? CacheWriteTokens = null,
+    // Set on the Done event (ADR 0110): the turn's estimated USD cost from the checked-in price table, and its
+    // CostStatus string. Cost is null unless priced; the status is null when the turn reported no usage at all.
+    [property: Id(20)] decimal? CostUsd = null,
+    [property: Id(21)] string? CostStatus = null);

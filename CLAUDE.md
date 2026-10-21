@@ -161,7 +161,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Area | ADRs |
 |------|------|
 | Core: grain per conversation, auth, persona snapshot, blob attachments, profile | 0001, 0002, 0003, 0004, 0005 |
-| Telemetry, `/logs` console, usage dashboard, Orleans dashboard, App Insights export | 0009, 0010, 0031, 0054, 0062, 0077, 0104 |
+| Telemetry, `/logs` console, usage dashboard + estimated cost (checked-in price table), Orleans dashboard, App Insights export | 0009, 0010, 0031, 0054, 0062, 0077, 0104, 0110 |
 | Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out | 0074, 0090 |
 | Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens), GitHub Copilot kind (Sign in with GitHub, copilot-agents-only models) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104, 0108 |
 | Image generation, speech (STT/TTS/voice loop), reasoning output | 0006, 0020, 0037, 0038, 0071 |

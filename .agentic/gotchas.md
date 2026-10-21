@@ -728,6 +728,23 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0031-token-usage-dashboard.md`, `.agentic/decisions/0004-attachments-in-blob.md`
 - **Verified:** 2026-07-22
 
+### Estimated cost: Anthropic input already CONTAINS cache reads and writes, and a model without a row is "—", not $0
+
+- **Claim:** `ModelPricing` (ADR 0110) prices tokens from a checked-in table. Three traps sit in it. First, the
+  Anthropic `IChatClient` reports `InputTokenCount` as plain input + cache reads + cache writes (spike 2026-10-21:
+  wire `10 / 100 / 50` → `160`), so the formula SUBTRACTS both before billing the remainder at the input rate. Adding
+  them on top double-bills every cached Claude turn. Reasoning is part of output, so it has no term either. Second,
+  matching is EXACT after lower-casing and stripping a date suffix: a prefix match prices `gpt-5.4-pro` as `gpt-5.4`.
+  A new model is therefore unpriced until a row is added. That is by design, so add the row and do not loosen the
+  match. Third, the price key includes the provider KIND, which only `agent42.provider.kind` carries
+  (`gen_ai.provider.name` is `"openai"` for Azure and OpenAI-compatible alike), and the table keys are the
+  `ProviderKind` enum names: renaming an enum member silently unprices that kind
+  (`PriceTableKinds_MatchTheProviderKindEnum`).
+- **Evidence:** `src/Agent42.Agents/Telemetry/ModelPricing.cs`, `src/Agent42.Backend/Models/ProviderKindTagChatClient.cs`,
+  `tests/Agent42.Tests/ModelPricingTests.cs`, `tests/Agent42.Tests/ProviderKindTagTests.cs`,
+  `.agentic/decisions/0110-estimated-cost-from-a-checked-in-price-table.md`
+- **Verified:** 2026-10-21
+
 ### A GitHub model id contains a `/`, so the provider separator is `:` — and the split is on the FIRST colon
 
 - **Claim:** the obvious separator for a qualified model id is `/`, and it is **wrong**: GitHub Models'

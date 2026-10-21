@@ -40,6 +40,10 @@ public static class UsageSpanProjector
     public const string ApplicationContextKey = "agent42.usage.application";
     public const string ApplicationTag = "agent42.application";
 
+    // The serving provider's kind (ADR 0110), stamped on the chat span by the Backend's ProviderKindTagChatClient.
+    // gen_ai.provider.name cannot stand in for it: it reads "openai" for Azure AND every OpenAI-compatible endpoint.
+    public const string ProviderKindTag = "agent42.provider.kind";
+
     /// <summary>
     /// Projects a span's tags into a <see cref="UsageEvent"/>, or <c>null</c> when the span is
     /// neither a chat completion nor a tool execution (dropped, including
@@ -77,7 +81,8 @@ public static class UsageSpanProjector
                     OutputTokens: Long(tags, OutputTokensTag),
                     CachedInputTokens: Long(tags, CacheReadTokensTag),
                     ReasoningOutputTokens: Long(tags, ReasoningTokensTag),
-                    IsError: errored);
+                    IsError: errored,
+                    ProviderKind: Str(tags, ProviderKindTag) ?? "");
 
             case ExecuteToolOperation:
                 return new UsageEvent(

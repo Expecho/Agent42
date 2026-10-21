@@ -2732,6 +2732,22 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Null(plain.CacheWriteTokens);
     }
 
+    // ADR 0110: Done carries the turn's estimated cost, priced against the factory's pricing identity (the test silo
+    // prices every turn as claude-sonnet-4-6: 3 in / 0.30 read / 3.75 write / 15 out per 1M).
+    [Fact]
+    public async Task Done_PricesTurn()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("cost-user/cost-conv");
+
+        var done = (await CollectAsync(agent.ChatAsync(FakeChatClient.CacheUsageMarker, null)))
+            .Single(e => e.Type == AgentStreamEventType.Done);
+
+        // input 1200 = 800 read + 350 write + 50 plain; output 30.
+        // 50 x 3 + 800 x 0.30 + 350 x 3.75 + 30 x 15 = 150 + 240 + 1312.5 + 450 = 2152.5 per 1M
+        Assert.Equal(CostStatus.Priced, done.CostStatus);
+        Assert.Equal(0.0021525m, done.CostUsd);
+    }
+
     private static string AnswerText(IEnumerable<AgentStreamEvent> events) => string.Concat(events
         .Where(e => e.Type == AgentStreamEventType.TextDelta)
         .Select(e => e.Text));
