@@ -846,8 +846,59 @@ any operator input), `chat-apps.md` Signal, and a live check with a real linked 
     messages sent via it, but NOT a plain `@mention`. The setup guide says to turn privacy off or make the bot an
     admin.
   - The token is accepted in the URL path only.
-- **(b) Slack, (c) Discord, (g) STT:** deferred to their own MRs (1b and 1c), which re-run them anyway per this
-  spec's phasing note.
+- **(b) Slack, re-run for phase 1b (2026-10-21, docs.slack.dev):**
+  - **Socket Mode:** `apps.connections.open` takes the app-level `xapp-` token in the `Authorization` header (scope
+    `connections:write`) and returns a `wss://` `url`. Slack sends `hello` first; its `debug_info.approximate_connection_time`
+    is about 3600 s. Each envelope is `{envelope_id, type, payload, accepts_response_payload}`, acked by sending
+    `{"envelope_id": …}` back. A `disconnect` envelope carries `reason` `warning` (about 10 s ahead), `refresh_requested`
+    (which can come with no warning) or `link_disabled` (Socket Mode turned off, so it is permanent). Up to 10
+    connections are allowed per app, and any one may receive any payload. `&debug_reconnects=true` shortens a
+    connection to 360 s.
+  - **Messages:** `message.im` (`im:history`), `message.channels` (`channels:history`, public channels only),
+    `message.groups` (`groups:history`), `message.mpim` and `app_mention` (`app_mentions:read`). The relevant subtypes
+    are `bot_message`, `message_changed`, `message_deleted`, `file_share` and `thread_broadcast`. `chat.postMessage`
+    returns `channel` and `ts`, and `thread_ts` must be the PARENT's `ts`. It allows about 1 message per second per
+    channel; `chat.update` is Tier 3. A 429 `ratelimited` carries `Retry-After`. `auth.test` returns `user_id`,
+    `team_id`, `bot_id` and `user`.
+  - **Formatting:** `markdown_text` exists on both `chat.postMessage` and `chat.update` (12,000 characters, mutually
+    exclusive with `text`). But how it treats `<!channel>` and `&lt;` is not documented. The documented mrkdwn
+    escaping (`& < >` as entities) is the property that keeps a reply from pinging `@channel`. **Decision:**
+    `SlackText` converts Markdown to mrkdwn, sent as `text`. `chat.update`'s `msg_too_long` caps `text` at 4,000
+    characters, so `MaxMessageLength` is 4000 (also Slack's "best results" figure), not Hermes' 39000.
+  - **Command prefix:** the Slack composer takes a leading `/` as a slash command (Hermes `typed_command_prefix`;
+    Slack's docs don't say it outright). It stays `!`.
+- **(c) Discord, re-run for phase 1b (2026-10-21, docs.discord.com + nuget.org):**
+  - **Library (C10):** **`Discord.Net.WebSocket` 3.20.2.** It is stable, was published 2026-10-08, targets `net10.0`,
+    and brings Core, Rest, Dave (libdave bindings, 150 KB) and Newtonsoft.Json. `NetCord` is active and has no
+    dependencies, but it has **no stable release** (the latest is `1.0.0-beta.28`), so it fails `add_policy:
+    latest-stable`. Added with `dotnet add package`.
+  - **Intents:** `MESSAGE_CONTENT` is privileged, but "content in DMs with the app" and "content in which the app is
+    mentioned" are exempt. So the adapter asks for `Guilds | GuildMessages | DirectMessages` only. `Guilds` is
+    unprivileged; Discord.Net needs it to resolve thread channels. A consequence for 1c: a guild message that doesn't
+    mention the bot arrives with EMPTY content, so in a thread the owner has to mention the bot (a reply that pings
+    it counts, since it lands in `mentions`).
+  - **Close codes:** 4004 (authentication failed), 4010–4014 (shard, version, invalid or disallowed intents) are
+    "Reconnect: false". **Discord.Net reconnects forever on them anyway** (`ConnectionManager` gives special handling
+    to 4006/4014 only). So the adapter watches `Disconnected` for a `WebSocketClosedException` with a non-reconnectable
+    code and ends the session with `ChatAuthException`.
+  - **Messages:** `content` is at most 2000 characters. `allowed_mentions: {"parse": []}` suppresses every mention
+    (`parse` is mutually exclusive with `users`/`roles`). `message_reference.message_id` makes a reply, and
+    `fail_if_not_exists` defaults to true. A thread started from a message has **the message's id** (flag
+    `HAS_THREAD`). A voice message is flag `IS_VOICE_MESSAGE` (1 << 13). JSON error codes include 10003 unknown
+    channel, 10008 unknown message and 50013 missing permissions.
+  - **Attachment hosts:** `url` is on `cdn.discordapp.com` and `proxy_url` on `media.discordapp.net` (the CDN base
+    in Discord's image-formatting reference). No token is sent there.
+  - **Transport:** compression is optional. Discord.Net asks for `zlib-stream` but also reads uncompressed text
+    frames. With `DiscordSocketConfig.GatewayHost` set, connecting makes **no REST call**: `LoginAsync` only stores
+    the token, and `/gateway/bot` is skipped. That is what lets DevHost and the tests point the real library at a
+    local gateway stand-in.
+  - **REST is hand-rolled** (send, edit, typing, start thread, `GET /users/@me`), as for Telegram and Slack. Discord.Net's
+    REST client defaults to `RetryMode.AlwaysRetry` and waits out rate-limit buckets inside the library. That is
+    exactly the sleep C6 forbids, and it would hide `allowed_mentions` behind the library's defaults.
+  - **`/text` in a DM:** Discord doesn't document what happens to an unmatched `/` message. The app registers no
+    commands, and none of ours collide with the client's built-ins (`/shrug`, `/me`, `/tableflip`…), so the prefix
+    stays `/`. **Unverified until Step 19's live check**; if Discord swallows it, switch to `!` as on Slack.
+- **(g) STT:** deferred to phase 1c, which re-runs it.
 - **(d) Token in the path:** the gotcha's `SuppressInstrumentationScope` handler suppresses the HttpClient span. The
   factory's request logging is a separate channel that needs `RemoveAllLoggers()`. Both are proven by
   `TelegramBotApi_NeverLeaksTheToken`, with a control client and both mutations checked. Also found: a token's `:`
@@ -862,8 +913,8 @@ any operator input), `chat-apps.md` Signal, and a live check with a real linked 
 
 ## Progress and divergences
 
-**Phase 1a (Steps 1–10) is implemented** on `feature/chat-gateway`. Phases 1b, 1c, 2 and 3 remain, so this spec
-stays in `.agentic/specs/` (not `completed/`) until phase 3 ships. Differences from the plan:
+**Phase 1a (Steps 1–10) shipped in PR #212, and phase 1b (Steps 11–13) is below.** Phases 1c, 2 and 3 remain, so this
+spec stays in `.agentic/specs/` (not `completed/`) until phase 3 ships. Phase 1a's differences from the plan:
 
 - **No `LoopbackChatAdapter`.** DevHost points the REAL Telegram adapter at a local stand-in for the Bot API
   (`ChatGateway:TelegramApiBaseUrl`), which exercises the actual adapter rather than a fake one. The Step 10
@@ -906,6 +957,65 @@ stays in `.agentic/specs/` (not `completed/`) until phase 3 ships. Differences f
 - **Not covered by automated tests:** `BlobChatGatewayLease` (0% new-code coverage; it needs Azurite or real
   storage). The supervisor's lease behaviour is covered against a fake; the Blob implementation is checked live in
   Step 19.
+
+### Phase 1b (Steps 11–13), on `feature/chat-gateway-phase-1b` from `main` @ `4cec70b` (the #212 merge)
+
+**Implemented:** Slack over Socket Mode and Discord over the gateway, behind the unchanged adapter contract. The
+drift check was clean, since `main` was exactly the #212 merge. Spike items (b) and (c) were re-run against current
+docs; see Spike findings. Differences from the plan:
+
+- **Discord REST is hand-rolled; Discord.Net holds only the gateway.** The plan said "use a library for Discord", meaning
+  the gateway. The library's REST client waits out rate limits inside itself (the C6 inline sleep) and would hide
+  `allowed_mentions` behind its defaults, so the five REST calls follow the Telegram/Slack shape.
+- **Discord.Net doesn't stop on 4004.** It reconnects forever on non-reconnectable close codes, so the adapter
+  detects them in `Disconnected` (4004, 4010–4014, and a 401 from `/gateway/bot`).
+- **Slack's `disconnect` reconnects inside the session,** not "via the supervisor" as Step 11 put it. Replies go over the
+  Web API, so a streaming reply survives Slack's routine refresh. A failed socket still goes to the supervisor.
+- **Slack formatting is mrkdwn via `SlackText`,** not `markdown_text` (Spike (b)), and Slack's `MaxMessageLength` is
+  4000, because `chat.update` caps `text` there. The plan's 39000 was Hermes' figure.
+- **Slack has no typing indicator** for bots outside the AI-apps surface, so typing is a no-op.
+- **Discord intents** are `Guilds | GuildMessages | DirectMessages`. `Guilds` is needed for Discord.Net to resolve
+  thread channels. "A reply to the bot" counts on Discord only through the mention array: without MESSAGE_CONTENT, an
+  unmentioned guild message arrives empty. So `RepliesToBot` is always false there.
+- **Outbound image upload stays phase 1c** for both platforms, as it is for Telegram. Slack's and Discord's
+  host-pinned, capped downloads are implemented and tested now, since Step 11 listed them.
+- **The frontend changed** (the plan's 1b steps named none): Slack's second credential needs a write-only `xapp-`
+  field, shown only for Slack, plus setup notes for both platforms. `CACHE` went v71 → v72.
+- **The Slack manifest is in code** (`SlackAdapter.AppManifest`), and the guide quotes it verbatim, pinned by
+  `ChatAppsGuide_QuotesTheSlackManifest`. That is what "generated manifest" means here.
+- **Found and fixed:** two command descriptions hard-coded `/`, so Slack's `!help` would have advertised
+  `/model list`. Descriptions now take the platform's prefix (`ChatCommands.Describe`).
+- **Observed, not fixed (pre-existing from 1a):** at DevHost boot, the supervisor's first read of
+  `ChatConnectionDirectoryGrain` can run before the silo is active. Orleans' placement retry logs two Polly warnings
+  and succeeds.
+- **DevHost exercise (2026-10-21):** DevHost was run with `ChatGateway__SlackApiBaseUrl`, `ChatGateway__DiscordApiBaseUrl`
+  and `ChatGateway__DiscordGatewayUrl` pointed at a single-file .NET stand-in in the session scratchpad (not
+  committed). The stand-in serves the Slack Web API + Socket Mode and Discord REST + gateway, with control endpoints
+  to inject messages. For both platforms:
+  - a rejected token was refused;
+  - a stranger and a wrong code were ignored;
+  - the code paired;
+  - a DM was answered by a placeholder edited into the reply;
+  - `!new`/`!status` (Slack) and `/new`/`/help` (Discord) answered;
+  - the bot's own echo and Slack's `message_changed` were ignored.
+
+  Slack acked all 8 envelopes. Every Discord create and edit carried `allowed_mentions: {"parse": []}`, including a
+  reply that echoed `@everyone`. Both connections showed "connected" and both conversations were listed.
+
+- **Diff review (critic, phase 1b): no blockers, 2 majors and 5 minors, all fixed. None were rejected.**
+  - **M1:** an envelope past the 8 MB guard was never acked. It is now acked from the `envelope_id` in its first or
+    last bytes (`Slack_AcksAnOversizedEnvelope`, mutation-checked).
+  - **M2:** rotating one Slack token forced re-pasting both, while the placeholder said "leave blank to keep". On an
+    edit the API now keeps the stored token for a blank field (`Update_WithOneToken_KeepsTheOtherStoredToken`,
+    mutation-checked).
+  - **m3:** the Discord entry in `Directory.Packages.props` was splitting the security-pin comment from its package.
+    It now has its own comment.
+  - **m4:** close codes 4010–4012 got the "token rejected" text; they now get their own.
+  - **m5:** the `/gateway/bot` 401 path is now described as verified from the library source, not by a test (Step 19
+    checks it live).
+  - **m6:** back-to-back Slack refreshes are spaced out, so a flapping workspace can't hammer `apps.connections.open`.
+  - **m7:** a Discord bot without permission to start threads now answers in the channel instead of failing every
+    reply (`Send_WhereThreadsAreForbidden_AnswersInTheChannel`).
 
 ## Acceptance criteria → test mapping
 

@@ -96,6 +96,28 @@ public sealed class ChatGatewayApiTests(ChatGatewayApiFixture fixture) : SharedC
         Assert.NotNull(stored.CredentialsCiphertext);
     }
 
+    // Phase 1b (critic M2): Slack has two tokens, and an edit that pastes only one keeps the other stored, so rotating
+    // the app-level token doesn't mean re-pasting the bot token. The merged pair is what gets validated and stored.
+    [Fact]
+    public async Task Update_WithOneToken_KeepsTheOtherStoredToken()
+    {
+        var user = NewUser();
+        var created = await SendAsync(HttpMethod.Post, "/api/chat-connections", user,
+            new { platform = "Telegram", name = "Work", credentials = new { botToken = GoodToken, appToken = "xapp-old" } });
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString()!;
+
+        var appOnly = await SendAsync(HttpMethod.Put, $"/api/chat-connections/{id}", user,
+            new { name = "Work", credentials = new { botToken = "", appToken = "xapp-new" } });
+        var botOnly = await SendAsync(HttpMethod.Put, $"/api/chat-connections/{id}", user,
+            new { name = "Work", credentials = new { botToken = "1234567:rotated-token" } });
+
+        Assert.Equal(HttpStatusCode.OK, appOnly.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, botOnly.StatusCode);
+        var protector = Fixture.App.Services.GetRequiredService<IChatGatewaySecretProtector>();
+        var stored = protector.Unprotect((await Connections(user).GetAsync(id))!.CredentialsCiphertext);
+        Assert.Equal(new ChatCredentials("1234567:rotated-token", "xapp-new"), stored);
+    }
+
     // Found in the DevHost exercise: a create with a rejected token used to leave a half-made bot in the list.
     [Fact]
     public async Task Create_WithRejectedToken_CreatesNothing()

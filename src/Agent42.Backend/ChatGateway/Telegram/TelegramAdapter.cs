@@ -57,7 +57,8 @@ public sealed class TelegramAdapter(TelegramBotApi api, ILogger<TelegramAdapter>
         Throw(await api.CallAsync(token, "deleteWebhook", new { drop_pending_updates = false }, cancellationToken));
 
         // Best effort: the menu is a convenience, and a failure here must not keep the bot offline.
-        var commands = ChatCommands.All.Select(c => new { command = c.Name, description = c.Description[..Math.Min(c.Description.Length, 256)] });
+        var commands = ChatCommands.All.Select(c => (c.Name, Description: ChatCommands.Describe(c.Description, '/')))
+            .Select(c => new { command = c.Name, description = c.Description[..Math.Min(c.Description.Length, 256)] });
         var menu = await api.CallAsync(token, "setMyCommands", new { commands }, cancellationToken);
         if (!menu.Ok)
         {

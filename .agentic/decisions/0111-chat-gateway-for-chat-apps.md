@@ -151,3 +151,78 @@ to ADR 0038), groups, and proactive delivery to the origin or home chat. 2: What
   placeholder, `/new` and `/status` answered, the conversation appeared in the sidebar, and the panel showed
   "connected".
 - Not yet verified live: a real Telegram bot, and the lease across a real revision rollover (plan Step 19).
+
+## Amendment (2026-10-21): Slack and Discord, phase 1b
+
+Phase 1b adds the two other outbound-connection platforms behind the same adapter contract. Nothing in the pipeline,
+the supervisor, the lease, the state or the endpoints changed: the adapter seam held.
+
+### Slack over Socket Mode
+- Each user's own Slack app, with two credentials: the bot token (`xoxb-`, for the Web API) and an app-level token
+  (`xapp-`, scope `connections:write`, for the socket). Both are validated on save (`auth.test`,
+  `apps.connections.open`), and a pasted user token (`xoxp-`) is refused by name. The panel gains a write-only
+  app-token field, shown only for Slack. On an edit, a token field left blank keeps the stored token, so rotating one
+  of the two doesn't mean re-pasting the other; the merged pair is validated and stored as one credential.
+- **Every envelope is acked, before it is read, ignored ones included.** Slack redelivers what is not acked and
+  disables the subscription after sustained failures. An envelope past the 8 MB memory guard is not read, but it is
+  still acked, from the `envelope_id` in its first or last bytes. Back-to-back refreshes are spaced out (from 4 s up
+  to 30 s), so a flapping workspace can't make the session hammer `apps.connections.open`.
+- A `disconnect` envelope (`warning`, `refresh_requested`: Slack recycles a socket about hourly) reconnects **inside**
+  the session rather than through the supervisor. Replies go over the Web API, never the socket, so a reply that is
+  streaming survives the refresh. `link_disabled` (Socket Mode turned off) is a permanent fault. A socket that fails
+  ends the session, and the supervisor reconnects it.
+- The event filter is old C4: `message` / `app_mention` with no subtype or `file_share`; the bot's own user dropped,
+  other `bot_id`s flagged. The dedupe id is `channel:ts`, since a `ts` is unique per channel only; it also collapses
+  the `message` + `app_mention` pair one mention produces. In a channel, a message is always a thread (its
+  `thread_ts`, or its own `ts` at the top level), so a reply threads under the mention. A follow-up in a thread the
+  bot posted in counts as a reply to it.
+- **Formatting is mrkdwn, sent as `text`**, converted by `SlackText`. Slack also offers `markdown_text`, but documents
+  how mrkdwn escapes `& < >` and not how `markdown_text` does, and that escaping is what keeps a reply from forming
+  `<!channel>`. `chat.update` caps `text` at 4,000 characters, so that is the message length.
+- **Commands start with `!`**, because Slack's composer takes a leading `/` as a slash command.
+- Slack offers bots no typing indicator outside its AI-apps surface, so typing is a no-op. The app manifest is in
+  code (`SlackAdapter.AppManifest`), and the setup guide quotes it verbatim (a test pins that).
+
+### Discord over the gateway, with Discord.Net
+- **Library: `Discord.Net.WebSocket`** (3.20.2, added with `dotnet add package`), for the gateway socket only. NetCord
+  was the alternative (active, no dependencies) but has no stable release, which the repo's `add_policy:
+  latest-stable` rules out.
+- **Intents `Guilds | GuildMessages | DirectMessages`, never the privileged MESSAGE_CONTENT.** Discord still delivers
+  the content of DMs and of messages that mention the bot, which is everything the owner gate lets through. The
+  consequence for phase 1c: in a guild thread the owner must mention the bot, since an unmentioned message arrives
+  empty.
+- **A non-reconnectable close code is a permanent fault.** Discord documents 4004 and 4010–4014 as "Reconnect: false",
+  but Discord.Net reconnects forever on them. The adapter watches `Disconnected` for those codes, ends the session
+  with `ChatAuthException`, and the supervisor records the fault. A 401 from the library's own `/gateway/bot` call is
+  treated the same way. That it arrives through `Disconnected` is read from the Discord.Net source
+  (`ConnectionManager` raises it from its reconnect loop); no test can reach that call, so Step 19 confirms it live.
+- **Replies use a hand-rolled REST client, not the library's.** Discord.Net's REST retries and waits out rate-limit
+  buckets inside the library, which is the inline sleep section 7 forbids, so a 429 must come back to the streamer as
+  `RateLimited`. Every create and edit carries **`allowed_mentions: {"parse": []}`**, so no reply can ping
+  `@everyone`, `@here`, a role or a user.
+- In a guild, a top-level mention is routed to the thread a reply starts on it (Discord gives that thread the
+  message's own id), so the mention and its follow-ups are one conversation. A bot not allowed to start threads (403)
+  answers in the channel instead, as a reply to the mention. Tables become bullet lists; other
+  Markdown is native. 2000 characters a message, at most 8 per reply.
+- `/` is the command prefix. The bot registers no application commands, so Discord sends `/new` through as text. Not
+  documented by Discord; the Step 19 live check confirms it.
+
+### Consequences (phase 1b)
+- One new dependency tree: `Discord.Net.WebSocket` → Core, Rest, Dave (libdave bindings), Newtonsoft.Json.
+- Two more connections held by the single replica, both covered by the existing lease: Slack's socket (which Slack
+  would otherwise load-balance across both revisions during a rollover) and Discord's gateway session.
+- Lost on restart, as before: Discord messages sent while disconnected. Slack redelivers what was not acked.
+- Egress is unchanged in kind: replies are stored by Slack (and visible to workspace admins with export rights) and
+  by Discord, under the user's own app or bot.
+
+### Verification (phase 1b)
+- Tests: `SlackEventsTests`, `SlackTextTests`, `SlackAdapterTests` (including `Slack_AcksEveryEnvelope`,
+  `Slack_AcksAnOversizedEnvelope` and `Slack_Disconnect_Reconnects` against a real local websocket), `DiscordMessagesTests`, `DiscordTextTests`, and
+  `DiscordAdapterTests`. `Discord_AllowedMentionsNone` and `Discord_4004_Faults` run the real Discord.Net client
+  against a local gateway. The ack test, the mentions test and the 4004 test were each mutation-checked.
+- DevHost, 2026-10-21: the real Slack and Discord adapters against local stand-ins. For both: a rejected token was
+  refused; a stranger and a wrong code were ignored; the code paired; a DM was answered by editing the placeholder;
+  `!new` / `/new`, `!status` and `/help` answered; the bot's own echo was ignored. Slack acked every envelope.
+  Discord sent every message with `allowed_mentions` none.
+- Not yet verified live: a real Slack app and Discord bot, `/text` pass-through in a Discord DM, and the lease across a
+  rollover with Slack and Discord connected (plan Step 19).

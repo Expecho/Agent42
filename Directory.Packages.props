@@ -26,6 +26,9 @@
     <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.9.0" />
     <PackageVersion Include="Azure.ResourceManager.CognitiveServices" Version="1.6.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
+    <!-- Chat gateway (ADR 0111, phase 1b): the Discord GATEWAY websocket only (heartbeat, identify, resume, close
+         codes). Replies use the hand-rolled DiscordRestApi. Chosen over NetCord, which has no stable release. -->
+    <PackageVersion Include="Discord.Net.WebSocket" Version="3.20.2" />
     <!-- Security pin, not a feature dependency. Azure.Extensions.AspNetCore.DataProtection.Blobs
          -> Microsoft.AspNetCore.DataProtection 10.0.7 drags in System.Security.Cryptography.Xml
          10.0.7, which carries four known high-severity advisories. Pinned directly (with a matching

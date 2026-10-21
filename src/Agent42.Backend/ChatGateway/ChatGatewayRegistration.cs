@@ -40,6 +40,28 @@ public static class ChatGatewayRegistration
         services.AddSingleton<IChatGatewayControl>(sp => sp.GetRequiredService<ChatGatewayService>());
         services.AddHostedService(sp => sp.GetRequiredService<ChatGatewayService>());
         services.AddTelegramChat();
+        services.AddSlackChat();
+        services.AddDiscordChat();
+        return services;
+    }
+
+    /// <summary>Slack (phase 1b): the hand-rolled Web API on its two named clients, and the Socket Mode adapter.</summary>
+    public static IServiceCollection AddSlackChat(this IServiceCollection services)
+    {
+        services.TryAddSingleton(SlackOptions.Default);
+        SlackWebApi.AddHttpClients(services);
+        services.AddSingleton<SlackWebApi>();
+        services.AddSingleton<IChatPlatformAdapter, SlackAdapter>();
+        return services;
+    }
+
+    /// <summary>Discord (phase 1b): the hand-rolled REST client, and the adapter over Discord.Net's gateway.</summary>
+    public static IServiceCollection AddDiscordChat(this IServiceCollection services)
+    {
+        services.TryAddSingleton(DiscordOptions.Default);
+        DiscordRestApi.AddHttpClients(services);
+        services.AddSingleton<DiscordRestApi>();
+        services.AddSingleton<IChatPlatformAdapter, DiscordAdapter>();
         return services;
     }
 
