@@ -91,7 +91,9 @@ public sealed class ChatSearchIndexRegistrationTests
 
         Assert.Contains("TOP 16", sql);
         Assert.Contains("WHERE FullTextContainsAny(c.text, \"ingress\", \"tls\")", sql);
-        Assert.Contains("ORDER BY RANK FullTextScore(c.text, [\"ingress\", \"tls\"])", sql);
+        // Variadic, NOT an array: the prod account rejects the array form with SC2241 (measured 2026-10-21).
+        Assert.Contains("ORDER BY RANK FullTextScore(c.text, \"ingress\", \"tls\")", sql);
+        Assert.DoesNotContain("[", sql);
     }
 
     // AC7: the terms are inlined (FullTextScore takes literals), so each must be unable to leave its literal.
@@ -103,8 +105,8 @@ public sealed class ChatSearchIndexRegistrationTests
         Assert.Contains("\"a\\\") OR true OR (\\\"\"", sql);
         Assert.Contains("\"b\\\\\"", sql);
         Assert.Contains("\"c]\"", sql);
-        // The array still closes where it should: the only `])` is the end of the FullTextScore call.
-        Assert.EndsWith("])", sql);
+        // The call still closes where it should: the last literal, then the FullTextScore paren.
+        Assert.EndsWith("\"c]\")", sql);
     }
 
     // AC8.

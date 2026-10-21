@@ -73,7 +73,7 @@ public sealed class CompositeIndexMatchesTheSearchQueryTests
     }
 
     // The ranked query orders by a BM25 score, not a property list. It must be recognised as such and not
-    // parsed into bogus paths: "RANK FullTextScore(c.text, [\"a\", \"b\"])" split on commas would yield three.
+    // parsed into bogus paths: "RANK FullTextScore(c.text, \"a\", \"b\")" split on commas would yield three.
     [Fact]
     public void RankedSearch_OrdersByRank_NotByAPropertyList()
     {

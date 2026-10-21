@@ -40,7 +40,8 @@ turn (the ADR 0098 shape). No new container, grain state, Bicep or frontend.
    by distinct terms matched, then occurrences. It is **not** BM25, so tests pin only "any term" and "more terms
    first". *Rejected: reusing the sidebar's `CONTAINS`.* Keyword queries from a model would almost never be an exact
    substring. *Rejected: changing the sidebar too.* Users type substrings, and that query stays as it was.
-3. **Terms are inlined as escaped literals.** `FullTextScore` takes an array of string literals. Terms come from
+3. **Terms are inlined as escaped literals, passed variadically.** `FullTextScore`'s term arguments must be string
+   literals, and the account rejects the array form some docs show (`SC2241`, measured on prod 2026-10-21). Terms come from
    `PastChatQuery.Terms` (letters and digits only, lower-cased, at most 8 × 64 chars) and are JSON-escaped with the
    relaxed encoder. A test pins that a quote, a backslash or a bracket cannot leave its literal.
 4. **Ownership is the partition plus the conversation list.** Every index call is single-partition on the grain-key
@@ -75,8 +76,9 @@ turn (the ADR 0098 shape). No new container, grain state, Bicep or frontend.
   text it never saw. The text stays within one user's own providers. With `memory` on, a reply built on recalled text is
   also retained to Hindsight.
 - **The Cosmos ranked query is unverified offline.** Its SQL text is pinned by tests, but its execution needs a prod
-  smoke. The current Microsoft docs mention a full-text feature enrollment, which ADR 0061 said was not needed for
-  `en-US`. If `ORDER BY RANK` is refused, the fallback is local to `CosmosChatSearchIndex.SearchRankedAsync`: one
+  smoke. A first prod run (2026-10-21, Data Explorer) got past `FullTextContainsAny` with no enrollment error, but
+  rejected the array form of `FullTextScore` with `SC2241`, so the builder emits the variadic form. A full successful
+  run of the variadic query is still pending. If `ORDER BY RANK` is refused, the fallback is local to `CosmosChatSearchIndex.SearchRankedAsync`: one
   `CONTAINS` per term, ranked in-process with `InMemoryChatSearchIndex.RankByTerms`. The port and the tools do not change.
 
 ## Consequences

@@ -84,8 +84,8 @@ public sealed class CosmosChatSearchIndex(CosmosClient cosmosClient, string data
             return [];
         }
 
-        // The terms are INLINED as escaped literals, not parameters: FullTextScore takes an array of string
-        // literals (ADR 0111). BuildRankedSearchSql JSON-escapes each one, and a test pins that a quote, a
+        // The terms are INLINED as escaped literals, not parameters: FullTextScore's term arguments must be
+        // string literals (ADR 0111). BuildRankedSearchSql JSON-escapes each one, and a test pins that a quote, a
         // backslash or a bracket cannot leave its literal.
         var take = Math.Min(maxResults, ChatSearchLimits.MaxSearchResults);
         var definition = new QueryDefinition(BuildRankedSearchSql(terms, take));
@@ -198,15 +198,18 @@ public sealed class CosmosChatSearchIndex(CosmosClient cosmosClient, string data
     /// clause, not a property list, so it needs no composite index.
     ///
     /// <para><b>Each term is inlined as a JSON string literal</b> (<see cref="System.Text.Json.JsonSerializer"/>
-    /// escapes quotes, backslashes and control characters), because <c>FullTextScore</c> takes an array of
-    /// string literals. <paramref name="take"/> is application-clamped, as in <see cref="BuildSearchSql"/>.</para>
+    /// escapes quotes, backslashes and control characters), because <c>FullTextScore</c>'s term arguments must be
+    /// string literals, passed variadically. <paramref name="take"/> is application-clamped, as in <see cref="BuildSearchSql"/>.</para>
     /// </summary>
     public static string BuildRankedSearchSql(IReadOnlyList<string> terms, int take)
     {
         var literals = string.Join(", ", terms.Select(term => System.Text.Json.JsonSerializer.Serialize(term, LiteralOptions)));
         return $"SELECT TOP {take} c.conversationId, c.role, c.text, c.ordinal "
             + $"FROM c WHERE FullTextContainsAny(c.text, {literals}) "
-            + $"ORDER BY RANK FullTextScore(c.text, [{literals}])";
+            // VARIADIC, not an array: the account answers SC2241 to `FullTextScore(c.text, ["a", "b"])` ("the
+            // second through last arguments ... must be literals of type string"), measured 2026-10-21 on prod.
+            // Some current docs show the array form; this account does not accept it.
+            + $"ORDER BY RANK FullTextScore(c.text, {literals})";
     }
 
     // The relaxed encoder escapes a quote as \" and a backslash as \\ (both Cosmos string-literal escapes) instead

@@ -316,9 +316,11 @@ Critic pass, 2026-10-21. All findings were accepted. None were rejected.
 | LOW | One conversation can fill every hit slot; no per-conversation dedupe | Over-fetch at 50 + per-conversation cap, AC27 |
 | LOW | No test for descriptions-as-policy or sidebar SQL unchanged; composite-index test needs a rewrite | AC28, AC29; Step 3 now says rewrite `OrderByPaths()` |
 
-Step 0 outcome: **not run, pending the user** (the Data Explorer query was handed over at execution start). The
-BM25 path shipped (`FullTextContainsAny` with variadic literals, `FullTextScore` with an array literal, `TOP` +
-`ORDER BY RANK`). Its SQL text is pinned by tests and its execution is unverified. ADR 0111 records the fallback
+Step 0 outcome (2026-10-21, after the PR opened): the user ran the query in Data Explorer. It first needed a
+Cosmos data-plane Data Reader assignment for the user, which the user ran themselves. **`FullTextScore(c.text, [..])`
+(array) is rejected with `SC2241`**: the term arguments must be string literals. `FullTextContainsAny` parsed, and
+there was no enrollment error. The builder now emits the variadic `FullTextScore(c.text, "a", "b")`. A successful
+run of that form is still pending. ADR 0111 records the fallback
 (per-term `CONTAINS` ranked by `RankByTerms`, local to `CosmosChatSearchIndex`) for a post-deploy smoke failure.
 
 Diff critic pass, 2026-10-21: no HIGH findings. Fixed: `docs/features/custom-agents.md` still named
