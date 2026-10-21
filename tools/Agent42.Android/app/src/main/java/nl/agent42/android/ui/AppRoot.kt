@@ -9,6 +9,7 @@ import nl.agent42.android.ui.chat.ChatScreen
 import nl.agent42.android.ui.conversations.ConversationsScreen
 import nl.agent42.android.ui.server.ServerScreen
 import nl.agent42.android.ui.signin.SignInScreen
+import nl.agent42.android.ui.voice.VoiceScreen
 
 @Composable
 fun AppRoot(container: AppContainer) {
@@ -19,5 +20,6 @@ fun AppRoot(container: AppContainer) {
         Screen.SignIn -> SignInScreen(container)
         Screen.Conversations -> ConversationsScreen(container)
         is Screen.Chat -> ChatScreen(container, screen)
+        is Screen.Voice -> VoiceScreen(container, screen)
     }
 }

@@ -77,6 +77,10 @@ fun ChatScreen(container: AppContainer, chat: Screen.Chat) {
         vm.foreground = true
         onPauseOrDispose { vm.foreground = false }
     }
+    // A voice call on this chat added turns server-side: re-read them when it ends.
+    LaunchedEffect(container.voiceEnded) {
+        if (container.voiceEnded > 0) vm.refresh()
+    }
     LaunchedEffect(vm.turns.size, vm.turns.lastOrNull()?.text?.length) {
         if (vm.turns.isNotEmpty()) list.animateScrollToItem(vm.turns.lastIndex)
     }
@@ -102,6 +106,7 @@ fun ChatScreen(container: AppContainer, chat: Screen.Chat) {
             TopAppBar(
                 title = { Text(chat.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 actions = {
+                    TextButton(onClick = { container.navigate(Screen.Voice(chat)) }, enabled = !vm.streaming) { Text("🎙") }
                     if (!chat.agentBound) ModelPicker(vm)
                     // The web app has no per-conversation link, so this opens its home page (ADR 0114: rich content
                     // such as artifacts and mermaid lives there).

@@ -3,12 +3,18 @@ package nl.agent42.android
 import android.content.ContentResolver
 import android.content.Context
 import android.webkit.CookieManager
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.io.File
 import java.util.UUID
 import nl.agent42.android.api.Agent42Api
 import nl.agent42.android.chat.SharedContent
 import nl.agent42.android.location.LocationSource
+import nl.agent42.android.voice.VoiceCallService
+import nl.agent42.android.voice.VoiceSession
 import nl.agent42.android.session.KeystoreSessionStore
 import nl.agent42.android.session.Session
 import okhttp3.OkHttpClient
@@ -19,14 +25,42 @@ sealed interface Screen {
     data object SignIn : Screen
     data object Conversations : Screen
     data class Chat(val id: String, val title: String, val isNew: Boolean, val agentBound: Boolean) : Screen
+    data class Voice(val chat: Chat) : Screen
 }
 
 /**
  * Process-wide state: the session, the API client built from it, and the back stack. Lives in [Agent42App], so it
  * survives activity recreation (rotation).
  */
-class AppContainer(context: Context) {
+class AppContainer(private val context: Context) {
     private val store = KeystoreSessionStore(context)
+
+    /** The voice call in progress, if any (one at a time); kept alive by VoiceCallService. */
+    var voice by mutableStateOf<VoiceSession?>(null)
+        private set
+
+    /** Bumped when a call ends, so the chat it ran on re-reads its history. */
+    var voiceEnded by mutableIntStateOf(0)
+        private set
+
+    fun startVoice(chat: Screen.Chat): VoiceSession {
+        voice?.takeIf { it.conversationId == chat.id }?.let { return it }
+        endVoice()
+        return VoiceSession(context, this, chat.id, chat.title).also {
+            voice = it
+            it.start()
+            VoiceCallService.start(context)
+        }
+    }
+
+    fun endVoice() {
+        val session = voice ?: return
+        voice = null
+        session.hangUp()
+        voiceEnded++
+        if (stack.lastOrNull() is Screen.Voice) back()
+    }
+
     val resolver: ContentResolver = context.contentResolver
     val location = LocationSource(context)
     val cacheDir: File = context.cacheDir

@@ -8,6 +8,22 @@
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- Voice call (ADR 0114): the mic, call audio mode, and a microphone foreground service with its notification. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:name=".Agent42App"
         android:allowBackup="false"
@@ -38,6 +54,11 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".voice.VoiceCallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!-- Camera photos are written to the app's cache and handed to the camera app through this provider. -->
         <provider

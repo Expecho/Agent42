@@ -229,6 +229,10 @@ class ChatViewModel(private val container: AppContainer, private val chat: Scree
         }
     }
 
+    fun refresh() {
+        if (!streaming) reload()
+    }
+
     private fun reload() {
         viewModelScope.launch {
             call {
