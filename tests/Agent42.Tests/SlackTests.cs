@@ -396,6 +396,38 @@ public sealed class SlackAdapterTests : IAsyncLifetime
         Assert.False(SlackWebApi.IsPinnedFileUrl(url, null));
     }
 
+    // AC17: a generated image is shared through Slack's external upload: a ticket, the bytes to the pinned upload host,
+    // then the completion that posts it into the channel and thread.
+    [Fact]
+    public async Task UploadImage_UsesTheExternalUploadFlow_InTheThread()
+    {
+        await using var session = await Adapter.ConnectAsync(Runtime(), new RecordingSink(), CancellationToken.None);
+
+        var result = await session.UploadImageAsync(new ChatTarget("C1", "1700000000.000100"), [1, 2, 3], "chart.png", "image/png", CancellationToken.None);
+
+        Assert.True(result.Success);
+        var ticket = _server.Requests.Single(r => r.Method == "files.getUploadURLExternal").Body;
+        Assert.Equal(("chart.png", "3"), (Str(ticket, "filename"), Str(ticket, "length")));
+        Assert.Equal(("/files/upload/abc", 3L), (_server.Uploads.Single().Path, _server.Uploads.Single().Length));
+        var complete = _server.Requests.Single(r => r.Method == "files.completeUploadExternal").Body;
+        Assert.Equal(("C1", "1700000000.000100"), (Str(complete, "channel_id"), Str(complete, "thread_ts")));
+        Assert.Contains("\"F099\"", Str(complete, "files"));
+    }
+
+    // The upload URL Slack returns must be on the pinned file host: the token and bytes go nowhere else.
+    [Fact]
+    public async Task UploadImage_ToAnUntrustedUploadUrl_SendsNothing()
+    {
+        await using var session = await Adapter.ConnectAsync(Runtime(), new RecordingSink(), CancellationToken.None);
+        _server.Script("files.getUploadURLExternal", """{"ok":true,"upload_url":"https://uploads.evil.example/x","file_id":"F1"}""");
+
+        var result = await session.UploadImageAsync(new ChatTarget("C1"), [1], "x.png", "image/png", CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Empty(_server.Uploads);
+        Assert.DoesNotContain(_server.Requests, r => r.Method == "files.completeUploadExternal");
+    }
+
     internal static ServiceProvider Services(FakeSlackServer server)
     {
         var services = new ServiceCollection();
@@ -446,6 +478,9 @@ public sealed class FakeSlackServer : IAsyncDisposable
 
     public ConcurrentQueue<string> Acks { get; } = new();
 
+    /// <summary>Each byte upload to an <c>upload_url</c>: its path, Authorization header and length.</summary>
+    public ConcurrentQueue<(string Path, string Authorization, long Length)> Uploads { get; } = new();
+
     public int Connections => Volatile.Read(ref _connections);
 
     public Uri BaseUrl { get; private set; } = null!;
@@ -463,6 +498,13 @@ public sealed class FakeSlackServer : IAsyncDisposable
         _app.MapPost("/api/{method}", HandleApiAsync);
         _app.Map("/socket", HandleSocketAsync);
         _app.MapGet("/files/{name}", HandleFile);
+        _app.MapPost("/files/upload/{id}", async (string id, HttpContext http) =>
+        {
+            using var buffer = new MemoryStream();
+            await http.Request.Body.CopyToAsync(buffer);
+            Uploads.Enqueue((http.Request.Path, http.Request.Headers.Authorization.ToString(), buffer.Length));
+            return Results.Ok();
+        });
         await _app.StartAsync();
         BaseUrl = new Uri(_app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First() + "/");
     }
@@ -493,8 +535,21 @@ public sealed class FakeSlackServer : IAsyncDisposable
     private async Task HandleApiAsync(string method, HttpContext http)
     {
         // JsonContent is sent chunked, with no Content-Length, so read the body rather than trust the header.
-        var text = await new StreamReader(http.Request.Body).ReadToEndAsync();
-        var body = text.Length > 0 ? JsonNode.Parse(text)?.AsObject() ?? [] : [];
+        JsonObject body;
+        if (http.Request.HasFormContentType)
+        {
+            body = [];
+            foreach (var (name, value) in await http.Request.ReadFormAsync())
+            {
+                body[name] = value.ToString();
+            }
+        }
+        else
+        {
+            var text = await new StreamReader(http.Request.Body).ReadToEndAsync();
+            body = text.Length > 0 ? JsonNode.Parse(text)?.AsObject() ?? [] : [];
+        }
+
         Requests.Enqueue((method, http.Request.Headers.Authorization.ToString(), body));
         var (status, json, retryAfter) = _scripts.TryGetValue(method, out var queue) && queue.TryDequeue(out var scripted)
             ? scripted
@@ -517,6 +572,7 @@ public sealed class FakeSlackServer : IAsyncDisposable
         "auth.test" => """{"ok":true,"url":"https://t.slack.com/","team":"T","user":"agent42","team_id":"T1","user_id":"U0BOT42","bot_id":"B42"}""",
         "apps.connections.open" => $$$"""{"ok":true,"url":"ws://{{{BaseUrl.Authority}}}/socket"}""",
         "chat.postMessage" => """{"ok":true,"channel":"C1","ts":"1700000000.000900"}""",
+        "files.getUploadURLExternal" => $$$"""{"ok":true,"upload_url":"{{{BaseUrl}}}files/upload/abc","file_id":"F099"}""",
         _ => """{"ok":true}""",
     };
 

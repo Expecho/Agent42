@@ -279,6 +279,42 @@ public sealed class TelegramAdapterTests : IAsyncLifetime
         }
     }
 
+    // AC17: getFile resolves the path, and the read is capped; a file getFile says is too large is never fetched.
+    [Fact]
+    public async Task Download_ResolvesThePath_AndNeverFetchesAnOversizedFile()
+    {
+        await using var session = await Adapter.ConnectAsync(Runtime(), new RecordingSink(), CancellationToken.None);
+        _server.Files["documents/file_1.pdf"] = [1, 2, 3, 4, 5];
+        _server.Script("getFile", 200, """{"ok":true,"result":{"file_id":"F1","file_path":"documents/file_1.pdf","file_size":5}}""");
+        _server.Script("getFile", 200, """{"ok":true,"result":{"file_id":"F2","file_path":"documents/big.pdf","file_size":5000}}""");
+
+        var small = await session.DownloadAsync(new ChatInboundFile("F1", "guide.pdf", "application/pdf", 5, false), 100, CancellationToken.None);
+        var big = await session.DownloadAsync(new ChatInboundFile("F2", "big.pdf", "application/pdf", null, false), 100, CancellationToken.None);
+
+        Assert.Equal([1, 2, 3, 4, 5], small!.Bytes);
+        Assert.Equal("guide.pdf", small.FileName);
+        Assert.Null(big);
+        Assert.Equal(["documents/file_1.pdf"], _server.FileRequests);
+        Assert.Equal("F1", _server.Requests.First(r => r.Method == "getFile").Body["file_id"]!.GetValue<string>());
+    }
+
+    // AC17: a generated image goes out as a photo in the same chat, topic and reply chain as the text.
+    [Fact]
+    public async Task UploadImage_SendsAPhoto_InTheThread_AsAReply()
+    {
+        await using var session = await Adapter.ConnectAsync(Runtime(), new RecordingSink(), CancellationToken.None);
+        _server.Script("sendPhoto", 200, """{"ok":true,"result":{"message_id":120}}""");
+
+        var result = await session.UploadImageAsync(new ChatTarget("-100", "77", "313"), [1, 2, 3], "chart.png", "image/png", CancellationToken.None);
+
+        Assert.Equal(ChatSendResult.Ok("120"), result);
+        var body = _server.Requests.Last(r => r.Method == "sendPhoto").Body;
+        Assert.Equal(("-100", "77", "chart.png", 3L),
+            (body["chat_id"]!.GetValue<string>(), body["message_thread_id"]!.GetValue<string>(),
+                body["photo.filename"]!.GetValue<string>(), body["photo.length"]!.GetValue<long>()));
+        Assert.Equal(313L, JsonNode.Parse(body["reply_parameters"]!.GetValue<string>())!["message_id"]!.GetValue<long>());
+    }
+
     internal static ServiceProvider Services(Uri baseUrl, CapturingLoggerProvider? logging)
     {
         var services = new ServiceCollection();
@@ -352,6 +388,8 @@ public sealed class TelegramTokenLeakTests : IAsyncLifetime
         var api = services.GetRequiredService<TelegramBotApi>();
         await api.CallAsync(Token, "getMe", null, CancellationToken.None);
         await api.GetUpdatesAsync(Token, 0, CancellationToken.None);
+        await api.DownloadFileAsync(Token, "documents/x.pdf", 100, CancellationToken.None);
+        await api.UploadAsync(Token, "sendPhoto", new Dictionary<string, string> { ["chat_id"] = "1" }, "photo", [1], "x.png", "image/png", CancellationToken.None);
 
         Assert.DoesNotContain(spans, s => s.TagObjects.Any(t => t.Value?.ToString()?.Contains(Token, StringComparison.Ordinal) == true)
             || s.DisplayName.Contains(Token, StringComparison.Ordinal));
@@ -416,6 +454,12 @@ public sealed class FakeTelegramServer : IAsyncDisposable
 
     public Uri BaseUrl { get; private set; } = null!;
 
+    /// <summary>Files served at <c>/file/bot{token}/{path}</c>, by path.</summary>
+    public ConcurrentDictionary<string, byte[]> Files { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Every file path requested, in order.</summary>
+    public ConcurrentQueue<string> FileRequests { get; } = new();
+
     public void Script(string method, int status, string json)
         => _scripts.GetOrAdd(method, _ => new ConcurrentQueue<(int, string)>()).Enqueue((status, json));
 
@@ -426,6 +470,11 @@ public sealed class FakeTelegramServer : IAsyncDisposable
         builder.Logging.ClearProviders();
         _app = builder.Build();
         _app.MapPost("/bot{token}/{method}", HandleAsync);
+        _app.MapGet("/file/bot{token}/{**path}", (string path) =>
+        {
+            FileRequests.Enqueue(path);
+            return Files.TryGetValue(path, out var bytes) ? Results.Bytes(bytes, "application/octet-stream") : Results.NotFound();
+        });
         await _app.StartAsync();
         BaseUrl = new Uri(_app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First() + "/");
     }
@@ -434,7 +483,7 @@ public sealed class FakeTelegramServer : IAsyncDisposable
 
     private async Task HandleAsync(string token, string method, HttpContext http)
     {
-        var body = (await JsonNode.ParseAsync(http.Request.Body))?.AsObject() ?? [];
+        var body = http.Request.HasFormContentType ? await FormBodyAsync(http.Request) : (await JsonNode.ParseAsync(http.Request.Body))?.AsObject() ?? [];
         Requests.Enqueue((method, body));
         var (status, json) = _scripts.TryGetValue(method, out var queue) && queue.TryDequeue(out var scripted)
             ? scripted
@@ -442,6 +491,25 @@ public sealed class FakeTelegramServer : IAsyncDisposable
         http.Response.StatusCode = status;
         http.Response.ContentType = "application/json";
         await http.Response.WriteAsync(json);
+    }
+
+    // A multipart upload as a JSON object: each field as a string, each file as "<field>.filename" and "<field>.length".
+    private static async Task<JsonObject> FormBodyAsync(HttpRequest request)
+    {
+        var form = await request.ReadFormAsync();
+        var body = new JsonObject();
+        foreach (var (name, value) in form)
+        {
+            body[name] = value.ToString();
+        }
+
+        foreach (var file in form.Files)
+        {
+            body[file.Name + ".filename"] = file.FileName;
+            body[file.Name + ".length"] = file.Length;
+        }
+
+        return body;
     }
 
     private static async Task<string> DefaultAsync(string method)

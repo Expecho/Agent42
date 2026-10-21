@@ -51,6 +51,7 @@ nothing in Slack points at Agent42.
          - channels:history
          - chat:write
          - files:read
+         - files:write
          - groups:history
          - im:history
          - mpim:history

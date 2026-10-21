@@ -58,6 +58,7 @@ public sealed class SlackAdapter(SlackWebApi api, ILogger<SlackAdapter> logger) 
               - channels:history
               - chat:write
               - files:read
+              - files:write
               - groups:history
               - im:history
               - mpim:history
@@ -190,10 +191,13 @@ internal sealed partial class SlackSession : IChatPlatformSession
     // Slack offers bots no typing indicator over the Web API or Socket Mode.
     public Task SendTypingAsync(ChatTarget target, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    // Phase 1c (ADR 0111): outbound images go through files.getUploadURLExternal there.
-    public Task<ChatSendResult> UploadImageAsync(
+    // A generated image as a file shared in the same channel and thread (Slack's external-upload flow, files:write).
+    public async Task<ChatSendResult> UploadImageAsync(
         ChatTarget target, byte[] bytes, string fileName, string mediaType, CancellationToken cancellationToken)
-        => Task.FromResult(ChatSendResult.Fail(ChatSendErrorKind.Unknown));
+    {
+        var result = (await _api.UploadFileAsync(BotToken, target.ChatId, target.ThreadId, bytes, fileName, cancellationToken)).ToSendResult();
+        return result.Success ? ChatSendResult.Ok() : result;
+    }
 
     public async Task<ChatDownloadedFile?> DownloadAsync(ChatInboundFile file, long maxBytes, CancellationToken cancellationToken)
         => await _api.DownloadFileAsync(BotToken, file.FileRef, maxBytes, cancellationToken) is { } bytes

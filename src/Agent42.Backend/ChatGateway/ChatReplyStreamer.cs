@@ -84,10 +84,15 @@ public sealed class ChatReplyBuffer
 }
 
 /// <summary>Where the streamer sends: the connection's live session, resolved per call (it can change on reconnect).</summary>
+/// <param name="UploadImage">
+/// Uploads one generated image (by attachment id) through the given session. <c>null</c> when images cannot be sent
+/// here, in which case the final text says where to see them instead.
+/// </param>
 public sealed record ChatReplyDestination(
     Func<IChatPlatformSession?> Session,
     ChatTarget Target,
-    ChatPlatformCapabilities Capabilities);
+    ChatPlatformCapabilities Capabilities,
+    Func<IChatPlatformSession, string, CancellationToken, Task<ChatSendResult>>? UploadImage = null);
 
 /// <summary>
 /// Turns a <see cref="ChatReplyBuffer"/> into chat messages (ADR 0111), with Hermes' stream-consumer rules:
@@ -141,7 +146,33 @@ public sealed class ChatReplyStreamer(TimeProvider timeProvider, ILogger<ChatRep
             await typingLoop;
         }
 
-        await SendFinalAsync(destination, buffer, messageId, cancellationToken);
+        if (await SendFinalAsync(destination, buffer, messageId, cancellationToken))
+        {
+            await UploadImagesAsync(destination, buffer, cancellationToken);
+        }
+    }
+
+    // After the text final, each generated image goes out once, as its own message. One that can't be sent leaves a
+    // single note pointing to Agent42, never a retry loop and never a second copy.
+    private async Task UploadImagesAsync(ChatReplyDestination destination, ChatReplyBuffer buffer, CancellationToken cancellationToken)
+    {
+        if (destination.UploadImage is not { } upload || buffer.Failure is not null)
+        {
+            return;
+        }
+
+        var failed = 0;
+        foreach (var id in buffer.ImageIds().Distinct(StringComparer.Ordinal))
+        {
+            var result = await CallAsync(destination, (s, t) => upload(s, id, t), cancellationToken);
+            failed += result.Success ? 0 : 1;
+        }
+
+        if (failed > 0)
+        {
+            var note = $"_{(failed == 1 ? "An image" : $"{failed} images")} couldn't be sent here. Open the conversation in Agent42 to see {(failed == 1 ? "it" : "them")}._";
+            await FinalWithRetryAsync(destination, note, null, cancellationToken);
+        }
     }
 
     // Sends the placeholder, then edits it while the drain runs. Returns the placeholder's id (null when it could not
@@ -180,9 +211,10 @@ public sealed class ChatReplyStreamer(TimeProvider timeProvider, ILogger<ChatRep
         return placeholder.MessageId;
     }
 
-    private async Task SendFinalAsync(ChatReplyDestination destination, ChatReplyBuffer buffer, string? messageId, CancellationToken cancellationToken)
+    // True when every part landed.
+    private async Task<bool> SendFinalAsync(ChatReplyDestination destination, ChatReplyBuffer buffer, string? messageId, CancellationToken cancellationToken)
     {
-        var text = FinalText(buffer);
+        var text = FinalText(buffer, destination.UploadImage is not null);
         var chunks = ChatMessageChunker.Split(text, destination.Capabilities.MaxMessageLength, destination.Capabilities.MaxChunks);
         for (var i = 0; i < chunks.Count; i++)
         {
@@ -197,12 +229,15 @@ public sealed class ChatReplyStreamer(TimeProvider timeProvider, ILogger<ChatRep
             if (!result.Success)
             {
                 logger.LogWarning("A chat reply part could not be delivered ({Kind}); the rest is dropped.", result.ErrorKind);
-                return;
+                return false;
             }
         }
+
+        return true;
     }
 
-    private static string FinalText(ChatReplyBuffer buffer)
+    // With an uploader, generated images follow the text as their own messages; without one, the text says where they are.
+    private static string FinalText(ChatReplyBuffer buffer, bool uploadsImages)
     {
         if (buffer.Failure is { } failure)
         {
@@ -210,9 +245,20 @@ public sealed class ChatReplyStreamer(TimeProvider timeProvider, ILogger<ChatRep
         }
 
         var (text, _) = buffer.Snapshot();
-        var images = buffer.ImageIds().Count;
-        var note = images == 0 ? "" : $"\n\n_{(images == 1 ? "An image was" : $"{images} images were")} generated. Open the conversation in Agent42 to see {(images == 1 ? "it" : "them")}._";
-        return text.Trim().Length == 0 && note.Length == 0 ? "(The agent finished without a reply.)" : (text + note).Trim();
+        var images = buffer.ImageIds().Distinct(StringComparer.Ordinal).Count();
+        if (text.Trim().Length > 0 && (images == 0 || uploadsImages))
+        {
+            return text.Trim();
+        }
+
+        var note = images switch
+        {
+            0 => "(The agent finished without a reply.)",
+            _ when uploadsImages => images == 1 ? "Here is the image." : "Here are the images.",
+            1 => "_An image was generated. Open the conversation in Agent42 to see it._",
+            _ => $"_{images} images were generated. Open the conversation in Agent42 to see them._",
+        };
+        return text.Trim().Length == 0 ? note : $"{text.Trim()}\n\n{note}";
     }
 
     // Sends or edits one final part: formatted first, plain if the platform rejects the markup, waiting out a rate limit

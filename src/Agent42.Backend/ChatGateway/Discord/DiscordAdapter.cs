@@ -189,10 +189,14 @@ internal sealed class DiscordSession : IChatPlatformSession
     public Task SendTypingAsync(ChatTarget target, CancellationToken cancellationToken)
         => _api.TriggerTypingAsync(Token, ChannelFor(target), cancellationToken);
 
-    // Phase 1c (ADR 0111): outbound images are uploaded there.
-    public Task<ChatSendResult> UploadImageAsync(
+    // A generated image as its own message in the channel the text went to (the reply's thread, once it exists).
+    public async Task<ChatSendResult> UploadImageAsync(
         ChatTarget target, byte[] bytes, string fileName, string mediaType, CancellationToken cancellationToken)
-        => Task.FromResult(ChatSendResult.Fail(ChatSendErrorKind.Unknown));
+    {
+        var channel = ChannelFor(target);
+        var replyTo = channel == target.ThreadId ? null : target.ReplyToMessageId;
+        return (await _api.CreateMessageWithFileAsync(Token, channel, bytes, fileName, mediaType, replyTo, cancellationToken)).ToSendResult();
+    }
 
     public async Task<ChatDownloadedFile?> DownloadAsync(ChatInboundFile file, long maxBytes, CancellationToken cancellationToken)
         => await _api.DownloadAttachmentAsync(file.FileRef, maxBytes, cancellationToken) is { } bytes

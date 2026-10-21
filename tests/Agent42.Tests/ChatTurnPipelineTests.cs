@@ -365,7 +365,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm(""));
 
-        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("I can only read text messages", StringComparison.Ordinal)));
+        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("I can read text, images and documents here", StringComparison.Ordinal)));
         Assert.Empty(await Index(h).GetConversationsAsync());
     }
 
@@ -384,6 +384,87 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("Model:", StringComparison.Ordinal)));
         var conversationId = (await Route(h).GetAsync()).ConversationId!;
         await Until(async () => (await Agent(h, conversationId).GetHistoryAsync()).Count == 2);
+    }
+
+    // AC17: an image rides onto the turn as an attachment; a document is ingested (and registered) before it runs.
+    [Fact]
+    public async Task Pipeline_Files_ImageAndDocumentReachTheTurn()
+    {
+        var h = await PairedAsync();
+        h.Session.Files["img"] = new ChatDownloadedFile([1, 2, 3, 4], "pic.png", "image/png");
+        h.Session.Files["doc"] = new ChatDownloadedFile(TestDocuments.SampleTwoPagePdf(), "guide.pdf", DocumentMediaTypes.Pdf);
+
+        await h.Session.InjectAsync(Dm("look at these", files:
+        [
+            new ChatInboundFile("img", "pic.png", "image/png", 4, false),
+            new ChatInboundFile("doc", "guide.pdf", null, null, false),
+        ]));
+
+        await FinalReplyAsync(h, Reply);
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        var user = Assert.Single(await Agent(h, conversationId).GetHistoryAsync(), t => t.Role == "user");
+        Assert.Equal("look at these", user.Text);
+        Assert.Contains(user.Attachments!, a => a.FileName == "pic.png");
+        var query = (await new DeterministicEmbeddingGenerator().GenerateAsync(["magrathea"]))[0].Vector;
+        Assert.Contains(await new InMemoryDocumentIndex().SearchAsync($"{h.UserId}/{conversationId}", query, topK: 3),
+            hit => hit.FileName == "guide.pdf");
+    }
+
+    // AC17: a file over the cap is refused from its metadata, never downloaded; the owner and the model are both told.
+    [Fact]
+    public async Task Pipeline_Files_OversizedIsSkippedWithANote_AndNeverFetched()
+    {
+        var h = await PairedAsync();
+        h.Session.Files["big"] = new ChatDownloadedFile([1], "huge.pdf", DocumentMediaTypes.Pdf);
+
+        await h.Session.InjectAsync(Dm("read this", files: [new ChatInboundFile("big", "huge.pdf", DocumentMediaTypes.Pdf, 11L * 1024 * 1024, false)]));
+
+        await FinalReplyAsync(h, Reply);
+        Assert.Contains(h.Session.VisibleMessages(), m => m.Contains("'huge.pdf' exceeds the 10 MB limit.", StringComparison.Ordinal));
+        Assert.Empty(h.Session.Downloads);
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        Assert.Contains("[Attachment skipped: 'huge.pdf' exceeds", Assert.Single(await Agent(h, conversationId).GetHistoryAsync(), t => t.Role == "user").Text);
+    }
+
+    // A message with only unusable files gets the reason and mints no conversation.
+    [Fact]
+    public async Task Pipeline_Files_OnlyUnusable_RepliesAndRunsNoTurn()
+    {
+        var h = await PairedAsync();
+
+        await h.Session.InjectAsync(Dm("", files: [new ChatInboundFile("exe", "setup.exe", "application/octet-stream", 10, false)]));
+
+        await Until(() => h.Session.VisibleMessages().Any(m => m.Contains("'setup.exe' is not a supported", StringComparison.Ordinal)));
+        await Task.Delay(200);
+        Assert.Empty(await Index(h).GetConversationsAsync());
+        Assert.Empty(h.Session.Downloads);
+    }
+
+    // A captionless photo is a turn of its own: titled by the file, prompted with what was sent.
+    [Fact]
+    public async Task Pipeline_Files_PhotoWithoutText_IsATurn()
+    {
+        var h = await PairedAsync();
+        h.Session.Files["photo"] = new ChatDownloadedFile([9, 9, 9], "photo.jpg", "image/jpeg");
+
+        await h.Session.InjectAsync(Dm("", files: [new ChatInboundFile("photo", "photo.jpg", "image/jpeg", 3, false)]));
+
+        await FinalReplyAsync(h, Reply);
+        Assert.Equal("photo.jpg", Assert.Single(await Index(h).GetConversationsAsync()).Title);
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        Assert.Equal("The user sent 'photo.jpg'.", Assert.Single(await Agent(h, conversationId).GetHistoryAsync(), t => t.Role == "user").Text);
+    }
+
+    // A download the adapter refuses (off its pinned host, gone, too large in fact) is skipped; the text still runs.
+    [Fact]
+    public async Task Pipeline_Files_FailedDownload_IsSkipped()
+    {
+        var h = await PairedAsync();
+
+        await h.Session.InjectAsync(Dm("and this", files: [new ChatInboundFile("https://evil.example/x.pdf", "x.pdf", DocumentMediaTypes.Pdf, 100, false)]));
+
+        await FinalReplyAsync(h, Reply);
+        Assert.Contains(h.Session.VisibleMessages(), m => m.StartsWith("'x.pdf' couldn't be downloaded", StringComparison.Ordinal));
     }
 
     // ---- harness ----
@@ -411,7 +492,8 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
             [
                 new ModelInfo(TestSiloConfigurator.DefaultModel, "fake", null, null, null, true, true),
                 new ModelInfo(TestSiloConfigurator.NoVisionModel, "fake", null, null, null, true, false),
-            ])), maxTurnWait);
+            ])), maxTurnWait,
+            SiloServices.GetRequiredService<IAttachmentStore>(), SiloServices.GetRequiredService<DocumentIngestionService>());
         var runtime = new ChatConnectionRuntime(userId, connection, new ChatCredentials("token"), _ => Task.CompletedTask);
         var session = new FakeChatSession(runtime, pipeline);
         sessions.Set(connection.Id, session);
@@ -427,8 +509,10 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         return h;
     }
 
-    private ChatInboundMessage Dm(string text, string sender = Owner, string chat = Owner)
-        => new(NextId(), chat, ChatType.Direct, null, sender, null, false, text, false, false, [], Now);
+    private IServiceProvider SiloServices => Cluster.GetSiloServiceProvider(Cluster.Silos[0].SiloAddress);
+
+    private ChatInboundMessage Dm(string text, string sender = Owner, string chat = Owner, IReadOnlyList<ChatInboundFile>? files = null)
+        => new(NextId(), chat, ChatType.Direct, null, sender, null, false, text, false, false, files ?? [], Now);
 
     private ChatInboundMessage Group(string text, bool mentions, string sender = Owner)
         => new(NextId(), "-1001234567890", ChatType.Group, null, sender, null, false, text, mentions, false, [], Now);

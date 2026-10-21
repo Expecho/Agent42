@@ -115,14 +115,39 @@ public sealed class TelegramBotApi(IHttpClientFactory httpClients, TelegramOptio
         return buffer.ToArray();
     }
 
+    /// <summary>
+    /// Calls <paramref name="method"/> as multipart form data, with one uploaded file under <paramref name="fileField"/>
+    /// (<c>sendPhoto</c>'s <c>photo</c>). Telegram takes uploads no other way.
+    /// </summary>
+    public async Task<TelegramResponse> UploadAsync(
+        string token, string method, IReadOnlyDictionary<string, string> fields, string fileField,
+        byte[] bytes, string fileName, string mediaType, CancellationToken cancellationToken)
+    {
+        using var form = new MultipartFormDataContent();
+        foreach (var (name, value) in fields)
+        {
+            form.Add(new StringContent(value), name);
+        }
+
+        var file = new ByteArrayContent(bytes);
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
+        form.Add(file, fileField, fileName);
+
+        var client = httpClients.CreateClient(HttpClientName);
+        using var response = await client.PostAsync(Endpoint($"bot{token}/{method}"), form, cancellationToken);
+        return Parse(await ReadJsonAsync(response, cancellationToken), response.StatusCode);
+    }
+
     private async Task<TelegramResponse> SendAsync(
         string clientName, string token, string method, object? body, CancellationToken cancellationToken)
     {
         var client = httpClients.CreateClient(clientName);
         using var response = await client.PostAsJsonAsync(Endpoint($"bot{token}/{method}"), body ?? new { }, cancellationToken);
-        var json = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken).ConfigureAwait(false);
-        return Parse(json, response.StatusCode);
+        return Parse(await ReadJsonAsync(response, cancellationToken), response.StatusCode);
     }
+
+    private static async Task<JsonObject?> ReadJsonAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        => await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken).ConfigureAwait(false);
 
     // The token contains a ':', so "bot123:abc/getMe" as a RELATIVE Uri parses as scheme "bot123:" and is refused.
     // "./" forces a path; the base URL always ends with '/'.
