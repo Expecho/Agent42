@@ -177,6 +177,28 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
 
     // ---- the gateway's implementation ----
 
+    // Review M2: a group origin is delivered to only while groups are still on, since everyone there would see it. With
+    // groups turned off since, the reply falls back to the home chat (when notifications are on) or nowhere.
+    [Fact]
+    public async Task Sender_GroupOrigin_OnlyWhileGroupsAreOn()
+    {
+        var user = NewUser();
+        var sessions = new ChatSessionRegistry();
+        var groupsOff = await ConnectAsync(user, sessions, notifications: true, home: "999", groups: false);
+
+        await Sender(sessions).DeliverNowAsync(user, Delivery(ChatDeliveryKind.AwayReply, groupsOff.Connection.Id, "-100", group: true), CancellationToken.None);
+
+        Assert.Equal(new ChatTarget("999"), Assert.Single(groupsOff.Session.Sent, s => s.Op == "send").Target);
+
+        var otherUser = NewUser();
+        var otherSessions = new ChatSessionRegistry();
+        var groupsOn = await ConnectAsync(otherUser, otherSessions, notifications: false, home: null, groups: true);
+
+        await Sender(otherSessions).DeliverNowAsync(otherUser, Delivery(ChatDeliveryKind.AwayReply, groupsOn.Connection.Id, "-100", group: true), CancellationToken.None);
+
+        Assert.Equal(new ChatTarget("-100"), Assert.Single(groupsOn.Session.Sent, s => s.Op == "send").Target);
+    }
+
     // The caller is a non-reentrant conversation grain: a hung platform must never hold it. The hand-off returns at
     // once, and the send still lands once the platform answers.
     [Fact]
@@ -273,21 +295,21 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
             Cluster.GrainFactory, sessions, new ChatReplyStreamer(TimeProvider.System, NullLogger<ChatReplyStreamer>.Instance),
             [new FakeChatPlatformAdapter()], NullLogger<ChatDeliverySender>.Instance);
 
-    private static ChatDelivery Delivery(ChatDeliveryKind kind, string? originConnectionId, string? originRoute)
+    private static ChatDelivery Delivery(ChatDeliveryKind kind, string? originConnectionId, string? originRoute, bool group = false)
         => new(
             "conv-1",
-            originConnectionId is null ? null : new ChatOrigin { ConnectionId = originConnectionId, RouteKey = originRoute ?? "" },
+            originConnectionId is null ? null : new ChatOrigin { ConnectionId = originConnectionId, RouteKey = originRoute ?? "", IsGroup = group },
             kind, "Marvin", "the reply");
 
     private static string NewUser() => "deliv-sender-user-" + Guid.NewGuid().ToString("N");
 
     // A paired connection with a fake session, registered as live unless told otherwise.
     private async Task<(ChatConnection Connection, FakeChatSession Session)> ConnectAsync(
-        string userId, ChatSessionRegistry sessions, bool notifications, string? home, bool live = true)
+        string userId, ChatSessionRegistry sessions, bool notifications, string? home, bool live = true, bool groups = false)
     {
         var store = Cluster.GrainFactory.GetGrain<IUserChatConnectionsGrain>(userId);
         var created = await store.CreateAsync(
-            ChatPlatformKind.Telegram, new ChatConnectionSettings { Name = "x", NotificationsEnabled = notifications }, Now);
+            ChatPlatformKind.Telegram, new ChatConnectionSettings { Name = "x", NotificationsEnabled = notifications, GroupsEnabled = groups }, Now);
         await store.SetCredentialsAsync(
             created!.Id, "cipher", new ChatBotIdentity(FakeChatPlatformAdapter.BotUserId, FakeChatPlatformAdapter.BotUserName), Now);
         var code = (await store.GetAsync(created.Id))!.PairingCode!;

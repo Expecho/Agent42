@@ -382,12 +382,16 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
     [Fact]
     public void ChatOrigin_RoundTripsThroughCosmosJson()
     {
-        var written = new AgentGrainState { Origin = new ChatOrigin { ConnectionId = "conn-1", RouteKey = "-1001#42" } };
+        var written = new AgentGrainState { Origin = new ChatOrigin { ConnectionId = "conn-1", RouteKey = "-1001#42", IsGroup = true } };
+        var dm = new AgentGrainState { Origin = new ChatOrigin { ConnectionId = "conn-2", RouteKey = "555" } };
 
         var restored = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(written));
+        var restoredDm = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(dm));
 
         Assert.NotNull(restored.Origin);
-        Assert.Equal(("conn-1", "-1001#42"), (restored.Origin.ConnectionId, restored.Origin.RouteKey));
+        Assert.Equal(("conn-1", "-1001#42", true), (restored.Origin.ConnectionId, restored.Origin.RouteKey, restored.Origin.IsGroup));
+        // A DM origin is written WITHOUT IsGroup (the CLR default is omitted) and must read back false, never a flip.
+        Assert.False(restoredDm.Origin!.IsGroup);
     }
 
     // AC1: ChatTurn.Artifacts crosses the grain boundary (Orleans binary) and the HTTP boundary (System.Text.Json,

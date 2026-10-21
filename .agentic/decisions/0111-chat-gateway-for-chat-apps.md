@@ -241,7 +241,9 @@ the supervisor, the lease, the state or the endpoints changed: the adapter seam 
   whole batch because automation retries cleanly; a chat user cannot easily resend a mixed batch. This is inbound
   email's policy (ADR 0096). Images become attachments on the turn. Documents are ingested and **registered before the
   turn**. A copilot agent refuses documents, as on the other doors. At most 10 files a message.
-- A message with no text and only unusable files gets the reason and mints no conversation. A captionless photo is a
+- A message with no text and only files that fail the metadata check gets the reason and mints no conversation. One
+  whose files pass that check but then fail to download or ingest has already minted its conversation, which stays
+  listed and empty (accepted: the ingest needs the conversation's owner key). A captionless photo is a
   turn of its own, titled by the file name.
 
 ### Outbound images
@@ -275,11 +277,14 @@ the supervisor, the lease, the state or the endpoints changed: the adapter seam 
 - **Away replies.** `EnqueuePromptAsync` and the reminder path accumulate the run's text (`TextDelta` appends,
   `TextReset` clears, bounded by the webhook limit) and hand it over **next to `SendAwayReplyPushAsync`, at its two sites
   only**:
-  - to the origin chat when its connection is paired and live;
+  - to the origin chat when its connection is paired and live, and, for a group origin (`ChatOrigin.IsGroup`), still
+    has groups on. **This needs no notifications toggle:** a conversation started in a chat answers in that chat, as
+    its live turns do;
   - else to the first connection with notifications on and a home route (`/sethome`).
 
   A web conversation whose model already used `send_push_notification` this turn skips the home fallback, since that
-  notification went home already. A chat-driven turn runs `ChatAsync`, so it never reaches those sites and is never
+  notification went home already. Accepted residual: in a chat-started conversation whose origin IS the home chat, a
+  turn that also used `send_push_notification` posts twice there (the notification, then the reply). A chat-driven turn runs `ChatAsync`, so it never reaches those sites and is never
   posted twice.
 - **`send_push_notification`** also goes to the home chat, on the sent path only. A user with no Web Push device still
   gets the tool's refusal and no chat message. The tool's model-facing contract is unchanged.
@@ -291,8 +296,9 @@ the supervisor, the lease, the state or the endpoints changed: the adapter seam 
 - **Egress, extended:**
   - generated images are stored by the chat platform, like the replies;
   - voice audio goes to the owner's transcription endpoint (ADR 0113);
-  - scheduled results and notifications are written into the origin or home chat, opt-in per connection
-    ("deliver notifications here").
+  - scheduled results and queued runs of a chat-started conversation are written back into that chat (a group one only
+    while groups are on); the home chat receives the rest, and the agent's notifications, only with "deliver
+    notifications here" on.
 - More in-process state on rule 12's single replica: the delivery hand-off reaches only sessions live on this replica.
 - Slack apps created before phase 1c need `files:write` added and the app reinstalled before image upload works.
   Without it, the upload fails and the note points to Agent42.

@@ -1040,7 +1040,8 @@ check since `41f0a41` showed only phases 1a/1b and the past-chats merge (ADR 011
   the gateway validates before downloading, and `StoreAgentRunFilesAsync` has a byte-level overload. The form overloads
   delegate to them, and both doors' behaviour is unchanged.
 - **Files: skip-and-note**, as recommended. The owner gets a notice and the model a `[Attachment skipped: …]` line.
-  A no-text, unusable-only message mints nothing. At most 10 files per message. A copilot agent refuses documents.
+  A no-text message whose files all fail the metadata check mints nothing; one whose files fail later (download,
+  ingest) leaves an empty listed conversation (accepted, critic m2). At most 10 files per message. A copilot agent refuses documents.
 - **Images out after the text final**, through `ChatReplyDestination.UploadImage`. The streamer's old "open Agent42"
   note is now only the fallback for a failed upload. **Slack's manifest gains `files:write`**, so older apps must be
   reinstalled.
@@ -1068,6 +1069,16 @@ check since `41f0a41` showed only phases 1a/1b and the past-chats merge (ADR 011
 - **Goldens:** no new golden blobs. The committed `AgentGrainState` / `UserProviderConfig` goldens predate the new
   fields, so they already are the "document without the field" case. New tests round-trip the populated fields on both
   serializer paths.
+- **Diff review (critic, phase 1c): no blockers, 2 majors and 4 minors.** Four fixed, two accepted with a record:
+  - **M1:** away replies reach the origin chat without the notifications toggle. That is the C9 design, so the docs were
+    fixed: the ADR egress bullet and the toggle's note now say so.
+  - **M2:** a group origin is now delivered to only while groups are on. `ChatOrigin.IsGroup` is a trailing `[Id(2)]`,
+    defaulting to false and proven on Cosmos JSON (`Sender_GroupOrigin_OnlyWhileGroupsAreOn`).
+  - **m1** (two messages in one chat when the origin is the home chat and the model also pushed) is accepted and
+    recorded in the ADR.
+  - **m2** (an empty conversation after a late file failure) is accepted and recorded.
+  - **m3:** Telegram files have their own `telegram-files` client with a 2-minute timeout, token-safe like the others.
+  - **m4:** the transcriber is resolved once per voice note.
 - **Not done in this MR:** the DevHost exercise of files and voice against platform stand-ins. These paths are
   covered by the pipeline tests with a fake session and by the adapter tests against local servers. Step 19 checks the
   real platforms.
@@ -1098,7 +1109,7 @@ check since `41f0a41` showed only phases 1a/1b and the past-chats merge (ADR 011
 | AC14 | The Telegram offset persists across restart; a 409 faults the connection | `Telegram_Offset_*`, `Telegram_409_Faults` | `TelegramAdapterTests.cs` |
 | AC15 | Slack acks every envelope (ignored ones too) and reconnects on `disconnect` | `Slack_AcksEveryEnvelope`, `Slack_Disconnect_Reconnects` | `SlackAdapterTests.cs` |
 | AC16 | Discord replies can't mention everyone or roles; an auth close code faults | `Discord_AllowedMentionsNone`, `Discord_4004_Faults` | `DiscordAdapterTests.cs` |
-| AC17 | Inbound files are validated before download, host-pinned and capped; images reach the turn; documents are registered first; a generated image is uploaded | `Pipeline_Files_*`, `*WebApiTests` host rows | `ChatTurnPipelineTests.cs`, `SlackWebApiTests.cs`, `TelegramAdapterTests.cs` |
+| AC17 | Inbound files are validated before download, host-pinned and capped; images reach the turn; documents are registered first; a generated image is uploaded | `Pipeline_Files_*`, `*WebApiTests` host rows | `ChatTurnPipelineTests.cs`, `ChatReplyStreamerTests.cs`, `SlackTests.cs`, `TelegramTests.cs`, `DiscordTests.cs` |
 | AC18 | A voice note is transcribed by the user's model and becomes the turn; missing model or format → one curated reply | `Pipeline_Voice_*`, `OpenAITranscriptionServiceTests` | `ChatTurnPipelineTests.cs`, `OpenAITranscriptionServiceTests.cs` |
 | AC19 | Groups: owner + mention only; a non-owner is ignored; toggle off ignores all groups | `Pipeline_Group_*` | `ChatTurnPipelineTests.cs` |
 | AC20 | Proactive delivery: `Origin` written on mint only; origin first, home when enabled, never a chat-driven turn twice, never incognito | `ChatDeliveryTests` | `ChatDeliveryTests.cs` |

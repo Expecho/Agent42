@@ -8,7 +8,8 @@ namespace Agent42.Backend;
 /// this replica.
 ///
 /// <para><b>Where it goes.</b> An <see cref="ChatDeliveryKind.AwayReply"/> goes to its conversation's origin route when
-/// that connection still exists, is paired and has a live session. Otherwise, and always for a
+/// that connection still exists, is paired and has a live session, and (for a group origin) still has groups on. That
+/// needs no notifications toggle: a conversation started in a chat answers in that chat, as its live turns do. Otherwise, and always for a
 /// <see cref="ChatDeliveryKind.Notification"/>, it goes to the first connection with notifications on and a home route
 /// whose session is live. When nothing qualifies nothing is sent: Web Push still ran.</para>
 ///
@@ -74,7 +75,8 @@ public sealed class ChatDeliverySender : IChatDeliverySender
         if (delivery.Kind == ChatDeliveryKind.AwayReply && delivery.Origin is { } origin)
         {
             var source = connections.FirstOrDefault(c => c.Id == origin.ConnectionId);
-            if (source is not null && IsReachable(source) && origin.RouteKey.Length > 0)
+            // A group origin only while groups are still on: everyone there would see it (the panel's warning).
+            if (source is not null && IsReachable(source) && origin.RouteKey.Length > 0 && (!origin.IsGroup || source.GroupsEnabled))
             {
                 return (source, origin.RouteKey);
             }

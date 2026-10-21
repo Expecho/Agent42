@@ -20,4 +20,11 @@ public sealed class ChatOrigin
     /// <summary>The route key (<see cref="ChatRouteKey.For"/>): the chat id, plus <c>#thread</c> where there is one.</summary>
     [Id(1)]
     public string RouteKey { get; set; } = "";
+
+    /// <summary>
+    /// Whether the route is a group or channel. A delivery there reaches everyone in it, so it is made only while the
+    /// connection still has groups turned on (false by default, the Cosmos-JSON-safe shape).
+    /// </summary>
+    [Id(2)]
+    public bool IsGroup { get; set; }
 }

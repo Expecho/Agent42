@@ -39,6 +39,8 @@ public sealed record TelegramResponse(bool Ok, JsonElement Result, int ErrorCode
 /// The handful of Telegram Bot API calls the gateway uses (ADR 0111), hand-rolled on two named clients rather than a
 /// library: about ten JSON POSTs do not justify a dependency and its CVE surface.
 ///
+/// <para>Three named clients, every one token-safe in the same way: ordinary calls, the long poll, and files.</para>
+///
 /// <para><b>The bot token is in the URL path</b> (<c>/bot&lt;token&gt;/sendMessage</c>; Telegram accepts it nowhere
 /// else). OpenTelemetry redacts a URL's query string but never its path, so both clients run every call inside
 /// <see cref="TelegramSpanSuppressingHandler"/> (no HttpClient span at all) and drop <c>IHttpClientFactory</c>'s
@@ -53,6 +55,9 @@ public sealed class TelegramBotApi(IHttpClientFactory httpClients, TelegramOptio
 
     /// <summary>Named client for <c>getUpdates</c>, whose long poll outlasts an ordinary timeout.</summary>
     public const string PollHttpClientName = "telegram-poll";
+
+    /// <summary>Named client for file downloads and uploads: a 10 MB file on a slow link outlasts an ordinary call.</summary>
+    public const string FilesHttpClientName = "telegram-files";
 
     /// <summary>How long one <c>getUpdates</c> long poll waits for an update.</summary>
     public static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(30);
@@ -69,6 +74,10 @@ public sealed class TelegramBotApi(IHttpClientFactory httpClients, TelegramOptio
             .RemoveAllLoggers()
             .RemoveAllResilienceHandlers();
         services.AddHttpClient(PollHttpClientName, http => http.Timeout = PollTimeout + TimeSpan.FromSeconds(20))
+            .AddHttpMessageHandler(() => new TelegramSpanSuppressingHandler())
+            .RemoveAllLoggers()
+            .RemoveAllResilienceHandlers();
+        services.AddHttpClient(FilesHttpClientName, http => http.Timeout = TimeSpan.FromMinutes(2))
             .AddHttpMessageHandler(() => new TelegramSpanSuppressingHandler())
             .RemoveAllLoggers()
             .RemoveAllResilienceHandlers();
@@ -90,7 +99,7 @@ public sealed class TelegramBotApi(IHttpClientFactory httpClients, TelegramOptio
     /// <summary>Downloads a file by the <c>file_path</c> <c>getFile</c> returned, capped at <paramref name="maxBytes"/>.</summary>
     public async Task<byte[]?> DownloadFileAsync(string token, string filePath, long maxBytes, CancellationToken cancellationToken)
     {
-        var client = httpClients.CreateClient(HttpClientName);
+        var client = httpClients.CreateClient(FilesHttpClientName);
         using var response = await client.GetAsync(
             Endpoint($"file/bot{token}/{filePath}"), HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > maxBytes)
@@ -133,7 +142,7 @@ public sealed class TelegramBotApi(IHttpClientFactory httpClients, TelegramOptio
         file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
         form.Add(file, fileField, fileName);
 
-        var client = httpClients.CreateClient(HttpClientName);
+        var client = httpClients.CreateClient(FilesHttpClientName);
         using var response = await client.PostAsync(Endpoint($"bot{token}/{method}"), form, cancellationToken);
         return Parse(await ReadJsonAsync(response, cancellationToken), response.StatusCode);
     }

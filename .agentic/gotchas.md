@@ -4644,7 +4644,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Claim:** The Bot API accepts the token only in the path (`/bot<token>/sendMessage`, `/file/bot<token>/…`). Three
   traps follow. First, OpenTelemetry redacts a query string but never a path, so the HttpClient span's `url.full`
   carries the token into OTLP and App Insights. Second, `IHttpClientFactory` logs "Sending HTTP request … {uri}" for
-  every named client, and those lines reach the owner-visible `/logs` buffer too. Both Telegram clients therefore run
+  every named client, and those lines reach the owner-visible `/logs` buffer too. All three Telegram clients (calls, the long poll, files) therefore run
   inside `TelegramSpanSuppressingHandler` (`SuppressInstrumentationScope`) AND call `RemoveAllLoggers()`, and
   `TelegramBotApi_NeverLeaksTheToken` captures real spans and real log records, with a control client proving the probe
   sees a leak when either is removed (both mutation-checked). Third, the token contains a `:`, so

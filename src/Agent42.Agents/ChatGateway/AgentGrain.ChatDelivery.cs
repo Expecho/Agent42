@@ -24,7 +24,7 @@ public sealed partial class AgentGrain
             return;
         }
 
-        _state.State.Origin = new ChatOrigin { ConnectionId = origin.ConnectionId, RouteKey = origin.RouteKey };
+        _state.State.Origin = new ChatOrigin { ConnectionId = origin.ConnectionId, RouteKey = origin.RouteKey, IsGroup = origin.IsGroup };
         await _state.WriteStateAsync();
     }
 

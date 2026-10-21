@@ -37,13 +37,14 @@ public sealed partial class ChatTurnPipeline
             return VoiceNote.None;
         }
 
-        if (await VoiceRefusalAsync(work, voice) is { } refusal)
+        var transcriber = await TranscriberAsync(work.UserId);
+        if (VoiceRefusal(work, voice, transcriber) is { } refusal)
         {
             await ReplyAsync(work, refusal);
             return VoiceNote.Stop;
         }
 
-        var transcript = await TranscribeAsync(work, voice);
+        var transcript = await TranscribeAsync(work, voice, transcriber!);
         if (string.IsNullOrWhiteSpace(transcript))
         {
             await ReplyAsync(work, transcript is null ? TranscriptionFailedText : "I couldn't hear any words in that voice note.");
@@ -57,7 +58,7 @@ public sealed partial class ChatTurnPipeline
     }
 
     // Why a voice note can't be read at all, judged before anything is downloaded; null when it can be tried.
-    private async Task<string?> VoiceRefusalAsync(ChatTurnWork work, ChatInboundFile voice)
+    private static string? VoiceRefusal(ChatTurnWork work, ChatInboundFile voice, ISpeechTranscriptionService? transcriber)
     {
         if (!work.Connection.VoiceNotesEnabled)
         {
@@ -70,7 +71,7 @@ public sealed partial class ChatTurnPipeline
             return UnsupportedVoiceText;
         }
 
-        return await TranscriberAsync(work.UserId) is null ? NoTranscriptionModelText : null;
+        return transcriber is null ? NoTranscriptionModelText : null;
     }
 
     private async Task<ISpeechTranscriptionService?> TranscriberAsync(string userId)
@@ -92,9 +93,9 @@ public sealed partial class ChatTurnPipeline
     }
 
     // Downloads and transcribes; null on any failure (the caller sends the one curated reply).
-    private async Task<string?> TranscribeAsync(ChatTurnWork work, ChatInboundFile voice)
+    private async Task<string?> TranscribeAsync(ChatTurnWork work, ChatInboundFile voice, ISpeechTranscriptionService transcriber)
     {
-        if (await TranscriberAsync(work.UserId) is not { } transcriber || _sessions.Get(work.Connection.Id) is not { } session)
+        if (_sessions.Get(work.Connection.Id) is not { } session)
         {
             return null;
         }
@@ -107,7 +108,7 @@ public sealed partial class ChatTurnPipeline
                 return null;
             }
 
-            // Non-null: VoiceRefusalAsync already accepted this name and type.
+            // Non-null: VoiceRefusal already accepted this name and type.
             var name = SpeechTranscriptionFormats.UploadName(voice.FileName, voice.DeclaredMediaType)!;
             return await transcriber.TranscribeAsync(audio.Bytes, name, voice.DeclaredMediaType ?? audio.MediaType ?? "application/octet-stream", timeout.Token);
         }
