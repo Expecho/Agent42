@@ -94,7 +94,7 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Agents",
             [
-                "Artifacts", "Attachments", "ClientTools", "Conversations", "Copilot", "Documents", "Email", "Fleet", "ImageGeneration",
+                "Artifacts", "Attachments", "ChatGateway", "ClientTools", "Conversations", "Copilot", "Documents", "Email", "Fleet", "ImageGeneration",
                 "Location", "Mcp", "Memory", "Models", "PromptCaching", "Push", "Research", "Scheduling", "Search", "SharedState",
                 "Sharing", "Skills", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web", "Webhooks",
             ]
@@ -102,7 +102,7 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Backend",
             [
-                "Api", "Artifacts", "Attachments", "ClientTools", "Configuration", "Conversations", "Copilot",
+                "Api", "Artifacts", "Attachments", "ChatGateway", "ClientTools", "Configuration", "Conversations", "Copilot",
                 "Documents", "Email", "Export", "Fleet", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
                 "Search", "SharedState", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills",
                 "Users", "Web", "Webhooks", "wwwroot",
@@ -192,6 +192,7 @@ public sealed class ProjectLayoutTests
         { "Webhooks/AgentApi.Webhooks.cs", "MapWebhookEndpoints" },
         { "Fleet/AgentApi.Fleet.cs", "MapFleetEndpoints" },
         { "Copilot/AgentApi.GitHubCopilot.cs", "MapGitHubCopilotEndpoints" },
+        { "ChatGateway/AgentApi.ChatGateway.cs", "MapChatGatewayEndpoints" },
     };
 
     // The theory above lists exactly the parts reflection finds, so it cannot fall behind again (it once missed four).
@@ -643,6 +644,33 @@ public sealed class ProjectLayoutTests
     /// only its <c>UseWebSockets</c> half is order-sensitive — but it keeps every public surface in one place.
     /// No test executes <c>Program.cs</c>, hence source text.
     /// </summary>
+    /// <summary>
+    /// AC22 (ADR 0111). Both hosts register the chat gateway exactly once, before the shared registrations. Its
+    /// management endpoints resolve their services optionally and answer 503 without them, so a host that forgot
+    /// <c>AddChatGateway()</c> would pass every other test while no bot ever connected. DevHost must also register its
+    /// no-op lease BEFORE the call, because <c>AddChatGateway</c> only <c>TryAdd</c>s the Blob lease.
+    /// </summary>
+    [Theory]
+    [InlineData("src/Agent42.Backend/Program.cs", false)]
+    [InlineData("tools/Agent42.DevHost/Program.cs", true)]
+    public void Hosts_RegisterChatGateway(string relativePath, bool noOpLease)
+    {
+        var program = StrippedSource(Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+        var gateway = program.IndexOf("AddChatGateway()", StringComparison.Ordinal);
+        Assert.True(gateway >= 0, $"{relativePath} does not call AddChatGateway().");
+        Assert.Equal(gateway, program.LastIndexOf("AddChatGateway()", StringComparison.Ordinal));
+        Assert.True(program.IndexOf("AddAgent42Silo()", StringComparison.Ordinal) > gateway,
+            $"{relativePath} must call AddChatGateway() before AddAgent42Silo().");
+
+        var lease = program.IndexOf("NoOpChatGatewayLease", StringComparison.Ordinal);
+        Assert.Equal(noOpLease, lease >= 0);
+        if (noOpLease)
+        {
+            Assert.True(lease < gateway, $"{relativePath} must register the no-op lease before AddChatGateway().");
+        }
+    }
+
     [Theory]
     [InlineData("src/Agent42.Backend/Program.cs")]
     [InlineData("tools/Agent42.DevHost/Program.cs")]

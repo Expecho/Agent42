@@ -167,4 +167,51 @@ public static class GoldenStates
             ],
             Version: 4),
     };
+
+    // ADR 0111: a user's chat bots. Every member non-default, so a dropped or renumbered [Id(n)] fails.
+    public static UserChatConnectionsState UserChatConnections() => new()
+    {
+        Connections =
+        [
+            new ChatConnection
+            {
+                Id = "conn-golden",
+                Platform = ChatPlatformKind.Telegram,
+                Name = "My phone",
+                TargetAgentId = "agent-golden",
+                Enabled = false,
+                CredentialsCiphertext = "cipher-golden",
+                BotUserId = "7000000001",
+                BotUserName = "agent42_golden_bot",
+                WorkspaceId = "T-golden",
+                OwnerPlatformUserId = "111111111",
+                OwnerWorkspaceId = "T-owner",
+                PairingCode = "ABCDE23456",
+                PairingExpiresAt = Updated,
+                PairingFailures = 3,
+                GroupsEnabled = true,
+                VoiceNotesEnabled = true,
+                NotificationsEnabled = true,
+                HomeRouteKey = "111111111",
+                PollOffset = 500000007,
+                FaultReason = "golden fault",
+                CreatedAt = Created,
+                UpdatedAt = Updated,
+                OwnerTelemetry = new UserTelemetryContext("user@example.com", "Golden", "user@example.com", "Golden User", ["user"], "aad"),
+            },
+        ],
+    };
+
+    public static ChatConnectionDirectoryState ChatConnectionDirectory() => new()
+    {
+        Entries = [new ChatConnectionRef("user@example.com", "conn-golden")],
+    };
+
+    public static ChatRouteState ChatRoute() => new()
+    {
+        ConversationId = "chat-11111111-2222-3333-4444-555555555555",
+        TurnCount = 42,
+        ModelOverride = "foundry:gpt-5.4",
+        TargetAgentOverride = "agent-golden",
+    };
 }
