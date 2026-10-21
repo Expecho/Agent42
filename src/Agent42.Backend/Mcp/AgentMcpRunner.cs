@@ -58,8 +58,8 @@ public static class AgentMcpRunner
         await grains.GetGrain<IConversationIndexGrain>(caller.UserId)
             .TouchAsync(id, prompt, caller.Agent.Id, caller.Agent.Name);
 
-        // Snapshot the persona (ADR 0003), with memory and push notifications removed from the tool
-        // selection (see WithoutOwnerScopedTools). Idempotent and immutable-once-bound, so on a continued
+        // Snapshot the persona (ADR 0003), with memory, push notifications and past chats removed from the
+        // tool selection (see WithoutOwnerScopedTools). Idempotent and immutable-once-bound, so on a continued
         // conversation this is a no-op and the binding checked above is the one that runs.
         await agentGrain.BindAgentAsync(new AgentBinding(
             caller.Agent.Id, caller.Agent.Name, caller.Agent.SystemPrompt, caller.Agent.Model,

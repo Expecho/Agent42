@@ -316,4 +316,37 @@ Critic pass, 2026-10-21. All findings were accepted. None were rejected.
 | LOW | One conversation can fill every hit slot; no per-conversation dedupe | Over-fetch at 50 + per-conversation cap, AC27 |
 | LOW | No test for descriptions-as-policy or sidebar SQL unchanged; composite-index test needs a rewrite | AC28, AC29; Step 3 now says rewrite `OrderByPaths()` |
 
-Step 0 outcome: _(executor fills in: argument forms, enrollment, which Cosmos path shipped)_
+Step 0 outcome: **not run, pending the user** (the Data Explorer query was handed over at execution start). The
+BM25 path shipped (`FullTextContainsAny` with variadic literals, `FullTextScore` with an array literal, `TOP` +
+`ORDER BY RANK`). Its SQL text is pinned by tests and its execution is unverified. ADR 0111 records the fallback
+(per-term `CONTAINS` ranked by `RankByTerms`, local to `CosmosChatSearchIndex`) for a post-deploy smoke failure.
+
+Diff critic pass, 2026-10-21: no HIGH findings. Fixed: `docs/features/custom-agents.md` still named
+`WithoutMemoryOrPush` and the two-key set (MED); a stale call-site comment in `AgentMcpRunner` (LOW); a
+`Window(int.MaxValue)` overflow (LOW, clamped + test). The historical ADR 0070/0076 mentions of the old name stay as
+written, under 0070's amended-by note.
+
+## Implementation divergences from the plan
+
+- **Tool descriptions live in `PastChatLimits`** (`SearchDescription`, `ReadDescription`), not inline in
+  `AIFunctionFactory.Create`, so AC28 can pin them. No test could reach a grain tool's description otherwise.
+- **`PastChatQuery` also holds `Select`, `Window`, `FormatSearch` and `FormatRead`.** There is no separate formatter
+  file. All of them are pure and keep the grain partial's methods under S3776.
+- **No whole-result cap on a read.** The per-turn cap × window fits `MaxReadTextLength` by construction (AC11). The
+  search result keeps a defensive 4 KB cap.
+- **Cosmos terms are JSON-escaped with the relaxed encoder**, which gives `\"` and `\\` rather than `"`, because
+  those are the escapes a Cosmos string literal certainly accepts. `FullTextContainsAny` takes inlined literals too,
+  not parameters, so both functions share one literal list.
+- **A second test double, `ChatSearchProjectionTests.RecordingIndex`,** implements the port and gained the two
+  methods. The plan named only `TestChatSearchIndex`.
+- **More tests needed updating than the plan named:** the four service-worker cache pins (`*AssetsTests`, v69 → v70)
+  and `ToolSelectionApiTests.Tools_Catalog_ReturnsSelectableKeys` (the new key in `/api/tools`).
+- **The agent editor's email note** (`wwwroot/index.html`) now names Past chats, Long-term memory and web fetching as
+  the tools to turn off, so `sw.js` CACHE was bumped to v70 (rule 3). The plan expected no frontend change.
+- **Two gotchas, not three.** "Sidebar vs tool query" and "the twin is not BM25" are one entry.
+- **Step 6 (DevHost) was not run.** The canned LLM does not call tools on its own. The silo tests in
+  `PastChatToolTests` drive both tools through `FakeChatClient.CallToolPrompt`, and those are the evidence.
+- **Three tests flaked once in the first full run** and passed on rerun and in the second full run:
+  `McpElicitationTests.Elicitation_PendingCalls_ListIt_AsMcpElicitation`,
+  `McpToolImageTests.StoredSession_HoldsNoImageBytes_AfterAScreenshotTurn` and
+  `ChromeExtensionBridgeTests.ExtensionCore_DeniedCallNeverReachesTheBrowser`. None touches this feature's code.

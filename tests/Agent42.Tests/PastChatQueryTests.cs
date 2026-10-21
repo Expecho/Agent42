@@ -103,6 +103,10 @@ public sealed class PastChatQueryTests
     {
         Assert.Equal((3, 8), PastChatQuery.Window(5));
         Assert.Equal((0, 3), PastChatQuery.Window(0));
+        Assert.Equal((0, 3), PastChatQuery.Window(-7));
+
+        var (from, to) = PastChatQuery.Window(int.MaxValue);
+        Assert.True(from >= 0 && to >= from, $"{from}..{to}");
     }
 
     [Fact]

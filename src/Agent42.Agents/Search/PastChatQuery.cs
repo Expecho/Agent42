@@ -91,9 +91,15 @@ public static partial class PastChatQuery
         return Cap(text.ToString(), PastChatLimits.MaxSearchTextLength);
     }
 
-    /// <summary>The inclusive ordinal window a read of <paramref name="ordinal"/> covers.</summary>
+    /// <summary>
+    /// The inclusive ordinal window a read of <paramref name="ordinal"/> covers. The ordinal comes from the model, so
+    /// it is clamped into a range where neither bound can overflow.
+    /// </summary>
     public static (int From, int To) Window(int ordinal)
-        => (Math.Max(0, ordinal - PastChatLimits.ReadTurnsBefore), Math.Max(0, ordinal) + PastChatLimits.ReadTurnsAfter);
+    {
+        var at = Math.Clamp(ordinal, 0, int.MaxValue - PastChatLimits.ReadTurnsAfter);
+        return (Math.Max(0, at - PastChatLimits.ReadTurnsBefore), at + PastChatLimits.ReadTurnsAfter);
+    }
 
     /// <summary>
     /// The read result: a header starting with <see cref="PastChatLimits.ReadHeaderPrefix"/>, then each turn with its

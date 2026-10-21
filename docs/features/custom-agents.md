@@ -151,9 +151,9 @@ Deleting the conversation is still the full reset.
 `AgentDefinition.McpExposed` opts an agent into `/api/agent-mcp`, an Easy-Auth-excluded endpoint that
 self-enforces the agent's API key. The MCP surface is one tool, `ask_agent` (`AgentMcpTools`). Unlike
 `/api/agent-run`, the call waits and returns the reply plus a conversation id the caller can continue.
-`AgentMcpRunner` binds the persona with **memory and push notifications removed** from the tool
-selection (`WithoutMemoryOrPush`): a memory bank spans all the owner's conversations, so a key holder
-must not read or write it. The turn lands silently in the owner's sidebar. Turning exposure on upgrades
+`AgentMcpRunner` binds the persona with **memory, push notifications and past chats removed** from the
+tool selection (`WithoutOwnerScopedTools`): a memory bank spans all the owner's conversations, and the
+past-chat tools (ADR 0111) return those conversations verbatim, so a key holder must reach neither. The turn lands silently in the owner's sidebar. Turning exposure on upgrades
 an already-distributed key from "can send" to "can read replies", so the editor offers a key
 regeneration next to the toggle.
 
