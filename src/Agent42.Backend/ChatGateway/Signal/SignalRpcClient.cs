@@ -72,7 +72,10 @@ public sealed class SignalRpcClient(IHttpClientFactory httpClients, ISignalDaemo
     }
 
     /// <summary>Whether <paramref name="chatId"/> addresses a person (an ACI, or an E.164 number) rather than a group.</summary>
-    public static bool IsDirect(string chatId) => Guid.TryParse(chatId, out _) || chatId.StartsWith('+');
+    // A person is an ACI (a GUID) or an E.164 number ('+' and digits only). A group id is base64, which can itself start
+    // with '+', so a leading '+' alone would send to roughly one group in 64 as if it were a person.
+    public static bool IsDirect(string chatId)
+        => Guid.TryParse(chatId, out _) || (chatId.Length > 1 && chatId[0] == '+' && chatId.Skip(1).All(char.IsAsciiDigit));
 
     public async Task<SignalRpcResult> CallAsync(string method, object? parameters, CancellationToken cancellationToken)
     {

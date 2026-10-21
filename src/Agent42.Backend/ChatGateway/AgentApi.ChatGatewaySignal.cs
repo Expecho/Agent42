@@ -55,6 +55,12 @@ public static partial class AgentApi
             return Results.Text("That number is already in use in Agent42.", "text/plain", statusCode: StatusCodes.Status409Conflict);
         }
 
+        // Switching to another number: the earlier, never-verified one is no longer this connection's to hold.
+        if (connection.PendingSignalNumber is { } previous && previous != number)
+        {
+            await grains.GetGrain<ISignalNumberDirectoryGrain>(previous).ReleaseAsync(connection.Id);
+        }
+
         var store = ChatConnections(grains, http);
         await store.SetPendingSignalNumberAsync(connection.Id, number, parts.Clock.GetUtcNow());
         var answer = await CallSignalAsync(() => rpc.RegisterAsync(number, Trimmed(request.Captcha), request.Voice, http.RequestAborted));
@@ -94,6 +100,14 @@ public static partial class AgentApi
             return ChatBadRequest("Enter the six-digit code Signal sent.");
         }
 
+        // The pending claim may have expired and been taken while the user fetched the code: check before verifying, so a
+        // number another connection now holds is never verified (and its registration disturbed) on this one's behalf.
+        var claim = grains.GetGrain<ISignalNumberDirectoryGrain>(number);
+        if ((await claim.GetAsync())?.ConnectionId != connection.Id)
+        {
+            return Results.Text("This registration expired. Request a new code.", "text/plain", statusCode: StatusCodes.Status409Conflict);
+        }
+
         var verified = await CallSignalAsync(() => rpc.VerifyAsync(number, code, Trimmed(request.Pin), http.RequestAborted));
         if (verified is not { Ok: true })
         {
@@ -109,7 +123,7 @@ public static partial class AgentApi
                 "text/plain", statusCode: StatusCodes.Status502BadGateway);
         }
 
-        if (!await grains.GetGrain<ISignalNumberDirectoryGrain>(number).ActivateAsync(connection.Id))
+        if (!await claim.ActivateAsync(connection.Id))
         {
             return Results.Text("That number is already in use in Agent42.", "text/plain", statusCode: StatusCodes.Status409Conflict);
         }
@@ -134,15 +148,20 @@ public static partial class AgentApi
         ChatConnection connection, ChatGatewayParts parts, IGrainFactory grains, CancellationToken cancellationToken)
     {
         var credentials = parts.Protector.Unprotect(connection.CredentialsCiphertext);
-        if (parts.Adapters.GetValueOrDefault(connection.Platform) is IChatPlatformCleanup cleanup)
+        var number = connection.Platform == ChatPlatformKind.Signal ? credentials?.BotToken ?? connection.PendingSignalNumber : null;
+        var claim = number is { Length: > 0 } ? grains.GetGrain<ISignalNumberDirectoryGrain>(number) : null;
+
+        // Only the claim's holder may make the daemon forget a number. An abandoned registration's claim can have expired
+        // and been taken by another connection since; forgetting it then would unregister that connection's number.
+        var ownsNumber = claim is null || (await claim.GetAsync())?.ConnectionId == connection.Id;
+        if (ownsNumber && parts.Adapters.GetValueOrDefault(connection.Platform) is IChatPlatformCleanup cleanup)
         {
             await cleanup.ForgetAsync(connection, credentials, cancellationToken);
         }
 
-        if (connection.Platform == ChatPlatformKind.Signal
-            && (credentials?.BotToken ?? connection.PendingSignalNumber) is { Length: > 0 } number)
+        if (claim is not null)
         {
-            await grains.GetGrain<ISignalNumberDirectoryGrain>(number).ReleaseAsync(connection.Id);
+            await claim.ReleaseAsync(connection.Id);
         }
     }
 

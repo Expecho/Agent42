@@ -1715,6 +1715,20 @@ Divergences from the plan:
   - `/new` answered "Started a new conversation.";
   - with groups on, an unmentioned group message was ignored, and a mention was answered in the group as a quote;
   - "@bot /help" (with the real U+FFFC placeholder) ran the command.
+- **Diff review (critic, phase 3): no blockers, 1 major, 2 minors and 3 nits. All fixed or recorded; none were
+  rejected.**
+  - **M1: deleting a stale registration could unregister another user's number.** An abandoned pending claim expires,
+    and another connection can take the number. The daemon cleanup now runs only while this connection still holds the
+    claim (`Delete_AStaleRegistration_WhoseNumberWasTakenOver_LeavesTheNewHolderAlone`, mutation-checked).
+  - **m1: a base64 group id starting with `+` was treated as a person.** `IsDirect` is now "+ and digits only".
+  - **m2: switching to another number leaked the earlier pending claim.** It is now released.
+  - **Nits:**
+    - `verify` checks the claim before calling the daemon;
+    - the JVM runs with a scrubbed environment;
+    - the ADR now records the SearXNG sidecar's loopback reach, and the delete-without-lease residual.
+  - **Found by the full suite under load:** `SignalDaemonTests.ACrash_RestartsOnTheNextCall_WithGrowingBackoff`
+    exposed a real race. `EnsureRunningAsync` could restart a crashed process before its exit watcher had recorded the
+    crash, so the backoff was skipped. The exit is now recorded once, by whichever sees it first.
 - **Measured:** signal-cli 0.14.9 in Docker (Step 24b), and the built backend image (`java` 25.0.4.1, signal-cli 0.14.9,
   uid 1654; the daemon starts and stops cleanly on SIGTERM).
 

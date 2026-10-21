@@ -37,6 +37,12 @@ public interface ISignalProcessLauncher
 /// The production launcher: <see cref="Process"/> with no shell and an argument list. Deliberately thin, and not
 /// unit-tested (the accepted coverage gap): everything behavioural lives in <see cref="SignalDaemon"/>.
 /// </summary>
+/// <summary>The only variables the signal-cli process inherits from the backend's environment.</summary>
+public static class SignalProcessEnvironment
+{
+    public static readonly IReadOnlyList<string> Inherited = ["PATH", "JAVA_HOME", "HOME", "LANG", "TZ", "TMPDIR"];
+}
+
 public sealed class SignalProcessLauncher : ISignalProcessLauncher
 {
     public ISignalProcess Start(SignalProcessStartInfo info)
@@ -52,6 +58,18 @@ public sealed class SignalProcessLauncher : ISignalProcessLauncher
         foreach (var argument in info.Arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        // A scrubbed environment: the JVM never inherits the backend's (connection strings, API keys, the managed
+        // identity's IDENTITY_ENDPOINT/HEADER). It gets only what it needs to run, plus what the caller passes.
+        var inherited = startInfo.Environment.ToDictionary(e => e.Key, e => e.Value, StringComparer.Ordinal);
+        startInfo.Environment.Clear();
+        foreach (var name in SignalProcessEnvironment.Inherited)
+        {
+            if (inherited.TryGetValue(name, out var value) && value is not null)
+            {
+                startInfo.Environment[name] = value;
+            }
         }
 
         foreach (var (key, value) in info.Environment)

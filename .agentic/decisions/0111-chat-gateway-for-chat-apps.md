@@ -344,8 +344,15 @@ account") and the plan's sidecar. Plan: `.agentic/specs/plan-chat-gateway.md`, s
   1. read the connection first;
   2. deregister it;
   3. stop the session;
-  4. have the daemon `unregister` the number and `deleteLocalAccountData`, through the optional `IChatPlatformCleanup`;
+  4. have the daemon `unregister` the number and `deleteLocalAccountData`, through the optional `IChatPlatformCleanup`,
+     **only if this connection still holds the number's claim**: an abandoned registration's claim can have expired and
+     been taken by another connection, whose number must not be unregistered;
   5. release the claim.
+
+  A delete that lands on an instance without the lease (a rollover) can't reach the daemon. The claim is still released,
+  and the number stays registered with its keys on the share until it is registered again. Switching a connection to
+  another number releases the earlier pending claim, and `verify` checks that the claim is still this connection's
+  before it asks the daemon.
 
 ### signal-cli is a child process of the backend, started only under the gateway lease
 - The backend image bundles signal-cli and a JRE 25. It is the JVM build, pinned by version and SHA-256; the GraalVM
@@ -410,7 +417,11 @@ account") and the plan's sidecar. Plan: `.agentic/specs/plan-chat-gateway.md`, s
   backend container.
   - It can call the unauthenticated daemon on loopback: send as any connected number, and read any number's events.
   - It can read `/mnt/signal`.
-  - The loopback bind protects against the network, never against that shell.
+  - The loopback bind protects against the network, never against that shell, nor against the SearXNG sidecar, which
+    shares the replica's network namespace (it runs an upstream image, not a shell anyone controls).
+  - The daemon is started with a scrubbed environment (`SignalProcessEnvironment`: `PATH`, `JAVA_HOME`, `HOME`, and a
+    few locale variables), so the JVM never inherits the backend's connection strings, keys or managed-identity
+    endpoint.
 
   This is the same class as ADR 0107's accepted risks: the shell can already forge the principal header and mint
   managed-identity tokens for all app data. It stays cross-conversation rather than cross-user while only the owner's

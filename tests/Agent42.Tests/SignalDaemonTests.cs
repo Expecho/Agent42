@@ -93,8 +93,7 @@ public sealed class SignalDaemonTests
         await Ensure(daemon);
 
         _launcher.Processes[0].Crash();
-        await Task.Delay(50);
-        await Assert.ThrowsAsync<SignalDaemonUnavailableException>(() => daemon.EnsureRunningAsync(CancellationToken.None));
+        await CrashObservedAsync(daemon);
         Assert.Single(_launcher.Processes);
 
         _time.Advance(TimeSpan.FromSeconds(2));
@@ -103,12 +102,33 @@ public sealed class SignalDaemonTests
 
         // Crashed again straight away: the backoff doubled.
         _launcher.Processes[1].Crash();
-        await Task.Delay(50);
+        await CrashObservedAsync(daemon);
         _time.Advance(TimeSpan.FromSeconds(2));
         await Assert.ThrowsAsync<SignalDaemonUnavailableException>(() => daemon.EnsureRunningAsync(CancellationToken.None));
         _time.Advance(TimeSpan.FromSeconds(2));
         await Ensure(daemon);
         Assert.Equal(3, _launcher.Processes.Count);
+    }
+
+    // The daemon learns of a crash on its own exit watcher, asynchronously. Under a loaded full-suite run a fixed delay was
+    // not always enough, so wait until it refuses (it is in backoff) instead of sleeping.
+    private static async Task CrashObservedAsync(SignalDaemon daemon)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (true)
+        {
+            try
+            {
+                await daemon.EnsureRunningAsync(CancellationToken.None);
+            }
+            catch (SignalDaemonUnavailableException)
+            {
+                return;
+            }
+
+            Assert.True(DateTime.UtcNow < deadline, "The daemon never noticed the crash.");
+            await Task.Delay(20);
+        }
     }
 
     [Fact]

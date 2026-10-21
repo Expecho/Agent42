@@ -55,6 +55,15 @@ public class SignalRpcTests
 
     // Found in the DevHost exercise: JsonContent streams a chunked body with no Content-Length, which a small HTTP server
     // can read as empty. Every call is sent buffered, with its length.
+    // Critic m1: a base64 group id can start with '+'; only '+' and digits is a phone number.
+    [Theory]
+    [InlineData("+31612345678", true)]
+    [InlineData("aaaaaaaa-0000-4000-8000-000000000002", true)]
+    [InlineData("+R3JvdXBJZA/x=", false)]
+    [InlineData("R3JvdXBJZA==", false)]
+    [InlineData("+", false)]
+    public void IsDirect_TellsAPersonFromAGroup(string chatId, bool direct) => Assert.Equal(direct, SignalRpcClient.IsDirect(chatId));
+
     [Fact]
     public async Task EveryCall_SendsABufferedJsonBody_WithItsLength()
     {

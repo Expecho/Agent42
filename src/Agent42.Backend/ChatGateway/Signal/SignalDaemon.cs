@@ -62,6 +62,7 @@ public sealed partial class SignalDaemon : ISignalDaemon, IChatGatewayLeaseParti
     private readonly Lock _state = new();
 
     private ISignalProcess? _process;
+    private ISignalProcess? _exitRecorded; // the process whose unexpected exit was already counted
     private DateTimeOffset _processStartedAt;
     private bool _ready;
     private bool _startsAllowed = true;
@@ -133,6 +134,13 @@ public sealed partial class SignalDaemon : ISignalDaemon, IChatGatewayLeaseParti
             if (IsRunning())
             {
                 return BaseUri;
+            }
+
+            // A process that exited before its watcher ran is recorded here, so a crash always backs off rather than
+            // restarting at once because this call won the race.
+            if (_process is { HasExited: true } exited)
+            {
+                RecordExit(exited);
             }
 
             RequireMayStart();
@@ -386,13 +394,20 @@ public sealed partial class SignalDaemon : ISignalDaemon, IChatGatewayLeaseParti
     private async Task WatchExitAsync(ISignalProcess process)
     {
         await process.Exited.ConfigureAwait(false);
+        RecordExit(process);
+    }
+
+    // Counts an unexpected exit once, whichever of the exit watcher and EnsureRunningAsync sees it first.
+    private void RecordExit(ISignalProcess process)
+    {
         lock (_state)
         {
-            if (!ReferenceEquals(_process, process))
+            if (!ReferenceEquals(_process, process) || ReferenceEquals(_exitRecorded, process))
             {
                 return;
             }
 
+            _exitRecorded = process;
             var lived = _time.GetUtcNow() - _processStartedAt;
             _failures = lived >= _timings.HealthyRunTime ? 1 : _failures + 1;
             _ready = false;

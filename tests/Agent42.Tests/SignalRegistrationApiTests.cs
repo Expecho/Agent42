@@ -219,6 +219,54 @@ public sealed class SignalRegistrationApiTests(SignalRegistrationApiFixture fixt
         }
     }
 
+    // Critic M1: an abandoned registration's claim expired and another connection took the number. Deleting the old
+    // connection must NOT make the daemon forget it: that would unregister the new holder's working number.
+    [Fact]
+    public async Task Delete_AStaleRegistration_WhoseNumberWasTakenOver_LeavesTheNewHolderAlone()
+    {
+        var (user, id) = await NewSignalConnectionAsync();
+        var number = NewNumber();
+        await SendAsync(HttpMethod.Post, $"/api/chat-connections/{id}/signal/register", user, new { number });
+        Assert.True(await Claim(number).TryClaimAsync("someone-else", "their-connection",
+            DateTimeOffset.UtcNow + ChatGatewayLimits.SignalPendingClaimLifetime));
+
+        await SendAsync(HttpMethod.Delete, $"/api/chat-connections/{id}", user);
+
+        Assert.DoesNotContain(Daemon.Calls, c => c.Method is "unregister" or "deleteLocalAccountData"
+            && c.Params.GetProperty("account").GetString() == number);
+        Assert.Equal("their-connection", (await Claim(number).GetAsync())!.ConnectionId);
+    }
+
+    // Critic m2: switching to another number releases the earlier, never-verified one.
+    [Fact]
+    public async Task Register_AnotherNumber_ReleasesThePreviousPendingClaim()
+    {
+        var (user, id) = await NewSignalConnectionAsync();
+        var (first, second) = (NewNumber(), NewNumber());
+
+        await SendAsync(HttpMethod.Post, $"/api/chat-connections/{id}/signal/register", user, new { number = first });
+        var switched = await SendAsync(HttpMethod.Post, $"/api/chat-connections/{id}/signal/register", user, new { number = second });
+
+        Assert.Equal(HttpStatusCode.OK, switched.StatusCode);
+        Assert.Null(await Claim(first).GetAsync());
+        Assert.Equal(id, (await Claim(second).GetAsync())!.ConnectionId);
+    }
+
+    // A claim that expired and was taken while the user fetched the code: 409, and the daemon is never asked to verify.
+    [Fact]
+    public async Task Verify_AfterTheClaimWasTakenOver_Is409_AndNeverCallsVerify()
+    {
+        var (user, id) = await NewSignalConnectionAsync();
+        var number = NewNumber();
+        await SendAsync(HttpMethod.Post, $"/api/chat-connections/{id}/signal/register", user, new { number });
+        await Claim(number).TryClaimAsync("someone-else", "their-connection", DateTimeOffset.UtcNow + ChatGatewayLimits.SignalPendingClaimLifetime);
+
+        var response = await SendAsync(HttpMethod.Post, $"/api/chat-connections/{id}/signal/verify", user, new { code = "123456" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.DoesNotContain(Daemon.Calls, c => c.Method == "verify" && c.Params.GetProperty("account").GetString() == number);
+    }
+
     private void AssertForgotten(string number)
     {
         var mine = Daemon.Calls.Where(c => c.Params.ValueKind == JsonValueKind.Object
