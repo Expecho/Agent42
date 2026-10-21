@@ -140,7 +140,7 @@ public sealed class UserChatConnectionsGrain : Grain, IUserChatConnectionsGrain
     public async Task SetOwnerTelemetryAsync(string connectionId, UserTelemetryContext telemetry)
     {
         var connection = Find(connectionId);
-        if (connection is null || connection.OwnerTelemetry == telemetry)
+        if (connection is null || SameIdentity(connection.OwnerTelemetry, telemetry))
         {
             return;
         }
@@ -148,6 +148,12 @@ public sealed class UserChatConnectionsGrain : Grain, IUserChatConnectionsGrain
         connection.OwnerTelemetry = telemetry;
         await _state.WriteStateAsync();
     }
+
+    // Record equality compares Roles (a string[]) by reference, so it would never match and every save would write.
+    private static bool SameIdentity(UserTelemetryContext? stored, UserTelemetryContext incoming)
+        => stored is not null
+            && stored with { Roles = null } == incoming with { Roles = null }
+            && (stored.Roles ?? []).SequenceEqual(incoming.Roles ?? []);
 
     public async Task RecordFaultAsync(string connectionId, string reason, DateTimeOffset now)
         => await MutateAsync(connectionId, c =>

@@ -64,7 +64,7 @@ public sealed class TelegramAdapter(TelegramBotApi api, ILogger<TelegramAdapter>
             logger.LogInformation("Telegram did not take the command menu ({Code}); continuing.", menu.ErrorCode);
         }
 
-        return new TelegramSession(api, runtime, sink, cancellationToken);
+        return new TelegramSession(api, runtime, sink, logger, cancellationToken);
     }
 
     // Maps a failed management call during connect: permanent failures fault, everything else is retried.
@@ -92,17 +92,27 @@ internal sealed class TelegramSession : IChatPlatformSession
     private readonly ChatConnectionRuntime _runtime;
     private readonly IChatInboundSink _sink;
     private readonly CancellationTokenSource _stop;
+    private readonly ILogger _logger;
+    private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public TelegramSession(TelegramBotApi api, ChatConnectionRuntime runtime, IChatInboundSink sink, CancellationToken cancellationToken)
+    public TelegramSession(
+        TelegramBotApi api, ChatConnectionRuntime runtime, IChatInboundSink sink, ILogger logger, CancellationToken cancellationToken)
     {
         _api = api;
         _runtime = runtime;
         _sink = sink;
+        _logger = logger;
         _stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        Completion = Task.Run(() => PollAsync(_stop.Token));
+        Completion = Task.Run(async () =>
+        {
+            await _started.Task.WaitAsync(_stop.Token);
+            await PollAsync(_stop.Token);
+        });
     }
 
     public Task Completion { get; }
+
+    public void Start() => _started.TrySetResult();
 
     private string Token => _runtime.Credentials.BotToken;
 
@@ -174,15 +184,28 @@ internal sealed class TelegramSession : IChatPlatformSession
 
             foreach (var update in response.Result.EnumerateArray())
             {
-                if (TelegramUpdates.Parse(update, _runtime.Connection.BotUserId, _runtime.Connection.BotUserName) is { } message)
-                {
-                    await _sink.AcceptAsync(_runtime, message, cancellationToken);
-                }
-
-                offset = Math.Max(offset, update.GetProperty("update_id").GetInt64() + 1);
+                await AcceptOneAsync(update, cancellationToken);
+                offset = update.TryGetProperty("update_id", out var id) ? Math.Max(offset, id.GetInt64() + 1) : offset;
             }
 
             await _runtime.CommitCursorAsync(offset);
+        }
+    }
+
+    // One update that cannot be parsed or handled is logged and skipped. Throwing would end the session before the
+    // cursor moves, so the same poison update would come back on every reconnect.
+    private async Task AcceptOneAsync(JsonElement update, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (TelegramUpdates.Parse(update, _runtime.Connection.BotUserId, _runtime.Connection.BotUserName) is { } message)
+            {
+                await _sink.AcceptAsync(_runtime, message, cancellationToken);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "A Telegram update on connection {ConnectionId} could not be handled; skipping it.", _runtime.ConnectionId);
         }
     }
 }

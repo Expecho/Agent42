@@ -37,6 +37,12 @@ public interface IChatPlatformSession : IAsyncDisposable
     Task Completion { get; }
 
     /// <summary>
+    /// Begins delivering inbound messages. Called by the supervisor only AFTER it registered the session, so a reply
+    /// to the very first message (pending updates arrive at once) can find the session to send through.
+    /// </summary>
+    void Start();
+
+    /// <summary>
     /// Sends <paramref name="markdown"/>. <see cref="ChatTextFormat.Formatted"/> asks the adapter to convert the
     /// Markdown to the platform's markup; <see cref="ChatTextFormat.Plain"/> sends it as literal text.
     /// </summary>

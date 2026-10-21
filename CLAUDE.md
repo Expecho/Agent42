@@ -156,7 +156,8 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
     lease (ADR 0111), and anything else that holds an outbound connection needs the same.
 13. **Egress is a design property.** Anything that sends conversation content to a third party is an ADR 0013
     extension and must be recorded as such in its ADR. Don't write "following ADR 0008" for an always-on,
-    ungated provider: 0008 rejected that shape.
+    ungated provider: 0008 rejected that shape. Chat-app replies (ADR 0111) are one: opt-in per connection, and stored
+    by the chat platform under the user's own bot.
 
 ### Feature map (area → ADRs)
 

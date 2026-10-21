@@ -70,8 +70,17 @@ reconnects; the owner check runs; then each route has a FIFO whose slot is claim
 with different routes running in parallel up to 8. Each turn calls
 `ChatAsync(text, model, attachments: null, ephemeral: false, interactive: false)`: an interactive turn would pause on a
 client tool, an MCP elicitation or a suggestion, waiting for a browser a chat app cannot be. The owner's telemetry
-identity (captured from their last signed-in save) is set on the turn's `RequestContext`, so `/usage` and `/logs`
-attribute chat turns. The enumeration runs detached into a buffer, and no platform call is awaited inside it.
+identity is set on the turn's `RequestContext`, so `/usage` and `/logs` attribute chat turns. The enumeration runs
+detached into a buffer, and no platform call is awaited inside it. The chat waits at most 15 minutes for one turn: then
+it says where the reply will appear and frees the conversation's queue and the global slot, while the turn runs on to
+its persist (the "cap the WAIT, never the enumeration" rule). A message with no text (a sticker, an uncaptioned photo)
+gets a one-line "text only for now" answer rather than an empty model call.
+
+**The owner's identity is persisted.** A chat turn has no HTTP request, and `/usage` keys a user on email, then name,
+then id. So `ChatConnection.OwnerTelemetry` stores the owner's `UserTelemetryContext` (id, name, email, full name,
+roles, identity provider) from their latest signed-in save of the connection. It is the owner's own data in their own
+grain state, refreshed on every save; roles can go stale between saves, and they only label spans. The alternative,
+storing the id alone, would make every chat turn show under an opaque object id in `/usage`.
 
 ### 7. Replies
 A placeholder is sent, then edited with plain frames on the platform's pace (Telegram: about one action per second
@@ -122,6 +131,10 @@ to ADR 0038), groups, and proactive delivery to the origin or home chat. 2: What
 - **Inbound:** the sender is pinned to the paired owner by the platform's own identity. The residuals are a compromised
   platform account and a token at rest (encrypted, replaced by pasting a new one). Files the owner forwards (phase 1c)
   are still untrusted content.
+- **Pairing can be blocked, never stolen:** wrong codes from ANY sender count toward the five-try lockout, so someone
+  who finds the bot's username while a window is open can lock it. That is an accepted denial-of-service residual: the
+  owner presses "New pairing code" and tries again. Counting per sender would let a stranger try five codes per account
+  they control.
 - **In-process state** (rule 12): sessions, the dedupe, the route queues and their guards, and the lease holder. Lost on
   restart: queued turns, and Discord messages sent while disconnected (Telegram keeps updates for 24 hours; Slack
   redelivers). Turns in flight at shutdown are not cancelled into a consistent state.

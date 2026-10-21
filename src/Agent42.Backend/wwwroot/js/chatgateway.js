@@ -161,8 +161,9 @@ async function saveChatConnection() {
     }
     const saved = await res.json();
     await loadChatConnections();
-    // A fresh token opens pairing: keep the dialog open on the code instead of closing it.
-    if (saved.status === "awaiting-pairing") {
+    // A fresh token opens pairing: keep the dialog open on the code instead of closing it. Only for a token saved just
+    // now, so renaming a bot that is still awaiting pairing closes the dialog like any other save.
+    if (body.credentials && saved.status === "awaiting-pairing") {
       openChatDialog(saved);
     } else {
       chatDialog.close();

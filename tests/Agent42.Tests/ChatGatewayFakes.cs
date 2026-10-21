@@ -84,6 +84,10 @@ public sealed class FakeChatSession(ChatConnectionRuntime runtime, IChatInboundS
 
     public Task Completion => _completion.Task;
 
+    public bool Started { get; private set; }
+
+    public void Start() => Started = true;
+
     public Task InjectAsync(ChatInboundMessage message) => sink.AcceptAsync(Runtime, message, CancellationToken.None);
 
     /// <summary>Ends the session the way a dropped connection would.</summary>

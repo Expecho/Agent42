@@ -169,8 +169,15 @@ public sealed class ChatGatewayService(
         }
     }
 
+    // Callers hold _gate. A connection already running is left alone: boot's StartAllAsync can race a RestartAsync, and
+    // overwriting the entry would orphan a live runner (two pollers on one bot, the 409 the lease exists to prevent).
     private void StartRunner(ChatConnectionRef entry)
     {
+        if (_runners.ContainsKey(entry.ConnectionId))
+        {
+            return;
+        }
+
         var runner = new ConnectionRunner(entry, CancellationTokenSource.CreateLinkedTokenSource(_stopping));
         _runners[entry.ConnectionId] = runner;
         runner.Task = Task.Run(() => SuperviseAsync(runner));
@@ -192,6 +199,11 @@ public sealed class ChatGatewayService(
         {
             // Expected: the runner was cancelled.
         }
+        catch (Exception ex)
+        {
+            // Never rethrow a runner's failure into a restart, a stop, or the shutdown path.
+            logger.LogWarning(ex, "Chat connection {ConnectionId}'s supervisor had failed.", connectionId);
+        }
 
         runner.Cancellation.Dispose();
     }
@@ -204,7 +216,19 @@ public sealed class ChatGatewayService(
         var attempt = 0;
         while (!token.IsCancellationRequested)
         {
-            var outcome = await RunOnceAsync(runner, token);
+            SessionOutcome outcome;
+            try
+            {
+                outcome = await RunOnceAsync(runner, token);
+            }
+            catch (Exception ex) when (!token.IsCancellationRequested)
+            {
+                // A grain or storage error while preparing or recording a fault: transient. Back off and try again
+                // rather than end supervision with nothing logged and the panel stuck on "connecting".
+                logger.LogWarning(ex, "Chat connection {ConnectionId} could not be (re)started; retrying.", runner.Entry.ConnectionId);
+                outcome = SessionOutcome.Retry;
+            }
+
             if (outcome is SessionOutcome.Stop)
             {
                 return;
@@ -230,6 +254,7 @@ public sealed class ChatGatewayService(
         {
             session = await prepared.Adapter.ConnectAsync(prepared.Runtime, sink, token);
             sessions.Set(connectionId, session);
+            session.Start();
             runner.Live = true;
             await session.Completion.WaitAsync(token);
             return timeProvider.GetUtcNow() - openedAt >= _timings.HealthySessionAge ? SessionOutcome.Healthy : SessionOutcome.Retry;

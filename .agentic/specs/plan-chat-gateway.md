@@ -825,6 +825,88 @@ self" sync echoes and stories (Hermes `:363-375, 434`).
 **Step 25: Docs + live check.** ADR 0111 amendment, CLAUDE.md's manual-prerequisites table (if the sidecar needs
 any operator input), `chat-apps.md` Signal, and a live check with a real linked device.
 
+## Spike findings (Step 1, 2026-10-21)
+
+- **(a) Telegram:** all answers are from core.telegram.org, read 2026-10-21; the current version is Bot API 10.3,
+  dated 2026-08-24.
+  - `getUpdates`: an update is confirmed by any later call with a higher `offset`. Unconfirmed updates are kept for
+    24 hours. The call refuses while a webhook is set. No maximum `timeout` is documented, so we use 30 s.
+  - The 409 text for two pollers is **not documented**. The adapter keys on the status code only.
+  - Errors: `parameters.retry_after` is documented. "message is not modified" is **not documented**; it is mapped
+    from the description text and treated as success.
+  - `sendMessageDraft` exists, but only for **private** chats, and it is an ephemeral 30-second preview that still
+    needs a final `sendMessage`. So edit-in-place stays the streaming path; Draft is a possible later refinement.
+  - `reply_to_message_id` was replaced by `reply_parameters` in Bot API 7.0.
+  - HTML parse mode supports `b strong i em u ins s strike del span.tg-spoiler tg-spoiler a tg-emoji tg-time code pre
+    blockquote`. Only `& < >` need escaping (plus `&quot;` inside attributes).
+  - `sendChatAction` lasts 5 s or until the bot's next message. `getFile` downloads up to 20 MB, and its link lives at
+    least 1 hour.
+  - Limits: about 1 message per second per chat, and 20 per minute in a group.
+  - **Privacy mode (matters for 1c groups):** a bot in a group sees commands addressed to it, replies to it and
+    messages sent via it, but NOT a plain `@mention`. The setup guide says to turn privacy off or make the bot an
+    admin.
+  - The token is accepted in the URL path only.
+- **(b) Slack, (c) Discord, (g) STT:** deferred to their own MRs (1b and 1c), which re-run them anyway per this
+  spec's phasing note.
+- **(d) Token in the path:** the gotcha's `SuppressInstrumentationScope` handler suppresses the HttpClient span. The
+  factory's request logging is a separate channel that needs `RemoveAllLoggers()`. Both are proven by
+  `TelegramBotApi_NeverLeaksTheToken`, with a control client and both mutations checked. Also found: a token's `:`
+  makes `new Uri(base, "bot…")` parse as a URI scheme, so the path is built as `"./bot…"`.
+- **(e) Lease:** blob containers are declared in Bicep here (`infra/modules/storage.bicep`), so the lease needs one
+  new container, `chat-gateway`, on the existing account-scoped role. ACA's default single-revision mode still
+  overlaps the old and new revision during a rollover; Step 19 measures it live.
+- **(f) Compaction:** ADR 0084 stubs only tool payloads (artifact sources, `read_document` results), never message
+  text, so the turn-count rollover is needed: `MaxTurnsPerConversation = 100`.
+- **(h) Limits:** Telegram is 4096 (documented as "characters"; we count UTF-16 units, which is conservative) and
+  10 chunks (our choice). Edits are paced at 1.2 s for the 1/s per-chat budget, and typing is refreshed every 4 s.
+
+## Progress and divergences
+
+**Phase 1a (Steps 1–10) is implemented** on `feature/chat-gateway`. Phases 1b, 1c, 2 and 3 remain, so this spec
+stays in `.agentic/specs/` (not `completed/`) until phase 3 ships. Differences from the plan:
+
+- **No `LoopbackChatAdapter`.** DevHost points the REAL Telegram adapter at a local stand-in for the Bot API
+  (`ChatGateway:TelegramApiBaseUrl`), which exercises the actual adapter rather than a fake one. The Step 10
+  exercise used a small Node stand-in in the session scratchpad; it is not committed.
+- **The lease touches infra in 1a:** one blob container in `infra/modules/storage.bicep`. "No infra in phase 1" was
+  wrong, since containers are pre-declared here.
+- **The setup guide is a folder,** `docs/integrations/chat-apps/README.md`, per that directory's
+  one-folder-per-integration rule. There is also a `docs/features/chat-apps.md` page.
+- **Group gating (Step 16) is already in the pipeline,** with its tests (`Pipeline_Group_*`), because it is a few
+  lines of the owner/mention gate. The panel does not expose the toggle yet; 1c adds it with the privacy-mode setup
+  note.
+- **`ChatConnectionDirectoryGrainTests`** were folded into `UserChatConnectionsGrainTests`, which assert the run list
+  after every lifecycle step.
+- **The chunker has no UTF-16 mode flag:** `string.Length` is UTF-16 already, and it is never shorter than the
+  character count other platforms use.
+- **Owner telemetry:** a chat turn has no request, so `ChatConnection.OwnerTelemetry` (`[Id(22)]`) captures the
+  owner's identity on each signed-in save. The plan only said "set the RequestContext".
+- **Found and fixed while executing:**
+  - **Cosmos JSON flips a `true`-initialised bool.** `ChatConnection.Enabled` had no-`= true` added, with a
+    gotcha and a mutation-checked test.
+  - **A create with a rejected token left an orphan bot.** Credentials are now validated before the create (found in
+    the DevHost exercise).
+  - **`\r` leaked into Telegram HTML.** Line endings are normalised.
+  - **One-line replies sent a needless "typing…".**
+  - **An existing flake, `McpToolImageGrainTests`:** it read one silo's counters while the grain could run on the
+    other. Both are now read.
+- **Diff review (critic, phase 1a): no blockers, 5 majors and 6 minors, all fixed. None were rejected.**
+  - **M1:** a message with no text no longer becomes an empty turn.
+  - **M2:** a queue worker can no longer die and leave its key behind (catch, plus `finally` cleanup), and a turn's
+    wait is capped at 15 minutes while the turn runs on.
+  - **M3:** a grain error no longer ends a connection's supervision silently, and a stop never rethrows.
+  - **M4:** boot racing a restart can no longer orphan a duplicate session.
+  - **M5:** the persisted owner identity is now in ADR 0111, and its equality compares roles by value.
+  - **m6:** a session polls only after it is registered (`IChatPlatformSession.Start`).
+  - **m7:** a poison update is skipped, and the cursor still moves past it.
+  - **m8:** CLAUDE.md rule 13 names the chat gateway.
+  - **m9:** the queue-cap off-by-one is fixed.
+  - **m10:** the pairing-lockout DoS residual is recorded in the ADR.
+  - **m11:** the dialog reopens only after a fresh token.
+- **Not covered by automated tests:** `BlobChatGatewayLease` (0% new-code coverage; it needs Azurite or real
+  storage). The supervisor's lease behaviour is covered against a fake; the Blob implementation is checked live in
+  Step 19.
+
 ## Acceptance criteria → test mapping
 
 | # | Acceptance criterion | Test | File |

@@ -33,6 +33,14 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
 
     private const string LinkedText = "Linked to Agent42. Send a message to start chatting, or {0}help for the commands.";
     private const string BusyText = "I'm still working through your earlier messages. Send this again in a moment.";
+    private const string TextOnlyText = "I can only read text messages here for now. Type your message, or send files from Agent42.";
+
+    /// <summary>
+    /// How long a chat waits for one turn before it moves on (the gotcha "Bounding a drained agent turn: cap the WAIT,
+    /// never the enumeration"). The turn itself keeps running and persists; the chat is told where its reply will be,
+    /// and the conversation's next message and the global slot are freed. Long enough for a research loop (ADR 0082).
+    /// </summary>
+    public static readonly TimeSpan DefaultMaxTurnWait = TimeSpan.FromMinutes(15);
 
     private readonly IGrainFactory _grains;
     private readonly InboundDeduper _deduper;
@@ -40,6 +48,7 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
     private readonly ChatReplyStreamer _streamer;
     private readonly Dictionary<string, IChatPlatformAdapter> _adapters;
     private readonly IUserModelCatalogProvider? _modelCatalogs;
+    private readonly TimeSpan _maxTurnWait;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ChatTurnPipeline> _logger;
     private readonly SemaphoreSlim _concurrency = new(MaxConcurrentTurns, MaxConcurrentTurns);
@@ -54,8 +63,10 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
         IEnumerable<IChatPlatformAdapter> adapters,
         TimeProvider timeProvider,
         ILogger<ChatTurnPipeline> logger,
-        IUserModelCatalogProvider? modelCatalogs = null)
+        IUserModelCatalogProvider? modelCatalogs = null,
+        TimeSpan? maxTurnWait = null)
     {
+        _maxTurnWait = maxTurnWait ?? DefaultMaxTurnWait;
         _grains = grains;
         _deduper = deduper;
         _sessions = sessions;
@@ -118,6 +129,12 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
         {
             await RunCommandAsync(work, command);
         }
+        else if (string.IsNullOrWhiteSpace(message.Text))
+        {
+            // A sticker, or a photo or voice note with no caption: phase 1a reads text only (files and voice are 1c), and
+            // an empty prompt would still mint a conversation and spend a model call.
+            await ReplyAsync(work, TextOnlyText);
+        }
         else if (!TryEnqueue(work))
         {
             await ReplyAsync(work, BusyText);
@@ -169,7 +186,8 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
         {
             if (_queues.TryGetValue(work.QueueKey, out var queue))
             {
-                if (queue.Count > MaxQueuedPerRoute)
+                // The head is the running turn, so Count - 1 are waiting.
+                if (queue.Count - 1 >= MaxQueuedPerRoute)
                 {
                     return false;
                 }
@@ -193,39 +211,61 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
     }
 
     // The head of a queue is the running turn; it is dequeued only after it finished, so /stop can drop everything
-    // behind it without touching it.
+    // behind it without touching it. Nothing may escape this loop: it is fire-and-forget, and a worker that died with
+    // its key still in _queues would leave that chat silently dead (every later message joins a queue nobody drains).
     private async Task DrainQueueAsync(string queueKey)
     {
-        while (true)
+        try
         {
-            ChatTurnWork work;
-            lock (_queueGate)
+            while (TryPeek(queueKey) is { } work)
             {
-                if (!_queues.TryGetValue(queueKey, out var queue) || queue.Count == 0)
+                await _concurrency.WaitAsync();
+                try
                 {
-                    _queues.Remove(queueKey);
-                    return;
+                    await RunTurnSafelyAsync(work);
                 }
-
-                work = queue.Peek();
-            }
-
-            await _concurrency.WaitAsync();
-            try
-            {
-                await RunTurnSafelyAsync(work);
-            }
-            finally
-            {
-                _concurrency.Release();
-                lock (_queueGate)
+                catch (Exception ex)
                 {
-                    if (_queues.TryGetValue(queueKey, out var queue) && queue.Count > 0)
+                    _logger.LogError(ex, "A chat turn failed outside its own error handling; moving on.");
+                }
+                finally
+                {
+                    _concurrency.Release();
+                    lock (_queueGate)
                     {
-                        queue.Dequeue();
+                        if (_queues.TryGetValue(queueKey, out var queue) && queue.Count > 0)
+                        {
+                            queue.Dequeue();
+                        }
                     }
                 }
             }
+        }
+        finally
+        {
+            // Normally TryPeek already removed the empty queue; this covers an exit any other way.
+            lock (_queueGate)
+            {
+                if (_queues.TryGetValue(queueKey, out var queue) && queue.Count == 0)
+                {
+                    _queues.Remove(queueKey);
+                }
+            }
+        }
+    }
+
+    // The queue's head, or null after removing an empty queue (so the next message starts a new worker).
+    private ChatTurnWork? TryPeek(string queueKey)
+    {
+        lock (_queueGate)
+        {
+            if (_queues.TryGetValue(queueKey, out var queue) && queue.Count > 0)
+            {
+                return queue.Peek();
+            }
+
+            _queues.Remove(queueKey);
+            return null;
         }
     }
 
@@ -256,11 +296,19 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
     // markup, time-boxed, and never throwing.
     private async Task ReplyAsync(ChatTurnWork work, string text)
     {
-        var buffer = new ChatReplyBuffer();
-        buffer.Apply(new AgentStreamEvent(AgentStreamEventType.TextDelta, text));
-        buffer.Complete();
-        var destination = Destination(work) with { Capabilities = Capabilities(work.Connection) with { SupportsEdit = false } };
-        await _streamer.StreamAsync(destination, buffer, CancellationToken.None);
+        try
+        {
+            var buffer = new ChatReplyBuffer();
+            buffer.Apply(new AgentStreamEvent(AgentStreamEventType.TextDelta, text));
+            buffer.Complete();
+            var destination = Destination(work) with { Capabilities = Capabilities(work.Connection) with { SupportsEdit = false } };
+            await _streamer.StreamAsync(destination, buffer, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // A notice that cannot be sent is logged, never rethrown into a queue worker or an adapter's receive loop.
+            _logger.LogWarning(ex, "A chat notice could not be sent on connection {ConnectionId}.", work.Connection.Id);
+        }
     }
 }
 

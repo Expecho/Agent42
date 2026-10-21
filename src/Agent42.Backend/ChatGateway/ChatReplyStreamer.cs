@@ -51,10 +51,19 @@ public sealed class ChatReplyBuffer
 
     public void Complete() => _completed.TrySetResult();
 
+    /// <summary>Ends the reply with curated text instead of the model's. First ending wins (a timeout vs. a late finish).</summary>
     public void Fail(string curatedText)
     {
-        Failure = curatedText;
-        _completed.TrySetResult();
+        lock (_gate)
+        {
+            if (_completed.Task.IsCompleted)
+            {
+                return;
+            }
+
+            Failure = curatedText;
+            _completed.TrySetResult();
+        }
     }
 
     public (string Text, int Version) Snapshot()

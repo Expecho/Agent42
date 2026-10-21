@@ -8,6 +8,7 @@ public sealed partial class ChatTurnPipeline
     private const string FailureText = "I couldn't answer that. Check your model provider in Agent42 and try again.";
     private const string MissingAgentText = "This chat is set to talk to an agent that no longer exists. Pick another with {0}agent, or {0}agent none for plain chat.";
     private const string RolloverText = "This conversation got long, so I started a new one. The earlier one is in your Agent42 chat list.";
+    private const string LongTurnText = "This is taking a while. I'm still working on it, and the reply will appear in this conversation in your Agent42 chat list.";
     private const int MaxTitleChars = 80;
 
     private async Task RunTurnSafelyAsync(ChatTurnWork work)
@@ -55,9 +56,13 @@ public sealed partial class ChatTurnPipeline
         // An agent conversation runs on the agent's own model; /model applies to plain chat only (the web UI's rule).
         var model = await agentGrain.GetAgentBindingAsync() is null ? turn.ModelOverride : null;
         var buffer = new ChatReplyBuffer();
-        var drain = Task.Run(() => DrainAsync(agentGrain, PromptText(work), model, buffer));
+        // Detached and never awaited past the cap: the turn runs to its persist whatever the chat does.
+        _ = Task.Run(() => DrainAsync(agentGrain, PromptText(work), model, buffer));
+        using var cap = new CancellationTokenSource();
+        _ = Task.Delay(_maxTurnWait, _timeProvider, cap.Token)
+            .ContinueWith(t => buffer.Fail(LongTurnText), CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
         await _streamer.StreamAsync(Destination(work), buffer, CancellationToken.None);
-        await drain;
+        await cap.CancelAsync();
     }
 
     // Lists the new conversation and binds its agent, if any. False when the turn must not run.

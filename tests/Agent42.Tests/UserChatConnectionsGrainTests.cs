@@ -199,6 +199,21 @@ public sealed class UserChatConnectionsGrainTests(SharedClusterFixture fixture) 
         Assert.Equal(ChatPlatformKind.Slack, unnamed!.Name);
     }
 
+    // Review M5: the owner's telemetry identity is stored, and an identical one (roles compared by value) writes nothing new.
+    [Fact]
+    public async Task OwnerTelemetry_IsStored_AndComparedByValue()
+    {
+        var (grain, _) = NewUser();
+        var connection = await CreateWithCredentials(grain);
+        var first = new UserTelemetryContext("u", "Ada", "ada@example.com", "Ada L", ["user"], "aad");
+
+        await grain.SetOwnerTelemetryAsync(connection.Id, first);
+        await grain.SetOwnerTelemetryAsync(connection.Id, first with { Roles = ["user"] });
+        await grain.SetOwnerTelemetryAsync(connection.Id, first with { Roles = ["user", "admin"] });
+
+        Assert.Equal(["user", "admin"], (await grain.GetAsync(connection.Id))!.OwnerTelemetry!.Roles);
+    }
+
     [Fact]
     public async Task HomeRoute_IsStored()
     {

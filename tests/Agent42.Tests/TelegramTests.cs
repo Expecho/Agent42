@@ -197,6 +197,10 @@ public sealed class TelegramAdapterTests : IAsyncLifetime
         var commits = new ConcurrentQueue<long>();
 
         await using var session = await Adapter.ConnectAsync(Runtime(offset: 40, commits), sink, CancellationToken.None);
+        await Task.Delay(150);
+        // Nothing is polled until the supervisor has registered the session and calls Start.
+        Assert.DoesNotContain(_server.Requests, r => r.Method == "getUpdates");
+        session.Start();
 
         await ChatGatewayServiceTests.Until(() => commits.Contains(43) && _server.Requests.Count(r => r.Method == "getUpdates") >= 2);
         Assert.Equal("one", Assert.Single(sink.Messages).Text);
@@ -205,6 +209,23 @@ public sealed class TelegramAdapterTests : IAsyncLifetime
         // Connect removed any webhook WITHOUT dropping pending updates, and set the command menu.
         Assert.False(_server.Requests.Single(r => r.Method == "deleteWebhook").Body["drop_pending_updates"]!.GetValue<bool>());
         Assert.Contains(_server.Requests, r => r.Method == "setMyCommands");
+    }
+
+    // A poison update (here: a message with no message_id) is skipped and the cursor still moves past it, so it cannot
+    // crash-loop the session on every reconnect.
+    [Fact]
+    public async Task Poll_SkipsAPoisonUpdate_AndKeepsGoing()
+    {
+        _server.Script("getUpdates", 200, """{"ok":true,"result":[{"update_id":50,"message":{"from":{"id":111,"is_bot":false,"first_name":"P"},"chat":{"id":111,"type":"private"},"date":1,"text":"broken"}},{"update_id":51,"message":{"message_id":2,"from":{"id":111,"is_bot":false,"first_name":"P"},"chat":{"id":111,"type":"private"},"date":1,"text":"fine"}}]}""");
+        var sink = new RecordingSink();
+        var commits = new ConcurrentQueue<long>();
+
+        await using var session = await Adapter.ConnectAsync(Runtime(offset: 50, commits), sink, CancellationToken.None);
+        session.Start();
+
+        await ChatGatewayServiceTests.Until(() => commits.Contains(52));
+        Assert.Equal("fine", Assert.Single(sink.Messages).Text);
+        Assert.False(session.Completion.IsCompleted);
     }
 
     // AC14: a second poller (409) and a dead token (401) end the session with a permanent failure.
@@ -216,6 +237,7 @@ public sealed class TelegramAdapterTests : IAsyncLifetime
         _server.Script("getUpdates", status, $$"""{"ok":false,"error_code":{{status}},"description":"x"}""");
 
         await using var session = await Adapter.ConnectAsync(Runtime(), new RecordingSink(), CancellationToken.None);
+        session.Start();
 
         var failure = await Assert.ThrowsAsync<ChatAuthException>(() => session.Completion);
         Assert.StartsWith(reason, failure.Message);

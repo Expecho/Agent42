@@ -326,13 +326,73 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         await Until(() => h.Session.VisibleMessages().Contains("Stopped."));
     }
 
+    // AC6: the read-only commands answer from the owner's own state, and /sethome stores the route.
+    [Fact]
+    public async Task Pipeline_Command_ListsStatusHelpAndHome()
+    {
+        var h = await PairedAsync();
+        await NewAgentAsync(h, "Weather bot");
+
+        await h.Session.InjectAsync(Dm("/model list"));
+        await h.Session.InjectAsync(Dm("/agent list"));
+        await h.Session.InjectAsync(Dm("/agent"));
+        await h.Session.InjectAsync(Dm("/help"));
+        await h.Session.InjectAsync(Dm("/sethome"));
+        await h.Session.InjectAsync(Dm("/status"));
+        await h.Session.InjectAsync(Dm("/model"));
+        await h.Session.InjectAsync(Dm("/model default"));
+        await h.Session.InjectAsync(Dm("/agent nobody"));
+
+        await Until(() => h.Session.VisibleMessages().Count == 9);
+        var replies = h.Session.VisibleMessages();
+        Assert.Contains($"• {TestSiloConfigurator.NoVisionModel}", replies[0]);
+        Assert.Contains("• Weather bot", replies[1]);
+        Assert.Equal("New conversations here are plain chat.", replies[2]);
+        Assert.Contains("/sethome", replies[3]);
+        Assert.StartsWith("This chat is now home.", replies[4]);
+        Assert.Contains("Home chat: this one", replies[5]);
+        Assert.Equal("Model: your default model.", replies[6]);
+        Assert.Equal("Back to your default model.", replies[7]);
+        Assert.StartsWith("There's no agent called \"nobody\"", replies[8]);
+        Assert.Equal(Owner, (await Store(h).GetAsync(h.ConnectionId))!.HomeRouteKey);
+    }
+
+    // Review M1: a sticker or an uncaptioned photo has no text, and must not become an empty model call.
+    [Fact]
+    public async Task Pipeline_NoText_RepliesOnce_AndRunsNoTurn()
+    {
+        var h = await PairedAsync();
+
+        await h.Session.InjectAsync(Dm(""));
+
+        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("I can only read text messages", StringComparison.Ordinal)));
+        Assert.Empty(await Index(h).GetConversationsAsync());
+    }
+
+    // Review M2: a turn that outlasts the wait cap frees the chat (the next message runs) while it runs on to persist.
+    [Fact]
+    public async Task Pipeline_LongTurn_IsCapped_AndTheQueueMovesOn()
+    {
+        var h = await PairedAsync(maxTurnWait: TimeSpan.FromMilliseconds(400));
+        OpenGates(afterChunks: 1);
+        await h.Session.InjectAsync(Dm("a very long research question"));
+
+        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("This is taking a while", StringComparison.Ordinal)));
+        CloseGates();
+        await h.Session.InjectAsync(Dm("/status"));
+
+        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("Model:", StringComparison.Ordinal)));
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        await Until(async () => (await Agent(h, conversationId).GetHistoryAsync()).Count == 2);
+    }
+
     // ---- harness ----
 
     private sealed record Harness(
         ChatTurnPipeline Pipeline, FakeChatSession Session, ChatSessionRegistry Sessions, string UserId, string ConnectionId);
 
     private async Task<Harness> CreateAsync(
-        string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null)
+        string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null, TimeSpan? maxTurnWait = null)
     {
         userId ??= "pipe-user-" + Guid.NewGuid().ToString("N");
         var store = Cluster.GrainFactory.GetGrain<IUserChatConnectionsGrain>(userId);
@@ -351,7 +411,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
             [
                 new ModelInfo(TestSiloConfigurator.DefaultModel, "fake", null, null, null, true, true),
                 new ModelInfo(TestSiloConfigurator.NoVisionModel, "fake", null, null, null, true, false),
-            ])));
+            ])), maxTurnWait);
         var runtime = new ChatConnectionRuntime(userId, connection, new ChatCredentials("token"), _ => Task.CompletedTask);
         var session = new FakeChatSession(runtime, pipeline);
         sessions.Set(connection.Id, session);
@@ -359,9 +419,9 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
     }
 
     private async Task<Harness> PairedAsync(
-        string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null)
+        string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null, TimeSpan? maxTurnWait = null)
     {
-        var h = await CreateAsync(targetAgentId, groups, callTimeout, userId);
+        var h = await CreateAsync(targetAgentId, groups, callTimeout, userId, maxTurnWait);
         var code = (await Store(h).GetAsync(h.ConnectionId))!.PairingCode!;
         Assert.Equal(ChatPairingOutcome.Paired, await Store(h).TryPairAsync(h.ConnectionId, Owner, null, code, Now));
         return h;
