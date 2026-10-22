@@ -529,6 +529,52 @@ the phone speaks a Dutch paragraph (any transcript is a self-echo trigger), then
   - Error 11 (server disconnected) follows every result. It's harmless and the loop restarts, but step 10 must not
     surface it.
 
+## Implementation: divergences from the plan (2026-10-22)
+
+### Decided by the spikes
+- **Auth path B (WebView + session cookie).** Candidates A and C were never run, and Step 6 made **no Bicep or Entra
+  change**. An unauthenticated non-browser request gets a **401**, not the redirect the plan expected; the client
+  handles both (gotcha added).
+- **STT:** the default (Google network) recognizer, because Dutch has no on-device model on the A54. The
+  `EXTRA_AUDIO_SOURCE` AEC pipe was dropped: the recognizer ignored the piped audio.
+- **ADR number:** 0114, because 0111 and 0113 landed on main meanwhile. The branch was rebased onto it.
+
+### Found on the phone
+- **Echo:** the call audio path does not fully remove self-echo. Three guards were added to `VoiceLoop`, each driven
+  by an on-phone trace:
+  - the post-reply echo window (2.5 s);
+  - a 2-word minimum for a partial barge-in;
+  - talking while still THINKING carries the sent words into the next turn (a mid-sentence pause had split one
+    utterance into two turns, and the first was lost).
+
+  ADR 0114 was corrected to call the echo check load-bearing.
+- **Telecom:** core-telecom's docs forbid `setCommunicationDevice` during a call, so routing moved to its endpoints.
+  The foreground service is `phoneCall|microphone` with a CallStyle notification. The platform sets
+  `MODE_IN_COMMUNICATION` itself (measured).
+- **Assistant role:** an `ACTION_ASSIST` intent filter is enough to be listed as a digital assistant (measured). No
+  `VoiceInteractionService` was needed.
+
+### Scope changes
+- **"Open in web"** opens the web app's home page, because the web app has no per-conversation link.
+- **Added at the user's request, beyond the plan:**
+  - the website's visual style: `styles.css` tokens, IBM Plex Mono + Newsreader bundled under the OFL;
+  - a per-chat **tools picker** (ADR 0021), with `tools.js`'s selection rules ported into `ToolPicker` and
+    unit-tested.
+
+### AC → test, as built
+| AC | As built |
+|---|---|
+| 4, 6, 11 | `Agent42ApiTest` (sign-out on 401/redirect/HTML; uploads; the 409 → platform-voice signal). The MediaPlayer/TTS fallback itself is Android-coupled and was verified on the phone. |
+| 8 | `ClientToolsTest` |
+| 12 | `VoiceLoopTest` |
+| 13 | `CallStateMappingTest` |
+
+### Not verified on the phone
+- Hold by a real incoming call.
+- Bluetooth/car.
+- Self-echo with server MP3 voice: the owner's account has no speech model, so every call used the platform TTS.
+- The signed release: it is first built on merge to main (`android.yml`).
+
 ## Review
 
 Critic pass on 2026-10-21. There were no ADR contradictions; 1 high, 4 medium and 3 low findings, all

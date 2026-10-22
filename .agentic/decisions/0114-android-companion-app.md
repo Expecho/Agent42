@@ -16,7 +16,7 @@ the assistant speaks on a speaker, because the browser loop heard its own TTS an
 reply only works on a headset. A browser also stops listening when the screen locks, and can't route through car
 Bluetooth like a call. Android can do all three. Two unknowns decided the shape, and both were measured on the owner's
 phone (Galaxy A54, Android 16, nl-NL) on 2026-10-21. The evidence is in
-`.agentic/specs/plan-android-companion-app.md`, "Spike results".
+`.agentic/specs/completed/plan-android-companion-app.md`, "Spike results".
 
 ## Decision
 - **App:** Kotlin + Jetpack Compose in `tools/Agent42.Android`, next to the other non-server clients (the Chrome

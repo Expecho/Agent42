@@ -4791,3 +4791,24 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   phase 1b Slack/Discord stand-ins hit it).
 - **Evidence:** the phase 1b DevHost exercise (`.agentic/specs/plan-chat-gateway.md`, "Progress and divergences")
 - **Verified:** 2026-10-21
+
+### Easy Auth answers an unauthenticated NON-browser request with 401, not the login redirect
+
+- **Claim:** `unauthenticatedClientAction` is `RedirectToLoginPage`, but measured on prod (2026-10-21), a request
+  with no session from curl or the Android app gets a bare **401**; only a browser-shaped request gets the 302 to
+  Entra. A client that only checks for the redirect never notices it is signed out. The Android client treats a
+  401, a redirect, or an HTML body as "signed out" (`SignedOutInterceptor`). The session cookie
+  (`AppServiceAuthSession`) is accepted from any client, and a POST without an `Origin` header is not refused. Only
+  `Origin: null` is (see the no-referrer entry).
+- **Evidence:** `tools/Agent42.Android/app/src/main/java/nl/agent42/android/api/Credentials.kt`,
+  `.agentic/decisions/0114-android-companion-app.md`
+- **Verified:** 2026-10-21
+
+### Building the Android app on Windows: GRADLE_USER_HOME must be a short path, or AAPT2 "can't start"
+
+- **Claim:** With the Gradle cache under a long directory (e.g. a session scratchpad), `processDebugResources` fails
+  with "AAPT2 … Daemon startup failed — Please check if you installed the Windows Universal C Runtime". The UCRT is
+  fine: the transformed-resource paths pass the 260-character limit. Point `GRADLE_USER_HOME` at a short folder
+  (e.g. `%LOCALAPPDATA%\Temp\a42g`). CI (Linux) is unaffected.
+- **Evidence:** `tools/Agent42.Android/gradle/wrapper/gradle-wrapper.properties`
+- **Verified:** 2026-10-21
