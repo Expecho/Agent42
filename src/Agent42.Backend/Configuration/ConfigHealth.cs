@@ -54,7 +54,8 @@ public static class ConfigHealth
     /// (which a booted app already has) are itemised so a malformed value still surfaces as an error, but
     /// the tab renders the Core group compactly; the high-value signal is the Optional group.
     /// </summary>
-    public static ConfigHealthReport BuildStatic(IConfiguration config, IHostEnvironment env, PushConfig push)
+    public static ConfigHealthReport BuildStatic(
+        IConfiguration config, IHostEnvironment env, PushConfig push, TimeProvider? clock = null)
     {
         var isDevelopment = env.IsDevelopment();
         var checks = new List<ConfigCheck>();
@@ -146,8 +147,47 @@ public static class ConfigHealth
             Billable: false));
 
         checks.Add(AliasCheck(config));
+        checks.Add(SignalCliCheck(config, (clock ?? TimeProvider.System).GetUtcNow()));
 
         return new ConfigHealthReport(env.EnvironmentName, checks);
+    }
+
+    /// <summary>Days after its release at which the bundled signal-cli is flagged, then refused as stale.</summary>
+    public const int SignalCliWarnAfterDays = 75;
+
+    /// <summary>Signal's clients expire after three months, and "signal-cli releases older than three months may not work".</summary>
+    public const int SignalCliErrorAfterDays = 90;
+
+    /// <summary>
+    /// The age of the signal-cli the image bundles (ADR 0111, phase 3), from the <c>SIGNAL_CLI_VERSION</c> and
+    /// <c>SIGNAL_CLI_RELEASED</c> the Dockerfile bakes in. signal-cli's README: "The official Signal clients expire after
+    /// three months and then the Signal-Server can make incompatible changes. So signal-cli releases older than three
+    /// months may not work correctly." Nothing upgrades it automatically, so this row is how the operator learns it is
+    /// time to bump the Dockerfile. Not applicable while Signal is off.
+    /// </summary>
+    private static ConfigCheck SignalCliCheck(IConfiguration config, DateTimeOffset now)
+    {
+        const string key = "SIGNAL_CLI_RELEASED";
+        if (!config.GetValue<bool>("ChatGateway:Signal:Enabled"))
+        {
+            return new ConfigCheck(GroupOptional, key, NotApplicable, "Signal is off (ChatGateway:Signal:Enabled).", Billable: false);
+        }
+
+        var version = config["SIGNAL_CLI_VERSION"];
+        if (!DateOnly.TryParseExact(config[key], "yyyy-MM-dd", out var released) || string.IsNullOrEmpty(version))
+        {
+            return new ConfigCheck(GroupOptional, key, Warning,
+                "Signal is on, but the image doesn't say which signal-cli it bundles, so its age is unknown.", Billable: false);
+        }
+
+        var age = DateOnly.FromDateTime(now.UtcDateTime).DayNumber - released.DayNumber;
+        var (status, verdict) = age >= SignalCliErrorAfterDays
+            ? (Error, "past Signal's three-month client expiry: update signal-cli in the backend Dockerfile now")
+            : age >= SignalCliWarnAfterDays
+                ? (Warning, "approaching Signal's three-month client expiry: update signal-cli in the backend Dockerfile")
+                : (Ok, "current");
+        return new ConfigCheck(GroupOptional, key, status,
+            $"signal-cli {version}, released {released:yyyy-MM-dd} ({age} days ago): {verdict}.", Billable: false);
     }
 
     /// <summary>

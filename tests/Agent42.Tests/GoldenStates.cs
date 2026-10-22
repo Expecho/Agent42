@@ -207,6 +207,15 @@ public static class GoldenStates
         Entries = [new ChatConnectionRef("user@example.com", "conn-golden")],
     };
 
+    // ADR 0111 phase 3: an ACTIVE claim (Active is true, so the Cosmos JSON writes it: false would be omitted).
+    public static SignalNumberDirectoryState SignalNumberDirectory() => new()
+    {
+        UserId = "user@example.com",
+        ConnectionId = "conn-golden-signal",
+        Active = true,
+        ClaimedAt = new DateTimeOffset(2026, 10, 21, 8, 9, 10, TimeSpan.Zero),
+    };
+
     public static ChatRouteState ChatRoute() => new()
     {
         ConversationId = "chat-11111111-2222-3333-4444-555555555555",

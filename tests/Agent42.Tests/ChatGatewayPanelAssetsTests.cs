@@ -37,7 +37,7 @@ public sealed class ChatGatewayPanelAssetsTests(StaticAssetsServerFixture fixtur
             .Select(f => (string)f.GetRawConstantValue()!)
             .ToList();
 
-        Assert.Equal(7, statuses.Count);
+        Assert.Equal(9, statuses.Count);
         Assert.All(statuses, status => Assert.Contains($"\"{status}\":", module, StringComparison.Ordinal));
     }
 
@@ -111,6 +111,27 @@ public sealed class ChatGatewayPanelAssetsTests(StaticAssetsServerFixture fixtur
         Assert.Contains("appToken: appToken || null", module, StringComparison.Ordinal);
         Assert.Contains("Slack:", module, StringComparison.Ordinal);
         Assert.Contains("Discord:", module, StringComparison.Ordinal);
+    }
+
+    // Phase 3 (AC31): Signal is registered, not pasted. The token field hides for Signal, the dialog carries the
+    // register/verify steps and the plain-words egress note, and the PIN is a password field.
+    [Fact]
+    public async Task Panel_RegistersASignalNumber_InsteadOfATokenField()
+    {
+        var html = await fixture.Client.GetStringAsync("/index.html");
+        var module = await fixture.Client.GetStringAsync("/js/chatgateway.js");
+
+        Assert.Matches("""id="chatSignalSection"[^>]*hidden""", html);
+        Assert.Contains("id=\"chatSignalNumber\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"chatSignalCode\"", html, StringComparison.Ordinal);
+        Assert.Matches("""<input[^>]*type="password"[^>]*id="chatSignalPin" """.Trim(), html);
+        Assert.Contains("https://signalcaptchas.org/registration/generate.html", html, StringComparison.Ordinal);
+        Assert.Contains("const registeredNotPasted = new Set([\"Signal\"]);", module, StringComparison.Ordinal);
+        Assert.Contains("chatBotTokenField.hidden = registeredNotPasted.has(", module, StringComparison.Ordinal);
+        Assert.Contains("/signal/${path}`", module, StringComparison.Ordinal);
+        Assert.Contains("signalStep(\"register\"", module, StringComparison.Ordinal);
+        Assert.Contains("signalStep(\"verify\"", module, StringComparison.Ordinal);
+        Assert.Contains("whoever runs this Agent42 could read what the bot receives", module, StringComparison.Ordinal);
     }
 
     // The tab is appended last, so the index pins on MCP (3), Configuration (4) and Skills (5) still hold.

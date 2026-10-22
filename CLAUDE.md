@@ -114,6 +114,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | `GH_OAUTH_CLIENT_SECRET` + `GitHub:OAuth:ClientId` (committed) + OAuth App callback `https://chat.agent42.nl/api/providers/github/callback` | "Sign in with GitHub" is hidden and `/api/providers/github/start` answers 503. The app boots (ADR 0108) |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No App Insights export. The app boots and sends telemetry to OTLP only (ADR 0077) |
 | `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` + `ANDROID_KEY_ALIAS` + `ANDROID_KEY_PASSWORD` | The Android app's release job fails and no APK is published. PR checks still run. The key must never change, or installed apps can't update |
+| `signalEnabled` (Bicep param, default `false`) | Signal isn't offered and no signal-cli runs. Turn it on only after the plan's Azure Files measurement (Step 24) and confirming the Copilot-shell risk in ADR 0111's phase 3 amendment |
 | `Dashboard:OwnerOid` (committed, currently blank) | `/dashboard` denies everyone. **Never set it to `local-dev`** (ADR 0062) |
 | MCP OAuth redirect URI `https://chat.agent42.nl/api/mcp/oauth/callback` | Must be registered in each provider's app registration (ADR 0025) |
 
@@ -153,9 +154,10 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
     **tool description**, not a `SKILL.md`.
 12. **Single replica is load-bearing** (in-process registries, the `/logs` ring buffer, the local-bridge
     socket registry, the Copilot SessionFs write gate, the agent fleet's running-task registry, the Copilot chat workspaces
-    share mounted into that one replica, the chat gateway's sessions, inbound dedupe and per-chat queues). `infra/main.bicep`
-    pins min = max = 1. A revision rollover still overlaps two replicas briefly; the chat gateway covers that with a Blob
-    lease (ADR 0111), and anything else that holds an outbound connection needs the same.
+    share mounted into that one replica, the chat gateway's sessions, inbound dedupe and per-chat queues, the signal-cli
+    child process and its store). `infra/main.bicep` pins min = max = 1. A revision rollover still overlaps two replicas
+    briefly; the chat gateway covers that with a Blob lease (ADR 0111), and anything else that holds an outbound
+    connection or a single-writer store needs the same (the signal-cli daemon runs only while the lease is held).
 13. **Egress is a design property.** Anything that sends conversation content to a third party is an ADR 0013
     extension and must be recorded as such in its ADR. Don't write "following ADR 0008" for an always-on,
     ungated provider: 0008 rejected that shape. Chat-app replies (ADR 0111) are one: opt-in per connection, and stored
@@ -183,7 +185,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Agent fleet (recursive agent teams, `/fleet/`): in-process runner (not a grain), Blob store + SSE replay, judge/fix/new team, Copilot agents with built-in tools, per-task tool override, attached files + workspace-scoped document search, shared canvas (versioned pages, live pane) | 0097, 0099, 0101, 0102 |
 | Calendar: now an external MCP server (0053 superseded) | 0063 |
 | Push: away replies, model-invoked, user-initiated test push | 0028, 0075, 0100 |
-| Chat apps: one in-process gateway, each user's own bots (Telegram, Slack, Discord now; WhatsApp, Signal planned), outbound connections, owner pairing, Blob lease, files and images, voice notes, groups, delivery to the origin or home chat | 0111, 0113 |
+| Chat apps: one in-process gateway, each user's own bots (Telegram, Slack, Discord now; Signal built but dormant until `signalEnabled`; WhatsApp planned), outbound connections, owner pairing, Blob lease, files and images, voice notes, groups, delivery to the origin or home chat; Signal as a dedicated number in a lease-gated signal-cli child process on Azure Files | 0111, 0113 |
 | Conversations: incognito, share links, follow-ups, pins, groups, chat search, stream recovery, stop generation, owner export (Markdown/JSON/ZIP, paged export-all), edit/regenerate last turn, fork, past chats as a model tool (search + read, ranked) | 0034, 0035, 0036, 0045, 0046, 0047, 0061, 0073, 0078, 0091, 0092, 0112 |
 | PWA and UI: share target, offline cache, composer, topbar, long press, prefs rail, tool-call folding, rich inline rendering (mermaid/code/math/charts), collapsible sidebar | 0023, 0032, 0043, 0044, 0052, 0065, 0072, 0080, 0083, 0086 |
 | Config health tab | 0029 |

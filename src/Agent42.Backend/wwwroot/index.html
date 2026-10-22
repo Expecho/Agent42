@@ -1079,7 +1079,7 @@
         <input class="agent-form__input" type="text" id="chatName" maxlength="64" placeholder="e.g. My phone" />
       </label>
 
-      <label class="agent-form__field">
+      <label class="agent-form__field" id="chatBotTokenField">
         <span class="agent-form__label">// bot token</span>
         <input class="agent-form__input" type="password" id="chatBotToken" autocomplete="off"
                placeholder="paste the token" />
@@ -1091,6 +1091,43 @@
         <input class="agent-form__input" type="password" id="chatAppToken" autocomplete="off"
                placeholder="paste the xapp- token" />
       </label>
+
+      <!-- Signal has no token to paste: a spare number is registered in the gateway's signal-cli (ADR 0111 phase 3).
+           Shown only for Signal, once the connection exists (registration needs its id). -->
+      <section class="agent-form__section" id="chatSignalSection" hidden>
+        <p class="agent-form__note" id="chatSignalNote"></p>
+        <div id="chatSignalRegister">
+          <label class="agent-form__field">
+            <span class="agent-form__label">// number</span>
+            <input class="agent-form__input" type="tel" id="chatSignalNumber" autocomplete="off" placeholder="+31 6 1234 5678" />
+          </label>
+          <label class="agent-form__field">
+            <span class="agent-form__label">// captcha (only when Signal asks)</span>
+            <input class="agent-form__input" type="text" id="chatSignalCaptcha" autocomplete="off"
+                   placeholder="signalcaptcha://…" />
+          </label>
+          <p class="agent-form__note">Signal may ask for a captcha first: solve it at
+            <a href="https://signalcaptchas.org/registration/generate.html" target="_blank" rel="noopener">signalcaptchas.org</a>,
+            copy the signalcaptcha:// link it gives you, and paste it above.</p>
+          <label class="agent-form__field agent-form__field--check">
+            <input class="agent-form__checkbox" type="checkbox" id="chatSignalVoice" />
+            <span class="agent-form__label">// call me instead of a text (try a text first)</span>
+          </label>
+          <button class="agent-form__btn" type="button" id="chatSignalRegisterBtn">Send me a code</button>
+        </div>
+        <div id="chatSignalVerify" hidden>
+          <p class="agent-form__note" id="chatSignalVerifyText"></p>
+          <label class="agent-form__field">
+            <span class="agent-form__label">// code</span>
+            <input class="agent-form__input" type="text" id="chatSignalCode" inputmode="numeric" autocomplete="one-time-code" placeholder="123-456" />
+          </label>
+          <label class="agent-form__field">
+            <span class="agent-form__label">// registration lock PIN (if the number has one)</span>
+            <input class="agent-form__input" type="password" id="chatSignalPin" autocomplete="off" />
+          </label>
+          <button class="agent-form__btn" type="button" id="chatSignalVerifyBtn">Verify</button>
+        </div>
+      </section>
 
       <label class="agent-form__field">
         <span class="agent-form__label">// talks to</span>

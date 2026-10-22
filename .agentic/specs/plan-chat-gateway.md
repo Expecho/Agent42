@@ -31,6 +31,8 @@ integration per platform.
 
 Each MR is shippable on its own. Before starting phase 2 or 3, re-run Step 1's drift check (header commit vs
 HEAD) and re-verify the phase's spike items. Those phases are planned here at a coarser grain, on purpose.
+**Phase 3 was refined on 2026-10-21 and runs before phase 2** (section "Phase 3 — Signal, refined plan"); it
+changes Signal to a dedicated number and a lease-gated child process.
 
 **Shape:**
 
@@ -778,7 +780,10 @@ Discord bot. For each: pair, DM, stream, `/new`, `/stop`, an image + a PDF + a v
 stranger ignored, a scheduled prompt delivered to origin. Trigger one ACA revision rollover with a connection live,
 and confirm there's no double reply and no 409 storm (C3). Record the results in ADR 0111's verification note
 **through a follow-up `docs/*` branch and MR**, never a commit to `main` (hard rule 1). The same applies to the
-live checks in Steps 22 and 25.
+live checks in Steps 22 and 31.
+
+**Status (2026-10-21): skipped on purpose, still open.** Phase 3 does not depend on it. Its open questions (Ogg
+accepted by STT, Discord `/text`, the Blob lease on real storage) stay open.
 
 ### Phase 2 — WhatsApp Cloud API (MR 4; re-verify before starting)
 
@@ -804,26 +809,597 @@ are not).
 **Step 22: Docs + live check.** ADR 0111 amendment, the `chat-apps.md` WhatsApp section, the ADR 0002 carve-out
 list, `README.md`, and a live check with a real number.
 
-### Phase 3 — Signal via signal-cli (MR 5; re-verify before starting)
+### Phase 3 — Signal via signal-cli (MR 5)
 
-**Step 23: Spike + design check.** Run `signal-cli` in `daemon --http` mode with **multi-account** support. Hermes
-uses SSE `GET /api/v1/events?account=` for inbound and JSON-RPC `POST /api/v1/rpc` for outbound
-(`signal/adapter.py:297-330, 599-611`). Note that Hermes's setup text wrongly calls this the
-`signal-cli-rest-api` bridge (`register.py:61-62`); use the native daemon API. Linking is per user, as a
-**linked device** (`signal-cli link` → a provisioning URI shown as a QR code in the panel, from the browser,
-never sent to a third party). The key store needs a **persistent volume** (Azure Files, the ADR 0107 precedent).
-Look at the image source and its CVE posture, and the container's CPU and memory (gotcha "Container Apps bills the
-per-replica total across ALL containers"). There's no edit, and outbound styles are UTF-16 `textStyle` ranges
-(Hermes `signal_format.py`).
+**Refined on 2026-10-21 and now runs BEFORE phase 2** (the user's call). The coarse Steps 23–25 that stood here
+assumed a linked device and a sidecar. The spike refuted both, so they are replaced by the section
+**"Phase 3 — Signal, refined plan"** below (Steps 23–31). Phase 2 (WhatsApp) stays coarse and unstarted.
 
-**Step 24: Sidecar + adapter.** Bicep sidecar + volume (what-if first; **never** run RBAC yourself, rule 5). Add
-the `SignalAdapter` (SSE in, JSON-RPC out, one account per connection) and the panel's link flow. Ignore "note to
-self" sync echoes and stories (Hermes `:363-375, 434`).
+## Phase 3 — Signal, refined plan
 
-**Verify:** `SignalAdapterTests` against a stub SSE + RPC server; a Bicep build.
+planned-against: main @ 2875f96 (the #214 merge). Branch `feature/chat-gateway-phase-3-signal` from there.
 
-**Step 25: Docs + live check.** ADR 0111 amendment, CLAUDE.md's manual-prerequisites table (if the sidecar needs
-any operator input), `chat-apps.md` Signal, and a live check with a real linked device.
+**Drift check (41f0a41 → 2875f96):** only phases 1a/1b/1c (#212–#214) and past chats (#211, ADR 0112). Nothing
+outside the gateway changed under this plan. At execution, re-run `git log --oneline 2875f96..HEAD` and re-read any
+touched file named below.
+
+**Goal:** each user connects a **dedicated Signal number** of their own, registered in a `signal-cli` daemon that the
+backend runs as a child process, and talks to Agent 42 there like on the other three platforms. No operator secret,
+and no inbound HTTP surface: the daemon listens on `127.0.0.1` only.
+
+### Decisions taken in the phase 3 interview (2026-10-21)
+
+Don't relitigate these. Changing one is a new planning round.
+
+- **S1: a dedicated number, not a linked device.** This amends G2's "each user links their own Signal account". A
+  linked device of the user's own account could reach them only through Note-to-Self. Its replies would be sent *as the
+  user*, phone notifications for them are unreliable (`--notify-self`, issue #373), and the daemon would receive and
+  store **all** of the user's inbound Signal traffic and attachments. With a dedicated number, the bot is its own
+  Signal account, like a Telegram bot. The existing pairing code, owner check, DMs and groups apply unchanged. The
+  cost is that the user needs a spare number (a SIM, a VoIP number, or a landline with a voice code).
+- **S2: `signal-cli` is a child process of the backend, started only while the gateway holds its lease.** This
+  replaces the plan's sidecar. The daemon has **no HTTP auth**, and its store is SQLite in WAL mode behind Java
+  `FileLock`s. A sidecar would run in both revisions during a rollover, two daemons on one store, and only an
+  unverified SMB lock would stand between them. Under the lease (C3) only one daemon runs at a time, by construction.
+  The backend image grows by a JRE 25 plus signal-cli (about 200 MB).
+- **S3: the store lives on Azure Files, verified first.** A new share on the existing copilot Files account, mounted on
+  the backend container only (the ADR 0107 shape). **Step 24 measures single-writer SQLite WAL on that mount in the
+  real Container Apps environment before any adapter code.** If it fails, the fallback is local disk plus a Blob
+  snapshot (Step 24's fallback paragraph). That fallback changes S3, so it is a short new planning round, not an
+  improvisation.
+- **Phase order:** phase 3 ships before phase 2. Step 19 stays open and is not a prerequisite.
+
+### Spike findings (Step 23, 2026-10-21; signal-cli master @ `46b40b6`, latest stable **v0.14.9**, 2026-10-07)
+
+Sources: the AsamK/signal-cli README, `man/signal-cli.1.adoc` (M), `man/signal-cli-jsonrpc.5.adoc` (J), the CHANGELOG
+(C), and the source files named. Re-verify anything marked *unverified* during Step 24 or the DevHost exercise.
+
+- **Runtime:** JRE **25** plus the bundled native libsignal (x86_64 glibc). A GraalVM native build exists, but the
+  README calls it "EXPERIMENTAL", so **use the JVM build**. The official images are `ghcr.io/asamk/signal-cli`
+  (`<ver>` and `<ver>-native`), and the JVM one is on Zulu JRE 25. Licence **GPL-3.0-only**: we run it as a separate
+  program inside a private image, which is aggregation, not linking. Record that in the ADR.
+- **Expiry:** "signal-cli releases older than three months may not work correctly" (README). Releases come every 3–5
+  weeks, so the bundled version needs a visible age check (Step 30).
+- **Daemon:** `daemon --http=127.0.0.1:<port>`. In multi-account mode (no `-a`), each JSON-RPC call names `account`.
+  - Endpoints: `POST /api/v1/rpc` (needs `Content-Type: application/json`), `GET /api/v1/events?account=<n>` (SSE,
+    event `receive`), and `GET /api/v1/check` (200).
+  - **No auth.** The Host header is validated only when bound to a loopback name, and that validation is OFF on
+    `0.0.0.0`, so the bind is load-bearing.
+  - Flags: `--receive-mode on-start|on-connection|manual`, where the default is `on-start`; `--ignore-stories`;
+    `--ignore-attachments`, which must NOT be set because `getAttachment` reads the downloaded file;
+    `--send-read-receipts`.
+- **Message loss traps:**
+  - In `on-start` mode the daemon receives and **acks** messages from boot. The SSE buffer only starts recording an
+    account when a client first connects for it, so anything that arrives before that is gone. **Use
+    `--receive-mode=on-connection`** (inferred from the code; DevHost must confirm), so messages wait on Signal's
+    server until our stream is up.
+  - A stream opened without `?account=` captures the account list at connect time, so **open one stream per
+    account**.
+  - The in-memory replay (1000 events, `Last-Event-ID`) does not survive a daemon restart.
+- **Registration (S1):** multi-account mode exposes `register`, with `captcha` and `voice` params. A captcha comes from
+  `https://signalcaptchas.org/registration/generate.html` as a `signalcaptcha://…` token. **Whether `verify` is exposed
+  over JSON-RPC is *unverified*.** J lists "except register, verify and link". Step 24 checks the source of `VerifyCommand`. If it isn't exposed, the fallback is a one-shot CLI
+  invocation `signal-cli --config <dir> -a <n> verify <code> [--pin]`, run while the daemon holds no lock on that
+  account, which means right after `register`, before the account is loaded. Measure that the daemon picks the account
+  up afterwards; in multi-account mode it may need `addAccount`/a restart.
+- **Phone-side or server-side loss:** an `AUTHENTICATION_FAILED` closes and removes the account **silently**. Nothing
+  is emitted on SSE. Later RPCs fail with "Specified account does not exist". The adapter maps that error, and an SSE
+  400 for an unknown account, to `ChatAuthException`.
+- **Envelope:** `sourceUuid` (the ACI), `sourceNumber`, `sourceDevice` and `timestamp`, plus exactly one of
+  `dataMessage | editMessage | storyMessage | syncMessage | receiptMessage | typingMessage | callMessage`.
+  - `dataMessage` carries `message`, `groupInfo{groupId}`, `mentions[{uuid,start,length}]`, `quote{authorUuid,…}`,
+    `attachments[{id, contentType, filename, size, isVoiceNote}]`, `reaction` and `remoteDelete`.
+  - There is **no message id**: Signal identifies a message by sender + sent `timestamp`. Dedupe key
+    `"{sourceUuid}:{timestamp}"`.
+- **Sending:** `send` takes `{recipient | groupId, message, textStyle[], attachments[], quoteTimestamp, quoteAuthor}`.
+  - `textStyle` is `"start:length:STYLE"` in **UTF-16 units**, with styles BOLD, ITALIC, STRIKETHROUGH, MONOSPACE and
+    SPOILER.
+  - `attachments` accepts `data:<mime>;filename=<name>;base64,<data>`.
+  - The result `timestamp` is the message id. `results[].type` is one of SUCCESS, UNREGISTERED_FAILURE,
+    NETWORK_FAILURE, and so on. A `token` in a result means proof-required (a captcha).
+  - JSON-RPC errors: **-5 rate limit**, -6 captcha rejected, -4 untrusted key, -1 user error.
+  - Text over **2000 UTF-8 bytes** is cut in the body and sent in full as an automatic long-text attachment.
+- **Edits exist** (`editTimestamp`, since 0.11.10), but their limits are *unverified*. `sendTyping` lasts 15 s unless
+  stopped.
+- **Attachments in:** `getAttachment {id, recipient|groupId}` → `{data: base64}`. The daemon's cap is 150 MiB; our cap
+  is `MaxAttachmentBytes`, checked from `size` first.
+- **Storage:** `<config>/data/accounts.json`, `<config>/data/<n>.d/account.db` (SQLite, `journal_mode=wal`) and
+  `<config>/attachments/`. A second daemon on the same dir **blocks** waiting for the `FileLock`. Over SMB, WAL and
+  those locks are *unverified*, which is S3's measurement.
+- **Not found:** the maximum devices per account, idle-unlink rules, and resource guidance. None of them matter with a
+  dedicated primary number.
+
+### Context & constraints (phase 3)
+
+- **SC1: where phase 1's code is reused unchanged, and where it can't be.** It is reused unchanged:
+  - `ChatTurnPipeline` (authz, pairing, commands, routing, queue, drain, files, voice, groups);
+  - `ChatReplyStreamer` final-only path, `ChatMessageChunker`, `InboundDeduper` and `ChatDeliverySender`;
+  - the file core (`AgentRunFileError` / `StoreAgentRunFilesAsync` overloads) and `ISpeechTranscriptionService`;
+  - `ChatConnection` and its grains, and the protector. The credential is the E.164 number in
+    `ChatCredentials.BotToken`, protected like any token.
+
+  It **can't** be reused unchanged in these places:
+  1. **The credential flow.** `ValidateAsync(ChatCredentials)` assumes the user pastes a working secret. Signal has a
+     two-call registration (`register` → SMS/voice code → `verify`), so it gets two dedicated endpoints (Step 28).
+     **The generic create and update endpoints REFUSE `Credentials` for Signal** with a 400 ("Signal numbers are
+     registered, not pasted"). Otherwise user B could paste user A's registered number, pass a `listAccounts` check,
+     and drive A's bot. Because a pasted Signal credential never gets past the API, the only way a credential is
+     stored is `verify`, which runs under the caller's own claim (SC2). `ValidateAsync` for Signal is then only the
+     supervisor's "does the daemon still hold it" check.
+  2. **The supervisor's lease.** The daemon must die the moment the lease is lost, even while a registration holds it.
+     `ChatGatewayService` gains a narrow hook, `IChatGatewayLeaseParticipant` (`OnLeaseRenewedAsync`,
+     `OnLeaseLostAsync`):
+     - it is notified **first**, before `StopAllAsync`, not after it, because a hung session `DisposeAsync` must not
+       delay the kill;
+     - it is notified on renewal failure, in the `ExecuteAsync` catch path, and in the `StopAsync` override, always
+       before `lease.ReleaseAsync`;
+     - it is idempotent, because `StopAllAsync` already runs from up to three places.
+
+     `IChatGatewayControl` exposes `HoldsLease`, which today is only on the class.
+  3. **Delete.** It must also tell the daemon to `unregister` + `deleteLocalAccountData` and release the number
+     claim. The endpoint **reads the connection first**: its number is in the credentials, or in the pending-number
+     field (SC2) when the registration was never finished. Then `DeleteAsync` (deregister first, as today), then
+     `Control.StopAsync`, then the optional adapter interface `IChatPlatformCleanup` with that number, then the claim
+     release. Cleanup is best effort: a failure is logged without the number and never undoes the delete. The claim is
+     released even when cleanup fails, because a pending claim also expires (SC2).
+  4. **Formatting.** There's no markup language: `SignalText` turns Markdown into `(text, textStyle[])`.
+  5. **The panel.** A registration flow replaces the token field for Signal (Step 29).
+  6. **Voice.** Signal voice notes are AAC, likely raw ADTS (C12). That is not on the STT list, so expect the existing
+     curated format reply. Step 31 records it live; no transcoding (C12).
+- **SC2: a number belongs to exactly one connection.** The daemon's account namespace is global across users. If user
+  B ran `register` on user A's number, B couldn't verify (the code goes to A), but the call would reset A's local
+  registration, which is a denial of service. **`ISignalNumberDirectoryGrain`**, keyed by the normalised E.164 number,
+  is a claim `(userId, connectionId, state, claimedAt)` taken **before** `register` is called. It is its own grain
+  type (gotcha "Each credential namespace gets its own directory grain type"), and a class with property
+  initialisers.
+  - **States:** `Pending` from claim until `verify` succeeds, then `Active`. A `Pending` claim **expires after 30
+    minutes**: another connection may then take it, so an abandoned or failed registration can't squat a number
+    forever. A failed `register` (captcha demand, rate limit, invalid number) releases the claim at once.
+  - A number claimed `Active`, or `Pending` and unexpired, by another connection is refused with a generic 409 that
+    doesn't say whose. Re-registering by the same connection is allowed.
+  - **The pending number is persisted on the connection** as a trailing `[Id(23)] string? PendingSignalNumber` on
+    `ChatConnection`, with a null default (rule 2). Setting it goes through a new grain method,
+    `SetPendingSignalNumberAsync`, and `SetCredentialsAsync` clears it. `verify` reads it, so the verify request
+    carries only `{code, pin?}`. Prove the field on the Cosmos JSON path (`GrainStorageSerializerTests`).
+  - The **"needs registration"** status is derived, not stored: a Signal connection with no `CredentialsCiphertext`.
+    It reads "awaiting code" when `PendingSignalNumber` is set.
+  - The number is a grain key in clear (Cosmos is the operator's store, with the same trust as the encrypted
+    credential's other neighbours). A hash of a phone number would be brute-forceable, so it would add nothing. Record
+    this in the ADR.
+  - **Accepted residual (record it in the ADR):** any signed-in user can make Signal send a code to, and sign out, the
+    phone of an arbitrary number by calling `register` on it. Signal's own rate limits bound it, and today only the
+    owner's principals can sign in (ADR 0002).
+- **SC3: the daemon host (`SignalDaemon`).**
+  - It starts lazily on first use, only when `HoldsLease`, as `java … signal-cli --config <dir> daemon
+    --http=127.0.0.1:<port> --receive-mode=on-connection --ignore-stories --no-receive-stdout`. The process is started
+    through an `ISignalProcessLauncher` seam.
+  - Readiness is `/api/v1/check`. A crash restarts it with capped backoff.
+  - On lease loss or shutdown, the participant hook **stops** it: SIGTERM, so SQLite closes cleanly, then SIGKILL
+    after 5 s. It waits for exit before the lease is released.
+  - **A watchdog closes the renewal window.** A renewal is detected as failed only at the next 20 s tick, `RenewAsync`
+    has no local deadline, and SDK retries can hold a hung renewal past the lease's 60 s, while a new revision
+    acquires it. So the daemon stops itself when no `OnLeaseRenewedAsync` arrived within **40 s** (less than the
+    lease duration minus one renew interval). Re-check the lease's duration and interval in `ChatGatewayLease.cs` at
+    execution, and derive the 40 s from them in code, never as a literal.
+  - stdout and stderr go to the logger at Debug, **minus phone numbers**: signal-cli logs them, and `/logs` is
+    owner-visible. Redact E.164 numbers with a regex before logging.
+  - `SignalOptions.DaemonUrl` set means "external daemon, never spawn". DevHost and the tests use that.
+  - The JVM heap is capped through `JAVA_OPTS` (`-Xmx`). Step 24 measures the RSS to size the container.
+- **SC4: the session.** One SSE stream per account (`?account=`), read on the session's task. A dropped stream
+  reconnects inside the session with a short backoff, as Slack's `disconnect` does (phase 1b). A 400 unknown-account
+  or "does not exist" → `ChatAuthException` ("Signal no longer has this number registered; register it again").
+  - **Inbound filter:** accept `dataMessage` with text, attachments or both. Drop `syncMessage` (no other device
+    exists, so any sync is foreign), `storyMessage`, `receiptMessage`, `typingMessage`, `callMessage` and
+    `editMessage`; editing never re-runs a turn (Out of scope). Also drop a `dataMessage` that is only a reaction or a
+    `remoteDelete`, and anything whose `sourceUuid` is the bot's own ACI.
+  - `MentionsBot` comes from `mentions[].uuid == bot ACI`, never the text. `RepliesToBot` from
+    `quote.authorUuid == bot ACI`. The chat id is `groupInfo.groupId` or the sender's ACI.
+- **SC5: capabilities.** Final-only (`SupportsEdit = false`). Edits exist, but their caps are unverified, and each
+  edit re-notifies, so streaming by edit is a later refinement. `MaxMessageLength` is **2000** (conservative against
+  the 2000-UTF-8-byte cut; the long-text attachment covers multibyte overflow). `MaxChunks` is 8, `TypingRefresh`
+  10 s (Signal clears it after 15 s), and the command prefix is `/` (Signal has no slash commands).
+- **SC6: errors → `ChatSendErrorKind`.**
+  - JSON-RPC -5 → `RateLimited` with `retryAfterSeconds`.
+  - A result `token` (proof-required) → `RateLimited`, plus a fault reason the panel shows ("Signal asks for a
+    captcha; open Agent42 to continue"). Solving it via `submitRateLimitChallenge` is out of scope.
+  - UNREGISTERED_FAILURE → `NotFound`. NETWORK_FAILURE / IO -3 → `Transient`.
+  - Every named client calls `RemoveAllResilienceHandlers()` and sets an explicit timeout (rule 8, C10). The SSE
+    stream gets **its own client** with an infinite timeout.
+- **SC7: egress (ADR 0013 extension) and the key material.** Replies are end-to-end encrypted to the owner's devices.
+  But the **bot account's** identity keys and its message cache live on the operator's Azure Files share, so the
+  operator can read what the bot account receives. The user's own Signal account is never involved (S1). The share is
+  encrypted at rest and mounted with the account key (ADR 0107's account, key-only by design). Say all this in the ADR
+  0111 amendment and in the panel's Signal setup note.
+- **SC7b: the Copilot shell can reach the daemon and its store (critic M1).** ADR 0107's built-in shell runs as
+  the backend's uid, in the backend container. It can therefore call the unauthenticated daemon on loopback (send as
+  any connected number, read any account's events) and read `/mnt/signal` (every bot's identity keys and message
+  cache). The `127.0.0.1` bind protects against the network, never against that shell. This is the **same class** as
+  ADR 0107's accepted risks: the shell can already forge `X-MS-CLIENT-PRINCIPAL-ID` and mint managed-identity tokens
+  for all app data. It stays cross-conversation rather than cross-user while only the owner's principals can sign in,
+  and the kill switch (`Copilot:BuiltInToolsEnabled`) is the response. **It is recorded as an explicit extension of
+  ADR 0107's accepted risks in the ADR 0111 amendment, conditional on the user confirming it at plan approval.** The
+  alternatives, if the user declines: a separate uid for the JVM (needs a root entrypoint that drops privileges), or
+  refuse to start Signal while built-in tools are on.
+- **SC8: rule 12.** The daemon process is in-process state for this purpose. Rule 12 gains it, and the lease (C3) now
+  protects a **store**, not only a connection.
+- **SC9: image and version (hard rule 4 applies by analogy).** Never write the signal-cli or JRE version from memory.
+  At execution, resolve the latest stable signal-cli release from `https://api.github.com/repos/AsamK/signal-cli/releases/latest`
+  and its tarball SHA-256. Pin both as `ARG`s in `src/Agent42.Backend/Dockerfile`, and verify the checksum in the
+  `RUN`. Take the JRE from the current `eclipse-temurin:25-jre` tag, resolved the same day and pinned by digest. Bake
+  `SIGNAL_CLI_VERSION` and `SIGNAL_CLI_RELEASED` into the image as `ENV` for Step 30's age check.
+
+### Affected areas (phase 3; verify against the tree at execution)
+
+**New — Agents:** `src/Agent42.Agents/ChatGateway/ISignalNumberDirectoryGrain.cs` + `SignalNumberDirectoryGrain.cs`
+(claim, release, resolve; state type in `PersistedTypeNames()` + golden; shared `agent-state` container).
+
+**New — Backend (`src/Agent42.Backend/ChatGateway/Signal/`, flat namespace):**
+- `SignalOptions.cs` (DataDir, DaemonUrl, port, JavaOpts, executable path);
+- `SignalDaemon.cs` + `ISignalProcessLauncher.cs` (SC3);
+- `SignalRpcClient.cs` (JSON-RPC + SSE clients, SC6);
+- `SignalEvents.cs` (pure envelope → `ChatInboundMessage` projection, SC4);
+- `SignalText.cs` (Markdown → text + `textStyle[]`);
+- `SignalAdapter.cs` (adapter + session);
+- `src/Agent42.Backend/ChatGateway/AgentApi.ChatGatewaySignal.cs` (register/verify). It goes in the feature folder,
+  NOT `Signal/`, because `AgentApiPart_ExistsInItsFeatureFolder` expects the folder. It holds
+  `private static void MapChatGatewaySignalEndpoints(IEndpointRouteBuilder app)`, called from `MapAgentApi` like
+  every other partial, plus a new row in `ProjectLayoutTests.AgentApiParts()` (count comment +1).
+  `AgentApiParts_MatchesReflectedMapMethods` reflects every `Map*Endpoints` method and would fail without the row.
+
+**Modified — source:**
+- `src/Agent42.Agents/ChatGateway/ChatConnection.cs` (trailing `PendingSignalNumber`),
+  `IUserChatConnectionsGrain.cs` + `UserChatConnectionsGrain.cs` (`SetPendingSignalNumberAsync`; `SetCredentialsAsync`
+  clears it).
+- `src/Agent42.Backend/Api/AgentApi.cs`: call `MapChatGatewaySignalEndpoints`.
+- `ChatGatewayService.cs` and `IChatGatewayControl.cs`: the lease participant hook (SC1.2), and `HoldsLease` on the
+  interface. A new `IChatGatewayLeaseParticipant.cs`. The factory lambda in `ChatGatewayRegistration.cs` passes
+  `sp.GetServices<IChatGatewayLeaseParticipant>()`.
+- `IChatPlatformAdapter.cs`: the optional `IChatPlatformCleanup`.
+- `AgentApi.ChatGateway.cs`: delete calls cleanup and releases the claim.
+- `ChatGatewayRegistration.cs`: `AddSignalChat()`.
+- `ChatGatewayContracts.cs`: register/verify DTOs, and a "needs registration" status in `ChatConnectionStatus`.
+- `tools/Agent42.DevHost/Program.cs`: config only (`ChatGateway:Signal:DaemonUrl` → a stand-in).
+- `src/Agent42.Backend/Dockerfile` (SC9).
+- `src/Agent42.Backend/Configuration/ConfigHealth.cs` (+ contracts): the age row (Step 30).
+- `wwwroot/index.html`, `js/chatgateway.js`, and `sw.js` (`CACHE` from `agent42-shell-v73` at plan time; re-read it).
+
+**Modified — infra:**
+- `infra/modules/copilot-files.bicep`: a second share `signal-data`, or a param-driven share list; keep the module's
+  "workspaces only" comment truthful.
+- `infra/modules/copilot-environment-storage.bicep`: reused for a second link, `agent42-signal`.
+- `infra/main.bicep`: the module call, `ChatGateway__Signal__DataDir`, and the CPU/memory bump (Step 27).
+- `infra/modules/container-app.bicep`: a volume `signal-data` mounted at `/mnt/signal` on the **backend container
+  only**, with the mount options from Step 24.
+
+**Modified — tests holding lists, and fakes:**
+- `GrainStorageSerializerTests.PersistedTypeNames()` + goldens (the directory state; a Cosmos JSON row for
+  `PendingSignalNumber`) and `SerializationCompatibilityTests`;
+- `ProjectLayoutTests` (the `AgentApiParts()` row; extend `Hosts_RegisterChatGateway`, or add a row, to assert that
+  `AddChatGateway()` registers the Signal adapter, so a dropped `AddSignalChat()` is caught);
+- `AgentApiReachabilityTests`;
+- `PwaAssetsTests` and the other cache-name pins, and `ChatGatewayPanelAssetsTests`;
+- `CopilotFilesMountTests` (a case for the `signal-data` mount: backend container only, with Step 24's options);
+- `ChatGatewayFakes.cs` (`RecordingChatGatewayControl` gains `HoldsLease`), `ChatGatewayServiceTests` (the
+  construction plus the hook) and `ChatGatewayApiTests` (Signal credentials refused);
+- `SiloRegistrationTests`, only if a grain gains a dependency; none should.
+
+**Docs:** an ADR 0111 amendment (S1–S3, SC2, SC7, the GPL note, the expiry), ADR 0107 (the share's account now also
+holds `signal-data`), `CLAUDE.md` (rule 12 gains the daemon; the feature map says "Signal now"),
+`.agentic/gotchas.md` (Step 30), and the Signal section of `docs/integrations/chat-apps/README.md` +
+`docs/features/chat-apps.md`.
+
+**Deliberately NOT touched:** `excludedPaths` (no inbound surface), GitHub secrets, and CLAUDE.md's
+manual-prerequisites table (no operator input: the share key comes from `listKeys()`, as ADR 0107's does).
+
+### Steps (phase 3)
+
+**Step 23: Spike.** Done (above). **Verify:** findings written here.
+
+**Step 24b results (2026-10-21, `ghcr.io/asamk/signal-cli:0.14.9` in Docker, SC3's exact arguments):**
+- Every flag is accepted. The log reads "Starting daemon in multi-account mode", then "Started HTTP server on
+  /127.0.0.1:8085", then "HTTP server has no authentication; Host header is pinned to [localhost, ::1, 127.0.0.1]".
+- `/api/v1/check` answers 200 **even with a foreign Host**. `/api/v1/rpc` with `Host: evil.example` answers **421**.
+  So the Host pin guards RPC, but not the health probe.
+- `/api/v1/events?account=+31600000000` (unknown) answers **400**. `send` for an unknown account returns JSON-RPC
+  **-32602 "Specified account does not exist"**. Both mean `ChatAuthException`.
+- **`verify` IS a JSON-RPC command in multi-account mode** (`VerifyCommand implements JsonRpcRegistrationCommand`;
+  without `account` it gives "-32602 Method requires account parameter"). The params are
+  `{account, verificationCode, pin?}`, and it returns nothing on success. With no pending session it gives
+  **-3 "Verify error: No registration verification session active"**. The CLI fallback is dropped.
+- `register` params: `{account, voice?, captcha?, reregister?}`. A captcha demand is **-1 (user error)** whose message
+  comes from `CommandUtil.getCaptchaRequiredMessage`, so detect it by the word "captcha" in a -1 message. A rate
+  limit is -5. "voice before SMS" is -1 "Before requesting voice verification you need to request SMS verification
+  and wait a minute."
+- **`listAccounts` returns `[{number, aci}]`**, so the ACI for `ChatBotIdentity.BotUserId` comes from there after
+  `verify`.
+- The idle daemon with no accounts measured **186 MiB** RSS, so the JVM with one or two accounts fits in +0.25 CPU /
+  +0.5Gi. Cap the heap with `JAVA_OPTS=-Xmx256m`.
+
+**Step 24: Azure Files measurement (MANUAL GATE, before Signal is ENABLED).** This creates resources in the shared
+environment `cae-hosting`, which is outward-facing, so **prepare the commands and hand them to the user to run** (the
+rule 5 posture).
+- Create the `signal-data` share on the copilot Files account, and an environment storage link to it.
+- Create a throwaway Container Apps **job** that mounts the share and runs a script from the pinned signal-cli JVM
+  image:
+  1. `sqlite3` WAL write/read loops, then `kill -9` mid-write, then `PRAGMA integrity_check` after reopen;
+  2. `signal-cli --config /mnt/signal listAccounts`, which proves the `FileLock` on `accounts.json` works;
+  3. both under the current mount options (`uid=1654,gid=1654,dir_mode=0700,file_mode=0600`) and with `nobrl` added.
+- Record the RSS of an idle daemon. Then delete the job.
+
+**Status (2026-10-21): the share `signal-data` (on `stagent42cpxdhwuybwqdgai`, quota 1 GiB) and the environment
+link `agent42-signal` in `cae-hosting` were created with the Bicep's names. Creating the job was refused by the
+session's permission policy (shared environment), so the measurement itself is the user's.** To run it, save the YAML
+below as `sig24-job.yaml` and run
+`az containerapp job create -g rg-agent42 -n agent42-sig24 --yaml sig24-job.yaml`, then
+`az containerapp job start -g rg-agent42 -n agent42-sig24`, then read the logs (`az containerapp job logs show …`
+or Log Analytics). Pass means `integrity_check` = `ok` and `journal_mode` = `wal` on `/a` (the current options);
+if only `/b` passes, add `nobrl` to the Signal mount. Then `az containerapp job delete -g rg-agent42 -n agent42-sig24 --yes`.
+
+```yaml
+location: westeurope   # check: az containerapp env show -g rg-hosting -n cae-hosting --query location
+properties:
+  environmentId: /subscriptions/<sub>/resourceGroups/rg-hosting/providers/Microsoft.App/managedEnvironments/cae-hosting
+  configuration: { triggerType: Manual, replicaTimeout: 900, replicaRetryLimit: 0,
+                   manualTriggerConfig: { parallelism: 1, replicaCompletionCount: 1 } }
+  template:
+    containers:
+    - name: probe
+      image: docker.io/library/alpine:3.20
+      resources: { cpu: 0.5, memory: 1Gi }
+      command: ["/bin/sh", "-c"]
+      args:
+      - |
+        apk add --no-cache sqlite >/dev/null 2>&1
+        for d in /a /b; do
+          echo "=== $d"; mkdir -p $d/probe; cd $d/probe; rm -f t.db t.db-wal t.db-shm
+          sqlite3 t.db "PRAGMA journal_mode=wal; create table t(i integer, s text);" 2>&1
+          (for i in $(seq 1 3000); do echo "insert into t values($i, hex(randomblob(200)));"; done) | sqlite3 t.db 2>&1 | head -3 &
+          for k in 1 2 3 4 5 6; do sqlite3 t.db "select count(*) from t;" 2>&1; sleep 0.5; done
+          pkill -9 sqlite3; sleep 1
+          sqlite3 t.db "PRAGMA integrity_check; PRAGMA journal_mode; select count(*) from t;" 2>&1
+        done
+      volumeMounts: [ { volumeName: plain, mountPath: /a }, { volumeName: nobrl, mountPath: /b } ]
+    volumes:
+    - { name: plain, storageType: AzureFile, storageName: agent42-signal, mountOptions: "uid=1654,gid=1654,dir_mode=0700,file_mode=0600" }
+    - { name: nobrl, storageType: AzureFile, storageName: agent42-signal, mountOptions: "uid=1654,gid=1654,dir_mode=0700,file_mode=0600,nobrl" }
+```
+
+**Until it passes, Signal ships dormant** (divergence D1 under Progress): `ChatGateway:Signal:Enabled` is false by
+default. With it off, the adapter isn't registered, no daemon ever starts, and the panel doesn't offer Signal.
+Turning it on (a Bicep param) is the user's step, after this measurement and their confirmation of SC7b.
+
+**Step 24b (local, no Azure, before Step 25): run the REAL pinned daemon with SC3's exact arguments** in Docker
+(`ghcr.io/asamk/signal-cli:<pinned>`, a scratch volume):
+- confirm that every flag is accepted, including `--receive-mode=on-connection` and `--no-receive-stdout`;
+- confirm `/api/v1/check` answers 200, and that a Host header other than localhost gets 421;
+- confirm that `/api/v1/events?account=+31600000000` (unknown) answers 400;
+- call `{"method":"verify"}` and `{"method":"register"}` with no params. A params error means exposed, "method not
+  found" means not. That settles the `VerifyCommand` question with the CLI fallback as the other branch.
+- read `ListAccountsCommand` in the pinned source: does its JSON carry the ACI? `ChatBotIdentity.BotUserId` needs the
+  ACI to drop own echoes and detect mentions. If it doesn't, take it from `verify`'s result or `getUserStatus` on
+  self.
+
+Message-loss behaviour under `on-connection` needs a registered number, so it stays a Step 31 check. If it fails
+there, the session's mitigation is to reopen the stream immediately after the daemon restarts. Record the result.
+
+**Verify:** Step 24's and 24b's results, the chosen mount options, the RSS and the verify/ACI answers are written
+**into SC3/SC4 and Step 28 here** (not only under Progress), so the executor of Step 25 onward reads facts, not
+open questions. The Azure job is gone.
+
+**Fallback, only if WAL is unsafe on the share:** stop and re-plan S3 with the user: local disk plus a Blob snapshot
+of the config dir taken on stop and every N minutes, restored at daemon start under the lease. Don't build it
+unasked.
+
+**Step 25: The lease hook + `SignalDaemon`.** Add `IChatGatewayLeaseParticipant` and wire it per SC1.2: renewed
+after each successful renew; lost **before** `StopAllAsync`; before `lease.ReleaseAsync`; idempotent. Add `HoldsLease`
+to `IChatGatewayControl`. Add `SignalOptions`, `ISignalProcessLauncher`, and `SignalDaemon` (SC3, including the
+watchdog). A host on `NoOpChatGatewayLease` (DevHost) still drives the hook, and an external `DaemonUrl` makes it a
+no-op.
+
+**Verify:**
+- `ChatGatewayServiceTests`:
+  - `LeaseLost_NotifiesParticipants_BeforeSessionsStop`: a hanging fake session doesn't delay the notification;
+  - `Stop_NotifiesBeforeRelease`: the fake lease records the order;
+  - `Renew_NotifiesParticipants`;
+  - a double stop notifies harmlessly.
+- `SignalDaemonTests` with a fake launcher and fake time:
+  - no start without the lease;
+  - the args contain `127.0.0.1` and `on-connection`, and never `--ignore-attachments`;
+  - readiness polling;
+  - a crash restarts with backoff;
+  - lease loss terminates the process (TERM, then KILL after 5 s) and awaits exit;
+  - **the watchdog stops the daemon** when no renewal arrived within the derived window (fake time), and a renewal
+    resets it (mutation-check it);
+  - an external `DaemonUrl` never spawns;
+  - phone numbers are redacted from forwarded output (mutation-check the redaction).
+
+**Step 26: The RPC client, events and text (pure, parallelizable with Step 25).** Add `SignalRpcClient`
+(SC6 mapping), `SignalEvents` (SC4 filter), and `SignalText`.
+
+**Verify:**
+- `SignalEventsTests` over **captured fixtures**: DM text, group with a mention, a quote of the bot, an image, a voice
+  note (`isVoiceNote`), a sync message, a story, a receipt, typing, an edit, a reaction-only message, a remote delete,
+  and own-ACI. The dedupe id is `uuid:timestamp`. The fixtures come from the DevHost stand-in modelled on J's examples,
+  replaced by real captures in Step 31.
+- `SignalRpcTests` with a stub handler:
+  - the send body;
+  - `textStyle` offsets around an emoji (UTF-16);
+  - a data-URI upload;
+  - `getAttachment` decode and cap;
+  - -5 → `RateLimited` with retry-after, a proof token → `RateLimited` + fault, UNREGISTERED → `NotFound`;
+  - "Specified account does not exist" → auth.
+- `SignalTextTests`: bold, italic, code, fences, links (as text + URL), nested and unbalanced input never throwing,
+  and offsets in UTF-16.
+
+**Step 27: Image + infra.** Dockerfile per SC9. Bicep per the affected areas. Rewrite `copilot-files.bicep`'s "Workspaces ONLY /
+holds nothing else" comment, since the account now also holds the Signal store; keep it key-only, as ADR 0107
+explains. Size the backend from Step 24's RSS:
+the expectation is backend `0.75 / 1.5Gi` + SearXNG `0.5 / 1Gi` = `1.25 / 2.5Gi`, an allowed combination (gotcha
+"Container Apps bills the per-replica total"). Run `az bicep build`, then hand the user `az deployment group what-if`
+**and** `az deployment group validate` (a bad CPU/memory sum is caught only there). No role assignment is involved.
+If one appears, hand it over (rule 5).
+
+**Verify:**
+- a `docker build` of the backend image locally, with `java -version` and `signal-cli --version` run inside it;
+- a `SignalImageTests` source-text test: the Dockerfile pins the version + SHA-256 and checks it, and the `ENV` names
+  match what ConfigHealth reads;
+- `az bicep build` green;
+- the what-if output pasted into the MR.
+
+**Step 28: Adapter, registration endpoints, number directory.**
+- `SignalAdapter` + session (SC4/SC5). `ValidateAsync` checks `listAccounts`.
+- `SignalNumberDirectoryGrain` (SC2).
+- `POST /api/chat-connections/{id}/signal/register {number, captcha?, voice?}`:
+  - 503 unless the gateway runs here and `HoldsLease`;
+  - normalise and validate E.164, then claim the number (`Pending`), then `SetPendingSignalNumberAsync`, then call
+    `register`;
+  - a captcha demand → 400 with the captcha link, and any `register` failure releases the claim.
+- `POST …/{id}/signal/verify {code, pin?}`: the number comes from `PendingSignalNumber`. Run `verify` (or Step 24b's
+  CLI fallback), then mark the claim `Active`, then `SetCredentialsAsync` with the number and the ACI identity (which
+  clears the pending field and opens pairing), then `RestartAsync`.
+- Create and update refuse `Credentials` for Signal (SC1.1).
+- Delete follows SC1.3's order.
+- `AddSignalChat()` in `AddChatGateway()`.
+- No log line in the adapter, the endpoints or the daemon host carries a number: log the connection id instead.
+
+**Verify:**
+- `SignalAdapterTests` against a local Kestrel stub serving SSE + RPC (the `LocalBridgeKestrelTests` shape):
+  - an owner DM end to end through the real pipeline is answered **final-only, with typing first**;
+  - a dropped stream reconnects;
+  - an unknown account faults;
+  - a group mention is answered in the group;
+  - an upload and a download run over RPC.
+  The adapter tests also capture logs and assert that no record contains the test number.
+- `SignalNumberDirectoryGrainTests`:
+  - claim, and refuse another connection's `Active` or unexpired `Pending` number;
+  - an expired `Pending` claim is taken over;
+  - same-connection re-claim, activate, release.
+- `SignalRegistrationApiTests` on the shared API fixture:
+  - no lease → 503;
+  - a number claimed elsewhere → 409, and **`register` is never called** (the stub records calls);
+  - a captcha demand → 400 **and the claim is released**;
+  - verify reads the pending number, stores credentials, opens pairing and never echoes the number;
+  - **create and update with Signal `Credentials` → 400**, and nothing is stored (B1, mutation-check it);
+  - delete of a verified connection and of an abandoned pending one both call `unregister` +
+    `deleteLocalAccountData` with the right number and release the claim, in SC1.3's order;
+  - a cleanup failure still deletes and releases.
+
+**Step 29: Panel.** For Signal, the dialog replaces the token field with a registration flow:
+1. the number;
+2. a captcha step (link + token paste), shown when the server asks for it, plus a "call me instead" option;
+3. the code + optional PIN;
+4. then the usual pairing card.
+
+The setup note carries SC7's plain-words egress line and "use a number you don't use on a phone with Signal: registering
+it here signs that phone out". Add a "needs registration" status. Bump `CACHE` (rule 3).
+
+**Verify:** `ChatGatewayPanelAssetsTests` (the ids, the register/verify paths, the status string) and the cache-name
+pins.
+
+**Step 30: Health, gotchas, docs, DevHost exercise.**
+- **ConfigHealth:** a row reading `SIGNAL_CLI_VERSION`/`SIGNAL_CLI_RELEASED` that warns from 75 days and errors from
+  90, with the README's expiry sentence as its rationale. It is absent when the env isn't set (DevHost).
+- **The ADR 0111 amendment:**
+  - S1–S3, SC2 (with its residuals: a number in clear as a grain key, and `register` used as harassment), SC7 and
+    SC7b (an explicit extension of ADR 0107's accepted risks, if the user confirmed it), the GPL note and the
+    expiry;
+  - it **names ADR 0085 and ADR 0107's "SQLite over SMB" rejection** and says what Step 24 measured, and why it holds
+    here (one writer, under the lease) when it didn't for the Copilot runtime;
+  - a banner on ADR 0107 pointing at it.
+- **CLAUDE.md:** rule 12 and the feature map.
+- **gotchas:**
+  - the signal-cli daemon has no auth, so bind `127.0.0.1`, because Host validation is off on `0.0.0.0`;
+  - `on-connection` or lose messages, plus one SSE stream per account;
+  - the daemon lives and dies with the gateway lease, because two daemons on one store is corruption;
+  - a number is claimed before `register`, and a Signal credential is never accepted from the generic endpoints;
+  - Signal has no message id: dedupe on `uuid:timestamp`;
+  - signal-cli expires after 3 months.
+- **The `chat-apps` Signal section:** a spare number, the captcha, the code, pairing, groups.
+- **DevHost exercise:** DevHost with `ChatGateway__Signal__DaemonUrl` at a single-file stand-in in the scratchpad (not
+  committed; `#:property PublishAot=false`, per the gotcha) serving `/api/v1/rpc` + `/api/v1/events`. Run:
+  register → verify → pair → DM → final-only reply → `/new` → a stranger ignored → a group mention.
+
+Then `/sync-docs`.
+
+**Verify:** the transcript in the MR; `node .agentic/scripts/check-doc-paths.mjs`; the full suite;
+`dotnet format --verify-no-changes`; `node .agentic/scripts/check-new-code-coverage.mjs`.
+
+**Step 31: Post-deploy live check (manual).** Use a real spare number:
+- register with a captcha, verify, pair;
+- a DM and a long reply (does the long-text attachment render?);
+- an image in and out, and a PDF;
+- a voice note (record whether AAC is refused);
+- a group mention;
+- a stranger ignored.
+
+Then trigger one revision rollover with the connection live: one daemon at a time (check the logs), no lost message
+sent during the rollover (`on-connection`), no double reply. Then delete the connection and confirm the number is
+unregistered. Record the results through a `docs/*` MR (hard rule 1), and replace the Step 26 fixtures with real
+captures there.
+
+### Acceptance criteria → test mapping (phase 3)
+
+| # | Acceptance criterion | Test | File |
+|---|---|---|---|
+| AC25 | Inbound: only owner-relevant `dataMessage`s become messages; sync/story/receipt/typing/call/edit/reaction-only/remote-delete/own-ACI are dropped; mention and quote come from uuids; dedupe id is `uuid:timestamp`; voice flag carried | `SignalEventsTests` | `SignalEventsTests.cs` |
+| AC26 | Outbound: send/typing/upload/download over JSON-RPC; `textStyle` offsets are UTF-16-correct; error codes map to `ChatSendErrorKind`; a missing account is an auth fault | `SignalRpcTests`, `SignalTextTests` | `SignalRpcTests.cs`, `SignalTextTests.cs` |
+| AC27 | The daemon runs only while the lease is held, binds `127.0.0.1`, uses `on-connection`, restarts after a crash; on lease loss it is told FIRST (before sessions stop) and stopped (TERM→KILL, exit awaited) before the lease is released; the watchdog stops it when renewals stall; the hook is idempotent; output is number-redacted | `SignalDaemonTests`, `LeaseLost_NotifiesParticipants_BeforeSessionsStop`, `Stop_NotifiesBeforeRelease`, `Renew_NotifiesParticipants` | `SignalDaemonTests.cs`, `ChatGatewayServiceTests.cs` |
+| AC28 | Registration: 503 without the lease; a number claimed (active or unexpired pending) by another connection is refused and `register` never runs; an expired pending claim can be taken; a failed register releases the claim; verify takes the number from the pending field, stores the credential and opens pairing | `SignalRegistrationApiTests`, `SignalNumberDirectoryGrainTests` | `SignalRegistrationApiTests.cs`, `SignalNumberDirectoryGrainTests.cs` |
+| AC28b | A Signal credential can never be pasted: create and update with Signal `Credentials` answer 400 and store nothing | `SignalRegistrationApiTests` (B1 row) | `SignalRegistrationApiTests.cs` |
+| AC29 | An owner DM is answered final-only through the unchanged pipeline, typing first; a group mention answers in the group; a dropped stream reconnects; no log record carries a number | `SignalAdapterTests` | `SignalAdapterTests.cs` |
+| AC30 | Delete: read the connection (number from credentials or pending field) → `DeleteAsync` (deregisters first) → `StopAsync` → daemon `unregister` + `deleteLocalAccountData` → claim released; a cleanup failure never undoes the delete or keeps the claim | `SignalRegistrationApiTests` delete rows | `SignalRegistrationApiTests.cs` |
+| AC31 | The Signal flow is in the panel, reachable from `main.js`, with the egress note; CACHE bumped | `ChatGatewayPanelAssetsTests`, cache pins | `ChatGatewayPanelAssetsTests.cs`, `PwaAssetsTests.cs` |
+| AC32 | The image pins signal-cli by version + SHA-256 and checks it; ConfigHealth warns at 75 days and errors at 90 | `SignalImageTests`, a `ConfigHealth` row test | `SignalImageTests.cs`, `ConfigHealthTests.cs` |
+| AC33 | The number directory state and `ChatConnection.PendingSignalNumber` round-trip on both serializer paths, and a document without the field reads as null | `PersistedTypeNames` + golden, a Cosmos JSON row | `GrainStorageSerializerTests.cs`, `SerializationCompatibilityTests.cs` |
+| AC34 | Azure Files carries WAL safely with the chosen mount options (or the fallback is re-planned); the real daemon accepts SC3's arguments | Step 24 manual gate, Step 24b local run, Step 31 live | written into SC3/SC4/Step 28 |
+| AC35 | `AddChatGateway()` registers the Signal adapter, the new partial is mapped, and the `signal-data` mount is on the backend container only | `ProjectLayoutTests` (`AgentApiParts` row + Signal registration), `AgentApiReachabilityTests`, `CopilotFilesMountTests` | `ProjectLayoutTests.cs`, `AgentApiReachabilityTests.cs`, `CopilotFilesMountTests.cs` |
+
+### Quality gates (phase 3; copied from `.agentic/quality-gates.yaml` on 2026-10-21)
+
+| Gate | Threshold | Measured by |
+|---|---|---|
+| `coverage_new_code_pct_min` | **80** | `node .agentic/scripts/check-new-code-coverage.mjs` |
+| `cognitive_complexity_max` | **15** | `SonarAnalyzer.CSharp` S3776 (build error) |
+| `vulnerable_packages` | **0** | CI package-freshness job. It doesn't see the signal-cli tarball or the JRE: Step 30's age row is the substitute, and it's **not** a gate |
+| `add_policy` | latest-stable | GitHub releases API + image tag resolved at execution (SC9); no NuGet package expected |
+| Branch policy | never commit to `main` | `.claude/hooks/protect-main.mjs`, `lefthook.yml` |
+
+`SignalDaemon`'s real-process path (`ISignalProcessLauncher`'s production implementation) is expected to be the
+coverage gap, as `BlobChatGatewayLease` was in 1a. Keep it to argument passing and `Process` plumbing, and report the
+number; never estimate it.
+
+### Review (phase 3)
+
+A `critic` pass on the first draft (2026-10-21) found **1 blocker, 6 majors and 5 minors. All 12 were accepted** and
+folded in; none were rejected. One of them (M1) is accepted as a risk, pending the user's confirmation at approval.
+- **B1:** a Signal credential could be pasted through the generic create/update endpoints, so user B could drive
+  user A's registered number. Signal credentials are now refused there (SC1.1, AC28b).
+- **M1:** the Copilot shell (ADR 0107) shares the uid and the loopback with the daemon. This is recorded as SC7b, an
+  extension of ADR 0107's accepted risks, **conditional on the user's confirmation**, with two named alternatives if
+  they decline.
+- **M2/M3:** delete couldn't find the number, an abandoned claim squatted forever, and `verify` had no number. The
+  fixes are the pending/active claim with a 30-minute TTL, release on a failed `register`, a persisted
+  `PendingSignalNumber`, read-before-delete, and AC28/AC30/AC33.
+- **M4:** the renewal window and a hung dispose could delay the kill. The participant is now notified BEFORE the
+  sessions stop, there is a 40 s watchdog derived from the lease timings, TERM→KILL, and an idempotent hook (AC27).
+- **M5:** the real daemon arguments were first run in production. Step 24b now runs the pinned daemon locally with
+  SC3's exact arguments and answers the verify/ACI questions.
+- **M6:** ADR 0085/0107's SQLite-over-SMB rejection is now named in the amendment, and the `copilot-files.bicep`
+  comment and `CopilotFilesMountTests` are in scope.
+- **Minors:**
+  - m1: the partial's file, method and `AgentApiParts` row are decided;
+  - m2: the fakes and the factory lambda are listed;
+  - m3: a no-number-in-logs assertion, and the clear-number grain key is recorded;
+  - m4: the `register` harassment residual is recorded;
+  - m5: AC35 pins the Signal adapter registration.
+
+### Out of scope (phase 3)
+
+- A linked-device mode (S1), solving Signal's rate-limit challenge from the panel (`submitRateLimitChallenge`), and
+  streaming by edit.
+- Transcoding AAC voice notes (ffmpeg, C12), reactions and read receipts, and stories.
+- Moving an existing registered number between connections. Delete it and register it again.
+- Automatic signal-cli upgrades. The age row only tells the operator.
 
 ## Spike findings (Step 1, 2026-10-21)
 
@@ -923,7 +1499,7 @@ any operator input), `chat-apps.md` Signal, and a live check with a real linked 
 
 ## Progress and divergences
 
-**Phase 1a (Steps 1–10) shipped in PR #212, phase 1b (Steps 11–13) in PR #213, and phase 1c (Steps 14–18) is below.** Step 19 and phases 2 and 3 remain, so this
+**Phase 1a (Steps 1–10) shipped in PR #212, phase 1b (Steps 11–13) in PR #213, phase 1c (Steps 14–18) in PR #214, and phase 3 (Steps 23–30, Signal dormant) is below.** Steps 19, 24 and 31 and phase 2 remain, so this
 spec stays in `.agentic/specs/` (not `completed/`) until phase 3 ships. Phase 1a's differences from the plan:
 
 - **No `LoopbackChatAdapter`.** DevHost points the REAL Telegram adapter at a local stand-in for the Bot API
@@ -1083,6 +1659,79 @@ check since `41f0a41` showed only phases 1a/1b and the past-chats merge (ADR 011
   covered by the pipeline tests with a fake session and by the adapter tests against local servers. Step 19 checks the
   real platforms.
 
+### Phase 3 (Steps 23–30), on `feature/chat-gateway-phase-3-signal` from `main` @ `2875f96` (the #214 merge)
+
+**Implemented:** Signal as a dedicated number in a lease-gated signal-cli child process, with its store on Azure Files.
+**Signal ships dormant** (D1). The drift check was clean: HEAD was exactly the planned-against commit. Steps 25 and 26
+ran as `step-implementer` subagents in worktrees and merged back without conflicts, on the shared contracts
+(`SignalOptions`, `ISignalDaemon`) committed first. Steps 27–30 ran in the main session. Step 31 (live) and Step 24 (the
+Azure Files measurement) remain open, and so do Step 19 and phase 2.
+
+Divergences from the plan:
+- **D1: Signal ships dormant, and Step 24 is the user's.** The user asked for the PR to be created and merged without
+  waiting. Creating the throwaway measurement job in the shared `cae-hosting` environment was refused by the session's
+  permission policy. The `signal-data` share and the `agent42-signal` environment link were already created, with the
+  Bicep's names, so the deploy adopts them.
+  - So `ChatGateway:Signal:Enabled` / Bicep `signalEnabled` default to **false**. Off, `AddSignalChat` registers nothing,
+    no daemon can start, the panel doesn't offer Signal, and the backend keeps its CPU and memory.
+  - Turning it on is the user's step, after two things: the Step 24 measurement (commands and YAML under Step 24) and
+    confirming SC7b. The ADR records SC7b as pending that confirmation, not as accepted.
+- **D2: `AddSignalChat(builder.Configuration)` is its own call in each host,** right after `AddChatGateway()`.
+  `Hosts_RegisterChatGateway` pins it. `AddChatGateway()` keeps its signature, which the test also pins.
+- **D3: the lease hook goes slightly past the plan:**
+  - `IChatGatewayLease` gained `Duration`, so the watchdog window is derived, not a literal: 35 s for the Blob lease
+    (60 − 20 − 5), not the plan's 40;
+  - "renewed" is also sent right after acquiring;
+  - `ChatGatewayTimings` gained `ParticipantTimeout`.
+- **D4: Step 24b answered the open questions, and the CLI verify fallback was dropped.** `verify` is a JSON-RPC method in
+  multi-account mode, and `listAccounts` returns the ACI.
+- **D5: JSON-RPC parameter names follow the man page's rule:** a list goes under the plural name. The plan wrote
+  `textStyle`; it is `textStyles`, and `attachments` stays.
+- **D6: `FileRef` is `chatId|attachmentId`,** because `getAttachment` needs the sender or the group as well as the id.
+- **D7: the adapter tests use an `HttpMessageHandler` stub (`SignalDaemonStub`), not a local Kestrel server.** The real
+  `SignalRpcClient` runs over it, with SSE fed through a pipe. "Final-only through the unchanged pipeline" is covered
+  by the existing streamer tests with `SupportsEdit = false` and by the DevHost exercise, not by a new
+  pipeline-level row.
+- **D8: Config health's signal-cli row** is `NotApplicable` while Signal is off. `BuildStatic` gained an optional
+  `TimeProvider` and is otherwise unchanged.
+- **D9: delete calls `deleteLocalAccountData` with `ignoreRegistered`,** so the keys go even when `unregister` failed.
+- **D10: a register on a connection that already has a different number is refused** ("delete it and add a new
+  connection"). A re-register of the same number keeps its active claim.
+- **Found and fixed:**
+  - **The chunked body.** In the DevHost exercise, every RPC body arrived empty: `JsonContent` sends it chunked. Calls
+    are now sent buffered, with a regression test.
+  - **The flaky test.** `ChatGatewayServiceTests.ASessionThatEndsWithAnAuthFailure_FaultsTheConnection` (pre-existing)
+    failed intermittently: the fault was recorded while `Live` was still true. `Live` is now cleared first.
+- **DevHost exercise (2026-10-21):** DevHost ran with `ChatGateway__Signal__Enabled=true` and
+  `ChatGateway__Signal__DaemonUrl` pointed at a Python stand-in for the daemon, in the session scratchpad (not
+  committed). Results:
+  - a pasted Signal number was refused with a 400;
+  - register without a captcha gave a 400 with the link, and with one gave "awaiting-code";
+  - a malformed code gave a 400;
+  - verify opened pairing;
+  - a stranger's message and a wrong code were ignored, and the code paired;
+  - "hello agent" was answered with `sendTyping`, then one `send` with `textStyles`;
+  - the same `sender:timestamp` again ran once;
+  - `/new` answered "Started a new conversation.";
+  - with groups on, an unmentioned group message was ignored, and a mention was answered in the group as a quote;
+  - "@bot /help" (with the real U+FFFC placeholder) ran the command.
+- **Diff review (critic, phase 3): no blockers, 1 major, 2 minors and 3 nits. All fixed or recorded; none were
+  rejected.**
+  - **M1: deleting a stale registration could unregister another user's number.** An abandoned pending claim expires,
+    and another connection can take the number. The daemon cleanup now runs only while this connection still holds the
+    claim (`Delete_AStaleRegistration_WhoseNumberWasTakenOver_LeavesTheNewHolderAlone`, mutation-checked).
+  - **m1: a base64 group id starting with `+` was treated as a person.** `IsDirect` is now "+ and digits only".
+  - **m2: switching to another number leaked the earlier pending claim.** It is now released.
+  - **Nits:**
+    - `verify` checks the claim before calling the daemon;
+    - the JVM runs with a scrubbed environment;
+    - the ADR now records the SearXNG sidecar's loopback reach, and the delete-without-lease residual.
+  - **Found by the full suite under load:** `SignalDaemonTests.ACrash_RestartsOnTheNextCall_WithGrowingBackoff`
+    exposed a real race. `EnsureRunningAsync` could restart a crashed process before its exit watcher had recorded the
+    crash, so the backoff was skipped. The exit is now recorded once, by whichever sees it first.
+- **Measured:** signal-cli 0.14.9 in Docker (Step 24b), and the built backend image (`java` 25.0.4.1, signal-cli 0.14.9,
+  uid 1654; the daemon starts and stops cleanly on SIGTERM).
+
 ## Acceptance criteria → test mapping
 
 | # | Acceptance criterion | Test | File |
@@ -1117,7 +1766,7 @@ check since `41f0a41` showed only phases 1a/1b and the past-chats merge (ADR 011
 | AC22 | The folders, the partial and both host registrations are wired | `ProjectLayoutTests`, `Hosts_RegisterChatGateway`, `AgentApiReachabilityTests` | `ProjectLayoutTests.cs`, `AgentApiReachabilityTests.cs` |
 | AC23 | The prefs panel is appended last, reachable from `main.js`, renders all four statuses (needs credentials / awaiting pairing / connected / faulted with reason), and CACHE is bumped | panel assets + layout + PWA tests (status strings pinned as source text; the live look is Step 19) | `ChatGatewayPanelAssetsTests.cs`, `PreferencesLayoutAssetsTests.cs`, `PwaAssetsTests.cs` |
 | AC24 (ph 2) | The WhatsApp handshake and signature check over the raw body; uniform 401; `wamid` dedupe; the path is excluded and nothing else | `WhatsAppWebhookTests`, `EasyAuthExclusionTests` rows | `WhatsAppWebhookTests.cs`, `EasyAuthExclusionTests.cs` |
-| AC25 (ph 3) | Signal SSE in and RPC out per account; sync echoes and stories ignored | `SignalAdapterTests` | `SignalAdapterTests.cs` |
+| AC25–AC34 (ph 3) | Signal: see "Phase 3 — Signal, refined plan" → its own AC table | `Signal*Tests` | see that table |
 
 ## Review
 

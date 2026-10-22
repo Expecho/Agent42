@@ -58,6 +58,7 @@ public static partial class AgentApi
         MapEmailEndpoints(app);
         MapFleetEndpoints(app);
         MapChatGatewayEndpoints(app);
+        MapChatGatewaySignalEndpoints(app);
 
         return app;
     }

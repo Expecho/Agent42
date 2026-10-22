@@ -40,6 +40,10 @@ public interface IUserChatConnectionsGrain : IGrainWithStringKey
     Task<ChatConnection?> SetCredentialsAsync(
         string connectionId, string credentialsCiphertext, ChatBotIdentity identity, DateTimeOffset now);
 
+    /// <summary>Records the Signal number a registration was started for (phase 3), until verify or delete.</summary>
+    [Alias("SetPendingSignalNumberAsync")]
+    Task<ChatConnection?> SetPendingSignalNumberAsync(string connectionId, string? number, DateTimeOffset now);
+
     /// <summary>Clears the owner and opens a fresh pairing window (and lifts a pairing lockout).</summary>
     [Alias("RepairAsync")]
     Task<ChatConnection?> RepairAsync(string connectionId, DateTimeOffset now);
