@@ -8,7 +8,7 @@ import okhttp3.Response
 /**
  * How a request proves who the user is to Easy Auth. The backend reads only the principal headers Easy Auth injects
  * (CurrentUser.cs), so every implementation is something Easy Auth accepts in front of the app; the app itself never
- * sees or checks a token. Which one ships is the auth spike's decision (plan step 1).
+ * sees or checks a token. Production uses [SessionCookie] from the WebView sign-in (ADR 0114); a DevHost uses [None].
  */
 fun interface Credentials {
     fun applyTo(request: Request.Builder)
@@ -34,9 +34,10 @@ class SessionCookie(private val value: String) : Credentials {
 class SignedOutException(message: String) : IOException(message)
 
 /**
- * Easy Auth answers an unauthenticated API call with a redirect to the Entra login page (`RedirectToLoginPage`), not a
- * 401, so the client never follows redirects and treats a redirect, a 401, or an HTML page where JSON was expected as
- * "signed out". Without this, OkHttp would follow the redirect and hand the login page's HTML to the JSON parser.
+ * "Signed out", however Easy Auth says it. Measured on prod: an unauthenticated request from this (non-browser) client
+ * gets a bare 401; a browser-shaped one gets `RedirectToLoginPage`'s 302 to Entra (gotchas.md). So a 401, a redirect, or
+ * an HTML page where JSON was expected all mean "sign in again", and redirects are never followed, or OkHttp would hand
+ * the login page's HTML to the JSON parser.
  */
 class SignedOutInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {

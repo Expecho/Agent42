@@ -49,7 +49,8 @@ android {
     buildFeatures {
       compose = true
       aidl = false
-      buildConfig = false
+      // BuildConfig.DEBUG gates conversation text out of the release build's voice trace (ADR 0114).
+      buildConfig = true
       shaders = false
     }
 

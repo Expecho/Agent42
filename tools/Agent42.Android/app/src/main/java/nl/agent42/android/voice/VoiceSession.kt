@@ -16,6 +16,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import nl.agent42.android.AppContainer
+import nl.agent42.android.BuildConfig
 import nl.agent42.android.api.ChatRequest
 import nl.agent42.android.api.SignedOutException
 import nl.agent42.android.api.StreamEventType
@@ -84,6 +85,12 @@ class VoiceSession(
     companion object {
         /** `adb logcat -s A42VOICE` shows every decision of the call. */
         const val TAG = "A42VOICE"
+
+        /**
+         * Conversation text in the trace: verbatim in a debug build (that is how the echo guards were found), only its
+         * length in a release build, so the sideloaded app never writes what was said or replied to the system log.
+         */
+        fun redact(content: String): String = if (BuildConfig.DEBUG) content else "<${content.length} chars>"
     }
 
     fun start() {
@@ -184,8 +191,8 @@ class VoiceSession(
         silence?.cancel()
     }
 
-    override fun trace(message: String) {
-        Log.i(TAG, message)
+    override fun trace(message: String, content: String?) {
+        Log.i(TAG, if (content == null) message else "$message: ${redact(content)}")
     }
 
     override fun stateChanged(state: VoiceState) {

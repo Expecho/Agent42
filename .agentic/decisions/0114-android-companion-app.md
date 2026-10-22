@@ -40,7 +40,8 @@ phone (Galaxy A54, Android 16, nl-NL) on 2026-10-21. The evidence is in
   - The app never lists `control_artifact_pane`, `get_browser_context` or `mcp_elicitation`.
 - **Voice is full duplex on the phone's own speaker.** This **amends ADR 0079 for the native client only**. The setup:
   - `AudioManager.MODE_IN_COMMUNICATION`;
-  - `setCommunicationDevice(built-in speaker)`, or the headset/Bluetooth device when one is connected;
+  - the reply routed to the loudspeaker, or to a connected headset or Bluetooth device. How: see "The call is a
+    Telecom call" below. `setCommunicationDevice` is only the fallback;
   - every reply played with `USAGE_VOICE_COMMUNICATION` attributes;
   - the default `SpeechRecognizer` listening throughout.
 
@@ -62,6 +63,24 @@ phone (Galaxy A54, Android 16, nl-NL) on 2026-10-21. The evidence is in
   - for **2.5 s after the reply ends**, a result that echoes it is dropped instead of being sent as the next turn.
 
   The build without these guards answered its own reply.
+- **The call is a self-managed Telecom call** (androidx core-telecom `CallsManager.addCall`, outgoing, audio,
+  `SUPPORTS_SET_INACTIVE`). That puts it in the system call UI and on the lock screen; car and headset buttons hang it up,
+  and a real incoming call puts it on hold, which closes the mic and stops the speech.
+  - Telecom owns the route: the app uses its endpoints (`requestEndpointChange`) and **never** `setCommunicationDevice`
+    during the call. The library's docs say doing so breaks call audio.
+  - The call starts on a headset if one is connected, else the loudspeaker. The platform sets `MODE_IN_COMMUNICATION`
+    itself (measured).
+  - The plain `AudioRoute`, with `setCommunicationDevice` and transient focus, is used only when `addCall` fails.
+  - The foreground service is `phoneCall|microphone` (`MANAGE_OWN_CALLS`), with a CallStyle notification.
+  - Alternative rejected: a hand-rolled `ConnectionService`. It is the same platform with more code to own.
+- **Entry points:** a Quick Settings tile, a home-screen widget (plain RemoteViews, no Glance), app shortcuts, and
+  `ACTION_ASSIST` / `VOICE_COMMAND` filters.
+  - The `ACTION_ASSIST` filter alone makes the app selectable as the digital assistant (measured: it is listed with
+    Google, Claude and ChatGPT), so no `VoiceInteractionService` is needed.
+  - Android 14 only lets a foreground app start a microphone call, so every entry point opens the activity, which
+    returns to a running call or starts a new voice chat.
+- **The voice trace** (`adb logcat -s A42VOICE`) logs every loop decision. Conversation text (heard, spoken) is
+  included **only in a debug build**; a release build logs its length instead (`VoiceSession.redact`).
 - **STT is the platform recognizer.**
   - Dutch has **no on-device model** on the A54 (`supported=false`). The default recognizer is Google's network
     service, the same egress as Chrome's Web Speech today (ADR 0006), so this is **not** a new ADR 0013 extension.

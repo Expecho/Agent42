@@ -54,6 +54,24 @@ public sealed class AndroidReleaseTests
         Assert.Contains("signingConfig = signingConfigs.findByName(\"release\")", build, StringComparison.Ordinal);
     }
 
+    // Only the release job may write, and it alone sees the signing secrets: the check job also runs on pull requests.
+    // A workflow edit alone releases nothing, and a version whose code would collide (minor or patch >= 100) is refused.
+    [Fact]
+    public void Workflow_ScopesWritesAndSecretsToTheReleaseJob_AndReleasesOnlyOnAppChanges()
+    {
+        var workflow = Workflow();
+        var check = workflow[workflow.IndexOf("  check:", StringComparison.Ordinal)..workflow.IndexOf("  release:", StringComparison.Ordinal)];
+        var release = workflow[workflow.IndexOf("  release:", StringComparison.Ordinal)..];
+        var push = workflow[workflow.IndexOf("  push:", StringComparison.Ordinal)..workflow.IndexOf("  workflow_dispatch:", StringComparison.Ordinal)];
+
+        Assert.Contains("permissions:\n  contents: read", workflow.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.DoesNotContain("contents: write", check, StringComparison.Ordinal);
+        Assert.DoesNotContain("secrets.", check, StringComparison.Ordinal);
+        Assert.Contains("contents: write", release, StringComparison.Ordinal);
+        Assert.DoesNotContain(".github/workflows/android.yml", push, StringComparison.Ordinal);
+        Assert.Contains("if [ \"$minor\" -ge 100 ] || [ \"$patch\" -ge 100 ]; then", workflow, StringComparison.Ordinal);
+    }
+
     // Immutable releases: a published release rejects uploads, so the draft gets everything and is published LAST.
     [Fact]
     public void Workflow_PublishesTheReleaseOnlyAfterTheApkIsUploaded()

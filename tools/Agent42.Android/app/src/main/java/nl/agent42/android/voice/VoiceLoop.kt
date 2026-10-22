@@ -28,8 +28,11 @@ interface VoiceIo {
     fun cancelSilence()
     fun stateChanged(state: VoiceState)
 
-    /** Diagnostics: every decision the loop takes, for logcat. */
-    fun trace(message: String) {}
+    /**
+     * Diagnostics: every decision the loop takes, for logcat. [content] is conversation text (what was heard); it is
+     * kept apart so a release build can log the decision without the words.
+     */
+    fun trace(message: String, content: String? = null) {}
 }
 
 /**
@@ -123,22 +126,22 @@ class VoiceLoop(
         when (state) {
             VoiceState.LISTENING -> {
                 if (now() < echoGuardUntil && SpeechText.isSelfOrEcho(t, "$lastReply $lastSubmitted")) {
-                    io.trace("drop echo tail (final=$final): $t")
+                    io.trace("drop echo tail (final=$final)", t)
                     return
                 }
                 if (final) finals = "$finals $t".trim()
                 heard = if (final) finals else "$finals $t".trim()
-                io.trace("heard (final=$final): $heard")
+                io.trace("heard (final=$final)", heard)
                 io.scheduleSilence(SILENCE_MS)
             }
             VoiceState.THINKING, VoiceState.SPEAKING -> {
                 if (!policy.listenWhileSpeaking(output)) return
                 when {
-                    SpeechText.isSelfOrEcho(t, "$spoken $lastSubmitted") -> io.trace("drop echo while $state (final=$final): $t")
+                    SpeechText.isSelfOrEcho(t, "$spoken $lastSubmitted") -> io.trace("drop echo while $state (final=$final)", t)
                     // A one-word partial is too thin to tell the user from a misheard scrap of the reply; wait for more.
-                    !final && SpeechText.wordCount(t) < BARGE_IN_MIN_WORDS -> io.trace("wait, too short to barge in: $t")
+                    !final && SpeechText.wordCount(t) < BARGE_IN_MIN_WORDS -> io.trace("wait, too short to barge in", t)
                     else -> {
-                        io.trace("BARGE-IN while $state (final=$final): $t")
+                        io.trace("BARGE-IN while $state (final=$final)", t)
                         bargeIn(t, final)
                     }
                 }

@@ -23,11 +23,11 @@ on:
     paths:
       - tools/Agent42.Android/**
       - .github/workflows/android.yml
+  # Only the app's own files release it: an edit to this workflow alone is checked on its PR, but publishes nothing.
   push:
     branches: [main]
     paths:
       - tools/Agent42.Android/**
-      - .github/workflows/android.yml
     tags: ['android-v*']
   workflow_dispatch:
     inputs:
