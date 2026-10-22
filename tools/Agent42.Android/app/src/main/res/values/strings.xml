@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Agent 42</string>
+    <string name="voice_call">Voice call</string>
+    <string name="new_chat">New chat</string>
+</resources>

@@ -28,6 +28,9 @@ Thumbs.db
 *.log
 
 # Secrets — User Secrets live in %APPDATA%\Microsoft\UserSecrets, not the repo
+# Android release signing keys: CI decodes them from secrets (android.yml); a committed key is a leaked key.
+*.jks
+*.keystore
 
 # Test coverage output (dotnet test --collect)
 TestResults/
