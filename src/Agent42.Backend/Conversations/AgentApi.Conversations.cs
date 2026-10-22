@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Agent42.Agents;
 
 namespace Agent42.Backend;
@@ -9,14 +8,6 @@ namespace Agent42.Backend;
 /// </summary>
 public static partial class AgentApi
 {
-    // NDJSON wire format for stream events: camelCase fields, camelCase enum values
-    // (e.g. "textDelta", "toolCallStart"), and null fields omitted.
-    private static readonly JsonSerializerOptions StreamEventJson = new(JsonSerializerOptions.Web)
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
-    };
-
     private static void MapConversationEndpoints(IEndpointRouteBuilder app)
     {
         app.MapPost("/api/chat/{conversationId}", ChatAsync);
@@ -220,7 +211,7 @@ public static partial class AgentApi
             // An edit or regenerate re-runs the turn just removed: its webhook event says so (ADR 0094).
             replacesLastTurn: request.ReplaceLastTurn))
         {
-            await http.Response.WriteAsync(JsonSerializer.Serialize(evt, StreamEventJson) + "\n");
+            await http.Response.WriteAsync(JsonSerializer.Serialize(evt, ChatStreamJson.Options) + "\n");
             await http.Response.Body.FlushAsync();
         }
     }
