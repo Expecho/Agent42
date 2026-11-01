@@ -103,6 +103,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private readonly IPushNotificationSender _pushSender;
 
     private readonly IChatDeliverySender _chatDelivery;
+    private readonly IFleetLauncher _fleet;
 
     private readonly ILogger<AgentGrain> _logger;
 
@@ -234,6 +235,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         HindsightIntegration memory,
         IPushNotificationSender pushSender,
         IChatDeliverySender chatDelivery,
+        IFleetLauncher fleet,
         ILogger<AgentGrain> logger,
         TimeProvider? timeProvider = null,
         ClientToolTimeouts? clientToolTimeouts = null)
@@ -253,6 +255,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _memory = memory;
         _pushSender = pushSender;
         _chatDelivery = chatDelivery;
+        _fleet = fleet;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _clientToolTimeouts = clientToolTimeouts ?? ClientToolTimeouts.Default;
@@ -453,12 +456,31 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
     }
 
-    public async Task EnqueuePromptAsync(string message, IReadOnlyList<AttachmentRef>? attachments)
-    {
-        // An agent-run conversation is always listed and persisted (it is opened later by its owner), and no live
-        // client watches the stream, so its run is never ephemeral and never interactive (ADR 0106).
-        var turn = TurnContext.ForBackground();
+    // An agent-run conversation is always listed and persisted (it is opened later by its owner), and no live
+    // client watches the stream, so its run is never ephemeral and never interactive (ADR 0106).
+    public Task EnqueuePromptAsync(string message, IReadOnlyList<AttachmentRef>? attachments)
+        => RunBackgroundTurnAsync(message, attachments, TurnContext.ForBackground());
 
+    public async Task ReceiveFleetResultAsync(string taskId, string message)
+    {
+        // The conversation was deleted while its fleet task ran (PurgeAsync clears the record): drop the result.
+        // Running the turn would write a new record and bring the conversation back.
+        if (!_state.RecordExists)
+        {
+            _logger.LogInformation(
+                "Agent grain {GrainKey} dropped the result of fleet task {TaskId}: the conversation no longer exists",
+                this.GetPrimaryKeyString(), taskId);
+            return;
+        }
+
+        // The loop guard (ADR 0115): this turn is marked, so start_fleet_task refuses in it.
+        await RunBackgroundTurnAsync(message, attachments: null, TurnContext.ForFleetResult());
+    }
+
+    // The background turn shared by agent-run (EnqueuePromptAsync) and a fleet result (ReceiveFleetResultAsync): the
+    // drained chat core, then the away push, then the chat-app delivery. One body, so the two can't drift apart.
+    private async Task RunBackgroundTurnAsync(string message, IReadOnlyList<AttachmentRef>? attachments, TurnContext turn)
+    {
         try
         {
             // Reuse the full chat turn core by DRAINING it. ChatCoreAsync already does the no-model guard,
@@ -501,7 +523,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             // Best-effort: no caller to surface this to (the 202 was already returned). Log and move on,
             // rather than faulting a OneWay grain call into the void.
             _logger.LogError(
-                ex, "Agent grain {GrainKey} failed a background (agent-run) turn", this.GetPrimaryKeyString());
+                ex, "Agent grain {GrainKey} failed a background (agent-run or fleet result) turn", this.GetPrimaryKeyString());
         }
     }
 

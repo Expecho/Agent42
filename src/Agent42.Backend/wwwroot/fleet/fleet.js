@@ -27,11 +27,12 @@
     defaultTools: null,     // the user's default chat selection (profile.enabledTools), null meaning all
     attachments: [],        // File objects the composer will send with the next task (ADR 0101)
     ingested: null,         // the selected task's documents.ingested files, from its event log
+    autoAnswers: [],        // questions a chat-started task answered by itself (ADR 0115), from its event log
   };
 
   function resetTaskState() {
     S.teams.clear(); S.calls.clear(); S.rootTeamId = null; S.live = null;
-    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; dirtyText.clear();
+    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; S.autoAnswers = []; dirtyText.clear();
     renderPrompt();
     invalidate();
   }
@@ -279,6 +280,8 @@
     },
     "prompt"(d) { S.prompt = d; renderPrompt(); return false; },
     "prompt.answered"() { S.prompt = null; renderPrompt(); return false; },
+    // A task started from a chat (ADR 0115) asks nobody: each question it answered by itself is logged here.
+    "question.auto"(d) { S.autoAnswers.push({ question: d.question || "", answer: d.answer || "" }); },
   };
 
   // A FormData body goes as it is: the browser sets its multipart content-type with the boundary.
@@ -755,8 +758,19 @@
       (task.documents || []).length > 0 && h("div", { class: "muted", text: "Agents can search: " + task.documents.join(", ") }));
   }
 
+  // The questions a task started from a chat answered by itself (ADR 0115). The question text quotes model-written
+  // commands, file names and MCP server messages: text only, never innerHTML.
+  function autoAnswersCard() {
+    if (S.autoAnswers.length === 0) return null;
+    return [h("h2", { text: "Answered automatically" }), h("div", { class: "card" },
+      h("div", { class: "muted", text: "Started from a chat, so nobody was asked: the plan and agents' actions were approved, MCP questions declined." }),
+      h("ul", { class: "files" }, S.autoAnswers.map(a => h("li", null,
+        h("span", { class: "name", text: a.question }), h("span", { class: "muted", text: a.answer })))))];
+  }
+
   function taskFooter(task) {
     return [
+      autoAnswersCard(),
       task.result && [h("h2", { text: "Result" }), h("div", { class: "card" }, clampText("result-" + task.id, "result", task.result, 2500, true))],
       task.reason && task.status !== "done" && [h("h2", { text: "Why it ended" }), h("div", { class: "card", text: task.reason })],
       canvasCard(task),
@@ -1220,8 +1234,10 @@
     fillComposerOptions();
     toolPicker.target = undefined;
     await loadTasks();
-    // Open the running task, if any: its stream picks up where it is.
-    const live = S.tasks.find(t => t.status === "running");
+    // A deep link from a chat (ADR 0115) opens that task; an id that isn't the user's does nothing. Otherwise open the
+    // running task, if any: its stream picks up where it is.
+    const linked = taskById(new URLSearchParams(location.search).get("task"));
+    const live = linked || S.tasks.find(t => t.status === "running");
     if (live) selectTask(live.id);
     invalidate();
   })();

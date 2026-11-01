@@ -210,6 +210,38 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
         Assert.Contains(".artifact-pane__frame", css);
     }
 
+    /// <summary>ADR 0115: a chat's deep link <c>/fleet/?task=&lt;id&gt;</c> opens that task, looked up among the user's
+    /// own tasks, so an unknown id does nothing.</summary>
+    [Fact]
+    public async Task FleetJs_OpensTheTaskOfTheDeepLink()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("taskById(new URLSearchParams(location.search).get(\"task\"))", script);
+        var linked = script.IndexOf("const linked = ", StringComparison.Ordinal);
+        Assert.True(script.IndexOf("await loadTasks();", StringComparison.Ordinal) < linked, "the task list loads before the link is looked up");
+        Assert.Contains("const live = linked || S.tasks.find(", script);
+    }
+
+    /// <summary>ADR 0115: an automatic answer is logged on the page, and the question (which quotes model-written
+    /// commands and MCP server messages) is rendered as text, never as html.</summary>
+    [Fact]
+    public async Task FleetJs_RendersQuestionAutoAsText()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("\"question.auto\"(d) { S.autoAnswers.push(", script);
+        var start = script.IndexOf("function autoAnswersCard()", StringComparison.Ordinal);
+        var end = script.IndexOf("function taskFooter(", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start, "autoAnswersCard is defined before taskFooter");
+        var card = script[start..end];
+        Assert.Contains("text: a.question", card);
+        Assert.DoesNotContain("innerHTML", card);
+        Assert.DoesNotContain("setMarkdown", card);
+        Assert.DoesNotContain("clampText", card);
+        Assert.Contains("autoAnswersCard(),", script[end..]);
+    }
+
     [GeneratedRegex(@"\.innerHTML\s*=[^;]*;")]
     private static partial Regex InnerHtmlRegex();
 

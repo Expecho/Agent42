@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using Agent42.Agents;
@@ -29,7 +30,8 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
 
     private FleetTaskService Service(
         FleetOptions? options = null, FleetToolCatalog? tools = null, IChatClient? client = null,
-        IDocumentIndex? documents = null, IEmbeddingGenerator<string, Embedding<float>>? embeddings = null)
+        IDocumentIndex? documents = null, IEmbeddingGenerator<string, Embedding<float>>? embeddings = null,
+        IFleetCompletionNotifier? notifier = null)
     {
         var provider = new SingleUserChatClientFactoryProvider(
             new SingleChatClientFactory(client ?? new FakeChatClient(), FleetRunHarness.ModelA, embeddingGenerator: embeddings));
@@ -41,7 +43,8 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
             NullLogger<FleetTaskService>.Instance,
             tools,
             documents: documents,
-            ingestion: documents is null ? null : new DocumentIngestionService(new DocumentTextExtractor(), new DocumentChunker(), provider, documents));
+            ingestion: documents is null ? null : new DocumentIngestionService(new DocumentTextExtractor(), new DocumentChunker(), provider, documents),
+            notifier: notifier);
         _services.Add(service);
         return service;
     }
@@ -647,6 +650,155 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Equal(FleetOutcome.Conflict, await service.AnswerAsync(Alice, taskId!, "y"));
     }
 
+    /// <summary>ADR 0115: a task started from a chat approves its plan without opening a question, and logs it.</summary>
+    [Fact]
+    public async Task OriginTask_NeverOpensQuestion()
+    {
+        var service = Service(Held);
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, OriginConversationId: "conv-1"));
+        var done = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Equal(FleetTaskStatus.Done, done.Status);
+        Assert.Equal("conv-1", done.OriginConversationId);
+        var types = (await _store.ReadEventsAsync(Alice, taskId!)).Select(TypeOf).ToList();
+        Assert.DoesNotContain("prompt", types);
+        Assert.Contains("question.auto", types);
+    }
+
+    /// <summary>Regression for ADR 0115: a page task (no origin) still asks before it runs a team.</summary>
+    [Fact]
+    public async Task PageTask_StillAsks()
+    {
+        var service = Service(Held);
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan));
+
+        await QuestionAsync(service, Alice, taskId!);
+
+        Assert.Equal(FleetTaskStatus.Running, (await service.GetAsync(Alice, taskId!))!.Status);
+        await service.StopAsync(Alice, taskId!);
+    }
+
+    [Fact]
+    public async Task Answer_AutoTask_Conflict()
+    {
+        var gate = new GatedChatClient(new FakeChatClient());
+        var service = Service(Held, client: gate);
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, OriginConversationId: "conv-1"));
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(FleetOutcome.Conflict, await service.AnswerAsync(Alice, taskId!, "y"));
+        await service.StopAsync(Alice, taskId!);
+    }
+
+    [Fact]
+    public async Task Stop_AutoTask_Stops()
+    {
+        var gate = new GatedChatClient(new FakeChatClient());
+        var service = Service(Held, client: gate);
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, OriginConversationId: "conv-1"));
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(FleetOutcome.Ok, await service.StopAsync(Alice, taskId!));
+
+        var stopped = await FinishedAsync(service, Alice, taskId!);
+        Assert.Equal(FleetTaskStatus.Stopped, stopped.Status);
+    }
+
+    /// <summary>ADR 0115: a chat-started task that finishes reports to its conversation once, after its final save.</summary>
+    [Fact]
+    public async Task Finish_Done_WithOrigin_NotifiesOnce()
+    {
+        var notifier = new RecordingNotifier(_store);
+        var service = Service(notifier: notifier);
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, OriginConversationId: "conv-1"));
+        var notified = await notifier.Next.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(taskId, notified.Id);
+        Assert.Equal(FleetTaskStatus.Done, notified.Status);
+        Assert.Equal("conv-1", notified.OriginConversationId);
+        Assert.Contains("help you today", notified.Result);
+        Assert.Equal(FleetTaskStatus.Done, notifier.StoredStatusAtNotify);
+        Assert.Single(notifier.Records);
+    }
+
+    [Fact]
+    public async Task Finish_Failed_NotifiesWithReason()
+    {
+        var notifier = new RecordingNotifier(_store);
+        var service = Service(notifier: notifier);
+
+        await service.SubmitAsync(Alice, new(Task(), OriginConversationId: "conv-1"));
+        var notified = await notifier.Next.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(FleetTaskStatus.Failed, notified.Status);
+        Assert.Equal(FleetTeamRunner.NoTeamResult, notified.Reason);
+        Assert.Contains(FleetTeamRunner.NoTeamResult, FleetToolLimits.FrameResult(notified));
+    }
+
+    [Fact]
+    public async Task Finish_Stopped_NotifiesWithReason()
+    {
+        var notifier = new RecordingNotifier(_store);
+        var gate = new GatedChatClient(new FakeChatClient());
+        var service = Service(client: gate, notifier: notifier);
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, OriginConversationId: "conv-1"));
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(30));
+
+        await service.StopAsync(Alice, taskId!);
+        var notified = await notifier.Next.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(FleetTaskStatus.Stopped, notified.Status);
+        Assert.Equal("stopped by the user", notified.Reason);
+    }
+
+    /// <summary>A page task (no origin) has nobody to report to. A chat task submitted after it is the only one told.</summary>
+    [Fact]
+    public async Task Finish_NoOrigin_DoesNotNotify()
+    {
+        var notifier = new RecordingNotifier(_store);
+        var service = Service(notifier: notifier);
+
+        var (pageTask, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await FinishedAsync(service, Alice, pageTask!);
+        var (chatTask, _) = await service.SubmitAsync(Alice, new(OnePlan, OriginConversationId: "conv-1"));
+        await notifier.Next.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Equal([chatTask], notifier.Records.Select(r => r.Id));
+    }
+
+    [Fact]
+    public async Task Finish_NotifierThrows_TaskStillDone()
+    {
+        var notifier = new RecordingNotifier(_store, throws: true);
+        var service = Service(notifier: notifier);
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, OriginConversationId: "conv-1"));
+        await notifier.Next.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(FleetTaskStatus.Done, (await FinishedAsync(service, Alice, taskId!)).Status);
+        var (next, error) = await service.SubmitAsync(Alice, new(OnePlan));
+        Assert.Null(error);
+        await FinishedAsync(service, Alice, next!);
+    }
+
+    [Fact]
+    public async Task Shutdown_Interrupted_DoesNotNotify()
+    {
+        var notifier = new RecordingNotifier(_store);
+        var gate = new GatedChatClient(new FakeChatClient());
+        var service = Service(client: gate, notifier: notifier);
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, OriginConversationId: "conv-1"));
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(30));
+
+        // StopAsync awaits each running task's completion, which includes the notifier call.
+        await service.StopAsync(CancellationToken.None);
+
+        Assert.Equal(FleetTaskStatus.Interrupted, (await _store.GetTaskAsync(Alice, taskId!))!.Status);
+        Assert.Empty(notifier.Records);
+    }
+
     [Fact]
     public async Task Delete_RefusedWhileRunning_ThenRemoves()
     {
@@ -962,6 +1114,58 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
     }
 
     // Records every system prompt the run's chat calls carry, as instructions or as system messages.
+    /// <summary>Records the finished tasks it is told about, and what the store held at that moment.</summary>
+    private sealed class RecordingNotifier(FleetStore store, bool throws = false) : IFleetCompletionNotifier
+    {
+        private readonly TaskCompletionSource<FleetTaskRecord> _next = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ConcurrentQueue<FleetTaskRecord> Records { get; } = new();
+
+        public string? StoredStatusAtNotify { get; private set; }
+
+        public Task<FleetTaskRecord> Next => _next.Task;
+
+        public async Task NotifyAsync(FleetTaskRecord record, CancellationToken cancellationToken = default)
+        {
+            StoredStatusAtNotify = (await store.GetTaskAsync(record.UserId, record.Id, cancellationToken))?.Status;
+            Records.Enqueue(record);
+            _next.TrySetResult(record);
+            if (throws)
+            {
+                throw new InvalidOperationException("the grain is gone");
+            }
+        }
+    }
+
+    /// <summary>Holds every model call until the call's token is cancelled (a stop), so a task that never asks a
+    /// question stays running for as long as a test needs.</summary>
+    private sealed class GatedChatClient(IChatClient inner) : DelegatingChatClient(inner)
+    {
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => _entered.Task;
+
+        public override async Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            _entered.TrySetResult();
+            await System.Threading.Tasks.Task.Delay(Timeout.Infinite, cancellationToken);
+            return await base.GetResponseAsync(messages, options, cancellationToken);
+        }
+
+        public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            _entered.TrySetResult();
+            await System.Threading.Tasks.Task.Delay(Timeout.Infinite, cancellationToken);
+            await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken))
+            {
+                yield return update;
+            }
+        }
+    }
+
     private sealed class SystemPromptRecorder(IChatClient inner) : DelegatingChatClient(inner)
     {
         public System.Collections.Concurrent.ConcurrentQueue<string> SystemPrompts { get; } = new();

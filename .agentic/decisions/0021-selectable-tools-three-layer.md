@@ -3,7 +3,7 @@ id: 0021
 date: 2026-07-17
 status: accepted
 tags: [agents, tools, capabilities, user-preferences, agent-definition]
-amended_by: 0084   # artifacts: new selectable key `artifacts`
+amended_by: [0084, 0115]   # 0084: artifacts, new selectable key `artifacts`; 0115: new selectable key `fleet`
 ---
 
 # Selectable tools per chat, per user, and per agent

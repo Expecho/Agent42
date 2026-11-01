@@ -196,8 +196,8 @@ public static class AgentMcpRunner
 
     /// <summary>
     /// The agent's tool selection with <see cref="ToolCatalog.Memory"/> (ADR 0056/0057),
-    /// <see cref="ToolCatalog.PushNotification"/> (ADR 0075) and <see cref="ToolCatalog.PastChats"/> (ADR 0112)
-    /// removed.
+    /// <see cref="ToolCatalog.PushNotification"/> (ADR 0075), <see cref="ToolCatalog.PastChats"/> (ADR 0112) and
+    /// <see cref="ToolCatalog.Fleet"/> (ADR 0115) removed.
     ///
     /// <para><b>Exclusion happens at BIND time, deliberately, and not per run.</b> A per-run value lives in the
     /// run's <c>TurnContext</c> (ADR 0106) and is gone when the run ends. A binding is materialised into grain
@@ -208,7 +208,7 @@ public static class AgentMcpRunner
     /// expands to <see cref="ToolCatalog.AllSelectableToolKeys"/> — which carries the <c>skills</c> and
     /// <c>mcp</c> wildcards. Substituting a hand-written list would silently drop both.</para>
     ///
-    /// <para><b>Why these three and nothing else.</b> A memory bank is the user's, spans every conversation,
+    /// <para><b>Why these four and nothing else.</b> A memory bank is the user's, spans every conversation,
     /// and has no delete path (ADR 0056). Retaining turns an external caller drove would let a key holder
     /// write permanently into the owner's memory, and recall would hand that caller content from the
     /// owner's unrelated conversations. The past-chat tools (ADR 0112) are that second risk in a stronger
@@ -224,6 +224,10 @@ public static class AgentMcpRunner
     /// <c>/api/agent-run</c> keeps the tool, because that surface already notifies by design (the ADR 0028
     /// away-reply push) and notifying is a plausible reason to drive an agent from a cron job.</para>
     ///
+    /// <para>The fleet tools (ADR 0115) are excluded because a chat-started fleet task approves every question of its
+    /// Copilot agents by itself, shell commands included. A key holder must not be able to drive the owner's agent
+    /// into an auto-approved shell in the owner's container.</para>
+    ///
     /// <para><b>It only ever NARROWS.</b> The keys are dropped from whatever the owner selected; nothing
     /// is added, and an owner who never enabled them sees no change.</para>
     /// </summary>
@@ -233,7 +237,7 @@ public static class AgentMcpRunner
             .ToList();
 
     private static readonly HashSet<string> ExcludedFromAskAgent =
-        new([ToolCatalog.Memory, ToolCatalog.PushNotification, ToolCatalog.PastChats], StringComparer.Ordinal);
+        new([ToolCatalog.Memory, ToolCatalog.PushNotification, ToolCatalog.PastChats, ToolCatalog.Fleet], StringComparer.Ordinal);
 }
 
 /// <summary>

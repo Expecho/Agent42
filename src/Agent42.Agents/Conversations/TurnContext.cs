@@ -21,12 +21,13 @@ public sealed class TurnContext
 {
     private static readonly AsyncLocal<TurnContext?> Current = new();
 
-    private TurnContext(bool ephemeral, bool interactive, ClientToolBroker? broker, bool isClosed)
+    private TurnContext(bool ephemeral, bool interactive, ClientToolBroker? broker, bool isClosed, bool fleetResultTurn = false)
     {
         Ephemeral = ephemeral;
         Interactive = interactive;
         Broker = broker;
         IsClosed = isClosed;
+        FleetResultTurn = fleetResultTurn;
     }
 
     /// <summary>The context a tool sees outside any run: ephemeral, not interactive, no broker, budgets exhausted.</summary>
@@ -46,6 +47,19 @@ public sealed class TurnContext
 
     /// <summary>True only for <see cref="Closed"/>.</summary>
     public bool IsClosed { get; }
+
+    /// <summary>
+    /// The background turn that delivers a fleet task's result (ADR 0115, <see cref="ForFleetResult"/>). Such a turn
+    /// can't start another fleet task: without this loop guard a result could start a task whose result starts a task,
+    /// unbounded and steerable by the result text.
+    /// </summary>
+    public bool FleetResultTurn { get; }
+
+    /// <summary>
+    /// Fleet tasks started during this run (ADR 0115), bounded by <see cref="FleetToolLimits.MaxStartsPerTurn"/>.
+    /// <see cref="int.MaxValue"/> (exhausted) when closed.
+    /// </summary>
+    public int FleetStarts => IsClosed ? int.MaxValue : _fleetStarts;
 
     /// <summary>
     /// Push notifications the model actually SENT during this run (ADR 0075), bounded by
@@ -140,6 +154,17 @@ public sealed class TurnContext
 
     private int _pastChatCalls;
 
+    private int _fleetStarts;
+
+    /// <summary>Counts a started fleet task. Ignored when closed.</summary>
+    public void RecordFleetStart()
+    {
+        if (!IsClosed)
+        {
+            _fleetStarts++;
+        }
+    }
+
     /// <summary>
     /// <c>search_past_chats</c> + <c>read_past_chat</c> calls during this run (ADR 0112), bounded by
     /// <see cref="PastChatLimits.MaxCallsPerTurn"/>. <see cref="int.MaxValue"/> (exhausted) when closed.
@@ -196,6 +221,11 @@ public sealed class TurnContext
 
     /// <summary>A run nobody watches: an agent-run drain or a fired reminder. Never ephemeral, never interactive.</summary>
     public static TurnContext ForBackground() => new(ephemeral: false, interactive: false, broker: null, isClosed: false);
+
+    /// <summary>The background turn that delivers a fleet task's result (ADR 0115): a background run marked
+    /// <see cref="FleetResultTurn"/>, so it can't start another fleet task.</summary>
+    public static TurnContext ForFleetResult()
+        => new(ephemeral: false, interactive: false, broker: null, isClosed: false, fleetResultTurn: true);
 
     /// <summary>One image an MCP tool returned during this run: request-only, keyed by the tool call it answers.</summary>
     public sealed record ToolImage(string CallId, ReadOnlyMemory<byte> Data, string MediaType);

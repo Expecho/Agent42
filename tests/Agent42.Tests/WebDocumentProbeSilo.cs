@@ -112,6 +112,7 @@ public sealed class WebDocumentProbeSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
             services.AddSingleton<IAgentWebhookSender, NullAgentWebhookSender>();
             services.AddSingleton<IChatDeliverySender, NullChatDeliverySender>();
+            services.AddSingleton<IFleetLauncher, DisabledFleetLauncher>();
             // Memory OFF on this silo (the CapSized precedent): a recorder would attach a context
             // provider and put a "## Memories" context message into the replies these tests read.
             services.AddSingleton(new HindsightIntegration(null));

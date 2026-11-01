@@ -196,16 +196,16 @@ public class ToolCatalogTests
     // ── Client tools and shared state (ADR 0089) ───────────────────────────────────────────────────
 
     // AC9 — both keys were appended (order stability for every existing key), right before past_chats (ADR 0112)
-    // which came after them; each tool maps to its key, and both are rendered checkboxes.
+    // and fleet (ADR 0115) which came after them; each tool maps to its key, and both are rendered checkboxes.
     [Fact]
     public void BrowserToolsAndSharedState_AreAppendedLast_AndMapTheirTools()
     {
         Assert.Equal(
-            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats],
-            ToolCatalog.AllSelectableToolKeys.TakeLast(3));
+            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats, ToolCatalog.Fleet],
+            ToolCatalog.AllSelectableToolKeys.TakeLast(4));
         Assert.Equal(
-            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats],
-            ToolCatalog.Descriptors.TakeLast(3).Select(d => d.Key));
+            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats, ToolCatalog.Fleet],
+            ToolCatalog.Descriptors.TakeLast(4).Select(d => d.Key));
 
         foreach (var tool in BrowserToolNames)
         {
@@ -219,8 +219,8 @@ public class ToolCatalogTests
     [Fact]
     public void ReadDocument_SitsBeforeBrowserTools_AndIsDescribed()
     {
-        Assert.Equal(ToolCatalog.ReadDocument, ToolCatalog.AllSelectableToolKeys[^4]);
-        var descriptor = ToolCatalog.Descriptors[^4];
+        Assert.Equal(ToolCatalog.ReadDocument, ToolCatalog.AllSelectableToolKeys[^5]);
+        var descriptor = ToolCatalog.Descriptors[^5];
         Assert.Equal(ToolCatalog.ReadDocument, descriptor.Key);
         Assert.False(descriptor.RequiresHostedTools);
         Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
@@ -242,12 +242,13 @@ public class ToolCatalogTests
 
     // ── Past chats (ADR 0112) ──────────────────────────────────────────────────────────────────────────
 
-    // AC21 — appended LAST in both lists, described, not a hosted tool, and the key for BOTH tools.
+    // AC21 — appended in both lists (last until fleet, ADR 0115, came after it), described, not a hosted tool, and
+    // the key for BOTH tools.
     [Fact]
     public void PastChats_IsSelectable_Described_AndMapsBothTools()
     {
-        Assert.Equal(ToolCatalog.PastChats, ToolCatalog.AllSelectableToolKeys[^1]);
-        var descriptor = ToolCatalog.Descriptors[^1];
+        Assert.Equal(ToolCatalog.PastChats, ToolCatalog.AllSelectableToolKeys[^2]);
+        var descriptor = ToolCatalog.Descriptors[^2];
         Assert.Equal(ToolCatalog.PastChats, descriptor.Key);
         Assert.False(descriptor.RequiresHostedTools);
         Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
@@ -264,6 +265,36 @@ public class ToolCatalogTests
         var saved = new HashSet<string> { ToolCatalog.WebSearch, ToolCatalog.Memory };
 
         foreach (var tool in new[] { PastChatLimits.SearchToolName, PastChatLimits.ReadToolName })
+        {
+            Assert.True(ToolCatalog.IsToolEnabled(tool, all), tool);
+            Assert.False(ToolCatalog.IsToolEnabled(tool, saved), tool);
+        }
+    }
+
+    // ── Fleet (ADR 0115) ───────────────────────────────────────────────────────────────────────────────
+
+    // AC11 — appended LAST in both lists, described, not a hosted tool, and the key for BOTH tools.
+    [Fact]
+    public void Fleet_IsAppendedLast_Described_AndMapsBothTools()
+    {
+        Assert.Equal(ToolCatalog.Fleet, ToolCatalog.AllSelectableToolKeys[^1]);
+        var descriptor = ToolCatalog.Descriptors[^1];
+        Assert.Equal(ToolCatalog.Fleet, descriptor.Key);
+        Assert.False(descriptor.RequiresHostedTools);
+        Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
+
+        Assert.Equal(ToolCatalog.Fleet, ToolCatalog.KeyFor(FleetToolLimits.StartToolName));
+        Assert.Equal(ToolCatalog.Fleet, ToolCatalog.KeyFor(FleetToolLimits.GetToolName));
+    }
+
+    // AC11 — ON for the null (== all) selection, OFF for a selection saved before the key existed (ADR 0021).
+    [Fact]
+    public void Fleet_IsOnForNull_AndOffForAnOlderSavedSelection()
+    {
+        var all = ToolCatalog.AllSelectableToolKeys.ToHashSet();
+        var saved = new HashSet<string> { ToolCatalog.WebSearch, ToolCatalog.PastChats };
+
+        foreach (var tool in new[] { FleetToolLimits.StartToolName, FleetToolLimits.GetToolName })
         {
             Assert.True(ToolCatalog.IsToolEnabled(tool, all), tool);
             Assert.False(ToolCatalog.IsToolEnabled(tool, saved), tool);

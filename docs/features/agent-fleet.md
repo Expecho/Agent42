@@ -35,6 +35,12 @@
   versions. Follow-ups share the canvas, and the judge sees it (ADR 0102).
 - **Approval and questions.** Teams up to `Fleet:ApprovalDepth` ask you to approve their plan. Copilot
   permissions and MCP elicitations are asked the same way: a bar at the top with buttons and a text field.
+- **Started from a chat (ADR 0115).** With the `fleet` tool on, a chat agent can call `start_fleet_task`. The task is
+  tied to the conversation and asks nobody: the plan and every Copilot permission are approved automatically (the
+  refusals outside the workspace still apply), and MCP elicitations are declined. Each automatic answer is listed
+  under **Answered automatically**. The chat gets the link `/fleet/?task=<id>`, which opens that task, and when the
+  task finishes the conversation runs a background turn with the result (pushed and delivered to a chat app like an
+  agent-run reply). `get_fleet_task` reads a task's status. Incognito chats and `ask_agent` can't start one.
 - **Bounded.** Every task has a token cap (a default, and a server maximum) and an agent cap. You run one task
   at a time, and `Fleet:MaxConcurrentTasks` caps all users together.
 - **Persistent.** Tasks, results, the event log and workspace files are kept in Blob. Reload the page at any
@@ -90,7 +96,7 @@ flowchart LR
 
 A Copilot fleet agent runs GitHub Copilot's loop with its **built-in shell, file and URL tools**, in the task's
 workspace directory inside the backend container. This set aside ADR 0085's "no built-in tools" boundary (ADR 0097),
-as copilot-kind chats now do too, but auto-approved (ADR 0107). Every write, command and fetch is asked to you ("always for this task" is per task). Reads and
+as copilot-kind chats now do too, but auto-approved (ADR 0107). Every write, command and fetch is asked to you ("always for this task" is per task), except in a task started from a chat, which approves them all (ADR 0115). Reads and
 writes outside the workspace are refused, and the runtime gets a minimal environment. `Fleet:CopilotAgentsEnabled`
 switches it off. The residual risks are in ADR 0097: a shell can reach the app on localhost, read the container's
 files, and use its network. Since ADR 0101 the workspace can hold your uploaded files, so its shell and file tools read
