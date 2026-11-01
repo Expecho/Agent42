@@ -47,6 +47,10 @@ public sealed class FleetRun
 
     public required IFleetEventSink Events { get; init; }
     public required IFleetInteraction Interaction { get; init; }
+
+    /// <summary>A task started from a chat (ADR 0115): the plan is approved without asking, and logged as a
+    /// <c>question.auto</c> event. The Copilot policy and the interaction carry their own auto mode.</summary>
+    public bool AutoApprove { get; init; }
     public required ILogger Logger { get; init; }
 
     /// <summary>Called after every attempt (a team's run), to sync the workspace to Blob.</summary>

@@ -535,7 +535,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 - **Claim:** the state of ONE run — incognito, interactive, the client-tool broker, the push and `read_document`
   budgets, the mid-run web-document ingest — is a `TurnContext` (ADR 0106), created at each run entry
-  (`TurnContext.ForChat` in `ChatAsync`, `TurnContext.ForBackground()` in `EnqueuePromptAsync` and
+  (`TurnContext.ForChat` in `ChatAsync`, `TurnContext.ForFleetResult()` in `ReceiveFleetResultAsync` (ADR 0115),
+  `TurnContext.ForBackground()` in `EnqueuePromptAsync` and
   `ReceiveReminder`) and passed explicitly down the grain side as a `turn` parameter. **Never put such state back in
   a field:** a private field lives for the *activation*, and two runs can be in flight on one activation —
   `ChatAsync` suspends between `yield return`s, and a reminder or `EnqueuePromptAsync` run executes in that gap.
@@ -2218,12 +2219,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 ### `SendAwayReplyPushAsync` belongs in the two async callers, never in `ChatCoreAsync`
 
 - **Claim:** the Web Push notification when an agent replies (ADR 0028) must be sent from the two
-  **async** callers — `EnqueuePromptAsync` (agent-run) and `ReceiveReminder` (scheduled prompt) — and
+  **async** callers — `EnqueuePromptAsync` (agent-run; since ADR 0115 its body is `RunBackgroundTurnAsync`, which
+  `ReceiveFleetResultAsync` shares) and `ReceiveReminder` (scheduled prompt) — and
   **never** from `ChatCoreAsync`, which all three paths share. `ChatCoreAsync` is the live interactive
   path's body too, so a send there would notify a user who is actively watching their reply stream — the
   exact opposite of "away". "Not online" is approximated by this placement alone; there is no
   presence/heartbeat tracker (rejected, ADR 0028). Two further placement traps invisible in the code:
-  **(1)** in `EnqueuePromptAsync` the send sits **inside the `try`, after the drain loop** (a faulted turn
+  **(1)** in `RunBackgroundTurnAsync` the send sits **inside the `try`, after the drain loop** (a faulted turn
   caught below must not notify) and is **gated on `!string.IsNullOrEmpty(_modelId)`** — the no-model path
   drains ChatCoreAsync *normally* (it emits the "configure a provider" notice + `Done`), so an ungated
   send would fire a false "your agent replied"; `_modelId` is set by ChatCoreAsync's re-resolve/rebind if
@@ -4882,3 +4884,32 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   pinned version, digest and date.
 - **Evidence:** `src/Agent42.Backend/Dockerfile`, `tests/Agent42.Tests/SignalImageTests.cs`
 - **Verified:** 2026-10-21
+
+### A chat-started fleet task answers its own questions, its result turn can't start a task, and it reports after the save
+
+- **Claim:** a fleet task started by `start_fleet_task` (ADR 0115) has `OriginConversationId`, and that alone puts it
+  in auto mode. Nobody watches it, so it never opens a question: the plan approval is skipped
+  (`FleetRun.AutoApprove`), EVERY Copilot permission kind that would be asked is approved once
+  (`FleetCopilotPermissionPolicy`'s `autoApproveEvents`; the refusals outside the working directory still come first),
+  and MCP elicitations are declined (`DecliningFleetInteraction` answers `"n"`). Each is logged as `question.auto`.
+  These are three explicit per-site switches, never a heuristic over the offered choices: a new question site must be
+  given its own auto behaviour, or it reaches `DecliningFleetInteraction` and is declined. `RunningFleetTask.Questions`
+  is an `IFleetInteraction`, so `AnswerAsync` on an auto task is 409. **The loop guard:** the result arrives through
+  `IAgentGrain.ReceiveFleetResultAsync`, whose `TurnContext.ForFleetResult()` sets `FleetResultTurn`, and
+  `start_fleet_task` refuses there. A per-turn counter alone cannot stop result -> start -> result, because each
+  background turn has a new `TurnContext`. Don't route a result through `EnqueuePromptAsync`. **Ordering:**
+  `FinishAsync` calls the notifier AFTER the final save and the registry removal, so `get_fleet_task` in the result turn
+  reads the final state (when that save succeeded; a failed save is logged and the result is still delivered) and the
+  user can start the next task. An interrupted task (shutdown) never notifies. A
+  conversation purged while its task ran drops the result (`!_state.RecordExists`), so it isn't brought back.
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`Register`, `AnswerAsync`),
+  `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`FinishAsync`, `NotifyOriginAsync`),
+  `src/Agent42.Backend/Fleet/FleetCopilotPermissionPolicy.cs`, `src/Agent42.Backend/Fleet/DecliningFleetInteraction.cs`,
+  `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs` (`ApproveAsync`),
+  `src/Agent42.Agents/Fleet/AgentGrain.FleetTools.cs`, `src/Agent42.Agents/Conversations/AgentGrain.cs`
+  (`ReceiveFleetResultAsync`, `RunBackgroundTurnAsync`), `tests/Agent42.Tests/FleetAutoApproveTests.cs`,
+  `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`OriginTask_NeverOpensQuestion`, `Answer_AutoTask_Conflict`,
+  `Finish_Done_WithOrigin_NotifiesOnce`, `Shutdown_Interrupted_DoesNotNotify`), `tests/Agent42.Tests/FleetToolTests.cs`
+  (`Start_InFleetResultTurn_Refused`), `tests/Agent42.Tests/FleetResultDeliveryTests.cs`
+  (`ResultTurn_DeletedConversation_Dropped`), `.agentic/decisions/0115-fleet-tasks-from-chat.md`
+- **Verified:** 2026-11-01

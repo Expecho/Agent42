@@ -4,10 +4,11 @@ using Agent42.Agents;
 namespace Agent42.Backend;
 
 /// <summary>What the page asks for when it starts a task: with attached files, and the task whose files a Run again
-/// copies into the new workspace (ADR 0101).</summary>
+/// copies into the new workspace (ADR 0101). <paramref name="OriginConversationId"/> is set only by a chat's
+/// <c>start_fleet_task</c> (ADR 0115), never by the page.</summary>
 public sealed record FleetSubmit(
     string Task, string? FollowUpOf = null, string? Model = null, long? MaxTokens = null, IReadOnlyList<string>? EnabledTools = null,
-    IReadOnlyList<FleetInputFile>? Files = null, string? CopyInputsOf = null);
+    IReadOnlyList<FleetInputFile>? Files = null, string? CopyInputsOf = null, string? OriginConversationId = null);
 
 /// <summary>How a stop, answer or delete went.</summary>
 public enum FleetOutcome { Ok, NotFound, Conflict }
@@ -30,7 +31,8 @@ public sealed partial class FleetTaskService(
     FleetCopilotHost? copilot = null,
     TimeProvider? time = null,
     IDocumentIndex? documents = null,
-    DocumentIngestionService? ingestion = null) : IHostedService
+    DocumentIngestionService? ingestion = null,
+    IFleetCompletionNotifier? notifier = null) : IHostedService
 {
     /// <summary>The usage dashboard's application dimension for fleet tokens (ADR 0031).</summary>
     public const string ApplicationName = "Agent42 fleet";
@@ -90,6 +92,7 @@ public sealed partial class FleetTaskService(
             UserId = userId,
             Request = request.Task.Trim(),
             FollowUpOf = previous?.Id,
+            OriginConversationId = string.IsNullOrWhiteSpace(request.OriginConversationId) ? null : request.OriginConversationId,
             WorkspaceId = previous?.WorkspaceId ?? Guid.NewGuid().ToString("N"),
             PlannerModel = model,
             StartedAt = _time.GetUtcNow(),
@@ -152,7 +155,9 @@ public sealed partial class FleetTaskService(
 
             var budget = new FleetBudget(record.MaxTokens, options.MaxAgentsPerTask, options.BudgetSoftLimit, options.MaxConcurrentSubTeamsPerLevel, options.MaxTeamDepth);
             var log = new FleetEventLog(store, record.UserId, record.Id, options.MaxEventLogBytes, _time);
-            _running[record.Id] = new RunningFleetTask(record, budget, log, new FleetQuestions(log));
+            // A task started from a chat has nobody on the page to answer it (ADR 0115): it never opens a question.
+            IFleetInteraction interaction = record.OriginConversationId is null ? new FleetQuestions(log) : new DecliningFleetInteraction(log);
+            _running[record.Id] = new RunningFleetTask(record, budget, log, interaction);
             return null;
         }
     }
@@ -190,7 +195,8 @@ public sealed partial class FleetTaskService(
     {
         if (RunningOf(userId, taskId) is { } task)
         {
-            return task.Questions.Answer(answer, questionId) ? FleetOutcome.Ok : FleetOutcome.Conflict;
+            // An auto task (ADR 0115) has no question slot, so there is nothing to answer.
+            return task.Questions is FleetQuestions questions && questions.Answer(answer, questionId) ? FleetOutcome.Ok : FleetOutcome.Conflict;
         }
 
         return await GetAsync(userId, taskId, cancellationToken) is null ? FleetOutcome.NotFound : FleetOutcome.Conflict;
@@ -320,13 +326,16 @@ public sealed partial class FleetTaskService(
         => model.SupportsTools && !model.SupportsEmbeddings && !model.SupportsSpeech && !model.SupportsTranscription && !model.SupportsImageGeneration
             && !model.CopilotOnly;
 
-    private sealed class RunningFleetTask(FleetTaskRecord record, FleetBudget budget, FleetEventLog log, FleetQuestions questions) : IDisposable
+    private sealed class RunningFleetTask(FleetTaskRecord record, FleetBudget budget, FleetEventLog log, IFleetInteraction questions) : IDisposable
     {
         // Replaced once, by the run-start ingest (ADR 0101), before anything else reads it for the run.
         public FleetTaskRecord Record { get; set; } = record;
         public FleetBudget Budget { get; } = budget;
         public FleetEventLog Log { get; } = log;
-        public FleetQuestions Questions { get; } = questions;
+        public IFleetInteraction Questions { get; } = questions;
+
+        /// <summary>Started from a chat (ADR 0115): every question is answered automatically.</summary>
+        public bool AutoApprove => Record.OriginConversationId is not null;
         public Task Completion { get; set; } = Task.CompletedTask;
 
         public void Dispose() => Budget.Dispose();

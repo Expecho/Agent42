@@ -176,6 +176,15 @@ public static class ToolCatalog
     public const string PastChats = "past_chats";
 
     /// <summary>
+    /// The agent fleet from a chat (ADR 0115) — <c>start_fleet_task</c> and <c>get_fleet_task</c>. One key for both:
+    /// reading a task without being able to start one has no use here. Appended LAST for the order-stability reason
+    /// <see cref="PushNotification"/> gives, and like every key added after the fact it <b>lands OFF for anyone who
+    /// has ever pressed Save</b> (ADR 0021). An <c>ask_agent</c> binding strips it (ADR 0070, 0115): a chat-started
+    /// task approves every Copilot question by itself.
+    /// </summary>
+    public const string Fleet = "fleet";
+
+    /// <summary>
     /// The agent-skills <b>wildcard</b> ("all skills") meta-key (per-skill selectable tools, amends 0021).
     /// Each skill is individually selectable as a per-skill key <c>skill:{name}</c> (see
     /// <see cref="SkillKey"/>) — both the ones shipped in <see cref="SkillCatalog"/> and the ones the user
@@ -227,7 +236,7 @@ public static class ToolCatalog
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
         [
             WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification,
-            Artifacts, ReadDocument, BrowserTools, SharedState, PastChats,
+            Artifacts, ReadDocument, BrowserTools, SharedState, PastChats, Fleet,
         ];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
@@ -254,6 +263,8 @@ public static class ToolCatalog
         [SharedStateLimits.UpdateToolName] = SharedState,
         [PastChatLimits.SearchToolName] = PastChats,
         [PastChatLimits.ReadToolName] = PastChats,
+        [FleetToolLimits.StartToolName] = Fleet,
+        [FleetToolLimits.GetToolName] = Fleet,
         [CodeInterpreter] = CodeInterpreter,
         [ClientToolLimits.GetCurrentLocation] = Location,
         ["schedule_prompt"] = Scheduling,
@@ -324,6 +335,11 @@ public static class ToolCatalog
         // hosted tool reads the user's own chat history.
         new(PastChats, "Past chats", RequiresHostedTools: false,
             Description: "Lets the assistant search and read your other conversations to recall what was said."),
+        // Fleet (ADR 0115) is LAST for the same order-stability reason. RequiresHostedTools is false: the fleet runs
+        // in Agent42, on the user's own models. The description names what is consented to: work that runs on its
+        // own, with its Copilot agents' actions approved automatically.
+        new(Fleet, "Agent fleet", RequiresHostedTools: false,
+            Description: "Lets the assistant hand long jobs to the agent fleet, which runs them on its own and approves its agents' actions by itself."),
     ];
 
     /// <summary>The logical key for a registered tool name, or null (e.g. <c>get_date</c>, or an unmapped tool).</summary>

@@ -23,6 +23,16 @@ public interface IAgentGrain : IGrainWithStringKey
     Task EnqueuePromptAsync(string message, IReadOnlyList<AttachmentRef>? attachments);
 
     /// <summary>
+    /// Delivers the result of a fleet task this conversation started (ADR 0115) as a background turn: the same body as
+    /// <see cref="EnqueuePromptAsync"/> (persisted, away push, chat-app delivery), with <paramref name="message"/>
+    /// already framed as fleet data. The turn is marked so it can't start another fleet task. A deleted conversation
+    /// drops the result without running a turn.
+    /// </summary>
+    [Alias("ReceiveFleetResultAsync")]
+    [OneWay]
+    Task ReceiveFleetResultAsync(string taskId, string message);
+
+    /// <summary>
     /// Sends a message to the agent and streams the turn back as typed events:
     /// reply-text deltas, tool-call start/end notifications, and a closing
     /// <see cref="AgentStreamEventType.Done"/> event with the turn's token usage.

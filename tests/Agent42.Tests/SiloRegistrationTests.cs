@@ -21,7 +21,7 @@ public sealed class SiloRegistrationTests
         typeof(IUserChatClientFactoryProvider), typeof(IUserMcpToolProvider), typeof(IAttachmentStore),
         typeof(IDocumentIndex), typeof(IChatSearchIndex), typeof(IWebSearch), typeof(IWebPageFetcher),
         typeof(IWebDocumentFetcher), typeof(IGeocoder), typeof(HindsightIntegration),
-        typeof(IPushNotificationSender), typeof(IAgentWebhookSender), typeof(IChatDeliverySender),
+        typeof(IPushNotificationSender), typeof(IAgentWebhookSender), typeof(IChatDeliverySender), typeof(IFleetLauncher),
     ];
 
     private static ServiceCollection WithPorts(params Type[] except)

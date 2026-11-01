@@ -113,6 +113,10 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             // an away reply or notification delivered. Every AgentGrain host needs one registered or activation fails.
             services.AddSingleton<RecordingChatDeliverySender>();
             services.AddSingleton<IChatDeliverySender>(sp => sp.GetRequiredService<RecordingChatDeliverySender>());
+            // Fleet launcher (ADR 0115): the recording stand-in, registered as its concrete type so a test can read what
+            // start_fleet_task asked for. Every AgentGrain host needs one registered or activation fails.
+            services.AddSingleton<FakeFleetLauncher>();
+            services.AddSingleton<IFleetLauncher>(sp => sp.GetRequiredService<FakeFleetLauncher>());
             // Long-term memory (ADR 0056): the recording stand-in, registered as its concrete type too so a
             // test can read which bank recalled and retained. Every AgentGrain host must register a
             // HindsightIntegration or activation fails; a null Client means no provider is attached at all.

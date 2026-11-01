@@ -61,6 +61,30 @@ public class FleetStoreTests
         Assert.True(task.CanFollowUp);
     }
 
+    // ADR 0115: a task started from a chat remembers its conversation.
+    [Fact]
+    public async Task Record_OriginConversationId_RoundTrips()
+    {
+        await _store.SaveTaskAsync(Task("alice", "a1", "w1", DateTimeOffset.Parse("2026-11-01T10:00:00Z")) with { OriginConversationId = "conv-1" });
+
+        var task = await _store.GetTaskAsync("alice", "a1");
+
+        Assert.Equal("conv-1", task!.OriginConversationId);
+    }
+
+    // ADR 0115: a record written before chat-started tasks existed has no origin, so it is a page task.
+    [Fact]
+    public async Task Record_WithoutOrigin_ReadsNull()
+    {
+        await _blobs.PutAsync("alice/tasks/old.json", Encoding.UTF8.GetBytes(
+            """{"id":"old","userId":"alice","request":"r","workspaceId":"w","plannerModel":"foundry:gpt-5","status":"done","result":"x"}"""));
+
+        var task = await _store.GetTaskAsync("alice", "old");
+
+        Assert.NotNull(task);
+        Assert.Null(task.OriginConversationId);
+    }
+
     // ADR 0101: records written before attached files existed load with empty lists, and the lists round-trip.
     [Fact]
     public async Task LegacyRecord_WithoutInputs_LoadsEmpty()
