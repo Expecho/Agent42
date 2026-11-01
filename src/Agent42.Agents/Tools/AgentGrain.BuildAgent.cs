@@ -322,6 +322,8 @@ public sealed partial class AgentGrain
             // search_past_chats + read_past_chat (ADR 0112): the user's own chat-search projection, which no hosted
             // tool reads, so unconditional too.
             .. PastChatTools(),
+            // start_fleet_task + get_fleet_task (ADR 0115): the in-process fleet, which no hosted tool provides.
+            .. FleetTools(),
         ];
         if (hostedTools)
         {

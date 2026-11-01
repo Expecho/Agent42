@@ -304,6 +304,23 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
         Assert.DoesNotContain("axolotl", reply.Text, StringComparison.Ordinal);
     }
 
+    // ADR 0115 AC11: an ask_agent binding strips fleet, asserted as an EFFECT: the agent has a NULL selection (null ==
+    // all, which includes fleet), and no task reaches the launcher. The positive control is
+    // FleetToolTests.Start_ReturnsIdAndLink on the same kind of cluster.
+    [Fact]
+    public async Task AskAgent_BindingExcludesFleet()
+    {
+        var (_, key) = await CreateExposedAgentAsync("No-fleet agent");
+
+        var reply = await AskAgentAsync(
+            key, FakeChatClient.CallToolPrompt(FleetToolLimits.StartToolName, new { task = "run a shell in the container" }));
+
+        Assert.False(reply.IsError, reply.Text);
+        Assert.DoesNotContain("Started fleet task", reply.Text, StringComparison.Ordinal);
+        Assert.Empty(Cluster.Silos.SelectMany(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
+            .GetRequiredService<FakeFleetLauncher>().Starts));
+    }
+
     // The control for AC9: a normal browser turn on this same cluster DOES recall and retain. Without it,
     // AC9 passes just as well against a cluster whose memory recorder is never wired at all.
     [Fact]

@@ -283,6 +283,12 @@ public sealed partial class FleetTeamRunner
                 return null;
             }
 
+            if (_run.AutoApprove)
+            {
+                _run.Events.Publish("question.auto", new { question = "Run this team?", answer = "approved" });
+                return null;
+            }
+
             var answer = await _run.Interaction.AskAsync(
                 "Run this team?",
                 [new("y", "Run this team"), new("n", "Stop the task")],

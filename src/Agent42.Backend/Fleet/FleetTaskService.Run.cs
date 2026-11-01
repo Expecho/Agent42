@@ -134,7 +134,7 @@ public sealed partial class FleetTaskService
         var copilotFactory = copilot is null
             ? null
             : new FleetCopilotAgentFactory(copilot, factory, [.. models.Select(m => m.Id)], record.PlannerModel, workspace, canvas, prompts,
-                new FleetCopilotPermissionPolicy(workspace.Root, task.Questions, task.Budget.Token));
+                new FleetCopilotPermissionPolicy(workspace.Root, task.Questions, task.Budget.Token, task.AutoApprove ? task.Log : null));
         return new FleetRun
         {
             TaskId = record.Id,
@@ -152,6 +152,7 @@ public sealed partial class FleetTaskService
             CopilotEnabled = copilot?.Available == true,
             Events = task.Log,
             Interaction = task.Questions,
+            AutoApprove = task.AutoApprove,
             Logger = logger,
             AfterAttempt = ct => SyncWorkspaceAsync(record, workspace, ct),
         };
@@ -248,18 +249,19 @@ public sealed partial class FleetTaskService
         });
         await FlushQuietlyAsync(task);
 
+        var final = record with
+        {
+            Status = status,
+            Result = status == FleetTaskStatus.Done ? result : null,
+            Reason = reason,
+            FinishedAt = _time.GetUtcNow(),
+            Tokens = budget.Tokens,
+            Agents = budget.Agents,
+            Notes = workspace is null ? record.Notes : new Dictionary<string, string>(workspace.Notes),
+        };
         try
         {
-            await store.SaveTaskAsync(record with
-            {
-                Status = status,
-                Result = status == FleetTaskStatus.Done ? result : null,
-                Reason = reason,
-                FinishedAt = _time.GetUtcNow(),
-                Tokens = budget.Tokens,
-                Agents = budget.Agents,
-                Notes = workspace is null ? record.Notes : new Dictionary<string, string>(workspace.Notes),
-            });
+            await store.SaveTaskAsync(final);
         }
         catch (Exception ex)
         {
@@ -271,6 +273,28 @@ public sealed partial class FleetTaskService
             _running.TryRemove(record.Id, out _);
             workspace?.Dispose();
             task.Dispose();
+        }
+
+        await NotifyOriginAsync(final);
+    }
+
+    // ADR 0115: a task started from a chat reports back to it, AFTER the save, so the conversation's get_fleet_task
+    // already reads the final state. An interrupted task (the app is shutting down) never reports. Best effort: a
+    // failure here never changes how the task ended.
+    private async Task NotifyOriginAsync(FleetTaskRecord final)
+    {
+        if (notifier is null || final.OriginConversationId is null || final.Status == FleetTaskStatus.Interrupted)
+        {
+            return;
+        }
+
+        try
+        {
+            await notifier.NotifyAsync(final);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Fleet task {TaskId}: its conversation could not be told it finished", final.Id);
         }
     }
 

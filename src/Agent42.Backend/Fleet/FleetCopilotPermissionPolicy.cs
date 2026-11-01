@@ -14,8 +14,14 @@ namespace Agent42.Backend;
 /// asking, as ADR 0085's policy does, since default mode still raises them and asking per call would stall every
 /// agent. A read-only MCP call is allowed. Everything else (writes, shell commands, URL fetches, other tools) is
 /// asked to the user, with "always for this task". One instance per task, so "always" never leaks into another task.
+/// <para>
+/// <paramref name="autoApproveEvents"/> puts the policy in auto mode, for a task started from a chat (ADR 0115): every
+/// request that would be asked is approved once instead, and logged as a <c>question.auto</c> event there. The
+/// refusals outside the working directory still come first and are never approved.
+/// </para>
 /// </summary>
-public sealed class FleetCopilotPermissionPolicy(string workingDirectory, IFleetInteraction interaction, CancellationToken cancellationToken)
+public sealed class FleetCopilotPermissionPolicy(
+    string workingDirectory, IFleetInteraction interaction, CancellationToken cancellationToken, IFleetEventSink? autoApproveEvents = null)
 {
     private readonly string _root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workingDirectory));
 
@@ -51,6 +57,12 @@ public sealed class FleetCopilotPermissionPolicy(string workingDirectory, IFleet
         }
 
         var reason = string.IsNullOrWhiteSpace(intention) ? "" : $" ({intention})";
+        if (autoApproveEvents is not null)
+        {
+            autoApproveEvents.Publish("question.auto", new { question = $"A Copilot agent wants to {action}{reason}.", answer = "approved" });
+            return PermissionDecision.ApproveOnce();
+        }
+
         var answer = await interaction.AskAsync(
             $"A Copilot agent wants to {action}{reason}. Allow it?",
             [new("y", "Allow"), new("a", "Always allow for this task"), new("n", "Deny")],

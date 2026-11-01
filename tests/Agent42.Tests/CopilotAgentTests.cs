@@ -208,6 +208,18 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
         Assert.Contains(PastChatLimits.ReadToolName, tools);
     }
 
+    // ADR 0115 AC11: the fleet tools reach a Copilot chat through SelectableTools with no exclusion. They need only the
+    // launcher port and the run's TurnContext, which the Copilot path re-establishes (SchedulerBoundAIFunction).
+    [Fact]
+    public async Task CopilotFunctions_IncludeTheFleetTools()
+    {
+        await CopilotChatAsync("copilot-fleet", tools: ToolCatalog.AllSelectableToolKeys);
+
+        var tools = LastRequest("copilot-fleet").Tools.Select(t => t.Name).ToList();
+        Assert.Contains(FleetToolLimits.StartToolName, tools);
+        Assert.Contains(FleetToolLimits.GetToolName, tools);
+    }
+
     // AC10: a copilot agent on a no-tools model is a plain chat: no Copilot agent is built, and the turn still runs.
     [Fact]
     public async Task CopilotKind_NoToolsModel_IsPlainAgent()

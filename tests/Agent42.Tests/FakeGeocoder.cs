@@ -71,6 +71,7 @@ public sealed class CoordinatesOnlyGeocoderSiloConfigurator : ISiloConfigurator
             services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
             services.AddSingleton<IAgentWebhookSender, NullAgentWebhookSender>();
             services.AddSingleton<IChatDeliverySender, NullChatDeliverySender>();
+            services.AddSingleton<IFleetLauncher, DisabledFleetLauncher>();
             // Long-term memory (ADR 0056) OFF on this silo, matching the null push sender above.
             // Still registered: HindsightIntegration is a mandatory grain dependency, so omitting it
             // fails ACTIVATION on this silo rather than merely disabling memory.
