@@ -55,6 +55,9 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         "Agent42.Agents.UserPushState",
         "Agent42.Agents.UserShareLinksState",
         "Agent42.Agents.UserSkillsState",
+        // ADR 0120: the fleet share links.
+        "Agent42.Agents.FleetShareLinkDirectoryState",
+        "Agent42.Agents.UserFleetShareLinksState",
         "Agent42.Agents.UserChatConnectionsState",
         "Agent42.Agents.ChatConnectionDirectoryState",
         "Agent42.Agents.ChatRouteState",

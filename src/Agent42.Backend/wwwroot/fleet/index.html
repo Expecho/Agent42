@@ -38,6 +38,7 @@
     <button id="newTaskBtn" class="btn" type="button">New task</button>
     <label class="follow" title="Jump to the team that is working right now"><input type="checkbox" id="follow" checked> Follow live</label>
     <button id="stopBtn" class="btn danger" type="button" hidden>Stop task</button>
+    <button id="shareBtn" class="btn" type="button" hidden>Share</button>
     <button id="deleteBtn" class="btn danger" type="button" hidden>Delete task</button>
     <button id="promptsBtn" class="btn" type="button">System prompts</button>
   </header>
@@ -57,6 +58,28 @@
     <section id="detail"></section>
     <section id="agentPanel" hidden aria-label="Agent output"><div id="panelHead" class="panel-head"></div><div id="panelBody"></div></section>
   </main>
+  <!-- Read-only share link for the selected task (ADR 0120). Nothing is minted until Create is pressed: that press is the
+       consent to the exposure the text below spells out. -->
+  <dialog id="shareDialog" class="share-dialog">
+    <form method="dialog">
+      <h2>Share this task</h2>
+      <p class="muted" id="shareTaskTitle"></p>
+      <p>Anyone with this link can view the task <strong>without signing in</strong>: its request and result, its canvas
+        pages and <strong>every file in its workspace</strong>. That includes files you attached and files from other
+        tasks that share the workspace, such as follow-ups, and it stays live: new files and follow-ups appear until you
+        revoke the link. The agents' transcripts and tool calls are never shared.</p>
+      <button class="btn primary" type="button" id="shareCreateBtn">Create link</button>
+      <div id="shareResult" hidden>
+        <input type="text" id="shareUrl" readonly aria-label="Share link">
+        <div class="share-actions">
+          <button class="btn primary" type="button" id="shareNativeBtn" hidden>Share</button>
+          <button class="btn primary" type="button" id="shareCopyBtn">Copy</button>
+          <button class="btn danger" type="button" id="shareRevokeBtn">Revoke</button>
+        </div>
+      </div>
+      <div class="share-actions"><button class="btn" type="button" id="shareCloseBtn">Close</button></div>
+    </form>
+  </dialog>
   <footer>
     <span>Agents spawned <b id="mAgents">0</b> <span id="mDepth"></span></span>
     <span>Tokens <b id="mIn">0</b> in (<b id="mCached">0</b> cached) / <b id="mOut">0</b> out</span>
