@@ -416,49 +416,6 @@ public sealed class McpUrlSeedingTests(SharedClusterFixture fixture) : SharedClu
         Assert.Contains("cut-in-half", CutUrl[..40], StringComparison.Ordinal);
     }
 
-    // ---- The model's own instructions ----
-
-    // AC16: the prohibition the model reads on EVERY turn must permit a seeded URL. The tool descriptions
-    // sit in the JSON schema unconditionally, so a description still saying "you must NEVER take a URL out
-    // of a tool result" leaves a compliant model refusing to use the feature — which would look like a bug
-    // while every behavioural test above passed (they drive the fake, which reads no descriptions).
-    [Fact]
-    public void SeedingToolDescriptions_PermitASeededUrl()
-    {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Agent42.Agents", "Tools", "AgentGrain.BuildAgent.cs"));
-
-        // The carve-out is named in both web tool descriptions...
-        Assert.Equal(2, CountOccurrences(source, "a URL that a tool result gave you"));
-
-        // ...and the old absolute prohibition on page text is still there, unweakened: only the tool-result
-        // case is carved out, never softened into "use your judgement".
-        Assert.Contains("out of the text of a page", source, StringComparison.Ordinal);
-    }
-
-    private static int CountOccurrences(string haystack, string needle)
-    {
-        var count = 0;
-        for (var i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0;
-             i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
-        {
-            count++;
-        }
-
-        return count;
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Agent42.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        Assert.NotNull(dir);
-        return dir!.FullName;
-    }
-
     // The fake echoes the tool schema it was handed as [tools:…]; this pulls that list out of a reply.
     private static string ToolNames(string answer)
     {

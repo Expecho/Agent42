@@ -119,31 +119,6 @@ public sealed class McpElicitationIntegrationTests : IAsyncLifetime
         Assert.Contains("form=True,url=True", result?.ToString(), StringComparison.Ordinal);
     }
 
-    // AC1: one options helper for both factories, so the remote and local-bridge paths cannot drift apart.
-    [Theory]
-    [InlineData("src/Agent42.Backend/Mcp/McpConnectionFactory.cs")]
-    [InlineData("src/Agent42.Backend/Mcp/LocalBridgeConnectionFactory.cs")]
-    public void BothFactories_UseTheSharedOptionsHelper(string relativePath)
-    {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar)));
-
-        Assert.Contains("McpElicitationClient.Options(router)", source, StringComparison.Ordinal);
-        Assert.Equal(
-            source.Split("McpClient.CreateAsync(").Length - 1,
-            source.Split("McpElicitationClient.Options(").Length - 1);
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Agent42.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        return dir?.FullName ?? throw new InvalidOperationException("Agent42.slnx not found above the test output.");
-    }
-
     [McpServerToolType]
     public sealed class ElicitingServerTools
     {

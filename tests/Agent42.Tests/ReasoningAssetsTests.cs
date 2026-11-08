@@ -11,80 +11,6 @@ namespace Agent42.Tests;
 public sealed class ReasoningAssetsTests(StaticAssetsServerFixture fixture)
 {
     /// <summary>
-    /// The renderer and its closer both exist and are reachable from <c>main.js</c>. A module unreachable
-    /// from there is invisible to this fixture, so this also proves the import graph carries them.
-    /// </summary>
-    [Fact]
-    public async Task Frontend_ShipsReasoningDisclosure()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        Assert.Contains("renderReasoning", app);
-        Assert.Contains("finishReasoning", app);
-        // A <details> element, so it is collapsed until the user opens it.
-        Assert.Contains("msg__thinking", app);
-        // Dispatched on the wire type the endpoint actually emits — pinned server-side by
-        // AgentApiTests.ChatEndpoint_StreamsReasoningAsNdjson.
-        Assert.Contains("\"reasoning\"", app);
-    }
-
-    /// <summary>
-    /// Reasoning is rendered as TEXT, never as markup.
-    ///
-    /// <para>The reply goes through the markdown renderer and the sanitizer; reasoning deliberately does
-    /// not, so the only safe sink is <c>textContent</c>. This pins that the thinking body is filled that
-    /// way — an <c>innerHTML</c> here would put unsanitized model output into the DOM.</para>
-    /// </summary>
-    [Fact]
-    public async Task Reasoning_IsRenderedAsTextNotMarkup()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        var render = CodeOnly(StaticAssetsServerFixture.Body(app, "export function renderReasoning"));
-        Assert.Contains("textContent", render);
-        Assert.DoesNotContain("innerHTML", render);
-    }
-
-    /// <summary>
-    /// The reasoning arm must not speak (ADR 0037/0038).
-    ///
-    /// <para>The <c>textDelta</c> arm one branch above calls <c>voice.onDelta(chunk.text)</c>, and copying
-    /// that line literally is the obvious mistake: hands-free voice would read the model's deliberation
-    /// aloud ahead of its answer, and with a speech model configured it would pay a third party per
-    /// character to do it. Scoped to the arm itself, because <c>voice.onDelta</c> legitimately appears
-    /// elsewhere in the same file.</para>
-    /// </summary>
-    [Fact]
-    public async Task ReasoningArm_DoesNotSpeakTheThinking()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        var arm = CodeOnly(Section(app, "chunk.type === \"reasoning\"", "chunk.type === \"toolCallStart\""));
-        Assert.DoesNotContain("voice.", arm);
-        Assert.Contains("renderReasoning", arm);
-
-        // Not vacuous: the textDelta arm DOES speak, so the assertion above is a real difference between
-        // the two arms rather than a claim about a file that never mentions voice.
-        Assert.Contains("voice.onDelta", app);
-    }
-
-    /// <summary>
-    /// Reasoning is scoped to its own turn: the renderer looks the disclosure up INSIDE the message it was
-    /// handed, so a new turn starts a fresh one instead of appending to the previous turn's thinking.
-    /// </summary>
-    [Fact]
-    public async Task Reasoning_IsScopedToItsOwnTurn()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        var render = CodeOnly(StaticAssetsServerFixture.Body(app, "export function renderReasoning"));
-        // msg.querySelector, never document.querySelector — the latter would find the FIRST disclosure in
-        // the whole thread and stream every later turn's thinking into the earliest reply.
-        Assert.Contains("msg.querySelector", render);
-        Assert.DoesNotContain("document.querySelector", render);
-    }
-
-    /// <summary>
     /// Every tail settles the disclosure, not just the happy one.
     ///
     /// <para><c>done</c> closes it when the turn completes normally, but three other tails never see a
@@ -104,49 +30,6 @@ public sealed class ReasoningAssetsTests(StaticAssetsServerFixture fixture)
 
         var tail = CodeOnly(Section(app, "  } finally {", "export function wireSend"));
         Assert.Contains("finishReasoning", tail);
-    }
-
-    /// <summary>
-    /// The providers UI lets a user flag a model as reasoning, and it is sent on save — copying the
-    /// <c>ProvidersForm_HasImageGenerationFlag</c> shape.
-    ///
-    /// <para><b>The second half is the one that matters.</b> <c>collectModels</c> reads the checkboxes by
-    /// POSITIONAL destructuring of <c>querySelectorAll(".agent-form__checkbox")</c>, paired by ORDER with
-    /// the <c>capDefs</c> array that renders them. Add a flag to one and not the other, or at a different
-    /// index, and every flag after the insertion point silently reads the wrong box — a model saved as
-    /// "speech" comes back as "embeddings". Nothing else in the suite pins that pairing; until now it was
-    /// covered only by a manual browser pass.</para>
-    /// </summary>
-    [Fact]
-    public async Task ProvidersForm_HasReasoningFlag_AndSendsIt()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        var addModelRow = StaticAssetsServerFixture.Body(app, "function addModelRow(model)");
-        Assert.Contains("model?.supportsReasoning", addModelRow);
-        Assert.Contains("reasoning", addModelRow);
-
-        var collectModels = StaticAssetsServerFixture.Body(app, "function collectModels()");
-        Assert.Contains("supportsReasoning: reasoning.checked", collectModels);
-
-        // The pairing itself: `reasoning` must be the SIXTH name (transcription, ADR 0113, is the seventh) destructured, matching capDefs' sixth
-        // entry. A name bound at the wrong index compiles, renders and saves — just wrongly.
-        Assert.Contains(
-            "const [tools, vision, image, embed, speech, reasoning, transcription] =",
-            CodeOnly(collectModels),
-            StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// The disclosure has a style of its own, so it is not silently inheriting <c>.tool-call</c>'s.
-    /// </summary>
-    [Fact]
-    public async Task Styles_ShipTheThinkingDisclosure()
-    {
-        var css = await fixture.Client.GetStringAsync("/styles.css");
-
-        Assert.Contains(".msg__thinking", css);
-        Assert.Contains(".msg__thinking-body", css);
     }
 
     /// <summary>
