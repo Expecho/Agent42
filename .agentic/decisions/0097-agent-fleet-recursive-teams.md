@@ -5,7 +5,7 @@ status: accepted
 tags: [fleet, agents, agent-framework, workflows, declarative, github-copilot-sdk, blob, sse, egress, trust-boundary, single-replica, usage, prerelease-package, no-migration]
 supersedes: []
 amends: [0085, 0013]
-amended_by: [0099, 0101, 0107, 0108, 0115]   # 0099: a task can override the default tool selection (decision 6); 0101: attached files + workspace document tools (decision 7); 0107: copilot chats get built-in tools too, and the managed-identity residual (decision 7); 0108: Copilot agents may run on the user's GitHub Copilot models (copilot/<id>), never the task model; 0115: a chat-started task approves every question automatically and declines elicitations (decision 7)
+amended_by: [0099, 0101, 0107, 0108, 0115, 0116]   # 0099: a task can override the default tool selection (decision 6); 0101: attached files + workspace document tools (decision 7); 0107: copilot chats get built-in tools too, and the managed-identity residual (decision 7); 0108: Copilot agents may run on the user's GitHub Copilot models (copilot/<id>), never the task model; 0115: a chat-started task approves every question automatically and declines elicitations (decision 7); 0116: a Details | Graph view of the task
 ---
 
 # Agent42 agent fleet: an in-process recursive team runner outside Orleans, persisted in Blob, with Copilot agents that keep their built-in tools
