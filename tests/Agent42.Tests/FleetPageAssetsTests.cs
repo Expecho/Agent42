@@ -78,6 +78,41 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("!!task.clarify, !!task.selfReview)", script, StringComparison.Ordinal);
     }
 
+    /// <summary>ADR 0120: the page has a Share button and dialog, whose warning names what a link exposes, and the script
+    /// talks to the owner's share route (never a public one).</summary>
+    [Fact]
+    public async Task FleetPage_HasShareButtonAndDialog_WiredToTheOwnerRoute()
+    {
+        var page = await _client.GetStringAsync("/fleet/");
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("id=\"shareBtn\"", page, StringComparison.Ordinal);
+        Assert.Contains("<dialog id=\"shareDialog\"", page, StringComparison.Ordinal);
+        Assert.Contains("every file in its workspace", page, StringComparison.Ordinal);
+        Assert.Contains("without signing in", page, StringComparison.Ordinal);
+        Assert.Contains("/api/fleet/tasks/${encodeURIComponent(id)}/share", script, StringComparison.Ordinal);
+        Assert.Contains("/api/fleet/tasks/${encodeURIComponent(shareTaskId)}/share", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/share/fleet", script, StringComparison.Ordinal);
+    }
+
+    /// <summary>ADR 0120 (ADR 0047's rule): the link is rendered BEFORE the OS sheet opens, and the sheet is gated on a pure
+    /// feature detect. Without the ordering a blocked sheet leaves the user without the link.</summary>
+    [Fact]
+    public async Task FleetShare_RendersTheLinkBeforeTheSheet_PureFeatureDetect()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        var start = script.IndexOf("async function createShare()", StringComparison.Ordinal);
+        Assert.True(start > 0, "createShare is missing");
+        var body = script[start..script.IndexOf("async function revokeShare()", start, StringComparison.Ordinal)];
+        var render = body.IndexOf("renderShareState(", StringComparison.Ordinal);
+        var share = body.IndexOf("nativeShare()", StringComparison.Ordinal);
+        Assert.True(render >= 0 && share > render, "createShare must render the link BEFORE handing it to the sheet");
+
+        Assert.Contains("typeof navigator.share === \"function\"", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("userAgent", script, StringComparison.Ordinal);
+    }
+
     /// <summary>ADR 0116: a node a stop cut off takes the team's state, and a delegation from a non-node agent is
     /// adopted instead of dropped.</summary>
     [Fact]

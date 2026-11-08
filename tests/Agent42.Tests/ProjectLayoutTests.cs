@@ -191,6 +191,7 @@ public sealed class ProjectLayoutTests
         { "Export/AgentApi.Export.cs", "MapExportEndpoints" },
         { "Webhooks/AgentApi.Webhooks.cs", "MapWebhookEndpoints" },
         { "Fleet/AgentApi.Fleet.cs", "MapFleetEndpoints" },
+        { "Fleet/AgentApi.FleetSharing.cs", "MapFleetSharingEndpoints" },
         { "Copilot/AgentApi.GitHubCopilot.cs", "MapGitHubCopilotEndpoints" },
         { "ChatGateway/AgentApi.ChatGateway.cs", "MapChatGatewayEndpoints" },
         { "ChatGateway/AgentApi.ChatGatewaySignal.cs", "MapChatGatewaySignalEndpoints" },

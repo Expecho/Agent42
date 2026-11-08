@@ -184,10 +184,23 @@ public static partial class AgentApi
         return await fleet.GetAsync(http.GetUserId(), id, ct) is { } task ? Results.Json(task) : FleetNotFound();
     }
 
-    private static async Task<IResult> DeleteFleetTask(string id, IServiceProvider services, HttpContext http, CancellationToken ct)
-        => services.GetService<FleetTaskService>() is { } fleet
-            ? FleetOutcomeResult(await fleet.DeleteAsync(http.GetUserId(), id, ct), "The task is running, stop it first.")
-            : FleetUnavailable();
+    private static async Task<IResult> DeleteFleetTask(string id, IServiceProvider services, IGrainFactory grains, HttpContext http, CancellationToken ct)
+    {
+        if (services.GetService<FleetTaskService>() is not { } fleet)
+        {
+            return FleetUnavailable();
+        }
+
+        var userId = http.GetUserId();
+        var outcome = await fleet.DeleteAsync(userId, id, ct);
+        if (outcome == FleetOutcome.Ok)
+        {
+            // Deleting a task also revokes its share link (ADR 0120), belt and braces: the public routes re-read the task.
+            await grains.GetGrain<IUserFleetShareLinksGrain>(userId).RemoveAsync(id);
+        }
+
+        return FleetOutcomeResult(outcome, "The task is running, stop it first.");
+    }
 
     private static async Task<IResult> StopFleetTask(string id, IServiceProvider services, HttpContext http, CancellationToken ct)
         => services.GetService<FleetTaskService>() is { } fleet
@@ -274,9 +287,13 @@ public static partial class AgentApi
 
         var userId = http.GetUserId();
         return await fleet.GetAsync(userId, id, ct) is { } task
-            ? Results.Json(await fleet.Store.ListWorkspaceAsync(userId, task.WorkspaceId, ct))
+            ? await FleetFileListAsync(fleet, task, ct)
             : FleetNotFound();
     }
+
+    /// <summary>The workspace's files. Shared by the owner route and the public share route (ADR 0120).</summary>
+    private static async Task<IResult> FleetFileListAsync(FleetTaskService fleet, FleetTaskRecord task, CancellationToken ct)
+        => Results.Json(await fleet.Store.ListWorkspaceAsync(task.UserId, task.WorkspaceId, ct));
 
     /// <summary>
     /// A workspace file. The content is model-written, so this is an XSS sink: it is always an attachment, with
@@ -291,15 +308,21 @@ public static partial class AgentApi
         }
 
         var userId = http.GetUserId();
-        if (await fleet.GetAsync(userId, id, ct) is not { } task)
-        {
-            return FleetNotFound();
-        }
+        return await fleet.GetAsync(userId, id, ct) is { } task
+            ? await FleetFileDownloadAsync(fleet, task, path, http, ct)
+            : FleetNotFound();
+    }
 
+    /// <summary>
+    /// One workspace file, for the task's owner or for a share link's viewer (ADR 0120): both go through here, so the
+    /// attachment, <c>nosniff</c> and never-renders rules cannot drift between them.
+    /// </summary>
+    private static async Task<IResult> FleetFileDownloadAsync(FleetTaskService fleet, FleetTaskRecord task, string path, HttpContext http, CancellationToken ct)
+    {
         byte[]? content;
         try
         {
-            content = await fleet.Store.GetWorkspaceFileAsync(userId, task.WorkspaceId, path, ct);
+            content = await fleet.Store.GetWorkspaceFileAsync(task.UserId, task.WorkspaceId, path, ct);
         }
         catch (ArgumentException)
         {
@@ -324,12 +347,15 @@ public static partial class AgentApi
         }
 
         var userId = http.GetUserId();
-        if (await fleet.GetAsync(userId, id, ct) is not { } task)
-        {
-            return FleetNotFound();
-        }
+        return await fleet.GetAsync(userId, id, ct) is { } task
+            ? await FleetCanvasListAsync(fleet, task, ct)
+            : FleetNotFound();
+    }
 
-        var manifest = await fleet.Store.GetCanvasManifestAsync(userId, task.WorkspaceId, ct);
+    /// <summary>The canvas pages in the shape the artifact pane lists. Shared by the owner and the share routes (ADR 0120).</summary>
+    private static async Task<IResult> FleetCanvasListAsync(FleetTaskService fleet, FleetTaskRecord task, CancellationToken ct)
+    {
+        var manifest = await fleet.Store.GetCanvasManifestAsync(task.UserId, task.WorkspaceId, ct);
         return Results.Json(manifest.Pages.Select(p => new
         {
             id = p.Name,
@@ -355,14 +381,21 @@ public static partial class AgentApi
         }
 
         var userId = http.GetUserId();
-        if (await fleet.GetAsync(userId, id, ct) is not { } task)
-        {
-            return Results.NotFound();
-        }
+        return await fleet.GetAsync(userId, id, ct) is { } task
+            ? await FleetCanvasVersionAsync(fleet, task, name, version, frame, http, ct)
+            : Results.NotFound();
+    }
 
-        var page = (await fleet.Store.GetCanvasManifestAsync(userId, task.WorkspaceId, ct)).Pages.FirstOrDefault(p => p.Name == name);
+    /// <summary>
+    /// One canvas page version for the owner or a share link's viewer (ADR 0120). The caller has already put the
+    /// sandbox headers on the response and resolved the task, so a miss here carries them too.
+    /// </summary>
+    private static async Task<IResult> FleetCanvasVersionAsync(
+        FleetTaskService fleet, FleetTaskRecord task, string name, int version, bool frame, HttpContext http, CancellationToken ct)
+    {
+        var page = (await fleet.Store.GetCanvasManifestAsync(task.UserId, task.WorkspaceId, ct)).Pages.FirstOrDefault(p => p.Name == name);
         if (page is null || !page.Versions.Contains(version) || (frame && !ArtifactKind.IsFramed(page.Kind))
-            || await fleet.Store.GetCanvasVersionAsync(userId, task.WorkspaceId, page.Name, version, ct) is not { } stored)
+            || await fleet.Store.GetCanvasVersionAsync(task.UserId, task.WorkspaceId, page.Name, version, ct) is not { } stored)
         {
             return Results.NotFound();
         }
