@@ -2,6 +2,7 @@ using Agent42.Agents;
 using Agent42.Backend;
 using GitHub.Copilot;
 using Microsoft.Agents.AI;
+using ModelInfo = Agent42.Backend.ModelInfo;
 using Microsoft.Extensions.Logging.Abstractions;
 
 #pragma warning disable GHCP001 // The SDK's permission RPC types are [Experimental]; these tests pin them.
@@ -188,5 +189,113 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
 
         Assert.Equal(FleetCanvas.ToolNames, config.Tools!.Select(t => t.Name));
         Assert.Null(config.AvailableTools);
+    }
+
+    private static MultiProviderChatClientFactory MixedFactory()
+    {
+        var mine = new ProviderOptions { Kind = ProviderKind.OpenAICompatible, Endpoint = "https://api.example/v1", ApiKey = "key" };
+        var claude = new ProviderOptions { Kind = ProviderKind.Anthropic, Endpoint = "https://anthropic.stub", ApiKey = "key" };
+        return new MultiProviderChatClientFactory(
+            new Dictionary<string, MultiProviderChatClientFactory.Provider>
+            {
+                ["mine"] = MultiProviderChatClientFactory.Provider.OpenAICompatible(mine, new Uri(mine.Endpoint), mine.ApiKey),
+                ["claude"] = MultiProviderChatClientFactory.Provider.Anthropic(claude, new Uri(claude.Endpoint), claude.ApiKey, new RecordingHttpHandler()),
+            },
+            "claude:claude-test", "test", NullLogger<MultiProviderChatClientFactory>.Instance);
+    }
+
+    private static ModelInfo Model(string id, bool copilotOnly = false) => new(id, id.Split(':')[0], id, id.Split(':')[1], null, true, false, CopilotOnly: copilotOnly);
+
+    [Fact]
+    public void ReachableModels_KeepsByokAndGitHub_ExcludesAnthropic()
+    {
+        var models = new[] { Model("mine:gpt-5"), Model("claude:claude-test"), Model("github-copilot:gpt-6", copilotOnly: true) };
+
+        var reachable = FleetCopilotAgentFactory.ReachableModels(MixedFactory(), models);
+
+        // GitHub is not connected in this factory, so its id is refused; Anthropic has no Copilot mapping.
+        Assert.Equal(["mine:gpt-5"], reachable.Select(m => m.Id));
+        Assert.Empty(FleetCopilotAgentFactory.ReachableModels(new SingleChatClientFactory(new FakeChatClient(), "fake:model-a"), models));
+    }
+
+    private string PlannerPrompt(string defaultModel, string? copilotDefault, string defaultCopilotModel = "", bool withByok = true)
+    {
+        using var h = new FleetRunHarness(new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1 });
+        var host = Host(enabled: true, defaultCopilotModel: defaultCopilotModel);
+        var run = new FleetRun
+        {
+            TaskId = h.Run.TaskId,
+            Options = h.Run.Options,
+            Prompts = h.Run.Prompts,
+            Budget = h.Run.Budget,
+            Workspace = h.Run.Workspace,
+            Canvas = h.Run.Canvas,
+            DefaultModel = h.Run.DefaultModel,
+            Clients = h.Run.Clients,
+            Events = h.Events,
+            Interaction = h.Interaction,
+            Logger = h.Run.Logger,
+            CopilotFactory = Factory(host),
+            CopilotEnabled = true,
+            CopilotByokModelIds = withByok ? new Dictionary<string, string?> { ["mine:gpt-5"] = "GPT 5" } : new Dictionary<string, string?>(),
+            CopilotDefaultModel = copilotDefault ?? defaultModel,
+        };
+        return new FleetTeamRunner(run).PlannerInstructions(h.Root);
+    }
+
+    [Fact]
+    public void Planner_ListsReachableByokModels_NotUnreachableOnes()
+    {
+        var prompt = PlannerPrompt("claude:claude-test", null);
+
+        Assert.Contains("- mine:gpt-5 (GPT 5)", prompt);
+        Assert.Contains("cannot run as a Copilot agent", prompt);
+        Assert.DoesNotContain("copilot/claude", prompt);
+        Assert.DoesNotContain("- claude:claude-test", prompt);
+    }
+
+    [Fact]
+    public void Planner_UnreachableDefault_SaysPlainCopilotCannotRun()
+    {
+        var prompt = PlannerPrompt("claude:claude-test", null);
+
+        Assert.Contains("plain 'copilot' would run on claude:claude-test, which a Copilot agent cannot run on", prompt);
+        Assert.Contains("Name 'copilot/<model id>'", prompt);
+    }
+
+    [Fact]
+    public void Planner_ReachableDefault_SaysPlainCopilotRunsOnIt()
+    {
+        var prompt = PlannerPrompt("mine:gpt-5", null);
+
+        Assert.Contains("plain 'copilot' runs on mine:gpt-5.", prompt);
+        Assert.DoesNotContain("cannot run on.", prompt);
+    }
+
+    [Fact]
+    public void Planner_ConfiguredDefaultCopilotModel_IsWhatThePromptSays()
+    {
+        // The task's model is unreachable, but the operator's default is: the prompt names the configured one.
+        var reachable = PlannerPrompt("claude:claude-test", "mine:gpt-5", defaultCopilotModel: "mine:gpt-5");
+        Assert.Contains("plain 'copilot' runs on mine:gpt-5.", reachable);
+        Assert.DoesNotContain("claude:claude-test, which", reachable);
+
+        // The factory matches catalog ids case-insensitively, so the prompt must too.
+        var cased = PlannerPrompt("claude:claude-test", "mine:GPT-5", defaultCopilotModel: "mine:GPT-5");
+        Assert.Contains("plain 'copilot' runs on mine:GPT-5.", cased);
+
+        var unreachable = PlannerPrompt("mine:gpt-5", "claude:claude-test", defaultCopilotModel: "claude:claude-test");
+        Assert.Contains("would run on claude:claude-test, which a Copilot agent cannot run on", unreachable);
+    }
+
+    [Fact]
+    public void NoReachableModel_CopilotIsNotOffered()
+    {
+        var host = Host(enabled: true);
+
+        Assert.True(host.Available);
+        Assert.False(FleetCopilotAgentFactory.CopilotOffered(host, []));
+        Assert.False(FleetCopilotAgentFactory.CopilotOffered(null, [Model("mine:gpt-5")]));
+        Assert.True(FleetCopilotAgentFactory.CopilotOffered(host, [Model("mine:gpt-5")]));
     }
 }
