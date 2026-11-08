@@ -53,8 +53,7 @@ public sealed partial class FleetTaskService
             });
             record = await IngestInputsAsync(task, workspace);
             var run = await BuildRunAsync(task, workspace, canvas, models);
-            var input = (previous is null ? record.Request : await FollowUpInputAsync(record, previous, workspace, run.Prompts))
-                + AttachedFiles(record);
+            var input = await ComposeInputAsync(task, record, previous, workspace, run);
             result = await new FleetTeamRunner(run).RunAsync(input);
             failure = result is null ? FleetTeamRunner.NoTeamResult : null;
         }
@@ -161,9 +160,24 @@ public sealed partial class FleetTaskService
         };
     }
 
+    // The input of the run: the request (or, when the user asked to be questioned first, the brief the clarify phase
+    // wrote from it, ADR 0118), the follow-up history, and the attached files. The record keeps the user's own words.
+    // A task started from a chat never clarifies: nobody is there to answer.
+    private async Task<string> ComposeInputAsync(
+        RunningFleetTask task, FleetTaskRecord record, FleetTaskRecord? previous, FleetWorkspace workspace, FleetRun run)
+    {
+        var files = AttachedFiles(record);
+        var request = record.Clarify && !task.AutoApprove
+            ? await new FleetClarifier(run, record.Request, files, previous is null ? null : FleetTeamRunner.Cut(previous.Request, 500))
+                .RunAsync(task.Budget.Token)
+            : record.Request;
+        return (previous is null ? request : await FollowUpInputAsync(record, previous, workspace, run.Prompts, request)) + files;
+    }
+
     // The input of a follow-up: the new request with the earlier requests and their results, oldest first, and the
     // files in the workspace. The latest result is given up to MaxRetryResultLength, earlier ones shorter.
-    private async Task<string> FollowUpInputAsync(FleetTaskRecord record, FleetTaskRecord previous, FleetWorkspace workspace, FleetPromptSet prompts)
+    private async Task<string> FollowUpInputAsync(
+        FleetTaskRecord record, FleetTaskRecord previous, FleetWorkspace workspace, FleetPromptSet prompts, string request)
     {
         var chain = new List<FleetTaskRecord>();
         for (var task = previous; task is not null && chain.Count < MaxFollowUpChain;
@@ -179,7 +193,7 @@ public sealed partial class FleetTaskService
         }));
         var files = workspace.ListFiles();
         return prompts.Render("followup",
-            ("request", record.Request),
+            ("request", request),
             ("history", history),
             ("files", files.Count == 0 ? "(none)" : string.Join("\n", files.Select(file => $"- {file}"))));
     }

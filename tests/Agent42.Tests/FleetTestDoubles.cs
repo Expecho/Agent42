@@ -27,9 +27,21 @@ public sealed class ScriptedFleetInteraction(params string[] answers) : IFleetIn
 
     public ConcurrentQueue<string> Questions { get; } = new();
 
+    /// <summary>Every choice set offered, in order.</summary>
+    public ConcurrentQueue<IReadOnlyList<FleetChoice>> Choices { get; } = new();
+
+    /// <summary>The user stopped the task while the question was open.</summary>
+    public bool Cancel { get; set; }
+
     public Task<string> AskAsync(string question, IReadOnlyList<FleetChoice> choices, string freeTextHint, CancellationToken cancellationToken)
     {
+        if (Cancel)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+
         Questions.Enqueue(question);
+        Choices.Enqueue(choices);
         return Task.FromResult(_answers.TryDequeue(out var answer) ? answer : "y");
     }
 }

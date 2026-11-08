@@ -19,16 +19,26 @@ public sealed partial class FakeChatClient
     /// <summary>A fleet task script. Plans are <c>submit_team_plan</c> arguments as anonymous objects.</summary>
     public sealed class FleetScript(
         IReadOnlyList<object> plans, IReadOnlyList<int>? scores = null, long usagePerCall = 0, IReadOnlyList<string>? agentReplies = null,
-        IReadOnlyList<(string Name, Dictionary<string, object?> Arguments)>? agentCalls = null)
+        IReadOnlyList<(string Name, Dictionary<string, object?> Arguments)>? agentCalls = null,
+        IReadOnlyList<(string Name, Dictionary<string, object?> Arguments)>? clarifyCalls = null)
     {
         private int _plans;
         private int _scores;
         private int _agentReplies;
         private int _agentCalls;
+        private int _clarifyCalls;
 
         /// <summary>Function calls the team's agents make, one per agent turn that doesn't follow a function result, in
         /// order; once they are used up agents just reply.</summary>
         public IReadOnlyList<(string Name, Dictionary<string, object?> Arguments)> AgentCalls { get; } = agentCalls ?? [];
+
+        /// <summary>The calls the clarify phase's interviewer makes (<c>ask_user</c>, <c>requirements_clear</c>), one per
+        /// interviewer turn, in order; once they are used up it just replies. A <c>requirements_clear</c> brief gets the
+        /// task's marker appended, so the planner that follows still finds this script.</summary>
+        public IReadOnlyList<(string Name, Dictionary<string, object?> Arguments)> ClarifyCalls { get; } = clarifyCalls ?? [];
+
+        /// <summary>The user text of every interviewer call, in order.</summary>
+        public ConcurrentQueue<string> ClarifyInputs { get; } = new();
 
         /// <summary>The user text of every judge call, in order.</summary>
         public ConcurrentQueue<string> JudgeInputs { get; } = new();
@@ -52,6 +62,9 @@ public sealed partial class FakeChatClient
 
         internal (string Name, Dictionary<string, object?> Arguments)? NextAgentCall()
             => Interlocked.Increment(ref _agentCalls) - 1 is var i && i < AgentCalls.Count ? AgentCalls[i] : null;
+
+        internal (string Name, Dictionary<string, object?> Arguments)? NextClarifyCall()
+            => Interlocked.Increment(ref _clarifyCalls) - 1 is var i && i < ClarifyCalls.Count ? ClarifyCalls[i] : null;
 
         internal int? NextScore() => Interlocked.Increment(ref _scores) - 1 is var i && i < Scores.Count ? Scores[i] : null;
     }
@@ -96,6 +109,11 @@ public sealed partial class FakeChatClient
         }
 
         var lastResult = list.LastOrDefault()?.Contents.OfType<FunctionResultContent>().FirstOrDefault()?.Result?.ToString();
+        if (tools.Contains("requirements_clear"))
+        {
+            return ClarifierReply(list, script, lastResult);
+        }
+
         if (!tools.Contains("submit_team_plan") && !tools.Contains("submit_verdict"))
         {
             if (lastResult is null && script.NextAgentCall() is { } call)
@@ -112,6 +130,29 @@ public sealed partial class FakeChatClient
         }
 
         return tools.Contains("submit_team_plan") ? PlannerReply(script, lastResult) : JudgeReply(script, lastResult);
+    }
+
+    private static ChatResponse ClarifierReply(IReadOnlyList<ChatMessage> list, FleetScript script, string? lastResult)
+    {
+        if (lastResult is null)
+        {
+            script.ClarifyInputs.Enqueue(string.Join("\n", list.Where(m => m.Role == ChatRole.User).Select(m => m.Text)));
+        }
+
+        if (script.NextClarifyCall() is not { } call)
+        {
+            return Fleet(new TextContent("Done."), script);
+        }
+
+        var arguments = new Dictionary<string, object?>(call.Arguments);
+        if (call.Name == "requirements_clear" && arguments.TryGetValue("brief", out var brief))
+        {
+            var text = list.Select(m => m.Text ?? "").First(t => t.Contains(FleetMarker, StringComparison.Ordinal));
+            var at = text.IndexOf(FleetMarker, StringComparison.Ordinal);
+            arguments["brief"] = $"{brief} {text.Substring(at, FleetMarker.Length + 12)}";
+        }
+
+        return Fleet(new FunctionCallContent(FleetCallId(), call.Name, arguments), script);
     }
 
     private static ChatResponse PlannerReply(FleetScript script, string? lastResult)

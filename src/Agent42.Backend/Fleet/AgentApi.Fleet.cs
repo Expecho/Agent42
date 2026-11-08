@@ -8,10 +8,10 @@ namespace Agent42.Backend;
 
 /// <summary>A task the page starts: the request, optionally the done task it follows up, the model, the token cap,
 /// a tool selection overriding the user's default (null follows the default, ADR 0099), and the task whose attached
-/// files a Run again copies (ADR 0101).</summary>
+/// files a Run again copies (ADR 0101). <c>Clarify</c> asks the user questions about the task first (ADR 0118).</summary>
 public sealed record FleetSubmitRequest(
     string? Task, string? FollowUpOf, string? Model, long? MaxTokens, IReadOnlyList<string>? EnabledTools = null,
-    string? CopyInputsOf = null);
+    string? CopyInputsOf = null, bool? Clarify = null);
 
 /// <summary>The user's answer to a task's open question, optionally naming the question (the <c>prompt</c> event's id).</summary>
 public sealed record FleetAnswerRequest(string? Answer, int? QuestionId = null);
@@ -163,7 +163,7 @@ public static partial class AgentApi
         var telemetry = RequestContext.Get(UserTelemetryContext.RequestContextKey) as UserTelemetryContext;
         var (taskId, error) = await fleet.SubmitAsync(
             http.GetUserId(),
-            new FleetSubmit(request.Task ?? "", request.FollowUpOf, request.Model, request.MaxTokens, request.EnabledTools, files, request.CopyInputsOf),
+            new FleetSubmit(request.Task ?? "", request.FollowUpOf, request.Model, request.MaxTokens, request.EnabledTools, files, request.CopyInputsOf, Clarify: request.Clarify == true),
             telemetry, ct);
         return taskId is null
             ? Results.Json(new { error }, statusCode: StatusCodes.Status409Conflict)

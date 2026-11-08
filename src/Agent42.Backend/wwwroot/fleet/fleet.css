@@ -121,6 +121,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 .composer-options input[type=number] { width: 130px; }
 .tool-picker { flex-basis: 100%; }
 .composer.dropping { border-color: var(--accent); border-style: dashed; }
+.brief { white-space: pre-wrap; margin-top: 8px; font-family: var(--serif); }
 .composer-files { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .composer-files .hint { font-size: 12px; flex-basis: 100%; }
 .attachments { display: flex; gap: 6px; flex-wrap: wrap; }
