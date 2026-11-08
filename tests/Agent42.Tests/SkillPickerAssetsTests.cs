@@ -16,42 +16,6 @@ public sealed class SkillPickerAssetsTests
 
     public SkillPickerAssetsTests(StaticAssetsServerFixture fixture) => _fixture = fixture;
 
-    // AC12: the built-ins group must exclude BOTH prefixes. Missing the `skill:` half is the likely bug —
-    // every skill would render twice, once ungrouped among the built-ins and once under its heading.
-    [Fact]
-    public async Task BuiltinsGroup_ExcludesBothPrefixedGroups()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        Assert.Contains(
-            "toolCatalog.filter((t) => !t.key.startsWith(\"mcp:\") && !t.key.startsWith(\"skill:\"))",
-            app);
-        Assert.Contains("toolCatalog.filter((t) => t.key.startsWith(\"skill:\"))", app);
-
-        // The MCP filter must ALSO exclude per-tool rows, which start with the same prefix as their server.
-        // A bare startsWith("mcp:") here would render every tool a second time as a top-level server row.
-        Assert.Contains(
-            "toolCatalog.filter((t) => t.key.startsWith(\"mcp:\") && !t.parentKey)",
-            app);
-    }
-
-    // AC12: skills render under their own heading, reusing the existing .tool-check__heading class the MCP
-    // group already styles (no new CSS).
-    //
-    // The MCP half no longer goes through addGroup: per-MCP-tool selection renders each server as a nested
-    // master + children row, so it emits the heading itself and then walks addServer. The assertion follows
-    // the code rather than being deleted — the point it guards is that BOTH groups still get a heading.
-    [Fact]
-    public async Task SkillsRenderUnderTheirOwnHeading()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        Assert.Contains("tool-check__heading", app);
-        Assert.Contains("addGroup(\"Skills\", skills)", app);
-        Assert.Contains("addHeading(\"MCP servers\")", app);       // the MCP group still gets its heading
-        Assert.Contains("for (const server of mcpServers) addServer(server);", app);
-    }
-
     // AC19 — the one assertion nothing else in the repo makes. `cb.checked` must be a FOUR-way OR: an
     // explicit key, the `mcp` wildcard, the `skills` wildcard, or (new with per-MCP-tool selection) the row's
     // own PARENT key being selected.

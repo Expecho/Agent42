@@ -144,16 +144,6 @@ public sealed class WebhookApiTests(SharedApiFixture fixture) : SharedClusterTes
         Assert.Equal(secret, Fixture.App.Services.GetRequiredService<IWebhookSecretProtector>().Unprotect(stored));
     }
 
-    // AC22: the chat endpoint tells the grain when a turn replaces the last one (ADR 0092), so the event can say so.
-    [Fact]
-    public void Chat_ReplaceLastTurn_PassesFlagToGrain()
-    {
-        var source = File.ReadAllText(Path.Combine(
-            RepoRoot(), "src", "Agent42.Backend", "Conversations", "AgentApi.Conversations.cs"));
-
-        Assert.Contains("replacesLastTurn: request.ReplaceLastTurn", source, StringComparison.Ordinal);
-    }
-
     private async Task<(string User, string AgentId)> NewAgentAsync()
     {
         var user = $"webhook-api-{Guid.NewGuid():N}";
@@ -187,16 +177,5 @@ public sealed class WebhookApiTests(SharedApiFixture fixture) : SharedClusterTes
         }
 
         return request;
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Agent42.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
     }
 }

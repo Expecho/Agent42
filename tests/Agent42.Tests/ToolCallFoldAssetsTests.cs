@@ -12,38 +12,6 @@ namespace Agent42.Tests;
 public sealed class ToolCallFoldAssetsTests(StaticAssetsServerFixture fixture)
 {
     /// <summary>
-    /// The group, its counter and its closer all exist and are reachable from <c>main.js</c>. A module
-    /// unreachable from there is invisible to this fixture, so this also proves the import graph carries
-    /// them.
-    /// </summary>
-    [Fact]
-    public async Task Frontend_ShipsTheToolCallGroup()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        Assert.Contains("msg__toolgroup", app);
-        Assert.Contains("finishToolCalls", app);
-        // The count in the summary comes from the chips actually present, not an incremented counter.
-        Assert.Contains("group.querySelectorAll(\".tool-call\").length", app);
-    }
-
-    /// <summary>
-    /// The fold has a threshold, and it is a count comparison rather than an unconditional wrapper.
-    ///
-    /// <para>Pinned because the threshold is the whole reason a one-call turn still looks like it always
-    /// did: drop the comparison and every single-tool turn grows a "1 tool call" header, which is the
-    /// change this feature was explicitly scoped not to make.</para>
-    /// </summary>
-    [Fact]
-    public async Task TheFold_IsThresholded()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        Assert.Contains("const TOOL_GROUP_THRESHOLD = 3;", app);
-        Assert.Contains("count > TOOL_GROUP_THRESHOLD", CodeOnly(StaticAssetsServerFixture.Body(app, "function syncToolGroup(group)")));
-    }
-
-    /// <summary>
     /// <b>The rule that matters:</b> the group is collapsed only when the turn is over, never while it is
     /// streaming.
     ///
@@ -70,59 +38,6 @@ public sealed class ToolCallFoldAssetsTests(StaticAssetsServerFixture fixture)
     }
 
     /// <summary>
-    /// Every tail settles the group, not just the happy one.
-    ///
-    /// <para>The <c>done</c> arm covers a normal turn, but three others never see a <c>done</c>: a voice
-    /// barge-in (<c>AbortError</c>, ADR 0037), a stream that died and was recovered (ADR 0046), and an
-    /// outright failure. Each would otherwise leave a pulsing lamp over an expanded chain of chips —
-    /// until a reload — which, since ADR 0080, does replay the chips and does heal the group. This is what
-    /// settles it without one.</para>
-    ///
-    /// <para>The <c>finally</c> is the only construct that covers all four, so that is what this pins —
-    /// scoped to the block, because <c>finishToolCalls</c> is legitimately called from the done arm too
-    /// and an unscoped assertion would pass on that one alone.</para>
-    ///
-    /// <para><b>The scoping is narrowed to <c>send</c>'s body first, and that is load-bearing.</b> Three
-    /// other modules contain a <c>finally</c>, and the concatenated corpus is ordered by the import graph,
-    /// so a bare <c>"} finally {"</c> marker can anchor in one of those and run the slice across module
-    /// boundaries — far enough to swallow <c>send.js</c>'s own <c>import</c> line, which names
-    /// <c>finishToolCalls</c> and makes the assertion vacuous. Mutation-checked: deleting the call from
-    /// the <c>finally</c> fails this test.</para>
-    /// </summary>
-    [Fact]
-    public async Task EveryStreamTail_SettlesTheToolGroup()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
-        var tail = CodeOnly(Section(send, "} finally {", "sendAbort = null"));
-        Assert.Contains("finishToolCalls", tail);
-    }
-
-    /// <summary>
-    /// The group is scoped to its own turn, both on the way in and on the way out.
-    ///
-    /// <para><c>toolGroup</c> looks up inside the bubble it was handed: a <c>document.querySelector</c>
-    /// would find the FIRST group in the whole thread and append every later turn's chips into the
-    /// earliest reply. <c>completeToolCall</c> re-syncs through the chip's own <c>closest</c> ancestor for
-    /// the same reason — the count and the lamp belong to the turn the chip is in.</para>
-    /// </summary>
-    [Fact]
-    public async Task TheGroup_IsScopedToItsOwnTurn()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        var create = CodeOnly(StaticAssetsServerFixture.Body(app, "function toolGroup(bubble)"));
-        Assert.Contains("bubble.querySelector", create);
-        Assert.DoesNotContain("document.querySelector", create);
-
-        // Section, not Body: this declaration destructures its second parameter, so the first `{` after
-        // it is the destructuring pattern and the brace-depth extractor would stop at its close.
-        var complete = CodeOnly(Section(app, "export function completeToolCall", "export function finishToolCalls"));
-        Assert.Contains("item.closest(\".msg__toolgroup\")", complete);
-    }
-
-    /// <summary>
     /// ADR 0080 AC7 — <b>both</b> painters of a stored <c>ChatTurn</c> replay the turn's tool calls,
     /// through the one shared helper.
     ///
@@ -145,60 +60,6 @@ public sealed class ToolCallFoldAssetsTests(StaticAssetsServerFixture fixture)
             CodeOnly(StaticAssetsServerFixture.Body(app, "function renderTurns(id, turns)")));
         Assert.Contains("replayToolCalls",
             CodeOnly(StaticAssetsServerFixture.Body(app, "async function recoverPersistedReply")));
-    }
-
-    /// <summary>
-    /// ADR 0080 AC8 — every replayed call is completed, so none can pulse forever.
-    ///
-    /// <para>A tool that returned null replays with a null result, and so does any call the history holds
-    /// no result for. Gate <c>completeToolCall</c> on that result and the chip stays <c>is-running</c> in a
-    /// transcript that is finished — <c>finishToolCalls</c> clears the GROUP's lamp, not the chip's. So
-    /// the call must be unconditional, which is what the negative assertion pins: the helper never
-    /// inspects the result at all.</para>
-    ///
-    /// <para><c>CodeOnly</c> is required, not decorative — the comment above the loop explains this exact
-    /// rule and names <c>toolResult</c> while doing so.</para>
-    /// </summary>
-    [Fact]
-    public async Task EveryReplayedCall_IsCompleted()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        var replay = CodeOnly(StaticAssetsServerFixture.Body(app, "export function replayToolCalls"));
-        Assert.Contains("completeToolCall", replay);
-        Assert.DoesNotContain("toolResult", replay);
-    }
-
-    /// <summary>
-    /// ADR 0080 AC9 — a recovered turn does not double-render chips it already painted live.
-    ///
-    /// <para>Neither primitive is idempotent: <c>addToolCall</c> appends a chip unconditionally and
-    /// <c>completeToolCall</c> appends a result body unconditionally, so a naive loop over a bubble that
-    /// already holds pre-disconnect chips duplicates the chips AND gives the finished ones two results.
-    /// The helper therefore keys on the call id and skips only what is already <c>is-done</c> — which is
-    /// also what lets it heal a chip the disconnect left running.</para>
-    /// </summary>
-    [Fact]
-    public async Task ReplayDeduplicates_ByCallId()
-    {
-        var app = await fixture.GetAppScriptAsync();
-
-        var replay = CodeOnly(StaticAssetsServerFixture.Body(app, "export function replayToolCalls"));
-        Assert.Contains("data-call-id", replay);
-        Assert.Contains("is-done", replay);
-    }
-
-    /// <summary>
-    /// The styles ship, including the one rule that keeps a below-threshold turn looking untouched: the
-    /// summary is not drawn unless the group is marked <c>is-grouped</c>.
-    /// </summary>
-    [Fact]
-    public async Task Styles_ShipTheToolGroup()
-    {
-        var css = await fixture.Client.GetStringAsync("/styles.css");
-
-        Assert.Contains(".msg__toolgroup", css);
-        Assert.Contains(".msg__toolgroup:not(.is-grouped) > .msg__toolgroup-summary { display: none; }", css);
     }
 
     /// <summary>

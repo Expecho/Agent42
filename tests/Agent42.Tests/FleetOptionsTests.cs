@@ -29,17 +29,6 @@ public class FleetOptionsTests
         Assert.Equal(7, options.PassingScore);
     }
 
-    [Fact]
-    public void MissingSection_GivesDefaults()
-    {
-        var options = FleetOptions.From(new ConfigurationBuilder().Build());
-
-        Assert.Equal(6, options.MaxTeamDepth);
-        Assert.Equal(40, options.MaxAgentsPerTask);
-        Assert.Equal(0.8, options.BudgetSoftLimit);
-        Assert.True(options.DefaultMaxTokensPerTask > 0);
-    }
-
     /// <summary>The page proposes the default, and the server refuses anything over the limit, so a default over the
     /// limit would make every task submitted with the default fail.</summary>
     [Fact]

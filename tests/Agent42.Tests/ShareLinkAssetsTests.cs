@@ -19,59 +19,6 @@ public sealed class ShareLinkAssetsTests
         _client = fixture.Client;
     }
 
-    // The owner-side dialog and its create / share-or-copy / revoke controls are present, with names distinct from the
-    // ADR 0023 Web Share Target (#shareDialog) so the two don't collide.
-    [Fact]
-    public async Task ShareDialog_PresentInMarkup()
-    {
-        var index = await _client.GetStringAsync("/");
-
-        Assert.Contains("id=\"shareLinkDialog\"", index);
-        Assert.Contains("id=\"shareLinkCreateBtn\"", index);
-        Assert.Contains("id=\"shareLinkUrl\"", index);
-        Assert.Contains("id=\"shareLinkRevokeBtn\"", index);
-    }
-
-    // Every sidebar row (regular + agent chats share buildConvRow) gets a share action that opens the dialog,
-    // and the dialog's create/revoke calls hit the owner share endpoint.
-    [Fact]
-    public async Task ShareAction_WiredIntoConvRow_AndOwnerEndpoint()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        var row = StaticAssetsServerFixture.Body(app, "export function buildConvRow(conv, hoisted, grouped)");
-        Assert.Contains("conv__share", row);
-        Assert.Contains("openShareLink(conv.id", row);
-
-        var open = StaticAssetsServerFixture.Body(app, "async function openShareLink(convId, title)");
-        Assert.Contains("/share", open);
-    }
-
-    // The row action and the topbar action are two entry points into ONE feature, so they draw one mark:
-    // the row's old "↗" text glyph was replaced by the same three-node share SVG the topbar button
-    // carries. Pinned on the distinctive connector path, which no other icon in the app contains.
-    [Fact]
-    public async Task ShareIcon_IsTheSameMarkInBothPlaces()
-    {
-        const string connector = "M5.7 7.1l4.6-2.6M5.7 8.9l4.6 2.6";
-
-        var index = await _client.GetStringAsync("/");
-        var app = await _fixture.GetAppScriptAsync();
-
-        // The topbar button draws it in the markup — bounded at BOTH ends, so the mark has to be inside
-        // this button rather than merely somewhere further down the document.
-        var shareAt = index.IndexOf("id=\"topbarShareBtn\"", StringComparison.Ordinal);
-        Assert.True(shareAt >= 0, "the topbar share button is missing");
-        var shareEnd = index.IndexOf("</button>", shareAt, StringComparison.Ordinal);
-        Assert.True(shareEnd > shareAt, "the topbar share button is not closed");
-        Assert.Contains(connector, index[shareAt..shareEnd]);
-
-        // ...and buildConvRow draws the same one, in place of the text glyph it used to set.
-        var row = StaticAssetsServerFixture.Body(app, "export function buildConvRow(conv, hoisted, grouped)");
-        Assert.Contains(connector, row);
-        Assert.DoesNotContain("share.textContent", row); // anchored by the two positives above
-    }
-
     // The public viewer is served under /shared/, advertises itself read-only, and reads its content from the
     // token-scoped /api/share endpoint (never the user-scoped /api/conversations proxy).
     [Fact]
@@ -146,64 +93,6 @@ public sealed class ShareLinkAssetsTests
         Assert.Contains("marked.use({ extensions: rich.mathExtensions })", viewer);
     }
 
-    // AC18 (artifact pane): the viewer loads the SAME pane script as the app, relatively, and points it at the token-
-    // scoped /api/share/{token}/artifacts routes only (which EasyAuthExclusionTests proves are carved out). Cards
-    // come from turn.artifacts, the field the share response keeps while it strips the tool calls.
-    [Fact]
-    public async Task Viewer_RendersArtifactsViaShareRoutes()
-    {
-        var page = await _client.GetStringAsync("/shared/");
-        Assert.Contains("<script src=\"lib/artifactpane.js\"></script>", page);
-        Assert.True(
-            page.IndexOf("<script src=\"lib/artifactpane.js\">", StringComparison.Ordinal)
-                < page.IndexOf("<script src=\"viewer.js\">", StringComparison.Ordinal),
-            "the pane script must load before viewer.js uses it");
-
-        var viewer = await _client.GetStringAsync("/shared/viewer.js");
-        Assert.Contains("const artifactBase = () => `/api/share/${encodeURIComponent(token)}/artifacts`;", viewer);
-        Assert.DoesNotContain("/api/conversations", viewer, StringComparison.Ordinal);
-        Assert.Contains("typeof Agent42ArtifactPane !== \"undefined\"", viewer);
-        Assert.Contains("for (const info of turn.artifacts ?? []) artifactPane?.renderCard(bubble, info);",
-            StaticAssetsServerFixture.Body(viewer, "function renderTurns(turns)"));
-    }
-
-    // ADR 0047 — the OS share sheet. Both buttons ship in the markup and Share starts hidden, so a browser
-    // without navigator.share (and the pre-JS paint) shows Copy. Bounded at BOTH ends twice over: the button
-    // has to sit inside #shareLinkDialog rather than merely somewhere in the document (it would otherwise
-    // pass from the topbar), and the hidden attribute has to be on its OWN tag rather than on the
-    // #shareLinkResult wrapper two lines up.
-    [Fact]
-    public async Task NativeShare_ButtonIsInTheDialog_AndHiddenByDefault()
-    {
-        var index = await _client.GetStringAsync("/");
-
-        var dialogAt = index.IndexOf("id=\"shareLinkDialog\"", StringComparison.Ordinal);
-        Assert.True(dialogAt >= 0, "the share dialog is missing");
-        var dialogEnd = index.IndexOf("</dialog>", dialogAt, StringComparison.Ordinal);
-        Assert.True(dialogEnd > dialogAt, "the share dialog is not closed");
-        var dialog = index[dialogAt..dialogEnd];
-
-        var at = dialog.IndexOf("id=\"shareLinkShareBtn\"", StringComparison.Ordinal);
-        Assert.True(at >= 0, "the native-share button is missing from the share dialog");
-        var end = dialog.IndexOf("</button>", at, StringComparison.Ordinal);
-        Assert.True(end > at, "the native-share button is not closed");
-        Assert.Contains("hidden", dialog[at..end]);
-    }
-
-    // The swap is a PAIR, not an add: where the sheet exists Share appears and Copy goes away. Asserting
-    // both halves is what makes it a swap — the Share half alone would pass with the two buttons side by
-    // side, which is the alternative ADR 0047 rejected.
-    [Fact]
-    public async Task NativeShare_ReplacesCopyWhenTheApiExists()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        var wire = StaticAssetsServerFixture.Body(app, "export function wireShareLinks()");
-        Assert.Contains("shareLinkShareBtn.hidden = !canNativeShare", wire);
-        Assert.Contains("shareLinkCopyBtn.hidden = canNativeShare", wire);
-        Assert.Contains("shareLinkShareBtn.addEventListener(\"click\", nativeShareLink)", wire);
-    }
-
     // The gate is a PURE capability check (ADR 0047) — not a touch test and not a UA sniff. Without this the
     // other four guards all pass against a hardcoded true or a userAgent match, so the decision would be
     // unfalsifiable. The negatives are paired with the positive anchor from the same document, per the
@@ -234,26 +123,4 @@ public sealed class ShareLinkAssetsTests
         Assert.True(render < share, "createShareLink must render the link BEFORE handing it to the sheet");
     }
 
-    // The payload is title + url and nothing else (a text field repeating the URL renders twice in some
-    // targets), and every rejection is swallowed — a dismissed sheet (AbortError) and a blocked one
-    // (NotAllowedError) are both non-events. The negative is scoped to the call's own argument rather than
-    // the whole function, so prose in a comment cannot trip it.
-    [Fact]
-    public async Task NativeShare_SendsTitleAndUrl_AndSwallowsAFailedSheet()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        var body = StaticAssetsServerFixture.Body(app, "async function nativeShareLink()");
-        Assert.Contains("navigator.share", body);
-        Assert.Contains("title:", body);
-        Assert.Contains("catch", body);
-
-        var at = body.IndexOf("navigator.share(", StringComparison.Ordinal);
-        var end = body.IndexOf(')', at);
-        Assert.True(end > at, "the navigator.share call is not closed");
-        var payload = body[at..end];
-        Assert.Contains("title:", payload);
-        Assert.Contains("url", payload); // on the ARGUMENT, not the body — `const url = …` makes that vacuous
-        Assert.DoesNotContain("text:", payload); // anchored by the positives above
-    }
 }

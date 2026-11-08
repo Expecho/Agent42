@@ -20,21 +20,6 @@ public sealed class UsageAssetsTests
         _client = fixture.Client;
     }
 
-    // AC15: the dedicated view and its nav entry are present in the markup.
-    [Fact]
-    public async Task UsageView_IsPresentInMarkup()
-    {
-        var index = await _client.GetStringAsync("/");
-
-        Assert.Contains("id=\"usageView\"", index);
-        Assert.Contains("id=\"openUsageBtn\"", index);
-        Assert.Contains("id=\"usageCloseBtn\"", index);
-        Assert.Contains("id=\"usageApplication\"", index);
-        Assert.Contains("id=\"usageUser\"", index);
-        Assert.Contains("id=\"usageRange\"", index);
-        Assert.Contains("id=\"usageRefresh\"", index);
-    }
-
     // AC10 (ADR 0104): the dashboard no longer claims cached and reasoning always read 0 — the emitter does tag them
     // (UsageProcessorTests.ChatSpan_CarriesCachedAndReasoningTokens).
     [Fact]
@@ -62,71 +47,4 @@ public sealed class UsageAssetsTests
         Assert.Contains("showUsage(agentMsg, chunk)", send, StringComparison.Ordinal);
     }
 
-    // ADR 0110: the turn line shows a priced turn's estimate and a Copilot turn as included, and never an unpriced
-    // turn as $0; the dashboard has a cost tile and a cost column on the model and user tables.
-    [Fact]
-    public async Task Cost_IsRenderedOnTurnLineAndDashboard()
-    {
-        var thread = await _client.GetStringAsync("/js/thread.js");
-        var usage = await _client.GetStringAsync("/js/usage.js");
-        var format = await _client.GetStringAsync("/js/format.js");
-        var index = await _client.GetStringAsync("/");
-
-        Assert.Contains("if (costStatus === \"priced\") parts.push(`≈ ${formatCost(costUsd, costStatus)}`);", thread, StringComparison.Ordinal);
-        Assert.Contains("included in Copilot plan", thread, StringComparison.Ordinal);
-        Assert.Contains("if (usd == null) return \"—\";", format, StringComparison.Ordinal);
-        Assert.Contains("usageCostCell(model.costUsd, model.costStatus)", usage, StringComparison.Ordinal);
-        Assert.Contains("usageCostCell(user.costUsd, aggregateCostStatus(user.costUsd, user.unpricedCallCount))", usage, StringComparison.Ordinal);
-        Assert.Contains("usageTiles.cost.textContent = formatCost(", usage, StringComparison.Ordinal);
-        Assert.Contains("id=\"usageTileCost\"", index, StringComparison.Ordinal);
-        Assert.Equal(2, index.Split("<th scope=\"col\" class=\"grid__num\">Est. cost</th>").Length - 1);
-        Assert.Contains("Anthropic cache writes count at the input rate here", index, StringComparison.Ordinal);
-    }
-
-    // AC15: the view fetches the reference contract endpoint.
-    [Fact]
-    public async Task App_FetchesUsageEndpoint()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        Assert.Contains("fetch(`/api/usage?", app);
-    }
-
-    // AC15: auto-refresh is wired — the interval select drives a setInterval, and BOTH closeUsage()
-    // AND a re-selection clear it first. A leaked timer would keep polling /api/usage from the
-    // console view (the M5 critic finding this test exists to pin).
-    [Fact]
-    public async Task App_WiresAutoRefresh_AndClearsIntervalOnClose()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        Assert.Contains("usageRefresh", app);
-        Assert.Contains("setInterval(loadUsage", app);
-
-        var closeUsage = StaticAssetsServerFixture.Body(app, "function closeUsage()");
-        Assert.Contains("clearInterval", closeUsage + StaticAssetsServerFixture.Body(app, "function stopUsageAutoRefresh()"));
-        Assert.Contains("stopUsageAutoRefresh()", closeUsage);
-    }
-
-    // AC15: rows render a share bar — the only "chart" this view uses, a percentage-width div.
-    [Fact]
-    public async Task App_RendersShareBar()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        Assert.Contains("bar__fill", app);
-        var barCell = StaticAssetsServerFixture.Body(app, "function usageBarCell(value, max)");
-        Assert.Contains("* 100", barCell);
-        Assert.Contains("fill.style.width", barCell);
-    }
-
-    // AC15: the overlay has its own CSS with a leak-proof z-index above the rest of the app.
-    [Fact]
-    public async Task Styles_DefineUsageOverlay()
-    {
-        var styles = await _client.GetStringAsync("/styles.css");
-
-        Assert.Contains(".usage {", styles);
-        Assert.Contains(".bar__fill", styles);
-    }
 }

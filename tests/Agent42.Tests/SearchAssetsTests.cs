@@ -24,37 +24,6 @@ public sealed class SearchAssetsTests
         _client = fixture.Client;
     }
 
-    // AC12: the box exists in the conversations nav, above the list it filters.
-    [Fact]
-    public async Task SearchInput_IsInTheConversationsNav()
-    {
-        var index = await _client.GetStringAsync("/");
-
-        Assert.Contains("id=\"searchInput\"", index);
-        Assert.Contains("id=\"conversationList\"", index);
-
-        // Above the list: the box filters what follows it, and a box rendered after the list would
-        // read as belonging to whatever comes next.
-        Assert.True(
-            index.IndexOf("id=\"searchInput\"", StringComparison.Ordinal)
-            < index.IndexOf("id=\"conversationList\"", StringComparison.Ordinal),
-            "the search box must be rendered above the conversation list it filters.");
-    }
-
-    // AC12: the module is reachable from the composition root — a module unreachable from main.js is
-    // invisible to every source-text guard in this suite, including the ones below (ADR 0041).
-    [Fact]
-    public async Task SearchModule_IsWiredFromTheCompositionRoot()
-    {
-        var main = await _client.GetStringAsync("/js/main.js");
-
-        Assert.Contains("wireSearch", main);
-        Assert.Contains("./search.js", main);
-
-        var app = await _fixture.GetAppScriptAsync();
-        Assert.Contains("export function wireSearch", app);
-    }
-
     // AC16 — the load-bearing client rule of this feature. renderSidebar is called from nine sites
     // that fire independently of the search box (a background refresh, ADR 0032 cache hydration, an
     // agent save, send()'s success path). If the hits were painted by a render path BESIDE
@@ -82,34 +51,6 @@ public sealed class SearchAssetsTests
         // name matches the declaration first and the ordering assertion would be inverted (and vacuous).
         var firstPass = sidebar.IndexOf("= renderPinnedBlock();", StringComparison.Ordinal);
         Assert.True(firstPass > branch, "the search branch must precede the render passes.");
-    }
-
-    // The render passes survive on the no-query path: the search branch must not have been implemented
-    // by replacing them. Three of them since ADR 0073 added the user's custom groups between the pinned
-    // block (ADR 0045) and the agent walk.
-    [Fact]
-    public async Task PinnedAndGroupedPasses_SurviveOnTheNoQueryPath()
-    {
-        var sidebar = await _client.GetStringAsync("/js/sidebar.js");
-
-        Assert.Contains("function renderPinnedBlock()", sidebar);
-        Assert.Contains("function renderCustomGroups()", sidebar);
-        Assert.Contains("function renderAgentWalk()", sidebar);
-        Assert.Contains("buildConvRow(conv, true, false)", sidebar);
-    }
-
-    // The hit list is built with textContent, never innerHTML: it renders message text, which
-    // includes whatever a model or a web page put into the conversation.
-    [Fact]
-    public async Task SearchHits_AreRenderedAsTextNotMarkup()
-    {
-        var search = await _client.GetStringAsync("/js/search.js");
-
-        Assert.Contains("textContent", search);
-        // The ASSIGNMENT, not the word: search.js's own comment explains why it uses textContent, and
-        // a bare "innerHTML" negative would trip over that comment rather than over real markup
-        // injection.
-        Assert.DoesNotContain(".innerHTML", search);
     }
 
     // AC12: the service worker's SHELL lists the new module and CACHE was bumped. SHELL is

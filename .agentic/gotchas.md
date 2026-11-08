@@ -80,7 +80,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   are worded by the OS, so the `console.debug("[voice] audio output:", …)` line is the first thing to read
   if muting misfires. Like all the speech wiring, the C# guards are source-text only (no JS runner in repo).
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/voice.js` (`muteMic`, `unmuteMic`, `refreshOutputKind`,
-  `maybeArmListening`, the `end` handler), `tests/Agent42.Tests/VoiceConversationAssetsTests.cs`,
+  `maybeArmListening`, the `end` handler),
   `.agentic/decisions/0079-half-duplex-voice-on-speakers.md` (its Unverified section)
 - **Verified:** 2026-09-20
 
@@ -640,7 +640,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   the repo), so they cannot catch an engine deviation: **retest on a real iOS device** — same class of trap
   as the Chrome-on-Android speech gotcha.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/location.js` (`isCaptureAuthorized`, `locationForTool`,
-  `handlePositionError`), `tests/Agent42.Tests/LocationAssetsTests.cs`,
+  `handlePositionError`),
   `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0093-location-as-a-client-tool.md`
 - **Verified:** 2026-10-09
 
@@ -2607,7 +2607,6 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/sidebar.js` (`wireRowReveal`, `clearReveal`,
   `LONG_PRESS_MS`, `renderSidebar`'s `clearReveal()`),
   `src/Agent42.Backend/wwwroot/styles.css` (`@media (hover: hover)`, `@media (hover: none)`),
-  `tests/Agent42.Tests/RowActionsRevealAssetsTests.cs`,
   `.agentic/decisions/0052-long-press-reveals-row-actions.md`
 - **Verified:** 2026-08-25
 
@@ -2636,7 +2635,6 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   writes the NDJSON stream), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`WriteStateAsync` after the
   stream), `src/Agent42.Backend/wwwroot/js/send.js` (`recoverPersistedReply`, `priorTurns`,
   `onVisibilityChange`), `tests/Agent42.Tests/ChatStreamDisconnectTests.cs`,
-  `tests/Agent42.Tests/StreamRecoveryAssetsTests.cs`,
   `.agentic/decisions/0046-recover-a-reply-whose-stream-died.md`
 - **Verified:** 2026-08-22
 
@@ -4156,7 +4154,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Artifacts/AgentApi.Artifacts.cs` (`ArtifactCsp`, `AddArtifactHeaders`),
   `src/Agent42.Backend/Artifacts/ArtifactTheme.cs`, `tests/Agent42.Tests/ArtifactThemeTests.cs`,
   `src/Agent42.Backend/wwwroot/shared/lib/artifactpane.js` (`renderBody`), `tests/Agent42.Tests/ArtifactsApiTests.cs`
-  (`Frame_And_Content_SendSandboxHeaders`), `tests/Agent42.Tests/ArtifactAssetsTests.cs`,
+  (`Frame_And_Content_SendSandboxHeaders`),
   `.agentic/decisions/0084-artifact-pane.md`
 - **Verified:** 2026-10-03
 
