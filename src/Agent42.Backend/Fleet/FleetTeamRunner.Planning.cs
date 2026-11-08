@@ -185,7 +185,8 @@ public sealed partial class FleetTeamRunner
             }
 
             Plan = plan;
-            Agents = loaded;
+            // After the metric above, which reads the runtime from the agent's type (ADR 0119).
+            Agents = FleetSelfReview.Apply(_run, plan, loaded, models, context);
             _run.Events.Publish("plan.accepted", new { teamId = context.TeamId, attempt = context.Attempt });
             return "The team is ready and will now execute the task. Reply with a one line confirmation.";
         }

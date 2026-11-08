@@ -155,6 +155,7 @@ public sealed partial class FleetTaskService
             Events = task.Log,
             Interaction = task.Questions,
             AutoApprove = task.AutoApprove,
+            SelfReview = record.SelfReview,
             Logger = logger,
             AfterAttempt = ct => SyncWorkspaceAsync(record, workspace, ct),
         };

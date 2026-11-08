@@ -457,6 +457,29 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         Assert.Contains("at most 5 questions", rendered);
     }
 
+    /// <summary>ADR 0119: both submit routes carry the self-review flag, and a task that did not ask for it does not get it.</summary>
+    [Fact]
+    public async Task Submit_SelfReview_IsStoredOnTheTask_OnBothRoutes()
+    {
+        var asked = await Send(HttpMethod.Post, "/api/fleet/tasks", "fleet-review-1", new { task = Task(), model = FleetRunHarness.ModelA, selfReview = true });
+        var plain = await Send(HttpMethod.Post, "/api/fleet/tasks", "fleet-review-2", new { task = Task(), model = FleetRunHarness.ModelA });
+        var multipart = await SendForm("fleet-review-3",
+            Form(new { task = Task(), model = FleetRunHarness.ModelA, selfReview = true }, ("notes.md", Encoding.UTF8.GetBytes("# notes"))));
+        var askedId = (await asked.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("taskId").GetString()!;
+        var plainId = (await plain.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("taskId").GetString()!;
+        var multipartId = (await multipart.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("taskId").GetString()!;
+
+        Assert.True((await Store.GetTaskAsync("fleet-review-1", askedId))!.SelfReview);
+        // The task JSON the page reads (and Run again repeats) carries the flag.
+        var detail = await (await Send(HttpMethod.Get, $"/api/fleet/tasks/{askedId}", "fleet-review-1")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(detail.GetProperty("selfReview").GetBoolean());
+        Assert.False((await Store.GetTaskAsync("fleet-review-2", plainId))!.SelfReview);
+        Assert.True((await Store.GetTaskAsync("fleet-review-3", multipartId))!.SelfReview);
+        await Send(HttpMethod.Post, $"/api/fleet/tasks/{askedId}/stop", "fleet-review-1");
+        await Send(HttpMethod.Post, $"/api/fleet/tasks/{plainId}/stop", "fleet-review-2");
+        await Send(HttpMethod.Post, $"/api/fleet/tasks/{multipartId}/stop", "fleet-review-3");
+    }
+
     /// <summary>The page's "ask me questions first" reaches the task on the JSON route: the stored task says so, and a
     /// task that did not ask for it does not.</summary>
     [Fact]

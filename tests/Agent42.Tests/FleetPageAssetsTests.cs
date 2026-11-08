@@ -66,6 +66,18 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("\"clarify.done\"(d)", script, StringComparison.Ordinal);
     }
 
+    /// <summary>ADR 0119: the composer sends the self-review flag (off by default, remembered per viewer), and Run again
+    /// repeats the task's own flag, or a rerun would silently drop it.</summary>
+    [Fact]
+    public async Task FleetPage_SendsSelfReview_AndRunAgainRepeatsIt()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("selfReview: selfReview !== undefined ? selfReview : composer.selfReview.checked,", script, StringComparison.Ordinal);
+        Assert.Contains("localStorage.getItem(\"agent42.fleet.selfReview\") === \"on\"", script, StringComparison.Ordinal);
+        Assert.Contains("!!task.clarify, !!task.selfReview)", script, StringComparison.Ordinal);
+    }
+
     /// <summary>ADR 0116: a node a stop cut off takes the team's state, and a delegation from a non-node agent is
     /// adopted instead of dropped.</summary>
     [Fact]

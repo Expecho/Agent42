@@ -58,6 +58,9 @@ public sealed class FleetRun
     /// <summary>A task started from a chat (ADR 0115): the plan is approved without asking, and logged as a
     /// <c>question.auto</c> event. The Copilot policy and the interaction carry their own auto mode.</summary>
     public bool AutoApprove { get; init; }
+
+    /// <summary>The task asked for self-review (ADR 0119): the agents that write a team's result check their own output.</summary>
+    public bool SelfReview { get; init; }
     public required ILogger Logger { get; init; }
 
     /// <summary>Called after every attempt (a team's run), to sync the workspace to Blob.</summary>

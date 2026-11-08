@@ -16,6 +16,11 @@ public sealed record FleetTaskRecord
     /// request before the planner runs. Never set for a task started from a chat.</summary>
     public bool Clarify { get; init; }
 
+    /// <summary>The task started with "self-review the result" (ADR 0119): the agent that writes a team's result checks it
+    /// against the task and fixes gaps before the team's judge sees it. A record stored without the field reads false.
+    /// Never set for a task started from a chat.</summary>
+    public bool SelfReview { get; init; }
+
     /// <summary>The conversation that started this task through <c>start_fleet_task</c> (ADR 0115), or null for a task
     /// started on the page. A task with an origin approves its questions automatically and reports back to it.</summary>
     public string? OriginConversationId { get; init; }

@@ -40,6 +40,14 @@
     try { localStorage.setItem("agent42.fleet.clarify", on ? "on" : "off"); } catch { /* not remembered */ }
   }
 
+  // ADR 0119: off by default (each fix pass costs tokens), remembered per viewer.
+  function loadSelfReview() {
+    try { return localStorage.getItem("agent42.fleet.selfReview") === "on"; } catch { return false; }
+  }
+  function saveSelfReview(on) {
+    try { localStorage.setItem("agent42.fleet.selfReview", on ? "on" : "off"); } catch { /* not remembered */ }
+  }
+
   // A per-viewer convenience only: without storage (private window, blocked site data) the page starts on Details.
   function loadDetailView() {
     try { return localStorage.getItem("agent42.fleet.detailView") === "graph" ? "graph" : "details"; } catch { return "details"; }
@@ -475,8 +483,10 @@
     const tools = h("details", { class: "tool-picker", hidden: true }, toolsSummary, toolsList);
     // ADR 0118: on by default; a per-viewer convenience, so storage that throws just leaves the default.
     const clarify = h("input", { type: "checkbox", checked: loadClarify(), onchange: e => saveClarify(e.target.checked) });
+    const selfReview = h("input", { type: "checkbox", checked: loadSelfReview(), onchange: e => saveSelfReview(e.target.checked) });
     const options = h("div", { class: "composer-options" }, h("label", null, "Model", model), h("label", null, "Token cap", tokens),
-      h("label", { title: "The fleet asks you questions about the task until the requirements are clear, then plans it" }, clarify, "Ask me questions first"), tools);
+      h("label", { title: "The fleet asks you questions about the task until the requirements are clear, then plans it" }, clarify, "Ask me questions first"),
+      h("label", { title: "The agent that writes the result checks it against the task and fixes gaps before it is judged. Costs extra tokens" }, selfReview, "Self-review the result"), tools);
     const fileInput = h("input", { type: "file", multiple: true, hidden: true, onchange: e => { addAttachments(e.target.files); e.target.value = ""; } });
     const chips = h("div", { class: "attachments" });
     const files = h("div", { class: "composer-files" },
@@ -486,7 +496,7 @@
     el.addEventListener("dragover", e => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); el.classList.add("dropping"); } });
     el.addEventListener("dragleave", e => { if (!el.contains(e.relatedTarget)) el.classList.remove("dropping"); });
     el.addEventListener("drop", e => { if (e.dataTransfer?.files?.length) { e.preventDefault(); addAttachments(e.dataTransfer.files); } el.classList.remove("dropping"); });
-    return { el, ta, err, btn, title, hint, model, tokens, clarify, tools, toolsSummary, toolsList, chips };
+    return { el, ta, err, btn, title, hint, model, tokens, clarify, selfReview, tools, toolsSummary, toolsList, chips };
   })();
 
   // ---------- attached files (ADR 0101) ----------
@@ -617,7 +627,7 @@
   // Run again passes the record's enabledTools (null too), which then wins over the picker, and the task whose files
   // it copies (copyInputsOf). Only the composer's own submit sends the attached files: as multipart, to the files
   // route, and as plain JSON when there are none.
-  async function submitTask(text, followUpOf, enabledTools, copyInputsOf, clarify) {
+  async function submitTask(text, followUpOf, enabledTools, copyInputsOf, clarify, selfReview) {
     const task = (text ?? composer.ta.value).trim();
     if (!task) { composer.ta.focus(); return; }
     composer.btn.disabled = true;
@@ -629,6 +639,7 @@
       enabledTools: enabledTools !== undefined ? enabledTools : toolOverride(),
       copyInputsOf: copyInputsOf || null,
       clarify: clarify !== undefined ? clarify : composer.clarify.checked,
+      selfReview: selfReview !== undefined ? selfReview : composer.selfReview.checked,
     };
     const files = text === undefined ? S.attachments : [];
     let r;
@@ -873,7 +884,7 @@
     return ["interrupted", "stopped", "failed"].includes(task?.status) && !running() && h("div", { class: "card follow-up-cta" },
       h("div", null, h("b", { text: task.status === "interrupted" ? "Interrupted by a restart" : "Didn't finish" }),
         h("div", { class: "muted", text: "Run the same request again as a new task." })),
-      h("button", { class: "btn", text: "Run again", onclick: () => submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null, task.followUpOf ? null : task.id, !!task.clarify) }));
+      h("button", { class: "btn", text: "Run again", onclick: () => submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null, task.followUpOf ? null : task.id, !!task.clarify, !!task.selfReview) }));
   }
 
   function statusText(s) {
