@@ -109,6 +109,21 @@ public sealed class FleetCopilotAgentFactory(
         return Task.FromResult<AIAgent?>(host.Client.AsAIAgent(config, ownsClient: false, name: promptAgent.Name, description: promptAgent.Description));
     }
 
+    /// <summary>
+    /// The catalog models the Copilot runtime can reach: the same <see cref="ICopilotProviderSource.GetCopilotProvider"/>
+    /// check <see cref="TryCreateAsync"/> makes, so filtering with it cannot disagree with the factory. Pass only ids
+    /// from the catalog (an id whose provider is gone resolves to the default provider). A factory that is not an
+    /// <see cref="ICopilotProviderSource"/> reaches none.
+    /// </summary>
+    public static IReadOnlyList<ModelInfo> ReachableModels(IChatClientFactory factory, IEnumerable<ModelInfo> models)
+        => factory is ICopilotProviderSource source
+            ? [.. models.Where(m => source.GetCopilotProvider(m.Id) is not null)]
+            : [];
+
+    /// <summary>Whether the planner is told Copilot agents exist: the runtime is usable and some model can run on it.</summary>
+    public static bool CopilotOffered(FleetCopilotHost? host, IReadOnlyCollection<ModelInfo> reachable)
+        => host?.Available == true && reachable.Count > 0;
+
     public static bool IsCopilotModel(string modelId)
         => modelId.Equals("copilot", StringComparison.OrdinalIgnoreCase)
             || modelId.StartsWith("copilot/", StringComparison.OrdinalIgnoreCase);

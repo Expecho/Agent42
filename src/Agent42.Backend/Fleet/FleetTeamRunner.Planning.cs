@@ -75,11 +75,30 @@ public sealed partial class FleetTeamRunner
 
     // The user's GitHub Copilot models (ADR 0108), appended in code rather than in the editable copilot prompt so a
     // user's own prompt text keeps working: they run only as a Copilot agent's 'copilot/<id>'.
-    private string CopilotModels() => run.CopilotModelNames.Count == 0
+    // Then the user's BYOK models the runtime can reach, what a plain 'copilot' resolves to, and that nothing else can run.
+    private string CopilotModels() => CopilotOnlyModels() + ReachableByokModels() + PlainCopilotRule()
+        + "\n\nAny model not listed for Copilot agents (for example an Anthropic/Claude model) cannot run as a Copilot agent; use it as an ordinary agent.";
+
+    private string CopilotOnlyModels() => run.CopilotModelNames.Count == 0
         ? ""
         : "\n\nThese models run only as a Copilot agent, as 'copilot/<model id>' (never as an agent's plain model id):\n"
-            + string.Join("\n", run.CopilotModelNames.Keys.Order(StringComparer.OrdinalIgnoreCase)
-                .Select(id => run.CopilotModelNames[id] is { Length: > 0 } name ? $"- {id} ({name})" : $"- {id}"));
+            + ModelList(run.CopilotModelNames);
+
+    private string ReachableByokModels() => run.CopilotByokModelIds.Count == 0
+        ? ""
+        : "\n\nThese models can also run as a Copilot agent, as 'copilot/<model id>':\n" + ModelList(run.CopilotByokModelIds);
+
+    // What ModelFor("copilot") really returns, so an operator's Fleet:DefaultCopilotModel is honoured.
+    private string PlainCopilotRule()
+    {
+        var model = run.CopilotDefaultModel ?? run.DefaultModel;
+        return run.CopilotByokModelIds.Keys.Concat(run.CopilotModelNames.Keys).Contains(model, StringComparer.OrdinalIgnoreCase)
+            ? $"\n\nA Copilot agent whose model is plain 'copilot' runs on {model}."
+            : $"\n\nA Copilot agent whose model is plain 'copilot' would run on {model}, which a Copilot agent cannot run on. Name 'copilot/<model id>' from the lists above instead.";
+    }
+
+    private static string ModelList(IReadOnlyDictionary<string, string?> models) => string.Join("\n", models.Keys.Order(StringComparer.OrdinalIgnoreCase)
+        .Select(id => models[id] is { Length: > 0 } name ? $"- {id} ({name})" : $"- {id}"));
 
     /// <summary>Turns YAML into agents: Copilot agents first, then the chat client of the model in the YAML.</summary>
     public PromptAgentFactory CreateAgentFactory(FleetTeamContext context)

@@ -36,6 +36,13 @@ public sealed class FleetRun
     /// </summary>
     public IReadOnlyDictionary<string, string?> CopilotModelNames { get; init; } = new Dictionary<string, string?>();
 
+    /// <summary>The user's BYOK models (not GitHub's) the Copilot runtime can reach, by qualified id with display names.
+    /// The planner is told they run as <c>copilot/&lt;id&gt;</c>.</summary>
+    public IReadOnlyDictionary<string, string?> CopilotByokModelIds { get; init; } = new Dictionary<string, string?>();
+
+    /// <summary>The catalog id a plain <c>copilot</c> resolves to (honours <c>Fleet:DefaultCopilotModel</c>), or null when unknown.</summary>
+    public string? CopilotDefaultModel { get; init; }
+
     /// <summary>The catalog's tools (web, MCP), besides the workspace tools and <c>delegate_to_team</c>.</summary>
     public IReadOnlyList<AIFunction> Tools { get; init; } = [];
 
