@@ -890,6 +890,29 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         Assert.Equal(("d", 6L), (TextOf(lines[3]), FleetEvent.SeqOf(lines[3])));
     }
 
+    /// <summary>ADR 0117: <c>todos.updated</c> carries the whole list, so every one is kept in order (never coalesced, and
+    /// not dropped at the cap like text), and the page rebuilds the latest list from a replay.</summary>
+    [Fact]
+    public async Task TodosUpdated_IsPersistedAndReplayed()
+    {
+        var log = new FleetEventLog(_store, Alice, "t1", maxBytes: 300);
+        var todos = new FleetTodos(log, "team-1", 1);
+        await todos.Tools.Single(t => t.Name == "todo_add").InvokeAsync(new() { ["titles"] = new[] { "one", "two" } });
+        for (var i = 0; i < 20; i++)
+        {
+            log.Publish("agent.text", new { teamId = "team-1", attempt = 1, executorId = $"Writer_{i}", text = new string('x', 40) });
+        }
+
+        await todos.Tools.Single(t => t.Name == "todo_complete").InvokeAsync(new() { ["ids"] = new[] { 2 } });
+        await log.FlushAsync();
+
+        var lines = (await _store.ReadEventsAsync(Alice, "t1")).Where(l => TypeOf(l) == "todos.updated").ToList();
+        Assert.Equal(2, lines.Count);
+        using var last = System.Text.Json.JsonDocument.Parse(lines[^1]);
+        var items = last.RootElement.GetProperty("data").GetProperty("todos");
+        Assert.Equal([false, true], items.EnumerateArray().Select(i => i.GetProperty("done").GetBoolean()));
+    }
+
     [Fact]
     public async Task LogCap_DropsTextButKeepsFinished()
     {

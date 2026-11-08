@@ -80,6 +80,24 @@ public sealed class FleetCopilotAgentFactory(
     public const string Unavailable = "Copilot agents are not available, use a normal agent.";
 
     public override Task<AIAgent?> TryCreateAsync(GptComponentMetadata promptAgent, CancellationToken cancellationToken = default)
+        => TryCreateAsync(promptAgent, null);
+
+    /// <summary>
+    /// A factory for ONE team attempt (ADR 0117): its agents get that attempt's todo tools beside the canvas tools. This
+    /// factory is built once per task and can't see a per-attempt list, so the runner binds one per attempt.
+    /// </summary>
+    public AttemptFactory ForAttempt(FleetTodos todos) => new(this, todos);
+
+    /// <summary>The Copilot factory of one team attempt: <see cref="FleetCopilotAgentFactory"/> plus that attempt's todo list.</summary>
+    public sealed class AttemptFactory(FleetCopilotAgentFactory inner, FleetTodos todos) : PromptAgentFactory
+    {
+        public FleetTodos Todos { get; } = todos;
+
+        public override Task<AIAgent?> TryCreateAsync(GptComponentMetadata promptAgent, CancellationToken cancellationToken = default)
+            => inner.TryCreateAsync(promptAgent, Todos);
+    }
+
+    private Task<AIAgent?> TryCreateAsync(GptComponentMetadata promptAgent, FleetTodos? todos)
     {
         var hint = promptAgent.Model?.ModelNameHint ?? "";
         if (!IsCopilotModel(hint))
@@ -105,7 +123,7 @@ public sealed class FleetCopilotAgentFactory(
                 : $"{Unavailable} The provider of '{model}' can't be reached by the Copilot runtime.");
         }
 
-        var config = BuildSessionConfig(provider.Settings, provider.Model, $"{promptAgent.Instructions?.ToTemplateString()}\n\n{prompts.Get("copilot-report")}");
+        var config = BuildSessionConfig(provider.Settings, provider.Model, $"{promptAgent.Instructions?.ToTemplateString()}\n\n{prompts.Get("copilot-report")}", todos);
         return Task.FromResult<AIAgent?>(host.Client.AsAIAgent(config, ownsClient: false, name: promptAgent.Name, description: promptAgent.Description));
     }
 
@@ -138,11 +156,12 @@ public sealed class FleetCopilotAgentFactory(
     /// One fleet session: the user's provider (BYOK), the agent's instructions appended to Copilot's own prompt, the
     /// task's workspace as working directory, and this task's permission policy. Host discovery (config, custom
     /// instructions, file hooks, the session store) and the large-output spill to a temp file outside the workspace are
-    /// off. The canvas tools are custom tools (ADR 0102), and <c>AvailableTools</c> stays unset on purpose: the chat
+    /// off. The canvas tools, and the attempt's todo tools when <paramref name="todos"/> is given (ADR 0117), are custom
+    /// tools (ADR 0102), and <c>AvailableTools</c> stays unset on purpose: the chat
     /// kind sets it (with built-in tools off) to restrict a <c>Mode.Empty</c> session to its custom tools, and here it
     /// would hide the shell and file built-ins the fleet's default mode keeps.
     /// </summary>
-    public SessionConfig BuildSessionConfig(CopilotProviderSettings settings, string model, string instructions) => new()
+    public SessionConfig BuildSessionConfig(CopilotProviderSettings settings, string model, string instructions, FleetTodos? todos = null) => new()
     {
         Model = model,
         // BYOK, or the user's own GitHub account (ADR 0108): the same rule as a copilot chat's session.
@@ -151,7 +170,7 @@ public sealed class FleetCopilotAgentFactory(
         EnableSessionTelemetry = CopilotAgentFactory.TelemetryFor(settings),
         SystemMessage = new SystemMessageConfig { Mode = SystemMessageMode.Append, Content = instructions },
         WorkingDirectory = workspace.Root,
-        Tools = [.. canvas.Tools],
+        Tools = [.. canvas.Tools, .. todos?.Tools ?? []],
         IncludedBuiltinSkills = [],
         EnableSessionStore = false,
         EnableConfigDiscovery = false,

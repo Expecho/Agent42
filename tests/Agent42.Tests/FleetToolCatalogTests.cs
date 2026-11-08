@@ -96,6 +96,17 @@ public class FleetToolCatalogTests
         Assert.Equal(["web_search", "fetch_web_page", "ok-name"], tools.Select(t => t.Name));
     }
 
+    [Fact]
+    public void McpTool_NamedLikeTodoTool_IsSkipped()
+    {
+        var clash = new McpServerTools("s3", [Tool("todo_add"), Tool("todo_list"), Tool("delta")]);
+
+        var tools = Catalog().Build(null, "", [clash], Interaction);
+
+        Assert.DoesNotContain(tools, t => t.Name.StartsWith("todo_", StringComparison.Ordinal));
+        Assert.Contains(tools, t => t.Name == "delta");
+    }
+
     /// <summary>ADR 0100: the document tools come first when the task has documents, whatever the selection (even
     /// an empty override); their names are reserved, so a same-named MCP tool is skipped with or without them.</summary>
     [Fact]

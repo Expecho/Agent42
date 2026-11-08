@@ -192,7 +192,8 @@
     }
   }
 
-  // One handler per event type the backend publishes (FleetPageAssetsTests checks every Publish("…") has one).
+  // One handler per event type the backend publishes. Nothing enforces that: a new Publish("…") needs an entry here by
+  // discipline (FleetPageAssetsTests pins only the todos.updated one, and that titles are never set as markup).
   const handlers = {
     "task.started"(d, time) { S.live = { status: "running", started: time, model: d.model }; },
     "documents.ingested"(d) { S.ingested = d.files || []; },
@@ -227,7 +228,7 @@
       const team = teamOf(d); if (!team) return;
       const fixes = d.fixOf && team.attempts.find(x => x.n === d.fixOf);
       team.attempts.push({ n: d.attempt, status: fixes ? "running" : "planning", plans: fixes ? fixes.plans.filter(p => p.status === "accepted") : [],
-        notes: [], timeline: [], turns: new Map(), started: time, review: d.review, fix: !!fixes });
+        notes: [], timeline: [], turns: new Map(), todos: [], started: time, review: d.review, fix: !!fixes });
       if (S.follow && S.selectedTeam === team.id) S.selectedAttempt = null;
     },
     "attempt.failed"(d) { const a = attemptOf(d); if (a) { a.status = "failed"; a.notes.push(d.reason); } },
@@ -276,6 +277,8 @@
     "magentic.plan"(d) { const a = attemptOf(d); if (a) a.timeline.push({ kind: "event", id: uid(), label: d.replanned ? "Manager replanned" : "Manager's plan", text: d.text }); },
     "workflow.error"(d) { const a = attemptOf(d); if (a) a.timeline.push({ kind: "event", error: true, id: uid(), label: "Workflow error", text: d.error }); },
     "attempt.result"(d) { const a = attemptOf(d); if (a) { a.result = d.result; a.status = "done"; for (const t of a.turns.values()) t.done = true; } },
+    // The whole list rides on every event, so a replay or a reload replaces it (ADR 0117).
+    "todos.updated"(d) { const a = attemptOf(d); if (a) a.todos = d.todos || []; },
     "judge.started"(d) { const a = attemptOf(d); if (a) a.status = "judging"; },
     "verdict"(d) { const a = attemptOf(d); if (a) { a.verdict = d; a.status = d.passed ? "passed" : d.willRetry ? "retry" : "failed"; } },
     "budget"(d) { S.budget = d; renderBudget(); return false; },
@@ -867,6 +870,7 @@
         : h("div", { class: "muted", text: "No team was created." }),
       notesList(a)));
 
+    out.push(...renderTodos(a));
     const hasTurns = a.timeline.some(e => e.kind === "turn");
     out.push(h("h2", null, "Activity", hasTurns && h("span", { class: "muted", style: "font-weight:400;text-transform:none;letter-spacing:0;margin-left:10px", text: "Click an agent to see its output" })));
     out.push(a.timeline.length
@@ -877,6 +881,16 @@
     if (a.verdict) out.push(h("h2", { text: "Review" }), renderVerdict(a.verdict));
     if (a.result != null) out.push(h("h2", { text: "Result" }), h("div", { class: "card" }, clampText("result-" + team.id + "-" + a.n, "result", a.result || "(empty)", 2500, true)));
     return out;
+  }
+
+  // The team's shared checklist (ADR 0117), read-only. Titles are agent text: textContent only.
+  const todoCount = todos => `${todos.filter(t => t.done).length}/${todos.length}`;
+  function renderTodos(a) {
+    const todos = a.todos || [];
+    if (todos.length === 0) return [];
+    return [h("h2", null, "Todos", h("span", { class: "muted todo-count", text: todoCount(todos) })),
+      h("ul", { class: "card todos" }, todos.map(t => h("li", { class: t.done ? "done" : "" },
+        h("span", { class: "todo-box", text: t.done ? "✓" : "" }), h("span", { text: t.title }))))];
   }
 
   function notesList(a) {
@@ -1061,7 +1075,7 @@
     const a = team.attempts[team.attempts.length - 1]; // always the latest attempt; the attempt tabs belong to Details
     const plan = currentPlan(a);
     const m = { id, label: teamLabel(team), status: teamStatus(team), attempt: team.attempts.length > 1 && a ? a.n : 0,
-      started: !!a && a.status !== "approval" && a.status !== "planning", attemptN: a?.n, ranks: [], links: [], collapsed: false };
+      started: !!a && a.status !== "approval" && a.status !== "planning", attemptN: a?.n, todos: a?.todos || [], ranks: [], links: [], collapsed: false };
     if (!plan) return m;
     const shape = patternShape(plan);
     m.ranks = graphCells(team, a, shape, subs);
@@ -1174,7 +1188,7 @@
 
   function graphCluster(b) {
     const m = b.m;
-    const label = m.attempt ? `${m.label} · attempt ${m.attempt}` : m.label;
+    const label = (m.attempt ? `${m.label} · attempt ${m.attempt}` : m.label) + (m.todos.length ? ` · ${todoCount(m.todos)}` : "");
     const head = h("div", { class: "gcluster-head", text: label, title: label,
       onclick: () => { if (m.collapsed) { S.graphOpen.add(m.id); invalidate(); } else select(m.id); } });
     return h("div", { class: `gcluster ${m.status}${S.selectedTeam === m.id ? " sel" : ""}${m.collapsed ? " collapsed" : ""}`, "data-team": m.id,

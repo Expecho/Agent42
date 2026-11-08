@@ -11,7 +11,7 @@ namespace Agent42.Tests;
 /// script outside the <c>main.js</c> module graph, so every other source-text guard is blind to it.</para>
 /// </summary>
 [Collection("StaticAssets")]
-public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
+public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
 {
     private readonly HttpClient _client = fixture.Client;
 
@@ -76,12 +76,18 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
         Assert.DoesNotContain("/fleet", shell, StringComparison.Ordinal);
     }
 
-    [GeneratedRegex(@"#[0-9a-fA-F]{3,8}\b")]
-    private static partial Regex HexColourRegex();
+    /// <summary>ADR 0117: the page folds <c>todos.updated</c> (replacing the list) and renders agent-written titles as
+    /// text, never markup.</summary>
+    [Fact]
+    public async Task TodosHandler_Exists_NoInnerHtml()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
 
-    [GeneratedRegex(@"\.innerHTML\s*=[^;]*;")]
-    private static partial Regex InnerHtmlRegex();
-
-    [GeneratedRegex("Publish\\(\"([a-z.]+)\"")]
-    private static partial Regex PublishRegex();
+        Assert.Contains("\"todos.updated\"(d) { const a = attemptOf(d); if (a) a.todos = d.todos || []; },", script, StringComparison.Ordinal);
+        var start = script.IndexOf("function renderTodos(", StringComparison.Ordinal);
+        Assert.True(start > 0, "renderTodos is missing");
+        var body = script[start..script.IndexOf("function notesList(", start, StringComparison.Ordinal)];
+        Assert.DoesNotContain("innerHTML", body, StringComparison.Ordinal);
+        Assert.Contains("h(\"span\", { text: t.title })", body, StringComparison.Ordinal);
+    }
 }

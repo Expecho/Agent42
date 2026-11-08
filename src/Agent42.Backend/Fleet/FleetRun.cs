@@ -47,7 +47,7 @@ public sealed class FleetRun
     public IReadOnlyList<AIFunction> Tools { get; init; } = [];
 
     /// <summary>Creates <c>copilot</c> agents, or null when the host has none. It returns null for any other model.</summary>
-    public PromptAgentFactory? CopilotFactory { get; init; }
+    public FleetCopilotAgentFactory? CopilotFactory { get; init; }
 
     /// <summary>Whether the planner is told about Copilot agents.</summary>
     public bool CopilotEnabled { get; init; }

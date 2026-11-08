@@ -556,3 +556,11 @@ footer .budget { display: flex; align-items: center; gap: 14px; margin-left: aut
 .gnode.manager { border-color: var(--line-2); border-style: dotted; color: var(--muted); }
 .gnode-name { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gnode-state { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+
+/* Team todo checklist (ADR 0117) */
+.todo-count { margin-left: 10px; font-weight: 400; letter-spacing: 0; }
+.todos { list-style: none; margin: 0; padding: 8px 14px; }
+.todos li { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; }
+.todos li.done span:last-child { color: var(--muted); text-decoration: line-through; }
+.todo-box { flex: none; display: inline-block; width: 14px; height: 14px; line-height: 14px; text-align: center; font-size: 11px; border: 1px solid var(--line); border-radius: 3px; }
+.todos li.done .todo-box { background: var(--amber); border-color: var(--amber); color: var(--bg); }

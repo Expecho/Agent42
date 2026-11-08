@@ -60,7 +60,10 @@ public static partial class FleetPrompts
             fetch_web_page functions. The workspace functions give all agents and sub-teams of the task a shared place for files and small
             facts: use them to hand over results that are too big or too structured for a message. The canvas functions (canvas_list, canvas_read,
             canvas_write, canvas_edit) give them shared pages (html, svg, markdown or code) that the user watches live: give them to agents
-            whose deliverable is meant to be looked at, like a report, a visual page or a diagram. Only give an agent the tools its role needs.
+            whose deliverable is meant to be looked at, like a report, a visual page or a diagram. The todo functions (todo_add, todo_complete,
+            todo_remove, todo_list) give a team one shared checklist that the user watches live: give them to agents with several steps of work,
+            not to one-shot writers, and tell those agents to add their steps and tick them off as they finish. Only give an agent the tools its
+            role needs.
 
             {{copilot}}
 
@@ -111,7 +114,7 @@ public static partial class FleetPrompts
             A Copilot agent works in the shared workspace directory with Copilot's own built-in tools: it can read and write files there
             and run shell commands, each after the user approved it. Use it for agents that must create or change files or run commands,
             for example a developer that writes a project to disk. Do not add a tools section to a Copilot agent: it always gets the canvas
-            functions too, for pages the user watches live. Agents that only reason,
+            functions too, for pages the user watches live, and the todo functions for the team's shared checklist. Agents that only reason,
             research or write text do not need Copilot. 'copilot/<model id>' runs it on one of the models below instead of the default.
             """),
         new("judge", "Judge",

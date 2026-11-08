@@ -4911,3 +4911,18 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`Start_InFleetResultTurn_Refused`), `tests/Agent42.Tests/FleetResultDeliveryTests.cs`
   (`ResultTurn_DeletedConversation_Dropped`), `.agentic/decisions/0115-fleet-tasks-from-chat.md`
 - **Verified:** 2026-11-01
+
+### `AgentFunctions(context)` runs twice per attempt, so per-attempt state is memoized, never built inside it
+
+- **Claim:** `FleetTeamRunner.AgentFunctions(context)` is called TWICE for one team attempt: once for the planner's tool
+  listing (`PlannerInstructions`) and once in `CreateAgentFactory`. A function set that holds per-attempt state (the
+  todo list, ADR 0117) must come from a registry keyed `(TeamId, Attempt)` (`TodosFor`), not be `new`ed inside it, or
+  the planner's listing and the agents' functions hold different lists and the checklist the user sees is not the one
+  the agents write. The root context has no `TeamId`, so no per-attempt state exists there. The Copilot factory is
+  built once per task, so per-attempt state reaches it through `FleetCopilotAgentFactory.ForAttempt(...)`, called from
+  `CreateAgentFactory`, never an `AsyncLocal`.
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetTeamRunner.cs` (`TodosFor`, `AgentFunctions`),
+  `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs` (`PlannerInstructions`, `CreateAgentFactory`),
+  `tests/Agent42.Tests/FleetTeamRunnerTests.cs` (`TodosFor_SameAttemptSameList`),
+  `.agentic/decisions/0117-fleet-todos.md`
+- **Verified:** 2026-11-08

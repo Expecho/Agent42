@@ -71,6 +71,7 @@ public sealed partial class FleetToolCatalog(
             FleetDocumentTools.SearchName, FleetDocumentTools.ReadName,
         };
         names.UnionWith(FleetCanvas.ToolNames);
+        names.UnionWith(FleetTodos.ToolNames);
         var usable = new List<AIFunction>();
         foreach (var tool in tools)
         {
