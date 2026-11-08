@@ -131,6 +131,7 @@ public sealed partial class FleetTaskService
             : await tools.BuildAsync(record.UserId, record.Request, record.EnabledTools, task.Questions, task.Budget.Token, documentTools);
         // GitHub Copilot models (ADR 0108) are offered to Copilot agents only; every chat client below is built from the rest.
         var chatModels = models.Where(m => !m.CopilotOnly).ToList();
+        var reachable = FleetCopilotAgentFactory.ReachableModels(factory, models);
         var copilotFactory = copilot is null
             ? null
             : new FleetCopilotAgentFactory(copilot, factory, [.. models.Select(m => m.Id)], record.PlannerModel, workspace, canvas, prompts,
@@ -148,8 +149,10 @@ public sealed partial class FleetTaskService
             ModelNames = chatModels.ToDictionary(m => m.Id, m => m.DisplayName),
             CopilotModelNames = models.Where(m => m.CopilotOnly).ToDictionary(m => m.Id, m => m.DisplayName),
             Tools = functions,
+            CopilotByokModelIds = reachable.Where(m => !m.CopilotOnly).ToDictionary(m => m.Id, m => m.DisplayName),
+            CopilotDefaultModel = copilotFactory?.ModelFor("copilot"),
             CopilotFactory = copilotFactory,
-            CopilotEnabled = copilot?.Available == true,
+            CopilotEnabled = FleetCopilotAgentFactory.CopilotOffered(copilot, reachable),
             Events = task.Log,
             Interaction = task.Questions,
             AutoApprove = task.AutoApprove,

@@ -66,7 +66,10 @@ provider and AF `GitHubCopilotAgent`, with a `gho_` token (output in
    - **Never a default.** The model is never the default, and the provider is never the fallback provider that legacy
      unqualified ids resolve against.
    - **Fleet.** `IsToolCapable` excludes these models, the Copilot factory accepts them as `copilot/<id>`, and the
-     planner prompt lists them separately.
+     planner prompt lists them separately. The prompt (in code, `FleetTeamRunner.CopilotModels`, not the editable
+     `copilot` prompt) also lists the user's BYOK models the Copilot runtime can reach (the factory's own
+     `GetCopilotProvider` check), says what a plain `copilot` resolves to (`Fleet:DefaultCopilotModel`, else the task's
+     model) and that it cannot run on an unreachable one (e.g. Claude), and is omitted when no model is reachable.
    - **Pickers.** Every picker hides them except the agent editor for the copilot kind.
 6. **Discovered live.** `CopilotModelDirectory` lists a user's plan through the **chat** runtime's client
    (`Rpc.Models.ListAsync(null, token)`; the fleet's client is not used), with a 10-minute in-process cache keyed by a
