@@ -6,10 +6,12 @@ namespace Agent42.Backend;
 /// <summary>What the page asks for when it starts a task: with attached files, and the task whose files a Run again
 /// copies into the new workspace (ADR 0101). <paramref name="OriginConversationId"/> is set only by a chat's
 /// <c>start_fleet_task</c> (ADR 0115), never by the page. <paramref name="Clarify"/> asks the user questions about
-/// the task before it is planned (ADR 0118); a task with an origin never does.</summary>
+/// the task before it is planned (ADR 0118); a task with an origin never does. <paramref name="SelfReview"/> lets the agent
+/// that writes a team's result check it and fix gaps (ADR 0119); a task with an origin never does either.</summary>
 public sealed record FleetSubmit(
     string Task, string? FollowUpOf = null, string? Model = null, long? MaxTokens = null, IReadOnlyList<string>? EnabledTools = null,
-    IReadOnlyList<FleetInputFile>? Files = null, string? CopyInputsOf = null, string? OriginConversationId = null, bool Clarify = false);
+    IReadOnlyList<FleetInputFile>? Files = null, string? CopyInputsOf = null, string? OriginConversationId = null, bool Clarify = false,
+    bool SelfReview = false);
 
 /// <summary>How a stop, answer or delete went.</summary>
 public enum FleetOutcome { Ok, NotFound, Conflict }
@@ -94,6 +96,7 @@ public sealed partial class FleetTaskService(
             Request = request.Task.Trim(),
             FollowUpOf = previous?.Id,
             Clarify = request.Clarify && string.IsNullOrWhiteSpace(request.OriginConversationId),
+            SelfReview = request.SelfReview && string.IsNullOrWhiteSpace(request.OriginConversationId),
             OriginConversationId = string.IsNullOrWhiteSpace(request.OriginConversationId) ? null : request.OriginConversationId,
             WorkspaceId = previous?.WorkspaceId ?? Guid.NewGuid().ToString("N"),
             PlannerModel = model,

@@ -85,6 +85,18 @@ public class FleetStoreTests
         Assert.Null(task.OriginConversationId);
     }
 
+    // ADR 0119: a record stored before self-review existed reads false, and the flag round-trips. Plain JSON, no migration.
+    [Fact]
+    public async Task Record_SelfReview_DefaultsFalse_AndRoundTrips()
+    {
+        await _blobs.PutAsync("alice/tasks/old.json", Encoding.UTF8.GetBytes(
+            """{"id":"old","userId":"alice","request":"r","workspaceId":"w","plannerModel":"foundry:gpt-5","status":"done","result":"x"}"""));
+        await _store.SaveTaskAsync(Task("alice", "a1", "w1", DateTimeOffset.Parse("2026-11-01T10:00:00Z")) with { SelfReview = true });
+
+        Assert.False((await _store.GetTaskAsync("alice", "old"))!.SelfReview);
+        Assert.True((await _store.GetTaskAsync("alice", "a1"))!.SelfReview);
+    }
+
     // ADR 0101: records written before attached files existed load with empty lists, and the lists round-trip.
     [Fact]
     public async Task LegacyRecord_WithoutInputs_LoadsEmpty()

@@ -29,6 +29,19 @@ public class FleetOptionsTests
         Assert.Equal(7, options.PassingScore);
     }
 
+    /// <summary>ADR 0119: one fix pass by default, binds from <c>Fleet</c>, and below 2 means self-review is off.</summary>
+    [Fact]
+    public void SelfReviewMaxIterations_DefaultsToOneFixPass_AndBinds()
+    {
+        Assert.Equal(2, new FleetOptions().SelfReviewMaxIterations);
+
+        var options = FleetOptions.From(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Fleet:SelfReviewMaxIterations"] = "4" })
+            .Build());
+
+        Assert.Equal(4, options.SelfReviewMaxIterations);
+    }
+
     /// <summary>The page proposes the default, and the server refuses anything over the limit, so a default over the
     /// limit would make every task submitted with the default fail.</summary>
     [Fact]
