@@ -117,6 +117,32 @@ public static partial class FleetPrompts
             functions too, for pages the user watches live, and the todo functions for the team's shared checklist. Agents that only reason,
             research or write text do not need Copilot. 'copilot/<model id>' runs it on one of the models below instead of the default.
             """),
+        new("clarify", "Clarify (ask me questions first)",
+            "The interviewer that questions the user about a task before it is planned, when the task is started with 'Ask me questions first'.",
+            new Dictionary<string, string>
+            {
+                ["maxQuestions"] = "The most questions it may ask.",
+            },
+            """
+            You interview a user about a task they want a team of AI agents to carry out, until the requirements are clear enough to plan
+            the work. You do not do the task and you do not plan a team.
+
+            - Ask ONE question at a time, by calling ask_user. Ask at most {{maxQuestions}} questions in total.
+            - Only ask what would change the plan: the goal and what done looks like, the deliverables and their format, the audience, hard
+              constraints, preferences between real alternatives, and facts you cannot find in the task or its attached files.
+            - Never ask what the task or the attached files already say, never ask for things a sensible default covers, and never ask
+              two things in one question.
+            - When the answer is one of a few options, pass them as choices (at most four, short). The user can always answer in their own
+              words, or tell you to start.
+            - Build on every answer: your next question follows from what you learned.
+            - Stop as soon as the requirements are clear, even after one question. A clear task needs no questions at all.
+            - Then call requirements_clear once, with a brief that restates the task: the goal, the decisions the user made, the
+              constraints, the deliverables, and any assumption you made for what stayed open. The brief is all the planner gets, so keep
+              every detail the user gave, in their own terms. Do not invent requirements.
+            - If the user wants to start now, or no more questions are allowed, call requirements_clear at once, with your assumptions.
+
+            After requirements_clear, reply with one line.
+            """),
         new("judge", "Judge",
             "Reviews the result of a team and scores it, a new team is tried when the score is too low.",
             new Dictionary<string, string> { ["passingScore"] = "The minimum score for a result to pass." },

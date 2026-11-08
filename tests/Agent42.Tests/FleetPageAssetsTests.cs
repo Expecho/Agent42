@@ -52,6 +52,20 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("$(\"#mCached\").textContent = nf.format(b?.cachedInputTokens || 0);", script, StringComparison.Ordinal);
     }
 
+    /// <summary>ADR 0118: <c>renderPrompt</c> writes the banner label by id, so a page without it would throw on the first
+    /// question; and the composer must send the flag and handle both events or the interview never shows.</summary>
+    [Fact]
+    public async Task FleetPage_HasClarifyCheckbox_AndHandlers()
+    {
+        var page = await _client.GetStringAsync("/fleet/");
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("id=\"promptLabel\"", page, StringComparison.Ordinal);
+        Assert.Contains("clarify: clarify !== undefined ? clarify : composer.clarify.checked,", script, StringComparison.Ordinal);
+        Assert.Contains("\"clarify.started\"()", script, StringComparison.Ordinal);
+        Assert.Contains("\"clarify.done\"(d)", script, StringComparison.Ordinal);
+    }
+
     /// <summary>ADR 0116: a node a stop cut off takes the team's state, and a delegation from a non-node agent is
     /// adopted instead of dropped.</summary>
     [Fact]

@@ -33,6 +33,9 @@ public sealed class FleetOptions
     /// <summary>Teams up to this depth ask the user to approve their plan; -1 turns approval off.</summary>
     public int ApprovalDepth { get; set; }
 
+    /// <summary>Questions the clarify phase may ask the user about a task before it is planned (ADR 0118). Below 1 counts as 1.</summary>
+    public int MaxClarifyingQuestions { get; set; } = 8;
+
     /// <summary>Results of teams up to this depth are reviewed by a judge; -1 turns reviewing off.</summary>
     public int JudgeDepth { get; set; } = 1;
 

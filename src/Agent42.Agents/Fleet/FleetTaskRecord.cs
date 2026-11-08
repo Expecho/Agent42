@@ -12,6 +12,10 @@ public sealed record FleetTaskRecord
     public required string Request { get; init; }
     public string? FollowUpOf { get; init; }
 
+    /// <summary>The task started with "ask me questions first" (ADR 0118): a clarify phase interviews the user about the
+    /// request before the planner runs. Never set for a task started from a chat.</summary>
+    public bool Clarify { get; init; }
+
     /// <summary>The conversation that started this task through <c>start_fleet_task</c> (ADR 0115), or null for a task
     /// started on the page. A task with an origin approves its questions automatically and reports back to it.</summary>
     public string? OriginConversationId { get; init; }

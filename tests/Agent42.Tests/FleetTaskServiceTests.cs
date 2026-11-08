@@ -1026,6 +1026,119 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
         }
     }
 
+    private static (string Name, Dictionary<string, object?> Arguments) AskCall(string question, params string[] choices)
+        => ("ask_user", choices.Length == 0
+            ? new() { ["question"] = question }
+            : new() { ["question"] = question, ["choices"] = choices });
+
+    private static (string Name, Dictionary<string, object?> Arguments) ClearCall(string brief)
+        => ("requirements_clear", new() { ["brief"] = brief });
+
+    private static FakeChatClient.FleetScript ClarifyScript(params (string Name, Dictionary<string, object?> Arguments)[] calls)
+        => new([FleetRunHarness.Plan("Sequential", "Writer")], scores: [9], clarifyCalls: calls);
+
+    /// <summary>ADR 0118: the flag is stored only for a page task that asked for it, and never for a chat-started one.</summary>
+    [Fact]
+    public async Task Submit_Clarify_IsStoredOnlyForPageTasks()
+    {
+        var service = Service();
+
+        var (plain, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await FinishedAsync(service, Alice, plain!);
+        // A clarify task whose interviewer asks nothing runs straight through (the canned interviewer just replies).
+        var (clarifying, _) = await service.SubmitAsync(Alice, new(OnePlan, Clarify: true));
+        await FinishedAsync(service, Alice, clarifying!);
+        var (chat, _) = await service.SubmitAsync(Alice, new(OnePlan, Clarify: true, OriginConversationId: "conv-1"));
+        await FinishedAsync(service, Alice, chat!);
+
+        Assert.False((await _store.GetTaskAsync(Alice, plain!))!.Clarify);
+        Assert.True((await _store.GetTaskAsync(Alice, clarifying!))!.Clarify);
+        Assert.False((await _store.GetTaskAsync(Alice, chat!))!.Clarify);
+        Assert.DoesNotContain("clarify.started", (await _store.ReadEventsAsync(Alice, chat!)).Select(TypeOf));
+    }
+
+    /// <summary>The whole feature through the service: the interviewer's question reaches the page as a prompt event,
+    /// the answer comes back through AnswerAsync, and the planner and judge get the brief while the record keeps the
+    /// user's own words.</summary>
+    [Fact]
+    public async Task Run_Clarified_PlannerGetsBrief_RecordKeepsRequest()
+    {
+        var script = ClarifyScript(AskCall("Who reads it?", "Engineers", "Children"), ClearCall("Haiku for engineers"));
+        var request = FakeChatClient.FleetTask("Write a haiku", script);
+        var service = Service(new FleetOptions { ApprovalDepth = -1, JudgeDepth = 1 });
+        var (taskId, _) = await service.SubmitAsync(Alice, new(request, Clarify: true));
+
+        await QuestionAsync(service, Alice, taskId!);
+        Assert.Equal(FleetOutcome.Ok, await service.AnswerAsync(Alice, taskId!, "Engineers"));
+        var done = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Equal(FleetTaskStatus.Done, done.Status);
+        Assert.Equal(request, done.Request);
+        Assert.Contains("Haiku for engineers", Assert.Single(script.JudgeInputs));
+        Assert.Contains("Write a haiku", Assert.Single(script.ClarifyInputs));
+        var types = (await _store.ReadEventsAsync(Alice, taskId!)).Select(TypeOf).ToList();
+        Assert.True(types.IndexOf("clarify.started") < types.IndexOf("prompt"));
+        Assert.True(types.IndexOf("clarify.done") < types.IndexOf("plan.submitted"));
+    }
+
+    /// <summary>A follow-up clarifies only its own request: the brief goes into the follow-up input, and the earlier
+    /// request is the interviewer's one line of context.</summary>
+    [Fact]
+    public async Task Run_FollowUpClarified_UsesBriefInFollowUpInput()
+    {
+        var service = Service(new FleetOptions { ApprovalDepth = -1, JudgeDepth = 1 });
+        var (firstId, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await FinishedAsync(service, Alice, firstId!);
+        var script = ClarifyScript(ClearCall("Now in Dutch, five lines"));
+        var request = FakeChatClient.FleetTask("Translate it", script);
+
+        var (secondId, _) = await service.SubmitAsync(Alice, new(request, FollowUpOf: firstId, Clarify: true));
+        await FinishedAsync(service, Alice, secondId!);
+
+        var judged = Assert.Single(script.JudgeInputs);
+        Assert.Contains("Now in Dutch, five lines", judged);
+        Assert.Contains("follow-up on earlier work", judged);
+        Assert.Contains("Write a haiku about lighthouses", Assert.Single(script.ClarifyInputs));
+    }
+
+    /// <summary>Stopping while the interviewer waits for an answer ends the task as stopped, not failed.</summary>
+    [Fact]
+    public async Task Run_StopDuringClarify_IsStopped()
+    {
+        var script = ClarifyScript(AskCall("Who reads it?"), ClearCall("never reached"));
+        var service = Service();
+        var (taskId, _) = await service.SubmitAsync(Alice, new(FakeChatClient.FleetTask("Write a haiku", script), Clarify: true));
+        await QuestionAsync(service, Alice, taskId!);
+
+        await service.StopAsync(Alice, taskId!);
+        var stopped = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Equal(FleetTaskStatus.Stopped, stopped.Status);
+        Assert.Equal(0, script.PlannerCalls);
+    }
+
+    /// <summary>A reload mid-interview replays the question and the interview's events from the persisted log.</summary>
+    [Fact]
+    public async Task Events_Clarify_ReplayedAfterReload()
+    {
+        var script = ClarifyScript(AskCall("Who reads it?"), ClearCall("Haiku for engineers"));
+        var service = Service();
+        var (taskId, _) = await service.SubmitAsync(Alice, new(FakeChatClient.FleetTask("Write a haiku", script), Clarify: true));
+        await QuestionAsync(service, Alice, taskId!);
+        await service.AnswerAsync(Alice, taskId!, "Engineers");
+        await FinishedAsync(service, Alice, taskId!);
+
+        var replay = new List<string>();
+        await foreach (var line in (await service.SubscribeAsync(Alice, taskId!))!)
+        {
+            replay.Add(TypeOf(line));
+        }
+
+        Assert.Equal(
+            ["clarify.started", "prompt", "prompt.answered", "clarify.done"],
+            replay.Where(t => t.StartsWith("clarify", StringComparison.Ordinal) || t.StartsWith("prompt", StringComparison.Ordinal)));
+    }
+
     // Waits on the live stream until the task asks its first question.
     private static async Task QuestionAsync(FleetTaskService service, string user, string taskId)
     {

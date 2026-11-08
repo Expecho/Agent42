@@ -28,9 +28,17 @@
     attachments: [],        // File objects the composer will send with the next task (ADR 0101)
     ingested: null,         // the selected task's documents.ingested files, from its event log
     autoAnswers: [],        // questions a chat-started task answered by itself (ADR 0115), from its event log
+    clarify: null,          // the clarify phase (ADR 0118), from its event log: { phase: "asking" | "done", brief, questions, cleared }
     detailView: loadDetailView(), // "details" | "graph" (ADR 0116), a per-viewer preference kept in localStorage
     graphOpen: new Set(),   // done sub-teams the graph shows in full although the fleet is large
   };
+
+  function loadClarify() {
+    try { return localStorage.getItem("agent42.fleet.clarify") !== "off"; } catch { return true; }
+  }
+  function saveClarify(on) {
+    try { localStorage.setItem("agent42.fleet.clarify", on ? "on" : "off"); } catch { /* not remembered */ }
+  }
 
   // A per-viewer convenience only: without storage (private window, blocked site data) the page starts on Details.
   function loadDetailView() {
@@ -39,7 +47,7 @@
 
   function resetTaskState() {
     S.teams.clear(); S.calls.clear(); S.rootTeamId = null; S.live = null;
-    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; S.autoAnswers = []; S.graphOpen.clear(); graphScrolledTo = null; dirtyText.clear();
+    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; S.autoAnswers = []; S.clarify = null; S.graphOpen.clear(); graphScrolledTo = null; dirtyText.clear();
     renderPrompt();
     invalidate();
   }
@@ -288,6 +296,9 @@
       if (canvasOpenName === d.name && canvasPane?.isOpen()) openCanvasPage(d.name, d.version);
       return false;
     },
+    // The clarify phase (ADR 0118): the interviewer's questions arrive as ordinary prompts, in between these two.
+    "clarify.started"() { S.clarify = { phase: "asking" }; renderPrompt(); },
+    "clarify.done"(d) { S.clarify = { phase: "done", brief: d.brief || "", questions: d.questions || 0, cleared: !!d.cleared }; renderPrompt(); },
     "prompt"(d) { S.prompt = d; renderPrompt(); return false; },
     "prompt.answered"() { S.prompt = null; renderPrompt(); return false; },
     // A task started from a chat (ADR 0115) asks nobody: each question it answered by itself is logged here.
@@ -429,6 +440,7 @@
   let shownPrompt = null;
   function renderPrompt() {
     $("#promptBanner").hidden = !S.prompt;
+    $("#promptLabel").textContent = S.clarify?.phase === "asking" ? "Before it starts, the fleet asks" : "The fleet asks";
     if (S.prompt === shownPrompt) return;
     shownPrompt = S.prompt;
     if (!S.prompt) return;
@@ -461,7 +473,10 @@
     const toolsSummary = h("summary");
     const toolsList = h("div", { class: "tool-list" });
     const tools = h("details", { class: "tool-picker", hidden: true }, toolsSummary, toolsList);
-    const options = h("div", { class: "composer-options" }, h("label", null, "Model", model), h("label", null, "Token cap", tokens), tools);
+    // ADR 0118: on by default; a per-viewer convenience, so storage that throws just leaves the default.
+    const clarify = h("input", { type: "checkbox", checked: loadClarify(), onchange: e => saveClarify(e.target.checked) });
+    const options = h("div", { class: "composer-options" }, h("label", null, "Model", model), h("label", null, "Token cap", tokens),
+      h("label", { title: "The fleet asks you questions about the task until the requirements are clear, then plans it" }, clarify, "Ask me questions first"), tools);
     const fileInput = h("input", { type: "file", multiple: true, hidden: true, onchange: e => { addAttachments(e.target.files); e.target.value = ""; } });
     const chips = h("div", { class: "attachments" });
     const files = h("div", { class: "composer-files" },
@@ -471,7 +486,7 @@
     el.addEventListener("dragover", e => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); el.classList.add("dropping"); } });
     el.addEventListener("dragleave", e => { if (!el.contains(e.relatedTarget)) el.classList.remove("dropping"); });
     el.addEventListener("drop", e => { if (e.dataTransfer?.files?.length) { e.preventDefault(); addAttachments(e.dataTransfer.files); } el.classList.remove("dropping"); });
-    return { el, ta, err, btn, title, hint, model, tokens, tools, toolsSummary, toolsList, chips };
+    return { el, ta, err, btn, title, hint, model, tokens, clarify, tools, toolsSummary, toolsList, chips };
   })();
 
   // ---------- attached files (ADR 0101) ----------
@@ -602,7 +617,7 @@
   // Run again passes the record's enabledTools (null too), which then wins over the picker, and the task whose files
   // it copies (copyInputsOf). Only the composer's own submit sends the attached files: as multipart, to the files
   // route, and as plain JSON when there are none.
-  async function submitTask(text, followUpOf, enabledTools, copyInputsOf) {
+  async function submitTask(text, followUpOf, enabledTools, copyInputsOf, clarify) {
     const task = (text ?? composer.ta.value).trim();
     if (!task) { composer.ta.focus(); return; }
     composer.btn.disabled = true;
@@ -613,6 +628,7 @@
       maxTokens: Number(composer.tokens.value) || null,
       enabledTools: enabledTools !== undefined ? enabledTools : toolOverride(),
       copyInputsOf: copyInputsOf || null,
+      clarify: clarify !== undefined ? clarify : composer.clarify.checked,
     };
     const files = text === undefined ? S.attachments : [];
     let r;
@@ -782,8 +798,19 @@
         h("span", { class: "name", text: a.question }), h("span", { class: "muted", text: a.answer })))))];
   }
 
+  // What the clarify phase wrote from the request (ADR 0118): the brief is model text, shown as text only.
+  function requirementsCard() {
+    const c = S.clarify;
+    if (c?.phase !== "done") return null;
+    const asked = `${c.questions} ${c.questions === 1 ? "question" : "questions"} asked`;
+    return [h("h2", { text: "Requirements" }), h("div", { class: "card" },
+      h("div", { class: "muted", text: c.cleared ? `${asked}. The team was planned from this brief, not from your request as typed.` : `${asked}, but no brief came out of it: the team was planned from your request as typed.` }),
+      c.cleared && h("div", { class: "brief", text: c.brief }))];
+  }
+
   function taskFooter(task) {
     return [
+      requirementsCard(),
       autoAnswersCard(),
       task.result && [h("h2", { text: "Result" }), h("div", { class: "card" }, clampText("result-" + task.id, "result", task.result, 2500, true))],
       task.reason && task.status !== "done" && [h("h2", { text: "Why it ended" }), h("div", { class: "card", text: task.reason })],
@@ -846,7 +873,7 @@
     return ["interrupted", "stopped", "failed"].includes(task?.status) && !running() && h("div", { class: "card follow-up-cta" },
       h("div", null, h("b", { text: task.status === "interrupted" ? "Interrupted by a restart" : "Didn't finish" }),
         h("div", { class: "muted", text: "Run the same request again as a new task." })),
-      h("button", { class: "btn", text: "Run again", onclick: () => submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null, task.followUpOf ? null : task.id) }));
+      h("button", { class: "btn", text: "Run again", onclick: () => submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null, task.followUpOf ? null : task.id, !!task.clarify) }));
   }
 
   function statusText(s) {
