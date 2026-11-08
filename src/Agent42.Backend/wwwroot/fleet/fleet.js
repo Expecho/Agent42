@@ -442,6 +442,8 @@
     $("#stopBtn").hidden = !(t && t.status === "running");
     // The server refuses to delete a running task (409): stop it first.
     $("#deleteBtn").hidden = !(t && t.status !== "running");
+    // A link can be made for any task, a running one included: the view is live (ADR 0120).
+    $("#shareBtn").hidden = !t;
     $("#promptsBtn").classList.toggle("active", S.view === "prompts");
   }
 
@@ -1519,6 +1521,67 @@
     S.tasks = S.tasks.filter(t => t.id !== id);
     if (S.selectedTask === id) newTask(); else invalidate();
   });
+  // ---------- share link (ADR 0120) ----------
+  // Does this browser have the OS share sheet? A pure feature detect, never a user-agent or pointer test (ADR 0047).
+  const canNativeShare = typeof navigator.share === "function";
+  let shareTaskId = null;
+  let shareTitle = "";
+  function renderShareState(url) {
+    const shared = typeof url === "string" && url.length > 0;
+    $("#shareResult").hidden = !shared;
+    $("#shareCreateBtn").hidden = shared;
+    if (shared) $("#shareUrl").value = url;
+  }
+  // Nothing is minted until Create is pressed: that press is the user's consent to what the dialog says the link exposes.
+  async function openShare() {
+    const id = S.selectedTask;
+    if (!id) return;
+    shareTaskId = id;
+    shareTitle = `Task #${taskNumber(id)}`;
+    $("#shareTaskTitle").textContent = shareTitle;
+    renderShareState(null);
+    $("#shareCreateBtn").disabled = false;
+    $("#shareDialog").showModal();
+    const r = await api("GET", `/api/fleet/tasks/${encodeURIComponent(id)}/share`);
+    if (r.ok && shareTaskId === id) renderShareState(r.data?.url);
+  }
+  // Both rejections the sheet can raise are non-events (dismissed, or no transient activation left); the link is on screen.
+  async function nativeShare() {
+    const url = $("#shareUrl").value;
+    if (!url) return;
+    try { await navigator.share({ title: `Agent 42 fleet: ${shareTitle}`, url }); } catch { /* dismissed or blocked */ }
+  }
+  async function createShare() {
+    if (!shareTaskId) return;
+    $("#shareCreateBtn").disabled = true;
+    const r = await api("POST", `/api/fleet/tasks/${encodeURIComponent(shareTaskId)}/share`);
+    if (r.ok && r.data?.url) {
+      // Render BEFORE sharing: the sheet can be dismissed or blocked, and the user must be left holding the link.
+      renderShareState(r.data.url);
+      if (canNativeShare) await nativeShare();
+    }
+    $("#shareCreateBtn").disabled = false;
+  }
+  async function revokeShare() {
+    if (!shareTaskId || !confirm("Revoke this link? Anyone holding it will lose access.")) return;
+    const r = await api("DELETE", `/api/fleet/tasks/${encodeURIComponent(shareTaskId)}/share`);
+    if (r.ok || r.status === 404) renderShareState(null);
+  }
+  async function copyShare() {
+    const url = $("#shareUrl");
+    try { await navigator.clipboard.writeText(url.value); $("#shareCopyBtn").textContent = "Copied"; setTimeout(() => { $("#shareCopyBtn").textContent = "Copy"; }, 1500); }
+    catch { url.focus(); url.select(); }
+  }
+  $("#shareBtn").addEventListener("click", openShare);
+  $("#shareCreateBtn").addEventListener("click", createShare);
+  $("#shareNativeBtn").addEventListener("click", nativeShare);
+  $("#shareCopyBtn").addEventListener("click", copyShare);
+  $("#shareRevokeBtn").addEventListener("click", revokeShare);
+  $("#shareCloseBtn").addEventListener("click", () => $("#shareDialog").close());
+  // Share REPLACES Copy where the sheet exists: a swap, not an add.
+  $("#shareNativeBtn").hidden = !canNativeShare;
+  $("#shareCopyBtn").hidden = canNativeShare;
+
   // An empty answer would pick the default, which differs per question: the buttons are for that.
   $("#promptForm").addEventListener("submit", e => { e.preventDefault(); const text = $("#promptInput").value.trim(); if (text) answer(text); else $("#promptInput").focus(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape" && S.panel && S.view === "tasks") closePanel(); });

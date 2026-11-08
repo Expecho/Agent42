@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shared fleet task — Agent 42</title>
+  <!-- A shared task may contain anything the owner worked on; keep it out of search indexes. -->
+  <meta name="robots" content="noindex, nofollow" />
+  <!-- Don't leak the token (URL fragment) via the Referer header when following links in the content. This page never
+       writes, so the no-referrer rule that breaks Easy Auth POSTs does not apply. -->
+  <meta name="referrer" content="no-referrer" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="lib/highlight/github.min.css" data-hljs-theme="light" />
+  <link rel="stylesheet" href="lib/highlight/github-dark.min.css" data-hljs-theme="dark" />
+  <link rel="stylesheet" href="viewer.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90' font-family='monospace' fill='%23FFB13D'>42</text></svg>" />
+  <meta name="theme-color" content="#100f0d" />
+  <script>
+    // No-FOUC theme resolve (mirrors index.html). A recipient has no server profile, so this reads the
+    // OS preference only.
+    (function () {
+      try {
+        var dark = matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = dark ? "#100f0d" : "#f4efe4";
+      } catch (e) { /* matchMedia unavailable → CSS dark default stands */ }
+    })();
+  </script>
+</head>
+<body>
+  <div class="viewer">
+    <header class="viewer__topbar">
+      <span class="viewer__brand"><span class="viewer__mark">42</span>AGENT&nbsp;42</span>
+      <span class="viewer__badge">read-only</span>
+    </header>
+
+    <main class="viewer__scroll">
+      <div class="viewer__head" id="viewerHead" hidden>
+        <h1 class="viewer__title" id="viewerTitle">Agent fleet task</h1>
+        <p class="viewer__agent" id="viewerMeta"></p>
+      </div>
+
+      <div class="viewer__thread" id="sections"></div>
+
+      <div class="viewer__state" id="viewerState">Loading…</div>
+    </main>
+  </div>
+
+  <!-- Self-contained on purpose, exactly like index.html: this page loads NOTHING from the authenticated app surface, so
+       the Easy Auth hole stays confined to /shared/* + /api/share/*. Relative paths only. EasyAuthExclusionTests runs
+       every src/href below and every /api/ literal in fleet-viewer.js through the measured excludedPaths matcher. -->
+  <script src="lib/marked.min.js"></script>
+  <script src="lib/purify.min.js"></script>
+  <script src="lib/highlight/highlight.min.js"></script>
+  <script src="lib/richtext.js"></script>
+  <!-- The same pane the chat app loads: a canvas page runs in a sandboxed iframe. -->
+  <script src="lib/artifactpane.js"></script>
+  <script src="fleet-viewer.js"></script>
+</body>
+</html>

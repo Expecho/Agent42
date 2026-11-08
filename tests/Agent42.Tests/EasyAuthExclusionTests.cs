@@ -76,6 +76,19 @@ public sealed class EasyAuthExclusionTests
             Because("the artifact frame route", entries));
     }
 
+    // ADR 0120. The fleet task view sits under the same /api/share/* and /shared/* wildcards, so it needed NO bicep change.
+    // Named separately because the page, the data route, a multi-segment file route and the canvas frame are different mistakes.
+    [Theory]
+    [InlineData("/shared/fleet.html")]
+    [InlineData("/shared/fleet-viewer.js")]
+    [InlineData("/api/share/fleet/shr_LMh3xg8k1QzR0pV7bYtN2sWfA6eJcD9uKmT4iXoZbQ1")]
+    [InlineData("/api/share/fleet/shr_LMh3xg8k1QzR0pV7bYtN2sWfA6eJcD9uKmT4iXoZbQ1/files")]
+    [InlineData("/api/share/fleet/shr_LMh3xg8k1QzR0pV7bYtN2sWfA6eJcD9uKmT4iXoZbQ1/files/site/index.html")]
+    [InlineData("/api/share/fleet/shr_LMh3xg8k1QzR0pV7bYtN2sWfA6eJcD9uKmT4iXoZbQ1/canvas")]
+    [InlineData("/api/share/fleet/shr_LMh3xg8k1QzR0pV7bYtN2sWfA6eJcD9uKmT4iXoZbQ1/canvas/app/versions/2/frame")]
+    public void Exclusions_CoverTheFleetShareSurface(string path)
+        => Assert.True(IsExcluded(ExcludedPaths(), path), Because(path, ExcludedPaths()));
+
     [Theory]
     [InlineData("/")]
     [InlineData("/index.html")]
@@ -163,6 +176,9 @@ public sealed class EasyAuthExclusionTests
     [InlineData("/api/fleet/tasks")]
     [InlineData("/api/fleet/tasks/x/events")]
     [InlineData("/api/fleet/tasks/x/files/report.md")]
+    // ADR 0120: the OWNER's share routes mint, show and revoke a link for the signed-in user, so they stay gated. Only
+    // /api/share/fleet/* is public, and it sits under the /api/share/* wildcard.
+    [InlineData("/api/fleet/tasks/x/share")]
     public void Exclusions_DoNotCoverAnyAuthenticatedPath(string path)
     {
         var entries = ExcludedPaths();
@@ -284,13 +300,16 @@ public sealed class EasyAuthExclusionTests
     {
         var dir = Path.Combine(RepoRoot(), "src", "Agent42.Backend", "wwwroot", "shared");
 
-        var markup = Regex
-            .Matches(File.ReadAllText(Path.Combine(dir, "index.html")), "(?:src|href)\\s*=\\s*\"([^\"]+)\"")
+        // The chat viewer and the fleet task viewer (ADR 0120) are both public pages under /shared/.
+        var pages = new[] { ("index.html", "viewer.js"), ("fleet.html", "fleet-viewer.js") };
+
+        var markup = pages
+            .SelectMany(page => Regex.Matches(File.ReadAllText(Path.Combine(dir, page.Item1)), "(?:src|href)\\s*=\\s*\"([^\"]+)\""))
             .Select(match => match.Groups[1].Value)
             .Where(IsSameOrigin);
 
-        var scripted = Regex
-            .Matches(File.ReadAllText(Path.Combine(dir, "viewer.js")), "[\"'`](/api/[^\"'`]*)[\"'`]")
+        var scripted = pages
+            .SelectMany(page => Regex.Matches(File.ReadAllText(Path.Combine(dir, page.Item2)), "[\"'`](/api/[^\"'`]*)[\"'`]"))
             .Select(match => Regex.Replace(match.Groups[1].Value, @"\$\{[^{}]*\}", SampleToken))
             .Where(IsSameOrigin);
 

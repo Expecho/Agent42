@@ -52,6 +52,34 @@ public sealed class ShareLinkAssetsTests
         (await _client.GetAsync("/shared/lib/purify.min.js")).EnsureSuccessStatusCode();
     }
 
+    // The fleet task viewer (ADR 0120) is a second public page under /shared/. It is read-only, takes the token from the
+    // fragment, calls only the token-scoped /api/share/fleet routes, and is self-contained like the chat viewer: nothing
+    // from the authenticated /lib, /js, /fleet or the app stylesheet.
+    [Fact]
+    public async Task FleetViewer_Served_WiredToFleetShareApi_SelfContained()
+    {
+        var page = await _client.GetStringAsync("/shared/fleet.html");
+        Assert.Contains("read-only", page);
+        Assert.Contains("fleet-viewer.js", page);
+        Assert.Contains("noindex", page);
+        Assert.Contains("lib/marked.min.js", page);
+        Assert.Contains("lib/artifactpane.js", page);
+        Assert.DoesNotContain("/lib/", page);
+        Assert.DoesNotContain("../", page);
+        Assert.DoesNotContain("styles.css", page);
+        Assert.DoesNotContain("/js/", page);
+        Assert.DoesNotContain("/fleet/", page);
+
+        var viewer = await _client.GetStringAsync("/shared/fleet-viewer.js");
+        Assert.Contains("location.hash", viewer);
+        Assert.Contains("/api/share/fleet/", viewer);
+        // Every API URL is a literal under the fleet share routes, never the owner's authenticated /api/fleet/tasks.
+        Assert.DoesNotContain("/api/fleet/", viewer);
+        Assert.DoesNotContain("/api/conversations", viewer);
+        // The result is the only HTML-rendered value, and it goes through the sanitizer.
+        Assert.Contains("DOMPurify.sanitize(marked.parse(text)", viewer);
+    }
+
     // The rich-rendering libs (mermaid, KaTeX, Chart.js, highlight.js) are vendored ONCE, under the public
     // /shared/lib/, and loaded from there by both the chat app and the viewer. A missing file here is a
     // diagram/formula/chart that silently stays a code block, so each one is fetched for real. The KaTeX

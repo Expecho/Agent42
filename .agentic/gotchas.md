@@ -2026,8 +2026,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   never from `GetUserId`; **(2)** any new endpoint added under this exclusion inherits the same duty. There
   are now **seven** entries in the ADR 0002 gate's hole list — `/api/agent-run` (ADR 0022, fails closed
   **401**), `/api/share/*` (ADR 0035, the read-only view; fails closed **404** because it is a
-  browser-visitable link, and userId+conversation come from the share directory), `/shared` + `/shared/*`
-  (ADR 0035, the static viewer page and its assets, self-contained so they carry no data), and
+  browser-visitable link, and userId+conversation come from the share directory; ADR 0120's fleet task view,
+  `/api/share/fleet/*`, rides the same wildcard and resolves userId+task from its own directory), `/shared` +
+  `/shared/*` (ADR 0035, the static viewer page and its assets, self-contained so they carry no data; ADR 0120's
+  `fleet.html` is one more page under it), and
   `/api/agent-mcp` + `/api/agent-mcp/*` (ADR 0070, the server-side MCP surface; fails closed **401** on the
   per-agent key, enforced by **middleware over the prefix** because one endpoint serves `initialize`,
   `tools/list` and `tools/call` alike), and `/api/local-bridge` (ADR 0076, the local-bridge WebSocket; an
@@ -2082,8 +2084,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   address is far more exposed than a header key (mail headers, forwarding rules, provider logs). The email token lives
   in `IEmailAddressDirectoryGrain`, a separate grain type with its own state name, so the two namespaces are disjoint by
   construction. `AgentKeyOwner` (the return record) is shared; the grain type never is. The same goes for the next
-  credential (a phone number, a Slack id).
+  credential (a phone number, a Slack id). The fleet share token (ADR 0120) is the third: it has `IFleetShareLinkDirectoryGrain`
+  though it reuses `ShareToken`, so a chat share token never opens a task and the reverse.
 - **Evidence:** `src/Agent42.Agents/Email/IEmailAddressDirectoryGrain.cs`,
+  `src/Agent42.Agents/Sharing/IFleetShareLinkDirectoryGrain.cs`, `tests/Agent42.Tests/FleetShareLinkGrainTests.cs` (`Directories_AreDisjoint`),
   `tests/Agent42.Tests/EmailAddressDirectoryGrainTests.cs` (`Registration_NeverResolvesInTheApiKeyDirectory`),
   `tests/Agent42.Tests/EmailApiTests.cs` (`EmailToken_DoesNotAuthenticateAgentRun`),
   `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
@@ -4943,3 +4947,24 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/FleetSelfReviewTests.cs` (`Runner_Sequential_TheTeamResultIsTheSecondDraft`,
   `Loop_AJudgeThatFails_KeepsTheResult`), `.agentic/decisions/0119-fleet-self-review.md`
 - **Verified:** 2026-11-08
+
+### A fleet share link exposes the live WORKSPACE, and its public routes reuse the owner's serving cores
+
+- **Claim:** a follow-up task shares its predecessor's workspace and canvas, so a fleet share link (ADR 0120) reaches
+  every file and canvas page of that workspace: the user's uploads under `inputs/`, generated text copies, whatever a
+  shell agent wrote, and later follow-ups, until the link is revoked. It is a live view, so say so wherever a link is
+  offered. Three things keep it safe, and each is easy to undo by "simplifying". **(1)** The task view is an allowlist
+  DTO (`SharedFleetTaskResponse`), never `FleetTaskRecord`, and `reason` is a fixed string per status because the stored
+  one is a raw exception message. **(2)** The public file and canvas routes call the SAME cores as the owner routes
+  (`FleetFileDownloadAsync`, `FleetCanvasVersionAsync`), so attachment, `nosniff`, never-HTML and the artifact sandbox
+  headers cannot drift. Don't copy their bodies into the public routes. **(3)** Every public miss is a 404, including a
+  host without the fleet, and the task is re-read through `FleetTaskService.GetAsync`, so a deleted task is gone even if a
+  deregister was missed. Deleting a task also revokes its link. An anonymous read of a running-but-orphaned task
+  persists the `interrupted` rewrite (`NormalizeAsync`): accepted, idempotent.
+- **Evidence:** `src/Agent42.Backend/Fleet/AgentApi.FleetSharing.cs` (`SharedFleetView`, `SharedFleetReason`,
+  `ResolveSharedFleetTaskAsync`), `src/Agent42.Backend/Fleet/AgentApi.Fleet.cs` (`FleetFileDownloadAsync`,
+  `FleetCanvasVersionAsync`, `DeleteFleetTask`), `tests/Agent42.Tests/FleetShareApiTests.cs`
+  (`Public_Task_ReturnsExactlyTheAllowlist`, `Public_EndedTask_ReasonIsFixedText`, `Public_Files_ListAndDownload_AreSafe`,
+  `DeleteTask_RevokesLink`), `.agentic/decisions/0120-fleet-share-links.md`
+- **Verified:** 2026-11-08
+
