@@ -6,6 +6,7 @@ tags: [fleet, ui, frontend, graph, no-build-step]
 supersedes: []
 extends: [0097, 0041]
 amends: [0097]
+amended_by: [0117]   # 0117: the team box shows done/total when the latest attempt has todos
 ---
 
 # The fleet page can show a task as a live graph
@@ -41,5 +42,6 @@ persisted field, so it is the same on replay, on a reload mid-run and live.
 - **A new backend event or endpoint**: unnecessary, the event log has it all.
 
 ## Consequences
-The test project has no JS runner, so behaviour is pinned by source-text guards in `FleetPageAssetsTests`, not by
-runtime tests.
+The test project has no JS runner. `FleetPageAssetsTests` pins only a few source-text facts (the shell exclusion,
+the cut-off node handling, the todos handler); the graph's behaviour is checked by hand in DevHost, and nothing
+enforces that every published event has a `handlers` entry in `fleet.js`.

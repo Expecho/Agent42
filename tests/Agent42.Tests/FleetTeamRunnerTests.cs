@@ -187,6 +187,63 @@ public class FleetTeamRunnerTests
         Assert.Contains("--- report (markdown, \"report\", version 1)\n# Lighthouse haiku", input);
     }
 
+    /// <summary>ADR 0117: AgentFunctions runs twice per attempt (planner listing, agent factory), so the list is memoized.</summary>
+    [Fact]
+    public void TodosFor_SameAttemptSameList()
+    {
+        using var h = new FleetRunHarness(NoReview);
+        var team1 = h.Root with { TeamId = "team-1", Attempt = 1 };
+
+        var first = h.Runner.AgentFunctions(team1).Where(f => FleetTodos.ToolNames.Contains(f.Name)).ToList();
+        var second = h.Runner.AgentFunctions(team1).Where(f => FleetTodos.ToolNames.Contains(f.Name)).ToList();
+
+        Assert.Equal(FleetTodos.ToolNames.Count, first.Count);
+        Assert.Same(h.Runner.TodosFor(team1), h.Runner.TodosFor(team1));
+        Assert.Equal(first, second);
+        Assert.NotSame(h.Runner.TodosFor(team1), h.Runner.TodosFor(team1 with { Attempt = 2 }));
+        Assert.NotSame(h.Runner.TodosFor(team1), h.Runner.TodosFor(team1 with { TeamId = "team-2" }));
+    }
+
+    [Fact]
+    public void TodoTools_NeedATeam_AndAreListedForThePlanner()
+    {
+        using var h = new FleetRunHarness(NoReview);
+
+        Assert.Null(h.Runner.TodosFor(h.Root));
+        Assert.DoesNotContain(h.Runner.AgentFunctions(h.Root), f => f.Name == "todo_add");
+        var instructions = h.Runner.PlannerInstructions(h.Root with { TeamId = "team-1", Attempt = 1 });
+        Assert.All(FleetTodos.ToolNames, name => Assert.Contains($"- {name}:", instructions));
+        Assert.Contains("The todo functions", instructions); // the default planner prompt says who should get them
+    }
+
+    [Fact]
+    public async Task JudgeInput_IncludesOpenTodos()
+    {
+        using var h = new FleetRunHarness(new FleetOptions { ApprovalDepth = -1, JudgeDepth = 0, MaxAttempts = 1, PassingScore = 7 });
+        var script = new FakeChatClient.FleetScript([FleetRunHarness.Plan("Sequential", "Writer")], scores: [9]);
+        // The root team is "team-1" and its first attempt 1: plan the list before the run, as an agent would during it.
+        var todos = h.Runner.TodosFor(h.Root with { TeamId = "team-1", Attempt = 1 })!;
+        await todos.Tools.Single(t => t.Name == "todo_add").InvokeAsync(new() { ["titles"] = new[] { "Draft the haiku", "Check the syllables" } });
+        await todos.Tools.Single(t => t.Name == "todo_complete").InvokeAsync(new() { ["ids"] = new[] { 1 } });
+
+        await h.Runner.RunAsync(FakeChatClient.FleetTask("Write a haiku about lighthouses", script));
+
+        var input = Assert.Single(script.JudgeInputs);
+        Assert.Contains("1 open of 2", input);
+        Assert.Contains("- [ ] Check the syllables", input);
+    }
+
+    [Fact]
+    public async Task JudgeInput_HasNoTodoSection_WhenNoneWerePlanned()
+    {
+        using var h = new FleetRunHarness(new FleetOptions { ApprovalDepth = -1, JudgeDepth = 0, MaxAttempts = 1, PassingScore = 7 });
+        var script = new FakeChatClient.FleetScript([FleetRunHarness.Plan("Sequential", "Writer")], scores: [9]);
+
+        await h.Runner.RunAsync(FakeChatClient.FleetTask("Write a haiku about lighthouses", script));
+
+        Assert.DoesNotContain("todo list", Assert.Single(script.JudgeInputs));
+    }
+
     [Fact]
     public void Delegate_AbsentAtMaxDepth()
     {

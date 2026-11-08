@@ -191,6 +191,30 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
         Assert.Null(config.AvailableTools);
     }
 
+    /// <summary>ADR 0117: an attempt's Copilot agents get its todo tools beside the canvas tools, still without AvailableTools.</summary>
+    [Fact]
+    public void SessionConfig_HasTodoTools_NoAvailableTools()
+    {
+        var settings = CopilotProviderSettings.OpenAICompatible(new Uri("https://api.example/v1"), "key");
+        var todos = new FleetTodos(new RecordingFleetSink(), "team-1", 1);
+
+        var config = Factory(Host(true)).BuildSessionConfig(settings, "gpt-5", "You build.", todos);
+
+        Assert.Equal([.. FleetCanvas.ToolNames, .. FleetTodos.ToolNames], config.Tools!.Select(t => t.Name));
+        Assert.Null(config.AvailableTools);
+    }
+
+    [Fact]
+    public void ForAttempt_BindsThatAttemptsList()
+    {
+        var factory = Factory(Host(true));
+        var first = new FleetTodos(new RecordingFleetSink(), "team-1", 1);
+        var second = new FleetTodos(new RecordingFleetSink(), "team-1", 2);
+
+        Assert.Same(first, factory.ForAttempt(first).Todos);
+        Assert.Same(second, factory.ForAttempt(second).Todos);
+    }
+
     private static MultiProviderChatClientFactory MixedFactory()
     {
         var mine = new ProviderOptions { Kind = ProviderKind.OpenAICompatible, Endpoint = "https://api.example/v1", ApiKey = "key" };
