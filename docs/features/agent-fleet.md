@@ -35,6 +35,7 @@
   versions. Follow-ups share the canvas, and the judge sees it (ADR 0102).
 - **Approval and questions.** Teams up to `Fleet:ApprovalDepth` ask you to approve their plan. Copilot
   permissions and MCP elicitations are asked the same way: a bar at the top with buttons and a text field.
+- **Graph view (ADR 0116).** A Details | Graph switch above the task shows the teams as boxes and the agents as nodes (pending, working, done, failed), with a sub-team under the agent that delegated to it. Click a node for its output, a team box to select it. The choice is remembered in your browser.
 - **Started from a chat (ADR 0115).** With the `fleet` tool on, a chat agent can call `start_fleet_task`. The task is
   tied to the conversation and asks nobody: the plan and every Copilot permission are approved automatically (the
   refusals outside the workspace still apply), and MCP elicitations are declined. Each automatic answer is listed
