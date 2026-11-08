@@ -13,6 +13,10 @@ public sealed partial class FleetTeamRunner(FleetRun run)
 {
     private int _lastTeamId;
 
+    // One todo list per team attempt (ADR 0117). AgentFunctions runs twice per attempt (the planner's tool listing and
+    // the agent factory), so the list is memoized here, or the two would hold different lists.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(string TeamId, int Attempt), FleetTodos> _todos = new();
+
     private FleetOptions Options => run.Options;
 
     private FleetRun Run => run;
@@ -195,7 +199,7 @@ public sealed partial class FleetTeamRunner(FleetRun run)
 
         // Agents often deliver their work as files or canvas pages, so the judge sees both next to the team's final message.
         await judge.RunAsync(
-            $"Task:\n{task}\n\nResult of the team:\n{result}\n\n{run.Workspace.Describe()}\n\n{run.Canvas.Describe()}",
+            $"Task:\n{task}\n\nResult of the team:\n{result}\n\n{run.Workspace.Describe()}\n\n{run.Canvas.Describe()}{TodosSection(context)}",
             cancellationToken: context.CancellationToken);
 
         return verdict ?? new FleetVerdict(passingScore, true, "The judge gave no verdict.");
@@ -226,13 +230,24 @@ public sealed partial class FleetTeamRunner(FleetRun run)
         }
     }
 
+    /// <summary>The todo list of the team attempt <paramref name="context"/> names, created on first use. Null before a
+    /// team exists (the root context has no team id).</summary>
+    public FleetTodos? TodosFor(FleetTeamContext context)
+        => context.TeamId is { } teamId
+            ? _todos.GetOrAdd((teamId, context.Attempt), key => new FleetTodos(run.Events, key.TeamId, key.Attempt))
+            : null;
+
+    // The judge's view of the team's todo list, empty when the team planned none.
+    private string TodosSection(FleetTeamContext context)
+        => TodosFor(context)?.Describe() is { Length: > 0 } todos ? $"\n\n{todos}" : "";
+
     /// <summary>
-    /// The functions agents of a team can reference in their YAML: the workspace, the canvas, the catalog's tools and,
-    /// below the maximum depth, <c>delegate_to_team</c>.
+    /// The functions agents of a team can reference in their YAML: the workspace, the canvas, the team's todo list, the
+    /// catalog's tools and, below the maximum depth, <c>delegate_to_team</c>.
     /// </summary>
     public List<AIFunction> AgentFunctions(FleetTeamContext context)
     {
-        List<AIFunction> functions = [.. run.Workspace.Tools, .. run.Canvas.Tools, .. run.Tools];
+        List<AIFunction> functions = [.. run.Workspace.Tools, .. run.Canvas.Tools, .. TodosFor(context)?.Tools ?? [], .. run.Tools];
         if (context.Depth < Options.MaxTeamDepth)
         {
             functions.Add(AIFunctionFactory.Create(

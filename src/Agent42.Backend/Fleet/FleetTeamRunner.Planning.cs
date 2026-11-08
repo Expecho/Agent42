@@ -108,7 +108,10 @@ public sealed partial class FleetTeamRunner
             entry => entry.Key,
             entry => (PromptAgentFactory)new ChatClientPromptAgentFactory(entry.Value, functions));
         var routing = new ModelRoutingPromptAgentFactory(modelFactories, run.DefaultModel);
-        return run.CopilotFactory is { } copilot ? new AggregatorPromptAgentFactory(copilot, routing) : routing;
+        // The Copilot factory is bound to this attempt's todo list; no team yet (the root context) means no list.
+        return run.CopilotFactory is { } copilot
+            ? new AggregatorPromptAgentFactory(TodosFor(context) is { } todos ? copilot.ForAttempt(todos) : copilot, routing)
+            : routing;
     }
 
     /// <summary>
