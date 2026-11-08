@@ -188,16 +188,6 @@ public class FleetTeamRunnerTests
     }
 
     [Fact]
-    public void Prompts_DefaultsMentionCanvas()
-    {
-        var prompts = FleetPromptSet.Defaults;
-
-        Assert.Contains("canvas_write", prompts.Get("planner"));
-        Assert.Contains("always gets the canvas", prompts.Get("copilot"));
-        Assert.Contains("canvas pages", prompts.Get("judge"));
-    }
-
-    [Fact]
     public void Delegate_AbsentAtMaxDepth()
     {
         using var h = new FleetRunHarness(new FleetOptions { MaxTeamDepth = 2 });

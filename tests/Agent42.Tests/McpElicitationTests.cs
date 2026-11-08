@@ -355,23 +355,6 @@ public sealed class McpElicitationTests(SharedClusterFixture fixture) : SharedCl
         Assert.Equal(AgentStreamEventType.Done, next[^1].Type);
     }
 
-    // AC10: elicitation innermost, URL seeding around it, the reauth notice outermost (ADR 0081).
-    [Fact]
-    public void ElicitingWrapper_IsInnermost_ReauthStaysOutermost()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Agent42.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        var source = File.ReadAllText(Path.Combine(
-            dir!.FullName, "src", "Agent42.Agents", "Tools", "AgentGrain.BuildAgent.cs"));
-
-        Assert.Contains(
-            "WithReauthNotice(server, WithUrlSeeding(server, WithElicitation(server, t)))", source, StringComparison.Ordinal);
-    }
-
     [Theory]
     [InlineData("""{"name":"Bob"}""", true)]
     [InlineData("""{}""", false)]

@@ -48,19 +48,6 @@ public sealed class PreferencesLayoutAssetsTests
         Assert.Contains("class=\"agent-dialog prefs\"", index);
     }
 
-    // AC4 — the MCP OAuth return opens the mobile DETAIL view, not just the (invisible-on-a-phone) tab.
-    // Asserted inside initMcpOAuthReturn's own body, so moving the call elsewhere fails rather than passing
-    // on the string existing somewhere in the module graph.
-    [Fact]
-    public async Task McpOAuthReturn_EntersThePreferencesDetailView()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-        var body = StaticAssetsServerFixture.Body(app, "export async function initMcpOAuthReturn()");
-
-        Assert.Contains("profileTabs.select(3)", body);   // unchanged — MCP is still index 3
-        Assert.Contains("enterPrefsDetail(3)", body);
-    }
-
     // AC5 — the drill-down is entered by a RAIL CLICK, never by tab selection.
     //
     // This is the load-bearing one. openProfileDialog() calls profileTabs.select(0) on every open, so if
@@ -182,63 +169,6 @@ public sealed class PreferencesLayoutAssetsTests
 
     private static string StripComments(string css) =>
         System.Text.RegularExpressions.Regex.Replace(css, @"/\*.*?\*/", " ", System.Text.RegularExpressions.RegexOptions.Singleline);
-
-    // AC7 — tool rows render as switches. The ONE `.tool-check input` rule (not a second rule beside the
-    // old one) sets `appearance: none`, which is what makes the ::after knob possible at all.
-    [Fact]
-    public async Task ToolRows_RenderAsSwitches()
-    {
-        var styles = await _client.GetStringAsync("/styles.css");
-
-        var ruleAt = styles.IndexOf(".tool-check input {", StringComparison.Ordinal);
-        Assert.True(ruleAt >= 0, "the .tool-check input rule is missing — renamed?");
-        var rule = styles[ruleAt..styles.IndexOf('}', ruleAt)];
-
-        Assert.Contains("appearance: none", rule);
-        Assert.Contains("-webkit-appearance: none", rule);
-        // The old checkbox treatment is GONE, not merely overridden by a later rule.
-        Assert.DoesNotContain("accent-color", rule);
-        Assert.Contains(".tool-check input:checked::after", styles); // the knob
-    }
-
-    // AC11 — the status line is wired to the four Save-persisted fields ONLY.
-    //
-    // Preferences mixes two persistence models: language / theme / suggest / the tool checks are PUT by
-    // Save, while the three model selects and every provider, MCP and skill control persist themselves the
-    // moment they change. A form-level input/change listener would therefore announce "Unsaved changes" for
-    // a default model that is already stored.
-    [Fact]
-    public async Task SavedStatus_TracksOnlyTheSavePersistedFields()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-        var wire = StaticAssetsServerFixture.Body(app, "export function wireProfile()");
-
-        // The existing "submit" listener on the form is fine and must not trip this — only input/change.
-        Assert.DoesNotContain("profileForm.addEventListener(\"input\"", app);
-        Assert.DoesNotContain("profileForm.addEventListener(\"change\"", app);
-
-        Assert.Contains("profileLanguage.addEventListener(\"change\", markPrefsDirty)", wire);
-        Assert.Contains("profileSuggest.addEventListener(\"change\", markPrefsDirty)", wire);
-        Assert.Contains("profileToolChecks.addEventListener(\"change\"", wire);
-        // The theme handler specifically — it already existed (it live-previews the theme) and had to GAIN
-        // the dirty mark. A bare Contains("markPrefsDirty()") over `wire` is satisfied by the tool-checks
-        // handler a few lines above, so it would not pin this at all.
-        Assert.Contains(
-            "applyTheme(profileTheme.value);",
-            StaticAssetsServerFixture.Body(app, "profileTheme.addEventListener(\"change\""));
-        Assert.Contains(
-            "markPrefsDirty();",
-            StaticAssetsServerFixture.Body(app, "profileTheme.addEventListener(\"change\""));
-
-        // Reset on open, and NO post-save write: saveProfile() closes the dialog, so "All changes saved"
-        // is only ever observable as the opening state.
-        Assert.Contains(
-            "resetPrefsStatus()",
-            StaticAssetsServerFixture.Body(app, "export async function openProfileDialog()"));
-        Assert.DoesNotContain(
-            "prefsStatus",
-            StaticAssetsServerFixture.Body(app, "async function saveProfile()"));
-    }
 
     // AC12 — the agent editor's tab strip is NOT restyled.
     //

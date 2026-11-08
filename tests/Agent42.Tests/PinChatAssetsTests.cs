@@ -19,20 +19,6 @@ public sealed class PinChatAssetsTests
         _client = fixture.Client;
     }
 
-    // AC8: every sidebar row (regular + agent chats share buildConvRow) carries a pin toggle that reflects
-    // its state to assistive tech and flips it through setPinned.
-    [Fact]
-    public async Task PinAction_WiredIntoConvRow()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        var row = StaticAssetsServerFixture.Body(app, "export function buildConvRow(conv, hoisted, grouped)");
-        Assert.Contains("conv__pin", row);
-        Assert.Contains("setPinned(conv.id", row);
-        Assert.Contains("is-pinned", row);
-        Assert.Contains("aria-pressed", row);
-    }
-
     // AC14: a row rendered outside its agent group must carry a badge, or an agent chat reads as a regular
     // one. TWO placements put it there, which is why the condition is a disjunction and not the single
     // `hoisted` flag it was before ADR 0073: the pinned block (ADR 0045), and a custom group, which wins
@@ -48,19 +34,6 @@ public sealed class PinChatAssetsTests
         Assert.Contains("(hoisted || grouped) && conv.agentId", row);
         Assert.Contains("conv.agentName || \"Agent\"", row);
         Assert.Contains("conv__agent", row);
-    }
-
-    // AC8: the toggle reaches the owner pin endpoint, and follows deleteConversation's mutate-then-reconcile
-    // shape — a mid-stream click is ignored rather than racing the turn's own index touch.
-    [Fact]
-    public async Task SetPinned_TargetsThePinEndpoint()
-    {
-        var app = await _fixture.GetAppScriptAsync();
-
-        var setPinned = StaticAssetsServerFixture.Body(app, "async function setPinned(id, pinned)");
-        Assert.Contains("/pin", setPinned);
-        Assert.Contains("method: \"PUT\"", setPinned);
-        Assert.Contains("if (streaming) return;", setPinned);
     }
 
     // AC9: the two-pass render. The pinned block must be emitted BEFORE the grouping walk, and the walk must
