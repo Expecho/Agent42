@@ -20,6 +20,10 @@ public sealed class FleetEventMapper(IFleetEventSink events, int maxToolTextLeng
         var (teamId, attempt) = (context.TeamId, context.Attempt);
         switch (evt)
         {
+            // The self-review loop's feedback to the agent (ADR 0119) is not the agent's own text.
+            case AgentResponseUpdateEvent { Update.AuthorName: FleetSelfReview.LoopAuthorName }:
+                break;
+
             case AgentResponseUpdateEvent update:
                 foreach (var content in update.Update.Contents)
                 {

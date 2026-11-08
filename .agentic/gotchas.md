@@ -4926,3 +4926,20 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/FleetTeamRunnerTests.cs` (`TodosFor_SameAttemptSameList`),
   `.agentic/decisions/0117-fleet-todos.md`
 - **Verified:** 2026-11-08
+
+### A fleet `LoopAgent` must keep its feedback IN the output: `ExcludeOnBehalfOfMessages = false`
+
+- **Claim:** `FleetSelfReview.Wrap` leaves `ExcludeOnBehalfOfMessages` false on purpose. With `true`, the workflow output
+  merges the agent's consecutive drafts into ONE assistant message whenever their streamed updates carry no
+  `MessageId` ("draft onedraft two", measured on 1.25.0, also in a Concurrent join), and `FleetTeamRunner.FinalResult`
+  (the last assistant message) then returns both drafts as the team's result. The user-role feedback message between
+  the drafts is what keeps them apart, whatever the client does with ids. That feedback is authored
+  `FleetSelfReview.LoopAuthorName`, so `FleetEventMapper` skips those updates; without the skip the page shows the
+  loop's feedback as the agent's own text. Two more facts of the same shape: `FreshContextPerIteration` must stay false
+  (the re-run would not see its own draft), and a judge that throws propagates and fails the team, which is why the
+  judge is wrapped in `ReviewEvaluator` (fail open, but a cancellation is never swallowed).
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetSelfReview.cs` (`Wrap`, `ReviewEvaluator`),
+  `src/Agent42.Backend/Fleet/FleetEventMapper.cs` (`Publish`),
+  `tests/Agent42.Tests/FleetSelfReviewTests.cs` (`Runner_Sequential_TheTeamResultIsTheSecondDraft`,
+  `Loop_AJudgeThatFails_KeepsTheResult`), `.agentic/decisions/0119-fleet-self-review.md`
+- **Verified:** 2026-11-08

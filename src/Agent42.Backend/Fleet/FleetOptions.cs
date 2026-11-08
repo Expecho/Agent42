@@ -36,6 +36,10 @@ public sealed class FleetOptions
     /// <summary>Questions the clarify phase may ask the user about a task before it is planned (ADR 0118). Below 1 counts as 1.</summary>
     public int MaxClarifyingQuestions { get; set; } = 8;
 
+    /// <summary>The most times the agent that writes a team's result runs in a self-review (ADR 0119), the first run
+    /// included: 2 means one fix pass. Below 2 turns self-review off.</summary>
+    public int SelfReviewMaxIterations { get; set; } = 2;
+
     /// <summary>Results of teams up to this depth are reviewed by a judge; -1 turns reviewing off.</summary>
     public int JudgeDepth { get; set; } = 1;
 

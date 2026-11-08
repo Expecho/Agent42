@@ -1037,6 +1037,24 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
     private static FakeChatClient.FleetScript ClarifyScript(params (string Name, Dictionary<string, object?> Arguments)[] calls)
         => new([FleetRunHarness.Plan("Sequential", "Writer")], scores: [9], clarifyCalls: calls);
 
+    /// <summary>ADR 0119: self-review is stored only for a page task that asked for it, and never for a chat-started one.</summary>
+    [Fact]
+    public async Task Submit_SelfReview_IsStoredOnlyForPageTasks()
+    {
+        var service = Service();
+
+        var (plain, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await FinishedAsync(service, Alice, plain!);
+        var (reviewing, _) = await service.SubmitAsync(Alice, new(OnePlan, SelfReview: true));
+        await FinishedAsync(service, Alice, reviewing!);
+        var (chat, _) = await service.SubmitAsync(Alice, new(OnePlan, SelfReview: true, OriginConversationId: "conv-1"));
+        await FinishedAsync(service, Alice, chat!);
+
+        Assert.False((await _store.GetTaskAsync(Alice, plain!))!.SelfReview);
+        Assert.True((await _store.GetTaskAsync(Alice, reviewing!))!.SelfReview);
+        Assert.False((await _store.GetTaskAsync(Alice, chat!))!.SelfReview);
+    }
+
     /// <summary>ADR 0118: the flag is stored only for a page task that asked for it, and never for a chat-started one.</summary>
     [Fact]
     public async Task Submit_Clarify_IsStoredOnlyForPageTasks()
