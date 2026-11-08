@@ -204,6 +204,18 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         }
     }
 
+    /// <summary>ADR 0118: the multipart route carries the clarify flag in its request part, like the JSON route.</summary>
+    [Fact]
+    public async Task SubmitWithFiles_Multipart_CarriesClarify()
+    {
+        const string user = "fleet-clarify-3";
+        var response = await SendForm(user, Form(new { task = Task(), model = FleetRunHarness.ModelA, clarify = true }, ("notes.md", Encoding.UTF8.GetBytes("# notes"))));
+        var taskId = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("taskId").GetString()!;
+
+        Assert.True((await Store.GetTaskAsync(user, taskId))!.Clarify);
+        await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/stop", user);
+    }
+
     /// <summary>ADR 0101: a body over the route's limit is a 413, a form without the request JSON a 400, and nothing
     /// starts. The fixture's caps make the limit 2 × 1 000 bytes plus the 1 MB form allowance.</summary>
     [Fact]
@@ -429,6 +441,36 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         Assert.Equal(HttpStatusCode.NotFound, (await Send(HttpMethod.Put, "/api/fleet/prompts/nope", "fleet-prompts-1", new { text = "x" })).StatusCode);
 
         static JsonElement Judge(JsonElement prompts) => prompts.EnumerateArray().Single(p => p.GetProperty("key").GetString() == "judge");
+    }
+
+    /// <summary>ADR 0118: the clarify prompt is listed with its placeholder, editable like the others, and renders it.</summary>
+    [Fact]
+    public async Task Clarify_Prompt_ListedAndRendersPlaceholders()
+    {
+        var prompts = await (await Send(HttpMethod.Get, "/api/fleet/prompts", "fleet-clarify-prompt-1")).Content.ReadFromJsonAsync<JsonElement>();
+
+        var clarify = prompts.EnumerateArray().Single(p => p.GetProperty("key").GetString() == "clarify");
+        Assert.Contains("{{maxQuestions}}", clarify.GetProperty("text").GetString());
+        Assert.Equal(["maxQuestions"], clarify.GetProperty("placeholders").EnumerateObject().Select(p => p.Name));
+        var rendered = FleetPromptSet.Defaults.Render("clarify", ("maxQuestions", "5"));
+        Assert.DoesNotContain("{{", rendered);
+        Assert.Contains("at most 5 questions", rendered);
+    }
+
+    /// <summary>The page's "ask me questions first" reaches the task on the JSON route: the stored task says so, and a
+    /// task that did not ask for it does not.</summary>
+    [Fact]
+    public async Task Submit_Clarify_IsStoredOnTheTask()
+    {
+        var asked = await Send(HttpMethod.Post, "/api/fleet/tasks", "fleet-clarify-1", new { task = Task(), model = FleetRunHarness.ModelA, clarify = true });
+        var plain = await Send(HttpMethod.Post, "/api/fleet/tasks", "fleet-clarify-2", new { task = Task(), model = FleetRunHarness.ModelA });
+        var askedId = (await asked.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("taskId").GetString()!;
+        var plainId = (await plain.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("taskId").GetString()!;
+
+        Assert.True((await Store.GetTaskAsync("fleet-clarify-1", askedId))!.Clarify);
+        Assert.False((await Store.GetTaskAsync("fleet-clarify-2", plainId))!.Clarify);
+        await Send(HttpMethod.Post, $"/api/fleet/tasks/{askedId}/stop", "fleet-clarify-1");
+        await Send(HttpMethod.Post, $"/api/fleet/tasks/{plainId}/stop", "fleet-clarify-2");
     }
 
     [Fact]
