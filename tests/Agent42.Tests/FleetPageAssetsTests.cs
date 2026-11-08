@@ -242,6 +242,104 @@ public sealed partial class FleetPageAssetsTests(StaticAssetsServerFixture fixtu
         Assert.Contains("autoAnswersCard(),", script[end..]);
     }
 
+    /// <summary>ADR 0116: the page offers a Details | Graph switch and starts on Details. The choice is a per-viewer
+    /// preference, so storage is only touched inside try/catch.</summary>
+    [Fact]
+    public async Task FleetJs_OffersAGraphView_DefaultingToDetails()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("detailView: loadDetailView(),", script, StringComparison.Ordinal);
+        Assert.Contains("=== \"graph\" ? \"graph\" : \"details\"; } catch { return \"details\"; }", script, StringComparison.Ordinal);
+        Assert.Contains("try { localStorage.setItem(\"agent42.fleet.detailView\", view); } catch", script, StringComparison.Ordinal);
+        Assert.Contains("[[\"details\", \"Details\"], [\"graph\", \"Graph\"]]", script, StringComparison.Ordinal);
+        Assert.Contains("if (S.detailView === \"graph\" && S.rootTeamId) {", script, StringComparison.Ordinal);
+    }
+
+    /// <summary>ADR 0116: every state a node can be in has its own explicit rule, coloured by theme tokens only (no
+    /// hex or rgb(); <c>color-mix</c> of tokens is fine).</summary>
+    [Fact]
+    public async Task FleetCss_StylesTheGraphNodesWithThemeTokens()
+    {
+        var css = await _client.GetStringAsync("/fleet/fleet.css");
+
+        foreach (var state in new[] { "idle", "working", "done", "retry" })
+        {
+            Assert.Contains($".gnode.{state} {{", css, StringComparison.Ordinal);
+        }
+
+        Assert.Contains(".gnode.failed, .gnode.stopped, .gnode.interrupted {", css, StringComparison.Ordinal);
+        var graphCss = css[css.IndexOf("graph view (ADR 0116)", StringComparison.Ordinal)..];
+        Assert.DoesNotContain("rgb(", graphCss, StringComparison.Ordinal);
+        Assert.False(HexColourRegex().IsMatch(graphCss), "The graph styles use a hard-coded hex colour instead of a theme token");
+    }
+
+    /// <summary>ADR 0116: node labels, team labels and snippets are model-written, so the graph builds its nodes as text.</summary>
+    [Fact]
+    public async Task FleetJs_GraphBuildsNodesAsText()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        var start = script.IndexOf("// ---------- graph (ADR 0116)", StringComparison.Ordinal);
+        var end = script.IndexOf("// ---------- agent panel ----------", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start, "the graph section sits before the agent panel");
+        var graph = script[start..end];
+        Assert.DoesNotContain("innerHTML", graph);
+        Assert.DoesNotContain("DOMPurify", graph);
+        Assert.DoesNotContain("setMarkdown", graph);
+        Assert.Contains("class: \"gnode-name\", text: label", graph);
+        Assert.Contains("class: \"gcluster-head\", text: label", graph);
+    }
+
+    /// <summary>ADR 0116: a delegation remembers the attempt it was made in, so a retry's graph never shows an earlier
+    /// attempt's sub-team under the same agent.</summary>
+    [Fact]
+    public async Task FleetJs_DelegationCallsRecordTheirAttempt()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("teamId: d.teamId, attempt: d.attempt, result: null", script, StringComparison.Ordinal);
+        Assert.Contains("const key = `${c.teamId}|${c.attempt}|${(c.agent || \"\").toLowerCase()}`;", script, StringComparison.Ordinal);
+        Assert.Contains("`${team.id}|${a.n}|${(name || \"\").toLowerCase()}`", script, StringComparison.Ordinal);
+    }
+
+    /// <summary>ADR 0116: a node a stop cut off takes the team's state, and a delegation from a non-node agent is
+    /// adopted instead of dropped.</summary>
+    [Fact]
+    public async Task FleetJs_GraphKeepsCutOffNodesAndOrphanSubTeams()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("if (!t.done) t.cut = true; t.done = true;", script, StringComparison.Ordinal);
+        Assert.Contains("if (last.cut && [\"stopped\", \"interrupted\", \"failed\"].includes(team.status)) return team.status;", script, StringComparison.Ordinal);
+        Assert.Contains("adoptOrphans(m, team, a, subs);", script, StringComparison.Ordinal);
+    }
+
+    /// <summary>ADR 0116: a node click opens the agent's output panel, a team click selects the team, like the tree does.</summary>
+    [Fact]
+    public async Task FleetJs_GraphNodesReuseThePanelAndSelect()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("onclick: clickable ? () => openPanel(m.id, m.attemptN, c.name) : null", script, StringComparison.Ordinal);
+        Assert.Contains("else select(m.id); } });", script, StringComparison.Ordinal);
+    }
+
+    /// <summary>ADR 0116: /fleet is not in the service worker's SHELL, so a change to it needs no CACHE bump.</summary>
+    [Fact]
+    public async Task ServiceWorker_LeavesFleetOutOfTheShell()
+    {
+        var sw = await _client.GetStringAsync("/sw.js");
+
+        Assert.Contains("url.pathname.startsWith(\"/fleet\")", sw, StringComparison.Ordinal);
+        var shellStart = sw.IndexOf("const SHELL", StringComparison.Ordinal);
+        var shell = sw[shellStart..sw.IndexOf("];", shellStart, StringComparison.Ordinal)];
+        Assert.DoesNotContain("/fleet", shell, StringComparison.Ordinal);
+    }
+
+    [GeneratedRegex(@"#[0-9a-fA-F]{3,8}\b")]
+    private static partial Regex HexColourRegex();
+
     [GeneratedRegex(@"\.innerHTML\s*=[^;]*;")]
     private static partial Regex InnerHtmlRegex();
 

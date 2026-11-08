@@ -28,11 +28,18 @@
     attachments: [],        // File objects the composer will send with the next task (ADR 0101)
     ingested: null,         // the selected task's documents.ingested files, from its event log
     autoAnswers: [],        // questions a chat-started task answered by itself (ADR 0115), from its event log
+    detailView: loadDetailView(), // "details" | "graph" (ADR 0116), a per-viewer preference kept in localStorage
+    graphOpen: new Set(),   // done sub-teams the graph shows in full although the fleet is large
   };
+
+  // A per-viewer convenience only: without storage (private window, blocked site data) the page starts on Details.
+  function loadDetailView() {
+    try { return localStorage.getItem("agent42.fleet.detailView") === "graph" ? "graph" : "details"; } catch { return "details"; }
+  }
 
   function resetTaskState() {
     S.teams.clear(); S.calls.clear(); S.rootTeamId = null; S.live = null;
-    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; S.autoAnswers = []; dirtyText.clear();
+    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; S.autoAnswers = []; S.graphOpen.clear(); graphScrolledTo = null; dirtyText.clear();
     renderPrompt();
     invalidate();
   }
@@ -181,7 +188,7 @@
     if (team.status === "running") team.status = status;
     for (const a of team.attempts) {
       if (!["passed", "retry", "done", "failed"].includes(a.status)) a.status = status;
-      for (const t of a.turns.values()) t.done = true;
+      for (const t of a.turns.values()) { if (!t.done) t.cut = true; t.done = true; } // cut = a stop ended it, not the agent
     }
   }
 
@@ -255,7 +262,7 @@
     "agent.thinking"(d) { appendText(d, "thinking"); return false; },
     "tool.call"(d) {
       const turn = openTurn(d, true); if (!turn) return;
-      const call = { callId: d.callId, name: d.name, arguments: d.arguments, agent: d.agent, teamId: d.teamId, result: null, failed: false, pending: true };
+      const call = { callId: d.callId, name: d.name, arguments: d.arguments, agent: d.agent, teamId: d.teamId, attempt: d.attempt, result: null, failed: false, pending: true };
       S.calls.set(d.callId, call);
       turn.items.push({ kind: "tool", id: uid(), call });
       const sub = [...S.teams.values()].find(t => t.parentCallId === d.callId);
@@ -702,6 +709,10 @@
           h("div", { text: "Describe a task above. The teams and agents that work on it show up here, live." })))));
       return;
     }
+    if (S.detailView === "graph" && S.rootTeamId) {
+      showGraph(pane, h("div", { class: "detail-inner wide" }, top, viewSwitch(), renderGraph()));
+      return;
+    }
     const a = (S.selectedAttempt && team.attempts.find(x => x.n === S.selectedAttempt)) || team.attempts[team.attempts.length - 1];
 
     const chain = [];
@@ -722,7 +733,7 @@
       onclick: () => { S.selectedAttempt = x.n; setFollow(false); invalidate(); },
     }, h("span", { class: "dot " + x.status }), `Attempt ${x.n}`, x.fix && h("span", { class: "muted", text: "fix" }), x.verdict && h("span", { class: "muted", text: `${x.verdict.score}/10` }))));
 
-    pane.replaceChildren(h("div", { class: "detail-inner" }, top, head, team.depth === 0 && task && attachedCard(task), tabs, a ? renderAttempt(team, a) : null,
+    pane.replaceChildren(h("div", { class: "detail-inner" }, top, viewSwitch(), head, team.depth === 0 && task && attachedCard(task), tabs, a ? renderAttempt(team, a) : null,
       team.depth === 0 && task && taskFooter(task)));
   }
 
@@ -974,6 +985,256 @@
         h("span", { class: "go", text: "Output →" })),
       subs.length > 0 && h("div", { class: "act-subteams" }, subs.map(subTeamLink)));
   }
+
+  // ---------- graph (ADR 0116) ----------
+  // A picture of the task: a box per team, a node per agent the planner designed, edges from the plan's pattern, and
+  // a sub-team box under the agent that delegated to it. Built only from the state the handlers already fold, so it
+  // is the same on replay, on a reload mid-run and live. Node labels are set as text, never as markup.
+  const G = { nodeW: 150, nodeH: 46, gapX: 44, gapY: 18, pad: 12, head: 24, cap: 24 };
+
+  // The agent names of a plan, grouped by rank (a column), plus the pattern's edges between names. Handoff and
+  // GroupChat edges are structural (what the pattern means), not observed hops.
+  // An agent listed in two stages keeps its first one, so a node id is unique within a team.
+  function stagedRanks(plan, names) {
+    if (!plan.stages?.length) return [names];
+    const seen = new Set();
+    return plan.stages.map(st => st.filter(n => !seen.has(n) && seen.add(n))).filter(r => r.length);
+  }
+
+  function patternShape(plan) {
+    const names = plan.agents.map(x => x.name);
+    switch (names.length > 1 ? plan.pattern : "") {
+      case "Concurrent": case "GroupChat": return { ranks: [names], links: [] };
+      case "Staged": return { ranks: stagedRanks(plan, names), links: "all" };
+      case "Handoff": return { ranks: [[names[0]], names.slice(1)], links: "all", both: true };
+      case "Magentic": return { ranks: [[null], names], links: "all" };
+      default: return { ranks: names.map(n => [n]), links: "all" };
+    }
+  }
+
+  // The state of one node, from its turns: pending (idle), working, done or failed. A node that never ran in a team
+  // that was stopped, interrupted or failed is drawn in the team's state (an agent has no state of its own for that).
+  function graphAgentState(team, a, name) {
+    const turns = agentTurns(a, name);
+    if (turns.length === 0) return ["stopped", "interrupted", "failed"].includes(team.status) ? team.status : "idle";
+    if (turns.some(t => !t.done)) return "working";
+    const last = turns[turns.length - 1];
+    if (last.cut && ["stopped", "interrupted", "failed"].includes(team.status)) return team.status;
+    const state = turnState(last);
+    return state === "done" && a.status === "retry" ? "retry" : state;
+  }
+
+  function graphCells(team, a, shape, subs) {
+    const key = name => `${team.id}|${a.n}|${(name || "").toLowerCase()}`;
+    return shape.ranks.map(rank => rank.map(name => ({
+      id: `${team.id}:${a.n}:${name === null ? "manager" : name}`, name: name === null ? "Manager" : name, manager: name === null,
+      state: name === null ? "" : graphAgentState(team, a, name),
+      subs: name === null ? [] : (subs.get(key(name)) || []).map(id => graphTeam(id, subs)).filter(Boolean),
+    })));
+  }
+
+  // A delegation whose agent is not a node of the plan (a name that drifted, or a call logged without an attempt) must
+  // not make its sub-team vanish: it hangs under the first agent node, as the details tree still lists it.
+  function adoptOrphans(m, team, a, subs) {
+    const names = new Set(m.ranks.flat().filter(c => !c.manager).map(c => c.name.toLowerCase()));
+    const host = m.ranks.flat().find(c => !c.manager);
+    if (!host) return;
+    for (const [key, ids] of subs) {
+      const [teamId, attempt, agent] = key.split("|");
+      if (teamId !== team.id || !(attempt === String(a.n) ? !names.has(agent) : attempt === "undefined")) continue;
+      host.subs.push(...ids.map(id => graphTeam(id, subs)).filter(Boolean));
+    }
+  }
+
+  // Edges run from every agent of a rank to every agent of the next one.
+  function graphLinks(ranks, shape) {
+    const links = [];
+    if (shape.links !== "all") return links;
+    for (let i = 0; i + 1 < ranks.length; i++)
+      for (const from of ranks[i]) for (const to of ranks[i + 1]) links.push({ from: from.id, to: to.id, both: !!shape.both });
+    return links;
+  }
+
+  function graphTeam(id, subs) {
+    const team = S.teams.get(id);
+    if (!team) return null;
+    const a = team.attempts[team.attempts.length - 1]; // always the latest attempt; the attempt tabs belong to Details
+    const plan = currentPlan(a);
+    const m = { id, label: teamLabel(team), status: teamStatus(team), attempt: team.attempts.length > 1 && a ? a.n : 0,
+      started: !!a && a.status !== "approval" && a.status !== "planning", attemptN: a?.n, ranks: [], links: [], collapsed: false };
+    if (!plan) return m;
+    const shape = patternShape(plan);
+    m.ranks = graphCells(team, a, shape, subs);
+    adoptOrphans(m, team, a, subs);
+    m.links = graphLinks(m.ranks, shape);
+    return m;
+  }
+
+  const graphAgents = m => m.ranks.flat().reduce((n, c) => n + (c.manager ? 0 : 1) + c.subs.reduce((k, s) => k + graphAgents(s), 0), 0);
+
+  // A large fleet stays legible: a finished sub-team shrinks to one box (click it to open it).
+  function collapseDone(m, root) {
+    for (const cell of m.ranks.flat()) for (const sub of cell.subs) {
+      collapseDone(sub, false);
+      if (sub.status === "done" && !S.graphOpen.has(sub.id)) sub.collapsed = true;
+    }
+    return root;
+  }
+
+  // Pure: reads S.teams and S.calls, changes nothing. Delegations are keyed by the attempt their call belongs to, so
+  // a retry never shows an earlier attempt's sub-team under the same agent.
+  function buildGraph(rootId) {
+    const subs = new Map();
+    for (const c of S.calls.values()) {
+      if (!c.subTeamId) continue;
+      const key = `${c.teamId}|${c.attempt}|${(c.agent || "").toLowerCase()}`;
+      subs.set(key, [...(subs.get(key) || []), c.subTeamId]);
+    }
+    const root = graphTeam(rootId, subs);
+    if (root && graphAgents(root) > G.cap) collapseDone(root, true);
+    return root;
+  }
+
+  // ---- layout: each cell is a node plus the sub-teams under it; a rank stacks its cells; a team lays its ranks out
+  // left to right. measure sizes everything bottom-up, place then gives absolute positions.
+  function measureCell(cell, dim) {
+    let w = G.nodeW, h = G.nodeH;
+    for (const sub of cell.subs) { const d = measureTeam(sub, dim); w = Math.max(w, d.w); h += G.gapY + d.h; }
+    const d = { w, h };
+    dim.set(cell, d);
+    return d;
+  }
+
+  function measureTeam(m, dim) {
+    let d;
+    if (m.collapsed || m.ranks.length === 0) d = { w: G.nodeW + G.pad * 2, h: G.head + G.pad + 18 };
+    else {
+      let w = G.pad, tall = 0;
+      m.ranks.forEach((rank, i) => {
+        const sizes = rank.map(cell => measureCell(cell, dim));
+        const r = { w: Math.max(G.nodeW, ...sizes.map(s => s.w)), h: sizes.reduce((n, s) => n + s.h, 0) + G.gapY * (rank.length - 1) };
+        dim.set(rank, r);
+        w += r.w + (i < m.ranks.length - 1 ? G.gapX : G.pad);
+        tall = Math.max(tall, r.h);
+      });
+      d = { w, h: G.head + tall + G.pad * 2 };
+    }
+    dim.set(m, d);
+    return d;
+  }
+
+  function placeCell(cell, m, rankBox, cx, cy, dim, out) {
+    const nx = cx + (rankBox.w - G.nodeW) / 2;
+    const node = { cell, team: m, x: nx, y: cy };
+    out.nodes.push(node);
+    let sy = cy + G.nodeH + G.gapY;
+    for (const sub of cell.subs) {
+      const sd = dim.get(sub), sx = cx + (rankBox.w - sd.w) / 2;
+      out.edges.push({ kind: "delegate", x1: nx + G.nodeW / 2, y1: cy + G.nodeH, x2: sx + sd.w / 2, y2: sy });
+      placeTeam(sub, sx, sy, dim, out);
+      sy += sd.h + G.gapY;
+    }
+    return node;
+  }
+
+  function placeTeam(m, x, y, dim, out) {
+    const d = dim.get(m);
+    out.boxes.push({ m, x, y, w: d.w, h: d.h });
+    out.w = Math.max(out.w, x + d.w); out.h = Math.max(out.h, y + d.h);
+    if (m.collapsed || m.ranks.length === 0) return;
+    const at = new Map();
+    let cx = x + G.pad;
+    for (const rank of m.ranks) {
+      const rankBox = dim.get(rank);
+      let cy = y + G.head + G.pad;
+      for (const cell of rank) { at.set(cell.id, placeCell(cell, m, rankBox, cx, cy, dim, out)); cy += dim.get(cell).h + G.gapY; }
+      cx += rankBox.w + G.gapX;
+    }
+    for (const l of m.links) {
+      const from = at.get(l.from), to = at.get(l.to);
+      if (from && to) out.edges.push({ kind: l.both ? "both" : "flow", x1: from.x + G.nodeW, y1: from.y + G.nodeH / 2, x2: to.x, y2: to.y + G.nodeH / 2 });
+    }
+  }
+
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs, ...kids) {
+    const el = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
+    el.append(...kids);
+    return el;
+  }
+
+  function graphEdge(e) {
+    const bend = e.kind === "delegate" ? Math.max(14, (e.y2 - e.y1) / 2) : Math.max(18, (e.x2 - e.x1) / 2);
+    const d = e.kind === "delegate"
+      ? `M${e.x1} ${e.y1} C${e.x1} ${e.y1 + bend} ${e.x2} ${e.y2 - bend} ${e.x2} ${e.y2}`
+      : `M${e.x1} ${e.y1} C${e.x1 + bend} ${e.y1} ${e.x2 - bend} ${e.y2} ${e.x2} ${e.y2}`;
+    return svgEl("path", { d, class: "gedge " + e.kind, "marker-end": "url(#garrow)", ...(e.kind === "both" ? { "marker-start": "url(#garrow)" } : {}) });
+  }
+
+  function graphCluster(b) {
+    const m = b.m;
+    const label = m.attempt ? `${m.label} · attempt ${m.attempt}` : m.label;
+    const head = h("div", { class: "gcluster-head", text: label, title: label,
+      onclick: () => { if (m.collapsed) { S.graphOpen.add(m.id); invalidate(); } else select(m.id); } });
+    return h("div", { class: `gcluster ${m.status}${S.selectedTeam === m.id ? " sel" : ""}${m.collapsed ? " collapsed" : ""}`, "data-team": m.id,
+      style: `left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px`, title: m.collapsed ? "Done. Click to open this team" : null },
+      head,
+      m.collapsed && h("div", { class: "gcluster-note", text: `${graphAgents(m)} agents` }),
+      !m.collapsed && m.ranks.length === 0 && h("div", { class: "gcluster-note", text: "Planning…" }));
+  }
+
+  function graphNode(b) {
+    const c = b.cell, m = b.team;
+    const label = c.manager ? "Manager" : c.name;
+    const clickable = !c.manager && m.started;
+    return h("div", { class: `gnode ${c.manager ? "manager" : c.state}${clickable ? " clickable" : ""}`, style: `left:${b.x}px;top:${b.y}px;--c:${agentColor(c.name)}`,
+      title: clickable ? `${label}, click to see the output` : label,
+      onclick: clickable ? () => openPanel(m.id, m.attemptN, c.name) : null },
+      h("span", { class: "gnode-name", text: label }),
+      !c.manager && h("span", { class: "gnode-state" }, h("span", { class: "dot " + c.state }), c.state === "idle" ? "pending" : c.state));
+  }
+
+  let graphScrolledTo = null;
+  function renderGraph() {
+    const root = buildGraph(S.rootTeamId);
+    if (!root) return h("div", { class: "muted", text: "No team yet." });
+    const out = { boxes: [], nodes: [], edges: [], w: 0, h: 0 };
+    const dim = new Map();
+    measureTeam(root, dim);
+    placeTeam(root, 0, 0, dim, out);
+    const arrow = svgEl("marker", { id: "garrow", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" },
+      svgEl("path", { d: "M0 1 L10 5 L0 9 z", class: "garrowhead" }));
+    const svg = svgEl("svg", { class: "gedges", width: out.w, height: out.h, viewBox: `0 0 ${out.w} ${out.h}`, "aria-hidden": "true" },
+      svgEl("defs", null, arrow), ...out.edges.map(graphEdge));
+    const graph = h("div", { class: "graph", style: `width:${out.w}px;height:${out.h}px` }, out.boxes.map(graphCluster), svg, out.nodes.map(graphNode));
+    return h("div", { class: "graph-scroll" }, graph);
+  }
+
+  // The graph is rebuilt on every structural render, which resets its scroll: keep it, and bring the followed team
+  // into view only when it changed.
+  function showGraph(pane, content) {
+    const was = pane.querySelector(".graph-scroll");
+    const left = was?.scrollLeft || 0, top = was?.scrollTop || 0;
+    pane.replaceChildren(content);
+    const scroller = pane.querySelector(".graph-scroll");
+    if (!scroller) return;
+    scroller.scrollLeft = left; scroller.scrollTop = top;
+    if (S.follow && S.selectedTeam && graphScrolledTo !== S.selectedTeam) {
+      const sel = scroller.querySelector(".gcluster.sel");
+      if (sel) { graphScrolledTo = S.selectedTeam; sel.scrollIntoView({ block: "nearest", inline: "nearest" }); }
+    }
+  }
+
+  function setDetailView(view) {
+    S.detailView = view;
+    try { localStorage.setItem("agent42.fleet.detailView", view); } catch { /* a per-viewer convenience only */ }
+    invalidate();
+  }
+
+  const viewSwitch = () => h("div", { class: "view-switch", role: "group", "aria-label": "View" },
+    [["details", "Details"], ["graph", "Graph"]].map(([view, label]) =>
+      h("button", { class: "btn" + (S.detailView === view ? " sel" : ""), type: "button", "aria-pressed": String(S.detailView === view), text: label, onclick: () => setDetailView(view) })));
 
   // ---------- agent panel ----------
   function openPanel(teamId, attempt, agent, focus) {
