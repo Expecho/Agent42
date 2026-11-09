@@ -19,7 +19,7 @@ amends: []
 > The gate compares `CurrentUser.GetUserId()`, which is where the identity alias is applied, so the
 > rule below now admits one **person** rather than one **principal**: an account aliased onto the
 > configured owner reaches the dashboard too. Everything else stands — it is still not a cross-user
-> surface, and `Dashboard:OwnerOid` still fails closed and still ships blank.
+> surface, and `Dashboard:OwnerOid` has since been retired for `Access:Owners` (ADR 0121), which fails closed the same way.
 
 ## Context
 The app runs an Orleans silo and has no way to see it. Grain activation counts, silo health,
