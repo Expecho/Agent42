@@ -6,7 +6,7 @@ namespace Agent42.Backend;
 /// <c>POST /api/fleet/tasks/{id}/answer</c>. Agents of teams running at once take turns. A stopped task cancels its
 /// open question.
 /// </summary>
-public sealed class FleetQuestions(IFleetEventSink events) : IFleetInteraction
+public sealed class FleetQuestions(IFleetEventSink events, Action? onQuestionOpened = null) : IFleetInteraction
 {
     private readonly SemaphoreSlim _turn = new(1, 1);
     private readonly Lock _gate = new();
@@ -49,6 +49,7 @@ public sealed class FleetQuestions(IFleetEventSink events) : IFleetInteraction
             });
 
             events.Publish("prompt", new { id, question = question.Trim(), choices = choices.Select(c => new { answer = c.Answer, label = c.Label }), freeTextHint });
+            onQuestionOpened?.Invoke();
             try
             {
                 var answer = await answered.Task;

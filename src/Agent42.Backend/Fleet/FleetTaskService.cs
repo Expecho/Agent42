@@ -35,7 +35,8 @@ public sealed partial class FleetTaskService(
     TimeProvider? time = null,
     IDocumentIndex? documents = null,
     DocumentIngestionService? ingestion = null,
-    IFleetCompletionNotifier? notifier = null) : IHostedService
+    IFleetCompletionNotifier? notifier = null,
+    IPushNotificationSender? push = null) : IHostedService
 {
     /// <summary>The usage dashboard's application dimension for fleet tokens (ADR 0031).</summary>
     public const string ApplicationName = "Agent42 fleet";
@@ -161,9 +162,19 @@ public sealed partial class FleetTaskService(
             var budget = new FleetBudget(record.MaxTokens, options.MaxAgentsPerTask, options.BudgetSoftLimit, options.MaxConcurrentSubTeamsPerLevel, options.MaxTeamDepth);
             var log = new FleetEventLog(store, record.UserId, record.Id, options.MaxEventLogBytes, _time);
             // A task started from a chat has nobody on the page to answer it (ADR 0115): it never opens a question.
-            IFleetInteraction interaction = record.OriginConversationId is null ? new FleetQuestions(log) : new DecliningFleetInteraction(log);
+            IFleetInteraction interaction = record.OriginConversationId is null ? new FleetQuestions(log, () => NotifyNeedsInput(record)) : new DecliningFleetInteraction(log);
             _running[record.Id] = new RunningFleetTask(record, budget, log, interaction);
             return null;
+        }
+    }
+
+    // Tells the user's devices a task is waiting for an answer. Fire and forget: the sender never throws and bounds itself.
+    // The text is generic on purpose, so no task content goes to the push service (ADR 0013).
+    private void NotifyNeedsInput(FleetTaskRecord record)
+    {
+        if (push is not null)
+        {
+            _ = push.SendAsync(record.UserId, new PushMessage("Agent 42 fleet", "A fleet task is waiting for your answer.", ""));
         }
     }
 
