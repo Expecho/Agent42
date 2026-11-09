@@ -84,6 +84,24 @@ public sealed class FleetReviewFixTests
     }
 
     [Fact]
+    public async Task OpenQuestion_NotifiesOncePerQuestion()
+    {
+        var opened = 0;
+        var sink = new RecordingFleetSink();
+        var questions = new FleetQuestions(sink, () => opened++);
+
+        var first = questions.AskAsync("One?", [new("y", "Yes")], "", default);
+        Assert.Equal(1, opened);
+        Assert.True(questions.Answer("y"));
+        await first;
+
+        var second = questions.AskAsync("Two?", [new("y", "Yes")], "", default);
+        Assert.Equal(2, opened);
+        Assert.True(questions.Answer("y"));
+        await second;
+    }
+
+    [Fact]
     public async Task Approval_Yes_Runs()
     {
         using var h = new FleetRunHarness(new FleetOptions { ApprovalDepth = 0, JudgeDepth = -1 }, answers: ["y"]);
