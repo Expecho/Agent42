@@ -4968,3 +4968,23 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `DeleteTask_RevokesLink`), `.agentic/decisions/0120-fleet-share-links.md`
 - **Verified:** 2026-11-08
 
+
+### The fleet analyzer sees only the caller's own spans, and a re-run it starts is NOT an origin task
+
+- **Claim:** `LiveTelemetryBuffer` is process-global and holds every user's chat text, and log lines carry no user tag, so
+  the analyzer (ADR 0122) returns spans only, and only those with a `user.id` tag equal to the caller's (an untagged span
+  is left out, fail closed). Don't "add logs" without a per-user stamp on log records first: it would send other users'
+  content to the conversation's model. Spans carry no fleet task id, so there is no per-task telemetry. Second: a
+  `rerun_fleet_task` has no `OriginConversationId`, on purpose. An origin task is auto-approved, Copilot shell and MCP
+  writes included (ADR 0115), and a re-run is composed from event text that is model and tool output. Its `disableTools`
+  can only remove keys from the original selection, never add, and `SubmitAsync` rejects (it does not clamp) an
+  over-limit token cap. Third: all eight tools are kept out of Copilot chats (`IsExcludedFromCopilot`) and `ask_agent`
+  (`ExcludedFromAskAgent`), and each exclusion has its own test.
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetSpans.cs` (`Select`, `IsOwnedBy`),
+  `src/Agent42.Backend/Fleet/FleetLauncher.Analyze.cs` (`RerunAsync`, `NarrowedToolsAsync`),
+  `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`IsExcludedFromCopilot`),
+  `tests/Agent42.Tests/FleetAnalyzerTests.cs` (`Spans_OnlyTheCallers_AnUntaggedSpanIsLeftOut_ValuesAreCut`,
+  `Rerun_StartsANonOriginTask_WithTheNoteTheCapAndANarrowedSelection`, `Rerun_DisableTools_CanOnlyNarrow`),
+  `tests/Agent42.Tests/CopilotAgentTests.cs` (`CopilotFunctions_ExcludeTheFleetAnalyzer`),
+  `.agentic/decisions/0122-fleet-analyzer.md`
+- **Verified:** 2026-11-09

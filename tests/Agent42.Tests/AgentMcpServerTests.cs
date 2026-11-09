@@ -321,6 +321,22 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
             .GetRequiredService<FakeFleetLauncher>().Starts));
     }
 
+    // ADR 0122: an ask_agent binding strips the analyzer too, asserted as an EFFECT: a null selection (== all) and a
+    // re-run never reaches the launcher. The positive control is FleetAnalyzerToolTests.Rerun_StartsANewTask.
+    [Fact]
+    public async Task AskAgent_BindingExcludesFleetAnalyzer()
+    {
+        var (_, key) = await CreateExposedAgentAsync("No-analyzer agent");
+
+        var reply = await AskAgentAsync(
+            key, FakeChatClient.CallToolPrompt(FleetAnalyzerLimits.RerunToolName, new { taskId = "task-1" }));
+
+        Assert.False(reply.IsError, reply.Text);
+        Assert.DoesNotContain("Started fleet task", reply.Text, StringComparison.Ordinal);
+        Assert.Empty(Cluster.Silos.SelectMany(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
+            .GetRequiredService<FakeFleetLauncher>().Reruns));
+    }
+
     // The control for AC9: a normal browser turn on this same cluster DOES recall and retain. Without it,
     // AC9 passes just as well against a cluster whose memory recorder is never wired at all.
     [Fact]

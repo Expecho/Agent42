@@ -7,9 +7,11 @@ namespace Agent42.Backend;
 /// The fleet's side of <see cref="IFleetLauncher"/> (ADR 0115): submits a task tied to the conversation, so it runs
 /// in auto mode and reports back to it. It picks the model itself, with the predicate <see cref="FleetTaskService"/>
 /// checks: the conversation's model when it is in the user's catalog and can run the fleet, otherwise none, so the
-/// catalog default applies. Never by matching the service's error text.
+/// catalog default applies. Never by matching the service's error text. The analyzer's half (ADR 0122) is in
+/// <c>FleetLauncher.Analyze.cs</c>.
 /// </summary>
-public sealed class FleetLauncher(FleetTaskService fleet, IUserModelCatalogProvider catalogs) : IFleetLauncher
+public sealed partial class FleetLauncher(
+    FleetTaskService fleet, IUserModelCatalogProvider catalogs, IGrainFactory grains, IServiceProvider services) : IFleetLauncher
 {
     public async Task<FleetLaunchResult> StartAsync(
         string userId, string conversationId, string task, string? model, string? followUpOf, CancellationToken cancellationToken = default)
