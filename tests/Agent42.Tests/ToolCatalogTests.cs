@@ -201,11 +201,11 @@ public class ToolCatalogTests
     public void BrowserToolsAndSharedState_AreAppendedLast_AndMapTheirTools()
     {
         Assert.Equal(
-            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats, ToolCatalog.Fleet],
-            ToolCatalog.AllSelectableToolKeys.TakeLast(4));
+            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats, ToolCatalog.Fleet, ToolCatalog.FleetAnalyzer],
+            ToolCatalog.AllSelectableToolKeys.TakeLast(5));
         Assert.Equal(
-            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats, ToolCatalog.Fleet],
-            ToolCatalog.Descriptors.TakeLast(4).Select(d => d.Key));
+            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats, ToolCatalog.Fleet, ToolCatalog.FleetAnalyzer],
+            ToolCatalog.Descriptors.TakeLast(5).Select(d => d.Key));
 
         foreach (var tool in BrowserToolNames)
         {
@@ -219,8 +219,9 @@ public class ToolCatalogTests
     [Fact]
     public void ReadDocument_SitsBeforeBrowserTools_AndIsDescribed()
     {
-        Assert.Equal(ToolCatalog.ReadDocument, ToolCatalog.AllSelectableToolKeys[^5]);
-        var descriptor = ToolCatalog.Descriptors[^5];
+        // Counted from the end, so each key appended after it (fleet, the analyzer) moves it one further in.
+        Assert.Equal(ToolCatalog.ReadDocument, ToolCatalog.AllSelectableToolKeys[^6]);
+        var descriptor = ToolCatalog.Descriptors[^6];
         Assert.Equal(ToolCatalog.ReadDocument, descriptor.Key);
         Assert.False(descriptor.RequiresHostedTools);
         Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
@@ -247,8 +248,8 @@ public class ToolCatalogTests
     [Fact]
     public void PastChats_IsSelectable_Described_AndMapsBothTools()
     {
-        Assert.Equal(ToolCatalog.PastChats, ToolCatalog.AllSelectableToolKeys[^2]);
-        var descriptor = ToolCatalog.Descriptors[^2];
+        Assert.Equal(ToolCatalog.PastChats, ToolCatalog.AllSelectableToolKeys[^3]);
+        var descriptor = ToolCatalog.Descriptors[^3];
         Assert.Equal(ToolCatalog.PastChats, descriptor.Key);
         Assert.False(descriptor.RequiresHostedTools);
         Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
@@ -277,8 +278,9 @@ public class ToolCatalogTests
     [Fact]
     public void Fleet_IsAppendedLast_Described_AndMapsBothTools()
     {
-        Assert.Equal(ToolCatalog.Fleet, ToolCatalog.AllSelectableToolKeys[^1]);
-        var descriptor = ToolCatalog.Descriptors[^1];
+        // The analyzer (ADR 0122) came after it, so fleet is now second to last in both lists.
+        Assert.Equal(ToolCatalog.Fleet, ToolCatalog.AllSelectableToolKeys[^2]);
+        var descriptor = ToolCatalog.Descriptors[^2];
         Assert.Equal(ToolCatalog.Fleet, descriptor.Key);
         Assert.False(descriptor.RequiresHostedTools);
         Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
@@ -296,6 +298,28 @@ public class ToolCatalogTests
 
         foreach (var tool in new[] { FleetToolLimits.StartToolName, FleetToolLimits.GetToolName })
         {
+            Assert.True(ToolCatalog.IsToolEnabled(tool, all), tool);
+            Assert.False(ToolCatalog.IsToolEnabled(tool, saved), tool);
+        }
+    }
+
+    // ADR 0122 — the analyzer is appended LAST, described, not hosted, the key for ALL eight tools, ON for null and OFF
+    // for a selection saved before it existed.
+    [Fact]
+    public void FleetAnalyzer_IsAppendedLast_MapsAllTools_AndIsOffForAnOlderSavedSelection()
+    {
+        Assert.Equal(ToolCatalog.FleetAnalyzer, ToolCatalog.AllSelectableToolKeys[^1]);
+        var descriptor = ToolCatalog.Descriptors[^1];
+        Assert.Equal(ToolCatalog.FleetAnalyzer, descriptor.Key);
+        Assert.False(descriptor.RequiresHostedTools);
+        Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
+
+        var all = ToolCatalog.AllSelectableToolKeys.ToHashSet();
+        var saved = new HashSet<string> { ToolCatalog.WebSearch, ToolCatalog.PastChats, ToolCatalog.Fleet };
+        Assert.Equal(8, FleetAnalyzerLimits.ToolNames.Count);
+        foreach (var tool in FleetAnalyzerLimits.ToolNames)
+        {
+            Assert.Equal(ToolCatalog.FleetAnalyzer, ToolCatalog.KeyFor(tool));
             Assert.True(ToolCatalog.IsToolEnabled(tool, all), tool);
             Assert.False(ToolCatalog.IsToolEnabled(tool, saved), tool);
         }

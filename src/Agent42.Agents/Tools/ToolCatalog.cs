@@ -185,6 +185,15 @@ public static class ToolCatalog
     public const string Fleet = "fleet";
 
     /// <summary>
+    /// The fleet analyzer (ADR 0122): tools that diagnose a fleet task (its record, event log, workspace, the fleet config
+    /// and the caller's own trace spans) and two actions on it (stop, re-run). Appended LAST for the order-stability reason
+    /// <see cref="PushNotification"/> gives, so, like every key added after the fact, it <b>lands OFF for anyone who has
+    /// ever pressed Save</b> (ADR 0021). It is stripped from an <c>ask_agent</c> binding (ADR 0070) and is never handed to
+    /// a Copilot chat: what it reads is attacker-influenceable text, and a Copilot chat can run a shell without asking.
+    /// </summary>
+    public const string FleetAnalyzer = "fleet_analyzer";
+
+    /// <summary>
     /// The agent-skills <b>wildcard</b> ("all skills") meta-key (per-skill selectable tools, amends 0021).
     /// Each skill is individually selectable as a per-skill key <c>skill:{name}</c> (see
     /// <see cref="SkillKey"/>) — both the ones shipped in <see cref="SkillCatalog"/> and the ones the user
@@ -236,7 +245,7 @@ public static class ToolCatalog
     public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
         [
             WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification,
-            Artifacts, ReadDocument, BrowserTools, SharedState, PastChats, Fleet,
+            Artifacts, ReadDocument, BrowserTools, SharedState, PastChats, Fleet, FleetAnalyzer,
         ];
 
     // Maps a REGISTERED tool's Name to its logical key. get_date is deliberately absent (always-on).
@@ -265,6 +274,14 @@ public static class ToolCatalog
         [PastChatLimits.ReadToolName] = PastChats,
         [FleetToolLimits.StartToolName] = Fleet,
         [FleetToolLimits.GetToolName] = Fleet,
+        [FleetAnalyzerLimits.ListToolName] = FleetAnalyzer,
+        [FleetAnalyzerLimits.AnalyzeToolName] = FleetAnalyzer,
+        [FleetAnalyzerLimits.EventsToolName] = FleetAnalyzer,
+        [FleetAnalyzerLimits.WorkspaceToolName] = FleetAnalyzer,
+        [FleetAnalyzerLimits.ConfigToolName] = FleetAnalyzer,
+        [FleetAnalyzerLimits.SpansToolName] = FleetAnalyzer,
+        [FleetAnalyzerLimits.StopToolName] = FleetAnalyzer,
+        [FleetAnalyzerLimits.RerunToolName] = FleetAnalyzer,
         [CodeInterpreter] = CodeInterpreter,
         [ClientToolLimits.GetCurrentLocation] = Location,
         ["schedule_prompt"] = Scheduling,
@@ -340,6 +357,11 @@ public static class ToolCatalog
         // own, with its Copilot agents' actions approved automatically.
         new(Fleet, "Agent fleet", RequiresHostedTools: false,
             Description: "Lets the assistant hand long jobs to the agent fleet, which runs them on its own and approves its agents' actions by itself."),
+        // FleetAnalyzer (ADR 0122) is LAST for the same order-stability reason. RequiresHostedTools is false: it reads the
+        // fleet's own store. The description names what is consented to: reading your fleet tasks' logs, files and
+        // traces, and stopping or re-running them.
+        new(FleetAnalyzer, "Fleet analyzer", RequiresHostedTools: false,
+            Description: "Lets the assistant diagnose your agent fleet tasks (their logs, files and traces) and stop or re-run them."),
     ];
 
     /// <summary>The logical key for a registered tool name, or null (e.g. <c>get_date</c>, or an unmapped tool).</summary>

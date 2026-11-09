@@ -1,5 +1,6 @@
 using Agent42.Agents;
 using Agent42.Backend;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent42.Tests;
@@ -31,7 +32,7 @@ public sealed class FleetLauncherTests : IAsyncDisposable
             new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(new FakeChatClient(), FleetRunHarness.ModelA)),
             catalogs,
             NullLogger<FleetTaskService>.Instance);
-        _launcher = new FleetLauncher(_service, catalogs);
+        _launcher = new FleetLauncher(_service, catalogs, null!, new ServiceCollection().BuildServiceProvider());
     }
 
     public async ValueTask DisposeAsync() => await _service.StopAsync(CancellationToken.None);

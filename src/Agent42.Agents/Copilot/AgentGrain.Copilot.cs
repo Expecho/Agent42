@@ -97,7 +97,9 @@ public sealed partial class AgentGrain
     // update_shared_state wait on, or route through, the grain's own run (an async-local broker, the per-run
     // snapshot), which Copilot's RPC thread is not part of, and a 120 s wait under its RPC timeout is unmeasured.
     private static bool IsExcludedFromCopilot(string toolName)
-        => ClientToolLimits.ToolNames.Contains(toolName) || toolName == SharedStateLimits.UpdateToolName;
+        => ClientToolLimits.ToolNames.Contains(toolName) || toolName == SharedStateLimits.UpdateToolName
+            // The fleet analyzer reads attacker-influenceable text and a Copilot chat runs a shell unasked (ADR 0107, 0122).
+            || FleetAnalyzerLimits.ToolNames.Contains(toolName);
 
     // The custom tools handed to Copilot. Only AIFunctions, so no hosted tool can arrive (and SelectableTools is asked
     // for the shims anyway). read_web_document is dropped because it feeds the RAG provider a copilot chat does not
