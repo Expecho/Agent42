@@ -1040,6 +1040,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private async Task<IReadOnlyList<string>?> SuggestFollowUpsAsync(
         string message, StringBuilder reply, bool stopped, bool interactive)
         => !stopped && interactive && _suggestFollowUpsEnabled && reply.Length > 0
+            // The analyzer panel shows no suggestions (ADR 0123), so the call would only resend its reply to the model.
+            && !AgentKinds.IsFleetAnalyzer(_state.State.AgentKind)
             && !GitHubCopilotProvider.IsGitHubModel(_modelId)
             ? await GenerateFollowUpsAsync(message, reply.ToString())
             : null;
@@ -1210,7 +1212,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // Search projection (ADR 0061). No ephemeral guard needed: the early return above already
         // took the incognito path, so reaching here means the turn is persisted. Best-effort inside.
         // When the reconcile above reset the cursor, this is the re-projection from ordinal 0.
-        await _search.IndexNewTurnsAsync();
+        // The fleet analyzer panel's chat is never indexed (ADR 0123): its text quotes fleet output and /api/search
+        // would list it, opening a conversation no sidebar knows.
+        if (!AgentKinds.IsFleetAnalyzer(_state.State.AgentKind))
+        {
+            await _search.IndexNewTurnsAsync();
+        }
 
         _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
             this.GetPrimaryKeyString());

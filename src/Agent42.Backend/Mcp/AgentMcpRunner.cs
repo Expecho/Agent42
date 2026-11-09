@@ -237,7 +237,7 @@ public static class AgentMcpRunner
             .ToList();
 
     private static readonly HashSet<string> ExcludedFromAskAgent =
-        new([ToolCatalog.Memory, ToolCatalog.PushNotification, ToolCatalog.PastChats, ToolCatalog.Fleet, ToolCatalog.FleetAnalyzer], StringComparer.Ordinal);
+        new([ToolCatalog.Memory, ToolCatalog.PushNotification, ToolCatalog.PastChats, ToolCatalog.Fleet], StringComparer.Ordinal);
 }
 
 /// <summary>

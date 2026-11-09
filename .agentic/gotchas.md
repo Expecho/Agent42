@@ -4978,8 +4978,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `rerun_fleet_task` has no `OriginConversationId`, on purpose. An origin task is auto-approved, Copilot shell and MCP
   writes included (ADR 0115), and a re-run is composed from event text that is model and tool output. Its `disableTools`
   can only remove keys from the original selection, never add, and `SubmitAsync` rejects (it does not clamp) an
-  over-limit token cap. Third: all eight tools are kept out of Copilot chats (`IsExcludedFromCopilot`) and `ask_agent`
-  (`ExcludedFromAskAgent`), and each exclusion has its own test.
+  over-limit token cap. Third: since ADR 0123 the eight tools exist only on the panel's `fleet-analyzer` kind (no catalog
+  key, so an unmapped tool name reads as always-on to the selection); they are still kept out of Copilot chats
+  (`IsExcludedFromCopilot`), which run a shell unasked, and that exclusion has its own test.
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetSpans.cs` (`Select`, `IsOwnedBy`),
   `src/Agent42.Backend/Fleet/FleetLauncher.Analyze.cs` (`RerunAsync`, `NarrowedToolsAsync`),
   `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`IsExcludedFromCopilot`),
@@ -4987,4 +4988,18 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Rerun_StartsANonOriginTask_WithTheNoteTheCapAndANarrowedSelection`, `Rerun_DisableTools_CanOnlyNarrow`),
   `tests/Agent42.Tests/CopilotAgentTests.cs` (`CopilotFunctions_ExcludeTheFleetAnalyzer`),
   `.agentic/decisions/0122-fleet-analyzer.md`
+- **Verified:** 2026-11-09
+
+
+### An internal conversation id must be kept out of chat search by the grain, not by the index filter
+
+- **Claim:** `GET /api/search` returns hits straight from `IChatSearchIndex` and does not filter by the conversation
+  index, so a conversation that is deliberately never listed (the fleet analyzer panel's `fleet-analyzer-{taskId}`, ADR
+  0123) still shows up in the sidebar search, and a click opens it in the chat app, unless the grain skips the projection.
+  `AgentGrain` skips `IndexNewTurnsAsync` for `AgentKinds.FleetAnalyzer`. `search_past_chats` is safe either way, because
+  it filters by the index. The same id is reused after Clear, so the DELETE stops a running turn first, and deleting a
+  task purges its analyzer conversation (nothing could reach it afterwards).
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`PersistTurnUnlessEphemeralAsync`),
+  `src/Agent42.Backend/Fleet/AgentApi.FleetAnalyzer.cs`, `tests/Agent42.Tests/FleetAnalyzerPanelApiTests.cs`
+  (`Panel_NotListed`, `DeletingTheTask_PurgesItsAnalyzerConversation`)
 - **Verified:** 2026-11-09
