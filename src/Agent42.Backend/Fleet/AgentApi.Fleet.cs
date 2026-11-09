@@ -197,6 +197,10 @@ public static partial class AgentApi
         {
             // Deleting a task also revokes its share link (ADR 0120), belt and braces: the public routes re-read the task.
             await grains.GetGrain<IUserFleetShareLinksGrain>(userId).RemoveAsync(id);
+            // And its analyzer conversation (ADR 0123): nothing else could purge it once the task is gone.
+            var analyzer = FleetAnalyzerGrain(grains, userId, id);
+            await analyzer.StopAsync();
+            await analyzer.PurgeAsync();
         }
 
         return FleetOutcomeResult(outcome, "The task is running, stop it first.");

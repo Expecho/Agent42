@@ -39,6 +39,7 @@
     <label class="follow" title="Jump to the team that is working right now"><input type="checkbox" id="follow" checked> Follow live</label>
     <button id="stopBtn" class="btn danger" type="button" hidden>Stop task</button>
     <button id="shareBtn" class="btn" type="button" hidden>Share</button>
+    <button id="analyzeBtn" class="btn" type="button" hidden title="Ask an analyzer why this task behaved as it did">Analyze</button>
     <button id="deleteBtn" class="btn danger" type="button" hidden>Delete task</button>
     <button id="promptsBtn" class="btn" type="button">System prompts</button>
   </header>
@@ -80,6 +81,22 @@
       <div class="share-actions"><button class="btn" type="button" id="shareCloseBtn">Close</button></div>
     </form>
   </dialog>
+  <!-- The analyzer (ADR 0123): a chat about the open task with only the fleet tools. Its own element, so a re-render of the
+       task detail never tears down a streaming answer. -->
+  <aside id="analyzer" class="analyzer" hidden aria-label="Fleet analyzer">
+    <div class="analyzer__head">
+      <b>Fleet analyzer</b>
+      <select id="anModel" aria-label="Model"></select>
+      <button id="anClear" class="btn" type="button" title="Delete this conversation">Clear</button>
+      <button id="anClose" class="btn" type="button">Close</button>
+    </div>
+    <div id="anLog" class="analyzer__log" role="log" aria-live="polite"></div>
+    <p id="anError" class="analyzer__error" hidden></p>
+    <form id="anForm" class="analyzer__form">
+      <textarea id="anInput" rows="2" placeholder="Why did this task stop? What went wrong?" aria-label="Message"></textarea>
+      <button id="anSend" class="btn primary" type="submit">Send</button>
+    </form>
+  </aside>
   <footer>
     <span>Agents spawned <b id="mAgents">0</b> <span id="mDepth"></span></span>
     <span>Tokens <b id="mIn">0</b> in (<b id="mCached">0</b> cached) / <b id="mOut">0</b> out</span>

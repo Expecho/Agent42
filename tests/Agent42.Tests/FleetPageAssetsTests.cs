@@ -151,4 +151,30 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.DoesNotContain("innerHTML", body, StringComparison.Ordinal);
         Assert.Contains("h(\"span\", { text: t.title })", body, StringComparison.Ordinal);
     }
+
+    /// <summary>ADR 0123: the analyzer panel is its own element (a re-render of the detail must not tear down a streaming
+    /// answer), sets model text only through <c>setMarkdown</c> (DOMPurify + marked) and never writes <c>innerHTML</c>
+    /// itself, offers no Copilot-only model, and sends the model on every turn.</summary>
+    [Fact]
+    public async Task FleetPage_AnalyzerPanel_RendersModelTextOnlyThroughTheSanitizer()
+    {
+        var page = await _client.GetStringAsync("/fleet/");
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        foreach (var id in new[] { "analyzeBtn", "analyzer", "anLog", "anForm", "anModel", "anClear" })
+        {
+            Assert.Contains($"id=\"{id}\"", page, StringComparison.Ordinal);
+        }
+
+        var start = script.IndexOf("// ---------- analyzer panel (ADR 0123)", StringComparison.Ordinal);
+        var end = script.IndexOf("(async function start()", StringComparison.Ordinal);
+        Assert.True(start > 0 && end > start, "The analyzer panel section was not found");
+        var panel = script[start..end];
+
+        Assert.DoesNotContain("innerHTML", panel, StringComparison.Ordinal);
+        Assert.Contains("setMarkdown(body, answer)", panel, StringComparison.Ordinal);
+        Assert.Contains("setMarkdown(body, turn.text)", panel, StringComparison.Ordinal);
+        Assert.Contains("!m.copilotOnly", panel, StringComparison.Ordinal);
+        Assert.Contains("JSON.stringify({ message, model })", panel, StringComparison.Ordinal);
+    }
 }

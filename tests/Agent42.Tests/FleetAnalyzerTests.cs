@@ -376,7 +376,7 @@ public sealed class FleetAnalyzerTests : IAsyncDisposable
     {
         await SeedAsync(Alice, FleetTaskStatus.Failed, request: OnePlan, enabledTools: ["web_search"]);
 
-        var (newId, _) = await _launcher.RerunAsync(Alice, "t1", null, ["fleet_analyzer", "memory"], null);
+        var (newId, _) = await _launcher.RerunAsync(Alice, "t1", null, ["fleet", "memory"], null);
 
         // Disabling keys that were never on adds nothing: the selection stays what it was.
         Assert.Equal(["web_search"], (await _store.GetTaskAsync(Alice, newId!))!.EnabledTools);

@@ -444,6 +444,8 @@
     $("#deleteBtn").hidden = !(t && t.status !== "running");
     // A link can be made for any task, a running one included: the view is live (ADR 0120).
     $("#shareBtn").hidden = !t;
+    $("#analyzeBtn").hidden = !t;
+    analyzerTaskChanged();
     $("#promptsBtn").classList.toggle("active", S.view === "prompts");
   }
 
@@ -1598,6 +1600,144 @@
   });
   setInterval(() => document.querySelectorAll("[data-since]:not([data-until])").forEach(el => el.textContent = duration(el.dataset.since)), 1000);
 
+  // ---------- analyzer panel (ADR 0123) ----------
+  // A chat about the selected task whose agent has only the fleet tools. Model text goes through setMarkdown (DOMPurify +
+  // marked); tool calls, the user's text and errors are set as text. The history is the server's, per task.
+  const An = { task: null, open: false, busy: false, token: 0 };
+  const anUrl = () => `/api/fleet/tasks/${encodeURIComponent(An.task)}/analyzer`;
+
+  function anModels() { return (S.models?.models || []).filter(m => toolCapable(m) && !m.copilotOnly); }
+
+  function anFillModels() {
+    const models = anModels();
+    $("#anModel").replaceChildren(...models.map(m => h("option", { value: m.id, text: m.displayName ? `${m.displayName} (${m.id})` : m.id })));
+    const preferred = models.find(m => m.id === S.models?.default) || models[0];
+    if (preferred) $("#anModel").value = preferred.id;
+  }
+
+  function anError(text) { $("#anError").hidden = !text; $("#anError").textContent = text || ""; }
+
+  function anToolChip(name, input, result) {
+    return h("details", { class: "an-tool" }, h("summary", { text: name }),
+      input ? h("pre", { text: String(input).slice(0, 2000) }) : null,
+      result ? h("pre", { text: String(result).slice(0, 2000) }) : null);
+  }
+
+  function anScroll() { const log = $("#anLog"); log.scrollTop = log.scrollHeight; }
+
+  async function anLoad() {
+    const token = ++An.token;
+    An.busy = false;
+    $("#anSend").disabled = false;
+    $("#anLog").replaceChildren();
+    anError("");
+    const res = await api("GET", anUrl());
+    if (token !== An.token) return;
+    if (!res.ok) { anError(res.data?.error || "The analyzer history could not be loaded."); return; }
+    for (const turn of res.data || []) {
+      if (turn.role === "user") { $("#anLog").append(h("div", { class: "an-msg an-user", text: turn.text })); continue; }
+      const bubble = h("div", { class: "an-msg an-assistant" });
+      for (const call of turn.toolCalls || []) bubble.append(anToolChip(call.toolName, call.toolInput, call.toolResult));
+      const body = h("div", { class: "an-text" });
+      setMarkdown(body, turn.text);
+      bubble.append(body);
+      $("#anLog").append(bubble);
+    }
+    anScroll();
+  }
+
+  // Called on every header render: a different selected task means a different conversation.
+  function analyzerTaskChanged() {
+    if (An.task === S.selectedTask) return;
+    An.task = S.selectedTask;
+    An.token++;
+    An.busy = false;
+    $("#anSend").disabled = false;
+    $("#anLog").replaceChildren();
+    anError("");
+    if (!An.task) $("#analyzer").hidden = true;
+    else if (An.open) anLoad();
+  }
+
+  function anToggle(open) {
+    An.open = open;
+    $("#analyzer").hidden = !open || !An.task;
+    $("#analyzeBtn").classList.toggle("active", open);
+    if (open && An.task) anLoad();
+  }
+
+  async function anSend(message) {
+    const model = $("#anModel").value;
+    if (!model) { anError("Add a model provider that supports tools, in the chat's Settings."); return; }
+    const token = ++An.token;
+    An.busy = true;
+    $("#anSend").disabled = true;
+    anError("");
+    $("#anLog").append(h("div", { class: "an-msg an-user", text: message }));
+    const bubble = h("div", { class: "an-msg an-assistant" });
+    const body = h("div", { class: "an-text" });
+    bubble.append(body);
+    $("#anLog").append(bubble);
+    anScroll();
+    let answer = "";
+    try {
+      const res = await fetch(anUrl(), {
+        method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin",
+        body: JSON.stringify({ message, model }),
+      });
+      if (!res.ok) {
+        let text = "";
+        try { text = (await res.json()).error; } catch { text = ""; }
+        throw new Error(text || `The analyzer failed (${res.status}).`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const chunk = JSON.parse(line);
+          if (token !== An.token) continue; // another task was opened meanwhile
+          if (chunk.type === "textDelta") { answer += chunk.text; setMarkdown(body, answer); }
+          else if (chunk.type === "toolCallStart") bubble.insertBefore(anToolChip(chunk.toolName, chunk.toolInput, null), body);
+          anScroll();
+        }
+      }
+      if (token === An.token && !answer && !bubble.querySelector(".an-tool")) anError("The analyzer returned no answer. Try again.");
+    } catch (err) {
+      if (token === An.token) anError(err.message || "The analyzer failed.");
+    } finally {
+      if (token === An.token) { An.busy = false; $("#anSend").disabled = false; }
+    }
+  }
+
+  $("#analyzeBtn").addEventListener("click", () => anToggle(!An.open));
+  $("#anClose").addEventListener("click", () => anToggle(false));
+  $("#anClear").addEventListener("click", async () => {
+    if (!An.task) return;
+    An.token++;
+    const res = await api("DELETE", anUrl());
+    An.busy = false;
+    $("#anSend").disabled = false;
+    $("#anLog").replaceChildren();
+    anError(res.ok ? "" : res.data?.error || "The conversation could not be cleared.");
+  });
+  $("#anForm").addEventListener("submit", ev => {
+    ev.preventDefault();
+    const message = $("#anInput").value.trim();
+    if (!message || An.busy) return;
+    $("#anInput").value = "";
+    anSend(message);
+  });
+  $("#anInput").addEventListener("keydown", ev => {
+    if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); $("#anForm").requestSubmit(); }
+  });
+
   (async function start() {
     const [config, models, tools, profile] = await Promise.all([
       api("GET", "/api/fleet/config"), api("GET", "/api/models"), api("GET", "/api/tools"), api("GET", "/api/profile")]);
@@ -1608,6 +1748,7 @@
     S.tools = tools.ok && profile.ok ? (tools.data || []).filter(t => fleetToolKey(t.key)) : null;
     S.defaultTools = profile.ok ? profile.data?.enabledTools ?? null : null;
     fillComposerOptions();
+    anFillModels();
     toolPicker.target = undefined;
     await loadTasks();
     // A deep link from a chat (ADR 0115) opens that task; an id that isn't the user's does nothing. Otherwise open the

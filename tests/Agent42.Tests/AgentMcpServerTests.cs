@@ -321,8 +321,9 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
             .GetRequiredService<FakeFleetLauncher>().Starts));
     }
 
-    // ADR 0122: an ask_agent binding strips the analyzer too, asserted as an EFFECT: a null selection (== all) and a
-    // re-run never reaches the launcher. The positive control is FleetAnalyzerToolTests.Rerun_StartsANewTask.
+    // ADR 0122/0123: an ask_agent binding has no analyzer tools (the chat key is gone), asserted as an EFFECT: a null
+    // selection (== all) and a re-run never reaches the launcher. The positive control is
+    // FleetAnalyzerToolTests.Rerun_StartsANewTask, on the panel's kind.
     [Fact]
     public async Task AskAgent_BindingExcludesFleetAnalyzer()
     {

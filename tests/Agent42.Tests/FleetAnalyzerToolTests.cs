@@ -30,6 +30,68 @@ public sealed class FleetAnalyzerToolTests(SharedClusterFixture fixture) : Share
         Assert.DoesNotContain(calls, c => c.Contains("someone-else", StringComparison.Ordinal));
     }
 
+    // ── The panel's kind (ADR 0123) ───────────────────────────────────────────────────────────────────
+
+    private static readonly string AnalyzerToolsEcho =
+        "[tools:get_date," + string.Join(",", FleetAnalyzerLimits.ToolNames) + "]";
+
+    private async Task<IAgentGrain> AnalyzerKindAsync(string user, IReadOnlyList<string>? enabledTools)
+    {
+        var agent = Agent(user, FleetAnalyzerDefaults.ConversationId("t1"));
+        await agent.BindAgentAsync(new AgentBinding(
+            AgentKinds.FleetAnalyzer, FleetAnalyzerDefaults.Name, FleetAnalyzerDefaults.SystemPrompt,
+            TestSiloConfigurator.DefaultModel, enabledTools, AgentKinds.FleetAnalyzer));
+        return agent;
+    }
+
+    [Fact]
+    public async Task Kind_ComposesOnlyFleetTools()
+    {
+        // Whatever the binding's selection says, the kind decides: no memory, web, push, MCP or chat tools.
+        var agent = await AnalyzerKindAsync("analyzer-kind-user", [ToolCatalog.Memory, ToolCatalog.WebSearch, ToolCatalog.PushNotification]);
+
+        var events = await CollectAsync(agent.ChatAsync("hello", TestSiloConfigurator.DefaultModel));
+
+        Assert.Contains(AnalyzerToolsEcho, Answer(events), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Kind_HasNoProviders()
+    {
+        var agent = await AnalyzerKindAsync("analyzer-noprov-user", null);
+        await agent.RegisterDocumentAsync("guide.pdf");
+
+        var events = await CollectAsync(agent.ChatAsync("hello", TestSiloConfigurator.DefaultModel));
+        var answer = Answer(events);
+
+        // No document search context, no skills tool, no hosted tools.
+        Assert.DoesNotContain("[ctx:", answer, StringComparison.Ordinal);
+        Assert.DoesNotContain("load_skill", answer, StringComparison.Ordinal);
+        Assert.DoesNotContain("code_interpreter", answer, StringComparison.Ordinal);
+        Assert.Contains(AnalyzerToolsEcho, answer, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Kind_OnANoToolsModel_GetsNoTools()
+    {
+        var agent = await AnalyzerKindAsync("analyzer-notools-user", null);
+
+        var events = await CollectAsync(agent.ChatAsync("hello", TestSiloConfigurator.NoToolsNoVisionModel));
+
+        Assert.Contains("[tools:]", Answer(events), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChatDoesNotOfferAnalyzerTools()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("analyzer-chat-user/conv");
+
+        var events = await CollectAsync(agent.ChatAsync("hello", TestSiloConfigurator.DefaultModel));
+
+        Assert.DoesNotContain(FleetAnalyzerLimits.AnalyzeToolName, Answer(events), StringComparison.Ordinal);
+        Assert.DoesNotContain(FleetAnalyzerLimits.RerunToolName, Answer(events), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Config_ReturnsThePortsText()
     {
@@ -224,7 +286,15 @@ public sealed class FleetAnalyzerToolTests(SharedClusterFixture fixture) : Share
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────────
 
-    private IAgentGrain Agent(string user, string conversation) => Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/{conversation}");
+    // The analyzer tools exist only on the panel's kind (ADR 0123), so the grain is bound to it, as the endpoint does.
+    private IAgentGrain Agent(string user, string conversation)
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/{conversation}");
+        agent.BindAgentAsync(new AgentBinding(
+            AgentKinds.FleetAnalyzer, FleetAnalyzerDefaults.Name, FleetAnalyzerDefaults.SystemPrompt,
+            TestSiloConfigurator.DefaultModel, null, AgentKinds.FleetAnalyzer)).GetAwaiter().GetResult();
+        return agent;
+    }
 
     private static Task<List<AgentStreamEvent>> CallAsync(IAgentGrain agent, string tool, object args)
         => CollectAsync(agent.ChatAsync(FakeChatClient.CallToolPrompt(tool, args), TestSiloConfigurator.DefaultModel));

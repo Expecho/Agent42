@@ -10,6 +10,9 @@ amends: []
 
 # A chat can diagnose a fleet task and stop or re-run it, through one more selectable tool key
 
+> **Amended by ADR 0123:** the delivery (decision 5, the `fleet_analyzer` chat key) was replaced by a panel on `/fleet/`
+> with fixed tools. The tool guarantees below still hold.
+
 ## Context
 A fleet task that can't complete (2026-11-09) was diagnosable only by reading `/fleet/` by hand, or the Blob store and
 Application Insights with operator RBAC. The user asked for an analyzer **inside the app**, that they can ask questions,
