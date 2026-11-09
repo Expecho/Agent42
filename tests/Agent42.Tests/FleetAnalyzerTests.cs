@@ -315,6 +315,28 @@ public sealed class FleetAnalyzerTests : IAsyncDisposable
         Assert.StartsWith("0 of 0", FleetSpans.Select(spans, "nobody", null, 3), StringComparison.Ordinal);
     }
 
+    // The whole path through the real buffer: more spans than one poll returns, three users mixed, and a log line that
+    // must never appear. The launcher finds the buffer in the service provider, as the Backend registers it.
+    [Fact]
+    public async Task Spans_ThroughTheRealBuffer_DrainMoreThanOnePoll_AndReturnOnlyTheCallers()
+    {
+        var buffer = new LiveTelemetryBuffer(DiagnosticsConfig.Default);
+        for (var i = 0; i < 450; i++)
+        {
+            buffer.AppendSpan(Span($"call {i}", i % 3 == 0 ? Alice : i % 3 == 1 ? Bob : null, i % 3 == 1 ? "bob-secret" : "v"));
+        }
+
+        buffer.AppendLog(new CapturedLog(1, DateTimeOffset.UtcNow, "cat", "Error", "bob-secret-log-line", null, null, null, [], []));
+        var launcher = new FleetLauncher(
+            _service, new Catalogs(), null!, new ServiceCollection().AddSingleton(buffer).BuildServiceProvider());
+
+        var text = await launcher.ReadSpansAsync(Alice, null, 1_000);
+
+        Assert.Contains($"{FleetAnalyzerLimits.MaxSpanLimit} of 150 matching spans of this user (150 of theirs are buffered)", text, StringComparison.Ordinal);
+        Assert.Contains("call 447", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("bob-secret", text, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Spans_WithoutABuffer_SaysSo()
         => Assert.Contains("isn't running", await _launcher.ReadSpansAsync(Alice, null, 5), StringComparison.Ordinal);
