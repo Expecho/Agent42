@@ -7,6 +7,11 @@ tags: [mcp, tools, per-user, egress, security, agent-framework]
 
 # Title: Config-driven remote MCP servers — per-user, encrypted, gated by one `mcp` tool key
 
+> **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** The "may be `localhost`, no SSRF guard" rationale for user MCP endpoints assumed
+> about two trusted users. With sign-in open, `Header` auth lets a user choose the header name and value against the app's
+> own loopback (for example `X-MS-CLIENT-PRINCIPAL-ID`). That exposure is **accepted, not mitigated** (user decision,
+> 2026-11-09).
+
 > **Amended by [ADR 0076](0076-local-bridge-for-machine-local-mcp-servers.md) (2026-09-17) — a server that
 > dials in.** A new auth mode, `LocalBridge`, reaches an MCP server that listens only on the user's machine:
 > a helper there opens a WebSocket to `/api/local-bridge` and the backend speaks MCP over it. Such a server

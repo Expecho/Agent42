@@ -10,7 +10,11 @@ namespace Agent42.Backend;
 /// It lives here rather than inline in <c>Program.cs</c> because nothing in the suite runs
 /// <c>Program.cs</c>, and the order is the part that has to be tested.
 ///
-/// <para>The processors that read a span's content in <c>OnEnd</c>, <see cref="UsageSpanProcessor"/> and
+/// <para>The non-owner content redactor (<see cref="NonOwnerContentRedactor"/>, ADR 0121) is NOT registered here: it has
+/// to run before every exporter, so it rides ServiceDefaults' before-exporters hook from <c>Program.cs</c>. Everything
+/// below therefore sees an already-redacted span for a non-owner.</para>
+///
+/// /// <para>The processors that read a span's content in <c>OnEnd</c>, <see cref="UsageSpanProcessor"/> and
 /// the live console's <see cref="LiveSpanProcessor"/>, are registered first. The Application Insights
 /// fan-out comes LAST: it strips chat content from the same <c>Activity</c> instances, and a batch worker
 /// can export a span while the ending thread is still running the <c>OnEnd</c> of processors registered

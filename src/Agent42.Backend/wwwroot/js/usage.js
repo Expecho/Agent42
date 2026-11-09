@@ -1,6 +1,6 @@
 /* Agent 42 — token-usage dashboard (ADR 0031). Split out of app.js (ADR 0041). */
 
-import { openUsageBtn, usageApplication, usageCloseBtn, usageModelsBody, usageModelsEmpty, usageRange, usageRefresh, usageTiles, usageToolsBody, usageToolsEmpty, usageUser, usageUsersBody, usageUsersEmpty, usageView } from "./dom.js";
+import { openUsageBtn, usageApplication, usageCloseBtn, usageModelsBody, usageModelsEmpty, usageRange, usageRefresh, usageTiles, usageToolsBody, usageToolsEmpty, usageUsersBody, usageUsersEmpty, usageView } from "./dom.js";
 import { formatCost } from "./format.js";
 
 // Handle for the auto-refresh timer, so a new interval selection (or closeUsage) can cancel the
@@ -169,7 +169,6 @@ async function loadUsageOptions(url, select) {
 async function loadUsage() {
   const query = new URLSearchParams({
     application: usageApplication.value,
-    user: usageUser.value,
     range: usageRange.value,
   });
   try {
@@ -201,11 +200,8 @@ function applyUsageAutoRefresh() {
 async function openUsage() {
   // Reset to just the "all" option before repopulating — reopening must not duplicate entries.
   usageApplication.innerHTML = '<option value="all">All applications</option>';
-  usageUser.innerHTML = '<option value="all">All users</option>';
-  await Promise.all([
-    loadUsageOptions("/api/usage/applications", usageApplication),
-    loadUsageOptions("/api/usage/users", usageUser),
-  ]);
+  // Only the signed-in user's own usage is ever returned (ADR 0121), so there is no user picker.
+  await loadUsageOptions("/api/usage/applications", usageApplication);
   await loadUsage();
   usageView.hidden = false;
   applyUsageAutoRefresh();
@@ -220,7 +216,6 @@ export function wireUsage() {
   openUsageBtn.addEventListener("click", () => openUsage());
   usageCloseBtn.addEventListener("click", () => closeUsage());
   usageApplication.addEventListener("change", () => loadUsage());
-  usageUser.addEventListener("change", () => loadUsage());
   usageRange.addEventListener("change", () => loadUsage());
   usageRefresh.addEventListener("change", applyUsageAutoRefresh);
 

@@ -115,7 +115,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No App Insights export. The app boots and sends telemetry to OTLP only (ADR 0077) |
 | `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` + `ANDROID_KEY_ALIAS` + `ANDROID_KEY_PASSWORD` | The Android app's release job fails and no APK is published. PR checks still run. The key must never change, or installed apps can't update |
 | `signalEnabled` (Bicep param, default `false`) | Signal isn't offered and no signal-cli runs. Turn it on only after the plan's Azure Files measurement (Step 24) and confirming the Copilot-shell risk in ADR 0111's phase 3 amendment |
-| `Dashboard:OwnerOid` (committed, currently blank) | `/dashboard` denies everyone. **Never set it to `local-dev`** (ADR 0062) |
+| `Access:Owners` (committed list of Entra object ids) | An empty list makes nobody an owner, so `/dashboard`, `/logs`, `/api/diagnostics` and `/api/config-health` answer 404 to everyone. **Never list `local-dev`** (ADR 0062/0121) |
 | MCP OAuth redirect URI `https://chat.agent42.nl/api/mcp/oauth/callback` | Must be registered in each provider's app registration (ADR 0025) |
 
 ### Cross-cutting rules (each has a gotchas entry)
@@ -158,6 +158,10 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
     child process and its store). `infra/main.bicep` pins min = max = 1. A revision rollover still overlaps two replicas
     briefly; the chat gateway covers that with a Blob lease (ADR 0111), and anything else that holds an outbound
     connection or a single-writer store needs the same (the signal-cli daemon runs only while the lease is held).
+14. **The owner tier is advisory, never isolation (ADR 0121).** `IOwnerPolicy` (committed `Access:Owners`, post-alias id,
+    fails closed) gates `/dashboard`, `/logs`, `/api/diagnostics` and `/api/config-health` through `OwnerGate`, and decides whose
+    span content `NonOwnerContentRedactor` keeps. Any signed-in user can run the Copilot shell, which can forge the principal
+    header, so never write "only owners can" as a security claim. Usage is scoped by the object id, never the email.
 13. **Egress is a design property.** Anything that sends conversation content to a third party is an ADR 0013
     extension and must be recorded as such in its ADR. Don't write "following ADR 0008" for an always-on,
     ungated provider: 0008 rejected that shape. Chat-app replies (ADR 0111) are one: opt-in per connection, and stored
@@ -169,7 +173,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 |------|------|
 | Core: grain per conversation, auth, persona snapshot, blob attachments, profile | 0001, 0002, 0003, 0004, 0005 |
 | Telemetry, `/logs` console, usage dashboard + estimated cost (checked-in price table), Orleans dashboard, App Insights export | 0009, 0010, 0031, 0054, 0062, 0077, 0104, 0110 |
-| Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out | 0074, 0090 |
+| Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out; **open sign-in + the advisory owner tier** (`Access:Owners`, `OwnerGate`, own-data-only usage, non-owner telemetry redaction) | 0074, 0090, 0121 |
 | Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens), GitHub Copilot kind (Sign in with GitHub, copilot-agents-only models) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104, 0108 |
 | Image generation, speech (STT/TTS/voice loop), server-side transcription model (chat voice notes), reasoning output | 0006, 0020, 0037, 0038, 0071, 0113 |
 | Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces), fleet workspace documents | 0007, 0008, 0030, 0066, 0098, 0101 |

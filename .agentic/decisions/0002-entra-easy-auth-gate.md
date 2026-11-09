@@ -7,6 +7,11 @@ tags: [auth, azure, container-apps]
 
 # Gate the Container App behind Entra ID Easy Auth instead of app-level auth
 
+> **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** The premise that every signed-in user is one of two trusted accounts stops being
+> true when sign-in opens to any Microsoft account (the identity flip, Phase B of that plan). Easy Auth still
+> authenticates; who reaches the privileged surfaces is now `Access:Owners`, an **advisory** tier (any signed-in user can
+> forge the principal header through the Copilot shell, so it is not a security boundary).
+
 > **Amended by [ADR 0022](0022-per-agent-api-key-and-async-run-endpoint.md) (2026-07-17),
 > [ADR 0035](0035-read-only-share-links.md) (2026-07-30),
 > [ADR 0042](0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md) (2026-08-20),

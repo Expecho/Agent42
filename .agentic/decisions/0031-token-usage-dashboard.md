@@ -7,6 +7,10 @@ tags: [telemetry, opentelemetry, usage, tokens, dashboard, grains, cosmos, cross
 
 # Token-usage dashboard fed from OpenTelemetry, stored in a global grain
 
+> **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** Usage is no longer global. `/api/usage` and `/api/usage/applications` return only the
+> **signed-in caller's** data (scoped by object id, never by email), a `user` query parameter is ignored, and
+> `/api/usage/users` is removed. The "GLOBAL / cross-user" bullet below is superseded; buckets carry a trailing `UserId`.
+
 > **Amended by [ADR 0110](0110-estimated-cost-from-a-checked-in-price-table.md) (2026-10-21): there IS a cost field
 > now.** An estimated USD cost is derived at query time from a checked-in price table, keyed on a new
 > `agent42.provider.kind` span tag stored on each token bucket. It is never stored; everything else here stands.
@@ -59,7 +63,7 @@ counter in `AgentGrain` — and stored in Cosmos **without a new container**.
   `/usage/users`) returns aggregates across **all** users — including other users' email/name and usage — to
   **any** signed-in caller, matching the reference. It stays behind Easy Auth (never `excludedPaths`) like
   every `/api/*` read; all allowlisted users may view (no role system, the ADR 0029 precedent). This is the
-  one genuinely new exposure and is accepted for the ~2 trusted allowlisted users.
+  one genuinely new exposure and was accepted for the ~2 trusted allowlisted users (superseded by ADR 0121: usage is now own-data-only).
 - **Cached-input and reasoning are wire-contract fields kept for reference parity but always 0** (the OTel
   pipeline emits neither). The UI shows the reference's tile/column layout with an honest note, rather than
   dropping them or tapping the grain's `UsageContent` (which would reverse the OTEL-only decision).

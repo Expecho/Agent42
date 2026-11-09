@@ -136,6 +136,25 @@ public sealed class PwaAssetsTests
     }
 
     /// <summary>
+    /// ADR 0121. The owner-only <c>/logs</c> console is a standalone page outside SHELL: a non-owner gets 404
+    /// from the owner gate, and an owner's page must not enter the shared cache or fall back to the chat app.
+    /// Source-text heuristic like the guards above: proves position, not logic.
+    /// </summary>
+    [Fact]
+    public async Task ServiceWorker_BypassesTheLogsConsoleBeforeCaching()
+    {
+        var response = await _client.GetAsync("/sw.js");
+        response.EnsureSuccessStatusCode();
+        var source = await response.Content.ReadAsStringAsync();
+
+        var logsGuard = source.IndexOf("startsWith(\"/logs\")", StringComparison.Ordinal);
+        Assert.True(logsGuard >= 0, "Service worker is missing the /logs bypass guard");
+
+        var firstRespond = source.IndexOf("event.respondWith(", StringComparison.Ordinal);
+        Assert.True(logsGuard < firstRespond, "The /logs bypass must precede any respondWith");
+    }
+
+    /// <summary>
     /// ADR 0097. The agent fleet page is standalone and outside SHELL: an offline <c>/fleet/</c> navigation must not
     /// fall through to the navigate branch, which would paint <c>/index.html</c> (the chat app) in its place, and
     /// its assets stay out of the shared cache. Source-text heuristic, like the guards above: proves position.
@@ -247,7 +266,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v75", sw);
+        Assert.Contains("agent42-shell-v76", sw);
     }
 
     // Rich rendering (ADR 0083): SHELL holds only the eager renderer + highlight.js. The lazy libs stay out —

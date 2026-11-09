@@ -7,6 +7,10 @@ tags: [diagnostics, configuration, preferences, security, secrets, egress, probe
 
 # Configuration health tab in Preferences
 
+> **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** `/api/config-health` is now **owner-only** (404 for everyone else, including
+> `?probe=true`): its payload is operator information and its probes spend the operator's billable keys. The
+> "all allowlisted users may view it" line below no longer holds.
+
 ## Context
 The app depends on ~10 configuration inputs that flow GitHub secret → Container App secret → env var, and
 several of them **degrade silently** when absent: geocoding falls back to coordinates-only (ADR 0012),
@@ -31,7 +35,7 @@ message — **never a secret value**.
   — no HTTP, no DI graph — so it is unit-testable without a host and cannot drift into a slow call. Live
   probes are a separate `ProbeAsync` path.
 - **The endpoint stays behind Easy Auth (never `excludedPaths`), and all allowlisted users may view it.**
-  There is no role system beyond the Easy-Auth object-id allowlist (2 trusted users, `main.bicep`); presence
+  There is no role system beyond the Easy-Auth object-id allowlist (2 trusted users, `main.bicep`; superseded by ADR 0121: owner-only now); presence
   booleans + curated messages are low-sensitivity, so no admin gate is added (none exists to reuse).
 - **Things the app genuinely cannot see are reported `skipped` WITH a reason, not faked.** `SEARXNG_SECRET`
   is a sidecar secret the backend never reads; `AAD_CLIENT_SECRET` is injected into the Container App's auth

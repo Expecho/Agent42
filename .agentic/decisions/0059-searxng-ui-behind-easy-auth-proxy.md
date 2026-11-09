@@ -10,6 +10,9 @@ amends: [0011]
 
 # The SearXNG web UI, proxied onto the app's own origin behind Easy Auth
 
+> **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** With sign-in open the proxied SearXNG UI is a search surface any signed-in user can drive
+> from the operator's egress IP and bill. It is not gated by the owner tier; the deferred limits plan owns it.
+
 > **Amends [ADR 0011](0011-web-search-self-hosted-searxng-sidecar.md).** ADR 0011 rejected running SearXNG
 > as a separate internal Container App on the grounds that *"a sidecar is one deployment unit,
 > `localhost`-only, and therefore unreachable from outside by construction"*, and repeated the property

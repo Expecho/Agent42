@@ -28,6 +28,9 @@ public enum UsageEventKind
 ///
 /// <para><see cref="ProviderKind"/> (ADR 0110) is the Backend's <c>ProviderKind</c> by name, or <c>""</c> on a span
 /// that carried no <c>agent42.provider.kind</c> tag — which prices as unpriced, never as a guess.</para>
+///
+/// <para><see cref="UserId"/> (ADR 0121) is the post-alias Entra object id (<c>user.id</c>), <c>""</c> on a span with
+/// no user identity. Reports are scoped by it, never by <see cref="UserKey"/> (an email is not unique across tenants).</para>
 /// </summary>
 [GenerateSerializer]
 [Alias("Agent42.Agents.UsageEvent")]
@@ -44,4 +47,5 @@ public sealed record UsageEvent(
     [property: Id(9)] long CachedInputTokens,
     [property: Id(10)] long ReasoningOutputTokens,
     [property: Id(11)] bool IsError,
-    [property: Id(12)] string ProviderKind = "");
+    [property: Id(12)] string ProviderKind = "",
+    [property: Id(13)] string UserId = "");

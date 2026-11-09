@@ -2,7 +2,7 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v75";
+const CACHE = "agent42-shell-v76";
 const SHELL = ["/", "/index.html", "/styles.css", "/js/agents.js", "/js/artifacts.js", "/js/attachments.js",
   "/js/cache.js", "/js/chatgateway.js", "/js/clienttools.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
   "/js/drawer.js", "/js/editfork.js", "/js/elicitation.js", "/js/export.js", "/js/format.js", "/js/groups.js", "/js/location.js", "/js/main.js", "/js/mcp.js",
@@ -94,6 +94,10 @@ self.addEventListener("fetch", (event) => {
   // /index.html would show the chat app instead — a cached shell silently contradicting the gate.
   // Must precede any respondWith, exactly like the /api and /searxng guards.
   if (url.pathname.startsWith("/dashboard")) return;
+  // The owner-only /logs console (ADR 0054, owner-gated by ADR 0121) is a standalone page outside SHELL, like
+  // /dashboard: a non-owner gets 404 from the gate and an owner's page must not enter the shared cache.
+  // Must precede any respondWith, exactly like the guards above.
+  if (url.pathname.startsWith("/logs")) return;
   // Easy Auth's own endpoints (ADR 0090): sign-in and sign-out are platform redirects, never part of the
   // shell. An offline sign-out must fail visibly, not paint /index.html as if the session were still alive.
   // Must precede any respondWith, exactly like the guards above.

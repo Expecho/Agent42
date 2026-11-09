@@ -14,12 +14,15 @@ namespace Agent42.Tests;
 
 /// <summary>
 /// The <c>GET /api/usage</c> contract (ADR 0031), hosted in-memory (TestServer). Asserts the wire
-/// shape, range validation, and — the load-bearing property — that the payload is GLOBAL/cross-user:
-/// data applied under one user is visible to a different signed-in caller.
+/// shape, range validation, and — the load-bearing property since ADR 0121 — that the payload is scoped to
+/// the signed-in caller: another user's data is never visible, however the request is shaped.
 /// </summary>
 public sealed class UsageApiTests : IAsyncLifetime
 {
     private const string IdHeader = "X-MS-CLIENT-PRINCIPAL-ID";
+    private const string BlobHeader = "X-MS-CLIENT-PRINCIPAL";
+    private const string OwnerOid = "oid-owner";
+    private const string OwnerEmail = "owner@example.com";
 
     private TestCluster _cluster = null!;
     private WebApplication _app = null!;
@@ -49,6 +52,7 @@ public sealed class UsageApiTests : IAsyncLifetime
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         appBuilder.Services.AddDocumentRagFakes();
         appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
+        appBuilder.Services.AddSingleton<IOwnerPolicy>(new OwnerPolicy([OwnerOid]));
 
         _app = appBuilder.Build();
         _app.MapAgentApi();
@@ -63,15 +67,31 @@ public sealed class UsageApiTests : IAsyncLifetime
         await _cluster.DisposeAsync();
     }
 
-    private HttpRequestMessage Request(string uri, string caller = "user-a")
+    // `email` becomes the preferred_username claim in the principal blob, which is what an owner's email key is
+    // derived from: it lets a test present a stranger whose email EQUALS an owner's.
+    private HttpRequestMessage Request(string uri, string caller = "user-a", string? email = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Add(IdHeader, caller);
+        if (email is not null)
+        {
+            var blob = JsonSerializer.Serialize(new { claims = new[] { new { typ = "preferred_username", val = email } } });
+            request.Headers.Add(BlobHeader, Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(blob)));
+        }
+
         return request;
     }
 
-    private static UsageEvent Token(string user, long input, long output) =>
-        new(UsageEventKind.Token, DateTimeOffset.UtcNow, "Agent42", "foundry", "gpt-5.4", user, "", input, output, 0, 0, false);
+    private static UsageEvent Token(string user, long input, long output, string userId = "") =>
+        new(UsageEventKind.Token, DateTimeOffset.UtcNow, "Agent42", "foundry", "gpt-5.4", user, "", input, output, 0, 0, false, UserId: userId);
+
+    private async Task<long> InputTokensAsync(HttpRequestMessage request)
+    {
+        var response = await _client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return doc.RootElement.GetProperty("totals").GetProperty("inputTokens").GetInt64();
+    }
 
     // AC12: the endpoint returns the reference contract shape (totals + three tables).
     [Fact]
@@ -110,24 +130,57 @@ public sealed class UsageApiTests : IAsyncLifetime
         }
     }
 
-    // AC14: data applied under user "bob" is visible to a DIFFERENT signed-in caller ("user-a") — the
-    // dashboard is global/cross-user by design.
+    // ADR 0121 AC10: a caller sees only their own rows; another user's data is invisible, and a `user` query
+    // parameter (which used to be the filter) is ignored rather than honoured, so it cannot widen the scope.
     [Fact]
-    public async Task Usage_IsCrossUserVisible()
+    public async Task Usage_IsolatedPerUser()
     {
         await _cluster.GrainFactory.GetGrain<IUsageRollupGrain>(UsageRollupGrain.GlobalKey)
-            .ApplyAsync([Token("ada", 100, 20), Token("bob", 200, 40)]);
+            .ApplyAsync([Token("ada", 100, 20, "oid-ada"), Token("bob", 200, 40, "oid-bob")]);
 
-        var response = await _client.SendAsync(Request("/api/usage?range=30d", caller: "user-a"));
+        Assert.Equal(100, await InputTokensAsync(Request("/api/usage?range=30d", caller: "oid-ada")));
+        Assert.Equal(200, await InputTokensAsync(Request("/api/usage?range=30d", caller: "oid-bob")));
+
+        // Asking for someone else's data by name or id does not get it.
+        Assert.Equal(100, await InputTokensAsync(Request("/api/usage?range=30d&user=oid-bob", caller: "oid-ada")));
+        Assert.Equal(100, await InputTokensAsync(Request("/api/usage?range=30d&user=bob", caller: "oid-ada")));
+
+        // A user with no data of their own sees none of anyone else's.
+        Assert.Equal(0, await InputTokensAsync(Request("/api/usage?range=30d", caller: "oid-nobody")));
+    }
+
+    // ADR 0121 AC11: a stranger whose EMAIL equals an owner's sees neither the owner's new rows nor the legacy
+    // (pre-UserId) rows; the owner sees both. Email is a label; the object id is the key.
+    [Fact]
+    public async Task Usage_SpoofedEmail_SeesNothing()
+    {
+        await _cluster.GrainFactory.GetGrain<IUsageRollupGrain>(UsageRollupGrain.GlobalKey)
+            .ApplyAsync([
+                Token(OwnerEmail, 100, 10, OwnerOid), // new row
+                Token(OwnerEmail, 1000, 10),          // legacy row: recorded before UserId existed
+            ]);
+
+        Assert.Equal(0, await InputTokensAsync(Request("/api/usage?range=30d", caller: "oid-stranger", email: OwnerEmail)));
+        Assert.Equal(1100, await InputTokensAsync(Request("/api/usage?range=30d", caller: OwnerOid, email: OwnerEmail)));
+
+        // An owner id with a DIFFERENT email still sees their own new rows but not someone else's legacy rows.
+        Assert.Equal(100, await InputTokensAsync(Request("/api/usage?range=30d", caller: OwnerOid, email: "other@example.com")));
+    }
+
+    // ADR 0121 AC12: the applications dropdown is scoped to the caller, and the all-users list is gone.
+    [Fact]
+    public async Task Usage_Applications_ScopedToCaller_AndUsersListIsGone()
+    {
+        await _cluster.GrainFactory.GetGrain<IUsageRollupGrain>(UsageRollupGrain.GlobalKey)
+            .ApplyAsync([Token("ada", 1, 1, "oid-ada") with { Application = "AdaApp" }, Token("bob", 1, 1, "oid-bob") with { Application = "BobApp" }]);
+
+        var response = await _client.SendAsync(Request("/api/usage/applications", caller: "oid-ada"));
         response.EnsureSuccessStatusCode();
-
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var root = doc.RootElement;
-        Assert.Equal(300, root.GetProperty("totals").GetProperty("inputTokens").GetInt64());
+        Assert.Equal(["AdaApp"], doc.RootElement.EnumerateArray().Select(e => e.GetString()).ToArray());
 
-        var users = root.GetProperty("users").EnumerateArray().Select(u => u.GetProperty("user").GetString()).ToList();
-        Assert.Contains("ada", users);
-        Assert.Contains("bob", users);
+        var users = await _client.SendAsync(Request("/api/usage/users", caller: "oid-ada"));
+        Assert.Equal(HttpStatusCode.NotFound, users.StatusCode);
     }
 
     // Empty store → zeroed totals and empty tables (no crash on a fresh deployment).

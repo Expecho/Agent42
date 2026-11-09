@@ -26,8 +26,10 @@ builder.Services.AddSingleton(usageChannel.Reader);
 builder.Services.AddHostedService<UsageIngestionService>();
 
 // OTel logging, metrics and tracing via Aspire service defaults: OTLP, plus Application Insights metrics
-// when APPLICATIONINSIGHTS_CONNECTION_STRING is set.
-builder.AddServiceDefaults();
+// when APPLICATIONINSIGHTS_CONNECTION_STRING is set. NonOwnerContentRedactor.Register is passed as the
+// hook that runs BEFORE any trace exporter is added (ADR 0121): it removes non-owners' prompt text from
+// gen_ai spans ahead of the OTLP exporters and the /logs ring. Registering it any later is too late.
+builder.AddServiceDefaults(NonOwnerContentRedactor.Register);
 
 // The Backend's span processors (user.* identity, usage rollups), the live telemetry console at /logs
 // (ADR 0054) and, LAST, the Application Insights trace fan-out that strips chat content. One method,
@@ -45,6 +47,10 @@ builder.AddBackendTelemetry(usageChannel.Writer);
 // path, so an app that boots with the alias inert is recoverable where one that refuses to boot is not.
 var userIdAliases = UserIdAliases.FromConfiguration(builder.Configuration);
 builder.Services.AddSingleton(userIdAliases);
+
+// Who is an owner (ADR 0121): the committed Access:Owners list. Fails closed when empty. Advisory, not a
+// security boundary: see IOwnerPolicy.
+builder.Services.AddSingleton<IOwnerPolicy>(OwnerPolicy.FromConfiguration(builder.Configuration));
 
 // Stamp OTel semantic-convention user.* attributes onto the ASP.NET Core server span of every
 // authenticated request (ADR 0009). The Easy-Auth-specific extraction lives in CurrentUser here in
@@ -555,13 +561,12 @@ app.UseForwardedHeaders(forwardedHeaders);
 // span has already started, which is why that span stays enriched via EnrichWithHttpRequest above.
 app.Use(UserTelemetryMiddleware.InvokeAsync);
 
-// Restrict the Orleans dashboard to its single configured owner (ADR 0062). Easy Auth already gates
-// the path — it is absent from excludedPaths, which is default-deny — so this is the second, narrower
-// rule that keeps a cluster console from becoming a third cross-user read surface beside /logs and
-// /usage. MUST stay ABOVE UseDefaultFiles/UseStaticFiles: below them it still works today only
-// because no wwwroot/dashboard/ exists, and anyone later adding one would have it served ungated
-// while the gate still looked installed. ProjectLayoutTests asserts this ordering.
-app.UseOrleansDashboardOwnerGate();
+// Restrict the Orleans dashboard, /logs, /api/diagnostics and /api/config-health to owners (ADR 0062,
+// generalised by ADR 0121). Easy Auth already gates each path (none is in excludedPaths, which is
+// default-deny), so this is the second, narrower rule. Advisory, not a boundary: see IOwnerPolicy.
+// MUST stay ABOVE UseDefaultFiles/UseStaticFiles: /logs is a static page, and a gated path that is a
+// file would be served ungated while the gate still looked installed. ProjectLayoutTests asserts this.
+app.UseOwnerGate();
 
 // Authenticate the server-side MCP surface (ADR 0070) BEFORE the protocol reaches it. /api/agent-mcp is
 // on excludedPaths, so Easy Auth never sees it and MapMcp serves initialize/tools/list from the same

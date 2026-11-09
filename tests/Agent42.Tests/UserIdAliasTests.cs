@@ -61,7 +61,7 @@ public sealed class UserIdAliasTests
 
     /// <summary>
     /// AC4. An Entra object id is a GUID, and a GUID pasted in different casing is the same principal —
-    /// the reason <see cref="DashboardOwnerGate.IsOwner"/> compares ignore-case too. This also pins that
+    /// the reason <see cref="OwnerPolicy.IsOwner"/> compares ignore-case too. This also pins that
     /// the map is built with an explicit ignore-case comparer: a bare
     /// <c>Get&lt;Dictionary&lt;string,string&gt;&gt;()</c> would return an ordinal one and fail here.
     /// </summary>
@@ -269,6 +269,25 @@ public sealed class UserIdAliasTests
                 $"Alias '{entry.Key}' resolves to '{entry.Value}', which is not in "
                     + "authAllowedUserObjectIds in infra/main.bicep — an alias must never hand a signed-in "
                     + "user the dataset of a principal that is not even allowed to sign in.");
+        }
+    }
+
+    /// <summary>
+    /// ADR 0121 AC16. Once sign-in is open the Easy Auth allowlist stops bounding who an alias can name, so the bound
+    /// becomes <c>Access:Owners</c>: every id on either side of a shipped alias must be an owner. An alias can then only
+    /// ever link owners, never hand a stranger an owner's dataset.
+    /// </summary>
+    [Fact]
+    public void ShippedAliases_AreAllOwners()
+    {
+        var config = ShippedConfiguration();
+        var owners = OwnerPolicy.FromConfiguration(config);
+
+        foreach (var entry in config.GetSection(UserIdAliases.SectionName).GetChildren()
+            .Where(child => !child.Key.StartsWith("//", StringComparison.Ordinal)))
+        {
+            Assert.True(owners.IsOwner(entry.Key), $"Alias key '{entry.Key}' is not in Access:Owners (ADR 0121).");
+            Assert.True(owners.IsOwner(entry.Value), $"Alias '{entry.Key}' resolves to '{entry.Value}', which is not in Access:Owners (ADR 0121).");
         }
     }
 

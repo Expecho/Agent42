@@ -24,10 +24,10 @@ public sealed class UsageSpanProjectorTests
         return map;
     }
 
-    // AC11b (ADR 0074): an identity alias does NOT merge one person's two accounts into one usage row.
-    // The user bucket is resolved user.email -> user.name -> user.id, and in production the email is
-    // always present, so aliasing user.id never reaches this projection. ADR 0074 records that as a
-    // consequence rather than a benefit; this is what keeps the claim falsifiable.
+    // AC11b (ADR 0074, amended by ADR 0121): an identity alias does NOT merge one person's two accounts into one
+    // usage ROW LABEL. The label is resolved user.email -> user.name -> user.id, and in production the email is
+    // always present. The report SCOPE is the object id though, and user.id IS aliased, so both accounts of one
+    // person carry the same UserId and see one report. This is what keeps both halves falsifiable.
     [Fact]
     public void ChatSpan_WithAnAliasedUserId_StillBucketsOnTheRealEmail()
     {
@@ -46,6 +46,34 @@ public sealed class UsageSpanProjectorTests
 
         Assert.NotNull(e);
         Assert.Equal("msn@2000miles.nl", e!.UserKey);
+        Assert.Equal("2da7fa48-e41e-4ebd-b665-96bc4210fefd", e.UserId);
+    }
+
+    // ADR 0121 AC13: the projector and the usage endpoint share ONE key function, so what is written is what is matched.
+    [Fact]
+    public void UsageKey_SharedWithProjector()
+    {
+        var tags = Tags(
+            ("gen_ai.operation.name", "chat"),
+            ("user.email", "ada@example.com"), ("user.name", "Ada"), ("user.id", "oid-1"));
+
+        var e = UsageSpanProjector.Project(tags, When, false, App);
+
+        Assert.Equal(UsageUserKey.From("ada@example.com", "Ada", "oid-1"), e!.UserKey);
+        Assert.Equal("oid-1", e.UserId);
+        Assert.Equal("Ada", UsageUserKey.From(null, "Ada", "oid-1"));
+        Assert.Equal("oid-1", UsageUserKey.From("", "", "oid-1"));
+        Assert.Equal("", UsageUserKey.From(null, null, null));
+    }
+
+    // ADR 0121: a span with no user identity projects an empty UserId, which no caller's scope matches.
+    [Fact]
+    public void SpanWithNoIdentity_ProjectsAnEmptyUserId()
+    {
+        var e = UsageSpanProjector.Project(Tags(("gen_ai.operation.name", "chat")), When, false, App);
+
+        Assert.Equal("", e!.UserId);
+        Assert.Equal("", e.UserKey);
     }
 
     // AC1: a chat span projects to a token event carrying input/output/model/provider/user.

@@ -10,6 +10,9 @@ amends: []
 
 # Easy Auth session lasts 14 days, Entra gets a login hint, and the sidebar has Sign out
 
+> **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** `authLoginHint` is removed in the identity flip (Phase B): it would pre-fill the owner's
+> email for every stranger. The cost is the Entra account picker returning for the owner's two accounts.
+
 ## Context
 Opening the app showed the Entra account picker almost every time. There were two causes:
 

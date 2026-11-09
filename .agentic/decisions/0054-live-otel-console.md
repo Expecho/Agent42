@@ -7,6 +7,12 @@ tags: [observability, opentelemetry, diagnostics, frontend, privacy]
 
 # Title: A live OpenTelemetry console at `/logs`
 
+> **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** `/logs` and `/api/diagnostics/*` are now **owner-only** (404 otherwise), and prompt and
+> completion text from non-owners' spans is redacted before it reaches the OTLP collector or the live buffer. The
+> "any signed-in user can read every user's conversations" exposure below is narrowed to owners, but the tier is
+> **advisory**: any signed-in user can become an owner through the Copilot shell. Log records and URLs can still carry
+> search queries.
+
 > **Amended by [ADR 0077](0077-app-insights-export-content-stripped.md) (2026-09-19).** The Context
 > below says "in production the only sink is an OTLP export". That is no longer true: traces and metrics
 > also go to Application Insights when a connection string is configured. Chat content is stripped from

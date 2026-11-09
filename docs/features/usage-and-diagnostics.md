@@ -8,14 +8,20 @@
 
 | View | Where | Who can see it | What it shows |
 |------|-------|----------------|---------------|
-| Token usage | The usage overlay in the app (`#usageView`) | **Any signed-in user**, across all users | Token and tool-call counts per model, application (agent) and user, over 24 h / 7 d / 30 d / all |
-| Live console | `/logs` (a standalone page) | **Any signed-in user**, across all users | The most recent traces, logs and a metrics snapshot, including full prompts and replies |
-| Orleans dashboard | `/dashboard` | **One configured owner** (`Dashboard:OwnerOid`) | Grain types, activations, reminders, silo health |
+| Token usage | The usage overlay in the app (`#usageView`) | **Each signed-in user, their own data only** (ADR 0121) | Token and tool-call counts per model and application (agent), over 24 h / 7 d / 30 d / all |
+| Live console | `/logs` (a standalone page) | **Owners** (`Access:Owners`), across all users | The most recent traces, logs and a metrics snapshot, including full prompts and replies of owners (non-owners' content is redacted) |
+| Orleans dashboard | `/dashboard` | **Owners** (`Access:Owners`) | Grain types, activations, reminders, silo health |
 | App Insights | Azure portal | Whoever has access to the resource | Traces and metrics with all conversation content removed |
 
-Usage and `/logs` are **deliberately cross-user**: the app is behind an Easy Auth allowlist of
-about two people and has no role system. `/dashboard` is the exception, so that a cluster console
-doesn't become a third view that shows everyone's data.
+Anyone with a Microsoft account can sign in (ADR 0121), so nothing here is cross-user for a plain user: usage
+shows only your own data, and `/logs`, `/dashboard`, `/api/diagnostics/*` and `/api/config-health` are **owner-only**
+(404 for everyone else). **The owner tier is advisory, not a security boundary**: any signed-in user can run commands in
+the service's own environment through the Copilot shell, which can forge the principal header, so an adversarial user can
+become an owner. It stops accidental and casual access.
+
+**Usage is scoped by the Entra object id, never the email** (an email claim is mutable and not unique across tenants). One
+`UsageUserKey` function labels rows and matches legacy buckets, so the projector's write and the endpoint's read cannot
+drift. Buckets from before the id existed match by the old email key for an owner only.
 
 ## How it works
 
@@ -86,8 +92,10 @@ snapshot that is replaced wholesale. `/logs` polls `/api/diagnostics/{traces,log
 a cursor, and renders everything with `textContent` / `createElement`, never `innerHTML`.
 
 - **Sensitive:** `gen_ai` spans carry `gen_ai.input.messages` (the whole conversation sent to the
-  model) and the tool definitions. So the console shows other users' prompts and replies, including
-  what was said in incognito chats.
+  model) and the tool definitions, including what was said in incognito chats. `NonOwnerContentRedactor` removes that
+  from every span whose `user.id` is not an owner (and from a span with no `user.id`) before it reaches the OTLP
+  collector or this ring; it is registered through ServiceDefaults' `beforeTraceExporters` hook so it runs ahead of every
+  exporter. It covers span content only: log records and http-client URLs can still carry model-chosen queries.
 - **Single replica:** the buffer and its cursors live in one process. `infra/main.bicep` pins
   min = max = 1 replica; scaling out would split the buffer.
 - The production log level is `Warning`, so the Logs tab is often empty. The page says so.
@@ -96,27 +104,27 @@ a cursor, and renders everything with `textContent` / `createElement`, never `in
 
 The official `Microsoft.Orleans.Dashboard` package, mounted at `/dashboard` in both silo hosts.
 Never use the community `OrleansDashboard` package: it crashes the silo on Orleans 10.x. Easy Auth
-already covers the path, and `DashboardOwnerGate` adds a single-owner check on top:
+already covers the path, and `OwnerGate` (ADR 0121, generalising ADR 0062's `DashboardOwnerGate`) adds an owner check
+on top, over `/dashboard`, `/logs`, `/api/diagnostics` and `/api/config-health`:
 
 ```csharp
-public static bool IsOwner(string? configuredOwnerOid, string requestUserId)
-    => !string.IsNullOrWhiteSpace(configuredOwnerOid)
-        && string.Equals(configuredOwnerOid, requestUserId, StringComparison.OrdinalIgnoreCase);
+public bool IsOwner(string? userId)
+    => !string.IsNullOrWhiteSpace(userId) && _owners.Contains(userId.Trim()); // OrdinalIgnoreCase set
 ```
 
-- It fails closed: the committed `Dashboard:OwnerOid` is blank, so production denies everyone
-  (with a 404) until an object id is filled in.
+- It fails closed: an empty `Access:Owners` (or no `IOwnerPolicy` registered) denies everyone, with a 404.
+- The check runs on the post-alias `GetUserId()`, so an aliased account is the same person (ADR 0074).
 - There is no environment branch. DevHost and the AppHost set the owner to `local-dev`, the id
   `CurrentUser.GetUserId` falls back to without an Easy Auth header, so offline is open through the
-  same rule. **Never set the committed value to `local-dev`.**
-- The gate is installed with `UseWhen(...StartsWithSegments("/dashboard"))` **before** the
-  static-file middleware, so no dashboard asset is served ungated.
+  same rule. **Never list `local-dev` in the committed `Access:Owners`.**
+- The gate is installed with `UseWhen(...StartsWithSegments(prefix))` **before** the
+  static-file middleware, so no dashboard or `/logs` asset is served ungated.
 
 ### Application Insights export (ADR 0077)
 
 Optional: set the `APPLICATIONINSIGHTS_CONNECTION_STRING` secret and traces and metrics (not logs)
 also go to Azure Monitor. `AddTraceExportFanOut` must be the **last** processor registered. It
-exports to OTLP first, then strips each `gen_ai` span in place down to an exact-key allowlist
+exports to OTLP first (non-owner prompt text is already gone by then, ADR 0121), then strips each `gen_ai` span in place down to an exact-key allowlist
 (model, token counts, tool names, ids, finish reason, `user.*`, `agent42.application`), then
 hands it to Azure Monitor. Message, instruction, tool-definition and tool-I/O content never
 reaches App Insights. Other spans (HTTP, Orleans) are not stripped, so one known residual remains:

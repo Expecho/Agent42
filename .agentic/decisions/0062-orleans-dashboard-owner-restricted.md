@@ -10,6 +10,11 @@ amends: []
 
 # Orleans dashboard at `/dashboard`, restricted to a single owner
 
+> **Generalised by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** `Dashboard:OwnerOid` is retired. Owners are the committed `Access:Owners` list, and
+> the same gate (`OwnerGate`, 404, before static files) now covers `/dashboard`, `/logs`, `/api/diagnostics/*` and
+> `/api/config-health`. Still fails closed; still never names `local-dev` in shipped config. The tier is advisory, not a
+> security boundary.
+
 > **Amended by [ADR 0074](0074-identity-alias-for-a-second-entra-account.md) (2026-09-13).**
 > The gate compares `CurrentUser.GetUserId()`, which is where the identity alias is applied, so the
 > rule below now admits one **person** rather than one **principal**: an account aliased onto the

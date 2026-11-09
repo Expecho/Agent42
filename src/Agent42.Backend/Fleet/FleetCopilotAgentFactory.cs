@@ -14,7 +14,9 @@ namespace Agent42.Backend;
 /// tools. It is deliberately NOT ADR 0085's client: that one has a Blob <c>SessionFs</c> (transcripts that resume
 /// across deploys), auto-approves, and follows its own kill switch (<c>Copilot:BuiltInToolsEnabled</c>, ADR 0107; off
 /// it runs <c>Mode.Empty</c> at a virtual <c>/work</c>). Merging the two would give fleet agents a store-routed
-/// filesystem, or tie one kill switch to the other. Fleet sessions are one-shot and never resumed, so there is no
+/// filesystem, or tie one kill switch to the other. <b>Fleet Copilot agents therefore have NO kill switch</b>:
+/// <c>Copilot:BuiltInToolsEnabled</c> governs chats only, and this client is hard-coded to <c>CopilotCli</c> mode, so with
+/// sign-in open to everyone (ADR 0121) the only way to stop a fleet agent's shell is not to run the task. Fleet sessions are one-shot and never resumed, so there is no
 /// <c>SessionFs</c>; each session works in its task's local workspace directory. Creating this spawns nothing.
 /// </summary>
 public sealed class FleetCopilotHost : IAsyncDisposable

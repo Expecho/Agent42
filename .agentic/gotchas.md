@@ -38,6 +38,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
 | Keyed third-party HTTP client behind an Agents interface | `src/Agent42.Backend/Web/ContextWebPageFetcher.cs`, `src/Agent42.Backend/Location/GoogleGeocoder.cs` | 2026-07-21 |
+| Owner-only surface (one policy, fail-closed, 404 middleware before static files, host-level test) | `src/Agent42.Backend/Access/OwnerPolicy.cs`, `src/Agent42.Backend/Access/OwnerGate.cs`, `tests/Agent42.Tests/DashboardOwnerGateTests.cs` | 2026-11-09 |
 | In-container fetch of a MODEL-chosen URL (connect-time SSRF guard + streamed size cap + own deadline) | `src/Agent42.Backend/Web/GuardedDocumentFetcher.cs`, `src/Agent42.Backend/Web/PrivateAddressGuard.cs` | 2026-09-04 |
 
 ## Constraints
@@ -112,9 +113,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   *principal*). Two things follow that are easy to get wrong. **(1) Only `user.id` is aliased.**
   `user.name` comes from `X-MS-CLIENT-PRINCIPAL-NAME` and `user.email`/`user.full_name`/`user.roles`
   from the claims blob, so a span reads the canonical object id next to the *real* account's email —
-  that is what keeps `/logs` attribution honest, and it is also why **`/usage` still shows one row per
-  account**: `UsageSpanProjector` keys the user bucket `user.email → user.name → user.id`, so the alias
-  never merges those rows and was never going to. **(2) The map is consulted only on the
+  that is what keeps `/logs` attribution honest. Since ADR 0121 `/usage` is scoped by the (aliased) `user.id`,
+  so both accounts of one person share ONE report, while the row LABEL (`UsageUserKey`: `user.email → user.name →
+  user.id`) still names the real account. **(2) The map is consulted only on the
   header-present branch** — the `local-dev` fallback returns before any lookup, and `local-dev` is
   refused on both sides of an entry, so an `excludedPaths` request (which carries no principal header)
   is unaffected. Also: the map is resolved with `GetService`, not `GetRequiredService`, so a **missing
@@ -125,6 +126,36 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   pipeline.
 - **Evidence:** `src/Agent42.Backend/Api/UserIdAliases.cs`, `src/Agent42.Backend/Api/CurrentUser.cs` (`ResolveUserId`), `src/Agent42.Backend/Program.cs`, `src/Agent42.Agents/Telemetry/UsageSpanProjector.cs`, `tests/Agent42.Tests/UserIdAliasTests.cs`, `.agentic/decisions/0074-identity-alias-for-a-second-entra-account.md`
 - **Verified:** 2026-09-13
+
+### Usage is keyed on the object id, never the email — and one function must feed the stamp and the filter
+
+- **Claim:** ADR 0121 made `/api/usage` own-data-only. The scope is `UsageEvent.UserId` (the post-alias `user.id`), stored
+  as a trailing `[Id(n)]` on `TokenBucket`/`ToolBucket`, **never** `UsageUserKey` (email → name → id). An email claim is
+  mutable and not unique across tenants, so under open sign-in a foreign-tenant admin with a spoofed UPN would read an
+  owner's usage. Three traps: **(1)** the id is part of the bucket KEY, or two users sharing an email label merge into one
+  bucket; **(2)** buckets from before the field have `UserId == ""` and match by the old email key **only for an owner** (a
+  non-owner with the owner's email must see nothing, `Usage_SpoofedEmail_SeesNothing`); **(3)** the endpoint derives the
+  caller itself (`http.GetUserId()` is the same function that stamps `user.id`), and ignores a `user` query parameter. A
+  blank caller id returns an empty report, never "all". Spans with no identity land in an unreported bucket nobody sees.
+- **Evidence:** `src/Agent42.Agents/Telemetry/UsageUserKey.cs`, `src/Agent42.Agents/Telemetry/UsageRollupState.cs` (`InScope`),
+  `src/Agent42.Backend/Telemetry/AgentApi.Telemetry.cs` (`UsageCaller`), `tests/Agent42.Tests/UsageApiTests.cs`
+- **Verified:** 2026-11-09
+
+### The owner tier is advisory, and a processor that must redact before export has to be registered BEFORE the exporters
+
+- **Claim:** `IOwnerPolicy` (committed `Access:Owners`, post-alias id, fails closed) is the one owner question (ADR 0121). It is
+  **not a security boundary**: the Copilot shell and user-supplied MCP/provider endpoints can forge
+  `X-MS-CLIENT-PRINCIPAL-ID` against the app's own localhost, so never write "only owners can" as a security claim. For
+  telemetry, `NonOwnerContentRedactor` strips gen_ai span content for non-owners (and for a span with no `user.id`).
+  OpenTelemetry runs processors in **registration order** and a batch exporter can read a span as soon as its `OnEnd` has
+  run, so a redactor added after `AddServiceDefaults()` redacts nothing already exported. It therefore rides
+  `ConfigureOpenTelemetry(beforeTraceExporters)`, which `Program.cs` passes as `NonOwnerContentRedactor.Register`;
+  `TelemetryRedactionTests.RedactorHook_RunsBeforeTheExporters_AndProgramPassesIt` pins both halves. Its allowlist must keep
+  `agent42.provider.kind`, which `UsageSpanProcessor` reads **after** it, or every non-owner call becomes unpriced. Redaction is
+  span content only: logs and http-client URLs can still carry model-chosen queries.
+- **Evidence:** `src/Agent42.Backend/Telemetry/NonOwnerContentRedactor.cs`, `src/Agent42.ServiceDefaults/Extensions.cs`,
+  `tests/Agent42.Tests/TelemetryRedactionTests.cs`, `src/Agent42.Backend/Access/OwnerPolicy.cs`
+- **Verified:** 2026-11-09
 
 ### Easy Auth claim `typ` spellings for `user.*` telemetry are a prod-only fact
 
