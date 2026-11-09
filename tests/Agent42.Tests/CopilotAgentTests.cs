@@ -220,6 +220,18 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
         Assert.Contains(FleetToolLimits.GetToolName, tools);
     }
 
+    // ADR 0122: the analyzer reads attacker-influenceable text (event logs, workspace files), and a Copilot chat runs a
+    // shell unasked (ADR 0107), so none of its tools reaches one, with the fleet tools beside them as the control.
+    [Fact]
+    public async Task CopilotFunctions_ExcludeTheFleetAnalyzer()
+    {
+        await CopilotChatAsync("copilot-fleet-analyzer", tools: ToolCatalog.AllSelectableToolKeys);
+
+        var tools = LastRequest("copilot-fleet-analyzer").Tools.Select(t => t.Name).ToList();
+        Assert.Contains(FleetToolLimits.StartToolName, tools);
+        Assert.All(FleetAnalyzerLimits.ToolNames, name => Assert.DoesNotContain(name, tools));
+    }
+
     // AC10: a copilot agent on a no-tools model is a plain chat: no Copilot agent is built, and the turn still runs.
     [Fact]
     public async Task CopilotKind_NoToolsModel_IsPlainAgent()
