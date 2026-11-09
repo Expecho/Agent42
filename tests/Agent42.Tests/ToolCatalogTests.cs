@@ -201,11 +201,11 @@ public class ToolCatalogTests
     public void BrowserToolsAndSharedState_AreAppendedLast_AndMapTheirTools()
     {
         Assert.Equal(
-            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats, ToolCatalog.Fleet, ToolCatalog.FleetAnalyzer],
-            ToolCatalog.AllSelectableToolKeys.TakeLast(5));
+            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats, ToolCatalog.Fleet],
+            ToolCatalog.AllSelectableToolKeys.TakeLast(4));
         Assert.Equal(
-            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats, ToolCatalog.Fleet, ToolCatalog.FleetAnalyzer],
-            ToolCatalog.Descriptors.TakeLast(5).Select(d => d.Key));
+            [ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.PastChats, ToolCatalog.Fleet],
+            ToolCatalog.Descriptors.TakeLast(4).Select(d => d.Key));
 
         foreach (var tool in BrowserToolNames)
         {
@@ -220,8 +220,8 @@ public class ToolCatalogTests
     public void ReadDocument_SitsBeforeBrowserTools_AndIsDescribed()
     {
         // Counted from the end, so each key appended after it (fleet, the analyzer) moves it one further in.
-        Assert.Equal(ToolCatalog.ReadDocument, ToolCatalog.AllSelectableToolKeys[^6]);
-        var descriptor = ToolCatalog.Descriptors[^6];
+        Assert.Equal(ToolCatalog.ReadDocument, ToolCatalog.AllSelectableToolKeys[^5]);
+        var descriptor = ToolCatalog.Descriptors[^5];
         Assert.Equal(ToolCatalog.ReadDocument, descriptor.Key);
         Assert.False(descriptor.RequiresHostedTools);
         Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
@@ -248,8 +248,8 @@ public class ToolCatalogTests
     [Fact]
     public void PastChats_IsSelectable_Described_AndMapsBothTools()
     {
-        Assert.Equal(ToolCatalog.PastChats, ToolCatalog.AllSelectableToolKeys[^3]);
-        var descriptor = ToolCatalog.Descriptors[^3];
+        Assert.Equal(ToolCatalog.PastChats, ToolCatalog.AllSelectableToolKeys[^2]);
+        var descriptor = ToolCatalog.Descriptors[^2];
         Assert.Equal(ToolCatalog.PastChats, descriptor.Key);
         Assert.False(descriptor.RequiresHostedTools);
         Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
@@ -279,8 +279,8 @@ public class ToolCatalogTests
     public void Fleet_IsAppendedLast_Described_AndMapsBothTools()
     {
         // The analyzer (ADR 0122) came after it, so fleet is now second to last in both lists.
-        Assert.Equal(ToolCatalog.Fleet, ToolCatalog.AllSelectableToolKeys[^2]);
-        var descriptor = ToolCatalog.Descriptors[^2];
+        Assert.Equal(ToolCatalog.Fleet, ToolCatalog.AllSelectableToolKeys[^1]);
+        var descriptor = ToolCatalog.Descriptors[^1];
         Assert.Equal(ToolCatalog.Fleet, descriptor.Key);
         Assert.False(descriptor.RequiresHostedTools);
         Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
@@ -303,26 +303,15 @@ public class ToolCatalogTests
         }
     }
 
-    // ADR 0122 — the analyzer is appended LAST, described, not hosted, the key for ALL eight tools, ON for null and OFF
-    // for a selection saved before it existed.
+    // ADR 0123 — the analyzer is no longer a selectable chat key: the panel's kind fixes its tools, so none of the eight
+    // maps to a key (an unmapped tool is always on) and the key is neither listed nor sanitized into a selection.
     [Fact]
-    public void FleetAnalyzer_IsAppendedLast_MapsAllTools_AndIsOffForAnOlderSavedSelection()
+    public void FleetAnalyzer_IsNotASelectableKey()
     {
-        Assert.Equal(ToolCatalog.FleetAnalyzer, ToolCatalog.AllSelectableToolKeys[^1]);
-        var descriptor = ToolCatalog.Descriptors[^1];
-        Assert.Equal(ToolCatalog.FleetAnalyzer, descriptor.Key);
-        Assert.False(descriptor.RequiresHostedTools);
-        Assert.False(string.IsNullOrWhiteSpace(descriptor.Description));
-
-        var all = ToolCatalog.AllSelectableToolKeys.ToHashSet();
-        var saved = new HashSet<string> { ToolCatalog.WebSearch, ToolCatalog.PastChats, ToolCatalog.Fleet };
-        Assert.Equal(8, FleetAnalyzerLimits.ToolNames.Count);
-        foreach (var tool in FleetAnalyzerLimits.ToolNames)
-        {
-            Assert.Equal(ToolCatalog.FleetAnalyzer, ToolCatalog.KeyFor(tool));
-            Assert.True(ToolCatalog.IsToolEnabled(tool, all), tool);
-            Assert.False(ToolCatalog.IsToolEnabled(tool, saved), tool);
-        }
+        Assert.DoesNotContain("fleet_analyzer", ToolCatalog.AllSelectableToolKeys);
+        Assert.DoesNotContain(ToolCatalog.Descriptors, d => d.Key == "fleet_analyzer");
+        Assert.All(FleetAnalyzerLimits.ToolNames, tool => Assert.Null(ToolCatalog.KeyFor(tool)));
+        Assert.DoesNotContain("fleet_analyzer", ToolCatalog.Sanitize(["web_search", "fleet_analyzer"])!);
     }
 
     // The client tools under browser_tools: every one except get_current_location, which is a client tool (ADR

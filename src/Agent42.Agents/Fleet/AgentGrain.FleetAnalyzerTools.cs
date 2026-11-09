@@ -5,8 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace Agent42.Agents;
 
 /// <summary>
-/// The chat's fleet-analyzer tools (ADR 0122): the agent in this conversation diagnoses a fleet task and can act on it,
-/// without a new team, grain or page. The fleet is reached through the <see cref="IFleetLauncher"/> port, and the user
+/// The fleet-analyzer tools (ADR 0122), composed only for the panel's <see cref="AgentKinds.FleetAnalyzer"/> kind (ADR 0123):
+/// the agent in the conversation diagnoses a fleet task and can act on it, without a new team. The fleet is reached through the <see cref="IFleetLauncher"/> port, and the user
 /// id is always this grain's <c>_userId</c>, never an argument, so another user's task reads as not found.
 ///
 /// <para>Everything the read tools return is fleet or telemetry output, already capped and framed as data by the port.

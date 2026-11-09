@@ -44,6 +44,12 @@ public sealed partial class AgentGrain
         // get NO function schema at all.
         var capabilities = _chatClientFactory.GetCapabilities(modelId);
 
+        // The fleet analyzer panel's chat (ADR 0123): the kind fixes the tools, so nothing below applies to it.
+        if (AgentKinds.IsFleetAnalyzer(_state.State.AgentKind))
+        {
+            return ComposeFleetAnalyzerAgent(modelId, capabilities);
+        }
+
         // The user's selection (ADR 0021), resolved once and shared by both compositions below.
         var enabled = EffectiveEnabledTools().ToHashSet(StringComparer.Ordinal);
 
@@ -324,8 +330,6 @@ public sealed partial class AgentGrain
             .. PastChatTools(),
             // start_fleet_task + get_fleet_task (ADR 0115): the in-process fleet, which no hosted tool provides.
             .. FleetTools(),
-            // The fleet analyzer (ADR 0122): diagnose a task and stop or re-run it. Same port, no hosted tool.
-            .. FleetAnalyzerTools(),
         ];
         if (hostedTools)
         {

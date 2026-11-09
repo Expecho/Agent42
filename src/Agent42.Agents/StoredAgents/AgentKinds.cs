@@ -14,6 +14,15 @@ public static class AgentKinds
     /// </summary>
     public const string Copilot = "copilot";
 
+    /// <summary>
+    /// The fleet analyzer panel's agent (ADR 0123): the kind itself fixes its tools, so there is no selection to widen.
+    /// Never stored in the registry and never user-selectable.
+    /// </summary>
+    public const string FleetAnalyzer = "fleet-analyzer";
+
+    /// <summary>True for the fleet-analyzer kind. A null or unknown kind is an ordinary agent.</summary>
+    public static bool IsFleetAnalyzer(string? kind) => string.Equals(kind, FleetAnalyzer, StringComparison.Ordinal);
+
     /// <summary>True for the research kind. A null or unknown kind is an ordinary agent.</summary>
     public static bool IsResearch(string? kind) => string.Equals(kind, Research, StringComparison.Ordinal);
 

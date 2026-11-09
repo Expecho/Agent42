@@ -220,8 +220,8 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
         Assert.Contains(FleetToolLimits.GetToolName, tools);
     }
 
-    // ADR 0122: the analyzer reads attacker-influenceable text (event logs, workspace files), and a Copilot chat runs a
-    // shell unasked (ADR 0107), so none of its tools reaches one, with the fleet tools beside them as the control.
+    // ADR 0122/0123: the analyzer reads attacker-influenceable text and a Copilot chat runs a shell unasked (ADR 0107).
+    // It is composed only for the panel's kind now, so none of its tools reaches a Copilot chat; the fleet tools are the control.
     [Fact]
     public async Task CopilotFunctions_ExcludeTheFleetAnalyzer()
     {
