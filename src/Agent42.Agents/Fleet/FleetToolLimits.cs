@@ -86,7 +86,15 @@ public static partial class FleetToolLimits
     /// <c>get_fleet_task</c> use, so neither can be broken out of.
     /// </summary>
     public static string WrapAsData(string content, string taskId)
-        => $"{ResultOpenTag}\n{Neutralize(Cut(content, taskId))}\n{ResultCloseTag}";
+        => FrameAsData(Cut(content, taskId));
+
+    /// <summary>
+    /// <paramref name="content"/> wrapped in <see cref="ResultOpenTag"/> and <see cref="ResultCloseTag"/> with every closing
+    /// tag inside it neutralized, and NOT cut: the caller has already bounded it (the lessons digest, ADR 0124, is larger
+    /// than <see cref="MaxResultChars"/> on purpose).
+    /// </summary>
+    public static string FrameAsData(string content)
+        => $"{ResultOpenTag}\n{Neutralize(content)}\n{ResultCloseTag}";
 
     // Breaks every closing tag (any case, any spacing) so it no longer reads as one; the visible text barely changes.
     private static string Neutralize(string content) => CloseTagRegex().Replace(content, "&lt;$1");

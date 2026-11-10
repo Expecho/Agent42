@@ -40,6 +40,10 @@ public sealed partial class FakeChatClient
         /// <summary>The user text of every interviewer call, in order.</summary>
         public ConcurrentQueue<string> ClarifyInputs { get; } = new();
 
+        /// <summary>The user text of every planner call (the first turn of each planning, not the turns after a plan was
+        /// refused), in order. The only way to observe what a planner was told (ADR 0124: the lessons).</summary>
+        public ConcurrentQueue<string> PlannerInputs { get; } = new();
+
         /// <summary>The user text of every judge call, in order.</summary>
         public ConcurrentQueue<string> JudgeInputs { get; } = new();
 
@@ -129,7 +133,7 @@ public sealed partial class FakeChatClient
             script.JudgeInputs.Enqueue(string.Join("\n", list.Where(m => m.Role == ChatRole.User).Select(m => m.Text)));
         }
 
-        return tools.Contains("submit_team_plan") ? PlannerReply(script, lastResult) : JudgeReply(script, lastResult);
+        return tools.Contains("submit_team_plan") ? PlannerReply(list, script, lastResult) : JudgeReply(script, lastResult);
     }
 
     private static ChatResponse ClarifierReply(IReadOnlyList<ChatMessage> list, FleetScript script, string? lastResult)
@@ -155,8 +159,13 @@ public sealed partial class FakeChatClient
         return Fleet(new FunctionCallContent(FleetCallId(), call.Name, arguments), script);
     }
 
-    private static ChatResponse PlannerReply(FleetScript script, string? lastResult)
+    private static ChatResponse PlannerReply(IReadOnlyList<ChatMessage> list, FleetScript script, string? lastResult)
     {
+        if (lastResult is null)
+        {
+            script.PlannerInputs.Enqueue(string.Join("\n", list.Where(m => m.Role == ChatRole.User).Select(m => m.Text)));
+        }
+
         // After an accepted plan, or a refusal with nothing left to try, the planner just confirms in text.
         if (lastResult is not null && !lastResult.Contains("rejected", StringComparison.OrdinalIgnoreCase))
         {

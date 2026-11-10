@@ -11,7 +11,7 @@ namespace Agent42.Backend;
 /// <c>FleetLauncher.Analyze.cs</c>.
 /// </summary>
 public sealed partial class FleetLauncher(
-    FleetTaskService fleet, IUserModelCatalogProvider catalogs, IGrainFactory grains, IServiceProvider services) : IFleetLauncher
+    FleetTaskService fleet, IUserModelCatalogProvider catalogs, IGrainFactory grains, IServiceProvider services, FleetLessonService? lessons = null) : IFleetLauncher
 {
     public async Task<FleetLaunchResult> StartAsync(
         string userId, string conversationId, string task, string? model, string? followUpOf, CancellationToken cancellationToken = default)
@@ -33,4 +33,9 @@ public sealed partial class FleetLauncher(
 
     public Task<FleetTaskRecord?> GetAsync(string userId, string taskId, CancellationToken cancellationToken = default)
         => fleet.GetAsync(userId, taskId, cancellationToken);
+
+    public Task<FleetDreamTick> RunNightlyDreamAsync(string userId, CancellationToken cancellationToken = default)
+        => lessons is null
+            ? Task.FromResult(FleetDreamTick.Unavailable)
+            : lessons.TickAsync(userId, RequestContext.Get(UserTelemetryContext.RequestContextKey) as UserTelemetryContext, cancellationToken);
 }

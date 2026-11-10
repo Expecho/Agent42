@@ -85,6 +85,51 @@ public sealed class FleetOptions
     /// <summary>The user's catalog model id a plain <c>copilot</c> agent runs on. Empty: the task's model.</summary>
     public string DefaultCopilotModel { get; set; } = "";
 
+    /// <summary>The operator kill switch for the nightly dream (ADR 0124). Off: no dream runs, manual ones included, and
+    /// every user's reminder unregisters itself on its next tick. Lessons already learned still apply.</summary>
+    public bool DreamEnabled { get; set; } = true;
+
+    /// <summary>The UTC time of day the nightly dream window opens (<c>HH:mm</c>). 01:00 UTC is 02:00-03:00 in the
+    /// Netherlands; there is no per-user timezone, so DST drift is accepted.</summary>
+    public string DreamAtUtc { get; set; } = "01:00";
+
+    /// <summary>Hours the dream window stays open. The reminder ticks hourly, so a missed tick costs at most an hour.
+    /// Below 1 counts as 1.</summary>
+    public int DreamWindowHours { get; set; } = 4;
+
+    /// <summary>Finished tasks the dream reads, newest first. Below 1 counts as 1.</summary>
+    public int DreamMaxTasks { get; set; } = 20;
+
+    /// <summary>Fewer finished tasks than this and the dream makes no model call.</summary>
+    public int DreamMinTasks { get; set; } = 3;
+
+    /// <summary>Tasks that must have finished since the last run for a NIGHTLY run to start, so an idle night costs nothing.</summary>
+    public int DreamMinNewTasks { get; set; } = 2;
+
+    /// <summary>The digest's size in characters; the oldest tasks are dropped first.</summary>
+    public int DreamMaxDigestChars { get; set; } = 30_000;
+
+    /// <summary>Distinct workspaces whose tasks must support a lesson. Below 1 counts as 1.</summary>
+    public int DreamMinSupport { get; set; } = 2;
+
+    /// <summary>New lessons one run may add. Below 1 counts as 1.</summary>
+    public int DreamMaxNewPerRun { get; set; } = 3;
+
+    /// <summary>Characters of one lesson's text. Below 20 counts as 20.</summary>
+    public int LessonMaxChars { get; set; } = 300;
+
+    /// <summary>Lessons one planner call receives, newest first. Below 1 counts as 1.</summary>
+    public int LessonsInPrompt { get; set; } = 8;
+
+    /// <summary>Days a lesson lives after it was last supported. Below 1 counts as 1.</summary>
+    public int LessonTtlDays { get; set; } = 90;
+
+    /// <summary>Lessons stored per user, disabled tombstones excluded. Below 1 counts as 1.</summary>
+    public int LessonsMaxStored { get; set; } = 200;
+
+    /// <summary>The whole dream run's deadline, the digest reads included.</summary>
+    public TimeSpan DreamTimeout { get; set; } = TimeSpan.FromMinutes(3);
+
     /// <summary>How often an idle event stream gets a comment line, so the ACA ingress does not drop it.</summary>
     public TimeSpan SseKeepAlive { get; set; } = TimeSpan.FromSeconds(15);
 
