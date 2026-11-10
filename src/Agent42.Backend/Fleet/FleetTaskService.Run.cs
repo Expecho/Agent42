@@ -131,6 +131,8 @@ public sealed partial class FleetTaskService
         // GitHub Copilot models (ADR 0108) are offered to Copilot agents only; every chat client below is built from the rest.
         var chatModels = models.Where(m => !m.CopilotOnly).ToList();
         var reachable = FleetCopilotAgentFactory.ReachableModels(factory, models);
+        // The user's lessons (ADR 0124): a failing read is logged and the run goes without them.
+        var activeLessons = lessons is null ? [] : await lessons.ActiveAsync(record.UserId, task.Budget.Token);
         var copilotFactory = copilot is null
             ? null
             : new FleetCopilotAgentFactory(copilot, factory, [.. models.Select(m => m.Id)], record.PlannerModel, workspace, canvas, prompts,
@@ -156,10 +158,43 @@ public sealed partial class FleetTaskService
             Interaction = task.Questions,
             AutoApprove = task.AutoApprove,
             SelfReview = record.SelfReview,
+            Lessons = activeLessons,
+            OnLessonsApplied = applied => ApplyLessonsAsync(task, applied),
             Logger = logger,
             AfterAttempt = ct => SyncWorkspaceAsync(record, workspace, ct),
         };
     }
+
+    // The first time a planner of the run gets lessons (ADR 0124). The in-memory record is assigned FIRST: FinishAsync
+    // rebuilds the final record from task.Record, and RunAsync holds an earlier local copy, so saving only a copy would be
+    // overwritten by the final save and the task view would show nothing applied. The runner calls this once per task, inside
+    // its once-only guard, and catches whatever it throws. The lessons' own counters are recorded in the background: a slow
+    // lock or blob never delays planning, and FinishAsync waits for it briefly.
+    private async Task ApplyLessonsAsync(RunningFleetTask task, IReadOnlyList<FleetLesson> applied)
+    {
+        task.Record = task.Record with { AppliedLessons = [.. applied.Select(l => new FleetAppliedLesson(l.Id, l.Text))] };
+        var (userId, taskId) = (task.Record.UserId, task.Record.Id);
+        task.Applications = RecordApplicationQuietlyAsync(userId, taskId, [.. applied.Select(l => l.Id)]);
+        await store.SaveTaskAsync(task.Record, task.Budget.Token);
+    }
+
+    private async Task RecordApplicationQuietlyAsync(string userId, string taskId, IReadOnlyList<string> ids)
+    {
+        try
+        {
+            if (lessons is not null)
+            {
+                await lessons.RecordApplicationAsync(userId, taskId, ids);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Fleet task {TaskId}: the applied lessons' counters could not be saved", taskId);
+        }
+    }
+
+    // How long a finishing task waits for the lessons' counters before it moves on without them.
+    private static readonly TimeSpan ApplicationsWait = TimeSpan.FromSeconds(5);
 
     // The input of the run: the request (or, when the user asked to be questioned first, the brief the clarify phase
     // wrote from it, ADR 0118), the follow-up history, and the attached files. The record keeps the user's own words.
@@ -234,6 +269,7 @@ public sealed partial class FleetTaskService
 
     private async Task FinishAsync(RunningFleetTask task, FleetWorkspace? workspace, string? result, string? failure)
     {
+        await Task.WhenAny(task.Applications, Task.Delay(ApplicationsWait));
         var record = task.Record;
         var budget = task.Budget;
         var status = _stopping ? FleetTaskStatus.Interrupted

@@ -37,6 +37,7 @@ public sealed partial class FleetTeamRunner
             : $"Design a team of agents for the following sub-task, which another agent delegated as part of a larger task:\n\n{task}";
         prompt += $"\n\nThe budget of the task allows at most {run.Budget.RemainingAgents} more agent(s), including the agents of any sub-teams.";
         prompt += $"\n\nThe shared workspace of the task is the directory {run.Workspace.Root}.";
+        prompt += await LessonsSectionAsync(context);
         if (previousAttempt is not null)
         {
             prompt += $"\n\n{previousAttempt}";
@@ -55,6 +56,43 @@ public sealed partial class FleetTeamRunner
         }
 
         return submission.Plan is null ? (new FleetTeamPlan(), []) : (submission.Plan, submission.Agents);
+    }
+
+    private int _lessonsApplied;
+
+    // The user's lessons (ADR 0124) for THIS planner call, at any depth and on a re-plan: appended to the USER prompt, never
+    // the system prompt (derived text gets user-role authority, ADR 0104). Every call publishes lessons.applied, a structural
+    // event, with the block's size so the cost of applying at depth can be measured; the run's callback records the
+    // application once, the first time.
+    private async Task<string> LessonsSectionAsync(FleetTeamContext context)
+    {
+        if (run.Lessons.Count == 0)
+        {
+            return "";
+        }
+
+        var block = FleetLessons.PromptBlock(run.Lessons);
+        run.Events.Publish("lessons.applied", new
+        {
+            teamId = context.TeamId,
+            attempt = context.Attempt,
+            depth = context.Depth,
+            ids = run.Lessons.Select(l => l.Id),
+            chars = block.Length,
+        });
+        if (run.OnLessonsApplied is { } applied && Interlocked.CompareExchange(ref _lessonsApplied, 1, 0) == 0)
+        {
+            try
+            {
+                await applied(run.Lessons);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                run.Logger.LogWarning(ex, "Fleet task {TaskId}: recording the applied lessons failed", run.TaskId);
+            }
+        }
+
+        return $"\n\n{block}";
     }
 
     /// <summary>The planner's system prompt for a team at this depth: the tools, the user's models, Copilot and delegation.</summary>
