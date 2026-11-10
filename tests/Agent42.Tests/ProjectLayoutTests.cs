@@ -193,6 +193,7 @@ public sealed class ProjectLayoutTests
         { "Fleet/AgentApi.Fleet.cs", "MapFleetEndpoints" },
         { "Fleet/AgentApi.FleetSharing.cs", "MapFleetSharingEndpoints" },
         { "Fleet/AgentApi.FleetAnalyzer.cs", "MapFleetAnalyzerEndpoints" },
+        { "Fleet/AgentApi.FleetLessons.cs", "MapFleetLessonEndpoints" },
         { "Copilot/AgentApi.GitHubCopilot.cs", "MapGitHubCopilotEndpoints" },
         { "ChatGateway/AgentApi.ChatGateway.cs", "MapChatGatewayEndpoints" },
         { "ChatGateway/AgentApi.ChatGatewaySignal.cs", "MapChatGatewaySignalEndpoints" },

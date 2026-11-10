@@ -514,6 +514,7 @@ public sealed class FleetApiUnavailableTests(SharedApiFixture fixture) : SharedC
     [InlineData("/api/fleet/tasks")]
     [InlineData("/api/fleet/tasks/x/events")]
     [InlineData("/api/fleet/prompts")]
+    [InlineData("/api/fleet/lessons")]
     public async Task MissingService_Is503(string uri)
     {
         var response = await Fixture.Client.GetAsync(uri);

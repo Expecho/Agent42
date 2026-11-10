@@ -61,6 +61,10 @@ public sealed record FleetTaskRecord
     /// <see cref="Documents"/>, so a user file that happens to end in <c>.txt</c> is never taken for one.</summary>
     public IReadOnlyList<string> TextCopies { get; init; } = [];
 
+    /// <summary>The lessons the task's planners received (ADR 0124), recorded the first time one did. A record stored
+    /// without the field reads empty.</summary>
+    public IReadOnlyList<FleetAppliedLesson> AppliedLessons { get; init; } = [];
+
     public bool CanFollowUp => Status == FleetTaskStatus.Done && Result is not null;
 }
 

@@ -109,6 +109,7 @@ public sealed class FleetShareApiTests(FleetApiFixture fixture) : SharedClusterT
             Documents = ["private-doc.pdf"],
             EnabledTools = ["private-tool"],
             OriginConversationId = "private-origin-conversation",
+            AppliedLessons = [new FleetAppliedLesson("private-lesson-id", "private lesson text")],
         });
         var token = await ShareAsync(user, task.Id);
 
@@ -125,7 +126,7 @@ public sealed class FleetShareApiTests(FleetApiFixture fixture) : SharedClusterT
         Assert.Equal(JsonValueKind.Null, json.GetProperty("reason").ValueKind);
 
         // The values behind the fields that must stay off the wire.
-        foreach (var secret in new[] { user, task.WorkspaceId, "private notes text", "private-upload.pdf", "private-doc.pdf", "private-tool", "private-origin-conversation", "fake:model-a" })
+        foreach (var secret in new[] { user, task.WorkspaceId, "private notes text", "private-upload.pdf", "private-doc.pdf", "private-tool", "private-origin-conversation", "private-lesson-id", "private lesson text", "fake:model-a" })
         {
             Assert.DoesNotContain(secret, body);
         }
