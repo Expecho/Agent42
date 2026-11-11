@@ -590,3 +590,13 @@ footer .budget { display: flex; align-items: center; gap: 14px; margin-left: aut
 .analyzer__error { margin: 0; padding: 6px 10px; color: var(--red); font-size: 12px; }
 .analyzer__form { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line-soft); }
 .analyzer__form textarea { flex: 1; resize: none; font: inherit; font-size: 13px; background: var(--bg-inset); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+
+/* Lessons (ADR 0124) */
+#lessonsBtn .badge { margin-left: 4px; }
+.lesson { margin-top: 10px; }
+.lesson.off { opacity: .7; }
+.lesson-text { font-weight: 550; }
+.lesson-meta, .lesson-links { font-size: 12px; margin-top: 4px; }
+.lesson-task { cursor: pointer; text-decoration: underline; }
+.lessons-off { margin-top: 12px; }
+.dream-run { font-size: 12px; padding: 3px 0; }

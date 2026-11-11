@@ -447,6 +447,7 @@
     $("#analyzeBtn").hidden = !t;
     analyzerTaskChanged();
     $("#promptsBtn").classList.toggle("active", S.view === "prompts");
+    $("#lessonsBtn").classList.toggle("active", S.view === "lessons");
   }
 
   let shownPrompt = null;
@@ -782,6 +783,7 @@
         h("div", { class: "sub-head" }, `${task.plannerModel} · `, dur(task.startedAt, task.finishedAt), toolsText(task)),
         clampText("task-" + task.id, "task-text", task.request, 600)),
       attachedCard(task),
+      lessonsAppliedCard(task),
       task.status === "running" && h("div", { class: "card waiting", style: "margin-top:12px" }, h("span", { class: "dot planning" }), "The planner is putting a team together…"),
       taskFooter(task),
     ];
@@ -1497,6 +1499,156 @@
     update();
   }
 
+  // ---------- lessons (ADR 0124) ----------
+  // What the nightly dream learned from the user's finished tasks, where it was applied, and the controls. Every string
+  // below is model-written or derived from model output, so it is written as plain text only, never as markup.
+  const lessonTime = iso => iso ? new Date(iso).toLocaleString() : "never";
+  const lessonExpiry = l => new Date(new Date(l.lastSupportedAt).getTime() + (S.lessons?.ttlDays || 90) * 86400000).toLocaleDateString();
+
+  function updateLessonsBadge() {
+    const n = S.lessons?.newCount || 0;
+    const badge = $("#lessonsBadge");
+    badge.hidden = n === 0;
+    badge.textContent = String(n);
+  }
+
+  async function loadLessons() {
+    const r = await api("GET", "/api/fleet/lessons");
+    if (r.ok) S.lessons = r.data;
+    updateLessonsBadge();
+    return r;
+  }
+
+  async function openLessons() {
+    S.view = "lessons";
+    renderHeader(); renderPanel();
+    const r = await loadLessons();
+    if (!r.ok) {
+      $("#detail").replaceChildren(h("div", { class: "detail-inner" }, h("div", { class: "error-text", text: r.data?.error || "The lessons could not be loaded." })));
+      return;
+    }
+    // Lessons created since the last visit stay marked as new in this view; opening it clears the badge.
+    S.lessonsSeenBefore = r.data.settings?.seenAt || null;
+    renderLessonsView();
+    if ((S.lessons.newCount || 0) > 0) {
+      api("POST", "/api/fleet/lessons/seen").then(() => { if (S.lessons) { S.lessons.newCount = 0; updateLessonsBadge(); } });
+    }
+  }
+
+  function closeLessons() { S.view = "tasks"; invalidate(); }
+
+  // A task id as a link that opens that task, or plain text when the task is gone.
+  function lessonTaskLink(id) {
+    const n = taskNumber(id);
+    return taskById(id) ? h("a", { class: "lesson-task", text: `#${n}`, title: "Open this task", onclick: () => selectTask(id) }) : h("span", { class: "muted", text: "(deleted task)" });
+  }
+
+  function lessonCard(l) {
+    const isNew = l.createdAt && (!S.lessonsSeenBefore || l.createdAt > S.lessonsSeenBefore);
+    const off = l.status === "disabled";
+    const del = h("button", { class: "btn danger", text: "Delete" });
+    del.addEventListener("click", async () => {
+      // A second click confirms: a dialog would block the page.
+      if (!del.dataset.confirm) {
+        del.dataset.confirm = "1"; del.textContent = "Click again to delete";
+        setTimeout(() => { delete del.dataset.confirm; del.textContent = "Delete"; }, 3000);
+        return;
+      }
+      if ((await api("DELETE", "/api/fleet/lessons/" + encodeURIComponent(l.id))).ok) await refreshLessons();
+    });
+    const toggle = h("button", { class: "btn", text: off ? "Enable" : "Disable" });
+    toggle.addEventListener("click", async () => {
+      if ((await api("POST", `/api/fleet/lessons/${encodeURIComponent(l.id)}/${off ? "enable" : "disable"}`)).ok) await refreshLessons();
+    });
+    const applied = l.applications || [];
+    return h("div", { class: "card lesson" + (off ? " off" : "") },
+      h("div", { class: "lesson-text", text: l.text }),
+      h("div", { class: "muted lesson-meta" },
+        `${l.topic} · ${l.confidence} confidence · learned ${lessonTime(l.createdAt)} · last supported ${lessonTime(l.lastSupportedAt)}`,
+        off ? "" : ` · expires ${lessonExpiry(l)}`,
+        isNew && h("span", { class: "badge", text: "new" })),
+      h("div", { class: "lesson-links" }, h("b", { text: "Learned from " }), (l.evidence || []).map((id, i) => [i > 0 && " ", lessonTaskLink(id)])),
+      h("div", { class: "lesson-links" }, h("b", { text: "Applied " }),
+        l.appliedCount > 0
+          ? [`${l.appliedCount}× (last ${lessonTime(applied[applied.length - 1]?.at)}) in `, applied.map((a, i) => [i > 0 && " ", lessonTaskLink(a.taskId)])]
+          : h("span", { class: "muted", text: "not yet" })),
+      h("div", { class: "editor-actions" }, toggle, del));
+  }
+
+  function dreamRunRow(run) {
+    const bits = [run.trigger, run.status];
+    if (run.status === "ran") bits.push(`${run.tasksRead} tasks read`, `${run.learned} learned`, `${run.reinforced} reinforced`, `${run.refused} refused`);
+    if (run.reason) bits.push(run.reason);
+    if (run.model) bits.push(run.model);
+    return h("div", { class: "dream-run" }, h("span", { class: "muted", text: lessonTime(run.startedAt) }), " ", bits.join(" · "));
+  }
+
+  async function refreshLessons() {
+    const r = await loadLessons();
+    if (r.ok && S.view === "lessons") renderLessonsView();
+  }
+
+  function renderLessonsView() {
+    if (S.view !== "lessons" || !S.lessons) return;
+    const d = S.lessons;
+    const active = d.lessons.filter(l => l.status === "active");
+    const disabled = d.lessons.filter(l => l.status === "disabled");
+
+    $("#tree").replaceChildren(h("div", { class: "tree-task" },
+      h("div", { class: "t", text: "Lessons" }),
+      h("div", { text: `${active.length} active, ${disabled.length} turned off. Learned from your finished tasks and given to every planner, sub-teams included.` })));
+
+    const enabled = h("input", { type: "checkbox", id: "lessonsEnabled" });
+    enabled.checked = !!d.settings.enabled;
+    const model = h("select", { id: "lessonsModel", "aria-label": "Dream model" }, h("option", { value: "", text: "Your default model" }),
+      (S.models?.models || []).filter(toolCapable).map(m => h("option", { value: m.id, text: m.displayName ? `${m.displayName} (${m.id})` : m.id })));
+    model.value = d.settings.model || "";
+    const status = h("span", { class: "muted" });
+    const saveSettings = async () => {
+      const r = await api("PUT", "/api/fleet/lessons/settings", { enabled: enabled.checked, model: model.value || null });
+      status.textContent = r.ok ? (enabled.checked ? "Saved. The dream runs tonight." : "Saved. The nightly dream is off.") : (r.data?.error || "Saving failed.");
+      if (r.ok) d.settings = r.data; else enabled.checked = !!d.settings.enabled;
+    };
+    enabled.addEventListener("change", saveSettings);
+    model.addEventListener("change", saveSettings);
+
+    const when = d.schedule.amsterdam ? `about ${d.schedule.amsterdam} Amsterdam time` : `at ${d.schedule.atUtc} UTC`;
+    const dreamNow = h("button", { class: "btn", id: "dreamNowBtn", text: d.running ? "Dreaming…" : "Dream now" });
+    dreamNow.disabled = !!d.running || !d.dreamEnabled;
+    dreamNow.addEventListener("click", async () => {
+      dreamNow.disabled = true; dreamNow.textContent = "Dreaming…"; status.textContent = "";
+      const r = await api("POST", "/api/fleet/lessons/dream", { model: model.value || null });
+      if (!r.ok) status.textContent = r.data?.error || "The dream could not run.";
+      await refreshLessons();
+    });
+
+    $("#detail").replaceChildren(h("div", { class: "detail-inner editor" },
+      h("div", { class: "crumbs" }, h("a", { text: "← Back to tasks", onclick: closeLessons })),
+      h("h1", { text: "Lessons" }),
+      h("div", { class: "sub-head", text: "Once a night a model reads your recent finished tasks and keeps a few lessons about team design that several tasks agree on. They are used automatically from your next task on, and you can turn any of them off." }),
+      h("div", { class: "card" },
+        h("label", { class: "follow" }, enabled, " Learn nightly"),
+        h("div", { class: "muted", text: d.dreamEnabled
+          ? `Runs ${when}, within a ${d.schedule.windowHours} hour window, when at least ${d.minNewTasks} tasks finished since the last run. Off by default: it spends your own tokens.`
+          : "The nightly dream is switched off on this server." }),
+        h("div", { class: "editor-actions" }, h("span", { text: "Model " }), model, h("span", { class: "spacer" }), status, dreamNow),
+        h("div", { class: "muted", text: "Dream now ignores the time window and uses up tonight's run." })),
+      h("h2", { text: "Learned" }),
+      active.length === 0 ? h("div", { class: "muted", text: "Nothing learned yet." }) : active.map(lessonCard),
+      disabled.length > 0 && h("details", { class: "lessons-off" }, h("summary", { text: `Turned off (${disabled.length})` }), disabled.map(lessonCard)),
+      h("h2", { text: "Dream log" }),
+      d.runs.length === 0 ? h("div", { class: "muted", text: "No dream has run yet." }) : d.runs.map(dreamRunRow)));
+  }
+
+  // The lessons the task's planners received, as a snapshot (the lesson may have been deleted since).
+  function lessonsAppliedCard(task) {
+    const applied = task.appliedLessons || [];
+    if (applied.length === 0) return null;
+    return h("div", { class: "card attached", style: "margin-top:12px" },
+      h("b", { text: `Lessons applied (${applied.length})` }),
+      h("ul", { class: "files" }, applied.map(l => h("li", null, h("span", { class: "name", text: l.text })))));
+  }
+
   // ---------- wiring ----------
   function selectTask(taskId) {
     S.view = "tasks"; S.panel = null; S.freshTask = !taskById(taskId)?.canFollowUp;
@@ -1511,6 +1663,7 @@
   }
 
   $("#promptsBtn").addEventListener("click", () => S.view === "prompts" ? closePrompts() : openPrompts());
+  $("#lessonsBtn").addEventListener("click", () => S.view === "lessons" ? closeLessons() : openLessons());
   $("#stopBtn").addEventListener("click", () => S.selectedTask && api("POST", `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/stop`));
   function newTask() { disconnect(); closeCanvasPane(); S.selectedTask = null; S.freshTask = true; resetTaskState(); S.view = "tasks"; invalidate(); composer.ta.focus(); }
   $("#newTaskBtn").addEventListener("click", newTask);
@@ -1751,6 +1904,7 @@
     anFillModels();
     toolPicker.target = undefined;
     await loadTasks();
+    loadLessons();
     // A deep link from a chat (ADR 0115) opens that task; an id that isn't the user's does nothing. Otherwise open the
     // running task, if any: its stream picks up where it is.
     const linked = taskById(new URLSearchParams(location.search).get("task"));

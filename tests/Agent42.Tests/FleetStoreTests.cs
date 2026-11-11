@@ -293,4 +293,43 @@ public class FleetStoreTests
 
         Assert.Equal("custom", (await _store.GetPromptsAsync("alice"))["planner"]);
     }
+
+    [Fact]
+    public async Task Lessons_MissingBlob_ReadsEmptyDocument_WithToggleOff()
+    {
+        var doc = await _store.GetLessonsAsync("alice");
+
+        Assert.Empty(doc.Lessons);
+        Assert.Empty(doc.Runs);
+        Assert.False(doc.Settings.Enabled);
+    }
+
+    [Fact]
+    public async Task Lessons_RoundTrip_PerUser_OutsideWorkspacePrefix()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var lesson = new FleetLesson { Id = "l1", Text = "stage the work", Topic = FleetLessonTopics.Staging, Evidence = ["t1", "t2"], CreatedAt = now, LastSupportedAt = now };
+        await _store.SetLessonsAsync("alice", new FleetLessonsDocument { Lessons = [lesson], Settings = new FleetLessonSettings { Enabled = true } });
+
+        var read = await _store.GetLessonsAsync("alice");
+        Assert.Equal("stage the work", Assert.Single(read.Lessons).Text);
+        Assert.Equal(["t1", "t2"], read.Lessons[0].Evidence);
+        Assert.True(read.Settings.Enabled);
+        Assert.Empty((await _store.GetLessonsAsync("bob")).Lessons);
+        Assert.Contains("alice/lessons.json", (await _blobs.ListAsync("")).Select(b => b.Key));
+    }
+
+    [Fact]
+    public async Task Lessons_DocumentAndRecordMissingTrailingFields_ReadWithDefaults()
+    {
+        await _blobs.PutAsync("alice/lessons.json", Encoding.UTF8.GetBytes("{\"lessons\":[{\"id\":\"l1\",\"text\":\"x\"}]}"));
+        await _blobs.PutAsync("alice/tasks/a1.json", Encoding.UTF8.GetBytes(
+            "{\"id\":\"a1\",\"userId\":\"alice\",\"request\":\"r\",\"workspaceId\":\"w1\",\"plannerModel\":\"foundry:gpt-5\"}"));
+
+        var doc = await _store.GetLessonsAsync("alice");
+        Assert.Equal(FleetLessonStatus.Active, doc.Lessons[0].Status);
+        Assert.Empty(doc.Lessons[0].Applications);
+        Assert.Empty(doc.Runs);
+        Assert.Empty((await _store.GetTaskAsync("alice", "a1"))!.AppliedLessons);
+    }
 }

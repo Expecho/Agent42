@@ -36,7 +36,8 @@ public sealed partial class FleetTaskService(
     IDocumentIndex? documents = null,
     DocumentIngestionService? ingestion = null,
     IFleetCompletionNotifier? notifier = null,
-    IPushNotificationSender? push = null) : IHostedService
+    IPushNotificationSender? push = null,
+    FleetLessonService? lessons = null) : IHostedService
 {
     /// <summary>The usage dashboard's application dimension for fleet tokens (ADR 0031).</summary>
     public const string ApplicationName = "Agent42 fleet";
@@ -353,6 +354,9 @@ public sealed partial class FleetTaskService(
         /// <summary>Started from a chat (ADR 0115): every question is answered automatically.</summary>
         public bool AutoApprove => Record.OriginConversationId is not null;
         public Task Completion { get; set; } = Task.CompletedTask;
+
+        /// <summary>The best-effort recording of the lessons the planners got (ADR 0124), awaited briefly when the task finishes.</summary>
+        public Task Applications { get; set; } = Task.CompletedTask;
 
         public void Dispose() => Budget.Dispose();
     }

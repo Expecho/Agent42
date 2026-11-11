@@ -177,4 +177,49 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("!m.copilotOnly", panel, StringComparison.Ordinal);
         Assert.Contains("JSON.stringify({ message, model })", panel, StringComparison.Ordinal);
     }
+
+    /// <summary>ADR 0124: the Lessons button with its badge, the settings controls, the per-task line, and the wiring in fleet.js. Lesson
+    /// text is model-written, so the view writes it with textContent only (stricter than the page's markdown rule).</summary>
+    [Fact]
+    public async Task FleetPage_HasLessonsButtonBadge_AndTheViewIsWired()
+    {
+        var page = await _client.GetStringAsync("/fleet/");
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("id=\"lessonsBtn\"", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"lessonsBadge\"", page, StringComparison.Ordinal);
+        foreach (var id in new[] { "lessonsEnabled", "lessonsModel", "dreamNowBtn" })
+        {
+            Assert.Contains($"id: \"{id}\"", script, StringComparison.Ordinal);
+        }
+
+        foreach (var wired in new[]
+        {
+            "$(\"#lessonsBtn\").addEventListener(\"click\"",
+            "/api/fleet/lessons\"",
+            "/api/fleet/lessons/settings",
+            "/api/fleet/lessons/dream",
+            "/api/fleet/lessons/seen",
+            "function lessonsAppliedCard(task)",
+            "`Lessons applied (${applied.length})`",
+            "loadLessons();",
+        })
+        {
+            Assert.Contains(wired, script, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task FleetPage_LessonText_IsNeverWrittenAsMarkup()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+        var start = script.IndexOf("// ---------- lessons (ADR 0124)", StringComparison.Ordinal);
+        var end = script.IndexOf("// ---------- wiring ----------", StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start, "the lessons section exists");
+        var section = script[start..end];
+
+        Assert.DoesNotContain("innerHTML", section, StringComparison.Ordinal);
+        Assert.DoesNotContain("setMarkdown", section, StringComparison.Ordinal);
+        Assert.DoesNotContain("mdBlock", section, StringComparison.Ordinal);
+    }
 }

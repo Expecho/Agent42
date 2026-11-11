@@ -41,6 +41,20 @@ public sealed class FakeFleetLauncher : IFleetLauncher
     /// <summary>When set, every analyzer call throws it (a tool must turn that into text).</summary>
     public Exception? AnalyzerThrows { get; set; }
 
+    // The nightly dream tick (ADR 0124): every call is counted, and the answer is whatever the test set.
+    private int _dreamTicks;
+
+    public int DreamTicks => Volatile.Read(ref _dreamTicks);
+
+    /// <summary>What <see cref="RunNightlyDreamAsync"/> answers.</summary>
+    public FleetDreamTick NextTick { get; set; } = FleetDreamTick.NotYet;
+
+    public Task<FleetDreamTick> RunNightlyDreamAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref _dreamTicks);
+        return Task.FromResult(NextTick);
+    }
+
     public void Reset()
     {
         _starts.Clear();
@@ -50,6 +64,8 @@ public sealed class FakeFleetLauncher : IFleetLauncher
         NextError = null;
         AnalyzerError = null;
         AnalyzerThrows = null;
+        NextTick = FleetDreamTick.NotYet;
+        Interlocked.Exchange(ref _dreamTicks, 0);
     }
 
     public Task<FleetLaunchResult> StartAsync(

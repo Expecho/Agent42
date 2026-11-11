@@ -144,5 +144,7 @@ public sealed class FleetReviewFixTests
         public Task DeleteCanvasAsync(string userId, string workspaceId, CancellationToken cancellationToken = default) => inner.DeleteCanvasAsync(userId, workspaceId, cancellationToken);
         public Task<IReadOnlyDictionary<string, string>> GetPromptsAsync(string userId, CancellationToken cancellationToken = default) => inner.GetPromptsAsync(userId, cancellationToken);
         public Task SetPromptsAsync(string userId, IReadOnlyDictionary<string, string> prompts, CancellationToken cancellationToken = default) => inner.SetPromptsAsync(userId, prompts, cancellationToken);
+        public Task<FleetLessonsDocument> GetLessonsAsync(string userId, CancellationToken cancellationToken = default) => inner.GetLessonsAsync(userId, cancellationToken);
+        public Task SetLessonsAsync(string userId, FleetLessonsDocument document, CancellationToken cancellationToken = default) => inner.SetLessonsAsync(userId, document, cancellationToken);
     }
 }

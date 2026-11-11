@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using Agent42.Agents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -62,6 +63,14 @@ public sealed class FleetRun
     /// <summary>The task asked for self-review (ADR 0119): the agents that write a team's result check their own output.</summary>
     public bool SelfReview { get; init; }
     public required ILogger Logger { get; init; }
+
+    /// <summary>The user's active lessons about team design (ADR 0124), given to EVERY planner of the task, sub-teams included.
+    /// Empty when there are none, the read failed, or the host has no lessons.</summary>
+    public IReadOnlyList<FleetLesson> Lessons { get; init; } = [];
+
+    /// <summary>Called the first time a planner of this run receives <see cref="Lessons"/>, to record that they were applied.
+    /// The runner awaits it with every exception caught, so a slow or failing store never fails planning.</summary>
+    public Func<IReadOnlyList<FleetLesson>, Task>? OnLessonsApplied { get; init; }
 
     /// <summary>Called after every attempt (a team's run), to sync the workspace to Blob.</summary>
     public Func<CancellationToken, Task>? AfterAttempt { get; init; }

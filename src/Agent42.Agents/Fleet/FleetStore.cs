@@ -14,6 +14,7 @@ namespace Agent42.Agents;
 /// {userId}/canvas/{workspaceId}/manifest.json
 /// {userId}/canvas/{workspaceId}/{name}/v{version}
 /// {userId}/prompts.json
+/// {userId}/lessons.json                      (ADR 0124; outside every workspace prefix, so the sync never deletes it)
 /// </code>
 /// Every id and path segment is escaped with <see cref="Uri.EscapeDataString(string)"/>, so none can add a level or
 /// step out of its own. A workspace path with <c>..</c>, a rooted path or an empty path is refused, never resolved:
@@ -138,6 +139,17 @@ public sealed class FleetStore(IFleetBlobs blobs) : IFleetStore
     public Task SetPromptsAsync(string userId, IReadOnlyDictionary<string, string> prompts, CancellationToken cancellationToken = default)
         => blobs.PutAsync(PromptsKey(userId), JsonSerializer.SerializeToUtf8Bytes(prompts, JsonOptions), cancellationToken);
 
+    public async Task<FleetLessonsDocument> GetLessonsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var content = await blobs.GetAsync(LessonsKey(userId), cancellationToken);
+        return content is null
+            ? new FleetLessonsDocument()
+            : JsonSerializer.Deserialize<FleetLessonsDocument>(content, JsonOptions) ?? new FleetLessonsDocument();
+    }
+
+    public Task SetLessonsAsync(string userId, FleetLessonsDocument document, CancellationToken cancellationToken = default)
+        => blobs.PutAsync(LessonsKey(userId), JsonSerializer.SerializeToUtf8Bytes(document, JsonOptions), cancellationToken);
+
     /// <summary>
     /// The workspace-relative path as <c>/</c>-joined segments, or an exception when it is empty, rooted or
     /// contains <c>..</c>. Backslashes count as separators, and empty and <c>.</c> segments are dropped.
@@ -195,6 +207,8 @@ public sealed class FleetStore(IFleetBlobs blobs) : IFleetStore
     }
 
     private static string PromptsKey(string userId) => $"{UserPrefix(userId)}prompts.json";
+
+    private static string LessonsKey(string userId) => $"{UserPrefix(userId)}lessons.json";
 
     // A '.' or '..' segment survives escaping, and an HTTP client may resolve it in the blob URL, so it is refused.
     private static string Escape(string segment)
