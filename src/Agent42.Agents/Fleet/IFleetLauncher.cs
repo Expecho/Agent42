@@ -51,6 +51,10 @@ public interface IFleetLauncher
     Task<FleetLaunchResult> RerunAsync(
         string userId, string taskId, string? note, IReadOnlyList<string>? disableTools, long? maxTokens,
         CancellationToken cancellationToken = default);
+
+    /// <summary>One hourly tick of a user's dream reminder (ADR 0124). The Backend decides whether it is time and starts the run
+    /// in the background; the grain only reads the typed result, never Backend types.</summary>
+    Task<FleetDreamTick> RunNightlyDreamAsync(string userId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>How a start went: the new task's id, or the reason it didn't start.</summary>
@@ -92,4 +96,27 @@ public sealed class DisabledFleetLauncher : IFleetLauncher
         string userId, string taskId, string? note, IReadOnlyList<string>? disableTools, long? maxTokens,
         CancellationToken cancellationToken = default)
         => Task.FromResult(new FleetLaunchResult(null, Unavailable));
+
+    public Task<FleetDreamTick> RunNightlyDreamAsync(string userId, CancellationToken cancellationToken = default)
+        => Task.FromResult(FleetDreamTick.Unavailable);
+}
+
+/// <summary>What one hourly dream tick did (ADR 0124). Typed, never prose, so the grain can decide whether its reminder
+/// lives on: <see cref="Disabled"/> and <see cref="Unavailable"/> unregister it.</summary>
+public enum FleetDreamTick
+{
+    /// <summary>A dream run was started in the background.</summary>
+    Started,
+
+    /// <summary>Outside the nightly window: nothing was done and nothing was written.</summary>
+    NotYet,
+
+    /// <summary>Inside the window but no run started (already ran this window, too few new tasks, one already running).</summary>
+    Skipped,
+
+    /// <summary>The user's toggle is off.</summary>
+    Disabled,
+
+    /// <summary>The operator turned the dream off, or this host has no fleet.</summary>
+    Unavailable,
 }

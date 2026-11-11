@@ -79,7 +79,7 @@ flowchart LR
   `JudgeAsync`, `DelegateToTeamAsync`, `BuildWorkflow`, `RunWorkflowAsync` and `RunStagesAsync`.
 - `FleetStore` (`src/Agent42.Agents/Fleet/`) holds the layout over the narrow `IFleetBlobs` seam:
   `{userId}/tasks/`, `/events/` (append blobs), `/workspaces/{workspaceId}/`, `/canvas/{workspaceId}/` (outside
-  the workspace prefix, which the sync prunes) and `/prompts.json`.
+  the workspace prefix, which the sync prunes) `/prompts.json` and `/lessons.json` (the lessons, ADR 0124, also outside any workspace prefix).
 - `FleetCanvas` holds a task's canvas pages behind one gate and writes each version through to Blob before it
   publishes `canvas.updated` (ADR 0102).
 - `FleetEventLog` numbers every event, fans it out live, and persists it at most once a second, merging streamed
@@ -108,6 +108,24 @@ Since ADR 0108 a Copilot agent can also run on your GitHub Copilot plan, as `cop
 have signed in with GitHub. Those models never become the task's model and never get a chat client: the planner,
 judge, manager and ordinary agents stay on your own providers, and the planner sees the plan's models in a separate
 "run only as a Copilot agent" list.
+
+## Lessons (the nightly dream, ADR 0124)
+
+The **Lessons** button on `/fleet/` opens what the fleet learned about team design from your finished tasks. Once a night (default
+01:00 UTC, a four hour window, `Fleet:DreamAtUtc`) a model reads a digest of your recent finished tasks and keeps a few lessons that
+several tasks agree on. It is **off until you switch it on** (it spends your own tokens), runs only when enough tasks finished since (`DreamMinNewTasks`, default two)
+the last run, and needs `DreamMinTasks` (default three) finished tasks in all. "Dream now" runs it on demand and uses up tonight's run.
+
+A lesson is active at once and is added to the user prompt of **every planner** of your next tasks, sub-teams and re-plans included
+(`lessons.applied` event per planner call, with the block's size). The view shows each lesson with its topic, confidence, when it was
+learned and last supported, when it expires (90 days without support), the tasks it was learned from and the tasks it was applied in, plus
+the dream log. Disable keeps a lesson as a tombstone so it is not proposed again; delete removes it. A task shows "Lessons applied (n)".
+
+The schedule is an hourly Orleans reminder per user (`FleetDreamGrain`); the Backend decides whether it is time. Lessons live in
+`{userId}/lessons.json`. The checks on a lesson are shape hygiene, not an injection defence; ADR 0124 lists the residuals. Switches:
+`Fleet:DreamEnabled` (operator kill switch), `DreamAtUtc`, `DreamWindowHours`, `DreamMaxTasks`, `DreamMinTasks`, `DreamMinNewTasks`,
+`DreamMaxDigestChars`, `DreamMinSupport`, `DreamMaxNewPerRun`, `LessonMaxChars`, `LessonsInPrompt`, `LessonTtlDays`, `LessonsMaxStored`,
+`DreamTimeout`.
 
 ## Downloads
 

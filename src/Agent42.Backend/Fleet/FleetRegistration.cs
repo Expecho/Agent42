@@ -41,6 +41,7 @@ public static class FleetRegistration
         // The grain's port (ADR 0115). A host without the fleet registers DisabledFleetLauncher instead.
         services.AddSingleton<IFleetLauncher, FleetLauncher>();
         services.AddSingleton<FleetTaskService>();
+        services.AddSingleton<FleetLessonService>();
         services.AddHostedService(sp => sp.GetRequiredService<FleetTaskService>());
     }
 }

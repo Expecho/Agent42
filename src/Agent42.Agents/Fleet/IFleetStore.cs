@@ -57,4 +57,9 @@ public interface IFleetStore
     Task<IReadOnlyDictionary<string, string>> GetPromptsAsync(string userId, CancellationToken cancellationToken = default);
 
     Task SetPromptsAsync(string userId, IReadOnlyDictionary<string, string> prompts, CancellationToken cancellationToken = default);
+
+    /// <summary>The user's fleet lessons document (ADR 0124), or an empty one when none is stored yet.</summary>
+    Task<FleetLessonsDocument> GetLessonsAsync(string userId, CancellationToken cancellationToken = default);
+
+    Task SetLessonsAsync(string userId, FleetLessonsDocument document, CancellationToken cancellationToken = default);
 }
