@@ -59,6 +59,10 @@ public sealed class ConfigHealthApiTests(SharedClusterFixture fixture) : SharedC
             ContextScrape: _ => _counter.Bump(),
             Hindsight: _ => _counter.Bump()));
 
+        // "user-a" is the one owner, so /api/access can be asserted both ways (the gate itself is not installed
+        // here; DashboardOwnerGateTests covers it).
+        appBuilder.Services.AddSingleton<IOwnerPolicy>(new OwnerPolicy(["user-a"]));
+
         _app = appBuilder.Build();
         _app.MapAgentApi();
         await _app.StartAsync();
@@ -99,6 +103,54 @@ public sealed class ConfigHealthApiTests(SharedClusterFixture fixture) : SharedC
         response.EnsureSuccessStatusCode();
 
         Assert.True(_counter.Count > 0);
+    }
+
+    // The UI hides the owner-only Configuration tab from this answer: an owner gets true, anyone else false.
+    [Theory]
+    [InlineData("user-a", true)]
+    [InlineData("user-b", false)]
+    public async Task Access_ReportsWhetherTheCallerIsAnOwner(string userId, bool expected)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/access");
+        request.Headers.Add(IdHeader, userId);
+
+        var response = await _client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(expected, doc.RootElement.GetProperty("isOwner").GetBoolean());
+    }
+
+    // Fails closed like the gate: a host with no IOwnerPolicy registered makes nobody an owner.
+    [Fact]
+    public async Task Access_WithNoOwnerPolicy_IsFalse()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSingleton<IGrainFactory>(Cluster.GrainFactory);
+        builder.Services.AddSingleton<IProviderSecretProtector>(
+            new ProviderSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<ProviderSecretProtector>.Instance));
+        builder.Services.AddSingleton<IMcpSecretProtector>(
+            new McpSecretProtector(new EphemeralDataProtectionProvider(), NullLogger<McpSecretProtector>.Instance));
+        builder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
+        builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog("fake-model", []));
+        builder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
+            new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
+        builder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
+        builder.Services.AddDocumentRagFakes();
+        builder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
+        await using var app = builder.Build();
+        app.MapAgentApi();
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/access");
+        request.Headers.Add(IdHeader, "user-a");
+        var response = await client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(doc.RootElement.GetProperty("isOwner").GetBoolean());
     }
 
     private sealed class ProbeCounter

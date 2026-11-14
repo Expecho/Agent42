@@ -12,3 +12,6 @@ public record ConfigHealthReport(string Environment, IReadOnlyList<ConfigCheck> 
 // (never an exception or a target URL — the probe path carries the key-bearing geocoding URL). Billable
 // flags a check whose live probe costs a metered call/credit, so the UI can label the button.
 public record ConfigCheck(string Group, string Key, string Status, string Message, bool Billable);
+
+// The GET /api/access payload: what the UI may show this caller. Advisory, never a security boundary (ADR 0121).
+public sealed record AccessResponse(bool IsOwner);
