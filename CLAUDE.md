@@ -92,10 +92,13 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
   `Hindsight.AgentFramework.Net` package from https://github.com/Expecho/Hindsight.AgentFramework.Net
   (ADR 0056). Its public API and issue tracker are owned. Everything inside Agent42 is private and can
   change freely.
-- Deploy: push to `main` → `.github/workflows/deploy.yml` → ACR `crexpechohosting`, Bicep to RG
-  `rg-agent42`. App runs behind Entra ID Easy Auth at chat.agent42.nl.
-- The AI Foundry account `Agent42` is in a *different* RG (`agent42`), where the deploy SP holds only
-  role-assignment rights. Read gotchas before touching IAM/infra.
+- Deploy: push to `main` → `.github/workflows/deploy.yml` (`preflight` → shared infra → build/push → Bicep).
+  Tenant-specific values (registry, environment, resource group, domain, client id) are **repo variables**, not code
+  (ADR 0128). Prod's values are listed in `docs/features/azure-deployment.md`, which also covers deploying to another
+  tenant with `infra/bootstrap.sh`. Prod runs behind Entra ID Easy Auth at chat.agent42.nl. Read gotchas before
+  touching IAM/infra.
+- The AI Foundry account `Agent42` is in a *different* RG (`agent42`) and is dormant (ADR 0017/0019); the deploy no
+  longer grants anything on it.
 - **No operator model of any kind** (ADR 0019 + 0030): chat, embedding, image and speech models are all
   per-user providers (ADR 0018). A user with none gets an empty picker and a gated composer.
 - Frontend is vanilla JS: native ES modules in `src/Agent42.Backend/wwwroot/js/` with no build step,
@@ -106,6 +109,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 
 | Input | Missing means |
 |-------|---------------|
+| Repo variables `AZURE_RESOURCE_GROUP` + `AUTH_CLIENT_ID` (and, for prod, the rest of the table in `docs/features/azure-deployment.md`) | The deploy fails `preflight`, by design: an absent variable expands to an empty string, and empty means "off" (ADR 0128) |
 | `SEARXNG_SECRET` | **App down.** The sidecar crash-loops, and ACA gates revision health on every container (ADR 0011) |
 | `GOOGLE_MAPS_API_KEY` | Location returns coordinates without an address (ADR 0012) |
 | `HINDSIGHT_API_KEY` | No long-term memory, and zero calls are made. This is the operator's egress switch (ADR 0056/0057) |
@@ -197,4 +201,5 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Client tools and shared state: browser-run tools (confirm, artifact pane, browser context, location) paused on the stream, per-run broker, shared JSON state with snapshots; why not AG-UI | 0089, 0088, 0093 |
 | Android companion app (`tools/Agent42.Android`): WebView sign-in + Easy Auth cookie, NDJSON contract golden file, full-duplex voice on the call audio path (amends 0079 for the app only), sideloaded signed APK | 0114 |
 | Self-hosting: `Storage:Provider` = `azure` (default, prod) or `local` (Postgres + a filesystem volume, `compose.yaml`, no Azure account); ADO.NET grain storage with the same `$type` JSON, pgvector (no ANN index), file stores, attachment reference URLs inlined as bytes per request, no auth, no migration | 0127 |
+| Deployment: tenant-portable IaC, create-or-reuse shared infra, repo variables, `preflight`, `infra/bootstrap.sh` | 0128 |
 | Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test, AgentGrain services + per-run TurnContext | 0039, 0040, 0041, 0050, 0051, 0055, 0105, 0106 |

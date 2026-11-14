@@ -79,6 +79,7 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 |---------|------|
 | Configuration health | [configuration-health.md](configuration-health.md) |
 | Self-hosting with Docker (Postgres + a volume, no Azure account) | [self-hosting.md](self-hosting.md) |
+| Deploying to your own Azure subscription (bootstrap script, repo variables, preflight) | [azure-deployment.md](azure-deployment.md) |
 | Usage dashboard, `/logs` console, Orleans dashboard, App Insights export | [usage-and-diagnostics.md](usage-and-diagnostics.md) |
 
 ---

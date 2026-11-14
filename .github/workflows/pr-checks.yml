@@ -1,6 +1,6 @@
 # PR quality gates. Thresholds and policy live in .agentic/quality-gates.yaml —
 # this workflow enforces: build, tests, format, vulnerable_packages: 0,
-# doc-path integrity, and coverage_new_code_pct_min. outdated_packages is
+# doc-path integrity, bicep build (infra/*.bicep compile), and coverage_new_code_pct_min. outdated_packages is
 # report-only (policy: report). cognitive_complexity_max is enforced at BUILD
 # time by SonarAnalyzer.CSharp rule S3776, so it needs no job of its own — and
 # since ADR 0051 cleared the backlog ADR 0050 had to carry, it is an `error`
@@ -81,6 +81,15 @@ jobs:
         run: dotnet test Agent42.slnx --collect:"XPlat Code Coverage"
       - name: Gate coverage of NEW code (policy coverage_new_code_pct_min)
         run: node .agentic/scripts/check-new-code-coverage.mjs origin/${{ github.base_ref }}
+
+  # Every Bicep template must compile (ADR 0128). No Azure login: `bicep build` is a local compile.
+  bicep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: az bicep install
+      - run: az bicep build --file infra/main.bicep --stdout > /dev/null
+      - run: az bicep build --file infra/shared.bicep --stdout > /dev/null
 
   agent-docs-check:
     runs-on: ubuntu-latest

@@ -1320,23 +1320,22 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ### Cosmos account region is pinned to northeurope and immutable
 
-- **Claim:** West Europe rejected new Cosmos accounts at creation time; the account was created in North Europe and a Cosmos account's region can't change after creation. The `cosmosLocation="northeurope"` parameter in the deploy workflow must keep matching where the account actually lives.
-- **Evidence:** `.github/workflows/deploy.yml`
-- **Verified:** 2026-07-06
+- **Claim:** West Europe rejected new Cosmos accounts at creation time; the account was created in North Europe and a Cosmos account's region can't change after creation. Since ADR 0128 the region is the repo variable `COSMOS_LOCATION` (unset falls back to the resource group's location), so prod must keep it at `northeurope`: a missing variable would try to move the account. The `preflight` job compares it with the existing account and fails with the variable's name.
+- **Evidence:** `.github/workflows/deploy.yml` (`preflight`, `az cosmosdb list`), `docs/features/azure-deployment.md`
+- **Verified:** 2026-11-14
 
 ### Custom domain must stay declared in Bicep
 
-- **Claim:** an undeclared custom domain gets silently unbound on the next deploy. `customDomainName`/`customDomainCertificateName` must stay set, and the certificate name must match the auto-generated managed certificate — if the cert is ever recreated, update the name or the deployment unbinds the domain again.
-- **Evidence:** `infra/modules/container-app.bicep`
-- **Verified:** 2026-07-06
+- **Claim:** an undeclared custom domain gets silently unbound on the next deploy. The pair is now the repo variables `CUSTOM_DOMAIN_NAME` / `CUSTOM_DOMAIN_CERTIFICATE_NAME` (ADR 0128), and an absent variable expands to empty, which means "bind nothing". The `preflight` job reads the domain bound to the live app and fails when it is not the one the variable names. It cannot see a stale certificate name: if the cert is ever recreated, update the variable or the deployment unbinds the domain again.
+- **Evidence:** `.github/workflows/deploy.yml` (`preflight`, `customDomains`), `infra/modules/container-app.bicep`, `InfraPortabilityTests.Deploy_PreflightRunsFirst_AndGuardsWhatAMissingVariableWouldDestroy`
+- **Verified:** 2026-11-14
 
-### A cross-RG role grant in RG `agent42` must be a CLI step in the deploy workflow, not Bicep
+### A cross-RG role grant into a resource group the deploy SP only has a scoped grant on must be a CLI step, not Bicep
 
-- **Claim:** the AI Foundry account lives in RG `agent42`, where the deploy SP has only `Microsoft.Authorization/roleAssignments/write` scoped to that one account — not `Microsoft.Resources/deployments/write`. A cross-RG Bicep module therefore fails; any such grant must be an idempotent `az rest` PUT in the deploy workflow, not "cleaned up" into Bicep. This is the durable constraint.
-- **The specific grant the workflow still performs — "Cognitive Services OpenAI User" for the app MI — is itself NO LONGER REQUIRED (ADR 0017):** Foundry chat + embeddings authenticate by **API key**, so the app functions without any OpenAI data-plane RBAC. The `az rest` step in `deploy.yml` is now dead-but-harmless (idempotent, leaves a role that nothing reads). Keep it only as the live example of the CLI-not-Bicep pattern above; it is safe to remove.
-- **Evidence:** `.github/workflows/deploy.yml` (Grant Cognitive Services OpenAI User step, ~line 113 + comment),
-  `.agentic/decisions/0017-foundry-provider-api-key-auth.md` (the grant is no longer required)
-- **Verified:** 2026-07-16
+- **Claim:** a deploy SP that holds only `Microsoft.Authorization/roleAssignments/write` on one resource (not `Microsoft.Resources/deployments/write` on its resource group) cannot run a cross-RG Bicep module, so any such grant must be an idempotent `az rest` PUT in the workflow, not "cleaned up" into Bicep. This is the durable pattern.
+- **The one grant that used it is gone (ADR 0128):** "Cognitive Services OpenAI User" on the owner's Foundry account was no longer required since ADR 0017 (Foundry authenticates by API key) and was owner-scoped, so the step was removed from `deploy.yml`. No live example remains; `InfraPortabilityTests.Deploy_HasNoRoleAssignmentPut` keeps it out.
+- **Evidence:** `.agentic/decisions/0017-foundry-provider-api-key-auth.md`, `.agentic/decisions/0128-tenant-portable-azure-iac.md`, `tests/Agent42.Tests/InfraPortabilityTests.cs`
+- **Verified:** 2026-11-14
 
 ### Deploy service principal uses a client secret, not OIDC
 
@@ -1470,10 +1469,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Control Administrator" --scope subscriptions/<sub>/resourceGroups/rg-agent42`). If that elevation is
   removed or the SP recreated, this module's deploy fails with an authorization error — fall back to a
   manual `az role assignment create` of Storage Blob Data Contributor. This is the key difference from
-  the **OpenAI grant, which stays manual** (its account is in a *different* RG where a cross-RG Bicep
-  role module fails). The role also authorizes `generateUserDelegationKey`, so no account key is needed
+  the old **OpenAI grant**, a CLI step because its account was in a *different* RG where a cross-RG Bicep
+  role module fails (removed, ADR 0128). The role also authorizes `generateUserDelegationKey`, so no account key is needed
   (shared-key auth is disabled on the account). The agent never runs role-assignment writes itself; the
-  one-time elevation was run by the user.
+  one-time elevation was run by the user. For a new tenant `infra/bootstrap.sh init` grants the deploy SP this role
+  on its resource group (ADR 0128); the operator runs it.
 - **Gotcha on Windows/Git Bash:** an `az … --scope "/subscriptions/…"` argument starting with `/` is
   mangled by MSYS path conversion into a Windows path → ARM returns `MissingSubscription`. Drop the
   leading `/` (`--scope "subscriptions/…"`) or prefix the command with `MSYS_NO_PATHCONV=1`.
@@ -5036,4 +5036,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   store may build a path itself or call `Path.Combine` on a key. The attachment store escapes each segment first and keeps
   its metadata sidecars in a separate folder, so a client-chosen attachment id can never read a sidecar as content.
 - **Evidence:** `src/Agent42.Backend/Storage/LocalFileStore.cs`, `tests/Agent42.Tests/LocalFileStoreTests.cs`
+- **Verified:** 2026-11-14
+
+### An absent GitHub variable expands to empty, and empty means "off" for optional Bicep params
+
+- **Claim:** `${{ vars.X }}` for an unset variable is an empty string, not an error. For `customDomainName` that means "bind no domain" (silently unbinds a live one), for the shared-infra names it means "create a new registry and environment" (a stray ACR, pushed to), and for `cosmosLocation` an attempted move of an immutable account. The `preflight` job (first in `deploy.yml`, both other jobs `needs` it) fails closed on each, and passes optional values to Bicep only when set. A new optional variable needs the same treatment: pass it only when non-empty, and add a preflight check if empty would destroy something. Secrets behave the same way (see `searxngSecret`'s `@minLength`).
+- **Evidence:** `.github/workflows/deploy.yml` (`preflight`, the `optional=()` array), `infra/main.bicep` (`searxngSecret`), `tests/Agent42.Tests/InfraPortabilityTests.cs`
 - **Verified:** 2026-11-14
