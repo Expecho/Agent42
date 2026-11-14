@@ -15,7 +15,7 @@
     </header>
 
     <h1>Privacy policy</h1>
-    <p class="legal__updated">Last updated: 19 October 2026</p>
+    <p class="legal__updated">Last updated: 14 November 2026</p>
 
     <p>Agent 42 (chat.agent42.nl) is an AI chat service. This page explains what the service stores, where it
       goes and what you can do about it.</p>
@@ -31,6 +31,10 @@
         stored agents, skills, groups, pins, share links and preferences.</li>
       <li><strong>Your settings for other services.</strong> The model providers and MCP servers you add, with their
         API keys and tokens. Keys are stored encrypted.</li>
+      <li><strong>Long-term memory.</strong> When the memory tool is on, the assistant can save short notes about you
+        and your conversations so it can recall them later. They are stored with a third-party memory service (see
+        below). <strong>These notes cannot be deleted individually, and they are not removed when you delete a
+        conversation or ask for your account to be deleted.</strong></li>
       <li><strong>Push subscriptions.</strong> If you turn on notifications, we store the address your browser's
         push service gives us.</li>
       <li><strong>Technical logs.</strong> Requests, errors and performance data, labelled with your account
@@ -49,6 +53,11 @@
         receive the content of the conversation you are having with them, including attachments, tool results and
         documents relevant to your question. Because you use your own account, the provider's own terms and privacy
         policy apply.</li>
+      <li><strong>The memory service (Hindsight).</strong> If long-term memory is on, the notes described above are sent
+        to it, under the operator’s account with that service, not yours.</li>
+      <li><strong>Services the operator pays for.</strong> Some features use services under the operator’s own keys,
+        and receive what the feature needs: web page fetching (context.dev), turning coordinates into an address
+        (Google Maps) and inbound email (Mailgun).</li>
       <li><strong>MCP servers you connect.</strong> They receive whatever the model sends to their tools.</li>
       <li><strong>Web search.</strong> Search queries go through a search proxy that we host ourselves and are
         forwarded to Google, Bing and DuckDuckGo. Those engines see the query, but not your identity or your IP
@@ -71,6 +80,13 @@
     </ul>
     <p>We do not sell your data, show advertising or use tracking or analytics cookies.</p>
 
+    <h2>Commands in the service’s own environment</h2>
+    <p>Some agents (the Copilot agent kind and agent fleet tasks) can run commands and read and write files on the
+      server that runs Agent 42. That environment is shared and is <strong>not isolated per user</strong>: a signed-in
+      user’s chat can run commands there, and so can reach data that the service stores, including other
+      users’ data. The operator invites only people they are willing to trust with this. Do not put anything into
+      Agent 42 that you could not accept being seen by another invited user.</p>
+
     <h2>Cookies and local storage</h2>
     <p>We set one session cookie to keep you signed in. Your browser also stores your preferences and an offline copy
       of the app on your own device.</p>
@@ -81,12 +97,12 @@
       <li>Incognito chats are never stored.</li>
       <li>In the continuous chat of a stored agent, messages older than 24 hours are deleted automatically.</li>
       <li>Technical logs and diagnostic traces are kept only as long as troubleshooting needs them.</li>
-      <li>To have your whole account deleted, contact us.</li>
+      <li>To have your account and your conversations deleted, contact us. Long-term memory notes are the exception: there is currently no way to delete them.</li>
     </ul>
 
     <h2>Your rights</h2>
     <p>Under the GDPR you can access, correct, export and delete your data, and object to or restrict how we process
-      it. You can export and delete your conversations yourself in the app. For anything else, contact us. You can
+      it. Long-term memory notes cannot currently be deleted (see above). You can export and delete your conversations yourself in the app. For anything else, contact us. You can
       also complain to the Dutch data protection authority, the
       <a href="https://autoriteitpersoonsgegevens.nl" rel="noopener">Autoriteit Persoonsgegevens</a>.</p>
 
