@@ -1,4 +1,5 @@
 using Agent42.Agents;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Agent42.Backend;
 
@@ -13,7 +14,7 @@ public static class CopilotRegistration
 {
     public static void AddCopilotAgents(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddSingleton<ICopilotSessionStore, BlobCopilotSessionStore>();
+        services.TryAddSingleton<ICopilotSessionStore, BlobCopilotSessionStore>();
         services.AddSingleton(new CopilotRuntimeOptions
         {
             RuntimePath = configuration["Copilot:RuntimePath"],

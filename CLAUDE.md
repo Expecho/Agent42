@@ -3,7 +3,7 @@
 > Personal AI chat agent ("Agent 42"): Orleans-hosted conversations wrapping Microsoft
 > Agent Framework agents on Azure OpenAI, with a static web UI, deployed to Azure Container Apps.
 
-**Stack:** .NET 10 · Orleans 10.3 (grains, Cosmos persistence + reminders) · Microsoft Agent
+**Stack:** .NET 10 · Orleans 10.3 (grains; Cosmos or Postgres persistence + reminders, `Storage:Provider`) · Microsoft Agent
 Framework 1.25 · ASP.NET Core minimal APIs · Aspire 13.5 (local orchestration) · vanilla-JS
 frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 
@@ -14,6 +14,7 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 | Install | `dotnet restore Agent42.slnx` |
 | Run dev (offline) | `dotnet run --project tools/Agent42.DevHost` — canned LLM, in-memory grains; UI at http://localhost:61326 |
 | Run full stack | `dotnet run --project src/Agent42.AppHost` — Aspire + Cosmos emulator (needs Docker) |
+| Self-host (no Azure) | `docker compose up -d --build` after `cp .env.example .env` — Postgres + a volume, UI at http://localhost:8080, no auth (ADR 0127) |
 | Test | `dotnet test Agent42.slnx` |
 | Lint | `dotnet format Agent42.slnx --verify-no-changes` |
 | Type check | `dotnet build Agent42.slnx` |
@@ -152,7 +153,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
     Wildcards (`mcp`, `skills`) must be expanded before the picker sees them. The rule the model reads is the
     **tool description**, not a `SKILL.md`.
 12. **Single replica is load-bearing** (in-process registries, the `/logs` ring buffer, the local-bridge
-    socket registry, the Copilot SessionFs write gate, the agent fleet's running-task registry, the Copilot chat workspaces
+    socket registry, the Copilot SessionFs write gate, the local file stores and Postgres advisory-lock gateway lease (ADR 0127), the agent fleet's running-task registry, the Copilot chat workspaces
     share mounted into that one replica, the chat gateway's sessions, inbound dedupe and per-chat queues, the signal-cli
     child process and its store). `infra/main.bicep` pins min = max = 1. A revision rollover still overlaps two replicas
     briefly; the chat gateway covers that with a Blob lease (ADR 0111), and anything else that holds an outbound
@@ -195,4 +196,5 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Artifacts / canvas: model-created versioned pages, SVG, docs and code in a sandboxed pane; CSP sandbox header; session compaction | 0083, 0084 |
 | Client tools and shared state: browser-run tools (confirm, artifact pane, browser context, location) paused on the stream, per-run broker, shared JSON state with snapshots; why not AG-UI | 0089, 0088, 0093 |
 | Android companion app (`tools/Agent42.Android`): WebView sign-in + Easy Auth cookie, NDJSON contract golden file, full-duplex voice on the call audio path (amends 0079 for the app only), sideloaded signed APK | 0114 |
+| Self-hosting: `Storage:Provider` = `azure` (default, prod) or `local` (Postgres + a filesystem volume, `compose.yaml`, no Azure account); ADO.NET grain storage with the same `$type` JSON, pgvector (no ANN index), file stores, attachment reference URLs inlined as bytes per request, no auth, no migration | 0127 |
 | Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test, AgentGrain services + per-run TurnContext | 0039, 0040, 0041, 0050, 0051, 0055, 0105, 0106 |

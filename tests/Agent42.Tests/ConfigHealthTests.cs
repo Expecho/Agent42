@@ -325,6 +325,42 @@ public sealed class ConfigHealthTests
         Assert.Contains("OTLP collector only", missing.Message);
     }
 
+    // ————— Storage:Provider (the self-hosting plan; AC12) —————
+
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Development")]
+    public void LocalStorage_MakesTheAzureOnlyKeysNotApplicable_InAnyEnvironment(string environment)
+    {
+        var report = ConfigHealth.BuildStatic(
+            Config(("WebSearch:Endpoint", "http://localhost:8888"), ("Storage:Provider", "local")), Env(environment), Push());
+
+        Assert.Equal(ConfigHealth.NotApplicable, Find(report, "Storage:BlobEndpoint").Status);
+        Assert.Equal(ConfigHealth.NotApplicable, Find(report, "AzureOpenAI:TenantId").Status);
+        var provider = Find(report, "Storage:Provider");
+        Assert.Equal(ConfigHealth.Ok, provider.Status);
+        Assert.Contains("local", provider.Message);
+    }
+
+    [Fact]
+    public void AzureStorage_InProduction_StillWarnsOnTheMissingBlobEndpoint_AndNamesTheProvider()
+    {
+        var report = ConfigHealth.BuildStatic(Config(("WebSearch:Endpoint", "http://localhost:8888")), Env(), Push());
+
+        Assert.Equal(ConfigHealth.Warning, Find(report, "Storage:BlobEndpoint").Status);
+        Assert.Equal(ConfigHealth.Warning, Find(report, "AzureOpenAI:TenantId").Status);
+        Assert.Contains("azure", Find(report, "Storage:Provider").Message);
+    }
+
+    [Fact]
+    public void AzureStorage_InDevelopment_IsUnchanged()
+    {
+        var report = ConfigHealth.BuildStatic(
+            Config(("WebSearch:Endpoint", "http://localhost:8888"), ("Storage:Provider", "azure")), Env("Development"), Push());
+
+        Assert.Equal(ConfigHealth.NotApplicable, Find(report, "Storage:BlobEndpoint").Status);
+        Assert.Contains("in-memory", Find(report, "Storage:BlobEndpoint").Message);
+    }
 }
 
 /// <summary>A minimal <see cref="IHostEnvironment"/> so <see cref="ConfigHealth.BuildStatic"/> — a pure

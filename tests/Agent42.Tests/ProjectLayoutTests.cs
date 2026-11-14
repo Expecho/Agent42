@@ -104,7 +104,7 @@ public sealed class ProjectLayoutTests
             [
                 "Access", "Api", "Artifacts", "Attachments", "ChatGateway", "ClientTools", "Configuration", "Conversations", "Copilot",
                 "Documents", "Email", "Export", "Fleet", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
-                "Search", "SharedState", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills",
+                "Search", "SharedState", "Sharing", "Speech", "Storage", "StoredAgents", "Telemetry", "Tools", "UserSkills",
                 "Users", "Web", "Webhooks", "wwwroot",
             ]
         },
@@ -711,9 +711,12 @@ public sealed class ProjectLayoutTests
     /// because nothing in the suite runs <c>Program.cs</c>.
     /// </summary>
     [Theory]
-    [InlineData("src/Agent42.Backend/Program.cs")]
-    [InlineData("tools/Agent42.DevHost/Program.cs")]
-    public void Hosts_CallAddAgent42Silo(string relativePath)
+    // The attachment store is a host-varying port. Backend registers it through the storage provider switch
+    // (Storage:Provider, Azure Blob or local files), so its token is the switch call; DevHost registers the in-memory
+    // store directly. Both must still come before AddAgent42Silo().
+    [InlineData("src/Agent42.Backend/Program.cs", "AddStorageProvider(")]
+    [InlineData("tools/Agent42.DevHost/Program.cs", "AddSingleton<IAttachmentStore")]
+    public void Hosts_CallAddAgent42Silo(string relativePath, string attachmentStorePort)
     {
         var program = StrippedSource(
             Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar)));
@@ -724,7 +727,7 @@ public sealed class ProjectLayoutTests
         Assert.True(silo > api, $"{relativePath} must call AddAgent42Silo() after AddAgent42Api().");
         Assert.True(silo < program.IndexOf("builder.UseOrleans(", StringComparison.Ordinal), $"{relativePath} must call AddAgent42Silo() before UseOrleans.");
 
-        foreach (var port in new[] { "AddSingleton<IPushNotificationSender", "AddSingleton<IAttachmentStore" })
+        foreach (var port in new[] { "AddSingleton<IPushNotificationSender", attachmentStorePort })
         {
             var last = program.LastIndexOf(port, StringComparison.Ordinal);
             Assert.True(last >= 0 && last < silo, $"{relativePath}: {port} must be registered before AddAgent42Silo().");
