@@ -12,7 +12,7 @@ namespace Agent42.Backend;
 /// inside the tool method would leave <c>initialize</c> and <c>tools/list</c> anonymously reachable the
 /// moment the <c>excludedPaths</c> entries land, which is exactly what the "an Easy-Auth
 /// <c>excludedPaths</c> endpoint is publicly reachable" gotcha forbids. This is the same problem ADR 0062
-/// solved for the Orleans dashboard's package-owned routes, and <see cref="DashboardOwnerGate"/> is the
+/// solved for the Orleans dashboard's package-owned routes, and <see cref="OwnerGate"/> is the
 /// shape copied here.</para>
 ///
 /// <para><b>Failures are uniform.</b> Missing key, unknown key, deleted agent and flag-off all answer
@@ -73,7 +73,7 @@ public static class AgentMcpKeyGate
     /// </summary>
     /// <remarks>
     /// A named delegate rather than an inline lambda, so a test can drive it through a real host — the
-    /// <see cref="DashboardOwnerGate.InvokeAsync"/> shape.
+    /// <see cref="OwnerGate.InvokeAsync"/> shape.
     /// </remarks>
     public static async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {

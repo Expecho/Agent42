@@ -18,18 +18,16 @@ public interface IUsageRollupGrain : IGrainWithStringKey
     Task ApplyAsync(IReadOnlyList<UsageEvent> events);
 
     /// <summary>
-    /// Aggregates the rollups for a range (<c>24h</c>/<c>7d</c>/<c>30d</c>/<c>all</c>) with optional
-    /// application/user filters (null = no filter). The caller validates the range; an unrecognized
-    /// range is treated as "all".
+    /// Aggregates the rollups for a range (<c>24h</c>/<c>7d</c>/<c>30d</c>/<c>all</c>) with an optional application
+    /// filter, scoped to ONE user (ADR 0121): the caller's post-alias object id, plus, for an owner only, the legacy
+    /// <see cref="UsageUserKey"/> that matches buckets written before <see cref="TokenBucket.UserId"/> existed.
+    /// A blank <paramref name="userId"/> returns an empty report, never everyone's. The caller validates the range;
+    /// an unrecognized range is treated as "all".
     /// </summary>
-    [Alias("QueryAsync")]
-    Task<UsageReport> QueryAsync(string range, string? application, string? user);
+    [Alias("QueryForUserAsync")]
+    Task<UsageReport> QueryForUserAsync(string range, string? application, string userId, string? legacyUserKey);
 
-    /// <summary>Distinct application names seen (for the filter dropdown).</summary>
-    [Alias("ListApplicationsAsync")]
-    Task<IReadOnlyList<string>> ListApplicationsAsync();
-
-    /// <summary>Distinct user keys seen (for the filter dropdown).</summary>
-    [Alias("ListUsersAsync")]
-    Task<IReadOnlyList<string>> ListUsersAsync();
+    /// <summary>Distinct application names in the caller's scope (for the filter dropdown), see <see cref="QueryForUserAsync"/>.</summary>
+    [Alias("ListApplicationsForUserAsync")]
+    Task<IReadOnlyList<string>> ListApplicationsForUserAsync(string userId, string? legacyUserKey);
 }

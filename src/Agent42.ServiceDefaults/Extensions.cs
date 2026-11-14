@@ -23,9 +23,13 @@ public static class Extensions
     internal const string LocalCollectorEndpointKey = "Otel:LocalCollector:Endpoint";
     internal const string LocalCollectorHeadersKey = "Otel:LocalCollector:Headers";
 
-    public static TBuilder AddServiceDefaults<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
+    /// <param name="builder">The host being built.</param>
+    /// <param name="beforeTraceExporters">See <see cref="ConfigureOpenTelemetry{TBuilder}"/>.</param>
+    public static TBuilder AddServiceDefaults<TBuilder>(
+        this TBuilder builder, Action<TracerProviderBuilder>? beforeTraceExporters = null)
+        where TBuilder : IHostApplicationBuilder
     {
-        builder.ConfigureOpenTelemetry();
+        builder.ConfigureOpenTelemetry(beforeTraceExporters);
 
         builder.AddDefaultHealthChecks();
 
@@ -49,7 +53,21 @@ public static class Extensions
         return builder;
     }
 
-    public static TBuilder ConfigureOpenTelemetry<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
+    /// <summary>
+    /// Logging, metrics and tracing, plus the OTLP / Application Insights exporters.
+    /// </summary>
+    /// <param name="builder">The host being built.</param>
+    /// <param name="beforeTraceExporters">
+    /// A host hook that runs on the tracer builder AFTER the instrumentation and BEFORE any trace exporter is
+    /// added, so a processor it registers runs ahead of every exporter's <c>OnEnd</c>. Processors run in
+    /// registration order and a batch exporter's worker can read a span as soon as its <c>OnEnd</c> has run, so
+    /// anything added after this method returns (the host's own <c>AddProcessor</c> calls) is too late to change
+    /// what the exporters ship. The Backend uses it to redact non-owners' prompt text (ADR 0121); this project
+    /// stays free of app types, so the hook takes a delegate rather than the policy.
+    /// </param>
+    public static TBuilder ConfigureOpenTelemetry<TBuilder>(
+        this TBuilder builder, Action<TracerProviderBuilder>? beforeTraceExporters = null)
+        where TBuilder : IHostApplicationBuilder
     {
         builder.Logging.AddOpenTelemetry(logging =>
         {
@@ -71,6 +89,8 @@ public static class Extensions
                     // Uncomment the following line to enable gRPC instrumentation (requires the OpenTelemetry.Instrumentation.GrpcNetClient package)
                     //.AddGrpcClientInstrumentation()
                     .AddHttpClientInstrumentation();
+
+                beforeTraceExporters?.Invoke(tracing);
             });
 
         builder.AddOpenTelemetryExporters();

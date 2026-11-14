@@ -26,7 +26,7 @@ public sealed class UsageIngestionServiceTests : IAsyncLifetime
     public async Task DisposeAsync() => await _cluster.DisposeAsync();
 
     private static UsageEvent Token(string user, long input, long output) =>
-        new(UsageEventKind.Token, DateTimeOffset.UtcNow, "Agent42", "foundry", "gpt-5.4", user, "", input, output, 0, 0, false);
+        new(UsageEventKind.Token, DateTimeOffset.UtcNow, "Agent42", "foundry", "gpt-5.4", user, "", input, output, 0, 0, false, UserId: "oid-" + user);
 
     // Enqueued events are drained on the timer and applied to the global grain.
     [Fact]
@@ -44,11 +44,11 @@ public sealed class UsageIngestionServiceTests : IAsyncLifetime
         try
         {
             var grain = _cluster.GrainFactory.GetGrain<IUsageRollupGrain>(UsageRollupGrain.GlobalKey);
-            await WaitUntilAsync(async () => (await grain.QueryAsync("30d", null, null)).Totals.InputTokens == 300);
+            await WaitUntilAsync(async () => (await grain.QueryForUserAsync("30d", null, "oid-bob", null)).Totals.InputTokens == 200);
 
-            var report = await grain.QueryAsync("30d", null, null);
-            Assert.Equal(300, report.Totals.InputTokens);
-            Assert.Equal(2, report.Users.Count);
+            var ada = await grain.QueryForUserAsync("30d", null, "oid-ada", null);
+            Assert.Equal(100, ada.Totals.InputTokens);
+            Assert.Single(ada.Users);
         }
         finally
         {
@@ -70,7 +70,7 @@ public sealed class UsageIngestionServiceTests : IAsyncLifetime
         await service.StopAsync(CancellationToken.None);
 
         var report = await _cluster.GrainFactory.GetGrain<IUsageRollupGrain>(UsageRollupGrain.GlobalKey)
-            .QueryAsync("all", null, null);
+            .QueryForUserAsync("all", null, "oid-ada", null);
         Assert.Equal(0, report.Totals.CallCount);
     }
 

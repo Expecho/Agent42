@@ -244,14 +244,13 @@ builder.Services.AddAgentMcpServer();
 // machine; the buffer behind /logs is the only sink offline.
 builder.AddLiveTelemetryCapture(addInstrumentation: true);
 
-// The Orleans dashboard's owner (ADR 0062). DevHost has no appsettings.json, so the value is set here.
+// The owner tier (ADR 0062/0121). DevHost has no appsettings.json, so the owner is set here.
 // "local-dev" is exactly what CurrentUser.GetUserId falls back to with no Easy Auth principal header —
-// which is every request offline — so the dashboard is open here through the SAME rule that admits
-// exactly one principal in production. That is the whole point: there is no IsDevelopment() branch in
-// the gate, because an environment branch is a second code path that only ever runs where it cannot be
-// tested. NEVER put this value in src/Agent42.Backend/appsettings.json.
-builder.Configuration.AddInMemoryCollection(
-    new Dictionary<string, string?> { [DashboardOwnerGate.OwnerOidConfigKey] = "local-dev" });
+// which is every request offline — so the owner-only surfaces are open here through the SAME rule that
+// admits only the owners in production. There is no IsDevelopment() branch in the gate, because an
+// environment branch is a second code path that only ever runs where it cannot be tested.
+// NEVER put this value in src/Agent42.Backend/appsettings.json.
+builder.Services.AddSingleton<IOwnerPolicy>(new OwnerPolicy(["local-dev"]));
 
 builder.UseOrleans(silo =>
 {
@@ -263,7 +262,7 @@ builder.UseOrleans(silo =>
 
 var app = builder.Build();
 
-app.UseOrleansDashboardOwnerGate();
+app.UseOwnerGate();
 app.UseAgentMcpKeyGate();
 
 // The local-bridge socket (ADR 0076). Also on excludedPaths, so its endpoint self-enforces the bridge key.

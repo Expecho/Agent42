@@ -10,6 +10,10 @@ amends: [0001, 0002, 0009, 0062]
 
 # A second Entra account signs in as an existing user, by config-driven identity alias
 
+> **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** `allowedPrincipals` is removed when sign-in opens, so it is no longer "the only tenant
+> gate"; `Access:Owners` plus the test that every alias key and value is an owner replace it. Usage is now scoped by the
+> (aliased) object id, so both accounts of one person share one report; the row label is still the real email.
+
 ## Context
 The operator holds two Entra accounts in the tenant — `Expecho@users.noreply.github.com`, which every byte of
 production data is keyed to, and `msn@2000miles.nl`, which they want to use from now on. Both must keep

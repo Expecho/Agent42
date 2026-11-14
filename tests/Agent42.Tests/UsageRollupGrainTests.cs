@@ -26,7 +26,7 @@ public sealed class UsageRollupGrainTests : IAsyncLifetime
         _cluster.GrainFactory.GetGrain<IUsageRollupGrain>(UsageRollupGrain.GlobalKey);
 
     private static UsageEvent Token(string user, long input, long output) =>
-        new(UsageEventKind.Token, DateTimeOffset.UtcNow, "Agent42", "foundry", "gpt-5.4", user, "", input, output, 0, 0, false);
+        new(UsageEventKind.Token, DateTimeOffset.UtcNow, "Agent42", "foundry", "gpt-5.4", user, "", input, output, 0, 0, false, UserId: "oid-" + user);
 
     // AC10: applied rollups persist and are still queryable after the grain deactivates and re-reads state.
     [Fact]
@@ -37,10 +37,13 @@ public sealed class UsageRollupGrainTests : IAsyncLifetime
 
         await grain.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
 
-        var report = await Global().QueryAsync("30d", null, null);
-        Assert.Equal(300, report.Totals.InputTokens);
-        Assert.Equal(60, report.Totals.OutputTokens);
-        Assert.Equal(2, report.Users.Count);
+        var ada = await Global().QueryForUserAsync("30d", null, "oid-ada", null);
+        Assert.Equal(100, ada.Totals.InputTokens);
+        Assert.Equal(20, ada.Totals.OutputTokens);
+        Assert.Single(ada.Users);
+
+        var bob = await Global().QueryForUserAsync("30d", null, "oid-bob", null);
+        Assert.Equal(200, bob.Totals.InputTokens);
     }
 
     // An empty batch is a no-op (no write, no throw).
@@ -49,19 +52,18 @@ public sealed class UsageRollupGrainTests : IAsyncLifetime
     {
         var grain = Global();
         await grain.ApplyAsync([]);
-        var report = await grain.QueryAsync("all", null, null);
+        var report = await grain.QueryForUserAsync("all", null, "oid-ada", null);
         Assert.Equal(0, report.Totals.CallCount);
     }
 
-    // The dropdown lists reflect what was applied.
+    // The application dropdown lists only what the caller's scope contains.
     [Fact]
-    public async Task ListUsers_ReflectsApplied()
+    public async Task ListApplications_IsScopedToTheCaller()
     {
         var grain = Global();
-        await grain.ApplyAsync([Token("ada", 1, 1), Token("bob", 1, 1)]);
+        await grain.ApplyAsync([Token("ada", 1, 1) with { Application = "AdaApp" }, Token("bob", 1, 1) with { Application = "BobApp" }]);
 
-        var users = await grain.ListUsersAsync();
-        Assert.Contains("ada", users);
-        Assert.Contains("bob", users);
+        Assert.Equal(["AdaApp"], await grain.ListApplicationsForUserAsync("oid-ada", null));
+        Assert.Empty(await grain.ListApplicationsForUserAsync("", null));
     }
 }
