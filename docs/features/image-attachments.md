@@ -8,6 +8,8 @@ You attach one or more images to a message. Vision-capable models see them; a mo
 vision is told it can't. Image **bytes** live in a private Azure Storage container — they never
 land in the conversation's grain state, which is capped at ~2 MB.
 
+> **Self-hosted (`Storage:Provider = local`, ADR 0127):** bytes live on a volume, and the model-facing URL is a constant `agent42-attachment://` reference that a chat-client wrapper replaces with the image bytes on each request (images over 4 MB, or beyond 16 MB per request, become a short text note, oldest first). See [self-hosting.md](self-hosting.md). The SAS description below is the Azure deployment.
+
 ## How it works
 
 Upload is a two-phase flow: the browser first POSTs the file (getting back an id), then sends

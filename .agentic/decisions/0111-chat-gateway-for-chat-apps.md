@@ -10,6 +10,8 @@ amends: [0028, 0075]
 
 # A chat gateway: each user's own bots on chat apps, connected outward from the single replica
 
+> **Amended by [ADR 0127](0127-self-hosting-local-storage-provider.md) (2026-11-14): with `Storage:Provider = local`, the lease is a Postgres advisory lock held on a dedicated connection.** The Blob lease below is the `azure` provider.
+
 ## Context
 Agent42 is reachable only from its web app, its API key door (ADR 0022), MCP (ADR 0070) and inbound email (ADR 0096).
 A comparison with OpenClaw and Hermes Agent (2026-10-21) found chat-app reach to be the single biggest gap: both put

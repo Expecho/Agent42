@@ -1,0 +1,84 @@
+# Self-hosting Agent 42 with no Azure account (ADR 0127): Postgres + a filesystem volume instead of Cosmos DB + Blob Storage.
+#
+#   cp .env.example .env     # set the two secrets
+#   docker compose up -d --build
+#   open http://localhost:8080
+#
+# Read docs/features/self-hosting.md first. The short version: there is NO authentication (every request is the one user
+# "local-dev"), so the app is bound to 127.0.0.1 only. Put an authenticating reverse proxy in front before exposing it.
+
+services:
+  # The app image ends with USER $APP_UID (1654, the aspnet image's non-root user), and a fresh named volume is owned by
+  # root, so the app could not write to it. This one-shot makes the data and Copilot volumes writable for that user.
+  init-volumes:
+    image: alpine:3.22
+    command: chown -R 1654:1654 /data /copilot
+    volumes:
+      - agent42-data:/data
+      - agent42-copilot:/copilot
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agent42
+      POSTGRES_USER: agent42
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - agent42-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent42 -d agent42"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Web search (ADR 0011). NOTE: SearXNG forwards each query to the public search engines it aggregates, so this is not
+  # private: queries leave your machine (the same as production).
+  searxng:
+    build: ./infra/searxng
+    restart: unless-stopped
+    environment:
+      SEARXNG_PORT: "8888"
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env}
+      # The /searxng/ subpath the app proxies the UI under (ADR 0059); it must name this container's own address.
+      SEARXNG_BASE_URL: http://searxng:8888/searxng/
+
+  app:
+    build:
+      context: .
+      dockerfile: src/Agent42.Backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      init-volumes:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      searxng:
+        condition: service_started
+    environment:
+      Storage__Provider: local
+      Storage__Local__Root: /data
+      # GSS encryption is switched off: the slim image has no Kerberos library, and Npgsql would log a load error probing it.
+      ConnectionStrings__postgres: Host=postgres;Database=agent42;Username=agent42;Password=${POSTGRES_PASSWORD};GSS Encryption Mode=Disable
+      WebSearch__Endpoint: http://searxng:8888
+      # OFF: with built-in tools on, every Copilot chat gets an auto-approved shell INSIDE this container (ADR 0107), and
+      # with no authentication anyone who can reach the port could use it to read the Postgres password above and the
+      # key ring in /data. Turn it on only behind an authenticating proxy.
+      Copilot__BuiltInToolsEnabled: "false"
+      # Chats' working directories for the Copilot agent kind (ADR 0107), on a volume so they survive a restart.
+      Copilot__WorkspaceRoot: /copilot
+      # Without Easy Auth every caller is "local-dev"; naming it here lets you reach /dashboard and /logs. Env vars override
+      # array items by index, so entry 0 becomes local-dev and the committed production entry 1 is blanked.
+      Access__Owners__0: local-dev
+      Access__Owners__1: ""
+    volumes:
+      - agent42-data:/data
+      - agent42-copilot:/copilot
+    # Loopback only: there is no authentication in front of this (see above).
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  agent42-data:
+  agent42-copilot:
+  agent42-postgres:

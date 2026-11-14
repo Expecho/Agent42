@@ -5,6 +5,8 @@
 
 ## What it is
 
+> With `Storage:Provider = local` (ADR 0127) the report adds a `Storage:Provider` row, and `Storage:BlobEndpoint` and `AzureOpenAI:TenantId` read **not applicable** whatever the environment. See [self-hosting.md](self-hosting.md).
+
 A read-only tab, backed by `GET /api/config-health`, that reports which config inputs are
 present / malformed / (opt-in) unreachable — so a silently degraded feature (geocoding off,
 Web Push off) is visible instead of mysterious.

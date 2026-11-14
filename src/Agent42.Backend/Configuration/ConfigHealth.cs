@@ -73,23 +73,8 @@ public static class ConfigHealth
             + "config. A live probe of the SearXNG endpoint is the only signal.", Billable: false));
         checks.Add(NotProbed(GroupWebSearch, ProbeSearxng, "SearXNG reachability", billable: false));
 
-        // ————— Production infrastructure (informational / n-a in Development) —————
-        if (isDevelopment)
-        {
-            checks.Add(new ConfigCheck(GroupInfra, "Storage:BlobEndpoint", NotApplicable,
-                "Not required offline — the AppHost/DevHost uses an in-memory attachment store.", Billable: false));
-            checks.Add(new ConfigCheck(GroupInfra, "AzureOpenAI:TenantId", NotApplicable,
-                "Not required offline.", Billable: false));
-        }
-        else
-        {
-            checks.Add(UriCheck(GroupInfra, "Storage:BlobEndpoint", config["Storage:BlobEndpoint"],
-                requireHttps: true, missingStatus: Warning,
-                missingMessage: "not set — blob attachments and the Data Protection key ring degrade"));
-            checks.Add(PresenceCheck(GroupInfra, "AzureOpenAI:TenantId", config["AzureOpenAI:TenantId"],
-                present: "configured", missing: "not set — the managed identity uses the ambient tenant",
-                missingStatus: Warning));
-        }
+        // ————— Production infrastructure (informational / n-a in Development, and n-a for local storage) —————
+        AddInfrastructureChecks(checks, config, isDevelopment);
 
         checks.Add(new ConfigCheck(GroupInfra, "AAD_CLIENT_SECRET", Skipped,
             "Injected by Bicep into the Container App's auth sidecar; it is not visible to app config, "
@@ -220,6 +205,42 @@ public static class ConfigHealth
                 : $"{aliases.Count} alias(es) active: that many additional accounts resolve to another "
                     + "account's data.",
             Billable: false);
+    }
+
+    // The Azure-only keys are not applicable offline, and not applicable when Storage:Provider is local (Postgres plus a
+    // volume): there is no blob endpoint to set and no managed identity to point at a tenant.
+    private static void AddInfrastructureChecks(List<ConfigCheck> checks, IConfiguration config, bool isDevelopment)
+    {
+        var provider = StorageProviderSetting.Read(config);
+        checks.Add(new ConfigCheck(GroupInfra, StorageProviderSetting.Key, Ok,
+            provider == StorageProvider.Local
+                ? "local — Postgres and a filesystem volume; no Azure account is used for storage."
+                : "azure — Cosmos DB and Blob Storage (the default; DevHost and tests use in-memory twins).",
+            Billable: false));
+
+        if (provider == StorageProvider.Local)
+        {
+            checks.Add(new ConfigCheck(GroupInfra, "Storage:BlobEndpoint", NotApplicable,
+                "Not used — the local provider keeps files on a volume.", Billable: false));
+            checks.Add(new ConfigCheck(GroupInfra, "AzureOpenAI:TenantId", NotApplicable,
+                "Not used — there is no managed identity with local storage.", Billable: false));
+        }
+        else if (isDevelopment)
+        {
+            checks.Add(new ConfigCheck(GroupInfra, "Storage:BlobEndpoint", NotApplicable,
+                "Not required offline — the AppHost/DevHost uses an in-memory attachment store.", Billable: false));
+            checks.Add(new ConfigCheck(GroupInfra, "AzureOpenAI:TenantId", NotApplicable,
+                "Not required offline.", Billable: false));
+        }
+        else
+        {
+            checks.Add(UriCheck(GroupInfra, "Storage:BlobEndpoint", config["Storage:BlobEndpoint"],
+                requireHttps: true, missingStatus: Warning,
+                missingMessage: "not set — blob attachments and the Data Protection key ring degrade"));
+            checks.Add(PresenceCheck(GroupInfra, "AzureOpenAI:TenantId", config["AzureOpenAI:TenantId"],
+                present: "configured", missing: "not set — the managed identity uses the ambient tenant",
+                missingStatus: Warning));
+        }
     }
 
     /// <summary>

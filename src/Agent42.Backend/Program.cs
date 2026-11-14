@@ -5,10 +5,8 @@ using Azure;
 using Azure.AI.OpenAI;
 using Azure.Identity;
 using Azure.ResourceManager;
-using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.AI;
 using OpenTelemetry.Instrumentation.AspNetCore;
 using Orleans.Dashboard;
@@ -61,9 +59,6 @@ builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(options =>
     options.EnrichWithHttpRequest = (activity, request) =>
         activity.ApplyUserTelemetryTags(request.Headers, userIdAliases));
 
-// CosmosClient wired from the Aspire-provided "cosmos" connection.
-builder.AddAzureCosmosClient("cosmos");
-
 // No operator embedding floor any more: embeddings are a per-user model chosen in Preferences (the
 // document-RAG generator resolves from the user's overlay, ADR 0007/0018), so AzureOpenAI:Endpoint/ApiKey
 // are no longer eager-validated at startup. They remain readable ONLY by the dormant Foundry-provider
@@ -102,7 +97,8 @@ builder.Services.AddSingleton<IChatClientFactory>(sp => new MultiProviderChatCli
     models.Providers,
     modelOptions.Default,
     OtelSourceName,
-    sp.GetRequiredService<ILogger<MultiProviderChatClientFactory>>()));
+    sp.GetRequiredService<ILogger<MultiProviderChatClientFactory>>(),
+    attachmentInliner: sp.GetService<AttachmentInliner>()));
 
 // Per-user providers (ADR 0018): the resolver merges the baseline with the signed-in user's overlay,
 // and the factory provider hands the agent grain a user-scoped factory (resolved on activation, cached
@@ -116,7 +112,9 @@ builder.Services.AddSingleton<IUserProviderResolver>(sp => new UserProviderResol
 builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp => new UserChatClientFactoryProvider(
     sp.GetRequiredService<IUserProviderResolver>(),
     OtelSourceName,
-    sp.GetRequiredService<ILogger<MultiProviderChatClientFactory>>()));
+    sp.GetRequiredService<ILogger<MultiProviderChatClientFactory>>(),
+    // Registered only by local storage: turns an attachment reference URL into image bytes at request time.
+    sp.GetService<AttachmentInliner>()));
 
 builder.Services.AddSingleton<IModelCatalog>(sp => new CompositeModelCatalog(
     [.. models.Discovering.Select(d => new AzureModelCatalog(
@@ -135,42 +133,10 @@ builder.Services.AddSingleton<IUserModelCatalogProvider>(sp => new UserModelCata
     // Optional: registered by AddCopilotAgents. Lists a connected GitHub Copilot plan's models (ADR 0108).
     sp.GetService<CopilotModelDirectory>()));
 
-// Blob-backed attachment store (ADR 0004): durable image bytes live in blob storage, never in
-// the serialized session. Prefer an Aspire-provided connection (Azurite under the AppHost);
-// otherwise use the blob endpoint + the same managed identity, whose Storage Blob Data
-// Contributor role also enables key-free user-delegation SAS.
-var blobConnection = builder.Configuration.GetConnectionString("blobs");
-if (!string.IsNullOrWhiteSpace(blobConnection))
-{
-    builder.Services.AddSingleton(new BlobServiceClient(blobConnection));
-}
-else
-{
-    var blobEndpoint = builder.Configuration["Storage:BlobEndpoint"]
-        ?? throw new InvalidOperationException(
-            "Storage:BlobEndpoint is not configured. Set it in appsettings.json, user secrets, " +
-            "or the Storage__BlobEndpoint environment variable (e.g. https://<account>.blob.core.windows.net).");
-    builder.Services.AddSingleton(new BlobServiceClient(new Uri(blobEndpoint), credential));
-}
-
-builder.Services.AddSingleton<IAttachmentStore, BlobAttachmentStore>();
-
-// Data Protection (ADR 0018): encrypts the API keys of user-configured providers. In prod the key
-// ring MUST be persisted out-of-process — an ephemeral ring rotates on restart and orphans every
-// stored secret. Gate on the PROD branch (Storage:BlobEndpoint set, and NOT the Azurite/AppHost
-// GetConnectionString("blobs") path) and use the MI PersistKeysToAzureBlobStorage(BlobClient) overload:
-// shared-key auth is disabled on the account, so the connection-string overload cannot work. The
-// master key itself is protected only by Storage SSE + RBAC (no ProtectKeysWith…) — the user secrets
-// it encrypts are DP-encrypted on top. DevHost/tests fall through to the default ephemeral ring (fine —
-// nothing persisted there).
-var dataProtection = builder.Services.AddDataProtection();
-var dataProtectionBlobEndpoint = builder.Configuration["Storage:BlobEndpoint"];
-if (string.IsNullOrWhiteSpace(blobConnection) && !string.IsNullOrWhiteSpace(dataProtectionBlobEndpoint))
-{
-    var keyRingBlob = new BlobClient(
-        new Uri(dataProtectionBlobEndpoint.TrimEnd('/') + "/dataprotection/keys.xml"), credential);
-    dataProtection.PersistKeysToAzureBlobStorage(keyRingBlob);
-}
+// Durable storage (Storage:Provider, default azure): Cosmos + Blob today, or Postgres + a filesystem volume for
+// self-hosting. Registers the attachment, skill, document-index and chat-search ports, the Data Protection key
+// ring (ADR 0018) and, for Azure, the Cosmos/Blob clients. See StorageRegistration; the Orleans half is below.
+builder.AddStorageProvider(credential);
 
 // Per-user MCP tools (config-driven remote MCP servers): the provider connects to the signed-in user's
 // enabled MCP servers and hands the agent grain their tools (resolved on activation, version-cached,
@@ -191,11 +157,6 @@ builder.Services.AddSingleton<McpConnectionTester>();
 // /api/local-bridge. AddLocalBridge DECORATES the IMcpConnectionFactory registered above, so it must stay
 // below it — ProjectLayoutTests.Hosts_RegisterLocalBridge pins the order.
 builder.Services.AddLocalBridge();
-// Uploaded agent skills (ADR 0049): the Blob package store. Resolved only OPTIONALLY, out of IServiceProvider
-// inside the endpoint handler, so a host that omits it degrades to a 409 instead of breaking route matching for
-// the whole host (the /api/speech and /api/config-health pattern). The IUserSkillProvider over it is a grain
-// dependency and comes from AddAgent42Silo below.
-builder.Services.AddSingleton<ISkillPackageStore, BlobSkillPackageStore>();
 
 // Document RAG (ADR 0007/0018). There is NO operator embedding generator: the embedding model is
 // per-user (chosen in Preferences), so ingestion and retrieval resolve their generator from the user's
@@ -203,11 +164,6 @@ builder.Services.AddSingleton<ISkillPackageStore, BlobSkillPackageStore>();
 // AzureOpenAI:EmbeddingDeploymentName prerequisite. A user with no embedding model configured cannot
 // attach documents (the composer gates it) and RAG retrieval degrades to empty. The extractor, chunker and
 // ingestion service are host-invariant and come from AddAgent42Silo below.
-
-// The document index (ADR 0007) branches on whether the doc-chunks container is configured;
-// that decision lives with the Documents feature (ADR 0040/0050), not inline here.
-builder.Services.AddDocumentIndex(builder.Configuration);
-builder.Services.AddChatSearchIndex(builder.Configuration);
 
 // Web tools (ADR 0011): search runs against the SearXNG sidecar in this Container App, reached over
 // localhost. Eager-validated so a missing endpoint fails at startup rather than in the middle of a
@@ -425,7 +381,7 @@ builder.Services.AddAgent42Silo();
 // Orleans silo: clustering comes from the Aspire Orleans resource when running
 // under Aspire orchestration; localhost clustering is the fallback for a single
 // standalone instance (e.g. one Container App replica with no Aspire AppHost).
-// the agent state is persisted with Microsoft.Orleans.Persistence.Cosmos.
+// the agent state and reminders are persisted by the storage provider (Cosmos, or Postgres when local).
 builder.UseOrleans(silo =>
 {
     // Flow the W3C trace context (Activity.Current) across grain-call boundaries. Orleans does NOT
@@ -446,32 +402,13 @@ builder.UseOrleans(silo =>
         silo.UseLocalhostClustering();
     }
 
-    silo.AddCosmosGrainStorage(AgentGrain.StorageProviderName, options =>
-    {
-        options.ConfigureCosmosClient(sp =>
-            ValueTask.FromResult(sp.GetRequiredService<CosmosClient>()));
-        options.DatabaseName = "agent42";
-        options.ContainerName = "agent-state";
-        options.IsResourceCreationEnabled = false;
-    });
-
-    // Durable reminders (the schedule_prompt agent tool) persisted in Cosmos, so a
-    // scheduled reminder survives silo restarts just like the agent state does.
-    // Resource creation is disabled: the account has disableLocalAuth: true, and
-    // Cosmos's AAD data-plane RBAC cannot create databases/containers (only ARM
-    // control-plane can), so the "reminders" container is pre-created in
-    // infra/modules/cosmos.bicep instead.
-    silo.UseCosmosReminderService(options =>
-    {
-        options.ConfigureCosmosClient(sp =>
-            ValueTask.FromResult(sp.GetRequiredService<CosmosClient>()));
-        options.DatabaseName = "agent42";
-        options.ContainerName = "reminders";
-        options.IsResourceCreationEnabled = false;
-    });
+    silo.UseStorageProvider(builder.Configuration);
 });
 
 var app = builder.Build();
+
+// Local storage (Storage:Provider = local) runs with no authentication: say so once at startup. See LocalModeWarning.
+LocalModeWarning.LogIfLocal(builder.Configuration, app.Logger);
 
 // An alias entry is an authorization grant, so one refused for being malformed must be visible rather
 // than silently absent. Warning, not Information: Logging:LogLevel:Default is Warning in production, so

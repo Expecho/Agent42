@@ -34,6 +34,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Classic script shared by the app AND the public viewer (window global, guarded consumers) | `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` | 2026-10-03 |
 | Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/Attachments/IAttachmentStore.cs`, `src/Agent42.Agents/Attachments/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` | 2026-07-08 |
 | Storage with ALL logic over a narrow Blob seam (contract-tested over the in-memory twin) | `src/Agent42.Agents/Fleet/FleetStore.cs`, `src/Agent42.Agents/Fleet/IFleetBlobs.cs`, `src/Agent42.Backend/Fleet/AzureFleetBlobs.cs` | 2026-10-13 |
+| Storage provider switch (one static class per provider behind `AddStorageProvider` / `UseStorageProvider`) | `src/Agent42.Backend/Storage/StorageRegistration.cs`, `src/Agent42.Backend/Storage/LocalStorageRegistration.cs` | 2026-11-14 |
 | SSE endpoint: replay a persisted log, then live, with a keep-alive | `src/Agent42.Backend/Fleet/AgentApi.Fleet.cs`, `src/Agent42.Backend/Fleet/FleetEventLog.cs` | 2026-10-13 |
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
 | Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
@@ -4988,3 +4989,51 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Fleet/AgentApi.FleetAnalyzer.cs`, `tests/Agent42.Tests/FleetAnalyzerPanelApiTests.cs`
   (`Panel_NotListed`, `DeletingTheTask_PurgesItsAnalyzerConversation`)
 - **Verified:** 2026-11-09
+
+### Local storage writes the same `$type` JSON as Cosmos, so every persisted-state rule holds on both providers
+
+- **Claim:** `Storage:Provider = local` stores grain state through Orleans' ADO.NET provider, which (measured, Orleans 10.3.1)
+  writes the SAME `JsonGrainStorageSerializer` document as the Cosmos path (`$id`, `$type` with the full CLR name) as UTF-8
+  bytes in `orleansstorage.payloadbinary`. So the namespace rule, trailing `[Id(n)]` fields, no collection expression into
+  `IReadOnlyList<T>` and no `bool = true` default all bind exactly as before; `PostgresGrainStorageTests` proves them on a real
+  row. Three Postgres-only traps: (1) the packages ship NO SQL and Orleans' scripts are not idempotent, so
+  `PostgresSchema` embeds them and applies each only when its table is missing, under an advisory lock; (2) Npgsql loads the
+  type catalog on the FIRST connection, which is the bootstrap, before `CREATE EXTENSION vector`, so the bootstrap must call
+  `ReloadTypesAsync` or every later connection fails with "Cannot resolve 'vector'" until a restart; (3) the provider keeps a
+  row version, so a second write through a fresh `GrainState` for the same id throws `InconsistentStateException` (a grain's
+  own `IPersistentState` carries the version, so only hand-driven storage calls hit it).
+- **Evidence:** `src/Agent42.Backend/Storage/PostgresSchema.cs`, `tests/Agent42.Tests/PostgresGrainStorageTests.cs`
+- **Verified:** 2026-11-14
+
+### pgvector cannot index a vector above 2000 dimensions, so the local document index is an exact scan
+
+- **Claim:** HNSW and IVFFlat refuse a `vector` column over 2000 dimensions, and the document index default is 3072
+  (`text-embedding-3-large`). `PostgresDocumentIndex` therefore has NO ANN index: it orders by `embedding <=> @query` over the
+  owner's rows (every query is owner-scoped, so the scan is one conversation's chunks). A 3072-dimension `halfvec` can be
+  HNSW-indexed, if a corpus ever outgrows the scan. `Storage:Local:DocChunksDimensions` fixes the column at creation: changing
+  it needs a new database, and ingest's pre-upsert dimension check (ADR 0030) is what turns a mismatch into a clear message.
+- **Evidence:** `src/Agent42.Backend/Storage/PostgresDocumentIndex.cs`, `src/Agent42.Backend/Storage/Sql/agent42.sql`
+- **Verified:** 2026-11-14
+
+### The model's attachment URL is persisted in the session, so local storage cannot use a data: URL
+
+- **Claim:** The grain writes the URL `IAttachmentStore.GetReadUrlAsync` returns into the chat history (`UriContent`), which
+  is serialized into the 2 MB-capped grain state and re-signed on activation. A `data:` URL (megabytes of base64) would blow
+  that cap, and a hosted model cannot fetch a URL on the host. `FileAttachmentStore` returns a constant
+  `agent42-attachment://local/{ownerKey}/{id}` instead (which also keeps the prompt-prefix cache stable, ADR 0104), and
+  `AttachmentInlineChatClient`, in `MultiProviderChatClientFactory.Build` just above `ToolImageChatClient` (below OTel) and registered only for local storage,
+  swaps it for `DataContent` per request without touching the persisted messages. Any NEW producer of a model-facing image URL
+  must go through the store, and any new `IChatClient` path must be built by that factory, or it will send the reference.
+- **Evidence:** `src/Agent42.Backend/Storage/AttachmentInlineChatClient.cs`, `tests/Agent42.Tests/AttachmentUrlRewriteTests.cs`
+  (`EveryProviderKind_TheFactoryBuilds_RewritesTheReference`)
+- **Verified:** 2026-11-14
+
+### `LocalFileStore.Resolve` is the only place a storage key becomes a file path
+
+- **Claim:** The file-backed stores take keys that carry text that is not ours (a Copilot runtime path, a user or conversation
+  id, an uploaded file's name). `LocalFileStore.Resolve` refuses rooted keys, `..` and empty segments, backslash, colon,
+  wildcard characters, Windows device names and a trailing dot or space, then checks the resolved path is under the root. No
+  store may build a path itself or call `Path.Combine` on a key. The attachment store escapes each segment first and keeps
+  its metadata sidecars in a separate folder, so a client-chosen attachment id can never read a sidecar as content.
+- **Evidence:** `src/Agent42.Backend/Storage/LocalFileStore.cs`, `tests/Agent42.Tests/LocalFileStoreTests.cs`
+- **Verified:** 2026-11-14

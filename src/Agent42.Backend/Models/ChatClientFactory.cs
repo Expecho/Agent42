@@ -34,6 +34,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
     private readonly string _otelSourceName;
     private readonly ILogger<MultiProviderChatClientFactory> _logger;
     private readonly ConcurrentDictionary<string, IChatClient> _clients = new();
+    private readonly AttachmentInliner? _attachmentInliner;
 
     public MultiProviderChatClientFactory(
         IReadOnlyDictionary<string, Provider> providers,
@@ -42,7 +43,8 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         ILogger<MultiProviderChatClientFactory> logger,
         string defaultEmbeddingModelId = "",
         string defaultSpeechModelId = "",
-        string defaultTranscriptionModelId = "")
+        string defaultTranscriptionModelId = "",
+        AttachmentInliner? attachmentInliner = null)
     {
         // An empty provider set is now a supported state, not a misconfiguration (ADR 0019): a user who
         // has configured no chat provider gets an empty factory whose DefaultModelId is "" and whose
@@ -66,6 +68,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
             : ModelId.Parse(defaultModelId, FallbackProviderKey(providers)).Provider;
         _otelSourceName = otelSourceName;
         _logger = logger;
+        _attachmentInliner = attachmentInliner;
     }
 
     public string DefaultModelId { get; }
@@ -273,6 +276,9 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
             .UseOpenTelemetry(sourceName: _otelSourceName, configure: cfg => cfg.EnableSensitiveData = true)
             .Use(inner => new ProviderKindTagChatClient(inner, provider.Options.Kind))
             .Use(inner => new PromptCacheKeyChatClient(inner, provider.Options))
+            // Local storage only (null otherwise, so the Azure build is unchanged): swaps an attachment reference URL for the
+            // image bytes on the way to the model, just above the tool images (which stay last, pinned by a test) and for the same below-OTel reason.
+            .Use(inner => _attachmentInliner is null ? inner : new AttachmentInlineChatClient(inner, _attachmentInliner))
             .Use(inner => new ToolImageChatClient(inner))
             .Build();
     }
