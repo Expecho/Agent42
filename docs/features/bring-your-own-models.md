@@ -20,6 +20,7 @@ the composer stays gated and the model picker is empty.
 > The token is stored encrypted like any key, is sent per Copilot session, and is never the runtime's identity.
 > Delete the row to disconnect. The server needs the OAuth App (`GitHub:OAuth:ClientId` + `GH_OAUTH_CLIENT_SECRET`),
 > or the button is hidden.
+> Self-hosting needs its own OAuth App: see [`self-hosting.md`](self-hosting.md#github-copilot).
 
 > **Embedding models (ADR 0030):** a model can also be marked **embeddings** — document Q&A (RAG)
 > uses whichever embedding model you pick as the **default embedding model** (a second selector on

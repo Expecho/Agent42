@@ -76,6 +76,29 @@ session files, the Data Protection key ring) and `agent42-copilot` (chat workspa
 
 The Configuration tab (Preferences) shows the provider and marks the Azure-only keys as not applicable.
 
+## GitHub Copilot
+
+"Sign in with GitHub" (ADR 0108) is hidden until the server has an OAuth App's client id and secret. The id committed in
+`appsettings.json` is the production app and redirects to `chat.agent42.nl`, so a self-host needs its own:
+
+1. On GitHub: Settings, Developer settings, OAuth Apps, New. Homepage `http://localhost:8080`, callback
+   `http://localhost:8080/api/providers/github/callback`. Generate a client secret.
+2. Put the secret in `.env` as `GH_OAUTH_CLIENT_SECRET=...` (git-ignored).
+3. Create `compose.override.yaml` next to `compose.yaml` (Compose merges it automatically):
+
+   ```yaml
+   services:
+     app:
+       environment:
+         GitHub__OAuth__ClientId: <your client id>
+         GitHub__OAuth__ClientSecret: ${GH_OAUTH_CLIENT_SECRET}
+   ```
+
+4. `docker compose up -d app`, then open the models tab in Preferences and click **Sign in with GitHub**.
+
+Browse the app at `localhost`, not `127.0.0.1`: the redirect URI is built from the request and must match the callback you
+registered. Copilot models run only in Copilot-kind agents (see [`bring-your-own-models.md`](bring-your-own-models.md)).
+
 ## See also
 
 - [`.agentic/decisions/0127-self-hosting-local-storage-provider.md`](../../.agentic/decisions/0127-self-hosting-local-storage-provider.md)
