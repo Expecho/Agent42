@@ -11,7 +11,7 @@ conversation moves forward on its own. Reminders survive restarts (they're durab
 repeat, and can be cancelled.
 
 This is the **most Orleans-centric feature** in the app: it's built directly on Orleans
-Reminders backed by Cosmos.
+Reminders backed by Cosmos (or by Postgres with `Storage:Provider = local`, ADR 0127: `UseAdoNetReminderService`, see [self-hosting.md](self-hosting.md)).
 
 ## How it works
 

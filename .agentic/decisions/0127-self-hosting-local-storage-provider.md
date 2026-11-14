@@ -4,8 +4,8 @@ date: 2026-11-14
 status: accepted
 tags: [storage, self-hosting, postgres, orleans, attachments, docker, no-migration, egress]
 supersedes: []
-extends: [0001, 0004, 0111]
-amends: [0001, 0004, 0111]
+extends: [0001, 0004, 0007, 0018, 0061, 0111]
+amends: [0001, 0004, 0007, 0018, 0061, 0111]
 ---
 
 # A second storage provider: Postgres and a filesystem volume, selected by `Storage:Provider`
@@ -64,5 +64,5 @@ exactly as it is. The user chose Postgres for the database side and to keep both
 - Local mode has no ANN index and a different search ranking than production. Known limits, documented.
 - Local mode is single-replica like production (rule 12); the advisory lock is the guard against a second container on one
   database.
-- ADR 0001 (Cosmos persistence), 0004 (Blob attachments, SAS read URLs) and 0111 (Blob lease) describe the `azure` provider
-  and are unchanged for it.
+- ADR 0001 (Cosmos persistence), 0004 (Blob attachments, SAS read URLs), 0007 (Cosmos vector index), 0018 (Blob key ring), 0061
+  (Cosmos chat search) and 0111 (Blob lease) describe the `azure` provider and are unchanged for it.
