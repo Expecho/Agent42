@@ -158,7 +158,11 @@ public sealed class ToolSelection : IToolSelection
         [
             .. effective
                 .Where(k => k != ToolCatalog.Skills)
-                .Concat(MergedSkills(context).Select(s => ToolCatalog.SkillKey(s.Name)))
+                // A companion skill (ToolCatalog.CompanionSkills) has no picker row, so it mints no key here: it
+                // follows its tool's key, which is already in this list.
+                .Concat(MergedSkills(context)
+                    .Where(s => !ToolCatalog.IsCompanionSkill(s.Name))
+                    .Select(s => ToolCatalog.SkillKey(s.Name)))
                 .Distinct(StringComparer.Ordinal),
         ];
     }

@@ -125,13 +125,36 @@ public class ToolCatalogTests
             result);
     }
 
-    [Fact] // AC2/AC4 — a skill is enabled by the wildcard OR its own key, and by neither otherwise.
+    [Fact] // AC2/AC4 — an ordinary skill is enabled by the wildcard OR its own key, and by neither otherwise.
     public void IsSkillEnabled_HonoursWildcardAndPerSkillKey()
     {
-        Assert.True(ToolCatalog.IsSkillEnabled("websearch", new HashSet<string> { ToolCatalog.Skills }));
-        Assert.True(ToolCatalog.IsSkillEnabled("websearch", new HashSet<string> { "skill:websearch" }));
-        Assert.False(ToolCatalog.IsSkillEnabled("websearch", new HashSet<string> { "skill:scheduledprompt" }));
-        Assert.False(ToolCatalog.IsSkillEnabled("websearch", new HashSet<string> { ToolCatalog.WebSearch }));
+        Assert.True(ToolCatalog.IsSkillEnabled("invoices", new HashSet<string> { ToolCatalog.Skills }));
+        Assert.True(ToolCatalog.IsSkillEnabled("invoices", new HashSet<string> { "skill:invoices" }));
+        Assert.False(ToolCatalog.IsSkillEnabled("invoices", new HashSet<string> { "skill:other" }));
+        Assert.False(ToolCatalog.IsSkillEnabled("invoices", new HashSet<string> { ToolCatalog.WebSearch }));
+    }
+
+    [Fact] // A companion skill is enabled by its tool's key and by NOTHING else — not the wildcard, not its own key.
+    public void IsSkillEnabled_CompanionSkillFollowsOnlyItsToolKey()
+    {
+        Assert.True(ToolCatalog.IsSkillEnabled("websearch", new HashSet<string> { ToolCatalog.WebSearch }));
+        Assert.True(ToolCatalog.IsSkillEnabled("scheduledprompt", new HashSet<string> { ToolCatalog.Scheduling }));
+
+        Assert.False(ToolCatalog.IsSkillEnabled("websearch", new HashSet<string> { ToolCatalog.Scheduling }));
+        Assert.False(ToolCatalog.IsSkillEnabled("scheduledprompt", new HashSet<string> { ToolCatalog.WebSearch }));
+        Assert.False(ToolCatalog.IsSkillEnabled("websearch", new HashSet<string> { ToolCatalog.Skills }));
+        Assert.False(ToolCatalog.IsSkillEnabled("websearch", new HashSet<string> { "skill:websearch" }));
+
+        // A user upload shadowing the shipped name (any casing) is still that tool's companion.
+        Assert.True(ToolCatalog.IsSkillEnabled("WebSearch", new HashSet<string> { ToolCatalog.WebSearch }));
+    }
+
+    [Fact] // Every companion points at a real selectable key, and every shipped skill is one (none has a picker row).
+    public void CompanionSkills_PointAtSelectableKeys_AndCoverTheShippedSkills()
+    {
+        Assert.All(ToolCatalog.CompanionSkills.Values, key => Assert.Contains(key, ToolCatalog.AllSelectableToolKeys));
+        Assert.All(SkillCatalog.Skills, skill => Assert.True(ToolCatalog.IsCompanionSkill(skill.Name), skill.Name));
+        Assert.False(ToolCatalog.IsCompanionSkill("invoices"));
     }
 
     [Fact] // AC14 — the key helpers agree on the skill:{name} shape.

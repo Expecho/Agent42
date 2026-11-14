@@ -309,8 +309,9 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
     [Fact]
     public async Task CopilotSkills_PassSelectedDirectories_Only()
     {
-        await CopilotChatAsync("copilot-skills-one", tools: [ToolCatalog.Scheduling, ToolCatalog.SkillKey("websearch")]);
-        await CopilotChatAsync("copilot-skills-none", tools: [ToolCatalog.Scheduling]);
+        // Skills are the tools' companions, so selecting the Web search tool is what hands over `websearch`.
+        await CopilotChatAsync("copilot-skills-one", tools: [ToolCatalog.WebSearch]);
+        await CopilotChatAsync("copilot-skills-none", tools: [ToolCatalog.Location]);
 
         var one = LastRequest("copilot-skills-one");
         Assert.Equal("websearch", Path.GetFileName(Assert.Single(one.SkillDirectories)));

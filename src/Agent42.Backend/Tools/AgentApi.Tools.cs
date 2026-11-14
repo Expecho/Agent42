@@ -40,9 +40,11 @@ public static partial class AgentApi
             // OrdinalIgnoreCase, matching ToolSelection.MergedSkills: the picker and the gate must agree about
             // which skills exist, or a key the user can tick would gate nothing.
             var shadowed = uploaded.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            // Companion skills (websearch, scheduledprompt) are not rows: they follow their tool's own checkbox.
             var skillDescriptors = uploaded
                 .Select(s => s.Name)
                 .Concat(SkillCatalog.Skills.Select(s => s.Name).Where(n => !shadowed.Contains(n)))
+                .Where(n => !ToolCatalog.IsCompanionSkill(n))
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .Select(n => new ToolDescriptor(ToolCatalog.SkillKey(n), n, RequiresHostedTools: false));
 

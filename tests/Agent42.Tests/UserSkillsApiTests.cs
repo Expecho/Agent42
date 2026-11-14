@@ -111,7 +111,7 @@ public sealed class UserSkillsApiTests(UserSkillsApiFixture fixture) : SharedClu
         var keys = await ToolKeysAsync("user-tools");
 
         Assert.Contains(ToolCatalog.SkillKey("invoices"), keys);
-        Assert.Contains(ToolCatalog.SkillKey("websearch"), keys);   // the shipped ones are still there
+        Assert.DoesNotContain(ToolCatalog.SkillKey("websearch"), keys);   // shipped skills are companions: no row
         Assert.DoesNotContain(ToolCatalog.Skills, keys);            // the bare wildcard is never a checkbox
     }
 
@@ -127,8 +127,9 @@ public sealed class UserSkillsApiTests(UserSkillsApiFixture fixture) : SharedClu
         var warning = Assert.Single(payload.GetProperty("warnings").EnumerateArray()).GetString();
         Assert.Contains("websearch", warning!, StringComparison.Ordinal);
 
+        // The shadowing upload is still the web search tool's companion, so it gets no picker row either.
         var keys = await ToolKeysAsync("user-shadow");
-        Assert.Single(keys, k => k == ToolCatalog.SkillKey("websearch"));
+        Assert.DoesNotContain(ToolCatalog.SkillKey("websearch"), keys);
     }
 
     // AC11: the ADR 0049 auto-enable. A user who has ever pressed Save in the tools picker has a

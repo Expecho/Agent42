@@ -12,8 +12,10 @@ today (`websearch`, `scheduledprompt`).
 
 Users can upload their own from **Preferences → Skills** (ADR 0049): a bare `SKILL.md`, or a
 `.zip` with one or more skill directories and their resource files. An upload with the same name
-as a shipped skill replaces it for that user. Every skill is its own entry in the tool picker
-(`skill:{name}`, ADR 0048).
+as a shipped skill replaces it for that user. Every uploaded skill is its own entry in the tool picker
+(`skill:{name}`, ADR 0048). The two shipped skills are the exception (ADR 0126): they have no picker row and
+follow their tool — `websearch` is on exactly when **Web search** is, `scheduledprompt` exactly when
+**Scheduling** is (also for an upload that shadows one of them).
 
 ## How it works
 

@@ -407,7 +407,30 @@ public static class ToolCatalog
     /// way — which is what lets a user's upload shadow a shipped skill under one key rather than two.</para>
     /// </summary>
     public static bool IsSkillEnabled(string name, ISet<string> enabled)
-        => enabled.Contains(Skills) || enabled.Contains(SkillKey(name));
+        => CompanionSkills.TryGetValue(name, out var toolKey)
+            ? enabled.Contains(toolKey)
+            : enabled.Contains(Skills) || enabled.Contains(SkillKey(name));
+
+    /// <summary>
+    /// The shipped skills that are the <b>usage guidance of one selectable tool</b>, keyed by skill name and
+    /// valued with that tool's key. A companion skill has no picker row and no <c>skill:{name}</c> key of its
+    /// own: <see cref="IsSkillEnabled"/> turns it on exactly when its tool's key is selected, so the guidance
+    /// can never be advertised for a tool the model does not have (or withheld from one it does).
+    ///
+    /// <para>Matched by NAME, case-insensitively, and therefore also covers a user upload that shadows the
+    /// shipped skill (ADR 0049): the replacement is still that tool's guidance and follows the same switch.
+    /// The bare <see cref="Skills"/> wildcard and a stale <c>skill:{name}</c> key deliberately do NOT enable
+    /// one — only the tool key does.</para>
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> CompanionSkills { get; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["websearch"] = WebSearch,
+            ["scheduledprompt"] = Scheduling,
+        };
+
+    /// <summary>True when a skill is a tool's companion (see <see cref="CompanionSkills"/>), so it gets no picker row.</summary>
+    public static bool IsCompanionSkill(string name) => CompanionSkills.ContainsKey(name);
 
     /// <summary>
     /// True when a tool with this registered name should be kept given the effective selection.

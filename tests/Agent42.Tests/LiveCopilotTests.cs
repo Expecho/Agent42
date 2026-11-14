@@ -173,7 +173,7 @@ public sealed class LiveCopilotTests(ITestOutputHelper output)
     {
         await using var cluster = await DeployAsync();
         var agent = await BindAsync(cluster, $"live-copilot-skill-{Guid.NewGuid():n}",
-            [ToolCatalog.WebSearch, ToolCatalog.SkillKey("websearch")]);
+            [ToolCatalog.WebSearch]);
 
         var events = await CollectAsync(agent.ChatAsync(
             "Load your websearch skill with the skill tool, then tell me in one sentence what it says to do when the "
