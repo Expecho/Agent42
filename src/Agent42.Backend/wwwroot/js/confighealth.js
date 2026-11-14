@@ -1,10 +1,24 @@
 /* Agent 42 — configuration health (ADR 0029). Split out of app.js (ADR 0041). */
 
-import { configHealthList, runConfigProbesBtn, searxngUiLink } from "./dom.js";
+import { configHealthList, runConfigProbesBtn, searxngUiLink, tabConfig } from "./dom.js";
+
+// Shows the Configuration tab to owners only. /api/config-health is owner-gated (ADR 0121) and answers a
+// non-owner 404, so the tab would otherwise be an empty panel. The tab starts [hidden] in index.html, and
+// any failure here keeps it hidden: fail closed, like the gate. Cosmetic only; the gate is the protection.
+async function applyAccess() {
+  let isOwner = false;
+  try {
+    const res = await fetch("/api/access");
+    if (res.ok) isOwner = (await res.json()).isOwner === true;
+  } catch { /* silo may be unreachable; the tab stays hidden until the next open */ }
+  tabConfig.hidden = !isOwner;
+  return isOwner;
+}
 
 // Fetches the health report and renders it. probe=false (the default, on tab open) is the STATIC report
 // and runs no metered calls; probe=true runs the opt-in live probes (button). Mirrors loadProviders.
 export async function loadConfigHealth(probe = false) {
+  if (!(await applyAccess())) return; // a non-owner has no tab, and the endpoint would only answer 404
   try {
     const res = await fetch(`/api/config-health${probe ? "?probe=true" : ""}`);
     if (!res.ok) return;
