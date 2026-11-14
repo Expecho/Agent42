@@ -10,6 +10,8 @@ amends: [0011, 0066]
 
 # MCP tool results may seed the conversation's fetchable-URL allowlist (per-server opt-in)
 
+> **Amended by [ADR 0125](0125-remove-fetch-web-page-and-context-dev.md) (2026-11-14).** The seeded allowlist now feeds `read_web_document` only, because `fetch_web_page` no longer exists.
+
 > **Amends [ADR 0011](0011-web-search-self-hosted-searxng-sidecar.md)** — the fetchable-URL allowlist
 > gains a **third** feeder, and the "a string a search engine or the user produced *verbatim*" property
 > is narrowed for the servers a user opts in. **Amends [ADR 0066](0066-in-container-document-fetch-for-rag.md)**

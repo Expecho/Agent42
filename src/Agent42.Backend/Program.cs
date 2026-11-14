@@ -220,16 +220,14 @@ if (string.IsNullOrWhiteSpace(webSearchEndpoint))
         "WebSearch__Endpoint environment variable (the SearXNG sidecar, e.g. http://localhost:8888).");
 }
 
-// Explicit timeouts on both web clients, and NO retry pipeline.
+// Explicit timeouts on the web clients, and NO retry pipeline.
 //
 // AddServiceDefaults() applies AddStandardResilienceHandler() to EVERY HttpClient via
 // ConfigureHttpClientDefaults, so these named clients would silently inherit 3 retries plus the
-// handler's own generous per-attempt/total timeouts. Both are wrong here, and RemoveAllResilienceHandlers
+// handler's own generous per-attempt/total timeouts. Those are wrong here, and RemoveAllResilienceHandlers
 // is what actually opts out (setting HttpClient.Timeout alone does not — the pipeline still wraps it):
-//   * AgentGrain is NON-REENTRANT, so a slow search→fetch chain serializes the conversation's turn and
-//     delays the user's first token — and a retry multiplies that stall by four. The scrape client's
-//     timeout is higher than the search client's because a context.dev scrape renders the page (and, when
-//     following, does 1 + N of them) — but it is still bounded, for the same non-reentrancy reason.
+//   * AgentGrain is NON-REENTRANT, so a slow search→read chain serializes the conversation's turn and
+//     delays the user's first token — and a retry multiplies that stall by four.
 // A web lookup that hasn't answered within these timeouts is not worth the stall; the tools degrade by
 // telling the model the lookup failed.
 // EXTEXP0001: RemoveAllResilienceHandlers is still marked experimental, but it is the only supported way
@@ -245,22 +243,7 @@ builder.Services.AddHttpClient(SearxngWebSearch.HttpClientName, http =>
 })
     .RemoveAllResilienceHandlers();
 
-// fetch_web_page over the hosted context.dev scrape API (ADR 0027). Unlike the old WebPageFetcher this is
-// NOT an SSRF sink — our container never dials the model's URL, context.dev does — so there is NO
-// ConfigurePrimaryHttpMessageHandler / connect-time guard to install here; the host is fixed and ours.
-// A missing key is NOT eager-validated into a startup throw (unlike SEARXNG_SECRET, which is on the
-// availability path): with no key the client is still registered, calls 401, and the tool tells the model
-// the page could not be read. ConfigureClient carries the blank-key branch — a blank bearer value throws.
-var contextApiKey = builder.Configuration["ContextScrape:ApiKey"];
-builder.Services.AddHttpClient(ContextWebPageFetcher.HttpClientName, http =>
-{
-    ContextWebPageFetcher.ConfigureClient(http, contextApiKey);
-    http.Timeout = TimeSpan.FromSeconds(30);
-})
-    .RemoveAllResilienceHandlers();
-
-// read_web_document over an in-container fetch (ADR 0066). THIS ONE IS AN SSRF SINK, unlike the scrape
-// client above, and the ConfigurePrimaryHttpMessageHandler further down is the entire control: our
+// read_web_document over an in-container fetch (ADR 0066). THIS ONE IS AN SSRF SINK, and the ConfigurePrimaryHttpMessageHandler further down is the entire control: our
 // container — which holds the managed identity Azure IMDS mints Cosmos/Storage/OpenAI tokens for — dials
 // a URL the MODEL chose, and (because /api/agent-run is on excludedPaths, ADR 0022) a URL an API key
 // holder can put in front of it with no browser session. PrivateAddressGuard runs at CONNECT time inside
@@ -309,10 +292,6 @@ builder.Services.AddHttpClient(SearxngProxy.HttpClientName, http =>
 builder.Services.AddSingleton<IWebSearch>(sp => new SearxngWebSearch(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient(SearxngWebSearch.HttpClientName),
     sp.GetRequiredService<ILogger<SearxngWebSearch>>()));
-
-builder.Services.AddSingleton<IWebPageFetcher>(sp => new ContextWebPageFetcher(
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient(ContextWebPageFetcher.HttpClientName),
-    sp.GetRequiredService<ILogger<ContextWebPageFetcher>>()));
 
 // read_web_document (ADR 0066): the guarded fetcher over the client registered above. A mandatory AgentGrain
 // dependency (AddAgent42Silo checks it); its ingestion port is host-invariant and comes from AddAgent42Silo.
@@ -386,9 +365,9 @@ builder.Services.AddAgentFleet(builder.Configuration);
 // Web Push notifications (ADR 0028): a push when an agent replies on an async path (a fired reminder or an
 // agent-run) while the user is away.
 //
-// Like the geocoding and context.dev keys above, a missing key is NOT eager-validated into a startup throw —
+// Like the geocoding key above, a missing key is NOT eager-validated into a startup throw —
 // the VAPID private key is the ONLY secret and is OPTIONAL / not on the availability path (copy the
-// contextApiKey/googleMapsApiKey shape, NOT searxngSecret): with no key the app starts, PushConfig reports
+// googleMapsApiKey shape, NOT searxngSecret): with no key the app starts, PushConfig reports
 // Enabled:false, GET /api/push/config returns enabled:false, the UI hides the toggle, and the no-op sender
 // does nothing. The public key + subject are non-secret (committed in appsettings.json); the browser fetches
 // the public key from GET /api/push/config. Enabled is the single source of the "push is on" fact — the same

@@ -64,7 +64,7 @@ public sealed partial class AgentGrain
     // "the user has uploaded" wording — the strongest trust signal in the prompt. Web-fetched documents
     // (read_web_document, a MODEL-chosen URL) get their own sentence that says plainly they are untrusted
     // and must be treated as data. Merging the two lists would assert user provenance for possibly
-    // attacker-authored content, the exact inverse of BuildFetchPayload's "UNTRUSTED: …" labelling.
+    // attacker-authored content, the exact inverse of the "UNTRUSTED: …" labelling.
     // WebDocument_IsNotDescribedAsUserUploaded pins it.
     private string WithDocumentAwareness(string baseInstructions)
     {

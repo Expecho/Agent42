@@ -64,7 +64,7 @@ Verified against the tree at `9ba20b7`.
 - `src/Agent42.Backend/wwwroot/js/agents.js`, `index.html`, `sw.js` (`CACHE` bump v19 → v20)
 - **`infra/main.bicep`** — declares the new optional params and threads them to the module. **This
   is the file the previous revision forgot, and the omission breaks the entire deploy, not just
-  telephony:** every optional secret is declared here (`googleMapsApiKey`, `contextApiKey`,
+  telephony:** every optional secret is declared here (`googleMapsApiKey`,
   `vapidPrivateKey`) and passed through to `container-app.bicep`; passing
   `acsConnectionString=…` on the `az deployment group create` line for a template that does not
   declare it is an ARM `InvalidTemplate` failure. Step 1's `az bicep build` **cannot** catch it,
@@ -290,7 +290,7 @@ Its complexity existed only because Play and Recognize were separate actions.)*
 ### Other investigation findings the executor cannot cheaply re-derive
 
 - **The whole feature must be OFF the availability path.** Telephony config follows the
-  `contextApiKey`/`vapidPrivateKey` shape, *not* `searxngSecret`: blank connection string → the app
+  `googleMapsApiKey`/`vapidPrivateKey` shape, *not* `searxngSecret`: blank connection string → the app
   boots normally, the two endpoints 404, nothing else changes. Evidence: the optional-secret
   `concat()` pattern in the secrets block of `infra/modules/container-app.bicep`, and the
   `@minLength(16)` on `searxngSecret` in `infra/main.bicep`.
@@ -458,7 +458,7 @@ Files: **`infra/main.bicep`**, `infra/modules/container-app.bicep`, `.github/wor
 - **`infra/main.bicep` first** (B3): declare three **optional** params (`default ''`, **no**
   `@minLength`) — `acsConnectionString`, `telephonyEventGridSecret`,
   `telephonyCognitiveServicesEndpoint` — and thread them into the `containerApp` module exactly as
-  `googleMapsApiKey` / `contextApiKey` / `vapidPrivateKey` already are. Omitting this file makes the
+  `googleMapsApiKey` / `vapidPrivateKey` already are. Omitting this file makes the
   whole deploy fail with `InvalidTemplate`, not just telephony.
 - In `container-app.bicep`, wire the two secrets through the `concat()` optional-secret pattern to
   `Telephony__ConnectionString` and `Telephony__EventGridSecret`, and the non-secret

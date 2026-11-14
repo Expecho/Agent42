@@ -82,14 +82,10 @@ param searxngSecret string
 param googleMapsApiKey string = ''
 
 @secure()
-@description('API key for the hosted context.dev page-scrape API behind fetch_web_page (ADR 0027). OPTIONAL, exactly like googleMapsApiKey: when empty, neither the secret nor the env var below is emitted, and fetch_web_page degrades to a per-call failure rather than failing to deploy. Not on the availability path.')
-param contextApiKey string = ''
-
-@secure()
-@description('Client secret of the GitHub OAuth App behind "Sign in with GitHub" (ADR 0108). OPTIONAL, exactly like contextApiKey: when empty, neither the secret nor the env var below is emitted, and the sign-in answers 503 rather than the deployment failing. Not on the availability path.')
+@description('Client secret of the GitHub OAuth App behind "Sign in with GitHub" (ADR 0108). OPTIONAL, exactly like googleMapsApiKey: when empty, neither the secret nor the env var below is emitted, and the sign-in answers 503 rather than the deployment failing. Not on the availability path.')
 param githubOAuthClientSecret string = ''
 
-@description('API key for the Hindsight long-term-memory service (ADR 0056). OPTIONAL, exactly like googleMapsApiKey/contextApiKey/vapidPrivateKey: when empty, neither the secret nor the env var below is emitted, and long-term memory is simply off rather than the deployment failing. Not on the availability path.')
+@description('API key for the Hindsight long-term-memory service (ADR 0056). OPTIONAL, exactly like googleMapsApiKey/vapidPrivateKey: when empty, neither the secret nor the env var below is emitted, and long-term memory is simply off rather than the deployment failing. Not on the availability path.')
 param hindsightApiKey string = ''
 
 @secure()
@@ -97,11 +93,11 @@ param hindsightApiKey string = ''
 param appInsightsConnectionString string = ''
 
 @secure()
-@description('VAPID private key for Web Push notifications (ADR 0028). OPTIONAL, exactly like googleMapsApiKey/contextApiKey: when empty, neither the secret nor the env var below is emitted, and push simply stays disabled (GET /api/push/config returns enabled:false, the UI hides the toggle) rather than failing to deploy. Not on the availability path. The matching public key + subject are non-secret and committed in appsettings.json.')
+@description('VAPID private key for Web Push notifications (ADR 0028). OPTIONAL, exactly like googleMapsApiKey: when empty, neither the secret nor the env var below is emitted, and push simply stays disabled (GET /api/push/config returns enabled:false, the UI hides the toggle) rather than failing to deploy. Not on the availability path. The matching public key + subject are non-secret and committed in appsettings.json.')
 param vapidPrivateKey string = ''
 
 @secure()
-@description('Mailgun HTTP webhook signing key for inbound email (ADR 0096). OPTIONAL in the deploy sense, like contextApiKey: when empty, neither the secret nor the env var below is emitted and the app starts. But POST /api/email-in then answers 503 and accepts nothing - it never skips verification.')
+@description('Mailgun HTTP webhook signing key for inbound email (ADR 0096). OPTIONAL in the deploy sense, like googleMapsApiKey: when empty, neither the secret nor the env var below is emitted and the app starts. But POST /api/email-in then answers 503 and accepts nothing - it never skips verification.')
 param mailgunSigningKey string = ''
 
 @description('Minimum replica count. Orleans localhost clustering (used by this single-instance deployment) only supports one instance.')
@@ -195,14 +191,6 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
                 value: googleMapsApiKey
               }
             ],
-        empty(contextApiKey)
-          ? []
-          : [
-              {
-                name: 'context-api-key'
-                value: contextApiKey
-              }
-            ],
         empty(githubOAuthClientSecret)
           ? []
           : [
@@ -290,12 +278,6 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           empty(googleMapsApiKey)
             ? []
             : [{ name: 'Geocoding__GoogleApiKey', secretRef: 'google-maps-api-key' }],
-          // The context.dev scrape key behind fetch_web_page (ADR 0027). Emitted only when supplied:
-          // with no key the fetcher is still registered and simply fails per call — not on the
-          // availability path, so no empty-valued secret is risked.
-          empty(contextApiKey)
-            ? []
-            : [{ name: 'ContextScrape__ApiKey', secretRef: 'context-api-key' }],
           // The GitHub OAuth App secret behind "Sign in with GitHub" (ADR 0108). Emitted only when supplied: without it
           // the GitHub Copilot provider is simply not offered.
           empty(githubOAuthClientSecret)

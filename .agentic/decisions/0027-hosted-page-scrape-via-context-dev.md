@@ -1,12 +1,16 @@
 ---
 id: 0027
 date: 2026-07-21
-status: accepted
+status: superseded
+superseded_by: 0125
 tags: [web-search, tools, agent-framework, security, ssrf, prompt-injection, egress, context-dev]
 # partially amends 0011 — supersedes ITS SSRF-guard MECHANISM only; 0011 stays accepted
 ---
 
 # Hosted page scraping via context.dev, with opt-in depth-1 link following
+
+> **Superseded by [ADR 0125](0125-remove-fetch-web-page-and-context-dev.md) (2026-11-14).** `fetch_web_page`,
+> context.dev and depth-1 link following are removed entirely, with no replacement. This record is kept as history.
 
 > **Amended by [ADR 0066](0066-in-container-document-fetch-for-rag.md) (2026-09-04).** Nothing here is
 > overturned: this decision governs `fetch_web_page`, which stays on context.dev, unchanged, guardless

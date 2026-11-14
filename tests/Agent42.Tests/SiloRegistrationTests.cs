@@ -19,7 +19,7 @@ public sealed class SiloRegistrationTests
     private static readonly Type[] Ports =
     [
         typeof(IUserChatClientFactoryProvider), typeof(IUserMcpToolProvider), typeof(IAttachmentStore),
-        typeof(IDocumentIndex), typeof(IChatSearchIndex), typeof(IWebSearch), typeof(IWebPageFetcher),
+        typeof(IDocumentIndex), typeof(IChatSearchIndex), typeof(IWebSearch),
         typeof(IWebDocumentFetcher), typeof(IGeocoder), typeof(HindsightIntegration),
         typeof(IPushNotificationSender), typeof(IAgentWebhookSender), typeof(IChatDeliverySender), typeof(IFleetLauncher),
     ];

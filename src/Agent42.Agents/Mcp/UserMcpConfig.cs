@@ -62,8 +62,8 @@ public enum McpAuthMode
 /// migration.</para>
 /// </param>
 /// <param name="SeedsFetchableUrls">
-/// Whether a URL appearing in one of this server's tool results may be fetched by <c>fetch_web_page</c>
-/// and read by <c>read_web_document</c> in the conversation that received it (ADR 0067). Off unless the
+/// Whether a URL appearing in one of this server's tool results may be read by
+/// <c>read_web_document</c> in the conversation that received it (ADR 0067). Off unless the
 /// user turns it on, per server.
 ///
 /// <para><b>A SETTING, not discovered metadata — the exact opposite of <see cref="KnownToolNames"/>.</b>

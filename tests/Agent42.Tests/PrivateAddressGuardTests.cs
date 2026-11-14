@@ -8,8 +8,8 @@ namespace Agent42.Tests;
 /// address class that matters most is link-local: 169.254.169.254 is Azure IMDS, which hands out
 /// managed-identity tokens to anything that can issue an HTTP request from inside the container.
 ///
-/// <para>Restored from the commit that deleted it with ADR 0027. It guards the DOCUMENT path only —
-/// <c>fetch_web_page</c> still makes no outbound socket of its own and still installs no guard.</para>
+/// <para>Restored from the commit that deleted it with ADR 0027. It guards the DOCUMENT path, which since
+/// ADR 0125 is the only model-invoked web fetch.</para>
 /// </summary>
 public sealed class PrivateAddressGuardTests
 {

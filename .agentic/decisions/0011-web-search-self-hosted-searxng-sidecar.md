@@ -7,6 +7,8 @@ tags: [web-search, tools, agent-framework, security, ssrf, prompt-injection, con
 
 # Web search as function tools over a self-hosted SearXNG sidecar
 
+> **Amended by [ADR 0125](0125-remove-fetch-web-page-and-context-dev.md) (2026-11-14).** Its `fetch_web_page` tool, the context.dev scrape path and the allowlist-exempt link following are removed. `web_search` and the whole-URL allowlist stand; the allowlist now guards `read_web_document` only.
+
 ## Context
 Agent 42 could not read the web: it answered current-events questions from a training cutoff, or
 declined. Two commits bracket the problem. `f14de0e` added Agent Framework's `HostedWebSearchTool` +

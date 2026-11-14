@@ -35,7 +35,7 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 
 | Feature | Page |
 |---------|------|
-| Web search (`web_search` + `fetch_web_page`) | [web-search.md](web-search.md) |
+| Web search (`web_search`) | [web-search.md](web-search.md) |
 | Current location | [current-location.md](current-location.md) |
 | Scheduled reminders | [scheduled-reminders.md](scheduled-reminders.md) |
 | Skills (markdown playbooks, per-skill selection, uploads) | [skills.md](skills.md) |

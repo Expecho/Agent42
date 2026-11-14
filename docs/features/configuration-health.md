@@ -7,7 +7,7 @@
 
 A read-only tab, backed by `GET /api/config-health`, that reports which config inputs are
 present / malformed / (opt-in) unreachable — so a silently degraded feature (geocoding off,
-context.dev 401, Web Push off) is visible instead of mysterious.
+Web Push off) is visible instead of mysterious.
 
 > **The load-bearing invariant: the report never contains a secret value** — only a status
 > (`ok`/`warning`/`error`/`skipped`/`na`) plus a curated message per check.
@@ -16,7 +16,7 @@ context.dev 401, Web Push off) is visible instead of mysterious.
 
 `ConfigHealth.BuildStatic` is a **pure function** of `IConfiguration` + `IHostEnvironment` +
 `PushConfig` — no HTTP, no DI. Live probes are a separate **opt-in** `ProbeAsync` path (a "Run
-live checks" button; geocoding/context.dev probes are billable), so a static call runs **zero**
+live checks" button; the geocoding probe is billable), so a static call runs **zero**
 probes.
 
 ```mermaid
@@ -83,8 +83,7 @@ present (else `CreateClient` would return a retry-pipeline-inheriting client):
 return new ConfigHealthProbeSet(
     SearXng: httpFactory is null ? null : ct => ProbeSearxngAsync(httpFactory, ct),
     Geocoding: httpFactory is null || string.IsNullOrWhiteSpace(googleKey)
-        ? null : ct => ProbeGeocodingAsync(httpFactory, googleKey, ct),
-    ContextScrape: httpFactory is null ? null : ct => ProbeContextAsync(httpFactory, ct));
+        ? null : ct => ProbeGeocodingAsync(httpFactory, googleKey, ct));
 ```
 
 > There is **no embeddings check** here (ADR 0030): embeddings are a **per-user** model now, not

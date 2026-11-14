@@ -7,6 +7,8 @@ tags: [diagnostics, configuration, preferences, security, secrets, egress, probe
 
 # Configuration health tab in Preferences
 
+> **Amended by [ADR 0125](0125-remove-fetch-web-page-and-context-dev.md) (2026-11-14).** The context.dev presence check and its `probe:context.dev` are removed, and `ConfigHealthProbeSet` has three members.
+
 > **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** `/api/config-health` is now **owner-only** (404 for everyone else, including
 > `?probe=true`): its payload is operator information and its probes spend the operator's billable keys. The
 > "all allowlisted users may view it" line below no longer holds.
