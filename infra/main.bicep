@@ -132,15 +132,6 @@ param authClientSecret string
 @description('Entra ID tenant id that issues sign-in tokens for built-in authentication.')
 param authTenantId string = tenant().tenantId
 
-@description('Object ids of the only users allowed to sign in: peter.bons@aceve.com and msn@2000miles.nl. Must stay in sync with the user assignments on the agent42-easyauth enterprise app.')
-param authAllowedUserObjectIds array = [
-  '2da7fa48-e41e-4ebd-b665-96bc4210fefd' // peter.bons@aceve.com
-  '4e85e5fd-1130-4498-a29f-d02cad7ca43b' // msn@2000miles.nl
-]
-
-@description('Account Entra signs in without showing the account picker (ADR 0090). Reach the other allowed account through Sign out. Empty sends no hint.')
-param authLoginHint string = 'peter.bons@aceve.com'
-
 @description('How long an Easy Auth session lasts before Entra is asked again, as a .NET TimeSpan (ADR 0090). The platform default is 08:00:00.')
 param authSessionLifetime string = '14.00:00:00'
 
@@ -292,8 +283,6 @@ module containerApp 'modules/container-app.bicep' = {
     authClientId: authClientId
     authClientSecret: authClientSecret
     authTenantId: authTenantId
-    authAllowedUserObjectIds: authAllowedUserObjectIds
-    authLoginHint: authLoginHint
     authSessionLifetime: authSessionLifetime
     customDomainName: customDomainName
     customDomainCertificateName: customDomainCertificateName

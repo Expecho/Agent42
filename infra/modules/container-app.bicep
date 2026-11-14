@@ -55,12 +55,6 @@ param authClientSecret string
 @description('Entra ID tenant id that issues sign-in tokens for built-in authentication.')
 param authTenantId string
 
-@description('Object ids of the only Entra ID users allowed to sign in. Defense-in-depth next to the assignment requirement on the enterprise app.')
-param authAllowedUserObjectIds array
-
-@description('Account Entra signs in without showing the account picker. Empty sends no hint (ADR 0090).')
-param authLoginHint string
-
 @description('Easy Auth session lifetime as a .NET TimeSpan, e.g. 14.00:00:00 (ADR 0090).')
 param authSessionLifetime string
 
@@ -401,9 +395,12 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
 
 // Built-in authentication (Easy Auth): every request must carry a Microsoft Entra
 // sign-in; unauthenticated browsers are redirected to the Entra login page.
-// Primary access control is the assignment requirement on the enterprise app
-// (only explicitly assigned users can complete sign-in); allowedPrincipals
-// repeats the allowlist here so the restriction survives portal config drift.
+// The ONLY allowlist is the "assignment required" setting on the agent42-easyauth enterprise app: only users
+// assigned to it (members, or B2B guests the operator invited) can complete sign-in (ADR 0121, invite-only
+// variant). There is deliberately no allowedPrincipals copy here: it needed a bicep edit and a deploy per person.
+// The cost is that this template can no longer catch portal drift: if "assignment required" is switched off, every
+// user of the tenant can sign in. Check it with
+//   az ad sp show --id <authClientId> --query appRoleAssignmentRequired    (must print true)
 resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
   parent: containerApp
   name: 'current'
@@ -476,19 +473,8 @@ resource authConfig 'Microsoft.App/containerApps/authConfigs@2026-01-01' = {
           clientSecretSettingName: 'microsoft-provider-authentication-secret'
           openIdIssuer: '${environment().authentication.loginEndpoint}${authTenantId}/v2.0'
         }
-        // ADR 0090: both allowed accounts live in one tenant, so without a hint Entra shows its account
-        // picker on every sign-in. The hint makes it sign straight in. Reaching the other account means
-        // Sign out (the sidebar link to /.auth/logout) and then choosing it at Entra.
-        login: {
-          loginParameters: empty(authLoginHint) ? [] : [ 'login_hint=${authLoginHint}' ]
-        }
-        validation: {
-          defaultAuthorizationPolicy: {
-            allowedPrincipals: {
-              identities: authAllowedUserObjectIds
-            }
-          }
-        }
+        // No login_hint (ADR 0121 amends ADR 0090): a hint would pin every sign-in, invited guests included, to
+        // one account, so Entra shows its account picker and each person chooses their own.
       }
     }
   }

@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Agent42.Backend;
 using Microsoft.Extensions.Configuration;
 
@@ -242,39 +241,8 @@ public sealed class UserIdAliasTests
     }
 
     /// <summary>
-    /// AC10 (security set). Every id on either side of a shipped alias must be a principal Easy Auth
-    /// already admits — the <c>authAllowedUserObjectIds</c> allowlist in <c>infra/main.bicep</c>.
-    ///
-    /// <para>This is the strongest check available and it catches what a GUID parse cannot: a
-    /// well-formed object id belonging to the wrong person, or a mistyped digit. It cannot prove the
-    /// grant is <em>intended</em> — nothing can — but it bounds the blast radius to principals that can
-    /// already sign in, which with this allowlist is the operator's own two accounts.</para>
-    /// </summary>
-    [Fact]
-    public void ShippedAliases_NameOnlyPrincipalsEasyAuthAdmits()
-    {
-        var allowed = EasyAuthAllowedObjectIds();
-        var section = ShippedConfiguration().GetSection(UserIdAliases.SectionName).GetChildren();
-
-        foreach (var entry in section.Where(child => !child.Key.StartsWith("//", StringComparison.Ordinal)))
-        {
-            Assert.True(
-                allowed.Contains(entry.Key, StringComparer.OrdinalIgnoreCase),
-                $"Alias key '{entry.Key}' is not in authAllowedUserObjectIds in infra/main.bicep — "
-                    + "it names a principal Easy Auth will never admit, so the alias is dead config at "
-                    + "best and points at the wrong person at worst.");
-
-            Assert.True(
-                allowed.Contains(entry.Value, StringComparer.OrdinalIgnoreCase),
-                $"Alias '{entry.Key}' resolves to '{entry.Value}', which is not in "
-                    + "authAllowedUserObjectIds in infra/main.bicep — an alias must never hand a signed-in "
-                    + "user the dataset of a principal that is not even allowed to sign in.");
-        }
-    }
-
-    /// <summary>
-    /// ADR 0121 AC16. Once sign-in is open the Easy Auth allowlist stops bounding who an alias can name, so the bound
-    /// becomes <c>Access:Owners</c>: every id on either side of a shipped alias must be an owner. An alias can then only
+    /// ADR 0121 AC16. With invited guests the enterprise-app assignment list stops bounding who an alias can name (the bicep
+    /// <c>allowedPrincipals</c> copy is gone), so the bound is <c>Access:Owners</c>: every id on either side of a shipped alias must be an owner. An alias can then only
     /// ever link owners, never hand a stranger an owner's dataset.
     /// </summary>
     [Fact]
@@ -295,25 +263,6 @@ public sealed class UserIdAliasTests
         => new ConfigurationBuilder()
             .AddJsonFile(Path.Combine(RepoRoot(), "src", "Agent42.Backend", "appsettings.json"))
             .Build();
-
-    /// <summary>Reads the literal <c>authAllowedUserObjectIds</c> array out of the Bicep template.</summary>
-    private static IReadOnlyList<string> EasyAuthAllowedObjectIds()
-    {
-        var bicep = File.ReadAllText(Path.Combine(RepoRoot(), "infra", "main.bicep"));
-        var start = bicep.IndexOf("param authAllowedUserObjectIds array = [", StringComparison.Ordinal);
-        Assert.True(start >= 0, "No authAllowedUserObjectIds parameter found in infra/main.bicep");
-
-        var end = bicep.IndexOf(']', start);
-        Assert.True(end > start, "Unterminated authAllowedUserObjectIds array in infra/main.bicep");
-
-        var ids = Regex
-            .Matches(bicep[start..end], "'([^']+)'")
-            .Select(match => match.Groups[1].Value)
-            .ToList();
-
-        Assert.NotEmpty(ids);
-        return ids;
-    }
 
     private static string RepoRoot()
     {

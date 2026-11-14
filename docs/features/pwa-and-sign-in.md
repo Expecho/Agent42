@@ -84,7 +84,8 @@ stay **behind** Easy Auth (an `excludedPaths` carve-out would bind to `local-dev
 `Identity:Aliases` is a committed config map from an additional Entra object id to the object id
 that owns the data. `ResolveUserId` applies it for both grain keying and telemetry `user.id`, so
 two accounts see one set of conversations. No data moves. This is an authorization grant: an alias
-gets full access to the owner's data. Sign-in is open to any Microsoft account (ADR 0121, identity flip), so an alias
+gets full access to the owner's data. Sign-in is invite-only (ADR 0121): "assignment required" on the enterprise app is the one allowlist, and guests from
+other organisations are invited and assigned, so an alias
 may only ever link accounts listed in `Access:Owners` (pinned by `UserIdAliasTests`). Owners are the people who also reach
 `/dashboard`, `/logs` and config health; that tier is advisory, not a boundary.
 
