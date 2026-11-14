@@ -176,8 +176,8 @@ public sealed class LiveCopilotTests(ITestOutputHelper output)
             [ToolCatalog.WebSearch, ToolCatalog.SkillKey("websearch")]);
 
         var events = await CollectAsync(agent.ChatAsync(
-            "Load your websearch skill with the skill tool, then tell me in one sentence when it says to fetch a page "
-            + "after searching.", null));
+            "Load your websearch skill with the skill tool, then tell me in one sentence what it says to do when the "
+            + "search snippets are not enough.", null));
         Log("skill", events);
 
         Assert.Contains(events, e => e.Type == AgentStreamEventType.ToolCallStart && e.ToolName == CopilotLimits.SkillToolName);

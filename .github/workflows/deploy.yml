@@ -98,7 +98,6 @@ jobs:
               authClientSecret="${{ secrets.AAD_CLIENT_SECRET }}" \
               searxngSecret="${{ secrets.SEARXNG_SECRET }}" \
               googleMapsApiKey="${{ secrets.GOOGLE_MAPS_API_KEY }}" \
-              contextApiKey="${{ secrets.CONTEXT_API_KEY }}" \
               githubOAuthClientSecret="${{ secrets.GH_OAUTH_CLIENT_SECRET }}" \
               hindsightApiKey="${{ secrets.HINDSIGHT_API_KEY }}" \
               appInsightsConnectionString="${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}" \

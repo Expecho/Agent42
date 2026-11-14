@@ -524,7 +524,7 @@
   // ---------- tools picker (ADR 0099) ----------
   // A task follows the user's default chat selection unless this picker was changed: only then is an override sent,
   // so a new MCP server still reaches a task that didn't override (ADR 0021, null == all). It shows only what the
-  // fleet uses, web_search (which gates fetch_web_page too) and the MCP servers with their tools, so a sent override
+  // fleet uses, web_search and the MCP servers with their tools, so a sent override
   // drops every other key on purpose: it is this task's, never written back to the profile. A local picker, because
   // this classic script can't import js/tools.js. MCP names are server-supplied: text only.
   const fleetToolKey = key => key === "web_search" || key.startsWith("mcp:");

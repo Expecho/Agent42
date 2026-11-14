@@ -81,17 +81,6 @@ public sealed class ConfigHealthProbeTests
         Assert.Equal(ConfigHealth.Error, (await probes.Geocoding!(default)).Status);
     }
 
-    [Theory]
-    [InlineData(HttpStatusCode.OK, ConfigHealth.Ok)]
-    [InlineData(HttpStatusCode.Unauthorized, ConfigHealth.Error)]
-    [InlineData(HttpStatusCode.Forbidden, ConfigHealth.Error)]
-    public async Task ContextProbe_ClassifiesStatus(HttpStatusCode status, string expected)
-    {
-        var probes = ConfigHealthProbeSet.FromServices(Services(new CannedHandler(status)), Config());
-
-        Assert.Equal(expected, (await probes.ContextScrape!(default)).Status);
-    }
-
     // With no IHttpClientFactory registered, every probe is null → the check stays skipped (the "unresolved
     // client" path). Embeddings are no longer probed here — RAG is a per-user model now (ADR 0007/0018).
     [Fact]
@@ -102,7 +91,6 @@ public sealed class ConfigHealthProbeTests
         Assert.Null(probes.SearXng);
         Assert.Null(probes.Geocoding);
         Assert.Null(probes.Hindsight);
-        Assert.Null(probes.ContextScrape);
     }
 
     private sealed class CannedHandler(HttpStatusCode status, string body = "") : HttpMessageHandler

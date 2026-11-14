@@ -15,7 +15,7 @@ namespace Agent42.Tests;
 /// <summary>
 /// The <c>GET /api/config-health</c> contract (Preferences → Configuration), hosted in-memory (TestServer).
 /// The load-bearing assertion is the billing-safety invariant: a STATIC call runs ZERO probes (a
-/// geocoding/context.dev probe costs a metered call), while <c>?probe=true</c> runs them. A counting
+/// geocoding probe costs a metered call), while <c>?probe=true</c> runs them. A counting
 /// <see cref="ConfigHealthProbeSet"/> is injected so the count is observable without a network — the same
 /// seam ProbeAsync prefers over its production FromServices factory.
 /// </summary>
@@ -56,7 +56,6 @@ public sealed class ConfigHealthApiTests(SharedClusterFixture fixture) : SharedC
         appBuilder.Services.AddSingleton(new ConfigHealthProbeSet(
             SearXng: _ => _counter.Bump(),
             Geocoding: _ => _counter.Bump(),
-            ContextScrape: _ => _counter.Bump(),
             Hindsight: _ => _counter.Bump()));
 
         // "user-a" is the one owner, so /api/access can be asserted both ways (the gate itself is not installed

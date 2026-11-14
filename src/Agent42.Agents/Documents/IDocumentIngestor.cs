@@ -12,8 +12,8 @@ namespace Agent42.Agents;
 /// other documents and present them as this URL's content; and avoiding it keeps
 /// <see cref="IDocumentIndex"/> and both its implementations out of the diff entirely.</para>
 ///
-/// <para><paramref name="Truncated"/> is reported rather than swallowed, mirroring
-/// <see cref="WebPageContent.Truncated"/>: the model must know it is reasoning over part of a document,
+/// <para><paramref name="Truncated"/> is reported rather than swallowed, so
+/// the model must know it is reasoning over part of a document,
 /// not all of it.</para>
 /// </summary>
 public sealed record IngestedDocument(IReadOnlyList<EmbeddedChunk> Chunks, bool Truncated)

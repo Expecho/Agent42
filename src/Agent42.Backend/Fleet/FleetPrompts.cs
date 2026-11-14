@@ -56,8 +56,8 @@ public static partial class FleetPrompts
 
             {{tools}}
 
-            The functions only exist under these names, and only the function kind is supported: for web research use the web_search and
-            fetch_web_page functions. The workspace functions give all agents and sub-teams of the task a shared place for files and small
+            The functions only exist under these names, and only the function kind is supported: for web research use the web_search function (it
+            returns snippets; no function reads a whole page). The workspace functions give all agents and sub-teams of the task a shared place for files and small
             facts: use them to hand over results that are too big or too structured for a message. The canvas functions (canvas_list, canvas_read,
             canvas_write, canvas_edit) give them shared pages (html, svg, markdown or code) that the user watches live: give them to agents
             whose deliverable is meant to be looked at, like a report, a visual page or a diagram. The todo functions (todo_add, todo_complete,

@@ -161,7 +161,7 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
     }
 
     // AC9: Copilot gets the tools selection grants, as functions only. A hosted-tools model still gets the SearXNG
-    // shims rather than hosted tools, and a tool the user deselected is not offered.
+    // web_search shim rather than hosted tools, and a tool the user deselected is not offered.
     [Fact]
     public async Task CopilotTools_RespectSelection_AndDropHostedTools()
     {
@@ -170,7 +170,7 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
 
         var hosted = LastRequest("copilot-tools-hosted").Tools.Select(t => t.Name).ToList();
         Assert.Contains("web_search", hosted);
-        Assert.Contains("fetch_web_page", hosted);
+        Assert.DoesNotContain("fetch_web_page", hosted);
         Assert.DoesNotContain(ToolCatalog.CodeInterpreter, hosted);
 
         var narrow = LastRequest("copilot-tools-narrow").Tools.Select(t => t.Name).ToList();

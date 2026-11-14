@@ -19,7 +19,7 @@ SearXNG web-search shims out and adds the framework's native `HostedCodeInterpre
 flowchart TD
     CAP["GetCapabilities(modelId)"] --> Q{SupportsHostedTools?}
     Q -->|yes| ADD["tools += HostedCodeInterpreterTool, HostedWebSearchTool"]
-    Q -->|no| SHIM["tools += SearXNG web_search, fetch_web_page shims"]
+    Q -->|no| SHIM["tools += SearXNG web_search shim"]
     ADD --> SEL["filter by selection (code_interpreter key)"]
     SEL --> INT["Tools = SupportsTools ? tools : []"]
     INT --> RUN["model emits hosted tool call → host runs code"]
@@ -51,7 +51,6 @@ if (capabilities.SupportsHostedTools)
 else
 {
     tools.Add(webSearch);
-    tools.Add(fetchWebPage);
 }
 ```
 

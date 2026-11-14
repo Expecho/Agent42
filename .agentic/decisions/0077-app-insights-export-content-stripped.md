@@ -7,6 +7,8 @@ tags: [observability, opentelemetry, privacy, egress, infra]
 
 # Export traces and metrics to Application Insights, with chat content stripped from the traces
 
+> **Amended by [ADR 0125](0125-remove-fetch-web-page-and-context-dev.md) (2026-11-14).** The context.dev `?url=` half of the residual below is moot because context.dev is removed. A model-chosen URL's host and path can still reach App Insights on a `GuardedDocumentFetcher` span.
+
 ## Context
 
 The Application Insights resource `agent-42-appinsights` (RG `rg-agent42`) was created on 2026-07-11

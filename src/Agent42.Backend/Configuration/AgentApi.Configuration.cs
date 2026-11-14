@@ -9,11 +9,11 @@ public static partial class AgentApi
     private static void MapConfigurationEndpoints(IEndpointRouteBuilder app)
     {
         // A read-only diagnostic of which config inputs are present/malformed/(opt-in) unreachable — so a
-        // silently degraded feature (geocoding off, push off, context.dev failing) is visible. Behind Easy
+        // silently degraded feature (geocoding off, push off, memory off) is visible. Behind Easy
         // Auth like every /api/* read, and owner-only on top via OwnerGate (ADR 0121; a non-owner gets 404).
         // NEVER leaks a secret — ConfigHealth exposes a status + curated message only.
         //
-        // Static by default; ?probe=true also runs the opt-in LIVE probes (a geocoding/context.dev probe
+        // Static by default; ?probe=true also runs the opt-in LIVE probes (a geocoding probe
         // costs a billable call, so the static call must run ZERO probes). Injects IServiceProvider (probe
         // deps are resolved OPTIONALLY inside ProbeAsync) plus the both-hosts-registered IConfiguration /
         // IHostEnvironment / PushConfig — deliberately NOT IHttpClientFactory as a parameter: it is not

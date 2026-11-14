@@ -128,7 +128,7 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
     public async Task Run_UsesTaskOverride_ElseProfileDefault(bool withOverride, bool expectWebSearch)
     {
         var profile = FakeProfileGrainFactory.Create([ToolCatalog.WebSearch]);
-        var catalog = new FleetToolCatalog(profile.Factory, NullLogger<FleetToolCatalog>.Instance, new InMemoryWebSearch(), new InMemoryWebPageFetcher());
+        var catalog = new FleetToolCatalog(profile.Factory, NullLogger<FleetToolCatalog>.Instance, new InMemoryWebSearch());
         var client = new SystemPromptRecorder(new FakeChatClient());
         var service = Service(tools: catalog, client: client);
 
@@ -137,7 +137,6 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
 
         var planner = client.SystemPrompts.First(p => p.Contains("- write_artifact:", StringComparison.Ordinal));
         Assert.Equal(expectWebSearch, planner.Contains("- web_search:", StringComparison.Ordinal));
-        Assert.Equal(expectWebSearch, planner.Contains("- fetch_web_page:", StringComparison.Ordinal));
         Assert.Equal(withOverride ? 0 : 1, profile.Reads);
     }
 

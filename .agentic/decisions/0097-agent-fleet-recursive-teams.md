@@ -10,6 +10,8 @@ amended_by: [0099, 0101, 0107, 0108, 0115, 0116, 0117, 0118, 0119, 0120]   # 009
 
 # Agent42 agent fleet: an in-process recursive team runner outside Orleans, persisted in Blob, with Copilot agents that keep their built-in tools
 
+> **Amended by [ADR 0125](0125-remove-fetch-web-page-and-context-dev.md) (2026-11-14).** The fleet no longer has a `fetch_web_page` tool or its own fetch allowlist (`FleetWebTools` keeps only `web_search`), so fleet agents cannot read web pages.
+
 > **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** Fleet Copilot agents have **no kill switch**: `Copilot:BuiltInToolsEnabled` governs
 > chats only, and `FleetCopilotHost` is hard-coded to `CopilotCli` mode. With sign-in open, every signed-in user can start one
 > (user decision, accepted risk).

@@ -86,7 +86,7 @@ public static class ToolCatalog
     /// <c>read_web_document</c> tool.
     ///
     /// <para><b>Deliberately its own key, not folded into <see cref="WebSearch"/>.</b> That key covers
-    /// tools whose outbound request is made by a third party (SearXNG, and context.dev since ADR 0027)
+    /// tools whose outbound request is made by a third party (SearXNG)
     /// and whose results are transient text. This one dials a model-chosen URL <b>from our own
     /// container</b> and writes durable vector chunks. Those are different things to consent to, so they
     /// are different checkboxes — even though a user who wants one usually wants the other.</para>
@@ -250,7 +250,6 @@ public static class ToolCatalog
     private static readonly Dictionary<string, string> ToolNameToKey = new(StringComparer.Ordinal)
     {
         [WebSearch] = WebSearch,
-        ["fetch_web_page"] = WebSearch,
         [ReadWebDocument] = ReadWebDocument,
         [ReadDocument] = ReadDocument,
         ["send_push_notification"] = PushNotification,
@@ -282,7 +281,7 @@ public static class ToolCatalog
     public static IReadOnlyList<ToolDescriptor> Descriptors { get; } =
     [
         new(WebSearch, "Web search", RequiresHostedTools: false,
-            Description: "Searches the web and fetches pages through the SearXNG sidecar."),
+            Description: "Searches the web through the SearXNG sidecar."),
         new(Location, "Location", RequiresHostedTools: false,
             Description: "Shares your device location and street address with the model."),
         new(Scheduling, "Scheduling", RequiresHostedTools: false,

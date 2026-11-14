@@ -63,7 +63,7 @@ flowchart LR
   Runner --> WF[Agent Framework workflows]
   Runner --> Judge[judge + submit_verdict]
   WF -- delegate_to_team --> Runner
-  WF --> Tools[workspace, canvas, search_documents, read_document,<br/>web_search, fetch_web_page,<br/>your MCP tools, Copilot built-ins]
+  WF --> Tools[workspace, canvas, search_documents, read_document,<br/>web_search,<br/>your MCP tools, Copilot built-ins]
   Tools -- "canvas_write / canvas_edit<br/>(gate + versions)" --> Canvas[FleetCanvas]
   Canvas --> Blob
   Page -- "GET …/canvas/{name}/versions/{v}/frame<br/>(sandboxed pane)" --> Blob

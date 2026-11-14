@@ -7,17 +7,16 @@ namespace Agent42.Backend;
 /// <summary>
 /// The tools a fleet task's agents can name in their YAML besides the workspace tools and <c>delegate_to_team</c>
 /// (ADR 0097): the workspace's document tools when it has documents (ADR 0101, never gated by a selection), then
-/// <c>web_search</c> and <c>fetch_web_page</c>, and the user's own MCP tools. <c>SelectableTools</c> is the
+/// <c>web_search</c>, and the user's own MCP tools. <c>SelectableTools</c> is the
 /// grain's and can't be called here, so this is a small catalog of its own. It honours the task's own tool selection,
 /// else the user's DEFAULT one (ADR 0099 amending ADR 0097, ADR 0021 <c>null == all</c>), for both, and wraps MCP tools as <c>BuildAgent</c> does: the ADR 0095
 /// elicitation wrapper innermost, the ADR 0081 reauth notice outermost. No URL seeding (ADR 0067): the fleet has
-/// no <c>read_web_document</c>.
+/// no <c>read_web_document</c> and, since ADR 0125, no page fetch.
 /// </summary>
 public sealed partial class FleetToolCatalog(
     IGrainFactory grains,
     ILogger<FleetToolCatalog> logger,
     IWebSearch? webSearch = null,
-    IWebPageFetcher? webPageFetcher = null,
     IUserMcpToolProvider? mcpTools = null)
 {
     /// <summary>
@@ -45,9 +44,9 @@ public sealed partial class FleetToolCatalog(
     {
         var enabled = (selection ?? ToolCatalog.AllSelectableToolKeys).ToHashSet(StringComparer.Ordinal);
         var tools = new List<AIFunction>();
-        if (webSearch is not null && webPageFetcher is not null)
+        if (webSearch is not null)
         {
-            var web = new FleetWebTools(webSearch, webPageFetcher, request, logger);
+            var web = new FleetWebTools(webSearch, logger);
             tools.AddRange(web.Tools.Where(t => ToolCatalog.IsToolEnabled(t.Name, enabled)));
         }
 

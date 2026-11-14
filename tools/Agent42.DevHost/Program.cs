@@ -149,10 +149,9 @@ builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, Det
 builder.Services.AddSingleton<IDocumentIndex, InMemoryDocumentIndex>();
 builder.Services.AddSingleton<IChatSearchIndex, InMemoryChatSearchIndex>();
 
-// Web tools offline (ADR 0011): canned search results and canned page text, so the web_search /
-// fetch_web_page tool path renders end to end with no SearXNG sidecar, no Docker and no network.
+// Web tools offline (ADR 0011): canned search results, so the web_search
+// tool path renders end to end with no SearXNG sidecar, no Docker and no network.
 builder.Services.AddSingleton<IWebSearch, InMemoryWebSearch>();
-builder.Services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
 
 // read_web_document offline (ADR 0066): a canned document instead of a real download, so the whole tool
 // path — allowlist check, ingest into the in-memory vector index, in-process ranking, deferred rebuild —

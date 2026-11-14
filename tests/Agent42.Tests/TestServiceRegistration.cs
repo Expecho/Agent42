@@ -51,8 +51,8 @@ internal static class TestServiceRegistration
 
     /// <summary>
     /// Registers the offline web-tool stand-ins (ADR 0011) the grain resolves for <c>web_search</c> and
-    /// <c>fetch_web_page</c>, plus the <see cref="IGeocoder"/> behind <c>get_current_location</c>
-    /// (ADR 0012): canned results, canned page text and one canned address, so the tool paths run with no
+    /// <c>read_web_document</c>, plus the <see cref="IGeocoder"/> behind <c>get_current_location</c>
+    /// (ADR 0012): canned results, a canned document and one canned address, so the tool paths run with no
     /// SearXNG sidecar, no Google API key and no network. Every silo configurator that hosts an
     /// <see cref="AgentGrain"/> needs this — a grain dependency missing from one configurator fails that
     /// host's activations only, which is why it lives here rather than being repeated per configurator.
@@ -62,7 +62,6 @@ internal static class TestServiceRegistration
     public static IServiceCollection AddWebToolFakes(this IServiceCollection services)
     {
         services.AddSingleton<IWebSearch, InMemoryWebSearch>();
-        services.AddSingleton<IWebPageFetcher, InMemoryWebPageFetcher>();
         // read_web_document (ADR 0066). The offline fetcher deliberately re-implements no address guard:
         // the guard lives in the production fetcher's ConnectCallback because it must run against the
         // address actually dialled, and a fake that opens no socket has nothing to guard.

@@ -22,10 +22,7 @@ namespace Agent42.Backend;
 /// time and the attacker's second answer is the address you just rejected. Validating at connect time
 /// also covers every redirect hop for free.
 ///
-/// <b>This guard belongs to the document path ONLY (ADR 0066).</b> <c>fetch_web_page</c> is a different
-/// path with a different mechanism: since ADR 0027 the scrape request is made by context.dev, not by
-/// our container, so there is nothing there to guard and no guard is installed. Restoring this file did
-/// not change that — see the two gotchas.
+/// <b>This guard belongs to the document path (ADR 0066), the only model-invoked web fetch.</b>
 /// </summary>
 public static class PrivateAddressGuard
 {

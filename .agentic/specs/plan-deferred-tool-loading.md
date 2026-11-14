@@ -85,7 +85,7 @@ batch streaming=True: gate saw [sent=[search_tools] allowed=False]  get_weather 
   generic `invoke_tool(name, args)` meta-tool (the model never sees the real schema → worse argument adherence).
 - **Deferrable = MCP tools + the non-core built-ins**: `schedule_prompt`, `cancel_scheduled_prompt`,
   `cancel_all_scheduled_prompts`, `get_current_location`, `read_web_document`, `send_push_notification`.
-  **Always loaded (core):** `get_date`, `web_search`, `fetch_web_page`, the ADR 0015 hosted tools
+  **Always loaded (core):** `get_date`, `web_search`, the ADR 0015 hosted tools
   (`HostedWebSearchTool`/`HostedCodeInterpreterTool` — not `AIFunction`s), `search_tools` itself, and every tool an
   `AIContextProvider` contributes (skills' `load_skill`/`read_skill_resource` — already progressive-disclosure).
   Deferrability is decided by **name** against an explicit list of the built-ins + membership of `_mcpServers`,
@@ -139,7 +139,7 @@ batch streaming=True: gate saw [sent=[search_tools] allowed=False]  get_weather 
    label, never the opaque server id. The helper is a small public static on `DeferredToolLimits`: do NOT reuse
    `WebDocumentLimits.Sanitize`, which is private and URL-shaped.
 5a. **Name collisions — nothing dedupes tool names today** (MCP tools are appended after the built-ins). Rules:
-   (i) an MCP tool that shares a name with any **core** tool (`get_date`, `web_search`, `fetch_web_page`,
+   (i) an MCP tool that shares a name with any **core** tool (`get_date`, `web_search`,
    `code_interpreter`) is **never deferred**, so both are sent exactly as today and the core tool is never hidden;
    (ii) `search_tools` is **reserved**: if any selected tool is named `search_tools`, deferral does not activate for
    that build (log a warning) and the conversation behaves exactly as today; (iii) an MCP tool that shares a name

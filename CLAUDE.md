@@ -106,7 +106,6 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Input | Missing means |
 |-------|---------------|
 | `SEARXNG_SECRET` | **App down.** The sidecar crash-loops, and ACA gates revision health on every container (ADR 0011) |
-| `CONTEXT_API_KEY` | `fetch_web_page` fails on each call. The app boots (ADR 0027) |
 | `GOOGLE_MAPS_API_KEY` | Location returns coordinates without an address (ADR 0012) |
 | `HINDSIGHT_API_KEY` | No long-term memory, and zero calls are made. This is the operator's egress switch (ADR 0056/0057) |
 | `VAPID_PRIVATE_KEY` | Web Push is hidden (ADR 0028) |
@@ -177,7 +176,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens), GitHub Copilot kind (Sign in with GitHub, copilot-agents-only models) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104, 0108 |
 | Image generation, speech (STT/TTS/voice loop), server-side transcription model (chat voice notes), reasoning output | 0006, 0020, 0037, 0038, 0071, 0113 |
 | Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces), fleet workspace documents | 0007, 0008, 0030, 0066, 0098, 0101 |
-| Web search (SearXNG sidecar, engines, proxied UI), page scrape (context.dev) | 0011, 0027, 0059, 0060 |
+| Web search (SearXNG sidecar, engines, proxied UI); no page fetch (removed, 0125) | 0011, 0059, 0060, 0125 |
 | Location (a client tool since 0093) | 0012, 0093 |
 | Selectable tools: three layers, skills, uploaded skills, memory | 0021, 0048, 0049, 0057 |
 | Long-term memory (Hindsight; **no delete path**) | 0056, 0057 |

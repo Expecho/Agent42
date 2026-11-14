@@ -79,6 +79,8 @@ public sealed class GuardedDocumentFetcherTests
             () => LoopbackAllowed().FetchAsync($"{server.BaseUrl}/spec.pdf"));
 
         Assert.Contains("HTML", ex.Message, StringComparison.Ordinal);
+        // ADR 0125 removed fetch_web_page: the message must not send the model to a tool that is gone.
+        Assert.DoesNotContain("fetch_web_page", ex.Message, StringComparison.Ordinal);
     }
 
     // AC5 — the media type comes from the RESPONSE, not from the URL. The URL has no extension at all,

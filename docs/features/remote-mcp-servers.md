@@ -132,7 +132,7 @@ A failed or zero-tool test changes nothing.
 `StoredMcpServer.SeedsFetchableUrls` is a per-server opt-in, off by default ("let links from this
 server be opened and read"). When on, `UrlHarvestingMcpTool` harvests http(s) URLs from that
 server's tool results into `AgentGrainState.SeededFetchableUrls` (20 per result, 100 total, oldest
-dropped first), and `fetch_web_page` / `read_web_document` accept them like URLs the user typed.
+dropped first), and `read_web_document` accepts them like URLs the user typed.
 
 ### A server can ask the user for input (ADR 0095)
 

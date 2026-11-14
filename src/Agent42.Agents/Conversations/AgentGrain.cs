@@ -87,11 +87,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly IWebSearch _webSearch;
 
-    private readonly IWebPageFetcher _webPageFetcher;
-
-    // read_web_document (ADR 0066). Deliberately NOT the same seam as _webPageFetcher: this one dials the
-    // model-chosen URL from OUR container (so it carries the SSRF guard), and it returns bytes rather
-    // than scraped text.
+    // read_web_document (ADR 0066). It dials the model-chosen URL from OUR container (so it carries the
+    // SSRF guard), and it returns bytes rather than scraped text.
     private readonly IWebDocumentFetcher _webDocumentFetcher;
 
     private readonly IDocumentIngestor _documentIngestor;
@@ -228,7 +225,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         IDocumentIndex documentIndex,
         IChatSearchIndex chatSearchIndex,
         IWebSearch webSearch,
-        IWebPageFetcher webPageFetcher,
         IWebDocumentFetcher webDocumentFetcher,
         IDocumentIngestor documentIngestor,
         IGeocoder geocoder,
@@ -248,7 +244,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _documentIndex = documentIndex;
         _chatSearchIndex = chatSearchIndex;
         _webSearch = webSearch;
-        _webPageFetcher = webPageFetcher;
         _webDocumentFetcher = webDocumentFetcher;
         _documentIngestor = documentIngestor;
         _geocoder = geocoder;
