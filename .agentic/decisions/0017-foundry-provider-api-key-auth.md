@@ -8,6 +8,8 @@ supersedes: 0013, 0014 (credential mechanism only)
 
 # Authenticate the Foundry provider with an Azure OpenAI API key, not managed identity
 
+> **Amended by [ADR 0128](0128-tenant-portable-azure-iac.md) (2026-11-14).** The dead "Cognitive Services OpenAI User" grant step is removed from `deploy.yml`.
+
 > **Amended by [ADR 0030](0030-user-configured-embedding-model.md) (2026-07-21) — the key no longer
 > authenticates embeddings, and is no longer fatal.** ADR 0030 makes the embedding model per-user, so
 > `AzureOpenAI:ApiKey` no longer authenticates any embedding client and is no longer an availability path:

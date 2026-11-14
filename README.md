@@ -309,9 +309,12 @@ principal; locally everything maps to a single `local-dev` pseudo-user.
 
 ## Deployment
 
-Push to `main` → `.github/workflows/deploy.yml` builds the container, pushes it to ACR
-(`crexpechohosting`), and deploys `infra/main.bicep` to resource group `rg-agent42`. The
-app runs on Azure Container Apps behind Entra ID Easy Auth at chat.agent42.nl.
+Push to `main` → `.github/workflows/deploy.yml` checks its repository variables (`preflight`), deploys the shared
+infra (`infra/shared.bicep`: a registry and Container Apps environment, created or reused), builds and pushes the
+containers, and deploys `infra/main.bicep`. The app runs on Azure Container Apps behind Entra ID Easy Auth. To deploy
+to your own subscription, run `infra/bootstrap.sh` once and set the secrets and variables it prints; the full guide,
+every variable, and this repo's own production values are in
+[`docs/features/azure-deployment.md`](docs/features/azure-deployment.md).
 
 Several manual prerequisites live outside the code as GitHub Actions secrets. One is
 required: `SEARXNG_SECRET` (without it the search sidecar crash-loops and the revision never

@@ -22,7 +22,7 @@ enforcement:
   local: soft_warning        # skills render the gate table, ask proceed/abort on FAIL
   ci: hard_block             # PR checks (.github/workflows/pr-checks.yml) block on:
                              # build, tests, dotnet format, vulnerable packages,
-                             # doc-path integrity, and new-code coverage.
+                             # doc-path integrity, bicep build, and new-code coverage.
                              # cognitive_complexity_max BLOCKS: S3776 is an `error`, so a method over
                              # the threshold fails `dotnet build` (ADR 0051 cleared the backlog that
                              # ADR 0050 had to carry).

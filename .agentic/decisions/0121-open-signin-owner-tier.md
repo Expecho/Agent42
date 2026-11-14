@@ -10,6 +10,8 @@ amends: [0002, 0018, 0024, 0029, 0031, 0054, 0059, 0062, 0074, 0090, 0097, 0107]
 
 # Open sign-in to everybody, with an advisory owner tier
 
+> **Amended by [ADR 0128](0128-tenant-portable-azure-iac.md) (2026-11-14).** The owner list may be overridden at deploy time (`Access__Owners__<i>` from the `ACCESS_OWNERS` repo variable, index-0 semantics) so a fork can name its own owners. Prod sets no override and keeps the committed list.
+
 ## Context
 Until now only two Entra accounts could sign in (Easy Auth `allowedPrincipals`, "assignment required" on the
 enterprise app), and ADRs 0029, 0031, 0054, 0059 and 0107 all rest on the premise "every signed-in user is

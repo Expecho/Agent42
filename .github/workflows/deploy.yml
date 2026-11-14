@@ -13,20 +13,128 @@ on:
       - .github/workflows/deploy.yml
   workflow_dispatch:
 
+# Everything tenant-specific is a repository variable (vars.*), never a literal here (ADR 0128, InfraPortabilityTests).
+# docs/features/azure-deployment.md lists every variable and secret, and what a missing one does.
 env:
-  REGISTRY_NAME: crexpechohosting
   IMAGE_NAME: agent42-backend
   SEARXNG_IMAGE_NAME: agent42-searxng
-  RESOURCE_GROUP: rg-agent42
+  CONTAINER_APP_NAME: ca-agent42-backend
 
 permissions:
   contents: read
 
 jobs:
+  # Runs FIRST and fails closed (ADR 0128). An absent GitHub variable expands to an EMPTY string, and for the optional
+  # Bicep params empty means "off": a missing CUSTOM_DOMAIN_NAME would silently unbind a live domain, and a missing
+  # shared-infra variable would create a stray registry and environment and push images to it. Nothing is created or
+  # pushed before this job passes.
+  preflight:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AUTH_CLIENT_ID: ${{ vars.AUTH_CLIENT_ID }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      CAE_NAME: ${{ vars.CAE_NAME }}
+      CAE_RESOURCE_GROUP: ${{ vars.CAE_RESOURCE_GROUP }}
+      CUSTOM_DOMAIN_NAME: ${{ vars.CUSTOM_DOMAIN_NAME }}
+      CUSTOM_DOMAIN_CERTIFICATE_NAME: ${{ vars.CUSTOM_DOMAIN_CERTIFICATE_NAME }}
+      COSMOS_LOCATION: ${{ vars.COSMOS_LOCATION }}
+      ACCESS_OWNERS: ${{ vars.ACCESS_OWNERS }}
+    steps:
+      - name: Log in to Azure
+        uses: azure/login@v3
+        with:
+          creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
+
+      - name: Check the repository variables against what is deployed
+        run: |
+          failed=0
+          fail() { echo "::error::$1"; failed=1; }
+
+          # (a) required variables
+          [ -n "$AZURE_RESOURCE_GROUP" ] || fail "Repository variable AZURE_RESOURCE_GROUP is not set."
+          [ -n "$AUTH_CLIENT_ID" ] || fail "Repository variable AUTH_CLIENT_ID is not set (infra/bootstrap.sh prints it)."
+          if [ "$failed" = 1 ]; then exit 1; fi
+
+          # (a2) the shared-infra trio is all set (reuse) or all empty (create)
+          set_count=0
+          for v in "$ACR_NAME" "$CAE_NAME" "$CAE_RESOURCE_GROUP"; do
+            if [ -n "$v" ]; then set_count=$((set_count + 1)); fi
+          done
+          if [ "$set_count" != 0 ] && [ "$set_count" != 3 ]; then
+            fail "ACR_NAME, CAE_NAME and CAE_RESOURCE_GROUP must be ALL set (reuse existing shared infra) or ALL empty (create it). Create mode must be an explicit choice."
+          fi
+
+          # (b) the custom domain pair
+          if [ -n "$CUSTOM_DOMAIN_NAME" ] && [ -z "$CUSTOM_DOMAIN_CERTIFICATE_NAME" ]; then
+            fail "CUSTOM_DOMAIN_NAME is set but CUSTOM_DOMAIN_CERTIFICATE_NAME is not. Set both or neither."
+          fi
+          if [ -z "$CUSTOM_DOMAIN_NAME" ] && [ -n "$CUSTOM_DOMAIN_CERTIFICATE_NAME" ]; then
+            fail "CUSTOM_DOMAIN_CERTIFICATE_NAME is set but CUSTOM_DOMAIN_NAME is not. Set both or neither."
+          fi
+
+          # (e) local-dev is never an owner (ADR 0062/0121)
+          case ",$ACCESS_OWNERS," in
+            *,local-dev,*) fail "ACCESS_OWNERS contains local-dev. Never list it (ADR 0062/0121)." ;;
+          esac
+          if [ "$failed" = 1 ]; then exit 1; fi
+
+          # Facts about what already exists. A missing app or account is "nothing deployed yet", but any other az
+          # error must stop the run: swallowing it would turn this guard fail-open.
+          app_id=$(az resource list --resource-group "$AZURE_RESOURCE_GROUP" \
+            --resource-type Microsoft.App/containerApps --name "$CONTAINER_APP_NAME" --query "[0].id" -o tsv)
+
+          if [ -n "$app_id" ]; then
+            # (c) a bound custom domain that the variable does not name would be unbound by the deploy
+            bound=$(az resource show --ids "$app_id" \
+              --query "properties.configuration.ingress.customDomains[].name" -o tsv)
+            for domain in $bound; do
+              if [ "$domain" != "$CUSTOM_DOMAIN_NAME" ]; then
+                fail "The container app has the custom domain '$domain' bound, but CUSTOM_DOMAIN_NAME is '$CUSTOM_DOMAIN_NAME'. Deploying would unbind it. Set CUSTOM_DOMAIN_NAME and CUSTOM_DOMAIN_CERTIFICATE_NAME."
+              fi
+            done
+
+            # (c2) an app cannot move between environments (only checkable when the names are given)
+            if [ "$set_count" = 3 ]; then
+              current_env=$(az resource show --ids "$app_id" --query "properties.managedEnvironmentId" -o tsv)
+              case "${current_env,,}" in
+                */resourcegroups/"${CAE_RESOURCE_GROUP,,}"/providers/microsoft.app/managedenvironments/"${CAE_NAME,,}") ;;
+                *) fail "The container app lives in the environment '$current_env', but ACR_NAME/CAE_NAME/CAE_RESOURCE_GROUP resolve to '$CAE_NAME' in '$CAE_RESOURCE_GROUP'. An app cannot move between environments." ;;
+              esac
+            else
+              # Create mode puts the environment in the app's own resource group. An existing app that lives elsewhere
+              # means the shared-infra variables were lost: creating new shared infra here would be a stray copy.
+              current_env=$(az resource show --ids "$app_id" --query "properties.managedEnvironmentId" -o tsv)
+              case "${current_env,,}" in
+                */resourcegroups/"${AZURE_RESOURCE_GROUP,,}"/providers/microsoft.app/managedenvironments/*) ;;
+                *) fail "The container app lives in the environment '$current_env', outside '$AZURE_RESOURCE_GROUP', but ACR_NAME, CAE_NAME and CAE_RESOURCE_GROUP are all empty (create mode). Set all three to the existing shared infra." ;;
+              esac
+            fi
+          fi
+
+          # (d) the Cosmos account's region is immutable
+          rg_location=$(az group show --name "$AZURE_RESOURCE_GROUP" --query location -o tsv)
+          want_location="${COSMOS_LOCATION:-$rg_location}"
+          cosmos_locations=$(az cosmosdb list --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query "[?starts_with(name, 'cosmos-agent42-')].location" -o tsv)
+          for have in $cosmos_locations; do
+            have_norm=$(echo "$have" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+            want_norm=$(echo "$want_location" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+            if [ "$have_norm" != "$want_norm" ]; then
+              fail "The Cosmos account already lives in '$have', but COSMOS_LOCATION resolves to '$want_location'. A Cosmos region cannot change. Set COSMOS_LOCATION to the existing region."
+            fi
+          done
+
+          exit "$failed"
+
   build-and-push:
     runs-on: ubuntu-latest
+    needs: preflight
     outputs:
       image-tag: ${{ steps.tag.outputs.value }}
+      registry-name: ${{ steps.shared.outputs.registry-name }}
+      environment-name: ${{ steps.shared.outputs.environment-name }}
+      environment-resource-group: ${{ steps.shared.outputs.environment-resource-group }}
     steps:
       - uses: actions/checkout@v7
 
@@ -40,10 +148,39 @@ jobs:
         with:
           creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
 
+      # The registry must exist before the image push, so the shared infra (infra/shared.bicep, ADR 0128) is deployed
+      # first. With ACR_NAME/CAE_NAME/CAE_RESOURCE_GROUP set it creates nothing and returns the names; with all three
+      # empty it creates the registry, a Log Analytics workspace and the Container Apps environment.
+      - name: Deploy shared infrastructure
+        id: shared
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          CAE_NAME: ${{ vars.CAE_NAME }}
+          CAE_RESOURCE_GROUP: ${{ vars.CAE_RESOURCE_GROUP }}
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/shared.bicep \
+            --parameters \
+              existingRegistryName="$ACR_NAME" \
+              existingEnvironmentName="$CAE_NAME" \
+              existingEnvironmentResourceGroup="$CAE_RESOURCE_GROUP" \
+            --query properties.outputs -o json)
+          {
+            echo "registry-name=$(echo "$outputs" | jq -r .registryName.value)"
+            echo "environment-name=$(echo "$outputs" | jq -r .environmentName.value)"
+            echo "environment-resource-group=$(echo "$outputs" | jq -r .environmentResourceGroup.value)"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Log in to container registry
         run: az acr login --name "$REGISTRY_NAME"
+        env:
+          REGISTRY_NAME: ${{ steps.shared.outputs.registry-name }}
 
       - name: Build image
+        env:
+          REGISTRY_NAME: ${{ steps.shared.outputs.registry-name }}
         run: |
           docker build \
             -f src/Agent42.Backend/Dockerfile \
@@ -52,12 +189,16 @@ jobs:
             .
 
       - name: Push image
+        env:
+          REGISTRY_NAME: ${{ steps.shared.outputs.registry-name }}
         run: docker push --all-tags "$REGISTRY_NAME.azurecr.io/$IMAGE_NAME"
 
       # The SearXNG sidecar backing the web_search tool (ADR 0011): a thin image over a pinned
       # upstream tag with our settings.yml baked in (mounting it would need an Azure Files volume,
       # and the SEARXNG_* env overrides don't reach the `search:` section where search.formats lives).
       - name: Build SearXNG sidecar image
+        env:
+          REGISTRY_NAME: ${{ steps.shared.outputs.registry-name }}
         run: |
           docker build \
             -t "$REGISTRY_NAME.azurecr.io/$SEARXNG_IMAGE_NAME:${{ steps.tag.outputs.value }}" \
@@ -65,11 +206,13 @@ jobs:
             infra/searxng
 
       - name: Push SearXNG sidecar image
+        env:
+          REGISTRY_NAME: ${{ steps.shared.outputs.registry-name }}
         run: docker push --all-tags "$REGISTRY_NAME.azurecr.io/$SEARXNG_IMAGE_NAME"
 
   deploy:
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: [preflight, build-and-push]
     steps:
       - uses: actions/checkout@v7
 
@@ -80,19 +223,54 @@ jobs:
 
       - name: Deploy Bicep
         id: deploy
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          REGISTRY_NAME: ${{ needs.build-and-push.outputs.registry-name }}
+          CAE_NAME: ${{ needs.build-and-push.outputs.environment-name }}
+          CAE_RESOURCE_GROUP: ${{ needs.build-and-push.outputs.environment-resource-group }}
+          AUTH_CLIENT_ID: ${{ vars.AUTH_CLIENT_ID }}
+          CUSTOM_DOMAIN_NAME: ${{ vars.CUSTOM_DOMAIN_NAME }}
+          CUSTOM_DOMAIN_CERTIFICATE_NAME: ${{ vars.CUSTOM_DOMAIN_CERTIFICATE_NAME }}
+          COSMOS_LOCATION: ${{ vars.COSMOS_LOCATION }}
+          OTLP_ENDPOINT: ${{ vars.OTLP_ENDPOINT }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
+          GH_OAUTH_CLIENT_ID: ${{ vars.GH_OAUTH_CLIENT_ID }}
+          EMAIL_INBOUND_DOMAIN: ${{ vars.EMAIL_INBOUND_DOMAIN }}
+          ACCESS_OWNERS: ${{ vars.ACCESS_OWNERS }}
         run: |
           acr_password=$(az acr credential show --name "$REGISTRY_NAME" --query "passwords[0].value" -o tsv)
 
-          # cosmosLocation is pinned to North Europe: West Europe was rejecting new
-          # Cosmos accounts on first deploy ("high demand ... cannot fulfill your
-          # request at this time"), and the account's region can't change after
-          # creation, so this must keep matching wherever it actually lives.
-          principal_id=$(az deployment group create \
+          # An unset variable expands to an empty string. The optional values below are therefore only passed when
+          # set, so an unset one falls back to the Bicep default (for cosmosLocation: the resource group's location).
+          # The Cosmos region is immutable, so on an existing deployment COSMOS_LOCATION must keep matching it
+          # (the preflight job enforces that).
+          optional=()
+          [ -z "$COSMOS_LOCATION" ] || optional+=(cosmosLocation="$COSMOS_LOCATION")
+          [ -z "$OTLP_ENDPOINT" ] || optional+=(otlpEndpoint="$OTLP_ENDPOINT")
+          [ -z "$AZURE_OPENAI_ENDPOINT" ] || optional+=(azureOpenAIEndpoint="$AZURE_OPENAI_ENDPOINT")
+          [ -z "$CUSTOM_DOMAIN_NAME" ] || optional+=(customDomainName="$CUSTOM_DOMAIN_NAME")
+          [ -z "$CUSTOM_DOMAIN_CERTIFICATE_NAME" ] || optional+=(customDomainCertificateName="$CUSTOM_DOMAIN_CERTIFICATE_NAME")
+          [ -z "$VAPID_PUBLIC_KEY" ] || optional+=(vapidPublicKey="$VAPID_PUBLIC_KEY")
+          [ -z "$VAPID_SUBJECT" ] || optional+=(vapidSubject="$VAPID_SUBJECT")
+          [ -z "$GH_OAUTH_CLIENT_ID" ] || optional+=(githubOAuthClientId="$GH_OAUTH_CLIENT_ID")
+          [ -z "$EMAIL_INBOUND_DOMAIN" ] || optional+=(emailInboundDomain="$EMAIL_INBOUND_DOMAIN")
+          # ACCESS_OWNERS is comma-separated; Bicep takes a JSON array.
+          if [ -n "$ACCESS_OWNERS" ]; then
+            optional+=(accessOwners="$(echo "$ACCESS_OWNERS" | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')")
+          fi
+
+          az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
             --parameters \
               imageTag="${{ needs.build-and-push.outputs.image-tag }}" \
               searxngImageTag="${{ needs.build-and-push.outputs.image-tag }}" \
+              containerRegistryName="$REGISTRY_NAME" \
+              containerAppsEnvironmentName="$CAE_NAME" \
+              containerAppsEnvironmentResourceGroup="$CAE_RESOURCE_GROUP" \
+              authClientId="$AUTH_CLIENT_ID" \
               acrAdminUsername="$REGISTRY_NAME" \
               acrAdminPassword="$acr_password" \
               authClientSecret="${{ secrets.AAD_CLIENT_SECRET }}" \
@@ -103,32 +281,4 @@ jobs:
               appInsightsConnectionString="${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}" \
               vapidPrivateKey="${{ secrets.VAPID_PRIVATE_KEY }}" \
               mailgunSigningKey="${{ secrets.MAILGUN_SIGNING_KEY }}" \
-              cosmosLocation="northeurope" \
-              otlpEndpoint="http://home.peterbons.nl:4317" \
-            --query properties.outputs.containerAppPrincipalId.value -o tsv)
-          echo "principal-id=$principal_id" >> "$GITHUB_OUTPUT"
-
-      # Not managed via the Bicep above: the AI Foundry account lives in a separate
-      # resource group ('agent42') that this deploy identity has no general access
-      # to (only a role-assignment-scoped grant on this one account — see
-      # infra/main.bicep's history for why). A nested Bicep module targeting that
-      # RG would need Microsoft.Resources/deployments/write there too, which wasn't
-      # granted; a direct role-assignment PUT only needs
-      # Microsoft.Authorization/roleAssignments/write on the account itself, which
-      # was granted. Idempotent: skips if the container app identity already holds
-      # the role (e.g. unchanged between deploys).
-      - name: Grant Cognitive Services OpenAI User role to the container app identity
-        run: |
-          principal_id="${{ steps.deploy.outputs.principal-id }}"
-          scope="/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/agent42/providers/Microsoft.CognitiveServices/accounts/Agent42"
-          role_definition_id="/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/providers/Microsoft.Authorization/roleDefinitions/5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
-
-          existing_count=$(az rest --method get \
-            --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01&\$filter=principalId eq '${principal_id}'" \
-            --query "length(value[?properties.roleDefinitionId=='${role_definition_id}'])" -o tsv)
-
-          if [ "$existing_count" = "0" ]; then
-            az rest --method put \
-              --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/roleAssignments/$(uuidgen)?api-version=2022-04-01" \
-              --body "{\"properties\":{\"roleDefinitionId\":\"${role_definition_id}\",\"principalId\":\"${principal_id}\",\"principalType\":\"ServicePrincipal\"}}"
-          fi
+              "${optional[@]}"
