@@ -7,8 +7,8 @@ namespace Agent42.Tests;
 
 /// <summary>
 /// URL seeding from MCP tool results (ADR 0067): a per-server opt-in that lets a URL arriving in a remote
-/// MCP server's tool result become fetchable by <c>fetch_web_page</c> and readable by
-/// <c>read_web_document</c>, without the user pasting it back by hand.
+/// MCP server's tool result become readable by <c>read_web_document</c> (the only model-invoked web fetch
+/// since ADR 0125), without the user pasting it back by hand.
 ///
 /// <para><b>Most assertions read PERSISTED GRAIN STATE rather than the reply text</b>, following the
 /// <c>WebDocumentToolTests</c> precedent: the fake echoes only a trimmed slice of the tool payloads, and a
@@ -181,24 +181,6 @@ public sealed class McpUrlSeedingTests(SharedClusterFixture fixture) : SharedClu
         // own reply cannot show this — the fake trims its tool-payload echo across all of history and
         // this chain spends that budget on the link tool's JSON.
         Assert.Contains("[ctx:", Answer(await Chat(agent, "what did it say")), StringComparison.Ordinal);
-    }
-
-    // AC4: and fetchable as a PAGE. Both consumers of IsFetchableUrl are covered, because they are two
-    // separate call sites with two separate refusal messages and only a test per path notices a miss.
-    [Fact]
-    public async Task SeededUrl_IsFetchableAsAPage()
-    {
-        GiveServers(seeding: true);
-        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("seed-page-conversation");
-
-        var answer = Answer(await Chat(agent, $"{FakeChatClient.SeedingFetchChainTrigger} a page"));
-
-        // A POSITIVE from the page the fetch actually returned. A negative on the refusal text was the
-        // first attempt and was worse than useless: the refusal contains an apostrophe ("I won't fetch"),
-        // and the needle written for it did not — so it matched nothing, and the test still passed with
-        // IsFetchableUrl reading only FetchableUrls. That is the exact miss this test exists to catch.
-        Assert.Contains("Canned offline page content", answer, StringComparison.Ordinal);
-        Assert.Contains(LinkedDocumentUrl, (await ReadStateAsync(agent)).SeededFetchableUrls);
     }
 
     // ---- Harvest mechanics ----

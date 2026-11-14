@@ -26,7 +26,7 @@ public static class SkillToolLimits
     /// <summary>
     /// Maximum length, in characters, of what <c>load_skill</c> hands back for one skill — the SKILL.md body
     /// plus the framework's resource/script listing. Same order of magnitude as
-    /// <see cref="WebToolLimits.MaxPageTextLength"/>: a skill's guidance is prose meant to be read in one
+    /// <see cref="ReadDocumentLimits.MaxPartTextLength"/>: a skill's guidance is prose meant to be read in one
     /// go, and anything past this is a sign the skill should have used a resource file.
     /// </summary>
     public const int MaxSkillBodyLength = 16 * 1024;

@@ -11,23 +11,18 @@ public sealed record WebDocument(string Url, string FileName, string MediaType, 
 
 /// <summary>
 /// Fetches one web-hosted DOCUMENT (PDF / Office / text) as raw bytes so it can be ingested into the
-/// conversation's RAG index (ADR 0066). This is the second, document-only web path — deliberately
-/// disjoint from <see cref="IWebPageFetcher"/>, which reads HTML pages through the hosted context.dev
-/// scrape API and cannot deliver bytes at all.
+/// conversation's RAG index (ADR 0066). This is the only model-invoked web fetch path (ADR 0125
+/// removed <c>fetch_web_page</c>).
 ///
-/// <para><b>This one IS an SSRF sink, and that is the whole reason the guard came back.</b> Unlike
-/// <c>fetch_web_page</c> (ADR 0027, where context.dev makes the request), the production implementation
-/// dials the model-chosen URL <b>from our container</b> — which holds the managed identity that Azure
+/// <para><b>This one IS an SSRF sink, and that is the whole reason the guard exists.</b> The
+/// production implementation dials the model-chosen URL <b>from our container</b> — which holds the managed identity that Azure
 /// IMDS will mint Cosmos/Storage/OpenAI tokens for. <c>PrivateAddressGuard</c> is installed at
-/// <b>connect</b> time so every redirect hop is checked and DNS rebinding cannot slip past. Do not
-/// generalise from the sibling interface's "no longer an SSRF sink" note: it is true there and false
-/// here.</para>
+/// <b>connect</b> time so every redirect hop is checked and DNS rebinding cannot slip past.</para>
 ///
 /// <para>The whole-URL allowlist (<c>AgentGrainState.FetchableUrls</c> and, since ADR 0067,
 /// <c>AgentGrainState.SeededFetchableUrls</c>) is a <i>separate</i>, prompt-injection exfiltration
 /// control and stays the caller's job — <c>AgentGrain</c> checks it before calling here. There is no
-/// link following on this path, so there is no allowlist-exempt content and none of ADR 0027's
-/// residual risk.</para>
+/// link following on this path, so there is no allowlist-exempt content.</para>
 ///
 /// <para><b>ADR 0067 widened what can reach this fetcher, and this is the path where that matters
 /// most.</b> With a URL-seeding MCP server configured, the URL handed here may be one authored on a page

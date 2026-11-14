@@ -14,7 +14,7 @@ namespace Agent42.Agents;
 /// Whether the model reaches OpenAI's <b>hosted</b> server-side tools (web search, code interpreter).
 /// True only for a Foundry provider running the <b>Responses</b> API (ADR 0014) — Chat Completions
 /// 400s on them, which is the whole reason the self-hosted SearXNG shims exist (ADR 0011). When set,
-/// the grain swaps its <c>web_search</c>/<c>fetch_web_page</c> shims for the native hosted tools.
+/// the grain swaps its <c>web_search</c> shim for the native hosted tools.
 /// </param>
 /// <param name="SupportsImageGeneration">
 /// Whether picking this model turns a turn into <b>image generation</b> instead of a chat reply (ADR 0020):

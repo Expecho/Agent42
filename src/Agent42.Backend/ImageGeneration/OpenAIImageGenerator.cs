@@ -32,7 +32,7 @@ public sealed class OpenAIImageGenerator(ImageClient client) : IImageGenerationS
     // inline bytes). A plain static HttpClient — NOT a named/DI one — so it does not inherit the
     // AddServiceDefaults retry pipeline (gotcha) and does not exhaust sockets. Plain GET, no auth header, so it
     // never carries the app's managed identity. The URL comes from the user's OWN configured image provider
-    // (config, not a model/request choice), so it stays off the fetch_web_page SSRF path (ADR 0018).
+    // (config, not a model/request choice), so it stays off the read_web_document SSRF path (ADR 0018).
     private static readonly HttpClient Http = new();
 
     public async Task<Agent42.Agents.GeneratedImage> GenerateAsync(

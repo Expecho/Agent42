@@ -6,7 +6,7 @@ namespace Agent42.Backend;
 /// <summary>
 /// Builds the <c>GET /api/config-health</c> report (the Preferences → Configuration tab): which
 /// required/optional configuration inputs are present, malformed, or (opt-in) unreachable, so a silently
-/// degraded feature (geocoding off, Web Push off, context.dev fetch failing) is visible instead of
+/// degraded feature (geocoding off, Web Push off, long-term memory off) is visible instead of
 /// mysterious. Backs an operator diagnostic, not per-user state.
 ///
 /// <para><b>The load-bearing invariant: the report never contains a secret value.</b> Every check exposes
@@ -25,7 +25,7 @@ namespace Agent42.Backend;
 /// <para><see cref="BuildStatic"/> is a <b>pure function</b> of <see cref="IConfiguration"/> +
 /// <see cref="IHostEnvironment"/> + <see cref="PushConfig"/> — no HTTP, no DI graph — so it is unit-testable
 /// without a host and cannot drift into a slow call. Live probes are a separate <see cref="ProbeAsync"/>
-/// path, opt-in because a geocoding/context.dev probe costs a billable call.</para>
+/// path, opt-in because a geocoding probe costs a billable call.</para>
 /// </summary>
 public static class ConfigHealth
 {
@@ -46,7 +46,6 @@ public static class ConfigHealth
     // Keys of the checks a live probe overrides. Stable so ProbeAsync can find them by key.
     private const string ProbeSearxng = "probe:searxng";
     private const string ProbeGeocoding = "probe:geocoding";
-    private const string ProbeContext = "probe:context.dev";
     private const string ProbeHindsight = "probe:hindsight";
 
     /// <summary>
@@ -103,12 +102,6 @@ public static class ConfigHealth
             missingStatus: Warning));
         checks.Add(NotProbed(GroupOptional, ProbeGeocoding, "Geocoding reachability", billable: true));
 
-        checks.Add(PresenceCheck(GroupOptional, "ContextScrape:ApiKey", config["ContextScrape:ApiKey"],
-            present: "page scraping enabled",
-            missing: "not set — fetch_web_page will fail per call with 401",
-            missingStatus: Warning));
-        checks.Add(NotProbed(GroupOptional, ProbeContext, "context.dev reachability", billable: true));
-
         // Long-term memory (ADR 0056). Absent is the DEFAULT and it is the OPERATOR's off switch — since
         // ADR 0057 a user can additionally deselect memory in Preferences → Tools, so this key being present
         // no longer means every turn is remembered. The missing message says what is lost rather than how to
@@ -118,7 +111,7 @@ public static class ConfigHealth
                 + "Settings → Tools (ADR 0057), so this key being set does not mean every turn is remembered",
             missing: "not set — long-term memory is off; the agent recalls and retains nothing",
             missingStatus: Warning));
-        // Unlike the geocoding and context.dev probes this one is FREE: /health is unauthenticated and
+        // Unlike the geocoding probe this one is FREE: /health is unauthenticated and
         // metered by nobody, so it costs the operator nothing to press the button.
         checks.Add(NotProbed(GroupOptional, ProbeHindsight, "Hindsight reachability", billable: false));
 
@@ -281,11 +274,6 @@ public static class ConfigHealth
             await RunAsync(ProbeGeocoding, probes.Geocoding, geocoding);
         }
 
-        if (byKey.TryGetValue(ProbeContext, out var context))
-        {
-            await RunAsync(ProbeContext, probes.ContextScrape, context);
-        }
-
         if (byKey.TryGetValue(ProbeHindsight, out var hindsight))
         {
             await RunAsync(ProbeHindsight, probes.Hindsight, hindsight);
@@ -350,7 +338,6 @@ public sealed record ProbeResult(string Status, string Message);
 public sealed record ConfigHealthProbeSet(
     Func<CancellationToken, Task<ProbeResult>>? SearXng,
     Func<CancellationToken, Task<ProbeResult>>? Geocoding,
-    Func<CancellationToken, Task<ProbeResult>>? ContextScrape,
     Func<CancellationToken, Task<ProbeResult>>? Hindsight)
 {
     /// <summary>
@@ -372,7 +359,6 @@ public sealed record ConfigHealthProbeSet(
             Geocoding: httpFactory is null || string.IsNullOrWhiteSpace(googleKey)
                 ? null
                 : ct => ProbeGeocodingAsync(httpFactory, googleKey, ct),
-            ContextScrape: httpFactory is null ? null : ct => ProbeContextAsync(httpFactory, ct),
             // Key-gated for the same reason as geocoding, not because the probe needs the key (it does not
             // — /health is unauthenticated): the named client is registered only when the key is present, so
             // CreateClient would otherwise hand back a resilience-pipeline-inheriting client.
@@ -424,23 +410,8 @@ public sealed record ConfigHealthProbeSet(
         return new ProbeResult(ConfigHealth.Ok, "reachable");
     }
 
-    private static async Task<ProbeResult> ProbeContextAsync(IHttpClientFactory factory, CancellationToken ct)
-    {
-        var client = factory.CreateClient(ContextWebPageFetcher.HttpClientName);
-        // A minimal scrape of a throwaway URL — this DOES consume one context.dev credit (hence billable).
-        // Any 2xx/4xx that is not 401/403 means the endpoint is reachable and the key is accepted; 401/403
-        // means the key is missing or rejected.
-        using var response = await client.GetAsync("v1/web/scrape/markdown?url=https://example.com", ct);
-        if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
-        {
-            return new ProbeResult(ConfigHealth.Error, "auth failed");
-        }
-
-        return new ProbeResult(ConfigHealth.Ok, "reachable");
-    }
-
     // Hindsight /health is UNAUTHENTICATED and free, which is why this probe is Billable: false while the
-    // geocoding and context.dev ones are not. No key is sent and none is needed; the point is only whether
+    // geocoding one is not. No key is sent and none is needed; the point is only whether
     // the configured base address answers. A curated constant either way, never the exception or the URL.
     private static async Task<ProbeResult> ProbeHindsightAsync(
         IHttpClientFactory factory, IConfiguration config, CancellationToken ct)

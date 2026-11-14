@@ -36,7 +36,6 @@ public sealed class ConfigHealthTests
         ("WebSearch:Endpoint", "http://localhost:8888"),
         ("Storage:BlobEndpoint", "https://acct.blob.core.windows.net"),
         ("Geocoding:GoogleApiKey", "SECRET-google-key"),
-        ("ContextScrape:ApiKey", "SECRET-context-key"),
         ("Hindsight:ApiKey", "SECRET-hindsight-key"),
         ("Email:MailgunSigningKey", "SECRET-mailgun-signing-key"),
         ("APPLICATIONINSIGHTS_CONNECTION_STRING", "InstrumentationKey=SECRET-appinsights-key;IngestionEndpoint=https://x/"),
@@ -130,7 +129,6 @@ public sealed class ConfigHealthTests
         // RAG is a per-user model now, ADR 0007/0018), so there is no AzureOpenAI Core check to assert here.
         Assert.Equal(ConfigHealth.Ok, Find(report, "WebSearch:Endpoint").Status);
         Assert.Equal(ConfigHealth.Ok, Find(report, "Geocoding:GoogleApiKey").Status);
-        Assert.Equal(ConfigHealth.Ok, Find(report, "ContextScrape:ApiKey").Status);
         Assert.Equal(ConfigHealth.Ok, Find(report, "Push:Vapid").Status);
         Assert.Equal(ConfigHealth.Ok, Find(report, "Hindsight:ApiKey").Status);
     }
@@ -205,7 +203,6 @@ public sealed class ConfigHealthTests
 
         Assert.DoesNotContain("SECRET-openai-key", json);
         Assert.DoesNotContain("SECRET-google-key", json);
-        Assert.DoesNotContain("SECRET-context-key", json);
     }
 
     // AC4b (the HIGH finding): a failing secret-bearing PROBE never leaks the secret. The fake geocoding
@@ -220,7 +217,6 @@ public sealed class ConfigHealthTests
             SearXng: null,
             Geocoding: _ => throw new InvalidOperationException(
                 "GET https://maps.googleapis.com/maps/api/geocode/json?latlng=0,0&key=SECRET-google-key failed"),
-            ContextScrape: null,
             Hindsight: null);
         var services = new ServiceCollection().AddSingleton(probes).BuildServiceProvider();
 
@@ -241,7 +237,6 @@ public sealed class ConfigHealthTests
         var probes = new ConfigHealthProbeSet(
             SearXng: _ => Task.FromResult(new ProbeResult(ConfigHealth.Ok, "reachable")),
             Geocoding: _ => Task.FromResult(new ProbeResult(ConfigHealth.Error, "auth failed")),
-            ContextScrape: null,
             Hindsight: null);
         var services = new ServiceCollection().AddSingleton(probes).BuildServiceProvider();
 
@@ -257,14 +252,14 @@ public sealed class ConfigHealthTests
     public async Task UnresolvedProbeClient_IsSkipped()
     {
         var report = ConfigHealth.BuildStatic(Config(AllSecretsSet), Env(), Push(enabled: true));
-        var probes = new ConfigHealthProbeSet(null, null, null, null);
+        var probes = new ConfigHealthProbeSet(null, null, null);
         var services = new ServiceCollection().AddSingleton(probes).BuildServiceProvider();
 
         var probed = await ConfigHealth.ProbeAsync(report, services, Config(AllSecretsSet));
 
         Assert.Equal(ConfigHealth.Skipped, Find(probed, "probe:searxng").Status);
         Assert.Equal(ConfigHealth.Skipped, Find(probed, "probe:geocoding").Status);
-        Assert.Equal(ConfigHealth.Skipped, Find(probed, "probe:context.dev").Status);
+        Assert.Equal(ConfigHealth.Skipped, Find(probed, "probe:hindsight").Status);
     }
 
     // Development renders the prod-infra checks as n-a rather than error/warning noise.
@@ -308,7 +303,7 @@ public sealed class ConfigHealthTests
         Assert.Equal(ConfigHealth.Warning, missing.Status);
         Assert.Contains("long-term memory is off", missing.Message);
 
-        // Free, unlike the geocoding and context.dev probes — /health is unauthenticated.
+        // Free, unlike the geocoding probe — /health is unauthenticated.
         Assert.False(Find(configured, "probe:hindsight").Billable);
         Assert.Equal(ConfigHealth.Skipped, Find(configured, "probe:hindsight").Status);
     }

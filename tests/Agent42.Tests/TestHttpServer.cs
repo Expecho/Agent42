@@ -9,9 +9,8 @@ namespace Agent42.Tests;
 /// bytes a client actually sent.
 ///
 /// Why not a stub <c>HttpMessageHandler</c>: its consumers assert on the <b>outbound request line</b> —
-/// that the geocoder formats coordinates invariantly and never logs its key (<c>GoogleGeocoderTests</c>),
-/// and that the scrape client sends the right query parameters and dials followed links
-/// (<c>ContextWebPageFetcherTests</c>, ADR 0027). A stub can hand back canned responses, but only a real
+/// that the geocoder formats coordinates invariantly and never logs its key (<c>GoogleGeocoderTests</c>).
+/// A stub can hand back canned responses, but only a real
 /// request head shows what was truly put on the wire. Raw <see cref="TcpListener"/> rather than
 /// <c>HttpListener</c> because the latter needs a URL ACL (elevation) for non-<c>localhost</c> prefixes
 /// on Windows.

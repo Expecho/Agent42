@@ -154,7 +154,7 @@ public sealed class GuardedDocumentFetcher(HttpClient httpClient, TimeSpan? down
     //
     // text/html gets its OWN message rather than falling into the generic rejection below, because it is
     // the common failure and not an edge case: a sign-in wall served for a .pdf URL. Telling the model to
-    // use fetch_web_page instead is the actionable answer.
+    // saying plainly that web pages can't be read in full here (ADR 0125) is the honest answer.
     private static string ResolveMediaType(Uri uri, HttpResponseMessage response)
     {
         var declared = response.Content.Headers.ContentType?.MediaType;
@@ -165,7 +165,7 @@ public sealed class GuardedDocumentFetcher(HttpClient httpClient, TimeSpan? down
         {
             throw new InvalidOperationException(
                 $"'{uri}' returned an HTML page, not a document. This tool reads PDF, Office and text " +
-                "documents; use fetch_web_page for a web page.");
+                "documents; web pages can't be read in full here, so answer from the search snippets.");
         }
 
         if (!AllowedMediaTypes.Contains(resolved, StringComparer.OrdinalIgnoreCase))

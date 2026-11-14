@@ -10,6 +10,8 @@ amends: [0011, 0027, 0056]
 
 # `read_web_document`: fetch a web-hosted document in-container and ingest it into conversation RAG
 
+> **Amended by [ADR 0125](0125-remove-fetch-web-page-and-context-dev.md) (2026-11-14).** `fetch_web_page` is gone, so `read_web_document` is the only model-invoked web fetch and still rejects HTML. The "two fetch paths" comparison and the "context.dev is being retired" premise below are now history: the retirement happened.
+
 > **Amended by [ADR 0106](0106-agentgrain-services-and-turn-context.md) (2026-10-19): the "a document was ingested this turn" flag is `TurnContext.WebDocumentIngested` on the run's own context.** The consume sites read it after the run, and there is no field to clear.
 
 > **Amends [ADR 0027](0027-hosted-page-scrape-via-context-dev.md) and, through it,

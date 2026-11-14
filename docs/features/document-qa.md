@@ -17,9 +17,9 @@ image `UriContent` path).
 The model can also pull a document from the web into the same index (ADR 0066): the
 `read_web_document` tool downloads a PDF, Office or text file **from our own container**, ingests
 it into this conversation's index, and returns excerpts that answer the model's `question`. It
-only accepts URLs on the same fetch allowlist as `fetch_web_page` (see
+only accepts URLs on the same fetch allowlist (URLs the user typed or a search surfaced, see
 [Web search](web-search.md), plus opted-in MCP results, ADR 0067), rejects
-`text/html` (that is `fetch_web_page`'s job), and dials through `PrivateAddressGuard`, which
+`text/html` (web pages can't be read in full, ADR 0125), and dials through `PrivateAddressGuard`, which
 checks every resolved IP and every redirect hop against private ranges. Limits are in
 `WebDocumentLimits` (10 MB download, 30 s deadline, 10 web documents per conversation). A web
 document counts toward the RAG gate exactly like an uploaded one

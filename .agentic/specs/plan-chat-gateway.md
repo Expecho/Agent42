@@ -248,7 +248,7 @@ This is judgment the executor can't cheaply re-derive. Code facts are left out o
 | Encrypted, never-echoed secret with its own purpose | `src/Agent42.Backend/Webhooks/WebhookSecretProtector.cs` (newest of three siblings) |
 | Long-lived hosted service | `src/Agent42.Backend/Fleet/FleetTaskService.cs` + `FleetRegistration.cs:39` |
 | Outbound websocket with reconnect and backoff | `tools/Agent42.LocalBridge/BridgeClient.cs:101-123` |
-| Named HttpClient opting out of retries + explicit timeout | `Program.cs:249-254` (`ContextWebPageFetcher`) |
+| Named HttpClient opting out of retries + explicit timeout | `Program.cs` (the `GuardedDocumentFetcher` client, ~L258-264) |
 | User identity on a non-request caller's spans | `UserTelemetryContext.RequestContextKey` + `RequestContextPropagationTests` |
 | Registration guard (no test runs `Program.cs`) | `ProjectLayoutTests` `Hosts_RegisterLocalBridge` |
 | Outbound port called from the grain, recorded in tests | `IAgentWebhookSender` + `RecordingAgentWebhookSender` in `TestSiloConfigurator.cs:108-111` |

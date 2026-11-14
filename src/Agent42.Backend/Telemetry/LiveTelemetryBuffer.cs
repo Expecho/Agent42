@@ -70,7 +70,7 @@ public sealed class LiveTelemetryBuffer
     }
 
     // A caller-supplied limit may only narrow the configured per-poll cap, never raise it — the same
-    // clamp-don't-trust rule as WebToolLimits.MaxFollowedLinks.
+    // clamp-don't-trust rule as the other server-side ceilings.
     private int Clamp(int? limit) =>
         limit is null or <= 0 ? Config.MaxItemsPerPoll : Math.Min(limit.Value, Config.MaxItemsPerPoll);
 

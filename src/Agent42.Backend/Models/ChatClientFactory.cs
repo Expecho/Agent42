@@ -24,7 +24,7 @@ namespace Agent42.Backend;
 /// Foundry deployments reject. Embeddings moved off it too, onto <c>/openai/v1</c> at the resource root.</para>
 ///
 /// <para>The endpoint always comes from CONFIG and never from the model or a request. That is what
-/// keeps this off the SSRF path that <c>fetch_web_page</c> is on (ADR 0011), and it must stay true:
+/// keeps this off the SSRF path that <c>read_web_document</c> is on (ADR 0066), and it must stay true:
 /// do not let a future change accept an endpoint from anywhere else.</para>
 /// </summary>
 public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilotProviderSource

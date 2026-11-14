@@ -4,7 +4,7 @@ namespace Agent42.Agents;
 
 /// <summary>
 /// Wraps one tool of a URL-seeding MCP server (ADR 0067) so the absolute http(s) URLs in its result become
-/// fetchable by <c>fetch_web_page</c> and readable by <c>read_web_document</c> in the conversation that
+/// readable by <c>read_web_document</c> in the conversation that
 /// received them. <see cref="DelegatingAIFunction"/> forwards Name/Description/JsonSchema unchanged, so the
 /// model's view of the tool is identical — only a side effect is added, and the result passes through
 /// untouched.

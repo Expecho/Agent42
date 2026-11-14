@@ -195,7 +195,7 @@ first chat after an idle period. Keep the containers warm, or accept it.
 ### C12 — The builder must have the SMALLEST tool set in the app.
 
 Counterintuitive but load-bearing: it is the one agent that can write code, so it must not also
-carry the widest inbound injection surface. No `web_search` / `fetch_web_page` /
+carry the widest inbound injection surface. No `web_search` /
 `read_web_document`, and **no `memory`** — retain has no delete path (ADR 0056) and the
 builder's transcripts are source code. A new agent's `EnabledTools` is an explicit list, so
 memory (on by default elsewhere) is off unless ticked. Do not tick it.

@@ -215,7 +215,7 @@ dotnet run --project src/Agent42.AppHost
 No model endpoint or key is needed to start the backend: chat, embedding and speech models
 are all added per user at runtime (Preferences → model providers). The managed identity
 (`DefaultAzureCredential`) is used for blob storage. Optional feature keys (Google Maps,
-context.dev, Hindsight, VAPID) go in user secrets; each one missing just switches its feature
+Hindsight, VAPID) go in user secrets; each one missing just switches its feature
 off, as the Configuration tab shows.
 
 ## Test & lint
@@ -303,7 +303,7 @@ app runs on Azure Container Apps behind Entra ID Easy Auth at chat.agent42.nl.
 
 Several manual prerequisites live outside the code as GitHub Actions secrets. One is
 required: `SEARXNG_SECRET` (without it the search sidecar crash-loops and the revision never
-turns healthy). The rest are optional feature keys: `GOOGLE_MAPS_API_KEY`, `CONTEXT_API_KEY`,
+turns healthy). The rest are optional feature keys: `GOOGLE_MAPS_API_KEY`,
 `VAPID_PRIVATE_KEY`, `HINDSIGHT_API_KEY` (the switch for long-term memory, which sends
 conversation content to Hindsight), and `APPLICATIONINSIGHTS_CONNECTION_STRING`. The full table,
 with what each missing input breaks, is in `CLAUDE.md`. Integrations needing setup outside this

