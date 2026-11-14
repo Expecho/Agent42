@@ -105,8 +105,9 @@ healthy sidecar** (JSON API off), not an auth failure.
 ## How Orleans fits
 
 - None — the endpoint is pure config / env / DI-service inspection; no grain is involved. It
-  stays behind Easy Auth like every `/api/*` read; all allowlisted users may view it (no role
-  system).
+  stays behind Easy Auth like every `/api/*` read and, since ADR 0121, answers 404 to anyone who is not an
+  owner (`Access:Owners`): it reports operator endpoints and key status, and `?probe=true` spends the operator's
+  billable keys. A non-owner who opens the Config tab sees an empty list.
 
 ## Key files
 

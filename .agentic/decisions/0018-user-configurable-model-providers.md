@@ -8,6 +8,11 @@ supersedes: 0013, 0017 (invariant scope only — see "Partial supersession")
 
 # A signed-in user configures their own model providers, without a redeploy
 
+> **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** The "an authenticated user's own endpoint is a trusted, self-directed action"
+> rationale below assumed about two trusted users. With sign-in open, a user-supplied endpoint that may be `localhost`
+> can reach the app's own loopback, including forging `X-MS-CLIENT-PRINCIPAL-ID`. That exposure is **accepted, not
+> mitigated** (user decision, 2026-11-09): the shell reaches the same prize, so a guard here would not protect anything.
+
 > **Extended by [ADR 0103](0103-anthropic-provider-kind.md) (2026-10-18):** a third user-selectable kind,
 > `Anthropic` (Claude). The same rules apply: an encrypted key, a required absolute http/https endpoint (the UI
 > pre-fills `https://api.anthropic.com`) and declared models.

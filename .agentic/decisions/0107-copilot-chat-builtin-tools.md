@@ -9,6 +9,11 @@ amends: [0085, 0097]
 
 # Copilot chats get the runtime's built-in tools, auto-approved, with an Azure Files workspace per conversation
 
+> **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** The consequence below that cross-user exposure "becomes real the day a third principal is
+> admitted" is now **accepted**: sign-in opens to everybody and the Copilot shell stays available to all, un-isolated. It can
+> forge the principal header and read managed-identity tokens, so the owner tier is advisory, not a boundary. The kill switch
+> (`Copilot:BuiltInToolsEnabled`) is global and chat-only.
+
 > **Amended by [ADR 0111](0111-chat-gateway-for-chat-apps.md), phase 3 (2026-10-21): this account now also holds the
 > chat gateway's signal-cli store** (share `signal-data`, mounted at `/mnt/signal` on the backend only). That store is
 > SQLite over SMB, which this ADR rejected for the Copilot runtime; it is acceptable there because one daemon writes it

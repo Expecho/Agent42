@@ -102,7 +102,7 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Backend",
             [
-                "Api", "Artifacts", "Attachments", "ChatGateway", "ClientTools", "Configuration", "Conversations", "Copilot",
+                "Access", "Api", "Artifacts", "Attachments", "ChatGateway", "ClientTools", "Configuration", "Conversations", "Copilot",
                 "Documents", "Email", "Export", "Fleet", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
                 "Search", "SharedState", "Sharing", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills",
                 "Users", "Web", "Webhooks", "wwwroot",
@@ -522,7 +522,7 @@ public sealed class ProjectLayoutTests
     /// grain activations, silo health, reminder names, conversation ids — to every Easy-Auth-allowlisted
     /// user. That is the failure that actually matters here, and this source-text assertion is the only
     /// thing standing in front of it. Mutation check: delete the
-    /// <c>app.UseOrleansDashboardOwnerGate()</c> line from <c>Program.cs</c> and this must go red.</para>
+    /// <c>app.UseOwnerGate()</c> line from <c>Program.cs</c> and this must go red.</para>
     ///
     /// <para>It also pins that the raw package call is made in exactly ONE place. Both hosts go through
     /// the bundled extensions, so the gate and the map cannot drift apart per host.</para>
@@ -532,7 +532,7 @@ public sealed class ProjectLayoutTests
     {
         var program = StrippedSource(Path.Combine(ProjectDir("Agent42.Backend"), "Program.cs"));
 
-        var gate = program.IndexOf("app.UseOrleansDashboardOwnerGate()", StringComparison.Ordinal);
+        var gate = program.IndexOf("app.UseOwnerGate()", StringComparison.Ordinal);
         Assert.True(gate >= 0, "Program.cs no longer installs the dashboard owner gate — /dashboard is open to every allowlisted user");
 
         var map = program.IndexOf("app.MapOrleansDashboardUi()", StringComparison.Ordinal);
@@ -747,7 +747,7 @@ public sealed class ProjectLayoutTests
 
         Assert.Contains("silo.AddDashboard()", source, StringComparison.Ordinal);
 
-        var gate = source.IndexOf("app.UseOrleansDashboardOwnerGate()", StringComparison.Ordinal);
+        var gate = source.IndexOf("app.UseOwnerGate()", StringComparison.Ordinal);
         Assert.True(gate >= 0, $"{relativePath} does not install the dashboard owner gate");
         Assert.Contains("app.MapOrleansDashboardUi()", source, StringComparison.Ordinal);
 

@@ -348,6 +348,33 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal(10, restored.DailyTokens.Values.Single().InputTokens);
     }
 
+    // ADR 0121: a usage-rollup document written before TokenBucket/ToolBucket.UserId existed reads back with "" (an
+    // owner's legacy bucket), and the new field round-trips through the Cosmos JSON path.
+    [Fact]
+    public void UsageBuckets_WithoutUserId_Deserialize()
+    {
+        var state = new UsageRollupState();
+        state.Apply(new UsageEvent(
+            UsageEventKind.Token, DateTimeOffset.UtcNow, "Agent42", "openai", "gpt-5.4", "ada@example.com", "", 10, 5, 0, 0, false, "", "oid-ada"));
+        state.Apply(new UsageEvent(
+            UsageEventKind.Tool, DateTimeOffset.UtcNow, "Agent42", "", "", "ada@example.com", "web_search", 0, 0, 0, 0, false, "", "oid-ada"));
+        var json = Serializer().Serialize(state).ToString();
+        var legacy = System.Text.RegularExpressions.Regex.Replace(json, @",?\s*""UserId""\s*:\s*""oid-ada""", "");
+        Assert.DoesNotContain("UserId", legacy);
+
+        var roundTripped = Serializer().Deserialize<UsageRollupState>(new BinaryData(json));
+        var restored = Serializer().Deserialize<UsageRollupState>(new BinaryData(legacy));
+
+        Assert.Equal("oid-ada", roundTripped.DailyTokens.Values.Single().UserId);
+        Assert.Equal("oid-ada", roundTripped.DailyTools.Values.Single().UserId);
+        Assert.Equal("", restored.DailyTokens.Values.Single().UserId);
+        Assert.Equal("", restored.DailyTools.Values.Single().UserId);
+        Assert.Equal(10, restored.DailyTokens.Values.Single().InputTokens);
+        // A legacy bucket is reachable by an owner through the old email key, and by nobody else.
+        Assert.Equal(10, restored.Query("all", null, "oid-ada", "ada@example.com", DateTimeOffset.UtcNow).Totals.InputTokens);
+        Assert.Equal(0, restored.Query("all", null, "oid-ada", null, DateTimeOffset.UtcNow).Totals.InputTokens);
+    }
+
     // ADR 0089 AC12: the committed golden predates [Id(16)]/[Id(17)], so an existing conversation reads as having no
     // shared state at version 0.
     [Fact]

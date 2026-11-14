@@ -173,7 +173,9 @@ runtime's own built-in shell, file and URL tools, auto-approved with no prompt. 
 directory on an Azure Files share mounted at `/mnt/copilot` (`Copilot:WorkspaceRoot`), and
 `Copilot:BuiltInToolsEnabled` is the server-wide kill switch (off is ADR 0085's phase 1, custom tools only). The
 runtime's transcript stays in the private `copilot-sessions` Blob container. Deleting the chat deletes both. ADR 0107
-lists the accepted risks: the shell runs unattended in the backend container as the app's own user. The grain sees the loop only through `ICopilotAgentFactory` (`src/Agent42.Agents/Copilot/`).
+lists the accepted risks: the shell runs unattended in the backend container as the app's own user. Since ADR 0121 the
+Copilot kind is open to **every signed-in user**, un-isolated (accepted risk): the shell can forge the principal header and
+read managed-identity tokens, so the owner tier is advisory. Fleet Copilot agents have no kill switch. The grain sees the loop only through `ICopilotAgentFactory` (`src/Agent42.Agents/Copilot/`).
 The SDK side, its session store and the runtime's trust boundary are in `src/Agent42.Backend/Copilot/`. A copilot
 chat takes no documents or images and refuses incognito turns. ADR 0085 records why, and how the chat history the
 UI shows (a mirror) can diverge from the transcript the model sees.

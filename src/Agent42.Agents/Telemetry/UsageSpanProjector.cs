@@ -55,10 +55,11 @@ public static class UsageSpanProjector
     {
         var operation = Str(tags, OperationNameTag);
         var errored = activityErrored || !string.IsNullOrEmpty(Str(tags, ErrorTypeTag));
-        var user = FirstNonEmpty(
+        var user = UsageUserKey.From(
             Str(tags, UserTelemetryContext.UserEmailTag),
             Str(tags, UserTelemetryContext.UserNameTag),
             Str(tags, UserTelemetryContext.UserIdTag));
+        var userId = Str(tags, UserTelemetryContext.UserIdTag) ?? "";
 
         // Per-agent application if the grain stamped one this turn, else the caller's default constant.
         var app = FirstNonEmpty(Str(tags, ApplicationTag));
@@ -82,7 +83,8 @@ public static class UsageSpanProjector
                     CachedInputTokens: Long(tags, CacheReadTokensTag),
                     ReasoningOutputTokens: Long(tags, ReasoningTokensTag),
                     IsError: errored,
-                    ProviderKind: Str(tags, ProviderKindTag) ?? "");
+                    ProviderKind: Str(tags, ProviderKindTag) ?? "",
+                    UserId: userId);
 
             case ExecuteToolOperation:
                 return new UsageEvent(
@@ -90,7 +92,8 @@ public static class UsageSpanProjector
                     Provider: "", Model: "", UserKey: user,
                     ToolName: Str(tags, ToolNameTag) ?? "",
                     InputTokens: 0, OutputTokens: 0, CachedInputTokens: 0, ReasoningOutputTokens: 0,
-                    IsError: errored);
+                    IsError: errored,
+                    UserId: userId);
 
             default:
                 return null;

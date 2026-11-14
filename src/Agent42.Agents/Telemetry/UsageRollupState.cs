@@ -34,6 +34,13 @@ public sealed class TokenBucket
     /// as unpriced: those calls are honestly unknown, and no migration is needed (cross-cutting rule 2).
     /// </summary>
     [Id(11)] public string ProviderKind { get; set; } = "";
+
+    /// <summary>
+    /// The post-alias object id the call belongs to (ADR 0121). <c>""</c> on every bucket written before it existed:
+    /// those belong to an owner (the only users that could sign in) and match by <see cref="UserKey"/> for an owner
+    /// only. No migration (cross-cutting rule 2).
+    /// </summary>
+    [Id(12)] public string UserId { get; set; } = "";
 }
 
 /// <summary>A tool-call rollup for one (bucket, application, tool, user) cell.</summary>
@@ -47,6 +54,9 @@ public sealed class ToolBucket
     [Id(3)] public string UserKey { get; set; } = "";
     [Id(4)] public long Count { get; set; }
     [Id(5)] public long ErrorCount { get; set; }
+
+    /// <summary>See <see cref="TokenBucket.UserId"/>.</summary>
+    [Id(6)] public string UserId { get; set; } = "";
 }
 
 /// <summary>
@@ -96,9 +106,15 @@ public sealed class UsageRollupState
 
     /// <summary>
     /// Aggregates the rollups for a range (<c>24h</c> reads hourly; <c>7d</c>/<c>30d</c>/<c>all</c>
-    /// read daily) with optional application/user filters (null = no filter) into the wire contract.
+    /// read daily) with an optional application filter into the wire contract, scoped to ONE user (ADR 0121).
+    ///
+    /// <para><b>Always scoped, never "all".</b> A blank <paramref name="userId"/> yields an empty report. A bucket
+    /// is in scope when its <see cref="TokenBucket.UserId"/> equals <paramref name="userId"/>, or, only when
+    /// <paramref name="legacyUserKey"/> is non-null (the caller is an owner), when it predates the id (empty
+    /// <c>UserId</c>) and its <see cref="TokenBucket.UserKey"/> equals that key.</para>
     /// </summary>
-    public UsageReport Query(string range, string? application, string? user, DateTimeOffset now)
+    public UsageReport Query(
+        string range, string? application, string userId, string? legacyUserKey, DateTimeOffset now)
     {
         var useHourly = range == "24h";
         var cutoff = range switch
@@ -112,13 +128,13 @@ public sealed class UsageRollupState
         var tokenBuckets = (useHourly ? HourlyTokens : DailyTokens).Values
             .Where(b => b.BucketUnixSeconds >= cutoff)
             .Where(b => application is null || b.Application == application)
-            .Where(b => user is null || b.UserKey == user)
+            .Where(b => InScope(b.UserId, b.UserKey, userId, legacyUserKey))
             .ToList();
 
         var toolBuckets = (useHourly ? HourlyTools : DailyTools).Values
             .Where(b => b.BucketUnixSeconds >= cutoff)
             .Where(b => application is null || b.Application == application)
-            .Where(b => user is null || b.UserKey == user)
+            .Where(b => InScope(b.UserId, b.UserKey, userId, legacyUserKey))
             .ToList();
 
         var totalCost = CostSum.Of(tokenBuckets);
@@ -172,23 +188,20 @@ public sealed class UsageRollupState
         return new UsageReport(totals, models, tools, users);
     }
 
-    /// <summary>Distinct application names seen across all buckets (for the filter dropdown).</summary>
-    public IReadOnlyList<string> Applications()
-        => AllApplications().Where(a => a.Length > 0).Distinct().OrderBy(a => a, StringComparer.Ordinal).ToList();
+    private static bool InScope(string bucketUserId, string bucketUserKey, string userId, string? legacyUserKey)
+        => userId.Length > 0
+            && (string.Equals(bucketUserId, userId, StringComparison.OrdinalIgnoreCase)
+                || (legacyUserKey is not null && bucketUserId.Length == 0 && bucketUserKey == legacyUserKey));
 
-    /// <summary>Distinct user keys seen across all buckets (for the filter dropdown).</summary>
-    public IReadOnlyList<string> Users()
-        => AllUsers().Where(u => u.Length > 0).Distinct().OrderBy(u => u, StringComparer.Ordinal).ToList();
-
-    private IEnumerable<string> AllApplications()
-        => DailyTokens.Values.Select(b => b.Application).Concat(DailyTools.Values.Select(b => b.Application));
-
-    private IEnumerable<string> AllUsers()
-        => DailyTokens.Values.Select(b => b.UserKey).Concat(DailyTools.Values.Select(b => b.UserKey));
+    /// <summary>Distinct application names seen in the caller's scope (for the filter dropdown), see <see cref="Query"/>.</summary>
+    public IReadOnlyList<string> Applications(string userId, string? legacyUserKey)
+        => DailyTokens.Values.Where(b => InScope(b.UserId, b.UserKey, userId, legacyUserKey)).Select(b => b.Application)
+            .Concat(DailyTools.Values.Where(b => InScope(b.UserId, b.UserKey, userId, legacyUserKey)).Select(b => b.Application))
+            .Where(a => a.Length > 0).Distinct().OrderBy(a => a, StringComparer.Ordinal).ToList();
 
     private static void ApplyToken(Dictionary<string, TokenBucket> map, long bucket, UsageEvent e)
     {
-        var key = string.Join(KeyDelimiter, bucket, e.Application, e.Provider, e.Model, e.UserKey, e.ProviderKind);
+        var key = string.Join(KeyDelimiter, bucket, e.Application, e.Provider, e.Model, e.UserKey, e.ProviderKind, e.UserId);
         if (!map.TryGetValue(key, out var agg))
         {
             agg = new TokenBucket
@@ -198,6 +211,7 @@ public sealed class UsageRollupState
                 Provider = e.Provider,
                 Model = e.Model,
                 UserKey = e.UserKey,
+                UserId = e.UserId,
                 ProviderKind = e.ProviderKind,
             };
             map[key] = agg;
@@ -216,7 +230,7 @@ public sealed class UsageRollupState
 
     private static void ApplyTool(Dictionary<string, ToolBucket> map, long bucket, UsageEvent e)
     {
-        var key = string.Join(KeyDelimiter, bucket, e.Application, e.ToolName, e.UserKey);
+        var key = string.Join(KeyDelimiter, bucket, e.Application, e.ToolName, e.UserKey, e.UserId);
         if (!map.TryGetValue(key, out var agg))
         {
             agg = new ToolBucket
@@ -225,6 +239,7 @@ public sealed class UsageRollupState
                 Application = e.Application,
                 ToolName = e.ToolName,
                 UserKey = e.UserKey,
+                UserId = e.UserId,
             };
             map[key] = agg;
         }

@@ -30,7 +30,6 @@ export const openUsageBtn = document.getElementById("openUsageBtn");
 export const usageView = document.getElementById("usageView");
 export const usageCloseBtn = document.getElementById("usageCloseBtn");
 export const usageApplication = document.getElementById("usageApplication");
-export const usageUser = document.getElementById("usageUser");
 export const usageRange = document.getElementById("usageRange");
 export const usageRefresh = document.getElementById("usageRefresh");
 export const usageTiles = {

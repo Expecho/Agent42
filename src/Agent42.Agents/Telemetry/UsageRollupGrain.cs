@@ -40,12 +40,9 @@ public sealed class UsageRollupGrain : Grain, IUsageRollupGrain
         await _state.WriteStateAsync();
     }
 
-    public Task<UsageReport> QueryAsync(string range, string? application, string? user)
-        => Task.FromResult(_state.State.Query(range, application, user, DateTimeOffset.UtcNow));
+    public Task<UsageReport> QueryForUserAsync(string range, string? application, string userId, string? legacyUserKey)
+        => Task.FromResult(_state.State.Query(range, application, userId, legacyUserKey, DateTimeOffset.UtcNow));
 
-    public Task<IReadOnlyList<string>> ListApplicationsAsync()
-        => Task.FromResult(_state.State.Applications());
-
-    public Task<IReadOnlyList<string>> ListUsersAsync()
-        => Task.FromResult(_state.State.Users());
+    public Task<IReadOnlyList<string>> ListApplicationsForUserAsync(string userId, string? legacyUserKey)
+        => Task.FromResult(_state.State.Applications(userId, legacyUserKey));
 }

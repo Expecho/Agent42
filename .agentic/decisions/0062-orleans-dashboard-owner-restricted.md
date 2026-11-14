@@ -10,11 +10,16 @@ amends: []
 
 # Orleans dashboard at `/dashboard`, restricted to a single owner
 
+> **Generalised by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** `Dashboard:OwnerOid` is retired. Owners are the committed `Access:Owners` list, and
+> the same gate (`OwnerGate`, 404, before static files) now covers `/dashboard`, `/logs`, `/api/diagnostics/*` and
+> `/api/config-health`. Still fails closed; still never names `local-dev` in shipped config. The tier is advisory, not a
+> security boundary.
+
 > **Amended by [ADR 0074](0074-identity-alias-for-a-second-entra-account.md) (2026-09-13).**
 > The gate compares `CurrentUser.GetUserId()`, which is where the identity alias is applied, so the
 > rule below now admits one **person** rather than one **principal**: an account aliased onto the
 > configured owner reaches the dashboard too. Everything else stands — it is still not a cross-user
-> surface, and `Dashboard:OwnerOid` still fails closed and still ships blank.
+> surface, and `Dashboard:OwnerOid` has since been retired for `Access:Owners` (ADR 0121), which fails closed the same way.
 
 ## Context
 The app runs an Orleans silo and has no way to see it. Grain activation counts, silo health,

@@ -10,10 +10,11 @@ namespace Agent42.Backend;
 /// memory bank id. ADR 0001's "one user can never address another's conversation" still holds of
 /// <em>userIds</em>; what this changes is that two Entra principals can map to one. A wrong entry hands
 /// one principal another's entire dataset, which is why the validation below drops aggressively and why
-/// <c>UserIdAliasTests</c> cross-checks the shipped map against the Easy Auth allowlist in Bicep.</para>
+/// <c>UserIdAliasTests</c> cross-checks the shipped map against the Easy Auth allowlist in Bicep (and, once sign-in is
+/// open, against <c>Access:Owners</c>: an alias may only ever link owners, ADR 0121).</para>
 ///
 /// <para>Deliberately free of DI and of <c>HttpContext</c>: the rule is the security surface, so it is
-/// unit-testable directly rather than only through a host — the <see cref="DashboardOwnerGate"/> shape.</para>
+/// unit-testable directly rather than only through a host — the <see cref="OwnerGate"/> shape.</para>
 /// </summary>
 public sealed class UserIdAliases
 {
@@ -142,7 +143,7 @@ public sealed class UserIdAliases
     /// only, never an alias, so the intersection below is empty and both entries stand.</para>
     ///
     /// <para>The intersection is <see cref="StringComparer.OrdinalIgnoreCase"/> for the reason
-    /// <see cref="DashboardOwnerGate.IsOwner"/> documents — a GUID in different casing is the same
+    /// <see cref="OwnerPolicy.IsOwner"/> documents — a GUID in different casing is the same
     /// principal, so an ordinal check here would let <c>{A→b, B→C}</c> slip through as unchained while
     /// <see cref="Resolve"/> matched it case-insensitively.</para>
     /// </summary>

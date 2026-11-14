@@ -54,12 +54,14 @@ builder.AddProject<Projects.Agent42_Backend>("backend")
     // full-stack run can exercise the real fetcher. Absent is fine — it degrades to a per-call failure,
     // not a startup throw (it is deliberately NOT on the availability path, unlike SEARXNG_SECRET above).
     .WithEnvironment("ContextScrape__ApiKey", builder.Configuration["ContextScrape:ApiKey"] ?? "")
-    // The Orleans dashboard's owner (ADR 0062). REQUIRED here, and this is the environment that is easy
-    // to forget: this path runs the real Agent42.Backend project, so it loads the real
-    // src/Agent42.Backend/appsettings.json — whose OwnerOid is the production one (or blank). Without
-    // this override the gate would 404 the dashboard for the "local-dev" identity every local
-    // full-stack request carries, which looks exactly like the feature being broken.
-    .WithEnvironment("Dashboard__OwnerOid", "local-dev")
+    // The owner tier (ADR 0062/0121). REQUIRED here, and this is the environment that is easy to forget:
+    // this path runs the real Agent42.Backend project, so it loads the real
+    // src/Agent42.Backend/appsettings.json, whose Access:Owners are the production ids. Without this
+    // override the gate would 404 /dashboard and /logs for the "local-dev" identity every local
+    // full-stack request carries, which looks exactly like the feature being broken. Env vars override
+    // array items by index, so entry 0 becomes local-dev and entry 1 is blanked (blank is ignored).
+    .WithEnvironment("Access__Owners__0", "local-dev")
+    .WithEnvironment("Access__Owners__1", "")
     .WaitFor(cosmos)
     .WaitFor(blobs)
     .WaitFor(searxng);
