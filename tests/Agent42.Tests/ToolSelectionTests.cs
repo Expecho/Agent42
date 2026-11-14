@@ -72,7 +72,8 @@ public sealed class ToolSelectionTests
 
         Assert.DoesNotContain(ToolCatalog.Skills, expanded);
         Assert.Contains(ToolCatalog.SkillKey(upload.Name), expanded);
-        Assert.Equal(SkillCatalog.Skills.Count + 1, expanded.Count);
+        // The shipped skills are companions (no picker row), so only the upload mints a key.
+        Assert.Equal([ToolCatalog.SkillKey(upload.Name)], expanded);
     }
 
     [Fact]

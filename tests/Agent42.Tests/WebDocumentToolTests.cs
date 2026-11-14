@@ -284,9 +284,13 @@ public sealed class WebDocumentToolTests(SharedClusterFixture fixture) : SharedC
         await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch, ToolCatalog.Scheduling]);
 
         var answer = Answer(await Chat(agent, "hi again"));
-        Assert.DoesNotContain(ToolCatalog.ReadWebDocument, answer, StringComparison.Ordinal);
+        // Asserted on the REGISTERED tool list, not the whole prompt: the websearch skill (a companion of the
+        // still-selected web_search key) names read_web_document in its description, which is guidance text, not
+        // a tool the model holds.
+        var registered = System.Text.RegularExpressions.Regex.Match(answer, @"\[tools:([^\]]*)\]").Groups[1].Value;
+        Assert.DoesNotContain(ToolCatalog.ReadWebDocument, registered, StringComparison.Ordinal);
         // The neighbouring key is still there, so this is a narrowing and not an empty tool list.
-        Assert.Contains("web_search", answer, StringComparison.Ordinal);
+        Assert.Contains("web_search", registered, StringComparison.Ordinal);
     }
 
     // ---- The three that need the probe silo ----

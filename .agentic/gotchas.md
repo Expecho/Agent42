@@ -353,7 +353,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   - **The prohibition the model reads lives in the TOOL DESCRIPTIONS, not in `SKILL.md`.** Three schema surfaces
     say "never take a URL out of a page": the `read_web_document` description in `BuildAgent`, its `url`
     `[Description]` attribute and its refusal message — all in the JSON schema on **every** turn — plus `SKILL.md`, which
-    only reaches the model through `load_skill` and only while `skill:websearch` survives (ADR 0021/0048).
+    only reaches the model through `load_skill` and only while the `web_search` key is selected (the `websearch`
+    skill is that key's companion, ADR 0126; it was `skill:websearch` before).
     Update only `SKILL.md` and a compliant model reads a hard prohibition in the schema and declines to use
     a seeded URL: the feature looks broken while every behavioural test passes, because the tests drive a
     fake that reads no descriptions.

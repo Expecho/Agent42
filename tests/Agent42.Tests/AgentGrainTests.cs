@@ -2020,12 +2020,13 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     }
 
     // The client-facing projection of a null (all) selection for a user with no MCP servers: the static keys
-    // in catalog order, both wildcards gone, one skill:{name} per shipped skill. Shared by the two null==all
-    // guards so the recorded ordering lives in exactly one place.
+    // in catalog order, both wildcards gone, one skill:{name} per shipped skill that HAS a picker row (the
+    // companion skills follow their tool's key and mint none). Shared by the two null==all guards so the
+    // recorded ordering lives in exactly one place.
     private static IEnumerable<string> AllKeysExpanded() =>
     [
         .. ToolCatalog.AllSelectableToolKeys.Where(k => k != ToolCatalog.Mcp && k != ToolCatalog.Skills),
-        .. SkillCatalog.Skills.Select(sk => ToolCatalog.SkillKey(sk.Name)),
+        .. SkillCatalog.Skills.Where(sk => !ToolCatalog.IsCompanionSkill(sk.Name)).Select(sk => ToolCatalog.SkillKey(sk.Name)),
     ];
 
     // AC1 (per-skill selectable tools): with no stored selection (null == all) EVERY shipped skill is
@@ -2047,36 +2048,71 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains("load_skill", ToolNames(answer));
     }
 
-    // AC2: selecting ONE skill advertises that skill and NOT the other, while load_skill stays registered —
-    // the whole point of per-skill selection over the old all-or-none `skills` key.
+    // AC2: a companion skill follows its TOOL's key and nothing else. Selecting only Scheduling advertises the
+    // scheduledprompt skill and NOT websearch, while load_skill stays registered for the one skill.
     //
-    // The negative assertion is only safe because the tool names use underscores (`schedule_prompt`), so
-    // "scheduledprompt" cannot match a tool name — see the gotcha recording exactly this collision for
-    // `web_search` vs the `websearch` skill description. Do not weaken it to a shorter substring.
+    // The negative assertions are only safe because the tool names use underscores (`schedule_prompt`,
+    // `web_search`), so "scheduledprompt" / "websearch" cannot match a tool name — see the gotcha recording
+    // exactly this collision for `web_search` vs the `websearch` skill description. Do not weaken them to a
+    // shorter substring.
     [Fact]
-    public async Task PerSkillSelection_AdvertisesOnlySelectedSkill()
+    public async Task CompanionSkill_FollowsItsToolKey_SchedulingOnly()
     {
-        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("per-skill-selection-conversation");
-        await agent.SetEnabledToolsAsync([ToolCatalog.Scheduling, ToolCatalog.SkillKey("websearch")]);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("companion-scheduling-only-conversation");
+        await agent.SetEnabledToolsAsync([ToolCatalog.Scheduling]);
+
+        var answer = Answer(await Chat(agent, "hi"));
+
+        Assert.Contains("scheduledprompt", answer);
+        Assert.DoesNotContain("websearch", answer);
+        Assert.Contains("load_skill", ToolNames(answer));
+        Assert.Contains("schedule_prompt", ToolNames(answer));
+    }
+
+    // The mirror: Web search alone advertises websearch and not scheduledprompt.
+    [Fact]
+    public async Task CompanionSkill_FollowsItsToolKey_WebSearchOnly()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("companion-websearch-only-conversation");
+        await agent.SetEnabledToolsAsync([ToolCatalog.WebSearch]);
 
         var answer = Answer(await Chat(agent, "hi"));
 
         Assert.Contains("websearch", answer);
         Assert.DoesNotContain("scheduledprompt", answer);
-        Assert.Contains("load_skill", ToolNames(answer));  // the provider is still on for the one selected skill
-        Assert.Contains("schedule_prompt", ToolNames(answer)); // an unrelated tool key is untouched
+        Assert.Contains("load_skill", ToolNames(answer));
     }
 
-    // AC4: a legacy stored selection carrying the bare `skills` key still enables EVERY skill — the
-    // zero-migration promise. This is the state shape that exists in Cosmos today.
+    // Both tools off: no companion skill, so no provider at all (an empty path list drops load_skill rather
+    // than leaving a schema the model cannot use).
     [Fact]
-    public async Task LegacySkillsWildcard_EnablesEverySkill()
+    public async Task CompanionSkills_AreOff_WhenTheirToolsAreOff()
     {
-        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("legacy-skills-wildcard-conversation");
-        await agent.SetEnabledToolsAsync([ToolCatalog.Skills]);
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("companion-both-off-conversation");
+        await agent.SetEnabledToolsAsync([ToolCatalog.Location]);
 
         var answer = Answer(await Chat(agent, "hi"));
 
+        Assert.DoesNotContain("websearch", answer);
+        Assert.DoesNotContain("scheduledprompt", answer);
+        Assert.DoesNotContain("load_skill", ToolNames(answer));
+    }
+
+    // AC4, amended: a legacy stored selection carrying the bare `skills` key still enables every skill that
+    // has a picker row (the zero-migration promise), but NOT the companion skills — those follow their tool
+    // key, so `skills` alone must not advertise guidance for a tool the selection does not carry.
+    [Fact]
+    public async Task LegacySkillsWildcard_DoesNotEnableCompanionSkills_ButTheirToolKeysDo()
+    {
+        var wildcardOnly = Cluster.GrainFactory.GetGrain<IAgentGrain>("legacy-skills-wildcard-conversation");
+        await wildcardOnly.SetEnabledToolsAsync([ToolCatalog.Skills]);
+        var bare = Answer(await Chat(wildcardOnly, "hi"));
+        Assert.DoesNotContain("websearch", bare);
+        Assert.DoesNotContain("scheduledprompt", bare);
+
+        var withTools = Cluster.GrainFactory.GetGrain<IAgentGrain>("legacy-skills-wildcard-with-tools-conversation");
+        await withTools.SetEnabledToolsAsync([ToolCatalog.Skills, ToolCatalog.WebSearch, ToolCatalog.Scheduling]);
+        var answer = Answer(await Chat(withTools, "hi"));
         foreach (var skill in SkillCatalog.Skills)
         {
             Assert.Contains(skill.Name, answer);
@@ -2097,9 +2133,11 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         var effective = await agent.GetEnabledToolsAsync(); // no override, no user default → null == all
 
         Assert.DoesNotContain(ToolCatalog.Skills, effective); // the bare wildcard never reaches the picker
-        Assert.Contains(ToolCatalog.SkillKey("websearch"), effective);
-        Assert.Contains(ToolCatalog.SkillKey("scheduledprompt"), effective);
+        // The companion skills have no picker row, so they mint no key: they ride on their tool's key.
+        Assert.DoesNotContain(ToolCatalog.SkillKey("websearch"), effective);
+        Assert.DoesNotContain(ToolCatalog.SkillKey("scheduledprompt"), effective);
         Assert.Contains(ToolCatalog.WebSearch, effective);    // the static keys are still there
+        Assert.Contains(ToolCatalog.Scheduling, effective);
     }
 
     // ---- Uploaded skills (ADR 0049) -------------------------------------------------------------
@@ -2164,9 +2202,10 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         // The shipped websearch description opens with this; its absence is what "shadowed" means.
         Assert.DoesNotContain("Guidance for using the web search", answer);
 
-        // And exactly ONE key, not two — the picker must not render a duplicate checkbox.
+        // The shadowing upload is still the web search tool's companion: no skill key of its own, and the
+        // picker renders no checkbox for it.
         var effective = await agent.GetEnabledToolsAsync();
-        Assert.Single(effective, k => k == ToolCatalog.SkillKey("websearch"));
+        Assert.DoesNotContain(ToolCatalog.SkillKey("websearch"), effective);
     }
 
     // AC14: a null (all) selection expands to include the UPLOADED skills' keys too. Without this the picker
@@ -2182,7 +2221,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         Assert.DoesNotContain(ToolCatalog.Skills, effective);
         Assert.Contains(ToolCatalog.SkillKey("invoices"), effective);
-        Assert.Contains(ToolCatalog.SkillKey("websearch"), effective);
+        Assert.DoesNotContain(ToolCatalog.SkillKey("websearch"), effective); // a companion: no key of its own
     }
 
     // AC13: selecting ONLY an uploaded skill drops every shipped one and keeps load_skill — per-skill
@@ -3490,7 +3529,10 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains("get_date", registered);            // always-on, never filtered
         Assert.DoesNotContain("schedule_prompt", registered);
         Assert.DoesNotContain("get_current_location", registered);
-        Assert.DoesNotContain("load_skill", answer);        // skills not selected → provider dropped
+        // Skills are tool companions: Web search brings its own guidance and nothing else's.
+        Assert.Contains("load_skill", answer);
+        Assert.Contains("websearch", answer);
+        Assert.DoesNotContain("scheduledprompt", answer);
     }
 
     // AC3: disabling `skills` drops load_skill (the provider is a tool) but the document RAG provider is
@@ -3508,16 +3550,16 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
         await agent.RegisterDocumentAsync("guide.pdf");
-        // Everything EXCEPT skills.
-        await agent.SetEnabledToolsAsync(
-            [ToolCatalog.WebSearch, ToolCatalog.Location, ToolCatalog.Scheduling, ToolCatalog.CodeInterpreter]);
+        // No skill selected: the shipped skills are companions of Web search / Scheduling, so those two keys
+        // are left out as well, otherwise their guidance would (correctly) bring the provider back.
+        await agent.SetEnabledToolsAsync([ToolCatalog.Location, ToolCatalog.CodeInterpreter]);
 
         var answer = Answer(await CollectAsync(
             agent.ChatAsync("what does the document say about magrathea", TestSiloConfigurator.DefaultModel)));
 
         Assert.DoesNotContain("load_skill", answer);
         Assert.DoesNotContain("unselected", answer);                // the upload is not advertised either
-        Assert.Contains("web_search", ToolNames(answer));           // a non-skills tool still registers
+        Assert.Contains("get_current_location", ToolNames(answer)); // a non-skills tool still registers
         Assert.Contains("Magrathea is a legendary planet", answer); // RAG stayed on
     }
 
@@ -3575,7 +3617,8 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains("web_search", registered);
         Assert.DoesNotContain("schedule_prompt", registered);
         Assert.DoesNotContain("get_current_location", registered);
-        Assert.DoesNotContain("load_skill", answer);
+        Assert.Contains("load_skill", answer);              // the websearch companion rides on web_search
+        Assert.DoesNotContain("scheduledprompt", answer);
     }
 
     // AC7: a per-conversation override beats the user default.
@@ -3626,7 +3669,8 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         var scopedAnswer = Answer(await CollectAsync(scoped.ChatAsync("hi", null)));
         Assert.Contains("schedule_prompt", ToolNames(scopedAnswer));
         Assert.DoesNotContain("web_search", ToolNames(scopedAnswer));
-        Assert.DoesNotContain("load_skill", scopedAnswer);
+        Assert.Contains("load_skill", scopedAnswer);        // the scheduledprompt companion rides on scheduling
+        Assert.DoesNotContain("websearch", scopedAnswer);
         Assert.Equal(new[] { ToolCatalog.Scheduling }, await scoped.GetEnabledToolsAsync());
 
         // A null-tools agent materializes to ALL selectable tools on bind — never inherits the user default.
