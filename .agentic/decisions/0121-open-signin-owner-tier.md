@@ -111,6 +111,6 @@ anywhere.
 - The legal text (`terms`/`privacy` say "invite-only", which stays true) ships with the Phase B deploy and must disclose
   that a signed-in user's chats can run commands in the service's own environment. It must not promise erasure (Hindsight
   has no delete path, ADR 0056/0057).
-- Prod checks stay **open** until the user confirms them: owner still reaches `/dashboard` and `/logs`; an invited guest
-  gets 404 on both, no guest text in `/logs`, `/usage` shows only their own; **an unassigned account is refused at Entra**
-  (AADSTS50105); `appRoleAssignmentRequired` prints `True`; Android still signs in.
+- **Prod checks confirmed by the user, 2026-11-14 (after #234 deployed):** owners reach `/dashboard`, `/logs` and Copilot; an invited
+  guest gets 404 on both and sees only their own usage; an unassigned account is refused at Entra; `appRoleAssignmentRequired`
+  prints `True`; Android still signs in. The drift command stays the standing check after any portal change to the app.

@@ -321,7 +321,7 @@ After the deploy, the user checks, in this order:
 5. **Drift check, rerun after any portal change to the app:** the `appRoleAssignmentRequired` command below must print
    `True`.
 
-Prod checks stay **listed as open** in ADR 0121 until the user confirms them (repo convention).
+Prod checks were confirmed by the user on 2026-11-14 (see the handoff results).
 
 ## Acceptance criteria → test mapping
 
@@ -496,4 +496,6 @@ B1(a) result, 2026-11-14 (user ran it): `appRoleAssignmentRequired = true`, `sig
 object id `ac2c57f1-ff38-450a-9b90-f95f8de48b69`. Both preconditions hold. B1(b) (test guest) is pending. After B2 is deployed,
 run the B3 checks and record them here.
 
-Results: _(pending the user)_
+Results (user-observed, 2026-11-14, after #234 deployed): all five B3 checks passed. The owners still reach `/dashboard`, `/logs`
+and Copilot. An invited, assigned guest signs in, gets 404 on `/dashboard` and `/logs` and sees only their own usage. An unassigned
+account is refused at Entra. `appRoleAssignmentRequired` prints `True`. The Android app still signs in. Phase B is complete.
