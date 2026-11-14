@@ -184,6 +184,7 @@ public static partial class AgentApi
         }
 
         var missing = installed
+            .Where(s => !ToolCatalog.IsCompanionSkill(s.Name)) // follows its tool's key; a skill: key would be inert
             .Select(s => ToolCatalog.SkillKey(s.Name))
             .Where(key => !selection.Contains(key, StringComparer.Ordinal))
             .ToList();

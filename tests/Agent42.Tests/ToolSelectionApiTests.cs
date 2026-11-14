@@ -58,8 +58,7 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
             new[]
             {
                 "web_search", "location", "scheduling", "code_interpreter", "memory", "read_web_document",
-                "push_notification", "artifacts", "read_document", "browser_tools", "shared_state", "past_chats", "fleet", "skill:scheduledprompt",
-                "skill:websearch",
+                "push_notification", "artifacts", "read_document", "browser_tools", "shared_state", "past_chats", "fleet",
             }.Order(),
             keys.Order());
 
@@ -126,15 +125,9 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
             .Select(e => (Key: e.GetProperty("key").GetString(), Label: e.GetProperty("label").GetString()))
             .ToArray();
 
-        Assert.Equal(
-            [("skill:scheduledprompt", "scheduledprompt"), ("skill:websearch", "websearch")],
-            skills);
-
-        // A skill never needs a hosted-tools model — that flag belongs to code_interpreter alone.
-        Assert.All(
-            doc.RootElement.EnumerateArray()
-                .Where(e => e.GetProperty("key").GetString()!.StartsWith("skill:", StringComparison.Ordinal)),
-            e => Assert.False(e.GetProperty("requiresHostedTools").GetBoolean()));
+        // The shipped skills (websearch, scheduledprompt) are companions of the Web search and Scheduling
+        // tools: they follow those checkboxes and get no row of their own.
+        Assert.Empty(skills);
     }
 
     // AC5 (per-server, ADR 0026): a management-ENABLED MCP server appears in the catalog as an `mcp:{id}`

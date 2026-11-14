@@ -3,7 +3,7 @@ id: 0048
 date: 2026-08-24
 status: accepted
 tags: [skills, tools, ux, no-migration, per-deployment]
-amended_by: 0049 (per-deployment → per-user; the "no grain field" clause)
+amended_by: 0049 (per-deployment → per-user; the "no grain field" clause); 0126 (the two shipped skills are tool companions with no picker row)
 amends: 0021 (static-catalog scope + the skills gate only — see "Amends")
 ---
 
