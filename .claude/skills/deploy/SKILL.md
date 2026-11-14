@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: Deploy Agent42 to Azure — explain, trigger, or monitor the GitHub Actions "Deploy" workflow (build → ACR → Bicep to rg-agent42).
+description: Deploy Agent42 to Azure — explain, trigger, or monitor the GitHub Actions "Deploy" workflow (preflight → shared infra → build → ACR → Bicep).
 user-invocable: true
 argument-hint: "[status | trigger | watch]"
 ---
@@ -16,13 +16,14 @@ There is no manual deploy path — never run `az deployment group create` or
 1. **Trigger:** push to `main` touching `src/**`, `infra/**`, `Directory.Packages.props`,
    `.dockerignore`, or the workflow file — or a manual `workflow_dispatch`. Merging a PR into
    `main` is the normal deploy, but a PR touching none of those paths does NOT deploy.
-2. **build-and-push:** builds `src/Agent42.Backend/Dockerfile`, tags with the first
-   12 chars of the SHA, pushes to ACR `crexpechohosting`.
-3. **deploy:** `az deployment group create` of `infra/main.bicep` into RG `rg-agent42`
-   (Cosmos pinned to `northeurope`), then an idempotent `az rest` step grants the
-   container app identity `Cognitive Services OpenAI User` on the AI Foundry account
-   in RG `agent42`. Both quirks are documented in `.agentic/gotchas.md` — read those
-   entries before changing anything in this pipeline.
+2. **preflight:** fails closed when a repository variable is missing or would change what is deployed
+   (an absent variable expands to an empty string; a missing custom domain would unbind the live one).
+3. **build-and-push:** deploys `infra/shared.bicep` (registry and Container Apps environment, reused or created),
+   builds `src/Agent42.Backend/Dockerfile`, tags with the first 12 chars of the SHA, pushes to the ACR.
+4. **deploy:** `az deployment group create` of `infra/main.bicep` into the resource group. The registry, environment,
+   resource group, domain and Cosmos region come from repo variables (ADR 0128); prod's values are in
+   `docs/features/azure-deployment.md`. Quirks are in `.agentic/gotchas.md` — read those entries before
+   changing anything in this pipeline.
 
 ## Commands
 
@@ -37,5 +38,5 @@ There is no manual deploy path — never run `az deployment group create` or
 
 - IAM/RBAC failures in the deploy: per CLAUDE.md hard rule 5, never fix by running
   role-assignment writes yourself — prepare the exact command and hand it to the user.
-- If the deploy unbinds chat.agent42.nl, the managed certificate name drifted — see
+- If the deploy unbinds the custom domain, the managed certificate name drifted — see
   the "Custom domain must stay declared in Bicep" gotcha.

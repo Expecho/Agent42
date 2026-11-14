@@ -1,8 +1,10 @@
 targetScope = 'resourceGroup'
 
-// Deploy with:
-//   az deployment group create -g rg-agent42 -f infra/main.bicep \
-//     -p acrAdminUsername=... acrAdminPassword=... imageTag=<git-sha>
+// Deployed by .github/workflows/deploy.yml (ADR 0128). infra/shared.bicep runs first and yields the registry and
+// Container Apps environment names, which this template requires. By hand:
+//   az deployment group create -g <resource-group> -f infra/main.bicep \
+//     -p containerRegistryName=... containerAppsEnvironmentName=... containerAppsEnvironmentResourceGroup=... \
+//        authClientId=... acrAdminUsername=... acrAdminPassword=... imageTag=<git-sha> ...
 
 @description('Location for resources created by this deployment. The referenced Container Apps environment and registry are fixed to their own existing locations.')
 param location string = resourceGroup().location
@@ -10,14 +12,14 @@ param location string = resourceGroup().location
 @description('Name of the Container App running the Agent 42 backend/silo.')
 param containerAppName string = 'ca-agent42-backend'
 
-@description('Name of the existing Azure Container Apps environment.')
-param containerAppsEnvironmentName string = 'cae-hosting'
+@description('Name of the Azure Container Apps environment (an output of shared.bicep). Required: there is no default, so a missing value fails validation instead of deploying somewhere unintended.')
+param containerAppsEnvironmentName string
 
-@description('Resource group containing the existing Azure Container Apps environment.')
-param containerAppsEnvironmentResourceGroup string = 'rg-hosting'
+@description('Resource group containing the Azure Container Apps environment (an output of shared.bicep). Required, like containerAppsEnvironmentName.')
+param containerAppsEnvironmentResourceGroup string
 
-@description('Name of the existing Azure Container Registry.')
-param containerRegistryName string = 'crexpechohosting'
+@description('Name of the Azure Container Registry (an output of shared.bicep). Required, like containerAppsEnvironmentName.')
+param containerRegistryName string
 
 @description('Repository name of the backend image (without registry host or tag).')
 param imageName string = 'agent42-backend'
@@ -41,7 +43,7 @@ param searxngSecret string
 param googleMapsApiKey string = ''
 
 @secure()
-@description('Client secret of the GitHub OAuth App behind "Sign in with GitHub" (ADR 0108 - the GH_OAUTH_CLIENT_SECRET GitHub Actions secret). OPTIONAL like googleMapsApiKey (no @minLength, empty default): an absent secret must NOT fail the deployment, and the app starts fine; the GitHub Copilot provider is then not offered and /api/providers/github/start answers 503. The client id is public and committed in appsettings.json (GitHub:OAuth:ClientId). MANUAL PREREQ outside this repo: the OAuth App, whose callback URL is https://chat.agent42.nl/api/providers/github/callback.')
+@description('Client secret of the GitHub OAuth App behind "Sign in with GitHub" (ADR 0108 - the GH_OAUTH_CLIENT_SECRET GitHub Actions secret). OPTIONAL like googleMapsApiKey (no @minLength, empty default): an absent secret must NOT fail the deployment, and the app starts fine; the GitHub Copilot provider is then not offered and /api/providers/github/start answers 503. The client id is public and committed in appsettings.json (GitHub:OAuth:ClientId). MANUAL PREREQ outside this repo: the OAuth App, whose callback URL is https://<your host>/api/providers/github/callback.')
 param githubOAuthClientSecret string = ''
 
 @description('API key for the Hindsight long-term-memory service (ADR 0056 - the HINDSIGHT_API_KEY GitHub Actions secret). A manual prerequisite, but deliberately OPTIONAL like googleMapsApiKey (no @minLength, empty default): an absent key must NOT fail the deployment. It is not on the availability path - the app starts fine without it and memory is simply off, with BuildAgent attaching no memory provider at all, so a turn makes zero Hindsight calls rather than calls that quietly fail. NOTE the reverse: SETTING this key turns on an always-on egress in which every non-incognito turn, user message and assistant reply both, is POSTed to a third party. Read ADR 0056 before supplying it.')
@@ -56,7 +58,7 @@ param appInsightsConnectionString string = ''
 param vapidPrivateKey string = ''
 
 @secure()
-@description('Mailgun HTTP webhook signing key for inbound email (ADR 0096 - the MAILGUN_SIGNING_KEY GitHub Actions secret). OPTIONAL like googleMapsApiKey (no @minLength, empty default): an absent key must NOT fail the deployment, and the app starts fine. But NOT a graceful degradation: without it POST /api/email-in answers 503 and accepts nothing, because accepting unsigned webhooks would turn an optional secret into an optional security control. MANUAL PREREQS outside this repo: MX for the inbound subdomain pointing at Mailgun (DNS is at the registrar; this template only binds the ACA custom domain), and a Mailgun Route forwarding to https://chat.agent42.nl/api/email-in.')
+@description('Mailgun HTTP webhook signing key for inbound email (ADR 0096 - the MAILGUN_SIGNING_KEY GitHub Actions secret). OPTIONAL like googleMapsApiKey (no @minLength, empty default): an absent key must NOT fail the deployment, and the app starts fine. But NOT a graceful degradation: without it POST /api/email-in answers 503 and accepts nothing, because accepting unsigned webhooks would turn an optional secret into an optional security control. MANUAL PREREQS outside this repo: MX for the inbound subdomain pointing at Mailgun (DNS is at the registrar; this template only binds the ACA custom domain), and a Mailgun Route forwarding to https://<your host>/api/email-in.')
 param mailgunSigningKey string = ''
 
 @secure()
@@ -110,16 +112,16 @@ param signalBackendCpu string = '0.75'
 param signalBackendMemory string = '1.5Gi'
 
 @description('Endpoint of the existing Azure AI Foundry / Azure OpenAI resource. Kept only as the DORMANT Foundry-provider inheritance source (ProviderSettings.ResolveFoundry): baseline Models:Providers is empty (ADR 0019), so nothing reads it today; a user\'s Foundry provider declares its own. Non-secret; harmless if unused.')
-param azureOpenAIEndpoint string = 'https://agent42.services.ai.azure.com'
+param azureOpenAIEndpoint string = ''
 
 @description('Entra ID tenant id bound to DefaultAzureCredential for blob storage (user-delegation SAS) and ARM. Still required.')
-param azureOpenAITenantId string = '2250fce3-5bc9-4ae7-a5e9-58c510a422ec'
+param azureOpenAITenantId string = tenant().tenantId
 
 @description('OTLP endpoint for OpenTelemetry export. Leave empty to disable OTLP export.')
 param otlpEndpoint string = ''
 
-@description('Client id of the agent42-easyauth Entra ID app registration used by built-in authentication.')
-param authClientId string = 'e9a02aec-5368-4c9a-8211-d21222c4f30c'
+@description('Client id of the Entra ID app registration used by built-in authentication (Easy Auth). Required: infra/bootstrap.sh creates the registration and prints the id (the AUTH_CLIENT_ID repo variable).')
+param authClientId string
 
 @secure()
 @description('Client secret of the agent42-easyauth app registration. Rotate with: az ad app credential reset --id <authClientId>, then update the AAD_CLIENT_SECRET GitHub secret.')
@@ -158,11 +160,26 @@ param minReplicas int = 1
 @maxValue(1)
 param maxReplicas int = 1
 
-@description('Custom domain hostname bound to the Container App ingress. Leave empty to skip binding a custom domain.')
-param customDomainName string = 'chat.agent42.nl'
+@description('Custom domain hostname bound to the Container App ingress. Leave empty to skip binding a custom domain. Set BOTH this and customDomainCertificateName, or neither: deploy.yml preflight rejects exactly one, and a deployment that omits a bound domain unbinds it.')
+param customDomainName string = ''
 
-@description('Name of the existing managed certificate resource in the Container Apps environment (rg-hosting/cae-hosting) backing customDomainName. Look up with: az containerapp env certificate list -n cae-hosting -g rg-hosting. Update if the certificate is ever recreated.')
-param customDomainCertificateName string = 'chat.agent42.nl-cae-host-260706080049'
+@description('Name of the existing managed certificate resource in the Container Apps environment backing customDomainName. Look up with: az containerapp env certificate list -n <environment> -g <environment resource group>. Update if the certificate is ever recreated. Set BOTH this and customDomainName, or neither.')
+param customDomainCertificateName string = ''
+
+@description('Public VAPID key for Web Push (ADR 0028). OPTIONAL: when empty no env var is emitted and the committed Push:VapidPublicKey in appsettings.json stays in force. A fork must set it, with vapidSubject, to the key pair of its own VAPID private key.')
+param vapidPublicKey string = ''
+
+@description('VAPID subject (a mailto: or https: URL) for Web Push. OPTIONAL, like vapidPublicKey.')
+param vapidSubject string = ''
+
+@description('Client id of the GitHub OAuth App behind "Sign in with GitHub" (ADR 0108). OPTIONAL: when empty the committed GitHub:OAuth:ClientId stays in force.')
+param githubOAuthClientId string = ''
+
+@description('Domain that receives inbound email through Mailgun (ADR 0096). OPTIONAL: when empty the committed Email:InboundDomain stays in force.')
+param emailInboundDomain string = ''
+
+@description('Entra object ids of the owners (ADR 0121, amended by 0128). OPTIONAL: when empty the committed Access:Owners list stays in force. Entries override by index from 0; a longer committed list keeps its tail. Never local-dev.')
+param accessOwners array = []
 
 @description('Tags applied to all created resources.')
 param tags object = {
@@ -281,6 +298,11 @@ module containerApp 'modules/container-app.bicep' = {
     authSessionLifetime: authSessionLifetime
     customDomainName: customDomainName
     customDomainCertificateName: customDomainCertificateName
+    vapidPublicKey: vapidPublicKey
+    vapidSubject: vapidSubject
+    githubOAuthClientId: githubOAuthClientId
+    emailInboundDomain: emailInboundDomain
+    accessOwners: accessOwners
     copilotEnvironmentStorageName: copilotEnvironmentStorage.outputs.name
     signalEnvironmentStorageName: signalEnvironmentStorage.outputs.name
     signalEnabled: signalEnabled

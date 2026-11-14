@@ -109,11 +109,26 @@ param maxReplicas int
 @description('Tags applied to the Container App.')
 param tags object
 
-@description('Custom domain hostname bound to the Container App ingress, e.g. chat.agent42.nl. Leave empty to skip binding a custom domain.')
+@description('Custom domain hostname bound to the Container App ingress, e.g. chat.example.com. Leave empty to skip binding a custom domain.')
 param customDomainName string = ''
 
 @description('Name of the existing managed certificate resource (Microsoft.App/managedEnvironments/managedCertificates, in the same resource group as the environment) backing customDomainName. Azure auto-generates this name (format <domain>-<environment-name>-<timestamp>) when the certificate is first created via `az containerapp hostname bind` or the portal; look it up with `az containerapp env certificate list -n <environmentName> -g <environmentResourceGroup>`. Required when customDomainName is set. If the certificate is ever recreated, this value must be updated to match, or this deployment will unbind the domain again.')
 param customDomainCertificateName string = ''
+
+@description('Public VAPID key (ADR 0028). OPTIONAL: when empty the Push__VapidPublicKey env var is not emitted and the committed appsettings value stays in force.')
+param vapidPublicKey string = ''
+
+@description('VAPID subject for Web Push. OPTIONAL, like vapidPublicKey (Push__VapidSubject).')
+param vapidSubject string = ''
+
+@description('Client id of the GitHub OAuth App (ADR 0108). OPTIONAL: when empty GitHub__OAuth__ClientId is not emitted.')
+param githubOAuthClientId string = ''
+
+@description('Inbound email domain (ADR 0096). OPTIONAL: when empty Email__InboundDomain is not emitted.')
+param emailInboundDomain string = ''
+
+@description('Owner Entra object ids (ADR 0121/0128). OPTIONAL: when empty no Access__Owners__<i> env var is emitted. Entries override the committed list by index from 0.')
+param accessOwners array = []
 
 @description('Name of the environment storage link (Microsoft.App/managedEnvironments/storages) to the Azure Files share of copilot chats\' workspaces (ADR 0107).')
 param copilotEnvironmentStorageName string
@@ -273,6 +288,23 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
             { name: 'ChatGateway__Signal__Enabled', value: string(signalEnabled) }
             { name: 'ChatGateway__Signal__DataDir', value: '/mnt/signal' }
           ],
+          // Deploy-time overrides of committed appsettings values (ADR 0128). Each is emitted only when set, so prod
+          // (which sets none) keeps the committed values authoritative.
+          empty(vapidPublicKey)
+            ? []
+            : [{ name: 'Push__VapidPublicKey', value: vapidPublicKey }],
+          empty(vapidSubject)
+            ? []
+            : [{ name: 'Push__VapidSubject', value: vapidSubject }],
+          empty(githubOAuthClientId)
+            ? []
+            : [{ name: 'GitHub__OAuth__ClientId', value: githubOAuthClientId }],
+          empty(emailInboundDomain)
+            ? []
+            : [{ name: 'Email__InboundDomain', value: emailInboundDomain }],
+          empty(accessOwners)
+            ? []
+            : map(range(0, length(accessOwners)), i => { name: 'Access__Owners__${i}', value: string(accessOwners[i]) }),
           // Reverse geocoding for get_current_location (ADR 0012). Emitted only when a key was
           // supplied: with no key the backend registers CoordinatesOnlyGeocoder and starts normally.
           empty(googleMapsApiKey)
