@@ -2,6 +2,13 @@ planned-against: main @ 69c3fb2
 
 # Open sign-in to everybody, with an owner tier
 
+> **Scope change (user, 2026-11-14): Phase B is now invite-only, not open to everybody.** Phase A (below) is merged
+> (#228, ADR 0121) and stands unchanged: the owner tier, own-data-only usage and telemetry redaction matter just as
+> much for invited guests. Only Phase B changed: access stays by invitation through "assignment required" on the
+> enterprise app, guests are invited and assigned, and `allowedPrincipals` goes. Read "Phase B" and "Phase B handoff"
+> for the current plan. Wherever the Overview and Context below say "anyone with a Microsoft account can sign in", read
+> "anyone the operator invites and assigns".
+
 ## Overview
 
 Today only two Entra accounts can reach the app (Easy Auth `allowedPrincipals` + "assignment required" on the
@@ -245,41 +252,76 @@ not mitigated. `/gotcha` for the owner-policy
 exemplar, the "usage keys on object id, not email" trap, and the new telemetry processor order.
 *Verify:* `node .agentic/scripts/check-doc-paths.mjs`, `/sync-docs`.
 
-### Phase B: identity flip (infra; the user runs the commands)
+### Phase B: invite-only access via assignment (infra; the user runs the commands)
 
-**B1. Spike (needs the user, blocks the rest of Phase B).** Prepare and hand over the exact commands; record
-results in this spec. Questions to settle with a real second-tenant account and a personal Microsoft account:
-(a) set the app registration sign-in audience to `AzureADandPersonalMicrosoftAccount` (or
-`AzureADMultipleOrgs` if personal accounts fail) and set `accessTokenAcceptedVersion` to 2; (b) turn
-"assignment required" **off** on the home-tenant enterprise app (`agent42-easyauth`); (c) with issuer
-`https://login.microsoftonline.com/common/v2.0` (or `/organizations`, `/consumers` as needed), what does Easy
-Auth put in `X-MS-CLIENT-PRINCIPAL-ID`, and is it the **same** oid the owner has today; (d) which claim `typ`
-carries email and **tenant id** in the principal blob; (e) known limitation to record, not solve: tenants that
-block user consent will show "need admin approval". **No stranger can sign in until B2 removes
-`allowedPrincipals`**, so the Phase A acceptance check is not done in B1: it is done in the tests (a non-owner
-principal header against the real middleware and endpoints, as `DashboardOwnerGateTests` does) and in DevHost with
-a different `X-MS-CLIENT-PRINCIPAL-ID`; the first real-stranger check is B3, after B2 is deployed. A narrow window
-exists between B2's deploy and B3's check; that is acceptable only because Phase A is already live.
-*Gate:* Phase B cannot proceed unless (c) shows the owner id is unchanged. If it is not, stop and re-plan; do
-not remap ids ad hoc.
+**Variant decision (user, 2026-11-14), replacing the original "flip the identity provider to multi-tenant and personal
+accounts" B1-B3.** Access stays by invitation. "Assignment required" on the `agent42-easyauth` enterprise app is the
+**one** allowlist; people from other organisations or with a personal Microsoft account are invited into the tenant as
+**B2B guests** and assigned to the app. `allowedPrincipals` is removed because it is a second copy of that list that
+needs a bicep edit and a deploy per person. What follows from that choice:
 
-**B2. Infra change.** `container-app.bicep`: issuer → the multi-tenant authority proven in B1; remove
-`validation.defaultAuthorizationPolicy.allowedPrincipals`; remove `authLoginHint` (`loginParameters`) and its param
-in `main.bicep`; remove `authAllowedUserObjectIds` (owners now live in `Access:Owners`). Update the code that
-referenced them: `EasyAuthSessionTests` (drop the login-hint pins, keep the lifetime pins), `UserIdAliasTests`
-(`ShippedAliases_*` now checks alias keys and values ⊆ `Access:Owners`, so an alias can only ever link owners).
-Fix the stale comments at `container-app.bicep:402-406,58`. Run a `what-if` before deploy; the deploy goes through
-the normal `deploy.yml` (do not change its shape).
-*Verify:* `dotnet test --filter "EasyAuth|UserIdAlias"`, `az deployment group what-if` output shown to the user.
+- The app registration stays single-tenant (`AzureADMyOrg`) and the issuer stays tenant-specific. Nothing about the
+  token or the principal id changes, so the original owner-id hard gate disappears (B1 only re-confirms it).
+- No consent screen and no "need admin approval": every user is a member or guest of the home tenant.
+- `Access:OwnerTenantId` (open decision 2) is moot: one tenant, one id space.
+- The public "invite-only" wording in `terms.html:24` and `privacy.html:23` stays **true**. B3 adds the disclosures the
+  plan still owes (below) but does not rewrite that line.
+- **Trade-off, state it in ADR 0121:** `allowedPrincipals` was the safeguard "so the restriction survives portal config
+  drift" (`container-app.bicep:405-406`). Without it, someone turning "assignment required" off in the portal opens the
+  app to every user of the tenant and, with any other drift, nothing in bicep catches it. B3 gives the user a check
+  command; a CI check is **not** added (the deploy SP's Graph read rights are unverified; do not assume them).
+- Closing it again, or opening it fully later, is a separate decision: re-add `allowedPrincipals` to close; widen the
+  audience, switch the issuer and turn assignment off to open fully (the original Phase B text is in git history at
+  `9a2a2a3`).
 
-**B3. Legal text + deploy + post-deploy checks (user-observed).** Ship the `terms`/`privacy` rewrite (replace
-"invite-only", `terms.html:24`, `privacy.html:23`) with the Phase B MR, and fix the stale sign-out comment at
-`wwwroot/index.html:125-127` (it describes `login_hint`). The privacy text must **not promise erasure**: Hindsight has
-no delete path (ADR 0056/0057), so say what is stored and where; it must also name the operator-keyed egress above.
-After deploy: sign in with the owner (still owner: `/dashboard` 200, `/logs` 200, Copilot agent works), with a
-non-owner second-tenant account (404 on `/dashboard` and `/logs`, no Copilot kind, `/usage` shows only own,
-`/logs` shows no strangers' prompt or completion text to the owner, see the A5 residual), and confirm the Android app still signs in. Prod checks are
-**listed as open** in the ADR until the user confirms them (repo convention).
+**B1. Verify and prepare (user; read-only except the invite, which changes nothing until B2 is deployed).**
+Hand over the commands in the "Phase B handoff" section below and record the answers there. Settle: (a)
+`appRoleAssignmentRequired` is `true` today and the audience is `AzureADMyOrg` (both must already hold; if either is
+not, stop and say so, because the whole variant rests on them); (b) invite one test guest (an external-organisation
+address, and a personal Microsoft account if available) and assign each to the enterprise app. They still cannot sign
+in, because `allowedPrincipals` blocks them until B2 deploys. That is expected, and is why the first real guest check
+is in B3. No code or infra change in B1.
+
+**B2. Infra change (one MR).** `container-app.bicep`: remove `validation.defaultAuthorizationPolicy.allowedPrincipals`
+(the `validation` block is empty afterwards, so remove the block); remove the `authAllowedUserObjectIds` param
+(`container-app.bicep:59`, `main.bicep:136`, passed at `main.bicep:295`); `authLoginHint` per open decision 4 (default:
+remove it and its param at `container-app.bicep:62,483` and `main.bicep:142,296`). `openIdIssuer`, `authTenantId`,
+`excludedPaths` and the cookie lifetime stay exactly as they are. Rewrite the comments at `container-app.bicep:402-406`
+and the param descriptions so they say assignment is the only allowlist and name the drift risk. Tests:
+`EasyAuthSessionTests` (drop the login-hint pins if removed; keep the lifetime pins; add a pin that the authConfig has no
+`allowedPrincipals` and still redirects to login), `UserIdAliasTests` (`ShippedAliases_*` stops reading
+`authAllowedUserObjectIds` from `main.bicep`; alias keys and values must be a subset of `Access:Owners`, so an alias can
+only ever link owners; AC16 already covers the policy side). Docs: ADR 0121 gets a "Phase B variant" section (the
+decision, the drift trade-off, guests are the mechanism); amend banners on 0002, 0074 and 0090 where they describe the
+allowlist or the login hint; `CLAUDE.md` Feature-map "Identity" row; `docs/features/pwa-and-sign-in.md`. Run
+`az deployment group what-if` and show the output to the user before the deploy; the deploy goes through the normal
+`deploy.yml` (do not change its shape; it passes neither removed param, so no workflow edit is needed).
+*Verify:* `dotnet test --filter "EasyAuth|UserIdAlias"`, `dotnet format Agent42.slnx --verify-no-changes`,
+`node .agentic/scripts/check-doc-paths.mjs`, the what-if output.
+
+**B3. Disclosures, deploy and post-deploy checks (user-observed).** The legal pages stay "invite-only". They still
+gain what the plan owes any invited third party, because the accepted risk is unchanged: (1) a signed-in user's chats can
+run commands in the service's own environment (the Copilot shell, ADR 0107) and so can reach data the service stores;
+(2) what is stored and where, with **no promise of erasure** (Hindsight has no delete path, ADR 0056/0057); (3) the
+operator-keyed egress. If `authLoginHint` is removed, fix the stale sign-out comment at `wwwroot/index.html:125-127`
+(it describes `login_hint`). A `wwwroot/js/` change would need the `sw.js` `CACHE` bump (rule 3); these edits are HTML
+and comments, so the executor confirms whether `legal/` is in `SHELL` before deciding.
+After the deploy, the user checks, in this order:
+
+1. **The owner still works:** sign in as each owner: `/dashboard` 200, `/logs` 200, a Copilot agent runs.
+2. **A guest works and is a non-owner:** sign in as the invited guest: the chat loads, `/dashboard` and `/logs` answer 404,
+   `/usage` shows only their own rows, and `/logs` shows the owner no prompt or completion text of theirs (the A5
+   residual still applies to `ILogger` records). Record which claim `typ` carries a guest's email (it can be the
+   `#EXT#` UPN); it only feeds display and telemetry labels (`CurrentUser.cs:42-50`), never keys (usage and grains key on
+   the object id).
+3. **Invite-only actually holds without `allowedPrincipals` (the check that matters):** sign in with an account that is
+   in the tenant but **not assigned** (an unassigned member or guest). Entra must refuse it (AADSTS50105, "user is not
+   assigned to a role"). If it gets in, "assignment required" is not on: turn it on and treat the window as an incident.
+4. **The Android app still signs in** (WebView + Easy Auth cookie, ADR 0114).
+5. **Drift check, rerun after any portal change to the app:** the `appRoleAssignmentRequired` command below must print
+   `True`.
+
+Prod checks stay **listed as open** in ADR 0121 until the user confirms them (repo convention).
 
 ## Acceptance criteria → test mapping
 
@@ -301,7 +343,7 @@ non-owner second-tenant account (404 on `/dashboard` and `/logs`, no Copilot kin
 | 14 | Non-owner prompt/completion content absent from OTLP exporter **and** live buffer; owner content present; a span with no `user.id` is redacted | real-composition test with in-memory exporter | `OtelConfigurationTests.cs` / new `TelemetryRedactionTests.cs` |
 | 15 | Redactor registered before every trace exporter (new ServiceDefaults hook); the four old order pins updated, not deleted | source-text order guards | `ProjectLayoutTests.cs`, `AzureMonitorTraceExportTests.cs`, `OtelConfigurationTests.cs`, `LiveTelemetryCaptureWiringTests.cs` |
 | 16 | Alias keys and values must all be owners | `ShippedAliases_AreAllOwners` | `UserIdAliasTests.cs` |
-| 17 | Bicep no longer pins `allowedPrincipals`/`login_hint`; lifetime pins kept | updated EasyAuth tests | `EasyAuthSessionTests.cs` |
+| 17 | Bicep no longer pins `allowedPrincipals` (nor `login_hint`, unless open decision 4 keeps it) and still redirects to login; lifetime pins kept | updated EasyAuth tests | `EasyAuthSessionTests.cs` |
 | 18 | `excludedPaths` unchanged; `/logs`, `/api/diagnostics`, `/dashboard` stay un-excluded | existing + new rows | `EasyAuthExclusionTests.cs` |
 | 19 | `sw.js` `CACHE` bumped; `/logs` bypass present if added; usage module still reachable from `main.js` | existing shell/SW guards (the 4 tests that pin `CACHE`, memory `fleet-from-chat`) | executor finds by `grep CACHE tests/` |
 | 20 | Owner flag exposed to the client and used to hide `/logs` and Config (only if cheap; Copilot kind is no longer hidden) | API test on the bootstrap/profile response | executor names it |
@@ -322,7 +364,9 @@ non-owner second-tenant account (404 on `/dashboard` and `/logs`, no Copilot kin
 - Per-user rate limits, storage quotas, the global fleet concurrency cap, operator-key cost controls
   (deferred by the user; recorded as open risks in ADR 0121). Includes the unauthenticated-sign-up abuse story
   (anyone can create storage/Cosmos documents).
-- External ID / CIAM, Google/Apple social login, B2B guests, any data migration of user ids.
+- External ID / CIAM, Google/Apple social login, any data migration of user ids. (B2B guests were out of scope for the
+  original open-sign-in Phase B; they are now the access mechanism of the invite-only Phase B.) Widening the audience or
+  switching the issuer to a multi-tenant authority is out of scope until the user decides to open it fully.
 - A role system beyond the single owner tier.
 - Isolating or sandboxing the Copilot shell (recommended follow-up plan), gating it to owners (A3), and guarding
   loopback MCP/provider endpoints (A3b): all three were considered and **declined by the user**. Reverting to the
@@ -335,13 +379,19 @@ non-owner second-tenant account (404 on `/dashboard` and `/logs`, no Copilot kin
 1. **Usage key = object id (new trailing `UserId` on the buckets).** Recommended. Alternative: keep the
    email-first key and accept that a foreign-tenant admin with a spoofed UPN can read someone's usage. Not
    recommended under open sign-in.
-2. **Tenant check on owners.** The owner test compares only the object id. In a multi-tenant app an id is unique
+2. **(Moot under the invite-only Phase B: one tenant, one id space, so `Access:OwnerTenantId` is not added. Reopen only if
+   the audience is ever widened.)** **Tenant check on owners.** The owner test compares only the object id. In a multi-tenant app an id is unique
    per home tenant; I could not verify from the repo that `X-MS-CLIENT-PRINCIPAL-ID` equals `oid` for every
    provider (no test exercises real `tid`/`oid`/`iss` claims). **Default: add `Access:OwnerTenantId` and require
    it, failing closed, if B1(d) shows a reliable `tid` claim** (cheap, and the critic recommended making it the
    default); skip it if the claim spelling cannot be pinned, because a wrong spelling locks the owner out of owner
    features (`gotchas.md:129`).
 3. (Resolved by the user: shell open to all, accepted risk. No decision left here.)
+4. **`authLoginHint` under the invite-only Phase B.** Default: **remove it.** The hint pins every sign-in, guests
+   included, to `Expecho@users.noreply.github.com` at the Entra prompt, which defeats an invited person choosing their own account.
+   Cost: the two owners get Entra's account picker again on each sign-in (the ADR 0090 convenience goes; the 14-day
+   session cookie is unaffected, so it only shows when the session expires). Alternative: keep the hint and accept that
+   guests must use "Sign out" or the picker's "use another account" each time. **Resolved by the user, 2026-11-14: remove it.**
 
 ## Review
 
@@ -364,7 +414,8 @@ documented as advisory. The critic's H1 finding stands as an *accepted residual*
 
 ## Progress and divergences (executed 2026-11-09, branch `feature/open-signin-owner-tier`)
 
-**Phase A is implemented; Phase B (B1 spike, B2 infra, B3 legal text + deploy) is NOT started and is the user's to run.** The
+**Phase A is implemented and merged (#228, 2026-11-14). Phase B was rewritten on 2026-11-14 as the invite-only variant (B1 verify
+and invite, B2 infra, B3 disclosures + deploy + checks); it is NOT started and the B1 commands are the user's to run.** The
 spec therefore stays in `.agentic/specs/` (not `completed/`) until Phase B lands.
 
 Where the implementation diverged from the plan above:
@@ -397,8 +448,8 @@ Where the implementation diverged from the plan above:
   allowlist must also keep `agent42.provider.kind`, which `UsageSpanProcessor` reads after the redactor.
 - **AC16 (`ShippedAliases_AreAllOwners`) was added in Phase A** (owners exist already). The Bicep-allowlist test stays until
   B2 removes `authAllowedUserObjectIds`. AC17 (EasyAuth test updates) is B2.
-- **Open decision 2 (`Access:OwnerTenantId`) is deferred to B1(d)** as the plan's default said (skip unless a `tid` claim
-  spelling can be pinned).
+- **Open decision 2 (`Access:OwnerTenantId`) was deferred to B1(d)** as the plan's default said. It is now moot: the
+  invite-only Phase B keeps one tenant, so it is not added.
 - ADR 0121 written; amend banners added to 0002, 0018, 0024, 0029, 0031, 0054, 0059, 0062, 0074, 0090, 0097, 0107; the
   "~2 trusted users" sentences in 0031 and 0029 were annotated. `CLAUDE.md`, `usage-and-diagnostics.md`,
   `configuration-health.md`, `custom-agents.md`, `pwa-and-sign-in.md` and three `gotchas.md` entries were updated.
@@ -407,22 +458,42 @@ Where the implementation diverged from the plan above:
 
 ### Phase B handoff: commands for the USER to run (prepared, not executed; hard rule 5)
 
-B1 is a spike with a real second-tenant account and a personal Microsoft account. App registration client id (from
-`infra/main.bicep:126`): `e9a02aec-5368-4c9a-8211-d21222c4f30c`. Check the syntax with `--help` before running.
+Invite-only variant (see Phase B above). App registration client id (from `infra/main.bicep:126`):
+`e9a02aec-5368-4c9a-8211-d21222c4f30c`. These are directory operations in the home tenant, run by the user; the invite
+sends an email, so confirm the address first. Check the syntax with `--help` before running (the Graph calls need
+`User.Invite.All` and `AppRoleAssignment.ReadWrite.All`; the portal does the same: Entra, Users, Invite external user, then
+Enterprise applications, `agent42-easyauth`, Users and groups, Add user).
 
 ```powershell
-# (a) read the current state first
-az ad app show --id e9a02aec-5368-4c9a-8211-d21222c4f30c --query "{aud:signInAudience, tokenVersion:api.requestedAccessTokenVersion}"
-# (a) widen the audience, and accept v2 tokens (use AzureADMultipleOrgs if personal accounts fail)
-az ad app update --id e9a02aec-5368-4c9a-8211-d21222c4f30c --sign-in-audience AzureADandPersonalMicrosoftAccount
-az ad app update --id e9a02aec-5368-4c9a-8211-d21222c4f30c --set api.requestedAccessTokenVersion=2
-# (b) turn "assignment required" off on the home-tenant enterprise app
-az ad sp update --id e9a02aec-5368-4c9a-8211-d21222c4f30c --set appRoleAssignmentRequired=false
+$app = "e9a02aec-5368-4c9a-8211-d21222c4f30c"
+
+# 1. READ-ONLY. Both must hold before anything else; the variant rests on them.
+az ad sp show --id $app --query "{assignmentRequired:appRoleAssignmentRequired, spObjectId:id}"   # expect assignmentRequired = true
+az ad app show --id $app --query signInAudience                                                  # expect AzureADMyOrg
+
+# 2. Invite a test guest (external-organisation address; a personal Microsoft account works too). Sends an email.
+az rest --method POST --uri "https://graph.microsoft.com/v1.0/invitations" `
+  --headers "Content-Type=application/json" `
+  --body '{"invitedUserEmailAddress":"<guest email>","inviteRedirectUrl":"https://chat.agent42.nl","sendInvitationMessage":true}'
+#    The response carries invitedUser.id: that is the guest's object id (use it below).
+
+# 3. Assign the guest to the enterprise app (the default access role id is all zeros when the app defines no custom roles).
+az rest --method POST --uri "https://graph.microsoft.com/v1.0/servicePrincipals/<spObjectId>/appRoleAssignedTo" `
+  --headers "Content-Type=application/json" `
+  --body '{"principalId":"<guest object id>","resourceId":"<spObjectId>","appRoleId":"00000000-0000-0000-0000-000000000000"}'
 ```
 
-Then settle, and write the answers here: (c) with issuer `https://login.microsoftonline.com/common/v2.0` (or `/organizations`,
-`/consumers`), what `X-MS-CLIENT-PRINCIPAL-ID` carries and whether the owner's id is **unchanged** (hard gate: if not, stop
-and re-plan); (d) which claim `typ` carries email and tenant id; (e) record that tenants that block user consent show "need
-admin approval". No stranger can sign in until B2 removes `allowedPrincipals`.
+The drift check, run after the B2 deploy and again after any portal change to the app (must print `True`):
+
+```powershell
+az ad sp show --id e9a02aec-5368-4c9a-8211-d21222c4f30c --query appRoleAssignmentRequired
+```
+
+Nothing in B1 lets a guest in: `allowedPrincipals` still blocks them until B2 is deployed. Write the answers to
+(a) the two read-only checks and (b) the guest object id(s) here, then the executor starts B2.
+
+B1(a) result, 2026-11-14 (user ran it): `appRoleAssignmentRequired = true`, `signInAudience = AzureADMyOrg`, enterprise app
+object id `ac2c57f1-ff38-450a-9b90-f95f8de48b69`. Both preconditions hold. B1(b) (test guest) is pending. After B2 is deployed,
+run the B3 checks and record them here.
 
 Results: _(pending the user)_
