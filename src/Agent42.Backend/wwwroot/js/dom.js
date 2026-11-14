@@ -119,6 +119,8 @@ export const pushTestStatus = document.getElementById("pushTestStatus");
 // Configuration and Skills are APPENDED, never inserted: initMcpOAuthReturn deep-links to
 // select(3) (the MCP tab), so MCP must stay index 3 — a new tab placed before it would shift MCP and
 // break the OAuth return. Append → MCP stays 3, Configuration is 4, Skills is 5, Chat apps is 6.
+// The Configuration tab starts [hidden] in index.html and is revealed for owners only (confighealth.js).
+export const tabConfig = document.getElementById("tabConfig");
 export const profileTabs = wireTabs([
   [document.getElementById("tabGeneral"), document.getElementById("panelGeneral")],
   [document.getElementById("tabTools"), document.getElementById("panelTools")],
