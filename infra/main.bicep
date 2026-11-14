@@ -141,10 +141,10 @@ param authSessionLifetime string = '14.00:00:00'
 // app's previous compute cost. Replicas stay pinned at 1 (Orleans localhost clustering), so there is
 // exactly one SearXNG per deployment.
 @description('CPU cores allocated to the backend container.')
-param containerCpu string = '0.5'
+param containerCpu string = '0.25'
 
 @description('Memory allocated to the backend container.')
-param containerMemory string = '1Gi'
+param containerMemory string = '0.5Gi'
 
 @description('CPU cores allocated to the SearXNG sidecar. Must keep the replica total (backend + sidecar) on an allowed CPU/memory combination.')
 param searxngCpu string = '0.5'
