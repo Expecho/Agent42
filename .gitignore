@@ -44,3 +44,6 @@ scratchpad/
 live-model.local.json
 live-anthropic.local.json
 live-github.local.json
+
+# Self-hosting secrets (compose.yaml reads .env; .env.example is the template)
+.env

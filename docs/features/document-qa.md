@@ -137,6 +137,8 @@ return results.Select(chunk => new TextSearchProvider.TextSearchResult
 
 ### The vector store
 
+> **Self-hosted (`Storage:Provider = local`, ADR 0127):** chunks live in Postgres with pgvector (`agent42_doc_chunks`), searched by an exact cosine scan per owner with no ANN index. See [self-hosting.md](self-hosting.md). The Cosmos description below is the Azure deployment.
+
 Cosmos NoSQL `VectorDistance` top-k, partitioned by the owner (grain) key:
 
 ```csharp

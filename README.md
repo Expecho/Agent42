@@ -7,7 +7,7 @@ document Q&A, long-term memory, voice, image generation, custom agents, and a va
 web UI served from the backend. Deployed to Azure Container Apps behind Entra ID Easy Auth at
 [chat.agent42.nl](https://chat.agent42.nl).
 
-**Stack:** .NET 10 · Orleans 10.3 (grains, Cosmos persistence + reminders) · Microsoft
+**Stack:** .NET 10 · Orleans 10.3 (grains; Cosmos or Postgres persistence + reminders) · Microsoft
 Agent Framework 1.22 · ASP.NET Core minimal APIs · Aspire 13.5 (local orchestration) ·
 vanilla-JS frontend · Bicep + GitHub Actions → Azure Container Apps.
 
@@ -169,8 +169,8 @@ wwwroot UI (vanilla JS)  ──HTTP/NDJSON──▶  ASP.NET Core minimal API + 
                                                     ▼
                                         AgentGrain  (key: {userId}/{conversationId})
                                         ├─ Agent Framework ChatClientAgent + tools
-                                        ├─ session persisted as grain state → Cosmos DB
-                                        └─ durable reminders (schedule_prompt) → Cosmos DB
+                                        ├─ session persisted as grain state → Cosmos DB (or Postgres, self-hosted)
+                                        └─ durable reminders (schedule_prompt) → Cosmos DB (or Postgres)
                                                     │
                                                     ▼
                                      Any OpenAI-compatible model endpoint
@@ -217,6 +217,18 @@ are all added per user at runtime (Preferences → model providers). The managed
 (`DefaultAzureCredential`) is used for blob storage. Optional feature keys (Google Maps,
 Hindsight, VAPID) go in user secrets; each one missing just switches its feature
 off, as the Configuration tab shows.
+
+## Self-host with Docker
+
+No Azure account needed: `Storage:Provider = local` keeps state in Postgres and on a volume.
+
+```bash
+cp .env.example .env          # set POSTGRES_PASSWORD and SEARXNG_SECRET
+docker compose up -d --build  # UI at http://localhost:8080, bound to loopback only
+```
+
+There is no authentication in this mode, so keep it on localhost or put an authenticating proxy in front. What differs
+from the Azure deployment, and its limits, are in [`docs/features/self-hosting.md`](docs/features/self-hosting.md).
 
 ## Test & lint
 

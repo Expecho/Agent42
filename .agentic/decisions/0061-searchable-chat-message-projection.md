@@ -16,6 +16,8 @@ amends: []
 
 # Search inside chat history via a plain-text message projection
 
+> **Amended by [ADR 0127](0127-self-hosting-local-storage-provider.md) (2026-11-14): with `Storage:Provider = local`, chat search is a Postgres table (substring match, and `ts_rank_cd` for the ranked tool).** The Cosmos container below is the `azure` provider.
+
 ## Context
 A user can search conversation **titles** and nothing else. Message text exists only inside
 `AgentGrainState.SerializedSession` — one opaque JSON string per conversation grain, in the

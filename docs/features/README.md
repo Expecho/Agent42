@@ -6,7 +6,7 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 
 > **Two recurring seams to know before reading any page:**
 > - **`AgentGrain`** is the Orleans grain, one per conversation, keyed `{userId}/{conversationId}`.
->   Its state persists to Cosmos; it implements `IRemindable` for durable reminders.
+>   Its state persists to Cosmos (or Postgres when self-hosted, ADR 0127); it implements `IRemindable` for durable reminders.
 > - **`AgentGrain.BuildAgent(modelId)`** is where Orleans state and per-user config become a
 >   Microsoft Agent Framework `ChatClientAgent` (tools, context providers, instructions). Almost
 >   every feature passes through it. Model/tool/persona changes use the same
@@ -78,6 +78,7 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 | Feature | Page |
 |---------|------|
 | Configuration health | [configuration-health.md](configuration-health.md) |
+| Self-hosting with Docker (Postgres + a volume, no Azure account) | [self-hosting.md](self-hosting.md) |
 | Usage dashboard, `/logs` console, Orleans dashboard, App Insights export | [usage-and-diagnostics.md](usage-and-diagnostics.md) |
 
 ---

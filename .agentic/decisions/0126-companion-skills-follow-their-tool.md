@@ -54,7 +54,7 @@ Web search and Scheduling settings.
 
 ## Evidence
 `src/Agent42.Agents/Tools/ToolCatalog.cs` (`CompanionSkills`, `IsSkillEnabled`), `ToolSelection.cs`
-(`ExpandSkillsWildcard`), `src/Agent42.Backend/Tools/AgentApi.Tools.cs`, `UserSkills/AgentApi.UserSkills.cs`;
+(`ExpandSkillsWildcard`), `src/Agent42.Backend/Tools/AgentApi.Tools.cs`, `src/Agent42.Backend/UserSkills/AgentApi.UserSkills.cs`;
 `ToolCatalogTests` (`IsSkillEnabled_CompanionSkillFollowsOnlyItsToolKey`), `AgentGrainTests`
 (`CompanionSkill_FollowsItsToolKey_*`, `LegacySkillsWildcard_DoesNotEnableCompanionSkills_ButTheirToolKeysDo`),
 `ToolSelectionApiTests` (`Tools_Catalog_IncludesPerSkillKeys`).

@@ -8,6 +8,8 @@ supersedes: 0013, 0017 (invariant scope only — see "Partial supersession")
 
 # A signed-in user configures their own model providers, without a redeploy
 
+> **Amended by [ADR 0127](0127-self-hosting-local-storage-provider.md) (2026-11-14): with `Storage:Provider = local`, the Data Protection key ring persists on the filesystem volume instead of in Blob Storage.** The Blob ring below is the `azure` provider.
+
 > **Amended by [ADR 0121](0121-open-signin-owner-tier.md) (2026-11-09).** The "an authenticated user's own endpoint is a trusted, self-directed action"
 > rationale below assumed about two trusted users. With sign-in open, a user-supplied endpoint that may be `localhost`
 > can reach the app's own loopback, including forging `X-MS-CLIENT-PRINCIPAL-ID`. That exposure is **accepted, not

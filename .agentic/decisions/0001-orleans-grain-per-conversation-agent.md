@@ -7,6 +7,8 @@ tags: [architecture, orleans, agent-framework]
 
 # Host each conversation as an Orleans grain wrapping an Agent Framework agent
 
+> **Amended by [ADR 0127](0127-self-hosting-local-storage-provider.md) (2026-11-14): grain state and reminders can live in Postgres (`Storage:Provider = local`).** Cosmos persistence below is the `azure` provider.
+
 > **Amended by [ADR 0074](0074-identity-alias-for-a-second-entra-account.md) (2026-09-13).**
 > The Consequences below say grain keys are `{userId}/{conversationId}`, "so one user can never
 > address another's conversation". That still holds of **userIds** — but two Entra principals can

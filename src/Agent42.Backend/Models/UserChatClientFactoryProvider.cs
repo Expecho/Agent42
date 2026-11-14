@@ -18,6 +18,7 @@ public sealed class UserChatClientFactoryProvider : IUserChatClientFactoryProvid
     private readonly IUserProviderResolver _resolver;
     private readonly string _otelSourceName;
     private readonly ILogger<MultiProviderChatClientFactory> _logger;
+    private readonly AttachmentInliner? _attachmentInliner;
 
     // The cache is never evicted — negligible for a one-user app; revisit if it grows multi-user
     // (the non-blocking note the plan's critic flagged).
@@ -26,11 +27,13 @@ public sealed class UserChatClientFactoryProvider : IUserChatClientFactoryProvid
     public UserChatClientFactoryProvider(
         IUserProviderResolver resolver,
         string otelSourceName,
-        ILogger<MultiProviderChatClientFactory> logger)
+        ILogger<MultiProviderChatClientFactory> logger,
+        AttachmentInliner? attachmentInliner = null)
     {
         _resolver = resolver;
         _otelSourceName = otelSourceName;
         _logger = logger;
+        _attachmentInliner = attachmentInliner;
     }
 
     public async Task<IChatClientFactory> GetForUserAsync(string userId, CancellationToken cancellationToken = default)
@@ -46,7 +49,7 @@ public sealed class UserChatClientFactoryProvider : IUserChatClientFactoryProvid
         var factory = new MultiProviderChatClientFactory(
             resolved.Providers, resolved.DefaultModelId, _otelSourceName, _logger,
             resolved.EmbeddingDefaultModelId, resolved.SpeechDefaultModelId,
-            resolved.TranscriptionDefaultModelId);
+            resolved.TranscriptionDefaultModelId, _attachmentInliner);
         _cache[userId] = new CachedFactory(resolved.Version, factory);
         return factory;
     }

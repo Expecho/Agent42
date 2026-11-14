@@ -1,4 +1,5 @@
 using Agent42.Agents;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Agent42.Backend;
 
@@ -19,7 +20,7 @@ public static class FleetRegistration
     public static void AddAgentFleet(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddAgentFleetCore(FleetOptions.From(configuration));
-        services.AddSingleton<IFleetBlobs, AzureFleetBlobs>();
+        services.TryAddSingleton<IFleetBlobs, AzureFleetBlobs>();
         services.AddSingleton<FleetCopilotHost>();
     }
 
