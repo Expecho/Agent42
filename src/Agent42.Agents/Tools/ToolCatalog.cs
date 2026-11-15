@@ -65,7 +65,7 @@ public static class ToolCatalog
     ///
     /// <para><b>The operator's <c>Hindsight:ApiKey</c> remains the outer gate</b> and the only one that stops
     /// the egress deployment-wide. This key narrows within it; with no key configured, selecting memory still
-    /// makes zero calls (<c>UnconfiguredMemory_MakesNoCalls</c>). Deselecting also does <b>not</b> remove
+    /// makes zero calls (<c>UnconfiguredMemory_MakesNoCalls</c>), and <c>GET /api/tools</c> offers no row for it (ADR 0131). Deselecting also does <b>not</b> remove
     /// memories already retained — ADR 0056's no-delete-path residual is untouched by it.</para>
     ///
     /// <para><b>This key lands OFF for anyone who has ever pressed Save</b>, exactly as the <c>calendar</c>
