@@ -239,6 +239,7 @@ jobs:
           GH_OAUTH_CLIENT_ID: ${{ vars.GH_OAUTH_CLIENT_ID }}
           EMAIL_INBOUND_DOMAIN: ${{ vars.EMAIL_INBOUND_DOMAIN }}
           ACCESS_OWNERS: ${{ vars.ACCESS_OWNERS }}
+          IDENTITY_ALIASES: ${{ vars.IDENTITY_ALIASES }}
         run: |
           acr_password=$(az acr credential show --name "$REGISTRY_NAME" --query "passwords[0].value" -o tsv)
 
@@ -259,6 +260,11 @@ jobs:
           # ACCESS_OWNERS is comma-separated; Bicep takes a JSON array.
           if [ -n "$ACCESS_OWNERS" ]; then
             optional+=(accessOwners="$(echo "$ACCESS_OWNERS" | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')")
+          fi
+          # IDENTITY_ALIASES is a JSON object (alias object id -> owning object id), passed to Bicep as it is.
+          if [ -n "$IDENTITY_ALIASES" ]; then
+            echo "$IDENTITY_ALIASES" | jq -e 'type == "object"' > /dev/null || { echo "IDENTITY_ALIASES must be a JSON object."; exit 1; }
+            optional+=(identityAliases="$IDENTITY_ALIASES")
           fi
 
           az deployment group create \

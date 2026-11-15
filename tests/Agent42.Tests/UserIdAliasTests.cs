@@ -211,9 +211,9 @@ public sealed class UserIdAliasTests
     /// </summary>
     [Theory]
     [InlineData("not-a-guid")]
-    [InlineData("2da7fa48-e41e-4ebd-b665-96bc4210fefd/../other")]
-    [InlineData("../2da7fa48-e41e-4ebd-b665-96bc4210fefd")]
-    [InlineData("{2da7fa48-e41e-4ebd-b665-96bc4210fefd}")]
+    [InlineData("11111111-1111-1111-1111-111111111111/../other")]
+    [InlineData("../11111111-1111-1111-1111-111111111111")]
+    [InlineData("{11111111-1111-1111-1111-111111111111}")]
     public void FromConfiguration_DropsAValueThatIsNotABareGuid(string canonical)
     {
         var aliases = From((AliasOid, canonical));

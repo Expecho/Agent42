@@ -28,7 +28,7 @@ The app had no sign-out at all.
   `cookieExpiration`. This is safe because the app reads only `X-MS-CLIENT-PRINCIPAL` (`CurrentUser.cs`) and
   never an Entra access or refresh token. With no token store configured, nothing depends on the tokens
   staying fresh.
-- **`login_hint=Expecho@users.noreply.github.com`** (`authLoginHint`) in the Entra provider's `loginParameters`. That is
+- **`login_hint=primary@example.com`** (`authLoginHint`) in the Entra provider's `loginParameters`. That is
   the canonical account ADR 0074 maps the alias onto. An empty value sends no hint.
 - **Sign out**: an icon link in the sidebar footer to `/.auth/logout?post_logout_redirect_uri=/`. It is plain
   HTML with no JS. This is how you reach the alias account: sign out, then pick it at Entra.

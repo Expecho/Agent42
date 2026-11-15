@@ -21,8 +21,8 @@ There is no manual deploy path — never run `az deployment group create` or
 3. **build-and-push:** deploys `infra/shared.bicep` (registry and Container Apps environment, reused or created),
    builds `src/Agent42.Backend/Dockerfile`, tags with the first 12 chars of the SHA, pushes to the ACR.
 4. **deploy:** `az deployment group create` of `infra/main.bicep` into the resource group. The registry, environment,
-   resource group, domain and Cosmos region come from repo variables (ADR 0128); prod's values are in
-   `docs/features/azure-deployment.md`. Quirks are in `.agentic/gotchas.md` — read those entries before
+   resource group, domain and Cosmos region come from repo variables (ADR 0128); they are documented in
+   `docs/features/azure-deployment.md` and set in the repository's Actions variables. Quirks are in `.agentic/gotchas.md` — read those entries before
    changing anything in this pipeline.
 
 ## Commands

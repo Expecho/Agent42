@@ -15,7 +15,7 @@ public sealed class InfraPortabilityTests
 {
     private static readonly string[] OwnerLiterals =
     [
-        "crexpechohosting", "cae-hosting", "rg-hosting", "rg-agent42", "agent42.nl", "2250fce3-", "e9a02aec-",
+        "crexpechohosting", "cae-hosting", "rg-hosting", "rg-agent42", "agent42.nl",
         "peterbons", "resourceGroups/agent42",
     ];
 
@@ -142,6 +142,16 @@ public sealed class InfraPortabilityTests
     }
 
     [Fact]
+    public void AppConfigOverrides_IdentityAliasesAreEmittedPerKeyOnlyWhenSet()
+    {
+        var module = StripBicepComments(Read("infra", "modules", "container-app.bicep"));
+
+        Assert.Matches(new Regex(@"param identityAliases object = \{\}"), module);
+        Assert.Matches(new Regex(@"empty\(identityAliases\)\s*\?\s*\[\]\s*:\s*map\(items\(identityAliases\)"), module);
+        Assert.Contains("'Identity__Aliases__${alias.key}'", module, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Docs_ListEveryVariableAndSecretTheWorkflowReads()
     {
         var docs = Read("docs", "features", "azure-deployment.md");
@@ -156,20 +166,20 @@ public sealed class InfraPortabilityTests
     }
 
     [Fact]
-    public void Docs_ProdValuesTableNamesOnlyVariablesTheWorkflowReads()
+    public void Docs_VariablesTableNamesOnlyVariablesTheWorkflowReads()
     {
         var docs = Read("docs", "features", "azure-deployment.md");
         var workflow = StripYamlComments(Read(".github", "workflows", "deploy.yml"));
         var referenced = Referenced(workflow, "vars").ToHashSet();
 
-        var section = SectionOf(docs, "## This repo's production values");
+        var section = SectionOf(docs, "## Variables");
         var named = Regex.Matches(section, @"^\|\s*`(?<name>[A-Z][A-Z0-9_]+)`\s*\|", RegexOptions.Multiline)
             .Select(m => m.Groups["name"].Value)
             .ToList();
 
         Assert.NotEmpty(named);
         Assert.True(named.All(referenced.Contains),
-            "The prod values table names variables deploy.yml never reads: " + string.Join(", ", named.Where(n => !referenced.Contains(n))));
+            "The variables table names variables deploy.yml never reads: " + string.Join(", ", named.Where(n => !referenced.Contains(n))));
     }
 
     [Fact]

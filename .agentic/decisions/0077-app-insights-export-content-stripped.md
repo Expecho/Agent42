@@ -90,7 +90,7 @@ Export **traces and metrics, never logs**, to the existing resource, **alongside
   change what the home collector receives, which this ADR's scope excluded.
 - **ADR 0054 is amended.** "In production the only sink is an OTLP export" is no longer true.
 - **Shared failure domain for traces.** One batch worker exports sequentially. A stalled
-  `home.peterbons.nl:4317` (OTLP timeout 10 s) delays App Insights batches, a slow App Insights delays
+  `otlp.example.com:4317` (OTLP timeout 10 s) delays App Insights batches, a slow App Insights delays
   the next OTLP batch, and both share the provider's shutdown budget. Metrics keep separate readers and
   are unaffected.
 - **With a connection string set, the fan-out owns the trace OTLP exporters.** ServiceDefaults then

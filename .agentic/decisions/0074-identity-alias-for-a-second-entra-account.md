@@ -15,8 +15,8 @@ amends: [0001, 0002, 0009, 0062]
 > (aliased) object id, so both accounts of one person share one report; the row label is still the real email.
 
 ## Context
-The operator holds two Entra accounts in the tenant — `Expecho@users.noreply.github.com`, which every byte of
-production data is keyed to, and `msn@2000miles.nl`, which they want to use from now on. Both must keep
+The operator holds two Entra accounts in the tenant — `primary@example.com`, which every byte of
+production data is keyed to, and `secondary@example.com`, which they want to use from now on. Both must keep
 working.
 
 `userId` is the Entra object id read from `X-MS-CLIENT-PRINCIPAL-ID` (`CurrentUser.ResolveUserId`), and it is the
@@ -46,7 +46,7 @@ Eight decisions worth recording:
    that comment exists to protect, and splitting it would reintroduce the drift. Attribution survives
    because `user.name` (principal-name header) and `user.email`/`user.full_name`/`user.roles` (claims
    blob) never pass through `ResolveUserId` — a span reads `user.id = <canonical oid>` next to
-   `user.name = msn@2000miles.nl`.
+   `user.name = secondary@example.com`.
 2. **Committed config, not a secret.** An object id is an identifier, not a credential, and these two are
    already in `main.bicep`. That is what keeps this feature free of any Bicep, deploy-workflow or
    GitHub-secret change — the `Dashboard:OwnerOid` precedent exactly.

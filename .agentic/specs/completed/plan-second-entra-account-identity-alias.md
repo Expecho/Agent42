@@ -6,8 +6,8 @@ planned-against: main @ 44413e7
 
 ## Overview
 
-The operator holds two Entra accounts — `Expecho@users.noreply.github.com` (the one every byte of
-production data is keyed to) and `msn@2000miles.nl` (the one they want to use going
+The operator holds two Entra accounts — `primary@example.com` (the one every byte of
+production data is keyed to) and `secondary@example.com` (the one they want to use going
 forward) — and wants the second to reach the first's data. **Both must keep working.**
 
 `userId` is the Entra object id read from `X-MS-CLIENT-PRINCIPAL-ID`
@@ -22,8 +22,8 @@ populated and complete in one MR:
 
 | Role | Account | Object id |
 |---|---|---|
-| **alias** (incoming) | `msn@2000miles.nl` | `4e85e5fd-1130-4498-a29f-d02cad7ca43b` |
-| **canonical** (owns the data) | `Expecho@users.noreply.github.com` | `2da7fa48-e41e-4ebd-b665-96bc4210fefd` |
+| **alias** (incoming) | `secondary@example.com` | `22222222-2222-2222-2222-222222222222` |
+| **canonical** (owns the data) | `primary@example.com` | `11111111-1111-1111-1111-111111111111` |
 
 > **Confirm this direction with the user before implementing.** It is inferred from
 > "I want to use another one … but keep all my data", not stated outright. Reversing it
@@ -90,7 +90,7 @@ keys are immutable, and the Hindsight bank is third-party with **no delete or re
   **Consequence: `/usage` shows two rows for one human whether or not the alias is applied**
   (see D1).
 - **Both oids are already committed** at `infra/main.bicep:107-111` as
-  `authAllowedUserObjectIds`, with `msn@2000miles.nl` named in the comment. Nothing
+  `authAllowedUserObjectIds`, with `secondary@example.com` named in the comment. Nothing
   overrides it (grepped `infra/` and `.github/`). This is why the map ships populated —
   and it enables the strongest available safety test (AC10).
 - **`Dashboard:OwnerOid` needs no Bicep** — it lives only in
@@ -134,7 +134,7 @@ keys are immutable, and the Hindsight bank is third-party with **no delete or re
   single resolution path is an explicit design property (`CurrentUser.cs:116`: kept in one
   place "so [both readers] can never drift"). Attribution survives because
   `user.name`/`user.email` are never aliased — a span reads `user.id = <canonical oid>` next
-  to `user.name = msn@2000miles.nl`.
+  to `user.name = secondary@example.com`.
   **Recorded consequence, NOT a benefit:** `/usage` still shows **two rows for one human**,
   because `UsageSpanProjector` keys on email first. Unifying it would require aliasing
   email/name too, which is rejected — that would destroy attribution on the app's widest
@@ -183,11 +183,11 @@ keys are immutable, and the Hindsight bank is third-party with **no delete or re
 
 Only one remains, and it is a **verification**, not a task: `infra/main.bicep:107-111`
 warns that `authAllowedUserObjectIds` *"Must stay in sync with the user assignments on the
-agent42-easyauth enterprise app."* Confirm `msn@2000miles.nl` is actually assigned there.
+agent42-easyauth enterprise app."* Confirm `secondary@example.com` is actually assigned there.
 Per hard rule 5 the agent prepares any `az` command; the user runs it.
 
 **Operational warning to give the user before deploy:** signing in as
-`msn@2000miles.nl` *before* the alias ships creates a second, permanently unreachable
+`secondary@example.com` *before* the alias ships creates a second, permanently unreachable
 dataset under its own oid — and if `Hindsight:ApiKey` is set and a turn runs, a memory bank
 with no delete path (ADR 0056). Check whether this has already happened.
 
@@ -302,7 +302,7 @@ Branch: `feature/*` off `main` + MR. **Never commit to `main`** (hard rule 1).
 
 - **The real data migration.** Rejected by the user this session; do not revive it.
 - **Merging or moving the Hindsight memory bank** — no delete/rename path (ADR 0056).
-- **Removing `Expecho@users.noreply.github.com`'s access.** The user chose to keep both signing in.
+- **Removing `primary@example.com`'s access.** The user chose to keep both signing in.
 - **Unifying `/usage` rows** — would require aliasing email/name, destroying attribution.
 - **Cleaning up any dataset already created under the alias oid** by a prior sign-in.
 - **Any UI.** No account-linking screen, no Preferences surface, no frontend change, and

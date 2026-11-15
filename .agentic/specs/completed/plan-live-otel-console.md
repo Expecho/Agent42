@@ -5,7 +5,7 @@ planned-against: main @ a74a34c
 ## Overview
 
 Agent42 emits traces, logs and metrics through OpenTelemetry but there is **no in-app way to look at
-them**. In production the only sink is an OTLP export to `http://home.peterbons.nl:4317` (set in
+them**. In production the only sink is an OTLP export to `http://otlp.example.com:4317` (set in
 `.github/workflows/deploy.yml`); offline there is no pipeline at all. The token-usage dashboard
 (ADR 0031) reads *derived aggregates*, never the raw signal.
 

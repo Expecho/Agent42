@@ -6,6 +6,9 @@
 
 ## Run it
 
+> New to this? [Run locally](../setup/local.md) is the step-by-step guide covering all three local modes. This page is the
+> reference for the Compose mode.
+
 ```bash
 cp .env.example .env          # set POSTGRES_PASSWORD and SEARXNG_SECRET
 docker compose up -d --build

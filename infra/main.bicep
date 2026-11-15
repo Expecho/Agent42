@@ -175,11 +175,14 @@ param vapidSubject string = ''
 @description('Client id of the GitHub OAuth App behind "Sign in with GitHub" (ADR 0108). OPTIONAL: when empty the committed GitHub:OAuth:ClientId stays in force.')
 param githubOAuthClientId string = ''
 
-@description('Domain that receives inbound email through Mailgun (ADR 0096). OPTIONAL: when empty the committed Email:InboundDomain stays in force.')
+@description('Domain that receives inbound email through Mailgun (ADR 0096). OPTIONAL: when empty Email:InboundDomain stays empty and inbound email is not offered.')
 param emailInboundDomain string = ''
 
-@description('Entra object ids of the owners (ADR 0121, amended by 0128). OPTIONAL: when empty the committed Access:Owners list stays in force. Entries override by index from 0; a longer committed list keeps its tail. Never local-dev.')
+@description('Entra object ids of the owners (ADR 0121, amended by 0128). OPTIONAL: when empty Access:Owners stays empty, so nobody is an owner (fails closed). Never local-dev.')
 param accessOwners array = []
+
+@description('Identity aliases (ADR 0074): an object of additional Entra object id -> the object id that owns the data. OPTIONAL: when empty no alias exists. An entry is an authorization grant.')
+param identityAliases object = {}
 
 @description('Tags applied to all created resources.')
 param tags object = {
@@ -303,6 +306,7 @@ module containerApp 'modules/container-app.bicep' = {
     githubOAuthClientId: githubOAuthClientId
     emailInboundDomain: emailInboundDomain
     accessOwners: accessOwners
+    identityAliases: identityAliases
     copilotEnvironmentStorageName: copilotEnvironmentStorage.outputs.name
     signalEnvironmentStorageName: signalEnvironmentStorage.outputs.name
     signalEnabled: signalEnabled

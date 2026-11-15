@@ -60,7 +60,8 @@ public sealed class OwnerPolicyTests
     /// <summary>
     /// The shipped file, not the rule. <c>local-dev</c> is the no-header fallback identity, so listing it
     /// would make every unauthenticated request an owner. Every shipped entry must also be a GUID: a typo
-    /// fails closed and locks the owner out while looking like a broken feature.
+    /// fails closed and locks the owner out while looking like a broken feature. The shipped list is empty (the
+    /// owners come from the ACCESS_OWNERS repository variable), which also fails closed.
     /// </summary>
     [Fact]
     public void ShippedConfiguration_NeverListsTheOfflineFallbackUserAsOwner_AndEveryOwnerIsAGuid()
@@ -71,7 +72,6 @@ public sealed class OwnerPolicyTests
 
         var owners = shipped.GetSection(OwnerPolicy.SectionName).GetChildren().Select(c => c.Value).ToList();
 
-        Assert.NotEmpty(owners);
         Assert.DoesNotContain(owners, o => string.Equals(o, "local-dev", StringComparison.OrdinalIgnoreCase));
         Assert.All(owners, o => Assert.True(Guid.TryParse(o, out _), $"Access:Owners entry '{o}' is not a GUID"));
         Assert.False(OwnerPolicy.FromConfiguration(shipped).IsOwner("local-dev"));
