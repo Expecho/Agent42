@@ -325,7 +325,7 @@ to a deployment is a variable or a secret you set.
 
 There is no operator model: each user adds their own model providers in Settings (ADR 0018/0019), so a fresh install
 shows an empty model picker until a provider is added. The legal pages, the Android app's default URL and the Chrome
-extension's fallback server point at the maintainer's instance (chat.agent42.nl); change them if you publish your own.
+extension's fallback server point at the maintainer's own instance; change them if you publish your own.
 
 ## Test & lint
 
