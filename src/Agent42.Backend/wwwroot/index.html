@@ -11,6 +11,7 @@
        so the app's own .prose pre code colors win the specificity ties. -->
   <link rel="stylesheet" href="/shared/lib/highlight/github.min.css" data-hljs-theme="light" />
   <link rel="stylesheet" href="/shared/lib/highlight/github-dark.min.css" data-hljs-theme="dark" />
+  <link rel="stylesheet" href="/shared/themes.css" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90' font-family='monospace' fill='%23FFB13D'>42</text></svg>" />
   <link rel="manifest" href="/manifest.webmanifest" />
@@ -32,8 +33,13 @@
           (choice === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
         var theme = dark ? "dark" : "light";
         document.documentElement.dataset.theme = theme;
+        // Palette is the second axis (ADR 0129); js/theme.js reconciles it against the profile on load.
+        document.documentElement.dataset.palette = localStorage.getItem("agent42.palette") || "amber";
+        // theme-color follows the palette: read the resolved --bg from themes.css (linked above, so it has
+        // loaded); an empty read (slow/failed stylesheet) falls back to the amber hexes.
+        var bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
         var meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.content = theme === "dark" ? "#100f0d" : "#f4efe4";
+        if (meta) meta.content = bg || (theme === "dark" ? "#100f0d" : "#f4efe4");
       } catch (e) { /* localStorage/matchMedia unavailable → CSS dark default stands */ }
       // Same no-flash reason for the collapsed sidebar: js/drawer.js owns this class after load and
       // repeats this exact rule (the stored choice, or a narrow window) as its initial state.
@@ -541,6 +547,25 @@
                   </select>
                 </label>
                 <p class="agent-form__note">System follows your device. Applied instantly as a preview; Cancel reverts, Save keeps it across your devices.</p>
+              </section>
+
+              <section class="agent-form__section">
+                <label class="agent-form__field">
+                  <span class="agent-form__label">// colour palette</span>
+                  <select class="agent-form__input agent-form__select" id="profilePalette">
+                    <option value="amber">Amber</option>
+                    <option value="ocean">Ocean</option>
+                    <option value="indigo">Indigo</option>
+                    <option value="violet">Violet</option>
+                    <option value="rose">Rose</option>
+                    <option value="crimson">Crimson</option>
+                    <option value="coral">Coral</option>
+                    <option value="forest">Forest</option>
+                    <option value="teal">Teal</option>
+                    <option value="graphite">Graphite</option>
+                  </select>
+                </label>
+                <p class="agent-form__note">The accent and surface colours, in both light and dark. Previewed instantly like the theme; Cancel reverts, Save keeps it across your devices.</p>
               </section>
 
               <section class="agent-form__section">

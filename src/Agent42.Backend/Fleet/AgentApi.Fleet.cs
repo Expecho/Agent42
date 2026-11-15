@@ -411,7 +411,7 @@ public static partial class AgentApi
         }
 
         var html = page.Kind == ArtifactKind.Svg ? WrapSvg(source) : source;
-        return Results.Text(ArtifactTheme.Apply(html, http.Request.Query["theme"]), "text/html; charset=utf-8");
+        return Results.Text(ArtifactTheme.Apply(html, http.Request.Query["theme"], http.Request.Query["palette"]), "text/html; charset=utf-8");
     }
 
     /// <summary>True for valid UTF-8 without NUL bytes: such a file is shown as text, anything else is binary.</summary>

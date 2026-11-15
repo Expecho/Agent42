@@ -1,40 +1,11 @@
 /* ————————————————————————————————————————————————
    Agent 42 · live telemetry console (ADR 0054)
-   Self-contained: the theme tokens are COPIED from styles.css, as wwwroot/shared/viewer.css does, so a
+   Palette tokens come from shared/themes.css (ADR 0129); a
    standalone page depends on nothing else. Keep visually in sync with styles.css.
    ———————————————————————————————————————————————— */
 
 :root {
-  --bg: #100f0d;
-  --bg-raised: #171512;
-  --bg-inset: #0b0a09;
-  --line: #2a2620;
-  --line-soft: #201d18;
-  --ink: #e9e2d3;
-  --ink-dim: #a89f8c;
-  --ink-faint: #6d6555;
-  --amber: #ffb13d;
-  --amber-deep: #c97f1b;
-  --amber-glow: rgba(255, 177, 61, 0.14);
-  --red: #e06c5f;
-  --green: #7fb069;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-:root[data-theme="light"] {
-  --bg: #f4efe4;
-  --bg-raised: #fbf7ee;
-  --bg-inset: #e9e2d2;
-  --line: #d6cdb8;
-  --line-soft: #e2dac7;
-  --ink: #2a2620;
-  --ink-dim: #5c5647;
-  --ink-faint: #8a8270;
-  --amber: #a86611;
-  --amber-deep: #7f4e0a;
-  --amber-glow: rgba(168, 102, 17, 0.12);
-  --red: #bf3c30;
-  --green: #4a7c32;
 }
 
 * { box-sizing: border-box; }

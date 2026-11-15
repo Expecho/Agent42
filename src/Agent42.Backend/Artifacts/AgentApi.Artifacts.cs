@@ -81,7 +81,7 @@ public static partial class AgentApi
 
         // The app's look goes in first, so the artifact's own CSS wins (ArtifactTheme). The theme is the pane's.
         var page = artifact.Kind == ArtifactKind.Svg ? WrapSvg(source) : source;
-        return Results.Text(ArtifactTheme.Apply(page, http.Request.Query["theme"]), "text/html; charset=utf-8");
+        return Results.Text(ArtifactTheme.Apply(page, http.Request.Query["theme"], http.Request.Query["palette"]), "text/html; charset=utf-8");
     }
 
     private static void AddArtifactHeaders(HttpResponse response)

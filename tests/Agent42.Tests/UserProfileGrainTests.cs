@@ -86,6 +86,28 @@ public sealed class UserProfileGrainTests(SharedClusterFixture fixture) : Shared
         Assert.Equal(expected, (await profile.GetAsync()).Theme);
     }
 
+    // Palette (ADR 0129, [Id(4)]): a second axis beside Theme. Known ids round-trip; null/blank/unknown clamp to amber.
+    [Theory]
+    [InlineData("ocean", "ocean")]
+    [InlineData("  GRAPHITE ", "graphite")]
+    [InlineData("neon", "amber")]
+    [InlineData("", "amber")]
+    [InlineData(null, "amber")]
+    public async Task UserProfile_NormalizesPalette(string? input, string expected)
+    {
+        var profile = Cluster.GrainFactory.GetGrain<IUserProfileGrain>($"profile-palette-{expected}-{input?.Trim() ?? "null"}");
+
+        var saved = await profile.SaveAsync(new UserProfile("en-US", Palette: input));
+        Assert.Equal(expected, saved.Palette);
+        Assert.Equal(expected, (await profile.GetAsync()).Palette);
+    }
+
+    [Fact]
+    public void UserProfile_NeverSaved_HasNoPalette()
+    {
+        Assert.Null(UserProfile.Empty.Palette);
+    }
+
     [Fact]
     public async Task UserProfile_DefaultTheme_IsSystem()
     {

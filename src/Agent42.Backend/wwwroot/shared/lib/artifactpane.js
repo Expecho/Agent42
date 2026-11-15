@@ -11,7 +11,7 @@
    nothing else.
 
    Look: /frame injects the app's theme (ArtifactTheme.cs) for the theme passed as ?theme=, so the pane passes the
-   page's current data-theme and reloads a framed artifact when it flips. The full-screen toggle widens the pane over
+   page's current data-theme and data-palette and reloads a framed artifact when it flips. The full-screen toggle widens the pane over
    the whole window (a CSS class, not the browser Fullscreen API, so the browser chrome and Escape stay normal). */
 (function () {
   "use strict";
@@ -65,6 +65,14 @@
   function currentTheme() {
     return document.documentElement.dataset.theme === "light" ? "light" : "dark";
   }
+  // The palette (ADR 0129); the public viewer pages never set data-palette, so they frame amber.
+  function currentPalette() {
+    return document.documentElement.dataset.palette || "amber";
+  }
+  // What a frame is rendered for: palette + mode, so a flip of either reloads it.
+  function currentLook() {
+    return `${currentPalette()}/${currentTheme()}`;
+  }
 
   async function fetchText(url) {
     const res = await fetch(url);
@@ -103,7 +111,7 @@
 
     let artifacts = [];
     let current = null; // { record, version }
-    let frameTheme = null; // the theme the open frame was rendered in
+    let frameLook = null; // the palette/theme the open frame was rendered in
 
     async function refresh() {
       const res = await fetch(urls.list());
@@ -123,8 +131,8 @@
         frame.setAttribute("sandbox", "allow-scripts");
         frame.setAttribute("referrerpolicy", "no-referrer");
         frame.title = record.title;
-        frameTheme = currentTheme();
-        frame.src = `${urls.frame(record.id, version)}?theme=${frameTheme}`;
+        frameLook = currentLook();
+        frame.src = `${urls.frame(record.id, version)}?theme=${currentTheme()}&palette=${encodeURIComponent(currentPalette())}`;
         body.appendChild(frame);
         return;
       }
@@ -285,13 +293,13 @@
       else close();
     });
 
-    // The frame was rendered for one theme; a theme switch while it is open reloads it in the new one. Markdown and
+    // The frame was rendered for one theme; a theme or palette switch while it is open reloads it in the new one. Markdown and
     // code follow by themselves, they use the page's CSS.
     new MutationObserver(() => {
       const kind = current?.record.kind;
-      if (pane.hidden || body.hidden || (kind !== "html" && kind !== "svg") || currentTheme() === frameTheme) return;
+      if (pane.hidden || body.hidden || (kind !== "html" && kind !== "svg") || currentLook() === frameLook) return;
       show(current.record, current.version);
-    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-palette"] });
 
     // One card per artifact version a turn produced. Idempotent per (artifact, version), so a replay over a bubble
     // that already holds the live card (stream recovery) does not duplicate it. beforeOpen lets a page point the

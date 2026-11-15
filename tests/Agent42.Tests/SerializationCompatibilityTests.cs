@@ -329,6 +329,8 @@ public sealed class SerializationCompatibilityTests
         Assert.Equal(expected.EnabledTools, actual.EnabledTools);
         Assert.Equal(expected.SuggestFollowUps, actual.SuggestFollowUps);
         Assert.False(actual.SuggestFollowUps);
+        // The blob predates Palette ([Id(4)], ADR 0129): a legacy profile restores it as null (= amber).
+        Assert.Null(actual.Palette);
     }
 
     // AC2: the per-user provider overlay (ADR 0018/0030/0038) — the encrypted API key plus the three
