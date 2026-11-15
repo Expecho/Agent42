@@ -59,7 +59,8 @@ services.AddHttpClient(nameof(HindsightClient), http => http.Timeout = TimeSpan.
 
 The named client opts out of `AddServiceDefaults`' retry pipeline. `AgentGrain` is non-reentrant,
 so retries against a stalled Hindsight would stall the user's turn several times over.
-`Hindsight:Mission` (committed, empty by default) creates the bank with a mission on first use.
+`Hindsight:Mission` (committed in `appsettings.json` with a default text, ADR 0132) creates the bank with a mission
+on first use; an empty value means no create call is made.
 `Hindsight:BaseAddress` overrides the Hindsight cloud, for example for a self-hosted server.
 
 There is deliberately no Agent42 port over the package: its `IHindsightClient` already is the seam,
