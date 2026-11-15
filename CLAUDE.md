@@ -14,7 +14,7 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 | Install | `dotnet restore Agent42.slnx` |
 | Run dev (offline) | `dotnet run --project tools/Agent42.DevHost` — canned LLM, in-memory grains; UI at http://localhost:61326 |
 | Run full stack | `dotnet run --project src/Agent42.AppHost` — Aspire + Cosmos emulator (needs Docker) |
-| Self-host (no Azure) | `docker compose up -d --build` after `cp .env.example .env` — Postgres + a volume, UI at http://localhost:8080, no auth (ADR 0127) |
+| Self-host (no Azure) | `docker compose up -d` after `cp .env.example .env` (pulls the published images, ADR 0130; `-f compose.yaml -f compose.build.yaml up -d --build` builds from source) — Postgres + a volume, UI at http://localhost:8080, no auth (ADR 0127) |
 | Test | `dotnet test Agent42.slnx` |
 | Lint | `dotnet format Agent42.slnx --verify-no-changes` |
 | Type check | `dotnet build Agent42.slnx` |
@@ -201,5 +201,5 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Client tools and shared state: browser-run tools (confirm, artifact pane, browser context, location) paused on the stream, per-run broker, shared JSON state with snapshots; why not AG-UI | 0089, 0088, 0093 |
 | Android companion app (`tools/Agent42.Android`): WebView sign-in + Easy Auth cookie, NDJSON contract golden file, full-duplex voice on the call audio path (amends 0079 for the app only), sideloaded signed APK | 0114 |
 | Self-hosting: `Storage:Provider` = `azure` (default, prod) or `local` (Postgres + a filesystem volume, `compose.yaml`, no Azure account); ADO.NET grain storage with the same `$type` JSON, pgvector (no ANN index), file stores, attachment reference URLs inlined as bytes per request, no auth, no migration | 0127 |
-| Deployment: tenant-portable IaC, create-or-reuse shared infra, repo variables, `preflight`, `infra/bootstrap.sh` | 0128 |
+| Deployment: tenant-portable IaC, create-or-reuse shared infra, repo variables, `preflight`, `infra/bootstrap.sh`; published multi-arch images on GHCR (compose pulls them, `az acr import` for Azure) | 0128, 0130 |
 | Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test, AgentGrain services + per-run TurnContext | 0039, 0040, 0041, 0050, 0051, 0055, 0105, 0106 |

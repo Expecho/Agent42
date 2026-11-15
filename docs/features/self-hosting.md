@@ -11,8 +11,12 @@
 
 ```bash
 cp .env.example .env          # set POSTGRES_PASSWORD and SEARXNG_SECRET
-docker compose up -d --build
+docker compose up -d          # pulls the published images (ADR 0130)
 ```
+
+To build the images from your checkout instead, add the override file:
+`docker compose -f compose.yaml -f compose.build.yaml up -d --build`. `AGENT42_VERSION` (default `latest`) pins a release
+or a `sha-<commit>` tag, and `AGENT42_REGISTRY` (default `ghcr.io/expecho`) names another registry.
 
 Open <http://localhost:8080>. Then add a model provider under Preferences, because no chat, embedding, image or speech model
 ships with the app (ADR 0019): until you add one the composer is gated.
@@ -21,9 +25,9 @@ ships with the app (ADR 0019): until you add one the composer is gated.
 
 | Service | What it is |
 |---|---|
-| `app` | The Backend image (`src/Agent42.Backend/Dockerfile`), bound to `127.0.0.1:8080` |
+| `app` | The Backend image (`ghcr.io/expecho/agent42-backend`, built from `src/Agent42.Backend/Dockerfile`), bound to `127.0.0.1:8080` |
 | `postgres` | `pgvector/pgvector:pg17`: grain state, reminders, document vectors, chat search, the gateway lock |
-| `searxng` | The web-search sidecar built from `infra/searxng` |
+| `searxng` | The web-search sidecar (`ghcr.io/expecho/agent42-searxng`, built from `infra/searxng`) |
 | `init-volumes` | A one-shot that makes the volumes writable for the app's non-root user, then exits |
 
 Data lives in three named volumes: `agent42-postgres`, `agent42-data` (attachments, uploaded skills, fleet files, Copilot

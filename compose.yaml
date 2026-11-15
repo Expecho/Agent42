@@ -1,8 +1,11 @@
 # Self-hosting Agent 42 with no Azure account (ADR 0127): Postgres + a filesystem volume instead of Cosmos DB + Blob Storage.
 #
 #   cp .env.example .env     # set the two secrets
-#   docker compose up -d --build
+#   docker compose up -d     # pulls the published images (ADR 0130); no build, no .NET SDK
 #   open http://localhost:8080
+#
+# To build the images from this checkout instead (to run your own changes), add the build override:
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build
 #
 # Read docs/features/self-hosting.md first. The short version: there is NO authentication (every request is the one user
 # "local-dev"), so the app is bound to 127.0.0.1 only. Put an authenticating reverse proxy in front before exposing it.
@@ -35,7 +38,7 @@ services:
   # Web search (ADR 0011). NOTE: SearXNG forwards each query to the public search engines it aggregates, so this is not
   # private: queries leave your machine (the same as production).
   searxng:
-    build: ./infra/searxng
+    image: ${AGENT42_REGISTRY:-ghcr.io/expecho}/agent42-searxng:${AGENT42_VERSION:-latest}
     restart: unless-stopped
     environment:
       SEARXNG_PORT: "8888"
@@ -44,9 +47,7 @@ services:
       SEARXNG_BASE_URL: http://searxng:8888/searxng/
 
   app:
-    build:
-      context: .
-      dockerfile: src/Agent42.Backend/Dockerfile
+    image: ${AGENT42_REGISTRY:-ghcr.io/expecho}/agent42-backend:${AGENT42_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       init-volumes:

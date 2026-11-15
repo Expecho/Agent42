@@ -136,6 +136,44 @@ Find the app's address once it finishes:
 az containerapp show -n ca-agent42-backend -g rg-myagent --query properties.configuration.ingress.fqdn -o tsv
 ```
 
+### Alternative: deploy the published images, with no fork and no GitHub Actions
+
+Every push to `main` and every `v*` tag publishes the two images to the GitHub Container Registry
+(`ghcr.io/expecho/agent42-backend` and `ghcr.io/expecho/agent42-searxng`, amd64 and arm64). If you would rather not fork
+and build, import them into your own Azure Container Registry and deploy the Bicep by hand. It needs only `az`, `jq` and
+`bash`, and it is the same infrastructure the workflow deploys. The images hold no configuration, so the same image runs
+in any tenant.
+
+```bash
+git clone https://github.com/Expecho/Agent42.git && cd Agent42
+RG=rg-myagent
+
+# 1. Bootstrap (step 1 above). Keep the values it prints: AUTH_CLIENT_ID, AAD_CLIENT_SECRET and SEARXNG_SECRET.
+infra/bootstrap.sh init --resource-group $RG --location westeurope
+
+# 2. Shared infrastructure: the registry, a Log Analytics workspace and a Container Apps environment.
+outputs=$(az deployment group create -g $RG --template-file infra/shared.bicep --query properties.outputs -o json)
+ACR=$(jq -r .registryName.value <<< "$outputs")
+CAE=$(jq -r .environmentName.value <<< "$outputs")
+CAE_RG=$(jq -r .environmentResourceGroup.value <<< "$outputs")
+
+# 3. Copy the images into your registry. The registry pulls them itself, so you need no local Docker. Pin a version
+#    (1.2.3 or sha-abc1234) rather than `latest`: the Container App only rolls a new revision when its image tag changes.
+TAG=latest
+for image in agent42-backend agent42-searxng; do
+  az acr import --name $ACR --source ghcr.io/expecho/$image:$TAG --image $image:$TAG
+done
+
+# 4. Deploy the app.
+az deployment group create -g $RG --template-file infra/main.bicep --parameters   imageTag=$TAG searxngImageTag=$TAG   containerRegistryName=$ACR containerAppsEnvironmentName=$CAE containerAppsEnvironmentResourceGroup=$CAE_RG   acrAdminUsername=$ACR acrAdminPassword="$(az acr credential show -n $ACR --query 'passwords[0].value' -o tsv)"   authClientId=<AUTH_CLIENT_ID> authClientSecret=<AAD_CLIENT_SECRET> searxngSecret=<SEARXNG_SECRET>
+```
+
+Then carry on with step 4 below (the redirect), and assign users. To update, import a newer tag and re-run the last
+command with it. Optional features take the same parameters `deploy.yml` passes (`accessOwners`, `vapidPublicKey`,
+`customDomainName` and so on; see [`azure-deployment.md`](../features/azure-deployment.md)), and a parameter you leave out
+is off, exactly as an unset variable is in the workflow. The package must be public for the import to work without
+credentials; if you run a fork that publishes its own images, use `ghcr.io/<your-user>/...` instead.
+
 ## Step 4. Register the sign-in redirect
 
 The redirect URI needs the host, which does not exist until the first deploy:

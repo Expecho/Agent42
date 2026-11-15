@@ -305,7 +305,7 @@ No Azure account needed: `Storage:Provider = local` keeps state in Postgres and 
 
 ```bash
 cp .env.example .env          # set POSTGRES_PASSWORD and SEARXNG_SECRET
-docker compose up -d --build  # UI at http://localhost:8080, bound to loopback only
+docker compose up -d          # pulls the published images; UI at http://localhost:8080, bound to loopback only
 ```
 
 There is no authentication in this mode, so keep it on localhost or put an authenticating proxy in front. What differs
