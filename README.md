@@ -279,6 +279,8 @@ session state), so any model — including stateless third-party endpoints — c
 
 ## Run locally
 
+Full walkthrough, with every variable and troubleshooting: [`docs/setup/local.md`](docs/setup/local.md).
+
 ```powershell
 # Restore
 dotnet restore Agent42.slnx
@@ -316,7 +318,8 @@ to a deployment is a variable or a secret you set.
 
 1. **Offline** (`tools/Agent42.DevHost`): canned LLM, in-memory grains, nothing to configure. Good for hacking on the UI.
 2. **Self-host** (above): `docker compose`, Postgres, no Azure account. No authentication, so keep it local.
-3. **Azure Container Apps**: run `infra/bootstrap.sh` and set what it prints. Owners (`ACCESS_OWNERS`), push contact
+3. **Azure Container Apps**: run `infra/bootstrap.sh` and set what it prints (step by step in
+   [`docs/setup/azure.md`](docs/setup/azure.md)). Owners (`ACCESS_OWNERS`), push contact
    (`VAPID_SUBJECT`), inbound email domain and identity aliases start empty; see
    [`docs/features/azure-deployment.md`](docs/features/azure-deployment.md).
 

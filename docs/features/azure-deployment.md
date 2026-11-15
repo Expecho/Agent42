@@ -1,5 +1,8 @@
 # Deploying to your own Azure subscription
 
+> New to this? Start with the step-by-step guide, [Deploy to Azure](../setup/azure.md). This page is the reference for
+> every secret and variable.
+
 The Azure IaC is tenant-portable (ADR 0128): a fork runs one bootstrap script, sets the GitHub secrets and
 variables it prints, and pushes. Without an Azure account, use [self-hosting](self-hosting.md) instead.
 
