@@ -112,7 +112,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Repo variables `AZURE_RESOURCE_GROUP` + `AUTH_CLIENT_ID` (and, for prod, the rest of the table in `docs/features/azure-deployment.md`) | The deploy fails `preflight`, by design: an absent variable expands to an empty string, and empty means "off" (ADR 0128) |
 | `SEARXNG_SECRET` | **App down.** The sidecar crash-loops, and ACA gates revision health on every container (ADR 0011) |
 | `GOOGLE_MAPS_API_KEY` | Location returns coordinates without an address (ADR 0012) |
-| `HINDSIGHT_API_KEY` | No long-term memory, and zero calls are made. This is the operator's egress switch (ADR 0056/0057) |
+| `HINDSIGHT_API_KEY` | No long-term memory, zero calls are made, and the picker shows no memory row (ADR 0131). This is the operator's egress switch (ADR 0056/0057) |
 | `VAPID_PRIVATE_KEY` | Web Push is hidden (ADR 0028) |
 | `MAILGUN_SIGNING_KEY` + MX for the in.agent42.nl subdomain → Mailgun + a Route forwarding to `/api/email-in` | `/api/email-in` answers 503 and no inbound email is accepted. The app boots (ADR 0096) |
 | `GH_OAUTH_CLIENT_SECRET` + `GitHub:OAuth:ClientId` (committed) + OAuth App callback `https://chat.agent42.nl/api/providers/github/callback` | "Sign in with GitHub" is hidden and `/api/providers/github/start` answers 503. The app boots (ADR 0108) |
@@ -184,7 +184,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Web search (SearXNG sidecar, engines, proxied UI); no page fetch (removed, 0125) | 0011, 0059, 0060, 0125 |
 | Location (a client tool since 0093) | 0012, 0093 |
 | Selectable tools: three layers, skills, uploaded skills (the two shipped skills follow their tool key, no picker row), memory | 0021, 0048, 0049, 0057, 0126 |
-| Long-term memory (Hindsight; **no delete path**) | 0056, 0057 |
+| Long-term memory (Hindsight; **no delete path**; picker row hidden without a key) | 0056, 0057, 0131 |
 | MCP client: config, OAuth (per-request refresh + in-turn reconnect + auto re-send), per-server/per-tool selection, test, URL seeding, local bridge, Chrome extension bridge client + MCP image results, elicitation (form + URL) | 0024, 0025, 0026, 0058, 0064, 0067, 0069, 0076, 0081, 0087, 0095, 0109 |
 | MCP server (agents exposed via `/api/agent-mcp`) | 0070 |
 | Stored agents: history mode, API key + `/api/agent-run`, retention, outbound webhook (signed, SSRF-guarded egress), inbound email address (Mailgun, untrusted-in) | 0016, 0022, 0068, 0094, 0096 |

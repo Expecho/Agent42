@@ -74,8 +74,16 @@ public static partial class AgentApi
                         name,
                         RequiresHostedTools: false,
                         ParentKey: ToolCatalog.McpServerKey(s.Id)))));
+            // Long-term memory has no row when the operator configured no Hindsight:ApiKey (ADR 0131, amends
+            // 0057 decision 3): a checkbox for a feature that cannot run is a control that does nothing.
+            // Resolved optionally, so a host that never registered the integration reads as "off" (the
+            // /api/speech pattern). Only the DESCRIPTOR is hidden; the `memory` key stays in
+            // AllSelectableToolKeys so the null == all sentinel and stored selections are untouched.
+            var memoryAvailable = http.RequestServices.GetService<HindsightIntegration>()?.Client is not null;
+            var staticDescriptors = ToolCatalog.Descriptors
+                .Where(d => memoryAvailable || d.Key != ToolCatalog.Memory);
             return Results.Json<IReadOnlyList<ToolDescriptor>>(
-                [.. ToolCatalog.Descriptors, .. skillDescriptors, .. mcpDescriptors]);
+                [.. staticDescriptors, .. skillDescriptors, .. mcpDescriptors]);
         });
 
         // The EFFECTIVE tools for one conversation (override ?? user-default ?? all), so the composer popover

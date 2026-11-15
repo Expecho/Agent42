@@ -57,7 +57,7 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
         Assert.Equal(
             new[]
             {
-                "web_search", "location", "scheduling", "code_interpreter", "memory", "read_web_document",
+                "web_search", "location", "scheduling", "code_interpreter", "read_web_document",
                 "push_notification", "artifacts", "read_document", "browser_tools", "shared_state", "past_chats", "fleet",
             }.Order(),
             keys.Order());
@@ -91,22 +91,20 @@ public sealed class ToolSelectionApiTests(SharedApiFixture fixture) : SharedClus
     // actually reads: plain "Memory" would read as the conversation's own history (the ADR 0004 session),
     // which this is not, and that misreading makes the checkbox look like it wipes the current chat.
     //
-    // It renders even with no Hindsight:ApiKey configured — today's production state, and the state this
-    // fixture runs in. That is deliberate (the code_interpreter precedent: the catalog expresses INTENT
-    // and an outer gate decides). Hiding it would make this per-user endpoint depend on operator config
-    // for the first time; Preferences → Configuration reports memory's real state instead.
+    // ADR 0131 (amends 0057 decision 3): with no Hindsight client registered — this fixture's state, and
+    // today's production state — the memory row is NOT offered. The key itself stays selectable
+    // (ToolCatalogTests.Memory_IsSelectable_AndAppearsInDescriptors), so stored selections are untouched.
+    // The configured case, where the row appears labelled "Long-term memory", is MemoryToolCatalogApiTests.
     [Fact]
-    public async Task Tools_Catalog_IncludesMemory()
+    public async Task Tools_Catalog_HidesMemory_WithoutHindsightKey()
     {
         var response = await Client.SendAsync(Request(HttpMethod.Get, "/api/tools", "user-mem-cat"));
         response.EnsureSuccessStatusCode();
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var memory = doc.RootElement.EnumerateArray()
-            .Single(e => e.GetProperty("key").GetString() == "memory");
-
-        Assert.Equal("Long-term memory", memory.GetProperty("label").GetString());
-        Assert.False(memory.GetProperty("requiresHostedTools").GetBoolean());
+        Assert.DoesNotContain(
+            doc.RootElement.EnumerateArray(),
+            e => e.GetProperty("key").GetString() == "memory");
     }
 
     // AC6/AC14 (per-skill): every shipped skill appears as a `skill:{name}` descriptor whose LABEL is the
