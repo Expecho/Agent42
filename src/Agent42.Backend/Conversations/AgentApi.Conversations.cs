@@ -209,7 +209,9 @@ public static partial class AgentApi
             request.Message, model, attachmentRefs, request.Ephemeral,
             clientTools: KnownClientTools(request.ClientTools),
             // An edit or regenerate re-runs the turn just removed: its webhook event says so (ADR 0094).
-            replacesLastTurn: request.ReplaceLastTurn))
+            replacesLastTurn: request.ReplaceLastTurn,
+            // What open MCP App views told the model (ADR 0133): per turn, untrusted, never stored.
+            appContext: request.AppContext))
         {
             await http.Response.WriteAsync(JsonSerializer.Serialize(evt, ChatStreamJson.Options) + "\n");
             await http.Response.Body.FlushAsync();

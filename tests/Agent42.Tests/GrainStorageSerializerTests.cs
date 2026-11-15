@@ -328,6 +328,43 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal([1, 2], b.Versions.Select(v => v.Version));
     }
 
+    // ADR 0133: [Id(19)] McpApps is the next trailing member of AgentGrainState. The committed golden predates it, so the
+    // key is absent: it must bind to an EMPTY list, not null, because the replay path reads it unguarded.
+    [Fact]
+    public void McpAppsWrittenBefore_FieldExisted_Deserializes()
+    {
+        var restored = Serializer().Deserialize<AgentGrainState>(new BinaryData(StoredAgentGrainStateJson));
+
+        Assert.NotNull(restored.McpApps);
+        Assert.Empty(restored.McpApps);
+    }
+
+    // ADR 0133: the forward direction on the Cosmos JSON path. Two records with different values in every field, so a swap
+    // or a lost JsonIgnore'd AttachmentId (System.Text.Json's attribute must NOT hide it from Cosmos) shows up. The list
+    // is built as a List<T>, the way the grain builds it.
+    [Fact]
+    public void McpApps_RoundTripThroughCosmosJson()
+    {
+        var written = new AgentGrainState
+        {
+            McpApps = new List<McpAppRecord>
+            {
+                new("call-1", "srv-a", "show_chart", "ui://chart/view.html", "blob-1", 100),
+                new("call-2", "srv-b", "show_map", "ui://map/view.html", "blob-2", 200),
+            },
+        };
+
+        var restored = Serializer().Deserialize<AgentGrainState>(Serializer().Serialize(written));
+
+        Assert.Equal(typeof(List<McpAppRecord>), restored.McpApps.GetType());
+        Assert.Equal(["call-1", "call-2"], restored.McpApps.Select(r => r.CallId));
+        Assert.Equal(["srv-a", "srv-b"], restored.McpApps.Select(r => r.ServerId));
+        Assert.Equal(["show_chart", "show_map"], restored.McpApps.Select(r => r.ToolName));
+        Assert.Equal(["ui://chart/view.html", "ui://map/view.html"], restored.McpApps.Select(r => r.ResourceUri));
+        Assert.Equal(["blob-1", "blob-2"], restored.McpApps.Select(r => r.AttachmentId));
+        Assert.Equal([100, 200], restored.McpApps.Select(r => r.SizeBytes));
+    }
+
     // ADR 0110: a usage-rollup document written before TokenBucket.ProviderKind existed reads back with "" (unpriced),
     // and the new field round-trips through the Cosmos JSON path.
     [Fact]
@@ -697,6 +734,24 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
     // AC4 (ADR 0076): [Id(14)] BridgeKeyHash is the third trailing member appended to StoredMcpServer after
     // documents already existed. Same mechanism, same golden: an absent key binds to null, so every existing
     // server reads as having no bridge key — which is also correct, since none of them is LocalBridge.
+    // ADR 0133: [Id(15)] AppsEnabled is the next trailing member of StoredMcpServer. On the Cosmos JSON path an
+    // absent key must bind to false (every stored server reads as apps OFF, no migration), and a written true must
+    // survive the round trip.
+    [Fact]
+    public void StoredMcpServer_AppsEnabled_DefaultsOff_AndRoundTrips()
+    {
+        var old = Serializer().Deserialize<UserMcpConfigState>(new BinaryData(PreKnownToolNamesMcpConfigJson));
+        Assert.False(Assert.Single(old.Config.Servers).AppsEnabled);
+
+        var written = new UserMcpConfigState
+        {
+            Config = new UserMcpConfig(new List<StoredMcpServer> { new("s", "n", "https://e", "None", true, AppsEnabled: true) }, 1),
+        };
+        var restored = Serializer().Deserialize<UserMcpConfigState>(Serializer().Serialize(written));
+
+        Assert.True(Assert.Single(restored.Config.Servers).AppsEnabled);
+    }
+
     [Fact]
     public void StoredMcpServer_WithoutBridgeKeyHash_Deserializes()
     {

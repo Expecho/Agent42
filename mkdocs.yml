@@ -79,6 +79,7 @@ nav:
           - PWA install and sign-in: features/pwa-and-sign-in.md
           - Configuration health: features/configuration-health.md
           - Usage and diagnostics: features/usage-and-diagnostics.md
+          - MCP Apps: features/mcp-apps.md
   - Integration setup:
       - Overview: integrations/README.md
       - Chat apps: integrations/chat-apps/README.md

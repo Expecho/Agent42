@@ -5066,3 +5066,45 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   matching `infra/main.bicep`'s `imageName` defaults or an imported image is not found.
 - **Evidence:** `.github/workflows/publish-images.yml`, `tests/Agent42.Tests/PublishImagesTests.cs`
 - **Verified:** 2026-11-15
+
+### The MCP App frame route's CSP header is the safety, and declared domains are untrusted input
+
+- **Claim:** `/api/mcp-apps/{serverId}/frame` serves third-party HTML on our origin (ADR 0133). The protection is the response
+  header `McpAppCsp` builds (`sandbox allow-scripts`, never `allow-same-origin`; `form-action 'none'`; `'none'`/`data:` and never
+  `'self'`, which matches every same-origin URL), because anyone can open the frame as a top-level page where the iframe attribute
+  does not exist. The narrowest policy is set BEFORE anything can fail, so an error response carries it too. The view's declared
+  `connectDomains`/`resourceDomains`/`frameDomains`/`baseUriDomains` come from a third-party server and are written into that
+  header, so each is parsed (https/wss, no IP literal, no local/internal name, not our own host or a wildcard covering it, no
+  bare TLD, at most 16) and dropped on doubt: a dropped entry narrows the policy and never widens it. Regex `$` matches before a
+  trailing newline; the parser uses `\z`.
+- **Evidence:** `src/Agent42.Backend/Mcp/McpAppCsp.cs`, `src/Agent42.Backend/Mcp/AgentApi.McpApps.cs`, `tests/Agent42.Tests/McpAppCspTests.cs`
+- **Verified:** 2026-11-15
+
+### A view's postMessage origin is `"null"`: authenticate by `event.source`, reply to `"*"`
+
+- **Claim:** The sandboxed frame has an opaque origin, so `event.origin` is the string `"null"` and says nothing. `mcpapps.js`
+  authenticates a message by `event.source === iframe.contentWindow` plus its JSON-RPC shape, and replies with `targetOrigin "*"`
+  (the only value an opaque origin accepts). Send nothing before `ui/notifications/initialized`, send `tool-input` before
+  `tool-result`, and send `ui/resource-teardown` before removing the frame. `ui/open-link` needs `navigator.userActivation.isActive`
+  (a click inside the frame does not reach the page's own listeners).
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/mcpapps.js`, `tests/Agent42.Tests/McpAppsAssetsTests.cs`
+- **Verified:** 2026-11-15
+
+### The model's MCP result and the view's result differ, and the raw one must stay out of the session
+
+- **Claim:** `AIFunction.InvokeAsync` on an `McpClientTool` returns the WHOLE `CallToolResult` as a `JsonElement` when the result
+  has `structuredContent` (measured, SDK 2.2.0), and a `TextContent`/`AIContent[]` otherwise. `TruncatingMcpTool` records the raw
+  result for the browser on the run's `TurnContext` and returns the shaped, bounded value to the model as before; the raw one is
+  capped at 64 KB, rides the stream event and the replay blob, and never the session (ADR 0004). An extension's capability value
+  must be a `JsonElement`: an anonymous object throws `NotSupportedException` from the source-generated context on the first request.
+- **Evidence:** `src/Agent42.Backend/Mcp/McpConnectionFactory.cs` (`TruncatingMcpTool`), `src/Agent42.Backend/Mcp/McpAppResultCapture.cs`, `tests/Agent42.Tests/McpAppsGrainTests.cs`
+- **Verified:** 2026-11-15
+
+### Tool visibility has TWO writers: the provider and the connection tester
+
+- **Claim:** A tool whose `_meta.ui.visibility` lacks `"model"` must be absent from the agent's tools AND from the discovered names,
+  or the picker lists a checkbox the gate never honors. `UserMcpToolProvider.ConnectAllAsync` and `McpConnectionTester.TestAsync` both
+  write tool names, so both call `McpAppMeta.ModelTools`. With apps off nothing is filtered. A view's own `tools/call` is a third
+  reader: it goes through `McpAppRegistry`, which accepts only tools visible to `"app"` on the route's server.
+- **Evidence:** `src/Agent42.Backend/Mcp/McpAppMeta.cs`, `tests/Agent42.Tests/UserMcpToolProviderTests.cs`, `tests/Agent42.Tests/McpConnectionTesterTests.cs`
+- **Verified:** 2026-11-15

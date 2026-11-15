@@ -101,7 +101,44 @@ public sealed class TurnContext
         }
     }
 
+    /// <summary>
+    /// Whether the browser streaming this run can render MCP App views (ADR 0133): an interactive run whose request
+    /// advertised <see cref="ClientToolLimits.McpApp"/>. False until set and always false when closed, so every other
+    /// run (reminder, agent-run, email, chat gateway, fleet, a browser without the capability) stays text-only.
+    /// </summary>
+    public bool AppsSupported { get; private set; }
+
+    /// <summary>
+    /// What the open MCP App views asked the model to know this turn (<c>ui/update-model-context</c>, ADR 0133), as JSON
+    /// text the browser sent with the request, or null. Untrusted third-party text: <c>AppContextProvider</c> shows it as
+    /// a labeled trailing message, and it is never persisted. Per run, never a grain field (ADR 0106).
+    /// </summary>
+    public string? AppContext { get; private set; }
+
+    /// <summary>Applies the browser's app context, bounded. Ignored when closed or when over <see cref="McpToolLimits.MaxAppContextChars"/>.</summary>
+    public void SetAppContext(string? context)
+    {
+        if (!IsClosed && !string.IsNullOrWhiteSpace(context) && context.Length <= McpToolLimits.MaxAppContextChars)
+        {
+            AppContext = context;
+        }
+    }
+
+    /// <summary>The MCP App results recorded so far on this run, with their call ids, in call order (replay persists these).</summary>
+    public IReadOnlyList<(string CallId, McpAppResult Result)> AppResults
+    {
+        get
+        {
+            lock (_imagesLock)
+            {
+                return [.. _appResults.Select(kv => (kv.Key, kv.Value))];
+            }
+        }
+    }
+
     private int _pushes;
+
+    private readonly Dictionary<string, McpAppResult> _appResults = new(StringComparer.Ordinal);
 
     private readonly Lock _imagesLock = new();
 
@@ -139,6 +176,55 @@ public sealed class TurnContext
         }
 
         return true;
+    }
+
+    /// <summary>Applies the browser's MCP App capability. Ignored when closed or not interactive.</summary>
+    public void SetAppsSupported(bool supported)
+    {
+        if (!IsClosed && Interactive)
+        {
+            AppsSupported = supported;
+        }
+    }
+
+    /// <summary>
+    /// Records the raw result of an MCP App tool call so the stream can hand it to the browser (ADR 0133). Refused
+    /// (false) when closed, when the browser cannot render apps, without a call id, or when the result is over
+    /// <see cref="McpToolLimits.MaxAppResultBytes"/>: the card then degrades to the plain tool chip. At most
+    /// <see cref="McpToolLimits.MaxAppResultsPerRun"/> are kept per run.
+    /// </summary>
+    public bool RecordAppResult(string? callId, McpAppResult result)
+    {
+        if (IsClosed || !AppsSupported || string.IsNullOrEmpty(callId) || result.ResultJson.Length > McpToolLimits.MaxAppResultBytes)
+        {
+            return false;
+        }
+
+        lock (_imagesLock)
+        {
+            if (_appResults.Count >= McpToolLimits.MaxAppResultsPerRun && !_appResults.ContainsKey(callId))
+            {
+                return false;
+            }
+
+            _appResults[callId] = result;
+        }
+
+        return true;
+    }
+
+    /// <summary>The recorded app result for <paramref name="callId"/>, or null.</summary>
+    public McpAppResult? AppResultFor(string? callId)
+    {
+        if (string.IsNullOrEmpty(callId))
+        {
+            return null;
+        }
+
+        lock (_imagesLock)
+        {
+            return _appResults.GetValueOrDefault(callId);
+        }
     }
 
     /// <summary>The images still kept for <paramref name="callId"/>, in the order they were recorded.</summary>

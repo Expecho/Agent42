@@ -5,9 +5,11 @@ import { clearSharedState } from "./sharedstate.js";
 import { chatScroll, emptyState, thread } from "./dom.js";
 import { formatCost, linkifyPlainText, renderMarkdown } from "./format.js";
 import { mcpOAuthStartUrl } from "./mcp.js";
+import { teardownAppCards } from "./mcpapps.js";
 import { send, streaming } from "./send.js";
 
 export function clearThread() {
+  teardownAppCards(); // MCP App views are told before their frames go (ADR 0133)
   thread.querySelectorAll(".msg").forEach((el) => el.remove());
   closeArtifactPane(); // every chat switch and new chat clears the thread, and the pane belongs to the old one
   clearSharedState(); // ...and so does the shared-state panel (ADR 0089); selectConversation loads the new one

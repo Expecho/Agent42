@@ -9,6 +9,7 @@ import { autosize } from "./composer.js";
 import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./conversations.js";
 import { form, incognitoBtn, input, modelSelect, stopBtn, thread } from "./dom.js";
 import { syncMessageActions } from "./editfork.js";
+import { cancelAppCards, getAppContext, renderMcpAppCard, renderMcpAppCards } from "./mcpapps.js";
 import { watchMcpReconnect } from "./mcp.js";
 import { renderResearchTodos } from "./research.js";
 import { applyModelAvailability } from "./models.js";
@@ -123,6 +124,7 @@ async function recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)
       replayToolCalls(agentMsg, last.toolCalls);
       // ...and the artifact cards, de-duped per artifact version like the chips.
       renderArtifactCards(agentMsg, convId, last.artifacts);
+      renderMcpAppCards(agentMsg, convId, last.toolCalls);
       cachePut("messages:" + convId, turns); // keep the offline mirror in step (ADR 0032)
       return true;
     }
@@ -216,6 +218,8 @@ export async function send(prompt, replay = null) {
   let stopped = false;
   // toolCallEnd carries no tool name, and an artifact card needs it (read_artifact's result looks the same).
   const toolNames = new Map();
+  // The tool input a live MCP App card is fed (ADR 0133); toolCallEnd does not repeat it.
+  const toolInputs = new Map();
   try {
     // In an agent chat the model is pinned server-side, so never send a model (it would
     // switch the conversation off the agent's model). agentId is sent only on the first
@@ -240,6 +244,8 @@ export async function send(prompt, replay = null) {
         // The client tools this page can run (ADR 0089). The server defines them and intersects this list with its
         // own; a call to one the page did not list answers "unavailable" without reaching it.
         clientTools: CLIENT_TOOLS,
+        // What the open MCP App views asked the assistant to know (ADR 0133), or null. Untrusted; used for this turn only.
+        appContext: getAppContext(convId),
         // Edit and regenerate (ADR 0092): replace the last exchange, if the history is still the one read.
         replaceLastTurn: replay?.replaceLastTurn ?? false,
         expectedUserTurnCount: replay?.expectedUserTurnCount ?? null,
@@ -275,6 +281,7 @@ export async function send(prompt, replay = null) {
           renderReasoning(agentMsg, chunk.text);
         } else if (chunk.type === "toolCallStart") {
           toolNames.set(chunk.toolCallId, chunk.toolName);
+          toolInputs.set(chunk.toolCallId, chunk.toolInput);
           addToolCall(agentMsg, chunk);
           // A tool this page runs (ADR 0089). Not awaited: the reader must keep reading while a dialog is open.
           if (chunk.clientTool) runClientTool(convId, chunk);
@@ -285,6 +292,13 @@ export async function send(prompt, replay = null) {
         } else if (chunk.type === "toolCallEnd") {
           completeToolCall(agentMsg, chunk);
           artifactCardFromToolCall(agentMsg, convId, toolNames.get(chunk.toolCallId), chunk.toolResult);
+          // An MCP App tool (ADR 0133): the view and the tool's raw result, live and active at once.
+          if (chunk.mcpApp) {
+            renderMcpAppCard(agentMsg, convId, {
+              toolCallId: chunk.toolCallId, toolInput: toolInputs.get(chunk.toolCallId),
+              app: chunk.mcpApp.app, resultJson: chunk.mcpApp.resultJson,
+            }, { live: true });
+          }
         } else if (chunk.type === "image") {
           // An image-generation model produced an image (ADR 0020): render it live in the assistant
           // bubble via the display proxy, exactly like it will re-render on reload.
@@ -321,7 +335,10 @@ export async function send(prompt, replay = null) {
           showUsage(agentMsg, chunk);
           // The SERVER decides whether this turn counts as stopped (ADR 0078), not the click: a press that
           // lands as the last token goes out stopped nothing, and labelling that turn would be a lie.
-          if (chunk.stopped) stopped = true;
+          if (chunk.stopped) {
+            stopped = true;
+            cancelAppCards();
+          }
         }
       }
     }

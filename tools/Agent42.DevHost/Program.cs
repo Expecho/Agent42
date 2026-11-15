@@ -75,6 +75,9 @@ AITool[] offlineMcpTools =
 [
     AIFunctionFactory.Create(() => "ok", "demo_search", "a demo MCP search tool"),
     AIFunctionFactory.Create(() => "ok", "demo_delete", "a demo MCP delete tool"),
+    // The MCP App fixture (ADR 0133): a model-visible tool that declares a ui:// view. The app-only tool it pairs with
+    // is reachable only through the registry below, never listed here, exactly as the real provider filters it.
+    DemoMcpApp.Tool(SingleUserMcpToolProvider.DefaultServerId),
     AIFunctionFactory.Create(
         (string filter) => "{\"links\":[{\"text\":\"the offline whitepaper\",\"href\":\"https://demo.invalid/whitepaper.pdf\"}]}",
         "demo_find_links",
@@ -95,6 +98,10 @@ builder.Services.AddSingleton<IUserMcpToolProvider>(new SingleUserMcpToolProvide
             SeedsFetchableUrls: true),
     ],
 });
+// The registry the MCP App routes resolve (ADR 0133), over the fixture view instead of a live connection.
+builder.Services.AddSingleton<IMcpAppRegistry>(sp => new McpAppRegistry(
+    new DemoMcpApp.HandleSource(SingleUserMcpToolProvider.DefaultServerId),
+    sp.GetRequiredService<ILogger<McpAppRegistry>>()));
 builder.Services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
 
 builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel,
@@ -301,7 +308,8 @@ await mcpConfig.SaveAsync(new StoredMcpServer(
     Endpoint: "https://demo.invalid/mcp",
     Auth: nameof(McpAuthMode.None),
     Enabled: true,
-    KnownToolNames: ["demo_search", "demo_delete", "demo_find_links"],
+    KnownToolNames: ["demo_search", "demo_delete", DemoMcpApp.ToolName, "demo_find_links"],
+    AppsEnabled: true,
     // Matches the provider group above (ADR 0067). Both halves again: the provider's flag is what
     // BuildAgent reads, this one is what the MCP dialog renders — a mismatch would show an unticked box
     // over a seeding server.

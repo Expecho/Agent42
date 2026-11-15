@@ -463,6 +463,89 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
         Assert.Equal(["tool_a"], group.KnownToolNames);
     }
 
+    // AC2 (ADR 0133): with apps on, a tool whose visibility lacks "model" is absent from the tools AND from the
+    // discovered names (picker and gate agree), while the model-visible tool stays.
+    [Fact]
+    public async Task AppOnlyTool_IsHiddenFromToolsAndDiscoveredNames_WhenAppsEnabled()
+    {
+        const string user = "mcp-tp-apps-visibility";
+        await Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user).SaveAsync(HeaderServer("a") with { AppsEnabled = true });
+        _connections.ToolsFor = _ => [AIFunctionFactory.Create(() => "ok", "show"), AIFunctionFactory.Create(() => "ok", "refresh")];
+        _connections.AppToolsFor = _ => new Dictionary<string, McpAppToolMeta>
+        {
+            ["show"] = new("ui://a/view.html", ["model", "app"]),
+            ["refresh"] = new("ui://a/view.html", ["app"]),
+        };
+
+        var set = await NewProvider().GetForUserAsync(user);
+
+        var group = Assert.Single(set.Servers);
+        Assert.Equal(["show"], group.Tools.Select(t => t.Name));
+        Assert.Equal(["show"], group.KnownToolNames);
+    }
+
+    // AC19 (ADR 0133): a fresh provider has no cache (a restart, or a config save), yet the registry's handle lookup
+    // connects on demand through the same path as an activation, once, and reuses that connection afterwards.
+    [Fact]
+    public async Task AppHandle_ConnectsOnDemand_OnACacheMiss_AndThenReuses()
+    {
+        const string user = "mcp-tp-apps-ondemand";
+        await Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user).SaveAsync(HeaderServer("a") with { AppsEnabled = true });
+        _connections.AppClient = new NullAppClient();
+        _connections.AppToolsFor = _ => new Dictionary<string, McpAppToolMeta> { ["tool_a"] = new("ui://a/v", ["model", "app"]) };
+        var provider = NewProvider();
+
+        var handle = await provider.GetAppHandleAsync(user, "a", default);
+
+        Assert.NotNull(handle);
+        Assert.Contains("tool_a", handle.ToolNames);
+        Assert.Equal(1, _connections.ConnectCount);
+        Assert.Same(handle, await provider.GetAppHandleAsync(user, "a", default));
+        Assert.Equal(1, _connections.ConnectCount);
+    }
+
+    // Fail closed: an unknown server, a disabled one and one with apps off all yield no handle.
+    [Fact]
+    public async Task AppHandle_IsNull_ForUnknownDisabledAndAppsOffServers()
+    {
+        const string user = "mcp-tp-apps-closed";
+        var grain = Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user);
+        await grain.SaveAsync(HeaderServer("off"));
+        await grain.SaveAsync(HeaderServer("disabled") with { AppsEnabled = true, Enabled = false });
+        _connections.AppClient = new NullAppClient();
+        var provider = NewProvider();
+
+        Assert.Null(await provider.GetAppHandleAsync(user, "off", default));
+        Assert.Null(await provider.GetAppHandleAsync(user, "disabled", default));
+        Assert.Null(await provider.GetAppHandleAsync(user, "missing", default));
+    }
+
+    private sealed class NullAppClient : IMcpAppClient
+    {
+        public Task<McpAppResource> ReadResourceAsync(string uri, CancellationToken cancellationToken)
+            => Task.FromResult(new McpAppResource(null, null, null));
+
+        public Task<System.Text.Json.JsonElement> CallToolAsync(
+            string toolName, System.Text.Json.JsonElement? arguments, CancellationToken cancellationToken)
+            => Task.FromResult(default(System.Text.Json.JsonElement));
+    }
+
+    // The default for a stored server is OFF (ADR 0133, cross-cutting 13): nothing is filtered or carried, so a
+    // server that exists today behaves exactly as before.
+    [Fact]
+    public async Task AppsOff_FiltersNothing_AndCarriesNoApps()
+    {
+        const string user = "mcp-tp-apps-off";
+        await Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user).SaveAsync(HeaderServer("a"));
+        Assert.False(Assert.Single((await Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user).GetAsync()).Servers).AppsEnabled);
+        _connections.ToolsFor = _ => [AIFunctionFactory.Create(() => "ok", "refresh")];
+        _connections.AppToolsFor = _ => new Dictionary<string, McpAppToolMeta> { ["refresh"] = new("ui://a/v", ["app"]) };
+
+        var group = Assert.Single((await NewProvider().GetForUserAsync(user)).Servers);
+
+        Assert.Equal(["refresh"], group.Tools.Select(t => t.Name));
+    }
+
     private sealed class FakeMcpConnectionFactory : IMcpConnectionFactory
     {
         public HashSet<string> DeadServerIds { get; } = new(StringComparer.Ordinal);
@@ -474,6 +557,8 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
         public int ConnectCount { get; private set; }
         public TrackingDisposable? LastDisposable { get; private set; }
         public McpElicitationRouter? Router { get; set; }
+        public IMcpAppClient? AppClient { get; set; }
+        public Func<StoredMcpServer, IReadOnlyDictionary<string, McpAppToolMeta>?> AppToolsFor { get; set; } = _ => null;
 
         public async Task<McpServerConnection> ConnectAsync(
             StoredMcpServer server, McpConnectionSecrets secrets, CancellationToken cancellationToken)
@@ -491,7 +576,7 @@ public sealed class UserMcpToolProviderTests(SharedClusterFixture fixture) : Sha
             }
 
             LastDisposable = new TrackingDisposable();
-            return new McpServerConnection(ToolsFor(server), LastDisposable, Router);
+            return new McpServerConnection(ToolsFor(server), LastDisposable, Router, AppClient, AppToolsFor(server));
         }
     }
 

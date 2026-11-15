@@ -14,7 +14,8 @@ namespace Agent42.Backend;
 public record ChatRequest(
     string Message, string? Model, string? AgentId = null, IReadOnlyList<string>? AttachmentIds = null,
     bool Ephemeral = false, IReadOnlyList<string>? ClientTools = null,
-    bool ReplaceLastTurn = false, int? ExpectedUserTurnCount = null, string? ExpectedLastUserTextHash = null);
+    bool ReplaceLastTurn = false, int? ExpectedUserTurnCount = null, string? ExpectedLastUserTextHash = null,
+    string? AppContext = null);
 
 // Fork from here (ADR 0092): copy the conversation through the exchange that starts at projected user turn
 // ThroughUserTurn (0-based) into a new conversation. Same concurrency token as ChatRequest.ReplaceLastTurn.

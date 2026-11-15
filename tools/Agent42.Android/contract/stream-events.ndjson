@@ -1,6 +1,6 @@
 {"type":"textDelta","text":"Hello"}
 {"type":"toolCallStart","toolName":"get_current_location","toolCallId":"call_1","toolInput":"{}","clientTool":true}
-{"type":"toolCallEnd","toolName":"web_search","toolCallId":"call_2","toolResult":"3 results"}
+{"type":"toolCallEnd","toolName":"web_search","toolCallId":"call_2","toolResult":"3 results","mcpApp":{"app":{"serverId":"srv_1","toolName":"show_chart","resourceUri":"ui://chart/view.html"},"resultJson":"{}"}}
 {"type":"image","attachmentId":"att_1","mediaType":"image/png"}
 {"type":"done","inputTokens":120,"outputTokens":45,"cachedTokens":100,"stopped":true,"cacheWriteTokens":20,"costUsd":0.0012,"costStatus":"priced"}
 {"type":"suggestions","suggestions":["Tell me more","Thanks"]}

@@ -1004,6 +1004,12 @@
       </label>
       <p class="agent-form__note">Off by default. When on, a link this server returns can be read as a document without you pasting it back. Only turn it on for a server you trust: the links it returns come from whatever page it read, not from you.</p>
 
+      <label class="agent-form__field agent-form__field--check">
+        <input class="agent-form__checkbox" type="checkbox" id="mcpAppsEnabled" />
+        <span class="agent-form__label">// show this server's interactive apps</span>
+      </label>
+      <p class="agent-form__note">When on, a tool of this server that ships an interactive view shows it in the chat. The view is third-party code in a sandboxed frame; it can call this server's tools, and it can reach the web addresses the server declares for it. It can message the assistant or tell it things only after you confirm. New servers start with this on; existing ones keep it off until you tick it.</p>
+
       <label class="agent-form__field">
         <span class="agent-form__label">// auth</span>
         <select class="agent-form__input agent-form__select" id="mcpAuth">

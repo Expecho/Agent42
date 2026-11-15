@@ -29,6 +29,25 @@ public static class McpToolLimits
     /// <summary>Largest decoded image an MCP tool may show the model. A bigger one is dropped with a note.</summary>
     public const int MaxImageBytes = 1024 * 1024;
 
+    /// <summary>
+    /// The most of an MCP App tool's RAW result (JSON text) that travels to the browser and into the replay blob
+    /// (ADR 0133). Over it the call renders no view and shows the plain tool chip, rather than a truncated result a
+    /// view could misread as complete.
+    /// </summary>
+    public const int MaxAppResultBytes = 64 * 1024;
+
+    /// <summary>The most app-supplied context (<c>ui/update-model-context</c>) a chat request may carry (ADR 0133).</summary>
+    public const int MaxAppContextChars = 16 * 1024;
+
+    /// <summary>App results one run keeps for the browser (ADR 0133).</summary>
+    public const int MaxAppResultsPerRun = 20;
+
+    /// <summary>
+    /// Stored app calls one conversation keeps for replay (ADR 0133). Past it the OLDEST record is dropped and that card
+    /// degrades to the plain tool chip.
+    /// </summary>
+    public const int MaxAppsPerConversation = 20;
+
     /// <summary>The image types shown to the model, each checked against its magic bytes. Anything else is dropped.</summary>
     public static readonly IReadOnlySet<string> ImageMediaTypes =
         new HashSet<string>(["image/png", "image/jpeg", "image/webp", "image/gif"], StringComparer.OrdinalIgnoreCase);

@@ -14,7 +14,7 @@ public record McpServerUpsertRequest(
     string Name, string? Endpoint, string Auth, bool Enabled,
     string? HeaderName = null, string? HeaderValue = null,
     string? Authority = null, string? ClientId = null, string? ClientSecret = null,
-    IReadOnlyList<string>? Scopes = null, bool SeedsFetchableUrls = false);
+    IReadOnlyList<string>? Scopes = null, bool SeedsFetchableUrls = false, bool AppsEnabled = false);
 
 // What GET/POST/PUT return for an MCP server: everything EXCEPT the secrets, which are masked to
 // HasHeaderValue/HasClientSecret so no ciphertext (or plaintext) reaches the client. Authority/ClientId/
@@ -27,7 +27,7 @@ public record McpServerResponse(
     string Id, string Name, string Endpoint, string Auth, bool Enabled, string? HeaderName, bool HasHeaderValue,
     string? Authority = null, string? ClientId = null, IReadOnlyList<string>? Scopes = null, bool HasClientSecret = false,
     bool HasToken = false, bool SeedsFetchableUrls = false, bool HasBridgeKey = false, string? BridgeKey = null,
-    bool NeedsReauth = false);
+    bool NeedsReauth = false, bool AppsEnabled = false);
 
 // The GET /api/mcp-servers payload: the user's overlay servers (masked).
 public record McpServersResponse(IReadOnlyList<McpServerResponse> Servers);

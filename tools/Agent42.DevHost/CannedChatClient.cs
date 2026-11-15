@@ -332,7 +332,7 @@ public sealed partial class CannedChatClient : IChatClient
             return BuildPushCall(null);
         }
 
-        if (ArtifactCall(list, lastUserIndex, text, options) is { } artifact)
+        if ((ArtifactCall(list, lastUserIndex, text, options) ?? AppCall(text, options)) is { } artifact)
         {
             return artifact;
         }
@@ -377,6 +377,9 @@ public sealed partial class CannedChatClient : IChatClient
     /// <summary>Creates a small HTML artifact that demonstrates the sandbox (a canvas, and a fetch that fails).</summary>
     public const string ArtifactTrigger = "make an artifact";
 
+    /// <summary>Calls the demo MCP App tool, which renders an interactive view (ADR 0133).</summary>
+    public const string AppTrigger = "show the chart app";
+
     /// <summary>Updates the most recent artifact in this chat to a second version.</summary>
     public const string ArtifactUpdateTrigger = "update the artifact";
 
@@ -385,6 +388,13 @@ public sealed partial class CannedChatClient : IChatClient
 
     /// <summary>Creates a code artifact whose source contains a triple-backtick run.</summary>
     public const string CodeArtifactTrigger = "make a code artifact";
+
+    // The MCP App fixture (ADR 0133): one call to the demo tool that declares a view. Extracted to keep SelectToolCall
+    // under S3776, and chained onto the artifact check with `??`, which the metric does not charge.
+    private static FunctionCallContent? AppCall(string text, ChatOptions? options)
+        => text.Contains(AppTrigger, StringComparison.OrdinalIgnoreCase) && options?.Tools?.Any(t => t.Name == "demo_show_app") is true
+            ? new("canned-app-call", "demo_show_app", new Dictionary<string, object?> { ["topic"] = "sales" })
+            : null;
 
     // The artifact tools, offline. Worded to collide with nothing else here (no "cancel", "remind" or "look up"), and
     // extracted so SelectToolCall stays under S3776. Like FakeChatClient: no call for a tool the model was not given.

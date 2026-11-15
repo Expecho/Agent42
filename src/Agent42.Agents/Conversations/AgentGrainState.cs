@@ -245,6 +245,15 @@ public sealed class AgentGrainState
     public Dictionary<string, ArtifactRecord> Artifacts { get; set; } = [];
 
     /// <summary>
+    /// The MCP App calls this conversation can replay (ADR 0133), oldest first: which view each tool call rendered and
+    /// the blob holding its raw result. Written at the end-of-turn persist, never by the tool, and pruned wherever the
+    /// session loses a turn. Trailing <c>[Id(19)]</c> on a <see cref="List{T}"/> (never an <c>IReadOnlyList</c>, where a
+    /// collection expression breaks the Cosmos JSON path), so old state reads as empty with no migration.
+    /// </summary>
+    [Id(19)]
+    public List<McpAppRecord> McpApps { get; set; } = [];
+
+    /// <summary>
     /// The conversation's shared agent↔UI state (ADR 0089): one JSON object, stored as TEXT, or null when the
     /// conversation has none. A string rather than a <c>JsonNode</c>: Orleans cannot serialize a <c>JsonNode</c>,
     /// and a string round-trips through the Cosmos <c>$type</c> JSON unchanged. Capped by

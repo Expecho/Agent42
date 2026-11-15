@@ -27,7 +27,8 @@ import { profile, wireProfile } from "./profile.js";
 import { initGitHubSignInReturn, loadProviders, wireProviders } from "./providers.js";
 import { initPush } from "./push.js";
 import { wirePwa } from "./pwa.js";
-import { wireSend } from "./send.js";
+import { configureMcpApps } from "./mcpapps.js";
+import { send, streaming, wireSend } from "./send.js";
 import { wireSharedState } from "./sharedstate.js";
 import { setTopbarShare, wireShareLinks } from "./sharelinks.js";
 import { initShare } from "./sharetarget.js";
@@ -78,6 +79,8 @@ wireSearch();
 wireGroups();
 wireDrawer();
 wireSend();
+// MCP App views can ask for a user turn (ADR 0133); the host module cannot import send.js, so it is handed these here.
+configureMcpApps({ isStreaming: () => streaming, send });
 wireEditFork();
 wireClientTools();
 wireElicitation();

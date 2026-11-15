@@ -42,7 +42,8 @@ public sealed class AndroidStreamContractTests
             AgentStreamEventType.ToolCallStart => new AgentStreamEvent(
                 type, ToolName: "get_current_location", ToolCallId: "call_1", ToolInput: "{}", ClientTool: true),
             AgentStreamEventType.ToolCallEnd => new AgentStreamEvent(
-                type, ToolName: "web_search", ToolCallId: "call_2", ToolResult: "3 results"),
+                type, ToolName: "web_search", ToolCallId: "call_2", ToolResult: "3 results",
+                McpApp: new McpAppResult(new McpAppRef("srv_1", "show_chart", "ui://chart/view.html"), "{}")),
             AgentStreamEventType.Image => new AgentStreamEvent(type, AttachmentId: "att_1", MediaType: "image/png"),
             AgentStreamEventType.Done => new AgentStreamEvent(
                 type, InputTokens: 120, OutputTokens: 45, CachedTokens: 100, Stopped: true,

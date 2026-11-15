@@ -213,7 +213,9 @@ public static partial class AgentApi
             // The one field that is a SETTING rather than a secret or discovered metadata (ADR 0067), so it
             // must ride the request: the grain has no Keep clause for it, which is what lets a user turn
             // seeding back OFF. Adding one there would make the opt-in one-way.
-            SeedsFetchableUrls: request.SeedsFetchableUrls);
+            SeedsFetchableUrls: request.SeedsFetchableUrls,
+            // A SETTING like the line above (ADR 0133): it rides the request and the grain has no Keep clause for it.
+            AppsEnabled: request.AppsEnabled);
     }
 
     // Never returns a secret — only whether one is stored. Authority/clientId/scopes are non-secret and are
@@ -234,6 +236,7 @@ public static partial class AgentApi
             SeedsFetchableUrls: s.SeedsFetchableUrls,
             HasBridgeKey: !string.IsNullOrEmpty(s.BridgeKeyHash),
             BridgeKey: bridgeKey,
+            AppsEnabled: s.AppsEnabled,
             NeedsReauth: s.Auth == nameof(McpAuthMode.InteractiveOAuth)
                 && McpOAuthTokens.Deserialize(protector.Unprotect(s.TokenCiphertext))?.RequiresReauth(DateTimeOffset.UtcNow) == true);
 

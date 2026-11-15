@@ -157,4 +157,8 @@ public sealed record AgentStreamEvent(
     // Set on the Done event (ADR 0110): the turn's estimated USD cost from the checked-in price table, and its
     // CostStatus string. Cost is null unless priced; the status is null when the turn reported no usage at all.
     [property: Id(20)] decimal? CostUsd = null,
-    [property: Id(21)] string? CostStatus = null);
+    [property: Id(21)] string? CostStatus = null,
+    // Set on a ToolCallEnd of an MCP App tool (ADR 0133): the view to render and the tool's raw result. Live-only on
+    // the stream (replay reads it back from the stored blob), null elsewhere so the NDJSON writer omits it. Trailing
+    // default so every existing construction keeps compiling.
+    [property: Id(22)] McpAppResult? McpApp = null);

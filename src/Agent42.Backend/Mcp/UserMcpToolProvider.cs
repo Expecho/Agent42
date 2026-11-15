@@ -21,7 +21,7 @@ namespace Agent42.Backend;
 /// recent <see cref="RetainedVersionsPerUser"/> versions per user and disposes older ones on eviction — a
 /// grain on an evicted version sees a disposed client as a skipped tool (tolerated).</para>
 /// </summary>
-public sealed class UserMcpToolProvider : IUserMcpToolProvider
+public sealed class UserMcpToolProvider : IUserMcpToolProvider, IMcpAppHandleSource
 {
     // Retain the current version plus one prior, so a grain still on the previous version keeps working
     // until it too is evicted. Bounds the open-connection count to N per user with a config change.
@@ -69,10 +69,10 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             }
 
             var config = await _grains.GetGrain<IUserMcpConfigGrain>(userId).GetAsync();
-            var (servers, connections) = await ConnectAllAsync(userId, config, cancellationToken);
+            var (servers, connections, handles) = await ConnectAllAsync(userId, config, cancellationToken);
             var set = new McpToolSet(servers, version);
 
-            cache.Store(version, set, connections);
+            cache.Store(version, set, connections, handles);
             await cache.EvictBeyondAsync(RetainedVersionsPerUser, _logger);
             return set;
         }
@@ -82,11 +82,24 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
         }
     }
 
-    private async Task<(IReadOnlyList<McpServerTools> Servers, List<IAsyncDisposable> Connections)> ConnectAllAsync(
+    /// <summary>
+    /// The live MCP Apps handle for one of the user's servers (ADR 0133), connecting on demand. It goes through
+    /// <see cref="GetForUserAsync"/> on purpose: a cache miss (restart, config save) uses the same bounded, capped
+    /// <c>ConnectAllAsync</c> a chat activation does and fills the same cache, so there is never a second socket.
+    /// Null when the server is unknown, disabled, has apps off, or could not be reached.
+    /// </summary>
+    public async Task<McpAppHandle?> GetAppHandleAsync(string userId, string serverId, CancellationToken cancellationToken)
+    {
+        var set = await GetForUserAsync(userId, cancellationToken);
+        return _caches.TryGetValue(userId, out var cache) ? cache.TryGetHandle(set.Version, serverId) : null;
+    }
+
+    private async Task<(IReadOnlyList<McpServerTools> Servers, List<IAsyncDisposable> Connections, Dictionary<string, McpAppHandle> Handles)> ConnectAllAsync(
         string userId, UserMcpConfig config, CancellationToken cancellationToken)
     {
         var servers = new List<McpServerTools>();
         var connections = new List<IAsyncDisposable>();
+        var handles = new Dictionary<string, McpAppHandle>(StringComparer.Ordinal);
 
         foreach (var server in config.Servers.Where(s => s.Enabled))
         {
@@ -136,7 +149,10 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             {
                 var connection = await _connectionFactory.ConnectAsync(server, secrets, timeout.Token);
                 // Wrap each tool so its persisted result is bounded (ADR 0004), preserving name + schema.
-                var tools = connection.Tools.Select(WrapForTruncation).ToList();
+                // An app-only tool (ADR 0133) is dropped here, at the one chokepoint, BEFORE the names are derived, so
+                // the model, the picker and the gate all see the same list. McpConnectionTester applies the same rule.
+                var apps = McpAppMeta.AppRefs(server, connection);
+                var tools = McpAppMeta.ModelTools(server, connection).Select(t => WrapForTruncation(t, apps)).ToList();
 
                 // Names are learned on a SUCCESSFUL connect. This is one of TWO writers — McpConnectionTester
                 // (the user-pressed POST /api/mcp-servers/{id}/test) records them too, and the two must agree.
@@ -157,6 +173,7 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
                     server.Id, tools, discovered, server.SeedsFetchableUrls, server.Name,
                     InteractiveOAuth: oauthBearer is not null, Elicitation: connection.Elicitation));
                 connections.Add(connection.Connection);
+                AddAppHandle(handles, server, connection);
             }
             catch (LocalBridgeNotConnectedException)
             {
@@ -178,7 +195,16 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             }
         }
 
-        return (servers, connections);
+        return (servers, connections, handles);
+    }
+
+    // Kept out of ConnectAllAsync: that loop is already at the S3776 ceiling (ADR 0051).
+    private static void AddAppHandle(Dictionary<string, McpAppHandle> handles, StoredMcpServer server, McpServerConnection connection)
+    {
+        if (McpAppMeta.Handle(server, connection) is { } handle)
+        {
+            handles[server.Id] = handle;
+        }
     }
 
     private const string ReauthSkipReason = "OAuth authorization expired; reconnect needed";
@@ -224,8 +250,8 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
 
     // An MCP tool is an AIFunction (Step 0 spike), so it can be truncation-wrapped; anything else (there is
     // none today) passes through unchanged.
-    private static AITool WrapForTruncation(AITool tool) =>
-        tool is AIFunction fn ? new TruncatingMcpTool(fn) : tool;
+    private static AITool WrapForTruncation(AITool tool, IReadOnlyDictionary<string, McpAppRef>? apps) =>
+        tool is AIFunction fn ? new TruncatingMcpTool(fn, apps?.GetValueOrDefault(fn.Name)) : tool;
 
     /// <summary>Per-user cache of the most recent versions' tool sets and their live connections.</summary>
     private sealed class UserCache
@@ -250,10 +276,23 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             return false;
         }
 
-        public void Store(int version, McpToolSet set, List<IAsyncDisposable> connections)
+        public void Store(int version, McpToolSet set, List<IAsyncDisposable> connections, Dictionary<string, McpAppHandle> handles)
         {
             _entries.RemoveAll(e => e.Version == version);
-            _entries.Add(new Entry(version, set, connections));
+            _entries.Add(new Entry(version, set, connections, handles));
+        }
+
+        public McpAppHandle? TryGetHandle(int version, string serverId)
+        {
+            foreach (var e in _entries)
+            {
+                if (e.Version == version)
+                {
+                    return e.Handles.GetValueOrDefault(serverId);
+                }
+            }
+
+            return null;
         }
 
         public async Task EvictBeyondAsync(int retain, ILogger logger)
@@ -276,6 +315,7 @@ public sealed class UserMcpToolProvider : IUserMcpToolProvider
             }
         }
 
-        private sealed record Entry(int Version, McpToolSet Set, List<IAsyncDisposable> Connections);
+        private sealed record Entry(
+            int Version, McpToolSet Set, List<IAsyncDisposable> Connections, Dictionary<string, McpAppHandle> Handles);
     }
 }

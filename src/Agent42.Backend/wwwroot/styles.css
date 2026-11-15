@@ -3925,3 +3925,13 @@ body.is-incognito .topbar {
 .agent-webhook__row--failed { color: var(--red); }
 
 .agent-webhook__row--empty { opacity: 0.7; }
+
+/* MCP App cards (ADR 0133): a third-party view in a sandboxed frame, under the tool chip in the bubble. */
+.mcp-app { margin: 0.6rem 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-raised); overflow: hidden; }
+.mcp-app__bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--line-soft); font-size: 0.8rem; color: var(--ink-dim); }
+.mcp-app__title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-app__activate, .mcp-app__mode { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 6px; padding: 0.1rem 0.5rem; cursor: pointer; font: inherit; }
+.mcp-app__activate:hover, .mcp-app__mode:hover { border-color: var(--amber); }
+.mcp-app__frame { display: block; width: 100%; border: 0; background: transparent; color-scheme: normal; }
+.mcp-app--full { position: fixed; inset: 0; z-index: 60; margin: 0; border-radius: 0; display: flex; flex-direction: column; }
+.mcp-app--full .mcp-app__frame { flex: 1; height: auto !important; }

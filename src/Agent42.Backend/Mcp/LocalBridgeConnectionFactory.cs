@@ -53,12 +53,11 @@ public sealed class LocalBridgeConnectionFactory : IMcpConnectionFactory
         // async local reaches the handler (measured on 2.2.0), so elicitations here route exactly.
         var router = new McpElicitationRouter();
         var client = await McpClient.CreateAsync(
-            new ChannelClientTransport(server.Name, channel), McpElicitationClient.Options(router), _loggerFactory, cancellationToken);
+            new ChannelClientTransport(server.Name, channel), McpElicitationClient.Options(router, server.AppsEnabled), _loggerFactory, cancellationToken);
         try
         {
             var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
-            IReadOnlyList<AITool> raw = [.. tools.Cast<AITool>()];
-            return new McpServerConnection(raw, client, router);
+            return McpClientAppClient.Connection(client, tools, router, server);
         }
         catch
         {

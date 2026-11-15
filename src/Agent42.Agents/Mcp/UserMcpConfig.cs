@@ -87,6 +87,16 @@ public enum McpAuthMode
 /// change it — each keeping the global directory in step. Not a <c>?? prev</c> clause: that would make
 /// clearing impossible, since null would mean "keep". Trailing and optional — no migration.
 /// </param>
+/// <param name="AppsEnabled">
+/// Whether Agent42 hosts this server's MCP Apps (SEP-1865, ADR 0133): advertise the
+/// <c>io.modelcontextprotocol/ui</c> extension on connect, hide app-only tools from the model and render a tool's
+/// declared view in a sandboxed frame whose CSP honors the view's declared domains.
+///
+/// <para><b>A SETTING, never metadata</b> — like <see cref="SeedsFetchableUrls"/> it rides the upsert and the grain
+/// must never gain a <c>Keep</c> clause for it, or the user could turn it on and never off again. It <b>defaults off
+/// for every stored server</b> (turning it on widens egress, ADR 0013), while the editor pre-ticks it for a newly
+/// added one. Trailing and optional, so an overlay persisted before it existed deserializes with apps off.</para>
+/// </param>
 [GenerateSerializer]
 [Alias("Agent42.Agents.StoredMcpServer")]
 public sealed record StoredMcpServer(
@@ -110,7 +120,9 @@ public sealed record StoredMcpServer(
     // ── A user SETTING (ADR 0067), not metadata — must not gain a Keep clause ──
     [property: Id(13)] bool SeedsFetchableUrls = false,
     // ── Grain-owned metadata (ADR 0076) — SaveAsync always preserves, never writes ──
-    [property: Id(14)] string? BridgeKeyHash = null);
+    [property: Id(14)] string? BridgeKeyHash = null,
+    // ── A user SETTING (ADR 0133), default off — must not gain a Keep clause ──
+    [property: Id(15)] bool AppsEnabled = false);
 
 /// <summary>
 /// A user's remote-MCP-server overlay: the servers they added and a monotonically-increasing

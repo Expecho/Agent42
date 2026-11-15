@@ -56,6 +56,10 @@ public interface IAgentGrain : IGrainWithStringKey
     /// with <see cref="ClientToolLimits.AdvertisableCapabilities"/>. Only an interactive turn with a non-empty list
     /// gets a broker; every other run answers a client tool "unavailable" and an elicitation <c>cancel</c> at once.
     ///
+    /// <paramref name="appContext"/> is what the browser's open MCP App views asked the model to know (ADR 0133), as JSON
+    /// text: shown to the model as labeled untrusted trailing context for this turn only, allowed on an incognito turn
+    /// (it is never stored), and ignored when over <see cref="McpToolLimits.MaxAppContextChars"/>.
+    ///
     /// <paramref name="replacesLastTurn"/> says this turn re-runs one <see cref="TruncateLastTurnAsync"/> just
     /// removed (ADR 0092), so the outbound webhook event is marked as superseding the previous one (ADR 0094). A
     /// parameter, never a field the truncate sets: the two are separate calls, and a background turn running between
@@ -65,7 +69,7 @@ public interface IAgentGrain : IGrainWithStringKey
     IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
         bool ephemeral = false, bool interactive = true,
-        IReadOnlyList<string>? clientTools = null, bool replacesLastTurn = false);
+        IReadOnlyList<string>? clientTools = null, bool replacesLastTurn = false, string? appContext = null);
 
     /// <summary>
     /// Completes a client tool call or an MCP elicitation (ADR 0095, by its <c>elicit_…</c> id) the interactive turn
@@ -209,6 +213,14 @@ public interface IAgentGrain : IGrainWithStringKey
     /// </summary>
     [Alias("GetArtifactsAsync")]
     Task<IReadOnlyList<ArtifactRecord>> GetArtifactsAsync();
+
+    /// <summary>
+    /// The stored raw result (<c>CallToolResult</c> JSON) of the MCP App call <paramref name="callId"/> of this
+    /// conversation (ADR 0133), or null when there is none: never stored, dropped past the cap, pruned, an incognito turn,
+    /// or a fork. The result route reads it, scoped to the owner by the grain key.
+    /// </summary>
+    [Alias("GetMcpAppResultAsync")]
+    Task<string?> GetMcpAppResultAsync(string callId);
 
     /// <summary>
     /// Re-projects this conversation into the chat search index (ADR 0061) and returns how many

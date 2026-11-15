@@ -317,6 +317,26 @@ public sealed class McpConnectionTesterTests(SharedClusterFixture fixture) : Sha
         Assert.Equal(before, await config.GetVersionAsync());
     }
 
+    // AC2 (ADR 0133): the tester is the second writer of tool names and must apply the provider's visibility rule.
+    [Fact]
+    public async Task AppOnlyTool_IsNotListedByTheTest_WhenAppsEnabled()
+    {
+        const string user = "mcp-test-app-only";
+        await Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user).SaveAsync(HeaderServer("a") with { AppsEnabled = true });
+        _connections.ToolsFor = _ => [AIFunctionFactory.Create(() => "ok", "show"), AIFunctionFactory.Create(() => "ok", "refresh")];
+        _connections.AppToolsFor = _ => new Dictionary<string, McpAppToolMeta>
+        {
+            ["show"] = new(null, ["model"]),
+            ["refresh"] = new("ui://a/v", ["app"]),
+        };
+
+        var outcome = await NewTester().TestAsync(user, "a", CancellationToken.None);
+
+        Assert.Equal(["show"], outcome!.ToolNames);
+        var stored = Assert.Single((await Cluster.GrainFactory.GetGrain<IUserMcpConfigGrain>(user).GetAsync()).Servers);
+        Assert.Equal(["show"], stored.KnownToolNames);
+    }
+
     private sealed class FakeConnectionFactory : IMcpConnectionFactory
     {
         public const string SecretExceptionText = "sensitive-upstream-detail";
@@ -328,6 +348,7 @@ public sealed class McpConnectionTesterTests(SharedClusterFixture fixture) : Sha
         public IAuthHeaderProvider? LastOAuthBearer { get; private set; }
         public int ConnectCount { get; private set; }
         public TrackingDisposable? LastDisposable { get; private set; }
+        public Func<StoredMcpServer, IReadOnlyDictionary<string, McpAppToolMeta>?> AppToolsFor { get; set; } = _ => null;
 
         public async Task<McpServerConnection> ConnectAsync(
             StoredMcpServer server, McpConnectionSecrets secrets, CancellationToken cancellationToken)
@@ -344,7 +365,7 @@ public sealed class McpConnectionTesterTests(SharedClusterFixture fixture) : Sha
             }
 
             LastDisposable = new TrackingDisposable();
-            return new McpServerConnection(ToolsFor(server), LastDisposable);
+            return new McpServerConnection(ToolsFor(server), LastDisposable, null, null, AppToolsFor(server));
         }
     }
 
