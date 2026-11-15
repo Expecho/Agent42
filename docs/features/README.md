@@ -1,90 +1,63 @@
-# Agent42 feature docs
+# Features
 
-Developer documentation for each user-facing feature listed in the top-level
-[README](https://github.com/Expecho/Agent42/blob/main/README.md). Each page describes what the feature is, how **Microsoft Agent
-Framework** and **Orleans** fit in, a flow diagram, and code snippets from the implementation.
-
-> **Two recurring seams to know before reading any page:**
-> - **`AgentGrain`** is the Orleans grain, one per conversation, keyed `{userId}/{conversationId}`.
->   Its state persists to Cosmos (or Postgres when self-hosted, ADR 0127); it implements `IRemindable` for durable reminders.
-> - **`AgentGrain.BuildAgent(modelId)`** is where Orleans state and per-user config become a
->   Microsoft Agent Framework `ChatClientAgent` (tools, context providers, instructions). Almost
->   every feature passes through it. Model/tool/persona changes use the same
->   *snapshot → rebuild → restore-session* dance so history survives.
+What Agent42 can do, from a user's point of view. Pages marked *needs setup* depend on a key or account the person who
+runs your Agent42 provides; Preferences → **Configuration** shows what is on, degraded or off.
 
 ## Chat
 
-| Feature | Page |
+| Feature | What it gives you |
 |---------|------|
-| Streaming replies (NDJSON, live-only events, stop, stream recovery, tool-call folding and replay) | [streaming-replies.md](streaming-replies.md) |
-| Conversation history (sidebar, resume, delete, search, pins, groups, incognito, share links, follow-ups) | [conversation-history.md](conversation-history.md) |
-| Model picker (switch mid-conversation) | [model-picker.md](model-picker.md) |
-| Reasoning output (live-only "thinking") | [reasoning-output.md](reasoning-output.md) |
-| Rich inline rendering (diagrams, code, math, charts) | [rich-rendering.md](rich-rendering.md) |
-| Artifacts (pages, apps, SVG, documents and code in a sandboxed side pane, with versions) | [artifacts.md](artifacts.md) |
-| Voice: dictation, hands-free loop, server-side speech | [voice-and-speech.md](voice-and-speech.md) |
-| Chat apps (your own Telegram bot; more platforms planned) | [chat-apps.md](chat-apps.md) |
+| [Streaming replies](streaming-replies.md) | Answers appear as they are written; stop, and pick up after a dropped connection |
+| [Conversation history](conversation-history.md) | Sidebar, search, pins, groups, incognito chats, share links |
+| [Model picker](model-picker.md) | Switch model mid-conversation |
+| [Reasoning output](reasoning-output.md) | Watch the model think, on models that show it |
+| [Rich inline rendering](rich-rendering.md) | Diagrams, code, math and charts in the answer |
+| [Artifacts](artifacts.md) | Pages, SVG, documents and code in a side pane, with versions |
+| [Voice and speech](voice-and-speech.md) | Dictation and hands-free conversation |
+| [Chat apps](chat-apps.md) | Talk to Agent42 from your own Telegram, Slack or Discord bot |
 
-## Bring your own models
+## Models
 
-| Feature | Page |
+| Feature | What it gives you |
 |---------|------|
-| User-configurable providers, encrypted keys, default model | [bring-your-own-models.md](bring-your-own-models.md) |
+| [Bring your own models](bring-your-own-models.md) | Add your own providers and keys; pick a default |
 
-## Tools the agent can use
+## Tools
 
-| Feature | Page |
+| Feature | What it gives you |
 |---------|------|
-| Web search (`web_search`) | [web-search.md](web-search.md) |
-| Current location | [current-location.md](current-location.md) |
-| Scheduled reminders | [scheduled-reminders.md](scheduled-reminders.md) |
-| Skills (markdown playbooks, per-skill selection, uploads) | [skills.md](skills.md) |
-| Code interpreter (hosted) | [code-interpreter.md](code-interpreter.md) |
-| Choosing which tools an assistant may use | [tool-selection.md](tool-selection.md) |
-| Long-term memory (Hindsight) | [long-term-memory.md](long-term-memory.md) |
+| [Web search](web-search.md) | Current facts, prices and news |
+| [Current location](current-location.md) | "Near me" answers |
+| [Scheduled reminders](scheduled-reminders.md) | Ask for a reminder or a recurring task |
+| [Skills](skills.md) | Reusable playbooks the agent follows |
+| [Code interpreter](code-interpreter.md) | Run code to calculate and analyse |
+| [Tool selection](tool-selection.md) | Choose which tools an assistant may use |
+| [Long-term memory](long-term-memory.md) | Remembers you across chats (*needs setup*) |
+| [Remote MCP servers](remote-mcp-servers.md) | Add your own tools |
+| [MCP Apps](mcp-apps.md) | Interactive views from your MCP tools |
 
-## Files, images & documents
+## Files and images
 
-| Feature | Page |
+| Feature | What it gives you |
 |---------|------|
-| Image attachments (vision) | [image-attachments.md](image-attachments.md) |
-| Document Q&A (RAG, incl. `read_web_document`) | [document-qa.md](document-qa.md) |
-| Image generation | [image-generation.md](image-generation.md) |
+| [Image attachments](image-attachments.md) | Ask about a picture |
+| [Document Q&A](document-qa.md) | Ask questions about your documents |
+| [Image generation](image-generation.md) | Create images from a prompt |
 
-## Custom agents
+## Agents
 
-| Feature | Page |
+| Feature | What it gives you |
 |---------|------|
-| Build agents, continuous/per-chat memory, external API-key runs, MCP exposure | [custom-agents.md](custom-agents.md) |
-| The seeded Research agent: plan/search/reflect loop with a live checklist | [research-agent.md](research-agent.md) |
-| Agent42 agent fleet: recursive agent teams on their own page (`/fleet/`), judged and followed up | [agent-fleet.md](agent-fleet.md) |
+| [Custom agents](custom-agents.md) | Your own agents with instructions, tools and memory |
+| [Research agent](research-agent.md) | Plans, searches and reflects, with a live checklist |
+| [Agent fleet](agent-fleet.md) | A team of agents for big tasks, on its own page |
 
-## Remote MCP servers
+## App and account
 
-| Feature | Page |
+| Feature | What it gives you |
 |---------|------|
-| Add your own tools via MCP (auth options, OAuth refresh and Reconnect, connection test, per-server toggle, local bridge for on-machine servers, the Chrome extension, images from MCP tools) | [remote-mcp-servers.md](remote-mcp-servers.md) |
-
-## Notifications & sharing (installed Android/Chromium PWA)
-
-| Feature | Page |
-|---------|------|
-| Push notifications | [push-notifications.md](push-notifications.md) |
-| Android Share sheet | [android-share-target.md](android-share-target.md) |
-| Install as an app + sign-in (incl. identity alias) | [pwa-and-sign-in.md](pwa-and-sign-in.md) |
-
-## Preferences & account
-
-| Feature | Page |
-|---------|------|
-| Configuration health | [configuration-health.md](configuration-health.md) |
-| Self-hosting with Docker (Postgres + a volume, no Azure account) | [self-hosting.md](self-hosting.md) |
-| Deploying to your own Azure subscription (bootstrap script, repo variables, preflight) | [azure-deployment.md](azure-deployment.md) |
-| Usage dashboard, `/logs` console, Orleans dashboard, App Insights export | [usage-and-diagnostics.md](usage-and-diagnostics.md) |
-
----
-
-*Code is the source of truth (see [`CLAUDE.md`](https://github.com/Expecho/Agent42/blob/main/CLAUDE.md)). These pages are pointers and
-rationale — on any conflict, trust the code and fix the page. Decisions and their rationale live
-in [`.agentic/decisions/`](https://github.com/Expecho/Agent42/blob/main/.agentic/decisions/) (ADRs); non-obvious constraints in
-[`.agentic/gotchas.md`](https://github.com/Expecho/Agent42/blob/main/.agentic/gotchas.md).*
+| [Push notifications](push-notifications.md) | Be told when a reply or reminder arrives |
+| [Android share sheet](android-share-target.md) | Share text and files to Agent42 from other apps |
+| [Install and sign in](pwa-and-sign-in.md) | Install as an app; how sign-in works |
+| [Configuration health](configuration-health.md) | See what is on, off or broken |
+| [Usage and diagnostics](usage-and-diagnostics.md) | Your usage and estimated cost |

@@ -1,5 +1,5 @@
 site_name: Agent42
-site_description: A personal AI agent you can run yourself. Orleans grains wrapping Microsoft Agent Framework agents.
+site_description: A personal AI agent you can run yourself, with chat, tools, memory, custom agents and agent fleets.
 site_url: https://expecho.github.io/Agent42/
 repo_url: https://github.com/Expecho/Agent42
 repo_name: Expecho/Agent42
@@ -43,7 +43,6 @@ nav:
       - Deploy to Azure: setup/azure.md
       - Self-hosting: features/self-hosting.md
       - Azure deployment details: features/azure-deployment.md
-  - Agent fleet: features/agent-fleet.md
   - Features:
       - Overview: features/README.md
       - Chat:
@@ -66,6 +65,7 @@ nav:
           - Tool selection: features/tool-selection.md
           - Long-term memory: features/long-term-memory.md
           - Remote MCP servers: features/remote-mcp-servers.md
+          - MCP Apps: features/mcp-apps.md
       - Files and images:
           - Image attachments: features/image-attachments.md
           - Document Q&A: features/document-qa.md
@@ -73,13 +73,13 @@ nav:
       - Agents:
           - Custom agents: features/custom-agents.md
           - Research agent: features/research-agent.md
+          - Agent fleet: features/agent-fleet.md
       - App and account:
           - Push notifications: features/push-notifications.md
           - Android share sheet: features/android-share-target.md
           - PWA install and sign-in: features/pwa-and-sign-in.md
           - Configuration health: features/configuration-health.md
           - Usage and diagnostics: features/usage-and-diagnostics.md
-          - MCP Apps: features/mcp-apps.md
   - Integration setup:
       - Overview: integrations/README.md
       - Chat apps: integrations/chat-apps/README.md

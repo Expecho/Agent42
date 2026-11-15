@@ -3,7 +3,7 @@
 > New to this? Start with the step-by-step guide, [Deploy to Azure](../setup/azure.md). This page is the reference for
 > every secret and variable.
 
-The Azure IaC is tenant-portable (ADR 0128): a fork runs one bootstrap script, sets the GitHub secrets and
+The Azure setup is tenant-portable: a fork runs one bootstrap script, sets the GitHub secrets and
 variables it prints, and pushes. Without an Azure account, use [self-hosting](self-hosting.md) instead.
 
 ## The fork flow
@@ -41,12 +41,12 @@ variables it prints, and pushes. Without an Azure account, use [self-hosting](se
 | `AZURE_TENANT_ID` | yes | Login fails. |
 | `AAD_CLIENT_SECRET` | yes | Easy Auth cannot sign anyone in. Rotate with `az ad app credential reset --id <AUTH_CLIENT_ID>`. |
 | `SEARXNG_SECRET` | yes | **App down**: the sidecar crash-loops and the revision never turns healthy (`@minLength` fails the deploy first). |
-| `GOOGLE_MAPS_API_KEY` | no | Location returns coordinates without an address (ADR 0012). |
-| `GH_OAUTH_CLIENT_SECRET` | no | "Sign in with GitHub" is hidden (ADR 0108). |
-| `HINDSIGHT_API_KEY` | no | No long-term memory, and no calls are made. Setting it turns on always-on egress (ADR 0056). |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | no | No App Insights export; OTLP only (ADR 0077). |
-| `VAPID_PRIVATE_KEY` | no | Web Push is hidden (ADR 0028). |
-| `MAILGUN_SIGNING_KEY` | no | `/api/email-in` answers 503 (ADR 0096). |
+| `GOOGLE_MAPS_API_KEY` | no | Location returns coordinates without an address. |
+| `GH_OAUTH_CLIENT_SECRET` | no | "Sign in with GitHub" is hidden. |
+| `HINDSIGHT_API_KEY` | no | No long-term memory, and no calls are made. Setting it turns on always-on egress. |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | no | No App Insights export; OTLP only. |
+| `VAPID_PRIVATE_KEY` | no | Web Push is hidden. |
+| `MAILGUN_SIGNING_KEY` | no | `/api/email-in` answers 503. |
 
 ## Variables
 
@@ -64,13 +64,13 @@ That is why the `preflight` job exists: it fails the run, naming the variable, b
 | `CUSTOM_DOMAIN_CERTIFICATE_NAME` | with the domain | Managed certificate backing the domain. |
 | `COSMOS_LOCATION` | no | Region of the Cosmos account (default: the resource group's location). Immutable once created. |
 | `OTLP_ENDPOINT` | no | OpenTelemetry collector. Empty disables OTLP export. |
-| `AZURE_OPENAI_ENDPOINT` | no | Dormant Foundry-provider inheritance source (ADR 0019). |
+| `AZURE_OPENAI_ENDPOINT` | no | Dormant Foundry-provider inheritance source. |
 | `VAPID_PUBLIC_KEY` | no | Overrides the committed `Push:VapidPublicKey`. |
 | `VAPID_SUBJECT` | no | `Push:VapidSubject` (a `mailto:` or `https:` contact URL). Ships empty. |
 | `GH_OAUTH_CLIENT_ID` | no | Overrides the committed `GitHub:OAuth:ClientId`. Not `GITHUB_*`: GitHub reserves that prefix. |
 | `EMAIL_INBOUND_DOMAIN` | no | `Email:InboundDomain`. Ships empty, so inbound email is off until set. |
 | `ACCESS_OWNERS` | no | Comma-separated Entra object ids that become the owner tier. Ships empty, so nobody is an owner until set. |
-| `IDENTITY_ALIASES` | no | JSON object, additional Entra object id to the object id that owns the data (ADR 0074). Ships empty. An entry is an authorization grant. |
+| `IDENTITY_ALIASES` | no | JSON object, additional Entra object id to the object id that owns the data. Ships empty. An entry is an authorization grant. |
 
 **Shared infra is all or nothing.** `ACR_NAME`, `CAE_NAME` and `CAE_RESOURCE_GROUP` are either all set (reuse, nothing
 is created) or all empty (create). Preflight rejects a mix, so create mode is never a side effect of one missing
@@ -105,8 +105,8 @@ person or a deployment. Set the variables above and they arrive as environment v
   `mailto:` subject as variables.
 - **Owners:** `ACCESS_OWNERS` is split on commas and emitted as `Access__Owners__0`, `__1` and so on. With the list
   empty nobody is an owner, so `/dashboard`, `/logs`, `/api/diagnostics` and `/api/config-health` answer 404 to
-  everyone. Never list `local-dev`. The owner tier is advisory, never isolation (ADR 0121).
-- **Aliases:** `IDENTITY_ALIASES` is emitted as `Identity__Aliases__<alias id>` (ADR 0074). Both sides must be owners.
+  everyone. Never list `local-dev`. The owner tier is advisory, never isolation.
+- **Aliases:** `IDENTITY_ALIASES` is emitted as `Identity__Aliases__<alias id>`. Both sides must be owners.
 
 ## Keeping a deployment's values
 

@@ -4,17 +4,24 @@
 Anthropic, Ollama, any OpenAI-compatible endpoint), give the agent tools, memory and schedules, and when a task is
 too big for one agent, hand it to a **fleet** that designs its own team, runs it and judges the result.
 
-## Start here
+## Get it running
 
 | I want to | Go to |
 |---|---|
 | Try it on my machine, no Azure account | [Run locally](setup/local.md) |
 | Host it with Docker and Postgres | [Self-hosting](features/self-hosting.md) |
 | Deploy it to Azure Container Apps | [Deploy to Azure](setup/azure.md) |
-| Hand a big task to a team of agents | [Agent fleet](features/agent-fleet.md) |
-| Understand how a feature works | [Feature docs](features/README.md) |
-| Wire up Telegram, Slack, OAuth and the like | [Integration setup](integrations/README.md) |
+| Wire up Telegram, Slack, GitHub sign-in and the like | [Integration setup](integrations/README.md) |
 
-The source, issues and architecture decision records (ADRs) live in the
-[GitHub repository](https://github.com/Expecho/Agent42); the ADRs are in
-[`.agentic/decisions`](https://github.com/Expecho/Agent42/tree/main/.agentic/decisions).
+After the first start, open **Preferences → model providers** and add a model. Agent42 ships without one, so the
+chat box stays disabled until you do.
+
+## What you can do with it
+
+- **Chat** with streaming replies, saved history, search, pins, groups and share links.
+- **Use tools:** web search, scheduled reminders, long-term memory, documents and images, your own MCP servers.
+- **Build agents** with their own instructions, tools and memory, or use the built-in Research agent.
+- **Hand big jobs to a fleet** of agents on their own page.
+- **Take it with you:** install it as an app, get push notifications, or talk to it from Telegram, Slack or Discord.
+
+See every feature in the [feature overview](features/README.md).

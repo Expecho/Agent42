@@ -1,7 +1,7 @@
 # Self-hosting
 
 > Run Agent 42 on your own machine with `docker compose up`, with no Azure account. A second storage provider,
-> `Storage:Provider = local`, keeps everything in Postgres and on a volume (ADR 0127). Production still runs the default,
+> `Storage:Provider = local`, keeps everything in Postgres and on a volume. Production still runs the default,
 > `azure`, unchanged.
 
 ## Run it
@@ -11,7 +11,7 @@
 
 ```bash
 cp .env.example .env          # set POSTGRES_PASSWORD and SEARXNG_SECRET
-docker compose up -d          # pulls the published images (ADR 0130)
+docker compose up -d          # pulls the published images
 ```
 
 To build the images from your checkout instead, add the override file:
@@ -19,14 +19,14 @@ To build the images from your checkout instead, add the override file:
 or a `sha-<commit>` tag, and `AGENT42_REGISTRY` (default `ghcr.io/expecho`) names another registry.
 
 Open <http://localhost:8080>. Then add a model provider under Preferences, because no chat, embedding, image or speech model
-ships with the app (ADR 0019): until you add one the composer is gated.
+ships with the app: until you add one the composer is gated.
 
 `compose.yaml` starts four things:
 
 | Service | What it is |
 |---|---|
 | `app` | The Backend image (`ghcr.io/expecho/agent42-backend`, built from `src/Agent42.Backend/Dockerfile`), bound to `127.0.0.1:8080` |
-| `postgres` | `pgvector/pgvector:pg17`: grain state, reminders, document vectors, chat search, the gateway lock |
+| `postgres` | `pgvector/pgvector:pg17`: conversations, reminders, document vectors, chat search, the gateway lock |
 | `searxng` | The web-search sidecar (`ghcr.io/expecho/agent42-searxng`, built from `infra/searxng`) |
 | `init-volumes` | A one-shot that makes the volumes writable for the app's non-root user, then exits |
 
@@ -38,7 +38,7 @@ session files, the Data Protection key ring) and `agent42-copilot` (chat workspa
 
 | | `azure` (production) | `local` (compose) |
 |---|---|---|
-| Grain state and reminders | Cosmos DB | Postgres, through Orleans' ADO.NET providers; the same `$type` JSON |
+| Conversations and reminders | Cosmos DB | Postgres |
 | Documents (RAG) | Cosmos vector search | pgvector, exact cosine scan per owner, **no ANN index** |
 | Chat search | Cosmos full text (BM25) | Postgres full text (`ts_rank_cd`), ranks differently |
 | Attachments, skills, fleet, Copilot files | Blob Storage | files under `Storage:Local:Root` |
@@ -63,7 +63,7 @@ session files, the Data Protection key ring) and `agent42-copilot` (chat workspa
   database.
 - **Copilot built-in shell is off.** The Copilot agent kind's shell, file and URL tools run inside the app container with no
   prompt, so with no authentication in front they could read the database password and the key ring. Compose sets
-  `Copilot__BuiltInToolsEnabled=false`; the Copilot kind still works with Agent 42's own tools (ADR 0085). Flip it only behind
+  `Copilot__BuiltInToolsEnabled=false`; the Copilot kind still works with Agent 42's own tools. Flip it only behind
   an authenticating proxy.
 - **One replica.** Run one `app` container per database (the gateway lock stops a second one from running your bots twice).
 - **Web search is not private.** SearXNG forwards each query to public search engines.
@@ -85,7 +85,7 @@ The Configuration tab (Preferences) shows the provider and marks the Azure-only 
 
 ## GitHub Copilot
 
-"Sign in with GitHub" (ADR 0108) is hidden until the server has an OAuth App's client id and secret. The id committed in
+"Sign in with GitHub" is hidden until the server has an OAuth App's client id and secret. The id committed in
 `appsettings.json` is the production app and redirects to `chat.agent42.nl`, so a self-host needs its own:
 
 1. On GitHub: Settings, Developer settings, OAuth Apps, New. Homepage `http://localhost:8080`, callback

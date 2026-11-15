@@ -37,7 +37,7 @@ dotnet restore Agent42.slnx      # A and B only
 dotnet run --project tools/Agent42.DevHost
 ```
 
-Open <http://localhost:61326>. It serves the real web UI and the real API, with the grains in memory and a canned chat
+Open <http://localhost:61326>. It serves the real web UI and the real API, with conversations held in memory and a canned chat
 client that answers with sample markdown, so you can try streaming, the model picker, artifacts, documents (a
 deterministic fake embedder), image generation (a canned PNG) and the research agent without any model.
 

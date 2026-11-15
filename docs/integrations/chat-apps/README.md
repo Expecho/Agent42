@@ -1,6 +1,6 @@
 # Chat apps: setting up your bot
 
-Each Agent42 user connects their **own** bot (ADR 0111). The operator sets up nothing: there is no secret to add to
+Each Agent42 user connects their **own** bot. The operator sets up nothing: there is no secret to add to
 GitHub Actions and no app to register. Everything below is done by the user, in the chat app and in Agent42.
 
 ## Telegram
@@ -144,7 +144,7 @@ These are the same on every platform, and each is set in the bot's dialog in **P
 
 ## Signal
 
-Signal is off unless the operator turned it on (Bicep `signalEnabled`, ADR 0111 phase 3). When it is, Preferences →
+Signal is off unless the operator turned it on (Bicep `signalEnabled`). When it is, Preferences →
 Chat apps offers **Signal**.
 
 Signal has no bot tokens, so the bot is a **spare number of your own**, registered in Agent42:
@@ -168,6 +168,6 @@ Signal account is never involved. Deleting the bot unregisters the number and de
 
 ## WhatsApp
 
-Planned (ADR 0111, phase 2). It will get a section here when it ships.
+Planned. It will get a section here when it ships.
 
 **No page here contains a secret value.**
