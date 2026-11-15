@@ -1,0 +1,46 @@
+site_name: Agent42
+site_description: A personal AI agent you can run yourself. Orleans grains wrapping Microsoft Agent Framework agents.
+site_url: https://expecho.github.io/Agent42/
+repo_url: https://github.com/Expecho/Agent42
+repo_name: Expecho/Agent42
+edit_uri: edit/main/docs/
+docs_dir: docs
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: { icon: material/weather-night, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: { icon: material/weather-sunny, name: Switch to light mode }
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Run it:
+      - Run locally: setup/local.md
+      - Deploy to Azure: setup/azure.md
+      - Self-hosting: features/self-hosting.md
+  - Features: features/README.md
+  - Integration setup: integrations/README.md

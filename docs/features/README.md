@@ -1,7 +1,7 @@
 # Agent42 feature docs
 
 Developer documentation for each user-facing feature listed in the top-level
-[README](../../README.md). Each page describes what the feature is, how **Microsoft Agent
+[README](https://github.com/Expecho/Agent42/blob/main/README.md). Each page describes what the feature is, how **Microsoft Agent
 Framework** and **Orleans** fit in, a flow diagram, and code snippets from the implementation.
 
 > **Two recurring seams to know before reading any page:**
@@ -84,7 +84,7 @@ Framework** and **Orleans** fit in, a flow diagram, and code snippets from the i
 
 ---
 
-*Code is the source of truth (see [`CLAUDE.md`](../../CLAUDE.md)). These pages are pointers and
+*Code is the source of truth (see [`CLAUDE.md`](https://github.com/Expecho/Agent42/blob/main/CLAUDE.md)). These pages are pointers and
 rationale — on any conflict, trust the code and fix the page. Decisions and their rationale live
-in [`.agentic/decisions/`](../../.agentic/decisions/) (ADRs); non-obvious constraints in
-[`.agentic/gotchas.md`](../../.agentic/gotchas.md).*
+in [`.agentic/decisions/`](https://github.com/Expecho/Agent42/blob/main/.agentic/decisions/) (ADRs); non-obvious constraints in
+[`.agentic/gotchas.md`](https://github.com/Expecho/Agent42/blob/main/.agentic/gotchas.md).*
