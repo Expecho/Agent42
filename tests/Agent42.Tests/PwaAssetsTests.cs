@@ -266,8 +266,62 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v78", sw);
+        Assert.Contains("agent42-shell-v79", sw);
     }
+
+    // Palette axis (ADR 0129): source-text proof that the picker, the engine, the head scripts and the offline
+    // cache all shipped. Runtime behaviour is walked by hand in the DevHost (no JS runner by design).
+    [Fact]
+    public async Task Palette_IsWiredThroughPickerEngineHeadScriptsAndShell()
+    {
+        var index = await _client.GetStringAsync("/index.html");
+        Assert.Contains("id=\"profilePalette\"", index);
+        Assert.Contains("/shared/themes.css", index);
+        Assert.Contains("dataset.palette", index); // no-FOUC head script
+        Assert.Contains("agent42.palette", index);
+        Assert.True(index.IndexOf("/shared/themes.css", StringComparison.Ordinal) < index.IndexOf("dataset.palette", StringComparison.Ordinal),
+            "the head script must come after the themes.css link, so --bg is resolved when it reads it");
+
+        var theme = await _client.GetStringAsync("/js/theme.js");
+        Assert.Contains("export function applyPalette", theme);
+        Assert.Contains("agent42.palette", theme);
+
+        var profile = await _client.GetStringAsync("/js/profile.js");
+        Assert.Contains("palette: profilePalette.value", profile);
+        Assert.Contains("applyPalette(", profile);
+
+        var sw = await _client.GetStringAsync("/sw.js");
+        var shell = Regex.Match(sw, @"const SHELL = \[(.*?)\];", RegexOptions.Singleline).Groups[1].Value;
+        Assert.Contains("\"/shared/themes.css\"", shell);
+
+        foreach (var page in new[] { "/fleet/index.html", "/logs/index.html" })
+        {
+            var html = await _client.GetStringAsync(page);
+            Assert.Contains("/shared/themes.css", html);
+            Assert.Contains("agent42.palette", html);
+        }
+    }
+
+    // The public recipient pages have no profile: they stay amber + OS mode and never read the user's cache.
+    // They still load themes.css (viewer.css no longer carries amber), and the amber light fallback in themes.css
+    // keeps them readable when only data-theme is set.
+    [Theory]
+    [InlineData("/shared/index.html")]
+    [InlineData("/shared/fleet.html")]
+    [InlineData("/legal/privacy.html")]
+    [InlineData("/legal/terms.html")]
+    public async Task PublicPages_DoNotReadTheUsersPalette(string page)
+    {
+        var html = await _client.GetStringAsync(page);
+        Assert.DoesNotContain("agent42.palette", html);
+        Assert.DoesNotContain("dataset.palette", html);
+    }
+
+    [Theory]
+    [InlineData("/shared/index.html")]
+    [InlineData("/shared/fleet.html")]
+    public async Task SharedPages_LoadThemesCss(string page)
+        => Assert.Contains("href=\"themes.css\"", await _client.GetStringAsync(page));
 
     // Rich rendering (ADR 0083): SHELL holds only the eager renderer + highlight.js. The lazy libs stay out —
     // SHELL is one all-or-nothing addAll, and a 5 MB mermaid there slows install and adds a failure point.

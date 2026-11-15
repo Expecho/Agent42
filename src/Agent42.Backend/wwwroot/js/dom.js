@@ -95,6 +95,7 @@ export const profileDialog = document.getElementById("profileDialog");
 export const profileForm = document.getElementById("profileForm");
 export const profileLanguage = document.getElementById("profileLanguage");
 export const profileTheme = document.getElementById("profileTheme");
+export const profilePalette = document.getElementById("profilePalette");
 export const profileSuggest = document.getElementById("profileSuggest");
 export const profileCancelBtn = document.getElementById("profileCancelBtn");
 // The rail + drill-down shell. #profileNav is the element carrying role="tablist" — the rail click is

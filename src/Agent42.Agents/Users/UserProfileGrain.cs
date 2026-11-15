@@ -50,7 +50,7 @@ public sealed class UserProfileGrain : Grain, IUserProfileGrain
             theme = "system";
         }
 
-        var stored = profile with { PreferredLanguage = language, Theme = theme };
+        var stored = profile with { PreferredLanguage = language, Theme = theme, Palette = ThemePalettes.Normalize(profile.Palette) };
         _state.State.Profile = stored;
         await _state.WriteStateAsync();
         return stored;

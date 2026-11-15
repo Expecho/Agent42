@@ -34,7 +34,10 @@ public sealed record UserProfile(
     // Follow-up suggestion prompts: null/true = ON (default), false = OFF. Nullable so legacy state
     // (missing this [Id]) deserializes to null and stays ON with no migration — the grain reads it as
     // `SuggestFollowUps != false`.
-    [property: Id(3)] bool? SuggestFollowUps = null)
+    [property: Id(3)] bool? SuggestFollowUps = null,
+    // Colour palette id (ThemePalettes, ADR 0129): an independent axis beside Theme. null = never chosen /
+    // legacy profile = amber; the grain clamps unknown ids to amber on save.
+    [property: Id(4)] string? Palette = null)
 {
     /// <summary>
     /// The canonical default profile: no preferences set yet. Returns a fresh instance on
@@ -43,5 +46,5 @@ public sealed record UserProfile(
     /// mutation across every grain that started from it. <see cref="EnabledTools"/> defaults to
     /// null (all selectable tools) and <see cref="SuggestFollowUps"/> to null (suggestions ON).
     /// </summary>
-    public static UserProfile Empty => new("", "system", null, null);
+    public static UserProfile Empty => new("", "system", null, null, null);
 }

@@ -1,51 +1,14 @@
 /* ————————————————————————————————————————————————
    Agent 42 · agent fleet (ADR 0097)
-   Self-contained: the theme tokens are COPIED from styles.css, as logs/logs.css does, so a standalone page
-   depends on nothing else. Keep visually in sync with styles.css. The engine's own names (--panel, --text…)
+   Palette tokens come from shared/themes.css (ADR 0129); a standalone page
+   needs nothing else. The engine's own names (--panel, --text…)
    are mapped onto them below.
    ———————————————————————————————————————————————— */
 
 :root {
-  --bg: #100f0d;
-  --bg-raised: #171512;
-  --bg-inset: #0b0a09;
-  --line: #2a2620;
-  --line-soft: #201d18;
-  --ink: #e9e2d3;
-  --ink-dim: #a89f8c;
-  --ink-faint: #6d6555;
-  --amber: #ffb13d;
-  --amber-deep: #c97f1b;
-  --amber-glow: rgba(255, 177, 61, 0.14);
-  --green: #9ac06d;
-  --red: #e06c5f;
-  --warn: #e3b25a;
-  --agent-s: 70%;
-  --agent-l: 66%;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --serif: "Newsreader", Georgia, "Times New Roman", serif;
   --radius: 10px;
-  color-scheme: dark;
-}
-
-:root[data-theme="light"] {
-  --bg: #f4efe4;
-  --bg-raised: #fbf7ee;
-  --bg-inset: #e9e2d2;
-  --line: #d6cdb8;
-  --line-soft: #e2dac7;
-  --ink: #2a2620;
-  --ink-dim: #5c5647;
-  --ink-faint: #8a8270;
-  --amber: #a86611;
-  --amber-deep: #7f4e0a;
-  --amber-glow: rgba(168, 102, 17, 0.12);
-  --green: #5a7d3a;
-  --red: #bf3c30;
-  --warn: #8a5a0c;
-  --agent-s: 55%;
-  --agent-l: 38%;
-  color-scheme: light;
 }
 
 /* The engine's names, on Agent42's tokens. */

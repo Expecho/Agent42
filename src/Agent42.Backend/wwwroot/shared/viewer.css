@@ -1,39 +1,12 @@
 /* ————————————————————————————————————————————————
    Agent 42 · public read-only conversation viewer (ADR 0035)
-   Self-contained: the theme tokens + message/prose styles are copied from styles.css so the
+   Palette tokens come from themes.css (ADR 0129); the message/prose styles are copied from styles.css so the
    public page depends on nothing behind Easy Auth. Keep visually in sync with styles.css.
    ———————————————————————————————————————————————— */
 
 :root {
-  --bg: #100f0d;
-  --bg-raised: #171512;
-  --bg-inset: #0b0a09;
-  --line: #2a2620;
-  --line-soft: #201d18;
-  --ink: #e9e2d3;
-  --ink-dim: #a89f8c;
-  --ink-faint: #6d6555;
-  --amber: #ffb13d;
-  --amber-deep: #c97f1b;
-  --amber-glow: rgba(255, 177, 61, 0.14);
-  --red: #e06c5f;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --serif: "Newsreader", Georgia, "Times New Roman", serif;
-}
-
-:root[data-theme="light"] {
-  --bg: #f4efe4;
-  --bg-raised: #fbf7ee;
-  --bg-inset: #e9e2d2;
-  --line: #d6cdb8;
-  --line-soft: #e2dac7;
-  --ink: #2a2620;
-  --ink-dim: #5c5647;
-  --ink-faint: #8a8270;
-  --amber: #a86611;
-  --amber-deep: #7f4e0a;
-  --amber-glow: rgba(168, 102, 17, 0.12);
-  --red: #bf3c30;
 }
 
 * { box-sizing: border-box; }
@@ -48,7 +21,7 @@ body {
   font-size: 14px;
   line-height: 1.5;
   background-image:
-    radial-gradient(ellipse 80% 60% at 70% -10%, rgba(255, 177, 61, 0.05), transparent);
+    radial-gradient(ellipse 80% 60% at 70% -10%, color-mix(in srgb, var(--amber) 5%, transparent), transparent);
 }
 
 .viewer {

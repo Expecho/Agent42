@@ -13,6 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/shared/themes.css" />
   <link rel="stylesheet" href="fleet.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90' font-family='monospace' fill='%23FFB13D'>42</text></svg>" />
   <meta name="theme-color" content="#100f0d" />
@@ -24,8 +25,12 @@
         var dark = choice === "dark" ||
           (choice === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
         document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.dataset.palette = localStorage.getItem("agent42.palette") || "amber";
+        // theme-color follows the palette: read the resolved --bg from themes.css (linked above, so it has
+        // loaded); an empty read (slow/failed stylesheet) falls back to the amber hexes.
+        var bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
         var meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.content = dark ? "#100f0d" : "#f4efe4";
+        if (meta) meta.content = bg || (dark ? "#100f0d" : "#f4efe4");
       } catch (e) { /* localStorage/matchMedia unavailable → CSS dark default stands */ }
     })();
   </script>

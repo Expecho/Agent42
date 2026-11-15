@@ -34,6 +34,7 @@ public static partial class AgentApi
                 Theme = request.Theme ?? current.Theme,
                 EnabledTools = request.EnabledTools is null ? current.EnabledTools : ToolCatalog.Sanitize(request.EnabledTools),
                 SuggestFollowUps = request.SuggestFollowUps ?? current.SuggestFollowUps,
+                Palette = request.Palette ?? current.Palette,
             });
             return Results.Json(saved);
         });

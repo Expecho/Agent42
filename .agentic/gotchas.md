@@ -4140,13 +4140,26 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   effects off GET, or record the measurement in ADR 0084.
   `/frame` also injects `ArtifactTheme` into the source. It goes AFTER the doctype and never before it, because a
   style block ahead of `<!doctype>` puts the page in quirks mode. Its two Google Fonts hosts are the only CSP
-  allowances the theme needs, so keep its tokens in sync with `styles.css`.
+  allowances the theme needs, so keep its tokens in sync with `shared/themes.css`: `ArtifactThemePalettes.cs` mirrors it and
+  `ThemePaletteTests` fails on drift (ADR 0129).
 - **Evidence:** `src/Agent42.Backend/Artifacts/AgentApi.Artifacts.cs` (`ArtifactCsp`, `AddArtifactHeaders`),
   `src/Agent42.Backend/Artifacts/ArtifactTheme.cs`, `tests/Agent42.Tests/ArtifactThemeTests.cs`,
   `src/Agent42.Backend/wwwroot/shared/lib/artifactpane.js` (`renderBody`), `tests/Agent42.Tests/ArtifactsApiTests.cs`
   (`Frame_And_Content_SendSandboxHeaders`),
   `.agentic/decisions/0084-artifact-pane.md`
-- **Verified:** 2026-10-03
+- **Verified:** 2026-11-15
+
+### Palette tokens live in `shared/themes.css` only
+
+- **Claim:** every palette (10 x dark/light) is defined once, in `wwwroot/shared/themes.css`; pages load it before their
+  own stylesheet and keep only non-palette tokens. A page that sets `data-theme` but not `data-palette` falls to the
+  amber fallback blocks, so never remove those (the public `/shared` pages rely on them for OS light). `ArtifactTheme`
+  cannot read the file, so its C# table is a mirror guarded by `ThemePaletteTests`; change a colour in the CSS, then the
+  table, never one alone. `--amber` means "the accent" in every palette. Contrast floors are measured there, and
+  amber/light's accent is the one pinned exception.
+- **Evidence:** `src/Agent42.Backend/wwwroot/shared/themes.css`, `src/Agent42.Backend/Artifacts/ArtifactThemePalettes.cs`,
+  `tests/Agent42.Tests/ThemePaletteTests.cs`, `.agentic/decisions/0129-palette-second-axis-shared-themes-css.md`
+- **Verified:** 2026-11-15
 
 ### Artifact blobs are stored as octet-stream because the attachment proxies serve ANY id
 

@@ -1,7 +1,7 @@
 /* Agent 42 — profile / preferences. Split out of app.js (ADR 0041). */
 
 import { loadConfigHealth } from "./confighealth.js";
-import { openProfileBtn, prefsBackBtn, prefsCloseBtn, prefsDetailTitle, prefsStatus, profileCancelBtn, profileDialog, profileForm, profileLanguage, profileNav, profileSuggest, profileTabs, profileTheme, profileToolChecks } from "./dom.js";
+import { openProfileBtn, prefsBackBtn, prefsCloseBtn, prefsDetailTitle, prefsStatus, profileCancelBtn, profileDialog, profileForm, profileLanguage, profileNav, profileSuggest, profileTabs, profilePalette, profileTheme, profileToolChecks } from "./dom.js";
 import { LANGUAGES } from "./format.js";
 import { updateLocationControl } from "./location.js";
 import { clearMcpTabResult, loadMcpServers } from "./mcp.js";
@@ -9,7 +9,7 @@ import { loadProviders } from "./providers.js";
 import { loadSkills } from "./skills.js";
 import { loadChatConnections } from "./chatgateway.js";
 import { updatePushControl } from "./push.js";
-import { applyTheme } from "./theme.js";
+import { applyPalette, applyTheme } from "./theme.js";
 import { allToolKeys, readToolChecks, refreshToolsBadge, renderToolChecks, toolCatalog } from "./tools.js";
 
 // The last profile fetched from the server. The server is the source of truth; this is
@@ -94,6 +94,7 @@ export async function openProfileDialog() {
   renderToolChecks(profileToolChecks, profile.enabledTools ?? allToolKeys());
   refreshToolsBadge();
   profileTheme.value = profile.theme ?? "system";
+  profilePalette.value = profile.palette ?? "amber"; // null (never chosen / legacy) = amber
   // Null-sentinel: null (never saved) and true both mean ON; only an explicit false is unchecked.
   profileSuggest.checked = profile.suggestFollowUps !== false;
   profileSaved = false; // fresh edit session; the close handler reverts a preview unless we save
@@ -123,6 +124,7 @@ async function saveProfile() {
   const payload = {
     preferredLanguage: profileLanguage.value,
     theme: profileTheme.value,
+    palette: profilePalette.value,
     suggestFollowUps: profileSuggest.checked,
   };
   if (toolCatalog.length > 0) payload.enabledTools = readToolChecks(profileToolChecks);
@@ -137,6 +139,7 @@ async function saveProfile() {
   } catch { return; /* silo may be unreachable; leave the dialog open */ }
 
   applyTheme(profile.theme ?? "system"); // commit the server-normalized value (paint + cache)
+  applyPalette(profile.palette);
   profileSaved = true;
   profileDialog.close();
 }
@@ -168,9 +171,17 @@ export function wireProfile() {
     applyTheme(profileTheme.value);
     markPrefsDirty();
   });
+  // Same staged preview for the palette (ADR 0129), independent of the mode.
+  profilePalette.addEventListener("change", () => {
+    applyPalette(profilePalette.value);
+    markPrefsDirty();
+  });
   // Revert an unsaved preview when the dialog closes via Cancel, Esc, or backdrop.
   profileDialog.addEventListener("close", () => {
-    if (!profileSaved) applyTheme(profile.theme ?? "system");
+    if (!profileSaved) {
+      applyTheme(profile.theme ?? "system");
+      applyPalette(profile.palette);
+    }
     profileSaved = false;
   });
   profileForm.addEventListener("submit", (e) => {

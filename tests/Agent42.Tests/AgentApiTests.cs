@@ -610,6 +610,21 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         Assert.Equal("dark", saved.Theme); // kept, not silently reset to "system"
     }
 
+    // A stale cached client that PUTs without `palette` must not reset the stored palette (ADR 0129).
+    [Fact]
+    public async Task ProfileEndpoint_OmittedPalette_KeepsStoredPalette()
+    {
+        var seed = await Client.PutAsJsonAsync("/api/profile", new ProfileUpdateRequest("en-US", "dark", Palette: "teal"));
+        seed.EnsureSuccessStatusCode();
+
+        var staleSave = await Client.PutAsJsonAsync("/api/profile", new { preferredLanguage = "fr-FR", theme = "light" });
+        staleSave.EnsureSuccessStatusCode();
+
+        var saved = await staleSave.Content.ReadFromJsonAsync<UserProfile>();
+        Assert.Equal("teal", saved!.Palette);
+        Assert.Equal("light", saved.Theme);
+    }
+
     // Follow-up suggestions preference persists through PUT and is reflected by the next GET.
     [Fact]
     public async Task ProfileEndpoint_PersistsSuggestFollowUps()

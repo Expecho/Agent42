@@ -575,6 +575,21 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Serializer().Deserialize<UserProfileState>(Serializer().Serialize(new UserProfileState { Profile = copied }));
     }
 
+    // Palette is a trailing [Id(4)] on the positional UserProfile record (ADR 0129). Cosmos writes JSON, so a
+    // populated value must survive that path, and a document written before the field must restore it as null.
+    [Fact]
+    public void UserProfile_Palette_RoundTripsOnTheCosmosJsonPath()
+    {
+        var serializer = Serializer();
+        var state = new UserProfileState { Profile = new UserProfile("nl-NL", "dark", null, null, "ocean") };
+
+        var restored = serializer.Deserialize<UserProfileState>(serializer.Serialize(state));
+        Assert.Equal("ocean", restored.Profile.Palette);
+
+        var legacy = new BinaryData("""{"$type":"Agent42.Agents.UserProfileState","Profile":{"PreferredLanguage":"nl-NL","Theme":"dark"}}""");
+        Assert.Null(serializer.Deserialize<UserProfileState>(legacy).Profile.Palette);
+    }
+
     // The pin flag (ADR 0045) appended a trailing [Id(5)] member to the POSITIONAL record ConversationInfo,
     // and every conversation-index document already in Cosmos was written without it. The mechanism at risk
     // is Newtonsoft constructor-binding a MISSING property onto a positional record — which only this path
