@@ -4,9 +4,6 @@
 Anthropic, Ollama, any OpenAI-compatible endpoint), give the agent tools, memory and schedules, and when a task is
 too big for one agent, hand it to a **fleet** that designs its own team, runs it and judges the result.
 
-One Orleans grain per conversation wraps a Microsoft Agent Framework agent. Replies stream into a vanilla-JS web UI
-(an installable PWA, with an Android app), a Telegram, Slack or Discord bot, or an HTTP API.
-
 ## Start here
 
 | I want to | Go to |
