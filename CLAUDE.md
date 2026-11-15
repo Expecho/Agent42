@@ -94,7 +94,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
   change freely.
 - Deploy: push to `main` → `.github/workflows/deploy.yml` (`preflight` → shared infra → build/push → Bicep).
   Tenant-specific values (registry, environment, resource group, domain, client id) are **repo variables**, not code
-  (ADR 0128). Prod's values are listed in `docs/features/azure-deployment.md`, which also covers deploying to another
+  (ADR 0128). The variables are documented in `docs/features/azure-deployment.md` (prod's values live only in the repo's Actions variables), which also covers deploying to another
   tenant with `infra/bootstrap.sh`. Prod runs behind Entra ID Easy Auth at chat.agent42.nl. Read gotchas before
   touching IAM/infra.
 - The AI Foundry account `Agent42` is in a *different* RG (`agent42`) and is dormant (ADR 0017/0019); the deploy no

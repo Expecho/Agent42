@@ -1,20 +1,52 @@
 # Agent42
 
-A personal AI chat agent ("Agent 42") hosted in Microsoft Orleans: one grain per
-conversation wraps a Microsoft Agent Framework `ChatClientAgent` against any
-OpenAI-compatible model, with streaming replies, tools, durable scheduled reminders,
-document Q&A, long-term memory, voice, image generation, custom agents, and a vanilla-JS
-web UI served from the backend.
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![.NET 10](https://img.shields.io/badge/.NET-10-512bd4)
+![Orleans 10.3](https://img.shields.io/badge/Orleans-10.3-0078d4)
+![Microsoft Agent Framework](https://img.shields.io/badge/Agent%20Framework-1.25-5c2d91)
 
-**Stack:** .NET 10 · Orleans 10.3 (grains; Cosmos or Postgres persistence + reminders) · Microsoft
-Agent Framework 1.22 · ASP.NET Core minimal APIs · Aspire 13.5 (local orchestration) ·
-vanilla-JS frontend · Bicep + GitHub Actions → Azure Container Apps.
+**A personal AI agent you can run yourself.** Chat with any model you bring (Azure AI Foundry, GitHub Models, Anthropic,
+Ollama, any OpenAI-compatible endpoint), give the agent tools, memory and schedules, and when a task is too big for one
+agent, hand it to a **fleet** that designs its own team, runs it and judges the result.
+
+One Orleans grain per conversation wraps a Microsoft Agent Framework agent. Replies stream into a vanilla-JS web UI
+(an installable PWA, with an Android app), a Telegram, Slack or Discord bot, or an HTTP API. It runs offline on a canned
+model, self-hosted with Docker and Postgres, or on Azure Container Apps behind Entra ID.
+
+## Highlights
+
+| | |
+|---|---|
+| **Bring your own models** | No built-in model and no operator key. Every user adds their own providers; keys are stored encrypted. |
+| **[Agent fleet](#agent-fleet)** | A planner designs a team of agents for a task, runs it in one of six patterns, lets agents spawn sub-teams, and a judge scores the result. |
+| **Tools you choose** | Web search, MCP servers (with a local bridge and a Chrome extension), skills, code interpreter, document Q&A, long-term memory, reminders. |
+| **Custom agents** | Named agents with their own tools, callable over an HTTP API, as an MCP tool, from email, or from a chat app. |
+| **Anywhere you are** | Web, PWA, Android app, Telegram, Slack, Discord, push notifications, voice. |
+| **Yours to host** | `docker compose up` with Postgres and no Azure account, or Bicep and GitHub Actions for Azure Container Apps. |
+
+```mermaid
+flowchart LR
+  subgraph Clients
+    Web["Web UI / PWA"]
+    Android["Android app"]
+    Chat["Telegram, Slack, Discord"]
+    API["HTTP API, MCP clients, webhooks, email"]
+  end
+  Clients --> Backend["ASP.NET Core + Orleans silo"]
+  Backend --> Grain["AgentGrain<br/>one per conversation"]
+  Backend --> Fleet["Agent fleet<br/>teams, judge, canvas"]
+  Grain --> Tools["Tools<br/>web search, MCP, skills, memory, documents"]
+  Fleet --> Tools
+  Grain --> Models["Your models<br/>Foundry, Anthropic, GitHub, Ollama, OpenAI-compatible"]
+  Fleet --> Models
+  Grain --> Store[("Cosmos DB or Postgres<br/>Blob or volume")]
+```
 
 ## Features
 
 Everything below is what you get as a signed-in user in the web app. For a developer
-walkthrough of each feature — how it works, how Agent Framework and Orleans fit in, with flow
-diagrams and code — see [`docs/features/`](docs/features/README.md). Features that need setup outside this repo
+walkthrough of each feature (how it works, how Agent Framework and Orleans fit in, with flow
+diagrams and code) see [`docs/features/`](docs/features/README.md). Features that need setup outside this repo
 (an account, an app registration, a redirect URI) have a guide in
 [`docs/integrations/`](docs/integrations/README.md).
 
@@ -108,17 +140,61 @@ Each skill and each MCP tool can be switched on or off individually.
   24 hours).
 - **Research agent** — every user gets a built-in Research agent that plans a question into
   steps, searches, checks its own answer, and shows a live checklist while it works.
-- **Agent42 agent fleet** — a page of its own (`/fleet/`, linked from the sidebar) where a planner designs a
-  team of agents for a task, runs it in one of six patterns, lets agents hand sub-tasks to sub-teams, and has a
-  judge score the result and send it back for a fix or a new team. Everything runs on your own models, streams
-  live, survives a reload, and a finished task can be followed up. Copilot agents in a team can write files
-  and run commands, each after you approve it.
+- **Agent fleet** — for tasks too big for one agent, see [Agent fleet](#agent-fleet) below.
 - **Run agents from outside the browser** — each agent gets its own API key (shown once)
   and a fire-and-forget endpoint, so a webhook, cron job, or automation tool (e.g. n8n)
   can hand it a prompt and files with no browser session. The result shows up as a new
   conversation you open later.
 - **Call an agent from another MCP host** — opt an agent in, and Claude Desktop, Copilot or
   any MCP client holding its key can call it as a tool and get the reply back.
+
+### Agent fleet
+
+A page of its own (`/fleet/`, linked from the sidebar). Describe a task and a **planner** designs a team of agents for
+it, the team runs, agents can hand sub-tasks to sub-teams of their own, and a **judge** scores the result.
+
+```mermaid
+flowchart TD
+  Task["Your task<br/>+ optional files"] --> Plan["Planner designs a team<br/>(agents as YAML, one of six patterns)"]
+  Plan --> Approve{"Approve the plan?"}
+  Approve -- yes --> Run
+  subgraph Run["Team runs, live"]
+    direction LR
+    A1[Agent] --- A2[Agent] --- A3[Agent]
+    A2 -. "delegate_to_team" .-> Sub["Sub-team<br/>(same loop, one level down)"]
+  end
+  Run --> Judge{"Judge scores 1 to 10"}
+  Judge -- "passes" --> Done["Result, files and canvas"]
+  Judge -- "below the passing score" --> Fix["Same team fixes it,<br/>then a new team builds on it"]
+  Fix --> Judge
+```
+
+- **Six patterns** — Sequential, Concurrent, GroupChat, Handoff, Magentic and Staged. The planner picks one and
+  writes the agents; invalid plans are sent back to it to fix.
+- **Recursive and bounded** — agents can delegate to sub-teams, within a depth, agent and token budget.
+- **Your models and tools** — everything runs on the providers you added, with the tools your chat defaults select
+  (overridable per task). Copilot agents in a team can write files and run commands.
+- **Files in, files out** — attach documents (they become searchable in the task's workspace), read the files the team
+  wrote, and watch a shared, versioned **canvas** fill with pages, diagrams and code while the task runs.
+- **Live and durable** — a graph view of teams and agents, a team to-do list, and a replay of the full event log. Reload
+  the page mid-task and nothing is lost. Follow up a finished task and the next team starts from its results.
+- **From a chat** — turn on the `fleet` tool and a chat agent can start a task itself, and gets the result back as a
+  new message when it finishes.
+- **Share, analyze, improve** — share a finished task as a read-only link, ask an analyzer agent to diagnose a run,
+  optionally add a self-review loop on the result, and let a nightly opt-in "dream" turn lessons from past runs into
+  better teams.
+
+Details: [`docs/features/agent-fleet.md`](docs/features/agent-fleet.md).
+
+### Chat apps, Copilot and Android
+
+- **Chat apps** — connect your own Telegram, Slack or Discord bot and talk to Agent42 from there. Replies stream by
+  editing one message, files, images and voice notes work, and only the paired owner is answered
+  ([`docs/features/chat-apps.md`](docs/features/chat-apps.md)).
+- **GitHub Copilot** — sign in with GitHub to use your own Copilot plan, and give chats a Copilot agent with a shell and
+  file tools that works in its own workspace.
+- **Android app** — a signed companion app (`tools/Agent42.Android`) that wraps the web app and adds full-duplex voice.
+- **Inbound email** — give a stored agent its own address; mail sent to it runs the agent.
 
 ### Remote MCP servers
 
@@ -162,19 +238,23 @@ Each skill and each MCP tool can be switched on or off individually.
 
 ## Architecture
 
+```mermaid
+sequenceDiagram
+  participant UI as Web UI
+  participant API as Minimal API
+  participant G as AgentGrain (userId/conversationId)
+  participant M as Model endpoint
+  UI->>API: POST message
+  API->>G: run turn
+  G->>M: prompt + tools
+  M-->>G: tokens, tool calls
+  G-->>API: events
+  API-->>UI: NDJSON stream (text, tool calls, usage)
+  G->>G: persist session as grain state
 ```
-wwwroot UI (vanilla JS)  ──HTTP/NDJSON──▶  ASP.NET Core minimal API + Orleans silo
-                                                    │
-                                                    ▼
-                                        AgentGrain  (key: {userId}/{conversationId})
-                                        ├─ Agent Framework ChatClientAgent + tools
-                                        ├─ session persisted as grain state → Cosmos DB (or Postgres, self-hosted)
-                                        └─ durable reminders (schedule_prompt) → Cosmos DB (or Postgres)
-                                                    │
-                                                    ▼
-                                     Any OpenAI-compatible model endpoint
-                                     (Azure AI Foundry · GitHub Models · Ollama · …)
-```
+
+Grain state lives in Cosmos DB (or Postgres when self-hosted), together with durable reminders. Any
+OpenAI-compatible endpoint can serve a chat.
 
 - **Backend** — `src/Agent42.Backend/` — minimal API (the `AgentApi.*` partials, one per
   feature folder, all called from `MapAgentApi`) co-hosted with an Orleans silo; streams each
@@ -198,6 +278,8 @@ Conversation content stays server-side in the grain (history is persisted as ser
 session state), so any model — including stateless third-party endpoints — can run a chat.
 
 ## Run locally
+
+Full walkthrough, with every variable and troubleshooting: [`docs/setup/local.md`](docs/setup/local.md).
 
 ```powershell
 # Restore
@@ -228,6 +310,22 @@ docker compose up -d --build  # UI at http://localhost:8080, bound to loopback o
 
 There is no authentication in this mode, so keep it on localhost or put an authenticating proxy in front. What differs
 from the Azure deployment, and its limits, are in [`docs/features/self-hosting.md`](docs/features/self-hosting.md).
+
+## Run your own
+
+Three ways, from least to most setup. The repo ships no operator credentials, owners or identities: everything specific
+to a deployment is a variable or a secret you set.
+
+1. **Offline** (`tools/Agent42.DevHost`): canned LLM, in-memory grains, nothing to configure. Good for hacking on the UI.
+2. **Self-host** (above): `docker compose`, Postgres, no Azure account. No authentication, so keep it local.
+3. **Azure Container Apps**: run `infra/bootstrap.sh` and set what it prints (step by step in
+   [`docs/setup/azure.md`](docs/setup/azure.md)). Owners (`ACCESS_OWNERS`), push contact
+   (`VAPID_SUBJECT`), inbound email domain and identity aliases start empty; see
+   [`docs/features/azure-deployment.md`](docs/features/azure-deployment.md).
+
+There is no operator model: each user adds their own model providers in Settings (ADR 0018/0019), so a fresh install
+shows an empty model picker until a provider is added. The legal pages, the Android app's default URL and the Chrome
+extension's fallback server point at the maintainer's own instance; change them if you publish your own.
 
 ## Test & lint
 
@@ -312,7 +410,7 @@ Push to `main` → `.github/workflows/deploy.yml` checks its repository variable
 infra (`infra/shared.bicep`: a registry and Container Apps environment, created or reused), builds and pushes the
 containers, and deploys `infra/main.bicep`. The app runs on Azure Container Apps behind Entra ID Easy Auth. To deploy
 to your own subscription, run `infra/bootstrap.sh` once and set the secrets and variables it prints; the full guide,
-every variable, and this repo's own production values are in
+and every variable are in
 [`docs/features/azure-deployment.md`](docs/features/azure-deployment.md).
 
 Several manual prerequisites live outside the code as GitHub Actions secrets. One is
@@ -327,9 +425,13 @@ grants, and the search sidecar all carry constraints that are invisible in the c
 
 ## Contributing / agent docs
 
-This is a personal, experimental project (Peter Bons). Its one external consumer surface is
+This is a personal, experimental project (Peter Bons), released under the [MIT license](LICENSE). Its one external consumer surface is
 the [`Hindsight.AgentFramework.Net`](https://github.com/Expecho/Hindsight.AgentFramework.Net)
 package it uses for long-term memory (ADR 0056); everything inside Agent42 can change freely.
 Commands, hard rules, and the knowledge layout live in `CLAUDE.md`; architectural
 decisions in `.agentic/decisions/` (ADRs); non-obvious constraints in
 `.agentic/gotchas.md`; multi-session plans in `.agentic/specs/`.
+
+## License
+
+[MIT](LICENSE).

@@ -107,7 +107,7 @@ Decisions I took (the user did not specify; each is listed in the final message 
   (every pre-change row belongs to an owner). Spans with no user identity (reminder, gateway, email-in, fleet
   runner may not carry `RequestContext`) land in the existing "unreported" bucket, which no one sees; this is a
   visible behaviour change from "all" and goes in the ADR. Alias note (ADR 0074): `/usage` stays per *account*.
-- **`authLoginHint` is removed** (ADR 0090). It is currently `peter.bons@aceve.com` and would pre-fill the owner's
+- **`authLoginHint` is removed** (ADR 0090). It is currently `primary@example.com` and would pre-fill the owner's
   email for every stranger. The cost is the Entra account picker returning for the owner's two accounts; accepted.
 - **Sequencing:** gating code first, identity flip last.
 
@@ -388,7 +388,7 @@ Prod checks were confirmed by the user on 2026-11-14 (see the handoff results).
    features (`gotchas.md:129`).
 3. (Resolved by the user: shell open to all, accepted risk. No decision left here.)
 4. **`authLoginHint` under the invite-only Phase B.** Default: **remove it.** The hint pins every sign-in, guests
-   included, to `peter.bons@aceve.com` at the Entra prompt, which defeats an invited person choosing their own account.
+   included, to `primary@example.com` at the Entra prompt, which defeats an invited person choosing their own account.
    Cost: the two owners get Entra's account picker again on each sign-in (the ADR 0090 convenience goes; the 14-day
    session cookie is unaffected, so it only shows when the session expires). Alternative: keep the hint and accept that
    guests must use "Sign out" or the picker's "use another account" each time. **Resolved by the user, 2026-11-14: remove it.**
@@ -459,13 +459,13 @@ Where the implementation diverged from the plan above:
 ### Phase B handoff: commands for the USER to run (prepared, not executed; hard rule 5)
 
 Invite-only variant (see Phase B above). App registration client id (from `infra/main.bicep:126`):
-`e9a02aec-5368-4c9a-8211-d21222c4f30c`. These are directory operations in the home tenant, run by the user; the invite
+`<auth-client-id>`. These are directory operations in the home tenant, run by the user; the invite
 sends an email, so confirm the address first. Check the syntax with `--help` before running (the Graph calls need
 `User.Invite.All` and `AppRoleAssignment.ReadWrite.All`; the portal does the same: Entra, Users, Invite external user, then
 Enterprise applications, `agent42-easyauth`, Users and groups, Add user).
 
 ```powershell
-$app = "e9a02aec-5368-4c9a-8211-d21222c4f30c"
+$app = "<auth-client-id>"
 
 # 1. READ-ONLY. Both must hold before anything else; the variant rests on them.
 az ad sp show --id $app --query "{assignmentRequired:appRoleAssignmentRequired, spObjectId:id}"   # expect assignmentRequired = true
@@ -486,14 +486,14 @@ az rest --method POST --uri "https://graph.microsoft.com/v1.0/servicePrincipals/
 The drift check, run after the B2 deploy and again after any portal change to the app (must print `True`):
 
 ```powershell
-az ad sp show --id e9a02aec-5368-4c9a-8211-d21222c4f30c --query appRoleAssignmentRequired
+az ad sp show --id <auth-client-id> --query appRoleAssignmentRequired
 ```
 
 Nothing in B1 lets a guest in: `allowedPrincipals` still blocks them until B2 is deployed. Write the answers to
 (a) the two read-only checks and (b) the guest object id(s) here, then the executor starts B2.
 
 B1(a) result, 2026-11-14 (user ran it): `appRoleAssignmentRequired = true`, `signInAudience = AzureADMyOrg`, enterprise app
-object id `ac2c57f1-ff38-450a-9b90-f95f8de48b69`. Both preconditions hold. B1(b) (test guest) is pending. After B2 is deployed,
+object id `33333333-3333-3333-3333-333333333333`. Both preconditions hold. B1(b) (test guest) is pending. After B2 is deployed,
 run the B3 checks and record them here.
 
 Results (user-observed, 2026-11-14, after #234 deployed): all five B3 checks passed. The owners still reach `/dashboard`, `/logs`

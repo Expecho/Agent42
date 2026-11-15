@@ -187,17 +187,17 @@ public sealed class UserTelemetryTests
         var headers = new HeaderDictionary
         {
             [IdHeader] = AliasOid,
-            [NameHeader] = "msn@2000miles.nl",
+            [NameHeader] = "secondary@example.com",
             [IdpHeader] = "aad",
             [BlobHeader] = BuildPrincipalBlob(
-                ("preferred_username", "msn@2000miles.nl"), ("name", "Second Account")),
+                ("preferred_username", "secondary@example.com"), ("name", "Second Account")),
         };
 
         var tags = headers.GetUserTelemetryTags(Aliases()).ToDictionary(t => t.Key, t => t.Value);
 
         Assert.Equal(CanonicalOid, tags["user.id"]);
-        Assert.Equal("msn@2000miles.nl", tags["user.name"]);
-        Assert.Equal("msn@2000miles.nl", tags["user.email"]);
+        Assert.Equal("secondary@example.com", tags["user.name"]);
+        Assert.Equal("secondary@example.com", tags["user.email"]);
         Assert.Equal("Second Account", tags["user.full_name"]);
     }
 
@@ -212,7 +212,7 @@ public sealed class UserTelemetryTests
     {
         var context = new DefaultHttpContext();
         context.Request.Headers[IdHeader] = AliasOid;
-        context.Request.Headers[NameHeader] = "msn@2000miles.nl";
+        context.Request.Headers[NameHeader] = "secondary@example.com";
         context.RequestServices = new ServiceCollection()
             .AddSingleton(Aliases())
             .BuildServiceProvider();
@@ -227,7 +227,7 @@ public sealed class UserTelemetryTests
         Assert.NotNull(published);
         Assert.Equal(CanonicalOid, published!.Id);
         // Same rule as AC11a: only the id is aliased, so the carrier still names the real account.
-        Assert.Equal("msn@2000miles.nl", published.Name);
+        Assert.Equal("secondary@example.com", published.Name);
     }
 
     /// <summary>

@@ -313,7 +313,7 @@ or the live path notifies too* (with evidence lines). Move this spec to `specs/c
      ```
 2. **Commit the public half** — put the **public key** in `appsettings.json`
    `Push:VapidPublicKey` and a `mailto:` **subject** in `Push:VapidSubject` (e.g.
-   `mailto:claude.peter.bons@hvdgroup.com`). Neither is secret; the browser fetches the
+   `mailto:operator@example.com`). Neither is secret; the browser fetches the
    public key from `GET /api/push/config`.
 3. **Add the private key** as GitHub Actions secret `VAPID_PRIVATE_KEY` → `Push__VapidPrivateKey`
    env. Absent → push simply disabled (not on the availability path; deployment still

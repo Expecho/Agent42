@@ -127,8 +127,11 @@ param githubOAuthClientId string = ''
 @description('Inbound email domain (ADR 0096). OPTIONAL: when empty Email__InboundDomain is not emitted.')
 param emailInboundDomain string = ''
 
-@description('Owner Entra object ids (ADR 0121/0128). OPTIONAL: when empty no Access__Owners__<i> env var is emitted. Entries override the committed list by index from 0.')
+@description('Owner Entra object ids (ADR 0121/0128). OPTIONAL: when empty no Access__Owners__<i> env var is emitted. The shipped Access:Owners list is empty.')
 param accessOwners array = []
+
+@description('Identity aliases (ADR 0074), additional Entra object id -> owning object id. OPTIONAL: when empty no Identity__Aliases__<id> env var is emitted.')
+param identityAliases object = {}
 
 @description('Name of the environment storage link (Microsoft.App/managedEnvironments/storages) to the Azure Files share of copilot chats\' workspaces (ADR 0107).')
 param copilotEnvironmentStorageName string
@@ -305,6 +308,9 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           empty(accessOwners)
             ? []
             : map(range(0, length(accessOwners)), i => { name: 'Access__Owners__${i}', value: string(accessOwners[i]) }),
+          empty(identityAliases)
+            ? []
+            : map(items(identityAliases), alias => { name: 'Identity__Aliases__${alias.key}', value: string(alias.value) }),
           // Reverse geocoding for get_current_location (ADR 0012). Emitted only when a key was
           // supplied: with no key the backend registers CoordinatesOnlyGeocoder and starts normally.
           empty(googleMapsApiKey)

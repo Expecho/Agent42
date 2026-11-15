@@ -117,7 +117,7 @@ first runs `grep -rln "doc-path\|DocPath" tests/` to confirm the real class name
     unconditionally, so prod would flip from its current value to empty (a what-if modify). Prod therefore
     passes it via `vars.AZURE_OPENAI_ENDPOINT` (listed in Step 8's prod values). The value is dormant (ADR 0019)
     but must stay byte-equal on prod.
-  - `azureOpenAITenantId` defaults to `tenant().tenantId`. Safe only if prod's tenant is `2250fce3-…`; Step 9's
+  - `azureOpenAITenantId` defaults to `tenant().tenantId`. Safe only if prod's tenant is `00000000-…`; Step 9's
     what-if proves it, so say so there.
   - Update the deploy comment at the top of the file.
   - **Scrub `@description('…')` strings and comments of owner literals** (`chat.agent42.nl`, `rg-hosting`,
@@ -222,7 +222,7 @@ New `tests/Agent42.Tests/InfraPortabilityTests.cs`, copying the file-reading sha
   `@description('…')` strings** (only `//` and `/* */` comments are exempt). The comment stripper must not
   truncate string literals such as `'https://…'`: reuse `EasyAuthSessionTests`' helper only after checking it
   is string-aware, otherwise write a small string-aware one. Literals checked:
-  `crexpechohosting`, `cae-hosting`, `rg-hosting`, `rg-agent42`, `agent42.nl`, `2250fce3-`, `e9a02aec-`,
+  `crexpechohosting`, `cae-hosting`, `rg-hosting`, `rg-agent42`, `agent42.nl`, `00000000-`, `00000000-`,
   `peterbons`, `resourceGroups/agent42`.
 - `main.bicep` declares `containerRegistryName`, `containerAppsEnvironmentName` and `authClientId` with **no**
   default.
@@ -251,9 +251,9 @@ New `tests/Agent42.Tests/InfraPortabilityTests.cs`, copying the file-reading sha
   - and, for **this repo's prod**, the exact variable values to set before merging. Those values are not secret
     and are copied from the current `main.bicep`/`deploy.yml` defaults: `ACR_NAME=crexpechohosting`,
     `CAE_NAME=cae-hosting`, `CAE_RESOURCE_GROUP=rg-hosting`, `AZURE_RESOURCE_GROUP=rg-agent42`,
-    `AUTH_CLIENT_ID=e9a02aec-5368-4c9a-8211-d21222c4f30c`, `CUSTOM_DOMAIN_NAME=chat.agent42.nl`,
-    `CUSTOM_DOMAIN_CERTIFICATE_NAME=chat.agent42.nl-cae-host-260706080049`, `COSMOS_LOCATION=northeurope`,
-    `OTLP_ENDPOINT=http://home.peterbons.nl:4317`,
+    `AUTH_CLIENT_ID=<auth-client-id>`, `CUSTOM_DOMAIN_NAME=chat.agent42.nl`,
+    `CUSTOM_DOMAIN_CERTIFICATE_NAME=<certificate-name>`, `COSMOS_LOCATION=northeurope`,
+    `OTLP_ENDPOINT=http://otlp.example.com:4317`,
     `AZURE_OPENAI_ENDPOINT=https://agent42.services.ai.azure.com`.
 
     Before setting these, the executor double-checks each value against the
