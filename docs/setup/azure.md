@@ -252,5 +252,5 @@ domain is unbound.
 ## See also
 
 - [`azure-deployment.md`](../features/azure-deployment.md): the secrets and variables reference.
-- [ADR 0128](../../.agentic/decisions/0128-tenant-portable-azure-iac.md): why the IaC is built this way.
-- [`.agentic/gotchas.md`](../../.agentic/gotchas.md): Azure traps (Cosmos, RBAC, the search sidecar).
+- [ADR 0128](https://github.com/Expecho/Agent42/blob/main/.agentic/decisions/0128-tenant-portable-azure-iac.md): why the IaC is built this way.
+- [`.agentic/gotchas.md`](https://github.com/Expecho/Agent42/blob/main/.agentic/gotchas.md): Azure traps (Cosmos, RBAC, the search sidecar).

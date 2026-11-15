@@ -47,3 +47,4 @@ live-github.local.json
 
 # Self-hosting secrets (compose.yaml reads .env; .env.example is the template)
 .env
+_site/

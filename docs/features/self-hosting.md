@@ -108,6 +108,6 @@ registered. Copilot models run only in Copilot-kind agents (see [`bring-your-own
 
 ## See also
 
-- [`.agentic/decisions/0127-self-hosting-local-storage-provider.md`](../../.agentic/decisions/0127-self-hosting-local-storage-provider.md)
+- [`.agentic/decisions/0127-self-hosting-local-storage-provider.md`](https://github.com/Expecho/Agent42/blob/main/.agentic/decisions/0127-self-hosting-local-storage-provider.md)
 - [`configuration-health.md`](configuration-health.md)
 - [`image-attachments.md`](image-attachments.md)
