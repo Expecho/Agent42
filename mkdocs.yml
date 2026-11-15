@@ -42,5 +42,43 @@ nav:
       - Run locally: setup/local.md
       - Deploy to Azure: setup/azure.md
       - Self-hosting: features/self-hosting.md
-  - Features: features/README.md
-  - Integration setup: integrations/README.md
+      - Azure deployment details: features/azure-deployment.md
+  - Agent fleet: features/agent-fleet.md
+  - Features:
+      - Overview: features/README.md
+      - Chat:
+          - Streaming replies: features/streaming-replies.md
+          - Conversation history: features/conversation-history.md
+          - Model picker: features/model-picker.md
+          - Reasoning output: features/reasoning-output.md
+          - Rich inline rendering: features/rich-rendering.md
+          - Artifacts: features/artifacts.md
+          - Voice and speech: features/voice-and-speech.md
+          - Chat apps: features/chat-apps.md
+      - Models:
+          - Bring your own models: features/bring-your-own-models.md
+      - Tools:
+          - Web search: features/web-search.md
+          - Current location: features/current-location.md
+          - Scheduled reminders: features/scheduled-reminders.md
+          - Skills: features/skills.md
+          - Code interpreter: features/code-interpreter.md
+          - Tool selection: features/tool-selection.md
+          - Long-term memory: features/long-term-memory.md
+          - Remote MCP servers: features/remote-mcp-servers.md
+      - Files and images:
+          - Image attachments: features/image-attachments.md
+          - Document Q&A: features/document-qa.md
+          - Image generation: features/image-generation.md
+      - Agents:
+          - Custom agents: features/custom-agents.md
+          - Research agent: features/research-agent.md
+      - App and account:
+          - Push notifications: features/push-notifications.md
+          - Android share sheet: features/android-share-target.md
+          - PWA install and sign-in: features/pwa-and-sign-in.md
+          - Configuration health: features/configuration-health.md
+          - Usage and diagnostics: features/usage-and-diagnostics.md
+  - Integration setup:
+      - Overview: integrations/README.md
+      - Chat apps: integrations/chat-apps/README.md

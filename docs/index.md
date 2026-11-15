@@ -14,6 +14,7 @@ One Orleans grain per conversation wraps a Microsoft Agent Framework agent. Repl
 | Try it on my machine, no Azure account | [Run locally](setup/local.md) |
 | Host it with Docker and Postgres | [Self-hosting](features/self-hosting.md) |
 | Deploy it to Azure Container Apps | [Deploy to Azure](setup/azure.md) |
+| Hand a big task to a team of agents | [Agent fleet](features/agent-fleet.md) |
 | Understand how a feature works | [Feature docs](features/README.md) |
 | Wire up Telegram, Slack, OAuth and the like | [Integration setup](integrations/README.md) |
 
