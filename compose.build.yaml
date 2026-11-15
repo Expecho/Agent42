@@ -1,0 +1,14 @@
+# Build the images from this checkout instead of pulling the published ones (ADR 0130). Use it together with compose.yaml:
+#
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build
+#
+# Needs only Docker; the Dockerfiles do the .NET build. Without this file, compose.yaml pulls ghcr.io/expecho/agent42-*.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: src/Agent42.Backend/Dockerfile
+
+  searxng:
+    build: ./infra/searxng

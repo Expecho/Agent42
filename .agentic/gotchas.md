@@ -5056,3 +5056,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Claim:** `${{ vars.X }}` for an unset variable is an empty string, not an error. For `customDomainName` that means "bind no domain" (silently unbinds a live one), for the shared-infra names it means "create a new registry and environment" (a stray ACR, pushed to), and for `cosmosLocation` an attempted move of an immutable account. The `preflight` job (first in `deploy.yml`, both other jobs `needs` it) fails closed on each, and passes optional values to Bicep only when set. A new optional variable needs the same treatment: pass it only when non-empty, and add a preflight check if empty would destroy something. Secrets behave the same way (see `searxngSecret`'s `@minLength`).
 - **Evidence:** `.github/workflows/deploy.yml` (`preflight`, the `optional=()` array), `infra/main.bicep` (`searxngSecret`), `tests/Agent42.Tests/InfraPortabilityTests.cs`
 - **Verified:** 2026-11-14
+
+### Published images are public, so nothing tenant-specific may be baked into them
+
+- **Claim:** `publish-images.yml` pushes `agent42-backend` and `agent42-searxng` to GHCR for anyone to pull (ADR 0130), and
+  `compose.yaml` and `az acr import` consume them. A value written into a Dockerfile (`ENV`, `ARG`, a copied settings file) is
+  therefore published. Configuration must stay an environment variable, and a secret must never be a build arg. The package is
+  private until the owner flips it public once in the package settings (a workflow cannot), and the image names must keep
+  matching `infra/main.bicep`'s `imageName` defaults or an imported image is not found.
+- **Evidence:** `.github/workflows/publish-images.yml`, `tests/Agent42.Tests/PublishImagesTests.cs`
+- **Verified:** 2026-11-15
