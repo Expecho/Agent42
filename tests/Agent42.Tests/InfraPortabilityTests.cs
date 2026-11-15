@@ -106,6 +106,18 @@ public sealed class InfraPortabilityTests
     }
 
     [Fact]
+    public void Deploy_PreflightCosmosRegionGuard_ReadsLocationsLineByLine()
+    {
+        // `az cosmosdb list -o tsv` prints display names with a space ("North Europe"). A word-splitting
+        // `for have in $locations` turns that into "North" and "Europe" and fails a correct region.
+        var workflow = StripYamlComments(Read(".github", "workflows", "deploy.yml"));
+
+        Assert.DoesNotContain("for have in $cosmos_locations", workflow, StringComparison.Ordinal);
+        Assert.Contains("while IFS= read -r have", workflow, StringComparison.Ordinal);
+        Assert.Contains("<<< \"$cosmos_locations\"", workflow, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Deploy_HasNoRoleAssignmentPut()
     {
         // The Foundry grant was dead since ADR 0017 and owner-scoped (ADR 0128).
