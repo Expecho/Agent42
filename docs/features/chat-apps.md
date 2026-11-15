@@ -1,86 +1,40 @@
 # Chat apps
 
-> Talk to Agent 42 from your own bot on a chat app. Telegram, Slack and Discord today; Signal is built but off until the
-> operator turns it on; WhatsApp is planned (ADR 0111).
+Talk to Agent 42 from your own bot on a chat app. Telegram, Slack and Discord work today. Signal is built but off until the operator turns it on, and WhatsApp is planned.
 
-## What it is
+## Connect a bot
 
-Each user connects their **own** bot in Preferences → Chat apps: paste the bot's token, then send the bot the pairing
-code Agent42 shows. From then on, DMs to the bot are conversations with Agent 42, listed in the sidebar like any other
-chat. Replies stream into the chat by editing one message in place. `/new`, `/stop`, `/model`, `/agent`, `/sethome`,
-`/status` and `/help` work in the chat (on Slack they start with `!`, because Slack keeps a leading `/` for its own
-commands).
+Each user connects their own bot.
 
-Only the paired owner can talk to the bot. Everyone else, other bots included, is ignored without a reply.
+1. Create a bot on the platform and copy its token.
+2. In Agent 42, open Preferences, then **Chat apps**, and paste the token.
+3. Send the bot the pairing code Agent 42 shows.
 
-Images and documents sent to the bot ride the turn (a file that can't be read is skipped with a note), images the model
-generates come back as uploads, and voice notes are transcribed by the user's own transcription model (ADR 0113).
-Groups answer the owner only when mentioned. With notifications on, results of scheduled prompts and agent runs, and the
-agent's notifications, are delivered to the chat a conversation came from, or to the home chat set with `/sethome`.
+For platform-specific setup steps, see the [chat apps setup guide](../integrations/chat-apps/README.md).
 
-## How it works
+## Chat with it
 
-```mermaid
-sequenceDiagram
-    participant T as Telegram
-    participant A as TelegramAdapter (long poll)
-    participant P as ChatTurnPipeline
-    participant R as ChatRouteGrain
-    participant G as AgentGrain
+Direct messages to your bot become conversations with Agent 42, and they are listed in the sidebar like any other chat. Replies appear by editing one message in place as they stream.
 
-    A->>T: getUpdates(offset)
-    T-->>A: update (message)
-    A->>P: AcceptAsync (normalized ChatInboundMessage)
-    P->>P: drop bots and own echoes, dedupe, owner check
-    alt a command
-        P->>T: answer inline (ahead of the queue)
-    else a message
-        P->>P: claim the chat's queue slot (synchronously)
-        P->>R: BeginTurnAsync → conversation id (minted on first use, /new, rollover)
-        P->>G: ChatAsync(text, interactive: false) — drained detached into a buffer
-        P->>T: placeholder, then throttled edits, then the formatted final
-    end
-    A->>A: commit cursor (update_id + 1)
-```
+These commands work in the chat: `/new`, `/stop`, `/model`, `/agent`, `/sethome` and `/status`, plus `/help`. On Slack, start them with `!` instead of `/`, because Slack keeps a leading `/` for itself.
 
-- **One gateway per process.** `ChatGatewayService` holds a Blob lease, then runs one supervised session per runnable
-  connection, reconnecting with backoff. An auth failure (a dead token, another program polling the same bot) faults
-  the connection with a reason the panel shows. Saving the connection again retries.
-- **Adapters own transport and formatting only.** `IChatPlatformAdapter` is the per-platform seam. Who may talk and
-  which conversation a message lands in belong to `ChatTurnPipeline`.
-- **No public endpoint.** The gateway connects out (Telegram long polling, Slack Socket Mode, the Discord gateway
-  websocket), so nothing is added to Easy Auth's `excludedPaths`.
-- **Slack** acks every Socket Mode envelope before reading it, and reconnects inside the session when Slack recycles
-  the socket. **Discord** uses `Discord.Net.WebSocket` for the gateway only; replies go through a hand-rolled REST
-  client that sends every message with mentions switched off.
+- Send images and documents with a message. A file that can't be read is skipped with a note.
+- Images the model generates come back as uploads.
+- Voice notes are transcribed with your own transcription model.
+- In groups, the bot answers you only when mentioned.
 
-## Key files
+## Notifications
 
-| What | Where |
-|---|---|
-| Connection state, pairing, routes | `src/Agent42.Agents/ChatGateway/` (`UserChatConnectionsGrain`, `ChatConnectionDirectoryGrain`, `ChatRouteGrain`) |
-| Supervisor and lease | `src/Agent42.Backend/ChatGateway/ChatGatewayService.cs`, `ChatGatewayLease.cs` |
-| Turn pipeline and commands | `src/Agent42.Backend/ChatGateway/ChatTurnPipeline*.cs` |
-| Streaming replies and splitting | `src/Agent42.Backend/ChatGateway/ChatReplyStreamer.cs`, `ChatMessageChunker.cs` |
-| Telegram | `src/Agent42.Backend/ChatGateway/Telegram/` |
-| Slack (Socket Mode, Web API, mrkdwn, the app manifest) | `src/Agent42.Backend/ChatGateway/Slack/` |
-| Discord (gateway via Discord.Net, REST, table conversion) | `src/Agent42.Backend/ChatGateway/Discord/` |
-| Management API | `src/Agent42.Backend/ChatGateway/AgentApi.ChatGateway.cs` |
-| Files, images, voice notes | `src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Files.cs`, `ChatTurnPipeline.Voice.cs` |
-| Delivery to a chat | `src/Agent42.Agents/ChatGateway/AgentGrain.ChatDelivery.cs`, `src/Agent42.Backend/ChatGateway/ChatDeliverySender.cs` |
-| Preferences panel | `src/Agent42.Backend/wwwroot/js/chatgateway.js` |
+With notifications on, results of scheduled prompts and agent runs, and the agent's own notifications, are delivered to the chat the conversation came from. Use `/sethome` in a chat to make it your home chat for deliveries.
 
-## Trying it offline
+## Who can talk to it
 
-DevHost runs the real adapters against local stand-ins for the platforms, and without them a real token connects to
-the real platform, outbound only, with no tunnel needed:
+Only the paired owner can use the bot. Everyone else, other bots included, is ignored without a reply.
 
-| Platform | Setting (base URLs end in `/`) |
-|---|---|
-| Telegram | `ChatGateway__TelegramApiBaseUrl`: a server that speaks the Bot API |
-| Slack | `ChatGateway__SlackApiBaseUrl`: the Web API. Its `apps.connections.open` answer names the Socket Mode URL |
-| Discord | `ChatGateway__DiscordApiBaseUrl` (REST) and `ChatGateway__DiscordGatewayUrl` (a `ws://` gateway; with it set, Discord.Net makes no REST call to connect) |
+## If a connection fails
 
-## Setup
+If a token is dead, or another program is polling the same bot, the connection shows a reason in the Chat apps panel. Fix it and save the connection again to retry.
 
-See [`docs/integrations/chat-apps/`](../integrations/chat-apps/README.md).
+## Privacy
+
+Agent 42 connects out to the chat platform, so you don't need to open a public address. Conversations you have through a chat app are stored by that platform under your own bot. Replies to chat apps are opt-in per connection.

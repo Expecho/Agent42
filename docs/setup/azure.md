@@ -15,11 +15,11 @@ flowchart LR
   Auth --> App
   subgraph CAE["Container Apps environment"]
     subgraph App["Container App (1 replica)"]
-      Backend["Agent42 backend<br/>Orleans silo + API + UI"]
+      Backend["Agent42 backend<br/>API + web UI"]
       Searx["SearXNG sidecar"]
     end
   end
-  Backend --> Cosmos[("Cosmos DB<br/>grain state, reminders,<br/>documents, chat search")]
+  Backend --> Cosmos[("Cosmos DB<br/>conversations, reminders,<br/>documents, chat search")]
   Backend --> Blob[("Blob Storage<br/>attachments, skills, fleet files")]
   Backend --> Files[("Azure Files<br/>Copilot workspaces")]
   Backend --> Models["Your model providers<br/>(added per user in Settings)"]
@@ -28,7 +28,7 @@ flowchart LR
 
 Created in your resource group: the Container App, a Cosmos DB account, two storage accounts, and (unless you reuse
 existing ones) a container registry, a Log Analytics workspace and a Container Apps environment. The app runs a single
-replica on purpose: several features keep in-process state (ADR 0128, and the single-replica rule in `CLAUDE.md`).
+replica on purpose: several features keep their live state inside the one running app.
 Expect an always-on bill for the replica, Cosmos DB and storage; check the Azure pricing calculator for your region.
 
 ## Before you start
@@ -252,5 +252,3 @@ domain is unbound.
 ## See also
 
 - [`azure-deployment.md`](../features/azure-deployment.md): the secrets and variables reference.
-- [ADR 0128](https://github.com/Expecho/Agent42/blob/main/.agentic/decisions/0128-tenant-portable-azure-iac.md): why the IaC is built this way.
-- [`.agentic/gotchas.md`](https://github.com/Expecho/Agent42/blob/main/.agentic/gotchas.md): Azure traps (Cosmos, RBAC, the search sidecar).

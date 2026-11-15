@@ -1,189 +1,41 @@
 # Tool selection
 
-> Choose which tools an assistant may use — a personal default, a per-conversation override, or
-> baked into a custom agent. Availability is also capped by what the chosen model supports.
-> ADRs 0021 · 0026 · 0057 · 0066 · 0075 · 0098.
+Choose which tools an assistant may use: web search, location, reminders and more. You can set a personal default, override it per conversation, or fix it inside a custom agent.
 
-## What it is
+## Where to choose
 
-You pick which of the curated tools (`web_search`, `location`, `scheduling`, `skills`,
-`code_interpreter`, `memory`, `read_web_document`, `push_notification`, `artifacts`, `read_document`,
-`browser_tools`, `shared_state`, `past_chats`, `fleet`, plus your MCP servers) an
-assistant may use, remembered at three layers:
+- **Personal default**: **Preferences → Tools**. It applies to every new regular chat.
+- **Per conversation**: the **Tools** button in the composer. Not available in agent chats.
+- **Per agent**: the **Tools** tab in the agent editor. See [Custom agents](custom-agents.md).
 
-- **User default** (Preferences → default tools) — every new regular chat.
-- **Per-conversation override** (the composer's "Tools" popover) — non-agent chats only.
-- **Per-agent set** (agent editor) — snapshotted into the conversation.
+Until you press Save for the first time, everything is on.
 
-`get_date` and document RAG stay **always-on**. Selection can only *narrow*, never grant: it is
-intersected with model capability.
+## Available tools
 
-Two keys are worth knowing about specifically, because turning them on grants more than a tool:
-`read_web_document` (ADR 0066) lets the assistant fetch a document **from our own container** and keep
-what it finds, and `push_notification` (ADR 0075) lets it put **text it writes itself** on your
-device's lock screen. Both are off in any selection you saved before they shipped — press Save once in
-Preferences → Tools to pick them up. The same holds for every key added later, `read_document`
-(ADR 0098) included.
+| Tool | What it gives the assistant |
+|------|-----------------------------|
+| Web search | Searches the web. See [Web search](web-search.md). |
+| Location | Your device location. See [Current location](current-location.md). |
+| Scheduling | Prompts that run later. See [Scheduled reminders](scheduled-reminders.md). |
+| Code interpreter | Runs Python in a hosted sandbox. See [Code interpreter](code-interpreter.md). |
+| Long-term memory | Remembers things across chats. See [Long-term memory](long-term-memory.md). |
+| Read web documents | Fetches a PDF or Office document from a link into the chat. |
+| Read whole documents | Reads a document start to end, for summaries and full lists. |
+| Push notifications | Sends a notification to your devices. See [Push notifications](push-notifications.md). |
+| Artifacts | Builds pages, diagrams and documents in a side pane. See [Artifacts](artifacts.md). |
+| Browser tools | Asks you to confirm actions and reads your time zone and selected text. |
+| Shared state | A checklist and notes you and the assistant both edit. |
+| Past chats | Searches and reads your other conversations. |
+| Agent fleet | Hands long jobs to the [agent fleet](agent-fleet.md). |
+| Skills | One row per skill. See [Skills](skills.md). |
+| MCP servers | One row per server, with a row for each of its tools. See [Remote MCP servers](remote-mcp-servers.md). |
 
-**`memory` is the one documented exception to that intersection** (ADR 0057). Long-term memory is not a
-tool — it is an `AIContextProvider` injected before the call — so it never passes through the capability
-filter: a text-only model with `memory` selected still gets memory. It is also gated underneath by the
-operator's `Hindsight:ApiKey`; with no key, selecting it makes zero calls.
+The current date and document search are always on.
 
-## How it works
+## Rules to know
 
-`ToolCatalog` is the single source of truth for keys. `EnabledTools` is a nullable list where
-**`null == all`** (so no migration was needed). The grain resolves
-**override ?? user-default ?? all**, then intersects with model capability.
-
-```mermaid
-flowchart TD
-    subgraph Layers
-      OV["conversation override / agent snapshot<br/>(AgentGrainState.EnabledTools)"]
-      UD["user default<br/>(UserProfile.EnabledTools)"]
-      ALL["null == all<br/>(ToolCatalog.AllSelectableToolKeys)"]
-    end
-    OV -->|"?? "| UD -->|"?? "| ALL --> EFF["EffectiveEnabledTools()"]
-    EFF --> FILT["BuildAgent: keep tools whose key ∈ set"]
-    FILT --> CAP["intersect with model capability (SupportsTools / SupportsHostedTools)"]
-    CAP --> FINAL["final AITool list"]
-    EFF --> MEM["memory ∈ set? (ADR 0057)"]
-    MEM --> PROV["HindsightMemoryProvider — NOT capability-filtered"]
-```
-
-The `memory` arm leaves the flow before `CAP` on purpose: it is a context provider, not a tool, so the
-capability intersection never applies to it.
-
-### The catalog keys and the null==all set
-
-```csharp
-public const string WebSearch = "web_search";
-public const string Location = "location";
-public const string Scheduling = "scheduling";
-public const string Skills = "skills";
-public const string CodeInterpreter = "code_interpreter";
-public const string Memory = "memory";         // ADR 0057 — the first key that is NOT a tool (see long-term-memory.md)
-...
-public static IReadOnlyList<string> AllSelectableToolKeys { get; } =
-    [
-        WebSearch, Location, Scheduling, Skills, CodeInterpreter, Mcp, Memory, ReadWebDocument, PushNotification,
-        Artifacts, ReadDocument, BrowserTools, SharedState, PastChats, Fleet,
-    ];
-```
-
-### Three-layer resolution
-
-```csharp
-private IReadOnlyList<string> EffectiveEnabledTools()
-    => _state.State.EnabledTools          // per-conversation override / agent snapshot
-        ?? _userDefaultEnabledTools       // user default (read once on activation)
-        ?? ToolCatalog.AllSelectableToolKeys;  // null == all
-```
-
-### The gate — selection ∩ capability
-
-Capability is the outer, authoritative gate; selection is intent only:
-
-```csharp
-var enabled = EffectiveEnabledTools().ToHashSet(StringComparer.Ordinal);
-tools = [.. tools.Where(t => ToolCatalog.IsToolEnabled(t.Name, enabled))];
-...
-Tools = capabilities.SupportsTools ? tools : [],
-```
-
-`IsToolEnabled` keeps `get_date` (unmapped) always, and requires the key for everything mapped:
-
-```csharp
-public static bool IsToolEnabled(string toolName, ISet<string> enabled)
-    => KeyFor(toolName) is not { } key || enabled.Contains(key);
-```
-
-### The per-user tool catalog and per-conversation override
-
-`GET /api/tools` returns the static descriptors, one `skill:{name}` descriptor per skill (uploaded
-skills shadow shipped ones by name, ADR 0048/0049), and per enabled MCP server one `mcp:{id}`
-descriptor plus one child row per tool it last reported (ADR 0026/0058). Tool names come from the
-persisted `KnownToolNames`, never a live connection, so a page load never waits on a dead server:
-
-```csharp
-app.MapGet("/api/tools", async (IGrainFactory grains, HttpContext http) =>
-{
-    var userId = http.GetUserId();
-    var uploaded = (await grains.GetGrain<IUserSkillsGrain>(userId).GetAsync()).Skills;
-    var skillDescriptors = /* uploaded ∪ shipped (not shadowed), ordered */
-        ... .Select(n => new ToolDescriptor(ToolCatalog.SkillKey(n), n, RequiresHostedTools: false));
-
-    var overlay = await grains.GetGrain<IUserMcpConfigGrain>(userId).GetAsync();
-    var mcpDescriptors = overlay.Servers
-        .Where(s => s.Enabled)
-        .SelectMany(s => new[] { new ToolDescriptor(ToolCatalog.McpServerKey(s.Id), s.Name, RequiresHostedTools: false) }
-            .Concat((s.KnownToolNames ?? []).Select(name => new ToolDescriptor(
-                ToolCatalog.McpToolKey(s.Id, name), name, RequiresHostedTools: false,
-                ParentKey: ToolCatalog.McpServerKey(s.Id)))));
-    return Results.Json<IReadOnlyList<ToolDescriptor>>(
-        [.. ToolCatalog.Descriptors, .. skillDescriptors, .. mcpDescriptors]);
-});
-```
-
-```csharp
-app.MapPut("/api/conversations/{conversationId}/tools", async (string conversationId, ToolSelectionRequest request, IGrainFactory grains, HttpContext http) =>
-{
-    var agent = grains.GetGrain<IAgentGrain>(AgentKey(http.GetUserId(), conversationId));
-    await agent.SetEnabledToolsAsync(request.Tools);
-    return Results.Json(await agent.GetEnabledToolsAsync());
-});
-```
-
-Server-side `Sanitize` drops invented keys but leaves `null` as `null`:
-
-```csharp
-public static IReadOnlyList<string>? Sanitize(IReadOnlyList<string>? tools)
-    => tools is null
-        ? null
-        : [
-            .. AllSelectableToolKeys.Where(tools.Contains),
-            .. tools.Where(IsSkillKey).Distinct(),
-            .. tools.Where(IsMcpServerKey).Distinct(),
-        ];
-```
-
-The `mcp` **wildcard** must be expanded into explicit `mcp:{id}` keys on read
-(`GetEnabledToolsAsync` → `ToolSelection.ExpandedEnabledTools`), or a no-op picker Save would silently disable
-every server — the picker has no bare `mcp` checkbox.
-
-## How the Agent Framework fits
-
-- Selection resolves to a concrete `List<AITool>` (plus hosted-tool markers) that becomes
-  `ChatClientAgentOptions.ChatOptions.Tools`. The framework is what turns "present in the list"
-  into "advertised to the model."
-- Two arms gate a framework `AIContextProvider` in/out of `AIContextProviders`, and they differ: the
-  **skills** arm is filtered by capability *and* selection (it exposes `load_skill`, so it is a tool);
-  the **memory** arm is filtered by selection only (ADR 0057). Document RAG is a third arm, filtered by
-  neither — document presence alone (ADR 0008).
-- The framework has no notion of the catalog — Agent42's filter runs *before* handing the final
-  list to `ChatClientAgent`.
-
-## How Orleans fits
-
-- `EnabledTools` is grain-persisted state (`AgentGrainState`, nullable, `null == all`). The
-  per-conversation override and agent snapshot live in the conversation grain; the user default
-  lives in `IUserProfileGrain` (fetched once per activation); the MCP server list in
-  `IUserMcpConfigGrain`.
-- Because resolution reads these on activation and `BuildAgent` intersects with model
-  capability, a Preferences change reflects in a warm chat only on its next activation (accepted
-  staleness). **That staleness is worth knowing for `memory` specifically:** switching the default off
-  stops recall and retain on the *next* activation of an already-warm chat, not immediately — and memory
-  is the widest egress in the app. The per-conversation override and the agent snapshot both rebuild
-  eagerly; only the user-default layer is deferred.
-- Every mutation persists and rebuilds the agent via the snapshot→rebuild→restore-session
-  dance, so the selection survives deactivation.
-
-## Key files
-
-| Concern | File |
-|---------|------|
-| Catalog (source of truth) | `src/Agent42.Agents/Tools/ToolCatalog.cs` |
-| Resolution + gate | `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`EffectiveEnabledTools`, `BuildAgent`) |
-| Memory gate (ADR 0057) | `src/Agent42.Agents/Memory/AgentGrain.Memory.cs` (`BuildMemoryProvider`) |
-| Endpoints | `src/Agent42.Backend/Tools/AgentApi.Tools.cs` (`/api/tools`, `/api/conversations/{id}/tools`, `/api/profile`) |
-| State | `src/Agent42.Agents/Conversations/AgentGrainState.cs`, `UserProfile.cs` |
+- Selection only narrows. A tool also needs a model that supports it, so a model without tool support gets none, and the code interpreter needs a Responses API model.
+- **Long-term memory is the exception.** It isn't a tool, so a text-only model still gets it when it is selected. It also needs the operator's key.
+- **New tools start off after you've saved.** If you pressed Save before a tool existed, open **Preferences → Tools** and save again to pick it up.
+- Two tools grant more than they sound like: **Read web documents** fetches from the Agent 42 server and keeps what it finds, and **Push notifications** puts text the assistant writes on your lock screen.
+- A change to your personal default may not reach a chat that is already open until you reopen it. Per-conversation and per-agent changes apply immediately. This matters most for **Long-term memory**: switching it off in Preferences may not stop it in a chat that is already open.
