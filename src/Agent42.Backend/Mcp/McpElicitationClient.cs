@@ -17,12 +17,29 @@ namespace Agent42.Backend;
 /// </summary>
 public static class McpElicitationClient
 {
-    /// <summary>Client options that declare elicitation and answer it through <paramref name="router"/>.</summary>
-    public static McpClientOptions Options(McpElicitationRouter router) => new()
+    /// <summary>The MCP Apps extension id and the one MIME type a host that renders views declares (SEP-1865).</summary>
+    public const string AppsExtension = "io.modelcontextprotocol/ui";
+
+    public const string AppsMimeType = "text/html;profile=mcp-app";
+
+    // An extension's value must be a JsonElement: measured on 2.2.0, an anonymous object throws
+    // NotSupportedException from the source-generated context when the capabilities are serialized.
+    private static readonly JsonElement AppsExtensionValue =
+        JsonSerializer.SerializeToElement(new Dictionary<string, string[]> { ["mimeTypes"] = [AppsMimeType] });
+
+    /// <summary>
+    /// Client options that declare elicitation and answer it through <paramref name="router"/>. With
+    /// <paramref name="appsEnabled"/> they also advertise the MCP Apps extension (ADR 0133) — only then, because a
+    /// server that sees it may return UI-oriented results, and a stored server defaults to apps off.
+    /// </summary>
+    public static McpClientOptions Options(McpElicitationRouter router, bool appsEnabled = false) => new()
     {
         Capabilities = new ClientCapabilities
         {
             Elicitation = new ElicitationCapability { Form = new(), Url = new() },
+            Extensions = appsEnabled
+                ? new Dictionary<string, object> { [AppsExtension] = AppsExtensionValue }
+                : null,
         },
         Handlers = new McpClientHandlers
         {

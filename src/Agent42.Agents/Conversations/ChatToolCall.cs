@@ -23,4 +23,7 @@ public sealed record ChatToolCall(
     // history at all. NOT a stopped turn: cancelling an Agent Framework run persists nothing — not even
     // the user message — so ADR 0078 cannot leave a dangling call here (measured, gotchas.md). The chip
     // replays completed and without a result body either way, rather than pulsing forever.
-    [property: Id(3)] string? ToolResult);
+    [property: Id(3)] string? ToolResult,
+    // Set when this call rendered an MCP App view (ADR 0133): where the view lives. The raw result stays in a blob behind
+    // the owner-only result route and never rides history. Trailing default, so every older construction compiles.
+    [property: Id(4)] McpAppRef? McpApp = null);

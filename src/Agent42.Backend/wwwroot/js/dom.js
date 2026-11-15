@@ -229,6 +229,7 @@ export const mcpBridgeKeyCopyBtn = document.getElementById("mcpBridgeKeyCopyBtn"
 export const mcpBridgeCommand = document.getElementById("mcpBridgeCommand");
 export const mcpEnabledInput = document.getElementById("mcpEnabled");
 export const mcpSeedsUrlsInput = document.getElementById("mcpSeedsUrls");
+export const mcpAppsEnabledInput = document.getElementById("mcpAppsEnabled");
 export const mcpAuthSelect = document.getElementById("mcpAuth");
 export const mcpHeaderNameField = document.getElementById("mcpHeaderNameField");
 export const mcpHeaderNameInput = document.getElementById("mcpHeaderName");

@@ -10,9 +10,13 @@ namespace Agent42.Backend;
 /// alive for as long as any grain may hold them, disposing it on cache eviction (the bounded-lifetime policy).
 /// <see cref="Elicitation"/> is the connection's elicitation router (ADR 0095). It is copied onto the group so the
 /// grain can open a scope around each call, and it is null for a connection that declared no elicitation.
+/// <see cref="App"/> and <see cref="AppTools"/> are the MCP Apps side (ADR 0133): a handle for reading a view and
+/// calling a tool for it, and the <c>_meta.ui</c> of every tool that declares any (including app-only tools, which the
+/// model never sees). Both are null when the server has apps off.
 /// </summary>
 public sealed record McpServerConnection(
-    IReadOnlyList<AITool> Tools, IAsyncDisposable Connection, McpElicitationRouter? Elicitation = null);
+    IReadOnlyList<AITool> Tools, IAsyncDisposable Connection, McpElicitationRouter? Elicitation = null,
+    IMcpAppClient? App = null, IReadOnlyDictionary<string, McpAppToolMeta>? AppTools = null);
 
 /// <summary>
 /// The already-decrypted secrets a connection may need, unprotected by the caller (never the ciphertext).
@@ -103,13 +107,12 @@ public sealed class McpConnectionFactory : IMcpConnectionFactory
 
         var router = new McpElicitationRouter();
         var client = await McpClient.CreateAsync(
-            transport, McpElicitationClient.Options(router), _loggerFactory, cancellationToken);
+            transport, McpElicitationClient.Options(router, server.AppsEnabled), _loggerFactory, cancellationToken);
         try
         {
             var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
             // McpClientTool : AIFunction : AITool (Step 0 spike). The provider wraps each for truncation.
-            IReadOnlyList<AITool> raw = [.. tools.Cast<AITool>()];
-            return new McpServerConnection(raw, client, router);
+            return McpClientAppClient.Connection(client, tools, router, server);
         }
         catch
         {
@@ -127,11 +130,17 @@ public sealed class McpConnectionFactory : IMcpConnectionFactory
 /// <see cref="DelegatingAIFunction"/> forwards Name/Description/JsonSchema unchanged (Step 0 spike), so the
 /// model's view of the tool is identical — only the return value is bounded.
 ///
+/// <para>Public rather than internal because this repo has no <c>InternalsVisibleTo</c> and the grain tests wrap their own tools.</para>
+///
+/// <para>For a tool that declares an MCP App view (<paramref name="app"/>, ADR 0133) it also records the tool's raw
+/// result on the run, for the browser to render. That capture is a side channel: the value returned to the model is
+/// exactly what it was.</para>
+///
 /// <para>It is also where the SDK's -32042 <see cref="ModelContextProtocol.UrlElicitationRequiredException"/>
 /// becomes the Agents layer's <see cref="McpUrlElicitationRequiredException"/> (ADR 0095). Every MCP tool passes
 /// through here, and the grain-side wrapper that handles the exception has no MCP package reference.</para>
 /// </summary>
-internal sealed class TruncatingMcpTool(AIFunction inner) : DelegatingAIFunction(inner)
+public sealed class TruncatingMcpTool(AIFunction inner, McpAppRef? app = null) : DelegatingAIFunction(inner)
 {
     protected override async ValueTask<object?> InvokeCoreAsync(
         AIFunctionArguments arguments, CancellationToken cancellationToken)
@@ -146,7 +155,16 @@ internal sealed class TruncatingMcpTool(AIFunction inner) : DelegatingAIFunction
             throw McpElicitationClient.Translate(ex);
         }
 
-        return McpToolResultShaper.Shape(
-            raw, TurnContext.CurrentOrClosed, FunctionInvokingChatClient.CurrentContext?.CallContent.CallId);
+        var turn = TurnContext.CurrentOrClosed;
+        var callId = FunctionInvokingChatClient.CurrentContext?.CallContent.CallId;
+
+        // An MCP App tool (ADR 0133): hand the browser the RAW result beside the text. The model's value below is
+        // unchanged and the raw one never enters the session; the run's context decides whether anyone may receive it.
+        if (app is not null && turn.AppsSupported)
+        {
+            turn.RecordAppResult(callId, new McpAppResult(app, McpAppResultCapture.ToResultJson(raw)));
+        }
+
+        return McpToolResultShaper.Shape(raw, turn, callId);
     }
 }

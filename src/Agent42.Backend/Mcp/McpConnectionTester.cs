@@ -114,7 +114,8 @@ public sealed class McpConnectionTester
             var connection = await _connectionFactory.ConnectAsync(server, secrets, timeout.Token);
             try
             {
-                var names = connection.Tools.Select(t => t.Name).ToList();
+                // The same visibility rule as the chat path (ADR 0133): an app-only tool is not a name the picker may list.
+                var names = McpAppMeta.ModelTools(server, connection).Select(t => t.Name).ToList();
                 return await RecordAndDescribeAsync(userId, server, names);
             }
             finally

@@ -11,11 +11,11 @@ import { confirmActionApproveBtn, confirmActionDeclineBtn, confirmActionDialog, 
 import { closeElicitationDialog, showElicitation } from "./elicitation.js";
 import { locationForTool } from "./location.js";
 
-// Every client tool this page can run, by name, plus "mcp_elicitation" (ADR 0095: this page can show an MCP server's
+// Every client tool this page can run, by name, plus "mcp_app" (ADR 0133: this page can render an MCP App view; a literal, not imported from mcpapps.js, which imports this module) and "mcp_elicitation" (ADR 0095: this page can show an MCP server's
 // request for input). Sent as `clientTools` with a chat request; a name missing here answers "unavailable" (an
 // elicitation: "cancel") on the server without ever reaching the page.
 export const CLIENT_TOOLS = [
-  "confirm_action", "control_artifact_pane", "get_browser_context", "get_current_location", "mcp_elicitation",
+  "confirm_action", "control_artifact_pane", "get_browser_context", "get_current_location", "mcp_elicitation", "mcp_app",
 ];
 
 const MAX_SELECTION_CHARS = 2000;
@@ -39,6 +39,13 @@ const handlers = {
   // ADR 0095: not a model tool. An MCP server's elicitation, streamed as `mcpElicitation` and answered the same way.
   mcp_elicitation: (input) => showElicitation(input),
 };
+
+// Asks the user a yes/no question in the confirm dialog and resolves true only for Approve. Used by MCP App views that
+// want to message the assistant or tell it something (ADR 0133): the text is third-party and shown as textContent.
+export async function askUserConfirm(text) {
+  const answer = await confirmAction({ action: text });
+  return answer?.approved === true;
+}
 
 // Runs one flagged call and posts its result. Never throws and is never awaited by the stream reader.
 export async function runClientTool(convId, call) {

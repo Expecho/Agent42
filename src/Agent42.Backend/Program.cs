@@ -144,6 +144,11 @@ builder.AddStorageProvider(credential);
 // gated by the ToolCatalog.Mcp key (ADR 0021).
 builder.Services.AddSingleton<IMcpConnectionFactory, McpConnectionFactory>();
 builder.Services.AddSingleton<IUserMcpToolProvider, UserMcpToolProvider>();
+// MCP Apps (ADR 0133): the registry reads a view and runs a view's tool call through the SAME provider instance (and so
+// the same cached sockets); it is Backend-only, and the endpoints resolve it with GetService so another host may omit it.
+builder.Services.AddSingleton<IMcpAppHandleSource>(sp => sp.GetRequiredService<IUserMcpToolProvider>() as UserMcpToolProvider
+    ?? throw new InvalidOperationException("MCP Apps need the Backend UserMcpToolProvider."));
+builder.Services.AddSingleton<IMcpAppRegistry, McpAppRegistry>();
 // The InteractiveOAuth access-token resolution shared by the activation path above and the user-pressed
 // connection test below (ADR 0064). Extracted so the test cannot false-negative on a server the chat path
 // connects to fine: there is exactly one implementation of the refresh-at-connect rule.

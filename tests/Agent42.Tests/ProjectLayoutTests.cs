@@ -181,6 +181,7 @@ public sealed class ProjectLayoutTests
         { "Telemetry/AgentApi.Telemetry.cs", "MapTelemetryEndpoints" },
         { "Telemetry/AgentApi.Diagnostics.cs", "MapDiagnosticsEndpoints" },
         { "Mcp/AgentApi.Mcp.cs", "MapMcpEndpoints" },
+        { "Mcp/AgentApi.McpApps.cs", "MapMcpAppEndpoints" },
         { "UserSkills/AgentApi.UserSkills.cs", "MapUserSkillEndpoints" },
         { "Web/AgentApi.Web.cs", "MapWebEndpoints" },
         { "Search/AgentApi.Search.cs", "MapSearchEndpoints" },

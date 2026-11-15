@@ -383,6 +383,36 @@ public sealed class McpServersApiTests(SharedApiFixture fixture) : SharedCluster
         Assert.Equal(["jira_get_issue", "jira_delete_issue"], stored.KnownToolNames);
     }
 
+    // ADR 0133: AppsEnabled is a SETTING like SeedsFetchableUrls: it follows the request, defaults OFF, and a PUT can turn
+    // it off again (the grain has no Keep clause for it).
+    [Fact]
+    public async Task Server_AppsEnabled_DefaultsOff_AndRoundTrips()
+    {
+        const string user = "user-apps-roundtrip";
+        var body = new { name = "Apps", endpoint = "https://apps.example/mcp", auth = "None", enabled = true };
+
+        var plain = await Client.SendAsync(Request(HttpMethod.Post, "/api/mcp-servers", user, body));
+        plain.EnsureSuccessStatusCode();
+        var created = await plain.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(created.GetProperty("appsEnabled").GetBoolean());
+        var id = created.GetProperty("id").GetString()!;
+
+        var on = await Client.SendAsync(Request(HttpMethod.Put, $"/api/mcp-servers/{id}", user, new
+        {
+            name = "Apps",
+            endpoint = "https://apps.example/mcp",
+            auth = "None",
+            enabled = true,
+            appsEnabled = true,
+        }));
+        on.EnsureSuccessStatusCode();
+        Assert.True((await SingleServer(await Client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", user)))).GetProperty("appsEnabled").GetBoolean());
+
+        var off = await Client.SendAsync(Request(HttpMethod.Put, $"/api/mcp-servers/{id}", user, body));
+        off.EnsureSuccessStatusCode();
+        Assert.False((await SingleServer(await Client.SendAsync(Request(HttpMethod.Get, "/api/mcp-servers", user)))).GetProperty("appsEnabled").GetBoolean());
+    }
+
     // AC12 (ADR 0067): the URL-seeding opt-in survives POST → GET → PUT → GET. Exercised through the real
     // endpoints because ToStored and Mask are the two places it can be dropped, and neither is reachable from
     // a grain-level test. Note this is the OPPOSITE property to KnownToolNames above: that one must survive an

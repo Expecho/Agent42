@@ -39,6 +39,8 @@ public sealed partial class AgentGrain
             messages, _state.State.TurnAttachments, _state.State.GeneratedImages, () => ProjectHistory().Count));
         if (result.Pruned)
         {
+            // A pruned turn takes its MCP App calls with it (ADR 0133): all four persist sites come through here.
+            ReconcileMcpApps();
             _search.RemapAfterPrune(result.DroppedProjectedTurns);
         }
 

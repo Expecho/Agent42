@@ -2,6 +2,7 @@
 
 import { lockPicker, setIncognito, unlockPicker } from "./agents.js";
 import { renderArtifactCards, syncArtifactsButton } from "./artifacts.js";
+import { renderMcpAppCards } from "./mcpapps.js";
 import { clearPendingAttachments } from "./attachments.js";
 import { cacheGet, cachePut } from "./cache.js";
 import { input, newChatBtn } from "./dom.js";
@@ -111,6 +112,8 @@ export function renderTurns(id, turns) {
       replayToolCalls(msg, turn.toolCalls);
       // ...and the artifacts it created or updated, as cards under the prose.
       renderArtifactCards(msg, id, turn.artifacts);
+      // ...and the MCP App cards of its tool calls (ADR 0133), inert until the user activates them.
+      renderMcpAppCards(msg, id, turn.toolCalls);
     }
   }
   syncMessageActions();

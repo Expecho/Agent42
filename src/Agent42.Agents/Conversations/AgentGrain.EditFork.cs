@@ -220,6 +220,7 @@ public sealed partial class AgentGrain
     {
         CompactToolPayloads();
         ApplyRetention();
+        ReconcileMcpApps();
 
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);

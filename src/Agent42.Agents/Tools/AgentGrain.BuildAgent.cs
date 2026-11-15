@@ -145,6 +145,9 @@ public sealed partial class AgentGrain
         // Shared state (ADR 0089): shows the model the conversation's state each run, when the selection has it.
         AddSharedStateProvider(contextProviders, enabled);
 
+        // What open MCP App views told the model (ADR 0133): per-run, labeled untrusted, a trailing message.
+        contextProviders.Add(new AppContextProvider());
+
         // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
         // state at bind time; a normal chat falls back to the default Agent 42 persona.
         // Old Cosmos state has null persona fields, so existing chats fall back too.

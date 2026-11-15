@@ -48,6 +48,7 @@ public static partial class AgentApi
         MapTelemetryEndpoints(app);
         MapDiagnosticsEndpoints(app);
         MapMcpEndpoints(app);
+        MapMcpAppEndpoints(app);
         MapUserSkillEndpoints(app);
         MapWebEndpoints(app);
         MapSearchEndpoints(app);

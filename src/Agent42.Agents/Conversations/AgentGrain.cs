@@ -395,7 +395,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(
         string message, string? model, IReadOnlyList<AttachmentRef>? attachments = null,
         bool ephemeral = false, bool interactive = true,
-        IReadOnlyList<string>? clientTools = null, bool replacesLastTurn = false)
+        IReadOnlyList<string>? clientTools = null, bool replacesLastTurn = false, string? appContext = null)
     {
         // This turn's client-tool broker (ADR 0089), or null when no browser of this turn runs client tools. Owned
         // by THIS call and registered by identity, never a turn-scoped field: see AgentGrain.ClientTools.cs.
@@ -405,6 +405,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // passes interactive false: the MCP surface (ADR 0070) takes the reply text and discards every other
         // event, so a follow-up call would be a second model call whose result nothing can ever read.
         var turn = TurnContext.ForChat(ephemeral, interactive, broker);
+        // A browser that advertised the mcp_app capability (ADR 0133) is sent each app tool's raw result beside the
+        // text; every other run (and every browser without it) stays text-only.
+        turn.SetAppsSupported(broker?.Supports(ClientToolLimits.McpApp) == true);
+        turn.SetAppContext(appContext);
 
         try
         {
@@ -870,7 +874,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 // TextReset and checklist events around it (ADR 0082), which is why this call is async.
                 foreach (var evt in await ProjectUpdateAsync(update, reply, tokens, research))
                 {
-                    yield return MarkClientToolCall(evt, broker);
+                    yield return AttachMcpApp(MarkClientToolCall(evt, broker), turn);
                 }
 
                 if (StateSnapshotAfter(update, stateCursor) is { } snapshot)
@@ -1006,6 +1010,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 CostStatus: cost?.Status);
         }
     }
+
+    // A ToolCallEnd of an MCP App tool carries the view and the tool's raw result (ADR 0133). The result was recorded on
+    // THIS run's context by the tool wrapper, keyed by call id, and only when the run is interactive and the browser can
+    // render it: so a background run, or a server with apps off, finds nothing here and the event is unchanged.
+    private static AgentStreamEvent AttachMcpApp(AgentStreamEvent evt, TurnContext turn)
+        => evt.Type == AgentStreamEventType.ToolCallEnd && turn.AppResultFor(evt.ToolCallId) is { } app
+            ? evt with { McpApp = app }
+            : evt;
 
     // Every event one streamed update produces, in order. A synchronous iterator, so the async iterator
     // above stays one loop deep instead of two.
@@ -1190,6 +1202,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         // Retention (ADR 0016): stamp every message, then delete whole turns that fell outside the window
         // — continuous chats only. Before the serialize, so the pruned session is what gets written.
+        await StoreMcpAppsAsync(turn);
         CompactToolPayloads();
         var pruned = ApplyRetention();
 
@@ -1293,7 +1306,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         value is not null ? JsonSerializer.Serialize(value) : null;
 
     public Task<IReadOnlyList<ChatTurn>> GetHistoryAsync()
-        => Task.FromResult<IReadOnlyList<ChatTurn>>(ProjectHistory().Select(p => p.Turn).ToList());
+        => Task.FromResult<IReadOnlyList<ChatTurn>>(ProjectHistory().Select(p => WithMcpApps(p.Turn)).ToList());
 
     /// <summary>
     /// The one history projection (<see cref="GetHistoryAsync"/>, search ordinals, ADR 0046 recovery), with each
@@ -1493,6 +1506,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _state.State.WebDocumentUrls.Clear();
         // The metadata goes; the blobs stay, the same gap attachments have (no blob delete on purge).
         _state.State.Artifacts.Clear();
+        _state.State.McpApps.Clear();
         _state.State.SerializedSession = null;
         _state.State.DeploymentName = null;
         await _state.ClearStateAsync();

@@ -1,6 +1,6 @@
 /* Agent 42 — remote MCP servers (ADR 0024/0025/0026), incl. the connection test (ADR 0064). Split out of app.js (ADR 0041). */
 
-import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpBridgeCommand, mcpBridgeKeyCopyBtn, mcpBridgeKeyReveal, mcpBridgeKeyValue, mcpBridgeRegenerateBtn, mcpBridgeSection, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpConnectBtn, mcpDialog, mcpEnabledInput, mcpEndpointField, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpSeedsUrlsInput, mcpScopesField, mcpScopesInput, mcpServerList, mcpTabResult, mcpTestBtn, mcpTestResult, profileTabs } from "./dom.js";
+import { addMcpServerBtn, mcpAuthSelect, mcpAuthorityField, mcpAuthorityInput, mcpBridgeCommand, mcpBridgeKeyCopyBtn, mcpBridgeKeyReveal, mcpBridgeKeyValue, mcpBridgeRegenerateBtn, mcpBridgeSection, mcpCancelBtn, mcpClientIdField, mcpClientIdInput, mcpClientSecretField, mcpClientSecretInput, mcpConnectBtn, mcpDialog, mcpEnabledInput, mcpEndpointField, mcpEndpointInput, mcpError, mcpForm, mcpFormTitle, mcpHeaderNameField, mcpHeaderNameInput, mcpHeaderValueField, mcpHeaderValueInput, mcpNameInput, mcpOAuthNote, mcpAppsEnabledInput, mcpSeedsUrlsInput, mcpScopesField, mcpScopesInput, mcpServerList, mcpTabResult, mcpTestBtn, mcpTestResult, profileTabs } from "./dom.js";
 import { enterPrefsDetail, openProfileDialog } from "./profile.js";
 import { refreshToolCatalog } from "./tools.js";
 
@@ -187,6 +187,9 @@ function openMcpDialog(server) {
   mcpEnabledInput.checked = server?.enabled ?? true;
   // Defaults OFF for a NEW server too, not just an unmigrated one — the opt-in is the whole control.
   mcpSeedsUrlsInput.checked = server?.seedsFetchableUrls ?? false;
+  // MCP Apps (ADR 0133): pre-ticked for a NEW server only. A stored server reads off until the user ticks it, so no
+  // existing server's egress widens by itself (the server defaults it off too).
+  mcpAppsEnabledInput.checked = server ? (server.appsEnabled ?? false) : true;
   mcpAuthSelect.value = server?.auth ?? "None";
   mcpHeaderNameInput.value = server?.headerName ?? "Authorization";
   mcpHeaderValueInput.value = ""; // never prefilled — write-only (blank = keep on edit)
@@ -325,6 +328,7 @@ async function saveMcpServer() {
     // A plain setting: unlike the write-only secrets, false really means off, so unticking turns seeding
     // back off (the grain keeps no previous value for it — deliberately, see ADR 0067).
     seedsFetchableUrls: mcpSeedsUrlsInput.checked,
+    appsEnabled: mcpAppsEnabledInput.checked,
     headerName: isHeader ? mcpHeaderNameInput.value.trim() : null,
     // Blank means "keep the stored value" on edit, or "no value" on create — the server maps both.
     headerValue: isHeader ? mcpHeaderValueInput.value : null,

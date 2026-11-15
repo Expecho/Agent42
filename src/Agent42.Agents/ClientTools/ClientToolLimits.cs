@@ -31,6 +31,12 @@ public static class ClientToolLimits
     public const string McpElicitation = "mcp_elicitation";
 
     /// <summary>
+    /// The browser can render an MCP App view inline (ADR 0133). A capability like <see cref="McpElicitation"/>, not a
+    /// model tool: it is in <see cref="AdvertisableCapabilities"/> but never in <see cref="ToolNames"/>.
+    /// </summary>
+    public const string McpApp = "mcp_app";
+
+    /// <summary>
     /// Every client MODEL tool name. Copilot and the tool catalog read it as the set of tools the model can call;
     /// the chat endpoint intersects the browser's list with <see cref="AdvertisableCapabilities"/> instead.
     /// </summary>
@@ -39,12 +45,12 @@ public static class ClientToolLimits
             [ConfirmAction, ControlArtifactPane, GetBrowserContext, GetCurrentLocation], StringComparer.Ordinal);
 
     /// <summary>
-    /// Everything a browser may advertise: <see cref="ToolNames"/> plus <see cref="McpElicitation"/>. The chat
+    /// Everything a browser may advertise: <see cref="ToolNames"/> plus <see cref="McpElicitation"/> and <see cref="McpApp"/>. The chat
     /// endpoint intersects the browser's list with this, so a client can only narrow what it supports, never
     /// introduce a name.
     /// </summary>
     public static IReadOnlySet<string> AdvertisableCapabilities { get; } =
-        new HashSet<string>([.. ToolNames, McpElicitation], StringComparer.Ordinal);
+        new HashSet<string>([.. ToolNames, McpElicitation, McpApp], StringComparer.Ordinal);
 
     /// <summary>A human reads and answers <c>confirm_action</c>.</summary>
     public static readonly TimeSpan ConfirmTimeout = TimeSpan.FromSeconds(120);
