@@ -82,8 +82,18 @@ This is the mode to use if you just want to run it. It keeps everything in Postg
 ```bash
 cp .env.example .env     # on Windows PowerShell: Copy-Item .env.example .env
 # edit .env, then:
-docker compose up -d --build
+docker compose up -d
 ```
+
+This pulls the published images (`ghcr.io/expecho/agent42-backend` and `agent42-searxng`, for amd64 and arm64), so you
+need neither the .NET SDK nor a build. To run your own changes instead, build from the checkout:
+
+```bash
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
+```
+
+By default you get `latest`, which follows `main`. To pin a release or a commit, set `AGENT42_VERSION` in `.env` (for
+example `1.2.3` or `sha-abc1234`). `AGENT42_REGISTRY` points compose at another registry, such as a fork's.
 
 `.env` holds the values compose reads:
 
@@ -93,13 +103,13 @@ docker compose up -d --build
 | `SEARXNG_SECRET` | yes | Any long random string. The search sidecar refuses to start without it. |
 | `GH_OAUTH_CLIENT_SECRET` | no | Only for "Sign in with GitHub" (see [`self-hosting.md`](../features/self-hosting.md#github-copilot)). |
 
-Open <http://localhost:8080>. The first start builds two images, so it takes a few minutes.
+Open <http://localhost:8080>. The first start pulls two images, so it takes a minute or two (a few more if you build).
 
 Day-to-day commands:
 
 ```bash
 docker compose logs -f app      # watch the app
-docker compose pull && docker compose up -d --build   # update after a git pull
+docker compose pull && docker compose up -d           # update to the newest published image
 docker compose down             # stop, keep your data
 docker compose down -v          # stop and DELETE all data
 ```

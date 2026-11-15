@@ -1,0 +1,132 @@
+name: Publish images
+
+# Publishes the two images everyone else needs to run Agent 42 without building it (ADR 0130):
+#   ghcr.io/<owner>/agent42-backend   the app (compose.yaml, and `az acr import` for an Azure deployment)
+#   ghcr.io/<owner>/agent42-searxng   the web-search sidecar
+# Both are multi-arch (amd64 + arm64): each arch builds on its own native runner and a merge job stitches the manifest.
+# Production is NOT deployed from these: deploy.yml still builds and pushes its own images to the Azure registry.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    # Everything the images are built from (the same list as deploy.yml; DeployTriggerTests holds that one).
+    paths:
+      - src/**
+      - infra/searxng/**
+      - Directory.Packages.props
+      - .dockerignore
+      - .github/workflows/publish-images.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: build ${{ matrix.image }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: agent42-backend, arch: amd64, runner: ubuntu-24.04, context: ".", file: src/Agent42.Backend/Dockerfile }
+          - { image: agent42-backend, arch: arm64, runner: ubuntu-24.04-arm, context: ".", file: src/Agent42.Backend/Dockerfile }
+          - { image: agent42-searxng, arch: amd64, runner: ubuntu-24.04, context: infra/searxng, file: infra/searxng/Dockerfile }
+          - { image: agent42-searxng, arch: arm64, runner: ubuntu-24.04-arm, context: infra/searxng, file: infra/searxng/Dockerfile }
+    steps:
+      - uses: actions/checkout@v7
+
+      # GHCR names must be lowercase and the owner may not be (Expecho): lowercase it once here.
+      - id: ref
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The labels carry org.opencontainers.image.source, which links the package to this repository.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.ref.outputs.name }}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Pushed by digest only; the merge job names it. GHA cache is per image and arch.
+          outputs: type=image,name=${{ steps.ref.outputs.name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+
+      - name: Export the digest
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: publish ${{ matrix.image }}
+    runs-on: ubuntu-24.04
+    needs: build
+    strategy:
+      matrix:
+        image: [agent42-backend, agent42-searxng]
+    steps:
+      - id: ref
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags: `latest` and `sha-<short>` for a push to main; `1.2.3`, `1.2` and `1` for a v1.2.3 tag.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.ref.outputs.name }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Create the multi-arch manifest
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ${{ steps.ref.outputs.name }}
+        run: |
+          tags=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          # shellcheck disable=SC2046,SC2086
+          docker buildx imagetools create $tags $(printf "$IMAGE@sha256:%s " *)
+
+      - name: Inspect
+        run: docker buildx imagetools inspect "${{ steps.ref.outputs.name }}:${{ steps.meta.outputs.version }}"
