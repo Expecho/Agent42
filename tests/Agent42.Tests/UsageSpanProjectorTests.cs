@@ -38,15 +38,15 @@ public sealed class UsageSpanProjectorTests
             ("gen_ai.response.model", "gpt-5.4"),
             ("gen_ai.provider.name", "foundry"),
             // The alias has already rewritten user.id to the canonical account's object id...
-            ("user.id", "2da7fa48-e41e-4ebd-b665-96bc4210fefd"),
+            ("user.id", "11111111-1111-1111-1111-111111111111"),
             // ...but user.name/user.email are never aliased, so the span still names who signed in.
-            ("user.email", "msn@2000miles.nl"));
+            ("user.email", "secondary@example.com"));
 
         var e = UsageSpanProjector.Project(tags, When, activityErrored: false, App);
 
         Assert.NotNull(e);
-        Assert.Equal("msn@2000miles.nl", e!.UserKey);
-        Assert.Equal("2da7fa48-e41e-4ebd-b665-96bc4210fefd", e.UserId);
+        Assert.Equal("secondary@example.com", e!.UserKey);
+        Assert.Equal("11111111-1111-1111-1111-111111111111", e.UserId);
     }
 
     // ADR 0121 AC13: the projector and the usage endpoint share ONE key function, so what is written is what is matched.

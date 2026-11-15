@@ -51,7 +51,7 @@ request scheme, and several comments/docs that assert the wrong matching rule ar
 
 ### The matching semantics were measured, not inferred
 
-Verified against the live app (`ca-agent42-backend`, `rg-agent42`, sub `De Heer MSDN`) on 2026-08-20 by
+Verified against the live app (`ca-agent42-backend`, `rg-agent42`, sub `<subscription>`) on 2026-08-20 by
 temporarily PUTting a widened `authConfigs/current` and curling. **Do not re-derive this; it is settled:**
 
 | Path | with `['/api/share','/shared']` | with `['/api/share/*','/shared','/shared/*']` |

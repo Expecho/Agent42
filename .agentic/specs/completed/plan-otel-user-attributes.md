@@ -13,7 +13,7 @@ are explicitly out of scope this round (see Out of scope).
 
 This is a privacy-relevant change: user PII (name, email, roles) will flow to **both** OTLP
 collectors the app already exports to (the env-var endpoint and the config-driven second
-collector, `home.peterbons.nl:4317`). The user explicitly chose "store as much as possible";
+collector, `otlp.example.com:4317`). The user explicitly chose "store as much as possible";
 that decision and its alternatives are recorded as an ADR in this plan (Step 4).
 
 ## Affected areas

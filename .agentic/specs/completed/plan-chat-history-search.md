@@ -442,7 +442,7 @@ for FTS, as it needed `EnableNoSQLVectorSearch` for vector search. Measured, 202
 
 - `az bicep build` compiles the template — the `2026-03-15` ARM schema accepts `fullTextPolicy` and
   `indexingPolicy.fullTextIndexes`.
-- `az deployment group what-if` against `rg-agent42` (subscription **"De Heer MSDN"**, not the CLI's
+- `az deployment group what-if` against `rg-agent42` (subscription **"<subscription>"**, not the CLI's
   default one) succeeds and reports **exactly one `Create`**: the `chat-messages` container. The
   Cosmos account's own `Modify` delta contains **no `properties.capabilities` entry**, so no
   capability change is proposed.

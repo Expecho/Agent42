@@ -34,7 +34,7 @@ template.
     user chose to keep **per-span token and user attribution** in App Insights and accepted the
     trade-offs in D6. The ADR must record this alternative and why it lost.
 - **D4 — Keep the home collector.** App Insights is added alongside the env-var OTLP endpoint
-  (`deploy.yml`: `otlpEndpoint="http://home.peterbons.nl:4317"`) and the optional
+  (`deploy.yml`: `otlpEndpoint="http://otlp.example.com:4317"`) and the optional
   `Otel:LocalCollector:*`.
 - **D5 — No logs to App Insights.** The app's own Warning+ log templates carry model-chosen
   conversation-derived text, rendered because `IncludeFormattedMessage = true` and kept because prod
@@ -46,7 +46,7 @@ template.
   So **no** `AddAzureMonitorLogExporter`. Logs keep going to OTLP and `/logs`.
 - **D6 — Accepted trade-off: shared failure domain for traces.** One batch worker exports
   sequentially: OTLP (env), then OTLP (local, when configured), then strip, then App Insights. A
-  stalled `home.peterbons.nl:4317` (OTLP timeout defaults to 10 s) delays App Insights batches, and a
+  stalled `otlp.example.com:4317` (OTLP timeout defaults to 10 s) delays App Insights batches, and a
   slow App Insights delays the next OTLP batch. Both also share the provider's shutdown budget.
   Metrics are unaffected because they keep separate readers. Record this in the ADR.
 - **D7 — Statsbeat off.** The Azure Monitor exporter's internal Statsbeat defaults to on. It sends

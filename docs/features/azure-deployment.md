@@ -63,10 +63,11 @@ That is why the `preflight` job exists: it fails the run, naming the variable, b
 | `OTLP_ENDPOINT` | no | OpenTelemetry collector. Empty disables OTLP export. |
 | `AZURE_OPENAI_ENDPOINT` | no | Dormant Foundry-provider inheritance source (ADR 0019). |
 | `VAPID_PUBLIC_KEY` | no | Overrides the committed `Push:VapidPublicKey`. |
-| `VAPID_SUBJECT` | no | Overrides the committed `Push:VapidSubject`. |
+| `VAPID_SUBJECT` | no | `Push:VapidSubject` (a `mailto:` or `https:` contact URL). Ships empty. |
 | `GH_OAUTH_CLIENT_ID` | no | Overrides the committed `GitHub:OAuth:ClientId`. Not `GITHUB_*`: GitHub reserves that prefix. |
-| `EMAIL_INBOUND_DOMAIN` | no | Overrides the committed `Email:InboundDomain`. |
-| `ACCESS_OWNERS` | no | Comma-separated Entra object ids that become the owner tier. |
+| `EMAIL_INBOUND_DOMAIN` | no | `Email:InboundDomain`. Ships empty, so inbound email is off until set. |
+| `ACCESS_OWNERS` | no | Comma-separated Entra object ids that become the owner tier. Ships empty, so nobody is an owner until set. |
+| `IDENTITY_ALIASES` | no | JSON object, additional Entra object id to the object id that owns the data (ADR 0074). Ships empty. An entry is an authorization grant. |
 
 **Shared infra is all or nothing.** `ACR_NAME`, `CAE_NAME` and `CAE_RESOURCE_GROUP` are either all set (reuse, nothing
 is created) or all empty (create). Preflight rejects a mix, so create mode is never a side effect of one missing
@@ -92,42 +93,28 @@ update the name or the next deploy unbinds the domain (preflight catches the dom
 
 ## App-config overrides
 
-The committed `src/Agent42.Backend/appsettings.json` carries the owner's VAPID public key and subject, GitHub OAuth
-client id, inbound email domain and `Access:Owners`. A fork sets the variables above and they override those values
-as environment variables, only when non-empty.
+The committed `src/Agent42.Backend/appsettings.json` carries the VAPID public key and the GitHub OAuth client id. The
+VAPID subject, inbound email domain, `Access:Owners` and `Identity:Aliases` ship **empty**, because they identify a
+person or a deployment. Set the variables above and they arrive as environment variables, only when non-empty.
 
 - **VAPID:** the public key must be the pair of `VAPID_PRIVATE_KEY`, or push breaks. Generate a pair with any Web Push
   tool (for example `npx web-push generate-vapid-keys`), set the private half as the secret and the public half plus a
   `mailto:` subject as variables.
-- **Owners:** `ACCESS_OWNERS` is split on commas and emitted as `Access__Owners__0`, `__1` and so on. Entries override
-  the committed list **by index from 0**; a longer committed list keeps its tail. Owner object ids are tenant-scoped, so
-  the committed ids never match in your tenant (harmless). To have exactly your own set, clear the list in your
-  appsettings. Never list `local-dev`. The owner tier is advisory, never isolation (ADR 0121).
+- **Owners:** `ACCESS_OWNERS` is split on commas and emitted as `Access__Owners__0`, `__1` and so on. With the list
+  empty nobody is an owner, so `/dashboard`, `/logs`, `/api/diagnostics` and `/api/config-health` answer 404 to
+  everyone. Never list `local-dev`. The owner tier is advisory, never isolation (ADR 0121).
+- **Aliases:** `IDENTITY_ALIASES` is emitted as `Identity__Aliases__<alias id>` (ADR 0074). Both sides must be owners.
 
-## This repo's production values
+## Keeping a deployment's values
 
-Set these repository variables **before merging** a change to the IaC, or preflight fails (the intended fail-closed).
-They are not secret. Listing them here keeps a code-side record of production, which partly offsets moving them out of
-the Bicep (ADR 0128), and `InfraPortabilityTests` checks that every name below is one `deploy.yml` reads.
-
-| Variable | Value |
-|---|---|
-| `ACR_NAME` | `crexpechohosting` |
-| `CAE_NAME` | `cae-hosting` |
-| `CAE_RESOURCE_GROUP` | `rg-hosting` |
-| `AZURE_RESOURCE_GROUP` | `rg-agent42` |
-| `AUTH_CLIENT_ID` | `e9a02aec-5368-4c9a-8211-d21222c4f30c` |
-| `CUSTOM_DOMAIN_NAME` | `chat.agent42.nl` |
-| `CUSTOM_DOMAIN_CERTIFICATE_NAME` | `chat.agent42.nl-cae-host-260706080049` |
-| `COSMOS_LOCATION` | `northeurope` |
-| `OTLP_ENDPOINT` | `http://home.peterbons.nl:4317` |
-| `AZURE_OPENAI_ENDPOINT` | `https://agent42.services.ai.azure.com` |
-
-Production sets none of the app-config overrides, so the committed appsettings stay authoritative there (ADR 0121).
-The Entra tenant is the deploy's own (`tenant().tenantId`), which a prod what-if confirms is unchanged.
+Everything tenant-specific lives in the repository variables above, not in code, so a deployment's values are visible
+only in the repository's Actions settings. Set them **before merging** a change to the IaC, or preflight fails (the
+intended fail-closed). An absent `ACCESS_OWNERS`, `VAPID_SUBJECT`, `EMAIL_INBOUND_DOMAIN` or `IDENTITY_ALIASES` on an
+existing deployment switches that feature off (owners, push contact, inbound email, aliases), so carry them over when
+you move a deployment to this layout. The Entra tenant is the deploy's own (`tenant().tenantId`).
 
 ## Not covered
 
 A fresh-resource-group or fresh-tenant test deploy was not run, so portability is proven structurally (tests and
 `bicep build` in CI), not end to end. Owner-specific content outside the IaC is unchanged: the legal pages, the Android
-app's default URL and the Chrome extension's fallback server.
+app's default URL and the Chrome extension's fallback server (all point at the maintainer's public instance).
