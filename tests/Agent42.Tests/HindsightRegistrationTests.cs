@@ -69,6 +69,23 @@ public sealed class HindsightRegistrationTests
         Assert.Equal("Remember this user's preferences.", integration.Mission);
     }
 
+    // ADR 0132: the SHIPPED appsettings.json carries a non-empty mission, and it survives the trip onto the
+    // integration. Reading the real file is the point: the in-memory tests above would stay green if someone
+    // blanked the committed default, which silently turns bank creation (and the mission) off in prod.
+    [Fact]
+    public void ShippedConfiguration_CarriesANonEmptyMission()
+    {
+        var shipped = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(FleetOptionsTests.RepoRoot(), "src", "Agent42.Backend", "appsettings.json"))
+            .AddInMemoryCollection([new("Hindsight:ApiKey", "k")])
+            .Build();
+
+        var integration = Resolve(shipped);
+
+        Assert.False(string.IsNullOrWhiteSpace(integration.Mission));
+        Assert.Contains("untrusted", integration.Mission, StringComparison.OrdinalIgnoreCase);
+    }
+
     // A mission with no key is still off: the key is the switch, not the mission.
     [Fact]
     public void MissionWithoutAKey_IsStillOff()
