@@ -4,8 +4,7 @@ A personal AI chat agent ("Agent 42") hosted in Microsoft Orleans: one grain per
 conversation wraps a Microsoft Agent Framework `ChatClientAgent` against any
 OpenAI-compatible model, with streaming replies, tools, durable scheduled reminders,
 document Q&A, long-term memory, voice, image generation, custom agents, and a vanilla-JS
-web UI served from the backend. Deployed to Azure Container Apps behind Entra ID Easy Auth at
-[chat.agent42.nl](https://chat.agent42.nl).
+web UI served from the backend.
 
 **Stack:** .NET 10 · Orleans 10.3 (grains; Cosmos or Postgres persistence + reminders) · Microsoft
 Agent Framework 1.22 · ASP.NET Core minimal APIs · Aspire 13.5 (local orchestration) ·
