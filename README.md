@@ -425,7 +425,7 @@ grants, and the search sidecar all carry constraints that are invisible in the c
 
 ## Contributing / agent docs
 
-This is a personal, experimental project (Peter Bons), released under the [MIT license](LICENSE). Its one external consumer surface is
+This is a personal, experimental project, released under the [MIT license](LICENSE). Its one external consumer surface is
 the [`Hindsight.AgentFramework.Net`](https://github.com/Expecho/Hindsight.AgentFramework.Net)
 package it uses for long-term memory (ADR 0056); everything inside Agent42 can change freely.
 Commands, hard rules, and the knowledge layout live in `CLAUDE.md`; architectural
