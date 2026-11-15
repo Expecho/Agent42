@@ -4,49 +4,10 @@
    ———————————————————————————————————————————————— */
 
 :root {
-  --bg: #100f0d;
-  --bg-raised: #171512;
-  --bg-inset: #0b0a09;
-  --line: #2a2620;
-  --line-soft: #201d18;
-  --ink: #e9e2d3;
-  --ink-dim: #a89f8c;
-  --ink-faint: #6d6555;
-  --amber: #ffb13d;
-  --amber-deep: #c97f1b;
-  --amber-glow: rgba(255, 177, 61, 0.14);
-  --green: #9ac06d;
-  --red: #e06c5f;
-  /* Theme-sensitive surfaces (flip in the light block below); the amber/green accent
-     glows stay literal — they sit over amber/green elements and read on both themes. */
-  --backdrop: rgba(6, 5, 4, 0.6);      /* modal / mobile scrim */
-  --shadow: rgba(0, 0, 0, 0.6);        /* raised-dialog drop shadow */
-  --chip-btn-bg: rgba(11, 10, 9, 0.82); /* attachment "remove" button scrim (holds a --ink glyph) */
+  /* Palette tokens (--bg, --ink, --amber = the accent …) live in shared/themes.css (ADR 0129). */
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --serif: "Newsreader", Georgia, "Times New Roman", serif;
   --radius: 10px;
-}
-
-/* Light theme — warm-paper mirror of the amber-phosphor identity. JS resolves the user's
-   choice (incl. "system" via matchMedia) to an explicit data-theme on <html>, so this block
-   never needs a prefers-color-scheme query; the dark :root above is the default/fallback. */
-:root[data-theme="light"] {
-  --bg: #f4efe4;
-  --bg-raised: #fbf7ee;
-  --bg-inset: #e9e2d2;
-  --line: #d6cdb8;
-  --line-soft: #e2dac7;
-  --ink: #2a2620;
-  --ink-dim: #5c5647;
-  --ink-faint: #8a8270;
-  --amber: #a86611;        /* darkened — #ffb13d fails AA contrast on pale bg */
-  --amber-deep: #7f4e0a;
-  --amber-glow: rgba(168, 102, 17, 0.12);
-  --green: #5a7d3a;
-  --red: #bf3c30;
-  --backdrop: rgba(60, 54, 44, 0.4);   /* warm, lighter scrim */
-  --shadow: rgba(60, 48, 30, 0.22);    /* softer paper shadow */
-  --chip-btn-bg: rgba(251, 247, 238, 0.85); /* light scrim so the dark --ink glyph stays legible */
 }
 
 * { box-sizing: border-box; }
@@ -68,7 +29,7 @@ body {
   line-height: 1.5;
   /* faint grain so large dark surfaces don't band */
   background-image:
-    radial-gradient(ellipse 80% 60% at 70% -10%, rgba(255, 177, 61, 0.05), transparent),
+    radial-gradient(ellipse 80% 60% at 70% -10%, color-mix(in srgb, var(--amber) 5%, transparent), transparent),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.03 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -143,8 +104,8 @@ body {
   letter-spacing: -1px;
   background:
     linear-gradient(160deg, var(--amber-glow), transparent 65%);
-  box-shadow: 0 0 22px var(--amber-glow), inset 0 0 12px rgba(255, 177, 61, 0.08);
-  text-shadow: 0 0 10px rgba(255, 177, 61, 0.55);
+  box-shadow: 0 0 22px var(--amber-glow), inset 0 0 12px color-mix(in srgb, var(--amber) 8%, transparent);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--amber) 55%, transparent);
 }
 
 .brand__text { display: flex; flex-direction: column; gap: 3px; }
@@ -966,7 +927,7 @@ body {
   font-weight: 600;
   letter-spacing: 0.42em;
   color: var(--amber-deep);
-  text-shadow: 0 0 12px rgba(255, 177, 61, 0.35);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--amber) 35%, transparent);
   user-select: none;
 }
 
@@ -1010,7 +971,7 @@ body {
   letter-spacing: -0.06em;
   color: transparent;
   -webkit-text-stroke: 1.5px var(--amber-deep);
-  text-shadow: 0 0 60px rgba(255, 177, 61, 0.18);
+  text-shadow: 0 0 60px color-mix(in srgb, var(--amber) 18%, transparent);
   line-height: 1;
   user-select: none;
 }
@@ -1471,7 +1432,7 @@ body {
   margin-left: 3px;
   vertical-align: -2px;
   background: var(--amber);
-  box-shadow: 0 0 8px rgba(255, 177, 61, 0.6);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--amber) 60%, transparent);
   animation: blink 0.9s steps(2) infinite;
 }
 
@@ -2096,7 +2057,7 @@ body {
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   /* amber chevron */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23c97f1b' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: var(--chevron);
   background-repeat: no-repeat;
   background-position: right 9px center;
 }
@@ -2584,7 +2545,7 @@ body {
   cursor: pointer;
   padding-right: 28px;
   /* amber chevron — same as the composer model picker */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23c97f1b' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: var(--chevron);
   background-repeat: no-repeat;
   background-position: right 11px center;
 }
@@ -2621,7 +2582,7 @@ body {
   background: var(--amber-glow);
 }
 
-.agent-form__btn--primary:hover { background: rgba(255, 177, 61, 0.28); }
+.agent-form__btn--primary:hover { background: color-mix(in srgb, var(--amber) 28%, transparent); }
 
 /* ————— Preferences dialog: rail + scrolling pane + footer ——————————————————————————————
    THIS BLOCK IS HALF OF THE PREFS CSS. Its narrow-viewport counterpart — the drill-down — is at the
@@ -3276,8 +3237,8 @@ body.is-incognito .topbar {
   font-size: 13px;
   letter-spacing: -1px;
   background: linear-gradient(160deg, var(--amber-glow), transparent 65%);
-  box-shadow: 0 0 14px var(--amber-glow), inset 0 0 8px rgba(255, 177, 61, 0.08);
-  text-shadow: 0 0 8px rgba(255, 177, 61, 0.55);
+  box-shadow: 0 0 14px var(--amber-glow), inset 0 0 8px color-mix(in srgb, var(--amber) 8%, transparent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--amber) 55%, transparent);
 }
 
 /* narrow screens: sidebar becomes an off-canvas drawer behind a dimming backdrop */
@@ -3428,7 +3389,7 @@ body.is-incognito .topbar {
   min-width: 170px;
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23c97f1b' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: var(--chevron);
   background-repeat: no-repeat;
   background-position: right 9px center;
 }

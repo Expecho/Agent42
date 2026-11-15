@@ -125,6 +125,13 @@ public sealed class ArtifactsApiTests(SharedApiFixture fixture) : SharedClusterT
 
             var light = await (await Get($"{prefix}/artifacts/{id}/versions/1/frame?theme=light", User)).Content.ReadAsStringAsync();
             Assert.Contains("--bg:#f4efe4", light, StringComparison.Ordinal);
+
+            // The palette is a second axis (ADR 0129): ?palette= picks its token set, an unknown one is amber.
+            var ocean = await (await Get($"{prefix}/artifacts/{id}/versions/1/frame?palette=ocean", User)).Content.ReadAsStringAsync();
+            Assert.Contains(ArtifactTheme.Block("dark", "ocean"), ocean, StringComparison.Ordinal);
+            Assert.Contains("--amber:#3d99f5", ocean, StringComparison.Ordinal);
+            var unknown = await (await Get($"{prefix}/artifacts/{id}/versions/1/frame?palette=nope", User)).Content.ReadAsStringAsync();
+            Assert.Contains("--bg:#100f0d", unknown, StringComparison.Ordinal);
         }
 
         // /content stays the raw source.

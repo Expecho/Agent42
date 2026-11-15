@@ -5,11 +5,11 @@ namespace Agent42.Backend;
 /// <summary>
 /// The app's look for framed artifacts. An html or svg artifact runs on an opaque origin (the CSP sandbox), so it
 /// cannot load <c>/styles.css</c>. <c>/frame</c> therefore injects this stylesheet: the app's theme tokens for the
-/// theme the pane asks for (<c>?theme=light|dark</c>), plus element defaults copied from the chat's prose.
+/// palette and theme the pane asks for (<c>?palette=</c>, <c>?theme=light|dark</c>), plus element defaults copied from the chat's prose.
 ///
 /// <para>Every element rule sits in <c>:where()</c> (zero specificity) and the block goes FIRST in the head, so any
 /// CSS the artifact writes wins. The tokens (<c>--bg</c>, <c>--ink</c>, <c>--amber</c> …) are the contract the
-/// <c>create_artifact</c> description hands the model. Keep them in sync with <c>wwwroot/styles.css</c>.</para>
+/// <c>create_artifact</c> description hands the model. Their values live in <c>wwwroot/shared/themes.css</c>; <c>ArtifactThemePalettes</c> mirrors them and <c>ThemePaletteTests</c> guards the parity.</para>
 /// </summary>
 public static partial class ArtifactTheme
 {
@@ -17,16 +17,6 @@ public static partial class ArtifactTheme
     private const string FontsLink =
         "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600"
         + "&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap\">";
-
-    private const string DarkTokens =
-        "color-scheme:dark;--bg:#100f0d;--bg-raised:#171512;--bg-inset:#0b0a09;--line:#2a2620;--line-soft:#201d18;"
-        + "--ink:#e9e2d3;--ink-dim:#a89f8c;--ink-faint:#6d6555;--amber:#ffb13d;--amber-deep:#c97f1b;"
-        + "--amber-glow:rgba(255,177,61,.14);--green:#9ac06d;--red:#e06c5f;";
-
-    private const string LightTokens =
-        "color-scheme:light;--bg:#f4efe4;--bg-raised:#fbf7ee;--bg-inset:#e9e2d2;--line:#d6cdb8;--line-soft:#e2dac7;"
-        + "--ink:#2a2620;--ink-dim:#5c5647;--ink-faint:#8a8270;--amber:#a86611;--amber-deep:#7f4e0a;"
-        + "--amber-glow:rgba(168,102,17,.12);--green:#5a7d3a;--red:#bf3c30;";
 
     private const string SharedTokens =
         "--mono:\"IBM Plex Mono\",ui-monospace,SFMono-Regular,Menlo,monospace;"
@@ -59,19 +49,22 @@ public static partial class ArtifactTheme
         + ":where(svg){color:var(--ink)}"
         + "::selection{background:var(--amber-glow)}";
 
-    /// <summary>The style block for one theme; anything but <c>"light"</c> is the app's dark default.</summary>
-    public static string Block(string? theme)
+    /// <summary>
+    /// The style block for one palette and theme; anything but <c>"light"</c> is the app's dark default and an
+    /// unknown (or absent) palette is amber.
+    /// </summary>
+    public static string Block(string? theme, string? palette = null)
         => FontsLink + "<style data-agent42-theme>:root{"
-            + (theme == "light" ? LightTokens : DarkTokens) + SharedTokens + "}" + ElementDefaults + "</style>";
+            + TokensFor(palette, theme) + SharedTokens + "}" + ElementDefaults + "</style>";
 
     /// <summary>
     /// Puts the block first inside the artifact's head: after <c>&lt;head&gt;</c>, else after <c>&lt;html&gt;</c>,
     /// else after the doctype, else at the very start. Never BEFORE a doctype, which would drop the page into
     /// quirks mode.
     /// </summary>
-    public static string Apply(string html, string? theme)
+    public static string Apply(string html, string? theme, string? palette = null)
     {
-        var block = Block(theme);
+        var block = Block(theme, palette);
         var anchor = HeadTag().Match(html);
         if (!anchor.Success)
         {
