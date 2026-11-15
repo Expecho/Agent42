@@ -117,13 +117,14 @@ jobs:
           want_location="${COSMOS_LOCATION:-$rg_location}"
           cosmos_locations=$(az cosmosdb list --resource-group "$AZURE_RESOURCE_GROUP" \
             --query "[?starts_with(name, 'cosmos-agent42-')].location" -o tsv)
-          for have in $cosmos_locations; do
+          while IFS= read -r have; do
+            [ -n "$have" ] || continue
             have_norm=$(echo "$have" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
             want_norm=$(echo "$want_location" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
             if [ "$have_norm" != "$want_norm" ]; then
               fail "The Cosmos account already lives in '$have', but COSMOS_LOCATION resolves to '$want_location'. A Cosmos region cannot change. Set COSMOS_LOCATION to the existing region."
             fi
-          done
+          done <<< "$cosmos_locations"
 
           exit "$failed"
 
