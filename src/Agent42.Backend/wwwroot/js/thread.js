@@ -17,6 +17,26 @@ export function setEmptyVisible(visible) {
   emptyState.style.display = visible ? "" : "none";
 }
 
+// A spinner in the thread while a conversation's history is fetched, so a slow open is not a blank screen.
+// While it shows, the welcome empty state is hidden; when it hides, the empty state returns only if no
+// message was rendered (a failed or empty load).
+let threadLoadingEl = null;
+export function setThreadLoading(on) {
+  if (on) {
+    if (!threadLoadingEl) {
+      threadLoadingEl = document.createElement("div");
+      threadLoadingEl.className = "thread-loading";
+      threadLoadingEl.setAttribute("role", "status");
+      threadLoadingEl.innerHTML = '<span class="thread-loading__spinner" aria-hidden="true"></span><span>Loading conversation…</span>';
+    }
+    setEmptyVisible(false);
+    thread.append(threadLoadingEl);
+  } else if (threadLoadingEl) {
+    threadLoadingEl.remove();
+    if (!thread.querySelector(".msg")) setEmptyVisible(true);
+  }
+}
+
 export function addMessage(role, options = {}) {
   setEmptyVisible(false);
   const msg = document.createElement("article");

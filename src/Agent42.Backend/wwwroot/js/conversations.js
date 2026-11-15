@@ -13,7 +13,7 @@ import { streaming, voice } from "./send.js";
 import { loadSharedState } from "./sharedstate.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, renderSidebar } from "./sidebar.js";
-import { addAgentImage, addCopyButton, addMessage, clearThread, fillUserBubble, replayToolCalls, scrollToBottom, setAgentMarkdown, setEmptyVisible } from "./thread.js";
+import { addAgentImage, addCopyButton, addMessage, clearThread, fillUserBubble, replayToolCalls, scrollToBottom, setAgentMarkdown, setEmptyVisible, setThreadLoading } from "./thread.js";
 import { allToolKeys, setChatTools } from "./tools.js";
 
 export let activeId = crypto.randomUUID();
@@ -40,7 +40,7 @@ export async function selectConversation(id) {
   clearPendingAttachments();
   renderSidebar();
   clearThread();
-  setEmptyVisible(true);
+  setThreadLoading(true);
 
   try {
     const [msgRes, modelRes, agentRes, toolsRes] = await Promise.all([
@@ -86,6 +86,9 @@ export async function selectConversation(id) {
     // The model/agent/tools siblings simply degrade — the composer can't send offline anyway.
     const cached = await cacheGet("messages:" + id);
     if (cached) renderTurns(id, cached);
+  } finally {
+    // A newer selectConversation owns the spinner now; only the latest open may hide it.
+    if (id === activeId) setThreadLoading(false);
   }
 }
 
