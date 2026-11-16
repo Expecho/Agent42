@@ -37,7 +37,8 @@ public sealed partial class FleetTaskService(
     DocumentIngestionService? ingestion = null,
     IFleetCompletionNotifier? notifier = null,
     IPushNotificationSender? push = null,
-    FleetLessonService? lessons = null) : IHostedService
+    FleetLessonService? lessons = null,
+    FleetSettingsService? settings = null) : IHostedService
 {
     /// <summary>The usage dashboard's application dimension for fleet tokens (ADR 0031).</summary>
     public const string ApplicationName = "Agent42 fleet";
@@ -78,6 +79,10 @@ public sealed partial class FleetTaskService(
             return (null, "Pick one of your models that supports tools.");
         }
 
+        // The user's overrides (ADR 0135), resolved ONCE: the budget below and the whole run use this snapshot, so a save
+        // mid-submit or mid-run changes the next task, never this one.
+        var effective = await ResolveOptionsAsync(userId, cancellationToken);
+
         FleetTaskRecord? previous = null;
         if (!string.IsNullOrWhiteSpace(request.FollowUpOf)
             && (previous = await GetAsync(userId, request.FollowUpOf, cancellationToken)) is not { CanFollowUp: true })
@@ -111,7 +116,7 @@ public sealed partial class FleetTaskService(
             TextCopies = previous?.TextCopies ?? [],
         };
 
-        if (Register(record) is { } refusal)
+        if (Register(record, effective) is { } refusal)
         {
             return (null, refusal);
         }
@@ -140,8 +145,12 @@ public sealed partial class FleetTaskService(
         return (record.Id, null);
     }
 
+    // The operator's options with this user's overrides on top; the operator's own when the host has no settings service.
+    public async Task<FleetOptions> ResolveOptionsAsync(string userId, CancellationToken cancellationToken)
+        => settings is null ? options : await settings.ResolveAsync(userId, cancellationToken);
+
     // Takes the registry slot, or says why not. Under one lock, so two submits can't both pass the caps.
-    private string? Register(FleetTaskRecord record)
+    private string? Register(FleetTaskRecord record, FleetOptions effective)
     {
         lock (_submitGate)
         {
@@ -160,11 +169,11 @@ public sealed partial class FleetTaskService(
                 return "The fleet is busy with other tasks, try again later.";
             }
 
-            var budget = new FleetBudget(record.MaxTokens, options.MaxAgentsPerTask, options.BudgetSoftLimit, options.MaxConcurrentSubTeamsPerLevel, options.MaxTeamDepth);
+            var budget = new FleetBudget(record.MaxTokens, effective.MaxAgentsPerTask, effective.BudgetSoftLimit, effective.MaxConcurrentSubTeamsPerLevel, effective.MaxTeamDepth);
             var log = new FleetEventLog(store, record.UserId, record.Id, options.MaxEventLogBytes, _time);
             // A task started from a chat has nobody on the page to answer it (ADR 0115): it never opens a question.
             IFleetInteraction interaction = record.OriginConversationId is null ? new FleetQuestions(log, () => NotifyNeedsInput(record)) : new DecliningFleetInteraction(log);
-            _running[record.Id] = new RunningFleetTask(record, budget, log, interaction);
+            _running[record.Id] = new RunningFleetTask(record, budget, log, interaction, effective);
             return null;
         }
     }
@@ -343,8 +352,11 @@ public sealed partial class FleetTaskService(
         => model.SupportsTools && !model.SupportsEmbeddings && !model.SupportsSpeech && !model.SupportsTranscription && !model.SupportsImageGeneration
             && !model.CopilotOnly;
 
-    private sealed class RunningFleetTask(FleetTaskRecord record, FleetBudget budget, FleetEventLog log, IFleetInteraction questions) : IDisposable
+    private sealed class RunningFleetTask(FleetTaskRecord record, FleetBudget budget, FleetEventLog log, IFleetInteraction questions, FleetOptions effective) : IDisposable
     {
+        /// <summary>The operator's options with the user's overrides applied (ADR 0135), fixed when the task started.</summary>
+        public FleetOptions Options { get; } = effective;
+
         // Replaced once, by the run-start ingest (ADR 0101), before anything else reads it for the run.
         public FleetTaskRecord Record { get; set; } = record;
         public FleetBudget Budget { get; } = budget;

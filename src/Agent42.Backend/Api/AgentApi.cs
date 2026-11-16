@@ -61,6 +61,7 @@ public static partial class AgentApi
         MapFleetSharingEndpoints(app);
         MapFleetAnalyzerEndpoints(app);
         MapFleetLessonEndpoints(app);
+        MapFleetSettingsEndpoints(app);
         MapChatGatewayEndpoints(app);
         MapChatGatewaySignalEndpoints(app);
 

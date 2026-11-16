@@ -77,7 +77,8 @@ public sealed class FleetCopilotAgentFactory(
     FleetWorkspace workspace,
     FleetCanvas canvas,
     FleetPromptSet prompts,
-    FleetCopilotPermissionPolicy policy) : PromptAgentFactory
+    FleetCopilotPermissionPolicy policy,
+    string? copilotDefaultModel = null) : PromptAgentFactory
 {
     public const string Unavailable = "Copilot agents are not available, use a normal agent.";
 
@@ -149,10 +150,13 @@ public sealed class FleetCopilotAgentFactory(
             || modelId.StartsWith("copilot/", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The catalog id a <c>copilot</c> hint runs on: the part after <c>copilot/</c>, else
-    /// <c>Fleet:DefaultCopilotModel</c>, else the task's model.</summary>
+    /// <c>Fleet:DefaultCopilotModel</c> (the user's override first, ADR 0135), else the task's model.</summary>
     public string ModelFor(string hint)
         => hint.Contains('/') ? hint[(hint.IndexOf('/') + 1)..]
-            : string.IsNullOrWhiteSpace(host.Options.DefaultCopilotModel) ? defaultModel : host.Options.DefaultCopilotModel;
+            : string.IsNullOrWhiteSpace(CopilotDefaultModel) ? defaultModel : CopilotDefaultModel;
+
+    // The run's own value (the user's override, ADR 0135); a factory built without one reads the operator's.
+    private string? CopilotDefaultModel => copilotDefaultModel ?? host.Options.DefaultCopilotModel;
 
     /// <summary>
     /// One fleet session: the user's provider (BYOK), the agent's instructions appended to Copilot's own prompt, the

@@ -98,7 +98,7 @@ public sealed class FakeFleetLauncher : IFleetLauncher
     public Task<string> ReadWorkspaceAsync(string userId, string taskId, string? path, CancellationToken cancellationToken = default)
         => Record($"workspace:{userId}:{taskId}:{path}");
 
-    public string DescribeConfig() => "fake config";
+    public Task<string> DescribeConfigAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult("fake config");
 
     public Task<string> ReadSpansAsync(string userId, string? search, int limit, CancellationToken cancellationToken = default)
         => Record($"spans:{userId}:{search}:{limit}");

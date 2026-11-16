@@ -504,6 +504,22 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         Assert.False(config.GetProperty("copilotAgentsEnabled").GetBoolean());
         Assert.True(config.GetProperty("defaultMaxTokens").GetInt64() <= config.GetProperty("maxTokensLimit").GetInt64());
     }
+
+    /// <summary>ADR 0135: the composer shows the user's effective limits, and the token caps stay the operator's.</summary>
+    [Fact]
+    public async Task FleetConfig_ShowsEffective()
+    {
+        await Store.SetSettingsAsync("fleet-config-2", new FleetUserSettings { MaxAgentsPerTask = 7, MaxTeamDepth = 3, JudgeDepth = 2 });
+
+        var mine = await (await Send(HttpMethod.Get, "/api/fleet/config", "fleet-config-2")).Content.ReadFromJsonAsync<JsonElement>();
+        var other = await (await Send(HttpMethod.Get, "/api/fleet/config", "fleet-config-3")).Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(7, mine.GetProperty("maxAgents").GetInt32());
+        Assert.Equal(3, mine.GetProperty("maxTeamDepth").GetInt32());
+        Assert.Equal(2, mine.GetProperty("judgeDepth").GetInt32());
+        Assert.Equal(new FleetOptions().MaxAgentsPerTask, other.GetProperty("maxAgents").GetInt32());
+        Assert.Equal(other.GetProperty("maxTokensLimit").GetInt64(), mine.GetProperty("maxTokensLimit").GetInt64());
+    }
 }
 
 /// <summary>A host without the fleet registered answers 503, never a 500 or a missing route (rule 7).</summary>
@@ -515,6 +531,7 @@ public sealed class FleetApiUnavailableTests(SharedApiFixture fixture) : SharedC
     [InlineData("/api/fleet/tasks/x/events")]
     [InlineData("/api/fleet/prompts")]
     [InlineData("/api/fleet/lessons")]
+    [InlineData("/api/fleet/settings")]
     public async Task MissingService_Is503(string uri)
     {
         var response = await Fixture.Client.GetAsync(uri);

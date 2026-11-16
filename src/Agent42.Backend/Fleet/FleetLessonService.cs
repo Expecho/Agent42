@@ -43,7 +43,8 @@ public sealed class FleetLessonService(
     IUserModelCatalogProvider catalogs,
     ILogger<FleetLessonService> logger,
     TimeProvider? time = null,
-    Microsoft.Extensions.Hosting.IHostApplicationLifetime? lifetime = null)
+    Microsoft.Extensions.Hosting.IHostApplicationLifetime? lifetime = null,
+    FleetSettingsService? settings = null)
 {
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
 
@@ -52,6 +53,11 @@ public sealed class FleetLessonService(
     private readonly TimeProvider _time = time ?? TimeProvider.System;
 
     public FleetOptions Options => options;
+
+    /// <summary>The options a user's dream runs on (ADR 0135): the operator's with the user's overrides. The operator-only
+    /// fields (<c>DreamEnabled</c>, <c>DreamTimeout</c>) are read from <see cref="Options"/> on purpose.</summary>
+    public async Task<FleetOptions> EffectiveOptionsAsync(string userId, CancellationToken cancellationToken = default)
+        => settings is null ? options : await settings.ResolveAsync(userId, cancellationToken);
 
     // ---- Reads ----
 
@@ -67,11 +73,11 @@ public sealed class FleetLessonService(
         => document.Lessons.Count(l => l.Status == FleetLessonStatus.Active && l.CreatedAt > (document.Settings.SeenAt ?? DateTimeOffset.MinValue));
 
     /// <summary>The lessons a planner of this user gets now. Fails open: a failing read logs a warning and returns none.</summary>
-    public async Task<IReadOnlyList<FleetLesson>> ActiveAsync(string userId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<FleetLesson>> ActiveAsync(string userId, CancellationToken cancellationToken = default, FleetOptions? effective = null)
     {
         try
         {
-            return FleetLessons.Active(await store.GetLessonsAsync(userId, cancellationToken), _time.GetUtcNow(), options);
+            return FleetLessons.Active(await store.GetLessonsAsync(userId, cancellationToken), _time.GetUtcNow(), effective ?? options);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -213,7 +219,9 @@ public sealed class FleetLessonService(
             return FleetDreamTick.Unavailable;
         }
 
-        if (WindowStart(now) is not { } windowStart)
+        // One small blob read per user per hourly tick, even outside the window: the window is the user's own setting.
+        var effective = await EffectiveOptionsAsync(userId, cancellationToken);
+        if (WindowStart(now, effective) is not { } windowStart)
         {
             return FleetDreamTick.NotYet;
         }
@@ -232,7 +240,7 @@ public sealed class FleetLessonService(
 
         var since = document.Settings.LastRunAt ?? DateTimeOffset.MinValue;
         var finished = (await store.ListTasksAsync(userId, cancellationToken)).Where(FleetDigest.IsFinished).ToList();
-        if (NothingToLearn(finished, since) is { } why)
+        if (NothingToLearn(finished, since, effective) is { } why)
         {
             await RecordSkippedOncePerWindowAsync(userId, windowStart, why, cancellationToken);
             return FleetDreamTick.Skipped;
@@ -250,12 +258,12 @@ public sealed class FleetLessonService(
     }
 
     // Why a nightly run would be pointless, or null: too few tasks finished since the last run, or too few to learn from at all.
-    private string? NothingToLearn(List<FleetTaskRecord> finished, DateTimeOffset since)
+    private static string? NothingToLearn(List<FleetTaskRecord> finished, DateTimeOffset since, FleetOptions effective)
     {
-        var minNew = Math.Max(1, options.DreamMinNewTasks);
+        var minNew = Math.Max(1, effective.DreamMinNewTasks);
         var fresh = finished.Count(t => (t.FinishedAt ?? t.StartedAt) > since);
         return fresh < minNew ? $"Only {fresh} task(s) finished since the last run; at least {minNew} are needed."
-            : finished.Count < Math.Max(1, options.DreamMinTasks) ? $"Only {finished.Count} finished task(s); at least {Math.Max(1, options.DreamMinTasks)} are needed."
+            : finished.Count < Math.Max(1, effective.DreamMinTasks) ? $"Only {finished.Count} finished task(s); at least {Math.Max(1, effective.DreamMinTasks)} are needed."
             : null;
     }
 
@@ -274,10 +282,11 @@ public sealed class FleetLessonService(
     }
 
     /// <summary>The start of the nightly window that contains <paramref name="now"/>, or null outside every window.</summary>
-    public DateTimeOffset? WindowStart(DateTimeOffset now)
+    public DateTimeOffset? WindowStart(DateTimeOffset now, FleetOptions? effective = null)
     {
-        var at = TimeOnly.TryParseExact(options.DreamAtUtc, "HH:mm", null, System.Globalization.DateTimeStyles.None, out var parsed) ? parsed : new TimeOnly(1, 0);
-        var hours = TimeSpan.FromHours(Math.Max(1, options.DreamWindowHours));
+        var window = effective ?? options;
+        var at = TimeOnly.TryParseExact(window.DreamAtUtc, "HH:mm", null, System.Globalization.DateTimeStyles.None, out var parsed) ? parsed : new TimeOnly(1, 0);
+        var hours = TimeSpan.FromHours(Math.Max(1, window.DreamWindowHours));
         var utc = now.ToUniversalTime();
         foreach (var day in new[] { utc.Date, utc.Date.AddDays(-1) })
         {
@@ -340,15 +349,16 @@ public sealed class FleetLessonService(
 
     private async Task<FleetDreamResult> DreamAsync(string userId, string trigger, string? requestedModel, UserTelemetryContext telemetry, CancellationToken cancellationToken)
     {
-        var settings = (await store.GetLessonsAsync(userId, cancellationToken)).Settings;
-        var (model, modelError) = await PickModelAsync(userId, requestedModel, settings.Model, cancellationToken);
+        var effective = await EffectiveOptionsAsync(userId, cancellationToken);
+        var lessonSettings = (await store.GetLessonsAsync(userId, cancellationToken)).Settings;
+        var (model, modelError) = await PickModelAsync(userId, requestedModel, lessonSettings.Model, cancellationToken);
         if (modelError is not null && trigger == FleetDreamTrigger.Manual)
         {
             return new FleetDreamResult(FleetDreamResultKind.BadModel, modelError);
         }
 
         var finished = await FinishedTasksAsync(userId, cancellationToken);
-        var minTasks = Math.Max(1, options.DreamMinTasks);
+        var minTasks = Math.Max(1, effective.DreamMinTasks);
         if (modelError is null && finished.Count < minTasks)
         {
             // Too little to learn from: recorded, but it does not use up the night (LastRunAt stays).
@@ -361,14 +371,14 @@ public sealed class FleetLessonService(
         {
             var progress = modelError is not null
                 ? new DreamProgress(FleetDreamStatus.Failed, modelError)
-                : await DreamOverAsync(userId, finished, previousRunAt, model!, telemetry, cancellationToken);
-            return new FleetDreamResult(FleetDreamResultKind.Ran, Run: await FinishRunAsync(userId, run, progress));
+                : await DreamOverAsync(userId, finished, previousRunAt, model!, telemetry, effective, cancellationToken);
+            return new FleetDreamResult(FleetDreamResultKind.Ran, Run: await FinishRunAsync(userId, run, progress, effective));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             logger.LogWarning(ex, "Fleet dream for a user failed");
             var failed = new DreamProgress(FleetDreamStatus.Failed, ex is OperationCanceledException ? "The dream was cancelled or timed out." : $"The dream failed: {FleetAnalyzerLimits.Short(ex.Message, 200)}");
-            return new FleetDreamResult(FleetDreamResultKind.Ran, Run: await FinishRunAsync(userId, run, failed));
+            return new FleetDreamResult(FleetDreamResultKind.Ran, Run: await FinishRunAsync(userId, run, failed, effective));
         }
     }
 
@@ -377,12 +387,12 @@ public sealed class FleetLessonService(
 
     // The digest and the model run, after the run is recorded as running.
     private async Task<DreamProgress> DreamOverAsync(
-        string userId, List<FleetTaskRecord> finished, DateTimeOffset? previousRunAt, string model, UserTelemetryContext telemetry, CancellationToken cancellationToken)
+        string userId, List<FleetTaskRecord> finished, DateTimeOffset? previousRunAt, string model, UserTelemetryContext telemetry, FleetOptions effective, CancellationToken cancellationToken)
     {
-        var digest = await FleetDigest.BuildAsync(store, userId, finished, options, cancellationToken);
+        var digest = await FleetDigest.BuildAsync(store, userId, finished, effective, cancellationToken);
         var prompts = new FleetPromptSet(await store.GetPromptsAsync(userId, cancellationToken));
         var client = (await chatClients.GetForUserAsync(userId, cancellationToken)).GetClient(model);
-        var outcome = await new FleetDreamer(options, prompts, digest, logger).RunAsync(client, telemetry, cancellationToken);
+        var outcome = await new FleetDreamer(effective, prompts, digest, logger).RunAsync(client, telemetry, cancellationToken);
         var since = previousRunAt ?? DateTimeOffset.MinValue;
         return new DreamProgress(outcome.Status, outcome.Reason)
         {
@@ -425,15 +435,15 @@ public sealed class FleetLessonService(
 
     // Takes the lock, RE-READS, and merges the accepted lessons into the fresh document: a disable or delete the user made
     // while the model ran survives, and a lesson the user disabled is not learned again.
-    private async Task<FleetDreamRun> FinishRunAsync(string userId, FleetDreamRun run, DreamProgress progress)
+    private async Task<FleetDreamRun> FinishRunAsync(string userId, FleetDreamRun run, DreamProgress progress, FleetOptions effective)
     {
         var now = _time.GetUtcNow();
         var final = run;
         await MutateAsync(userId, d =>
         {
             var merge = progress.Outcome is { Accepted.Count: > 0 } outcome
-                ? FleetLessons.Merge(d, outcome.Accepted, now, options)
-                : new FleetLessonMerge(FleetLessons.Expire(d, now, options), 0, 0, 0);
+                ? FleetLessons.Merge(d, outcome.Accepted, now, effective)
+                : new FleetLessonMerge(FleetLessons.Expire(d, now, effective), 0, 0, 0);
             final = run with
             {
                 Status = progress.Status,

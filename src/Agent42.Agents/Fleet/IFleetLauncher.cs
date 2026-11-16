@@ -35,8 +35,8 @@ public interface IFleetLauncher
     /// <summary>The task's workspace listing, or one text file when <paramref name="path"/> is set.</summary>
     Task<string> ReadWorkspaceAsync(string userId, string taskId, string? path, CancellationToken cancellationToken = default);
 
-    /// <summary>The fleet's effective limits and switches.</summary>
-    string DescribeConfig();
+    /// <summary>The fleet's limits and switches in effect for this user: the operator's with the user's Advanced settings on top (ADR 0135).</summary>
+    Task<string> DescribeConfigAsync(string userId, CancellationToken cancellationToken = default);
 
     /// <summary>Recent trace spans of this user only (never another user's), optionally filtered by text.</summary>
     Task<string> ReadSpansAsync(string userId, string? search, int limit, CancellationToken cancellationToken = default);
@@ -84,7 +84,7 @@ public sealed class DisabledFleetLauncher : IFleetLauncher
     public Task<string> ReadWorkspaceAsync(string userId, string taskId, string? path, CancellationToken cancellationToken = default)
         => Task.FromResult(Unavailable);
 
-    public string DescribeConfig() => Unavailable;
+    public Task<string> DescribeConfigAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(Unavailable);
 
     public Task<string> ReadSpansAsync(string userId, string? search, int limit, CancellationToken cancellationToken = default)
         => Task.FromResult(Unavailable);

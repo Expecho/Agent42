@@ -3,7 +3,8 @@ namespace Agent42.Backend;
 /// <summary>
 /// The agent fleet's limits and switches (ADR 0097), bound from the <c>Fleet</c> section. The defaults are the
 /// engine's own constants. The task-level ones (depths, attempts) shape every task, and the caps (tokens, agents,
-/// log and workspace size) bound what one task can cost or store.
+/// log and workspace size) bound what one task can cost or store. A user can override 25 of them for their own tasks
+/// (ADR 0135, <see cref="FleetSettingsService"/>); the token caps, concurrency, size caps and kill switches stay the operator's.
 /// </summary>
 public sealed class FleetOptions
 {
@@ -132,6 +133,10 @@ public sealed class FleetOptions
 
     /// <summary>How often an idle event stream gets a comment line, so the ACA ingress does not drop it.</summary>
     public TimeSpan SseKeepAlive { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>A copy to apply one user's overrides to (ADR 0135): the options are a settable class, and the singleton
+    /// the operator bound must never be mutated. Every member is a value type or a string, so a shallow copy is complete.</summary>
+    public FleetOptions Clone() => (FleetOptions)MemberwiseClone();
 
     public static FleetOptions From(IConfiguration configuration)
         => configuration.GetSection(SectionName).Get<FleetOptions>() ?? new FleetOptions();

@@ -22,7 +22,7 @@ public sealed partial class AgentGrain
         AIFunctionFactory.Create(AnalyzeFleetTaskAsync, name: FleetAnalyzerLimits.AnalyzeToolName, description: FleetAnalyzerLimits.AnalyzeDescription),
         AIFunctionFactory.Create(ReadFleetEventsAsync, name: FleetAnalyzerLimits.EventsToolName, description: FleetAnalyzerLimits.EventsDescription),
         AIFunctionFactory.Create(ReadFleetWorkspaceAsync, name: FleetAnalyzerLimits.WorkspaceToolName, description: FleetAnalyzerLimits.WorkspaceDescription),
-        AIFunctionFactory.Create(GetFleetConfig, name: FleetAnalyzerLimits.ConfigToolName, description: FleetAnalyzerLimits.ConfigDescription),
+        AIFunctionFactory.Create(GetFleetConfigAsync, name: FleetAnalyzerLimits.ConfigToolName, description: FleetAnalyzerLimits.ConfigDescription),
         AIFunctionFactory.Create(ReadRecentSpansAsync, name: FleetAnalyzerLimits.SpansToolName, description: FleetAnalyzerLimits.SpansDescription),
         AIFunctionFactory.Create(StopFleetTaskAsync, name: FleetAnalyzerLimits.StopToolName, description: FleetAnalyzerLimits.StopDescription),
         AIFunctionFactory.Create(RerunFleetTaskAsync, name: FleetAnalyzerLimits.RerunToolName, description: FleetAnalyzerLimits.RerunDescription),
@@ -49,7 +49,7 @@ public sealed partial class AgentGrain
         [Description("A workspace file path to read. Leave empty to list the files.")] string? path = null)
         => TaskCallAsync(FleetAnalyzerLimits.WorkspaceToolName, taskId, id => _fleet.ReadWorkspaceAsync(_userId, id, path));
 
-    private string GetFleetConfig() => _fleet.DescribeConfig();
+    private Task<string> GetFleetConfigAsync() => FleetAnalyzerCallAsync(FleetAnalyzerLimits.ConfigToolName, () => _fleet.DescribeConfigAsync(_userId));
 
     private Task<string> ReadRecentSpansAsync(
         [Description("Optional text to look for in span names, errors and tag values.")] string? search = null,

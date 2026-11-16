@@ -64,14 +64,15 @@ public static partial class AgentApi
         _ => Results.Json(new { error = conflict }, statusCode: StatusCodes.Status409Conflict),
     };
 
-    private static IResult FleetConfig(IServiceProvider services)
+    private static async Task<IResult> FleetConfig(IServiceProvider services, HttpContext http, CancellationToken ct)
     {
         if (services.GetService<FleetTaskService>() is not { } fleet)
         {
             return FleetUnavailable();
         }
 
-        var options = fleet.Options;
+        // The composer shows what THIS user's task will run on (ADR 0135); the token caps stay the operator's.
+        var options = await fleet.ResolveOptionsAsync(http.GetUserId(), ct);
         return Results.Json(new
         {
             defaultMaxTokens = options.DefaultMaxTokensPerTask,
