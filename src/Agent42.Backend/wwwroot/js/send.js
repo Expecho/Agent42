@@ -350,8 +350,9 @@ export async function send(prompt, replay = null) {
     if (stopped) markStopped(agentMsg, answer.length > 0);
     voice.onStreamEnd(); // speak any buffered tail (ADR 0037); no-op when voice mode is off
     // The persona is now bound server-side; don't resend agentId on later turns. Kept on
-    // failure so a retry rebinds.
-    setPendingAgentId(null);
+    // failure so a retry rebinds. Kept while incognito too (ADR 0134): an incognito binding is never stored, so a
+    // grain that deactivates between turns would otherwise run the next one as an unbound plain chat.
+    if (!ephemeral) setPendingAgentId(null);
     // This turn persisted, so the conversation now has something to share — unless it is incognito,
     // which is never written at all (ADR 0034). Deliberately here at the END of the try and not beside
     // the incognitoBtn lock at the top of send(): that line runs BEFORE the fetch, so an offline send, a

@@ -127,6 +127,23 @@ public sealed class AgentWebhookTurnTests(SharedClusterFixture fixture) : Shared
         Assert.Equal("hi", Assert.Single(await PollEventsAsync(url, 1)).Prompt);
     }
 
+    // ADR 0134: an incognito agent chat (ephemeral bind + ephemeral turn) fires no webhook, because delivery is gated
+    // on the persisted flag. The sentinel proves a delivery would have landed by now.
+    [Fact]
+    public async Task IncognitoAgentChat_DoesNotFireWebhook()
+    {
+        var user = NewUser();
+        await Webhook(user, AgentId).SaveAsync(UrlFor(user), "secret");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{user}/incognito");
+        await agent.BindAgentAsync(
+            new AgentBinding(AgentId, AgentName, "You are Hooky.", TestSiloConfigurator.DefaultModel), ephemeral: true);
+
+        await CollectAsync(agent.ChatAsync("a secret", null, ephemeral: true));
+
+        await SentinelAsync(user);
+        Assert.Empty(EventsTo(UrlFor(user)));
+    }
+
     // AC5: an unbound chat never activates a webhook, even for a user whose agent has one.
     [Fact]
     public async Task UnboundChat_NeverDelivers()

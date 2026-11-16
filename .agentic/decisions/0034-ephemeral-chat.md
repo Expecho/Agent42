@@ -7,6 +7,8 @@ tags: [agents, conversations, privacy, ephemeral, incognito, session, persistenc
 
 # Ephemeral ("incognito") chat
 
+> **Amended by [ADR 0134](0134-incognito-agent-chats.md) (2026-11-16): incognito is offered on fresh per-chat agent chats too.** The bind skips its write when ephemeral and the client resends `agentId` each incognito turn; continuous and Copilot agents stay excluded (a continuous id is refused with 400).
+
 > **Amended by [ADR 0106](0106-agentgrain-services-and-turn-context.md) (2026-10-19): the ephemeral flag is a per-run `TurnContext.Ephemeral`, not the `_ephemeral` field.** There is no clear ritual any more. A reminder or background run that interleaves with an incognito turn cannot unset it, and a tool called outside a run reads the fail-closed context (ephemeral).
 
 > **Amended by [ADR 0085](0085-copilot-agent-kind.md) (2026-10-05): a copilot agent's chat refuses incognito turns.**

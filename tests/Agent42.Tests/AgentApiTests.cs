@@ -1,3 +1,4 @@
+using Orleans.Core.Internal;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -330,6 +331,74 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         var conversations = await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
         Assert.DoesNotContain(conversations!, c => c.Id == ephemeralId);
         Assert.Contains(conversations!, c => c.Id == normalId);
+    }
+
+    // ADR 0134: an incognito chat with a per-chat agent is not listed and the bind leaves no stored record.
+    [Fact]
+    public async Task IncognitoAgentChat_IsNotListed_AndLeavesNoRecord()
+    {
+        const string convId = "api-incognito-agent";
+        var (agentId, _) = await CreateAgentAsync("Hidden");
+
+        using (var chat = await Client.PostAsJsonAsync(
+            $"/api/chat/{convId}", new ChatRequest("secret", null, agentId, null, Ephemeral: true)))
+        {
+            chat.EnsureSuccessStatusCode();
+            await chat.Content.ReadAsStringAsync();
+        }
+
+        var conversations = await Client.GetFromJsonAsync<List<ConversationInfo>>("/api/conversations");
+        Assert.DoesNotContain(conversations!, c => c.Id == convId);
+        var grain = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{LocalDevUser}/{convId}");
+        Assert.NotNull(await grain.GetAgentBindingAsync()); // bound in memory for this activation
+        await grain.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+        var reactivated = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{LocalDevUser}/{convId}");
+        Assert.Null(await reactivated.GetAgentBindingAsync());
+        Assert.Empty(await reactivated.GetHistoryAsync());
+    }
+
+    // ADR 0134: the client resends agentId every incognito turn, so a grain that deactivated in between rebinds.
+    [Fact]
+    public async Task IncognitoAgentChat_RebindsAfterDeactivation()
+    {
+        const string convId = "api-incognito-rebind";
+        var (agentId, _) = await CreateAgentAsync("Rebinder");
+        var request = new ChatRequest("secret", null, agentId, null, Ephemeral: true);
+
+        using (var first = await Client.PostAsJsonAsync($"/api/chat/{convId}", request))
+        {
+            first.EnsureSuccessStatusCode();
+            await first.Content.ReadAsStringAsync();
+        }
+
+        var grain = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{LocalDevUser}/{convId}");
+        await grain.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        using (var second = await Client.PostAsJsonAsync($"/api/chat/{convId}", request))
+        {
+            second.EnsureSuccessStatusCode();
+            await second.Content.ReadAsStringAsync();
+        }
+
+        var binding = await Cluster.GrainFactory.GetGrain<IAgentGrain>($"{LocalDevUser}/{convId}").GetAgentBindingAsync();
+        Assert.Equal(agentId, binding!.AgentId);
+    }
+
+    // ADR 0134: a continuous agent's conversation is one shared persisted grain, so an incognito turn is refused
+    // before any touch, bind or turn, and nothing is written.
+    [Fact]
+    public async Task IncognitoTurn_OnContinuousConversation_Is400()
+    {
+        var (agentId, _) = await CreateAgentAsync("Continuous");
+        var convId = $"{RetentionLimits.ContinuousConversationIdPrefix}{agentId}";
+
+        using var res = await Client.PostAsJsonAsync(
+            $"/api/chat/{convId}", new ChatRequest("secret", null, agentId, null, Ephemeral: true));
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var grain = Cluster.GrainFactory.GetGrain<IAgentGrain>($"{LocalDevUser}/{convId}");
+        Assert.Null(await grain.GetAgentBindingAsync());
+        Assert.Empty(await grain.GetHistoryAsync());
     }
 
     // AC5: agents CRUD is reachable over HTTP and returns JSON.

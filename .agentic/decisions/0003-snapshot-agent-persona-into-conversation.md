@@ -7,6 +7,8 @@ tags: [agents, grains, persona]
 
 # Snapshot an agent's persona into the conversation at bind time
 
+> **Amended by [ADR 0134](0134-incognito-agent-chats.md) (2026-11-16): an incognito bind is in-memory only.** It is never stored, so after a deactivation the next turn rebinds from the agent's *current* definition: a deliberate exception to "first persona wins", which holds only while the activation lives.
+
 > **Amended by [ADR 0082](0082-seeded-research-agent-loop.md) (2026-09-22): the agent's `Kind` is snapshotted too.** A research-kind agent changes how
 > the model runs, so `Kind` is persona and joins the name, prompt, model and tools in `AgentBinding` — editing or
 > deleting the source agent never turns an existing research chat into an ordinary one, or back.

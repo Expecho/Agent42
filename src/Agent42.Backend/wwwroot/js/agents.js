@@ -124,13 +124,17 @@ export function startAgentChat(agent) {
   setActiveAgentId(agent.id);
   setActiveAgentKind(agent.kind ?? null);
   setPendingAgentId(agent.id);
-  // A copilot chat refuses incognito turns (the runtime records the turn as it runs), so the toggle is locked off.
-  if (agent.kind === "copilot") setIncognito(false, false);
   clearPendingAttachments();
   clearThread();
   setEmptyVisible(true);
   setModel(agent.model);
   lockPicker(agent.name, agent.model);
+  // Incognito (ADR 0134) is offered on a FRESH per-chat agent chat only. A continuous agent's conversation is one
+  // shared persisted grain, and a copilot chat refuses incognito turns (the runtime records the turn as it runs).
+  // Always reset: a flag switched on in a regular chat must not leak into this one with the button hidden.
+  const incognitoAllowed = !agent.continuous && agent.kind !== "copilot";
+  incognitoBtn.hidden = !incognitoAllowed;
+  setIncognito(false, incognitoAllowed);
   renderSidebar();
   input.focus();
 }

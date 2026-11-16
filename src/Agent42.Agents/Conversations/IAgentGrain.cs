@@ -149,9 +149,11 @@ public interface IAgentGrain : IGrainWithStringKey
     /// Idempotent: once a conversation is bound the persona is immutable, so a second call
     /// is a no-op and can never flip the persona mid-conversation. Callers pass this on the
     /// first turn of a freshly-started agent chat; normal chats never call it.
+    /// <paramref name="ephemeral"/> (an incognito chat, ADR 0134) applies the persona in memory but writes no state, so
+    /// nothing is stored and the binding is gone after deactivation; the caller rebinds on the next turn.
     /// </summary>
     [Alias("BindAgentAsync")]
-    Task BindAgentAsync(AgentBinding binding);
+    Task BindAgentAsync(AgentBinding binding, bool ephemeral = false);
 
     /// <summary>
     /// Returns the persona bound to this conversation, or null for a normal chat. Lets the

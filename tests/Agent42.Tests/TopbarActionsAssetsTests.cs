@@ -76,6 +76,33 @@ public sealed class TopbarActionsAssetsTests
         Assert.True(clearAt > resumeAt, "the clear must be on the fresh-chat path, after the continuous early-return");
     }
 
+    // ADR 0134 — incognito is offered on a FRESH per-chat agent chat only. The gate must test agent.continuous (the fresh
+    // path is reached for a continuous agent with no conversation yet) and copilot, and the reset must run after
+    // lockPicker, which hides the button, so a flag leaked from a regular chat is always cleared.
+    [Fact]
+    public async Task IncognitoToggle_IsOfferedOnFreshPerChatAgentChats()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        var start = StaticAssetsServerFixture.Body(app, "export function startAgentChat(agent)");
+        Assert.Contains("const incognitoAllowed = !agent.continuous && agent.kind !== \"copilot\";", start);
+        Assert.Contains("incognitoBtn.hidden = !incognitoAllowed;", start);
+        var lockAt = start.IndexOf("lockPicker(", StringComparison.Ordinal);
+        var resetAt = start.IndexOf("setIncognito(false, incognitoAllowed)", StringComparison.Ordinal);
+        Assert.True(lockAt >= 0, "the lockPicker call is missing");
+        Assert.True(resetAt > lockAt, "the incognito reset must run after lockPicker, which hides the button");
+    }
+
+    // ADR 0134 — an incognito binding is never stored, so the client keeps sending agentId on every incognito turn.
+    [Fact]
+    public async Task IncognitoAgentChat_KeepsAgentIdAcrossTurns()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
+        Assert.Contains("if (!ephemeral) setPendingAgentId(null);", send);
+    }
+
     // AC3b (cascade-limited) — the trap this criterion exists for: the desktop sidebar header already
     // renders the identical mark + wordmark, so a naively revealed topbar brand shows "42 AGENT 42"
     // twice, side by side. Both original children are therefore hidden by default and revealed only
