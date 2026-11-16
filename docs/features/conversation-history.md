@@ -21,7 +21,7 @@ The agent can also search and read your past chats when the **past chats** tool 
 
 ## Chat without saving (incognito)
 
-Use the **Incognito chat** toggle in the chat header to talk without saving. The chat never appears in the sidebar and is not searchable. Documents can't be attached in an incognito chat, and chats with a Copilot agent don't support incognito at all.
+Use the **Incognito chat** toggle in the chat header to talk without saving. The chat never appears in the sidebar and is not searchable. Documents can't be attached in an incognito chat, and the toggle is offered on a new chat with a regular or per-chat agent. Chats with a Copilot agent, and with an agent that keeps one continuous history, don't support incognito. If the server restarts mid-chat, an incognito agent chat carries on with the agent's current settings but without the earlier messages.
 
 ## Share a chat
 

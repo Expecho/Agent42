@@ -194,7 +194,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Calendar: now an external MCP server (0053 superseded) | 0063 |
 | Push: away replies, model-invoked, user-initiated test push | 0028, 0075, 0100 |
 | Chat apps: one in-process gateway, each user's own bots (Telegram, Slack, Discord now; Signal built but dormant until `signalEnabled`; WhatsApp planned), outbound connections, owner pairing, Blob lease, files and images, voice notes, groups, delivery to the origin or home chat; Signal as a dedicated number in a lease-gated signal-cli child process on Azure Files | 0111, 0113 |
-| Conversations: incognito, share links, follow-ups, pins, groups, chat search, stream recovery, stop generation, owner export (Markdown/JSON/ZIP, paged export-all), edit/regenerate last turn, fork, past chats as a model tool (search + read, ranked) | 0034, 0035, 0036, 0045, 0046, 0047, 0061, 0073, 0078, 0091, 0092, 0112 |
+| Conversations: incognito, share links, follow-ups, pins, groups, chat search, stream recovery, stop generation, owner export (Markdown/JSON/ZIP, paged export-all), edit/regenerate last turn, fork, past chats as a model tool (search + read, ranked) | 0034, 0035, 0036, 0045, 0046, 0047, 0061, 0073, 0078, 0091, 0092, 0112, 0134 |
 | PWA and UI: share target, offline cache, composer, topbar, long press, prefs rail, tool-call folding, rich inline rendering (mermaid/code/math/charts), collapsible sidebar, ten colour palettes (a second axis beside light/dark, one shared `themes.css`) | 0023, 0032, 0043, 0044, 0052, 0065, 0072, 0080, 0083, 0086, 0129 |
 | Config health tab | 0029 |
 | Artifacts / canvas: model-created versioned pages, SVG, docs and code in a sandboxed pane; CSP sandbox header; session compaction | 0083, 0084 |

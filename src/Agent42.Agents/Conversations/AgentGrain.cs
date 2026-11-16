@@ -336,7 +336,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     public Task<string> GetSelectedModelAsync() => Task.FromResult(_modelId);
 
-    public async Task BindAgentAsync(AgentBinding binding)
+    public async Task BindAgentAsync(AgentBinding binding, bool ephemeral = false)
     {
         // Immutable once bound: a conversation keeps the first persona it was given, so a
         // repeat bind (e.g. a retried first turn) can never flip it mid-conversation.
@@ -379,7 +379,13 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             StripToolHistory();
         }
 
-        await _state.WriteStateAsync();
+        // An incognito chat (ADR 0034/0134) binds in memory only: the rebuild above applies the persona for this
+        // activation, but a stored record would break "not persisted" and flip RecordExists. The client resends
+        // agentId every incognito turn, so a deactivated grain rebinds instead of running as a plain chat.
+        if (!ephemeral)
+        {
+            await _state.WriteStateAsync();
+        }
 
         _logger.LogInformation("Agent grain {GrainKey} bound to agent {AgentId} ({AgentName}) on model {Model}",
             this.GetPrimaryKeyString(), binding.AgentId, binding.Name, binding.Model);

@@ -1140,6 +1140,50 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Equal("persona-model", await reactivated.GetSelectedModelAsync());
     }
 
+    // ADR 0134: an incognito agent chat binds in memory. The persona applies, but binding writes no state, so the
+    // stored grain has no record (and RecordExists stays false for the other incognito guards).
+    [Fact]
+    public async Task BindAgent_Ephemeral_AppliesPersonaButWritesNothing()
+    {
+        const string key = "ephemeral-bind-conversation";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await agent.BindAgentAsync(new AgentBinding("agent-1", "Marvin", "You are Marvin.", "persona-model"), ephemeral: true);
+
+        var binding = await agent.GetAgentBindingAsync();
+        Assert.Equal("agent-1", binding!.AgentId);
+        Assert.Equal("persona-model", await agent.GetSelectedModelAsync());
+        Assert.Null((await SessionStateOf(key)).AgentId);
+    }
+
+    [Fact]
+    public async Task BindAgent_Ephemeral_IsGoneAfterReactivation()
+    {
+        const string key = "ephemeral-bind-reactivation-conversation";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.BindAgentAsync(new AgentBinding("agent-1", "Marvin", "You are Marvin.", "persona-model"), ephemeral: true);
+
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        Assert.Null(await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetAgentBindingAsync());
+    }
+
+    [Fact]
+    public async Task EphemeralAgentChat_TurnUsesPersona_AndPersistsNothing()
+    {
+        const string key = "ephemeral-agent-chat-conversation";
+        const string persona = "You are Ford, an incognito persona.";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.BindAgentAsync(new AgentBinding("agent-f", "Ford", persona, "persona-model"), ephemeral: true);
+
+        var events = await CollectAsync(agent.ChatAsync("hi", null, null, ephemeral: true));
+
+        Assert.Contains(persona, Answer(events));
+        var state = await SessionStateOf(key);
+        Assert.Null(state.SerializedSession);
+        Assert.Null(state.AgentId);
+    }
+
     // AC3: the bound system prompt actually reaches the model (FakeChatClient echoes what the
     // terminal IChatClient receives as a [sys:…] marker — this is a real delivery assertion).
     [Fact]

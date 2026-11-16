@@ -136,11 +136,23 @@ public static partial class AgentApi
         return title + ForkTitleSuffix;
     }
 
+    // An incognito turn on a continuous agent's shared grain would stay in its in-memory session and the next normal
+    // turn would persist it (ADR 0134, gotchas: an incognito turn stays in the in-memory session).
+    private static bool RefusesIncognito(string conversationId, ChatRequest request)
+        => request.Ephemeral && conversationId.StartsWith(RetentionLimits.ContinuousConversationIdPrefix, StringComparison.Ordinal);
+
     // Streaming chat: sends a prompt to the conversation's agent grain and streams
     // the turn back as NDJSON events (text deltas, tool calls, token usage).
     private static async Task ChatAsync(
         string conversationId, ChatRequest request, IGrainFactory grains, IAttachmentStore attachments, HttpContext http)
     {
+        if (RefusesIncognito(conversationId, request))
+        {
+            await Results.BadRequest(new { error = "A continuous agent's conversation is shared and persisted, so it cannot be incognito" })
+                .ExecuteAsync(http);
+            return;
+        }
+
         var userId = http.GetUserId();
         var agent = grains.GetGrain<IAgentGrain>(AgentKey(userId, conversationId));
 
@@ -188,7 +200,7 @@ public static partial class AgentApi
             {
                 await agent.BindAgentAsync(new AgentBinding(
                     definition.Id, definition.Name, definition.SystemPrompt, definition.Model,
-                    definition.EnabledTools, definition.Kind));
+                    definition.EnabledTools, definition.Kind), request.Ephemeral);
             }
 
             model = null;

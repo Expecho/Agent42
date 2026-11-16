@@ -33,7 +33,7 @@ For safety, an agent called this way never gets memory, push notifications, past
 
 A Copilot agent runs its chats on the GitHub Copilot agent loop, using your own model and Agent42's tools and skills. It also has built-in shell, file and URL tools, auto-approved, working in its own directory. The operator can turn those built-ins off with `Copilot:BuiltInToolsEnabled`.
 
-Copilot agents are always per-chat, take no documents or images, and refuse incognito chats. Every signed-in user can use them, and the shell can read the server's own files and credentials, so treat it as trusted-deployment only.
+Copilot agents are always per-chat, take no documents or images, and refuse incognito chats. Continuous agents refuse them too, since they share one saved history; every other agent can start an incognito chat. Every signed-in user can use them, and the shell can read the server's own files and credentials, so treat it as trusted-deployment only.
 
 To run on your GitHub Copilot plan, use **Sign in with GitHub** (Preferences → model providers). The editor then offers your plan's `github-copilot:<model>` models for the Copilot type. If you disconnect GitHub, the agent refuses ("GitHub isn't connected") instead of switching models, and a rejected token gets a "Sign in with GitHub again" reply.
 
