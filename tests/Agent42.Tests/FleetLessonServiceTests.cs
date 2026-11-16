@@ -21,10 +21,14 @@ public class FleetLessonServiceTests
 
     private static readonly UserTelemetryContext Telemetry = new(User, "alice", null, null, null, null);
 
-    private FleetLessonService Service(ScriptedDreamClient client, FleetOptions? options = null, IFleetStore? store = null)
-        => new(store ?? _store, options ?? new FleetOptions(),
+    private FleetLessonService Service(ScriptedDreamClient client, FleetOptions? options = null, IFleetStore? store = null, bool userSettings = false)
+    {
+        options ??= new FleetOptions();
+        return new(store ?? _store, options,
             new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(client, LessonCatalogs.ModelA)),
-            _catalogs, NullLogger<FleetLessonService>.Instance, _time);
+            _catalogs, NullLogger<FleetLessonService>.Instance, _time,
+            settings: userSettings ? new FleetSettingsService(options, store ?? _store, _catalogs) : null);
+    }
 
     /// <summary>A client whose first call submits one lesson built from the first two tasks of the digest.</summary>
     private static ScriptedDreamClient LearnsOne(string text = "Stage the work in two steps.")
@@ -72,6 +76,62 @@ public class FleetLessonServiceTests
     {
         await service.WhenIdleAsync(User);
         return await service.GetAsync(User);
+    }
+
+    // ---- The user's Advanced settings (ADR 0135) ----
+
+    [Fact]
+    public async Task Dream_UsesUserWindow()
+    {
+        await SeedTasks(5);
+        await Enable();
+        await _store.SetSettingsAsync(User, new FleetUserSettings { DreamAtUtc = "12:00", DreamWindowHours = 2 });
+        var service = Service(LearnsOne(), userSettings: true);
+
+        // 01:30 is inside the operator's window (01:00-05:00) but not the user's (12:00-14:00).
+        Assert.Equal(FleetDreamTick.NotYet, await service.TickAsync(User));
+        Assert.Equal(new DateTimeOffset(2026, 11, 10, 12, 0, 0, TimeSpan.Zero), service.WindowStart(new DateTimeOffset(2026, 11, 10, 12, 30, 0, TimeSpan.Zero), await service.EffectiveOptionsAsync(User)));
+
+        _time.Now = new DateTimeOffset(2026, 11, 10, 12, 30, 0, TimeSpan.Zero);
+        Assert.Equal(FleetDreamTick.Started, await service.TickAsync(User));
+        await service.WhenIdleAsync(User);
+        Assert.Equal(FleetDreamStatus.Ran, Assert.Single((await _store.GetLessonsAsync(User)).Runs).Status);
+    }
+
+    [Fact]
+    public async Task Dream_UsesUserThresholds()
+    {
+        await SeedTasks(5);
+        await Enable();
+        await _store.SetSettingsAsync(User, new FleetUserSettings { DreamMinNewTasks = 10 });
+
+        var tick = await Service(LearnsOne(), userSettings: true).TickAsync(User);
+
+        Assert.Equal(FleetDreamTick.Skipped, tick);
+        Assert.Contains("at least 10", Assert.Single((await _store.GetLessonsAsync(User)).Runs).Reason);
+
+
+        // Without the override the same five tasks are enough.
+        await _store.SetSettingsAsync(User, new FleetUserSettings());
+        Assert.Equal(FleetDreamTick.Started, await Service(LearnsOne(), userSettings: true).TickAsync(User));
+    }
+
+    [Fact]
+    public async Task Lessons_UseUserCaps()
+    {
+        await SeedTasks(4);
+        await _store.SetLessonsAsync(User, new FleetLessonsDocument { Lessons = [Lesson("a", "One."), Lesson("b", "Two.")] });
+        await _store.SetSettingsAsync(User, new FleetUserSettings { LessonsInPrompt = 1, LessonsMaxStored = 2 });
+        var service = Service(LearnsOne(), userSettings: true);
+
+        // A planner gets the user's number of lessons, not the operator's 8.
+        Assert.Single(await service.ActiveAsync(User, effective: await service.EffectiveOptionsAsync(User)));
+        Assert.Equal(2, (await service.ActiveAsync(User)).Count);
+
+        // The store is full at the user's cap, so a new lesson is refused.
+        var result = await service.RunManualAsync(User, null, Telemetry);
+        Assert.Equal(1, result.Run!.Refused);
+        Assert.Equal(2, (await _store.GetLessonsAsync(User)).Lessons.Count);
     }
 
     // ---- The nightly tick ----
@@ -560,6 +620,8 @@ public class FleetLessonServiceTests
         }
 
         public Task SetLessonsAsync(string userId, FleetLessonsDocument document, CancellationToken cancellationToken = default) => inner.SetLessonsAsync(userId, document, cancellationToken);
+        public Task<FleetUserSettings> GetSettingsAsync(string userId, CancellationToken cancellationToken = default) => inner.GetSettingsAsync(userId, cancellationToken);
+        public Task SetSettingsAsync(string userId, FleetUserSettings settings, CancellationToken cancellationToken = default) => inner.SetSettingsAsync(userId, settings, cancellationToken);
         public Task<IReadOnlyList<FleetTaskRecord>> ListTasksAsync(string userId, CancellationToken cancellationToken = default) => inner.ListTasksAsync(userId, cancellationToken);
         public Task<FleetTaskRecord?> GetTaskAsync(string userId, string taskId, CancellationToken cancellationToken = default) => inner.GetTaskAsync(userId, taskId, cancellationToken);
         public Task SaveTaskAsync(FleetTaskRecord task, CancellationToken cancellationToken = default) => inner.SaveTaskAsync(task, cancellationToken);

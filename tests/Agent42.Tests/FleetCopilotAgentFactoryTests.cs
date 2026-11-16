@@ -33,7 +33,7 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
             new FleetOptions { CopilotAgentsEnabled = enabled, DefaultCopilotModel = defaultCopilotModel },
             NullLoggerFactory.Instance);
 
-    private FleetCopilotAgentFactory Factory(FleetCopilotHost host, IChatClientFactory? userFactory = null)
+    private FleetCopilotAgentFactory Factory(FleetCopilotHost host, IChatClientFactory? userFactory = null, string? copilotDefaultModel = null)
         => new(host,
             userFactory ?? new SingleChatClientFactory(new FakeChatClient(), "fake:model-a"),
             [FleetRunHarness.ModelA, FleetRunHarness.ModelB],
@@ -41,7 +41,8 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
             _workspace,
             _canvas,
             FleetPromptSet.Defaults,
-            new FleetCopilotPermissionPolicy(_workspace.Root, new ScriptedFleetInteraction(), CancellationToken.None));
+            new FleetCopilotPermissionPolicy(_workspace.Root, new ScriptedFleetInteraction(), CancellationToken.None),
+            copilotDefaultModel);
 
     [Fact]
     public async Task CopilotDisabled_LoadErrorForPlanner()
@@ -119,6 +120,16 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
         Assert.Equal(FleetRunHarness.ModelB, Factory(Host(true)).ModelFor($"copilot/{FleetRunHarness.ModelB}"));
         Assert.Equal(FleetRunHarness.ModelA, Factory(Host(true)).ModelFor("copilot"));
         Assert.Equal(FleetRunHarness.ModelB, Factory(Host(true, defaultCopilotModel: FleetRunHarness.ModelB)).ModelFor("copilot"));
+    }
+
+    [Fact]
+    public void ModelFor_UsersOverrideBeatsOperatorsDefault()
+    {
+        // ADR 0135: the run's value (the user's override) wins over Fleet:DefaultCopilotModel, which the host still carries.
+        var host = Host(true, defaultCopilotModel: FleetRunHarness.ModelA);
+
+        Assert.Equal(FleetRunHarness.ModelB, Factory(host, copilotDefaultModel: FleetRunHarness.ModelB).ModelFor("copilot"));
+        Assert.Equal(FleetRunHarness.ModelA, Factory(host).ModelFor("copilot"));
     }
 
     [Fact]

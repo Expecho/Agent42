@@ -91,11 +91,12 @@ public sealed partial class FleetLauncher
         }
     }
 
-    public string DescribeConfig()
+    public async Task<string> DescribeConfigAsync(string userId, CancellationToken cancellationToken = default)
     {
+        var effective = await fleet.ResolveOptionsAsync(userId, cancellationToken);
         var lines = typeof(FleetOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead && p.GetIndexParameters().Length == 0)
-            .Select(p => $"{p.Name} = {Convert.ToString(p.GetValue(fleet.Options), CultureInfo.InvariantCulture)}")
+            .Select(p => $"{p.Name} = {Convert.ToString(p.GetValue(effective), CultureInfo.InvariantCulture)}")
             .Append($"CopilotAvailable = {fleet.CopilotAvailable}");
         return "Fleet configuration in effect:\n" + string.Join('\n', lines);
     }

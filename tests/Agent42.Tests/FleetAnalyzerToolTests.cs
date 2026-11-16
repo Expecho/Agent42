@@ -244,7 +244,7 @@ public sealed class FleetAnalyzerToolTests(SharedClusterFixture fixture) : Share
         Assert.Equal(DisabledFleetLauncher.Unavailable, await disabled.AnalyzeAsync("u", "t"));
         Assert.Equal(DisabledFleetLauncher.Unavailable, await disabled.ReadEventsAsync("u", "t", null, 0, 5));
         Assert.Equal(DisabledFleetLauncher.Unavailable, await disabled.ReadWorkspaceAsync("u", "t", null));
-        Assert.Equal(DisabledFleetLauncher.Unavailable, disabled.DescribeConfig());
+        Assert.Equal(DisabledFleetLauncher.Unavailable, await disabled.DescribeConfigAsync("u"));
         Assert.Equal(DisabledFleetLauncher.Unavailable, await disabled.ReadSpansAsync("u", null, 5));
         Assert.Equal(DisabledFleetLauncher.Unavailable, await disabled.StopAsync("u", "t"));
         var rerun = await disabled.RerunAsync("u", "t", null, null, null);

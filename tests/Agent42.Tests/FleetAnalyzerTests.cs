@@ -255,13 +255,31 @@ public sealed class FleetAnalyzerTests : IAsyncDisposable
     }
 
     [Fact]
-    public void Config_ListsTheEffectiveLimits()
+    public async Task Config_ListsTheEffectiveLimits()
     {
-        var text = _launcher.DescribeConfig();
+        var text = await _launcher.DescribeConfigAsync(Alice);
 
         Assert.Contains("MaxTeamDepth = 6", text, StringComparison.Ordinal);
         Assert.Contains("MaxTokensPerTaskLimit = 10000000", text, StringComparison.Ordinal);
         Assert.Contains("CopilotAvailable = False", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DescribeConfig_ShowsEffective()
+    {
+        var options = new FleetOptions { ApprovalDepth = 0, JudgeDepth = -1, MaxConcurrentTasks = 5 };
+        var catalogs = new Catalogs();
+        var settings = new FleetSettingsService(options, _store, catalogs);
+        var service = new FleetTaskService(
+            _store, options,
+            new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(new FakeChatClient(), FleetRunHarness.ModelA)),
+            catalogs, NullLogger<FleetTaskService>.Instance, settings: settings);
+        var launcher = new FleetLauncher(service, catalogs, null!, new ServiceCollection().BuildServiceProvider());
+        await _store.SetSettingsAsync(Alice, new FleetUserSettings { MaxAttempts = 5 });
+
+        Assert.Contains("MaxAttempts = 5", await launcher.DescribeConfigAsync(Alice), StringComparison.Ordinal);
+        Assert.Contains("MaxAttempts = 3", await launcher.DescribeConfigAsync(Bob), StringComparison.Ordinal);
+        Assert.Contains("MaxTokensPerTaskLimit = 10000000", await launcher.DescribeConfigAsync(Alice), StringComparison.Ordinal);
     }
 
     // ── spans: the caller's own, fail closed ─────────────────────────────────────────────────────────

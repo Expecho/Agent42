@@ -101,6 +101,22 @@ public sealed class FleetLessonApiTests(FleetLessonApiFixture fixture) : SharedC
     }
 
     [Fact]
+    public async Task LessonsGet_ShowsEffective()
+    {
+        var user = NewUser();
+        await Store.SetSettingsAsync(user, new FleetUserSettings { DreamAtUtc = "03:30", DreamWindowHours = 2, DreamMinNewTasks = 5, DreamMinTasks = 6, LessonTtlDays = 30 });
+
+        var body = await Get(user);
+
+        Assert.Equal("03:30", body.GetProperty("schedule").GetProperty("atUtc").GetString());
+        Assert.Equal(2, body.GetProperty("schedule").GetProperty("windowHours").GetInt32());
+        Assert.Equal(5, body.GetProperty("minNewTasks").GetInt32());
+        Assert.Equal(6, body.GetProperty("minTasks").GetInt32());
+        Assert.Equal(30, body.GetProperty("ttlDays").GetInt32());
+        Assert.Equal("01:00", (await Get(NewUser())).GetProperty("schedule").GetProperty("atUtc").GetString());
+    }
+
+    [Fact]
     public async Task EnablingSchedulesTheGrain_DisablingUnschedulesIt()
     {
         var user = NewUser();

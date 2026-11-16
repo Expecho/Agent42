@@ -57,6 +57,8 @@ public static partial class AgentApi
 
         var userId = http.GetUserId();
         var document = await lessons.GetAsync(userId, ct);
+        // The user's own thresholds and window (ADR 0135): what the next dream really uses.
+        var effective = await lessons.EffectiveOptionsAsync(userId, ct);
         if (document.Settings.Enabled && lessons.Options.DreamEnabled)
         {
             // Idempotent: heals a reminder table that was reset.
@@ -71,10 +73,10 @@ public static partial class AgentApi
             newCount = FleetLessonService.NewCount(document),
             running = lessons.IsRunning(userId),
             dreamEnabled = lessons.Options.DreamEnabled,
-            minNewTasks = Math.Max(1, lessons.Options.DreamMinNewTasks),
-            minTasks = Math.Max(1, lessons.Options.DreamMinTasks),
-            ttlDays = Math.Max(1, lessons.Options.LessonTtlDays),
-            schedule = FleetDreamSchedule(lessons.Options),
+            minNewTasks = Math.Max(1, effective.DreamMinNewTasks),
+            minTasks = Math.Max(1, effective.DreamMinTasks),
+            ttlDays = Math.Max(1, effective.LessonTtlDays),
+            schedule = FleetDreamSchedule(effective),
         });
     }
 

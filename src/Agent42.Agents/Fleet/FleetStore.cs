@@ -14,6 +14,7 @@ namespace Agent42.Agents;
 /// {userId}/canvas/{workspaceId}/manifest.json
 /// {userId}/canvas/{workspaceId}/{name}/v{version}
 /// {userId}/prompts.json
+/// {userId}/settings.json                     (ADR 0135; per-user overrides of the operator's fleet limits)
 /// {userId}/lessons.json                      (ADR 0124; outside every workspace prefix, so the sync never deletes it)
 /// </code>
 /// Every id and path segment is escaped with <see cref="Uri.EscapeDataString(string)"/>, so none can add a level or
@@ -150,6 +151,17 @@ public sealed class FleetStore(IFleetBlobs blobs) : IFleetStore
     public Task SetLessonsAsync(string userId, FleetLessonsDocument document, CancellationToken cancellationToken = default)
         => blobs.PutAsync(LessonsKey(userId), JsonSerializer.SerializeToUtf8Bytes(document, JsonOptions), cancellationToken);
 
+    public async Task<FleetUserSettings> GetSettingsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var content = await blobs.GetAsync(SettingsKey(userId), cancellationToken);
+        return content is null
+            ? new FleetUserSettings()
+            : JsonSerializer.Deserialize<FleetUserSettings>(content, JsonOptions) ?? new FleetUserSettings();
+    }
+
+    public Task SetSettingsAsync(string userId, FleetUserSettings settings, CancellationToken cancellationToken = default)
+        => blobs.PutAsync(SettingsKey(userId), JsonSerializer.SerializeToUtf8Bytes(settings, JsonOptions), cancellationToken);
+
     /// <summary>
     /// The workspace-relative path as <c>/</c>-joined segments, or an exception when it is empty, rooted or
     /// contains <c>..</c>. Backslashes count as separators, and empty and <c>.</c> segments are dropped.
@@ -209,6 +221,8 @@ public sealed class FleetStore(IFleetBlobs blobs) : IFleetStore
     private static string PromptsKey(string userId) => $"{UserPrefix(userId)}prompts.json";
 
     private static string LessonsKey(string userId) => $"{UserPrefix(userId)}lessons.json";
+
+    private static string SettingsKey(string userId) => $"{UserPrefix(userId)}settings.json";
 
     // A '.' or '..' segment survives escaping, and an HTTP client may resolve it in the blob URL, so it is refused.
     private static string Escape(string segment)

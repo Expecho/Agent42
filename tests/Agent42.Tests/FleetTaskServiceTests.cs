@@ -31,20 +31,23 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
     private FleetTaskService Service(
         FleetOptions? options = null, FleetToolCatalog? tools = null, IChatClient? client = null,
         IDocumentIndex? documents = null, IEmbeddingGenerator<string, Embedding<float>>? embeddings = null,
-        IFleetCompletionNotifier? notifier = null)
+        IFleetCompletionNotifier? notifier = null, FleetStore? store = null, bool userSettings = false)
     {
+        store ??= _store;
+        var effective = options ?? new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1 };
         var provider = new SingleUserChatClientFactoryProvider(
             new SingleChatClientFactory(client ?? new FakeChatClient(), FleetRunHarness.ModelA, embeddingGenerator: embeddings));
         var service = new FleetTaskService(
-            _store,
-            options ?? new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1 },
+            store,
+            effective,
             provider,
             new FixedCatalogs(),
             NullLogger<FleetTaskService>.Instance,
             tools,
             documents: documents,
             ingestion: documents is null ? null : new DocumentIngestionService(new DocumentTextExtractor(), new DocumentChunker(), provider, documents),
-            notifier: notifier);
+            notifier: notifier,
+            settings: userSettings ? new FleetSettingsService(effective, store, new FixedCatalogs()) : null);
         _services.Add(service);
         return service;
     }
@@ -151,6 +154,74 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
 
         // FakeChatClient echoes the RequestContext identity into its replies: the background run carried it.
         Assert.Contains($"[uctx:{Alice}]", done.Result);
+    }
+
+    // The user's Advanced settings (ADR 0135): a task runs on its user's options, a neighbour's are untouched.
+    private static string TwoThenOneAgentPlan => Task(FleetRunHarness.Plan("Sequential", "Writer", "Editor"), FleetRunHarness.Plan("Sequential", "Writer"));
+
+    private static async Task<List<string>> RejectedPlanReasonsAsync(FleetStore store, string user, string taskId)
+        => [.. (await store.ReadEventsAsync(user, taskId)).Where(l => TypeOf(l) == "plan.rejected").Select(l => System.Text.Json.JsonDocument.Parse(l).RootElement.GetProperty("data").GetProperty("reason").GetString()!)];
+
+    [Fact]
+    public async Task Task_UsesUserSettings_AndOtherUserUnaffected()
+    {
+        var service = Service(userSettings: true);
+        await _store.SetSettingsAsync(Alice, new FleetUserSettings { MaxAgentsPerTask = 1 });
+
+        var (aliceTask, _) = await service.SubmitAsync(Alice, new(TwoThenOneAgentPlan));
+        await FinishedAsync(service, Alice, aliceTask!);
+        var (bobTask, _) = await service.SubmitAsync(Bob, new(TwoThenOneAgentPlan));
+        await FinishedAsync(service, Bob, bobTask!);
+
+        Assert.Contains("only 1 agent(s) are left", Assert.Single(await RejectedPlanReasonsAsync(_store, Alice, aliceTask!)));
+        Assert.Empty(await RejectedPlanReasonsAsync(_store, Bob, bobTask!));
+    }
+
+    [Fact]
+    public async Task Task_WithoutSettingsService_UsesOperatorOptions()
+    {
+        var service = Service(new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1, MaxAgentsPerTask = 1 });
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(TwoThenOneAgentPlan));
+        await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Single(await RejectedPlanReasonsAsync(_store, Alice, taskId!));
+    }
+
+    [Fact]
+    public async Task Running_KeepsSnapshot()
+    {
+        var blobs = new CountingBlobs();
+        var store = new FleetStore(blobs);
+        var service = Service(new FleetOptions { ApprovalDepth = 0, JudgeDepth = -1, MaxConcurrentTasks = 5 }, store: store, userSettings: true);
+        await store.SetSettingsAsync(Alice, new FleetUserSettings { MaxAgentsPerTask = 1 });
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(TwoThenOneAgentPlan));
+        await QuestionAsync(service, Alice, taskId!);
+        // A save while the task waits for its approval changes the NEXT task, not this one.
+        await store.SetSettingsAsync(Alice, new FleetUserSettings { MaxAgentsPerTask = 40 });
+        await service.StopAsync(Alice, taskId!);
+        await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Equal(1, blobs.SettingsReads);
+        Assert.Contains("only 1 agent(s) are left", Assert.Single(await RejectedPlanReasonsAsync(store, Alice, taskId!)));
+    }
+
+    private sealed class CountingBlobs : IFleetBlobs
+    {
+        private readonly InMemoryFleetBlobs _inner = new();
+        public int SettingsReads { get; private set; }
+
+        public Task<byte[]?> GetAsync(string key, CancellationToken cancellationToken = default)
+        {
+            SettingsReads += key.EndsWith("/settings.json", StringComparison.Ordinal) ? 1 : 0;
+            return _inner.GetAsync(key, cancellationToken);
+        }
+
+        public Task PutAsync(string key, byte[] content, CancellationToken cancellationToken = default) => _inner.PutAsync(key, content, cancellationToken);
+        public Task AppendAsync(string key, byte[] content, CancellationToken cancellationToken = default) => _inner.AppendAsync(key, content, cancellationToken);
+        public Task<IReadOnlyList<FleetBlobItem>> ListAsync(string prefix, CancellationToken cancellationToken = default) => _inner.ListAsync(prefix, cancellationToken);
+        public Task DeleteAsync(string key, CancellationToken cancellationToken = default) => _inner.DeleteAsync(key, cancellationToken);
     }
 
     [Fact]

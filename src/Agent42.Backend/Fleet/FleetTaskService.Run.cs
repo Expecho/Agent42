@@ -132,15 +132,16 @@ public sealed partial class FleetTaskService
         var chatModels = models.Where(m => !m.CopilotOnly).ToList();
         var reachable = FleetCopilotAgentFactory.ReachableModels(factory, models);
         // The user's lessons (ADR 0124): a failing read is logged and the run goes without them.
-        var activeLessons = lessons is null ? [] : await lessons.ActiveAsync(record.UserId, task.Budget.Token);
+        var activeLessons = lessons is null ? [] : await lessons.ActiveAsync(record.UserId, task.Budget.Token, task.Options);
         var copilotFactory = copilot is null
             ? null
             : new FleetCopilotAgentFactory(copilot, factory, [.. models.Select(m => m.Id)], record.PlannerModel, workspace, canvas, prompts,
-                new FleetCopilotPermissionPolicy(workspace.Root, task.Questions, task.Budget.Token, task.AutoApprove ? task.Log : null));
+                new FleetCopilotPermissionPolicy(workspace.Root, task.Questions, task.Budget.Token, task.AutoApprove ? task.Log : null),
+                task.Options.DefaultCopilotModel);
         return new FleetRun
         {
             TaskId = record.Id,
-            Options = options,
+            Options = task.Options,
             Prompts = prompts,
             Budget = task.Budget,
             Workspace = workspace,

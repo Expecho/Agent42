@@ -295,6 +295,33 @@ public class FleetStoreTests
     }
 
     [Fact]
+    public async Task Settings_Missing_IsEmpty()
+    {
+        var settings = await _store.GetSettingsAsync("alice");
+
+        Assert.Null(settings.MaxAttempts);
+        Assert.Null(settings.DreamAtUtc);
+        Assert.Null(settings.DefaultCopilotModel);
+    }
+
+    [Fact]
+    public async Task Settings_RoundTrip_PerUser_IgnoresUnknownMembers()
+    {
+        await _store.SetSettingsAsync("alice", new FleetUserSettings { MaxAttempts = 5, BudgetSoftLimit = 0.5, DreamAtUtc = "03:30" });
+
+        var read = await _store.GetSettingsAsync("alice");
+        Assert.Equal(5, read.MaxAttempts);
+        Assert.Equal(0.5, read.BudgetSoftLimit);
+        Assert.Equal("03:30", read.DreamAtUtc);
+        Assert.Null(read.MaxFixRounds);
+        Assert.Null((await _store.GetSettingsAsync("bob")).MaxAttempts);
+        Assert.Contains("alice/settings.json", (await _blobs.ListAsync("")).Select(b => b.Key));
+
+        await _blobs.PutAsync("alice/settings.json", Encoding.UTF8.GetBytes("{\"maxAttempts\":2,\"somethingNew\":true}"));
+        Assert.Equal(2, (await _store.GetSettingsAsync("alice")).MaxAttempts);
+    }
+
+    [Fact]
     public async Task Lessons_MissingBlob_ReadsEmptyDocument_WithToggleOff()
     {
         var doc = await _store.GetLessonsAsync("alice");

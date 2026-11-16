@@ -5108,3 +5108,19 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   reader: it goes through `McpAppRegistry`, which accepts only tools visible to `"app"` on the route's server.
 - **Evidence:** `src/Agent42.Backend/Mcp/McpAppMeta.cs`, `tests/Agent42.Tests/UserMcpToolProviderTests.cs`, `tests/Agent42.Tests/McpConnectionTesterTests.cs`
 - **Verified:** 2026-11-15
+
+### The fleet's run path reads the task's RESOLVED options, never the singleton
+
+- **Claim:** `FleetOptions` is a settable class bound once from config, and a user's Advanced settings (ADR 0135) override 25
+  of its fields. `FleetSettingsService.ResolveAsync` returns a CLONE with the overrides applied, and `SubmitAsync` resolves it
+  ONCE, before `Register`, onto the running task (`RunningFleetTask.Options`). Everything in the run reads that snapshot:
+  `FleetBudget`'s caps, `FleetRun.Options`, `lessons.ActiveAsync(..., task.Options)` and the Copilot factory's default model.
+  Reading the injected `options` there would silently ignore the user's value, and re-resolving mid-run would let a save change a
+  running task. The singleton stays right for the operator-only fields (`MaxConcurrentTasks`, token caps, size caps, event-log
+  cap, `DreamEnabled`, `DreamTimeout`). The dream resolves at tick time (`TickAsync`, `DreamAsync`). A new `Fleet:*` field a user
+  should be able to set goes in `FleetSettingsService.Descriptors` AND `FleetUserSettings` (same property name and type), or
+  `OperatorOnlyFields_NotExposed` and the descriptor lookup fail.
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetSettingsService.cs`, `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`SubmitAsync`,
+  `Register`), `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`BuildRunAsync`),
+  `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Task_UsesUserSettings_AndOtherUserUnaffected`, `Running_KeepsSnapshot`)
+- **Verified:** 2026-11-16

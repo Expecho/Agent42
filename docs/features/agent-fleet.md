@@ -53,6 +53,12 @@ The **Lessons** button opens what the fleet learned about team design from your 
 
 The view shows each lesson with its topic, confidence and sources. Lessons expire after 90 days without support. **Disable** keeps a lesson so it isn't proposed again, and delete removes it. **Dream now** runs it on demand. It needs a few finished tasks before it does anything.
 
+## Advanced settings
+
+The **Advanced** button opens the limits the server sets in config, so you can change them for your own tasks and your own dream: team depth, agents per task, judge and approval depth, passing score, attempts, fix rounds, the soft budget, clarifying questions, self-review runs, the model a plain Copilot agent runs on, and the dream's time window, thresholds and lesson caps. Each field shows the server's value as its placeholder; **leave a field blank to use it**. Save checks every value against its allowed range and names the field that is wrong. **Reset all** clears your overrides.
+
+A saved change applies from your **next task**; a task that is already running keeps the settings it started with. The token cap and the other server limits (how many tasks run at once, size limits, the dream's on/off switch) stay the server's and can't be changed here. Raising a limit such as agents per task lets a task do more, within the same token cap. Lowering the number of lessons stored or their lifetime removes nothing at once: it applies at the next dream.
+
 ## Editable prompts
 
 The planner, judge, moderator and other prompts can be edited per user. Usage counts under the application "Agent42 fleet" in the usage dashboard.

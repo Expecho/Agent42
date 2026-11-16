@@ -146,5 +146,7 @@ public sealed class FleetReviewFixTests
         public Task SetPromptsAsync(string userId, IReadOnlyDictionary<string, string> prompts, CancellationToken cancellationToken = default) => inner.SetPromptsAsync(userId, prompts, cancellationToken);
         public Task<FleetLessonsDocument> GetLessonsAsync(string userId, CancellationToken cancellationToken = default) => inner.GetLessonsAsync(userId, cancellationToken);
         public Task SetLessonsAsync(string userId, FleetLessonsDocument document, CancellationToken cancellationToken = default) => inner.SetLessonsAsync(userId, document, cancellationToken);
+        public Task<FleetUserSettings> GetSettingsAsync(string userId, CancellationToken cancellationToken = default) => inner.GetSettingsAsync(userId, cancellationToken);
+        public Task SetSettingsAsync(string userId, FleetUserSettings settings, CancellationToken cancellationToken = default) => inner.SetSettingsAsync(userId, settings, cancellationToken);
     }
 }

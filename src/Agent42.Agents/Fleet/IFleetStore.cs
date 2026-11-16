@@ -62,4 +62,9 @@ public interface IFleetStore
     Task<FleetLessonsDocument> GetLessonsAsync(string userId, CancellationToken cancellationToken = default);
 
     Task SetLessonsAsync(string userId, FleetLessonsDocument document, CancellationToken cancellationToken = default);
+
+    /// <summary>The user's overrides of the operator's fleet limits (ADR 0135), or an all-null record when none is stored yet.</summary>
+    Task<FleetUserSettings> GetSettingsAsync(string userId, CancellationToken cancellationToken = default);
+
+    Task SetSettingsAsync(string userId, FleetUserSettings settings, CancellationToken cancellationToken = default);
 }

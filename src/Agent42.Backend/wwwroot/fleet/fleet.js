@@ -17,7 +17,8 @@
     selectedTask: null, selectedTeam: null, selectedAttempt: null,
     follow: true,
     open: new Set(), expanded: new Set(),
-    view: "tasks",          // or "prompts"
+    view: "tasks",          // or "prompts", "lessons", "settings"
+    settings: null,         // GET /api/fleet/settings (ADR 0135)
     prompts: null, promptKey: "planner", drafts: {},
     panel: null,
     freshTask: true,        // the composer starts a new task, instead of a follow-up on the selected task
@@ -448,6 +449,7 @@
     analyzerTaskChanged();
     $("#promptsBtn").classList.toggle("active", S.view === "prompts");
     $("#lessonsBtn").classList.toggle("active", S.view === "lessons");
+    $("#settingsBtn").classList.toggle("active", S.view === "settings");
   }
 
   let shownPrompt = null;
@@ -1649,6 +1651,133 @@
       h("ul", { class: "files" }, applied.map(l => h("li", null, h("span", { class: "name", text: l.text })))));
   }
 
+  // ---------- advanced settings (ADR 0135) ----------
+  // The limits the operator sets in config, which a user may override for their own tasks and dream. The bounds, the operator's
+  // values and the field list come from GET /api/fleet/settings; only the wording lives here. A blank field uses the operator's value.
+  const SETTING_TEXT = {
+    maxTeamDepth: ["Team depth", "How deep teams nest: agents of a team below this depth can start sub-teams."],
+    maxAgentsPerTask: ["Agents per task", "Agents all teams of one task can spawn together."],
+    maxConcurrentSubTeamsPerLevel: ["Parallel sub-teams", "Sub-teams of one level that run at the same time."],
+    defaultMaxGroupChatRounds: ["Group chat rounds", "Turns of a group chat team when the planner sets none."],
+    budgetSoftLimit: ["Budget soft limit", "Once this fraction of the budget is used, agents can no longer start new teams."],
+    judgeDepth: ["Judge depth", "Results of teams up to this depth are reviewed by a judge; -1 turns reviewing off."],
+    passingScore: ["Passing score", "The lowest judge score (1 to 10) a result needs to pass."],
+    maxAttempts: ["Attempts", "Teams tried for a (sub-)task when the judge rejects the result; the best result is kept."],
+    maxFixRounds: ["Fix rounds", "Times a team fixes its own rejected result before a new team is tried."],
+    approvalDepth: ["Approval depth", "Teams up to this depth ask you to approve their plan; -1 turns approval off."],
+    maxClarifyingQuestions: ["Clarifying questions", "Questions the clarify step may ask before a task is planned."],
+    selfReviewMaxIterations: ["Self-review runs", "Most runs of the agent that writes a result in a self-review, the first included. 1 turns it off."],
+    defaultCopilotModel: ["Copilot agent model", "The model a plain copilot agent runs on. Blank: the task's model."],
+    dreamAtUtc: ["Dream starts at (UTC)", "The time of day the nightly dream window opens, as HH:mm."],
+    dreamWindowHours: ["Dream window (hours)", "How long the window stays open."],
+    dreamMaxTasks: ["Tasks read", "Finished tasks the dream reads, newest first."],
+    dreamMinTasks: ["Tasks needed", "Fewer finished tasks than this and the dream makes no model call."],
+    dreamMinNewTasks: ["New tasks needed", "Tasks that must have finished since the last run for a nightly run to start."],
+    dreamMaxDigestChars: ["Digest size (characters)", "How much of your tasks the dream reads; the oldest are dropped first."],
+    dreamMinSupport: ["Workspaces per lesson", "Distinct workspaces whose tasks must support a lesson."],
+    dreamMaxNewPerRun: ["New lessons per run", "New lessons one run may add."],
+    lessonMaxChars: ["Lesson length (characters)", "Characters of one lesson's text."],
+    lessonsInPrompt: ["Lessons per planner", "Lessons one planner call receives, newest first."],
+    lessonTtlDays: ["Lesson lifetime (days)", "Days a lesson lives after it was last supported."],
+    lessonsMaxStored: ["Lessons stored", "Lessons kept; a lower cap only blocks new lessons, it deletes none."],
+  };
+  const SETTING_GROUPS = [["behaviour", "Tasks"], ["dream", "Nightly dream and lessons"]];
+
+  async function openSettings() {
+    S.view = "settings";
+    renderHeader(); renderPanel();
+    const r = await api("GET", "/api/fleet/settings");
+    if (!r.ok) {
+      $("#detail").replaceChildren(h("div", { class: "detail-inner" }, h("div", { class: "error-text", text: r.data?.error || "The settings could not be loaded." })));
+      return;
+    }
+    S.settings = r.data;
+    renderSettingsView();
+  }
+
+  function closeSettings() { S.view = "tasks"; invalidate(); }
+
+  function settingInput(f, d, current) {
+    const attrs = { id: "setting-" + f.key, "aria-label": SETTING_TEXT[f.key]?.[0] || f.key };
+    let input;
+    if (f.kind === "model") {
+      input = h("select", attrs, h("option", { value: "", text: d[f.key] ? `Operator's value (${d[f.key]})` : "Operator's value (the task's model)" }),
+        (S.settings.copilotModels || []).map(m => h("option", { value: m.id, text: m.name === m.id ? m.id : `${m.name} (${m.id})` })));
+    } else if (f.kind === "time") {
+      input = h("input", { ...attrs, type: "text", inputmode: "numeric", maxlength: "5", placeholder: d[f.key] || "HH:mm" });
+    } else {
+      input = h("input", { ...attrs, type: "number", min: f.min, max: f.max, step: f.kind === "number" ? "0.05" : "1", placeholder: String(d[f.key] ?? "") });
+    }
+    // A saved model that is no longer offered stays selectable, so pressing Save does not silently clear it.
+    if (f.kind === "model" && current && ![...input.options].some(o => o.value === current)) input.append(h("option", { value: current, text: `${current} (no longer offered)` }));
+    input.value = current ?? "";
+    return input;
+  }
+
+  function renderSettingsView() {
+    if (S.view !== "settings" || !S.settings) return;
+    const { settings, defaults, fields } = S.settings;
+    $("#tree").replaceChildren(h("div", { class: "tree-task" },
+      h("div", { class: "t", text: "Advanced settings" }),
+      h("div", { text: "Limits you can change for your own tasks and your dream. A blank field uses the server's value." })));
+
+    const inputs = new Map();
+    const errors = new Map();
+    const status = h("span", { class: "muted" });
+    const rows = group => fields.filter(f => f.group === group).map(f => {
+      const [label, hint] = SETTING_TEXT[f.key] || [f.key, ""];
+      const input = settingInput(f, defaults, settings[f.key]);
+      const error = h("div", { class: "error-text" });
+      inputs.set(f.key, input); errors.set(f.key, error);
+      input.addEventListener("input", () => { input.classList.remove("invalid"); error.textContent = ""; status.textContent = ""; });
+      const range = f.kind === "number" || f.kind === "int"
+        ? ` Allowed ${f.min} to ${f.followsTeamDepth ? "your team depth" : f.max}.` : "";
+      return h("div", { class: "setting-row" },
+        h("label", { for: "setting-" + f.key, text: label }),
+        h("div", null, input, h("div", { class: "muted", text: `${hint}${range}` }), error));
+    });
+
+    const collect = () => {
+      const body = {};
+      for (const f of fields) {
+        const raw = inputs.get(f.key).value.trim();
+        if (raw === "") continue;
+        body[f.key] = f.kind === "int" || f.kind === "number" ? Number(raw) : raw;
+      }
+      return body;
+    };
+    const save = h("button", { class: "btn primary", id: "settingsSave", text: "Save" });
+    save.addEventListener("click", async () => {
+      save.disabled = true; status.textContent = "";
+      for (const [key, input] of inputs) { input.classList.remove("invalid"); errors.get(key).textContent = ""; }
+      const r = await api("PUT", "/api/fleet/settings", collect());
+      save.disabled = false;
+      if (r.ok) { S.settings.settings = r.data; status.textContent = "Saved. A task that is already running keeps the settings it started with."; return; }
+      if (r.data?.field && inputs.has(r.data.field)) {
+        inputs.get(r.data.field).classList.add("invalid");
+        errors.get(r.data.field).textContent = r.data.error;
+        inputs.get(r.data.field).focus();
+      } else status.textContent = r.data?.error || "Saving failed.";
+    });
+    const reset = h("button", { class: "btn danger", id: "settingsReset", text: "Reset all" });
+    reset.addEventListener("click", async () => {
+      // A second click confirms: a dialog would block the page.
+      if (!reset.dataset.confirm) {
+        reset.dataset.confirm = "1"; reset.textContent = "Click again to reset";
+        setTimeout(() => { delete reset.dataset.confirm; reset.textContent = "Reset all"; }, 3000);
+        return;
+      }
+      if ((await api("DELETE", "/api/fleet/settings")).ok) await openSettings();
+    });
+
+    $("#detail").replaceChildren(h("div", { class: "detail-inner editor" },
+      h("div", { class: "crumbs" }, h("a", { text: "← Back to tasks", onclick: closeSettings })),
+      h("h1", { text: "Advanced settings" }),
+      h("div", { class: "sub-head", text: "These apply to all your fleet tasks and your dream. The token cap and the other server limits stay the operator's. Raising a limit can raise what a task costs." }),
+      SETTING_GROUPS.map(([group, title]) => h("div", { class: "card settings-group" }, h("h2", { text: title }), rows(group))),
+      h("div", { class: "editor-actions" }, save, reset, h("span", { class: "spacer" }), status)));
+  }
+
   // ---------- wiring ----------
   function selectTask(taskId) {
     S.view = "tasks"; S.panel = null; S.freshTask = !taskById(taskId)?.canFollowUp;
@@ -1664,6 +1793,7 @@
 
   $("#promptsBtn").addEventListener("click", () => S.view === "prompts" ? closePrompts() : openPrompts());
   $("#lessonsBtn").addEventListener("click", () => S.view === "lessons" ? closeLessons() : openLessons());
+  $("#settingsBtn").addEventListener("click", () => S.view === "settings" ? closeSettings() : openSettings());
   $("#stopBtn").addEventListener("click", () => S.selectedTask && api("POST", `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/stop`));
   function newTask() { disconnect(); closeCanvasPane(); S.selectedTask = null; S.freshTask = true; resetTaskState(); S.view = "tasks"; invalidate(); composer.ta.focus(); }
   $("#newTaskBtn").addEventListener("click", newTask);

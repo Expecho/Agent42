@@ -563,3 +563,12 @@ footer .budget { display: flex; align-items: center; gap: 14px; margin-left: aut
 .lesson-task { cursor: pointer; text-decoration: underline; }
 .lessons-off { margin-top: 12px; }
 .dream-run { font-size: 12px; padding: 3px 0; }
+
+/* ————— advanced settings (ADR 0135) ————— */
+.settings-group h2 { margin: 0 0 8px; font-size: 14px; }
+.setting-row { display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 6px 14px; padding: 8px 0; border-top: 1px solid var(--line); align-items: start; }
+.setting-row label { font-weight: 550; font-size: 13px; padding-top: 6px; }
+.setting-row input, .setting-row select { width: 100%; max-width: 260px; }
+.setting-row .muted { font-size: 12px; margin-top: 3px; }
+.setting-row .invalid { border-color: var(--bad); }
+@media (max-width: 640px) { .setting-row { grid-template-columns: 1fr; } .setting-row label { padding-top: 0; } }

@@ -178,6 +178,30 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("JSON.stringify({ message, model })", panel, StringComparison.Ordinal);
     }
 
+    /// <summary>ADR 0135: the Advanced button, and a settings view that loads, saves and resets through the routes and renders from the
+    /// GET payload. <c>/fleet/</c> is outside the service worker SHELL (ADR 0116), so no <c>CACHE</c> bump is involved.</summary>
+    [Fact]
+    public async Task FleetPage_HasAdvancedSettings()
+    {
+        var page = await _client.GetStringAsync("/fleet/");
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("id=\"settingsBtn\"", page, StringComparison.Ordinal);
+        foreach (var wired in new[]
+        {
+            "$(\"#settingsBtn\").addEventListener(\"click\"",
+            "api(\"GET\", \"/api/fleet/settings\")",
+            "api(\"PUT\", \"/api/fleet/settings\"",
+            "api(\"DELETE\", \"/api/fleet/settings\")",
+            "id: \"settingsSave\"",
+            "id: \"settingsReset\"",
+            "r.data.field",
+        })
+        {
+            Assert.Contains(wired, script, StringComparison.Ordinal);
+        }
+    }
+
     /// <summary>ADR 0124: the Lessons button with its badge, the settings controls, the per-task line, and the wiring in fleet.js. Lesson
     /// text is model-written, so the view writes it with textContent only (stricter than the page's markdown rule).</summary>
     [Fact]
