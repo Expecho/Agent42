@@ -88,6 +88,18 @@ public sealed partial class FakeChatClient : IChatClient
     /// </summary>
     public const string ReasoningOnlyStreamMarker = "think separately";
 
+    /// <summary>
+    /// Prompt marker that streams ONLY an <see cref="ErrorContent"/> update, the shape a Responses <c>error</c> event
+    /// takes on the pinned stack (a 200 whose failure rides inside it, measured in <c>ReasoningSummaryFallbackTests</c>).
+    /// </summary>
+    public const string ErrorEventMarker = "error event";
+
+    /// <summary>The message <see cref="ErrorEventMarker"/> carries.</summary>
+    public const string ErrorEventText = "Unsupported parameter: reasoning.summary is not supported with this model";
+
+    /// <summary>Prompt marker that streams NOTHING: a model that answered 200 with no output item we map.</summary>
+    public const string EmptyReplyMarker = "return nothing";
+
     /// <summary>Prompt marker that streams a usage report with cache reads and Anthropic-style cache writes (ADR 0104).</summary>
     public const string CacheUsageMarker = "report cache usage";
 
@@ -269,6 +281,11 @@ public sealed partial class FakeChatClient : IChatClient
 
         // The agent fleet's planner, judge and moderator (ADR 0097) follow the task's script. Checked out here, so the
         // streaming body below stays under the S3776 threshold.
+        if (ScriptedFailure(list) is { } failure)
+        {
+            return FailureStream(failure);
+        }
+
         return FleetReply(list, options) is { } fleet
             ? FleetStream(fleet)
             : StreamCoreAsync(list, options, cancellationToken);
@@ -371,6 +388,36 @@ public sealed partial class FakeChatClient : IChatClient
                 await Task.Yield();
             }
         }
+    }
+
+    private static async IAsyncEnumerable<ChatResponseUpdate> FailureStream(IReadOnlyList<ChatResponseUpdate> updates)
+    {
+        foreach (var update in updates)
+        {
+            yield return update;
+            await Task.Yield();
+        }
+    }
+
+    // The updates for the two "the model gave us nothing usable" markers, or null for an ordinary turn.
+    private static IReadOnlyList<ChatResponseUpdate>? ScriptedFailure(IReadOnlyList<ChatMessage> messages)
+    {
+        var text = LastUserText(messages);
+        if (text is null)
+        {
+            return null;
+        }
+
+        if (text.Contains(ErrorEventMarker, StringComparison.OrdinalIgnoreCase))
+        {
+            return [new ChatResponseUpdate(ChatRole.Assistant, [new ErrorContent(ErrorEventText)])];
+        }
+
+        // One update with NO contents but a message id: what the real Responses client yields for `response.created`
+        // (measured), and the only shape that makes the framework store an assistant message with zero parts.
+        return text.Contains(EmptyReplyMarker, StringComparison.OrdinalIgnoreCase)
+            ? [new ChatResponseUpdate(ChatRole.Assistant, []) { MessageId = "empty-1" }]
+            : null;
     }
 
     // Parks the stream at the boundary a test asked for, until it releases it or cancels — see StreamGate.

@@ -56,6 +56,7 @@ public sealed class AndroidStreamContractTests
             AgentStreamEventType.StateSnapshot => new AgentStreamEvent(type, State: "{}", StateVersion: 3),
             AgentStreamEventType.McpElicitation => new AgentStreamEvent(
                 type, Text: "Calendar", ToolCallId: "call_3", Elicitation: "{}"),
+            AgentStreamEventType.Error => new AgentStreamEvent(type, Text: "The model returned an empty reply."),
             _ => throw new InvalidOperationException(
                 $"No Android contract sample for {type}: add one here and its line to stream-events.ndjson."),
         });

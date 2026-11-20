@@ -10,7 +10,9 @@ The thinking is shown live only. It isn't saved, so after you reload the chat on
 
 ## Turn it on for a model
 
-In Preferences, open the model providers and edit the provider. Tick the **reasoning** checkbox on the model. This makes Agent42 ask the model for a reasoning summary.
+In Preferences, open the model providers and edit the provider. Tick the **reasoning summary** checkbox on the model. This makes Agent42 ask the model for a reasoning summary.
+
+If a model refuses the summary request, Agent42 retries once without it and remembers that until the app restarts, so the chat still answers.
 
 The checkbox doesn't control display: a model that sends its thinking anyway still shows it, ticked or not.
 

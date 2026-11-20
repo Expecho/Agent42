@@ -214,6 +214,9 @@ export async function send(prompt, replay = null) {
   scrollToBottom();
 
   let answer = "";
+  // The provider's own explanation when the turn failed inside a 200 stream, or "returned an empty reply" (the `error` event).
+  // Kept apart from `answer`: that feeds the copy button, and an error is not something the assistant said. Never spoken.
+  let streamError = null;
   // Set from the `done` event, so it reflects what the server actually did with the turn.
   let stopped = false;
   // toolCallEnd carries no tool name, and an artifact card needs it (read_artifact's result looks the same).
@@ -272,6 +275,8 @@ export async function send(prompt, replay = null) {
           answer += chunk.text;
           setAgentMarkdown(agentMsg, answer, { caret: true });
           voice.onDelta(chunk.text); // speak the reply as it streams (ADR 0037); no-op when voice mode is off
+        } else if (chunk.type === "error") {
+          streamError = chunk.text || "The model returned an error.";
         } else if (chunk.type === "reasoning") {
           // A reasoning model's thinking (ADR 0071), into a collapsed disclosure above the reply.
           //
@@ -343,6 +348,13 @@ export async function send(prompt, replay = null) {
       }
     }
     setAgentMarkdown(agentMsg, answer);
+    // After the reply, so a turn that said something and then failed keeps what it said and shows why it stopped.
+    if (streamError) {
+      agentMsg.classList.add("is-error");
+      setAgentMarkdown(agentMsg, answer ? `${answer}
+
+**The model reported an error.** ${streamError}` : `**The model reported an error.** ${streamError}`);
+    }
     // Live-streamed reply is final: capture the raw markdown accumulator by closure for copy.
     addCopyButton(agentMsg, answer);
     // After the copy button, so the note it appends cannot be captured into the clipboard text. A turn
