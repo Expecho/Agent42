@@ -340,7 +340,7 @@ function addModelRow(model) {
     { label: "image gen", checked: model?.supportsImageGeneration ?? false },
     { label: "embeddings", checked: model?.supportsEmbeddings ?? false },
     { label: "speech", checked: model?.supportsSpeech ?? false },
-    { label: "reasoning", checked: model?.supportsReasoning ?? false },
+    { label: "reasoning summary", checked: model?.supportsReasoning ?? false },
     { label: "transcription", checked: model?.supportsTranscription ?? false },
   ];
   const capBoxes = [];
