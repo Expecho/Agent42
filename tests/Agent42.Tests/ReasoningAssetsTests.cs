@@ -33,6 +33,25 @@ public sealed class ReasoningAssetsTests(StaticAssetsServerFixture fixture)
     }
 
     /// <summary>
+    /// The <c>error</c> event (a provider failure that arrived inside a 200 stream, or a model that said nothing) reaches
+    /// the user, and does so WITHOUT being treated as something the assistant said: it must not be appended to the reply
+    /// the copy button captures, and it must not be spoken by hands-free voice (ADR 0037). Scoped to the arm, and to
+    /// code, for the reason <see cref="CodeOnly"/> gives.
+    /// </summary>
+    [Fact]
+    public async Task TheErrorEvent_IsShown_AndNeverSpokenOrCopiedAsTheReply()
+    {
+        var app = await fixture.GetAppScriptAsync();
+
+        var arm = CodeOnly(Section(app, "chunk.type === \"error\"", "chunk.type === \"reasoning\""));
+        Assert.Contains("streamError", arm);
+        Assert.DoesNotContain("voice.onDelta", arm);
+        Assert.DoesNotContain("answer +=", arm);
+        // ... and it is painted after the loop, as an error bubble.
+        Assert.Contains("agentMsg.classList.add(\"is-error\")", CodeOnly(Section(app, "if (streamError) {", "addCopyButton(agentMsg, answer)")));
+    }
+
+    /// <summary>
     /// <paramref name="source"/> with its <c>//</c> line comments removed.
     ///
     /// <para>Every negative assertion here MUST go through this. The comments in the code under test

@@ -101,6 +101,17 @@ public enum AgentStreamEventType
     /// never persisted. A browser whose stream died finds it through the pending-tool-calls GET.</para>
     /// </summary>
     McpElicitation,
+
+    /// <summary>
+    /// The turn failed or produced nothing, and <see cref="AgentStreamEvent.Text"/> says why: the provider's own error
+    /// when it reported one as a stream event, or "The model returned an empty reply." when it said nothing at all.
+    /// Appended LAST so the numeric values of every earlier member stay what they were.
+    ///
+    /// <para><b>Live-only</b>, like <see cref="Reasoning"/>: never appended to the reply, never persisted, never
+    /// replayed. A thrown provider failure is a different path (the stream breaks, ADR 0046); this is the one where
+    /// the provider answered 200 and the failure rode inside it. <see cref="Done"/> still follows.</para>
+    /// </summary>
+    Error,
 }
 
 /// <summary>

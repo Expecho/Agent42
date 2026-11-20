@@ -5124,3 +5124,17 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Register`), `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`BuildRunAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Task_UsesUserSettings_AndOtherUserUnaffected`, `Running_KeepsSnapshot`)
 - **Verified:** 2026-11-16
+
+## A stream failure is a 200 with `ErrorContent`, not an exception, and an empty message is never stored
+- **Claim:** On the Responses path a provider failure can arrive two ways, and only one throws. An HTTP 400 throws
+  `ClientResultException` (ADR 0046's "Transmission failed"). A Responses `error` SSE event is a 200 whose update carries
+  `ErrorContent`, and `ProjectStreamedContent` used to drop it, so the user saw an empty bubble. The framework also stores an
+  assistant message with zero parts for a response that mapped to nothing, so a storage filter must drop it, or the browser's reply
+  recovery paints it and the next turn replays it. A model that refuses `reasoning.summary` (`gpt-6.2-*`) is retried once without it by
+  `ReasoningSummaryFallbackChatClient`, and remembered in a static set: never per user (the factories are rebuilt) and never per turn.
+- **Evidence:** `src/Agent42.Backend/Models/ReasoningSummaryFallbackChatClient.cs`, `src/Agent42.Agents/Conversations/AgentGrain.cs`
+  (`ProjectStreamedContent`, `EmptyReplyNotice`, `StripReasoningFromStorage`), `tests/Agent42.Tests/ReasoningSummaryFallbackTests.cs`,
+  `tests/Agent42.Tests/AgentGrainTests.cs` (`ProviderErrorEvent_IsStreamed_NotStored_AndLeavesNoEmptyMessage`,
+  `EmptyReply_IsReportedAsAnError_AndNotStoredAsAnEmptyMessage`). The fake needs an update with NO contents but a message id
+  (`FakeChatClient.EmptyReplyMarker`) to reach the empty-message state: zero updates stores nothing.
+- **Verified:** 2026-11-20

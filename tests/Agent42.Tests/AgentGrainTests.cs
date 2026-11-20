@@ -234,6 +234,62 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains(history, t => t.Role == "assistant" && t.Text.Contains("Hello!", StringComparison.Ordinal));
     }
 
+    // A provider failure that rides INSIDE a 200 stream (a Responses `error` event, gpt-6.2-astra rejecting
+    // reasoning.summary) surfaces as an ErrorContent update. ProjectStreamedContent used to drop it, so the user got an
+    // empty bubble — and the framework stored an empty assistant message that the browser's reply recovery then adopted.
+    // Three properties, each of which fails separately: the event is streamed, it is NOT written to the session, and no
+    // empty assistant message is left to be replayed to the provider on the next turn.
+    [Fact]
+    public async Task ProviderErrorEvent_IsStreamed_NotStored_AndLeavesNoEmptyMessage()
+    {
+        const string Key = "error-user/error-event";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        var events = await CollectAsync(agent.ChatAsync($"hi, {FakeChatClient.ErrorEventMarker}", null));
+
+        var error = Assert.Single(events, e => e.Type == AgentStreamEventType.Error);
+        Assert.Equal(FakeChatClient.ErrorEventText, error.Text);
+        Assert.DoesNotContain(events, e => e.Type == AgentStreamEventType.TextDelta);
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+
+        var session = (await SessionStateOf(Key)).SerializedSession;
+        Assert.NotNull(session);
+        Assert.DoesNotContain(FakeChatClient.ErrorEventText, session!, StringComparison.Ordinal);
+        Assert.DoesNotContain(await agent.GetHistoryAsync(), t => t.Role == "assistant");
+
+        // THE load-bearing one: turn 2 replays turn 1's stored messages, and none of them is empty.
+        Assert.Contains("[emptymsg:0]", Answer(await CollectAsync(agent.ChatAsync("and now?", null))));
+    }
+
+    // The twin for a model that says nothing at all (HTTP 200, no output item we map): no ErrorContent exists to project,
+    // so the grain says it itself instead of leaving an empty bubble the user cannot tell from a hang.
+    [Fact]
+    public async Task EmptyReply_IsReportedAsAnError_AndNotStoredAsAnEmptyMessage()
+    {
+        const string Key = "error-user/empty-reply";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        var events = await CollectAsync(agent.ChatAsync($"hi, {FakeChatClient.EmptyReplyMarker}", null));
+
+        var error = Assert.Single(events, e => e.Type == AgentStreamEventType.Error);
+        Assert.Contains("empty reply", error.Text, StringComparison.Ordinal);
+        Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
+        Assert.DoesNotContain(await agent.GetHistoryAsync(), t => t.Role == "assistant");
+        Assert.Contains("[emptymsg:0]", Answer(await CollectAsync(agent.ChatAsync("and now?", null))));
+    }
+
+    // The negative control: an ordinary turn must not carry an Error event, or the two tests above could be satisfied by
+    // a grain that emits one on every turn.
+    [Fact]
+    public async Task AnOrdinaryTurn_EmitsNoErrorEvent()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("error-user/ordinary");
+
+        var events = await CollectAsync(agent.ChatAsync("hi", null));
+
+        Assert.DoesNotContain(events, e => e.Type == AgentStreamEventType.Error);
+    }
+
     // AC2b — a DIFFERENT property from AC2, and not a persistence one. `reply` feeds the ADR 0036 follow-up
     // call, so reasoning appended there would be re-sent to the model as if the assistant had said it: extra
     // third-party egress (ADR 0013) of the model's private deliberation, rather than a stored-data bug.

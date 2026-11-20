@@ -276,6 +276,12 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
             .UseOpenTelemetry(sourceName: _otelSourceName, configure: cfg => cfg.EnableSensitiveData = true)
             .Use(inner => new ProviderKindTagChatClient(inner, provider.Options.Kind))
             .Use(inner => new PromptCacheKeyChatClient(inner, provider.Options))
+            // A model that refuses the summary request above (HTTP 400 on reasoning.summary) is retried once without it and
+            // remembered. Inside OTel, so a span records the call that was finally made, not the refused one.
+            .Use(inner => Provider.RequestsReasoning(provider.Options, model)
+                ? new ReasoningSummaryFallbackChatClient(
+                    inner, ReasoningSummaryFallbackChatClient.KeyFor(provider.Options.Kind, provider.Options.Endpoint, model))
+                : inner)
             // Local storage only (null otherwise, so the Azure build is unchanged): swaps an attachment reference URL for the
             // image bytes on the way to the model, just above the tool images (which stay last, pinned by a test) and for the same below-OTel reason.
             .Use(inner => _attachmentInliner is null ? inner : new AttachmentInlineChatClient(inner, _attachmentInliner))

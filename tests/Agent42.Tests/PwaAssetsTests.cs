@@ -266,7 +266,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v82", sw);
+        Assert.Contains("agent42-shell-v83", sw);
     }
 
     // Palette axis (ADR 0129): source-text proof that the picker, the engine, the head scripts and the offline

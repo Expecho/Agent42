@@ -787,6 +787,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         string message, StringBuilder reply, TurnOutcome outcome, McpReauthTurnObserver reauth, bool interactive)
     {
         var events = TakeMcpReauthNotices(reauth.ServerIds, interactive);
+        if (EmptyReplyNotice(outcome) is { } notice)
+        {
+            events.Add(notice);
+        }
+
         if (await SuggestFollowUpsAsync(message, reply, outcome.Stopped, interactive) is { Count: > 0 } suggestions)
         {
             events.Add(new AgentStreamEvent(AgentStreamEventType.Suggestions, Suggestions: suggestions));
@@ -794,6 +799,16 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         return events;
     }
+
+    // A turn that ended with nothing to show, and no error either: a model that answered 200 with no output item we map.
+    // Said out loud rather than left as an empty bubble the user cannot tell from a hang. Not for a stopped turn (the user
+    // cut it short) and not when the provider already reported an error (that event is the explanation).
+    private const int ErrorTextLimit = 500;
+
+    private static AgentStreamEvent? EmptyReplyNotice(TurnOutcome outcome)
+        => outcome is { Stopped: false, ProducedOutput: false, ReportedError: false }
+            ? new AgentStreamEvent(AgentStreamEventType.Error, Text: "The model returned an empty reply.")
+            : null;
 
     // Makes this turn stoppable from outside, for a browser turn only. `??=` rather than `=`: if a turn is
     // already published, THIS turn is the one that started while that one was suspended at a yield, and
@@ -880,6 +895,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 // TextReset and checklist events around it (ADR 0082), which is why this call is async.
                 foreach (var evt in await ProjectUpdateAsync(update, reply, tokens, research))
                 {
+                    outcome.Observe(evt);
                     yield return AttachMcpApp(MarkClientToolCall(evt, broker), turn);
                 }
 
@@ -961,6 +977,19 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private sealed class TurnOutcome
     {
         public bool Stopped { get; set; }
+
+        /// <summary>True once the turn produced anything the user can see: reply text, a tool call or an image.</summary>
+        public bool ProducedOutput { get; private set; }
+
+        /// <summary>True once the provider reported an error for this turn (an <c>Error</c> event was projected).</summary>
+        public bool ReportedError { get; private set; }
+
+        public void Observe(AgentStreamEvent evt)
+        {
+            ProducedOutput |= evt.Type is AgentStreamEventType.TextDelta or AgentStreamEventType.ToolCallStart
+                or AgentStreamEventType.ToolCallEnd or AgentStreamEventType.Image;
+            ReportedError |= evt.Type == AgentStreamEventType.Error;
+        }
     }
 
     /// <summary>
@@ -1117,6 +1146,12 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             case TextReasoningContent reasoning when !string.IsNullOrEmpty(reasoning.Text):
                 return new AgentStreamEvent(AgentStreamEventType.Reasoning, Text: reasoning.Text);
 
+            // A provider failure that arrived as a stream event (a Responses `error` event is a 200, not an exception).
+            // Dropped before this, which left the user an empty bubble. Live-only like reasoning: StripReasoningFromStorage
+            // keeps it out of the session. Capped, because the text is the provider's own.
+            case ErrorContent error when !string.IsNullOrWhiteSpace(error.Message):
+                return new AgentStreamEvent(AgentStreamEventType.Error, Text: error.Message.Length > ErrorTextLimit ? error.Message[..ErrorTextLimit] : error.Message);
+
             case UsageContent usage:
                 tokens.Input += usage.Details.InputTokenCount.GetValueOrDefault();
                 tokens.Output += usage.Details.OutputTokenCount.GetValueOrDefault();
@@ -1159,20 +1194,29 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// exists to catch on the image-stripping path. That path keeps a placeholder because the user's turn
     /// must stay visible; here there is nothing to show, so dropping is right.</para>
     ///
-    /// <para>An ALREADY-empty message is passed through untouched rather than swept up — this filter owns
-    /// reasoning, and silently changing an unrelated invariant is how a strip becomes a second bug.</para>
+    /// <para>It owns <see cref="ErrorContent"/> too (a provider error that streamed as an event is live-only, never
+    /// replayed to the model), and it drops a message with NO parts at all. That is a change from "an already-empty
+    /// message passes through": a model that answers 200 with nothing we map (gpt-6.2-sol/astra) made the framework
+    /// store an empty assistant message, which the next turn replays to the provider and a chat-completions
+    /// endpoint rejects outright, and which the browser's reply recovery adopts as an empty bubble. A message with
+    /// no parts means nothing to a model, so storing it is never right.</para>
     /// </summary>
     private static IEnumerable<ChatMessage> StripReasoningFromStorage(IEnumerable<ChatMessage> messages)
     {
         foreach (var message in messages)
         {
-            if (!message.Contents.Any(c => c is TextReasoningContent))
+            if (message.Contents.Count == 0 && message.Role == ChatRole.Assistant)
+            {
+                continue;
+            }
+
+            if (!message.Contents.Any(c => c is TextReasoningContent or ErrorContent))
             {
                 yield return message;
                 continue;
             }
 
-            var kept = message.Contents.Where(c => c is not TextReasoningContent).ToList();
+            var kept = message.Contents.Where(c => c is not (TextReasoningContent or ErrorContent)).ToList();
             if (kept.Count == 0)
             {
                 continue;
