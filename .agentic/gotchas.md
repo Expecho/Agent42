@@ -18,29 +18,29 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 | Shape                                          | Exemplar                                          | Verified   |
 |------------------------------------------------|---------------------------------------------------|------------|
-| Orleans grain (state + reminders + agent tools) | `src/Agent42.Agents/Conversations/AgentGrain.cs` | 2026-10-19 |
-| Feature-sliced partial of a large grain          | `src/Agent42.Agents/Web/AgentGrain.WebTools.cs`   | 2026-10-19 |
-| Grain-delegated service (per-activation, explicit context, interface for tests) | `src/Agent42.Agents/Search/ChatSearchProjection.cs` | 2026-10-19 |
-| Per-user registry grain (list-in-state)         | `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs`        | 2026-07-07 |
-| Per-user singleton-preference grain (get/save)  | `src/Agent42.Agents/Users/UserProfileGrain.cs`          | 2026-07-08 |
-| Minimal-API endpoint group                      | `src/Agent42.Backend/Users/AgentApi.Users.cs`      | 2026-08-18 |
-| Endpoint composition root (registers groups)     | `src/Agent42.Backend/Api/AgentApi.cs`             | 2026-08-18 |
-| Host registration (shared invariants + validated ports) | `src/Agent42.Backend/Orleans/Agent42SiloRegistration.cs`, `src/Agent42.Backend/Api/Agent42ApiRegistration.cs` | 2026-10-19 |
-| Grain test (shared TestCluster + fake client)   | `tests/Agent42.Tests/SharedClusterTests.cs`, `tests/Agent42.Tests/UserProfileGrainTests.cs` | 2026-08-27 |
-| API test (shared cluster + one MapAgentApi host) | `tests/Agent42.Tests/SharedApiFixture.cs`, `tests/Agent42.Tests/McpServersApiTests.cs` | 2026-08-27 |
-| Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-07-06 |
-| Frontend feature module (vanilla JS, no build)  | `src/Agent42.Backend/wwwroot/js/conversations.js` | 2026-08-19 |
-| Frontend composition root (wires every module)  | `src/Agent42.Backend/wwwroot/js/main.js`          | 2026-08-19 |
-| Classic script shared by the app AND the public viewer (window global, guarded consumers) | `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` | 2026-10-03 |
-| Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/Attachments/IAttachmentStore.cs`, `src/Agent42.Agents/Attachments/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` | 2026-07-08 |
+| Orleans grain (state + reminders + agent tools) | `src/Agent42.Agents/Conversations/AgentGrain.cs` | 2026-11-21 |
+| Feature-sliced partial of a large grain          | `src/Agent42.Agents/Web/AgentGrain.WebTools.cs`   | 2026-11-21 |
+| Grain-delegated service (per-activation, explicit context, interface for tests) | `src/Agent42.Agents/Search/ChatSearchProjection.cs` | 2026-11-21 |
+| Per-user registry grain (list-in-state)         | `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs`        | 2026-11-21 |
+| Per-user singleton-preference grain (get/save)  | `src/Agent42.Agents/Users/UserProfileGrain.cs`          | 2026-11-21 |
+| Minimal-API endpoint group                      | `src/Agent42.Backend/Users/AgentApi.Users.cs`      | 2026-11-21 |
+| Endpoint composition root (registers groups)     | `src/Agent42.Backend/Api/AgentApi.cs`             | 2026-11-21 |
+| Host registration (shared invariants + validated ports) | `src/Agent42.Backend/Orleans/Agent42SiloRegistration.cs`, `src/Agent42.Backend/Api/Agent42ApiRegistration.cs` | 2026-11-21 |
+| Grain test (shared TestCluster + fake client)   | `tests/Agent42.Tests/SharedClusterTests.cs`, `tests/Agent42.Tests/UserProfileGrainTests.cs` | 2026-11-21 |
+| API test (shared cluster + one MapAgentApi host) | `tests/Agent42.Tests/SharedApiFixture.cs`, `tests/Agent42.Tests/McpServersApiTests.cs` | 2026-11-21 |
+| Bicep module                                    | `infra/modules/cosmos.bicep`                      | 2026-11-21 |
+| Frontend feature module (vanilla JS, no build)  | `src/Agent42.Backend/wwwroot/js/conversations.js` | 2026-11-21 |
+| Frontend composition root (wires every module)  | `src/Agent42.Backend/wwwroot/js/main.js`          | 2026-11-21 |
+| Classic script shared by the app AND the public viewer (window global, guarded consumers) | `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` | 2026-11-21 |
+| Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/Attachments/IAttachmentStore.cs`, `src/Agent42.Agents/Attachments/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` | 2026-11-21 |
 | Storage with ALL logic over a narrow Blob seam (contract-tested over the in-memory twin) | `src/Agent42.Agents/Fleet/FleetStore.cs`, `src/Agent42.Agents/Fleet/IFleetBlobs.cs`, `src/Agent42.Backend/Fleet/AzureFleetBlobs.cs` | 2026-10-13 |
-| Storage provider switch (one static class per provider behind `AddStorageProvider` / `UseStorageProvider`) | `src/Agent42.Backend/Storage/StorageRegistration.cs`, `src/Agent42.Backend/Storage/LocalStorageRegistration.cs` | 2026-11-14 |
-| SSE endpoint: replay a persisted log, then live, with a keep-alive | `src/Agent42.Backend/Fleet/AgentApi.Fleet.cs`, `src/Agent42.Backend/Fleet/FleetEventLog.cs` | 2026-10-13 |
-| PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-07-06 |
-| Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-07-06 |
-| Keyed third-party HTTP client behind an Agents interface | `src/Agent42.Backend/Location/GoogleGeocoder.cs` | 2026-11-14 |
-| Owner-only surface (one policy, fail-closed, 404 middleware before static files, host-level test) | `src/Agent42.Backend/Access/OwnerPolicy.cs`, `src/Agent42.Backend/Access/OwnerGate.cs`, `tests/Agent42.Tests/DashboardOwnerGateTests.cs` | 2026-11-09 |
-| In-container fetch of a MODEL-chosen URL (connect-time SSRF guard + streamed size cap + own deadline) | `src/Agent42.Backend/Web/GuardedDocumentFetcher.cs`, `src/Agent42.Backend/Web/PrivateAddressGuard.cs` | 2026-09-04 |
+| Storage provider switch (one static class per provider behind `AddStorageProvider` / `UseStorageProvider`) | `src/Agent42.Backend/Storage/StorageRegistration.cs`, `src/Agent42.Backend/Storage/LocalStorageRegistration.cs` | 2026-11-21 |
+| SSE endpoint: replay a persisted log, then live, with a keep-alive | `src/Agent42.Backend/Fleet/AgentApi.Fleet.cs`, `src/Agent42.Backend/Fleet/FleetEventLog.cs` | 2026-11-21 |
+| PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-11-21 |
+| Runtime agent skill (progressive disclosure)    | `src/Agent42.Agents/Skills/scheduledprompt/SKILL.md` | 2026-11-21 |
+| Keyed third-party HTTP client behind an Agents interface | `src/Agent42.Backend/Location/GoogleGeocoder.cs` | 2026-11-21 |
+| Owner-only surface (one policy, fail-closed, 404 middleware before static files, host-level test) | `src/Agent42.Backend/Access/OwnerPolicy.cs`, `src/Agent42.Backend/Access/OwnerGate.cs`, `tests/Agent42.Tests/DashboardOwnerGateTests.cs` | 2026-11-21 |
+| In-container fetch of a MODEL-chosen URL (connect-time SSRF guard + streamed size cap + own deadline) | `src/Agent42.Backend/Web/GuardedDocumentFetcher.cs`, `src/Agent42.Backend/Web/PrivateAddressGuard.cs` | 2026-11-21 |
 
 ## Constraints
 
@@ -60,7 +60,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   real Android PWA.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/speech.js` (`distrustZeroConfidenceFinals`);
   upstream precedent: `react-speech-recognition` `RecognitionManager.js`
-- **Verified:** 2026-07-09
+- **Verified:** 2026-11-21
 
 ### Muting the voice loop's mic: `abort()` not `stop()`, gate the keep-alive, and a stuck turn is now deaf
 
@@ -84,7 +84,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/voice.js` (`muteMic`, `unmuteMic`, `refreshOutputKind`,
   `maybeArmListening`, the `end` handler),
   `.agentic/decisions/0079-half-duplex-voice-on-speakers.md` (its Unverified section)
-- **Verified:** 2026-09-20
+- **Verified:** 2026-11-21
 
 ### A browser's upload Content-Type is unreliable for documents — resolve by extension
 
@@ -102,7 +102,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Attachments/AgentApi.Attachments.cs` (`ResolveMediaType` call before branching),
   `src/Agent42.Agents/Documents/DocumentMediaTypes.cs`,
   `tests/Agent42.Tests/DocumentMediaTypesTests.cs`
-- **Verified:** 2026-07-10
+- **Verified:** 2026-11-21
 
 ### An identity alias rewrites the userId at ONE point, and that point feeds four surfaces
 
@@ -126,7 +126,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   resolve DI, because it receives an `HttpRequest` and runs at `HttpRequestIn.Start`, before the
   pipeline.
 - **Evidence:** `src/Agent42.Backend/Api/UserIdAliases.cs`, `src/Agent42.Backend/Api/CurrentUser.cs` (`ResolveUserId`), `src/Agent42.Backend/Program.cs`, `src/Agent42.Agents/Telemetry/UsageSpanProjector.cs`, `tests/Agent42.Tests/UserIdAliasTests.cs`, `.agentic/decisions/0074-identity-alias-for-a-second-entra-account.md`
-- **Verified:** 2026-09-13
+- **Verified:** 2026-11-21
 
 ### Usage is keyed on the object id, never the email — and one function must feed the stamp and the filter
 
@@ -140,7 +140,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   blank caller id returns an empty report, never "all". Spans with no identity land in an unreported bucket nobody sees.
 - **Evidence:** `src/Agent42.Agents/Telemetry/UsageUserKey.cs`, `src/Agent42.Agents/Telemetry/UsageRollupState.cs` (`InScope`),
   `src/Agent42.Backend/Telemetry/AgentApi.Telemetry.cs` (`UsageCaller`), `tests/Agent42.Tests/UsageApiTests.cs`
-- **Verified:** 2026-11-09
+- **Verified:** 2026-11-21
 
 ### The owner tier is advisory, and a processor that must redact before export has to be registered BEFORE the exporters
 
@@ -156,7 +156,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   span content only: logs and http-client URLs can still carry model-chosen queries.
 - **Evidence:** `src/Agent42.Backend/Telemetry/NonOwnerContentRedactor.cs`, `src/Agent42.ServiceDefaults/Extensions.cs`,
   `tests/Agent42.Tests/TelemetryRedactionTests.cs`, `src/Agent42.Backend/Access/OwnerPolicy.cs`
-- **Verified:** 2026-11-09
+- **Verified:** 2026-11-21
 
 ### Easy Auth claim `typ` spellings for `user.*` telemetry are a prod-only fact
 
@@ -171,7 +171,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   code bug. `user.id`/`user.name`/`user.idp` come from plain headers and are not affected. Parsing is
   defensive: a missing/non-base64/non-JSON blob never throws — header attributes still emit.
 - **Evidence:** `src/Agent42.Backend/Api/CurrentUser.cs` (`EmailClaimTypes`/`FullNameClaimTypes`/`RoleClaimTypes`, `ParsePrincipalClaims`), `tests/Agent42.Tests/UserTelemetryTests.cs`, `.agentic/decisions/0009-user-identity-telemetry-attributes.md`
-- **Verified:** 2026-07-11
+- **Verified:** 2026-11-21
 
 ### User identity reaches downstream/grain spans via Orleans RequestContext, never Activity.Baggage
 
@@ -182,7 +182,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   injects a W3C `baggage` request header on outbound HttpClient calls, which would ship user PII
   (name/email/roles) to **Azure OpenAI** in headers. `RequestContext` is an in-cluster channel (Orleans'
   own protocol, never an external HTTP header), so identity reaches the grain without leaking outward —
-  the load-bearing reason for the design. This is the **one** `RequestContext` use in the repo.
+  the load-bearing reason for the design. Other keys share the channel (e.g. `UsageSpanProjector.ApplicationContextKey`, ADR 0110), but identity is the `UserTelemetryContext` key.
   `NoBaggageWriteApi_IsUsedInTelemetryPath` guards against `SetBaggage`/`AddBaggage` creeping in.
 - **Load-bearing behaviour:** Orleans 10.2 propagates `RequestContext` into the *streaming* `ChatAsync`
   grain path by default. That is **not** self-evident and is guarded by `RequestContextPropagationTests`
@@ -190,7 +190,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   flips that default, that test fails first — restore propagation (silo config or a grain-call-filter
   pair) before shipping. The actual OTel stamp on a real in-grain span is prod-smoke (no OTel host offline).
 - **Evidence:** `src/Agent42.Backend/Telemetry/UserTelemetryMiddleware.cs`, `src/Agent42.Backend/Telemetry/UserTelemetrySpanProcessor.cs`, `src/Agent42.Agents/Telemetry/UserTelemetryContext.cs`, `tests/Agent42.Tests/RequestContextPropagationTests.cs`, `.agentic/decisions/0010-downstream-user-telemetry-via-requestcontext.md`
-- **Verified:** 2026-07-11
+- **Verified:** 2026-11-21
 
 ### Trace-parent linkage across a grain call needs `AddActivityPropagation` — RequestContext propagation is NOT it
 
@@ -214,7 +214,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   The async paths (fired reminders, agent-run — ADR 0022/0028) still begin fresh roots **by design**: they
   have no ambient inbound Activity, so their rootlessness is correct, not this bug.
 - **Evidence:** `src/Agent42.Backend/Program.cs` (`silo.AddActivityPropagation()`), `tests/Agent42.Tests/ActivityPropagationTests.cs`, `tests/Agent42.Tests/FakeChatClient.cs` (`TraceEcho`)
-- **Verified:** 2026-07-21
+- **Verified:** 2026-11-21
 
 ### An agent tool's RETURN value is persisted, and counts against the 2 MB session cap
 
@@ -241,11 +241,10 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Documents/WebDocumentLimits.cs`,
   `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs` (`BuildWebDocumentPayload`),
   `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`ExcludeInjectedContextMessages`),
-  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`, and `ChatCoreAsync`'s
-  `SerializeSessionAsync`),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`, and `PersistTurnUnlessEphemeralAsync`'s `SerializeSessionAsync` (reached from `ChatCoreAsync`)),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ToolResults_DoNotBlowTheSessionSizeBudget`),
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0125-remove-fetch-web-page-and-context-dev.md`
-- **Verified:** 2026-11-14
+- **Verified:** 2026-11-21
 
 ### A continuous agent's history is pruned to 24 h — which NARROWS the brick, and does not close it
 
@@ -279,7 +278,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0016-per-agent-history-mode-deterministic-conversation-id.md`,
   `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0003-snapshot-agent-persona-into-conversation.md`
-- **Verified:** 2026-09-05
+- **Verified:** 2026-11-21
 
 ### There is ONE web fetch path, `read_web_document`, and its SSRF guard is load-bearing
 
@@ -309,7 +308,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`ProgramCs_WiresTheGuardIntoTheDocumentClientsPrimaryHandler`),
   `.agentic/decisions/0066-in-container-document-fetch-for-rag.md`,
   `.agentic/decisions/0125-remove-fetch-web-page-and-context-dev.md`
-- **Verified:** 2026-11-14
+- **Verified:** 2026-11-21
 
 ### Seeding URLs from an MCP result: harvest in the GRAIN, and the model is told not to on four surfaces
 
@@ -371,7 +370,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`SeededFetchableUrls`),
   `tests/Agent42.Tests/McpUrlSeedingTests.cs`,
   `.agentic/decisions/0067-mcp-results-seed-the-fetch-allowlist.md`
-- **Verified:** 2026-09-12
+- **Verified:** 2026-11-21
 
 ### The fetch allowlist must pin whole URLs — a HOST allowlist is bypassable in one tool call
 
@@ -402,7 +401,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`FetchableUrls`),
   `tests/Agent42.Tests/WebDocumentToolTests.cs` (`ReadWebDocument_RefusesAttackerUrlWhoseHostItsOwnSearchSurfaced`),
   `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`
-- **Verified:** 2026-07-12
+- **Verified:** 2026-11-21
 
 ### A named HttpClient silently inherits AddServiceDefaults' retry pipeline — opt out explicitly
 
@@ -427,7 +426,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   client (ADR 0012), the Web Push client (ADR 0028) and the document fetch client (ADR 0066); every new
   named client needs it), `src/Agent42.Agents/Documents/WebDocumentLimits.cs` (`DownloadDeadline`),
   `tests/Agent42.Tests/GuardedDocumentFetcherTests.cs` (`Fetch_AbandonsSlowBodyAtDeadline`)
-- **Verified:** 2026-09-04
+- **Verified:** 2026-11-21
 
 ### SearXNG is self-hosted, NOT private — it forwards every query to the upstream engines
 
@@ -447,7 +446,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Skills/websearch/SKILL.md`, `src/Agent42.Agents/Web/IWebSearch.cs`,
   `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`,
   `.agentic/decisions/0060-enable-google-and-bing-search-engines.md`
-- **Verified:** 2026-08-30
+- **Verified:** 2026-11-21
 
 ### SearXNG `keep_only` enables nothing — and `inactive` is not `disabled`
 
@@ -473,7 +472,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `infra/searxng/settings.yml` (the `engines:` override block and its comment),
   `infra/searxng/Dockerfile` (the tag bump and why),
   `.agentic/decisions/0060-enable-google-and-bing-search-engines.md` (the before/after measurements)
-- **Verified:** 2026-08-30
+- **Verified:** 2026-11-21
 
 ### SearXNG: the JSON API answers 403 unless enabled, and the port moves only via env
 
@@ -498,7 +497,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `infra/searxng/settings.yml`, `infra/searxng/Dockerfile`,
   `infra/modules/container-app.bicep` (`SEARXNG_PORT`), `src/Agent42.Backend/Web/SearxngWebSearch.cs`
   (the 403 message names the cause; no `safesearch` on the query string)
-- **Verified:** 2026-07-13
+- **Verified:** 2026-11-21
 
 ### Container Apps bills the per-replica total across ALL containers in the replica
 
@@ -506,13 +505,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **per-replica** total, and the **sum** of CPU/memory across every container in the replica must land on
   an allowed combination (CPU in 0.25 steps, memory ≈ 2 GiB per CPU) — an invalid sum is rejected at
   deploy, not at authoring. The SearXNG sidecar took the replica from `0.5 CPU / 1Gi` to
-  **`1.0 CPU / 2Gi`** (backend unchanged + sidecar `0.5/1Gi`), roughly doubling the app's compute cost.
+  **`1.0 CPU / 2Gi`** (backend unchanged + sidecar `0.5/1Gi`), roughly doubling the app's compute cost. (Defaults at the 2026-11-21 audit: backend `0.25 CPU / 0.5Gi` + sidecar `0.5 CPU / 1Gi` = `0.75 CPU / 1.5Gi` per replica, `infra/main.bicep`.)
   Replicas stay pinned at 1 (`@minValue(1) @maxValue(1)` — Orleans localhost clustering), so there is
   exactly one sidecar per deployment. `az bicep build` will not catch a bad combination; an
   `az deployment group validate` against the real RG will.
 - **Evidence:** `infra/main.bicep` (`containerCpu`/`containerMemory` + `searxngCpu`/`searxngMemory`),
   `infra/modules/container-app.bicep` (two containers in `template.containers`)
-- **Verified:** 2026-07-12
+- **Verified:** 2026-11-21
 
 ### Per-run state is a `TurnContext`, never a grain field — tools reach it only inside the run, and it fails closed
 
@@ -576,7 +575,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`ABackgroundRun_DoesNotConsumeTheNotice`), `tests/Agent42.Tests/AgentApiTests.cs`
   (`EphemeralChat_IsNotListedInTheSidebar`), `.agentic/decisions/0106-agentgrain-services-and-turn-context.md`,
   `.agentic/decisions/0034-ephemeral-chat.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### `get_current_location` is NOT an SSRF sink — and exactly two properties keep it that way
 
@@ -602,7 +601,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`GetCurrentLocationAsync`, `ParseBrowserFix`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`GetCurrentLocation_ExposesNoParameters`, `GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`),
   `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0093-location-as-a-client-tool.md`
-- **Verified:** 2026-10-09
+- **Verified:** 2026-11-21
 
 ### WebKit has no geolocation Permissions API — gating on `state === "granted"` is dead on iOS
 
@@ -625,7 +624,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/location.js` (`isCaptureAuthorized`, `locationForTool`,
   `handlePositionError`),
   `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0093-location-as-a-client-tool.md`
-- **Verified:** 2026-10-09
+- **Verified:** 2026-11-21
 
 ### OTel redacts an HttpClient span's query string by default — and one env var un-redacts it
 
@@ -633,7 +632,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   stamps `user.email`/`user.full_name`/`user.roles` onto **every** span started under a request identity
   (ADR 0010) — so an outbound span joins *a named human* to whatever is in that request's URL. For the
   geocode call that URL's query string carries **the Google API key and the user's exact coordinates**. A
-  spike settled the actual behaviour rather than trusting it: **OpenTelemetry.Instrumentation.Http 1.15.1
+  spike settled the actual behaviour rather than trusting it: **OpenTelemetry.Instrumentation.Http 1.15.1 (the repo now pins 1.19.0)
   redacts the query string by default**, recording `url.full` as `http://…/maps/api/geocode/json?*`. So no
   scrubbing is needed today — but this is a **library default, not a guarantee we own**: setting
   `OTEL_DOTNET_EXPERIMENTAL_HTTPCLIENT_DISABLE_URL_QUERY_REDACTION=true` (or an instrumentation upgrade that
@@ -670,7 +669,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Telemetry/UserTelemetrySpanProcessor.cs`, `src/Agent42.Backend/Location/GoogleGeocoder.cs`,
   `src/Agent42.Agents/Memory/HindsightIntegration.cs` (the recorded exception),
   `.agentic/decisions/0063-calendar-extracted-to-standalone-mcp-server.md` (why the worked example is gone)
-- **Verified:** 2026-09-04
+- **Verified:** 2026-09-04 (audit 2026-11-21: the repo now pins OpenTelemetry.Instrumentation.Http 1.19.0; the query-redaction default was measured on 1.15.1 and is not re-measured)
 
 ### The usage dashboard counts tokens from `chat` spans ONLY — `orchestrate_tools` is the summed parent
 
@@ -710,7 +709,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Telemetry/UsageSpanProcessor.cs` (`OnEnd`, best-effort enqueue),
   `tests/Agent42.Tests/UsageSpanProjectorTests.cs` (`AggregateSpan_IsNotCounted`),
   `.agentic/decisions/0031-token-usage-dashboard.md`, `.agentic/decisions/0004-attachments-in-blob.md`
-- **Verified:** 2026-07-22
+- **Verified:** 2026-11-21
 
 ### Estimated cost: Anthropic input already CONTAINS cache reads and writes, and a model without a row is "—", not $0
 
@@ -727,7 +726,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/Telemetry/ModelPricing.cs`, `src/Agent42.Backend/Models/ProviderKindTagChatClient.cs`,
   `tests/Agent42.Tests/ModelPricingTests.cs`, `tests/Agent42.Tests/ProviderKindTagTests.cs`,
   `.agentic/decisions/0110-estimated-cost-from-a-checked-in-price-table.md`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### A GitHub model id contains a `/`, so the provider separator is `:` — and the split is on the FIRST colon
 
@@ -746,7 +745,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`DeploymentName` + its comment),
   `tests/Agent42.Tests/ModelIdTests.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
   (`LegacyPersistedModel_StillResolves`), `.agentic/decisions/0013-multi-provider-model-catalog.md`
-- **Verified:** 2026-07-14
+- **Verified:** 2026-11-21
 
 ### `AgentSkillsProvider` is a TOOL — a no-tools model must drop it too, and the RAG provider must NOT be dropped
 
@@ -797,14 +796,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Tools/SkillCatalog.cs` (`Discover`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`NoToolModel_RegistersNoTools_AndNoSkillsProvider`,
   `NoToolModel_StillGetsDocumentRetrieval`, `SkillsDisabled_DropsLoadSkill_KeepsRetrieval`,
-  `PerSkillSelection_AdvertisesOnlySelectedSkill`),
+  `PerSkillSelection_AcrossBothLayers`),
   `tests/Agent42.Tests/SkillCatalogTests.cs` (`Discover_ToleratesBadInput` — pins the name/directory rule),
   `tests/Agent42.Tests/FakeChatClient.cs` (`ToolsEcho`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`NoToolModel_StillGetsMemory`,
   `MemorySelection_IsNotIntersectedWithCapability` — the ADR 0057 three-way arm),
   `.agentic/decisions/0048-per-skill-selectable-tools.md`,
   `.agentic/decisions/0057-memory-as-a-selectable-tool.md`
-- **Verified:** 2026-10-05
+- **Verified:** 2026-10-05 (audit 2026-11-21: evidence test renamed to the nearest existing one; whether it asserts advertise-only is unchecked)
 
 ### The boot chat is not created via `startNewConversation()` — seed its composer state explicitly
 
@@ -824,7 +823,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/main.js` (init block's `Promise.all([profileReady, toolsReady])`
   seed), `src/Agent42.Backend/wwwroot/js/conversations.js` (`startNewConversation`),
   `AgentGrain.EffectiveEnabledTools`
-- **Verified:** 2026-07-24
+- **Verified:** 2026-11-21
 
 ### Withholding images from a no-vision model must cover HISTORY, not just the new turn
 
@@ -854,7 +853,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `StripImageParts`, `WithheldImagePlaceholder`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`NoVisionModel_SendsNoImageContent`, `NoVisionModel_ImageOnlyTurn_StillReplies_AndSendsNoImage`),
   `tests/Agent42.Tests/FakeChatClient.cs` (`AllImagesEcho`, `EmptyMessageEcho`)
-- **Verified:** 2026-07-14
+- **Verified:** 2026-11-21
 
 ### An assistant generated image is id-keyed (message-level prop), never joined by assistant-message position
 
@@ -887,7 +886,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/ImageGeneration/IImageGenerationService.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
   (`NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn`, `History_IncludesAssistantGeneratedImage`),
   `.agentic/decisions/0020-image-generation-model-capability.md`
-- **Verified:** 2026-07-17
+- **Verified:** 2026-11-21
 
 ### A tool result never arrives on the message that made the call — never match the two in one forward pass
 
@@ -911,7 +910,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `GetStreamingResponseAsync`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`ANarratedToolCall_StillCarriesItsResult` — fails if the join goes back to forward-only),
   `.agentic/decisions/0080-replay-tool-calls-from-history.md`
-- **Verified:** 2026-09-20
+- **Verified:** 2026-11-21
 
 ### Image request shape: send NO `response_format` (gpt-image-1 400s), and NO `api-version` (Azure won't work)
 
@@ -928,7 +927,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **The image path also sends NO `api-version` — so an Azure/Foundry image endpoint won't work as OpenAICompatible.**
 - **Claim:** image generation (ADR 0020) rides `Provider.OpenAICompatible`'s plain `OpenAIClient`
   (`OpenAIClient(...).GetImageClient(model)`), the SAME client shape as the OpenAI-compatible *chat* path —
-  **not** the Azure SDK. A spike against the pinned `OpenAI 2.12.0` (capturing the outbound request URI with
+  **not** the Azure SDK. A spike against `OpenAI 2.12.0` (then the pin; the repo now pins 2.14.0) (capturing the outbound request URI with
   a short-circuiting pipeline policy) confirmed the requests are exactly `POST {endpoint}/images/generations`
   and `POST {endpoint}/images/edits` with **no `api-version` query parameter** (with `endpoint` ending
   `/v1`, that is `/v1/images/generations`). `api-version` is an **Azure-ism** added only by
@@ -945,7 +944,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   bytes-or-URL fallback; the SDK `ImageClient` calls),
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` builds the client image gen reuses),
   `.agentic/decisions/0020-image-generation-model-capability.md` (Foundry image gen out of scope)
-- **Verified:** 2026-07-17
+- **Verified:** 2026-07-17 (audit 2026-11-21: the repo now pins OpenAI 2.14.0; the no-response_format behaviour still holds in OpenAIImageGenerator.cs, the wire URI was not re-captured)
 
 ### The Foundry provider's endpoint + ARM coordinates are INHERITED — never copy them into `Models:`
 
@@ -988,7 +987,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`TwoFoundryProviders_ResolveOwnCoordinates_AndInheritWhenAbsent`),
   `.agentic/decisions/0017-foundry-provider-api-key-auth.md` (the `ApiKey` inheritance),
   `.agentic/decisions/0019-remove-baseline-chat-providers.md` (baseline removed)
-- **Verified:** 2026-07-16
+- **Verified:** 2026-07-16 (audit 2026-11-21: appsettings.json no longer ships a foundry block or //Default (ADR 0019); only the dormant ResolveFoundry mechanism remains, so read the appsettings parts as historical)
 
 ### A user provider overlay is best-effort (baseline wins) and its endpoint is deliberately NOT SSRF-guarded
 
@@ -1029,7 +1028,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/UserProviderResolverTests.cs`
   (`FoundryOverrideWithBlankKey_FallsBackToBaseline`, `OverlayDefault_NamingAMissingProvider_FallsBackToBaselineDefault`),
   `tests/Agent42.Tests/ProvidersApiTests.cs` (`AcceptsLocalhost_RejectsMalformed`)
-- **Verified:** 2026-07-16
+- **Verified:** 2026-11-21
 
 ### The webhook URL IS SSRF-guarded although it is owner config — the provider-endpoint exemption does not transfer
 
@@ -1045,7 +1044,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Webhooks/WebhookRegistration.cs`, `src/Agent42.Backend/Webhooks/HttpAgentWebhookSender.cs`,
   `tests/Agent42.Tests/HttpAgentWebhookSenderTests.cs` (`Send_LoopbackDestination_IsBlockedAndNotRetried`,
   `Registration_WiresGuardNoRedirectAndNoResilience`)
-- **Verified:** 2026-10-10
+- **Verified:** 2026-11-21
 
 ### The webhook fires on the PERSISTED flag, and at THREE sites
 
@@ -1060,7 +1059,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`ChatTurnAsync`, `RunReminderAsync`), `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
   `tests/Agent42.Tests/AgentWebhookTurnTests.cs` (`EphemeralTurn_NeverDelivers_NextTurnDoes`,
   `ReceiveReminder_AfterPush_StillDelivers`, `ImageTurn_DeliversCountWithoutUrls`, `RegeneratedTurn_DeliversWithReplacesFlag`)
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### A user provider's API key is encrypted, never echoed — and its Data Protection key ring MUST persist
 
@@ -1078,12 +1077,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   key** itself sits in the `dataprotection` blob container protected only by **Storage SSE + RBAC** (no
   `ProtectKeysWith…`) — not "encrypted at rest" in the envelope-key sense. `Unprotect` **swallows**
   `CryptographicException` → null (a rotated ring degrades the provider to "no key", never throws).
-- **Evidence:** `src/Agent42.Backend/Models/ProviderSecretProtector.cs`, `src/Agent42.Backend/Program.cs`
-  (the `AddDataProtection` block), `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (`Mask`, `ToStored`),
+- **Evidence:** `src/Agent42.Backend/Models/ProviderSecretProtector.cs`, `src/Agent42.Backend/Storage/AzureStorageRegistration.cs` (the `AddDataProtection` block), `src/Agent42.Backend/Models/AgentApi.Models.cs` (`Mask`, `ToStored`),
   `infra/modules/storage.bicep` (the `dataprotection` container),
   `tests/Agent42.Tests/ProviderSecretProtectorTests.cs`, `tests/Agent42.Tests/ProvidersApiTests.cs`
   (`Get_NeverReturnsKey`, `Put_BlankKey_KeepsStoredKey`)
-- **Verified:** 2026-07-16
+- **Verified:** 2026-11-21
 
 ### The per-user chat-client factory is resolved on grain activation, not injected — order matters
 
@@ -1114,7 +1112,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Models/IUserChatClientFactoryProvider.cs`,
   `src/Agent42.Backend/Models/UserChatClientFactoryProvider.cs`,
   `tests/Agent42.Tests/UserChatClientFactoryProviderTests.cs` (`VersionBump_ReturnsFreshFactory`)
-- **Verified:** 2026-07-16
+- **Verified:** 2026-11-21
 
 ### Chat is fully per-user — the app ships NO baseline chat provider, and the grain stays valid via a no-op client
 
@@ -1162,7 +1160,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0019-remove-baseline-chat-providers.md`,
   `.agentic/decisions/0043-remove-composer-send-button.md` (the gate is `input.disabled` alone now),
   `tests/Agent42.Tests/ComposerAssetsTests.cs` (`AppJs_GatesComposerOnInputWhenNoModel`)
-- **Verified:** 2026-08-21
+- **Verified:** 2026-11-21
 
 ### GitHub Models: the context-limit error is a 413, and the caps are small enough to matter here
 
@@ -1182,7 +1180,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   same per-model caps; the measured numbers below are unchanged.
 - **Evidence:** `.agentic/decisions/0013-multi-provider-model-catalog.md` (spike results — the caps + the
   413 behaviour), `.agentic/decisions/0019-remove-baseline-chat-providers.md` (github is now per-user)
-- **Verified:** 2026-07-14
+- **Verified:** 2026-11-21
 
 ### The Responses API is stateful by default — three non-obvious traps on the Foundry Responses path
 
@@ -1210,7 +1208,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   see the "Azure's `/openai/v1` authenticates the resource key via the `api-key` header" gotcha below.
 - **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.Foundry`, the `UseResponses`
   branch), `.agentic/decisions/0014-responses-api-stateless-mode.md`, `.agentic/decisions/0017-foundry-provider-api-key-auth.md`
-- **Verified:** 2026-07-16
+- **Verified:** 2026-11-21
 
 ### Azure's `/openai/v1` authenticates the resource key via the `api-key` header — three Foundry-key traps
 
@@ -1258,7 +1256,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0017-foundry-provider-api-key-auth.md`. (NOTE: ADR 0030 removed the eager `AzureOpenAI:ApiKey`
   check + embedding client from `Program.cs` and the `azureOpenAIApiKey` `@minLength` Bicep param — the
   `api-key`-header auth claim itself is unchanged, but those two anchors no longer exist.)
-- **Verified:** 2026-07-21
+- **Verified:** 2026-07-21 (audit 2026-11-21: the Bicep @minLength(32) azureOpenAIApiKey mirror and the shipped foundry provider no longer exist (ADR 0019/0030); only the code-side blank-key throw in ModelProviderBuilder.cs remains)
 
 ### Foundry Chat Completions runs over `/openai/v1` — NOT `AzureOpenAIClient` (its api-version is capped at 2024-10-21)
 
@@ -1286,7 +1284,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   branch, `Provider.FoundryEmbeddingsEndpoint`), `tests/Agent42.Tests/ModelProviderTests.cs` (`FoundryChatProvider_UsesV1Surface_NoApiVersion`,
   `ResponsesProvider_WiresResponsesEndpoint`, `FoundryEmbeddings_UseV1Surface_AtResourceRoot`),
   `.agentic/decisions/0033-foundry-chat-over-openai-v1.md`
-- **Verified:** 2026-10-17
+- **Verified:** 2026-11-21
 
 ### `HostedWebSearchTool.Name` is `web_search` — it collides with the SearXNG shim, so hosted models SWAP
 
@@ -1310,38 +1308,38 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   copilot chat passes `false` and always gets the shims, ADR 0085),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`HostedToolsModel_SwapsWebShimsForHostedTools`, `ToolNames`),
   `.agentic/decisions/0015-hosted-tools-on-responses-path.md`
-- **Verified:** 2026-10-05
+- **Verified:** 2026-11-21
 
 ### Cosmos containers must be pre-declared in Bicep
 
 - **Claim:** the Cosmos account has `disableLocalAuth: true` and AAD data-plane RBAC cannot create databases/containers — only ARM can. Any new container must be added to `infra/modules/cosmos.bicep`; Orleans providers run with `IsResourceCreationEnabled = false`, so runtime auto-create silently isn't there to save you.
-- **Evidence:** `infra/modules/cosmos.bicep`, `src/Agent42.Backend/Program.cs`
-- **Verified:** 2026-07-06
+- **Evidence:** `infra/modules/cosmos.bicep`, `src/Agent42.Backend/Storage/AzureStorageRegistration.cs`
+- **Verified:** 2026-11-21
 
 ### Cosmos account region is pinned to northeurope and immutable
 
 - **Claim:** West Europe rejected new Cosmos accounts at creation time; the account was created in North Europe and a Cosmos account's region can't change after creation. Since ADR 0128 the region is the repo variable `COSMOS_LOCATION` (unset falls back to the resource group's location), so prod must keep it at `northeurope`: a missing variable would try to move the account. The `preflight` job compares it with the existing account and fails with the variable's name.
 - **Evidence:** `.github/workflows/deploy.yml` (`preflight`, `az cosmosdb list`), `docs/features/azure-deployment.md`
-- **Verified:** 2026-11-14
+- **Verified:** 2026-11-21
 
 ### Custom domain must stay declared in Bicep
 
 - **Claim:** an undeclared custom domain gets silently unbound on the next deploy. The pair is now the repo variables `CUSTOM_DOMAIN_NAME` / `CUSTOM_DOMAIN_CERTIFICATE_NAME` (ADR 0128), and an absent variable expands to empty, which means "bind nothing". The `preflight` job reads the domain bound to the live app and fails when it is not the one the variable names. It cannot see a stale certificate name: if the cert is ever recreated, update the variable or the deployment unbinds the domain again.
 - **Evidence:** `.github/workflows/deploy.yml` (`preflight`, `customDomains`), `infra/modules/container-app.bicep`, `InfraPortabilityTests.Deploy_PreflightRunsFirst_AndGuardsWhatAMissingVariableWouldDestroy`
-- **Verified:** 2026-11-14
+- **Verified:** 2026-11-21
 
 ### A cross-RG role grant into a resource group the deploy SP only has a scoped grant on must be a CLI step, not Bicep
 
 - **Claim:** a deploy SP that holds only `Microsoft.Authorization/roleAssignments/write` on one resource (not `Microsoft.Resources/deployments/write` on its resource group) cannot run a cross-RG Bicep module, so any such grant must be an idempotent `az rest` PUT in the workflow, not "cleaned up" into Bicep. This is the durable pattern.
 - **The one grant that used it is gone (ADR 0128):** "Cognitive Services OpenAI User" on the owner's Foundry account was no longer required since ADR 0017 (Foundry authenticates by API key) and was owner-scoped, so the step was removed from `deploy.yml`. No live example remains; `InfraPortabilityTests.Deploy_HasNoRoleAssignmentPut` keeps it out.
 - **Evidence:** `.agentic/decisions/0017-foundry-provider-api-key-auth.md`, `.agentic/decisions/0128-tenant-portable-azure-iac.md`, `tests/Agent42.Tests/InfraPortabilityTests.cs`
-- **Verified:** 2026-11-14
+- **Verified:** 2026-11-21
 
 ### Deploy service principal uses a client secret, not OIDC
 
 - **Claim:** `sp-agent42-deploy` authenticates with a client secret, so `azure/login` needs the full credentials JSON (`clientId`+`clientSecret`+…), not the OIDC client-id-only form.
 - **Evidence:** `.github/workflows/deploy.yml`
-- **Verified:** 2026-07-06
+- **Verified:** 2026-11-21
 
 ### A merge to `main` deploys only when it touches what the images are built from
 
@@ -1353,7 +1351,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Dockerfile COPYs must join the list — `DeployTriggerTests` fails the build if it does not.
 - **Evidence:** `.github/workflows/deploy.yml` (its push `paths` list), `src/Agent42.Backend/Dockerfile`,
   `tests/Agent42.Tests/DeployTriggerTests.cs`
-- **Verified:** 2026-09-28
+- **Verified:** 2026-11-21
 
 ### Minimal-API handlers returning a bare string serve text/plain, not JSON
 
@@ -1371,7 +1369,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Results.Text(JsonSerializer.Serialize(value, JsonSerializerOptions.Web), "application/json")`
   so an absent value comes back as a real JSON `null`.
 - **Evidence:** `src/Agent42.Backend/Conversations/AgentApi.Conversations.cs` (`/model` and `/agent` endpoints), `src/Agent42.Backend/wwwroot/js/conversations.js` (`selectConversation`), `tests/Agent42.Tests/AgentApiTests.cs`
-- **Verified:** 2026-07-07
+- **Verified:** 2026-11-21
 
 ### Service worker must stay network-first for navigations and bypass /api
 
@@ -1385,7 +1383,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `PwaAssetsTests.ServiceWorker_BypassesApiBeforeCaching` test guards the `/api` ordering,
   but the navigation strategy is only enforced here — keep it network-first.
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
-- **Verified:** 2026-07-06
+- **Verified:** 2026-11-21
 
 ### Offline data for agents/chats lives in an app-module IndexedDB store, NEVER in the service worker
 
@@ -1401,7 +1399,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   no-op — never throw into a load path), and a cache paint is **length-guarded** so the network
   fast-path is never clobbered. A chat is viewable offline only if it was opened at least once online.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/cache.js` (`cacheGet`/`cachePut`), `src/Agent42.Backend/wwwroot/js/main.js` (`hydrateFromCache`), `src/Agent42.Backend/wwwroot/js/conversations.js` (`renderTurns`), `src/Agent42.Backend/wwwroot/sw.js`, `tests/Agent42.Tests/PwaAssetsTests.cs` (`Frontend_MirrorsAgentsAndChatsForOffline`), `.agentic/decisions/0032-offline-read-cache-indexeddb.md`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
-- **Verified:** 2026-07-25
+- **Verified:** 2026-11-21
 
 ### A shared static instance must never be a grain-state default (Orleans mutates it)
 
@@ -1414,14 +1412,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   another's data. Make the default a **factory** (`public static T Empty => new(...)`, a fresh
   instance per access) or initialize the field with `new(...)` directly — never a `{ get; } =`
   singleton. Same discipline as the list defaults (`= []`) elsewhere.
-- **Evidence:** `src/Agent42.Agents/Users/UserProfile.cs` (`Empty` is `=> new("")`), `src/Agent42.Agents/Users/UserProfileGrain.cs` (its UserProfileState.Profile property), `tests/Agent42.Tests/UserProfileGrainTests.cs` (`UserProfile_Empty_IsAFreshInstance_NotASharedSingleton` deterministically guards the factory property; `UserProfile_IsIsolatedPerUser` originally surfaced the leak in-cluster)
-- **Verified:** 2026-07-08
+- **Evidence:** `src/Agent42.Agents/Users/UserProfile.cs` (`Empty` is `=> new("", "system", null, null, null)`), `src/Agent42.Agents/Users/UserProfileGrain.cs` (its UserProfileState.Profile property), `tests/Agent42.Tests/UserProfileGrainTests.cs` (`UserProfile_Empty_IsAFreshInstance_NotASharedSingleton` deterministically guards the factory property; `UserProfile_IsIsolatedPerUser` originally surfaced the leak in-cluster)
+- **Verified:** 2026-11-21
 
 ### Agent Framework 1.13 session API differs from older samples
 
 - **Claim:** it's `AgentSession` with `CreateSessionAsync` / `SerializeSessionAsync` / `DeserializeSessionAsync` — the `AgentThread` / `GetNewThread()` API from pre-1.13 samples (and model training data) no longer exists. Copy `AgentGrain.cs`, not blog posts.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs`
-- **Verified:** 2026-07-06
+- **Verified:** 2026-11-21
 
 ### Testing that a bound persona reaches the model needs the fake to echo its instructions
 
@@ -1437,7 +1435,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   exact match; and every chat now carries the default persona as instructions, so assert on a
   *distinctive* bound prompt, not merely on non-empty instructions.
 - **Evidence:** `tests/Agent42.Tests/FakeChatClient.cs` (`InstructionsEcho`), `tests/Agent42.Tests/AgentGrainTests.cs` (`AgentChat_AppliesBoundSystemPrompt`)
-- **Verified:** 2026-07-07
+- **Verified:** 2026-11-21
 
 ### Image attachment bytes must stay out of the session, and prior-turn image URLs get re-fetched
 
@@ -1457,7 +1455,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Don't "simplify" back to `DataContent`, and don't drop the rehydrate step. This is a prod-blob
   property the offline harness can't test (the in-memory store returns non-expiring URLs).
 - **Evidence:** `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs` (`RehydrateAttachmentUrlsAsync`, `AlignTurnAttachmentsToHistory`), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`), `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`, `.agentic/decisions/0004-attachments-in-blob.md`
-- **Verified:** 2026-07-08
+- **Verified:** 2026-11-21
 
 ### Attachments Storage RBAC is in Bicep — but only because the deploy SP was elevated once
 
@@ -1478,7 +1476,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   mangled by MSYS path conversion into a Windows path → ARM returns `MissingSubscription`. Drop the
   leading `/` (`--scope "subscriptions/…"`) or prefix the command with `MSYS_NO_PATHCONV=1`.
 - **Evidence:** `infra/modules/storage-role-assignment.bicep`, `infra/main.bicep` (`storageRoleAssignment` module), `infra/modules/storage.bicep`
-- **Verified:** 2026-07-08
+- **Verified:** 2026-11-21
 
 ### Embeddings are a per-user model, not an operator prerequisite (ADR 0030 — supersedes the old "manual deployment" gotcha)
 
@@ -1499,7 +1497,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   ONLY as the **dormant** Foundry-provider inheritance source; `AzureOpenAI:TenantId` still binds
   `DefaultAzureCredential`. The `AZURE_OPENAI_API_KEY` GitHub secret + ACA secret are **removed**.
 - **Evidence:** `src/Agent42.Agents/Models/IChatClientFactory.cs` (`GetEmbeddingGenerator`/`DefaultEmbeddingModelId`), `src/Agent42.Backend/Models/ChatClientFactory.cs` (Foundry/OpenAICompatible embedding funcs), `src/Agent42.Agents/Documents/NoEmbeddingGenerator.cs`, `src/Agent42.Backend/Documents/DocumentIngestionService.cs`, `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`SearchDocumentContextAsync` empty-id guard), `src/Agent42.Backend/Models/UserProviderResolver.cs` (`EmbeddingDefaultModelId`), `.agentic/decisions/0030-user-configured-embedding-model.md`
-- **Verified:** 2026-07-21
+- **Verified:** 2026-11-21
 
 ### Cosmos vector search is prod-only: capability + pre-created container + no create-on-use
 
@@ -1516,14 +1514,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   AAD data-plane RBAC can't create the container (same 403 wall as the Orleans providers); a vector
   *connector* that calls `EnsureCollectionExists` would fail here. The container schema in Bicep
   (property names `ownerKey`/`embedding`, lowercase `id`) must exactly match the item POCO the code
-  writes/reads. This path **cannot be exercised offline**: `Program.cs` registers `CosmosDocumentIndex`
+  writes/reads. This path **cannot be exercised offline**: `DocumentIndexRegistration.cs` (called from `AzureStorageRegistration.cs`) registers `CosmosDocumentIndex`
   only when `Cosmos:DocChunksContainerName` is set (threaded from Bicep in prod); under the AppHost
   Cosmos emulator that key is absent, so the in-memory index is used and the emulator never runs a
   vector query — the emulator uses a well-known key and can't reproduce the no-create-rights wall
   anyway. The `ORDER BY VectorDistance(...)` (ascending) → most-similar-first ordering is a prod-smoke
   fact (AC7), not something the offline harness verifies.
-- **Evidence:** `infra/modules/cosmos.bicep` (`doc-chunks` container + capability), `src/Agent42.Backend/Documents/CosmosDocumentIndex.cs`, `src/Agent42.Backend/Program.cs` (index branch), `.agentic/decisions/0007-document-rag-cosmos-vector-search.md`
-- **Verified:** 2026-07-09
+- **Evidence:** `infra/modules/cosmos.bicep` (`doc-chunks` container + capability), `src/Agent42.Backend/Documents/CosmosDocumentIndex.cs`, `src/Agent42.Backend/Documents/DocumentIndexRegistration.cs` (index branch), `.agentic/decisions/0007-document-rag-cosmos-vector-search.md`
+- **Verified:** 2026-11-21
 
 ### Docnet.Core DocLib.Instance is a process-global native singleton — serialize PDF extraction
 
@@ -1538,7 +1536,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   what bound it.
 - **Evidence:** `src/Agent42.Agents/Documents/DocumentTextExtractor.cs` (`PdfLock`),
   `src/Agent42.Agents/Documents/WebDocumentLimits.cs`
-- **Verified:** 2026-09-04
+- **Verified:** 2026-11-21
 
 ### A mid-run ingest cannot rebuild the agent — the rebuild is deferred, and there are TWO consume sites
 
@@ -1582,7 +1580,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Conversations/TurnContext.cs` (`TakeWebDocumentIngested`),
   `tests/Agent42.Tests/WebDocumentToolTests.cs`,
   `.agentic/decisions/0066-in-container-document-fetch-for-rag.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### A web-fetched document must never be described as "the user has uploaded" — and its file name is prompt text
 
@@ -1613,7 +1611,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Documents/WebDocumentLimits.cs` (`SanitizeFileName`),
   `tests/Agent42.Tests/WebDocumentToolTests.cs` (`WebDocument_IsNotDescribedAsUserUploaded`),
   `tests/Agent42.Tests/GuardedDocumentFetcherTests.cs` (`Fetch_SanitizesFileNameFromUrlPath`)
-- **Verified:** 2026-09-04
+- **Verified:** 2026-11-21
 
 ### Selectable tools: `null == all`, and the user default must be fetched BEFORE the first `BuildAgent`
 
@@ -1629,7 +1627,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   turn on that activation** register all tools and silently ignore the user's default (the same ordering
   hazard the `_chatClientFactory` resolution guards against for a different field). The default is read
   **once on activation** (accepted staleness, mirrors default-model resolution) — a Preferences change
-  reflects in a warm regular chat only on its next activation. **`_mcpTools` (ADR 0024) is a THIRD field
+  reflects in a warm regular chat only on its next activation. **`_mcpServers` (ADR 0024; formerly `_mcpTools`) is a THIRD field
   with the identical hazard** — it is resolved from `IUserMcpToolProvider` in `OnActivateAsync` before the
   first `BuildAgent`, and `BuildAgent` merges it gated per server; resolving it later would omit the user's
   MCP tools from the first chat turn and every reminder turn on that activation.
@@ -1731,7 +1729,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/AgentGrainTests.cs` (`LegacyState_NullEnabledTools_MeansAll`,
   `UserDefault_AppliesWhenNoOverride`, `McpTools_ResolvedBeforeFirstBuildAgent`,
   `PerServerSelection_EnablesOnlySelectedServer`, `GetEnabledTools_NullSelection_ExpandsWildcardToPerServerKeys`,
-  `PerSkillSelection_AdvertisesOnlySelectedSkill`, `LegacySkillsWildcard_EnablesEverySkill`,
+  `PerSkillSelection_AcrossBothLayers`, `LegacySkillsWildcard_DoesNotEnableCompanionSkills_ButTheirToolKeysDo`,
   `GetEnabledTools_NullSelection_ExpandsSkillsWildcard`),
   `tests/Agent42.Tests/SkillPickerAssetsTests.cs` (`CheckedState_KeepsTheFourWayWildcardOr`),
   `tests/Agent42.Tests/ToolCatalogTests.cs`, `.agentic/decisions/0021-selectable-tools-three-layer.md`,
@@ -1741,7 +1739,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/UserSkills/IUserSkillProvider.cs` + `UserSkillProvider.cs` (the per-user layer),
   `.agentic/decisions/0049-upload-agent-skills.md`,
   `.agentic/decisions/0057-memory-as-a-selectable-tool.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-10-19 (audit 2026-11-21: since ADR 0126 a bare `skills` wildcard no longer enables companion-tool skills, so the 'keeps enabling every skill' sentence needs rewording)
 
 ### Remote MCP servers: a live-socket cache (bound it), a group-gated catalog exception, and a route-matcher trap
 
@@ -1825,8 +1823,8 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   non-bumping siblings), `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (the endpoint surface — no refresh route),
   `src/Agent42.Agents/Tools/ToolCatalog.cs` (`Mcp` wildcard + `IsMcpServerEnabled`, both absent from `ToolNameToKey`),
   `src/Agent42.Agents/Tools/ToolSelection.cs` (`SelectedMcpTools`, the per-server MCP gate `BuildAgent` applies over `_mcpServers`),
-  `src/Agent42.Backend/Program.cs` +
-  `tools/Agent42.DevHost/Program.cs` (`IMcpSecretProtector` registration),
+  `src/Agent42.Backend/Api/Agent42ApiRegistration.cs` (`IMcpSecretProtector` registration, called by `Program.cs`),
+  `src/Agent42.Backend/Tools/AgentApi.Tools.cs` (`/api/tools`),
   `tests/Agent42.Tests/UserMcpToolProviderTests.cs` (`OldVersions_AreEvicted_AndTheirConnectionsDisposed`),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`EveryRegisteredTool_MapsToACatalogKey_OrIsGetDate_OrIsAnMcpTool`,
   `PerServerSelection_EnablesOnlySelectedServer`),
@@ -1834,7 +1832,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`,
   `.agentic/decisions/0064-mcp-connection-test-endpoint.md`,
   `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
-- **Verified:** 2026-09-21
+- **Verified:** 2026-11-21
 
 ### The MCP connection test: two writers of the tool names, and an empty list ERASES them
 
@@ -1897,7 +1895,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/McpServersAssetsTests.cs` (`SaveFlow_DoesNotAutoTestADisabledServer`,
   `SaveFlow_DoesNotAutoTestAnOAuthServerThatHasNoTokenYet`, `McpDialog_OffersConnectForAStoredOAuthServer`),
   `.agentic/decisions/0064-mcp-connection-test-endpoint.md`
-- **Verified:** 2026-09-04
+- **Verified:** 2026-11-21
 
 ### MCP interactive OAuth is hand-rolled: the SDK flow blocks, the callback must stay behind Easy Auth
 
@@ -1933,7 +1931,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/InteractiveOAuthTokenProviderTests.cs` (`PerRequestBearer_RefreshesAnExpiredToken_OnALiveConnection`),
   `.agentic/decisions/0025-mcp-interactive-oauth-app-driven-pkce.md`,
   `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
-- **Verified:** 2026-09-21
+- **Verified:** 2026-11-21
 
 ### MCP OAuth refresh: only `invalid_grant` means "reconnect", every token write is a CAS, and the notice is trusted narrowly
 
@@ -1970,7 +1968,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/McpReauthTests.cs` (`AForgedMarker_FromAnotherServersTool_RaisesNoEvent`),
   `tests/Agent42.Tests/McpUrlSeedingTests.cs` (`A401OnASeedingServer_SeedsNothing`),
   `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
-- **Verified:** 2026-09-21
+- **Verified:** 2026-11-21
 
 ### The API-key directory must be kept in sync per-operation, or a revoked key stays live
 
@@ -1998,7 +1996,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `AgentDelete_DeregistersKey`, `EmailAddress_Regenerate_InvalidatesOld`, `AgentDelete_DeregistersBothDirectories`),
   `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`,
   `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
-- **Verified:** 2026-10-10
+- **Verified:** 2026-11-21
 
 ### An Easy-Auth `excludedPaths` endpoint is publicly reachable and must self-enforce auth + fail closed
 
@@ -2010,7 +2008,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   contributor must not miss: **(1)** on an excluded path there is **no `X-MS-CLIENT-PRINCIPAL-ID`**, so
   `GetUserId` returns `local-dev` — the endpoint must take the userId from the **directory resolution**,
   never from `GetUserId`; **(2)** any new endpoint added under this exclusion inherits the same duty. There
-  are now **seven** entries in the ADR 0002 gate's hole list — `/api/agent-run` (ADR 0022, fails closed
+  are now **nine** entries (the Bicep list also has `/legal/*`; recount it, it is the source) in the ADR 0002 gate's hole list — `/api/agent-run` (ADR 0022, fails closed
   **401**), `/api/share/*` (ADR 0035, the read-only view; fails closed **404** because it is a
   browser-visitable link, and userId+conversation come from the share directory; ADR 0120's fleet task view,
   `/api/share/fleet/*`, rides the same wildcard and resolves userId+task from its own directory), `/shared` +
@@ -2047,7 +2045,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0035-read-only-share-links.md`,
   `.agentic/decisions/0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md`,
   `src/Agent42.Backend/Email/AgentApi.Email.cs`, `tests/Agent42.Tests/EmailApiTests.cs`
-- **Verified:** 2026-10-10
+- **Verified:** 2026-11-21
 
 ### An inbound email token must be case-insensitive — never reuse `ApiKey`'s base64url
 
@@ -2060,7 +2058,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/Email/EmailAddress.cs`, `tests/Agent42.Tests/EmailAddressTests.cs`
   (`Hash_IsStableAndCaseInsensitive`), `tests/Agent42.Tests/EmailApiTests.cs` (`EmailIn_UppercasedAddress_StillResolves`),
   `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
-- **Verified:** 2026-10-10
+- **Verified:** 2026-11-21
 
 ### Each credential namespace gets its own directory grain type — never register a second credential in the key directory
 
@@ -2077,7 +2075,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/EmailAddressDirectoryGrainTests.cs` (`Registration_NeverResolvesInTheApiKeyDirectory`),
   `tests/Agent42.Tests/EmailApiTests.cs` (`EmailToken_DoesNotAuthenticateAgentRun`),
   `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
-- **Verified:** 2026-10-10
+- **Verified:** 2026-11-21
 
 ### Mailgun treats only 200 as success and retries everything except 406 for 8 hours
 
@@ -2094,11 +2092,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/MailgunWebhookTests.cs`, `tests/Agent42.Tests/EmailApiTests.cs`,
   `.agentic/specs/completed/plan-inbound-email-triggers-an-agent.md` (Spike findings),
   `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
-- **Verified:** 2026-10-10
+- **Verified:** 2026-11-21
 
 ### A scripted whole-file rewrite silently converts the checkout from CRLF to LF and `dotnet format` fails on every line
 
-- **Claim:** there is **no `.gitattributes`** in this repo and `core.autocrlf` is **`true`**, so files are
+- **Claim:** the only `.gitattributes` rule is `*.sh text eol=lf` and `core.autocrlf` is **`true`**, so files are
   stored LF in git and checked out **CRLF** on Windows — and `dotnet format` (the CI lint gate) enforces
   CRLF, reporting `error WHITESPACE: Fix whitespace formatting. Replace N characters with '
 …'` on
@@ -2112,7 +2110,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `git config core.autocrlf` → `true`; no `.gitattributes` in the tree;
   `.github/workflows/pr-checks.yml` (the `dotnet format` gate);
   `.agentic/specs/completed/plan-share-link-no-login.md` (divergence 5 — where this was hit)
-- **Verified:** 2026-08-20
+- **Verified:** 2026-11-21
 
 ### `Request.Scheme` is `http` behind the ACA ingress unless `UseForwardedHeaders` runs first
 
@@ -2145,7 +2143,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`ShareUrl`), `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (`redirect_uri`, persisted `ClientId`),
   `tests/Agent42.Tests/ProjectLayoutTests.cs` (`Program_TrustsForwardedProtoBeforeAnyOtherMiddleware`),
   `.agentic/decisions/0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md`
-- **Verified:** 2026-08-20
+- **Verified:** 2026-11-21
 
 ### A read-only share link stores the RAW token and revokes by deregistering the directory FIRST
 
@@ -2164,7 +2162,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (the opposite delete order, for contrast),
   `tests/Agent42.Tests/ShareLinkGrainTests.cs` (`UserGrain_Revoke_DeregistersTheDirectory_SoTheLinkGoesDead`),
   `.agentic/decisions/0035-read-only-share-links.md`
-- **Verified:** 2026-07-30
+- **Verified:** 2026-11-21
 
 ### The background (agent-run) run must drain `ChatCoreAsync`, not the reminder path, or attachments vanish
 
@@ -2181,7 +2179,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `ReceiveReminder`'s empty-attachment turn), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`EnqueuePrompt_RunsAndPersistsTurn`, `EnqueuePrompt_WithImage_RecordsAttachmentOnTurn` — both poll),
   `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### The Web Share Target `respondWith` must sit after the `/api` guard, and the share needs an active SW
 
@@ -2204,7 +2202,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/wwwroot/manifest.webmanifest` (`share_target`),
   `tests/Agent42.Tests/PwaAssetsTests.cs` (`ServiceWorker_HandlesShareTarget`, `Manifest_DeclaresShareTarget`),
   `.agentic/decisions/0023-web-share-target-android-pwa.md`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
-- **Verified:** 2026-07-18
+- **Verified:** 2026-11-21
 
 ### `SendAwayReplyPushAsync` belongs in the two async callers, never in `ChatCoreAsync`
 
@@ -2257,7 +2255,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0075-model-invoked-push-notification.md`,
   `src/Agent42.Backend/Push/PushTestNotifier.cs` + `tests/Agent42.Tests/PushTestNotifierTests.cs` (the
   reporting test push), `.agentic/decisions/0100-push-test-notification.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### The push-per-turn budget is the RUN's, and the away-reply push reads it after the run
 
@@ -2277,7 +2275,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `PushTool_CounterResetsOnTheNextTurn`, `PushTool_CapsPushesPerTurn`,
   `ReminderFiringMidStream_DoesNotResetTheStreamingTurnsPushBudget`),
   `.agentic/decisions/0075-model-invoked-push-notification.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### Config-health: the PROBE path is the leak channel, not the static one — and don't inject `IHttpClientFactory`
 
@@ -2308,11 +2306,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`GeocodingProbe_ClassifiesBody`, `SearxngProbe_ClassifiesStatus`, `GeocodingProbe_NullWhenKeyAbsent`),
   `tests/Agent42.Tests/ConfigHealthApiTests.cs` (`Static_RunsNoProbes`),
   `.agentic/decisions/0029-config-health-tab.md`
-- **Verified:** 2026-07-21
+- **Verified:** 2026-11-21
 
 ### Cosmos grain storage is JSON with `$type` — a persisted type's NAMESPACE is part of the on-disk format
 
-- **Claim:** `AddCosmosGrainStorage` (`src/Agent42.Backend/Program.cs`) configures no serializer, so it
+- **Claim:** `AddCosmosGrainStorage` (`src/Agent42.Backend/Storage/AzureStorageRegistration.cs`; Postgres: `LocalStorageRegistration.cs`) configures no serializer, so it
   falls through to Orleans' default `IGrainStorageSerializer`, which is
   **`Orleans.Storage.JsonGrainStorageSerializer`** — Newtonsoft JSON with type discriminators. Every
   document in the `agent-state` container therefore begins:
@@ -2341,12 +2339,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `PersistedTypeName_StillResolves` pins all 12 state-root type names as literals),
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (the comment at the type),
   `.editorconfig`, `.agentic/decisions/0039-feature-folders-in-agents-project.md`
-- **Verified:** 2026-08-18
+- **Verified:** 2026-11-21
 
 ### `[Alias("Agent42.Agents.*")]` governs the BINARY path, not what Cosmos stores
 
 - **Claim:** every serializable and grain-interface type carries an explicit literal
-  `[Alias("Agent42.Agents.X")]` (54 of them). These name types for **Orleans' binary serializer** — the
+  `[Alias("Agent42.Agents.X")]` (109 at the 2026-11-21 audit). These name types for **Orleans' binary serializer** — the
   one used for grain-to-grain calls and `Serializer<T>` — and should stay stable so a rolling deployment
   with mixed versions keeps interoperating. Keep them frozen.
 - **But do not mistake them for the data-at-rest guard.** Mutation testing showed the golden blobs in
@@ -2357,7 +2355,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `tests/Agent42.Tests/SerializationCompatibilityTests.cs` (the recorded mutation results
   in its class doc), `src/Agent42.Agents/Conversations/AgentGrainState.cs`,
   `.agentic/decisions/0039-feature-folders-in-agents-project.md`
-- **Verified:** 2026-08-18
+- **Verified:** 2026-11-21
 
 ### The service worker's SHELL is all-or-nothing — a STALE entry is worse than a missing one
 
@@ -2377,7 +2375,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js` (`SHELL`, `addAll`),
   `tests/Agent42.Tests/ProjectLayoutTests.cs` (`ServiceWorkerShell_ListsExactlyTheModuleDirectory`),
   `.agentic/decisions/0041-frontend-es-modules.md`
-- **Verified:** 2026-08-19
+- **Verified:** 2026-11-21
 
 ### Every MR that touches `wwwroot/js/` must bump `CACHE` in sw.js — module version skew is a BLANK app
 
@@ -2394,7 +2392,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js` (`CACHE`, the stale-while-revalidate branch),
   `tests/Agent42.Tests/PwaAssetsTests.cs` (`ServiceWorker_CacheNameIsCurrent`),
   `.agentic/decisions/0041-frontend-es-modules.md`
-- **Verified:** 2026-08-19
+- **Verified:** 2026-11-21
 
 ### A frontend module unreachable from `main.js` is invisible to every source-text guard
 
@@ -2431,7 +2429,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`EveryFrontEndModule_IsReachableFromTheEntryPoint`,
   `FrontEndModule_ExportsItsEntryPoint_AndIsCalledFromTheCompositionRoot`),
   `.agentic/decisions/0041-frontend-es-modules.md`, `.agentic/decisions/0054-live-otel-console.md`
-- **Verified:** 2026-08-27
+- **Verified:** 2026-11-21
 
 ### Topbar share availability: `startAgentChat` is a FOURTH transition and is the one that gets missed
 
@@ -2461,7 +2459,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.topbar__menu`, `body.is-incognito .topbar`), `tests/Agent42.Tests/TopbarActionsAssetsTests.cs`
   (`TopbarShare_IsClearedWhenAnAgentChatStarts`, `TopbarShare_IsGatedOnEmptyAndEphemeralChats`,
   `TopbarBrandAndMenu_AreMobileOnly`), `.agentic/decisions/0044-persistent-topbar-action-cluster.md`
-- **Verified:** 2026-08-21
+- **Verified:** 2026-11-21
 
 ### A pinned agent chat must be HOISTED out of its group, never sorted into it — and hoisting costs the agent label
 
@@ -2510,7 +2508,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`RenderSidebar_EmitsThePinnedBlockBeforeTheGroupingWalk`, `HoistedRow_CarriesTheAgentBadge`,
   `PinnedState_IsVisibleWithoutHover_AndReachableOnTouch`),
   `.agentic/decisions/0045-pinned-conversations.md`
-- **Verified:** 2026-08-21
+- **Verified:** 2026-11-21
 
 ### Filing a chat into a custom group repeats the ADR 0045 hoist trap — and four things around it bite first
 
@@ -2563,7 +2561,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ChatGroupAssetsTests.cs`, `tests/Agent42.Tests/PinChatAssetsTests.cs`,
   `tests/Agent42.Tests/SearchAssetsTests.cs` (`SearchBranch_LivesInsideRenderSidebar`),
   `.agentic/decisions/0073-custom-chat-groups.md`
-- **Verified:** 2026-09-13 (test suite plus a headless-Chrome/CDP pass against DevHost, 21/21 UI and
+- **Verified:** 2026-11-21 (test suite plus a headless-Chrome/CDP pass against DevHost, 21/21 UI and
   9/9 drag — the `draggable` arming rule in trap 4 is measured, not assumed. Two harness traps that
   imitate product bugs are in ADR 0073: a viewport at or under 760px puts the sidebar off-canvas so every
   synthetic event misses, and a group node captured before a drop is detached by the time the refresh
@@ -2598,7 +2596,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `LONG_PRESS_MS`, `renderSidebar`'s `clearReveal()`),
   `src/Agent42.Backend/wwwroot/styles.css` (`@media (hover: hover)`, `@media (hover: none)`),
   `.agentic/decisions/0052-long-press-reveals-row-actions.md`
-- **Verified:** 2026-08-25
+- **Verified:** 2026-11-21
 
 ### A chat turn outlives its client — and "Transmission failed" after an app switch is a lie
 
@@ -2626,7 +2624,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   stream), `src/Agent42.Backend/wwwroot/js/send.js` (`recoverPersistedReply`, `priorTurns`,
   `onVisibilityChange`), `tests/Agent42.Tests/ChatStreamDisconnectTests.cs`,
   `.agentic/decisions/0046-recover-a-reply-whose-stream-died.md`
-- **Verified:** 2026-08-22
+- **Verified:** 2026-11-21
 
 ### `navigator.share` — render the link first, and it is NOT an Android test
 
@@ -2651,12 +2649,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `createShareLink`), `tests/Agent42.Tests/ShareLinkAssetsTests.cs`
   (`NativeShare_IsGatedOnAPureFeatureDetect`, `NativeShare_RendersTheLinkBeforeOpeningTheSheet`),
   `.agentic/decisions/0047-native-share-for-read-only-links.md`
-- **Verified:** 2026-08-22
+- **Verified:** 2026-11-21
 
 ### Uploaded skills: the framework's own limits are NOT what they look like, and two of them are security controls
 
 - **Claim:** ADR 0049 lets a user upload a skill (`SKILL.md` or a zip). Four properties of
-  `Microsoft.Agents.AI@1.13.0` shape `SkillPackage`, none of them guessable from the API surface, and all
+  `Microsoft.Agents.AI@1.13.0` (the repo now pins 1.25.0) shape `SkillPackage`, none of them guessable from the API surface, and all
   four **measured** (a throwaway `dotnet run app.cs`, 2026-08-25) rather than reasoned about.
   **(1) Resource/script classification is by EXTENSION at any folder — folder names are IRRELEVANT.**
   Resources are `.md .json .yaml .yml .csv .xml .txt`; scripts are `.py .js .sh .ps1 .cs .csx`; anything
@@ -2699,7 +2697,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Upload_MultiSkillZip_InstallsEach` with its two- and four-wrapper rows),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`SkillTools_NeverAdvertiseAScript_EvenWhenOneIsOnDisk`),
   `.agentic/decisions/0049-upload-agent-skills.md`
-- **Verified:** 2026-08-25
+- **Verified:** 2026-08-25 (audit 2026-11-21: measured on Microsoft.Agents.AI 1.13.0; the repo pins 1.25.0 and the four behaviours were not re-measured)
 
 ### `src/Agent42.Agents/Skills/` is a CONTENT folder — never put `.cs` files in it
 
@@ -2722,13 +2720,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Dockerfile` (`USER $APP_UID`),
   `tests/Agent42.Tests/ProjectLayoutTests.cs` (`ExpectedFolders`),
   `.agentic/decisions/0049-upload-agent-skills.md`
-- **Verified:** 2026-08-25
+- **Verified:** 2026-11-21
 
 ### `LogRecord` is POOLED — retaining one in a `BaseProcessor` silently corrupts the buffer
 
 - **Claim:** A `BaseProcessor<LogRecord>` that stores the `LogRecord` reference and reads its fields
   later gets the **latest** record back for every entry it kept. The SDK pools and reuses the instance.
-  Measured twice against the pinned OpenTelemetry 1.18.0 — including once inside this repo's exact
+  Measured twice against OpenTelemetry 1.18.0 (then the pin; the repo now pins 1.19.1) — including once inside this repo's exact
   pipeline (`LoggerFactory` + `AddOpenTelemetry` + `IncludeFormattedMessage`) — two log calls yielded
   `count=2 distinctRefs=1`, and *both* buffered entries read back as the **second** message.
   **Nothing throws.** The console just shows the same line N times, which reads like a rendering bug
@@ -2746,7 +2744,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Telemetry/LiveLogProcessor.cs`,
   `tests/Agent42.Tests/LiveLogProcessorTests.cs`,
   `.agentic/decisions/0054-live-otel-console.md`
-- **Verified:** 2026-08-27
+- **Verified:** 2026-08-27 (audit 2026-11-21: measured on OpenTelemetry 1.18.0; the repo pins 1.19.1 and LiveLogProcessor.cs:13 still says 1.18.0)
 
 ### `MetricType` has EIGHT members — a five-arm switch reads `NaN` for 39% of the real instruments
 
@@ -2769,7 +2767,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Telemetry/LiveMetricExporter.cs`,
   `tests/Agent42.Tests/LiveMetricExporterTests.cs`,
   `.agentic/decisions/0054-live-otel-console.md`
-- **Verified:** 2026-08-27
+- **Verified:** 2026-11-21
 
 ### The gen_ai metrics ride a meter named after `sourceName` — and `AddSource` alone drops every one
 
@@ -2816,7 +2814,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (the unconditional `metrics.AddMeter(OtelSourceName)`),
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`_otelSourceName`),
   `tests/Agent42.Tests/MeterNamingTests.cs`
-- **Verified:** 2026-08-27
+- **Verified:** 2026-11-21
 
 ### Stripping chat content for ONE sink mutates the span EVERY sink shares — the fan-out's six traps
 
@@ -2856,7 +2854,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.ServiceDefaults/AzureMonitorTraceExport.cs`,
   `src/Agent42.Backend/Telemetry/BackendTelemetryExtensions.cs`,
   `tests/Agent42.Tests/AzureMonitorTraceExportTests.cs`, `tests/Agent42.Tests/OtelConfigurationTests.cs`
-- **Verified:** 2026-09-19
+- **Verified:** 2026-11-21
 
 ### A diagnostics console watches itself, and the obvious log filter blinds it instead
 
@@ -2890,7 +2888,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Telemetry/LiveTelemetryFilter.cs`,
   `tests/Agent42.Tests/LiveLogProcessorTests.cs`, `tests/Agent42.Tests/LiveSpanProcessorTests.cs`,
   `.agentic/decisions/0054-live-otel-console.md`
-- **Verified:** 2026-08-27
+- **Verified:** 2026-11-21
 
 ### xUnit v2 runs `IAsyncLifetime` per TEST, so a cluster built there is deployed per test
 
@@ -2911,12 +2909,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Read ADR 0055's three checks before converting a class or adding a new one.
 - **Evidence:** `tests/Agent42.Tests/SharedClusterTests.cs`, `tests/Agent42.Tests/SharedClusterFixture.cs`,
   `tests/Agent42.Tests/SharedClusterSeamTests.cs`; `.agentic/decisions/0055-one-orleans-cluster-per-test-class.md`
-- **Verified:** 2026-08-27
+- **Verified:** 2026-11-21
 
 ### A live Orleans reminder outlives its test once the cluster is shared
 
 - **Claim:** `AgentGrain.Scheduling.cs` registers a **real** reminder with Orleans' **1-minute
-  minimum**, backed by `UseInMemoryReminderService()` per silo, and nothing ever cancels it. Under
+  minimum**, backed by `UseInMemoryReminderService()` per silo, and nothing cancels it automatically (only the cancel tools do, `AgentGrain.Scheduling.cs`). Under
   the old cluster-per-test shape this was invisible: the cluster was disposed after ~1.3s, so no
   reminder ever fired. In a class-scoped cluster the reminders accumulate, and **any class whose
   tests take more than a minute in total will fire one mid-test** — `ReceiveReminder` then runs a
@@ -2928,7 +2926,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   every send. Cancelling the reminders in `src/` was rejected: a production change to fix a test.
 - **Evidence:** `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`,
   `tests/Agent42.Tests/RecordingPushNotificationSender.cs`, `tests/Agent42.Tests/TestSiloConfigurator.cs`
-- **Verified:** 2026-08-27
+- **Verified:** 2026-11-21
 
 ### Any `OpenAI` bump can bring back the 2.13.0 bug that killed streams on an empty `choices` chunk
 
@@ -2958,7 +2956,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   completes; 2.13.0 → throws.** `PropagateGet`'s own IL is byte-identical between the two, so
   diffing that method "proves" the versions are equivalent — they are not; the change is upstream of
   it, in whether the propagator is consulted at all. **Do not let a routine outdated-package sweep
-  raise `OpenAI`** (hard rule 4 says resolve latest stable — this pin is the documented exception).
+  raise `OpenAI`** (hard rule 4 says resolve latest stable — this pin was the documented exception, now lifted).
   It is enforced two ways: `StreamingEmptyChoicesTests` fails, and the direct
   `Microsoft.Extensions.AI.OpenAI` 10.9.0 reference declares `OpenAI [2.12.0, 2.13.0)`, so restore
   itself refuses 2.13.0 — a restore error there is the guard working, not a broken lockfile. Lift
@@ -2966,7 +2964,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `Directory.Packages.props` (the pin + its note), `tests/Agent42.Tests/ResponsesToolMappingTests.cs`,
   `tests/Agent42.Tests/StreamingEmptyChoicesTests.cs`,
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` — the affected path)
-- **Verified:** 2026-09-28 (2.14.0 green; pin lifted; M.E.AI.OpenAI 10.10.1 for the Responses tool mapping)
+- **Verified:** 2026-09-28 (audit 2026-11-21: the OpenAI 2.12.0 pin and restore guard in the body are historical (lifted, see Status); the run-StreamingEmptyChoicesTests-before-a-bump rule still holds) (2.14.0 green; pin lifted; M.E.AI.OpenAI 10.10.1 for the Responses tool mapping)
 
 ### The memory provider is built at ACTIVATION but the incognito gate is per-TURN — it must be a delegate
 
@@ -2998,7 +2996,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   rebuilds between turns of a warm activation, which is what forces incognito into a delegate.
   **But the USER-DEFAULT layer is stale by design, and for `memory` that staleness bites harder than for
   any other key.** `_userDefaultEnabledTools` is assigned only in `OnActivateAsync`
-  (`AgentGrain.cs:224`), so changing the Preferences default does **not** rebuild a warm grain — the
+  (`AgentGrain.cs:292` (in `OnActivateAsync`)), so changing the Preferences default does **not** rebuild a warm grain — the
   documented accepted staleness of the `null == all` entry above. For `web_search` that means a tool
   lingers one activation too long. For `memory` it means a user who has just switched off **the widest
   egress in the app keeps POSTing their conversation to a third party** in every already-warm chat until
@@ -3019,7 +3017,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `MemorySelection_IsNotIntersectedWithCapability`),
   `.agentic/decisions/0056-hindsight-long-term-memory.md`,
   `.agentic/decisions/0057-memory-as-a-selectable-tool.md`, `.agentic/decisions/0106-agentgrain-services-and-turn-context.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### `InvokingContext` has no `RequestMessages`, and injected `Instructions` neither come back nor accumulate
 
@@ -3027,7 +3025,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   compile error at best and a wrong port at worst. `InvokedContext` exposes `Agent`, `Session`,
   `RequestMessages`, `ResponseMessages` and `InvokeException`. `InvokingContext` exposes only `Agent`,
   `Session` and **`AIContext`** — there is no `RequestMessages` on it, and the run's incoming messages
-  arrive on **`context.AIContext.Messages`**. Measured by reflection against `Microsoft.Agents.AI` 1.19.0,
+  arrive on **`context.AIContext.Messages`**. Measured by reflection against `Microsoft.Agents.AI` 1.19.0 (the repo now pins 1.25.0),
   after the plan for ADR 0056 asserted the opposite from an earlier reading.
   Two further behaviours were measured with a spike (a real `ChatClientAgent` over a fake `IChatClient`,
   a provider injecting `## Memories\n- …`), because both look like risks and neither is: (1) the injected
@@ -3046,7 +3044,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   https://github.com/Expecho/Hindsight.AgentFramework.Net (`HindsightMemoryProvider`, and
   `Memories_DoNotAccumulateAcrossTurns` / `InjectedMemories_AreNotRetained` in its test suite),
   `.agentic/decisions/0056-hindsight-long-term-memory.md`
-- **Verified:** 2026-08-28
+- **Verified:** 2026-08-28 (audit 2026-11-21: reflection measured on Microsoft.Agents.AI 1.19.0; the repo now pins 1.25.0 and nothing re-measures it)
 
 ### Per-turn context must never go in the instructions — wrap the provider in `TrailingContextProvider`
 
@@ -3066,7 +3064,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/TrailingContextProviderTests.cs`,
   `tests/Agent42.Tests/AgentGrainTests.cs` (`MemoryAndSharedState_DoNotChangeInstructions`),
   `.agentic/decisions/0104-prompt-prefix-caching.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### `GetReadUrlAsync` is memoized per blob — a fresh SAS per call breaks the cached history prefix
 
@@ -3078,7 +3076,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   the grain: the store is the one place that knows a URL's expiry. Its clock is an injected `TimeProvider`.
 - **Evidence:** `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` (`GetReadUrlAsync`),
   `tests/Agent42.Tests/BlobAttachmentStoreReadUrlTests.cs`, `.agentic/decisions/0104-prompt-prefix-caching.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### A live-telemetry test host captures from a PROCESS-GLOBAL source, so those classes must not run in parallel
 
@@ -3135,7 +3133,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/MeterNamingTests.cs`,
   `src/Agent42.Backend/Telemetry/LiveTelemetryCaptureExtensions.cs` (`OtelSourceName`, `AddSource`),
   `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
-- **Verified:** 2026-09-03 (the 2026-08-28 fix was measured incomplete; see the correction)
+- **Verified:** 2026-11-21 (the 2026-08-28 fix was measured incomplete; see the correction)
 
 ### A collection expression into `IReadOnlyList<T>` written from INSIDE a grain is unreadable from Cosmos
 
@@ -3194,7 +3192,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   if .NET or Newtonsoft ever changes; `KnownToolNames_WrittenWithToList_SurviveTheCosmosJsonRoundTrip`),
   `tests/Agent42.Tests/ToolSelectionApiTests.cs` (`ProfileToolSave_IsReadableBackFromStorage` — asserts the
   stored type is `List<string>`, pinning the laundering rather than assuming it)
-- **Verified:** 2026-09-03 (re-measured on Orleans 10.3.1; the hazard holds, only the message moved)
+- **Verified:** 2026-11-21 (re-measured on Orleans 10.3.1; the hazard holds, only the message moved)
 
 ### Proxying a third-party app onto our own origin: both directions leak, and the route template bites
 
@@ -3255,7 +3253,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Proxy_ForwardsOnlyAllowlistedRequestHeaders`),
   `.agentic/decisions/0059-searxng-ui-behind-easy-auth-proxy.md`,
   `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
-- **Verified:** 2026-09-03 (0059 rules unchanged; the 0062 divergence added and measured)
+- **Verified:** 2026-11-21 (0059 rules unchanged; the 0062 divergence added and measured)
 
 ### A named `HttpClient` cannot be re-pointed per consumer — a proxy needs its OWN
 
@@ -3275,7 +3273,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   retry-inheritance trap).
 - **Evidence:** `src/Agent42.Backend/Program.cs` (the `SearxngProxy.HttpClientName` registration),
   `tests/Agent42.Tests/SearxngProxyFixture.cs` (the stub is installed as the PRIMARY handler, deliberately)
-- **Verified:** 2026-08-30
+- **Verified:** 2026-11-21
 
 ### Chat-search ordinals must come from ONE `GetHistoryAsync()` projection, on both paths
 
@@ -3293,7 +3291,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   hands it `ProjectHistory()`), `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
   (`Reindex_AfterLiveIndexing_ProducesNoDuplicates`, `Reindex_IsIdempotent`),
   `.agentic/decisions/0061-searchable-chat-message-projection.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### Skipping an incognito turn's index write is NOT enough — it stays in the in-memory session
 
@@ -3317,7 +3315,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`SkipEphemeralTurnAsync`), `src/Agent42.Agents/Conversations/AgentGrain.cs`,
   `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
   `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### The chat-search write is best-effort — and that is NOT ADR 0008's rejected shape
 
@@ -3338,7 +3336,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ChatSearchIndexingTests.cs` (`ThrowingIndex_DoesNotBreakTheReply`,
   `ThrowingIndex_DoesNotBreakPurge`),
   `.agentic/decisions/0008-always-on-textsearchprovider-retrieval.md` (Alternatives)
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### A multi-property `ORDER BY` needs a composite index, or chat search 400s — and it looks like "no matches"
 
@@ -3366,7 +3364,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/CompositeIndexMatchesTheSearchQueryTests.cs` — which pins the SQL's `ORDER BY`
   against the Bicep and was **mutation checked** three ways (index removed, paths swapped, direction
   flipped; each fails only the assertion that should catch it)
-- **Verified:** 2026-09-02
+- **Verified:** 2026-11-21
 
 ### The sidebar search and the model's `search_past_chats` are DIFFERENT queries on purpose — and the twin is not BM25
 
@@ -3381,7 +3379,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Search/CosmosChatSearchIndex.cs` (`BuildSearchSql`, `BuildRankedSearchSql`),
   `src/Agent42.Agents/Search/InMemoryChatSearchIndex.cs` (`RankByTerms`), `tests/Agent42.Tests/ChatSearchIndexTests.cs`
   (`SearchRanked_*`), `.agentic/decisions/0112-past-chats-as-a-model-tool.md`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### `read_past_chat` reads the search INDEX, never the other conversation's grain
 
@@ -3396,7 +3394,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`Select`, `FormatRead`), `tests/Agent42.Tests/PastChatToolTests.cs`
   (`Search_DropsHitsForConversationsNotInTheIndexGrain`, `Search_NeverFindsAnIncognitoTurn`),
   `.agentic/decisions/0112-past-chats-as-a-model-tool.md`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### The community `OrleansDashboard` package does not start the silo on Orleans 10.x — it CRASHES PROD
 
@@ -3440,7 +3438,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`Packages_DoNotReferenceTheDeprecatedCommunityDashboard`),
   `src/Agent42.Backend/Orleans/DashboardRegistration.cs`,
   `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
-- **Verified:** 2026-09-03
+- **Verified:** 2026-11-21
 
 ### The prefs drill-down must NOT be driven from `wireTabs`' `select` — every open would land in detail
 
@@ -3466,7 +3464,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/PreferencesLayoutAssetsTests.cs`
   (`DetailView_IsEnteredByRailClick_NotByProgrammaticSelect`),
   `.agentic/decisions/0065-preferences-rail-and-drill-down.md`
-- **Verified:** 2026-09-04
+- **Verified:** 2026-11-21
 
 ### The prefs CSS cannot be one contiguous block — and the comments explaining that break the guards
 
@@ -3477,7 +3475,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   narrow-viewport block must **not** be the first 760px media block in the file, because
   `tests/Agent42.Tests/TopbarActionsAssetsTests.cs` takes the first one and requires the base
   `.topbar__brand` rule to appear before it. So the base rules sit after the shared `.agent-form__*`
-  family and the media block sits at the **end of the file**.
+  family and the media block must not be the FIRST 760px block (`PrefsCss_IsOrderedAgainstBothConstraints`).
 - **⚠ The second-order trap, which cost two red tests.** Both guards are a plain `IndexOf` over the
   whole stylesheet text, and **`IndexOf` does not skip comments**. The natural comment explaining the
   split — "its `@media (max-width: 760px)` counterpart is at the end of the file", or "requires
@@ -3498,7 +3496,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`PrefsCss_IsOrderedAgainstBothConstraints`, `AgentDialogTabs_AreNotRestyled`),
   `tests/Agent42.Tests/McpServersAssetsTests.cs`,
   `.agentic/decisions/0065-preferences-rail-and-drill-down.md`
-- **Verified:** 2026-09-04
+- **Verified:** 2026-11-21
 
 ### After a retention prune, REMAP `_ephemeralOrdinals` — never `Clear()` it
 
@@ -3538,7 +3536,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`Prune_DoesNotIndexAnEphemeralTurn_AfterOrdinalsShift`),
   `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
   `.agentic/decisions/0034-ephemeral-chat.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### A pruned-turn delta is a PROJECTED-turn count, and a failed index delete is the one thing reindex cannot repair
 
@@ -3577,7 +3575,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Prune_DoesNotIndexAnEphemeralTurn_TakenBetweenAFailedReconcileAndItsRetry`),
   `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
   `.agentic/decisions/0061-searchable-chat-message-projection.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 
 ### Bounding a drained agent turn: cap the WAIT, never the enumeration — abandoning it LOSES the turn
@@ -3608,7 +3606,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   loop), `tests/Agent42.Tests/AgentMcpServerTests.cs` (`AskAgent_TimedOut_StillPersistsTheTurn`),
   `.agentic/decisions/0070-expose-stored-agents-as-an-mcp-server.md`,
   `.agentic/decisions/0046-recover-a-reply-whose-stream-died.md`
-- **Verified:** 2026-09-11
+- **Verified:** 2026-11-21
 
 ### A caller-supplied conversation id needs THREE defences — the id shape is not the whole one
 
@@ -3640,7 +3638,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/AgentMcpServerTests.cs` (`AskAgent_RejectsAnotherAgentsConversation`,
   `IsValidConversationId_AcceptsOnlyAMintedId`),
   `.agentic/decisions/0070-expose-stored-agents-as-an-mcp-server.md`
-- **Verified:** 2026-09-11
+- **Verified:** 2026-11-21
 
 ### `reply` is NOT the persistence path — it feeds the follow-up call, and the two fail differently
 
@@ -3660,8 +3658,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   The practical consequences, which need **separate** tests because they fail separately:
   1. **To keep a content part out of storage, filter it at the history provider** —
      `InMemoryChatHistoryProviderOptions.StorageInputResponseMessageFilter`, the response-side twin of the
-     `StorageInputRequestMessageFilter` used for injected context messages. Note the request filter has
-     **two** sites (`BuildAgent` and `RecordImageTurnAsync`) while the response filter has one — the
+     `StorageInputRequestMessageFilter` used for injected context messages. Note the request filter has **three** sites (`BuildAgent`, `RecordImageTurnAsync` and the fleet analyzer agent) while the response filter has two (`BuildAgent` and the fleet analyzer) — the
      image-turn adapter's client cannot emit reasoning, and a comment there says so. A check inside
      `ProjectStreamedContent` cannot reach the session at all. Measured on Agent Framework 1.19: without
      the filter a `TextReasoningContent` round-trips as `{"$type":"reasoning","text":"…"}` on **both** the
@@ -3683,7 +3680,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ReasoningText_IsNotPersisted`,
   `ReasoningText_IsNotPersisted_OnTheBackgroundPath`, `ReasoningText_DoesNotReachTheFollowUpCall`),
   `.agentic/decisions/0071-show-reasoning-output.md`
-- **Verified:** 2026-09-13
+- **Verified:** 2026-11-21
 
 ### Visible reasoning is `ChatOptions.Reasoning`, NOT `includeReasoningEncryptedContent`
 
@@ -3717,7 +3714,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `NoReasoningField_IsSent_WhenReasoningIsNotRequested`),
   `tests/Agent42.Tests/ModelProviderTests.cs` (`ReasoningModel_WiresTheReasoningRequest`),
   `.agentic/decisions/0071-show-reasoning-output.md`
-- **Verified:** 2026-09-13
+- **Verified:** 2026-11-21
 
 ### A local-bridge key hash is GRAIN-OWNED — `SaveAsync` carries it unconditionally, and revocation must also close the live socket
 
@@ -3739,7 +3736,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/UserMcpConfigGrainTests.cs` (`Edit_PreservesBridgeKeyHash`, `MintBridgeKey_RegenerateRevokesOld`),
   `tests/Agent42.Tests/LocalBridgeApiTests.cs` (`ManagementWrites_CloseLiveSocket`),
   `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md`
-- **Verified:** 2026-09-17
+- **Verified:** 2026-11-21
 
 ### The bridge key is accepted from the `X-Api-Key` HEADER only — never add a query-string fallback
 
@@ -3761,7 +3758,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Endpoint_RejectsAWebPageOrigin_EvenWithAValidKey`, `Endpoint_SubprotocolKey_OnlyFromTheExtensionOrigin`),
   `tests/Agent42.Tests/LocalBridgeKestrelTests.cs` (`Endpoint_NeverEchoesTheKeyInResponseHeaders`),
   `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Client_KeyFromEnvHeaderOnly`)
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### Nothing in a browser tab can relay to BrowserOS neo — any `Origin` gets a 403
 
@@ -3775,7 +3772,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tools/Agent42.LocalBridge/BridgeOptions.cs` (`DefaultUpstream`),
   `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Upstream_SendsNoOrigin`),
   `.agentic/specs/completed/plan-browseros-neo-as-an-mcp-tool.md` ("Option D")
-- **Verified:** 2026-09-17
+- **Verified:** 2026-11-21
 
 ### The bridge confirmation gate: exact `readOnlyHint: true` only, URL-shaped args still prompt, and the prompt is sanitized and never truncated
 
@@ -3814,7 +3811,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `ConsolePrompt_ReadsOnlyTheThreeAnswers`, `Gate_Yolo_AllowsEveryCallWithoutPrompting`),
   `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md` (Verification — 0 ESC and 0 U+202E
   bytes on the real terminal; the 2026-09-20 amendment block)
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### The Chrome extension cannot do three things a console helper can: set a socket header, see a 401, or stay awake on pings
 
@@ -3834,7 +3831,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ChromeExtensionBridgeTests.cs` (`ExtensionCore_StopsOnRevokedKey`,
   `ExtensionCore_HeartbeatKeepsTheSocketOpen`), `tests/Agent42.Tests/ChromeExtensionScriptTests.cs`
   (`Manifest_GivesWebPagesNoWayIn`), `.agentic/decisions/0109-chrome-extension-bridge-and-mcp-image-results.md`
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### The extension's hard floor: `chrome.debugger` can script the extension's OWN pages, so no tool may touch them
 
@@ -3851,7 +3848,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tools/Agent42.ChromeExtension/test/tools.test.mjs` ("no tool acts on the extension's own pages…", "the tab's
   address is re-checked after the gate"), `tests/Agent42.Tests/ChromeExtensionScriptTests.cs`
   (`InjectedFunctions_NeverTouchExtensionApis`)
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### A multi-part MCP result is an `AIContent[]`; images are taken out before truncation and shown for ONE turn only
 
@@ -3873,7 +3870,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Mcp/McpToolResultShaper.cs`, `src/Agent42.Agents/Models/ToolImageChatClient.cs`,
   `src/Agent42.Agents/Conversations/TurnContext.cs` (`RecordToolImage`), `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Build`),
   `src/Agent42.Agents/Models/IChatClientFactory.cs` (`SingleChatClientFactory`), `tests/Agent42.Tests/McpToolImageTests.cs`
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### A bridge that connects after a chat activated is invisible to it — invalidate on CONNECT, rate-limited, never on disconnect
 
@@ -3892,7 +3889,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Mcp/LocalBridgeSession.cs` (`RunAsync`),
   `tests/Agent42.Tests/LocalBridgeEndpointTests.cs` (`Connect_InvalidatesToolCache_RateLimited`),
   `tests/Agent42.Tests/LocalBridgeKestrelTests.cs` (`SocketDrop_FaultsPendingCall`)
-- **Verified:** 2026-09-17
+- **Verified:** 2026-11-21
 
 ### MCP SDK 2.2.0 opens with a `server/discover` probe that waits 5 s — and a custom `TransportBase` must `SetDisconnected` in `DisposeAsync`
 
@@ -3908,7 +3905,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Mcp/LocalBridgeChannelTransport.cs` (`DisposeAsync`, `Fault`),
   `tests/Agent42.Tests/LocalBridgeTestSupport.cs` (`FakeBridgeHelper.HandleAsync` — the `-32601` answer),
   `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md` (Verification)
-- **Verified:** 2026-09-17
+- **Verified:** 2026-11-21
 
 ### A cancelled Agent Framework run persists NOTHING — so a stopped turn is appended by hand, and `reply` becomes the persistence path
 
@@ -3944,12 +3941,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   **`TryGetInMemoryChatHistory` returning false is harmless at every other call site and harmful here** —
   falling through would commit an empty session over a conversation that had one, so this caller logs and
   skips the persist instead.
-  **Mutation-checked:** replacing the append with `true` turns 7 of the 12 `StopGenerationTests` red.
+  **Mutation-checked:** replacing the append with `true` turned 7 of the then-12 `StopGenerationTests` red (15 tests now, not re-run).
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`AppendStoppedTurnToSession`,
   `TryPrepareStoppedTurn`, the call site's comment), `src/Agent42.Agents/Conversations/HistoryRetention.cs`
   (the same list, and its header on the round-trip property),
   `tests/Agent42.Tests/StopGenerationTests.cs`, `.agentic/decisions/0078-stop-generation.md`
-- **Verified:** 2026-09-20
+- **Verified:** 2026-09-20 (audit 2026-11-21: StopGenerationTests now has 15 tests; the 7-of-12 mutation result was not re-run)
 
 ### The stop handle is a field published by identity, an iterator cannot catch around a `yield`, and `StopAsync` must interleave
 
@@ -3980,7 +3977,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Conversations/IAgentGrain.cs` (`StopAsync`'s attributes and their remarks),
   `tests/Agent42.Tests/StopGenerationTests.cs` (`Stop_DoesNotCancelABackgroundTurn`,
   `Stop_AfterTheTurnEnded_DoesNotAffectTheNextTurn`), `.agentic/decisions/0078-stop-generation.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### `CompactionProvider` freezes the request on AF 1.19 — bound the research prompt with a chat-client REDUCER
 
@@ -3996,7 +3993,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`WithResearchBudget`),
   `tests/Agent42.Tests/ResearchAgentTests.cs` (`ResearchPrompt_IsBoundedWithRag`),
   `.agentic/decisions/0082-seeded-research-agent-loop.md`
-- **Verified:** 2026-09-22
+- **Verified:** 2026-11-21
 
 ### `LoopAgent` persists each iteration MID-TURN — hide the turn while it runs, fold it when it ends
 
@@ -4016,7 +4013,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`AppendStoppedTurnToSession`), `tests/Agent42.Tests/ResearchAgentTests.cs`
   (`ResearchTurn_HistoryHasOneAssistantTurn`), `tests/Agent42.Tests/StopGenerationTests.cs`
   (`Stop_MidResearchLoop_KeepsHistoryConsistent`)
-- **Verified:** 2026-09-22
+- **Verified:** 2026-11-21
 
 ### A storage request filter must EXTEND `IsInjectedOrReplayed`, never replace it — and loop feedback must be dropped
 
@@ -4030,7 +4027,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   assistant messages carry the (user-editable) agent name.
 - **Evidence:** `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`ExcludeInjectedContextMessages`),
   `tests/Agent42.Tests/ResearchAgentTests.cs` (`ResearchTurn_HistoryHasOneAssistantTurn`)
-- **Verified:** 2026-09-22
+- **Verified:** 2026-11-21
 
 ### `AgentRunOptions.AdditionalProperties` is copied into EVERY model call's `ChatOptions`
 
@@ -4039,7 +4036,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   body. Per-run state for the research loop is keyed by the turn's own user `ChatMessage` in a
   `ConditionalWeakTable` instead: `LoopContext.InitialMessages` holds that very reference (measured).
 - **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`_researchRuns`)
-- **Verified:** 2026-09-22
+- **Verified:** 2026-11-21
 
 ### A record parameter a Cosmos document lacks binds to `null`, not to its C# default
 
@@ -4050,7 +4047,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   null. Class-shaped state (`AgentGrainState`) keeps its property initializer, so this is about records.
 - **Evidence:** `src/Agent42.Agents/StoredAgents/AgentDefinition.cs` (`Kind`),
   `tests/Agent42.Tests/GrainStorageSerializerTests.cs` (`DocumentsWithoutResearchFields_Deserialize`)
-- **Verified:** 2026-09-22
+- **Verified:** 2026-11-21
 
 ### Spiking Agent Framework in a file-based app needs reflection JSON switched back on
 
@@ -4061,7 +4058,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   returns **false** on it — code that reads the history length before a first turn must treat that as 0.
 - **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`BeginResearchRun`),
   `.agentic/specs/completed/plan-research-agent.md` (Spike results)
-- **Verified:** 2026-09-22
+- **Verified:** 2026-11-21
 
 ### Rich rendering runs on FINALIZE only — a new streaming call must pass `caret: true`, a new final one must not
 
@@ -4077,7 +4074,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/thread.js` (`setAgentMarkdown`),
   `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` (`enhance`, `mathExtensions`),
   `tests/Agent42.Tests/RichTextAssetsTests.cs`, `.agentic/decisions/0083-rich-inline-rendering.md`
-- **Verified:** 2026-10-03
+- **Verified:** 2026-11-21
 
 ### The rich-rendering libs live ONLY under `/shared/lib/`, and the heavy ones are lazy and NOT in SHELL
 
@@ -4096,7 +4093,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js` (`SHELL`), `src/Agent42.Backend/wwwroot/shared/index.html`,
   `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` (`renderChart`), `tests/Agent42.Tests/PwaAssetsTests.cs`,
   `.agentic/decisions/0083-rich-inline-rendering.md`
-- **Verified:** 2026-10-03
+- **Verified:** 2026-11-21
 
 ### Artifact tool ARGUMENTS are persisted too, so they are compacted after the turn
 
@@ -4124,7 +4121,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   compaction disabled), `tests/Agent42.Tests/ReadDocumentToolTests.cs` (`ReadDocumentParts_DoNotBlowTheSessionSizeBudget`
   fails with the `read_document` branch removed), `.agentic/decisions/0084-artifact-pane.md`,
   `.agentic/decisions/0098-read-document-sequential-reading.md`
-- **Verified:** 2026-10-17
+- **Verified:** 2026-11-21
 
 ### `/frame` safety is the CSP `sandbox` HEADER, not the iframe attribute
 
@@ -4140,18 +4137,18 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   effects off GET, or record the measurement in ADR 0084.
   `/frame` also injects `ArtifactTheme` into the source. It goes AFTER the doctype and never before it, because a
   style block ahead of `<!doctype>` puts the page in quirks mode. Its two Google Fonts hosts are the only CSP
-  allowances the theme needs, so keep its tokens in sync with `shared/themes.css`: `ArtifactThemePalettes.cs` mirrors it and
+  allowances the theme needs, so keep its tokens in sync with `src/Agent42.Backend/wwwroot/shared/themes.css`: `ArtifactThemePalettes.cs` mirrors it and
   `ThemePaletteTests` fails on drift (ADR 0129).
 - **Evidence:** `src/Agent42.Backend/Artifacts/AgentApi.Artifacts.cs` (`ArtifactCsp`, `AddArtifactHeaders`),
   `src/Agent42.Backend/Artifacts/ArtifactTheme.cs`, `tests/Agent42.Tests/ArtifactThemeTests.cs`,
   `src/Agent42.Backend/wwwroot/shared/lib/artifactpane.js` (`renderBody`), `tests/Agent42.Tests/ArtifactsApiTests.cs`
   (`Frame_And_Content_SendSandboxHeaders`),
   `.agentic/decisions/0084-artifact-pane.md`
-- **Verified:** 2026-11-15
+- **Verified:** 2026-11-21
 
-### Palette tokens live in `shared/themes.css` only
+### Palette tokens live in `src/Agent42.Backend/wwwroot/shared/themes.css` only
 
-- **Claim:** every palette (10 x dark/light) is defined once, in `wwwroot/shared/themes.css`; pages load it before their
+- **Claim:** every palette (10 x dark/light) is defined once, in `src/Agent42.Backend/wwwroot/shared/themes.css`; pages load it before their
   own stylesheet and keep only non-palette tokens. A page that sets `data-theme` but not `data-palette` falls to the
   amber fallback blocks, so never remove those (the public `/shared` pages rely on them for OS light). `ArtifactTheme`
   cannot read the file, so its C# table is a mirror guarded by `ThemePaletteTests`; change a colour in the CSS, then the
@@ -4159,7 +4156,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   amber/light's accent is the one pinned exception.
 - **Evidence:** `src/Agent42.Backend/wwwroot/shared/themes.css`, `src/Agent42.Backend/Artifacts/ArtifactThemePalettes.cs`,
   `tests/Agent42.Tests/ThemePaletteTests.cs`, `.agentic/decisions/0129-palette-second-axis-shared-themes-css.md`
-- **Verified:** 2026-11-15
+- **Verified:** 2026-11-21
 
 ### Artifact blobs are stored as octet-stream because the attachment proxies serve ANY id
 
@@ -4173,7 +4170,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Attachments/AgentApi.Attachments.cs`, `src/Agent42.Backend/Sharing/AgentApi.Sharing.cs`,
   `tests/Agent42.Tests/ArtifactToolTests.cs` (`ArtifactTools_StoreOctetStream`),
   `tests/Agent42.Tests/ArtifactsApiTests.cs` (`AttachmentProxies_SendNoSniff`)
-- **Verified:** 2026-10-03
+- **Verified:** 2026-11-21
 
 ### The Copilot runtime calls custom tools OFF the grain's scheduler — bind every tool handed to it to the activation
 
@@ -4182,11 +4179,11 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   custom tool from the SDK's RPC thread instead (measured: a turn started on an exclusive scheduler saw
   `thread=12 onExclusive=False syncCtx=null`). An unwrapped tool then races grain state, and a reminder registration
   fails outright. Every `AIFunction` handed to an out-of-process agent must be wrapped in `SchedulerBoundAIFunction`
-  with `TaskScheduler.Current` captured in `BuildAgent`. Mutation-checked: removing the wrap fails
+  with `TaskScheduler.Current` captured in `CopilotFunctions` (`AgentGrain.Copilot.cs`, reached from `BuildAgent`; fleet Copilot tools run off-grain and are not wrapped). Mutation-checked: removing the wrap fails
   `CopilotTool_InvokedFromForeignThread_RunsOnGrainScheduler` and two reminder tests.
 - **Evidence:** `src/Agent42.Agents/Copilot/SchedulerBoundAIFunction.cs`, `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs`
   (`CopilotFunctions`), `tests/Agent42.Tests/CopilotAgentTests.cs`
-- **Verified:** 2026-10-05
+- **Verified:** 2026-11-21
 
 ### A Copilot AF session is only a POINTER — its transcript lives in `SessionFs`, and AF 1.22 cannot resume it
 
@@ -4203,7 +4200,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`BuildSessionConfig`), `Directory.Packages.props`
   (the AF pin comment), `tests/Agent42.Tests/LiveCopilotTests.cs` (`LiveCopilot_ToolTurn_ResumesFromSessionFs`,
   `LiveCopilot_PreexistingSession_ResumesWithWorkspaceShell`)
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### A non-`ChatClientAgent` session has NO in-memory history until a run completes — seed it, or a stopped first turn is dropped
 
@@ -4215,7 +4212,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `AIAgent` the grain runs that is not a `ChatClientAgent` must seed an empty list on create and on deserialize.
 - **Evidence:** `src/Agent42.Agents/Copilot/CopilotChatAgent.cs` (`WithMirror`),
   `tests/Agent42.Tests/StopGenerationTests.cs` (`Stop_CopilotTurn_PersistsPartialReply`)
-- **Verified:** 2026-10-05
+- **Verified:** 2026-11-21
 
 ### `Microsoft.Agents.AI.GitHub.Copilot` downloads the CLI of the SDK it was PACKED with — reference `GitHub.Copilot.SDK` directly
 
@@ -4228,7 +4225,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   so spikes and the app pass an explicit `RuntimeConnection.ForStdio(.../runtimes/<rid>/native/copilot)`.
 - **Evidence:** `tests/Agent42.Tests/Agent42.Tests.csproj`, `tools/Agent42.DevHost/Agent42.DevHost.csproj`,
   `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`RuntimePath`)
-- **Verified:** 2026-10-05
+- **Verified:** 2026-11-21
 
 
 ### A client tool's wait: route the broker per RUN, interleave the answer, cap the wait and never the turn
@@ -4261,7 +4258,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/ClientTools/ClientToolBroker.cs`,
   `src/Agent42.Agents/Conversations/IAgentGrain.cs`, `src/Agent42.Backend/wwwroot/js/clienttools.js`
   (`confirmAction`), `tests/Agent42.Tests/ClientToolTests.cs`, `.agentic/decisions/0089-client-tools-and-shared-state.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### MCP elicitation: the SDK's handler runs off the grain scheduler, on a per-USER connection, and HTTP loses the async local
 
@@ -4288,7 +4285,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   (`ElicitationArrivedFirstAsync`), `src/Agent42.Backend/Mcp/McpElicitationClient.cs`,
   `tests/Agent42.Tests/McpElicitationIntegrationTests.cs`, `tests/Agent42.Tests/McpElicitationTests.cs`,
   `.agentic/decisions/0095-mcp-elicitation-on-the-client.md`
-- **Verified:** 2026-10-10
+- **Verified:** 2026-11-21
 
 ### Shared state: text in grain state, no write while a run is in flight, and the patch library is neither atomic nor strict
 
@@ -4313,7 +4310,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatCoreAsync`, `ReceiveReminder`),
   `tests/Agent42.Tests/SharedStateTests.cs`, `tests/Agent42.Tests/SharedStatePatchTests.cs`,
   `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
-- **Verified:** 2026-10-09
+- **Verified:** 2026-11-21
 
 ### `ZipArchive` writes synchronously even through its async APIs — never hand it the response body
 
@@ -4327,7 +4324,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Export/AgentApi.Export.cs` (`ZipResult`),
   `tests/Agent42.Tests/ConversationExportApiTests.cs` (every ZIP test goes through TestServer),
   `.agentic/decisions/0091-owner-export-of-conversations.md`
-- **Verified:** 2026-10-10
+- **Verified:** 2026-11-21
 
 ### A fork must COPY blobs: every proxy resolves a blob by `(ownerKey, id)`, never by id alone
 
@@ -4346,7 +4343,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` (`CopyAsync`),
   `tests/Agent42.Tests/ConversationEditForkApiTests.cs` (`Fork_AttachmentsAndArtifacts_AreServedUnderTheForkId`),
   `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### Truncating history removes WHOLE session turns, and re-anchors everything that indexes off them
 
@@ -4378,7 +4375,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/EditRegenerateForkTests.cs` (`Truncate_WithOrphanTurnAttachment_StaysAligned` fails when step
   3 is "remove the last entry", checked by mutation), `tests/Agent42.Tests/ConversationForkingTests.cs`,
   `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
-- **Verified:** 2026-10-19
+- **Verified:** 2026-11-21
 
 ### The fleet's event log coalesces streamed text: an append blob holds at most 50,000 blocks
 
@@ -4392,7 +4389,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetEventLog.cs` (`FlushAsync`, `Coalesce`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Events_TextCoalesced_Complete`, `LogCap_DropsTextButKeepsFinished`),
   `.agentic/decisions/0097-agent-fleet-recursive-teams.md`
-- **Verified:** 2026-10-13
+- **Verified:** 2026-11-21
 
 ### Fleet replay-then-live: subscribe BEFORE reading the store, and skip at or below the last seq sent
 
@@ -4405,7 +4402,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetEventLog.cs` (`Subscribe`, `ReplayAsync`),
   `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`SubscribeAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Subscribe_ReplaysThenLive_ExactlyOnce`)
-- **Verified:** 2026-10-13
+- **Verified:** 2026-11-21
 
 ### A fleet task's `interrupted` status is computed on read, and nothing scans at startup
 
@@ -4419,7 +4416,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`SubmitAsync`, `NormalizeAsync`, `StopAsync`),
   `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`FinishAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`RunningNotInRegistry_IsInterrupted_AndPersisted`, `Shutdown_PersistsInterrupted`)
-- **Verified:** 2026-10-13
+- **Verified:** 2026-11-21
 
 ### The fleet workspace sync DELETES stored files that aren't on local disk: materialize before a run writes
 
@@ -4434,7 +4431,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`RunAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Submit_WithFiles_StoresInputs`),
   `.agentic/decisions/0101-fleet-task-files-and-documents.md`
-- **Verified:** 2026-10-18
+- **Verified:** 2026-11-21
 
 ### The fleet canvas lives OUTSIDE the workspace prefix, because the workspace sync would delete it
 
@@ -4448,7 +4445,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Fleet/FleetCanvas.cs`, `tests/Agent42.Tests/FleetCanvasTests.cs` (`Canvas_SurvivesWorkspaceSync`),
   `tests/Agent42.Tests/FleetStoreTests.cs` (`DeleteTask_KeepsSharedCanvasUntilLastTask`),
   `.agentic/decisions/0102-fleet-shared-canvas.md`
-- **Verified:** 2026-10-18
+- **Verified:** 2026-11-21
 
 ### A fleet Copilot `SessionConfig` must NOT set `AvailableTools`
 
@@ -4462,7 +4459,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs` (`SessionConfig_CarriesCanvasTools_KeepsBuiltins`),
   `tests/Agent42.Tests/CopilotRuntimeTests.cs` (`SessionConfig_BuiltIns_PerConversationWorkingDirectory_NoAvailableTools`),
   `.agentic/decisions/0102-fleet-shared-canvas.md`
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### Fleet workspace downloads are an XSS sink: attachment, nosniff, never an HTML or SVG type
 
@@ -4476,7 +4473,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Fleet/AgentApi.Fleet.cs` (`DownloadFleetFile`, `IsUtf8Text`),
   `src/Agent42.Agents/Fleet/FleetStore.cs` (`NormalizeWorkspacePath`),
   `tests/Agent42.Tests/FleetApiTests.cs` (`FileDownload_IsAttachment_NoSniff_NotHtml`, `FileDownload_PathTraversal_Refused`)
-- **Verified:** 2026-10-13
+- **Verified:** 2026-11-21
 
 ### The fleet's Copilot client is NOT ADR 0085's client: don't merge them
 
@@ -4496,7 +4493,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`BuildClientOptions`),
   `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs`, `tests/Agent42.Tests/LiveCopilotTests.cs`,
   `.agentic/decisions/0097-agent-fleet-recursive-teams.md`, `.agentic/decisions/0107-copilot-chat-builtin-tools.md`
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### A Copilot chat's shell needs a REAL working directory: route only `/state` to the store
 
@@ -4515,12 +4512,12 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Copilot/CopilotSessionFsProvider.cs`, `src/Agent42.Backend/Copilot/CopilotWorkspaceFiles.cs`,
   `src/Agent42.Backend/Copilot/ICopilotSessionStore.cs` (`CopilotSessionPaths.IsStatePath`, `CopilotWorkspacePaths`),
   `tests/Agent42.Tests/CopilotWorkspaceFsTests.cs`, `.agentic/decisions/0107-copilot-chat-builtin-tools.md`
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### AF Workflows 1.23: `AgentResponseUpdateEvent` IS a `WorkflowOutputEvent`, and Declarative never throws on bad YAML
 
 - **Claim:** two measured traps for anything that drives Agent Framework workflows or declarative agents (spike of
-  2026-10-12, AF 1.23.0 / Declarative 1.23.0-rc1). (1) `AgentResponseUpdateEvent` derives from
+  2026-10-12, AF 1.23.0 / Declarative 1.23.0-rc1; the repo now pins 1.25.0). (1) `AgentResponseUpdateEvent` derives from
   `WorkflowOutputEvent`: a loop that ends on "the first `WorkflowOutputEvent`" ends on the first streamed token.
   Exclude update events first, and match outputs by their `Data` type. (2) `CreateFromYamlAsync` on malformed
   YAML does NOT throw: it returns an agent with a wrong or empty name. The fleet's "the name in the YAML must
@@ -4529,7 +4526,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetTeamRunner.Workflows.cs` (`FinalResult`),
   `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs` (`CheckAgent`),
   `tests/Agent42.Tests/FleetTeamRunnerTests.cs` (`InvalidYaml_ErrorsBackToPlanner`, `HostedToolKind_Rejected`)
-- **Verified:** 2026-10-13
+- **Verified:** 2026-10-13 (audit 2026-11-21: measured on AF 1.23.0; the repo pins 1.25.0 and it was not re-measured)
 
 ### A page that writes must not set `<meta name="referrer" content="no-referrer">`: its POSTs get `Origin: null` and Easy Auth 403s them
 
@@ -4542,7 +4539,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   keep `no-referrer` because they only read.
 - **Evidence:** `src/Agent42.Backend/wwwroot/fleet/index.html` (referrer meta),
   `tests/Agent42.Tests/FleetPageAssetsTests.cs` (`FleetPage_ReferrerPolicy_KeepsTheOriginOnWrites`)
-- **Verified:** 2026-10-13 (the 403 from Easy Auth was observed. The fix is unverified in production until it is deployed.)
+- **Verified:** 2026-11-21 (the 403 from Easy Auth was observed. The fix is unverified in production until it is deployed.)
 
 ### The Anthropic SDK reads `ANTHROPIC_*` env vars and defaults `max_tokens` to 1024: set both explicitly
 
@@ -4559,7 +4556,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/AnthropicEnvironmentTests.cs` (`AnthropicRequest_UsesStoredKey_NotEnvironment`),
   `tests/Agent42.Tests/AnthropicProviderTests.cs` (`AnthropicRequest_DefaultsMaxTokens`),
   `.agentic/decisions/0103-anthropic-provider-kind.md`
-- **Verified:** 2026-10-18
+- **Verified:** 2026-11-21
 
 ### Current Claude models 400 on forced tool choice, sampling params, disabled thinking and assistant prefill: the shim owns all four
 
@@ -4578,7 +4575,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Fleet/ModeratedGroupChatManager.cs` (`ToolMode = ChatToolMode.RequireAny`),
   `tests/Agent42.Tests/AnthropicCompatibilityChatClientTests.cs`, `tests/Agent42.Tests/ModeratedGroupChatManagerTests.cs`,
   `.agentic/decisions/0103-anthropic-provider-kind.md`
-- **Verified:** 2026-10-18 (the 400s are the documented model behaviour, unverified live in this repo until
+- **Verified:** 2026-11-21 (the 400s are the documented model behaviour, unverified live in this repo until
   `LiveAnthropicChatTests` runs with a key)
 
 ### A `RawRepresentationFactory` returning `MessageCreateParams` silently overrides `ModelId` and `MaxOutputTokens`
@@ -4592,7 +4589,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Models/AnthropicCompatibilityChatClient.cs` (`CachingFactory`),
   `tests/Agent42.Tests/AnthropicCompatibilityChatClientTests.cs` (`Wire_UnderFactory_KeepsEveryField`,
   `CallerFactory_KeepsItsParams_GainsCaching`, `ForeignFactory_PassesThrough`)
-- **Verified:** 2026-10-18
+- **Verified:** 2026-11-21
 
 ### A GitHub Copilot model must never reach an `IChatClient` — the guard is the refusing client, not the picker
 
@@ -4609,7 +4606,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`IsCopilotComposition`),
   `tests/Agent42.Tests/ModelProviderTests.cs` (`GitHubCopilotModel_ChatClientRefuses`,
   `GitHubCopilotModel_CapabilitiesAreToolsOnly`)
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### The GitHub token goes on every Copilot session create AND resume, never on the client or in its environment
 
@@ -4623,7 +4620,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `BuildClientOptions`), `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`BuildSessionConfig`),
   `tests/Agent42.Tests/CopilotGitHubAccountTests.cs` (`RuntimeEnvironment_CarriesNoGitHubToken`,
   `ChatSessionConfig_GitHubMode_TokenNoProviderTelemetryOff`), `.agentic/decisions/0108-github-copilot-provider.md`
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### A disconnected `github-copilot:` id must refuse, not take `Resolve`'s fallback — and the kind is never a default
 
@@ -4640,7 +4637,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `LegacyUnqualifiedId_NeverResolvesToGitHubCopilot`), `tests/Agent42.Tests/CopilotGitHubAccountTests.cs`
   (`CreateAgent_DisconnectedGitHubModel_IsNotConnected`), `tests/Agent42.Tests/UserProviderResolverTests.cs`
   (`PinnedGitHubCopilotDefault_IsIgnored`)
-- **Verified:** 2026-10-20
+- **Verified:** 2026-11-21
 
 ### The Telegram bot token is in the URL PATH: it leaks through HttpClient spans AND logs, and it breaks `new Uri(base, relative)`
 
@@ -4655,7 +4652,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `"./bot…"`. Any new client whose path holds a secret needs all three.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Telegram/TelegramBotApi.cs`, `tests/Agent42.Tests/TelegramTests.cs`,
   `.agentic/decisions/0111-chat-gateway-for-chat-apps.md`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### The chat gateway holds outbound connections, so a revision rollover would run it twice: it needs the lease
 
@@ -4668,7 +4665,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/ChatGateway/ChatGatewayLease.cs`, `src/Agent42.Backend/ChatGateway/ChatGatewayService.cs`,
   `infra/modules/storage.bicep` (`chatGatewayContainer`), `tests/Agent42.Tests/ChatGatewayServiceTests.cs`
   (`LeaseHandover_NoOverlap`, `LostRenewal_DisconnectsEverything`)
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### A chat-driven turn must be `interactive: false`, and chat commands must skip the queue
 
@@ -4680,7 +4677,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   claimed synchronously, before any await, or a second message races the first.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/ChatTurnPipeline.cs`, `src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Turn.cs`,
   `tests/Agent42.Tests/ChatTurnPipelineTests.cs` (`Pipeline_Stop_BypassesQueue`, `Pipeline_SameRoute_InOrder`)
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### Stream plain frames, format only the final, and never sleep a long rate limit
 
@@ -4690,7 +4687,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   97-minute Telegram flood wait verbatim and froze every platform. Every platform call is time-boxed, so a hung platform
   delays one reply, not the chat's queue, and the turn still persists (`Pipeline_HangingSession_StillPersists`).
 - **Evidence:** `src/Agent42.Backend/ChatGateway/ChatReplyStreamer.cs`, `tests/Agent42.Tests/ChatReplyStreamerTests.cs`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### Cosmos JSON omits a CLR-default member, so a bool initialised to `true` flips on reload
 
@@ -4701,7 +4698,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   default to `false` (name the property for its false meaning if needed). Binary serialization does not show this; only
   the Cosmos path does (`ChatConnection_Disabled_StaysDisabledThroughCosmosJson`, mutation-checked).
 - **Evidence:** `src/Agent42.Agents/ChatGateway/ChatConnection.cs`, `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### Every Slack Socket Mode envelope must be acked, ignored ones included, and Slack commands start with `!`
 
@@ -4716,7 +4713,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   pairing text must use the capability's prefix, never a literal `/`.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Slack/SlackAdapter.cs` (`HandleEnvelopeAsync`),
   `tests/Agent42.Tests/SlackTests.cs` (`Slack_AcksEveryEnvelope`, mutation-checked; `Slack_Disconnect_Reconnects`)
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### Discord: send with `allowed_mentions` none, and catch 4004 yourself, because Discord.Net reconnects forever
 
@@ -4732,7 +4729,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   what lets tests and DevHost point it at a stand-in.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs`,
   `src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs` (`IsPermanent`), `tests/Agent42.Tests/DiscordTests.cs`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### Chat delivery is a per-host port, accumulated only at the two away-reply sites, and it must never hold the grain
 
@@ -4752,7 +4749,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/ChatGateway/AgentGrain.ChatDelivery.cs`,
   `src/Agent42.Backend/ChatGateway/ChatDeliverySender.cs`, `tests/Agent42.Tests/ChatDeliveryTests.cs`,
   `tests/Agent42.Tests/SiloRegistrationTests.cs`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### Neither OpenAI nor Azure documents Ogg for transcription, and three platforms send voice notes as Ogg/Opus
 
@@ -4764,16 +4761,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   NAME's extension, so a voice note without one gets an extension inferred from its media type.
 - **Evidence:** `src/Agent42.Agents/Speech/ISpeechTranscriptionService.cs` (`SpeechTranscriptionFormats`),
   `.agentic/decisions/0113-server-side-speech-to-text-for-voice-notes.md`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### The provider editor's capability checkboxes are positional: append a new flag LAST
 
 - **Claim:** `providers.js` builds each model's capability checkboxes from `capDefs`, and `collectModels` reads them
   back by destructuring in the same order. They are now
   `[tools, vision, image, embed, speech, reasoning, transcription]`. A flag inserted mid-list silently shifts every
-  later one onto the wrong field on save. `ReasoningAssetsTests` pins the order.
-- **Evidence:** `src/Agent42.Backend/wwwroot/js/providers.js`, `tests/Agent42.Tests/ReasoningAssetsTests.cs`
-- **Verified:** 2026-10-21
+  later one onto the wrong field on save. No test pins the order yet; keep `capDefs` and `collectModels` in step by hand.
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/providers.js`
+- **Verified:** 2026-11-21
 
 ### Slack image upload needs `files:write`, and the upload URL Slack returns is pinned like a download
 
@@ -4784,7 +4781,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   reinstalled; until then each upload fails and the reply's note points to Agent42.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Slack/SlackWebApi.cs`, `tests/Agent42.Tests/SlackTests.cs`
   (`UploadImage_ToAnUntrustedUploadUrl_SendsNothing`)
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### A .NET file-based app (`dotnet run app.cs`) defaults to `PublishAot`, so reflection JSON fails with an empty 500
 
@@ -4793,7 +4790,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   shows only as an empty 500 on every route. Add `#:property PublishAot=false` to a throwaway stand-in or spike (the
   phase 1b Slack/Discord stand-ins hit it).
 - **Evidence:** the phase 1b DevHost exercise (`.agentic/specs/plan-chat-gateway.md`, "Progress and divergences")
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### Easy Auth answers an unauthenticated NON-browser request with 401, not the login redirect
 
@@ -4805,7 +4802,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Origin: null` is (see the no-referrer entry).
 - **Evidence:** `tools/Agent42.Android/app/src/main/java/nl/agent42/android/api/Credentials.kt`,
   `.agentic/decisions/0114-android-companion-app.md`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### Building the Android app on Windows: GRADLE_USER_HOME must be a short path, or AAPT2 "can't start"
 
@@ -4814,7 +4811,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   fine: the transformed-resource paths pass the 260-character limit. Point `GRADLE_USER_HOME` at a short folder
   (e.g. `%LOCALAPPDATA%\Temp\a42g`). CI (Linux) is unaffected.
 - **Evidence:** `tools/Agent42.Android/gradle/wrapper/gradle-wrapper.properties`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-10-21 (audit 2026-11-21: an environment measurement that needs JDK 21 and the Android SDK; not reproduced)
 
 ### The signal-cli daemon has no auth and lives and dies with the gateway lease: told "lost" FIRST, watched by a watchdog
 
@@ -4842,7 +4839,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/SignalDaemonTests.cs` (`ARenewal_ResetsTheWatchdog`, mutation-checked),
   `tests/Agent42.Tests/ChatGatewayServiceTests.cs` (`LeaseLost_NotifiesParticipants_BeforeSessionsStop`, mutation-checked),
   `.agentic/decisions/0111-chat-gateway-for-chat-apps.md` (phase 3 amendment)
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### A Signal number is registered, never pasted, and claimed before `register`
 
@@ -4859,7 +4856,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/ChatGateway/AgentApi.ChatGatewaySignal.cs`, `src/Agent42.Agents/ChatGateway/SignalNumberDirectoryGrain.cs`,
   `tests/Agent42.Tests/SignalRegistrationApiTests.cs` (`PastedSignalCredentials_AreRefused_OnCreateAndEdit`,
   mutation-checked; `Register_ANumberAnotherConnectionHolds_Is409_AndNeverCallsRegister`)
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### `JsonContent` sends a chunked body with no Content-Length; signal-cli calls are sent buffered
 
@@ -4874,7 +4871,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   - **Signal has no message id.** Dedupe and quotes use `sender ACI:timestamp`.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Signal/SignalRpcClient.cs`, `tests/Agent42.Tests/SignalRpcTests.cs`
   (`EveryCall_SendsABufferedJsonBody_WithItsLength`), signal-cli's JSON-RPC man page (github.com/AsamK/signal-cli, man/signal-cli-jsonrpc.5.adoc)
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### The backend Dockerfile's signal-cli ARGs must stay before the first FROM
 
@@ -4884,7 +4881,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   checksum digest format", which reads like an ADD limitation but isn't. `SignalImageTests` pins the order and the
   pinned version, digest and date.
 - **Evidence:** `src/Agent42.Backend/Dockerfile`, `tests/Agent42.Tests/SignalImageTests.cs`
-- **Verified:** 2026-10-21
+- **Verified:** 2026-11-21
 
 ### A chat-started fleet task answers its own questions, its result turn can't start a task, and it reports after the save
 
@@ -4913,7 +4910,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Finish_Done_WithOrigin_NotifiesOnce`, `Shutdown_Interrupted_DoesNotNotify`), `tests/Agent42.Tests/FleetToolTests.cs`
   (`Start_InFleetResultTurn_Refused`), `tests/Agent42.Tests/FleetResultDeliveryTests.cs`
   (`ResultTurn_DeletedConversation_Dropped`), `.agentic/decisions/0115-fleet-tasks-from-chat.md`
-- **Verified:** 2026-11-01
+- **Verified:** 2026-11-21
 
 ### `AgentFunctions(context)` runs twice per attempt, so per-attempt state is memoized, never built inside it
 
@@ -4928,7 +4925,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs` (`PlannerInstructions`, `CreateAgentFactory`),
   `tests/Agent42.Tests/FleetTeamRunnerTests.cs` (`TodosFor_SameAttemptSameList`),
   `.agentic/decisions/0117-fleet-todos.md`
-- **Verified:** 2026-11-08
+- **Verified:** 2026-11-21
 
 ### A fleet `LoopAgent` must keep its feedback IN the output: `ExcludeOnBehalfOfMessages = false`
 
@@ -4945,7 +4942,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Backend/Fleet/FleetEventMapper.cs` (`Publish`),
   `tests/Agent42.Tests/FleetSelfReviewTests.cs` (`Runner_Sequential_TheTeamResultIsTheSecondDraft`,
   `Loop_AJudgeThatFails_KeepsTheResult`), `.agentic/decisions/0119-fleet-self-review.md`
-- **Verified:** 2026-11-08
+- **Verified:** 2026-11-21
 
 ### A fleet share link exposes the live WORKSPACE, and its public routes reuse the owner's serving cores
 
@@ -4965,7 +4962,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `FleetCanvasVersionAsync`, `DeleteFleetTask`), `tests/Agent42.Tests/FleetShareApiTests.cs`
   (`Public_Task_ReturnsExactlyTheAllowlist`, `Public_EndedTask_ReasonIsFixedText`, `Public_Files_ListAndDownload_AreSafe`,
   `DeleteTask_RevokesLink`), `.agentic/decisions/0120-fleet-share-links.md`
-- **Verified:** 2026-11-08
+- **Verified:** 2026-11-21
 
 
 ### The fleet analyzer sees only the caller's own spans, and a re-run it starts is NOT an origin task
@@ -4987,7 +4984,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `Rerun_StartsANonOriginTask_WithTheNoteTheCapAndANarrowedSelection`, `Rerun_DisableTools_CanOnlyNarrow`),
   `tests/Agent42.Tests/CopilotAgentTests.cs` (`CopilotFunctions_ExcludeTheFleetAnalyzer`),
   `.agentic/decisions/0122-fleet-analyzer.md`
-- **Verified:** 2026-11-09
+- **Verified:** 2026-11-21
 
 
 ### An internal conversation id must be kept out of chat search by the grain, not by the index filter
@@ -5001,7 +4998,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`PersistTurnUnlessEphemeralAsync`),
   `src/Agent42.Backend/Fleet/AgentApi.FleetAnalyzer.cs`, `tests/Agent42.Tests/FleetAnalyzerPanelApiTests.cs`
   (`Panel_NotListed`, `DeletingTheTask_PurgesItsAnalyzerConversation`)
-- **Verified:** 2026-11-09
+- **Verified:** 2026-11-09 (audit 2026-11-21: the kind guard exists only in PersistTurnUnlessEphemeralAsync; the other IndexNewTurnsAsync sites (reminder fire, edit/fork, image turn) have none, and whether the analyzer kind can reach them is unchecked)
 
 ### Local storage writes the same `$type` JSON as Cosmos, so every persisted-state rule holds on both providers
 
@@ -5016,7 +5013,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   row version, so a second write through a fresh `GrainState` for the same id throws `InconsistentStateException` (a grain's
   own `IPersistentState` carries the version, so only hand-driven storage calls hit it).
 - **Evidence:** `src/Agent42.Backend/Storage/PostgresSchema.cs`, `tests/Agent42.Tests/PostgresGrainStorageTests.cs`
-- **Verified:** 2026-11-14
+- **Verified:** 2026-11-21
 
 ### pgvector cannot index a vector above 2000 dimensions, so the local document index is an exact scan
 
@@ -5026,7 +5023,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   HNSW-indexed, if a corpus ever outgrows the scan. `Storage:Local:DocChunksDimensions` fixes the column at creation: changing
   it needs a new database, and ingest's pre-upsert dimension check (ADR 0030) is what turns a mismatch into a clear message.
 - **Evidence:** `src/Agent42.Backend/Storage/PostgresDocumentIndex.cs`, `src/Agent42.Backend/Storage/Sql/agent42.sql`
-- **Verified:** 2026-11-14
+- **Verified:** 2026-11-21
 
 ### The model's attachment URL is persisted in the session, so local storage cannot use a data: URL
 
@@ -5039,7 +5036,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   must go through the store, and any new `IChatClient` path must be built by that factory, or it will send the reference.
 - **Evidence:** `src/Agent42.Backend/Storage/AttachmentInlineChatClient.cs`, `tests/Agent42.Tests/AttachmentUrlRewriteTests.cs`
   (`EveryProviderKind_TheFactoryBuilds_RewritesTheReference`)
-- **Verified:** 2026-11-14
+- **Verified:** 2026-11-21
 
 ### `LocalFileStore.Resolve` is the only place a storage key becomes a file path
 
@@ -5049,13 +5046,13 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   store may build a path itself or call `Path.Combine` on a key. The attachment store escapes each segment first and keeps
   its metadata sidecars in a separate folder, so a client-chosen attachment id can never read a sidecar as content.
 - **Evidence:** `src/Agent42.Backend/Storage/LocalFileStore.cs`, `tests/Agent42.Tests/LocalFileStoreTests.cs`
-- **Verified:** 2026-11-14
+- **Verified:** 2026-11-21
 
 ### An absent GitHub variable expands to empty, and empty means "off" for optional Bicep params
 
 - **Claim:** `${{ vars.X }}` for an unset variable is an empty string, not an error. For `customDomainName` that means "bind no domain" (silently unbinds a live one), for the shared-infra names it means "create a new registry and environment" (a stray ACR, pushed to), and for `cosmosLocation` an attempted move of an immutable account. The `preflight` job (first in `deploy.yml`, both other jobs `needs` it) fails closed on each, and passes optional values to Bicep only when set. A new optional variable needs the same treatment: pass it only when non-empty, and add a preflight check if empty would destroy something. Secrets behave the same way (see `searxngSecret`'s `@minLength`).
 - **Evidence:** `.github/workflows/deploy.yml` (`preflight`, the `optional=()` array), `infra/main.bicep` (`searxngSecret`), `tests/Agent42.Tests/InfraPortabilityTests.cs`
-- **Verified:** 2026-11-14
+- **Verified:** 2026-11-21
 
 ### Published images are public, so nothing tenant-specific may be baked into them
 
@@ -5065,7 +5062,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   private until the owner flips it public once in the package settings (a workflow cannot), and the image names must keep
   matching `infra/main.bicep`'s `imageName` defaults or an imported image is not found.
 - **Evidence:** `.github/workflows/publish-images.yml`, `tests/Agent42.Tests/PublishImagesTests.cs`
-- **Verified:** 2026-11-15
+- **Verified:** 2026-11-21
 
 ### The MCP App frame route's CSP header is the safety, and declared domains are untrusted input
 
@@ -5078,7 +5075,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   bare TLD, at most 16) and dropped on doubt: a dropped entry narrows the policy and never widens it. Regex `$` matches before a
   trailing newline; the parser uses `\z`.
 - **Evidence:** `src/Agent42.Backend/Mcp/McpAppCsp.cs`, `src/Agent42.Backend/Mcp/AgentApi.McpApps.cs`, `tests/Agent42.Tests/McpAppCspTests.cs`
-- **Verified:** 2026-11-15
+- **Verified:** 2026-11-21
 
 ### A view's postMessage origin is `"null"`: authenticate by `event.source`, reply to `"*"`
 
@@ -5088,7 +5085,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tool-result`, and send `ui/resource-teardown` before removing the frame. `ui/open-link` needs `navigator.userActivation.isActive`
   (a click inside the frame does not reach the page's own listeners).
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/mcpapps.js`, `tests/Agent42.Tests/McpAppsAssetsTests.cs`
-- **Verified:** 2026-11-15
+- **Verified:** 2026-11-21
 
 ### The model's MCP result and the view's result differ, and the raw one must stay out of the session
 
@@ -5098,7 +5095,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   capped at 64 KB, rides the stream event and the replay blob, and never the session (ADR 0004). An extension's capability value
   must be a `JsonElement`: an anonymous object throws `NotSupportedException` from the source-generated context on the first request.
 - **Evidence:** `src/Agent42.Backend/Mcp/McpConnectionFactory.cs` (`TruncatingMcpTool`), `src/Agent42.Backend/Mcp/McpAppResultCapture.cs`, `tests/Agent42.Tests/McpAppsGrainTests.cs`
-- **Verified:** 2026-11-15
+- **Verified:** 2026-11-21
 
 ### Tool visibility has TWO writers: the provider and the connection tester
 
@@ -5107,7 +5104,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   write tool names, so both call `McpAppMeta.ModelTools`. With apps off nothing is filtered. A view's own `tools/call` is a third
   reader: it goes through `McpAppRegistry`, which accepts only tools visible to `"app"` on the route's server.
 - **Evidence:** `src/Agent42.Backend/Mcp/McpAppMeta.cs`, `tests/Agent42.Tests/UserMcpToolProviderTests.cs`, `tests/Agent42.Tests/McpConnectionTesterTests.cs`
-- **Verified:** 2026-11-15
+- **Verified:** 2026-11-21
 
 ### The fleet's run path reads the task's RESOLVED options, never the singleton
 
@@ -5123,7 +5120,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetSettingsService.cs`, `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`SubmitAsync`,
   `Register`), `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`BuildRunAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Task_UsesUserSettings_AndOtherUserUnaffected`, `Running_KeepsSnapshot`)
-- **Verified:** 2026-11-16
+- **Verified:** 2026-11-21
 
 ## A stream failure is a 200 with `ErrorContent`, not an exception, and an empty message is never stored
 - **Claim:** On the Responses path a provider failure can arrive two ways, and only one throws. An HTTP 400 throws
@@ -5137,4 +5134,4 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ProviderErrorEvent_IsStreamed_NotStored_AndLeavesNoEmptyMessage`,
   `EmptyReply_IsReportedAsAnError_AndNotStoredAsAnEmptyMessage`). The fake needs an update with NO contents but a message id
   (`FakeChatClient.EmptyReplyMarker`) to reach the empty-message state: zero updates stores nothing.
-- **Verified:** 2026-11-20
+- **Verified:** 2026-11-21

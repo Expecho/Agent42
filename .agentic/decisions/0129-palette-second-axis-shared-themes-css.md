@@ -19,7 +19,7 @@ have been 60+ drifting copies.
 1. **Two independent axes.** `UserProfile.Theme` (`system|light|dark`) is unchanged. `UserProfile.Palette`
    (`[Id(4)]`, nullable, null = amber) is new; `ThemePalettes.Ids` (in `Agent42.Agents`) is the allow-list, and the
    grain clamps unknown/blank to `amber`. `PUT /api/profile` treats a null `palette` as "keep stored".
-2. **`wwwroot/shared/themes.css` is the single palette source**: 10 palettes x {dark, light} as
+2. **`src/Agent42.Backend/wwwroot/shared/themes.css` is the single palette source**: 10 palettes x {dark, light} as
    `:root[data-palette][data-theme]` sets, plus an amber-dark `:root` and an amber-light `:root[data-theme="light"]`
    fallback so a page that sets only `data-theme` (the public `/shared` pages) or neither stays readable and amber.
    `--amber` keeps its name and means "the accent". The chevron data-URLs became a per-set `--chevron` token.
