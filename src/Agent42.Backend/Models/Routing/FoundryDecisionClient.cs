@@ -91,7 +91,9 @@ public sealed class FoundryDecisionClient(
             {
                 type = "choice",
                 instructions = "Pick the assistant model best suited to answer the user's message. "
-                    + "Choose the cheapest model that can do the job well; pick the cannot-tell option when unsure.",
+                    + "Choose the cheapest model that can do the job well; pick the cannot-tell option when unsure. "
+                    + "Pick an image generator ONLY when the user asks to create, draw, generate or edit a picture; "
+                    + "describing, reading or discussing a picture is a job for a chat model that can see images.",
                 criteria = options,
             },
         },

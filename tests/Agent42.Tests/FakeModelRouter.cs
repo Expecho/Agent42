@@ -43,9 +43,17 @@ public sealed class FakeModelRouter : IModelRouter
 
     public ConcurrentQueue<RouterTurn> Calls { get; } = new();
 
-    public Task<RouterDecision?> RouteAsync(RouterTurn turn, CancellationToken cancellationToken = default)
+    /// <summary>When set, an answer waits on it first, so a test can start another run while the router call is awaited.</summary>
+    public Task? Gate { get; set; }
+
+    public async Task<RouterDecision?> RouteAsync(RouterTurn turn, CancellationToken cancellationToken = default)
     {
         Calls.Enqueue(turn);
-        return Throws is null ? Task.FromResult(Decision) : Task.FromException<RouterDecision?>(Throws);
+        if (Gate is { } gate)
+        {
+            await gate;
+        }
+
+        return Throws is null ? Decision : throw Throws;
     }
 }

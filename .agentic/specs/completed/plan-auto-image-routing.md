@@ -245,3 +245,21 @@ behaviour held. All findings were accepted and folded in above:
 9. LOW gotcha line number, labelling slips: accepted.
 
 Rejected: none.
+
+## Divergence from the plan (recorded at completion, 2026-11-21)
+
+- **Image-only survivors:** the plan said a lone image survivor returns null. The critic pass on the diff widened it: when NO chat
+  model survives the filter, nothing is routed and no call is made, however many image models remain (`eligible.All(IsImageGeneration)`).
+  ADR 0138 and the gotcha say so. Test: `Candidates_OnlyImageSurvives_NoImageTurn` (one and two image models).
+- **Agent-pinned chats never fall back.** The plan's "unrouted Auto" list named agent chat; the code and ADR 0138 keep an agent's pinned
+  model untouched instead (a pinned model stays the user's own pick). Only incognito, no router, router failure and a null decision fall
+  back to the default chat model from an image `_modelId`.
+- **Test support:** `ProbeImageGenerator` also got a `Gate` and an `Entered` counter (needed to hold an image run in flight for
+  `AutoFromAnImageModel_InFlight_DoesNotSwitch`), and is registered as its concrete type and reset by `SharedClusterFixture`.
+- **Not tested as written:** "`PreviousReplyWasImage` survives a no-vision strip". The flag is computed before the turn's own strip, so
+  the tests pin the key-based read after chat, Auto-picture and by-hand-picture turns instead.
+- **Step 5:** no gateway or frontend change was needed (`Pipeline_AutoImageTurn_DeliversTheImage` proves it); no `sw.js` bump.
+- **Step 7 (live check) is post-merge** and still open: thresholds 0.8 / 0.6 are untuned.
+- **Environment:** DevHost does not build here (SDK 11 only, no .NET 10 SDK), so `dotnet build Agent42.slnx` fails on that project
+  alone; the five `Live*` tests answer HTTP 401 without credentials.
+

@@ -1,3 +1,5 @@
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Agent42.Agents;
@@ -12,8 +14,11 @@ namespace Agent42.Agents;
 /// </summary>
 public sealed partial class AgentGrain
 {
-    /// <summary>What <see cref="ResolveTurnModelAsync"/> hands back: the model to switch to (null keeps the current) and the label event.</summary>
-    private readonly record struct TurnModel(string? Model, AgentStreamEvent? Routed);
+    /// <summary>
+    /// What <see cref="ResolveTurnModelAsync"/> hands back: the model to switch to (null keeps the current), the label event, and the
+    /// image model for a one-off picture turn that switches nothing (ADR 0138).
+    /// </summary>
+    private readonly record struct TurnModel(string? Model, AgentStreamEvent? Routed, string? ImageModel = null);
 
     // The picker restores to Auto only while the user still has a router; otherwise the real model (a stale Auto, ADR 0137).
     public async Task<string> GetSelectedModelAsync()
@@ -64,51 +69,102 @@ public sealed partial class AgentGrain
 
         // Agent chats keep their pinned model, an incognito turn writes and sends nothing extra, and a turn that overlaps another
         // run would swap the agent and session under it (ADR 0106): none of them routes.
-        if (!string.IsNullOrEmpty(_state.State.AgentId) || turn.Ephemeral || _runsInFlight > 1)
+        if (!string.IsNullOrEmpty(_state.State.AgentId))
         {
             return new TurnModel(null, null);
+        }
+
+        if (turn.Ephemeral || _runsInFlight > 1)
+        {
+            return UnroutedAuto();
         }
 
         if (await ResolveRouterAsync() is not { } router)
         {
             // A client that still sends `auto` after the router is gone: run on the current model and forget Auto.
             _state.State.AutoModel = false;
-            return new TurnModel(null, null);
+            return UnroutedAuto();
         }
 
         var wasAuto = _state.State.AutoModel;
         _state.State.AutoModel = true;
 
-        RouterDecision? decision;
+        var decision = await RouteSafelyAsync(router, message, attachments);
+
+        // The router awaited: a run that started meanwhile now shares this activation, and a switch would swap the agent and
+        // session under it (ADR 0106). Keep the current model, and an image decision is dropped with it.
+        if (decision is null || _runsInFlight > 1)
+        {
+            return UnroutedAuto();
+        }
+
+        return await ApplyDecisionAsync(decision, wasAuto);
+    }
+
+    // The router call itself. A failure keeps the current model (ADR 0137), so it never throws out of the turn.
+    private async Task<RouterDecision?> RouteSafelyAsync(IModelRouter router, string message, IReadOnlyList<AttachmentRef>? attachments)
+    {
         try
         {
-            decision = await router.RouteAsync(new RouterTurn(message, HasImages(attachments), ToolsEnabledForRouting(), _modelId));
+            // An image model is never the "current" model (null encodes "none", ADR 0138): a chat winner then switches the
+            // conversation off it, exactly as before, and the sticky rule never keeps a picture endpoint for a text turn.
+            var current = IsImageModel(_modelId) ? null : _modelId;
+            return await router.RouteAsync(
+                new RouterTurn(message, HasImages(attachments), ToolsEnabledForRouting(), current, PreviousReplyWasImage()));
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Agent grain {GrainKey} model router failed; keeping {Model}", this.GetPrimaryKeyString(), _modelId);
-            decision = null;
+            return null;
         }
+    }
 
-        // The router awaited: a run that started meanwhile now shares this activation, and a switch would swap the agent and
-        // session under it (ADR 0106). Keep the current model.
-        if (decision is null || _runsInFlight > 1)
-        {
-            return new TurnModel(null, null);
-        }
-
+    private async Task<TurnModel> ApplyDecisionAsync(RouterDecision decision, bool wasAuto)
+    {
         if (decision.Changed)
         {
             await RefreshChatClientFactoryAsync();
         }
 
-        _logger.LogInformation("Agent grain {GrainKey} routed the turn to {Model} (changed: {Changed})",
-            this.GetPrimaryKeyString(), decision.ModelId, decision.Changed);
-        var label = decision.Changed || !wasAuto
-            ? new AgentStreamEvent(AgentStreamEventType.Routed, Text: decision.DisplayName, Model: decision.ModelId)
-            : null;
-        return new TurnModel(decision.Changed ? decision.ModelId : null, label);
+        _logger.LogInformation("Agent grain {GrainKey} routed the turn to {Model} (changed: {Changed}, image: {Image})",
+            this.GetPrimaryKeyString(), decision.ModelId, decision.Changed, decision.ImageGeneration);
+        var routed = new AgentStreamEvent(AgentStreamEventType.Routed, Text: decision.DisplayName, Model: decision.ModelId);
+
+        // A picture is a one-off (ADR 0138): the conversation's model, agent and Auto flag stay as they were, and the label is
+        // always sent, because it is what tells the user why they got a picture.
+        if (decision.ImageGeneration)
+        {
+            return new TurnModel(null, routed, decision.ModelId);
+        }
+
+        return new TurnModel(decision.Changed ? decision.ModelId : null, decision.Changed || !wasAuto ? routed : null);
     }
+
+    // An Auto turn that was not routed. Normally it keeps the current model, but a conversation left on an image model must not
+    // send a text turn to the picture endpoint, so it falls back to the user's default chat model (ADR 0138). A turn that
+    // overlaps another run cannot switch (ADR 0106) and stays where it is.
+    private TurnModel UnroutedAuto()
+    {
+        var fallback = _chatClientFactory.DefaultModelId;
+        return _runsInFlight <= 1 && !string.IsNullOrEmpty(fallback) && IsImageModel(_modelId)
+            ? new TurnModel(fallback, null)
+            : new TurnModel(null, null);
+    }
+
+    private bool IsImageModel(string modelId) => _chatClientFactory.GetCapabilities(modelId).SupportsImageGeneration;
+
+    // The image model this turn runs on, or null for a chat turn: the router's one-off pick, else the conversation's own model when
+    // it is an image model. One helper so ChatTurnAsync keeps a single branch (S3776).
+    private string? ImageModelForTurn(TurnModel routing)
+        => routing.ImageModel ?? (IsImageModel(_modelId) ? _modelId : null);
+
+    // True when the last session message is an assistant image turn. Read from the id KEY, not the ref: the key survives the
+    // no-vision strip and fork, and the last message is never pruned by retention (ADR 0138).
+    private bool PreviousReplyWasImage()
+        => LastSessionMessage() is { } last && last.Role == ChatRole.Assistant && AssistantImageId(last) is not null;
+
+    private ChatMessage? LastSessionMessage()
+        => _session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) && messages is { Count: > 0 } ? messages[^1] : null;
 
     // The chat-client factory is resolved once per activation (ADR 0018), so a model the user added after this grain woke is unknown
     // to it, and a switch onto that model would fall back to the default model while the label named the new one. The router reads

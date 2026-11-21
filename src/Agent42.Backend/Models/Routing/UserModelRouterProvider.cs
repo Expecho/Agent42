@@ -24,7 +24,10 @@ public sealed class UserModelRouterProvider(
 
         var client = new FoundryDecisionClient(
             httpClients.CreateClient(FoundryDecisionClient.HttpClientName), settings, loggers.CreateLogger<FoundryDecisionClient>());
-        return new CatalogModelRouter(userId, catalogs, client, loggers.CreateLogger<CatalogModelRouter>(), cards);
+        // An image model is offered only when its provider can build an image service (only OpenAI-compatible ones do, ADR 0020),
+        // so the router can never pick a model that would answer "Image generation is unavailable" (ADR 0138).
+        bool CanGenerate(ModelInfo m) => resolved.Providers.TryGetValue(m.Provider, out var p) && p.ImageService is not null;
+        return new CatalogModelRouter(userId, catalogs, client, loggers.CreateLogger<CatalogModelRouter>(), cards, CanGenerate);
     }
 
     /// <summary>Registers the named client and the provider. Backend-only: DevHost and test silos register their own port (ADR 0105).</summary>
@@ -47,7 +50,12 @@ public sealed class UserModelRouterProvider(
 
 /// <summary>Builds the candidate list from the user's catalog for each turn, then delegates to <see cref="ModelRouterService"/>.</summary>
 public sealed class CatalogModelRouter(
-    string userId, IUserModelCatalogProvider catalogs, IDecisionClient client, ILogger logger, IModelCardSource? cards = null) : IModelRouter
+    string userId,
+    IUserModelCatalogProvider catalogs,
+    IDecisionClient client,
+    ILogger logger,
+    IModelCardSource? cards = null,
+    Func<ModelInfo, bool>? canGenerateImage = null) : IModelRouter
 {
     private readonly ModelRouterOptions _options = new();
 
@@ -64,7 +72,9 @@ public sealed class CatalogModelRouter(
             return null;
         }
 
-        var candidates = models.Select(m => ToCandidate(m, cards)).ToList();
+        var candidates = models
+            .Where(m => !m.SupportsImageGeneration || canGenerateImage?.Invoke(m) != false)
+            .Select(m => ToCandidate(m, cards)).ToList();
         return await new ModelRouterService(candidates, client, _options, logger).RouteAsync(turn, cancellationToken);
     }
 
@@ -77,5 +87,7 @@ public sealed class CatalogModelRouter(
         IsChat: !(m.SupportsImageGeneration || m.SupportsEmbeddings || m.SupportsSpeech || m.SupportsTranscription),
         Hint: m.Hint,
         // Layer two (ADR 0137): only when the user wrote no hint, by the provider's own model name, from cache.
-        CardText: string.IsNullOrWhiteSpace(m.Hint) ? cards?.TryGetDescription(m.Model ?? m.Id) : null);
+        CardText: string.IsNullOrWhiteSpace(m.Hint) ? cards?.TryGetDescription(m.Model ?? m.Id) : null,
+        // An image generator is a routing option (ADR 0138); embedding, speech and transcription models never are.
+        IsImageGeneration: m.SupportsImageGeneration && !(m.SupportsEmbeddings || m.SupportsSpeech || m.SupportsTranscription));
 }
