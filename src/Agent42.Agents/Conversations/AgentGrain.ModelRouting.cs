@@ -97,12 +97,33 @@ public sealed partial class AgentGrain
             return new TurnModel(null, null);
         }
 
+        if (decision.Changed)
+        {
+            await RefreshChatClientFactoryAsync();
+        }
+
         _logger.LogInformation("Agent grain {GrainKey} routed the turn to {Model} (changed: {Changed})",
             this.GetPrimaryKeyString(), decision.ModelId, decision.Changed);
         var label = decision.Changed || !wasAuto
             ? new AgentStreamEvent(AgentStreamEventType.Routed, Text: decision.DisplayName, Model: decision.ModelId)
             : null;
         return new TurnModel(decision.Changed ? decision.ModelId : null, label);
+    }
+
+    // The chat-client factory is resolved once per activation (ADR 0018), so a model the user added after this grain woke is unknown
+    // to it, and a switch onto that model would fall back to the default model while the label named the new one. The router reads
+    // the catalog fresh every turn, so reload the factory before switching onto what it chose. A version-stamped cache hit when
+    // nothing changed, so it costs one grain read. A failed reload keeps the old factory, as before.
+    private async Task RefreshChatClientFactoryAsync()
+    {
+        try
+        {
+            _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Agent grain {GrainKey} could not refresh its model providers before routing", this.GetPrimaryKeyString());
+        }
     }
 
     // The vision filter must hold for the whole conversation: history images are re-sent every turn (gotchas: CanSeeImages).

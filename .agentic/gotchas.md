@@ -5146,7 +5146,9 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   analyzer, lessons settings and dream, stored-agent create and update, `PUT /api/default-model`. A new endpoint or grain method that
   accepts a model id must do the same. A stale Auto (router removed) is answered by `GetSelectedModelAsync` with the real model, and
   the grain forgets Auto when a client still sends it. Incognito turns, agent-pinned chats and a turn while another run is in flight
-  never route.
+  never route. A routed switch first reloads the grain's factory (`RefreshChatClientFactoryAsync`), because the factory is resolved once
+  per activation and would not know a model added since: without it `Resolve` falls back to the default model while the label names
+  the new one. A by-hand pick of a new model still waits for the next activation (ADR 0018).
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.ModelRouting.cs`, `src/Agent42.Backend/Models/Routing/AutoModelRefusal.cs`,
   `tests/Agent42.Tests/ModelRouterGrainTests.cs` (`AutoOutsideChat_BindAgent_IsRefused_AndNothingIsPersisted`, `StaleAuto_*`),
   `tests/Agent42.Tests/ProvidersApiTests.cs` (`AutoOutsideChat_*`)

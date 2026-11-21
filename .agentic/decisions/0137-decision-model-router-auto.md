@@ -36,7 +36,9 @@ per option and no generated text (spike 2026-11-21: p50 0.24 s, p95 0.28 s, 4 op
   server entry that takes a model.
 - Routing is per-user only: an operator-baseline `DecisionModel` provider is ignored. A conversation that ever held an image routes to
   vision models only (history images are re-sent every turn). An explicit model pick clears Auto even on an incognito turn. If another
-  run starts while the router call is awaited, the decision is dropped and the turn keeps its model.
+  run starts while the router call is awaited, the decision is dropped and the turn keeps its model. The router reads the catalog
+  fresh every turn, and a grain reloads its chat-client factory before switching onto the model the router chose (ADR 0018 resolves
+  it once per activation), so a model added mid-conversation is usable at once instead of falling back to the default.
 - A new `Routed` stream event (appended last) shows the chosen model as a non-persisted label.
 
 ## Egress (ADR 0013 extension)

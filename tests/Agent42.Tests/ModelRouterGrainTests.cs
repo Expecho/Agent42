@@ -110,6 +110,31 @@ public sealed class ModelRouterGrainTests(SharedClusterFixture fixture) : Shared
         Assert.Equal([TestSiloConfigurator.DefaultModel, Blind, Blind], router.Calls.Select(c => c.CurrentModelId));
     }
 
+    // ADR 0018: a grain resolves its providers once per activation, so a model added after it woke is unknown to it. Switching onto what
+    // the router chose must reload them first, or the turn falls back to the default model while the label names the new one.
+    private int FactoryResolutions() => Cluster.Silos.Sum(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
+        .GetRequiredService<CountingChatClientFactoryProvider>().Calls);
+
+    [Fact]
+    public async Task AutoSwitch_ReloadsTheProviders_ButAKeptModelDoesNot()
+    {
+        var router = UseRouter(To(Blind));
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(NewKey());
+        await Collect(agent.ChatAsync("warm up", TestSiloConfigurator.DefaultModel));
+        var afterActivation = FactoryResolutions();
+
+        await Collect(agent.ChatAsync("route me", AutoModelId.Value));
+        Assert.Equal(afterActivation + 1, FactoryResolutions());
+
+        // Same model again, a null decision, and an explicit pick never reload.
+        router.Decision = To(Blind, changed: false);
+        await Collect(agent.ChatAsync("again", AutoModelId.Value));
+        router.Decision = null;
+        await Collect(agent.ChatAsync("nothing", AutoModelId.Value));
+        await Collect(agent.ChatAsync("by hand", TestSiloConfigurator.DefaultModel));
+        Assert.Equal(afterActivation + 1, FactoryResolutions());
+    }
+
     [Fact]
     public async Task ExplicitModel_ClearsAuto()
     {
