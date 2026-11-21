@@ -289,7 +289,7 @@ dotnet restore Agent42.slnx
 # UI at http://localhost:61326
 dotnet run --project tools/Agent42.DevHost
 
-# Full stack — Aspire orchestration with the Cosmos emulator (needs Docker).
+# Full stack — Aspire orchestration with the Cosmos emulator (needs Docker) and Aspire CLI 17+.
 dotnet run --project src/Agent42.AppHost
 ```
 
