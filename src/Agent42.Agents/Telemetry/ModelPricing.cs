@@ -93,6 +93,11 @@ public static partial class ModelPricing
         Azure("gpt-5.4", "2026-03-01", 2.5m, 0.25m, 15m),
         Azure("gpt-5.4-mini", "2026-03-01", 0.75m, 0.075m, 4.5m),
         Azure("gpt-5.4-nano", "2026-03-01", 0.2m, 0.02m, 1.25m),
+        // Standard Global meters, prompts in the short-context tier (the long-context tier is not modelled, like Haiku 5.5's).
+        Azure("gpt-6-sol", "2026-09-01", 2m, 0.2m, 10m),
+        Azure("gpt-6-astra", "2026-09-01", 10m, 1m, 50m),
+        Azure("gpt-6.1-sol", "2026-10-01", 2m, 0.1m, 10m),
+        Azure("gpt-6.1-terra", "2026-10-01", 1m, 0.05m, 5m),
         Azure("gpt-4.1", "2025-04-01", 2m, 0.5m, 8m),
         Azure("gpt-4.1-mini", "2025-04-01", 0.4m, 0.1m, 1.6m),
         Azure("gpt-4.1-nano", "2025-04-01", 0.1m, 0.025m, 0.4m),

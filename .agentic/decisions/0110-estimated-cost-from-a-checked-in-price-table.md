@@ -29,6 +29,7 @@ A spike (2026-10-21, Anthropic 12.58.0, stubbed transport) settled the formula's
   No reasoning term (reasoning is part of output). Matching is exact after lower-casing and stripping a release-date
   suffix — never a prefix match. Three answers: `priced`, `included` (GitHub Copilot, a subscription), `unpriced`
   (no row; rendered "—", never "$0"). On `/usage`, a row spanning an effective date is `partial` ("≥").
+- 2026-11-21: added `gpt-6-sol`, `gpt-6-astra`, `gpt-6.1-sol` and `gpt-6.1-terra` (Standard Global, short-context tier). Azure lists no 6.2 meter, so `gpt-6.2-*` stays unpriced.
 - Seeded from the **Azure Retail Prices API** (Global meters, normalized to per-1M) and **Anthropic list prices**
   (cache write 5-minute = 1.25× input). OpenAI-compatible endpoints have **no rows**: GitHub Models, Ollama and vLLM
   can be free, local, or anything.

@@ -23,6 +23,23 @@ public sealed class ModelPricingTests
         Assert.Equal(3.10m, estimate.Usd);
     }
 
+    // Seeded from the Standard Global meters (2026-11-21). 6.2 has no meter, so it must stay unpriced, not borrow 6.1.
+    [Fact]
+    public void Estimate_Gpt6Family_PricedFromItsOwnRow_And62Unpriced()
+    {
+        var priced = ModelPricing.Estimate(
+            ModelPricing.AzureOpenAIKind, "gpt-6.1-terra", Now, new TokenCounts(Input: 1_000_000, Output: 100_000, CachedInput: 400_000));
+
+        Assert.Equal(CostStatus.Priced, priced.Status);
+        // 600k x 1 + 400k x 0.05 + 100k x 5 = 0.60 + 0.02 + 0.50
+        Assert.Equal(1.12m, priced.Usd);
+
+        foreach (var model in new[] { "gpt-6.2-sol", "gpt-6.2-astra" })
+        {
+            Assert.Equal(CostStatus.Unpriced, ModelPricing.Estimate(ModelPricing.AzureOpenAIKind, model, Now, new TokenCounts(1000, 100)).Status);
+        }
+    }
+
     // Anthropic: the provider's input count contains cache reads AND cache writes (spike 2026-10-21).
     [Fact]
     public void Compute_AnthropicInputIncludesCacheReadAndWrite()
