@@ -133,6 +133,10 @@ builder.Services.AddSingleton<IUserModelCatalogProvider>(sp => new UserModelCata
     // Optional: registered by AddCopilotAgents. Lists a connected GitHub Copilot plan's models (ADR 0108).
     sp.GetService<CopilotModelDirectory>()));
 
+// The Auto router (ADR 0137): a per-user Decision-1 client over the user's own Foundry resource. A port each host
+// registers (ADR 0105): DevHost registers a canned one, a test silo none (no router = no Auto).
+UserModelRouterProvider.AddModelRouter(builder.Services);
+
 // Durable storage (Storage:Provider, default azure): Cosmos + Blob today, or Postgres + a filesystem volume for
 // self-hosting. Registers the attachment, skill, document-index and chat-search ports, the Data Protection key
 // ring (ADR 0018) and, for Azure, the Cosmos/Blob clients. See StorageRegistration; the Orleans half is below.

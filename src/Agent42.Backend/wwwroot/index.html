@@ -926,8 +926,14 @@
           <option value="OpenAICompatible">OpenAI-compatible (Ollama, vLLM, GitHub…)</option>
           <option value="AzureOpenAI">Azure AI Foundry</option>
           <option value="Anthropic">Anthropic (Claude)</option>
+          <option value="DecisionModel">Auto router (Microsoft Decision-1)</option>
         </select>
       </label>
+
+      <p class="agent-form__note" id="providerDecisionNote" hidden>The Auto router picks one of your other models for each
+        message. Use your Foundry resource root as the endpoint (https://&lt;resource&gt;.services.ai.azure.com), your key, and the
+        Decision-1 deployment name as the one model. Each message you send in an Auto chat goes to that deployment, then to the model it
+        picks. Add a "when to use" hint to your other models to steer it.</p>
 
       <p class="agent-form__note" id="providerAnthropicNote" hidden>Declare each Claude model with Tools and Vision as
         it supports them, and tick Reasoning to see Claude's thinking.</p>

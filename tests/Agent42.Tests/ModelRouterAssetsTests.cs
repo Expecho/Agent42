@@ -1,0 +1,85 @@
+namespace Agent42.Tests;
+
+/// <summary>
+/// Guards the frontend half of the Auto model (ADR 0137). The repo has no JS test runner, so these assert on the source
+/// of the real <c>wwwroot</c> and prove the wiring exists, in the style of <see cref="ResearchAssetsTests"/>. The rendered
+/// picker and label are checked in DevHost, which ships a canned router.
+/// </summary>
+[Collection("StaticAssets")]
+public sealed class ModelRouterAssetsTests(StaticAssetsServerFixture fixture)
+{
+    private Task<string> Js(string name) => fixture.Client.GetStringAsync($"/js/{name}");
+
+    // The composer picker offers Auto from the server's flag, never from a hardcoded one.
+    [Fact]
+    public async Task Picker_OffersAutoOnlyWhenTheServerSaysSo_AndOnlyInTheComposer()
+    {
+        var models = await Js("models.js");
+
+        Assert.Contains("export const AUTO_MODEL = \"auto\"", models);
+        Assert.Contains("auto && modelsData.auto", models);
+        Assert.Contains("fillModelOptions(modelSelect, { auto: true })", models);
+        // No other picker passes it: the agent dialog, the defaults and the fleet pin real models.
+        foreach (var module in new[] { "agents.js", "providers.js" })
+        {
+            Assert.DoesNotContain("auto: true", await Js(module));
+        }
+    }
+
+    // A stale Auto must never turn into an "Unavailable" option: it is not a model.
+    [Fact]
+    public async Task SelectModel_NeverAddsARawAutoOption()
+    {
+        var models = await Js("models.js");
+
+        Assert.Contains("id === AUTO_MODEL && ![...select.options].some((o) => o.value === id)) return;", models);
+        Assert.Contains("if (id === AUTO_MODEL) return \"Auto\";", models);
+    }
+
+    // The refill resets the select to its first option, which is Auto: a refresh that must not retarget the open chat puts the choice back.
+    [Fact]
+    public async Task LoadModels_KeepsTheOpenChatsChoice_WhenNotPinning()
+    {
+        var models = await Js("models.js");
+
+        Assert.Contains("const kept = modelSelect.value;", models);
+        Assert.Contains("else if (kept) setModel(kept);", models);
+    }
+
+    // The picker restores through GET .../model, which answers `auto` for an Auto conversation.
+    [Fact]
+    public async Task ConversationRestore_GoesThroughSetModel()
+    {
+        Assert.Contains("setModel(await modelRes.json())", await Js("conversations.js"));
+    }
+
+    // The server answers a chat turn with the model's own id plus a routed event; the page renders the event as a label.
+    [Fact]
+    public async Task Stream_RendersTheRoutedLabel_AsLiveOnlyMetadata()
+    {
+        var send = await Js("send.js");
+        var thread = await Js("thread.js");
+
+        Assert.Contains("chunk.type === \"routed\"", send);
+        Assert.Contains("renderRouted(agentMsg, chunk.text)", send);
+        Assert.Contains("export function renderRouted(msg, name)", thread);
+        // The label goes on the meta line, never into the reply's text.
+        Assert.Contains("msg.querySelector(\".msg__meta\")", thread);
+    }
+
+    // The editor: a DecisionModel kind, the per-model hint read by class (never positionally, a flag added there would shift), and the router CSS.
+    [Fact]
+    public async Task ProviderEditor_HasTheRouterKind_AndTheHintField()
+    {
+        var providers = await Js("providers.js");
+        var html = await fixture.Client.GetStringAsync("/");
+        var css = await fixture.Client.GetStringAsync("/styles.css");
+
+        Assert.Contains("<option value=\"DecisionModel\">", html);
+        Assert.Contains("id=\"providerDecisionNote\"", html);
+        Assert.Contains("hint: row.querySelector(\".provider-model-row__hint\").value.trim() || null", providers);
+        Assert.Contains("hint.value = model?.hint ?? \"\";", providers);
+        Assert.Contains(".provider-models--router .provider-model-row__hint", css);
+        Assert.Contains(".msg__routed", css);
+    }
+}

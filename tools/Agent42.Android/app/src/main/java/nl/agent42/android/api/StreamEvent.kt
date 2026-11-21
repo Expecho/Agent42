@@ -33,6 +33,8 @@ data class StreamEvent(
     val cacheWriteTokens: Long? = null,
     val costUsd: Double? = null,
     val costStatus: String? = null,
+    // Set on a routed event (ADR 0137): the qualified id of the model the Auto router chose.
+    val model: String? = null,
 ) {
     /** The event's kind; a type this build doesn't know is [StreamEventType.UNKNOWN], never a parse failure. */
     val kind: StreamEventType get() = StreamEventType.fromWire(type)
@@ -55,6 +57,8 @@ enum class StreamEventType(val wire: String) {
     TEXT_RESET("textReset"),
     STATE_SNAPSHOT("stateSnapshot"),
     MCP_ELICITATION("mcpElicitation"),
+    ERROR("error"),
+    ROUTED("routed"),
     UNKNOWN("");
 
     companion object {

@@ -112,6 +112,17 @@ public enum AgentStreamEventType
     /// the provider answered 200 and the failure rode inside it. <see cref="Done"/> still follows.</para>
     /// </summary>
     Error,
+
+    /// <summary>
+    /// The Auto router (ADR 0137) chose the model this turn runs on: <see cref="AgentStreamEvent.Model"/> is the qualified id and
+    /// <see cref="AgentStreamEvent.Text"/> its display name. Emitted at the start of an Auto turn, only when the router CHANGED the
+    /// model or this is the first Auto turn. Appended LAST so earlier numeric values stay what they were.
+    ///
+    /// <para><b>Live-only</b>, like <see cref="Reasoning"/>: a label on the assistant bubble, never appended to the reply, never
+    /// persisted, never replayed. A <see cref="TextDelta"/> notice was rejected because it would land in the bubble text, copy,
+    /// export and regenerate.</para>
+    /// </summary>
+    Routed,
 }
 
 /// <summary>
@@ -172,4 +183,7 @@ public sealed record AgentStreamEvent(
     // Set on a ToolCallEnd of an MCP App tool (ADR 0133): the view to render and the tool's raw result. Live-only on
     // the stream (replay reads it back from the stored blob), null elsewhere so the NDJSON writer omits it. Trailing
     // default so every existing construction keeps compiling.
-    [property: Id(22)] McpAppResult? McpApp = null);
+    [property: Id(22)] McpAppResult? McpApp = null,
+    // Set on a Routed event (ADR 0137): the qualified id of the model the Auto router chose. Null elsewhere so the NDJSON writer
+    // omits it. Trailing default so every existing construction keeps compiling.
+    [property: Id(23)] string? Model = null);

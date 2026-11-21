@@ -161,6 +161,12 @@ public static partial class AgentApi
     private static async Task<IResult> SubmitFleetAsync(
         FleetTaskService fleet, FleetSubmitRequest request, IReadOnlyList<FleetInputFile> files, HttpContext http, CancellationToken ct)
     {
+        // `auto` is a chat-picker value (ADR 0137); a fleet task is pinned to a real model.
+        if (AutoModelId.IsAuto(request.Model))
+        {
+            return FleetBadRequest(AutoModelRefusal.Message);
+        }
+
         // The request's identity, as the middleware put it in RequestContext: the background run re-publishes it.
         var telemetry = RequestContext.Get(UserTelemetryContext.RequestContextKey) as UserTelemetryContext;
         var (taskId, error) = await fleet.SubmitAsync(

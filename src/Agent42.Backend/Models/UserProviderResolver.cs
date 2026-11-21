@@ -20,7 +20,12 @@ public sealed record ResolvedProviderSet(
     string SpeechDefaultModelId = "",
     // The user's chosen default transcription model id (ADR 0113; the chat gateway's voice notes), or "" when none is
     // configured or the pinned id no longer names a declared transcription model. No baseline fallback.
-    string TranscriptionDefaultModelId = "");
+    string TranscriptionDefaultModelId = "")
+{
+    /// <summary>The user's router (ADR 0137), or null without an enabled DecisionModel provider: no Auto, nothing is sent.</summary>
+    public DecisionProviderSettings? Decision =>
+        Providers.Values.Select(p => p.Decision).FirstOrDefault(d => d is not null);
+}
 
 /// <summary>
 /// Resolves a user's effective (baseline ⊕ overlay) provider set (ADR 0018). An interface so the
@@ -81,8 +86,9 @@ public sealed class UserProviderResolver : IUserProviderResolver
     /// </summary>
     public ResolvedProviderSet Merge(UserProviderConfig overlay)
     {
+        // A router is per-user only (ADR 0019/0137): an operator-baseline DecisionModel provider would give every user one.
         var providers = new Dictionary<string, MultiProviderChatClientFactory.Provider>(
-            _baseline.Providers, StringComparer.OrdinalIgnoreCase);
+            _baseline.Providers.Where(p => p.Value.Decision is null), StringComparer.OrdinalIgnoreCase);
         var discovering = _baseline.Discovering.ToList();
         var declared = _baseline.DeclaredModels.ToList();
 
@@ -211,7 +217,7 @@ public sealed class UserProviderResolver : IUserProviderResolver
         // A GitHub Copilot model is never a default (ADR 0108): it runs only in Copilot agents, so a plain chat that
         // started on it would hit the refusing client. Being built is not enough.
         var (providerKey, _) = ModelId.Parse(modelId, "");
-        return providers.TryGetValue(providerKey, out var provider) && provider.Options.Kind != ProviderKind.GitHubCopilot;
+        return providers.TryGetValue(providerKey, out var provider) && provider.Options.Kind is not (ProviderKind.GitHubCopilot or ProviderKind.DecisionModel);
     }
 
     // A stored (overlay) provider → the same ProviderOptions shape the baseline uses, with the API key
@@ -236,6 +242,7 @@ public sealed class UserProviderResolver : IUserProviderResolver
             SupportsSpeech = m.SupportsSpeech,
             SupportsTranscription = m.SupportsTranscription,
             SupportsReasoning = m.SupportsReasoning,
+            Hint = m.Hint,
         })],
     };
 }

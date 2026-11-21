@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Agent42.Agents;
+using Agent42.Backend;
 
 namespace Agent42.Tests;
 
@@ -62,6 +63,19 @@ public sealed class FleetAnalyzerPanelApiTests(FleetApiFixture fixture) : Shared
         Assert.Contains("help you today?", body, StringComparison.Ordinal);
         // The panel shows no suggestions, so the extra model call that makes them is skipped (ADR 0123).
         Assert.DoesNotContain("suggestions", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ADR 0137: `auto` is a chat-picker value; the analyzer is pinned to a real model, so the bind would persist it.
+    [Fact]
+    public async Task AutoOutsideChat_FleetAnalyzer_IsRefused()
+    {
+        const string user = "panel-auto-user";
+        var taskId = await SubmitAsync(user);
+
+        var response = await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/analyzer", user, new { message = "hi", model = "auto" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(AutoModelRefusal.Message, await response.Content.ReadAsStringAsync());
     }
 
     [Fact]

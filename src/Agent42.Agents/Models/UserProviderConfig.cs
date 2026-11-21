@@ -34,7 +34,10 @@ public sealed record StoredModel(
     // Trailing [Id(8)] with a default so an existing overlay deserializes it false with no migration —
     // true only for a declared TRANSCRIPTION (speech-to-text) model (the chat gateway's voice notes, ADR 0113). A
     // distinct model KIND like speech above, reached via GetAudioClient not the chat client.
-    [property: Id(8)] bool SupportsTranscription = false);
+    [property: Id(8)] bool SupportsTranscription = false,
+    // Trailing [Id(9)] with a default so an existing overlay deserializes it null with no migration — the user's own
+    // "when to use this model" text, the first layer of the Auto router's option description (ADR 0137).
+    [property: Id(9)] string? Hint = null);
 
 /// <summary>
 /// One provider in a user's overlay (ADR 0018). Mirrors the Backend's <c>ProviderOptions</c>, but:

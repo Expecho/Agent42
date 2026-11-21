@@ -36,7 +36,7 @@ public record DefaultTranscriptionModelRequest(string? TranscriptionDefault);
 public record ProviderModelRequest(
     string Id, string? DisplayName, bool SupportsTools, bool SupportsVision,
     bool SupportsImageGeneration = false, bool SupportsEmbeddings = false, bool SupportsSpeech = false,
-    bool SupportsReasoning = false, bool SupportsTranscription = false);
+    bool SupportsReasoning = false, bool SupportsTranscription = false, string? Hint = null);
 
 // What GET/POST/PUT return for a provider: everything EXCEPT the key, which is masked to HasKey so the
 // ciphertext (and the plaintext) never reach the client (ADR 0018).
@@ -47,7 +47,7 @@ public record ProviderResponse(
 public record ProviderModelResponse(
     string Id, string? DisplayName, bool SupportsTools, bool SupportsVision,
     bool SupportsImageGeneration = false, bool SupportsEmbeddings = false, bool SupportsSpeech = false,
-    bool SupportsReasoning = false, bool SupportsTranscription = false);
+    bool SupportsReasoning = false, bool SupportsTranscription = false, string? Hint = null);
 
 // The GET /api/providers payload: the user's overlay providers (masked), their optional chat default, their
 // optional embedding default (the "default embedding model" id), and their optional speech default (the

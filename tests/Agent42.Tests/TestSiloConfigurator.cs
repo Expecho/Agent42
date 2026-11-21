@@ -82,8 +82,14 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
                     pricingIdentity: (ModelPricing.AnthropicKind, "claude-sonnet-4-6")));
             // The grain resolves its factory through the per-user seam (ADR 0018); offline/tests have no
             // overlay store, so the single fake factory stands in for every user.
-            services.AddSingleton<IUserChatClientFactoryProvider>(sp =>
-                new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>()));
+            // Counted, so a test can see when a grain reloads its providers (the Auto router does, before it switches models).
+            services.AddSingleton<CountingChatClientFactoryProvider>(sp =>
+                new CountingChatClientFactoryProvider(new SingleUserChatClientFactoryProvider(sp.GetRequiredService<IChatClientFactory>())));
+            services.AddSingleton<IUserChatClientFactoryProvider>(sp => sp.GetRequiredService<CountingChatClientFactoryProvider>());
+            // The Auto router port (ADR 0137): none until a test sets one, so a user without a router is the default shape.
+            // Registered as its concrete type too so a test can set the router on each silo.
+            services.AddSingleton<FakeModelRouterProvider>();
+            services.AddSingleton<IUserModelRouterProvider>(sp => sp.GetRequiredService<FakeModelRouterProvider>());
             // The grain resolves its MCP tools through the per-user seam (config-driven remote MCP servers).
             // Registered as its concrete type too, so a test can fetch it from the silo container and set
             // its Tools to exercise the mcp gate (mirrors SwitchableChatClientFactoryProvider).

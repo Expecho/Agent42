@@ -164,6 +164,112 @@ public sealed class ProvidersApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.Empty((await grain.GetAsync()).Providers);
     }
 
+    // ADR 0137: a DecisionModel provider names exactly ONE model (its deployment) and needs an endpoint.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task DecisionModel_NotExactlyOneModel_IsRejected(int count)
+    {
+        var response = await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", $"user-dm-{Guid.NewGuid():N}", new
+        {
+            key = "router",
+            kind = "DecisionModel",
+            endpoint = "https://res.services.ai.azure.com",
+            apiKey = "k",
+            models = Enumerable.Range(0, count).Select(i => new { id = $"d{i}", supportsTools = false, supportsVision = false }).ToArray(),
+        }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DecisionModel_NoEndpoint_IsRejected()
+    {
+        var response = await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", $"user-dm-{Guid.NewGuid():N}", new
+        {
+            key = "router",
+            kind = "DecisionModel",
+            apiKey = "k",
+            models = new[] { new { id = "Decision-1.1", supportsTools = false, supportsVision = false } },
+        }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    // ADR 0137: the per-model "when to use" hint round-trips, is trimmed and capped, and blank becomes null.
+    [Fact]
+    public async Task DecisionModel_OneModel_IsAccepted_AndModelHintsRoundTripCapped()
+    {
+        var user = $"user-dm-{Guid.NewGuid():N}";
+        (await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", user, new
+        {
+            key = "router",
+            kind = "DecisionModel",
+            endpoint = "https://res.services.ai.azure.com",
+            apiKey = "k",
+            models = new[] { new { id = "Decision-1.1", supportsTools = false, supportsVision = false } },
+        }))).EnsureSuccessStatusCode();
+        (await Client.SendAsync(Request(HttpMethod.Post, "/api/providers", user, new
+        {
+            key = "ollama",
+            kind = "OpenAICompatible",
+            endpoint = "http://localhost:11434/v1",
+            apiKey = "k",
+            models = new[]
+            {
+                new { id = "a", displayName = "A", supportsTools = true, supportsVision = false, hint = "  Hard maths  " },
+                new { id = "b", displayName = "B", supportsTools = true, supportsVision = false, hint = new string('x', 1000) },
+                new { id = "c", displayName = "C", supportsTools = true, supportsVision = false, hint = "   " },
+            },
+        }))).EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(await (await Client.SendAsync(Request(HttpMethod.Get, "/api/providers", user))).Content.ReadAsStringAsync());
+        var providers = doc.RootElement.GetProperty("providers").EnumerateArray().ToList();
+        Assert.Contains(providers, p => p.GetProperty("kind").GetString() == "DecisionModel");
+        var hints = providers.Single(p => p.GetProperty("key").GetString() == "ollama").GetProperty("models").EnumerateArray()
+            .Select(m => m.GetProperty("hint").GetString()).ToList();
+        Assert.Equal("Hard maths", hints[0]);
+        Assert.Equal(300, hints[1]!.Length);
+        Assert.Null(hints[2]);
+    }
+
+    // ADR 0137: `auto` is a chat-picker value, never a default model.
+    [Fact]
+    public async Task AutoOutsideChat_DefaultModel_IsRefused()
+    {
+        var user = $"user-auto-{Guid.NewGuid():N}";
+
+        var response = await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", user, new { @default = "auto" }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null((await Fixture.Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(user).GetAsync()).Default);
+    }
+
+    // ADR 0137: a stored agent pins a real model, on create and on update.
+    [Fact]
+    public async Task AutoOutsideChat_StoredAgent_CreateAndUpdate_AreRefused()
+    {
+        var user = $"user-auto-{Guid.NewGuid():N}";
+        var create = await Client.SendAsync(Request(HttpMethod.Post, "/api/agents", user, new
+        {
+            name = "A",
+            description = "d",
+            model = "auto",
+            systemPrompt = "p",
+        }));
+        var update = await Client.SendAsync(Request(HttpMethod.Put, "/api/agents/some-id", user, new
+        {
+            name = "A",
+            description = "d",
+            model = "AUTO",
+            systemPrompt = "p",
+        }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, create.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, update.StatusCode);
+        Assert.Empty(await Fixture.Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user).GetAllAsync());
+    }
+
     // ADR 0103 AC4: the unknown-kind message is derived from the enum, so it lists every kind (it once hard-coded two).
     [Fact]
     public async Task UnknownKind_MessageListsAllKinds()

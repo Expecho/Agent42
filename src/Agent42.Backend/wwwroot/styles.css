@@ -1032,6 +1032,9 @@ body {
   to { opacity: 1; transform: none; }
 }
 
+/* The Auto router's pick (ADR 0137), live-only, beside AGENT 42. */
+.msg__routed { opacity: 0.7; text-transform: none; letter-spacing: 0; }
+
 .msg__meta {
   font-size: 10.5px;
   letter-spacing: 0.22em;
@@ -3038,6 +3041,14 @@ body {
 
 .provider-model-row__id,
 .provider-model-row__display { flex: 1 1 130px; min-width: 0; padding: 7px 9px; }
+
+/* The Auto router's "when to use" hint (ADR 0137) takes its own line under the row. */
+.provider-model-row__hint { flex: 1 1 100%; min-width: 0; padding: 7px 9px; }
+
+/* A DecisionModel provider has one model, its deployment name: no display name, capabilities or hint. */
+.provider-models--router .provider-model-row__display,
+.provider-models--router .provider-model-row__caps,
+.provider-models--router .provider-model-row__hint { display: none; }
 
 .provider-model-row__flag {
   display: flex;

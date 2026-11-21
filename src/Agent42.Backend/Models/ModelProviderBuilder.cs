@@ -174,6 +174,19 @@ public static class ModelProviderBuilder
                 $"Model provider '{key}' is an {provider.Kind} provider and must declare an Endpoint.");
         }
 
+        // A Decision-1 router (ADR 0137) declares exactly one "model": its deployment name. It contributes NO catalog model
+        // (the `[]`, copied from Copilot), so it never reaches the picker, a default, or an embedding/speech selector.
+        if (provider.Kind == ProviderKind.DecisionModel)
+        {
+            return provider.Models.Count != 1 || string.IsNullOrWhiteSpace(provider.Models[0].Id)
+                ? Invalid($"Model provider '{key}' is a DecisionModel provider and must declare exactly one model (the deployment name).")
+                : new ProviderBuildResult(
+                    ProviderBuildStatus.Built,
+                    MultiProviderChatClientFactory.Provider.DecisionModel(
+                        provider, new DecisionProviderSettings(provider.Endpoint, provider.ApiKey, provider.Models[0].Id.Trim())),
+                    null, []);
+        }
+
         // An explicit Anthropic branch: before ADR 0103 every non-Foundry kind fell through to the OpenAI client.
         var built = provider.Kind == ProviderKind.Anthropic
             ? MultiProviderChatClientFactory.Provider.Anthropic(provider, new Uri(provider.Endpoint), provider.ApiKey)
@@ -205,5 +218,6 @@ public static class ModelProviderBuilder
             SupportsSpeech: m.SupportsSpeech,
             SupportsReasoning: m.SupportsReasoning,
             ProviderDisplayName: provider.DisplayName,
-            SupportsTranscription: m.SupportsTranscription));
+            SupportsTranscription: m.SupportsTranscription,
+            Hint: m.Hint));
 }

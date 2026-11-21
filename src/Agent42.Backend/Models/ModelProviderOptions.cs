@@ -31,6 +31,14 @@ public enum ProviderKind
     /// client refuses every request (<see cref="CopilotOnlyChatClient"/>). Never the default model.
     /// </summary>
     GitHubCopilot,
+
+    /// <summary>
+    /// A Microsoft Decision-1 deployment on the user's own Foundry resource (ADR 0137): the router behind the Auto model.
+    /// Its endpoint is the resource root, its key an API key, and its ONE declared "model" is the deployment name. It is
+    /// never a chat model, so its chat client refuses (<see cref="DecisionModelOnlyChatClient"/>) and it is invisible in
+    /// the catalog, the picker and every default.
+    /// </summary>
+    DecisionModel,
 }
 
 /// <summary>
@@ -112,6 +120,9 @@ public sealed class ConfiguredModel
     /// <c>StripReasoningFromStorage</c>), so turning this on does not grow the session item.</para>
     /// </summary>
     public bool SupportsReasoning { get; set; }
+
+    /// <summary>The user's own "when to use this model" text, the first layer of the Auto router's option description (ADR 0137).</summary>
+    public string? Hint { get; set; }
 }
 
 /// <summary>One configured provider.</summary>

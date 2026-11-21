@@ -87,6 +87,20 @@ public sealed class FleetLessonApiTests(FleetLessonApiFixture fixture) : SharedC
             Lessons = [new FleetLesson { Id = id, Text = "A lesson.", CreatedAt = DateTimeOffset.UtcNow, LastSupportedAt = DateTimeOffset.UtcNow }],
         });
 
+    // ADR 0137: the dream runs on a real model; `auto` is a chat-picker value, on both routes that take one.
+    [Fact]
+    public async Task AutoOutsideChat_LessonSettingsAndDream_AreRefused()
+    {
+        var user = NewUser();
+
+        var settings = await Send(HttpMethod.Put, "/api/fleet/lessons/settings", user, new { enabled = true, model = "auto" });
+        var dream = await Send(HttpMethod.Post, "/api/fleet/lessons/dream", user, new { model = "auto" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, settings.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, dream.StatusCode);
+        Assert.False((await Get(user)).GetProperty("settings").GetProperty("enabled").GetBoolean());
+    }
+
     [Fact]
     public async Task Get_Default_IsOff_Empty_AndCarriesTheSchedule()
     {

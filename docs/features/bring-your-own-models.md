@@ -18,6 +18,19 @@ Each model shows up in the model picker as `key:model`. Changes apply right away
 
 Until you add at least one provider, the model picker is empty and the composer is locked.
 
+## Auto router
+
+The **Auto router** (kind **Auto router (Microsoft Decision-1)**) lets Agent 42 pick a model for each message, so you don't have to. It needs a Microsoft Decision-1 deployment on your own Azure AI Foundry resource, which you deploy yourself.
+
+1. Add a provider and choose the kind **Auto router (Microsoft Decision-1)**.
+2. **endpoint**: your Foundry resource root, for example `https://my-resource.services.ai.azure.com`. A project URL is cut back to this.
+3. **api key**: the key of that resource.
+4. **model**: exactly one, the name of your Decision-1 deployment.
+
+The router is never a chat model. It adds an **Auto** entry to the [model picker](model-picker.md#auto). Without this provider there is no Auto and nothing is sent anywhere.
+
+To steer it, fill in **when to use** on your other models, for example "long documents and careful reasoning". Without a hint, Agent 42 describes a model from its public model card when it can find one, and otherwise from its capabilities, so the router works with no setup.
+
 ## Choose defaults
 
 - **Default model**: the model new chats start on.
@@ -41,3 +54,5 @@ If you have a GitHub Copilot subscription, click **Sign in with GitHub** on the 
 ## Privacy
 
 Whichever model you pick receives that conversation's content: messages, document excerpts, image links and your location when you share it. If that provider is outside your own organization, the content leaves it. This is why picking a model is always your explicit choice.
+
+With **Auto**, the text of your message is also sent to your own Decision-1 deployment, and the conversation then goes to whichever of your models it picks, including providers outside your organization. If you don't want a provider used, don't connect it, or pick models by hand. Agent 42 also fetches a public list of model descriptions (one request with nothing about you in it) to describe your models to the router.
