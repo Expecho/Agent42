@@ -1000,6 +1000,34 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Empty(provider.Models);
     }
 
+    // ADR 0137: StoredModel.Hint ([Id(9)]) and AgentGrainState.AutoModel ([Id(19)]) round-trip on the Cosmos JSON path,
+    // and a document written before they existed reads back null/false (no migration).
+    [Fact]
+    public void RouterFields_RoundTripThroughCosmosJson()
+    {
+        var provider = new StoredProvider("p", "OpenAICompatible", null, "https://x/v1", "cipher",
+            new List<StoredModel> { new("m1", "M1", true, false, Hint: "Use for hard maths"), new("m2", "M2", true, false) },
+            UseResponsesApi: false);
+        var config = new UserProviderConfigState { Config = new UserProviderConfig(new List<StoredProvider> { provider }, null, 1) };
+
+        var restoredConfig = Serializer().Deserialize<UserProviderConfigState>(Serializer().Serialize(config));
+        var models = Assert.Single(restoredConfig.Config.Providers).Models;
+        Assert.Equal("Use for hard maths", models[0].Hint);
+        Assert.Null(models[1].Hint);
+
+        var restoredGrain = Serializer().Deserialize<AgentGrainState>(
+            Serializer().Serialize(new AgentGrainState { DeploymentName = "p:m1", AutoModel = true }));
+        Assert.True(restoredGrain.AutoModel);
+        Assert.Equal("p:m1", restoredGrain.DeploymentName);
+    }
+
+    [Fact]
+    public void RouterFields_WrittenBeforeTheyExisted_ReadBackAsDefaults()
+    {
+        var restored = Serializer().Deserialize<AgentGrainState>(new BinaryData(StoredAgentGrainStateJson));
+        Assert.False(restored.AutoModel);
+    }
+
     // ADR 0113: a provider overlay persisted before SupportsTranscription ([Id(8)]) and TranscriptionDefault ([Id(5)])
     // existed has neither property in its Cosmos document. It must read back false/null with no migration.
     [Fact]

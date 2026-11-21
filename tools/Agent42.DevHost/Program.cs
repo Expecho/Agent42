@@ -126,6 +126,10 @@ builder.Services.AddSingleton<IModelCatalog>(new StaticModelCatalog(DefaultModel
 builder.Services.AddSingleton<IUserModelCatalogProvider>(sp =>
     new SingleUserModelCatalogProvider(sp.GetRequiredService<IModelCatalog>()));
 
+// The Auto router port (ADR 0137): a canned keyword router, so the Auto entry and the routed label work offline.
+builder.Services.AddSingleton<IUserModelRouterProvider>(
+    new SingleUserModelRouterProvider(new DemoModelRouter("foundry:gpt-4o-mini", "foundry:o3-mini")));
+
 // Provider and MCP secret encryption (ADR 0018): the protectors come from AddAgent42Api below, on this ring.
 // Offline uses the default EPHEMERAL key ring — nothing is persisted, so no blob store is needed. The per-user
 // overlay grains still work (in-memory storage below), so the providers and MCP servers UIs are exercisable here.

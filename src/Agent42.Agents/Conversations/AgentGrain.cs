@@ -75,6 +75,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     private readonly IUserChatClientFactoryProvider _chatClientFactoryProvider;
 
+    // The Auto router port (ADR 0137), null when the host registers none (a test silo): then there is no Auto. Resolved per turn,
+    // never held as per-run state (ADR 0106).
+    private readonly IUserModelRouterProvider? _modelRouterProvider;
+
     private readonly IUserMcpToolProvider _mcpToolProvider;
 
     private readonly IUserSkillProvider _userSkillProvider;
@@ -234,8 +238,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         IFleetLauncher fleet,
         ILogger<AgentGrain> logger,
         TimeProvider? timeProvider = null,
-        ClientToolTimeouts? clientToolTimeouts = null)
+        ClientToolTimeouts? clientToolTimeouts = null,
+        IUserModelRouterProvider? modelRouterProvider = null)
     {
+        _modelRouterProvider = modelRouterProvider;
         _state = state;
         _chatClientFactoryProvider = chatClientFactoryProvider;
         _mcpToolProvider = mcpToolProvider;
@@ -334,8 +340,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         return slash < 0 ? grainKey : grainKey[(slash + 1)..];
     }
 
-    public Task<string> GetSelectedModelAsync() => Task.FromResult(_modelId);
-
     public async Task BindAgentAsync(AgentBinding binding, bool ephemeral = false)
     {
         // Immutable once bound: a conversation keeps the first persona it was given, so a
@@ -344,6 +348,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         {
             return;
         }
+
+        // `auto` exists only on the chat wire (ADR 0137): an agent is pinned to a real model, and this persists binding.Model.
+        ThrowIfAuto(binding.Model);
 
         _state.State.AgentId = binding.AgentId;
         _state.State.AgentName = binding.Name;
@@ -579,36 +586,27 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s))",
             this.GetPrimaryKeyString(), message.Length, attachments?.Count ?? 0);
 
-        // No model configured (ADR 0019). The factory is resolved once per activation, so a user who added
-        // their FIRST provider after this grain activated still holds the empty factory here — re-resolve to
-        // pick it up without a reactivation. If a model is now available, rebind onto it (history preserved)
-        // and fall through to the normal turn; if still none, tell the user to configure one and stop —
-        // never running the no-op client.
-        if (string.IsNullOrEmpty(_modelId))
+        // No model configured (ADR 0019): see EnsureModelBoundAsync. A false result means still none, so tell the user and stop.
+        var (bound, requestedModel) = await EnsureModelBoundAsync(model);
+        if (!bound)
         {
-            _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId);
-            if (string.IsNullOrEmpty(_chatClientFactory.DefaultModelId))
-            {
-                yield return new AgentStreamEvent(
-                    AgentStreamEventType.TextDelta,
-                    // GitHub Copilot alone is not enough (ADR 0108): its models run only in Copilot agents.
-                    Text: "_No model provider is configured. Add one in Settings → model providers to "
-                        + "start chatting. GitHub Copilot needs an ordinary provider alongside it._\n\n");
-                yield return new AgentStreamEvent(AgentStreamEventType.Done);
-                yield break;
-            }
-
-            // Honour a model the request picked (the same save could have populated the picker), else the
-            // newly-resolved default. Null out `model` so the switch branch below doesn't repeat the rebuild.
-            await RebindModelAsync(string.IsNullOrWhiteSpace(model) ? _chatClientFactory.DefaultModelId : model);
-            model = null;
-
-            _logger.LogInformation(
-                "Agent grain {GrainKey} bound to model {Model} after a provider was configured",
-                this.GetPrimaryKeyString(), _modelId);
+            yield return new AgentStreamEvent(
+                AgentStreamEventType.TextDelta,
+                // GitHub Copilot alone is not enough (ADR 0108): its models run only in Copilot agents.
+                Text: "_No model provider is configured. Add one in Settings → model providers to "
+                    + "start chatting. GitHub Copilot needs an ordinary provider alongside it._\n\n");
+            yield return new AgentStreamEvent(AgentStreamEventType.Done);
+            yield break;
         }
 
-        await SwitchModelAsync(model);
+        model = requestedModel;
+
+        var routing = await ResolveTurnModelAsync(model, message, attachments, turn);
+        await SwitchModelAsync(routing.Model);
+        if (routing.Routed is { } routed)
+        {
+            yield return routed;
+        }
 
         // A copilot chat that cannot run this turn (no agent, or an incognito turn) is refused here, before anything
         // is written or sent: nothing is persisted and Copilot is never called. After the switch, so a switch onto a
@@ -1088,12 +1086,41 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             ? await GenerateFollowUpsAsync(message, reply.ToString())
             : null;
 
+    // No model configured (ADR 0019). The factory is resolved once per activation, so a user who added their FIRST provider after
+    // this grain activated still holds the empty factory here: re-resolve to pick it up without a reactivation. If a model is now
+    // available, rebind onto it (history preserved) and let the normal turn run; if still none the caller tells the user to
+    // configure one and stops, never running the no-op client. Returns whether a model is bound, and the model the switch below
+    // should still apply: null once a rebind happened (so it does not repeat the rebuild), else the request's own.
+    private async Task<(bool Bound, string? Model)> EnsureModelBoundAsync(string? model)
+    {
+        if (!string.IsNullOrEmpty(_modelId))
+        {
+            return (true, model);
+        }
+
+        _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId);
+        if (string.IsNullOrEmpty(_chatClientFactory.DefaultModelId))
+        {
+            return (false, model);
+        }
+
+        // Honour a model the request picked (the same save could have populated the picker), else the newly-resolved default.
+        // `auto` is a wire value, never a model (ADR 0137).
+        await RebindModelAsync(string.IsNullOrWhiteSpace(model) || AutoModelId.IsAuto(model) ? _chatClientFactory.DefaultModelId : model);
+
+        _logger.LogInformation(
+            "Agent grain {GrainKey} bound to model {Model} after a provider was configured",
+            this.GetPrimaryKeyString(), _modelId);
+        return (true, null);
+    }
+
     // Rehosts the existing conversation on a newly picked model: snapshot the session, rebuild the
     // agent against the new client, then restore the session so history carries over. A request that picked no
     // model, or the one already in use, is a no-op (the guard lives here to keep ChatCoreAsync under S3776).
     private async Task SwitchModelAsync(string? model)
     {
-        if (string.IsNullOrWhiteSpace(model) || model == _modelId)
+        // `auto` is a wire value, never a deployment (ADR 0137): ignore it here as the last line of defence.
+        if (string.IsNullOrWhiteSpace(model) || model == _modelId || AutoModelId.IsAuto(model))
         {
             return;
         }
@@ -1735,6 +1762,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // no-tools-downgrade strip (ADR 0013) so a rebind onto a no-tools model can't replay tool content.
     private async Task RebindModelAsync(string modelId)
     {
+        ThrowIfAuto(modelId);
         _modelId = modelId;
         _state.State.DeploymentName = modelId;
         await RebuildAgentPreservingSessionAsync(modelId);

@@ -216,7 +216,7 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
     }
 
     private static string FallbackProviderKey(IReadOnlyDictionary<string, Provider> providers)
-        => providers.FirstOrDefault(p => p.Value.Options.Kind != ProviderKind.GitHubCopilot).Key ?? providers.Keys.First();
+        => providers.FirstOrDefault(p => p.Value.Options.Kind is not (ProviderKind.GitHubCopilot or ProviderKind.DecisionModel)).Key ?? providers.Keys.First();
 
     // Maps a (possibly legacy, possibly stale) id onto a provider that actually exists.
     private (Provider Provider, string Model, string QualifiedId) Resolve(string? modelId)
@@ -297,9 +297,13 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         Func<string, IEmbeddingGenerator<string, Embedding<float>>>? embeddingGenerator = null,
         Func<string, ISpeechService>? speechService = null,
         CopilotProviderSettings? copilot = null,
-        Func<string, ISpeechTranscriptionService>? transcriptionService = null)
+        Func<string, ISpeechTranscriptionService>? transcriptionService = null,
+        DecisionProviderSettings? decision = null)
     {
         public ProviderOptions Options { get; } = options;
+
+        /// <summary>The router's coordinates (ADR 0137) for a DecisionModel provider, else null.</summary>
+        public DecisionProviderSettings? Decision { get; } = decision;
 
         /// <summary>
         /// How the Copilot runtime reaches this provider (the copilot agent kind), or null for one built without
@@ -549,6 +553,13 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
         /// </summary>
         public static Provider GitHubCopilot(ProviderOptions options, string token)
             => new(options, _ => CopilotOnlyChatClient.Instance, copilot: CopilotProviderSettings.GitHub(token));
+
+        /// <summary>
+        /// A Decision-1 router (ADR 0137): every model id gets <see cref="DecisionModelOnlyChatClient"/>, and the settings carry the
+        /// resource endpoint, key and deployment to the router. No image, embedding, speech or Copilot funcs.
+        /// </summary>
+        public static Provider DecisionModel(ProviderOptions options, DecisionProviderSettings settings)
+            => new(options, _ => DecisionModelOnlyChatClient.Instance, decision: settings);
     }
 
     /// <summary>

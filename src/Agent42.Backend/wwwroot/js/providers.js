@@ -1,6 +1,6 @@
 /* Agent 42 — model providers, per-user overlay (ADR 0018/0030/0038). Split out of app.js (ADR 0041). */
 
-import { addModelRowBtn, addProviderBtn, defaultModelSelect, githubSignInBtn, githubSignInNote, embeddingModelSelect, providerApiKeyInput, providerCancelBtn, providerDialog, providerDisplayNameInput, providerEndpointInput, providerError, providerForm, providerFormTitle, providerKeyInput, providerKindSelect, providerList, providerModelList, providerAnthropicNote, providerResponsesApi, profileTabs, providerResponsesField, speechModelSelect, transcriptionModelSelect } from "./dom.js";
+import { addModelRowBtn, addProviderBtn, defaultModelSelect, githubSignInBtn, githubSignInNote, embeddingModelSelect, providerApiKeyInput, providerCancelBtn, providerDialog, providerDisplayNameInput, providerEndpointInput, providerError, providerForm, providerFormTitle, providerKeyInput, providerKindSelect, providerList, providerModelList, providerAnthropicNote, providerDecisionNote, providerResponsesApi, profileTabs, providerResponsesField, speechModelSelect, transcriptionModelSelect } from "./dom.js";
 import { fillModelOptions, loadModels, modelsData, providerGroupLabel, selectModel } from "./models.js";
 import { enterPrefsDetail, openProfileDialog } from "./profile.js";
 
@@ -243,7 +243,9 @@ function renderProviders() {
     const github = provider.kind === GITHUB_COPILOT_KIND;
     sub.textContent = github
       ? "your GitHub account · Copilot agents only"
-      : `${provider.key} · ${provider.endpoint ?? ""}${provider.hasKey ? " · 🔑" : ""}`;
+      : provider.kind === DECISION_MODEL_KIND
+        ? `Auto router · ${provider.models?.[0]?.id ?? ""} · ${provider.endpoint ?? ""}${provider.hasKey ? " · 🔑" : ""}`
+        : `${provider.key} · ${provider.endpoint ?? ""}${provider.hasKey ? " · 🔑" : ""}`;
     sub.title = provider.endpoint ?? "";
     meta.append(name, sub);
 
@@ -292,6 +294,19 @@ export async function initGitHubSignInReturn() {
 
 const ANTHROPIC_ENDPOINT = "https://api.anthropic.com";
 
+// The Auto router provider (ADR 0137): ONE "model", the Decision-1 deployment name, with no capabilities and no hint. The list
+// shows only the id box, and a second row can't be added (the server refuses it too).
+const DECISION_MODEL_KIND = "DecisionModel";
+
+function syncModelListUi() {
+  const router = providerKindSelect.value === DECISION_MODEL_KIND;
+  providerModelList.classList.toggle("provider-models--router", router);
+  for (const id of providerModelList.querySelectorAll(".provider-model-row__id")) {
+    id.placeholder = router ? "Decision-1 deployment name" : "model id (e.g. llama3.1)";
+  }
+  addModelRowBtn.hidden = router && providerModelList.querySelector(".provider-model-row") !== null;
+}
+
 // The Responses-API toggle is Foundry-only (ADR 0014) — an OpenAI-compatible provider ignores it.
 // Anthropic (ADR 0103) pre-fills its API base, but only into an EMPTY endpoint: a value the user typed
 // (or a stored one being edited) is never overwritten.
@@ -299,6 +314,8 @@ function syncProviderKindUi() {
   const kind = providerKindSelect.value;
   providerResponsesField.hidden = kind !== "AzureOpenAI";
   providerAnthropicNote.hidden = kind !== "Anthropic";
+  providerDecisionNote.hidden = kind !== DECISION_MODEL_KIND;
+  syncModelListUi();
   if (kind === "Anthropic" && !providerEndpointInput.value.trim()) {
     providerEndpointInput.value = ANTHROPIC_ENDPOINT;
   }
@@ -321,6 +338,15 @@ function addModelRow(model) {
   display.className = "agent-form__input provider-model-row__display";
   display.placeholder = "display name (optional)";
   display.value = model?.displayName ?? "";
+
+  // The user's own "when to use this model" text, the first layer of what the Auto router is told about this model (ADR 0137).
+  // Not a capability, so it is read by class in collectModels, never positionally.
+  const hint = document.createElement("input");
+  hint.type = "text";
+  hint.className = "agent-form__input provider-model-row__hint";
+  hint.maxLength = 300;
+  hint.placeholder = "when to use (optional, helps Auto choose)";
+  hint.value = model?.hint ?? "";
 
   // Capabilities as a compact dropdown (a <details> disclosure) rather than four inline checkboxes, so a
   // model row stays short. Order is load-bearing: collectModels reads the .agent-form__checkbox inputs
@@ -378,8 +404,11 @@ function addModelRow(model) {
   remove.textContent = "×";
   remove.addEventListener("click", () => li.remove());
 
-  li.append(id, display, caps, remove);
+  remove.addEventListener("click", syncModelListUi);
+
+  li.append(id, display, caps, remove, hint);
   providerModelList.appendChild(li);
+  syncModelListUi();
 }
 
 function collectModels() {
@@ -402,6 +431,7 @@ function collectModels() {
       supportsSpeech: speech.checked,
       supportsReasoning: reasoning.checked,
       supportsTranscription: transcription.checked,
+      hint: row.querySelector(".provider-model-row__hint").value.trim() || null,
     });
   }
   return models;

@@ -277,4 +277,12 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(18)]
     public ChatOrigin? Origin { get; set; }
+
+    /// <summary>
+    /// True when the user picked Auto (ADR 0137): <see cref="DeploymentName"/> then holds the REAL model the router chose,
+    /// and this flag only makes the picker restore to Auto. Any explicit model choice clears it. Trailing <c>[Id(19)]</c>
+    /// defaulting to false, so old Cosmos state reads as false. Named <c>AutoModel</c>, not <c>ModelRouting</c> (Fleet's).
+    /// </summary>
+    [Id(19)]
+    public bool AutoModel { get; set; }
 }

@@ -69,6 +69,12 @@ public sealed partial class ChatTurnPipeline
             return "Back to your default model.";
         }
 
+        // Auto (ADR 0137) is accepted only while the user has a router; a stored `auto` for a user who lost it is ignored by the grain.
+        if (arguments.Equals(AutoModelId.Value, StringComparison.OrdinalIgnoreCase))
+        {
+            return await SetAutoModelAsync(work, route);
+        }
+
         if (await ModelsAsync(work.UserId) is not { } models)
         {
             return "Couldn't load your models right now. Try again in a moment.";
@@ -76,9 +82,7 @@ public sealed partial class ChatTurnPipeline
 
         if (arguments.Equals("list", StringComparison.OrdinalIgnoreCase))
         {
-            return models.Count == 0
-                ? "You have no models yet. Add a model provider in Agent42."
-                : "Models:\n" + string.Join('\n', models.Take(MaxListedItems).Select(m => $"• {m.Id}"));
+            return await ListModelsAsync(work.UserId, models);
         }
 
         var match = models.FirstOrDefault(m => string.Equals(m.Id, arguments, StringComparison.OrdinalIgnoreCase));
@@ -89,6 +93,43 @@ public sealed partial class ChatTurnPipeline
 
         await route.SetModelAsync(match.Id);
         return $"Model set to {match.Id}. Agent conversations keep their agent's model.";
+    }
+
+    private async Task<bool> HasRouterAsync(string userId)
+    {
+        try
+        {
+            return _routers is not null && await _routers.GetForUserAsync(userId) is not null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not resolve the model router for a chat command");
+            return false;
+        }
+    }
+
+    private async Task<string> SetAutoModelAsync(ChatTurnWork work, IChatRouteGrain route)
+    {
+        if (!await HasRouterAsync(work.UserId))
+        {
+            return "Auto isn't set up. Add a Decision-1 router provider in Agent42 first.";
+        }
+
+        await route.SetModelAsync(AutoModelId.Value);
+        return "Model set to Auto: each message picks one of your models. Agent conversations keep their agent's model.";
+    }
+
+    private async Task<string> ListModelsAsync(string userId, IReadOnlyList<ModelInfo> models)
+    {
+        var lines = models.Take(MaxListedItems).Select(m => $"• {m.Id}").ToList();
+        if (await HasRouterAsync(userId))
+        {
+            lines.Insert(0, $"• {AutoModelId.Value} (picks a model for each message)");
+        }
+
+        return lines.Count == 0
+            ? "You have no models yet. Add a model provider in Agent42."
+            : "Models:\n" + string.Join('\n', lines);
     }
 
     private async Task<string> AgentAsync(ChatTurnWork work, string arguments)

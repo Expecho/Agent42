@@ -16,7 +16,7 @@ import { applyModelAvailability } from "./models.js";
 import { applyStateSnapshot } from "./sharedstate.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, refreshConversations } from "./sidebar.js";
-import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, finishToolCalls, markStopped, renderMcpReauth, renderReasoning, renderSuggestions, replayToolCalls, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
+import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, finishToolCalls, markStopped, renderMcpReauth, renderReasoning, renderRouted, renderSuggestions, replayToolCalls, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
 
 export let streaming = false;
 // Stops live speech dictation. Reassigned via setStopSpeech() by wireSpeech() in speech.js when
@@ -275,6 +275,9 @@ export async function send(prompt, replay = null) {
           answer += chunk.text;
           setAgentMarkdown(agentMsg, answer, { caret: true });
           voice.onDelta(chunk.text); // speak the reply as it streams (ADR 0037); no-op when voice mode is off
+        } else if (chunk.type === "routed") {
+          // The Auto router picked the model for this turn (ADR 0137).
+          renderRouted(agentMsg, chunk.text);
         } else if (chunk.type === "error") {
           streamError = chunk.text || "The model returned an error.";
         } else if (chunk.type === "reasoning") {

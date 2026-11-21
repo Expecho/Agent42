@@ -107,6 +107,12 @@ public static partial class AgentApi
             return FleetUnavailable();
         }
 
+        // `auto` is a chat-picker value (ADR 0137): the dream runs on a real model.
+        if (AutoModelId.IsAuto(request.Model))
+        {
+            return FleetBadRequest(AutoModelRefusal.Message);
+        }
+
         var userId = http.GetUserId();
         var (settings, error) = await lessons.SetSettingsAsync(userId, request.Enabled, request.Model, ct);
         if (settings is null)
@@ -133,6 +139,11 @@ public static partial class AgentApi
         if (services.GetService<FleetLessonService>() is not { } lessons)
         {
             return FleetUnavailable();
+        }
+
+        if (AutoModelId.IsAuto(request?.Model))
+        {
+            return FleetBadRequest(AutoModelRefusal.Message);
         }
 
         var telemetry = RequestContext.Get(UserTelemetryContext.RequestContextKey) as UserTelemetryContext;

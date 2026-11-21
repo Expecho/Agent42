@@ -197,6 +197,7 @@ export const providerEndpointInput = document.getElementById("providerEndpoint")
 export const providerApiKeyInput = document.getElementById("providerApiKey");
 export const providerResponsesField = document.getElementById("providerResponsesField");
 export const providerAnthropicNote = document.getElementById("providerAnthropicNote");
+export const providerDecisionNote = document.getElementById("providerDecisionNote");
 export const providerResponsesApi = document.getElementById("providerResponsesApi");
 export const providerModelList = document.getElementById("providerModelList");
 export const addModelRowBtn = document.getElementById("addModelRowBtn");

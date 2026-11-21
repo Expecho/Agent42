@@ -62,6 +62,16 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
 
     private static string Task() => FakeChatClient.FleetTask("Write a haiku about lighthouses", new([FleetRunHarness.Plan("Sequential", "Writer")]));
 
+    // ADR 0137: a fleet task is pinned to a real model; `auto` is a chat-picker value.
+    [Fact]
+    public async Task AutoOutsideChat_FleetSubmit_IsRefused()
+    {
+        var response = await Send(HttpMethod.Post, "/api/fleet/tasks", "fleet-auto-user", new { task = Task(), model = "auto" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(AutoModelRefusal.Message, await response.Content.ReadAsStringAsync());
+    }
+
     private async Task<string> SubmitHeldAsync(string user)
     {
         var response = await Send(HttpMethod.Post, "/api/fleet/tasks", user, new { task = Task(), model = FleetRunHarness.ModelA });

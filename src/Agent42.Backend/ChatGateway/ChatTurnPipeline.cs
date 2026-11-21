@@ -58,6 +58,9 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
     private readonly Dictionary<string, Queue<ChatTurnWork>> _queues = new(StringComparer.Ordinal);
     private readonly Lock _queueGate = new();
 
+    // The Auto router port (ADR 0137): null when the host registers none, and then /model auto is refused.
+    private readonly IUserModelRouterProvider? _routers;
+
     public ChatTurnPipeline(
         IGrainFactory grains,
         InboundDeduper deduper,
@@ -70,8 +73,10 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
         TimeSpan? maxTurnWait = null,
         IAttachmentStore? attachments = null,
         DocumentIngestionService? ingestion = null,
-        IUserChatClientFactoryProvider? chatClients = null)
+        IUserChatClientFactoryProvider? chatClients = null,
+        IUserModelRouterProvider? routers = null)
     {
+        _routers = routers;
         _chatClients = chatClients;
         _maxTurnWait = maxTurnWait ?? DefaultMaxTurnWait;
         _attachments = attachments;

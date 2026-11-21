@@ -41,6 +41,12 @@ public static partial class AgentApi
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
+            // `auto` is a chat-picker value (ADR 0137): a stored agent pins a real model.
+            if (AutoModelId.IsAuto(request.Model))
+            {
+                return Results.Text(AutoModelRefusal.Message, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var result = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition("", request.Name, request.Description, request.Model, request.SystemPrompt,
                     default, default, request.Continuous, request.EnabledTools,
@@ -54,6 +60,11 @@ public static partial class AgentApi
         // the agent's API key (ADR 0022): the new raw key rides back ONCE, the old one stops working.
         app.MapPut("/api/agents/{id}", async (string id, AgentUpsertRequest request, IGrainFactory grains, HttpContext http) =>
         {
+            if (AutoModelId.IsAuto(request.Model))
+            {
+                return Results.Text(AutoModelRefusal.Message, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var result = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition(id, request.Name, request.Description, request.Model, request.SystemPrompt,
                     default, default, request.Continuous, request.EnabledTools,

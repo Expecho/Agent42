@@ -417,6 +417,20 @@ function appendToolIo(item, label, json) {
   item.appendChild(io);
 }
 
+// The Auto router's choice (ADR 0137): a small live-only label beside AGENT 42. Never part of the reply text, so copy, export
+// and regenerate are untouched, and a reload (which replays stored turns) shows none.
+export function renderRouted(msg, name) {
+  const meta = msg.querySelector(".msg__meta");
+  if (!meta || !name) return;
+  let label = meta.querySelector(".msg__routed");
+  if (!label) {
+    label = document.createElement("span");
+    label.className = "msg__routed";
+    meta.appendChild(label);
+  }
+  label.textContent = ` · auto → ${name}`;
+}
+
 export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheWriteTokens, costUsd, costStatus }) {
   if (inputTokens == null && outputTokens == null) return;
   const parts = [];

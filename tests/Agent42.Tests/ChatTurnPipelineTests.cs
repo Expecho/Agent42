@@ -196,6 +196,51 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         Assert.Equal(TestSiloConfigurator.NoVisionModel, await Agent(h, conversationId).GetSelectedModelAsync());
     }
 
+    // ADR 0137: /model auto is accepted only while the user has a router, and /model list offers it then.
+    [Fact]
+    public async Task Pipeline_Command_ModelAuto_AcceptedWithARouter_ListedToo()
+    {
+        var h = await PairedAsync(routers: new SingleUserModelRouterProvider(new FakeModelRouter()));
+
+        await h.Session.InjectAsync(Dm("/model auto"));
+        await h.Session.InjectAsync(Dm("/model list"));
+
+        await Until(() => h.Session.VisibleMessages().Count == 2);
+        var replies = h.Session.VisibleMessages();
+        Assert.StartsWith("Model set to Auto", replies[0]);
+        Assert.Contains("• auto", replies[1]);
+        Assert.Equal(AutoModelId.Value, (await Route(h).GetAsync()).ModelOverride);
+    }
+
+    [Fact]
+    public async Task Pipeline_Command_ModelAuto_RefusedWithoutARouter_NotListed()
+    {
+        var h = await PairedAsync();
+
+        await h.Session.InjectAsync(Dm("/model auto"));
+        await h.Session.InjectAsync(Dm("/model list"));
+
+        await Until(() => h.Session.VisibleMessages().Count == 2);
+        var replies = h.Session.VisibleMessages();
+        Assert.StartsWith("Auto isn't set up", replies[0]);
+        Assert.DoesNotContain("• auto", replies[1]);
+        Assert.Null((await Route(h).GetAsync()).ModelOverride);
+    }
+
+    // ADR 0137: a stored `auto` for a user who no longer has a router is ignored; the turn runs on the default model.
+    [Fact]
+    public async Task Pipeline_StaleAutoOverride_IsIgnoredWithoutARouter()
+    {
+        var h = await PairedAsync();
+        await Route(h).SetModelAsync(AutoModelId.Value);
+
+        await h.Session.InjectAsync(Dm("hi"));
+        await FinalReplyAsync(h, Reply);
+
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        Assert.Equal(TestSiloConfigurator.DefaultModel, await Agent(h, conversationId).GetSelectedModelAsync());
+    }
+
     // AC6 + AC7: /agent binds the NEXT conversation; a continued conversation is never re-bound.
     [Fact]
     public async Task Pipeline_Command_Agent_BindsTheNextConversationOnly()
@@ -532,7 +577,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
     private async Task<Harness> CreateAsync(
         string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null, TimeSpan? maxTurnWait = null,
-        bool voice = false, ISpeechTranscriptionService? transcriber = null)
+        bool voice = false, ISpeechTranscriptionService? transcriber = null, IUserModelRouterProvider? routers = null)
     {
         userId ??= "pipe-user-" + Guid.NewGuid().ToString("N");
         var store = Cluster.GrainFactory.GetGrain<IUserChatConnectionsGrain>(userId);
@@ -553,7 +598,8 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
                 new ModelInfo(TestSiloConfigurator.NoVisionModel, "fake", null, null, null, true, false),
             ])), maxTurnWait,
             SiloServices.GetRequiredService<IAttachmentStore>(), SiloServices.GetRequiredService<DocumentIngestionService>(),
-            new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(new FakeChatClient(), transcriber: transcriber)));
+            new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(new FakeChatClient(), transcriber: transcriber)),
+            routers);
         var runtime = new ChatConnectionRuntime(userId, connection, new ChatCredentials("token"), _ => Task.CompletedTask);
         var session = new FakeChatSession(runtime, pipeline);
         sessions.Set(connection.Id, session);
@@ -562,9 +608,9 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
     private async Task<Harness> PairedAsync(
         string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null, TimeSpan? maxTurnWait = null,
-        bool voice = false, ISpeechTranscriptionService? transcriber = null)
+        bool voice = false, ISpeechTranscriptionService? transcriber = null, IUserModelRouterProvider? routers = null)
     {
-        var h = await CreateAsync(targetAgentId, groups, callTimeout, userId, maxTurnWait, voice, transcriber);
+        var h = await CreateAsync(targetAgentId, groups, callTimeout, userId, maxTurnWait, voice, transcriber, routers);
         var code = (await Store(h).GetAsync(h.ConnectionId))!.PairingCode!;
         Assert.Equal(ChatPairingOutcome.Paired, await Store(h).TryPairAsync(h.ConnectionId, Owner, null, code, Now));
         return h;

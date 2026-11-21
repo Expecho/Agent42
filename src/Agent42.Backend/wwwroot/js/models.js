@@ -4,6 +4,10 @@ import { input, modelSelect, noModelHint } from "./dom.js";
 import { syncDefaultModelSelect, syncEmbeddingModelSelect, syncSpeechModelSelect, syncTranscriptionModelSelect } from "./providers.js";
 import { streaming } from "./send.js";
 
+// The reserved picker value for the Auto router (ADR 0137). It exists only on the wire and in the composer picker; the server
+// answers it with a real model, and it is offered only while /api/models says the user has a router (`auto: true`).
+export const AUTO_MODEL = "auto";
+
 export let defaultModel = null;
 export let modelsData = { models: [], default: null };
 // Live-queried from Azure AI Foundry: the deployments the agent can run on.
@@ -18,8 +22,12 @@ export async function loadModels({ pin = true } = {}) {
     modelsData = await res.json();
     defaultModel = modelsData.default ?? null;
 
-    fillModelOptions(modelSelect);
+    // The refill resets the select to its first option, which is Auto when the user has a router (ADR 0137). A refresh that must
+    // not retarget the open chat (pin:false) therefore puts the previous choice back, so it can never silently move onto Auto.
+    const kept = modelSelect.value;
+    fillModelOptions(modelSelect, { auto: true });
     if (pin && defaultModel) setModel(defaultModel);
+    else if (kept) setModel(kept);
     modelSelect.disabled = modelSelect.options.length === 0;
     applyModelAvailability();
     syncDefaultModelSelect();
@@ -47,6 +55,7 @@ export function applyModelAvailability() {
 // belongs to the default provider; conversations created before multi-provider hold those.
 export function modelLabel(id) {
   if (!id) return "";
+  if (id === AUTO_MODEL) return "Auto";
   const known = (modelsData.models ?? []).find((m) => m.id === id);
   if (known?.displayName) return known.displayName;
   const colon = id.indexOf(":");
@@ -63,8 +72,15 @@ export function providerGroupLabel(m) {
 // Fills a <select> with the available models, grouped by provider. Shared by the composer picker AND
 // the agent dialog — both get the grouping, and neither hand-rolls its own option list. GitHub Copilot models
 // (copilotOnly, ADR 0108) run only in Copilot agents, so they are left out unless the caller asks for them.
-export function fillModelOptions(select, { copilot = false } = {}) {
+export function fillModelOptions(select, { copilot = false, auto = false } = {}) {
   select.innerHTML = "";
+  if (auto && modelsData.auto) {
+    const opt = document.createElement("option");
+    opt.value = AUTO_MODEL;
+    opt.textContent = "Auto";
+    opt.title = "Picks one of your models for each message";
+    select.appendChild(opt);
+  }
   const groups = new Map();
   for (const m of modelsData.models ?? []) {
     if (m.copilotOnly && !copilot) continue;
@@ -90,6 +106,8 @@ export function fillModelOptions(select, { copilot = false } = {}) {
 // optgroups, it would render as their sibling and read as if it belonged to the last group.
 export function selectModel(select, id) {
   if (!id) return;
+  // A stale Auto (the router was removed, ADR 0137) must never become an "Unavailable" option: it is not a model.
+  if (id === AUTO_MODEL && ![...select.options].some((o) => o.value === id)) return;
   if (![...select.options].some((o) => o.value === id)) {
     // A Copilot agent's chat on a GitHub Copilot model (ADR 0108): the model exists, it is only left out of this
     // picker, so it is labelled with its provider rather than as unavailable.

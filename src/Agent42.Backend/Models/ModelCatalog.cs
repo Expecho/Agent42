@@ -39,10 +39,14 @@ public record ModelInfo(
     bool CopilotOnly = false,
     // Trailing default so existing constructions stay valid; true only for a declared transcription (speech-to-text)
     // model (ADR 0113). Surfaced on /api/models so the "default transcription model" selector can filter to it.
-    bool SupportsTranscription = false);
+    bool SupportsTranscription = false,
+    // Trailing default so existing constructions stay valid; the user's "when to use" text for the Auto router (ADR 0137).
+    string? Hint = null);
 
 /// <summary>The models the picker can choose from, plus the current default.</summary>
-public record ModelCatalogResult(string Default, IReadOnlyList<ModelInfo> Models);
+// Auto (ADR 0137): true only when the signed-in user has an enabled DecisionModel provider, so the picker offers an Auto entry.
+// Set by /api/models, never by a catalog; a trailing default so every existing construction stays valid.
+public record ModelCatalogResult(string Default, IReadOnlyList<ModelInfo> Models, bool Auto = false);
 
 /// <summary>Lists the models available to the agent.</summary>
 public interface IModelCatalog

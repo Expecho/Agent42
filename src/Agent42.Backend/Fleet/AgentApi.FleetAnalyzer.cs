@@ -46,6 +46,13 @@ public static partial class AgentApi
             return;
         }
 
+        // `auto` is a chat-picker value (ADR 0137): the analyzer is pinned to a real model, and the bind persists it.
+        if (AutoModelId.IsAuto(request.Model))
+        {
+            await FleetBadRequest(AutoModelRefusal.Message).ExecuteAsync(http);
+            return;
+        }
+
         if (await FleetAnalyzerModelRefusalAsync(services, userId, request.Model, http.RequestAborted) is { } refusal)
         {
             await FleetBadRequest(refusal).ExecuteAsync(http);

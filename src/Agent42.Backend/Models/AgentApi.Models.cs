@@ -11,8 +11,7 @@ public static partial class AgentApi
     {
         // The models available to the SIGNED-IN USER: their effective (baseline ⊕ overlay) provider set
         // (ADR 0018), so a provider they added shows up here without an app restart.
-        app.MapGet("/api/models", async (IUserModelCatalogProvider catalogs, HttpContext http, CancellationToken ct) =>
-            await (await catalogs.GetForUserAsync(http.GetUserId(), ct)).GetAsync(ct));
+        app.MapGet("/api/models", GetModelsAsync);
 
         // The signed-in user's OWN configured providers (their overlay — not the operator baseline).
         // Keys are MASKED to a hasKey flag: the ciphertext never leaves the server, and the plaintext
@@ -89,6 +88,12 @@ public static partial class AgentApi
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
+            // `auto` is a chat-picker value, never a default (ADR 0137): a default is a real model new chats start on.
+            if (AutoModelId.IsAuto(request.Default))
+            {
+                return Results.Text(AutoModelRefusal.Message, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
             await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).SetDefaultAsync(request.Default);
             return Results.NoContent();
         });
@@ -155,6 +160,17 @@ public static partial class AgentApi
         });
     }
 
+    // The signed-in user's catalog, plus whether they get an Auto entry. The Auto entry (ADR 0137) exists only for a user with an
+    // enabled DecisionModel provider; a host with no router port registered simply never offers it (optional resolution, ADR 0105).
+    private static async Task<ModelCatalogResult> GetModelsAsync(
+        IUserModelCatalogProvider catalogs, IServiceProvider services, HttpContext http, CancellationToken ct)
+    {
+        var userId = http.GetUserId();
+        var result = await (await catalogs.GetForUserAsync(userId, ct)).GetAsync(ct);
+        var router = services.GetService<IUserModelRouterProvider>();
+        return router is not null && await router.GetForUserAsync(userId, ct) is not null ? result with { Auto = true } : result;
+    }
+
     // A user provider must be self-contained (it does NOT inherit the operator AzureOpenAI:* config —
     // ADR 0018), so every kind requires an absolute http/https endpoint (an Anthropic provider too: the UI
     // pre-fills https://api.anthropic.com, one validation rule for all kinds, ADR 0103). localhost/private hosts are
@@ -197,6 +213,13 @@ public static partial class AgentApi
             return "A provider must declare at least one model.";
         }
 
+        // A Decision-1 router (ADR 0137) names its ONE deployment; a second "model" would be ambiguous.
+        if (kind.Equals(nameof(ProviderKind.DecisionModel), StringComparison.OrdinalIgnoreCase)
+            && (models.Count != 1 || string.IsNullOrWhiteSpace(models[0].Id)))
+        {
+            return "A DecisionModel provider must declare exactly one model: the Decision-1 deployment name.";
+        }
+
         return null;
     }
 
@@ -212,8 +235,19 @@ public static partial class AgentApi
             Models: [.. (request.Models ?? []).Select(m =>
                 new StoredModel(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision,
                     m.SupportsImageGeneration, m.SupportsEmbeddings, m.SupportsSpeech,
-                    m.SupportsReasoning, m.SupportsTranscription))],
+                    m.SupportsReasoning, m.SupportsTranscription, NormalizeHint(m.Hint)))],
             UseResponsesApi: request.UseResponsesApi);
+
+    /// <summary>Caps the router hint (ADR 0137) so a stored overlay can't grow without bound; blank becomes null.</summary>
+    internal const int MaxHintLength = 300;
+
+    internal static string? NormalizeHint(string? hint)
+    {
+        var trimmed = hint?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return null;
+        return trimmed.Length <= MaxHintLength ? trimmed : trimmed[..MaxHintLength];
+    }
 
     // Never returns the key — only whether one is stored (hasKey). The ciphertext stays server-side.
     private static ProviderResponse Mask(StoredProvider p) =>
@@ -223,6 +257,6 @@ public static partial class AgentApi
             Models: [.. p.Models.Select(m =>
                 new ProviderModelResponse(m.Id, m.DisplayName, m.SupportsTools, m.SupportsVision,
                     m.SupportsImageGeneration, m.SupportsEmbeddings, m.SupportsSpeech,
-                    m.SupportsReasoning, m.SupportsTranscription))],
+                    m.SupportsReasoning, m.SupportsTranscription, m.Hint))],
             p.UseResponsesApi);
 }

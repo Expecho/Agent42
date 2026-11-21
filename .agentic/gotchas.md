@@ -5135,3 +5135,43 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `EmptyReply_IsReportedAsAnError_AndNotStoredAsAnEmptyMessage`). The fake needs an update with NO contents but a message id
   (`FakeChatClient.EmptyReplyMarker`) to reach the empty-message state: zero updates stores nothing.
 - **Verified:** 2026-11-21
+
+### `auto` is a wire value: it is never persisted, and every entry that takes a model refuses it
+
+- **Claim:** The Auto picker value (ADR 0137) exists only on `ChatRequest.Model`. The chosen REAL model goes into
+  `AgentGrainState.DeploymentName`, plus the trailing bool `AutoModel` (not `ModelRouting`, which is Fleet's) so the picker restores
+  to Auto. `auto` reaching `SwitchModelAsync`/`BindAgentAsync` would persist it and make the conversation unopenable, and fork,
+  fleet and stored agents all read `DeploymentName`. So the grain ignores it in `SwitchModelAsync`, throws in `RebindModelAsync` and
+  `BindAgentAsync` (`ThrowIfAuto`), and every other endpoint that takes a model answers 400 (`AutoModelRefusal`): fleet submit,
+  analyzer, lessons settings and dream, stored-agent create and update, `PUT /api/default-model`. A new endpoint or grain method that
+  accepts a model id must do the same. A stale Auto (router removed) is answered by `GetSelectedModelAsync` with the real model, and
+  the grain forgets Auto when a client still sends it. Incognito turns, agent-pinned chats and a turn while another run is in flight
+  never route.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.ModelRouting.cs`, `src/Agent42.Backend/Models/Routing/AutoModelRefusal.cs`,
+  `tests/Agent42.Tests/ModelRouterGrainTests.cs` (`AutoOutsideChat_BindAgent_IsRefused_AndNothingIsPersisted`, `StaleAuto_*`),
+  `tests/Agent42.Tests/ProvidersApiTests.cs` (`AutoOutsideChat_*`)
+- **Verified:** 2026-11-21
+
+### A DecisionModel provider is not a chat model: it must stay out of every list, default and fallback
+
+- **Claim:** The `DecisionModel` kind (ADR 0137) is built into the provider set so `Resolve` finds it, but it contributes no declared
+  model (`[]`, the Copilot shape), is excluded from `NamesBuiltProvider` and `FallbackProviderKey`, and hands out
+  `DecisionModelOnlyChatClient`, which refuses. That last part is the guard: without it, a persisted id naming the router would take
+  `Resolve`'s fallback onto the default model (the stale-provider path). It requires an endpoint, a key and EXACTLY one declared model
+  (the deployment name), in both `ModelProviderBuilder` and `ValidateProvider`. The endpoint must be the Foundry resource ROOT: a
+  `/api/projects/<p>` URL answers 400 "Missing required query parameter: api-version", so `FoundryDecisionClient` cuts it back to its
+  origin. Tests that loop over `Enum.GetValues<ProviderKind>` see the new member.
+- **Evidence:** `src/Agent42.Backend/Models/ModelProviderBuilder.cs`, `src/Agent42.Backend/Models/DecisionModelOnlyChatClient.cs`,
+  `src/Agent42.Backend/Models/Routing/FoundryDecisionClient.cs`, `tests/Agent42.Tests/DecisionModelProviderTests.cs`
+- **Verified:** 2026-11-21
+
+### The Decision-1 router is not an `IChatClient`, so its tokens are outside the usage dashboard
+
+- **Claim:** The usage dashboard and the cost estimate count chat spans only (ADR 0110), and the router call is a plain HTTP POST,
+  so its tokens appear in neither. They are tagged on the current span as `agent42.router.input_tokens`. Do not add a price row you
+  cannot source. The response shape was captured from a real deployment, not the docs: `answers.<question>.probabilities.<key>`, and
+  a failure (timeout, non-2xx, bad JSON, unknown keys) returns null, so the turn keeps its model. The named client opts out of the
+  `AddServiceDefaults` retry pipeline (CLAUDE.md rule 8) and the call has a 4 s cap, so a retry never doubles a turn's wait.
+- **Evidence:** `src/Agent42.Backend/Models/Routing/FoundryDecisionClient.cs`, `src/Agent42.Agents/Models/Routing/ModelRouterService.cs`,
+  `tests/Agent42.Tests/DecisionModelProviderTests.cs` (`Parse_ReadsTheCapturedSample`)
+- **Verified:** 2026-11-21
