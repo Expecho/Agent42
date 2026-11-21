@@ -18,11 +18,42 @@ public sealed class ProbeImageGenerator : IImageGenerationService
     /// <summary>A ~256 KB PNG-signed blob: large enough that inlining it into the session is unmissable.</summary>
     public static readonly byte[] TextToImageBytes = BuildLargePng();
 
-    public Task<GeneratedImage> GenerateAsync(
+    private int _entered;
+
+    /// <summary>When set, <see cref="GenerateAsync"/> throws it (ADR 0138's failure test). Reset between tests by the fixture.</summary>
+    public Exception? Failure { get; set; }
+
+    /// <summary>When set, <see cref="GenerateAsync"/> waits on it first, so a test can hold an image run in flight.</summary>
+    public Task? Gate { get; set; }
+
+    /// <summary>How many generations have started, so a test can wait until one is parked on <see cref="Gate"/>.</summary>
+    public int Entered => Volatile.Read(ref _entered);
+
+    public void Reset()
+    {
+        Failure = null;
+        Gate = null;
+        Interlocked.Exchange(ref _entered, 0);
+    }
+
+    public async Task<GeneratedImage> GenerateAsync(
         string prompt, ImageInput? input, CancellationToken cancellationToken = default)
-        => Task.FromResult(input is null
+    {
+        Interlocked.Increment(ref _entered);
+        if (Gate is { } gate)
+        {
+            await gate;
+        }
+
+        if (Failure is { } failure)
+        {
+            throw failure;
+        }
+
+        return input is null
             ? new GeneratedImage(TextToImageBytes, "image/png")
-            : new GeneratedImage(input.Bytes, input.MediaType));
+            : new GeneratedImage(input.Bytes, input.MediaType);
+    }
 
     private static byte[] BuildLargePng()
     {

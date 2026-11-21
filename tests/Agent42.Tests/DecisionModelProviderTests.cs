@@ -267,4 +267,67 @@ public class DecisionModelProviderTests
         Assert.True(CatalogModelRouter.ToCandidate(new ModelInfo("github-copilot:c", "github-copilot", null, "c", null, true, false, CopilotOnly: true)).CopilotOnly);
         Assert.Equal("m", CatalogModelRouter.ToCandidate(new ModelInfo("p:m", "p", null, "m", null, false, false)).DisplayName);
     }
+
+    [Fact]
+    public void ToCandidate_ImageGenerationIsAnImageOptionAndOtherNonChatKindsStayOut()
+    {
+        var image = CatalogModelRouter.ToCandidate(new ModelInfo("p:i", "p", null, "i", null, false, false, SupportsImageGeneration: true));
+        Assert.True(image.IsImageGeneration);
+        Assert.False(image.IsChat);
+        Assert.False(CatalogModelRouter.ToCandidate(new ModelInfo("p:e", "p", null, "e", null, false, false, SupportsEmbeddings: true)).IsImageGeneration);
+        Assert.False(CatalogModelRouter.ToCandidate(new ModelInfo("p:a", "p", null, "a", null, true, true)).IsImageGeneration);
+        Assert.False(CatalogModelRouter.ToCandidate(
+            new ModelInfo("p:x", "p", null, "x", null, false, false, SupportsImageGeneration: true, SupportsSpeech: true)).IsImageGeneration);
+    }
+
+    private sealed class RecordingClient : IDecisionClient
+    {
+        public IReadOnlyDictionary<string, string>? Options;
+
+        public Task<IReadOnlyDictionary<string, double>?> ChooseAsync(
+            string state, IReadOnlyDictionary<string, string> options, CancellationToken cancellationToken = default)
+        {
+            Options = options;
+            return Task.FromResult<IReadOnlyDictionary<string, double>?>(null);
+        }
+    }
+
+    private sealed class FixedCatalog(IReadOnlyList<ModelInfo> models) : IUserModelCatalogProvider, IModelCatalog
+    {
+        public Task<IModelCatalog> GetForUserAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult<IModelCatalog>(this);
+
+        public Task<ModelCatalogResult> GetAsync(CancellationToken cancellationToken = default) => Task.FromResult(new ModelCatalogResult("p:a", models));
+    }
+
+    [Fact]
+    public async Task ToCandidate_ImageWithoutService_Dropped()
+    {
+        ModelInfo[] models =
+        [
+            new("p:a", "p", "A", "a", null, true, true),
+            new("p:b", "p", "B", "b", null, true, true),
+            new("img:ok", "img", "Maker", "ok", null, false, false, SupportsImageGeneration: true),
+            new("noimg:no", "noimg", "NoService", "no", null, false, false, SupportsImageGeneration: true),
+        ];
+        var client = new RecordingClient();
+        var router = new CatalogModelRouter(
+            "u", new FixedCatalog(models), client, NullLogger.Instance, canGenerateImage: m => m.Provider == "img");
+
+        await router.RouteAsync(new RouterTurn("draw a cat", false, false, "p:a"));
+
+        // Two chat models plus the one image model whose provider can generate; the other image model is never offered.
+        Assert.Equal(3, client.Options!.Count - 1);
+        Assert.Contains(client.Options.Values, v => v.StartsWith("Maker:"));
+        Assert.DoesNotContain(client.Options.Values, v => v.StartsWith("NoService"));
+    }
+
+    [Fact]
+    public void Choose_SendsImageAwareInstructions()
+    {
+        var options = new Dictionary<string, string> { ["m1"] = "x", ["none"] = "y" };
+        var json = System.Text.Json.JsonSerializer.Serialize(FoundryDecisionClient.BuildBody("Decision-1.1", "draw a cat", options));
+        Assert.Contains("create, draw, generate or edit a picture", json);
+        Assert.Contains("chat model that can see images", json);
+        Assert.Contains("\"m1\":\"x\"", json);
+    }
 }

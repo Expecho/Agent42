@@ -623,11 +623,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // no-vision model" gate must not fire here, and it runs a different API entirely
         // (IImageGenerationService, not the model's IChatClient). The no-op NoModelChatClient path never
         // reaches here: _modelId is non-empty by now (guarded above).
-        if (_chatClientFactory.GetCapabilities(_modelId).SupportsImageGeneration)
+        //
+        // The model is the router's one-off pick under Auto (ADR 0138), else the conversation's own image model.
+        var imageModel = ImageModelForTurn(routing);
+        if (imageModel is not null)
         {
             var webhookTurn = new WebhookTurn(
                 ChatTrigger(interactive), message, "", ImageCount: 1, ReplacesLastTurn: replacesLastTurn);
-            await foreach (var evt in GenerateImageTurnAsync(message, attachments, webhookTurn, turn))
+            await foreach (var evt in GenerateImageTurnAsync(message, attachments, webhookTurn, turn, imageModel, routing.ImageModel is not null))
             {
                 yield return evt;
             }

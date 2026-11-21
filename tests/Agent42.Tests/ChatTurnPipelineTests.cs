@@ -241,6 +241,34 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         Assert.Equal(TestSiloConfigurator.DefaultModel, await Agent(h, conversationId).GetSelectedModelAsync());
     }
 
+    // ADR 0138: an Auto turn the router sends to an image model reaches a chat app as an uploaded picture, with no gateway change.
+    [Fact]
+    public async Task Pipeline_AutoImageTurn_DeliversTheImage()
+    {
+        foreach (var silo in Cluster.Silos)
+        {
+            Cluster.GetSiloServiceProvider(silo.SiloAddress).GetRequiredService<FakeModelRouterProvider>().Router = new FakeModelRouter
+            {
+                Decision = new RouterDecision(TestSiloConfigurator.ImageModel, "Picture maker", true, ImageGeneration: true),
+            };
+        }
+
+        var h = await PairedAsync();
+        await Route(h).SetModelAsync(AutoModelId.Value);
+
+        await h.Session.InjectAsync(Dm("draw me a cat"));
+
+        await Until(() => h.Session.Sent.Any(s => s.Op == "image"));
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        // The conversation itself stays on its chat model.
+        foreach (var silo in Cluster.Silos)
+        {
+            Cluster.GetSiloServiceProvider(silo.SiloAddress).GetRequiredService<FakeModelRouterProvider>().Router = null;
+        }
+
+        Assert.Equal(TestSiloConfigurator.DefaultModel, await Agent(h, conversationId).GetSelectedModelAsync());
+    }
+
     // AC6 + AC7: /agent binds the NEXT conversation; a continued conversation is never re-bound.
     [Fact]
     public async Task Pipeline_Command_Agent_BindsTheNextConversationOnly()

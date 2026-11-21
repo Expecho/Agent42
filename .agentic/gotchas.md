@@ -5154,6 +5154,24 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `tests/Agent42.Tests/ProvidersApiTests.cs` (`AutoOutsideChat_*`)
 - **Verified:** 2026-11-21
 
+### An Auto picture turn never switches the conversation's model, and an image model is never the "current" model
+
+- **Claim:** When the router picks an image model (ADR 0138), the turn runs on a per-turn image model id (`TurnModel.ImageModel`,
+  `ImageModelForTurn`) and `SwitchModelAsync` is skipped, so `_modelId`, `_agent`, `DeploymentName` and `AutoModel` stay as they were.
+  Switching, as a hand pick does, would flip the chat model and send the next text message to the image endpoint. Three consequences to
+  keep: (1) `RouterTurn.CurrentModelId` is `null` when `_modelId` is an image model, so the router's sticky rule never "keeps" a picture
+  endpoint for a text turn, and an Auto turn that does not route on such a conversation falls back to the default chat model
+  (`UnroutedAuto`), except a turn skipped for another run in flight, which cannot switch (ADR 0106). (2) An image candidate needs
+  `ImageMinProbability` AND to be the largest answer, and when only image models survive the capability filter (however many) no call is made and nothing is routed. (3) The Auto edit input
+  is this turn's attachment, else the picture the IMMEDIATELY preceding turn made (read by the `assistantImageId` KEY), never "most recent
+  image anywhere", which stays the by-hand rule (ADR 0020). `ChatTurnAsync` sits at the S3776 limit: keep the decision in
+  `ImageModelForTurn`, not an inline `??` or ternary.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.ModelRouting.cs` (`ApplyDecisionAsync`, `UnroutedAuto`, `ImageModelForTurn`),
+  `src/Agent42.Agents/Models/Routing/ModelRouterService.cs` (`DecideImage`, `DecideChat`), `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`
+  (`ImageInputRef`), `tests/Agent42.Tests/ModelRouterGrainTests.cs` (`AutoImageTurn_*`, `AutoFromAnImageModel_*`),
+  `tests/Agent42.Tests/ModelRouterServiceTests.cs` (`ImageBar_*`)
+- **Verified:** 2026-11-21
+
 ### A DecisionModel provider is not a chat model: it must stay out of every list, default and fallback
 
 - **Claim:** The `DecisionModel` kind (ADR 0137) is built into the provider set so `Resolve` finds it, but it contributes no declared

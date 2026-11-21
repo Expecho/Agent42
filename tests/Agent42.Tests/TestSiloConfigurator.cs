@@ -67,7 +67,9 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
             // The image generator (ADR 0020) the ImageModel resolves to: echoes the edit input back and
             // returns a large recognizable PNG for text-to-image, so a test can tell the branches apart and
             // prove the bytes never enter the session.
-            services.AddSingleton<IImageGenerationService, ProbeImageGenerator>();
+            // Registered as its concrete type too, so a test can fail or hold it on each silo (ADR 0138).
+            services.AddSingleton<ProbeImageGenerator>();
+            services.AddSingleton<IImageGenerationService>(sp => sp.GetRequiredService<ProbeImageGenerator>());
             services.AddSingleton<IChatClientFactory>(sp =>
                 new SingleChatClientFactory(
                     sp.GetRequiredService<IChatClient>(),

@@ -29,7 +29,8 @@ public sealed partial class AgentGrain
     // storage, and record a user+assistant turn into the session so it renders in history and drives later
     // edits. Bytes go to blob storage only; the session holds a short UriContent reference + the id (ADR 0004).
     private async IAsyncEnumerable<AgentStreamEvent> GenerateImageTurnAsync(
-        string message, IReadOnlyList<AttachmentRef>? attachments, WebhookTurn webhookTurn, TurnContext turn)
+        string message, IReadOnlyList<AttachmentRef>? attachments, WebhookTurn webhookTurn, TurnContext turn,
+        string imageModelId, bool autoRouted)
     {
         var ownerKey = this.GetPrimaryKeyString();
 
@@ -37,12 +38,12 @@ public sealed partial class AgentGrain
         // image generation, and every wired factory returns a generator in that case — but guard rather than
         // `!`-deref, so a misconfigured factory (a test/DevHost declaring the capability without injecting a
         // generator) yields a clear notice instead of an NRE mid-turn (critic Minor-2).
-        var generator = _chatClientFactory.GetImageGenerationService(_modelId);
+        var generator = _chatClientFactory.GetImageGenerationService(imageModelId);
         if (generator is null)
         {
             _logger.LogError(
                 "Agent grain {GrainKey}: model {Model} reports image generation but no generator was resolved",
-                this.GetPrimaryKeyString(), _modelId);
+                this.GetPrimaryKeyString(), imageModelId);
             yield return new AgentStreamEvent(
                 AgentStreamEventType.TextDelta, Text: "_Image generation is unavailable for the selected model._\n\n");
             yield return new AgentStreamEvent(AgentStreamEventType.Done);
@@ -52,9 +53,7 @@ public sealed partial class AgentGrain
         // Input image: this turn's attachment wins; else the most recent image already in the conversation
         // (user-uploaded or previously generated); else none (text-to-image). Bytes are read fresh from the
         // owner-scoped store — never from a session URL.
-        var inputRef = attachments?.FirstOrDefault(
-                a => a.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-            ?? FindMostRecentImageRef();
+        var inputRef = ImageInputRef(attachments, autoRouted);
         ImageInput? input = null;
         if (inputRef is not null)
         {
@@ -155,6 +154,18 @@ public sealed partial class AgentGrain
             AgentStreamEventType.Image, AttachmentId: reference.Id, MediaType: reference.MediaType);
         yield return new AgentStreamEvent(AgentStreamEventType.Done);
     }
+
+    // The input image of an image turn. This turn's attachment always wins. After that a picture the user picked by hand edits the
+    // most recent image anywhere in the conversation (ADR 0020), while an Auto-routed one (ADR 0138) edits only the picture the
+    // IMMEDIATELY preceding turn made, so "draw a dog" can never silently become an edit of an old photo and old photos are not
+    // sent to an image provider the user did not pick for this chat. A missing ref (pruned) means no input.
+    private AttachmentRef? ImageInputRef(IReadOnlyList<AttachmentRef>? attachments, bool autoRouted)
+        => attachments?.FirstOrDefault(IsImage) ?? (autoRouted ? PreviousTurnImageRef() : FindMostRecentImageRef());
+
+    private AttachmentRef? PreviousTurnImageRef()
+        => LastSessionMessage() is { } last && last.Role == ChatRole.Assistant && AssistantImageRef(last) is { } generated
+            ? generated
+            : null;
 
     // Records a user + assistant(image) turn into the session via the one-shot ImageGenerationChatClient
     // adapter, then stamps the assistant message with its assistantImageId. AF 1.13 has no

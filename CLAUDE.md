@@ -4,7 +4,7 @@
 > Agent Framework agents on Azure OpenAI, with a static web UI, deployed to Azure Container Apps.
 
 **Stack:** .NET 10 · Orleans 10.3 (grains; Cosmos or Postgres persistence + reminders, `Storage:Provider`) · Microsoft Agent
-Framework 1.25 · ASP.NET Core minimal APIs · Aspire 13.5 (local orchestration) · vanilla-JS
+Framework 1.25 · ASP.NET Core minimal APIs · Aspire 13.6 (local orchestration) · vanilla-JS
 frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 
 ## Commands
@@ -177,7 +177,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Core: grain per conversation, auth, persona snapshot, blob attachments, profile | 0001, 0002, 0003, 0004, 0005 |
 | Telemetry, `/logs` console, usage dashboard + estimated cost (checked-in price table), Orleans dashboard, App Insights export | 0009, 0010, 0031, 0054, 0062, 0077, 0104, 0110 |
 | Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out; **invite-only sign-in (assignment required + B2B guests, no `allowedPrincipals`) + the advisory owner tier** (`Access:Owners`, `OwnerGate`, own-data-only usage, non-owner telemetry redaction) | 0074, 0090, 0121 |
-| Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens), GitHub Copilot kind (Sign in with GitHub, copilot-agents-only models), Auto model (a per-user Decision-1 router kind, sticky per-turn routing, reserved `auto` value) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104, 0108, 0137 |
+| Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens), GitHub Copilot kind (Sign in with GitHub, copilot-agents-only models), Auto model (a per-user Decision-1 router kind, sticky per-turn routing, reserved `auto` value; picture requests route to an image model as a one-off turn) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104, 0108, 0137, 0138 |
 | Image generation, speech (STT/TTS/voice loop), server-side transcription model (chat voice notes), reasoning output (+ summary fallback, visible empty replies) | 0006, 0020, 0037, 0038, 0071, 0113, 0136 |
 | Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces), fleet workspace documents | 0007, 0008, 0030, 0066, 0098, 0101 |
 | Web search (SearXNG sidecar, engines, proxied UI); no page fetch (removed, 0125) | 0011, 0059, 0060, 0125 |
