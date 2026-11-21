@@ -5138,7 +5138,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 
 ### `auto` is a wire value: it is never persisted, and every entry that takes a model refuses it
 
-- **Claim:** The Auto picker value (ADR 0137) exists only on `ChatRequest.Model`. The chosen REAL model goes into
+- **Claim:** The Auto picker value (ADR 0137) arrives on `ChatRequest.Model` and is returned by `GetSelectedModelAsync` while the router exists. The chosen REAL model goes into
   `AgentGrainState.DeploymentName`, plus the trailing bool `AutoModel` (not `ModelRouting`, which is Fleet's) so the picker restores
   to Auto. `auto` reaching `SwitchModelAsync`/`BindAgentAsync` would persist it and make the conversation unopenable, and fork,
   fleet and stored agents all read `DeploymentName`. So the grain ignores it in `SwitchModelAsync`, throws in `RebindModelAsync` and
@@ -5159,8 +5159,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Claim:** The `DecisionModel` kind (ADR 0137) is built into the provider set so `Resolve` finds it, but it contributes no declared
   model (`[]`, the Copilot shape), is excluded from `NamesBuiltProvider` and `FallbackProviderKey`, and hands out
   `DecisionModelOnlyChatClient`, which refuses. That last part is the guard: without it, a persisted id naming the router would take
-  `Resolve`'s fallback onto the default model (the stale-provider path). It requires an endpoint, a key and EXACTLY one declared model
-  (the deployment name), in both `ModelProviderBuilder` and `ValidateProvider`. The endpoint must be the Foundry resource ROOT: a
+  `Resolve`'s fallback onto the default model (the stale-provider path). It requires an endpoint and EXACTLY one declared model (the deployment name) in both `ModelProviderBuilder` and `ValidateProvider`. A keyless router is SKIPPED by the builder (`ProviderBuildStatus.Skipped`, so there is no router), and `ValidateProvider` does not require a key. The endpoint must be the Foundry resource ROOT: a
   `/api/projects/<p>` URL answers 400 "Missing required query parameter: api-version", so `FoundryDecisionClient` cuts it back to its
   origin. Tests that loop over `Enum.GetValues<ProviderKind>` see the new member.
 - **Evidence:** `src/Agent42.Backend/Models/ModelProviderBuilder.cs`, `src/Agent42.Backend/Models/DecisionModelOnlyChatClient.cs`,
