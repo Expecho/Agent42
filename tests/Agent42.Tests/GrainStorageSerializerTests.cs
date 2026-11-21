@@ -1000,7 +1000,7 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Empty(provider.Models);
     }
 
-    // ADR 0137: StoredModel.Hint ([Id(9)]) and AgentGrainState.AutoModel ([Id(19)]) round-trip on the Cosmos JSON path,
+    // ADR 0137: StoredModel.Hint ([Id(9)]) and AgentGrainState.AutoModel ([Id(20)]) round-trip on the Cosmos JSON path,
     // and a document written before they existed reads back null/false (no migration).
     [Fact]
     public void RouterFields_RoundTripThroughCosmosJson()
