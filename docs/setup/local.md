@@ -20,7 +20,7 @@ and no key, so the chat composer stays disabled until you add one.
 
 - **Git**, and a clone of the repo.
 - **.NET 11 SDK** for A and B. Check with `dotnet --version`.
-- **Docker** (Desktop, Engine or Podman with a compatible CLI) for B and C.
+- **Docker** (Desktop, Engine or Podman with a compatible CLI) for B and C. The full stack (B) also needs the **Aspire CLI 17+** (`aspire update --self`): the AppHost no longer uses the Aspire SDK, so DCP and the dashboard come from the CLI bundle.
 - Nothing else: no Node, no build step. The frontend is plain ES modules served from `src/Agent42.Backend/wwwroot/`.
 
 ```bash

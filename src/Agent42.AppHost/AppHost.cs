@@ -45,7 +45,7 @@ var searxng = builder.AddDockerfile("searxng", "../../infra/searxng")
 // only reduces a redirect Location to a root-relative path when its authority is one it recognises.
 searxng.WithEnvironment("SEARXNG_BASE_URL", ReferenceExpression.Create($"{searxng.GetEndpoint("http")}/searxng/"));
 
-builder.AddProject<Projects.Agent42_Backend>("backend")
+builder.AddDotnetProject("backend", "../Agent42.Backend/Agent42.Backend.csproj")
     .WithReference(orleans)
     .WithReference(cosmos)
     .WithReference(blobs)

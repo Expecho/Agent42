@@ -5205,3 +5205,16 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   Also: Anthropic SDK 13 sends `ApiKey` as `Authorization: Bearer`, not `x-api-key` (`AnthropicEnvironmentTests` pins it).
 - **Evidence:** `Directory.Build.props`, `tests/Agent42.Tests/AnthropicEnvironmentTests.cs`
 - **Verified:** 2026-11-21
+
+### The Aspire AppHost has no SDK: keep `Aspire.Hosting.AppHost` a direct reference, and it needs the Aspire CLI 17+
+
+- **Claim:** `src/Agent42.AppHost` uses `Microsoft.NET.Sdk` (the `Aspire.AppHost.Sdk` is obsolete, ASPIRE012), so nothing is
+  implicit any more. `Aspire.Hosting.AppHost` must stay a **direct** PackageReference: NuGet does not import a transitive
+  package's `build/` targets, and without them the `apphostprojectpath` assembly metadata is missing, so `AddDotnetProject`
+  resolves its relative path against the **working directory** and reports Backend "not found". The `<Using>` items replace the
+  SDK's implicit usings. There is no `ProjectReference` to Backend; `AddDotnetProject` builds it itself (a
+  `__dotnet-project-build` resource). DCP and the dashboard now come from the **global Aspire CLI bundle**, so a CLI older than
+  the packages (or none) breaks `dotnet run --project src/Agent42.AppHost`. A DCP "controller host" timeout of 2 minutes is
+  usually `~\.dcp` state with the wrong owner: move that folder aside.
+- **Evidence:** `src/Agent42.AppHost/Agent42.AppHost.csproj`, `src/Agent42.AppHost/AppHost.cs`
+- **Verified:** 2026-11-21

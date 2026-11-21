@@ -13,7 +13,7 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 |------|---------|
 | Install | `dotnet restore Agent42.slnx` |
 | Run dev (offline) | `dotnet run --project tools/Agent42.DevHost` — canned LLM, in-memory grains; UI at http://localhost:61326 |
-| Run full stack | `dotnet run --project src/Agent42.AppHost` — Aspire + Cosmos emulator (needs Docker) |
+| Run full stack | `dotnet run --project src/Agent42.AppHost` — Aspire + Cosmos emulator (needs Docker and Aspire CLI 17+) |
 | Self-host (no Azure) | `docker compose up -d` after `cp .env.example .env` (pulls the published images, ADR 0130; `-f compose.yaml -f compose.build.yaml up -d --build` builds from source) — Postgres + a volume, UI at http://localhost:8080, no auth (ADR 0127) |
 | Test | `dotnet test Agent42.slnx` |
 | Lint | `dotnet format Agent42.slnx --verify-no-changes` |
