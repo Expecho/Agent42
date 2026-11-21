@@ -3,8 +3,8 @@
 > Personal AI chat agent ("Agent 42"): Orleans-hosted conversations wrapping Microsoft
 > Agent Framework agents on Azure OpenAI, with a static web UI, deployed to Azure Container Apps.
 
-**Stack:** .NET 10 · Orleans 10.3 (grains; Cosmos or Postgres persistence + reminders, `Storage:Provider`) · Microsoft Agent
-Framework 1.25 · ASP.NET Core minimal APIs · Aspire 13.6 (local orchestration) · vanilla-JS
+**Stack:** .NET 11 · Orleans 10.4 (grains; Cosmos or Postgres persistence + reminders, `Storage:Provider`) · Microsoft Agent
+Framework 1.28 · ASP.NET Core minimal APIs · Aspire 17.0 (local orchestration) · vanilla-JS
 frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 
 ## Commands

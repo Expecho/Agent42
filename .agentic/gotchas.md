@@ -5194,3 +5194,14 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Models/Routing/FoundryDecisionClient.cs`, `src/Agent42.Agents/Models/Routing/ModelRouterService.cs`,
   `tests/Agent42.Tests/DecisionModelProviderTests.cs` (`Parse_ReadsTheCapturedSample`)
 - **Verified:** 2026-11-21
+
+
+### .NET SDK 11 Debug builds of two chained Web projects fail on a Hot Reload browser-tools asset
+
+- **Claim:** On SDK 11.0.100 a Debug build of a Web project adds Hot Reload browser-tools assets, and `tools/Agent42.DevHost`
+  (references `Agent42.Backend`, both Web SDK) failed with "scoped css bundles do not have matching endpoints"; Release built fine.
+  `Directory.Build.props` sets `EnableHotReloadInRuntimeConfigDevFile=false` for every project. Set the public property, never
+  `_HotReloadBrowserToolsEnabled`: the SDK overwrites that underscore one unconditionally. Delete `obj/Debug` after changing it.
+  Also: Anthropic SDK 13 sends `ApiKey` as `Authorization: Bearer`, not `x-api-key` (`AnthropicEnvironmentTests` pins it).
+- **Evidence:** `Directory.Build.props`, `tests/Agent42.Tests/AnthropicEnvironmentTests.cs`
+- **Verified:** 2026-11-21

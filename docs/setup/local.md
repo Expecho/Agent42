@@ -7,7 +7,7 @@ and no key, so the chat composer stays disabled until you add one.
 | | [A. Offline dev host](#a-offline-dev-host) | [B. Full stack (Aspire)](#b-full-stack-with-aspire) | [C. Docker Compose](#c-docker-compose-self-host) |
 |---|---|---|---|
 | For | Hacking on the UI and API | Developing the backend against real stores | Actually using it day to day |
-| Needs | .NET 10 SDK | .NET 10 SDK + Docker | Docker only |
+| Needs | .NET 11 SDK | .NET 11 SDK + Docker | Docker only |
 | Model | A canned reply generator (no real model) | Your own providers | Your own providers |
 | Storage | In memory (lost on restart) | Cosmos DB emulator + Azurite | Postgres + a volume (kept) |
 | Sign-in | None (user `local-dev`) | None (user `local-dev`) | None (user `local-dev`) |
@@ -19,9 +19,7 @@ and no key, so the chat composer stays disabled until you add one.
 ## Prerequisites
 
 - **Git**, and a clone of the repo.
-- **.NET 10 SDK** for A and B. Check with `dotnet --version`. A newer preview SDK (for example 11) can fail to build
-  `tools/Agent42.DevHost` with a "scoped css bundles do not have matching endpoints" error; install .NET 10 and make
-  sure `dotnet --version` reports it in the repo folder.
+- **.NET 11 SDK** for A and B. Check with `dotnet --version`.
 - **Docker** (Desktop, Engine or Podman with a compatible CLI) for B and C.
 - Nothing else: no Node, no build step. The frontend is plain ES modules served from `src/Agent42.Backend/wwwroot/`.
 
@@ -172,7 +170,6 @@ dotnet format Agent42.slnx --verify-no-changes
 | `app` restarts, logs mention Postgres | The password in `.env` changed after the volume was created. Reset the password in Postgres, or `docker compose down -v` to start fresh (deletes data). |
 | Web search returns nothing | `searxng` is not running (`docker compose logs searxng`) or `SEARXNG_SECRET` is empty. |
 | GitHub sign-in redirects to the wrong place | Browse at `localhost`, not `127.0.0.1`, and register the same callback URL. |
-| `dotnet build` fails in `Agent42.DevHost` with a scoped css error | A newer preview SDK is in use. Use .NET 10. |
 | `/dashboard` or `/logs` answer 404 | `local-dev` is not an owner. Set `Access__Owners__0=local-dev` (compose and the AppHost do this for you). |
 | Port 8080 or 61326 already in use | Stop the other process, or change the port mapping in `compose.yaml` / `launchSettings.json`. |
 

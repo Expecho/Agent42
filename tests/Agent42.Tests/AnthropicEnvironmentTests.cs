@@ -30,8 +30,9 @@ public class AnthropicEnvironmentTests
             }
 
             var call = Assert.Single(handler.Recorded);
-            Assert.Equal("stored-key", call.Headers!["x-api-key"]);
-            Assert.Null(call.Authorization);
+            // Anthropic SDK 13 sends ApiKey as `Authorization: Bearer` (its ClientOptions.ApiKey docs), not `x-api-key`.
+            Assert.Equal("Bearer stored-key", call.Authorization);
+            Assert.False(call.Headers!.ContainsKey("x-api-key"));
             Assert.StartsWith("https://anthropic.stub/", call.Url, StringComparison.Ordinal);
         }
         finally

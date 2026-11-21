@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- .NET SDK 11.0.100: Debug builds of a Web project add Hot Reload browser-tools assets, and a Web project that
+         references another one (DevHost -> Backend) fails with "scoped css bundles do not have matching endpoints".
+         Off for every project; the browser-refresh script this drops is not used here. -->
+    <EnableHotReloadInRuntimeConfigDevFile>false</EnableHotReloadInRuntimeConfigDevFile>
+  </PropertyGroup>
+</Project>

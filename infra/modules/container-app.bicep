@@ -143,7 +143,7 @@ param signalEnvironmentStorageName string
 param signalEnabled bool = false
 
 // The image runs as $APP_UID (src/Agent42.Backend/Dockerfile), 1654 in the aspnet base image (measured with
-// `docker run --rm mcr.microsoft.com/dotnet/aspnet:10.0 id app`), while an SMB mount is root-owned by default: without
+// `docker run --rm mcr.microsoft.com/dotnet/aspnet:11.0 id app`), while an SMB mount is root-owned by default: without
 // these options the app could not write to its own share. SMB has no chmod and no symlinks, so the modes are fixed.
 var copilotWorkspaceMountOptions = 'uid=1654,gid=1654,dir_mode=0700,file_mode=0600'
 
