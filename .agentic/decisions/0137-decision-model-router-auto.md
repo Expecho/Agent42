@@ -58,4 +58,4 @@ they don't want used. The endpoint comes from the stored provider, never a reque
   spans); token usage is logged on an `Activity`. List price seen: $0.042 per 1M input tokens, informational.
 - A model switch breaks prompt-prefix caching for that turn; stickiness is the mitigation, no hit rate is claimed.
 - The Android NDJSON golden file gains the `Routed` event (ADR 0114); its parser already maps unknown types to `UNKNOWN`.
-- Deploying `Microsoft-Decision-1.1` is a manual prerequisite handed to the user. Spec: `.agentic/specs/plan-decision-model-router.md`.
+- Deploying `Microsoft-Decision-1.1` is a manual prerequisite handed to the user. Spec: `.agentic/specs/completed/plan-decision-model-router.md`.
