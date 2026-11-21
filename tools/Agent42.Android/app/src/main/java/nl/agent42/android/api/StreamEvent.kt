@@ -57,6 +57,7 @@ enum class StreamEventType(val wire: String) {
     TEXT_RESET("textReset"),
     STATE_SNAPSHOT("stateSnapshot"),
     MCP_ELICITATION("mcpElicitation"),
+    ERROR("error"),
     ROUTED("routed"),
     UNKNOWN("");
 

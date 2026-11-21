@@ -51,9 +51,10 @@ object ChatReducer {
         StreamEventType.TODOS -> turn.copy(todos = event.todos.orEmpty())
         StreamEventType.MCP_REAUTH_REQUIRED -> turn.copy(reauthServer = event.text ?: event.mcpServerId)
         StreamEventType.DONE -> turn.copy(complete = true, stopped = event.stopped == true)
-        // Shared state, MCP elicitation, the Auto router's routed label (ADR 0137: the app has no Auto picker yet) and anything
+        // Shared state, MCP elicitation, a provider error event (ADR 0136: the web UI shows it, the app has no surface for it yet),
+        // the Auto router's routed label (ADR 0137: the app has no Auto picker yet) and anything
         // newer than this build have no surface in the app.
-        StreamEventType.STATE_SNAPSHOT, StreamEventType.MCP_ELICITATION, StreamEventType.ROUTED, StreamEventType.UNKNOWN -> turn
+        StreamEventType.STATE_SNAPSHOT, StreamEventType.MCP_ELICITATION, StreamEventType.ERROR, StreamEventType.ROUTED, StreamEventType.UNKNOWN -> turn
     }
 
     private fun startTool(turn: UiTurn, event: StreamEvent): UiTurn {
