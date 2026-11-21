@@ -6,7 +6,7 @@ ARG SIGNAL_CLI_VERSION=0.14.9
 ARG SIGNAL_CLI_SHA256=c32b87f587198cbd277c9d71228716ee6047ee2b63e8e88728e8280d9407d65a
 ARG SIGNAL_CLI_RELEASED=2026-10-07
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
 # Central Package Management: all versions live in Directory.Packages.props at the
@@ -44,7 +44,7 @@ RUN echo "${SIGNAL_CLI_SHA256}  /tmp/signal-cli.tar.gz" | sha256sum -c - \
     && mkdir -p /opt/signal-cli \
     && tar -xzf /tmp/signal-cli.tar.gz -C /opt/signal-cli --strip-components=1
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 ARG SIGNAL_CLI_VERSION
 ARG SIGNAL_CLI_RELEASED
 WORKDIR /app

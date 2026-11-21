@@ -1,8 +1,8 @@
 # Agent42
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-![.NET 10](https://img.shields.io/badge/.NET-10-512bd4)
-![Orleans 10.3](https://img.shields.io/badge/Orleans-10.3-0078d4)
+![.NET 11](https://img.shields.io/badge/.NET-11-512bd4)
+![Orleans 10.4](https://img.shields.io/badge/Orleans-10.4-0078d4)
 ![Microsoft Agent Framework](https://img.shields.io/badge/Agent%20Framework-1.25-5c2d91)
 
 **A personal AI agent you can run yourself.** Chat with any model you bring (Azure AI Foundry, GitHub Models, Anthropic,
