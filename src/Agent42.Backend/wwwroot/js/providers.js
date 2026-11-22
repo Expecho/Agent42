@@ -54,7 +54,7 @@ export async function loadProviders() {
 // either one alone would leave the select stale on the other's path. Reuses fillModelOptions/selectModel —
 // a stored default whose provider is gone shows under "Unavailable" rather than silently resetting.
 export function syncDefaultModelSelect() {
-  fillModelOptions(defaultModelSelect);
+  fillModelOptions(defaultModelSelect, { auto: true }); // Auto is a valid default (ADR 0139)
   const blank = document.createElement("option");
   blank.value = "";
   blank.textContent = "First available";

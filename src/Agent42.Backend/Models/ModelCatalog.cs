@@ -46,7 +46,8 @@ public record ModelInfo(
 /// <summary>The models the picker can choose from, plus the current default.</summary>
 // Auto (ADR 0137): true only when the signed-in user has an enabled DecisionModel provider, so the picker offers an Auto entry.
 // Set by /api/models, never by a catalog; a trailing default so every existing construction stays valid.
-public record ModelCatalogResult(string Default, IReadOnlyList<ModelInfo> Models, bool Auto = false);
+// AutoDefault (ADR 0139): the user chose Auto as their default AND still has a router, so new chats start on Auto. `Default` stays a real model.
+public record ModelCatalogResult(string Default, IReadOnlyList<ModelInfo> Models, bool Auto = false, bool AutoDefault = false);
 
 /// <summary>Lists the models available to the agent.</summary>
 public interface IModelCatalog

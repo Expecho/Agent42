@@ -241,6 +241,51 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         Assert.Equal(TestSiloConfigurator.DefaultModel, await Agent(h, conversationId).GetSelectedModelAsync());
     }
 
+    // ADR 0139: with Auto as the user's default and no /model override, a chat-app turn runs as an Auto turn.
+    [Fact]
+    public async Task Pipeline_AutoDefault_WithARouter_RunsTheTurnAsAuto()
+    {
+        SetSiloRouter(new FakeModelRouter());
+        try
+        {
+            var h = await PairedAsync(routers: new SingleUserModelRouterProvider(new FakeModelRouter()));
+            await Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(h.UserId).SetDefaultAsync(AutoModelId.Value);
+
+            await h.Session.InjectAsync(Dm("hi"));
+            await FinalReplyAsync(h, Reply);
+
+            var conversationId = (await Route(h).GetAsync()).ConversationId!;
+            Assert.Equal(AutoModelId.Value, await Agent(h, conversationId).GetSelectedModelAsync());
+            Assert.Null((await Route(h).GetAsync()).ModelOverride);
+        }
+        finally
+        {
+            SetSiloRouter(null);
+        }
+    }
+
+    // ADR 0139: a stored Auto default without a router is stale; the turn runs on the real default, as before.
+    [Fact]
+    public async Task Pipeline_AutoDefault_WithoutARouter_RunsOnTheDefaultModel()
+    {
+        var h = await PairedAsync();
+        await Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(h.UserId).SetDefaultAsync(AutoModelId.Value);
+
+        await h.Session.InjectAsync(Dm("hi"));
+        await FinalReplyAsync(h, Reply);
+
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        Assert.Equal(TestSiloConfigurator.DefaultModel, await Agent(h, conversationId).GetSelectedModelAsync());
+    }
+
+    private void SetSiloRouter(FakeModelRouter? router)
+    {
+        foreach (var silo in Cluster.Silos)
+        {
+            Cluster.GetSiloServiceProvider(silo.SiloAddress).GetRequiredService<FakeModelRouterProvider>().Router = router;
+        }
+    }
+
     // ADR 0138: an Auto turn the router sends to an image model reaches a chat app as an uploaded picture, with no gateway change.
     [Fact]
     public async Task Pipeline_AutoImageTurn_DeliversTheImage()

@@ -88,13 +88,10 @@ public static partial class AgentApi
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            // `auto` is a chat-picker value, never a default (ADR 0137): a default is a real model new chats start on.
-            if (AutoModelId.IsAuto(request.Default))
-            {
-                return Results.Text(AutoModelRefusal.Message, "text/plain", statusCode: StatusCodes.Status400BadRequest);
-            }
-
-            await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).SetDefaultAsync(request.Default);
+            // `auto` IS accepted as the default (ADR 0139): new chats start on the Auto router. It is stored as the literal `auto`
+            // (never as a model), and the resolver ignores it, so the real default model still resolves underneath it.
+            var value = AutoModelId.IsAuto(request.Default) ? AutoModelId.Value : request.Default;
+            await grains.GetGrain<IUserProviderConfigGrain>(http.GetUserId()).SetDefaultAsync(value);
             return Results.NoContent();
         });
 
@@ -168,7 +165,14 @@ public static partial class AgentApi
         var userId = http.GetUserId();
         var result = await (await catalogs.GetForUserAsync(userId, ct)).GetAsync(ct);
         var router = services.GetService<IUserModelRouterProvider>();
-        return router is not null && await router.GetForUserAsync(userId, ct) is not null ? result with { Auto = true } : result;
+        if (router is null || await router.GetForUserAsync(userId, ct) is null)
+        {
+            return result;
+        }
+
+        // The Auto default (ADR 0139) counts only while the router exists, so a stale `auto` falls back to the real default.
+        var stored = (await services.GetRequiredService<IGrainFactory>().GetGrain<IUserProviderConfigGrain>(userId).GetAsync()).Default;
+        return result with { Auto = true, AutoDefault = AutoModelId.IsAuto(stored) };
     }
 
     // A user provider must be self-contained (it does NOT inherit the operator AzureOpenAI:* config —

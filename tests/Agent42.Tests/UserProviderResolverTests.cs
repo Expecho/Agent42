@@ -111,6 +111,20 @@ public class UserProviderResolverTests
         Assert.Equal(3, resolved.Version);
     }
 
+    // ADR 0139: a stored `auto` default is a router choice, never a model id, so the real default still resolves beneath it.
+    [Theory]
+    [InlineData("auto")]
+    [InlineData(" AUTO ")]
+    public void OverlayDefault_Auto_IsNeverTheResolvedModel(string stored)
+    {
+        var overlay = new UserProviderConfig([Ollama(_protector.Protect("k"))], Default: stored, Version: 1);
+
+        var resolved = Resolver().Merge(overlay);
+
+        Assert.NotEmpty(resolved.DefaultModelId);
+        Assert.False(AutoModelId.IsAuto(resolved.DefaultModelId));
+    }
+
     [Fact]
     public void OverlayDefault_NamingAMissingProvider_FallsBackToBaselineDefault()
     {

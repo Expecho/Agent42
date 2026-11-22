@@ -26,7 +26,9 @@ export async function loadModels({ pin = true } = {}) {
     // not retarget the open chat (pin:false) therefore puts the previous choice back, so it can never silently move onto Auto.
     const kept = modelSelect.value;
     fillModelOptions(modelSelect, { auto: true });
-    if (pin && defaultModel) setModel(defaultModel);
+    // Auto as the default (ADR 0139): the server sets autoDefault only while the router still exists, so this can't pin a stale Auto.
+    if (pin && modelsData.autoDefault && modelsData.auto) setModel(AUTO_MODEL);
+    else if (pin && defaultModel) setModel(defaultModel);
     else if (kept) setModel(kept);
     modelSelect.disabled = modelSelect.options.length === 0;
     applyModelAvailability();

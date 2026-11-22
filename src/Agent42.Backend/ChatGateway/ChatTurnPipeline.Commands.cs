@@ -108,6 +108,27 @@ public sealed partial class ChatTurnPipeline
         }
     }
 
+    // `auto` when the user made Auto their default model and still has a router, else null (ADR 0139). A failure reads as no Auto
+    // default: the turn then runs on the real default, as it did before.
+    private async Task<string?> AutoDefaultAsync(string userId)
+    {
+        try
+        {
+            if (!await HasRouterAsync(userId))
+            {
+                return null;
+            }
+
+            var stored = (await _grains.GetGrain<IUserProviderConfigGrain>(userId).GetAsync()).Default;
+            return AutoModelId.IsAuto(stored) ? AutoModelId.Value : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the Auto default for a chat turn");
+            return null;
+        }
+    }
+
     private async Task<string> SetAutoModelAsync(ChatTurnWork work, IChatRouteGrain route)
     {
         if (!await HasRouterAsync(work.UserId))

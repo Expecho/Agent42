@@ -5143,7 +5143,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   to Auto. `auto` reaching `SwitchModelAsync`/`BindAgentAsync` would persist it and make the conversation unopenable, and fork,
   fleet and stored agents all read `DeploymentName`. So the grain ignores it in `SwitchModelAsync`, throws in `RebindModelAsync` and
   `BindAgentAsync` (`ThrowIfAuto`), and every other endpoint that takes a model answers 400 (`AutoModelRefusal`): fleet submit,
-  analyzer, lessons settings and dream, stored-agent create and update, `PUT /api/default-model`. A new endpoint or grain method that
+  analyzer, lessons settings and dream, stored-agent create and update. `PUT /api/default-model` is the one exception (ADR 0139): it stores `auto`, the resolver never treats it as a model (`NamesBuiltProvider`), and `/api/models` reports `autoDefault`. A new endpoint or grain method that
   accepts a model id must do the same. A stale Auto (router removed) is answered by `GetSelectedModelAsync` with the real model, and
   the grain forgets Auto when a client still sends it. Incognito turns, agent-pinned chats and a turn while another run is in flight
   never route. A routed switch first reloads the grain's factory (`RefreshChatClientFactoryAsync`), because the factory is resolved once
