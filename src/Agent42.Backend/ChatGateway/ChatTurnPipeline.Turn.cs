@@ -80,7 +80,7 @@ public sealed partial class ChatTurnPipeline
         }
 
         // An agent conversation runs on the agent's own model; /model applies to plain chat only (the web UI's rule).
-        var model = binding is null ? turn.ModelOverride : null;
+        var model = binding is null ? turn.ModelOverride ?? await AutoDefaultAsync(work.UserId) : null;
         var buffer = new ChatReplyBuffer();
         // Detached and never awaited past the cap: the turn runs to its persist whatever the chat does.
         _ = Task.Run(() => DrainAsync(agentGrain, prompt, model, prepared.Images, buffer));

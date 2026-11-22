@@ -209,7 +209,8 @@ public sealed class UserProviderResolver : IUserProviderResolver
     private static bool NamesBuiltProvider(
         string? modelId, IReadOnlyDictionary<string, MultiProviderChatClientFactory.Provider> providers)
     {
-        if (string.IsNullOrWhiteSpace(modelId))
+        // `auto` has no colon, so it would parse as a legacy id on the unkeyed provider and pass as a "built" default (ADR 0139).
+        if (string.IsNullOrWhiteSpace(modelId) || AutoModelId.IsAuto(modelId))
         {
             return false;
         }

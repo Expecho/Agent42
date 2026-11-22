@@ -233,16 +233,16 @@ public sealed class ProvidersApiTests(SharedApiFixture fixture) : SharedClusterT
         Assert.Null(hints[2]);
     }
 
-    // ADR 0137: `auto` is a chat-picker value, never a default model.
+    // ADR 0139 (amends 0137): `auto` is accepted as the default and stored as the literal `auto`, whatever its case.
     [Fact]
-    public async Task AutoOutsideChat_DefaultModel_IsRefused()
+    public async Task DefaultModel_Auto_IsAccepted_AndStoredNormalised()
     {
         var user = $"user-auto-{Guid.NewGuid():N}";
 
-        var response = await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", user, new { @default = "auto" }));
+        var response = await Client.SendAsync(Request(HttpMethod.Put, "/api/default-model", user, new { @default = " AUTO " }));
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Null((await Fixture.Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(user).GetAsync()).Default);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal("auto", (await Fixture.Cluster.GrainFactory.GetGrain<IUserProviderConfigGrain>(user).GetAsync()).Default);
     }
 
     // ADR 0137: a stored agent pins a real model, on create and on update.

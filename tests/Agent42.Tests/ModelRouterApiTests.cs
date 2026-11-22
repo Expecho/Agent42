@@ -62,4 +62,51 @@ public sealed class ModelRouterApiTests(ModelRouterApiFixture fixture) : SharedC
         // Auto is a picker entry, never a catalog model.
         Assert.Equal(1, body.GetProperty("models").GetArrayLength());
     }
+
+    private async Task<JsonElement> SetDefaultAndGetModelsAsync(string user, string? value)
+    {
+        var put = new HttpRequestMessage(HttpMethod.Put, "/api/default-model") { Content = JsonContent.Create(new { @default = value }) };
+        put.Headers.Add("X-MS-CLIENT-PRINCIPAL-ID", user);
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, (await Fixture.Client.SendAsync(put)).StatusCode);
+
+        var get = new HttpRequestMessage(HttpMethod.Get, "/api/models");
+        get.Headers.Add("X-MS-CLIENT-PRINCIPAL-ID", user);
+        var response = await Fixture.Client.SendAsync(get);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    // ADR 0139: Auto can be the default; `default` stays a real model so every other consumer keeps working.
+    [Fact]
+    public async Task Models_AutoStoredAsDefault_WithARouter_SetsAutoDefault_AndKeepsARealDefault()
+    {
+        Fixture.Routers.Router = new FakeModelRouter();
+
+        var body = await SetDefaultAndGetModelsAsync($"auto-default-{Guid.NewGuid():N}", "AUTO");
+
+        Assert.True(body.GetProperty("autoDefault").GetBoolean());
+        Assert.Equal("fake:a", body.GetProperty("default").GetString());
+    }
+
+    // ADR 0139: a stored `auto` for a user who lost the router is stale and reads as no Auto default.
+    [Fact]
+    public async Task Models_AutoStoredAsDefault_WithoutARouter_AutoDefaultIsFalse()
+    {
+        Fixture.Routers.Router = null;
+
+        var body = await SetDefaultAndGetModelsAsync($"auto-default-{Guid.NewGuid():N}", "auto");
+
+        Assert.False(body.GetProperty("autoDefault").GetBoolean());
+        Assert.Equal("fake:a", body.GetProperty("default").GetString());
+    }
+
+    [Fact]
+    public async Task Models_RealDefaultStored_WithARouter_AutoDefaultIsFalse()
+    {
+        Fixture.Routers.Router = new FakeModelRouter();
+
+        var body = await SetDefaultAndGetModelsAsync($"auto-default-{Guid.NewGuid():N}", "fake:a");
+
+        Assert.False(body.GetProperty("autoDefault").GetBoolean());
+    }
 }

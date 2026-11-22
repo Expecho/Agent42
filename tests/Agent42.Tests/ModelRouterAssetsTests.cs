@@ -10,20 +10,27 @@ public sealed class ModelRouterAssetsTests(StaticAssetsServerFixture fixture)
 {
     private Task<string> Js(string name) => fixture.Client.GetStringAsync($"/js/{name}");
 
-    // The composer picker offers Auto from the server's flag, never from a hardcoded one.
+    // The composer and default-model pickers offer Auto from the server's flag, never from a hardcoded one (ADR 0137/0139).
     [Fact]
-    public async Task Picker_OffersAutoOnlyWhenTheServerSaysSo_AndOnlyInTheComposer()
+    public async Task Picker_OffersAutoOnlyWhenTheServerSaysSo_InTheComposerAndTheDefault()
     {
         var models = await Js("models.js");
 
         Assert.Contains("export const AUTO_MODEL = \"auto\"", models);
         Assert.Contains("auto && modelsData.auto", models);
         Assert.Contains("fillModelOptions(modelSelect, { auto: true })", models);
-        // No other picker passes it: the agent dialog, the defaults and the fleet pin real models.
-        foreach (var module in new[] { "agents.js", "providers.js" })
-        {
-            Assert.DoesNotContain("auto: true", await Js(module));
-        }
+        // The default-model preference may be Auto (ADR 0139); the agent dialog and the fleet still pin real models.
+        Assert.Contains("fillModelOptions(defaultModelSelect, { auto: true })", await Js("providers.js"));
+        Assert.DoesNotContain("auto: true", await Js("agents.js"));
+    }
+
+    // New chats start on Auto only while the server says the Auto default is live (a router still exists, ADR 0139).
+    [Fact]
+    public async Task LoadModels_PinsAuto_OnlyWhenTheServerSaysTheAutoDefaultIsLive()
+    {
+        var models = await Js("models.js");
+
+        Assert.Contains("if (pin && modelsData.autoDefault && modelsData.auto) setModel(AUTO_MODEL);", models);
     }
 
     // Embedding, speech and transcription models can't chat, so no chat-model picker may list them.
