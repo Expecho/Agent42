@@ -273,6 +273,10 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         var error = Assert.Single(events, e => e.Type == AgentStreamEventType.Error);
         Assert.Contains("empty reply", error.Text, StringComparison.Ordinal);
+        // What the provider did send is named, so a live failure says WHY it was empty (finish reason, output tokens, content types).
+        Assert.Contains("finish reason:", error.Text, StringComparison.Ordinal);
+        Assert.Contains("output tokens:", error.Text, StringComparison.Ordinal);
+        Assert.Contains("content:", error.Text, StringComparison.Ordinal);
         Assert.Equal(AgentStreamEventType.Done, events[^1].Type);
         Assert.DoesNotContain(await agent.GetHistoryAsync(), t => t.Role == "assistant");
         Assert.Contains("[emptymsg:0]", Answer(await CollectAsync(agent.ChatAsync("and now?", null))));
