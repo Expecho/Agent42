@@ -84,6 +84,8 @@ export function fillModelOptions(select, { copilot = false, auto = false } = {})
   const groups = new Map();
   for (const m of modelsData.models ?? []) {
     if (m.copilotOnly && !copilot) continue;
+    // Embedding, speech and transcription models can't chat: they have their own default selectors in Preferences.
+    if (m.supportsEmbeddings || m.supportsSpeech || m.supportsTranscription) continue;
     const provider = m.provider ?? "";
     if (!groups.has(provider)) {
       const group = document.createElement("optgroup");
