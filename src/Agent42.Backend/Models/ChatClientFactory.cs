@@ -441,9 +441,10 @@ public sealed class MultiProviderChatClientFactory : IChatClientFactory, ICopilo
                 // resolver's default-speech pick is the per-model gate.
                 return new Provider(
                     options,
-                    model => responsesClient
+                    // The wrapper recovers an answer that arrives only in the completed event, which the adapter drops (see its summary).
+                    model => new ResponsesCompletedTextFallbackChatClient(responsesClient
                         .GetResponsesClient()
-                        .AsIChatClientWithStoredOutputDisabled(model, includeReasoningEncryptedContent: false),
+                        .AsIChatClientWithStoredOutputDisabled(model, includeReasoningEncryptedContent: false)),
                     embeddingGenerator: embeddings,
                     speechService: model => new OpenAISpeechService(responsesClient.GetAudioClient(model)),
                     transcriptionService: model => new OpenAITranscriptionService(responsesClient.GetAudioClient(model)),
