@@ -806,19 +806,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // cut it short) and not when the provider already reported an error (that event is the explanation).
     private const int ErrorTextLimit = 500;
 
-    // The detail (finish reason, output tokens, content types) is shown and logged so a live failure explains itself: a model that
-    // spent its tokens on hidden reasoning reads very differently from one that sent nothing at all.
-    private AgentStreamEvent? EmptyReplyNotice(TurnOutcome outcome)
-    {
-        if (outcome is not { Stopped: false, ProducedOutput: false, ReportedError: false })
-        {
-            return null;
-        }
-
-        _logger.LogWarning("Agent grain {GrainKey} model {Model} returned an empty reply ({Detail})",
-            this.GetPrimaryKeyString(), _modelId, outcome.Describe());
-        return new AgentStreamEvent(AgentStreamEventType.Error, Text: $"The model returned an empty reply ({outcome.Describe()}).");
-    }
+    private static AgentStreamEvent? EmptyReplyNotice(TurnOutcome outcome)
+        => outcome is { Stopped: false, ProducedOutput: false, ReportedError: false }
+            ? new AgentStreamEvent(AgentStreamEventType.Error, Text: "The model returned an empty reply.")
+            : null;
 
     // Makes this turn stoppable from outside, for a browser turn only. `??=` rather than `=`: if a turn is
     // already published, THIS turn is the one that started while that one was suspended at a yield, and
@@ -903,7 +894,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 // The projection is a plain iterator because it must not be an ASYNC one; usage updates
                 // produce no event at all, they only accumulate into `tokens`. A research turn adds its
                 // TextReset and checklist events around it (ADR 0082), which is why this call is async.
-                outcome.ObserveUpdate(update);
                 foreach (var evt in await ProjectUpdateAsync(update, reply, tokens, research))
                 {
                     outcome.Observe(evt);
@@ -994,32 +984,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         /// <summary>True once the provider reported an error for this turn (an <c>Error</c> event was projected).</summary>
         public bool ReportedError { get; private set; }
-
-        private readonly SortedSet<string> _contentKinds = new(StringComparer.Ordinal);
-        private string? _finishReason;
-        private long _outputTokens;
-
-        /// <summary>
-        /// What the provider actually sent, for the empty-reply case only: the content types seen (even ones we do not project),
-        /// the finish reason, and the output tokens. Without it "the model returned an empty reply" says nothing about WHY.
-        /// </summary>
-        public void ObserveUpdate(AgentResponseUpdate update)
-        {
-            foreach (var content in update.Contents)
-            {
-                _contentKinds.Add(content.GetType().Name);
-                _outputTokens += (content as UsageContent)?.Details.OutputTokenCount ?? 0;
-            }
-
-            if ((update.RawRepresentation as ChatResponseUpdate)?.FinishReason is { } finish)
-            {
-                _finishReason = finish.Value;
-            }
-        }
-
-        public string Describe()
-            => $"finish reason: {_finishReason ?? "none"}; output tokens: {_outputTokens}; content: "
-               + (_contentKinds.Count == 0 ? "none" : string.Join(", ", _contentKinds));
 
         public void Observe(AgentStreamEvent evt)
         {
