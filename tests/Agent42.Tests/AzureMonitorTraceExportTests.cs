@@ -56,7 +56,7 @@ public sealed class AzureMonitorTraceExportTests
 
         // Scoped to this test's own trace: the ingestion endpoint is private to the test, but the scoping
         // keeps the assertion honest if that ever changes.
-        var appInsights = Assert.Single(loopback.AppInsightsItems, item => item.Contains(otlpSpan.TraceId, StringComparison.Ordinal));
+        var appInsights = Assert.Single(loopback.AppInsightsItems, item => IsSpanItem(item) && item.Contains(otlpSpan.TraceId, StringComparison.Ordinal));
         foreach (var sentinel in SentinelChatClient.Sentinels)
         {
             Assert.DoesNotContain(sentinel, appInsights, StringComparison.Ordinal);
@@ -176,10 +176,13 @@ public sealed class AzureMonitorTraceExportTests
                 && span.Tags.Any(tag => tag.Value.Contains(SentinelChatClient.Prompt, StringComparison.Ordinal)));
         Assert.Contains(captured.Tags, tag => tag.Name == "gen_ai.input.messages");
 
-        var appInsights = Assert.Single(loopback.AppInsightsItems, item => item.Contains(captured.TraceId, StringComparison.Ordinal));
+        var appInsights = Assert.Single(loopback.AppInsightsItems, item => IsSpanItem(item) && item.Contains(captured.TraceId, StringComparison.Ordinal));
         Assert.DoesNotContain(SentinelChatClient.Prompt, appInsights, StringComparison.Ordinal);
         Assert.Contains("gen_ai.usage.input_tokens", appInsights, StringComparison.Ordinal);
     }
+
+    // A metric item can carry the trace id as an exemplar when the periodic metric export fires mid-test, so match the span item only.
+    private static bool IsSpanItem(string item) => !item.Contains("\"name\":\"Metric\"", StringComparison.Ordinal);
 
     /// <summary>
     /// Disposing the host with a span still queued in the batch delivers it to both sinks: the export
