@@ -5218,3 +5218,15 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   usually `~\.dcp` state with the wrong owner: move that folder aside.
 - **Evidence:** `src/Agent42.AppHost/Agent42.AppHost.csproj`, `src/Agent42.AppHost/AppHost.cs`
 - **Verified:** 2026-11-21
+
+### A Responses stream with no `output_text.delta` events yields only usage: the answer rides in `response.completed`
+
+- **Claim:** The Responses adapter (`AsIChatClientWithStoredOutputDisabled`) maps text from `output_text.delta` events only. A stream whose answer arrives
+  only in `response.output_item.done` / `response.completed` (`gpt-6.2-sol`, 2026-11-22) reaches the grain as a lone `UsageContent`: output tokens billed, finish reason
+  `stop`, no `TextContent`, so the turn shows "The model returned an empty reply". `ResponsesCompletedTextFallbackChatClient` wraps the Responses
+  client in `Provider.Foundry` and, only when a stream yielded no text, emits the completed event's message text as one `TextContent` before the usage update.
+  A stream that streamed text is untouched, so nothing is doubled. The empty-reply notice carries the finish reason, output tokens and content types
+  (`TurnOutcome.Describe`), so the next unmapped shape names itself. Chat Completions is not affected.
+- **Evidence:** `src/Agent42.Backend/Models/ResponsesCompletedTextFallbackChatClient.cs`, `src/Agent42.Backend/Models/ChatClientFactory.cs`,
+  `tests/Agent42.Tests/ResponsesCompletedTextFallbackTests.cs`
+- **Verified:** 2026-11-22
