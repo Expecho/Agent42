@@ -23,6 +23,12 @@ env:
 permissions:
   contents: read
 
+# One deploy at a time: two merges close together otherwise collide on the ARM deployment named "main" (DeploymentActive).
+# Never cancel one mid-flight (a half-applied Bicep deployment); a waiting run is replaced by the newer one, which deploys the latest main.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
 jobs:
   # Runs FIRST and fails closed (ADR 0128). An absent GitHub variable expands to an EMPTY string, and for the optional
   # Bicep params empty means "off": a missing CUSTOM_DOMAIN_NAME would silently unbind a live domain, and a missing
