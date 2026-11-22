@@ -26,6 +26,15 @@ public sealed class ModelRouterAssetsTests(StaticAssetsServerFixture fixture)
         }
     }
 
+    // Embedding, speech and transcription models can't chat, so no chat-model picker may list them.
+    [Fact]
+    public async Task Picker_HidesModelsThatCannotChat()
+    {
+        var models = await Js("models.js");
+
+        Assert.Contains("m.supportsEmbeddings || m.supportsSpeech || m.supportsTranscription", models);
+    }
+
     // A stale Auto must never turn into an "Unavailable" option: it is not a model.
     [Fact]
     public async Task SelectModel_NeverAddsARawAutoOption()
