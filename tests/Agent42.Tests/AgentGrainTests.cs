@@ -1161,6 +1161,25 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Equal(AgentKinds.Research, (await reactivated.GetAgentBindingAsync())!.Kind);
     }
 
+    // AC3 (ADR 0140): the retention value is snapshotted at bind time, survives reactivation, and a repeat bind with a
+    // different value (an edited agent) cannot change it.
+    [Fact]
+    public async Task Bind_SnapshotsRetention()
+    {
+        const string key = "binding-retention";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+
+        await agent.BindAgentAsync(new AgentBinding(
+            "agent-ret", "Keeper", "You keep.", TestSiloConfigurator.DefaultModel, RetentionMinutes: 60));
+        await agent.BindAgentAsync(new AgentBinding(
+            "agent-ret", "Keeper", "You keep.", TestSiloConfigurator.DefaultModel, RetentionMinutes: 10080));
+        Assert.Equal(60, (await agent.GetAgentBindingAsync())!.RetentionMinutes);
+
+        await agent.AsReference<IGrainManagementExtension>().DeactivateOnIdle();
+
+        Assert.Equal(60, (await Cluster.GrainFactory.GetGrain<IAgentGrain>(key).GetAgentBindingAsync())!.RetentionMinutes);
+    }
+
     // AC2: binding pins the persona + model into the conversation and survives reactivation.
     [Fact]
     public async Task Binding_PinsPersonaAndModel_SurvivesReactivation()
@@ -4165,6 +4184,96 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         // Deleted, not hidden — the same property the ADR 0016 case asserts, for the same 2 MB reason.
         Assert.DoesNotContain("the ancient message", await SessionJsonOf(key), StringComparison.Ordinal);
+    }
+
+    // The persona a retention test binds: an agent whose chat carries `minutes` (null = the agent set none).
+    private static AgentBinding RetentionBinding(int? minutes)
+        => new("agent-ret", "Keeper", "You keep.", TestSiloConfigurator.DefaultModel, RetentionMinutes: minutes);
+
+    // AC4 (ADR 0140): a per-chat agent chat with a 60 min setting is stamped and pruned past the window on the next
+    // persisted turn — a conversation id that is NOT continuous, so only the snapshotted value can have done this.
+    [Fact]
+    public async Task PerChatRetention_PrunesOnNextTurn()
+    {
+        const string key = "retention-user/perchat-60";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.BindAgentAsync(RetentionBinding(60));
+
+        await CollectAsync(agent.ChatAsync("the ancient message", null));
+        Fixture.AdvanceClock(TimeSpan.FromMinutes(90));
+        await CollectAsync(agent.ChatAsync("the fresh message", null));
+
+        var history = await agent.GetHistoryAsync();
+        Assert.DoesNotContain(history, t => t.Text == "the ancient message");
+        Assert.Contains(history, t => t.Text == "the fresh message");
+        Assert.DoesNotContain("the ancient message", await SessionJsonOf(key), StringComparison.Ordinal);
+    }
+
+    // AC5 (ADR 0140): a per-chat agent chat with NO setting is neither stamped nor pruned, so the 256 KB budget canary
+    // is unaffected by the feature.
+    [Fact]
+    public async Task NoSetting_PerChat_NotStamped()
+    {
+        const string key = "retention-user/perchat-unset";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.BindAgentAsync(RetentionBinding(null));
+
+        await CollectAsync(agent.ChatAsync("the ancient message", null));
+        Fixture.AdvanceClock(TimeSpan.FromDays(30));
+        await CollectAsync(agent.ChatAsync("the fresh message", null));
+
+        Assert.Empty(await SessionCreatedAtStamps(key));
+        Assert.Contains(await agent.GetHistoryAsync(), t => t.Text == "the ancient message");
+    }
+
+    // AC6 (ADR 0140): a continuous chat bound with no value keeps today's 24 h; with a value it uses that value.
+    [Fact]
+    public async Task Continuous_Unset_Keeps24h()
+    {
+        var key = ContinuousKey("bound-unset");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.BindAgentAsync(RetentionBinding(null));
+
+        await CollectAsync(agent.ChatAsync("the earlier message", null));
+        Fixture.AdvanceClock(TimeSpan.FromHours(3));
+        await CollectAsync(agent.ChatAsync("the later message", null));
+        Assert.Contains(await agent.GetHistoryAsync(), t => t.Text == "the earlier message");
+
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(agent.ChatAsync("the last message", null));
+        Assert.DoesNotContain(await agent.GetHistoryAsync(), t => t.Text == "the earlier message");
+    }
+
+    [Fact]
+    public async Task Continuous_Explicit_UsesValue()
+    {
+        var key = ContinuousKey("bound-week");
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.BindAgentAsync(RetentionBinding(10080));
+
+        await CollectAsync(agent.ChatAsync("the earlier message", null));
+        Fixture.AdvanceClock(TimeSpan.FromDays(3));
+        await CollectAsync(agent.ChatAsync("the later message", null));
+        Assert.Contains(await agent.GetHistoryAsync(), t => t.Text == "the earlier message");
+
+        Fixture.AdvanceClock(TimeSpan.FromDays(8));
+        await CollectAsync(agent.ChatAsync("the last message", null));
+        Assert.DoesNotContain(await agent.GetHistoryAsync(), t => t.Text == "the earlier message");
+    }
+
+    // AC6: an MCP conversation stays at 24 h even if something bound a longer value into it.
+    [Fact]
+    public async Task Mcp_IgnoresBoundRetention()
+    {
+        var key = $"retention-user/{AgentMcpLimits.NewConversationId()}";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(key);
+        await agent.BindAgentAsync(RetentionBinding(43200));
+
+        await CollectAsync(agent.ChatAsync("the ancient message", null));
+        Fixture.AdvanceClock(PastTheWindow);
+        await CollectAsync(agent.ChatAsync("the fresh message", null));
+
+        Assert.DoesNotContain(await agent.GetHistoryAsync(), t => t.Text == "the ancient message");
     }
 
     // AC5. The scope decision, held by a test: a regular chat binds one conversation per chat, so it has

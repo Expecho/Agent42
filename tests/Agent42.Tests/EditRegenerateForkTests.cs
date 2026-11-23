@@ -529,6 +529,24 @@ public sealed class EditRegenerateForkTests(SharedClusterFixture fixture) : Shar
         Assert.Equal(TestSiloConfigurator.NoToolsNoVisionModel, await fork.GetSelectedModelAsync());
     }
 
+    // AC3 (ADR 0140): a fork is a new conversation and carries its source's retention value.
+    [Fact]
+    public async Task Fork_CarriesRetention()
+    {
+        var source = Agent("erf-retention-user/src");
+        await source.BindAgentAsync(new AgentBinding(
+            "agent-ret", "Keeper", "You keep.", TestSiloConfigurator.DefaultModel, RetentionMinutes: 10080));
+        await ChatAsync(source, "say hello");
+        var (count, hash) = await TokenOf(source);
+        var payload = (await source.CreateForkAsync(0, count, hash)).Fork!;
+        Assert.Equal(10080, payload.RetentionMinutes);
+
+        var fork = Agent("erf-retention-user/fork");
+        Assert.True(await fork.InitializeFromForkAsync(payload));
+
+        Assert.Equal(10080, (await fork.GetAgentBindingAsync())!.RetentionMinutes);
+    }
+
     // AC14: an artifact version whose blob is missing is dropped from the fork, never fatal.
     [Fact]
     public async Task Fork_DanglingArtifactVersion_IsDropped()

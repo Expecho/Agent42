@@ -40,6 +40,11 @@ public sealed partial class AgentGrain
             return "The reminder needs a short name.";
         }
 
+        if (name.StartsWith(RetentionLimits.SweepReminderName, StringComparison.Ordinal))
+        {
+            return "That reminder name is reserved. Pick another short name.";
+        }
+
         if (string.IsNullOrWhiteSpace(prompt))
         {
             return "The reminder needs a prompt to send to the agent when it fires.";
@@ -118,9 +123,13 @@ public sealed partial class AgentGrain
 
         // Durable reminders must each be unregistered explicitly, or they keep firing
         // after the state is cleared (same reason PurgeAsync iterates them).
+        // Except the retention sweep (ADR 0140): it is not the model's to cancel.
         foreach (var reminder in await this.GetReminders())
         {
-            await this.UnregisterReminder(reminder);
+            if (reminder.ReminderName != RetentionLimits.SweepReminderName)
+            {
+                await this.UnregisterReminder(reminder);
+            }
         }
 
         _state.State.ScheduledPrompts.Clear();

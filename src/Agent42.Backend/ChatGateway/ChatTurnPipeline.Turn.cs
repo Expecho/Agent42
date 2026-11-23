@@ -142,7 +142,8 @@ public sealed partial class ChatTurnPipeline
             // Bound only here, on a conversation the route just minted: binding under an existing history would rewrite
             // the persona beneath it (ADR 0003).
             await _grains.GetGrain<IAgentGrain>($"{work.UserId}/{turn.ConversationId}").BindAgentAsync(new AgentBinding(
-                agent.Id, agent.Name, agent.SystemPrompt, agent.Model, agent.EnabledTools, agent.Kind));
+                agent.Id, agent.Name, agent.SystemPrompt, agent.Model, agent.EnabledTools, agent.Kind,
+                agent.RetentionMinutes));
         }
 
         return true;

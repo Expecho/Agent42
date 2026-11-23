@@ -26,4 +26,5 @@ public sealed record AgentBinding(
     [property: Id(2)] string SystemPrompt,
     [property: Id(3)] string Model,
     [property: Id(4)] IReadOnlyList<string>? EnabledTools = null,
-    [property: Id(5)] string? Kind = null);
+    [property: Id(5)] string? Kind = null,
+    [property: Id(6)] int? RetentionMinutes = null);

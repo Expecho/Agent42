@@ -477,6 +477,33 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         }
     }
 
+    // AC2 (ADR 0140): a preset is stored by POST and PUT, and an unknown value is a 400 on both, with nothing stored.
+    [Fact]
+    public async Task SaveAgent_Retention_PresetStored_UnknownRejected()
+    {
+        using var createRes = await Client.PostAsJsonAsync("/api/agents",
+            new AgentUpsertRequest("Keeper", "", "fake-model", "sys", RetentionMinutes: 1440));
+        createRes.EnsureSuccessStatusCode();
+        var created = (await createRes.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+        Assert.Equal(1440, created.RetentionMinutes);
+
+        using var putRes = await Client.PutAsJsonAsync($"/api/agents/{created.Id}",
+            new AgentUpsertRequest("Keeper", "", "fake-model", "sys", RetentionMinutes: 43200));
+        putRes.EnsureSuccessStatusCode();
+        Assert.Equal(43200, (await putRes.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent.RetentionMinutes);
+
+        using var badPost = await Client.PostAsJsonAsync("/api/agents",
+            new AgentUpsertRequest("Bad", "", "fake-model", "sys", RetentionMinutes: 7));
+        Assert.Equal(HttpStatusCode.BadRequest, badPost.StatusCode);
+
+        using var badPut = await Client.PutAsJsonAsync($"/api/agents/{created.Id}",
+            new AgentUpsertRequest("Keeper", "", "fake-model", "sys", RetentionMinutes: 0));
+        Assert.Equal(HttpStatusCode.BadRequest, badPut.StatusCode);
+
+        var stored = (await Client.GetFromJsonAsync<List<AgentDefinition>>("/api/agents"))!.Single(a => a.Id == created.Id);
+        Assert.Equal(43200, stored.RetentionMinutes);
+    }
+
     // PUT ignores Kind: an agent's kind is fixed at create, in both directions.
     [Fact]
     public async Task UpdateAgent_IgnoresKind()

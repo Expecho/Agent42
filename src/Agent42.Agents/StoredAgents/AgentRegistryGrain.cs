@@ -60,6 +60,7 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             {
                 Kind = kind,
                 Continuous = agent.Continuous && !AgentKinds.IsPerChatOnly(kind),
+                RetentionMinutes = AgentKinds.IsPerChatOnly(kind) ? null : agent.RetentionMinutes,
             });
         }
 
@@ -105,6 +106,8 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             EmailToken = storedEmailToken,
             Kind = previous.Kind,
             Continuous = agent.Continuous && !AgentKinds.IsPerChatOnly(previous.Kind),
+            // Retention is per-chat-only-forbidden for the same reason (ADR 0140): a copilot transcript lives outside the session.
+            RetentionMinutes = AgentKinds.IsPerChatOnly(previous.Kind) ? null : agent.RetentionMinutes,
         };
         agents[existing] = updated;
         await _state.WriteStateAsync();

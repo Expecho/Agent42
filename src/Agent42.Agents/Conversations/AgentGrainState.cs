@@ -285,4 +285,11 @@ public sealed class AgentGrainState
     /// </summary>
     [Id(20)]
     public bool AutoModel { get; set; }
+
+    /// <summary>
+    /// The retention window, in minutes, snapshotted from the source agent at bind time (ADR 0140), or null when the
+    /// agent set none. Trailing <c>[Id(21)]</c>, nullable so the Cosmos JSON path reads old state as null (CLAUDE.md rule 2).
+    /// </summary>
+    [Id(21)]
+    public int? RetentionMinutes { get; set; }
 }

@@ -46,7 +46,8 @@ public sealed record ConversationFork(
     [property: Id(7)] string SerializedSession,
     [property: Id(8)] List<List<AttachmentRef>> TurnAttachments,
     [property: Id(9)] Dictionary<string, AttachmentRef> GeneratedImages,
-    [property: Id(10)] List<ArtifactRecord> Artifacts);
+    [property: Id(10)] List<ArtifactRecord> Artifacts,
+    [property: Id(11)] int? RetentionMinutes = null);
 
 /// <summary>The outcome of <c>IAgentGrain.CreateForkAsync</c>: the payload when <see cref="Outcome"/> is Ok.</summary>
 [GenerateSerializer]

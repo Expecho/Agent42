@@ -87,7 +87,8 @@ public sealed class HistoryRetention(TimeProvider clock, ILogger logger, string 
     {
         var messages = context.Messages;
         var userIndices = UserTurnIndices(messages);
-        var expired = ExpiredLeadingTurnCount(messages, userIndices, clock.GetUtcNow() - RetentionLimits.Window);
+        var window = context.Window ?? RetentionLimits.Window;
+        var expired = ExpiredLeadingTurnCount(messages, userIndices, clock.GetUtcNow() - window);
 
         if (expired == 0)
         {
@@ -102,7 +103,7 @@ public sealed class HistoryRetention(TimeProvider clock, ILogger logger, string 
 
         logger.LogInformation(
             "Agent grain {GrainKey} pruned {Turns} expired turn(s) ({Ordinals} projected) outside the "
-            + "{Window} retention window", grainKey, expired, droppedProjectedTurns, RetentionLimits.Window);
+            + "{Window} retention window", grainKey, expired, droppedProjectedTurns, window);
 
         return new RetentionResult(Pruned: true, droppedProjectedTurns);
     }

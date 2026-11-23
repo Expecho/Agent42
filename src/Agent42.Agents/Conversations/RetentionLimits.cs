@@ -71,4 +71,26 @@ public static class RetentionLimits
     /// <c>wwwroot/js/agents.js</c> already relies on and comments.</para>
     /// </summary>
     public const string ContinuousConversationIdPrefix = "agent-";
+
+    /// <summary>The per-agent retention presets in minutes (ADR 0140): 1 hour, 24 hours, 7 days, 30 days.</summary>
+    public static readonly IReadOnlyList<int> Presets = [60, 1440, 10080, 43200];
+
+    /// <summary>
+    /// The reserved Orleans reminder name of the idle retention sweep (ADR 0140). Model-chosen reminder names
+    /// (<c>schedule_prompt</c>) may never start with this prefix, and <c>cancel_all_scheduled_prompts</c> skips it.
+    /// </summary>
+    public const string SweepReminderName = "__retention";
+
+    /// <summary>The shortest sweep period; Orleans reminders fire at most once a minute.</summary>
+    public static readonly TimeSpan MinSweepPeriod = TimeSpan.FromMinutes(15);
+
+    /// <summary>The longest sweep period.</summary>
+    public static readonly TimeSpan MaxSweepPeriod = TimeSpan.FromHours(6);
+
+    /// <summary>How often the idle sweep runs for a window: <c>Clamp(window / 4, 15 min, 6 h)</c> (ADR 0140).</summary>
+    public static TimeSpan SweepPeriod(TimeSpan window)
+    {
+        var quarter = window / 4;
+        return quarter < MinSweepPeriod ? MinSweepPeriod : quarter > MaxSweepPeriod ? MaxSweepPeriod : quarter;
+    }
 }

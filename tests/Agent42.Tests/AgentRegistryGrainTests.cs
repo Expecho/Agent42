@@ -340,6 +340,39 @@ public sealed class AgentRegistryGrainTests(SharedClusterFixture fixture) : Shar
         Assert.Null(await Cluster.GrainFactory.GetGrain<IEmailAddressDirectoryGrain>(emailHash).ResolveAsync());
     }
 
+    // AC2 (ADR 0140): a preset persists on insert and update, and survives reactivation-free reads.
+    [Fact]
+    public async Task Save_Retention_PersistsOnInsertAndUpdate()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("registry-retention");
+
+        var created = (await registry.SaveAsync(NewAgent() with { RetentionMinutes = 60 })).Agent;
+        Assert.Equal(60, created.RetentionMinutes);
+
+        var updated = (await registry.SaveAsync(created with { RetentionMinutes = 10080 })).Agent;
+        Assert.Equal(10080, updated.RetentionMinutes);
+
+        var cleared = (await registry.SaveAsync(updated with { RetentionMinutes = null })).Agent;
+        Assert.Null(cleared.RetentionMinutes);
+    }
+
+    // AC2: per-chat-only kinds (copilot, research) never carry a retention value, on insert or update.
+    [Fact]
+    public async Task Save_Retention_ForcedNullForPerChatOnlyKinds()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("registry-retention-kinds");
+
+        var copilot = (await registry.SaveAsync(NewAgent() with { Kind = AgentKinds.Copilot, RetentionMinutes = 60 })).Agent;
+        Assert.Null(copilot.RetentionMinutes);
+        var again = (await registry.SaveAsync(copilot with { RetentionMinutes = 60 })).Agent;
+        Assert.Null(again.RetentionMinutes);
+
+        await registry.EnsureResearchAgentAsync("fake-model");
+        var research = (await registry.GetAllAsync()).Single(a => a.Kind == AgentKinds.Research);
+        var updated = (await registry.SaveAsync(research with { RetentionMinutes = 60 })).Agent;
+        Assert.Null(updated.RetentionMinutes);
+    }
+
     private static AgentDefinition NewAgent()
         => new("", "Hooky", "", "gpt-4o", "You are Hooky.", default, default);
 }
