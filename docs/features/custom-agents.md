@@ -33,6 +33,12 @@ Each agent has its own API key, shown **once** when you create it. A webhook, cr
 
 Regenerate the key in the editor if it leaks. The old key stops working at once.
 
+## Email it
+
+Every saved agent has an inbound email address (API-key tab of the editor). Mail or forward a message to it and the agent runs on it; the reply appears in your chat list and nothing is emailed back. The default address is random and is the only secret, so **Regenerate** revokes it.
+
+You can instead tick **readable address from the name** (`calendar-agent@in.agent42.nl`). That address is not a secret: anyone who guesses it can instruct the agent. So it is refused for Copilot agents and for an agent with all tools, Long-term memory or Past chats on (the editor offers to turn those off), it can't be regenerated, it moves when you rename the agent (a taken, reserved or empty name is refused), and it is limited to 30 messages an hour per agent (`Email:PlainNameMaxPerHour`, 0 = unlimited). Names are first come, first served across all users, and are freed when you delete the agent or switch back to a random address. See ADR 0141.
+
 ## Call it from another MCP host
 
 Turn on the agent's MCP exposure and Claude Desktop, Copilot or any MCP client holding its API key can call it as an `ask_agent` tool. Unlike the API run, the call waits and returns the reply, plus a conversation id to continue. The turn also appears in your sidebar.

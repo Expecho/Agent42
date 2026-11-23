@@ -78,7 +78,9 @@ public static partial class AgentApi
 
         try
         {
-            return await AcceptEmailAsync(form, grains, attachments, ingestion, loggers.CreateLogger("Agent42.Email"));
+            return await AcceptEmailAsync(
+                form, grains, attachments, ingestion, loggers.CreateLogger("Agent42.Email"),
+                services.GetService<PlainEmailRateLimiter>(), now);
         }
         catch
         {
@@ -91,12 +93,19 @@ public static partial class AgentApi
 
     private static async Task<IResult> AcceptEmailAsync(
         IFormCollection form, IGrainFactory grains, IAttachmentStore attachments, DocumentIngestionService ingestion,
-        ILogger logger)
+        ILogger logger, PlainEmailRateLimiter? limiter, DateTimeOffset now)
     {
         var (owner, definition) = await ResolveEmailRecipientAsync(form["recipient"], grains);
         if (owner is null || definition is null)
         {
             return EmailRejected(logger, "Unknown recipient.");
+        }
+
+        // A plain-name address is guessable, so its agent is rate-limited (ADR 0141). 406, never retried; the Mailgun
+        // token stays claimed, so a replay of this very message is a 401.
+        if (definition.EmailPlain == true && limiter is not null && !limiter.TryAcquire(definition.Id, now))
+        {
+            return EmailRejected(logger, "Too many messages to this address. Try again later.");
         }
 
         var (usable, skipped) = PartitionEmailFiles(form.Files, AgentKinds.IsCopilot(definition.Kind));

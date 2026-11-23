@@ -7,12 +7,14 @@ namespace Agent42.Backend;
 /// </summary>
 public static class EmailRegistration
 {
-    /// <summary>Reads <c>Email:MailgunSigningKey</c> (secret) and <c>Email:InboundDomain</c>, and adds the replay guard.</summary>
+    /// <summary>Reads <c>Email:MailgunSigningKey</c> (secret) and <c>Email:InboundDomain</c>, the replay guard and the plain-name rate limiter (<c>Email:PlainNameMaxPerHour</c>, 0 = unlimited).</summary>
     public static void AddInboundEmail(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton(new EmailConfig(
             configuration["Email:MailgunSigningKey"] ?? "",
             configuration["Email:InboundDomain"] ?? ""));
         services.AddSingleton<MailgunReplayGuard>();
+        services.AddSingleton(new PlainEmailRateLimiter(
+            configuration.GetValue("Email:PlainNameMaxPerHour", PlainEmailRateLimiter.DefaultMaxPerHour)));
     }
 }

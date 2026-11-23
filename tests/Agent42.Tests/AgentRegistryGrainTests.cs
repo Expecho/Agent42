@@ -375,4 +375,326 @@ public sealed class AgentRegistryGrainTests(SharedClusterFixture fixture) : Shar
 
     private static AgentDefinition NewAgent()
         => new("", "Hooky", "", "gpt-4o", "You are Hooky.", default, default);
+
+    // ── Plain-name inbound address (ADR 0141) ──────────────────────────────────────────────────────────────────────
+    // Slugs are global across the shared silo, so every test derives its name from a unique suffix.
+
+    private static string Unique() => Guid.NewGuid().ToString("N")[..8];
+
+    private static AgentDefinition SafePlainAgent(string name)
+        => NewAgent() with { Name = name, EnabledTools = new List<string> { ToolCatalog.WebSearch } };
+
+    private IEmailAddressDirectoryGrain EmailDir(string token)
+        => Cluster.GrainFactory.GetGrain<IEmailAddressDirectoryGrain>(EmailAddress.Hash(token));
+
+    private async Task<AgentDefinition> OptInAsync(IAgentRegistryGrain registry, string name)
+    {
+        var created = (await registry.SaveAsync(SafePlainAgent(name))).Agent;
+        var result = await registry.SaveAsync(created, plainEmail: true);
+        Assert.Null(result.EmailError);
+        return result.Agent;
+    }
+
+    [Fact]
+    public async Task ExistingAgent_NoPlainFlag_KeepsRandomAddress()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-default-" + Unique());
+        var created = (await registry.SaveAsync(NewAgent())).Agent;
+        var saved = (await registry.SaveAsync(created with { Name = "Other" })).Agent;
+
+        Assert.Null(saved.EmailPlain);
+        Assert.Equal(created.EmailToken, saved.EmailToken);
+        Assert.Matches("^agent-[a-z2-7]{32}$", saved.EmailToken);
+        Assert.NotNull(await EmailDir(saved.EmailToken!).ResolveAsync());
+    }
+
+    [Fact]
+    public async Task PlainEmail_OptIn_ReplacesRandomAddress()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-optin-" + u);
+        var created = (await registry.SaveAsync(SafePlainAgent("Calendar " + u))).Agent;
+        var randomToken = created.EmailToken!;
+
+        var plain = (await registry.SaveAsync(created, plainEmail: true)).Agent;
+
+        Assert.True(plain.EmailPlain);
+        Assert.Equal("calendar-" + u, plain.EmailToken);
+        Assert.Null(await EmailDir(randomToken).ResolveAsync());
+        Assert.Equal(created.Id, (await EmailDir(plain.EmailToken!).ResolveAsync())?.AgentId);
+    }
+
+    [Fact]
+    public async Task PlainEmail_Collision_Refused_NothingChanged()
+    {
+        var u = Unique();
+        var first = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-coll-a-" + u);
+        var second = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-coll-b-" + u);
+        await OptInAsync(first, "Shared " + u);
+
+        var created = (await second.SaveAsync(SafePlainAgent("Shared " + u))).Agent;
+        var refused = await second.SaveAsync(created, plainEmail: true);
+
+        Assert.Equal(EmailErrors.Taken, refused.EmailError);
+        var stored = (await second.GetAsync(created.Id))!;
+        Assert.Equal(created.EmailToken, stored.EmailToken);
+        Assert.Null(stored.EmailPlain);
+        Assert.Equal(created.Id, (await EmailDir(created.EmailToken!).ResolveAsync())?.AgentId);
+    }
+
+    [Fact]
+    public async Task PlainEmail_OtherUsersCollision_Refused()
+    {
+        var u = Unique();
+        var owner = await OptInAsync(Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-x-a-" + u), "Cross " + u);
+        var other = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-x-b-" + u);
+        var created = (await other.SaveAsync(SafePlainAgent("cross-" + u.ToUpperInvariant()))).Agent;
+
+        Assert.Equal(EmailErrors.Taken, (await other.SaveAsync(created, plainEmail: true)).EmailError);
+        Assert.Equal("plain-x-a-" + u, (await EmailDir(owner.EmailToken!).ResolveAsync())?.UserId);
+    }
+
+    [Fact]
+    public async Task PlainEmail_CaseVariantName_CollidesAcrossUsers()
+    {
+        var u = Unique();
+        await OptInAsync(Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-case-a-" + u), "Mixed Case " + u);
+        var other = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-case-b-" + u);
+        var created = (await other.SaveAsync(SafePlainAgent("MIXED  case " + u))).Agent;
+
+        Assert.Equal(EmailErrors.Taken, (await other.SaveAsync(created, plainEmail: true)).EmailError);
+    }
+
+    [Fact]
+    public async Task PlainEmail_CollidesWithRandomToken_Refused()
+    {
+        var u = Unique();
+        var holder = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-rnd-a-" + u);
+        var held = (await holder.SaveAsync(NewAgent())).Agent;
+        var other = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-rnd-b-" + u);
+        var created = (await other.SaveAsync(SafePlainAgent("x " + u))).Agent;
+        // Pre-seed a directory entry that equals the slug the opt-in would derive, held by a live agent's random token.
+        await EmailDir("x-" + u).RegisterAsync("plain-rnd-a-" + u, held.Id);
+
+        Assert.Equal(EmailErrors.Taken, (await other.SaveAsync(created, plainEmail: true)).EmailError);
+    }
+
+    [Fact]
+    public async Task PlainEmail_OptIn_EmptySlug_Refused()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-empty-" + Unique());
+        var created = (await registry.SaveAsync(SafePlainAgent("日本語"))).Agent;
+
+        Assert.Equal(EmailErrors.Empty, (await registry.SaveAsync(created, plainEmail: true)).EmailError);
+    }
+
+    [Fact]
+    public async Task PlainEmail_OptIn_Reserved_Refused()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-reserved-" + Unique());
+        var created = (await registry.SaveAsync(SafePlainAgent("Postmaster"))).Agent;
+
+        Assert.Equal(EmailErrors.Reserved, (await registry.SaveAsync(created, plainEmail: true)).EmailError);
+    }
+
+    [Fact]
+    public async Task PlainEmail_Rename_MovesAddress_OldStopsResolving()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-rename-" + u);
+        var plain = await OptInAsync(registry, "Before " + u);
+
+        var renamed = (await registry.SaveAsync(plain with { Name = "After " + u })).Agent;
+
+        Assert.Equal("after-" + u, renamed.EmailToken);
+        Assert.True(renamed.EmailPlain);
+        Assert.Null(await EmailDir("before-" + u).ResolveAsync());
+        Assert.Equal(plain.Id, (await EmailDir("after-" + u).ResolveAsync())?.AgentId);
+    }
+
+    [Fact]
+    public async Task PlainEmail_RenameToTaken_Refused_OldStillWorks()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-rn-taken-" + u);
+        await OptInAsync(Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-rn-other-" + u), "Taken " + u);
+        var plain = await OptInAsync(registry, "Mine " + u);
+
+        var refused = await registry.SaveAsync(plain with { Name = "Taken " + u });
+
+        Assert.Equal(EmailErrors.Taken, refused.EmailError);
+        Assert.Equal("Mine " + u, (await registry.GetAsync(plain.Id))!.Name);
+        Assert.Equal(plain.Id, (await EmailDir("mine-" + u).ResolveAsync())?.AgentId);
+    }
+
+    [Fact]
+    public async Task PlainEmail_RenameToEmptySlug_Refused()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-rn-empty-" + u);
+        var plain = await OptInAsync(registry, "Name " + u);
+
+        Assert.Equal(EmailErrors.Empty, (await registry.SaveAsync(plain with { Name = "!!!" })).EmailError);
+        Assert.NotNull(await EmailDir("name-" + u).ResolveAsync());
+    }
+
+    [Fact]
+    public async Task PlainEmail_OptOut_MintsRandom_ReleasesName()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-optout-" + u);
+        var plain = await OptInAsync(registry, "Leaving " + u);
+
+        var result = await registry.SaveAsync(plain, plainEmail: false);
+
+        Assert.Null(result.EmailError);
+        Assert.Null(result.Agent.EmailPlain);
+        Assert.Matches("^agent-[a-z2-7]{32}$", result.Agent.EmailToken);
+        Assert.Null(await EmailDir("leaving-" + u).ResolveAsync());
+        Assert.Equal(plain.Id, (await EmailDir(result.Agent.EmailToken!).ResolveAsync())?.AgentId);
+    }
+
+    [Fact]
+    public async Task PlainEmail_Delete_ReleasesName()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-delete-" + u);
+        var plain = await OptInAsync(registry, "Gone " + u);
+
+        await registry.DeleteAsync(plain.Id);
+
+        Assert.Null(await EmailDir("gone-" + u).ResolveAsync());
+    }
+
+    [Fact]
+    public async Task PlainEmail_Regenerate_Refused()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-regen-" + u);
+        var plain = await OptInAsync(registry, "Fixed " + u);
+
+        var result = await registry.SaveAsync(plain, regenerateEmail: true);
+
+        Assert.Equal(EmailErrors.NotPlain, result.EmailError);
+        Assert.Equal(plain.Id, (await EmailDir("fixed-" + u).ResolveAsync())?.AgentId);
+    }
+
+    [Fact]
+    public async Task PlainEmail_StaleClaim_IsHealed()
+    {
+        var u = Unique();
+        var user = "plain-stale-" + u;
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>(user);
+        var created = (await registry.SaveAsync(SafePlainAgent("Stale " + u))).Agent;
+        // A crash left a claim held by an agent of the same user that no longer exists.
+        await EmailDir("stale-" + u).RegisterAsync(user, "vanished-agent");
+
+        var result = await registry.SaveAsync(created, plainEmail: true);
+
+        Assert.Null(result.EmailError);
+        Assert.Equal(created.Id, (await EmailDir("stale-" + u).ResolveAsync())?.AgentId);
+    }
+
+    [Fact]
+    public async Task PlainEmail_SameUserHolder_NoDeadlock()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-self-" + u);
+        await OptInAsync(registry, "Twin " + u);
+        var second = (await registry.SaveAsync(SafePlainAgent("Twin " + u))).Agent;
+
+        var result = await registry.SaveAsync(second, plainEmail: true).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(EmailErrors.Taken, result.EmailError);
+    }
+
+    [Fact]
+    public async Task PlainEmail_CrossUserOrphan_Refused()
+    {
+        var u = Unique();
+        // Another user's claim whose agent does not exist: never verified across users, so it stays refused.
+        await EmailDir("orphan-" + u).RegisterAsync("plain-orphan-owner-" + u, "no-such-agent");
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-orphan-" + u);
+        var created = (await registry.SaveAsync(SafePlainAgent("Orphan " + u))).Agent;
+
+        Assert.Equal(EmailErrors.Taken, (await registry.SaveAsync(created, plainEmail: true)).EmailError);
+    }
+
+    [Fact]
+    public async Task PlainEmail_CrashAfterDeregister_ResaveHeals()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-crash-" + u);
+        var plain = await OptInAsync(registry, "Crashy " + u);
+        // The crash window: the directory entry is gone but state still says plain.
+        await EmailDir("crashy-" + u).DeregisterAsync();
+        Assert.Null(await EmailDir("crashy-" + u).ResolveAsync());
+
+        var healed = await registry.SaveAsync(plain with { Description = "touched" });
+
+        Assert.Null(healed.EmailError);
+        Assert.Equal(plain.Id, (await EmailDir("crashy-" + u).ResolveAsync())?.AgentId);
+    }
+
+    [Fact]
+    public async Task PlainEmail_OptOut_CrashAfterDeregister_SlugDead()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-oo-crash-" + u);
+        var plain = await OptInAsync(registry, "Fade " + u);
+        // Opt-out deregisters the slug first; after that crash the slug must not resolve even though state is still plain.
+        await EmailDir("fade-" + u).DeregisterIfHeldByAsync("plain-oo-crash-" + u, plain.Id);
+
+        Assert.Null(await EmailDir("fade-" + u).ResolveAsync());
+        Assert.True((await registry.GetAsync(plain.Id))!.EmailPlain);
+    }
+
+    [Fact]
+    public async Task Put_OmitsPlainEmail_PreservesFlag()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-omit-" + u);
+        var plain = await OptInAsync(registry, "Keep " + u);
+
+        // A client that never heard of the field (Android, scripts) sends EmailToken/EmailPlain unset.
+        var saved = (await registry.SaveAsync(plain with { EmailPlain = null, EmailToken = null, Description = "d" })).Agent;
+
+        Assert.True(saved.EmailPlain);
+        Assert.Equal("keep-" + u, saved.EmailToken);
+    }
+
+    [Fact]
+    public async Task PlainEmail_CopilotKind_Refused()
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-copilot-" + Unique());
+        var created = (await registry.SaveAsync(SafePlainAgent("Shell " + Unique()) with { Kind = AgentKinds.Copilot })).Agent;
+
+        Assert.Equal(EmailErrors.UnsafeTools, (await registry.SaveAsync(created, plainEmail: true)).EmailError);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("memory")]
+    [InlineData("past_chats")]
+    public async Task PlainEmail_NullOrMemoryOrPastChatsTools_Refused(string? tool)
+    {
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-unsafe-" + Unique());
+        var created = (await registry.SaveAsync(SafePlainAgent("Risky " + Unique()))).Agent;
+        var risky = created with { EnabledTools = tool is null ? null : new List<string> { tool } };
+
+        Assert.Equal(EmailErrors.UnsafeTools, (await registry.SaveAsync(risky, plainEmail: true)).EmailError);
+    }
+
+    [Fact]
+    public async Task PlainEmail_ToolsEnabledLaterWhilePlain_Refused()
+    {
+        var u = Unique();
+        var registry = Cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("plain-later-" + u);
+        var plain = await OptInAsync(registry, "Later " + u);
+
+        var refused = await registry.SaveAsync(plain with { EnabledTools = new List<string> { ToolCatalog.Memory } });
+
+        Assert.Equal(EmailErrors.UnsafeTools, refused.EmailError);
+        Assert.Equal(new[] { ToolCatalog.WebSearch }, (await registry.GetAsync(plain.Id))!.EnabledTools);
+    }
 }
