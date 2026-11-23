@@ -273,6 +273,44 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.True(agent.McpExposed);
     }
 
+    // AC1 (ADR 0140): RetentionMinutes round-trips on every record that carries it, on the Cosmos JSON path (Serializer()
+    // is the grain-storage serializer), and the committed goldens predate it, so an old document must read null.
+    [Fact]
+    public void AgentGrainState_RetentionMinutes_RoundTrips()
+    {
+        var restored = Serializer().Deserialize<AgentGrainState>(
+            Serializer().Serialize(new AgentGrainState { RetentionMinutes = 10080 }));
+
+        Assert.Equal(10080, restored.RetentionMinutes);
+    }
+
+    [Fact]
+    public void AgentDefinition_RetentionMinutes_RoundTrips_AndDoesNotShiftNeighbours()
+    {
+        var registry = Serializer().Deserialize<AgentRegistryState>(Serializer().Serialize(new AgentRegistryState
+        {
+            Agents =
+            [
+                new AgentDefinition("a-1", "Hooky", "", "fake-model", "sys", default, default,
+                    ApiKeyHash: "h", EmailToken: "tok", RetentionMinutes: 60),
+            ],
+        }));
+
+        var agent = Assert.Single(registry.Agents);
+        Assert.Equal(60, agent.RetentionMinutes);
+        Assert.Equal("h", agent.ApiKeyHash);
+        Assert.Equal("tok", agent.EmailToken);
+    }
+
+    [Fact]
+    public void DocumentsWithoutRetention_ReadNull()
+    {
+        Assert.Null(Serializer().Deserialize<AgentGrainState>(new BinaryData(StoredAgentGrainStateJson)).RetentionMinutes);
+        var agent = Assert.Single(
+            Serializer().Deserialize<AgentRegistryState>(new BinaryData(PreResearchAgentRegistryJson)).Agents);
+        Assert.Null(agent.RetentionMinutes);
+    }
+
     // AC1 (artifact pane): the committed golden predates [Id(15)] Artifacts, so it carries no such key. It must
     // bind to an EMPTY dictionary, not null: the artifact tools and the list endpoint read it unguarded.
     [Fact]

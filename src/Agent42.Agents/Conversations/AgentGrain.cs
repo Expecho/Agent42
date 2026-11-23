@@ -359,6 +359,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // Persona, so snapshotted with the rest (ADR 0082 amends ADR 0003): BuildAgent below composes the research
         // loop from it, and editing the source agent later never changes this chat.
         _state.State.AgentKind = binding.Kind;
+        // Snapshot like the rest of the persona (ADR 0140 amends 0068/0003): editing the agent never changes this chat.
+        _state.State.RetentionMinutes = binding.RetentionMinutes;
 
         // Snapshot the agent's tools as a CONCRETE set (ADR 0021/0003): a null binding materializes to
         // all-selectable, so the persona is self-contained and never inherits the USER's per-chat default.
@@ -392,6 +394,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         if (!ephemeral)
         {
             await _state.WriteStateAsync();
+            await RegisterRetentionSweepAsync();
         }
 
         _logger.LogInformation("Agent grain {GrainKey} bound to agent {AgentId} ({AgentName}) on model {Model}",
@@ -402,7 +405,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         => Task.FromResult(_state.State.AgentId is { Length: > 0 } id
             ? new AgentBinding(
                 id, _state.State.AgentName ?? "", _state.State.SystemPrompt ?? "", _modelId,
-                _state.State.EnabledTools, _state.State.AgentKind)
+                _state.State.EnabledTools, _state.State.AgentKind, _state.State.RetentionMinutes)
             : null);
 
     public async IAsyncEnumerable<AgentStreamEvent> ChatAsync(
@@ -1607,6 +1610,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     /// </summary>
     public async Task ReceiveReminder(string reminderName, TickStatus status)
     {
+        // The idle retention sweep (ADR 0140) is not a scheduled prompt: it runs no model, sends no push, publishes no
+        // usage and does not touch _runsInFlight, so it is dispatched before everything below.
+        if (reminderName == RetentionLimits.SweepReminderName)
+        {
+            await SweepRetentionAsync();
+            return;
+        }
+
         PublishUsageApplication();
 
         // A fired reminder always persists and nobody watches it, so its run is background (ADR 0106). A fresh

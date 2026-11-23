@@ -29,14 +29,14 @@ public sealed partial class AgentGrain
     /// </summary>
     private bool ApplyRetention()
     {
-        if (!IsRetentionWindowed()
+        if (EffectiveRetentionWindow() is not { } window
             || !_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
         {
             return false;
         }
 
         var result = _retention.Apply(new RetentionContext(
-            messages, _state.State.TurnAttachments, _state.State.GeneratedImages, () => ProjectHistory().Count));
+            messages, _state.State.TurnAttachments, _state.State.GeneratedImages, () => ProjectHistory().Count, window));
         if (result.Pruned)
         {
             // A pruned turn takes its MCP App calls with it (ADR 0133): all four persist sites come through here.
@@ -48,8 +48,10 @@ public sealed partial class AgentGrain
     }
 
     /// <summary>
-    /// True when this grain's history is bounded to <see cref="RetentionLimits.Window"/> — the only
-    /// conversations this feature stamps or prunes. See
+    /// This conversation's effective retention window, or null when it has none (ADR 0140): the snapshotted
+    /// <see cref="AgentGrainState.RetentionMinutes"/> when the source agent set one, else
+    /// <see cref="RetentionLimits.Window"/> for a continuous or MCP conversation, else null. Null means the
+    /// conversation is neither stamped nor pruned — the only conversations this feature touches are windowed. See
     /// <see cref="RetentionLimits.ContinuousConversationIdPrefix"/> for why an id shape is the signal
     /// and no ADR 0016 reversal is needed.
     ///
@@ -60,10 +62,23 @@ public sealed partial class AgentGrain
     /// contrast, gets a new id per conversation and is deliberately left unstamped: see the
     /// per-message byte cost in <see cref="ApplyRetention"/>'s remarks.</para>
     /// </summary>
-    private bool IsRetentionWindowed()
+    private TimeSpan? EffectiveRetentionWindow()
     {
         var id = ConversationId();
+
+        // An MCP conversation is fixed at 24 h whatever it was bound with (ADR 0140; AgentMcpRunner passes no value).
+        if (id.StartsWith(AgentMcpLimits.ConversationIdPrefix, StringComparison.Ordinal))
+        {
+            return RetentionLimits.Window;
+        }
+
+        if (_state.State.RetentionMinutes is { } minutes)
+        {
+            return TimeSpan.FromMinutes(minutes);
+        }
+
         return id.StartsWith(RetentionLimits.ContinuousConversationIdPrefix, StringComparison.Ordinal)
-            || id.StartsWith(AgentMcpLimits.ConversationIdPrefix, StringComparison.Ordinal);
+            ? RetentionLimits.Window
+            : null;
     }
 }

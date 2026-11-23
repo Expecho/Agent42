@@ -3,7 +3,7 @@
 import { clearPendingAttachments } from "./attachments.js";
 import { cacheGet, cachePut } from "./cache.js";
 import { selectConversation, setActiveAgentId, setActiveAgentKind, setActiveId, setPendingAgentId } from "./conversations.js";
-import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentContinuousNote, agentDescriptionInput, agentDialog, agentEmailCopyBtn, agentEmailNote, agentEmailSection, agentEmailValue, agentForm, agentFormTitle, agentKeyCopyBtn, agentKindField, agentKindSelect, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateEmailBtn, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
+import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentContinuousNote, agentDescriptionInput, agentRetentionSelect, agentDialog, agentEmailCopyBtn, agentEmailNote, agentEmailSection, agentEmailValue, agentForm, agentFormTitle, agentKeyCopyBtn, agentKindField, agentKindSelect, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateEmailBtn, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
 import { closeDrawer } from "./drawer.js";
 import { defaultModel, fillModelOptions, modelLabel, selectModel, setModel } from "./models.js";
 import { streaming } from "./send.js";
@@ -142,6 +142,20 @@ export function startAgentChat(agent) {
 // The history-mode note as index.html writes it, restored when the dialog opens on an ordinary agent.
 const CONTINUOUS_NOTE = "All chats started from this agent share one ongoing history.";
 
+// The auto-delete presets in minutes (ADR 0140), matching RetentionLimits.Presets on the server.
+const RETENTION_PRESETS = [[60, "1 hour"], [1440, "24 hours"], [10080, "7 days"], [43200, "30 days"]];
+
+// A per-chat agent can pick Never; a continuous agent cannot (ADR 0016/0068 brick protection), so its first option is
+// the legacy 24 hours and the explicit 24 hours is not offered twice. Both unset states send null.
+function fillRetentionOptions(continuous, selected) {
+  const options = RETENTION_PRESETS.filter(([minutes]) => !(continuous && minutes === 1440));
+  const first = continuous ? "Default (24 hours)" : "Never";
+  agentRetentionSelect.replaceChildren(
+    new Option(first, ""),
+    ...options.map(([minutes, label]) => new Option(label, String(minutes))));
+  agentRetentionSelect.value = selected != null && options.some(([minutes]) => minutes === selected) ? String(selected) : "";
+}
+
 function openAgentDialog(agent) {
   editingAgentId = agent?.id ?? null;
   agentFormTitle.textContent = agent ? "Edit agent" : "New agent";
@@ -149,6 +163,7 @@ function openAgentDialog(agent) {
   agentDescriptionInput.value = agent?.description ?? "";
   agentSystemPromptInput.value = agent?.systemPrompt ?? "";
   agentContinuousInput.checked = agent?.continuous ?? false;
+  fillRetentionOptions(agentContinuousInput.checked, agent?.retentionMinutes ?? null);
   // The type is chosen on create only: an agent's kind never changes once saved, so the field is hidden on edit.
   agentKindField.hidden = !!agent;
   agentKindSelect.value = "";
@@ -193,6 +208,9 @@ function applyKindLock(kind) {
   const perChatOnly = kind === "research" || kind === "copilot";
   agentContinuousInput.disabled = perChatOnly;
   if (perChatOnly) agentContinuousInput.checked = false;
+  // Retention is per-chat-only-forbidden for the same reason (ADR 0140): the server forces it to null.
+  agentRetentionSelect.disabled = perChatOnly;
+  if (perChatOnly) fillRetentionOptions(false, null);
   agentContinuousNote.textContent = perChatOnly
     ? `A ${kind} agent always starts a fresh chat: its history can't be shared across chats.`
     : CONTINUOUS_NOTE;
@@ -243,6 +261,7 @@ async function saveAgent() {
     model: agentModelSelect.value,
     systemPrompt: agentSystemPromptInput.value.trim(),
     continuous: agentContinuousInput.checked,
+    retentionMinutes: agentRetentionSelect.value ? Number(agentRetentionSelect.value) : null,
     mcpExposed: agentMcpExposedInput.checked,
   };
   // The type rides a create only; the server ignores it on an update.
@@ -357,6 +376,9 @@ export function wireAgents() {
   // this only ever fires while the flag is still settable.
   incognitoBtn.addEventListener("click", () => setIncognito(!ephemeral));
   addAgentBtn.addEventListener("click", () => openAgentDialog(null));
+  agentContinuousInput.addEventListener("change", () => {
+    fillRetentionOptions(agentContinuousInput.checked, agentRetentionSelect.value ? Number(agentRetentionSelect.value) : null);
+  });
   agentKindSelect.addEventListener("change", () => {
     applyKindLock(agentKindSelect.value || null);
     // The GitHub Copilot models come and go with the copilot type (ADR 0108); keep the pick when it is still offered.

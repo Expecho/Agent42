@@ -10,6 +10,8 @@ amends: [0016, 0061]
 
 # A continuous agent's history is pruned to a 24-hour window
 
+> **Amended by [ADR 0140](0140-per-agent-message-retention.md) (2026-11-23): the window is now a per-agent setting.** A stored agent can carry its own retention (never / 1 h / 24 h / 7 d / 30 d) for per-chat and continuous chats alike, enforced by an idle sweep. Unset keeps this ADR's 24 h behaviour for a continuous chat.
+
 > **Amends [ADR 0016](0016-per-agent-history-mode-deterministic-conversation-id.md)** — it recorded the
 > 2 MB brick as "a designed-in failure mode" and closed with **"No code mitigation is in scope beyond
 > documenting this."** That scope call is reversed here. ADR 0016 otherwise stands entirely: the flag

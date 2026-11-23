@@ -200,7 +200,7 @@ public static partial class AgentApi
             {
                 await agent.BindAgentAsync(new AgentBinding(
                     definition.Id, definition.Name, definition.SystemPrompt, definition.Model,
-                    definition.EnabledTools, definition.Kind), request.Ephemeral);
+                    definition.EnabledTools, definition.Kind, definition.RetentionMinutes), request.Ephemeral);
             }
 
             model = null;

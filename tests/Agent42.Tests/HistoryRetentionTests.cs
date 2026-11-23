@@ -31,6 +31,17 @@ public sealed class HistoryRetentionTests
         _attachments.Add(attachment is null ? [] : [attachment]);
     }
 
+    // AC12 (ADR 0140): the sweep period is a quarter of the window, clamped to 15 min .. 6 h.
+    [Theory]
+    [InlineData(60, 15)]
+    [InlineData(1440, 360)]
+    [InlineData(10080, 360)]
+    [InlineData(43200, 360)]
+    [InlineData(20, 15)]
+    [InlineData(120, 30)]
+    public void SweepPeriod_IsAQuarterOfTheWindow_Clamped(int windowMinutes, int expectedMinutes)
+        => Assert.Equal(TimeSpan.FromMinutes(expectedMinutes), RetentionLimits.SweepPeriod(TimeSpan.FromMinutes(windowMinutes)));
+
     private static bool IsProjected(ChatMessage m) => !string.IsNullOrWhiteSpace(m.Text);
 
     private List<string> Texts() => [.. _messages.Select(m => m.Text)];

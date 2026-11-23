@@ -17,12 +17,15 @@ public interface IHistoryRetention
 /// What one retention pass works on: the session's message list and the two state collections that index off it.
 /// <paramref name="ProjectedTurnCount"/> counts the client-visible projection (the search ordinals); it is read on
 /// either side of the removal, because the shift is measured in PROJECTED turns, never in user turns.
+/// <paramref name="Window"/> is this conversation's effective retention window (ADR 0140); null means the legacy
+/// <see cref="RetentionLimits.Window"/>.
 /// </summary>
 public sealed record RetentionContext(
     List<ChatMessage> Messages,
     List<List<AttachmentRef>> TurnAttachments,
     Dictionary<string, AttachmentRef> GeneratedImages,
-    Func<int> ProjectedTurnCount);
+    Func<int> ProjectedTurnCount,
+    TimeSpan? Window = null);
 
 /// <summary>
 /// Whether a pass dropped anything (the search reconcile's input), and by how many projected turns (the incognito

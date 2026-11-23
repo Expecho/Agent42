@@ -273,12 +273,43 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   never collide — do not "fix" the derivation to hash or encode the id.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/agents.js` (`startAgentChat`),
   `src/Agent42.Agents/StoredAgents/AgentDefinition.cs` (`Continuous`), `src/Agent42.Backend/Api/AgentApi.cs` (`AgentKey`),
-  `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs` (`IsRetentionWindowed`),
+  `src/Agent42.Agents/Conversations/AgentGrain.Retention.cs` (`EffectiveRetentionWindow`),
   `src/Agent42.Agents/Conversations/HistoryRetention.cs`, `src/Agent42.Agents/Conversations/RetentionLimits.cs`,
   `.agentic/decisions/0016-per-agent-history-mode-deterministic-conversation-id.md`,
   `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
+  `.agentic/decisions/0140-per-agent-message-retention.md`,
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0003-snapshot-agent-persona-into-conversation.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-23
+
+**Amended by ADR 0140 (2026-11-23): the id prefix is no longer the only retention signal.** An agent can carry
+`RetentionMinutes`, snapshotted into `AgentBinding` → `AgentGrainState` at bind time, so the window is
+`EffectiveRetentionWindow()`: the MCP prefix is always 24 h; else the snapshotted value; else 24 h for an `agent-` id;
+else none (a per-chat chat without the setting is neither stamped nor pruned, so the 256 KB budget canary does not move).
+Like the persona it is a snapshot: editing the agent's retention changes only chats started afterwards, and an ongoing
+continuous chat keeps the value it was first bound with until it is deleted. The prune now also runs on edit/regenerate
+for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
+
+### The retention sweep is a reserved reminder, and its delete leaves two dangling ids
+
+- **Claim:** a chat bound with a retention value registers an Orleans reminder named `RetentionLimits.SweepReminderName`
+  (`__retention`, ADR 0140). Four traps. (1) `ReceiveReminder` dispatches that name **before** `PublishUsageApplication()`:
+  it must run no model, push nothing and not touch `_runsInFlight`; the name is not in `ScheduledPrompts`, so falling
+  through to `RunReminderAsync` would only log a warning, but moving the dispatch below the usage line publishes usage
+  for a tick. (2) `cancel_all_scheduled_prompts` iterates **every** reminder (`GetReminders()`), so it skips the reserved
+  name, and `schedule_prompt` refuses a name starting with it (reusing a name updates the reminder). (3) A tick with
+  `_runsInFlight > 0` skips: `ChatAsync` streams as interleaving `MoveNext` calls and `ReceiveReminder` is not
+  interleaving, so a tick can land between two pulls; deleting the chat under a running turn is the worst failure here.
+  (4) When everything has expired the sweep deletes the **whole chat** from inside the grain, which leaves two live
+  pointers to the purged id: the chat-app route (`ChatRouteGrain` keeps the current `ConversationId`; the sweep resets
+  it, but only when the route still points at this conversation) and a browser tab left open (the client sends `agentId`
+  only on a first turn, so a turn typed there re-lists the chat persona-less; accepted, same as deleting from another
+  tab). A fork carries the SOURCE's `CreatedAt` stamps, so `InitializeFromForkAsync` re-stamps every copied message,
+  or a fork cut at an early exchange is swept at its first tick. Unstamped messages are stamped "now", never deleted.
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.RetentionSweep.cs`,
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ReceiveReminder`),
+  `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`, `tests/Agent42.Tests/AgentRetentionSweepTests.cs`,
+  `.agentic/decisions/0140-per-agent-message-retention.md`
+- **Verified:** 2026-11-23
 
 ### There is ONE web fetch path, `read_web_document`, and its SSRF guard is load-bearing
 

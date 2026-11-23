@@ -15,7 +15,17 @@ Every user also gets a seeded Research agent. See [Research agent](research-agen
 - **Per-chat** (default): each start is a fresh conversation.
 - **Continuous**: every start resumes one ongoing conversation with that agent.
 
-Continuous chats only keep the last 24 hours of messages, so they don't grow forever. Deleting a continuous agent's conversation resets it fully. A conversation's tool set is fixed when it starts, so a continuous agent started before a new tool existed won't get that tool until you reset it.
+Continuous chats only keep the last 24 hours of messages by default, so they don't grow forever. Deleting a continuous agent's conversation resets it fully. A conversation's tool set is fixed when it starts, so a continuous agent started before a new tool existed won't get that tool until you reset it.
+
+## Auto-delete messages
+
+An agent can delete its chats' messages after a set time: 1 hour, 24 hours, 7 days or 30 days. A per-chat agent defaults to **Never**; a continuous agent can't pick Never and defaults to 24 hours. Research and Copilot agents don't have the setting.
+
+- Messages older than the setting are removed the next time you send one, and also while the chat sits idle: a background sweep runs every few minutes to hours (a quarter of the setting, between 15 minutes and 6 hours).
+- When every message in a chat has expired, the whole chat is deleted, as if you had pressed Delete. A chat that came from Telegram, Slack or Discord starts fresh on your next message there.
+- Chats started by an API-key run or an inbound email are deleted the same way, so read their results within the setting.
+- The setting is copied into a chat when it starts. Editing the agent changes only chats started afterwards, and an ongoing continuous chat keeps the value it started with until you delete it. A fork carries its source's setting and starts its own clock.
+- Deleted text can survive in a few places the app can't reach: long-term memory notes, the operator's diagnostic logs until they roll, attachment files, and the copy your browser keeps until it refreshes (ADR 0068, 0140).
 
 ## Run it from outside the browser
 

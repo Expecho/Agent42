@@ -115,6 +115,7 @@ public sealed partial class AgentGrain
             AgentName: _state.State.AgentName,
             SystemPrompt: _state.State.SystemPrompt,
             AgentKind: _state.State.AgentKind,
+            RetentionMinutes: _state.State.RetentionMinutes,
             DeploymentName: string.IsNullOrEmpty(_modelId) ? _state.State.DeploymentName : _modelId,
             EnabledTools: _state.State.EnabledTools is { } tools ? [.. tools] : null,
             SerializedSession: JsonSerializer.Serialize(await _agent.SerializeSessionAsync(copy)),
@@ -141,6 +142,7 @@ public sealed partial class AgentGrain
         _state.State.AgentName = fork.AgentName;
         _state.State.SystemPrompt = fork.SystemPrompt;
         _state.State.AgentKind = fork.AgentKind;
+        _state.State.RetentionMinutes = fork.RetentionMinutes;
         _state.State.DeploymentName = fork.DeploymentName;
         _state.State.EnabledTools = fork.EnabledTools is { } tools ? [.. tools] : null;
 
@@ -170,9 +172,15 @@ public sealed partial class AgentGrain
         await BindForkedSessionAsync(fork.SerializedSession);
 
         CompactToolPayloads();
+        if (fork.RetentionMinutes is not null)
+        {
+            RestampSessionNow();
+        }
+
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
         await _state.WriteStateAsync();
+        await RegisterRetentionSweepAsync();
         await _search.IndexNewTurnsAsync();
 
         _logger.LogInformation(

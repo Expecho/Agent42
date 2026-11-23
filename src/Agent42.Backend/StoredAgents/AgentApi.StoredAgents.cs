@@ -47,12 +47,17 @@ public static partial class AgentApi
                 return Results.Text(AutoModelRefusal.Message, "text/plain", statusCode: StatusCodes.Status400BadRequest);
             }
 
+            if (!ValidRetention(request.RetentionMinutes))
+            {
+                return Results.Text(RetentionRefusal, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var result = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition("", request.Name, request.Description, request.Model, request.SystemPrompt,
                     default, default, request.Continuous, request.EnabledTools,
                     // By NAME: McpExposed is the eleventh positional parameter and these call sites pass
                     // nine, so a positional append would silently land in ApiKeyHash (ADR 0065's scar).
-                    McpExposed: request.McpExposed, Kind: request.Kind));
+                    McpExposed: request.McpExposed, Kind: request.Kind, RetentionMinutes: request.RetentionMinutes));
             return Results.Json(new AgentSaveResponse(result.Agent, result.PlaintextApiKey));
         });
 
@@ -65,10 +70,15 @@ public static partial class AgentApi
                 return Results.Text(AutoModelRefusal.Message, "text/plain", statusCode: StatusCodes.Status400BadRequest);
             }
 
+            if (!ValidRetention(request.RetentionMinutes))
+            {
+                return Results.Text(RetentionRefusal, "text/plain", statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var result = await grains.GetGrain<IAgentRegistryGrain>(http.GetUserId()).SaveAsync(
                 new AgentDefinition(id, request.Name, request.Description, request.Model, request.SystemPrompt,
                     default, default, request.Continuous, request.EnabledTools,
-                    McpExposed: request.McpExposed),
+                    McpExposed: request.McpExposed, RetentionMinutes: request.RetentionMinutes),
                 request.RegenerateKey, request.RegenerateEmail);
             return Results.Json(new AgentSaveResponse(result.Agent, result.PlaintextApiKey));
         });
@@ -83,6 +93,11 @@ public static partial class AgentApi
 
         app.MapPost("/api/agent-run", RunAgentAsync).DisableAntiforgery();
     }
+
+    private const string RetentionRefusal = "Unknown retention. Use one of 60, 1440, 10080, 43200 minutes, or omit it.";
+
+    // null = unset; otherwise one of the presets (ADR 0140).
+    private static bool ValidRetention(int? minutes) => minutes is null || RetentionLimits.Presets.Contains(minutes.Value);
 
     // External async run (ADR 0022): a per-agent API key (X-Api-Key header) invokes an agent WITHOUT a
     // signed-in session. Multipart (a 'prompt' field + optional 'file' parts) so external automation can
@@ -160,7 +175,7 @@ public static partial class AgentApi
         // Snapshot the agent's persona into the conversation (ADR 0003): pins its model + tools for the run.
         await agentGrain.BindAgentAsync(new AgentBinding(
             definition.Id, definition.Name, definition.SystemPrompt, definition.Model, definition.EnabledTools,
-            definition.Kind));
+            definition.Kind, definition.RetentionMinutes));
 
         // Enable retrieval for any ingested document BEFORE the run, so the turn can see it (ADR 0008).
         foreach (var name in documentNames)

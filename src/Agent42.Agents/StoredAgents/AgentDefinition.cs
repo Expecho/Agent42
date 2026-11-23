@@ -52,6 +52,11 @@ namespace Agent42.Agents;
 /// is the only revocation. The grain is the authority on it, exactly as on the hash: a request never carries it.
 /// <c>null</c> means none minted yet (agents stored before it get one on their next regenerate); nullable for
 /// the same Cosmos JSON reason as <see cref="Kind"/>.</para>
+///
+/// <para><see cref="RetentionMinutes"/> is the per-agent message-retention preset (ADR 0140, amends 0068), one of
+/// <see cref="RetentionLimits.Presets"/>; <c>null</c> = unset (a per-chat chat keeps everything, a continuous chat keeps
+/// the legacy 24 h). Persona, not routing: it is snapshotted into <see cref="AgentBinding"/> at bind time. Forced to null
+/// for per-chat-only kinds. Nullable for the same Cosmos JSON reason as <see cref="Kind"/>.</para>
 /// </remarks>
 [GenerateSerializer]
 [Alias("Agent42.Agents.AgentDefinition")]
@@ -68,4 +73,5 @@ public sealed record AgentDefinition(
     [property: Id(9)] string ApiKeyHash = "",
     [property: Id(10)] bool McpExposed = false,
     [property: Id(11)] string? Kind = null,
-    [property: Id(12)] string? EmailToken = null);
+    [property: Id(12)] string? EmailToken = null,
+    [property: Id(13)] int? RetentionMinutes = null);
