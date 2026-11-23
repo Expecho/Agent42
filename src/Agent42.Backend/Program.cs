@@ -68,10 +68,7 @@ builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(options =>
 
 // The managed identity drives the services that are NOT Azure OpenAI: blob storage (user-delegation SAS)
 // and — kept for a future discovering provider — the ARM management plane. TenantId still binds it.
-var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
-{
-    TenantId = builder.Configuration["AzureOpenAI:TenantId"],
-});
+var credential = new DefaultAzureCredential(AzureCredentialSettings.Options(builder.Configuration));
 
 // Model providers (ADR 0013, availability floor removed by ADR 0019). The app ships NO baseline chat
 // provider — Models:Providers is empty in appsettings — so chat is entirely the per-user overlay
