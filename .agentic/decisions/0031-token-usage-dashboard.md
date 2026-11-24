@@ -3,6 +3,7 @@ id: 0031
 date: 2026-07-22
 status: accepted
 tags: [telemetry, opentelemetry, usage, tokens, dashboard, grains, cosmos, cross-user, easy-auth, egress]
+amended_by: [0104, 0110, 0121]
 ---
 
 # Token-usage dashboard fed from OpenTelemetry, stored in a global grain

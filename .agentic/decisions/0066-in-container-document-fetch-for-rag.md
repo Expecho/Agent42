@@ -6,6 +6,7 @@ tags: [rag, documents, web, ssrf, security, prompt-injection, tools, no-migratio
 supersedes: []
 extends: [0007, 0008, 0021]
 amends: [0011, 0027, 0056]
+amended_by: [0067, 0098, 0106, 0125]
 ---
 
 # `read_web_document`: fetch a web-hosted document in-container and ingest it into conversation RAG

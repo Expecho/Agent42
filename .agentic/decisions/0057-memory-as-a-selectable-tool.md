@@ -6,6 +6,7 @@ tags: [memory, egress, tools, selection, third-party, no-migration]
 supersedes: []
 extends: [0034, 0048, 0053]
 amends: [0021, 0056]
+amended_by: [0131]
 ---
 
 # Long-term memory is a selectable tool

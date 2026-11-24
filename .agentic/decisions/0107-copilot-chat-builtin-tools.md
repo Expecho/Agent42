@@ -5,6 +5,7 @@ status: accepted
 tags: [copilot, github-copilot-sdk, sessionfs, azure-files, infra, tools, permissions, egress, trust-boundary, kill-switch, no-migration]
 supersedes: []
 amends: [0085, 0097]
+amended_by: [0121]
 ---
 
 # Copilot chats get the runtime's built-in tools, auto-approved, with an Azure Files workspace per conversation

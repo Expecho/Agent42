@@ -5,6 +5,7 @@ status: accepted
 tags: [artifacts, tools, frontend, share-links, security, csp, sandbox, egress, session-size, storage]
 supersedes: []
 amends: [0004, 0013, 0021, 0035]
+amended_by: [0098]
 ---
 
 # Model-created, versioned artifacts, served under a CSP sandbox header and compacted out of the session

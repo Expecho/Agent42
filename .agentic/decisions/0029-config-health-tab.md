@@ -3,6 +3,7 @@ id: 0029
 date: 2026-07-21
 status: accepted
 tags: [diagnostics, configuration, preferences, security, secrets, egress, probes, easy-auth]
+amended_by: [0121, 0125]
 ---
 
 # Configuration health tab in Preferences

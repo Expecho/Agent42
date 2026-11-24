@@ -3,6 +3,7 @@ id: 0014
 date: 2026-07-15
 status: accepted
 tags: [models, providers, responses-api, chat-completions, openai, foundry, api-mode, config, data-egress, hosted-tools]
+amended_by: [0017, 0071]
 ---
 
 # Support the OpenAI Responses API on the Foundry provider, run statelessly

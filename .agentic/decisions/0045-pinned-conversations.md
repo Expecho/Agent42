@@ -6,6 +6,7 @@ tags: [frontend, orleans, conversations, sidebar, ux, persistence, css, pwa]
 supersedes: []
 extends: []
 amends: []
+amended_by: [0052, 0073]
 ---
 
 # Pin a conversation so it leads the sidebar

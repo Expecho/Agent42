@@ -17,7 +17,9 @@ argument-hint: "<short description of the decision>"
 3. **Write** `NNNN-<slug>.md` (next free number on `origin/main` — fetch first; a parallel branch may
    have taken it, and `AdrNumberingTests` fails on a duplicate) from `0000-adr-template.md`. Today's
    date, `status: accepted`, meaningful `tags`.
-4. **On supersession:** set `supersedes: NNNN` in the new file AND edit the old ADR
+4. **On amendment** (including a partial supersession): `amends: [NNNN]` in the new file AND add the new id
+   to the old ADR's `amended_by: [...]` (YAML lists, prose after `#`; `AdrLinkTests` fails otherwise).
+   **On supersession:** set `supersedes: NNNN` in the new file AND edit the old ADR
    (`status: superseded`, `superseded_by: MMMM`). Same commit.
 5. If the decision creates a non-obvious constraint agents will trip on, also add a
    gotcha entry (see `/gotcha`) pointing at the ADR as evidence context.

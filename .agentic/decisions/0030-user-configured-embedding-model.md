@@ -3,7 +3,8 @@ id: 0030
 date: 2026-07-21
 status: accepted
 tags: [rag, documents, embeddings, model-providers, config, security]
-# amends (in-body, not superseded_by): 0007, 0017, 0019; extends 0018
+amends: [0007, 0017, 0019]
+extends: [0018]
 ---
 
 # User-configured embedding model — remove the operator embedding availability floor

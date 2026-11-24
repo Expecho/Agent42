@@ -6,6 +6,7 @@ tags: [frontend, pwa, mobile, conversations, streaming, resilience, ux]
 supersedes: []
 extends: [0004, 0032]
 amends: []
+amended_by: [0080, 0082, 0089]
 ---
 
 # Recover a reply whose stream died while the app was backgrounded

@@ -6,6 +6,7 @@ tags: [mcp, tools, per-user, selection, ux, no-migration, persistence]
 supersedes: []
 extends: [0024, 0048]
 amends: [0021, 0026]
+amended_by: [0064]
 ---
 
 # Per-MCP-tool selectable tools — `mcp:{serverId}:{toolName}` keys

@@ -5,6 +5,7 @@ status: accepted
 tags: [mcp, oauth, auth, refresh, cache, frontend, stream-events, no-migration]
 supersedes: []
 amends: [0025, 0064]
+amended_by: [0087]
 ---
 
 # Refresh an MCP OAuth token per request, and offer Reconnect in the turn when the grant is dead

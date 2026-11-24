@@ -6,6 +6,7 @@ tags: [mcp, diagnostics, ux, endpoint, no-migration, oauth]
 supersedes: []
 extends: [0025, 0029]
 amends: [0024, 0026, 0058]
+amended_by: [0069, 0081]
 ---
 
 # Tell the user whether a newly added MCP server actually works

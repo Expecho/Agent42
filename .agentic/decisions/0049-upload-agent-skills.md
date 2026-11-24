@@ -3,7 +3,8 @@ id: 0049
 date: 2026-08-25
 status: accepted
 tags: [skills, tools, storage, security, prompt-injection, no-migration, per-user]
-amends: 0048 (per-deployment → per-user, and the "no ordering hazard" clause), 0021 (the skills gate's catalog)
+amends: [0021, 0048]   # 0048 (per-deployment → per-user, and the "no ordering hazard" clause), 0021 (the skills gate's catalog)
+amended_by: [0085, 0126]
 ---
 
 # Title: Upload your own agent skills (`.md` or `.zip`)

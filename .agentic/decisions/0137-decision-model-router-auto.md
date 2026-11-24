@@ -5,6 +5,7 @@ status: accepted
 tags: [models, routing, foundry, egress, per-user, no-migration]
 supersedes: []
 extends: [0013, 0018, 0019, 0103, 0108]
+amended_by: [0138, 0139]
 ---
 
 # Title: Route "Auto" turns with a per-user Microsoft Decision-1 provider

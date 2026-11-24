@@ -3,6 +3,7 @@ id: 0036
 date: 2026-07-31
 status: accepted
 tags: [agents, conversations, ux, suggestions, preferences, streaming, egress]
+amended_by: [0070]
 ---
 
 # Follow-up suggestion prompts

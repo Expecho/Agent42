@@ -3,6 +3,7 @@ id: 0034
 date: 2026-07-26
 status: accepted
 tags: [agents, conversations, privacy, ephemeral, incognito, session, persistence, routing]
+amended_by: [0044, 0085, 0106]
 ---
 
 # Ephemeral ("incognito") chat

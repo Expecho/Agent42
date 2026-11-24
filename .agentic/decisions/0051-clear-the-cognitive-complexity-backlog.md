@@ -3,7 +3,7 @@ id: 0051
 date: 2026-08-25
 status: accepted
 tags: [quality-gates, refactoring, complexity, no-behaviour-change]
-amends: 0050 (the gate now blocks; its recorded backlog is gone)
+amends: [0050]   # 0050 (the gate now blocks; its recorded backlog is gone)
 ---
 
 # Title: Clear the cognitive-complexity backlog and make the gate block

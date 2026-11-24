@@ -5,6 +5,7 @@ status: accepted
 tags: [research, stored-agents, agent-framework, loop, todos, compaction, stream-events, frontend, experimental-api, no-migration]
 supersedes: []
 amends: [0003, 0016, 0046, 0078]
+amended_by: [0085]
 ---
 
 # Seed a built-in Research agent that loops plan → search → reflect, with a live checklist

@@ -6,6 +6,7 @@ tags: [fleet, agents, lessons, unattended, egress, untrusted, reminders, blob, u
 supersedes: []
 extends: [0097, 0122, 0123]
 amends: []
+amended_by: [0143]
 ---
 
 # The fleet learns lessons about team design in a nightly, opt-in "dream" and applies them to every planner

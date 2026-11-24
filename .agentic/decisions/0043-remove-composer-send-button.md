@@ -6,6 +6,7 @@ tags: [frontend, composer, ux, pwa, accessibility]
 supersedes: []
 extends: []
 amends: [0023]
+amended_by: [0078]
 ---
 
 # Remove the composer send button; Enter becomes the send control

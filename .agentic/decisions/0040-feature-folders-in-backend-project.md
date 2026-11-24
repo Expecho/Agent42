@@ -6,6 +6,7 @@ tags: [refactor, structure, backend, minimal-api, tooling]
 supersedes: []
 amends: []
 extends: [0039]
+amended_by: [0063, 0105]
 ---
 
 # Feature folders in `Agent42.Backend`, and `MapAgentApi` split into per-feature partials

@@ -6,7 +6,7 @@ tags: [refactor, structure, frontend, pwa, tooling]
 supersedes: []
 amends: []
 extends: [0039, 0040]
-amended_by: 0083   # rich rendering: the app loads a classic renderer from /shared/lib/
+amended_by: [0083]   # rich rendering: the app loads a classic renderer from /shared/lib/
 ---
 
 # `app.js` split into native ES feature modules

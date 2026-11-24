@@ -3,7 +3,7 @@ id: 0020
 date: 2026-07-17
 status: accepted
 tags: [models, capabilities, image-generation, attachments, per-user, security, data-egress]
-amends: 0004 (assistant-generated attachments), 0013 (egress extends to image models + image bytes), 0018 (per-user providers gain image models)
+amends: [0004, 0013, 0018]   # 0004 (assistant-generated attachments), 0013 (egress extends to image models + image bytes), 0018 (per-user providers gain image models)
 ---
 
 # OpenAI-compatible image-generation model capability (text-to-image + image-to-image)

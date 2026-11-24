@@ -6,6 +6,7 @@ tags: [push-notifications, tools, selectable-tools, prompt-injection, security, 
 supersedes: []
 extends: [0021]
 amends: [0028, 0070]
+amended_by: [0106, 0111]
 ---
 
 # A model-invoked push notification tool

@@ -3,7 +3,7 @@ id: 0012
 date: 2026-07-13
 status: accepted
 tags: [location, tools, privacy, pii, geocoding, prompt-injection, frontend, container-apps]
-amended_by: 0093   # the position is now the answer to a client tool; it no longer rides the chat request
+amended_by: [0093]   # the position is now the answer to a client tool; it no longer rides the chat request
 ---
 
 # The user's location as a function tool, carried in on the chat request

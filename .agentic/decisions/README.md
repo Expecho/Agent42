@@ -12,6 +12,9 @@ handles supersession. Never edit an accepted ADR's decision content; supersede i
 - `status:` is one of `accepted`, `superseded`, `rejected`.
 - Superseding: new ADR gets `supersedes: NNNN`; the old ADR gets
   `superseded_by: MMMM` and `status: superseded`. Both edits land in the same commit.
+- Amending (or a partial supersession, which leaves the old ADR `accepted`): the new ADR gets
+  `amends: [NNNN]` (or `supersedes: [NNNN]`), and the old one gets the new id in `amended_by: [...]`, never
+  `superseded_by`. Link keys are YAML lists; any prose goes after a `#`. `AdrLinkTests` enforces both.
 - Keep it short. Context (2–5 lines), Decision (1–3 lines), Alternatives considered
   (bullets with the reason each lost), Consequences (incl. accepted downsides).
 - Tag with the area (`tags: [database, auth, ...]`) so `grep -l "tags:.*auth"` works.

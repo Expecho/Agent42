@@ -5,6 +5,7 @@ status: accepted
 tags: [documents, rag, tools, selectable-tools, compaction, session-size, cosmos, no-migration, no-egress]
 supersedes: []
 amends: [0007, 0066, 0084]
+amended_by: [0106]
 ---
 
 # `read_document`: sequential reading of ingested documents

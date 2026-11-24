@@ -3,6 +3,7 @@ id: 0077
 date: 2026-09-19
 status: accepted
 tags: [observability, opentelemetry, privacy, egress, infra]
+amended_by: [0125]
 ---
 
 # Export traces and metrics to Application Insights, with chat content stripped from the traces

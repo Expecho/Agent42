@@ -6,6 +6,7 @@ tags: [mcp, agents, api-key, security, egress, excluded-paths, no-migration]
 supersedes: []
 extends: [0024]
 amends: [0002, 0022, 0036, 0042, 0068]
+amended_by: [0075, 0076, 0109, 0112]
 ---
 
 > **Amended by [ADR 0112](0112-past-chats-as-a-model-tool.md) (2026-10-21).** The bind filter, renamed

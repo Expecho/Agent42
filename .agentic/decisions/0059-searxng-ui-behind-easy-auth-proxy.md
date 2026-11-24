@@ -6,6 +6,7 @@ tags: [web-search, searxng, proxy, security, same-origin, csp, easy-auth, contai
 supersedes: []
 extends: []
 amends: [0011]
+amended_by: [0060, 0121]
 ---
 
 # The SearXNG web UI, proxied onto the app's own origin behind Easy Auth

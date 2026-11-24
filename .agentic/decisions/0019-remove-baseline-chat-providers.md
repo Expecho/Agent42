@@ -3,7 +3,8 @@ id: 0019
 date: 2026-07-17
 status: accepted
 tags: [models, providers, config, per-user, availability, embeddings, security, data-egress]
-supersedes: 0018 (availability-floor invariant only), 0017 (blank-baseline-Foundry-key-is-fatal, chat scope only)
+supersedes: [0017, 0018]   # 0018 (availability-floor invariant only), 0017 (blank-baseline-Foundry-key-is-fatal, chat scope only)
+amended_by: [0030]
 ---
 
 # Chat providers are fully per-user — the app ships no baseline chat provider

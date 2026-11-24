@@ -6,6 +6,7 @@ tags: [frontend, backend, speech, tts, voice, providers, privacy, data-residency
 supersedes: []
 amends: [0006, 0037]
 extends: [0013, 0018, 0020, 0030]
+amended_by: [0113]
 ---
 
 # Server-side (Azure/OpenAI) text-to-speech for the voice reply, opt-in via a per-user speech model

@@ -6,6 +6,7 @@ tags: [frontend, composer, orleans, agent-framework, ux, cancellation]
 supersedes: []
 extends: []
 amends: [0037, 0043]
+amended_by: [0079, 0082]
 ---
 
 # A stop button that cancels the turn server-side and keeps what it streamed

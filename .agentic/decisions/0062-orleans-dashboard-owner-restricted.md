@@ -6,7 +6,7 @@ tags: [orleans, observability, easy-auth, authorization, dependency-bump, no-mig
 supersedes: []
 extends: [0002, 0042]
 amends: []
-amended_by: [0121]   # 0121: the owner rule is IOwnerPolicy (Access:Owners), not Dashboard:OwnerOid
+amended_by: [0074, 0121]   # 0121: the owner rule is IOwnerPolicy (Access:Owners), not Dashboard:OwnerOid
 ---
 
 # Orleans dashboard at `/dashboard`, restricted to a single owner

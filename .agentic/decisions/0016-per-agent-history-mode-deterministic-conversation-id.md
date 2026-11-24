@@ -3,6 +3,7 @@ id: 0016
 date: 2026-07-15
 status: accepted
 tags: [agents, conversations, history, routing, agent-definition, continuous, session-cap]
+amended_by: [0068, 0082, 0085]
 ---
 
 # Per-agent history mode via a deterministic conversation id

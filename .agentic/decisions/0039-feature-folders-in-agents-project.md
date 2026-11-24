@@ -6,6 +6,7 @@ tags: [refactor, structure, agents, orleans, serialization, tooling]
 supersedes: []
 amends: []
 extends: []
+amended_by: [0063, 0106]
 ---
 
 # Feature folders in `Agent42.Agents` — files move, namespaces deliberately do not

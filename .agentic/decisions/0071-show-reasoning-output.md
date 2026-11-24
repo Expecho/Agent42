@@ -6,6 +6,7 @@ tags: [chat, streaming, models, reasoning, frontend, foundry, no-migration]
 supersedes: []
 extends: [0013, 0018, 0030, 0036, 0038]
 amends: [0014]
+amended_by: [0136]
 ---
 
 # A reasoning model's thinking is shown, and never stored

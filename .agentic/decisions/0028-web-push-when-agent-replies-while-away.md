@@ -3,6 +3,7 @@ id: 0028
 date: 2026-07-21
 status: accepted
 tags: [push-notifications, pwa, service-worker, web-push, vapid, egress, security, ssrf]
+amended_by: [0075, 0100, 0111]
 ---
 
 > **Amended by [ADR 0075](0075-model-invoked-push-notification.md) (2026-09-16).** Two things change, and
