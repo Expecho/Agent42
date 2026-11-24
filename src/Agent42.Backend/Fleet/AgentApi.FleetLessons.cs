@@ -30,7 +30,66 @@ public static partial class AgentApi
             => EditFleetLessonAsync(services, http, (s, user) => s.EnableAsync(user, id, ct)));
         app.MapDelete("/api/fleet/lessons/{id}", (string id, IServiceProvider services, HttpContext http, CancellationToken ct)
             => EditFleetLessonAsync(services, http, (s, user) => s.DeleteAsync(user, id, ct)));
+        app.MapPost("/api/fleet/lessons/proposals/{id}/approve", ApproveFleetPromptProposalAsync);
+        app.MapPost("/api/fleet/lessons/proposals/{id}/dismiss", DismissFleetPromptProposalAsync);
     }
+
+    // The prompt proposals (ADR 0143): pending first, newest first, then the decided ones. A pending one carries whether its edit
+    // still applies to the user's current prompt, so the page can grey out a stale one.
+    private static IEnumerable<object> FleetPromptProposalViews(FleetLessonsDocument document, FleetPromptSet prompts)
+        => document.PromptProposals
+            .OrderBy(p => p.Status == FleetPromptProposalStatus.Pending ? 0 : 1)
+            .ThenByDescending(p => p.DecidedAt ?? p.CreatedAt)
+            .Select(p => new
+            {
+                p.Id,
+                key = p.PromptKey,
+                title = FleetPrompts.Find(p.PromptKey)?.Title ?? p.PromptKey,
+                p.Kind,
+                p.Find,
+                p.Replacement,
+                p.Rationale,
+                p.Evidence,
+                p.Status,
+                p.CreatedAt,
+                p.DecidedAt,
+                applies = p.Status == FleetPromptProposalStatus.Pending && FleetPrompts.Find(p.PromptKey) is not null
+                    && FleetPromptProposals.Apply(prompts.Get(p.PromptKey), p).Ok,
+            });
+
+    private static async Task<IResult> ApproveFleetPromptProposalAsync(string id, IServiceProvider services, HttpContext http, CancellationToken ct)
+    {
+        if (services.GetService<FleetLessonService>() is not { } lessons)
+        {
+            return FleetUnavailable();
+        }
+
+        var userId = http.GetUserId();
+        var decision = await lessons.ApproveProposalAsync(userId, id, ct);
+        if (decision.Outcome != FleetProposalOutcome.Done)
+        {
+            return FleetProposalProblem(decision);
+        }
+
+        // The shape of PUT /api/fleet/prompts/{key}, so the prompt editor can take it as it is.
+        var prompts = await lessons.PromptsAsync(userId, ct);
+        return Results.Json(new { key = decision.PromptKey, text = prompts.Get(decision.PromptKey!), edited = prompts.IsEdited(decision.PromptKey!) });
+    }
+
+    private static async Task<IResult> DismissFleetPromptProposalAsync(string id, IServiceProvider services, HttpContext http, CancellationToken ct)
+    {
+        if (services.GetService<FleetLessonService>() is not { } lessons)
+        {
+            return FleetUnavailable();
+        }
+
+        var decision = await lessons.DismissProposalAsync(http.GetUserId(), id, ct);
+        return decision.Outcome == FleetProposalOutcome.Done ? Results.Json(new { }) : FleetProposalProblem(decision);
+    }
+
+    private static IResult FleetProposalProblem(FleetProposalDecision decision)
+        => Results.Json(new { error = decision.Error },
+            statusCode: decision.Outcome == FleetProposalOutcome.NotFound ? StatusCodes.Status404NotFound : StatusCodes.Status409Conflict);
 
     private static IResult FleetLessonNotFound() => Results.Json(new { error = "No such lesson." }, statusCode: StatusCodes.Status404NotFound);
 
@@ -70,6 +129,7 @@ public static partial class AgentApi
             lessons = document.Lessons.OrderByDescending(l => l.LastSupportedAt),
             settings = document.Settings,
             runs = document.Runs,
+            proposals = FleetPromptProposalViews(document, await lessons.PromptsAsync(userId, ct)),
             newCount = FleetLessonService.NewCount(document),
             running = lessons.IsRunning(userId),
             dreamEnabled = lessons.Options.DreamEnabled,

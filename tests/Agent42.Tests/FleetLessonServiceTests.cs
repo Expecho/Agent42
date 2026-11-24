@@ -593,6 +593,144 @@ public class FleetLessonServiceTests
         Assert.Empty(await Service(LearnsOne(), store: throwing).ActiveAsync(User));
     }
 
+    // ---- Prompt proposals (ADR 0143) ----
+
+    private const string JudgeAddition = "Name the missing section in the feedback.";
+    private const string Why = "Results that skipped a section passed and were redone later.";
+
+    /// <summary>A client whose first call proposes appending <paramref name="replacement"/> to <paramref name="key"/>.</summary>
+    private static ScriptedDreamClient ProposesOne(string key = "judge", string replacement = JudgeAddition)
+        => new(c => c.Number == 1 ? ProposePrompt(key, "append", null, replacement, Why, [.. c.Tasks.Take(2).Select(t => t.Id)]) : Say("done"));
+
+    private static FleetPromptProposal Pending(string id, string key = "judge", string kind = FleetPromptProposalKind.Append, string? find = null,
+        string replacement = JudgeAddition, DateTimeOffset? created = null)
+        => new() { Id = id, PromptKey = key, Kind = kind, Find = find, Replacement = replacement, Rationale = Why, Evidence = ["t0", "t1"], CreatedAt = created ?? Night.AddHours(-1) };
+
+    [Fact]
+    public async Task ARun_StoresPendingProposals_AndChangesNoPrompt()
+    {
+        await SeedTasks(4);
+
+        var result = await Service(ProposesOne()).RunManualAsync(User, null, Telemetry);
+
+        Assert.Equal(1, result.Run!.Proposed);
+        var stored = Assert.Single((await _store.GetLessonsAsync(User)).PromptProposals);
+        Assert.Equal(("judge", FleetPromptProposalStatus.Pending, JudgeAddition, Night), (stored.PromptKey, stored.Status, stored.Replacement, stored.CreatedAt));
+        Assert.Equal(1, (await _store.GetLessonsAsync(User)).Runs[0].Proposed);
+        Assert.Empty(await _store.GetPromptsAsync(User));
+    }
+
+    [Fact]
+    public async Task AProposalWithoutLessons_AndOnAFailedRun_IsStored()
+    {
+        await SeedTasks(4);
+        var noLessons = await Service(ProposesOne()).RunManualAsync(User, null, Telemetry);
+        Assert.Equal((0, 1, FleetDreamStatus.Ran), (noLessons.Run!.Learned, noLessons.Run.Proposed, noLessons.Run.Status));
+        Assert.Null(noLessons.Run.Reason);
+
+        // The model fails after the proposal was accepted: the dream fails open and the proposal still counts.
+        var failing = new ScriptedDreamClient(c => c.Number == 1
+            ? ProposePrompt("retry", "append", null, "Fix only what the judge named.", Why, [.. c.Tasks.Take(2).Select(t => t.Id)])
+            : throw new HttpRequestException("provider down"));
+        var failed = await Service(failing).RunManualAsync(User, null, Telemetry);
+        Assert.Equal((FleetDreamStatus.Failed, 1), (failed.Run!.Status, failed.Run.Proposed));
+        Assert.Contains((await _store.GetLessonsAsync(User)).PromptProposals, p => p.PromptKey == "retry");
+
+        // Nothing at all: the reason accounts for both.
+        var idle = await Service(new ScriptedDreamClient(_ => Say("nothing"))).RunManualAsync(User, null, Telemetry);
+        Assert.Equal("The model proposed no lessons or prompt changes.", idle.Run!.Reason);
+    }
+
+    [Fact]
+    public async Task ADismissMadeWhileTheDreamRuns_Survives()
+    {
+        await SeedTasks(4);
+        await _store.SetLessonsAsync(User, new FleetLessonsDocument { PromptProposals = [Pending("p")] });
+        var gate = new TaskCompletionSource();
+        var client = new ScriptedDreamClient(c => c.Number == 1
+            ? ProposePrompt("retry", "append", null, "Fix only what the judge named.", Why, [.. c.Tasks.Take(2).Select(t => t.Id)])
+            : Say("done"))
+        { Gate = gate };
+        var service = Service(client);
+
+        var run = service.RunManualAsync(User, null, Telemetry);
+        await Until(() => client.Calls == 1);
+        Assert.Equal(FleetProposalOutcome.Done, (await service.DismissProposalAsync(User, "p")).Outcome);
+        gate.SetResult();
+        var result = await run;
+
+        var doc = await service.GetAsync(User);
+        Assert.Equal(FleetPromptProposalStatus.Dismissed, doc.PromptProposals.Single(p => p.Id == "p").Status);
+        Assert.Equal(Night, doc.PromptProposals.Single(p => p.Id == "p").DecidedAt);
+        Assert.Single(doc.PromptProposals, p => p.PromptKey == "judge");
+        Assert.Single(doc.PromptProposals, p => p.PromptKey == "retry" && p.Status == FleetPromptProposalStatus.Pending);
+        Assert.Equal(1, result.Run!.Proposed);
+
+        // The dismissed change itself is refused by the next merge.
+        var again = FleetPromptProposals.Merge(doc, [new FleetPromptProposalDraft("judge", "append", null, JudgeAddition, Why, ["t0", "t1"])], Night, new FleetOptions());
+        Assert.Equal(0, again.Proposed);
+    }
+
+    [Fact]
+    public async Task Approve_WritesThePrompt_OutdatedIsAConflict()
+    {
+        var replace = Pending("r", key: "planner", kind: FleetPromptProposalKind.Replace,
+            find: "Prefer the smallest team that gets the job done.", replacement: "Prefer the smallest team that gets the job done, staged.");
+        await _store.SetLessonsAsync(User, new FleetLessonsDocument { PromptProposals = [Pending("p"), replace] });
+        var service = Service(LearnsOne());
+
+        var approved = await service.ApproveProposalAsync(User, "p");
+
+        Assert.Equal((FleetProposalOutcome.Done, "judge"), (approved.Outcome, approved.PromptKey));
+        var judge = (await _store.GetPromptsAsync(User))["judge"];
+        Assert.EndsWith("\n\n" + JudgeAddition, judge);
+        Assert.StartsWith(FleetPromptProposals.Normalize(FleetPrompts.Find("judge")!.Default).TrimEnd(), judge);
+        var doc = await _store.GetLessonsAsync(User);
+        Assert.Equal((FleetPromptProposalStatus.Approved, Night), (doc.PromptProposals[0].Status, doc.PromptProposals[0].DecidedAt));
+
+        // The user rewrote the planner prompt meanwhile: the passage is gone.
+        await _store.SetPromptsAsync(User, new Dictionary<string, string>(await _store.GetPromptsAsync(User)) { ["planner"] = "My own planner. {{tools}} {{delegation}} {{copilot}} {{models}} {{defaultModel}}" });
+        var outdated = await service.ApproveProposalAsync(User, "r");
+        Assert.Equal(FleetProposalOutcome.Conflict, outdated.Outcome);
+        Assert.Contains("changed since", outdated.Error);
+        Assert.Equal(FleetPromptProposalStatus.Outdated, (await _store.GetLessonsAsync(User)).PromptProposals[1].Status);
+        Assert.StartsWith("My own planner.", (await _store.GetPromptsAsync(User))["planner"]);
+
+        Assert.Equal(FleetProposalOutcome.NotFound, (await service.ApproveProposalAsync(User, "ghost")).Outcome);
+        Assert.Equal(FleetProposalOutcome.NotFound, (await service.ApproveProposalAsync("bob", "p")).Outcome);
+        Assert.Equal(FleetProposalOutcome.Conflict, (await service.DismissProposalAsync(User, "p")).Outcome);
+    }
+
+    [Fact]
+    public async Task Approve_Twice_SecondIsAConflict_PromptChangedOnce()
+    {
+        await _store.SetLessonsAsync(User, new FleetLessonsDocument { PromptProposals = [Pending("p")] });
+        var service = Service(LearnsOne());
+
+        var both = await Task.WhenAll(service.ApproveProposalAsync(User, "p"), service.ApproveProposalAsync(User, "p"));
+
+        Assert.Equal([FleetProposalOutcome.Done, FleetProposalOutcome.Conflict], both.Select(b => b.Outcome).Order());
+        var judge = (await _store.GetPromptsAsync(User))["judge"];
+        Assert.Equal(judge.IndexOf(JudgeAddition, StringComparison.Ordinal), judge.LastIndexOf(JudgeAddition, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task NewCount_IncludesNewPendingProposals_AndClearsAfterSeen()
+    {
+        await _store.SetLessonsAsync(User, new FleetLessonsDocument
+        {
+            PromptProposals = [Pending("new"), Pending("old", key: "retry", created: Night.AddDays(-2)), Pending("done", key: "clarify") with { Status = FleetPromptProposalStatus.Dismissed }],
+            Settings = new FleetLessonSettings { SeenAt = Night.AddDays(-1) },
+        });
+        var service = Service(LearnsOne());
+
+        Assert.Equal(1, FleetLessonService.NewCount(await service.GetAsync(User)));
+        await service.MarkSeenAsync(User);
+        var seen = await service.GetAsync(User);
+        Assert.Equal(0, FleetLessonService.NewCount(seen));
+        Assert.Equal(2, seen.PromptProposals.Count(p => p.Status == FleetPromptProposalStatus.Pending));
+    }
+
     // ---- Doubles ----
 
     private sealed class SettableTime(DateTimeOffset now) : TimeProvider

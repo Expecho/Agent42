@@ -359,4 +359,35 @@ public class FleetStoreTests
         Assert.Empty(doc.Runs);
         Assert.Empty((await _store.GetTaskAsync("alice", "a1"))!.AppliedLessons);
     }
+
+    [Fact]
+    public async Task LessonsDocument_WithoutProposals_ReadsEmpty_AndProposalsRoundTrip()
+    {
+        await _blobs.PutAsync("alice/lessons.json", Encoding.UTF8.GetBytes("{\"lessons\":[],\"runs\":[{\"id\":\"r1\",\"status\":\"ran\"}]}"));
+        var old = await _store.GetLessonsAsync("alice");
+        Assert.Empty(old.PromptProposals);
+        Assert.Equal(0, Assert.Single(old.Runs).Proposed);
+
+        var now = DateTimeOffset.UtcNow;
+        var proposal = new FleetPromptProposal
+        {
+            Id = "p1",
+            PromptKey = "planner",
+            Kind = FleetPromptProposalKind.Replace,
+            Find = "old",
+            Replacement = "new",
+            Rationale = "Staged teams scored higher.",
+            Evidence = ["t1", "t2"],
+            CreatedAt = now,
+        };
+        await _store.SetLessonsAsync("alice", old with { PromptProposals = [proposal], Runs = [old.Runs[0] with { Proposed = 1 }] });
+
+        var read = await _store.GetLessonsAsync("alice");
+        var stored = Assert.Single(read.PromptProposals);
+        Assert.Equal(proposal with { Evidence = stored.Evidence }, stored);
+        Assert.Equal(["t1", "t2"], stored.Evidence);
+        Assert.Equal(FleetPromptProposalStatus.Pending, stored.Status);
+        Assert.Null(stored.DecidedAt);
+        Assert.Equal(1, read.Runs[0].Proposed);
+    }
 }

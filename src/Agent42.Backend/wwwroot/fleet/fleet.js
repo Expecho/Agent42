@@ -1665,9 +1665,73 @@
       h("div", { class: "editor-actions" }, toggle, del));
   }
 
+  // A prompt change the dream proposed (ADR 0143): the prompt, why, the tasks behind it and the diff, all as plain text.
+  // Nothing changes until Approve, which re-applies the edit to the current prompt on the server.
+  function proposalDiff(p) {
+    return p.kind === "replace"
+      ? [h("div", { class: "muted proposal-label", text: "Replace:" }), h("pre", { class: "proposal-del", text: p.find || "" }),
+        h("div", { class: "muted proposal-label", text: "With:" }), h("pre", { class: "proposal-add", text: p.replacement || "" })]
+      : [h("div", { class: "muted proposal-label", text: "Added at the end:" }), h("pre", { class: "proposal-add", text: p.replacement || "" })];
+  }
+
+  // After an approve, the prompt editor's copy of that prompt takes the saved text; an unsaved draft stays a draft.
+  function syncApprovedPrompt(data) {
+    const entry = S.prompts?.find(x => x.key === data.key);
+    if (entry) { entry.text = lf(data.text); entry.edited = data.edited; }
+  }
+
+  function proposalCard(p) {
+    const pending = p.status === "pending";
+    // An error survives the refresh that follows it (a 409 moves the card to Decided).
+    const error = h("div", { class: "error-text", text: S.proposalErrors?.[p.id] || "" });
+    const head = h("div", { class: "lesson-meta muted" }, h("b", { text: p.title }), ` · proposed ${lessonTime(p.createdAt)}`,
+      !pending && ` · ${p.status} ${lessonTime(p.decidedAt)}`);
+    const body = [
+      head,
+      h("div", { class: "lesson-text", text: p.rationale }),
+      h("div", { class: "lesson-links" }, h("b", { text: "Based on " }), (p.evidence || []).map((id, i) => [i > 0 && " ", lessonTaskLink(id)])),
+      proposalDiff(p),
+    ];
+    if (!pending) return h("div", { class: "card lesson proposal off" }, body, error);
+
+    const approve = h("button", { class: "btn primary", text: "Approve" });
+    const dismiss = h("button", { class: "btn", text: "Dismiss" });
+    approve.disabled = !p.applies;
+    const decide = async (action) => {
+      approve.disabled = dismiss.disabled = true; error.textContent = "";
+      const r = await api("POST", `/api/fleet/lessons/proposals/${encodeURIComponent(p.id)}/${action}`);
+      if (r.ok && action === "approve") syncApprovedPrompt(r.data);
+      if (!r.ok) {
+        error.textContent = (S.proposalErrors ||= {})[p.id] = r.data?.error || "That did not work.";
+        dismiss.disabled = false;
+      }
+      if (r.ok || r.status === 409) await refreshLessons();
+    };
+    approve.addEventListener("click", () => decide("approve"));
+    dismiss.addEventListener("click", () => decide("dismiss"));
+    return h("div", { class: "card lesson proposal" + (p.applies ? "" : " stale") }, body,
+      !p.applies && h("div", { class: "error-text", text: "The prompt changed since this was proposed, so it no longer applies. Dismiss it." }),
+      h("div", { class: "muted proposal-note", text: "Approving saves your own copy of this prompt: later updates to its default won't reach it (Reset in the prompt editor restores the default)." }),
+      error,
+      h("div", { class: "editor-actions" }, approve, dismiss));
+  }
+
+  function proposalsBlock(d) {
+    const all = d.proposals || [];
+    const pending = all.filter(p => p.status === "pending");
+    const decided = all.filter(p => p.status !== "pending");
+    if (all.length === 0) return null;
+    return h("div", { id: "promptProposals" },
+      h("h2", { text: `Proposed prompt changes (${pending.length} waiting)` }),
+      h("div", { class: "muted", text: "The dream may suggest a small edit to one of your fleet prompts. Nothing changes until you approve it." }),
+      pending.length === 0 ? h("div", { class: "muted", text: "Nothing waiting." }) : pending.map(proposalCard),
+      decided.length > 0 && h("details", { class: "lessons-off" }, h("summary", { text: `Decided (${decided.length})` }), decided.map(proposalCard)));
+  }
+
   function dreamRunRow(run) {
     const bits = [run.trigger, run.status];
     if (run.status === "ran") bits.push(`${run.tasksRead} tasks read`, `${run.learned} learned`, `${run.reinforced} reinforced`, `${run.refused} refused`);
+    if (run.proposed > 0) bits.push(`${run.proposed} prompt change(s) proposed`);
     if (run.reason) bits.push(run.reason);
     if (run.model) bits.push(run.model);
     return h("div", { class: "dream-run" }, h("span", { class: "muted", text: lessonTime(run.startedAt) }), " ", bits.join(" · "));
@@ -1716,6 +1780,7 @@
       h("div", { class: "crumbs" }, h("a", { text: "← Back to tasks", onclick: closeLessons })),
       h("h1", { text: "Lessons" }),
       h("div", { class: "sub-head", text: "Once a night a model reads your recent finished tasks and keeps a few lessons about team design that several tasks agree on. They are used automatically from your next task on, and you can turn any of them off." }),
+      proposalsBlock(d),
       h("div", { class: "card" },
         h("label", { class: "follow" }, enabled, " Learn nightly"),
         h("div", { class: "muted", text: d.dreamEnabled

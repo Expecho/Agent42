@@ -271,4 +271,74 @@ public sealed class FleetLessonApiTests(FleetLessonApiFixture fixture) : SharedC
         Assert.Equal("skipped", run.GetProperty("status").GetString());
         Assert.Equal(0, run.GetProperty("tasksRead").GetInt32());
     }
+
+    // ---- Prompt proposals (ADR 0143) ----
+
+    private const string Addition = "Name the missing section in the feedback.";
+    private const string PlannerFind = "Prefer the smallest team that gets the job done.";
+
+    private async Task SeedProposals(string user, params FleetPromptProposal[] proposals)
+    {
+        var doc = await Store.GetLessonsAsync(user);
+        await Store.SetLessonsAsync(user, doc with { PromptProposals = proposals });
+    }
+
+    private static FleetPromptProposal Proposal(string id, string key = "judge", string kind = FleetPromptProposalKind.Append, string? find = null,
+        string replacement = Addition, string status = FleetPromptProposalStatus.Pending)
+        => new() { Id = id, PromptKey = key, Kind = kind, Find = find, Replacement = replacement, Rationale = "Sections were missed.", Evidence = ["t0", "t1"], Status = status, CreatedAt = DateTimeOffset.UtcNow };
+
+    [Fact]
+    public async Task Proposals_ListApproveDismiss_ScopedToTheCaller()
+    {
+        var alice = NewUser();
+        var bob = NewUser();
+        await SeedProposals(alice, Proposal("a1"), Proposal("a2", key: "retry", replacement: "Fix only what the judge named."),
+            Proposal("old", key: "clarify", status: FleetPromptProposalStatus.Dismissed));
+
+        var listed = (await Get(alice)).GetProperty("proposals");
+        Assert.Equal(["a1", "a2", "old"], listed.EnumerateArray().Select(p => p.GetProperty("id").GetString()).Order());
+        Assert.Equal("old", listed[2].GetProperty("id").GetString());
+        var a1 = listed.EnumerateArray().Single(p => p.GetProperty("id").GetString() == "a1");
+        Assert.Equal(("judge", "Judge", true, Addition), (a1.GetProperty("key").GetString(), a1.GetProperty("title").GetString(), a1.GetProperty("applies").GetBoolean(), a1.GetProperty("replacement").GetString()));
+        Assert.Equal(0, (await Get(bob)).GetProperty("proposals").GetArrayLength());
+
+        Assert.Equal(HttpStatusCode.NotFound, (await Send(HttpMethod.Post, "/api/fleet/lessons/proposals/a1/approve", bob)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await Send(HttpMethod.Post, "/api/fleet/lessons/proposals/a1/dismiss", bob)).StatusCode);
+
+        var approve = await Send(HttpMethod.Post, "/api/fleet/lessons/proposals/a1/approve", alice);
+        Assert.Equal(HttpStatusCode.OK, approve.StatusCode);
+        var body = await approve.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(("judge", true), (body.GetProperty("key").GetString(), body.GetProperty("edited").GetBoolean()));
+        Assert.EndsWith(Addition, body.GetProperty("text").GetString());
+
+        var prompts = await (await Send(HttpMethod.Get, "/api/fleet/prompts", alice)).Content.ReadFromJsonAsync<JsonElement>();
+        var judge = prompts.EnumerateArray().Single(p => p.GetProperty("key").GetString() == "judge");
+        Assert.EndsWith(Addition, judge.GetProperty("text").GetString());
+        Assert.False((await Store.GetPromptsAsync(bob)).ContainsKey("judge"));
+
+        Assert.Equal(HttpStatusCode.OK, (await Send(HttpMethod.Post, "/api/fleet/lessons/proposals/a2/dismiss", alice)).StatusCode);
+        var after = (await Get(alice)).GetProperty("proposals").EnumerateArray().ToDictionary(p => p.GetProperty("id").GetString()!, p => p.GetProperty("status").GetString());
+        Assert.Equal(("approved", "dismissed"), (after["a1"], after["a2"]));
+        Assert.False((await Store.GetPromptsAsync(alice)).ContainsKey("retry"));
+    }
+
+    [Fact]
+    public async Task Proposals_OutdatedAndDecided_AreConflicts()
+    {
+        var user = NewUser();
+        await SeedProposals(user, Proposal("r", key: "planner", kind: FleetPromptProposalKind.Replace, find: PlannerFind, replacement: PlannerFind + " Stage it."),
+            Proposal("done", status: FleetPromptProposalStatus.Approved));
+        await Send(HttpMethod.Put, "/api/fleet/prompts/planner", user, new { text = "My own planner. {{tools}} {{delegation}} {{copilot}} {{models}} {{defaultModel}}" });
+
+        var stale = (await Get(user)).GetProperty("proposals").EnumerateArray().Single(p => p.GetProperty("id").GetString() == "r");
+        Assert.False(stale.GetProperty("applies").GetBoolean());
+
+        var approve = await Send(HttpMethod.Post, "/api/fleet/lessons/proposals/r/approve", user);
+        Assert.Equal(HttpStatusCode.Conflict, approve.StatusCode);
+        Assert.Contains("changed since", (await approve.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+        Assert.Equal(FleetPromptProposalStatus.Outdated, (await Store.GetLessonsAsync(user)).PromptProposals.Single(p => p.Id == "r").Status);
+
+        Assert.Equal(HttpStatusCode.Conflict, (await Send(HttpMethod.Post, "/api/fleet/lessons/proposals/done/approve", user)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Send(HttpMethod.Post, "/api/fleet/lessons/proposals/done/dismiss", user)).StatusCode);
+    }
 }

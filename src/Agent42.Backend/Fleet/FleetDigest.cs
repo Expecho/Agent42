@@ -33,6 +33,10 @@ public static class FleetDigest
     private const int FeedbackChars = 400;
     private const int FailureChars = 250;
 
+    /// <summary>Characters of one agent's instructions excerpt on a plan line (ADR 0143): enough for the dream to see what
+    /// the planner asked of each agent, small enough that the task block's cap still bounds it.</summary>
+    public const int AgentInstructionChars = 150;
+
     /// <summary>Whether a task counts as finished for the dream: it ended on its own, was stopped or failed. A running task
     /// and an interrupted one (no verdict, no result) carry no signal.</summary>
     public static bool IsFinished(FleetTaskRecord task)
@@ -119,9 +123,25 @@ public static class FleetDigest
     private static string PlanLine(FleetAnalysis.Event e)
     {
         var names = e.Data?["agents"] is JsonArray agents
-            ? string.Join(", ", agents.Select(a => Flat((a as JsonObject)?["name"]?.ToString(), 40)).Where(n => n.Length > 0))
+            ? string.Join(", ", agents.Select(a => AgentEntry(a as JsonObject)).Where(n => n.Length > 0))
             : "";
         return $"plan {Where(e)}: {Flat(e.Data?["pattern"]?.ToString(), 30)}, agents [{names}], rationale: {Flat(e.Data?["rationale"]?.ToString(), RationaleChars)}";
+    }
+
+    // "name: excerpt", where the excerpt is the yaml after "instructions:" (or the whole yaml), on one line and capped.
+    private static string AgentEntry(JsonObject? agent)
+    {
+        var name = Flat(agent?["name"]?.ToString(), 40);
+        var yaml = agent?["yaml"]?.ToString();
+        if (name.Length == 0 || string.IsNullOrWhiteSpace(yaml))
+        {
+            return name;
+        }
+
+        var at = yaml.IndexOf("instructions:", StringComparison.OrdinalIgnoreCase);
+        var instructions = at < 0 ? yaml : yaml[(at + "instructions:".Length)..].TrimStart(' ', '|', '>', '-');
+        var excerpt = Flat(instructions, AgentInstructionChars);
+        return excerpt.Length == 0 ? name : $"{name}: {excerpt}";
     }
 
     private static string VerdictLine(FleetAnalysis.Event e)

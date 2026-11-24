@@ -62,6 +62,14 @@ public sealed class ScriptedDreamClient(Func<DreamCall, ChatResponse> script) : 
         => new(new ChatMessage(ChatRole.Assistant,
             [new FunctionCallContent(Guid.NewGuid().ToString("N"), "submit_lessons", new Dictionary<string, object?> { ["lessons"] = lessons })]));
 
+    /// <summary>A <c>propose_prompt_change</c> call (ADR 0143).</summary>
+    public static ChatResponse ProposePrompt(string promptKey, string kind, string? find, string replacement, string rationale, params string[] evidence)
+        => new(new ChatMessage(ChatRole.Assistant,
+            [new FunctionCallContent(Guid.NewGuid().ToString("N"), "propose_prompt_change", new Dictionary<string, object?>
+            {
+                ["promptKey"] = promptKey, ["kind"] = kind, ["find"] = find, ["replacement"] = replacement, ["rationale"] = rationale, ["evidence"] = evidence,
+            })]));
+
     public static object Proposed(string text, IEnumerable<string> evidence, string topic = FleetLessonTopics.Staging, string confidence = FleetLessonConfidence.Medium)
         => new { text, topic, confidence, evidence = evidence.ToArray() };
 

@@ -76,33 +76,38 @@ public static partial class FleetLessons
             ?? (FleetLessonConfidence.All.Contains(proposal.Confidence) ? null : $"Unknown confidence '{proposal.Confidence}'. Use one of: {string.Join(", ", FleetLessonConfidence.All)}.")
             ?? EvidenceProblem(proposal.Evidence, taskWorkspaces, options);
 
-    private static string? TextProblem(string? text, FleetOptions options)
+    /// <summary>The lesson text rules (one plain line, no markup, link or denied term, within <c>LessonMaxChars</c>), or null when
+    /// <paramref name="text"/> passes. Shared with the rationale of a prompt proposal (ADR 0143); <paramref name="label"/> names
+    /// the text in the refusal.</summary>
+    public static string? TextProblem(string? text, FleetOptions options, string label = "The lesson text")
     {
         var trimmed = text?.Trim() ?? "";
         var max = Math.Max(20, options.LessonMaxChars);
         if (trimmed.Length == 0)
         {
-            return "The lesson text is empty.";
+            return $"{label} is empty.";
         }
 
         if (trimmed.Length > max)
         {
-            return $"The lesson text is {trimmed.Length} characters; the limit is {max}.";
+            return $"{label} is {trimmed.Length} characters; the limit is {max}.";
         }
 
         var badAt = trimmed.ToCharArray().ToList().FindIndex(c => !IsAllowedChar(c));
         if (badAt >= 0)
         {
             var bad = trimmed[badAt];
-            return $"The lesson text contains a character that is not allowed ('{(char.IsLetterOrDigit(bad) || char.IsPunctuation(bad) ? bad : '?')}'). Use plain words, digits and . , ; : ' \" ( ) - / % + only, on one line.";
+            return $"{label} contains a character that is not allowed ('{(char.IsLetterOrDigit(bad) || char.IsPunctuation(bad) ? bad : '?')}'). Use plain words, digits and . , ; : ' \" ( ) - / % + only, on one line.";
         }
 
-        return LooksLikeLink(trimmed) ? "The lesson text must not contain a link, address or domain name."
-            : DenyRegex.IsMatch(trimmed) ? "The lesson text uses a term that is not allowed in a lesson (it must describe team design, not tools, commands, shells or credentials)."
+        return LooksLikeLink(trimmed) ? $"{label} must not contain a link, address or domain name."
+            : DenyRegex.IsMatch(trimmed) ? $"{label} uses a term that is not allowed in a lesson (it must describe team design, not tools, commands, shells or credentials)."
             : null;
     }
 
-    private static string? EvidenceProblem(IReadOnlyList<string>? evidence, IReadOnlyDictionary<string, string> taskWorkspaces, FleetOptions options)
+    /// <summary>The evidence rule: every id is in the digest, and they span at least <c>DreamMinSupport</c> workspaces. Shared
+    /// with prompt proposals (ADR 0143); <paramref name="what"/> names the thing that needs the evidence.</summary>
+    public static string? EvidenceProblem(IReadOnlyList<string>? evidence, IReadOnlyDictionary<string, string> taskWorkspaces, FleetOptions options, string what = "The lesson")
     {
         var ids = (evidence ?? []).Distinct().ToList();
         if (ids.FirstOrDefault(id => !taskWorkspaces.ContainsKey(id)) is { } unknown)
@@ -114,7 +119,7 @@ public static partial class FleetLessons
         var workspaces = ids.Select(id => taskWorkspaces[id]).Distinct().Count();
         return workspaces >= support
             ? null
-            : $"The lesson needs evidence from at least {support} different tasks that do not share a workspace (a follow-up chain counts once); it cites {workspaces}.";
+            : $"{what} needs evidence from at least {support} different tasks that do not share a workspace (a follow-up chain counts once); it cites {workspaces}.";
     }
 
     private static bool IsAllowedChar(char c)
@@ -141,9 +146,13 @@ public static partial class FleetLessons
     [GeneratedRegex(@"[\p{L}\p{N}-]\.\p{L}{2,}")]
     private static partial Regex DomainRegex();
 
-    private static Regex BuildDenyRegex()
+    private static Regex BuildDenyRegex() => TermRegex(DeniedTerms);
+
+    /// <summary>A regex that matches any of <paramref name="terms"/> the way <see cref="DeniedTerms"/> match: at a word start,
+    /// case-insensitive, and as a whole word when the term ends in a space.</summary>
+    public static Regex TermRegex(IEnumerable<string> terms)
     {
-        var parts = DeniedTerms.Select(t => t.EndsWith(' ') ? $@"\b{Regex.Escape(t.TrimEnd())}\b" : $@"\b{Regex.Escape(t)}");
+        var parts = terms.Select(t => t.EndsWith(' ') ? $@"\b{Regex.Escape(t.TrimEnd())}\b" : $@"\b{Regex.Escape(t)}");
         return new Regex(string.Join('|', parts), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
