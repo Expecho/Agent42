@@ -30,7 +30,8 @@
     ingested: null,         // the selected task's documents.ingested files, from its event log
     autoAnswers: [],        // questions a chat-started task answered by itself (ADR 0115), from its event log
     clarify: null,          // the clarify phase (ADR 0118), from its event log: { phase: "asking" | "done", brief, questions, cleared }
-    detailView: loadDetailView(), // "details" | "graph" (ADR 0116), a per-viewer preference kept in localStorage
+    detailView: loadDetailView(), // "result" | "graph" | "details" (ADR 0116), the open tab, a per-viewer preference kept in localStorage
+    search: "",             // the sidebar's task filter
     graphOpen: new Set(),   // done sub-teams the graph shows in full although the fleet is large
   };
 
@@ -49,9 +50,9 @@
     try { localStorage.setItem("agent42.fleet.selfReview", on ? "on" : "off"); } catch { /* not remembered */ }
   }
 
-  // A per-viewer convenience only: without storage (private window, blocked site data) the page starts on Details.
+  // A per-viewer convenience only: without storage (private window, blocked site data) the page starts on Result.
   function loadDetailView() {
-    try { return localStorage.getItem("agent42.fleet.detailView") === "graph" ? "graph" : "details"; } catch { return "details"; }
+    try { const v = localStorage.getItem("agent42.fleet.detailView"); return v === "graph" || v === "details" ? v : "result"; } catch { return "result"; }
   }
 
   function resetTaskState() {
@@ -398,7 +399,7 @@
     const paneAtBottom = atBottom(pane), bodyAtBottom = atBottom(body);
     if (structural) {
       structural = false;
-      renderTaskSelect(); renderBudget(); renderHeader();
+      renderTaskList(); renderBudget(); renderHeader(); renderDock();
       if (S.view === "tasks") { renderTree(); renderDetail(); }
       renderPanel();
     }
@@ -446,6 +447,10 @@
     // A link can be made for any task, a running one included: the view is live (ADR 0120).
     $("#shareBtn").hidden = !t;
     $("#analyzeBtn").hidden = !t;
+    $("#moreMenu").hidden = !t;
+    // The sidebar and the page actions follow the view: the prompt, lessons and settings views own the whole main area.
+    document.body.dataset.view = S.view;
+    document.body.dataset.tab = S.view === "tasks" ? S.detailView : "";
     analyzerTaskChanged();
     $("#promptsBtn").classList.toggle("active", S.view === "prompts");
     $("#lessonsBtn").classList.toggle("active", S.view === "lessons");
@@ -478,10 +483,10 @@
   const toolCapable = m => m.supportsTools && !m.supportsEmbeddings && !m.supportsSpeech && !m.supportsTranscription && !m.supportsImageGeneration;
 
   const composer = (() => {
-    const ta = h("textarea", { "aria-label": "Task", onkeydown: e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitTask(); } });
+    const ta = h("textarea", { "aria-label": "Task", rows: "3", onkeydown: e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitTask(); } });
     const err = h("div", { class: "error-text" });
     const btn = h("button", { class: "btn primary", onclick: () => submitTask() });
-    const title = h("div", { class: "composer-title" });
+    const title = h("span", { class: "composer-switch" });
     const hint = h("span", { class: "muted hint" });
     const model = h("select", { "aria-label": "Model" });
     const tokens = h("input", { type: "number", min: "1", step: "100000", "aria-label": "Token cap" });
@@ -491,19 +496,33 @@
     // ADR 0118: on by default; a per-viewer convenience, so storage that throws just leaves the default.
     const clarify = h("input", { type: "checkbox", checked: loadClarify(), onchange: e => saveClarify(e.target.checked) });
     const selfReview = h("input", { type: "checkbox", checked: loadSelfReview(), onchange: e => saveSelfReview(e.target.checked) });
-    const options = h("div", { class: "composer-options" }, h("label", null, "Model", model), h("label", null, "Token cap", tokens),
+    const options = h("div", { class: "opts-pop" }, h("label", null, "Model", model), h("label", null, "Token cap", tokens),
       h("label", { title: "The fleet asks you questions about the task until the requirements are clear, then plans it" }, clarify, "Ask me questions first"),
       h("label", { title: "The agent that writes the result checks it against the task and fixes gaps before it is judged. Costs extra tokens" }, selfReview, "Self-review the result"), tools);
+    // The model and the cap sit behind one chip, so the composer shows what a run costs without the whole form.
+    const chipText = h("span", { class: "chip-text" });
+    const opts = h("details", { class: "opts pop-host" }, h("summary", { class: "opts-chip", title: "Model, token cap and options" }, chipText), options);
+    const updateChip = () => {
+      const cap = Number(tokens.value);
+      chipText.textContent = [model.value || "no model", cap > 0 && `${compact.format(cap)} cap`].filter(Boolean).join(" · ");
+    };
+    model.addEventListener("change", updateChip);
+    tokens.addEventListener("input", updateChip);
     const fileInput = h("input", { type: "file", multiple: true, hidden: true, onchange: e => { addAttachments(e.target.files); e.target.value = ""; } });
     const chips = h("div", { class: "attachments" });
-    const files = h("div", { class: "composer-files" },
-      h("button", { class: "btn", type: "button", text: "Attach files", onclick: () => fileInput.click() }), fileInput, chips,
-      h("span", { class: "muted hint", text: "Agents read attached files in the workspace. Documents (PDF, Word, PowerPoint, Excel, text) become searchable when you've chosen an embedding model in Settings." }));
-    const el = h("div", { class: "card composer" }, title, ta, files, options, h("div", { class: "composer-row" }, hint, err, btn));
+    const NS = "http://www.w3.org/2000/svg";
+    const clip = document.createElementNS(NS, "svg");
+    for (const [k, v] of Object.entries({ viewBox: "0 0 24 24", width: "17", height: "17", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) clip.setAttribute(k, v);
+    const clipPath = document.createElementNS(NS, "path");
+    clipPath.setAttribute("d", "M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5");
+    clip.append(clipPath);
+    const attach = h("button", { class: "icon-btn", type: "button", title: "Attach files. Documents (PDF, Word, PowerPoint, Excel, text) become searchable when you've chosen an embedding model in Settings.", "aria-label": "Attach files", onclick: () => fileInput.click() }, clip);
+    const row = h("div", { class: "composer-row" }, attach, fileInput, opts, h("span", { class: "spacer" }), h("span", { class: "muted ctrl" }, "Ctrl+Enter"), btn);
+    const el = h("div", { class: "composer" }, h("div", { class: "composer-card" }, ta, chips, row), h("div", { class: "composer-foot" }, hint, err, title));
     el.addEventListener("dragover", e => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); el.classList.add("dropping"); } });
     el.addEventListener("dragleave", e => { if (!el.contains(e.relatedTarget)) el.classList.remove("dropping"); });
     el.addEventListener("drop", e => { if (e.dataTransfer?.files?.length) { e.preventDefault(); addAttachments(e.dataTransfer.files); } el.classList.remove("dropping"); });
-    return { el, ta, err, btn, title, hint, model, tokens, clarify, selfReview, tools, toolsSummary, toolsList, chips };
+    return { el, ta, err, btn, title, hint, model, tokens, clarify, selfReview, tools, toolsSummary, toolsList, chips, updateChip };
   })();
 
   // ---------- attached files (ADR 0101) ----------
@@ -596,6 +615,7 @@
       composer.tokens.value = S.config.defaultMaxTokens;
       composer.tokens.max = S.config.maxTokensLimit;
     }
+    composer.updateChip();
   }
 
   function hasModels() { return (S.models?.models || []).some(toolCapable); }
@@ -612,15 +632,26 @@
     const done = S.tasks.find(x => x.canFollowUp && x.id === S.selectedTask);
     composer.el.classList.toggle("follow-up", !!t);
     composer.title.replaceChildren(...(t
-      ? [`Follow up on task #${taskNumber(t.id)}`, h("a", { class: "switch", text: "Start a new task instead", onclick: () => { S.freshTask = true; invalidate(); } })]
-      : ["New task", done && h("a", { class: "switch", text: `Follow up on task #${taskNumber(done.id)} instead`, onclick: () => { S.freshTask = false; invalidate(); } })].filter(Boolean)));
+      ? [h("a", { class: "switch", text: "Start a new task instead", onclick: () => { S.freshTask = true; invalidate(); } })]
+      : [done && h("a", { class: "switch", text: `Follow up on task #${taskNumber(done.id)} instead`, onclick: () => { S.freshTask = false; invalidate(); } })].filter(Boolean)));
     composer.ta.placeholder = t
-      ? "What's next? For example: add a section on pricing, or turn the report into a slide outline."
+      ? `Follow up on task #${taskNumber(t.id)}. For example: add a section on pricing, or turn the report into a slide outline.`
       : "Describe a task, for example: compare the three most used .NET web frameworks and write a short report.";
-    composer.hint.textContent = t
-      ? "Ctrl+Enter to run. A new team gets this with the earlier requests, their results and the files in the workspace."
-      : "Ctrl+Enter to run. A planner designs a team of agents for it, on your own models.";
+    composer.hint.textContent = "Agents read attached files in the workspace.";
     composer.btn.textContent = t ? "Run follow-up" : "Run task";
+  }
+
+  // The composer is docked under the page, outside the re-rendered detail, so what is typed survives every update.
+  let gateEl = null;
+  function renderDock() {
+    const dock = $("#dock");
+    let want = null;
+    if (S.view === "tasks") {
+      if (S.models && !hasModels()) want = gateEl || (gateEl = providerGate());
+      else if (!running()) { updateComposer(); want = composer.el; }
+    }
+    if (dock.firstChild !== want) dock.replaceChildren(...(want ? [want] : []));
+    dock.hidden = !want;
   }
 
   // Without a tool-capable model there is nothing to run on: the same gate as the chat composer (ADR 0019).
@@ -670,15 +701,16 @@
     }
   }
 
-  function renderTaskSelect() {
-    const sel = $("#taskSelect");
-    const placeholder = !S.selectedTask && h("option", { value: "", text: S.tasks.length ? "Your tasks…" : "No tasks yet", disabled: true, hidden: true });
-    sel.replaceChildren(...[placeholder, ...S.tasks.map(t => {
-      const mark = t.status === "running" ? "● " : t.status === "done" ? "✓ " : "✕ ";
-      const parent = t.followUpOf && taskById(t.followUpOf);
-      return h("option", { value: t.id, text: `${mark}#${taskNumber(t.id)} ${parent ? `↳ #${taskNumber(parent.id)} ` : ""}${firstLine(t.request, 60)}` });
-    })].filter(Boolean));
-    sel.value = S.selectedTask || "";
+  // The sidebar's task list: the request is the title, the number, state and time the meta line.
+  function renderTaskList() {
+    const q = S.search.trim().toLowerCase();
+    const total = S.tasks.length;
+    const items = S.tasks.map((t, i) => ({ t, n: total - i })).filter(({ t, n }) => !q || (t.request || "").toLowerCase().includes(q) || `#${n}` === q);
+    $("#taskList").replaceChildren(...(items.length
+      ? items.map(({ t, n }) => h("div", { class: "task-item" + (t.id === S.selectedTask && S.view === "tasks" ? " sel" : ""), onclick: () => selectTask(t.id) },
+        h("div", { class: "task-title", text: firstLine(t.request, 70) }),
+        h("div", { class: "task-meta" }, h("span", { class: "dot " + t.status }), `#${n} · ${statusText(t.status)} · `, dur(t.startedAt, t.finishedAt))))
+      : [h("div", { class: "sb-empty muted", text: total ? "No task matches." : "No tasks yet." })]));
   }
 
   function teamLabel(team) {
@@ -696,7 +728,7 @@
     const tree = $("#tree");
     const task = taskById(S.selectedTask);
     if (!task) {
-      tree.replaceChildren(h("div", { class: "tree-task", text: S.tasks.length ? "Pick a task at the top to see it or follow it up." : "No tasks yet." }));
+      tree.replaceChildren(h("div", { class: "sb-empty muted", text: "Pick a task to see its team." }));
       return;
     }
     const node = id => {
@@ -705,23 +737,15 @@
       const plan = currentPlan(a);
       const meta = [plan && plan.pattern, plan && `${plan.agents.length} agent${plan.agents.length === 1 ? "" : "s"}`, team.attempts.length > 1 && `attempt ${team.attempts.length}`].filter(Boolean).join(" · ");
       return h("div", null,
-        h("div", { class: "node" + (S.selectedTeam === id ? " sel" : ""), onclick: () => select(team.id) },
-          h("span", { class: "dot " + teamStatus(team) }),
-          h("div", { class: "node-body" },
-            h("div", { class: "label", text: teamLabel(team) }),
-            team.depth > 0 && h("div", { class: "sub", text: firstLine(team.task, 140) }),
-            meta && h("div", { class: "meta", text: meta }))),
+        h("div", { class: "team-card" + (S.selectedTeam === id && S.detailView === "details" ? " sel" : ""), onclick: () => { select(team.id); if (S.detailView === "result") setDetailView("details"); } },
+          h("div", { class: "team-card-head" }, h("span", { class: "dot " + teamStatus(team) }), h("span", { class: "label", text: teamLabel(team) })),
+          team.depth > 0 && h("div", { class: "sub", text: firstLine(team.task, 140) }),
+          meta && h("div", { class: "meta", text: meta })),
         team.children.length > 0 && h("div", { class: "children" }, team.children.map(node)));
     };
-    const parent = task.followUpOf && taskById(task.followUpOf);
-    tree.replaceChildren(
-      h("div", { class: "tree-task" },
-        h("div", null, `Task #${taskNumber(task.id)} · ${task.status} · `, dur(task.startedAt, task.finishedAt)),
-        parent && h("div", null, "Follow-up on ", h("a", { class: "task-link", text: `task #${taskNumber(parent.id)}`, onclick: () => selectTask(parent.id) })),
-        h("div", { class: "t", text: task.request })),
-      S.rootTeamId ? node(S.rootTeamId)
-        : task.status === "running" ? h("div", { class: "node" }, h("span", { class: "dot planning" }), h("span", { class: "muted", text: "Starting…" }))
-        : h("div", { class: "node" }, h("span", { class: "dot " + task.status }), h("span", { class: "muted", text: "No team ran." })));
+    tree.replaceChildren(S.rootTeamId ? node(S.rootTeamId)
+      : task.status === "running" ? h("div", { class: "team-card" }, h("div", { class: "team-card-head" }, h("span", { class: "dot planning" }), h("span", { class: "muted", text: "Starting…" })))
+      : h("div", { class: "sb-empty muted", text: "No team ran." }));
   }
 
   function select(teamId) {
@@ -733,36 +757,88 @@
 
   function setFollow(on) { S.follow = on; $("#follow").checked = on; }
 
+  const TABS = [["result", "Result"], ["graph", "Graph"], ["details", "Details"]];
+
+  // One quiet page per task: a title and state, three tabs, and the composer docked below. Only the Details tab carries the
+  // team, the agents and every step; Result is what the task produced.
   function renderDetail() {
     const pane = $("#detail");
     const task = taskById(S.selectedTask);
-    if (!running()) updateComposer();
-    const top = S.models && !hasModels() ? providerGate() : !running() && composer.el;
+    if (!task) {
+      pane.replaceChildren(h("div", { class: "detail-inner" }, h("div", { class: "empty" }, h("div", null,
+        h("h3", { text: "What should the fleet work on?" }),
+        h("div", { text: "Describe a task below. A planner designs a team of agents for it, and you can watch it work." })))));
+      return;
+    }
+    const body = S.detailView === "graph" ? graphTab() : S.detailView === "details" ? detailsTab(task) : resultTab(task);
+    const page = h("div", { class: "detail-inner" + (S.detailView === "graph" ? " wide" : "") }, taskHeader(task), tabBar(), h("div", { class: "tab-body" }, body));
+    if (S.detailView === "graph") showGraph(pane, page); else pane.replaceChildren(page);
+  }
+
+  function taskHeader(task) {
+    const parent = task.followUpOf && taskById(task.followUpOf);
+    const root = S.teams.get(S.rootTeamId);
+    return h("header", { class: "task-head" },
+      h("div", { class: "crumbs" }, root && [h("span", { text: teamLabel(root) }), " / "], `Task #${taskNumber(task.id)}`,
+        parent && [" · follow-up on ", h("a", { text: `#${taskNumber(parent.id)}`, onclick: () => selectTask(parent.id) })]),
+      h("h1", { text: firstLine(task.request, 110), title: task.request }),
+      h("div", { class: "status-line" }, h("span", { class: "dot " + task.status }), statusText(task.status), " · ", dur(task.startedAt, task.finishedAt)));
+  }
+
+  const tabBar = () => h("div", { class: "pagetabs", role: "tablist", "aria-label": "View" }, TABS.map(([view, label]) =>
+    h("button", { class: "pagetab" + (S.detailView === view ? " sel" : ""), type: "button", role: "tab", "aria-selected": String(S.detailView === view), text: label, onclick: () => setDetailView(view) })));
+
+  // What the task produced. While it works there is one live line and the checklist, nothing else.
+  function resultTab(task) {
+    const out = [];
+    if (task.result) out.push(h("section", { class: "result-card" }, h("div", { class: "slash", text: "// result" }), mdBlock("result-body", task.result)));
+    else if (task.status === "running") out.push(liveCard());
+    else if (!task.reason) out.push(h("section", { class: "result-card" }, h("div", { class: "slash", text: "// result" }), h("div", { class: "muted", text: "No result was written." })));
+    if (task.reason && task.status !== "done") out.push(h("section", { class: "result-card" }, h("div", { class: "slash", text: "// why it ended" }), h("div", { class: "result-body", text: task.reason })));
+    out.push(canvasCard(task), filesCard(task), runAgainCard(task));
+    return out;
+  }
+
+  function liveCard() {
+    const team = S.teams.get(S.rootTeamId);
+    const a = team?.attempts[team.attempts.length - 1];
+    const last = a?.timeline.findLast(e => e.kind === "turn");
+    return h("section", { class: "result-card live" },
+      h("div", { class: "slash", text: "// working" }),
+      h("div", { class: "live-line" }, h("span", { class: "dot working" }),
+        last ? [h("b", { style: `--c:${agentColor(last.agent)}`, text: last.agent }), h("span", { class: "act-preview", "data-turn-preview": last.id, text: turnPreview(last) })]
+          : h("span", { class: "muted", text: S.clarify?.phase === "asking" ? "Asking you a few questions first…" : "The planner is putting a team together…" })),
+      a && renderTodos(a),
+      h("button", { class: "more", type: "button", text: "See what the agents are doing →", onclick: () => setDetailView("details") }));
+  }
+
+  const graphTab = () => S.rootTeamId ? renderGraph() : h("div", { class: "muted", text: "No team yet." });
+
+  // The team, its agents and every step: the noisy view, one tab away.
+  function detailsTab(task) {
     const team = S.teams.get(S.selectedTeam);
-    if (!team) {
-      pane.replaceChildren(h("div", { class: "detail-inner" }, top,
-        task ? taskSummary(task) : h("div", { class: "empty", style: "height:auto;padding:40px 0" }, h("div", null,
-          h("h3", { text: "Nothing running yet" }),
-          h("div", { text: "Describe a task above. The teams and agents that work on it show up here, live." })))));
-      return;
-    }
-    if (S.detailView === "graph" && S.rootTeamId) {
-      showGraph(pane, h("div", { class: "detail-inner wide" }, top, viewSwitch(), renderGraph()));
-      return;
-    }
+    if (!team) return [
+      h("div", { class: "card" }, h("div", { class: "sub-head" }, `${task.plannerModel} · `, dur(task.startedAt, task.finishedAt), toolsText(task)),
+        clampText("task-" + task.id, "task-text", task.request, 600)),
+      attachedCard(task),
+      lessonsAppliedCard(task),
+      task.status === "running" && h("div", { class: "card waiting", style: "margin-top:12px" }, h("span", { class: "dot planning" }), "The planner is putting a team together…"),
+      requirementsCard(),
+      autoAnswersCard(),
+    ];
     const a = (S.selectedAttempt && team.attempts.find(x => x.n === S.selectedAttempt)) || team.attempts[team.attempts.length - 1];
 
     const chain = [];
     for (let t = team; t; t = S.teams.get(t.parentTeamId)) chain.unshift(t);
-    const crumbs = h("div", { class: "crumbs" }, chain.map((t, i) => i === chain.length - 1
+    const crumbs = chain.length > 1 && h("div", { class: "crumbs" }, chain.map((t, i) => i === chain.length - 1
       ? h("span", { text: teamLabel(t) })
       : [h("a", { text: teamLabel(t), onclick: () => select(t.id) }), " › "]));
 
     const status = teamStatus(team);
     const head = h("div", { class: "card" },
       crumbs,
-      h("h1", null, teamLabel(team), h("span", { class: "pill " + status, text: statusText(status) })),
-      h("div", { class: "sub-head" }, `Level ${team.depth} · `, dur(team.started, team.finished), team.depth === 0 && task && toolsText(task)),
+      h("div", { class: "team-name" }, teamLabel(team), h("span", { class: "pill " + status, text: statusText(status) })),
+      h("div", { class: "sub-head" }, `Level ${team.depth} · `, dur(team.started, team.finished), team.depth === 0 && toolsText(task)),
       clampText("task-" + team.id, "task-text", team.task, 600));
 
     const tabs = team.attempts.length > 1 && h("div", { class: "tabs" }, team.attempts.map(x => h("button", {
@@ -770,26 +846,12 @@
       onclick: () => { S.selectedAttempt = x.n; setFollow(false); invalidate(); },
     }, h("span", { class: "dot " + x.status }), `Attempt ${x.n}`, x.fix && h("span", { class: "muted", text: "fix" }), x.verdict && h("span", { class: "muted", text: `${x.verdict.score}/10` }))));
 
-    pane.replaceChildren(h("div", { class: "detail-inner" }, top, viewSwitch(), head, team.depth === 0 && task && attachedCard(task), tabs, a ? renderAttempt(team, a) : null,
-      team.depth === 0 && task && taskFooter(task)));
+    return [head, team.depth === 0 && attachedCard(task), team.depth === 0 && lessonsAppliedCard(task), tabs, a ? renderAttempt(team, a) : null,
+      team.depth === 0 && [requirementsCard(), autoAnswersCard()]];
   }
 
   // Whether the task ran on the user's default tools or on its own override (ADR 0099).
   const toolsText = task => ` · Tools: ${task.enabledTools ? `${task.enabledTools.length} selected` : "your defaults"}`;
-
-  // A task's own outcome, when no team is shown: its request, result or reason, files and what can be done next.
-  function taskSummary(task) {
-    return [
-      h("div", { class: "card" },
-        h("h1", null, `Task #${taskNumber(task.id)}`, h("span", { class: "pill " + task.status, text: statusText(task.status) })),
-        h("div", { class: "sub-head" }, `${task.plannerModel} · `, dur(task.startedAt, task.finishedAt), toolsText(task)),
-        clampText("task-" + task.id, "task-text", task.request, 600)),
-      attachedCard(task),
-      lessonsAppliedCard(task),
-      task.status === "running" && h("div", { class: "card waiting", style: "margin-top:12px" }, h("span", { class: "dot planning" }), "The planner is putting a team together…"),
-      taskFooter(task),
-    ];
-  }
 
   // The task's attached files with how each was ingested (the documents.ingested event), and which documents the
   // agents can search. Names are the user's and the reasons the server's: text only.
@@ -825,19 +887,6 @@
     return [h("h2", { text: "Requirements" }), h("div", { class: "card" },
       h("div", { class: "muted", text: c.cleared ? `${asked}. The team was planned from this brief, not from your request as typed.` : `${asked}, but no brief came out of it: the team was planned from your request as typed.` }),
       c.cleared && h("div", { class: "brief", text: c.brief }))];
-  }
-
-  function taskFooter(task) {
-    return [
-      requirementsCard(),
-      autoAnswersCard(),
-      task.result && [h("h2", { text: "Result" }), h("div", { class: "card" }, clampText("result-" + task.id, "result", task.result, 2500, true))],
-      task.reason && task.status !== "done" && [h("h2", { text: "Why it ended" }), h("div", { class: "card", text: task.reason })],
-      canvasCard(task),
-      filesCard(task),
-      followUpCard(task),
-      runAgainCard(task),
-    ];
   }
 
   function filesCard(task) {
@@ -878,12 +927,6 @@
     if (!id) return;
     const r = await api("GET", `/api/fleet/tasks/${encodeURIComponent(id)}/files`);
     if (r.ok && S.selectedTask === id) { S.files = { taskId: id, list: r.data || [] }; invalidate(); }
-  }
-
-  function followUpCard(task) {
-    return task?.canFollowUp && !running() && h("div", { class: "card follow-up-cta" },
-      h("div", null, h("b", { text: "Want more?" }), h("div", { class: "muted", text: "Ask a follow-up, a new team builds on this result and the files in the workspace." })),
-      h("button", { class: "btn primary", text: "Follow up", onclick: () => { S.freshTask = false; updateComposer(); $("#detail").scrollTop = 0; composer.ta.focus(); } }));
   }
 
   // An interrupted, stopped or failed task can't be followed up, but its request can run again as a new task. A follow-up
@@ -1291,10 +1334,6 @@
     try { localStorage.setItem("agent42.fleet.detailView", view); } catch { /* a per-viewer convenience only */ }
     invalidate();
   }
-
-  const viewSwitch = () => h("div", { class: "view-switch", role: "group", "aria-label": "View" },
-    [["details", "Details"], ["graph", "Graph"]].map(([view, label]) =>
-      h("button", { class: "btn" + (S.detailView === view ? " sel" : ""), type: "button", "aria-pressed": String(S.detailView === view), text: label, onclick: () => setDetailView(view) })));
 
   // ---------- agent panel ----------
   function openPanel(teamId, attempt, agent, focus) {
@@ -1795,7 +1834,7 @@
   $("#lessonsBtn").addEventListener("click", () => S.view === "lessons" ? closeLessons() : openLessons());
   $("#settingsBtn").addEventListener("click", () => S.view === "settings" ? closeSettings() : openSettings());
   $("#stopBtn").addEventListener("click", () => S.selectedTask && api("POST", `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/stop`));
-  function newTask() { disconnect(); closeCanvasPane(); S.selectedTask = null; S.freshTask = true; resetTaskState(); S.view = "tasks"; invalidate(); composer.ta.focus(); }
+  function newTask() { disconnect(); closeCanvasPane(); S.selectedTask = null; S.freshTask = true; resetTaskState(); S.view = "tasks"; invalidate(); requestAnimationFrame(() => composer.ta.focus()); }
   $("#newTaskBtn").addEventListener("click", newTask);
   // Deletes the record, its event log and, once no follow-up shares it, the workspace with its files.
   $("#deleteBtn").addEventListener("click", async () => {
@@ -1870,7 +1909,10 @@
   // An empty answer would pick the default, which differs per question: the buttons are for that.
   $("#promptForm").addEventListener("submit", e => { e.preventDefault(); const text = $("#promptInput").value.trim(); if (text) answer(text); else $("#promptInput").focus(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape" && S.panel && S.view === "tasks") closePanel(); });
-  $("#taskSelect").addEventListener("change", e => selectTask(e.target.value));
+  $("#taskSearch").addEventListener("input", e => { S.search = e.target.value; renderTaskList(); });
+  // The more-actions menu closes after a pick, and every popover (that menu, the composer's options) on a click outside.
+  $(".more-pop").addEventListener("click", e => { if (e.target.closest("button")) $("#moreMenu").open = false; });
+  document.addEventListener("click", e => { for (const d of document.querySelectorAll("details.pop-host[open]")) if (!d.contains(e.target)) d.open = false; });
   $("#follow").addEventListener("change", e => {
     S.follow = e.target.checked;
     if (S.follow) {
