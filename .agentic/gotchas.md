@@ -977,49 +977,6 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `.agentic/decisions/0020-image-generation-model-capability.md` (Foundry image gen out of scope)
 - **Verified:** 2026-11-24 (audit 2026-11-24: the repo now pins OpenAI 2.15.0; the no-response_format behaviour still holds in OpenAIImageGenerator.cs, the wire URI was not re-captured)
 
-### The Foundry provider's endpoint + ARM coordinates are INHERITED — never copy them into `Models:`
-
-> **Amended by ADR 0019 (2026-07-17):** the app **no longer ships a baseline `foundry` chat provider** —
-> `Models:Providers` is now `{}` and chat is fully per-user (ADR 0018). The inheritance MECHANISM below
-> (`ResolveFoundry` falling back to `AzureOpenAI:*`) still exists in code and would apply to a baseline
-> Foundry provider re-added to `appsettings`, but no shipped provider exercises it. Two concrete claims
-> below are now dead: the `Models:Default` derivation is **gone** (Default stays `""`; there is no operator
-> default), and `AzureOpenAI:DeploymentName`/`SubscriptionId`/`ResourceGroup`/`AccountName` (+ their Bicep
-> params/env vars) were **removed**. Only `AzureOpenAI:Endpoint`/`ApiKey`/`TenantId` remain (ADR 0030 removed
-> `EmbeddingDeploymentName` too), and the key now authenticates **nothing** operator-side — `Endpoint`/`ApiKey`
-> are the **dormant** Foundry-inheritance source and `TenantId` binds `DefaultAzureCredential`. See the "Chat is
-> fully per-user" and "Embeddings are a per-user model" gotchas.
-
-- **Claim:** the `foundry` provider in `appsettings.json` deliberately declares **none** of `Endpoint`,
-  `ApiKey` (ADR 0017), `SubscriptionId`, `ResourceGroup`, `AccountName`, and that emptiness is load-bearing
-  rather than an omission: all fall back to the top-level **`AzureOpenAI:*`** keys, which Bicep threads in
-  as env vars (`AzureOpenAI__Endpoint`, `AzureOpenAI__ApiKey`) and which the **embedding client** — out of
-  scope for multi-provider — also reads (the key especially: one `AzureOpenAI__ApiKey`, never a second
-  `Models__Providers__foundry__ApiKey`). Copying the endpoint into `Models:Providers:foundry:Endpoint` creates a
-  second source of truth, and prod then silently talks to whatever appsettings says while the Bicep param
-  points somewhere else. Declaring all four is exactly how a **second** Foundry account is added (and it
-  must be all four: `AzureModelCatalog` is constructed **per discovering provider** with *its own*
-  coordinates — a single shared catalog reading the three global keys would make account #2 enumerate
-  account #1's deployments and label them as its own, which is silently wrong rather than a failure).
-  Two things a second account does **not** get for free: embeddings stay on the primary account, and it
-  must declare its **own `ApiKey`** (ADR 0017 — a key-based Foundry provider authenticates by key, not an
-  MI grant; the *Cognitive Services OpenAI User* grant is no longer the mechanism).
-- **The same rule governs `Models:Default`, and it is easy to miss.** `AzureOpenAI:DeploymentName` is
-  threaded in by Bicep (`AzureOpenAI__DeploymentName`), so `Models:Default` is left **empty** in
-  appsettings and derived as `foundry:<AzureOpenAI:DeploymentName>`. Hardcoding `"foundry:gpt-4o"` there
-  — which the first draft did — silently overrides the env var and turns the Bicep param into **dead
-  config**: it looks authoritative and changes nothing. Exactly the trap shape as SearXNG's inert
-  `server.port` below.
-- **Evidence:** `src/Agent42.Backend/Models/ModelProviderOptions.cs` (`ProviderSettings.ResolveFoundry` — the
-  inheritance mechanism, still live for a re-added baseline Foundry provider),
-  `src/Agent42.Backend/Models/ModelProviderBuilder.cs`, `src/Agent42.Backend/appsettings.json` (the `"//Default"`
-  comment; the `foundry` block was removed by ADR 0019),
-  `tests/Agent42.Tests/ModelProviderTests.cs`
-  (`TwoFoundryProviders_ResolveOwnCoordinates_AndInheritWhenAbsent`),
-  `.agentic/decisions/0017-foundry-provider-api-key-auth.md` (the `ApiKey` inheritance),
-  `.agentic/decisions/0019-remove-baseline-chat-providers.md` (baseline removed)
-- **Verified:** 2026-11-24 (audit 2026-11-21: appsettings.json no longer ships a foundry block or //Default (ADR 0019); only the dormant ResolveFoundry mechanism remains, so read the appsettings parts as historical)
-
 ### A user provider overlay is best-effort (baseline wins) and its endpoint is deliberately NOT SSRF-guarded
 
 > **Amended by ADR 0019 (2026-07-17):** the baseline chat set now ships **EMPTY** (`Models:Providers: {}`),
@@ -1350,13 +1307,6 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 - **Claim:** an undeclared custom domain gets silently unbound on the next deploy. The pair is now the repo variables `CUSTOM_DOMAIN_NAME` / `CUSTOM_DOMAIN_CERTIFICATE_NAME` (ADR 0128), and an absent variable expands to empty, which means "bind nothing". The `preflight` job reads the domain bound to the live app and fails when it is not the one the variable names. It cannot see a stale certificate name: if the cert is ever recreated, update the variable or the deployment unbinds the domain again.
 - **Evidence:** `.github/workflows/deploy.yml` (`preflight`, `customDomains`), `infra/modules/container-app.bicep`, `InfraPortabilityTests.Deploy_PreflightRunsFirst_AndGuardsWhatAMissingVariableWouldDestroy`
-- **Verified:** 2026-11-24
-
-### A cross-RG role grant into a resource group the deploy SP only has a scoped grant on must be a CLI step, not Bicep
-
-- **Claim:** a deploy SP that holds only `Microsoft.Authorization/roleAssignments/write` on one resource (not `Microsoft.Resources/deployments/write` on its resource group) cannot run a cross-RG Bicep module, so any such grant must be an idempotent `az rest` PUT in the workflow, not "cleaned up" into Bicep. This is the durable pattern.
-- **The one grant that used it is gone (ADR 0128):** "Cognitive Services OpenAI User" on the owner's Foundry account was no longer required since ADR 0017 (Foundry authenticates by API key) and was owner-scoped, so the step was removed from `deploy.yml`. No live example remains; `InfraPortabilityTests.Deploy_HasNoRoleAssignmentPut` keeps it out.
-- **Evidence:** `.agentic/decisions/0017-foundry-provider-api-key-auth.md`, `.agentic/decisions/0128-tenant-portable-azure-iac.md`, `tests/Agent42.Tests/InfraPortabilityTests.cs`
 - **Verified:** 2026-11-24
 
 ### Deploy service principal uses a client secret, not OIDC
