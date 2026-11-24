@@ -973,6 +973,38 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal(enabled, Assert.Single(restored.Connections).Enabled);
     }
 
+    // The general form of the test above (gotcha "Cosmos JSON omits a CLR-default member"): no [GenerateSerializer] type
+    // in Agent42.Agents may default a serialized bool to true, by initialiser or by a primary-constructor default, because a
+    // stored false is omitted and comes back true. Use the inverse name (Disabled, default false) instead.
+    [Fact]
+    public void NoSerializedBool_DefaultsToTrue()
+    {
+        // Grain-call arguments only (the binary path), never stored: Apply copies them into the persisted ChatConnection.
+        string[] neverPersisted = ["ChatConnectionSettings.Enabled = true"];
+        var offenders = new List<string>();
+        foreach (var type in typeof(AgentGrain).Assembly.GetTypes()
+            .Where(t => t.IsDefined(typeof(GenerateSerializerAttribute), false) && !t.IsAbstract && !t.ContainsGenericParameters))
+        {
+            offenders.AddRange(type.GetConstructors()
+                .SelectMany(c => c.GetParameters())
+                .Where(p => p.ParameterType == typeof(bool) && p.HasDefaultValue && p.DefaultValue is true)
+                .Select(p => $"{type.Name}({p.Name} = true)"));
+
+            if (type.GetConstructor(Type.EmptyTypes) is null || type.IsValueType)
+            {
+                continue;
+            }
+
+            var instance = Activator.CreateInstance(type)!;
+            offenders.AddRange(type.GetProperties()
+                .Where(p => p.PropertyType == typeof(bool) && p.IsDefined(typeof(IdAttribute), false) && p.GetValue(instance) is true)
+                .Select(p => $"{type.Name}.{p.Name} = true"));
+        }
+
+        offenders.RemoveAll(neverPersisted.Contains);
+        Assert.True(offenders.Count == 0, "Serialized bools that default to true flip on a Cosmos reload:\n" + string.Join("\n", offenders));
+    }
+
     // ADR 0111: a connection stored before OwnerTelemetry ([Id(22)]) existed reads it as null, not as a fault.
     [Fact]
     public void ChatConnection_WithoutOwnerTelemetry_Deserializes()

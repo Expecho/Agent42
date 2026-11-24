@@ -9,8 +9,8 @@ namespace Agent42.Backend;
 ///
 /// <para><b>THE TRAP THIS CLASS EXISTS TO AVOID: <c>LogRecord</c> IS POOLED AND REUSED.</b> The naive
 /// implementation — keep the <c>LogRecord</c> reference and read its fields later, when the endpoint
-/// serialises the buffer — compiles, runs, and is silently, catastrophically wrong. Measured against the
-/// pinned OpenTelemetry 1.18.0: two log calls captured by a <c>BaseProcessor&lt;LogRecord&gt;</c> that
+/// serialises the buffer — compiles, runs, and is silently, catastrophically wrong. Measured against
+/// OpenTelemetry 1.18.0 (then the pin; not re-measured since): two log calls captured by a <c>BaseProcessor&lt;LogRecord&gt;</c> that
 /// stored the references yielded <c>count=2 distinctRefs=1</c>, and <i>both</i> buffered entries read
 /// back as the <b>second</b> message. Nothing throws; the console just shows the same line twice.</para>
 ///

@@ -22,6 +22,20 @@ public sealed class ChatGroupAssetsTests
         _client = fixture.Client;
     }
 
+    // ADR 0073 (gotcha "Filing into a custom group", trap 4): drag-to-file is armed per INTERACTION from the pointer
+    // type, never from a fine-pointer media query, which reports the PRIMARY pointer and so matches a touchscreen laptop,
+    // where a live `draggable` races the 400 ms reveal. A plain substring search on purpose: it matches comments too, so
+    // the rejected query is never spelled out in the script (the sidebar.js comment says so).
+    [Fact]
+    public async Task DragToFile_IsDecidedPerInteraction_NeverByAFinePointerQuery()
+    {
+        var app = await _fixture.GetAppScriptAsync();
+
+        Assert.Contains("li.draggable = e.pointerType === \"mouse\";", app);
+        Assert.DoesNotContain("pointer: fine", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("pointer:fine", app, StringComparison.Ordinal);
+    }
+
     // AC17: the agent walk skips BOTH pinned rows (ADR 0045) and rows filed into a custom group, or a
     // filed agent chat renders twice — once in its group and once under its agent.
     [Fact]
