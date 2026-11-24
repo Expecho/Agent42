@@ -75,7 +75,7 @@ allowed-vocabulary lesson can still bias team design toward the agents the task 
 - Single replica is load-bearing: the per-user lock and the running-dream registry are in-process. A rollover overlaps two replicas for a
   few minutes and the store has no ETag, so a disable or delete made on the OTHER replica in that window can be lost (the user clicks
   again). Accepted; no conditional write in slice 1.
-- Lock scope: a per-user `SemaphoreSlim` guards short read-modify-writes only. A run reads without the lock, calls the model unlocked, then
+- Lock scope: a per-user `SemaphoreSlim` guards short read-modify-writes only (one exception since ADR 0143: approving a prompt proposal holds it across two Blob reads and writes). A run reads without the lock, calls the model unlocked, then
   takes the lock, RE-READS and merges, so a disable or delete made during the run survives. A `running` entry not in the registry reads as
   `interrupted` (persisted under the lock with a re-read), as for fleet tasks.
 - A skipped night is recorded once per window, not once per hourly tick. A run skipped for too few tasks does not use up the night.
@@ -87,7 +87,8 @@ allowed-vocabulary lesson can still bias team design toward the agents the task 
 - Re-enabling a disabled lesson does not check `LessonsMaxStored`, so the active count can exceed it; the prompt is still capped by
   `LessonsInPrompt`, and new learning stops until the count is back under the cap.
 - ADR 0121's unmerged branch (`feature/open-signin-owner-tier`) also changes the usage projector; whichever lands second rebases this.
-- Slice 2 (out of scope): retiring a lesson because tasks that used it scored worse, prompt rewriting, judge calibration, a per-user
+- Slice 2 (out of scope): retiring a lesson because tasks that used it scored worse, prompt rewriting (now in scope as
+  approval-gated targeted edits: amended by [ADR 0143](0143-fleet-dream-proposes-prompt-edits.md), 2026-11-24), judge calibration, a per-user
   timezone, a push when a night learns something.
 - The Lessons UI is a view on `/fleet/` like the prompt editor (not a modal dialog, which would block the page); `/fleet/` is outside
   `SHELL`, so no `sw.js` bump.

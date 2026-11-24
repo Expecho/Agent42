@@ -23,12 +23,29 @@ public enum FleetDreamResultKind
 /// <summary>The outcome of <see cref="FleetLessonService.RunManualAsync"/>: its kind, an error text when it did not run, and the run.</summary>
 public sealed record FleetDreamResult(FleetDreamResultKind Kind, string? Error = null, FleetDreamRun? Run = null);
 
+/// <summary>How an approve or dismiss of a prompt proposal ended (ADR 0143).</summary>
+public enum FleetProposalOutcome
+{
+    Done,
+
+    /// <summary>No such proposal for this user.</summary>
+    NotFound,
+
+    /// <summary>Already decided, or the prompt changed so the edit no longer applies.</summary>
+    Conflict,
+}
+
+/// <summary>The result of <see cref="FleetLessonService.ApproveProposalAsync"/> or <see cref="FleetLessonService.DismissProposalAsync"/>:
+/// the outcome, an error text, and the prompt key an approve changed.</summary>
+public sealed record FleetProposalDecision(FleetProposalOutcome Outcome, string? Error = null, string? PromptKey = null);
+
 /// <summary>
 /// The fleet's lessons (ADR 0124): the nightly "dream" that distills a user's recent finished tasks into a few lessons
 /// about team design, and every read and write of the lessons document. In-process like the fleet (ADR 0097, rule 12): the
 /// per-user lock and the registry of running dreams rely on the single replica.
 /// <para>
-/// A per-user <see cref="SemaphoreSlim"/> guards short read-modify-writes ONLY. A run reads the document without the lock,
+/// A per-user <see cref="SemaphoreSlim"/> guards short read-modify-writes ONLY, with one exception: approving a prompt
+/// proposal (ADR 0143) holds it across reading and writing both <c>lessons.json</c> and <c>prompts.json</c>. A run reads the document without the lock,
 /// calls the model unlocked, and then takes the lock, RE-READS and merges into the fresh document, so a disable or delete the
 /// user made during the run survives it and nothing blocks for minutes. The store has no ETag, so a write on the other
 /// replica of a rollover can still be lost (ADR 0124 says so). A run entry stored as <c>running</c> that is not in the
@@ -68,9 +85,14 @@ public sealed class FleetLessonService(
         return !HasOrphanedRun(userId, document) ? document : await NormalizeAsync(userId, cancellationToken);
     }
 
-    /// <summary>Lessons created after the user last opened the dialog, for the badge.</summary>
+    /// <summary>Lessons and pending prompt proposals created after the user last opened the dialog, for the badge. A proposal
+    /// that stays pending stops counting once seen; the Lessons view shows how many are waiting.</summary>
     public static int NewCount(FleetLessonsDocument document)
-        => document.Lessons.Count(l => l.Status == FleetLessonStatus.Active && l.CreatedAt > (document.Settings.SeenAt ?? DateTimeOffset.MinValue));
+    {
+        var seen = document.Settings.SeenAt ?? DateTimeOffset.MinValue;
+        return document.Lessons.Count(l => l.Status == FleetLessonStatus.Active && l.CreatedAt > seen)
+            + document.PromptProposals.Count(p => p.Status == FleetPromptProposalStatus.Pending && p.CreatedAt > seen);
+    }
 
     /// <summary>The lessons a planner of this user gets now. Fails open: a failing read logs a warning and returns none.</summary>
     public async Task<IReadOnlyList<FleetLesson>> ActiveAsync(string userId, CancellationToken cancellationToken = default, FleetOptions? effective = null)
@@ -177,12 +199,79 @@ public sealed class FleetLessonService(
         return found;
     }
 
-    // Reads, applies and writes the document under the user's lock. Writes nothing when nothing changed.
-    private async Task<FleetLessonsDocument> MutateAsync(string userId, Func<FleetLessonsDocument, FleetLessonsDocument> change, CancellationToken cancellationToken)
+    // ---- Prompt proposals (ADR 0143) ----
+
+    /// <summary>The user's prompts as they are now: the defaults with the user's overrides.</summary>
+    public async Task<FleetPromptSet> PromptsAsync(string userId, CancellationToken cancellationToken = default)
+        => new(await store.GetPromptsAsync(userId, cancellationToken));
+
+    /// <summary>
+    /// Approves a pending prompt proposal: re-applies its edit to the user's CURRENT prompt and saves that as the user's own
+    /// copy (<see cref="FleetPrompts.WithOverride"/>), then marks it approved. A proposal whose passage is gone is marked
+    /// outdated and is a conflict. The whole body runs under the user's lock, so a double click gets a conflict and the prompt
+    /// changes once. <c>prompts.json</c> itself has no lock: a prompt-editor save at the same moment can still race (ADR 0143).
+    /// </summary>
+    public Task<FleetProposalDecision> ApproveProposalAsync(string userId, string proposalId, CancellationToken cancellationToken = default)
+        => WithUserLockAsync(userId, async () =>
+        {
+            var document = await store.GetLessonsAsync(userId, cancellationToken);
+            if (PendingProblem(document, proposalId) is { } problem)
+            {
+                return problem;
+            }
+
+            var proposal = document.PromptProposals.First(p => p.Id == proposalId);
+            var overrides = await store.GetPromptsAsync(userId, cancellationToken);
+            var applied = FleetPromptProposals.Apply(new FleetPromptSet(overrides).Get(proposal.PromptKey), proposal);
+            if (!applied.Ok)
+            {
+                await store.SetLessonsAsync(userId, Decide(document, proposalId, FleetPromptProposalStatus.Outdated), cancellationToken);
+                return new FleetProposalDecision(FleetProposalOutcome.Conflict, $"The prompt changed since this was proposed: {applied.Problem}");
+            }
+
+            if (!applied.AlreadyApplied)
+            {
+                await store.SetPromptsAsync(userId, FleetPrompts.WithOverride(overrides, proposal.PromptKey, applied.Text), cancellationToken);
+            }
+
+            await store.SetLessonsAsync(userId, Decide(document, proposalId, FleetPromptProposalStatus.Approved), cancellationToken);
+            return new FleetProposalDecision(FleetProposalOutcome.Done, null, proposal.PromptKey);
+        }, cancellationToken);
+
+    /// <summary>Dismisses a pending prompt proposal; it stays as a tombstone so the same change is not proposed again.</summary>
+    public Task<FleetProposalDecision> DismissProposalAsync(string userId, string proposalId, CancellationToken cancellationToken = default)
+        => WithUserLockAsync(userId, async () =>
+        {
+            var document = await store.GetLessonsAsync(userId, cancellationToken);
+            if (PendingProblem(document, proposalId) is { } problem)
+            {
+                return problem;
+            }
+
+            await store.SetLessonsAsync(userId, Decide(document, proposalId, FleetPromptProposalStatus.Dismissed), cancellationToken);
+            return new FleetProposalDecision(FleetProposalOutcome.Done);
+        }, cancellationToken);
+
+    private static FleetProposalDecision? PendingProblem(FleetLessonsDocument document, string proposalId)
+        => document.PromptProposals.FirstOrDefault(p => p.Id == proposalId) switch
+        {
+            null => new FleetProposalDecision(FleetProposalOutcome.NotFound, "No such proposal."),
+            { Status: FleetPromptProposalStatus.Pending } => null,
+            var decided => new FleetProposalDecision(FleetProposalOutcome.Conflict, $"This proposal was already {decided.Status}."),
+        };
+
+    private FleetLessonsDocument Decide(FleetLessonsDocument document, string proposalId, string status)
     {
-        var gate = _locks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken);
-        try
+        var now = _time.GetUtcNow();
+        return document with
+        {
+            PromptProposals = [.. document.PromptProposals.Select(p => p.Id == proposalId ? p with { Status = status, DecidedAt = now } : p)],
+        };
+    }
+
+    // Reads, applies and writes the document under the user's lock. Writes nothing when nothing changed.
+    private Task<FleetLessonsDocument> MutateAsync(string userId, Func<FleetLessonsDocument, FleetLessonsDocument> change, CancellationToken cancellationToken)
+        => WithUserLockAsync(userId, async () =>
         {
             var current = await store.GetLessonsAsync(userId, cancellationToken);
             var next = change(current);
@@ -192,6 +281,17 @@ public sealed class FleetLessonService(
             }
 
             return next;
+        }, cancellationToken);
+
+    // The user's lock around body. MutateAsync's short read-modify-writes use it, and approve, which is the one caller that
+    // holds it across two Blob reads and two writes.
+    private async Task<T> WithUserLockAsync<T>(string userId, Func<Task<T>> body, CancellationToken cancellationToken)
+    {
+        var gate = _locks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await body();
         }
         finally
         {
@@ -391,8 +491,10 @@ public sealed class FleetLessonService(
     {
         var digest = await FleetDigest.BuildAsync(store, userId, finished, effective, cancellationToken);
         var prompts = new FleetPromptSet(await store.GetPromptsAsync(userId, cancellationToken));
+        // Unlocked, like the rest of the run: the merge re-checks the stored proposals under the lock (ADR 0143).
+        var stored = (await store.GetLessonsAsync(userId, cancellationToken)).PromptProposals;
         var client = (await chatClients.GetForUserAsync(userId, cancellationToken)).GetClient(model);
-        var outcome = await new FleetDreamer(effective, prompts, digest, logger).RunAsync(client, telemetry, cancellationToken);
+        var outcome = await new FleetDreamer(effective, prompts, digest, logger, stored).RunAsync(client, telemetry, cancellationToken);
         var since = previousRunAt ?? DateTimeOffset.MinValue;
         return new DreamProgress(outcome.Status, outcome.Reason)
         {
@@ -434,7 +536,9 @@ public sealed class FleetLessonService(
     }
 
     // Takes the lock, RE-READS, and merges the accepted lessons into the fresh document: a disable or delete the user made
-    // while the model ran survives, and a lesson the user disabled is not learned again.
+    // while the model ran survives, and a lesson the user disabled is not learned again. The prompt proposals merge the same
+    // way, with or without lessons and on a failed run too (fail open: what was accepted still counts), re-checked against
+    // the fresh document so a dismiss made during the run survives (ADR 0143).
     private async Task<FleetDreamRun> FinishRunAsync(string userId, FleetDreamRun run, DreamProgress progress, FleetOptions effective)
     {
         var now = _time.GetUtcNow();
@@ -444,6 +548,7 @@ public sealed class FleetLessonService(
             var merge = progress.Outcome is { Accepted.Count: > 0 } outcome
                 ? FleetLessons.Merge(d, outcome.Accepted, now, effective)
                 : new FleetLessonMerge(FleetLessons.Expire(d, now, effective), 0, 0, 0);
+            var proposals = FleetPromptProposals.Merge(merge.Document, progress.Outcome?.Proposals ?? [], now, effective);
             final = run with
             {
                 Status = progress.Status,
@@ -456,8 +561,9 @@ public sealed class FleetLessonService(
                 Refused = merge.Refused + (progress.Outcome?.Refused ?? 0),
                 InputTokens = progress.Outcome?.InputTokens,
                 OutputTokens = progress.Outcome?.OutputTokens,
+                Proposed = proposals.Proposed,
             };
-            return merge.Document with { Runs = [.. merge.Document.Runs.Select(r => r.Id == run.Id ? final : r)] };
+            return proposals.Document with { Runs = [.. proposals.Document.Runs.Select(r => r.Id == run.Id ? final : r)] };
         }, CancellationToken.None);
         return final;
     }

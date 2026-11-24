@@ -254,6 +254,9 @@ public static partial class FleetPrompts
 
             Submit by calling submit_lessons with a list of lessons, each with text, topic, confidence and evidence (task ids). If a lesson
             is refused, the reason is returned: fix it and call submit_lessons again with only the corrected lessons.
+
+            You also see the user's current fleet prompts. When several tasks show that one of them steered the teams wrong, you may
+            call propose_prompt_change with one small, exact edit; the user reviews it and decides. Proposing nothing is fine.
             """),
         new("copilot-report", "Copilot report",
             "Added to the instructions of every Copilot agent. Its last message is its result for the next agent and the judge, while its "
@@ -294,6 +297,10 @@ public static partial class FleetPrompts
 
         return result;
     }
+
+    /// <summary>The names of the <c>{{name}}</c> placeholders in <paramref name="text"/>.</summary>
+    public static IReadOnlySet<string> PlaceholdersIn(string text)
+        => PlaceholderRegex().Matches(text).Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
 
     [GeneratedRegex(@"\{\{(\w+)\}\}")]
     private static partial Regex PlaceholderRegex();

@@ -638,6 +638,13 @@ footer .budget { display: flex; align-items: center; gap: 14px; margin-left: aut
 .lesson-task { cursor: pointer; text-decoration: underline; }
 .lessons-off { margin-top: 12px; }
 .dream-run { font-size: 12px; padding: 3px 0; }
+/* Prompt proposals (ADR 0143): a plain-text diff of one targeted edit. */
+#promptProposals { margin-top: 16px; }
+.proposal-label { font-size: 12px; margin-top: 8px; }
+.proposal-del { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); background: color-mix(in srgb, var(--bad) 7%, var(--bg)); }
+.proposal-add { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); background: color-mix(in srgb, var(--ok) 7%, var(--bg)); }
+.proposal.stale pre { opacity: .7; }
+.proposal-note { font-size: 12px; margin-top: 8px; }
 
 /* ————— advanced settings (ADR 0135) ————— */
 .settings-group h2 { margin: 0 0 8px; font-size: 14px; }

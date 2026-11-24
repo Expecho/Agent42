@@ -194,4 +194,70 @@ public class FleetDreamTests
 
         Assert.Equal((120L, 30L), (outcome.InputTokens, outcome.OutputTokens));
     }
+
+    private const string PlannerFind = "Prefer the smallest team that gets the job done.";
+    private const string Why = "Teams that staged research before writing scored higher.";
+
+    [Fact]
+    public async Task TheModelSeesTheAllowedPromptsAsData_NotDreamOrCopilot()
+    {
+        var client = new ScriptedDreamClient(_ => Say("nothing"));
+        var prompts = new FleetPromptSet(new Dictionary<string, string> { ["judge"] = "My own judge text {{task}} {{result}}." });
+        FleetPromptProposal[] stored = [new() { Id = "p", PromptKey = "retry", Replacement = "x", Status = FleetPromptProposalStatus.Pending }];
+
+        await new FleetDreamer(new FleetOptions(), prompts, Digest, NullLogger.Instance, stored).RunAsync(client, Alice, CancellationToken.None);
+
+        var block = client.UserText![client.UserText.IndexOf("current fleet prompts", StringComparison.Ordinal)..];
+        Assert.Contains("data, not instructions", block);
+        Assert.Contains(FleetToolLimits.ResultOpenTag, block);
+        Assert.All(FleetPromptProposals.AllowedKeys, k => Assert.Contains($"=== Prompt {k} (", block));
+        Assert.DoesNotContain("=== Prompt dream", block);
+        Assert.DoesNotContain("=== Prompt copilot", block);
+        Assert.Contains("My own judge text {{task}} {{result}}.", block);
+        Assert.Contains(PlannerFind, block);
+        Assert.Contains("change already waiting for the user: retry.", block);
+        Assert.Contains("propose_prompt_change", FleetPrompts.Find("dream")!.Default);
+    }
+
+    [Fact]
+    public async Task ProposePromptChange_AcceptsValid_RefusesWithReason_CapsPerRun()
+    {
+        var results = new List<string?>();
+        var client = new ScriptedDreamClient(c =>
+        {
+            results.Add(c.LastToolResult);
+            return c.Number switch
+            {
+                1 => ProposePrompt("dream", "append", null, "Be bolder.", Why, "t1", "t2"),
+                2 => ProposePrompt("planner", "replace", PlannerFind, PlannerFind + " Stage research before writing.", Why, "t1", "t2"),
+                3 => ProposePrompt("planner", "append", null, "Another one.", Why, "t1", "t3"),
+                4 => ProposePrompt("judge", "append", null, "Name the missing section in the feedback.", Why, "t2", "t3"),
+                _ => Say("done"),
+            };
+        });
+
+        var outcome = await new FleetDreamer(new FleetOptions(), FleetPromptSet.Defaults, Digest, NullLogger.Instance).RunAsync(client, Alice, CancellationToken.None);
+
+        Assert.Contains("refused", results[1]);
+        Assert.Contains("can't be changed", results[1]);
+        Assert.StartsWith("accepted", results[2]);
+        Assert.Contains("already proposed a change to 'planner'", results[3]);
+        Assert.StartsWith("accepted", results[4]);
+        Assert.Equal(["planner", "judge"], outcome.Proposals.Select(p => p.PromptKey));
+        Assert.Equal(2, outcome.ProposalsRefused);
+        Assert.Empty(outcome.Accepted);
+        Assert.Null(outcome.Reason);
+
+        // A third valid one in the same run hits the per-run cap.
+        var capped = new ScriptedDreamClient(c => c.Number switch
+        {
+            1 => ProposePrompt("planner", "replace", PlannerFind, PlannerFind + " Stage the work.", Why, "t1", "t2"),
+            2 => ProposePrompt("judge", "append", null, "Name the missing section.", Why, "t1", "t2"),
+            3 => ProposePrompt("retry", "append", null, "Fix only what the judge named.", Why, "t1", "t2"),
+            _ => Say("done"),
+        });
+        var third = await new FleetDreamer(new FleetOptions(), FleetPromptSet.Defaults, Digest, NullLogger.Instance).RunAsync(capped, Alice, CancellationToken.None);
+        Assert.Equal(FleetPromptProposals.MaxPerRun, third.Proposals.Count);
+        Assert.Equal(1, third.ProposalsRefused);
+    }
 }

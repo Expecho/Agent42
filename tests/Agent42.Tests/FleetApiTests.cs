@@ -549,4 +549,15 @@ public sealed class FleetApiUnavailableTests(SharedApiFixture fixture) : SharedC
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
     }
+
+    [Theory]
+    [InlineData("/api/fleet/lessons/proposals/x/approve")]
+    [InlineData("/api/fleet/lessons/proposals/x/dismiss")]
+    public async Task MissingService_PostIs503(string uri)
+    {
+        var response = await Fixture.Client.PostAsync(uri, null);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+    }
 }

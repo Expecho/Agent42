@@ -90,6 +90,9 @@ public sealed record FleetDreamRun
     public string? Model { get; init; }
     public long? InputTokens { get; init; }
     public long? OutputTokens { get; init; }
+
+    /// <summary>The prompt changes this run proposed and stored as pending (ADR 0143).</summary>
+    public int Proposed { get; init; }
 }
 
 /// <summary>What started a <see cref="FleetDreamRun"/>.</summary>
@@ -120,6 +123,54 @@ public sealed record FleetLessonsDocument
 
     /// <summary>The last 30 runs, newest first.</summary>
     public IReadOnlyList<FleetDreamRun> Runs { get; init; } = [];
+
+    /// <summary>The prompt changes the dream proposed (ADR 0143): pending ones wait for the user's Approve or Dismiss, decided
+    /// ones stay as tombstones so a dismissed change is not proposed again.</summary>
+    public IReadOnlyList<FleetPromptProposal> PromptProposals { get; init; } = [];
+}
+
+/// <summary>
+/// A targeted edit of one of the user's fleet prompts that the dream proposed (ADR 0143). Nothing changes until the user
+/// approves it; approve re-applies the edit to the CURRENT prompt text, so the user's own later edits elsewhere survive.
+/// </summary>
+public sealed record FleetPromptProposal
+{
+    public required string Id { get; init; }
+    public required string PromptKey { get; init; }
+    public string Kind { get; init; } = FleetPromptProposalKind.Replace;
+
+    /// <summary>The exact passage to replace (<see cref="FleetPromptProposalKind.Replace"/>), or null for an append.</summary>
+    public string? Find { get; init; }
+
+    public string Replacement { get; init; } = "";
+    public string Rationale { get; init; } = "";
+
+    /// <summary>The ids of the finished tasks that support it.</summary>
+    public IReadOnlyList<string> Evidence { get; init; } = [];
+
+    public string Status { get; init; } = FleetPromptProposalStatus.Pending;
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? DecidedAt { get; init; }
+}
+
+/// <summary>The kinds of <see cref="FleetPromptProposal"/>.</summary>
+public static class FleetPromptProposalKind
+{
+    public const string Replace = "replace";
+    public const string Append = "append";
+
+    public static readonly IReadOnlyList<string> All = [Replace, Append];
+}
+
+/// <summary>The states of a <see cref="FleetPromptProposal"/>.</summary>
+public static class FleetPromptProposalStatus
+{
+    public const string Pending = "pending";
+    public const string Approved = "approved";
+    public const string Dismissed = "dismissed";
+
+    /// <summary>The prompt changed so the edit no longer applies; found when the user tried to approve it.</summary>
+    public const string Outdated = "outdated";
 }
 
 /// <summary>A lesson a task's planner received: its id and a text snapshot, so the task view stays right after the lesson is deleted.</summary>

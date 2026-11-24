@@ -267,4 +267,25 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.DoesNotContain("setMarkdown", section, StringComparison.Ordinal);
         Assert.DoesNotContain("mdBlock", section, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task FleetPage_PromptProposals_AreWired()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+        var start = script.IndexOf("// ---------- lessons (ADR 0124)", StringComparison.Ordinal);
+        var end = script.IndexOf("// ---------- wiring ----------", StringComparison.Ordinal);
+        var section = script[start..end];
+
+        // Inside the section the markup scan covers.
+        Assert.Contains("function proposalCard(", section, StringComparison.Ordinal);
+        Assert.Contains("/api/fleet/lessons/proposals/", section, StringComparison.Ordinal);
+        Assert.Contains("decide(\"approve\")", section, StringComparison.Ordinal);
+        Assert.Contains("decide(\"dismiss\")", section, StringComparison.Ordinal);
+        Assert.Contains("id: \"promptProposals\"", section, StringComparison.Ordinal);
+        Assert.Contains("p.applies", section, StringComparison.Ordinal);
+        Assert.Contains("run.proposed", section, StringComparison.Ordinal);
+        Assert.Contains("later updates to its default won't reach it", section, StringComparison.Ordinal);
+        Assert.Contains("The prompt changed since this was proposed", section, StringComparison.Ordinal);
+        Assert.Contains("proposalsBlock(d)", section, StringComparison.Ordinal);
+    }
 }

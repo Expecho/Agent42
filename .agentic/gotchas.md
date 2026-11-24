@@ -5163,6 +5163,31 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Task_UsesUserSettings_AndOtherUserUnaffected`, `Running_KeepsSnapshot`)
 - **Verified:** 2026-11-21
 
+### A rule the dream's model must follow goes in the tool description, never only in the `dream` prompt
+
+- **Claim:** The `dream` prompt is user-editable. A user who saved it keeps their override (`prompts.json` stores the WHOLE
+  text), so a sentence added to `FleetPrompts.Definitions["dream"].Default` never reaches them. Rule 11's analogue for prompts:
+  anything the model must obey (the allowed keys, replace/append, find matches once, keep placeholders, cite evidence) lives in
+  `FleetDreamer.ProposeDescription` and the code-built `PromptsBlock`, and is enforced again by `FleetPromptProposals.Validate`.
+  The default-prompt paragraph is only encouragement (ADR 0143).
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetDreamer.cs` (`ProposeDescription`, `PromptsBlock`),
+  `src/Agent42.Backend/Fleet/FleetPrompts.cs` (`WithOverride`), `tests/Agent42.Tests/FleetDreamTests.cs`
+- **Verified:** 2026-11-24
+
+### An approved prompt proposal is RE-APPLIED to the current prompt, never written back from the stored text
+
+- **Claim:** A proposal stores only the edit (`find` + `replacement`, or an append), not the before/after prompt. Approve reads the
+  user's prompt as it is NOW and calls `FleetPromptProposals.Apply`: a `find` that no longer occurs exactly once marks it
+  `outdated` (409), and an append already at the end counts as applied (so a retry after a failed `lessons.json` write doesn't
+  append twice). Writing a stored "after" text would wipe the user's edits made since the dream ran. Compare with `\n` line
+  endings (`FleetPromptProposals.Normalize`): a shipped default is a C# raw string and carries the source file's CRLF. Approve
+  holds the per-user lessons lock across both blobs; `prompts.json` itself is unlocked, so the prompt editor can still race it.
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetPromptProposals.cs` (`Apply`), `src/Agent42.Backend/Fleet/FleetLessonService.cs`
+  (`ApproveProposalAsync`, `WithUserLockAsync`), `tests/Agent42.Tests/FleetPromptProposalsTests.cs`
+  (`Apply_ReappliesOnTheCurrentText_OutdatedWhenFindIsGone_AppendIdempotent`), `tests/Agent42.Tests/FleetLessonServiceTests.cs`
+  (`Approve_Twice_SecondIsAConflict_PromptChangedOnce`)
+- **Verified:** 2026-11-24
+
 ## A stream failure is a 200 with `ErrorContent`, not an exception, and an empty message is never stored
 - **Claim:** On the Responses path a provider failure can arrive two ways, and only one throws. An HTTP 400 throws
   `ClientResultException` (ADR 0046's "Transmission failed"). A Responses `error` SSE event is a 200 whose update carries
