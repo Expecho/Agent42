@@ -266,7 +266,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v89", sw);
+        Assert.Contains("agent42-shell-v90", sw);
     }
 
     // Palette axis (ADR 0129): source-text proof that the picker, the engine, the head scripts and the offline
@@ -435,6 +435,25 @@ public sealed class PwaAssetsTests
         Assert.Contains("showNotification", sw);
         // The click handler tells js/push.js which conversation to open (its message handler → selectConversation).
         Assert.Contains("open-conversation", sw);
+    }
+
+    // ADR 0144: a fleet push carries a url (/fleet/?task={id}). The worker keeps it in the notification's data, accepts it
+    // only when same-origin, and on a click navigates or opens a window there INSTEAD of posting open-conversation.
+    [Fact]
+    public async Task Sw_NotificationClick_OpensUrl()
+    {
+        var sw = await _client.GetStringAsync("/sw.js");
+
+        Assert.Contains("url: data.url || \"\"", sw);
+        Assert.Contains("parsed.origin === self.location.origin", sw);
+        var click = sw.IndexOf("addEventListener(\"notificationclick\"", StringComparison.Ordinal);
+        var urlBranch = sw.IndexOf("if (url) {", click, StringComparison.Ordinal);
+        var openConversation = sw.IndexOf("open-conversation", click, StringComparison.Ordinal);
+        Assert.True(urlBranch > click && urlBranch < openConversation, "The url branch must come before the conversation message");
+        Assert.Contains("client.navigate(url)", sw);
+        // A chat window is never navigated away: only a window already on /fleet/ is reused.
+        Assert.Contains("new URL(c.url).pathname.startsWith(\"/fleet/\")", sw);
+        Assert.Contains("openWindow(url)", sw);
     }
 
 }

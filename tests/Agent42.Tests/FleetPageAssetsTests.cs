@@ -95,6 +95,37 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.DoesNotContain("/api/share/fleet", script, StringComparison.Ordinal);
     }
 
+    /// <summary>ADR 0144: memory recall and past chats can flow into a shared result, so the dialog says so, inside the dialog.</summary>
+    [Fact]
+    public async Task FleetShare_NoticeMentionsMemory()
+    {
+        var page = await _client.GetStringAsync("/fleet/");
+
+        var dialog = page.IndexOf("<dialog id=\"shareDialog\"", StringComparison.Ordinal);
+        var notice = page.IndexOf("content your agents read from your memory and past chats", StringComparison.Ordinal);
+        Assert.True(dialog >= 0 && notice > dialog && notice < page.IndexOf("</dialog>", dialog, StringComparison.Ordinal));
+    }
+
+    /// <summary>ADR 0144: the picker offers the personal keys the fleet supports, and nothing it doesn't.</summary>
+    [Fact]
+    public async Task FleetPicker_OffersSkillsMemoryPastChatsPush()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("new Set([\"web_search\", \"memory\", \"past_chats\", \"push_notification\"])", script, StringComparison.Ordinal);
+        Assert.Contains("key.startsWith(\"skill:\")", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"scheduling\"", script, StringComparison.Ordinal);
+    }
+
+    /// <summary>ADR 0144 (rule 11): a stored <c>skills</c> wildcard ticks every skill row, as <c>mcp</c> ticks every server.</summary>
+    [Fact]
+    public async Task FleetPicker_ExpandsSkillsWildcard()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("(row.key.startsWith(\"skill:\") && selection.has(\"skills\"))", script, StringComparison.Ordinal);
+    }
+
     /// <summary>ADR 0120 (ADR 0047's rule): the link is rendered BEFORE the OS sheet opens, and the sheet is gated on a pure
     /// feature detect. Without the ordering a blocked sheet leaves the user without the link.</summary>
     [Fact]

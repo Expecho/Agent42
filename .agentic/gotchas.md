@@ -4494,13 +4494,32 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   sets `AvailableTools` to its custom tool names, which restricts a `Mode.Empty` session to exactly those. Copying
   that into `FleetCopilotAgentFactory.BuildSessionConfig` (or into the chat's built-ins-ON path, ADR 0107) would
   restrict a default-mode session the same way and hide the shell and file built-ins. The fleet sets only `Tools`
-  (the four canvas tools, ADR 0102). Measured live for the chat kind on 2026-10-20: a default-mode BYOK session
-  offers custom `Tools` alongside the built-ins (`web_search` and `create`/`powershell` in one chat).
+  (the canvas tools, ADR 0102; the attempt's todo tools, ADR 0117; and since ADR 0144 the task's catalog tools minus
+  `load_skill`) plus `SkillDirectories`/`EnableSkills` for the selected skills. Measured live for the chat kind on
+  2026-10-20: a default-mode BYOK session offers custom `Tools` alongside the built-ins (`web_search` and
+  `create`/`powershell` in one chat).
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`BuildSessionConfig`),
-  `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs` (`SessionConfig_CarriesCanvasTools_KeepsBuiltins`),
+  `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs` (`SessionConfig_CarriesCanvasTools_KeepsBuiltins`,
+  `SessionConfig_CarriesCatalogTools_KeepsBuiltins`),
   `tests/Agent42.Tests/CopilotRuntimeTests.cs` (`SessionConfig_BuiltIns_PerConversationWorkingDirectory_NoAvailableTools`),
-  `.agentic/decisions/0102-fleet-shared-canvas.md`
-- **Verified:** 2026-11-21
+  `.agentic/decisions/0102-fleet-shared-canvas.md`, `.agentic/decisions/0144-fleet-uses-user-tools.md`
+- **Verified:** 2026-11-24
+
+### Fleet personal tools are fleet-owned: never call the grain's tool methods, and the skills provider can't be harvested
+
+- **Claim:** the chat's skill, memory, past-chat and push tools read grain state and `TurnContext.CurrentOrClosed`,
+  which reads `Closed` off-grain, so every budget looks spent. The fleet builds its own (`FleetSkillTools`,
+  `FleetMemoryTools`, `FleetPastChatTools`, `FleetPushTools`, `FleetImageTools`) once per task in `FleetToolCatalog`,
+  with the budget on the instance, and shares only the pure cores (`PastChatQuery`, `PushToolLimits`,
+  `ReadSkillResourceTool`, `ToolSelection.Merge`). Don't try to reuse `TruncatingSkillsProvider` there:
+  `AIContextProvider.InvokingContext`'s only constructor (Microsoft.Agents.AI 1.28.0) takes an `AIAgent` and an
+  `AgentSession`, which a catalog doesn't have, and it would advertise `run_skill_script` too. Each family is gated
+  on its own (`memory` key + Hindsight client, mapped past-chat/push names, `IsSkillEnabled`, image capability):
+  `ToolCatalog.IsToolEnabled` on an unmapped name such as `recall_memory` always returns true.
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetToolCatalog.cs` (`PersonalTools`),
+  `tests/Agent42.Tests/FleetToolCatalogTests.cs` (`Build_NewKeys_*`, `Build_ExcludedChatKeys_NoTools`),
+  `tests/Agent42.Tests/FleetPersonalToolsTests.cs`, `.agentic/decisions/0144-fleet-uses-user-tools.md`
+- **Verified:** 2026-11-24
 
 ### Fleet workspace downloads are an XSS sink: attachment, nosniff, never an HTML or SVG type
 

@@ -2,7 +2,7 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v89";
+const CACHE = "agent42-shell-v90";
 const SHELL = ["/", "/index.html", "/styles.css", "/shared/themes.css", "/js/agents.js", "/js/artifacts.js", "/js/attachments.js",
   "/js/cache.js", "/js/chatgateway.js", "/js/clienttools.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
   "/js/drawer.js", "/js/editfork.js", "/js/elicitation.js", "/js/export.js", "/js/format.js", "/js/groups.js", "/js/location.js", "/js/main.js", "/js/mcp.js", "/js/mcpapps.js",
@@ -150,17 +150,44 @@ self.addEventListener("push", (event) => {
       body: data.body || "",
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
-      data: { conversationId: data.conversationId || "" },
+      data: { conversationId: data.conversationId || "", url: data.url || "" },
     }));
 });
 
+/* A fleet push (ADR 0144) carries a same-origin url (/fleet/?task={id}); anything else is ignored. */
+function sameOriginUrl(url) {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url, self.location.origin);
+    return parsed.origin === self.location.origin ? parsed.href : "";
+  } catch { return ""; }
+}
+
 /* Tapping the notification focuses an existing app window and tells js/push.js which conversation to
-   open (its `message` handler calls selectConversation), or opens a fresh window at "/" when none is open. */
+   open (its `message` handler calls selectConversation), or opens a fresh window at "/" when none is open.
+   With a url (a fleet push, ADR 0144) it navigates a window there instead, or opens one, and sends no message. */
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const conversationId = (event.notification.data && event.notification.data.conversationId) || "";
+  const url = sameOriginUrl(event.notification.data && event.notification.data.url);
   event.waitUntil((async () => {
     const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    if (url) {
+      // Only a window already on /fleet/ is reused: navigating a chat window away would lose its conversation, draft and
+      // stream. navigate() rejects on a window this worker doesn't control, so that falls back to a new window too.
+      const client = clients.find((c) => "focus" in c && "navigate" in c && new URL(c.url).pathname.startsWith("/fleet/"));
+      try {
+        if (client) {
+          await client.focus();
+          await client.navigate(url);
+          return;
+        }
+      } catch { /* fall through to a new window */ }
+      if (self.clients.openWindow) {
+        await self.clients.openWindow(url);
+      }
+      return;
+    }
     for (const client of clients) {
       if ("focus" in client) {
         await client.focus();

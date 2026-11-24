@@ -3,7 +3,7 @@ id: 0013
 date: 2026-07-14
 status: accepted
 tags: [models, providers, github-models, openai-compatible, config, security, data-egress, capabilities]
-amended_by: [0084, 0094, 0097, 0108]   # 0084 artifacts: accepted self-navigation egress from sandboxed artifact pages; 0094 outbound webhooks for stored agents; 0097 agent fleet Copilot URL/shell egress; 0108 copilot agents on the user's GitHub Copilot plan send conversation content to GitHub
+amended_by: [0084, 0094, 0097, 0108, 0144]   # 0084 artifacts: accepted self-navigation egress from sandboxed artifact pages; 0094 outbound webhooks for stored agents; 0097 agent fleet Copilot URL/shell egress; 0108 copilot agents on the user's GitHub Copilot plan send conversation content to GitHub; 0144 fleet recall queries to Hindsight, fleet prompts to the image provider, fleet push text
 ---
 
 # A provider/model catalog: any OpenAI-compatible endpoint, named by a qualified `provider:model` id

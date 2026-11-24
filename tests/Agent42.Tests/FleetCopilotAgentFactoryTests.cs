@@ -2,6 +2,7 @@ using Agent42.Agents;
 using Agent42.Backend;
 using GitHub.Copilot;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using ModelInfo = Agent42.Backend.ModelInfo;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -33,7 +34,9 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
             new FleetOptions { CopilotAgentsEnabled = enabled, DefaultCopilotModel = defaultCopilotModel },
             NullLoggerFactory.Instance);
 
-    private FleetCopilotAgentFactory Factory(FleetCopilotHost host, IChatClientFactory? userFactory = null, string? copilotDefaultModel = null)
+    private FleetCopilotAgentFactory Factory(
+        FleetCopilotHost host, IChatClientFactory? userFactory = null, string? copilotDefaultModel = null,
+        IReadOnlyList<AIFunction>? runTools = null, IReadOnlyList<SkillInfo>? skills = null)
         => new(host,
             userFactory ?? new SingleChatClientFactory(new FakeChatClient(), "fake:model-a"),
             [FleetRunHarness.ModelA, FleetRunHarness.ModelB],
@@ -42,7 +45,7 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
             _canvas,
             FleetPromptSet.Defaults,
             new FleetCopilotPermissionPolicy(_workspace.Root, new ScriptedFleetInteraction(), CancellationToken.None),
-            copilotDefaultModel);
+            copilotDefaultModel, runTools, skills);
 
     [Fact]
     public async Task CopilotDisabled_LoadErrorForPlanner()
@@ -213,6 +216,65 @@ public sealed class FleetCopilotAgentFactoryTests : IDisposable
 
         Assert.Equal([.. FleetCanvas.ToolNames, .. FleetTodos.ToolNames], config.Tools!.Select(t => t.Name));
         Assert.Null(config.AvailableTools);
+    }
+
+    // ---- ADR 0144: the catalog's tools and the user's skills ----
+
+    private static AIFunction Tool(string name) => AIFunctionFactory.Create(() => "ran", name);
+
+    /// <summary>The catalog's tools ride along as custom tools, except the regular agents' load_skill (Copilot has its own
+    /// skill tool). AvailableTools stays null, so the built-ins stay.</summary>
+    [Fact]
+    public void SessionConfig_CarriesCatalogTools_KeepsBuiltins()
+    {
+        var settings = CopilotProviderSettings.OpenAICompatible(new Uri("https://api.example/v1"), "key");
+        AIFunction[] runTools = [Tool("web_search"), Tool("alpha"), Tool(FleetSkillTools.LoadName), Tool(FleetMemoryTools.Name)];
+
+        var config = Factory(Host(true), runTools: runTools).BuildSessionConfig(settings, "gpt-5", "You build.");
+
+        Assert.Equal([.. FleetCanvas.ToolNames, "web_search", "alpha", FleetMemoryTools.Name], config.Tools!.Select(t => t.Name));
+        Assert.Null(config.AvailableTools);
+    }
+
+    [Fact]
+    public void SessionConfig_SkillDirectories_OnlyWhenSelected()
+    {
+        var settings = CopilotProviderSettings.OpenAICompatible(new Uri("https://api.example/v1"), "key");
+        SkillInfo[] skills = [new("recipes", "Recipes.", "/skills/recipes"), new("guide", "Guide.", "/skills/guide")];
+
+        var with = Factory(Host(true), skills: skills).BuildSessionConfig(settings, "gpt-5", "You build.");
+        var without = Factory(Host(true), skills: []).BuildSessionConfig(settings, "gpt-5", "You build.");
+
+        Assert.Equal(["/skills/recipes", "/skills/guide"], with.SkillDirectories);
+        Assert.True(with.EnableSkills);
+        Assert.Empty(with.IncludedBuiltinSkills!);
+        Assert.Null(without.SkillDirectories);
+        Assert.False(without.EnableSkills);
+    }
+
+    /// <summary>read_skill_resource comes from the catalog, which builds it only with skills; the permission policy is not
+    /// widened to the skill folders, so a resource read goes through this tool.</summary>
+    [Fact]
+    public void SessionConfig_ReadSkillResource_OnlyWithSkills()
+    {
+        var settings = CopilotProviderSettings.OpenAICompatible(new Uri("https://api.example/v1"), "key");
+        var skillRoot = Path.Combine(Path.GetTempPath(), "agent42-copilot-skill-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(skillRoot);
+        try
+        {
+            SkillInfo[] skills = [new("recipes", "Recipes.", skillRoot)];
+            var withSkills = Factory(Host(true), runTools: new FleetSkillTools(skills).Tools, skills: skills)
+                .BuildSessionConfig(settings, "gpt-5", "You build.");
+            var noSkills = Factory(Host(true), runTools: new FleetSkillTools([]).Tools)
+                .BuildSessionConfig(settings, "gpt-5", "You build.");
+            Assert.Contains(withSkills.Tools!, t => t.Name == ReadSkillResourceTool.Name);
+            Assert.DoesNotContain(withSkills.Tools!, t => t.Name == FleetSkillTools.LoadName);
+            Assert.DoesNotContain(noSkills.Tools!, t => t.Name == ReadSkillResourceTool.Name);
+        }
+        finally
+        {
+            Directory.Delete(skillRoot, recursive: true);
+        }
     }
 
     [Fact]

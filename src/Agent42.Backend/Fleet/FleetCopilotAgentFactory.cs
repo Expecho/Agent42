@@ -2,6 +2,7 @@ using Agent42.Agents;
 using GitHub.Copilot;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.ObjectModel;
+using Microsoft.Extensions.AI;
 
 namespace Agent42.Backend;
 
@@ -78,7 +79,9 @@ public sealed class FleetCopilotAgentFactory(
     FleetCanvas canvas,
     FleetPromptSet prompts,
     FleetCopilotPermissionPolicy policy,
-    string? copilotDefaultModel = null) : PromptAgentFactory
+    string? copilotDefaultModel = null,
+    IReadOnlyList<AIFunction>? runTools = null,
+    IReadOnlyList<SkillInfo>? skills = null) : PromptAgentFactory
 {
     public const string Unavailable = "Copilot agents are not available, use a normal agent.";
 
@@ -166,6 +169,11 @@ public sealed class FleetCopilotAgentFactory(
     /// tools (ADR 0102), and <c>AvailableTools</c> stays unset on purpose: the chat
     /// kind sets it (with built-in tools off) to restrict a <c>Mode.Empty</c> session to its custom tools, and here it
     /// would hide the shell and file built-ins the fleet's default mode keeps.
+    ///
+    /// <para>Since ADR 0144 the task's catalog tools (documents, the personal tools, web, MCP) are custom tools too, except the
+    /// regular agents' <c>load_skill</c>: Copilot loads the selected skills natively from <c>SkillDirectories</c>. The
+    /// catalog's <c>read_skill_resource</c> stays, because the permission policy confines file reads to the workspace and a
+    /// skill's folder is outside it (the chat kind's measured finding, ADR 0085). The policy itself is unchanged.</para>
     /// </summary>
     public SessionConfig BuildSessionConfig(CopilotProviderSettings settings, string model, string instructions, FleetTodos? todos = null) => new()
     {
@@ -176,7 +184,9 @@ public sealed class FleetCopilotAgentFactory(
         EnableSessionTelemetry = CopilotAgentFactory.TelemetryFor(settings),
         SystemMessage = new SystemMessageConfig { Mode = SystemMessageMode.Append, Content = instructions },
         WorkingDirectory = workspace.Root,
-        Tools = [.. canvas.Tools, .. todos?.Tools ?? []],
+        Tools = [.. canvas.Tools, .. todos?.Tools ?? [], .. (runTools ?? []).Where(t => t.Name != FleetSkillTools.LoadName)],
+        EnableSkills = skills is { Count: > 0 },
+        SkillDirectories = skills is { Count: > 0 } ? [.. skills.Select(s => s.Path)] : null,
         IncludedBuiltinSkills = [],
         EnableSessionStore = false,
         EnableConfigDiscovery = false,

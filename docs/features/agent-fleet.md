@@ -16,7 +16,7 @@ Teams up to a configured depth ask you to approve their plan. Permission request
 - **Recursive.** Agents can design and run a new team for a sub-task. Depth and a soft budget keep this bounded.
 - **Judged.** The result is scored 1 to 10. Below the passing score, the same team fixes it, then a new team builds on it. The best result is kept.
 - **Your models only.** The planner, judge and moderators run on the model you pick, and agents can use any of your tool-capable models. With no provider, the page shows the same "add a provider" gate as the chat.
-- **Tools per task.** Agents get web search and your MCP tools as your chat default selects them. Change the **Tools** picker to override that for one task. The task header shows "Tools: your defaults" or "Tools: N selected". Run again keeps the selection.
+- **Tools per task.** Agents get web search, your skills, long-term memory (recall only, nothing a task does is remembered), past chats, push notifications (a tap opens the task) and your MCP tools as your chat default selects them, Copilot agents included. With an image model they can also generate images into the workspace's `images/` folder. Scheduling, location, browser tools, artifacts and code interpreter stay chat-only. Change the **Tools** picker to override that for one task. The task header shows "Tools: your defaults" or "Tools: N selected". Run again keeps the selection.
 - **Bounded.** Every task has a token cap and an agent cap. You run one task at a time, and the operator caps tasks across all users.
 - **Persistent.** Reload the page at any moment and it replays the task. A task that was running when the app restarted shows as **interrupted** and can be run again.
 

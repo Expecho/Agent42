@@ -135,6 +135,81 @@ public class FleetToolCatalogTests
         Assert.DoesNotContain("fetch_web_page", tools.Select(t => t.Name));
     }
 
+    // ---- ADR 0144: the personal tools ----
+
+    private static readonly string[] PersonalNames =
+        [ReadSkillResourceTool.Name, FleetSkillTools.LoadName, FleetMemoryTools.Name, PastChatLimits.SearchToolName, PastChatLimits.ReadToolName, FleetPushTools.Name];
+
+    private static FleetToolCatalog FullCatalog(IGrainFactory grains)
+    {
+        var memory = new RecordingHindsightClient();
+        return new(grains, NullLogger<FleetToolCatalog>.Instance, new InMemoryWebSearch(), null, new FakeUserSkillProvider(),
+            new HindsightIntegration(memory), new InMemoryChatSearchIndex(), new RecordingPushNotificationSender());
+    }
+
+    private static async Task<IReadOnlyList<string>> PersonalAsync(IGrainFactory grains, IReadOnlyList<string>? selectionOverride)
+        => [.. (await FullCatalog(grains).BuildAsync(new FleetToolContext("alice", "t1", "", selectionOverride, Interaction), default))
+            .Tools.Select(t => t.Name).Where(PersonalNames.Contains)];
+
+    /// <summary>The chat keys the fleet doesn't support produce no tool, alone or together.</summary>
+    [Fact]
+    public async Task Build_ExcludedChatKeys_NoTools()
+    {
+        IReadOnlyList<string> excluded =
+        [
+            ToolCatalog.Scheduling, ToolCatalog.Location, ToolCatalog.BrowserTools, ToolCatalog.SharedState, ToolCatalog.Artifacts,
+            ToolCatalog.ReadWebDocument, ToolCatalog.Fleet, ToolCatalog.CodeInterpreter, ToolCatalog.ReadDocument,
+        ];
+
+        var set = await FullCatalog(FakeUserGrainFactory.Create().Factory).BuildAsync(
+            new FleetToolContext("alice", "t1", "", excluded, Interaction), default);
+
+        Assert.Empty(set.Tools);
+        Assert.Empty(set.Skills);
+    }
+
+    [Fact]
+    public async Task Build_NewKeys_GatedByOverride()
+    {
+        var grains = FakeUserGrainFactory.Create([]).Factory;
+
+        Assert.Equal([FleetMemoryTools.Name], await PersonalAsync(grains, [ToolCatalog.Memory]));
+        Assert.Equal([PastChatLimits.SearchToolName, PastChatLimits.ReadToolName], await PersonalAsync(grains, [ToolCatalog.PastChats]));
+        Assert.Equal([FleetPushTools.Name], await PersonalAsync(grains, [ToolCatalog.PushNotification]));
+        Assert.Equal([FleetSkillTools.LoadName, ReadSkillResourceTool.Name], await PersonalAsync(grains, [ToolCatalog.WebSearch]));
+        // The shipped skills are both companions: websearch needs web_search, and scheduledprompt never comes along.
+        Assert.Empty(await PersonalAsync(grains, [ToolCatalog.Skills, ToolCatalog.Scheduling]));
+    }
+
+    [Fact]
+    public async Task Build_NewKeys_GatedByProfileDefault()
+    {
+        var grains = FakeUserGrainFactory.Create([ToolCatalog.Memory, ToolCatalog.PushNotification]).Factory;
+
+        Assert.Equal([FleetMemoryTools.Name, FleetPushTools.Name], await PersonalAsync(grains, null));
+    }
+
+    [Fact]
+    public async Task Build_NewKeys_NullMeansAll()
+    {
+        var grains = FakeUserGrainFactory.Create(null).Factory;
+
+        var names = await PersonalAsync(grains, null);
+
+        Assert.Equal(PersonalNames.Order(StringComparer.Ordinal), names.Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>The personal tools' names are reserved, so an MCP tool named like one is skipped even when the tool is absent.</summary>
+    [Fact]
+    public void Build_McpToolNamedLoadSkill_Skipped()
+    {
+        var clash = new McpServerTools("s3", [.. FleetToolCatalog.PersonalToolNames.Select(Tool), Tool("delta")]);
+
+        var tools = Catalog().Build(null, "", [clash], Interaction);
+
+        Assert.Equal(["web_search", "delta"], tools.Select(t => t.Name));
+    }
+
     [Fact]
     public async Task Elicitation_UrlAndForm_BecomeFleetQuestions()
     {
