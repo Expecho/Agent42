@@ -33,7 +33,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Frontend composition root (wires every module)  | `src/Agent42.Backend/wwwroot/js/main.js`          | 2026-11-21 |
 | Classic script shared by the app AND the public viewer (window global, guarded consumers) | `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` | 2026-11-21 |
 | Storage abstraction (interface + prod + in-mem) | `src/Agent42.Agents/Attachments/IAttachmentStore.cs`, `src/Agent42.Agents/Attachments/InMemoryAttachmentStore.cs`, `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` | 2026-11-21 |
-| Storage with ALL logic over a narrow Blob seam (contract-tested over the in-memory twin) | `src/Agent42.Agents/Fleet/FleetStore.cs`, `src/Agent42.Agents/Fleet/IFleetBlobs.cs`, `src/Agent42.Backend/Fleet/AzureFleetBlobs.cs` | 2026-10-13 |
+| Storage with ALL logic over a narrow Blob seam (contract-tested over the in-memory twin) | `src/Agent42.Agents/Fleet/FleetStore.cs`, `src/Agent42.Agents/Fleet/IFleetBlobs.cs`, `src/Agent42.Backend/Fleet/AzureFleetBlobs.cs` | 2026-11-24 |
 | Storage provider switch (one static class per provider behind `AddStorageProvider` / `UseStorageProvider`) | `src/Agent42.Backend/Storage/StorageRegistration.cs`, `src/Agent42.Backend/Storage/LocalStorageRegistration.cs` | 2026-11-21 |
 | SSE endpoint: replay a persisted log, then live, with a keep-alive | `src/Agent42.Backend/Fleet/AgentApi.Fleet.cs`, `src/Agent42.Backend/Fleet/FleetEventLog.cs` | 2026-11-21 |
 | PWA service worker (root scope, auth-safe)      | `src/Agent42.Backend/wwwroot/sw.js`               | 2026-11-21 |
@@ -60,7 +60,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   real Android PWA.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/speech.js` (`distrustZeroConfidenceFinals`);
   upstream precedent: `react-speech-recognition` `RecognitionManager.js`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Muting the voice loop's mic: `abort()` not `stop()`, gate the keep-alive, and a stuck turn is now deaf
 
@@ -84,7 +84,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/voice.js` (`muteMic`, `unmuteMic`, `refreshOutputKind`,
   `maybeArmListening`, the `end` handler),
   `.agentic/decisions/0079-half-duplex-voice-on-speakers.md` (its Unverified section)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A browser's upload Content-Type is unreliable for documents — resolve by extension
 
@@ -102,7 +102,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 - **Evidence:** `src/Agent42.Backend/Attachments/AgentApi.Attachments.cs` (`ResolveMediaType` call before branching),
   `src/Agent42.Agents/Documents/DocumentMediaTypes.cs`,
   `tests/Agent42.Tests/DocumentMediaTypesTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### An identity alias rewrites the userId at ONE point, and that point feeds four surfaces
 
@@ -126,7 +126,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   resolve DI, because it receives an `HttpRequest` and runs at `HttpRequestIn.Start`, before the
   pipeline.
 - **Evidence:** `src/Agent42.Backend/Api/UserIdAliases.cs`, `src/Agent42.Backend/Api/CurrentUser.cs` (`ResolveUserId`), `src/Agent42.Backend/Program.cs`, `src/Agent42.Agents/Telemetry/UsageSpanProjector.cs`, `tests/Agent42.Tests/UserIdAliasTests.cs`, `.agentic/decisions/0074-identity-alias-for-a-second-entra-account.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Usage is keyed on the object id, never the email — and one function must feed the stamp and the filter
 
@@ -140,7 +140,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   blank caller id returns an empty report, never "all". Spans with no identity land in an unreported bucket nobody sees.
 - **Evidence:** `src/Agent42.Agents/Telemetry/UsageUserKey.cs`, `src/Agent42.Agents/Telemetry/UsageRollupState.cs` (`InScope`),
   `src/Agent42.Backend/Telemetry/AgentApi.Telemetry.cs` (`UsageCaller`), `tests/Agent42.Tests/UsageApiTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The owner tier is advisory, and a processor that must redact before export has to be registered BEFORE the exporters
 
@@ -156,7 +156,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   span content only: logs and http-client URLs can still carry model-chosen queries.
 - **Evidence:** `src/Agent42.Backend/Telemetry/NonOwnerContentRedactor.cs`, `src/Agent42.ServiceDefaults/Extensions.cs`,
   `tests/Agent42.Tests/TelemetryRedactionTests.cs`, `src/Agent42.Backend/Access/OwnerPolicy.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Easy Auth claim `typ` spellings for `user.*` telemetry are a prod-only fact
 
@@ -171,7 +171,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   code bug. `user.id`/`user.name`/`user.idp` come from plain headers and are not affected. Parsing is
   defensive: a missing/non-base64/non-JSON blob never throws — header attributes still emit.
 - **Evidence:** `src/Agent42.Backend/Api/CurrentUser.cs` (`EmailClaimTypes`/`FullNameClaimTypes`/`RoleClaimTypes`, `ParsePrincipalClaims`), `tests/Agent42.Tests/UserTelemetryTests.cs`, `.agentic/decisions/0009-user-identity-telemetry-attributes.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### User identity reaches downstream/grain spans via Orleans RequestContext, never Activity.Baggage
 
@@ -190,7 +190,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   flips that default, that test fails first — restore propagation (silo config or a grain-call-filter
   pair) before shipping. The actual OTel stamp on a real in-grain span is prod-smoke (no OTel host offline).
 - **Evidence:** `src/Agent42.Backend/Telemetry/UserTelemetryMiddleware.cs`, `src/Agent42.Backend/Telemetry/UserTelemetrySpanProcessor.cs`, `src/Agent42.Agents/Telemetry/UserTelemetryContext.cs`, `tests/Agent42.Tests/RequestContextPropagationTests.cs`, `.agentic/decisions/0010-downstream-user-telemetry-via-requestcontext.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Trace-parent linkage across a grain call needs `AddActivityPropagation` — RequestContext propagation is NOT it
 
@@ -214,7 +214,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   The async paths (fired reminders, agent-run — ADR 0022/0028) still begin fresh roots **by design**: they
   have no ambient inbound Activity, so their rootlessness is correct, not this bug.
 - **Evidence:** `src/Agent42.Backend/Program.cs` (`silo.AddActivityPropagation()`), `tests/Agent42.Tests/ActivityPropagationTests.cs`, `tests/Agent42.Tests/FakeChatClient.cs` (`TraceEcho`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### An agent tool's RETURN value is persisted, and counts against the 2 MB session cap
 
@@ -244,7 +244,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`, and `PersistTurnUnlessEphemeralAsync`'s `SerializeSessionAsync` (reached from `ChatCoreAsync`)),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ToolResults_DoNotBlowTheSessionSizeBudget`),
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0125-remove-fetch-web-page-and-context-dev.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A continuous agent's history is pruned to 24 h — which NARROWS the brick, and does not close it
 
@@ -279,7 +279,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
   `.agentic/decisions/0140-per-agent-message-retention.md`,
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0003-snapshot-agent-persona-into-conversation.md`
-- **Verified:** 2026-11-23
+- **Verified:** 2026-11-24
 
 **Amended by ADR 0140 (2026-11-23): the id prefix is no longer the only retention signal.** An agent can carry
 `RetentionMinutes`, snapshotted into `AgentBinding` → `AgentGrainState` at bind time, so the window is
@@ -309,7 +309,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ReceiveReminder`),
   `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`, `tests/Agent42.Tests/AgentRetentionSweepTests.cs`,
   `.agentic/decisions/0140-per-agent-message-retention.md`
-- **Verified:** 2026-11-23
+- **Verified:** 2026-11-24
 
 ### There is ONE web fetch path, `read_web_document`, and its SSRF guard is load-bearing
 
@@ -339,7 +339,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`ProgramCs_WiresTheGuardIntoTheDocumentClientsPrimaryHandler`),
   `.agentic/decisions/0066-in-container-document-fetch-for-rag.md`,
   `.agentic/decisions/0125-remove-fetch-web-page-and-context-dev.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Seeding URLs from an MCP result: harvest in the GRAIN, and the model is told not to on four surfaces
 
@@ -401,7 +401,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`SeededFetchableUrls`),
   `tests/Agent42.Tests/McpUrlSeedingTests.cs`,
   `.agentic/decisions/0067-mcp-results-seed-the-fetch-allowlist.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The fetch allowlist must pin whole URLs — a HOST allowlist is bypassable in one tool call
 
@@ -432,7 +432,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`FetchableUrls`),
   `tests/Agent42.Tests/WebDocumentToolTests.cs` (`ReadWebDocument_RefusesAttackerUrlWhoseHostItsOwnSearchSurfaced`),
   `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A named HttpClient silently inherits AddServiceDefaults' retry pipeline — opt out explicitly
 
@@ -457,7 +457,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   client (ADR 0012), the Web Push client (ADR 0028) and the document fetch client (ADR 0066); every new
   named client needs it), `src/Agent42.Agents/Documents/WebDocumentLimits.cs` (`DownloadDeadline`),
   `tests/Agent42.Tests/GuardedDocumentFetcherTests.cs` (`Fetch_AbandonsSlowBodyAtDeadline`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### SearXNG is self-hosted, NOT private — it forwards every query to the upstream engines
 
@@ -477,7 +477,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Skills/websearch/SKILL.md`, `src/Agent42.Agents/Web/IWebSearch.cs`,
   `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`,
   `.agentic/decisions/0060-enable-google-and-bing-search-engines.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### SearXNG `keep_only` enables nothing — and `inactive` is not `disabled`
 
@@ -503,7 +503,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `infra/searxng/settings.yml` (the `engines:` override block and its comment),
   `infra/searxng/Dockerfile` (the tag bump and why),
   `.agentic/decisions/0060-enable-google-and-bing-search-engines.md` (the before/after measurements)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### SearXNG: the JSON API answers 403 unless enabled, and the port moves only via env
 
@@ -528,7 +528,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `infra/searxng/settings.yml`, `infra/searxng/Dockerfile`,
   `infra/modules/container-app.bicep` (`SEARXNG_PORT`), `src/Agent42.Backend/Web/SearxngWebSearch.cs`
   (the 403 message names the cause; no `safesearch` on the query string)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Container Apps bills the per-replica total across ALL containers in the replica
 
@@ -542,7 +542,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `az deployment group validate` against the real RG will.
 - **Evidence:** `infra/main.bicep` (`containerCpu`/`containerMemory` + `searxngCpu`/`searxngMemory`),
   `infra/modules/container-app.bicep` (two containers in `template.containers`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Per-run state is a `TurnContext`, never a grain field — tools reach it only inside the run, and it fails closed
 
@@ -606,7 +606,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`ABackgroundRun_DoesNotConsumeTheNotice`), `tests/Agent42.Tests/AgentApiTests.cs`
   (`EphemeralChat_IsNotListedInTheSidebar`), `.agentic/decisions/0106-agentgrain-services-and-turn-context.md`,
   `.agentic/decisions/0034-ephemeral-chat.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `get_current_location` is NOT an SSRF sink — and exactly two properties keep it that way
 
@@ -632,7 +632,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`GetCurrentLocationAsync`, `ParseBrowserFix`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`GetCurrentLocation_ExposesNoParameters`, `GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`),
   `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0093-location-as-a-client-tool.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### WebKit has no geolocation Permissions API — gating on `state === "granted"` is dead on iOS
 
@@ -655,7 +655,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/location.js` (`isCaptureAuthorized`, `locationForTool`,
   `handlePositionError`),
   `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0093-location-as-a-client-tool.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### OTel redacts an HttpClient span's query string by default — and one env var un-redacts it
 
@@ -663,7 +663,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   stamps `user.email`/`user.full_name`/`user.roles` onto **every** span started under a request identity
   (ADR 0010) — so an outbound span joins *a named human* to whatever is in that request's URL. For the
   geocode call that URL's query string carries **the Google API key and the user's exact coordinates**. A
-  spike settled the actual behaviour rather than trusting it: **OpenTelemetry.Instrumentation.Http 1.15.1 (the repo now pins 1.19.0)
+  spike settled the actual behaviour rather than trusting it: **OpenTelemetry.Instrumentation.Http 1.15.1 (the repo now pins 1.21.0, Directory.Packages.props)
   redacts the query string by default**, recording `url.full` as `http://…/maps/api/geocode/json?*`. So no
   scrubbing is needed today — but this is a **library default, not a guarantee we own**: setting
   `OTEL_DOTNET_EXPERIMENTAL_HTTPCLIENT_DISABLE_URL_QUERY_REDACTION=true` (or an instrumentation upgrade that
@@ -700,7 +700,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Telemetry/UserTelemetrySpanProcessor.cs`, `src/Agent42.Backend/Location/GoogleGeocoder.cs`,
   `src/Agent42.Agents/Memory/HindsightIntegration.cs` (the recorded exception),
   `.agentic/decisions/0063-calendar-extracted-to-standalone-mcp-server.md` (why the worked example is gone)
-- **Verified:** 2026-09-04 (audit 2026-11-21: the repo now pins OpenTelemetry.Instrumentation.Http 1.19.0; the query-redaction default was measured on 1.15.1 and is not re-measured)
+- **Verified:** 2026-11-24 (audit 2026-11-21: the repo now pins OpenTelemetry.Instrumentation.Http 1.19.0; the query-redaction default was measured on 1.15.1 and is not re-measured)
 
 ### The usage dashboard counts tokens from `chat` spans ONLY — `orchestrate_tools` is the summed parent
 
@@ -740,7 +740,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Telemetry/UsageSpanProcessor.cs` (`OnEnd`, best-effort enqueue),
   `tests/Agent42.Tests/UsageSpanProjectorTests.cs` (`AggregateSpan_IsNotCounted`),
   `.agentic/decisions/0031-token-usage-dashboard.md`, `.agentic/decisions/0004-attachments-in-blob.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Estimated cost: Anthropic input already CONTAINS cache reads and writes, and a model without a row is "—", not $0
 
@@ -757,7 +757,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Agents/Telemetry/ModelPricing.cs`, `src/Agent42.Backend/Models/ProviderKindTagChatClient.cs`,
   `tests/Agent42.Tests/ModelPricingTests.cs`, `tests/Agent42.Tests/ProviderKindTagTests.cs`,
   `.agentic/decisions/0110-estimated-cost-from-a-checked-in-price-table.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A GitHub model id contains a `/`, so the provider separator is `:` — and the split is on the FIRST colon
 
@@ -769,14 +769,14 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   and resolves against the default provider — that is the entire reason ADR 0013 needed **no state
   migration**, because every conversation persisted before it holds a bare `gpt-4o`. Related, and easy to
   get wrong in the same breath: `AgentGrainState.DeploymentName` **keeps its name and its `[Id(2)]`** even
-  though it now holds a qualified id. Which serializer the Cosmos grain-storage provider actually uses
-  (Orleans binary field-ids vs. JSON property names) is **unverified**, and if it is JSON, renaming the
-  property silently orphans the model on every existing conversation.
+  though it now holds a qualified id. Cosmos grain storage is **JSON** with `$type` (see "Cosmos grain
+  storage is JSON" below), so property NAMES are the contract: renaming it silently orphans the model on
+  every existing conversation.
 - **Evidence:** `src/Agent42.Backend/Models/ModelProviderOptions.cs` (`ModelId.Parse`),
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`DeploymentName` + its comment),
   `tests/Agent42.Tests/ModelIdTests.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
   (`LegacyPersistedModel_StillResolves`), `.agentic/decisions/0013-multi-provider-model-catalog.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `AgentSkillsProvider` is a TOOL — a no-tools model must drop it too, and the RAG provider must NOT be dropped
 
@@ -834,7 +834,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `MemorySelection_IsNotIntersectedWithCapability` — the ADR 0057 three-way arm),
   `.agentic/decisions/0048-per-skill-selectable-tools.md`,
   `.agentic/decisions/0057-memory-as-a-selectable-tool.md`
-- **Verified:** 2026-10-05 (audit 2026-11-21: evidence test renamed to the nearest existing one; whether it asserts advertise-only is unchecked)
+- **Verified:** 2026-11-24 (audit 2026-11-21: evidence test renamed to the nearest existing one; whether it asserts advertise-only is unchecked)
 
 ### The boot chat is not created via `startNewConversation()` — seed its composer state explicitly
 
@@ -854,7 +854,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/main.js` (init block's `Promise.all([profileReady, toolsReady])`
   seed), `src/Agent42.Backend/wwwroot/js/conversations.js` (`startNewConversation`),
   `AgentGrain.EffectiveEnabledTools`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Withholding images from a no-vision model must cover HISTORY, not just the new turn
 
@@ -884,7 +884,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `StripImageParts`, `WithheldImagePlaceholder`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`NoVisionModel_SendsNoImageContent`, `NoVisionModel_ImageOnlyTurn_StillReplies_AndSendsNoImage`),
   `tests/Agent42.Tests/FakeChatClient.cs` (`AllImagesEcho`, `EmptyMessageEcho`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### An assistant generated image is id-keyed (message-level prop), never joined by assistant-message position
 
@@ -917,7 +917,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/ImageGeneration/IImageGenerationService.cs`, `tests/Agent42.Tests/AgentGrainTests.cs`
   (`NoVisionModel_WithholdsAssistantImage_AndRestores_AcrossToolTurn`, `History_IncludesAssistantGeneratedImage`),
   `.agentic/decisions/0020-image-generation-model-capability.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A tool result never arrives on the message that made the call — never match the two in one forward pass
 
@@ -941,7 +941,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `GetStreamingResponseAsync`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`ANarratedToolCall_StillCarriesItsResult` — fails if the join goes back to forward-only),
   `.agentic/decisions/0080-replay-tool-calls-from-history.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Image request shape: send NO `response_format` (gpt-image-1 400s), and NO `api-version` (Azure won't work)
 
@@ -958,7 +958,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **The image path also sends NO `api-version` — so an Azure/Foundry image endpoint won't work as OpenAICompatible.**
 - **Claim:** image generation (ADR 0020) rides `Provider.OpenAICompatible`'s plain `OpenAIClient`
   (`OpenAIClient(...).GetImageClient(model)`), the SAME client shape as the OpenAI-compatible *chat* path —
-  **not** the Azure SDK. A spike against `OpenAI 2.12.0` (then the pin; the repo now pins 2.14.0) (capturing the outbound request URI with
+  **not** the Azure SDK. A spike against `OpenAI 2.12.0` (then the pin; the repo now pins 2.15.0) (capturing the outbound request URI with
   a short-circuiting pipeline policy) confirmed the requests are exactly `POST {endpoint}/images/generations`
   and `POST {endpoint}/images/edits` with **no `api-version` query parameter** (with `endpoint` ending
   `/v1`, that is `/v1/images/generations`). `api-version` is an **Azure-ism** added only by
@@ -975,7 +975,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   bytes-or-URL fallback; the SDK `ImageClient` calls),
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` builds the client image gen reuses),
   `.agentic/decisions/0020-image-generation-model-capability.md` (Foundry image gen out of scope)
-- **Verified:** 2026-07-17 (audit 2026-11-21: the repo now pins OpenAI 2.14.0; the no-response_format behaviour still holds in OpenAIImageGenerator.cs, the wire URI was not re-captured)
+- **Verified:** 2026-11-24 (audit 2026-11-24: the repo now pins OpenAI 2.15.0; the no-response_format behaviour still holds in OpenAIImageGenerator.cs, the wire URI was not re-captured)
 
 ### The Foundry provider's endpoint + ARM coordinates are INHERITED — never copy them into `Models:`
 
@@ -1018,7 +1018,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`TwoFoundryProviders_ResolveOwnCoordinates_AndInheritWhenAbsent`),
   `.agentic/decisions/0017-foundry-provider-api-key-auth.md` (the `ApiKey` inheritance),
   `.agentic/decisions/0019-remove-baseline-chat-providers.md` (baseline removed)
-- **Verified:** 2026-07-16 (audit 2026-11-21: appsettings.json no longer ships a foundry block or //Default (ADR 0019); only the dormant ResolveFoundry mechanism remains, so read the appsettings parts as historical)
+- **Verified:** 2026-11-24 (audit 2026-11-21: appsettings.json no longer ships a foundry block or //Default (ADR 0019); only the dormant ResolveFoundry mechanism remains, so read the appsettings parts as historical)
 
 ### A user provider overlay is best-effort (baseline wins) and its endpoint is deliberately NOT SSRF-guarded
 
@@ -1059,7 +1059,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/UserProviderResolverTests.cs`
   (`FoundryOverrideWithBlankKey_FallsBackToBaseline`, `OverlayDefault_NamingAMissingProvider_FallsBackToBaselineDefault`),
   `tests/Agent42.Tests/ProvidersApiTests.cs` (`AcceptsLocalhost_RejectsMalformed`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The webhook URL IS SSRF-guarded although it is owner config — the provider-endpoint exemption does not transfer
 
@@ -1075,7 +1075,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Webhooks/WebhookRegistration.cs`, `src/Agent42.Backend/Webhooks/HttpAgentWebhookSender.cs`,
   `tests/Agent42.Tests/HttpAgentWebhookSenderTests.cs` (`Send_LoopbackDestination_IsBlockedAndNotRetried`,
   `Registration_WiresGuardNoRedirectAndNoResilience`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The webhook fires on the PERSISTED flag, and at THREE sites
 
@@ -1090,7 +1090,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`ChatTurnAsync`, `RunReminderAsync`), `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
   `tests/Agent42.Tests/AgentWebhookTurnTests.cs` (`EphemeralTurn_NeverDelivers_NextTurnDoes`,
   `ReceiveReminder_AfterPush_StillDelivers`, `ImageTurn_DeliversCountWithoutUrls`, `RegeneratedTurn_DeliversWithReplacesFlag`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A user provider's API key is encrypted, never echoed — and its Data Protection key ring MUST persist
 
@@ -1100,7 +1100,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `"providers"` grain state — never the 2 MB session (ADR 0004). On update a **blank** `ApiKey` means
   "keep the stored key" (the field is write-only in the UI), mapped as a null ciphertext the grain reads as
   "keep". The load-bearing trap is **key-ring persistence**: in prod the ring MUST persist out-of-process,
-  or a restart rotates it and every stored secret becomes undecryptable. `Program.cs` gates that on the
+  or a restart rotates it and every stored secret becomes undecryptable. `src/Agent42.Backend/Storage/AzureStorageRegistration.cs` gates that on the
   **prod `Storage:BlobEndpoint` branch** (NOT `GetConnectionString("blobs")`, the Azurite/AppHost path) and
   uses the **MI `PersistKeysToAzureBlobStorage(BlobClient)` overload** — the connection-string overload
   cannot work because shared-key auth is disabled on the account. DevHost/tests use the default **ephemeral**
@@ -1112,7 +1112,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `infra/modules/storage.bicep` (the `dataprotection` container),
   `tests/Agent42.Tests/ProviderSecretProtectorTests.cs`, `tests/Agent42.Tests/ProvidersApiTests.cs`
   (`Get_NeverReturnsKey`, `Put_BlankKey_KeepsStoredKey`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The per-user chat-client factory is resolved on grain activation, not injected — order matters
 
@@ -1143,7 +1143,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Models/IUserChatClientFactoryProvider.cs`,
   `src/Agent42.Backend/Models/UserChatClientFactoryProvider.cs`,
   `tests/Agent42.Tests/UserChatClientFactoryProviderTests.cs` (`VersionBump_ReturnsFreshFactory`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Chat is fully per-user — the app ships NO baseline chat provider, and the grain stays valid via a no-op client
 
@@ -1191,7 +1191,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `.agentic/decisions/0019-remove-baseline-chat-providers.md`,
   `.agentic/decisions/0043-remove-composer-send-button.md` (the gate is `input.disabled` alone now),
   `tests/Agent42.Tests/ComposerAssetsTests.cs` (`AppJs_GatesComposerOnInputWhenNoModel`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### GitHub Models: the context-limit error is a 413, and the caps are small enough to matter here
 
@@ -1211,7 +1211,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   same per-model caps; the measured numbers below are unchanged.
 - **Evidence:** `.agentic/decisions/0013-multi-provider-model-catalog.md` (spike results — the caps + the
   413 behaviour), `.agentic/decisions/0019-remove-baseline-chat-providers.md` (github is now per-user)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The Responses API is stateful by default — three non-obvious traps on the Foundry Responses path
 
@@ -1239,7 +1239,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   see the "Azure's `/openai/v1` authenticates the resource key via the `api-key` header" gotcha below.
 - **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.Foundry`, the `UseResponses`
   branch), `.agentic/decisions/0014-responses-api-stateless-mode.md`, `.agentic/decisions/0017-foundry-provider-api-key-auth.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Azure's `/openai/v1` authenticates the resource key via the `api-key` header — three Foundry-key traps
 
@@ -1265,29 +1265,22 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `/openai/v1`" gotcha below), and since 2026-10-17 so do **embeddings**, at the resource root (same
   gotcha, trap 2). Nothing in `Provider.Foundry` uses `AzureOpenAIClient` any more. (2) **The
   Foundry key is on the AVAILABILITY PATH — a blank one is FATAL, unlike a third-party provider key.**
-  `ModelProviderBuilder.Build` throws when the resolved Foundry key is blank (mirrored in Bicep by a
-  `@secure() @minLength(32)` param following the **`searxngSecret` shape** — unconditional secret + env +
-  a `@minLength`, though `searxngSecret` itself uses 16); a *third-party* provider with no key is merely
-  skipped. Resolution is `Models:Providers:<key>:ApiKey` ?? `AzureOpenAI:ApiKey`, and the embedding client
-  reads the same `AzureOpenAI:ApiKey` — **one** env var (`AzureOpenAI__ApiKey`), never a second
-  `Models__Providers__foundry__ApiKey`. (3) **ARM discovery is OFF for a key-based Foundry provider, and
-  `gpt-4o` is not deployed.** A data-plane key can't authenticate ARM, so the shipped `foundry` provider
-  sets `Discover: false` and **declares** its deployments in `appsettings`; the picker offers **exactly**
-  those, and the **default deployment must be one of them** — `CompositeModelCatalog` only synthesizes the
-  default when *nothing* is declared (`ModelCatalog.cs`, `if (models.Count == 0)`), so a default missing
-  from a non-empty declared list silently **vanishes from the picker**. Keep `AzureOpenAI:DeploymentName`
-  (Bicep `azureOpenAIDeploymentName`) in sync with the `Models` list — the same single-source trap the
-  "endpoint is INHERITED" gotcha guards for `Models:Default`, now reappearing for the model *list* under
-  dropped discovery. The spike found the account has **no `gpt-4o` deployment** (it has `gpt-5.4`,
-  `gpt-4.1`, `gpt-5.1`, `o3`, `model-router`, `claude-*`), so the default deployment is **`gpt-5.4`**, not
-  `gpt-4o` — with discovery off, a wrong default 404s every turn.
+  `ModelProviderBuilder.Build` throws when the resolved Foundry key is blank; a *third-party* provider with
+  no key is merely skipped. Resolution is `Models:Providers:<key>:ApiKey` ?? `AzureOpenAI:ApiKey` — **one**
+  key, never a second `Models__Providers__foundry__ApiKey`. (3) **ARM discovery is OFF for a key-based
+  Foundry provider.** A data-plane key can't authenticate ARM, so such a provider sets `Discover: false` and
+  **declares** its deployments; the picker offers **exactly** those, and the **default deployment must be
+  one of them** — `CompositeModelCatalog` only synthesizes the default when *nothing* is declared
+  (`ModelCatalog.cs`, `if (models.Count == 0 && !string.IsNullOrEmpty(defaultModelId))`), so a default
+  missing from a non-empty declared list silently **vanishes from the picker**, and with discovery off a
+  wrong default 404s every turn.
 - **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`ApiKeyHeaderPolicy`, `Provider.Foundry`),
   `src/Agent42.Backend/Models/ModelProviderBuilder.cs` (fatal-key throw), `src/Agent42.Backend/Models/ModelProviderOptions.cs`
   (`ProviderSettings.ResolveFoundry` — the dormant `AzureOpenAI:*` inheritance), `src/Agent42.Backend/appsettings.json`,
   `.agentic/decisions/0017-foundry-provider-api-key-auth.md`. (NOTE: ADR 0030 removed the eager `AzureOpenAI:ApiKey`
   check + embedding client from `Program.cs` and the `azureOpenAIApiKey` `@minLength` Bicep param — the
   `api-key`-header auth claim itself is unchanged, but those two anchors no longer exist.)
-- **Verified:** 2026-07-21 (audit 2026-11-21: the Bicep @minLength(32) azureOpenAIApiKey mirror and the shipped foundry provider no longer exist (ADR 0019/0030); only the code-side blank-key throw in ModelProviderBuilder.cs remains)
+- **Verified:** 2026-11-24 (the Bicep mirror and shipped-provider details were removed in the 2026-11-24 audit, ADR 0019/0030)
 
 ### Foundry Chat Completions runs over `/openai/v1` — NOT `AzureOpenAIClient` (its api-version is capped at 2024-10-21)
 
@@ -1315,7 +1308,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   branch, `Provider.FoundryEmbeddingsEndpoint`), `tests/Agent42.Tests/ModelProviderTests.cs` (`FoundryChatProvider_UsesV1Surface_NoApiVersion`,
   `ResponsesProvider_WiresResponsesEndpoint`, `FoundryEmbeddings_UseV1Surface_AtResourceRoot`),
   `.agentic/decisions/0033-foundry-chat-over-openai-v1.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `HostedWebSearchTool.Name` is `web_search` — it collides with the SearXNG shim, so hosted models SWAP
 
@@ -1339,38 +1332,38 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   copilot chat passes `false` and always gets the shims, ADR 0085),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`HostedToolsModel_SwapsWebShimsForHostedTools`, `ToolNames`),
   `.agentic/decisions/0015-hosted-tools-on-responses-path.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Cosmos containers must be pre-declared in Bicep
 
 - **Claim:** the Cosmos account has `disableLocalAuth: true` and AAD data-plane RBAC cannot create databases/containers — only ARM can. Any new container must be added to `infra/modules/cosmos.bicep`; Orleans providers run with `IsResourceCreationEnabled = false`, so runtime auto-create silently isn't there to save you.
 - **Evidence:** `infra/modules/cosmos.bicep`, `src/Agent42.Backend/Storage/AzureStorageRegistration.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Cosmos account region is pinned to northeurope and immutable
 
 - **Claim:** West Europe rejected new Cosmos accounts at creation time; the account was created in North Europe and a Cosmos account's region can't change after creation. Since ADR 0128 the region is the repo variable `COSMOS_LOCATION` (unset falls back to the resource group's location), so prod must keep it at `northeurope`: a missing variable would try to move the account. The `preflight` job compares it with the existing account and fails with the variable's name.
 - **Evidence:** `.github/workflows/deploy.yml` (`preflight`, `az cosmosdb list`), `docs/features/azure-deployment.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Custom domain must stay declared in Bicep
 
 - **Claim:** an undeclared custom domain gets silently unbound on the next deploy. The pair is now the repo variables `CUSTOM_DOMAIN_NAME` / `CUSTOM_DOMAIN_CERTIFICATE_NAME` (ADR 0128), and an absent variable expands to empty, which means "bind nothing". The `preflight` job reads the domain bound to the live app and fails when it is not the one the variable names. It cannot see a stale certificate name: if the cert is ever recreated, update the variable or the deployment unbinds the domain again.
 - **Evidence:** `.github/workflows/deploy.yml` (`preflight`, `customDomains`), `infra/modules/container-app.bicep`, `InfraPortabilityTests.Deploy_PreflightRunsFirst_AndGuardsWhatAMissingVariableWouldDestroy`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A cross-RG role grant into a resource group the deploy SP only has a scoped grant on must be a CLI step, not Bicep
 
 - **Claim:** a deploy SP that holds only `Microsoft.Authorization/roleAssignments/write` on one resource (not `Microsoft.Resources/deployments/write` on its resource group) cannot run a cross-RG Bicep module, so any such grant must be an idempotent `az rest` PUT in the workflow, not "cleaned up" into Bicep. This is the durable pattern.
 - **The one grant that used it is gone (ADR 0128):** "Cognitive Services OpenAI User" on the owner's Foundry account was no longer required since ADR 0017 (Foundry authenticates by API key) and was owner-scoped, so the step was removed from `deploy.yml`. No live example remains; `InfraPortabilityTests.Deploy_HasNoRoleAssignmentPut` keeps it out.
 - **Evidence:** `.agentic/decisions/0017-foundry-provider-api-key-auth.md`, `.agentic/decisions/0128-tenant-portable-azure-iac.md`, `tests/Agent42.Tests/InfraPortabilityTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Deploy service principal uses a client secret, not OIDC
 
 - **Claim:** `sp-agent42-deploy` authenticates with a client secret, so `azure/login` needs the full credentials JSON (`clientId`+`clientSecret`+…), not the OIDC client-id-only form.
 - **Evidence:** `.github/workflows/deploy.yml`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A merge to `main` deploys only when it touches what the images are built from
 
@@ -1382,7 +1375,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   Dockerfile COPYs must join the list — `DeployTriggerTests` fails the build if it does not.
 - **Evidence:** `.github/workflows/deploy.yml` (its push `paths` list), `src/Agent42.Backend/Dockerfile`,
   `tests/Agent42.Tests/DeployTriggerTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Minimal-API handlers returning a bare string serve text/plain, not JSON
 
@@ -1400,7 +1393,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `Results.Text(JsonSerializer.Serialize(value, JsonSerializerOptions.Web), "application/json")`
   so an absent value comes back as a real JSON `null`.
 - **Evidence:** `src/Agent42.Backend/Conversations/AgentApi.Conversations.cs` (`/model` and `/agent` endpoints), `src/Agent42.Backend/wwwroot/js/conversations.js` (`selectConversation`), `tests/Agent42.Tests/AgentApiTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Service worker must stay network-first for navigations and bypass /api
 
@@ -1414,7 +1407,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `PwaAssetsTests.ServiceWorker_BypassesApiBeforeCaching` test guards the `/api` ordering,
   but the navigation strategy is only enforced here — keep it network-first.
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Offline data for agents/chats lives in an app-module IndexedDB store, NEVER in the service worker
 
@@ -1430,7 +1423,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   no-op — never throw into a load path), and a cache paint is **length-guarded** so the network
   fast-path is never clobbered. A chat is viewable offline only if it was opened at least once online.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/cache.js` (`cacheGet`/`cachePut`), `src/Agent42.Backend/wwwroot/js/main.js` (`hydrateFromCache`), `src/Agent42.Backend/wwwroot/js/conversations.js` (`renderTurns`), `src/Agent42.Backend/wwwroot/sw.js`, `tests/Agent42.Tests/PwaAssetsTests.cs` (`Frontend_MirrorsAgentsAndChatsForOffline`), `.agentic/decisions/0032-offline-read-cache-indexeddb.md`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A shared static instance must never be a grain-state default (Orleans mutates it)
 
@@ -1444,13 +1437,13 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   instance per access) or initialize the field with `new(...)` directly — never a `{ get; } =`
   singleton. Same discipline as the list defaults (`= []`) elsewhere.
 - **Evidence:** `src/Agent42.Agents/Users/UserProfile.cs` (`Empty` is `=> new("", "system", null, null, null)`), `src/Agent42.Agents/Users/UserProfileGrain.cs` (its UserProfileState.Profile property), `tests/Agent42.Tests/UserProfileGrainTests.cs` (`UserProfile_Empty_IsAFreshInstance_NotASharedSingleton` deterministically guards the factory property; `UserProfile_IsIsolatedPerUser` originally surfaced the leak in-cluster)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Agent Framework 1.13 session API differs from older samples
 
 - **Claim:** it's `AgentSession` with `CreateSessionAsync` / `SerializeSessionAsync` / `DeserializeSessionAsync` — the `AgentThread` / `GetNewThread()` API from pre-1.13 samples (and model training data) no longer exists. Copy `AgentGrain.cs`, not blog posts.
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Testing that a bound persona reaches the model needs the fake to echo its instructions
 
@@ -1466,7 +1459,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   exact match; and every chat now carries the default persona as instructions, so assert on a
   *distinctive* bound prompt, not merely on non-empty instructions.
 - **Evidence:** `tests/Agent42.Tests/FakeChatClient.cs` (`InstructionsEcho`), `tests/Agent42.Tests/AgentGrainTests.cs` (`AgentChat_AppliesBoundSystemPrompt`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Image attachment bytes must stay out of the session, and prior-turn image URLs get re-fetched
 
@@ -1486,7 +1479,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   Don't "simplify" back to `DataContent`, and don't drop the rehydrate step. This is a prod-blob
   property the offline harness can't test (the in-memory store returns non-expiring URLs).
 - **Evidence:** `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs` (`RehydrateAttachmentUrlsAsync`, `AlignTurnAttachmentsToHistory`), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`), `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs`, `.agentic/decisions/0004-attachments-in-blob.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Attachments Storage RBAC is in Bicep — but only because the deploy SP was elevated once
 
@@ -1507,7 +1500,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   mangled by MSYS path conversion into a Windows path → ARM returns `MissingSubscription`. Drop the
   leading `/` (`--scope "subscriptions/…"`) or prefix the command with `MSYS_NO_PATHCONV=1`.
 - **Evidence:** `infra/modules/storage-role-assignment.bicep`, `infra/main.bicep` (`storageRoleAssignment` module), `infra/modules/storage.bicep`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Embeddings are a per-user model, not an operator prerequisite (ADR 0030 — supersedes the old "manual deployment" gotcha)
 
@@ -1528,7 +1521,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   ONLY as the **dormant** Foundry-provider inheritance source; `AzureOpenAI:TenantId` still binds
   `DefaultAzureCredential`. The `AZURE_OPENAI_API_KEY` GitHub secret + ACA secret are **removed**.
 - **Evidence:** `src/Agent42.Agents/Models/IChatClientFactory.cs` (`GetEmbeddingGenerator`/`DefaultEmbeddingModelId`), `src/Agent42.Backend/Models/ChatClientFactory.cs` (Foundry/OpenAICompatible embedding funcs), `src/Agent42.Agents/Documents/NoEmbeddingGenerator.cs`, `src/Agent42.Backend/Documents/DocumentIngestionService.cs`, `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`SearchDocumentContextAsync` empty-id guard), `src/Agent42.Backend/Models/UserProviderResolver.cs` (`EmbeddingDefaultModelId`), `.agentic/decisions/0030-user-configured-embedding-model.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Cosmos vector search is prod-only: capability + pre-created container + no create-on-use
 
@@ -1537,7 +1530,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (partition `/ownerKey`, vector path `/embedding` float32/cosine/3072, **`quantizedFlat`** index — a
   `flat` index caps at 505 dims and can't hold a 3072-dim embedding). **The 3072 is now load-bearing at
   ingest (ADR 0030):** the embedding model is user-chosen, so `IDocumentIndex.ExpectedDimensions`
-  (`CosmosDocumentIndex` reads `Cosmos:DocChunksDimensions`, default 3072; `InMemoryDocumentIndex` → null =
+  (`DocumentIndexRegistration` reads `Cosmos:DocChunksDimensions`, default 3072, and passes it to `CosmosDocumentIndex`; `InMemoryDocumentIndex` → null =
   no check) is validated against the generated vector length and a mismatch throws
   `EmbeddingDimensionMismatchException` → a clear 4xx, **before** any upsert — not an opaque Cosmos reject.
   `CosmosDocumentIndex` uses the
@@ -1552,7 +1545,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   anyway. The `ORDER BY VectorDistance(...)` (ascending) → most-similar-first ordering is a prod-smoke
   fact (AC7), not something the offline harness verifies.
 - **Evidence:** `infra/modules/cosmos.bicep` (`doc-chunks` container + capability), `src/Agent42.Backend/Documents/CosmosDocumentIndex.cs`, `src/Agent42.Backend/Documents/DocumentIndexRegistration.cs` (index branch), `.agentic/decisions/0007-document-rag-cosmos-vector-search.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Docnet.Core DocLib.Instance is a process-global native singleton — serialize PDF extraction
 
@@ -1567,7 +1560,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   what bound it.
 - **Evidence:** `src/Agent42.Agents/Documents/DocumentTextExtractor.cs` (`PdfLock`),
   `src/Agent42.Agents/Documents/WebDocumentLimits.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A mid-run ingest cannot rebuild the agent — the rebuild is deferred, and there are TWO consume sites
 
@@ -1611,7 +1604,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Conversations/TurnContext.cs` (`TakeWebDocumentIngested`),
   `tests/Agent42.Tests/WebDocumentToolTests.cs`,
   `.agentic/decisions/0066-in-container-document-fetch-for-rag.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A web-fetched document must never be described as "the user has uploaded" — and its file name is prompt text
 
@@ -1642,7 +1635,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Documents/WebDocumentLimits.cs` (`SanitizeFileName`),
   `tests/Agent42.Tests/WebDocumentToolTests.cs` (`WebDocument_IsNotDescribedAsUserUploaded`),
   `tests/Agent42.Tests/GuardedDocumentFetcherTests.cs` (`Fetch_SanitizesFileNameFromUrlPath`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Selectable tools: `null == all`, and the user default must be fetched BEFORE the first `BuildAgent`
 
@@ -1678,7 +1671,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Per-skill `skills` wildcard (ADR 0048) — a FOURTH null==all trap, identical in shape to the third.**
   Shipped skills are now selectable as `skill:{name}` keys; the bare `skills` key became a **wildcard "all
   skills"** meta-key that stays in `AllSelectableToolKeys` (legacy `"skills"` selections keep enabling every
-  skill — still no migration) but is **removed from `Descriptors`** (no checkbox). Everything the MCP
+  non-companion skill — still no migration; a companion skill (ADR 0126) follows only its tool's key) but is **removed from `Descriptors`** (no checkbox). Everything the MCP
   paragraph above says applies verbatim with `skill:` for `mcp:`: `GetEnabledToolsAsync` must **expand** a
   present `skills` into `skill:{name}` for every entry in `SkillCatalog` or a no-op Save silently disables
   **every skill**, `Sanitize` must **pass through** `skill:{name}` keys, and `renderToolChecks` must treat a
@@ -1770,7 +1763,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/UserSkills/IUserSkillProvider.cs` + `UserSkillProvider.cs` (the per-user layer),
   `.agentic/decisions/0049-upload-agent-skills.md`,
   `.agentic/decisions/0057-memory-as-a-selectable-tool.md`
-- **Verified:** 2026-10-19 (audit 2026-11-21: since ADR 0126 a bare `skills` wildcard no longer enables companion-tool skills, so the 'keeps enabling every skill' sentence needs rewording)
+- **Verified:** 2026-11-24 (audit 2026-11-21: since ADR 0126 a bare `skills` wildcard no longer enables companion-tool skills, so the 'keeps enabling every skill' sentence needs rewording)
 
 ### Remote MCP servers: a live-socket cache (bound it), a group-gated catalog exception, and a route-matcher trap
 
@@ -1863,7 +1856,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `.agentic/decisions/0026-per-mcp-server-selectable-tools.md`,
   `.agentic/decisions/0064-mcp-connection-test-endpoint.md`,
   `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The MCP connection test: two writers of the tool names, and an empty list ERASES them
 
@@ -1926,7 +1919,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/McpServersAssetsTests.cs` (`SaveFlow_DoesNotAutoTestADisabledServer`,
   `SaveFlow_DoesNotAutoTestAnOAuthServerThatHasNoTokenYet`, `McpDialog_OffersConnectForAStoredOAuthServer`),
   `.agentic/decisions/0064-mcp-connection-test-endpoint.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### MCP interactive OAuth is hand-rolled: the SDK flow blocks, the callback must stay behind Easy Auth
 
@@ -1962,7 +1955,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/InteractiveOAuthTokenProviderTests.cs` (`PerRequestBearer_RefreshesAnExpiredToken_OnALiveConnection`),
   `.agentic/decisions/0025-mcp-interactive-oauth-app-driven-pkce.md`,
   `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### MCP OAuth refresh: only `invalid_grant` means "reconnect", every token write is a CAS, and the notice is trusted narrowly
 
@@ -1999,7 +1992,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/McpReauthTests.cs` (`AForgedMarker_FromAnotherServersTool_RaisesNoEvent`),
   `tests/Agent42.Tests/McpUrlSeedingTests.cs` (`A401OnASeedingServer_SeedsNothing`),
   `.agentic/decisions/0081-mcp-oauth-per-request-refresh-and-reconnect.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The API-key directory must be kept in sync per-operation, or a revoked key stays live
 
@@ -2037,7 +2030,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`,
   `.agentic/decisions/0141-plain-name-inbound-email-address.md`, `src/Agent42.Agents/Email/EmailAddressLifecycle.cs`,
   `tests/Agent42.Tests/AgentRegistryGrainTests.cs` (`PlainEmail_*`)
-- **Verified:** 2026-11-23
+- **Verified:** 2026-11-24
 
 ### An Easy-Auth `excludedPaths` endpoint is publicly reachable and must self-enforce auth + fail closed
 
@@ -2086,7 +2079,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `.agentic/decisions/0035-read-only-share-links.md`,
   `.agentic/decisions/0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md`,
   `src/Agent42.Backend/Email/AgentApi.Email.cs`, `tests/Agent42.Tests/EmailApiTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### An inbound email token must be case-insensitive — never reuse `ApiKey`'s base64url
 
@@ -2099,7 +2092,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Agents/Email/EmailAddress.cs`, `tests/Agent42.Tests/EmailAddressTests.cs`
   (`Hash_IsStableAndCaseInsensitive`), `tests/Agent42.Tests/EmailApiTests.cs` (`EmailIn_UppercasedAddress_StillResolves`),
   `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Each credential namespace gets its own directory grain type — never register a second credential in the key directory
 
@@ -2116,7 +2109,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/EmailAddressDirectoryGrainTests.cs` (`Registration_NeverResolvesInTheApiKeyDirectory`),
   `tests/Agent42.Tests/EmailApiTests.cs` (`EmailToken_DoesNotAuthenticateAgentRun`),
   `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Mailgun treats only 200 as success and retries everything except 406 for 8 hours
 
@@ -2133,7 +2126,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/MailgunWebhookTests.cs`, `tests/Agent42.Tests/EmailApiTests.cs`,
   `.agentic/specs/completed/plan-inbound-email-triggers-an-agent.md` (Spike findings),
   `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A scripted whole-file rewrite silently converts the checkout from CRLF to LF and `dotnet format` fails on every line
 
@@ -2148,10 +2141,10 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `warning: … LF will be replaced by CRLF the next time Git touches it` line git emits. Read and write
   **binary**, or pass `newline=''` on **both** ends. Markdown files bite too — they just fail later, in
   review rather than in lint.
-- **Evidence:** `git config core.autocrlf` → `true`; no `.gitattributes` in the tree;
+- **Evidence:** `git config core.autocrlf` → `true`; `.gitattributes` holds one rule, `*.sh text eol=lf`, so `.cs` and `.md` files get no EOL protection;
   `.github/workflows/pr-checks.yml` (the `dotnet format` gate);
   `.agentic/specs/completed/plan-share-link-no-login.md` (divergence 5 — where this was hit)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `Request.Scheme` is `http` behind the ACA ingress unless `UseForwardedHeaders` runs first
 
@@ -2184,7 +2177,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`ShareUrl`), `src/Agent42.Backend/Mcp/AgentApi.Mcp.cs` (`redirect_uri`, persisted `ClientId`),
   `tests/Agent42.Tests/ProjectLayoutTests.cs` (`Program_TrustsForwardedProtoBeforeAnyOtherMiddleware`),
   `.agentic/decisions/0042-wildcard-easy-auth-exclusions-and-forwarded-proto.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A read-only share link stores the RAW token and revokes by deregistering the directory FIRST
 
@@ -2203,24 +2196,24 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (the opposite delete order, for contrast),
   `tests/Agent42.Tests/ShareLinkGrainTests.cs` (`UserGrain_Revoke_DeregistersTheDirectory_SoTheLinkGoesDead`),
   `.agentic/decisions/0035-read-only-share-links.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The background (agent-run) run must drain `ChatCoreAsync`, not the reminder path, or attachments vanish
 
 - **Claim:** the async run behind `POST /api/agent-run` (ADR 0022, `IAgentGrain.EnqueuePromptAsync`, `[OneWay]`)
-  runs its turn by **draining `ChatCoreAsync`** (`await foreach` over it under its own
-  `TurnContext.ForBackground()`, discarding the streamed events). This is deliberate and load-bearing: `ChatCoreAsync` is
+  runs its turn by **draining `ChatCoreAsync`**: it calls `RunBackgroundTurnAsync` under its own
+  `TurnContext.ForBackground()`, which `await foreach`es over `ChatCoreAsync` and discards the streamed events. This is deliberate and load-bearing: `ChatCoreAsync` is
   the *only* place that does the no-model guard, the **image-generation branch** (ADR 0020), the **vision
   gate + attachment→`UriContent` materialization** (ADR 0013/0004) and document retrieval. The reminder path
   (`ReceiveReminder`) pushes an **always-empty** attachment list and does none of that — so reusing *it* (the
   spec's original plan) would make agent-run images **silently vanish** and an image-generation agent never
   edit its input. Do not "simplify" `EnqueuePromptAsync` to a bare `_agent.RunAsync([msg], _session)`.
   Because it's `[OneWay]`, callers/tests can't await the turn — **poll** history for the persisted result.
-- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`EnqueuePromptAsync` draining `ChatCoreAsync`; contrast
+- **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`EnqueuePromptAsync` → `RunBackgroundTurnAsync` draining `ChatCoreAsync`; contrast
   `ReceiveReminder`'s empty-attachment turn), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`EnqueuePrompt_RunsAndPersistsTurn`, `EnqueuePrompt_WithImage_RecordsAttachmentOnTurn` — both poll),
   `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The Web Share Target `respondWith` must sit after the `/api` guard, and the share needs an active SW
 
@@ -2243,7 +2236,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/wwwroot/manifest.webmanifest` (`share_target`),
   `tests/Agent42.Tests/PwaAssetsTests.cs` (`ServiceWorker_HandlesShareTarget`, `Manifest_DeclaresShareTarget`),
   `.agentic/decisions/0023-web-share-target-android-pwa.md`, `.agentic/decisions/0002-entra-easy-auth-gate.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `SendAwayReplyPushAsync` belongs in the two async callers, never in `ChatCoreAsync`
 
@@ -2296,7 +2289,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `.agentic/decisions/0075-model-invoked-push-notification.md`,
   `src/Agent42.Backend/Push/PushTestNotifier.cs` + `tests/Agent42.Tests/PushTestNotifierTests.cs` (the
   reporting test push), `.agentic/decisions/0100-push-test-notification.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The push-per-turn budget is the RUN's, and the away-reply push reads it after the run
 
@@ -2316,7 +2309,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `PushTool_CounterResetsOnTheNextTurn`, `PushTool_CapsPushesPerTurn`,
   `ReminderFiringMidStream_DoesNotResetTheStreamingTurnsPushBudget`),
   `.agentic/decisions/0075-model-invoked-push-notification.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Config-health: the PROBE path is the leak channel, not the static one — and don't inject `IHttpClientFactory`
 
@@ -2347,7 +2340,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`GeocodingProbe_ClassifiesBody`, `SearxngProbe_ClassifiesStatus`, `GeocodingProbe_NullWhenKeyAbsent`),
   `tests/Agent42.Tests/ConfigHealthApiTests.cs` (`Static_RunsNoProbes`),
   `.agentic/decisions/0029-config-health-tab.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Cosmos grain storage is JSON with `$type` — a persisted type's NAMESPACE is part of the on-disk format
 
@@ -2377,10 +2370,10 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
   (`GrainState_IsPersistedAsJson_WithAssemblyQualifiedTypeNames` pins the format;
   `DocumentWrittenByAnEarlierDeployment_StillDeserializes` reads a real committed pre-move payload;
-  `PersistedTypeName_StillResolves` pins all 12 state-root type names as literals),
+  `PersistedTypeName_StillResolves` pins 23 persisted type names as literals (`PersistedTypeNames`)),
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (the comment at the type),
   `.editorconfig`, `.agentic/decisions/0039-feature-folders-in-agents-project.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `[Alias("Agent42.Agents.*")]` governs the BINARY path, not what Cosmos stores
 
@@ -2396,7 +2389,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `tests/Agent42.Tests/SerializationCompatibilityTests.cs` (the recorded mutation results
   in its class doc), `src/Agent42.Agents/Conversations/AgentGrainState.cs`,
   `.agentic/decisions/0039-feature-folders-in-agents-project.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The service worker's SHELL is all-or-nothing — a STALE entry is worse than a missing one
 
@@ -2416,7 +2409,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js` (`SHELL`, `addAll`),
   `tests/Agent42.Tests/ProjectLayoutTests.cs` (`ServiceWorkerShell_ListsExactlyTheModuleDirectory`),
   `.agentic/decisions/0041-frontend-es-modules.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Every MR that touches `wwwroot/js/` must bump `CACHE` in sw.js — module version skew is a BLANK app
 
@@ -2433,7 +2426,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js` (`CACHE`, the stale-while-revalidate branch),
   `tests/Agent42.Tests/PwaAssetsTests.cs` (`ServiceWorker_CacheNameIsCurrent`),
   `.agentic/decisions/0041-frontend-es-modules.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A frontend module unreachable from `main.js` is invisible to every source-text guard
 
@@ -2459,8 +2452,10 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `wwwroot/js`, so it is not reported either. `wwwroot/logs/` (ADR 0054) and `wwwroot/shared/` (ADR 0035)
   are both in that position by design — each is a self-contained classic script — so **each needs its own
   asset test that fetches its files from the fixture's `Client` directly**
-  (`LogsConsoleAssetsTests`, `ShareLinkAssetsTests`), and such a test must **never** call
-  `GetAppScriptAsync()`, which would silently assert against a corpus that does not contain the page.
+  (`LogsConsoleAssetsTests` for `wwwroot/logs/`, `ShareLinkAssetsTests` for `wwwroot/shared/`), and the
+  part of such a test that checks the standalone page must **never** call `GetAppScriptAsync()`, which
+  would silently assert against a corpus that does not contain the page. (`ShareLinkAssetsTests` does call
+  it, correctly, for the app-side module `sharelinks.js`.)
   The same scoping is why adding files under `wwwroot/logs/` does not affect
   `ServiceWorkerShell_ListsExactlyTheModuleDirectory` (it compares only the `"/js/..."` entries) and why
   no `sw.js` `CACHE` bump was due for ADR 0054.
@@ -2470,7 +2465,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`EveryFrontEndModule_IsReachableFromTheEntryPoint`,
   `FrontEndModule_ExportsItsEntryPoint_AndIsCalledFromTheCompositionRoot`),
   `.agentic/decisions/0041-frontend-es-modules.md`, `.agentic/decisions/0054-live-otel-console.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Topbar share availability: `startAgentChat` is a FOURTH transition and is the one that gets missed
 
@@ -2500,7 +2495,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `.topbar__menu`, `body.is-incognito .topbar`), `tests/Agent42.Tests/TopbarActionsAssetsTests.cs`
   (`TopbarShare_IsClearedWhenAnAgentChatStarts`, `TopbarShare_IsGatedOnEmptyAndEphemeralChats`,
   `TopbarBrandAndMenu_AreMobileOnly`), `.agentic/decisions/0044-persistent-topbar-action-cluster.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A pinned agent chat must be HOISTED out of its group, never sorted into it — and hoisting costs the agent label
 
@@ -2549,7 +2544,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`RenderSidebar_EmitsThePinnedBlockBeforeTheGroupingWalk`, `HoistedRow_CarriesTheAgentBadge`,
   `PinnedState_IsVisibleWithoutHover_AndReachableOnTouch`),
   `.agentic/decisions/0045-pinned-conversations.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Filing a chat into a custom group repeats the ADR 0045 hoist trap — and four things around it bite first
 
@@ -2585,9 +2580,9 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   4. **The drag gate is per INTERACTION, never per device.** `li.draggable = e.pointerType === "mouse"`,
      set in the `pointerdown` handler `wireRowReveal` already owns. A fine-pointer media query reports
      the **primary** pointer, so a touchscreen laptop matches it — the exact device where a live
-     `draggable` races the 400 ms reveal. A test asserts that query's absence from the whole script with
-     a plain substring search, **which does not skip comments**: explaining the rejected query by quoting
-     it in a comment fails the test (it did, once). For the same reason the move action is a fourth glyph
+     `draggable` races the 400 ms reveal. **No test asserts that query's absence today** (audit 2026-11-24:
+     nothing under `tests/` mentions it, though the `sidebar.js` comment claims a test does), so
+     re-adding it is caught only by review. For the same reason the move action is a fourth glyph
      at **every** width rather than a touch-only one — a hybrid laptop matches `(hover: hover)` and still
      raises the long press, so a gated glyph strands it with no way to file a chat.
   Two smaller ones in the same family: drag listeners are **delegated on `conversationList`**, since
@@ -2602,7 +2597,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/ChatGroupAssetsTests.cs`, `tests/Agent42.Tests/PinChatAssetsTests.cs`,
   `tests/Agent42.Tests/SearchAssetsTests.cs` (`SearchBranch_LivesInsideRenderSidebar`),
   `.agentic/decisions/0073-custom-chat-groups.md`
-- **Verified:** 2026-11-21 (test suite plus a headless-Chrome/CDP pass against DevHost, 21/21 UI and
+- **Verified:** 2026-11-24 (test suite plus a headless-Chrome/CDP pass against DevHost, 21/21 UI and
   9/9 drag — the `draggable` arming rule in trap 4 is measured, not assumed. Two harness traps that
   imitate product bugs are in ADR 0073: a viewport at or under 760px puts the sidebar off-canvas so every
   synthetic event misses, and a group node captured before a drop is detached by the time the refresh
@@ -2637,7 +2632,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `LONG_PRESS_MS`, `renderSidebar`'s `clearReveal()`),
   `src/Agent42.Backend/wwwroot/styles.css` (`@media (hover: hover)`, `@media (hover: none)`),
   `.agentic/decisions/0052-long-press-reveals-row-actions.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A chat turn outlives its client — and "Transmission failed" after an app switch is a lie
 
@@ -2665,7 +2660,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   stream), `src/Agent42.Backend/wwwroot/js/send.js` (`recoverPersistedReply`, `priorTurns`,
   `onVisibilityChange`), `tests/Agent42.Tests/ChatStreamDisconnectTests.cs`,
   `.agentic/decisions/0046-recover-a-reply-whose-stream-died.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `navigator.share` — render the link first, and it is NOT an Android test
 
@@ -2690,12 +2685,12 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `createShareLink`), `tests/Agent42.Tests/ShareLinkAssetsTests.cs`
   (`NativeShare_IsGatedOnAPureFeatureDetect`, `NativeShare_RendersTheLinkBeforeOpeningTheSheet`),
   `.agentic/decisions/0047-native-share-for-read-only-links.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Uploaded skills: the framework's own limits are NOT what they look like, and two of them are security controls
 
 - **Claim:** ADR 0049 lets a user upload a skill (`SKILL.md` or a zip). Four properties of
-  `Microsoft.Agents.AI@1.13.0` (the repo now pins 1.25.0) shape `SkillPackage`, none of them guessable from the API surface, and all
+  `Microsoft.Agents.AI@1.13.0` (the repo now pins 1.28.0) shape `SkillPackage`, none of them guessable from the API surface, and all
   four **measured** (a throwaway `dotnet run app.cs`, 2026-08-25) rather than reasoned about.
   **(1) Resource/script classification is by EXTENSION at any folder — folder names are IRRELEVANT.**
   Resources are `.md .json .yaml .yml .csv .xml .txt`; scripts are `.py .js .sh .ps1 .cs .csx`; anything
@@ -2738,7 +2733,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `Upload_MultiSkillZip_InstallsEach` with its two- and four-wrapper rows),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`SkillTools_NeverAdvertiseAScript_EvenWhenOneIsOnDisk`),
   `.agentic/decisions/0049-upload-agent-skills.md`
-- **Verified:** 2026-08-25 (audit 2026-11-21: measured on Microsoft.Agents.AI 1.13.0; the repo pins 1.25.0 and the four behaviours were not re-measured)
+- **Verified:** 2026-11-24 (audit 2026-11-21: measured on Microsoft.Agents.AI 1.13.0; the repo pins 1.28.0 and the four behaviours were not re-measured)
 
 ### `src/Agent42.Agents/Skills/` is a CONTENT folder — never put `.cs` files in it
 
@@ -2761,13 +2756,13 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Dockerfile` (`USER $APP_UID`),
   `tests/Agent42.Tests/ProjectLayoutTests.cs` (`ExpectedFolders`),
   `.agentic/decisions/0049-upload-agent-skills.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `LogRecord` is POOLED — retaining one in a `BaseProcessor` silently corrupts the buffer
 
 - **Claim:** A `BaseProcessor<LogRecord>` that stores the `LogRecord` reference and reads its fields
   later gets the **latest** record back for every entry it kept. The SDK pools and reuses the instance.
-  Measured twice against OpenTelemetry 1.18.0 (then the pin; the repo now pins 1.19.1) — including once inside this repo's exact
+  Measured twice against OpenTelemetry 1.18.0 (then the pin; the repo now pins 1.21.0) — including once inside this repo's exact
   pipeline (`LoggerFactory` + `AddOpenTelemetry` + `IncludeFormattedMessage`) — two log calls yielded
   `count=2 distinctRefs=1`, and *both* buffered entries read back as the **second** message.
   **Nothing throws.** The console just shows the same line N times, which reads like a rendering bug
@@ -2785,7 +2780,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Telemetry/LiveLogProcessor.cs`,
   `tests/Agent42.Tests/LiveLogProcessorTests.cs`,
   `.agentic/decisions/0054-live-otel-console.md`
-- **Verified:** 2026-08-27 (audit 2026-11-21: measured on OpenTelemetry 1.18.0; the repo pins 1.19.1 and LiveLogProcessor.cs:13 still says 1.18.0)
+- **Verified:** 2026-11-24 (audit 2026-11-21: measured on OpenTelemetry 1.18.0; the repo pins 1.21.0 and LiveLogProcessor.cs:13 still says 1.18.0)
 
 ### `MetricType` has EIGHT members — a five-arm switch reads `NaN` for 39% of the real instruments
 
@@ -2808,7 +2803,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Telemetry/LiveMetricExporter.cs`,
   `tests/Agent42.Tests/LiveMetricExporterTests.cs`,
   `.agentic/decisions/0054-live-otel-console.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The gen_ai metrics ride a meter named after `sourceName` — and `AddSource` alone drops every one
 
@@ -2855,7 +2850,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (the unconditional `metrics.AddMeter(OtelSourceName)`),
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`_otelSourceName`),
   `tests/Agent42.Tests/MeterNamingTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Stripping chat content for ONE sink mutates the span EVERY sink shares — the fan-out's six traps
 
@@ -2895,7 +2890,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.ServiceDefaults/AzureMonitorTraceExport.cs`,
   `src/Agent42.Backend/Telemetry/BackendTelemetryExtensions.cs`,
   `tests/Agent42.Tests/AzureMonitorTraceExportTests.cs`, `tests/Agent42.Tests/OtelConfigurationTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A diagnostics console watches itself, and the obvious log filter blinds it instead
 
@@ -2929,7 +2924,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Telemetry/LiveTelemetryFilter.cs`,
   `tests/Agent42.Tests/LiveLogProcessorTests.cs`, `tests/Agent42.Tests/LiveSpanProcessorTests.cs`,
   `.agentic/decisions/0054-live-otel-console.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### xUnit v2 runs `IAsyncLifetime` per TEST, so a cluster built there is deployed per test
 
@@ -2950,7 +2945,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   Read ADR 0055's three checks before converting a class or adding a new one.
 - **Evidence:** `tests/Agent42.Tests/SharedClusterTests.cs`, `tests/Agent42.Tests/SharedClusterFixture.cs`,
   `tests/Agent42.Tests/SharedClusterSeamTests.cs`; `.agentic/decisions/0055-one-orleans-cluster-per-test-class.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A live Orleans reminder outlives its test once the cluster is shared
 
@@ -2967,10 +2962,12 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   every send. Cancelling the reminders in `src/` was rejected: a production change to fix a test.
 - **Evidence:** `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`,
   `tests/Agent42.Tests/RecordingPushNotificationSender.cs`, `tests/Agent42.Tests/TestSiloConfigurator.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Any `OpenAI` bump can bring back the 2.13.0 bug that killed streams on an empty `choices` chunk
 
+- **Current pins (2026-11-24):** `OpenAI` **2.15.0**, `Microsoft.Extensions.AI.OpenAI` **11.0.1**
+  (`Directory.Packages.props`). The 2.14.0 / 10.10.1 results below are historical.
 - **Status (2026-09-24):** The 2.12.0 pin has been **lifted**. `OpenAI` **2.14.0** passes
   `StreamingEmptyChoicesTests`, and Agent Framework 1.22 / M.E.AI.OpenAI 10.10.0 require `>= 2.13.0`.
   The restore-time guard described below **is gone**: 10.10.0 has no upper bound. That leaves the test
@@ -3005,7 +3002,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `Directory.Packages.props` (the pin + its note), `tests/Agent42.Tests/ResponsesToolMappingTests.cs`,
   `tests/Agent42.Tests/StreamingEmptyChoicesTests.cs`,
   `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` — the affected path)
-- **Verified:** 2026-09-28 (audit 2026-11-21: the OpenAI 2.12.0 pin and restore guard in the body are historical (lifted, see Status); the run-StreamingEmptyChoicesTests-before-a-bump rule still holds) (2.14.0 green; pin lifted; M.E.AI.OpenAI 10.10.1 for the Responses tool mapping)
+- **Verified:** 2026-11-24 (audit 2026-11-21: the OpenAI 2.12.0 pin and restore guard in the body are historical (lifted, see Status); the run-StreamingEmptyChoicesTests-before-a-bump rule still holds) (2.14.0 green; pin lifted; M.E.AI.OpenAI 10.10.1 for the Responses tool mapping)
 
 ### The memory provider is built at ACTIVATION but the incognito gate is per-TURN — it must be a delegate
 
@@ -3058,7 +3055,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `MemorySelection_IsNotIntersectedWithCapability`),
   `.agentic/decisions/0056-hindsight-long-term-memory.md`,
   `.agentic/decisions/0057-memory-as-a-selectable-tool.md`, `.agentic/decisions/0106-agentgrain-services-and-turn-context.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `InvokingContext` has no `RequestMessages`, and injected `Instructions` neither come back nor accumulate
 
@@ -3066,7 +3063,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   compile error at best and a wrong port at worst. `InvokedContext` exposes `Agent`, `Session`,
   `RequestMessages`, `ResponseMessages` and `InvokeException`. `InvokingContext` exposes only `Agent`,
   `Session` and **`AIContext`** — there is no `RequestMessages` on it, and the run's incoming messages
-  arrive on **`context.AIContext.Messages`**. Measured by reflection against `Microsoft.Agents.AI` 1.19.0 (the repo now pins 1.25.0),
+  arrive on **`context.AIContext.Messages`**. Measured by reflection against `Microsoft.Agents.AI` 1.19.0 (the repo now pins 1.28.0; not re-measured),
   after the plan for ADR 0056 asserted the opposite from an earlier reading.
   Two further behaviours were measured with a spike (a real `ChatClientAgent` over a fake `IChatClient`,
   a provider injecting `## Memories\n- …`), because both look like risks and neither is: (1) the injected
@@ -3085,7 +3082,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   https://github.com/Expecho/Hindsight.AgentFramework.Net (`HindsightMemoryProvider`, and
   `Memories_DoNotAccumulateAcrossTurns` / `InjectedMemories_AreNotRetained` in its test suite),
   `.agentic/decisions/0056-hindsight-long-term-memory.md`
-- **Verified:** 2026-08-28 (audit 2026-11-21: reflection measured on Microsoft.Agents.AI 1.19.0; the repo now pins 1.25.0 and nothing re-measures it)
+- **Verified:** 2026-11-24 (audit 2026-11-21: reflection measured on Microsoft.Agents.AI 1.19.0; the repo now pins 1.28.0 and nothing re-measures it)
 
 ### Per-turn context must never go in the instructions — wrap the provider in `TrailingContextProvider`
 
@@ -3105,7 +3102,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/TrailingContextProviderTests.cs`,
   `tests/Agent42.Tests/AgentGrainTests.cs` (`MemoryAndSharedState_DoNotChangeInstructions`),
   `.agentic/decisions/0104-prompt-prefix-caching.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `GetReadUrlAsync` is memoized per blob — a fresh SAS per call breaks the cached history prefix
 
@@ -3117,7 +3114,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   the grain: the store is the one place that knows a URL's expiry. Its clock is an injected `TimeProvider`.
 - **Evidence:** `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` (`GetReadUrlAsync`),
   `tests/Agent42.Tests/BlobAttachmentStoreReadUrlTests.cs`, `.agentic/decisions/0104-prompt-prefix-caching.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A live-telemetry test host captures from a PROCESS-GLOBAL source, so those classes must not run in parallel
 
@@ -3174,7 +3171,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/MeterNamingTests.cs`,
   `src/Agent42.Backend/Telemetry/LiveTelemetryCaptureExtensions.cs` (`OtelSourceName`, `AddSource`),
   `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
-- **Verified:** 2026-11-21 (the 2026-08-28 fix was measured incomplete; see the correction)
+- **Verified:** 2026-11-24 (the 2026-08-28 fix was measured incomplete; see the correction)
 
 ### A collection expression into `IReadOnlyList<T>` written from INSIDE a grain is unreadable from Cosmos
 
@@ -3233,7 +3230,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   if .NET or Newtonsoft ever changes; `KnownToolNames_WrittenWithToList_SurviveTheCosmosJsonRoundTrip`),
   `tests/Agent42.Tests/ToolSelectionApiTests.cs` (`ProfileToolSave_IsReadableBackFromStorage` — asserts the
   stored type is `List<string>`, pinning the laundering rather than assuming it)
-- **Verified:** 2026-11-21 (re-measured on Orleans 10.3.1; the hazard holds, only the message moved)
+- **Verified:** 2026-11-24 (re-measured on Orleans 10.3.1; the hazard holds, only the message moved)
 
 ### Proxying a third-party app onto our own origin: both directions leak, and the route template bites
 
@@ -3294,7 +3291,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `Proxy_ForwardsOnlyAllowlistedRequestHeaders`),
   `.agentic/decisions/0059-searxng-ui-behind-easy-auth-proxy.md`,
   `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
-- **Verified:** 2026-11-21 (0059 rules unchanged; the 0062 divergence added and measured)
+- **Verified:** 2026-11-24 (0059 rules unchanged; the 0062 divergence added and measured)
 
 ### A named `HttpClient` cannot be re-pointed per consumer — a proxy needs its OWN
 
@@ -3314,7 +3311,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   retry-inheritance trap).
 - **Evidence:** `src/Agent42.Backend/Program.cs` (the `SearxngProxy.HttpClientName` registration),
   `tests/Agent42.Tests/SearxngProxyFixture.cs` (the stub is installed as the PRIMARY handler, deliberately)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Chat-search ordinals must come from ONE `GetHistoryAsync()` projection, on both paths
 
@@ -3332,7 +3329,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   hands it `ProjectHistory()`), `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
   (`Reindex_AfterLiveIndexing_ProducesNoDuplicates`, `Reindex_IsIdempotent`),
   `.agentic/decisions/0061-searchable-chat-message-projection.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Skipping an incognito turn's index write is NOT enough — it stays in the in-memory session
 
@@ -3356,7 +3353,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`SkipEphemeralTurnAsync`), `src/Agent42.Agents/Conversations/AgentGrain.cs`,
   `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
   `tests/Agent42.Tests/ChatSearchIndexingTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The chat-search write is best-effort — and that is NOT ADR 0008's rejected shape
 
@@ -3377,7 +3374,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/ChatSearchIndexingTests.cs` (`ThrowingIndex_DoesNotBreakTheReply`,
   `ThrowingIndex_DoesNotBreakPurge`),
   `.agentic/decisions/0008-always-on-textsearchprovider-retrieval.md` (Alternatives)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A multi-property `ORDER BY` needs a composite index, or chat search 400s — and it looks like "no matches"
 
@@ -3405,7 +3402,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/CompositeIndexMatchesTheSearchQueryTests.cs` — which pins the SQL's `ORDER BY`
   against the Bicep and was **mutation checked** three ways (index removed, paths swapped, direction
   flipped; each fails only the assertion that should catch it)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The sidebar search and the model's `search_past_chats` are DIFFERENT queries on purpose — and the twin is not BM25
 
@@ -3420,7 +3417,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Search/CosmosChatSearchIndex.cs` (`BuildSearchSql`, `BuildRankedSearchSql`),
   `src/Agent42.Agents/Search/InMemoryChatSearchIndex.cs` (`RankByTerms`), `tests/Agent42.Tests/ChatSearchIndexTests.cs`
   (`SearchRanked_*`), `.agentic/decisions/0112-past-chats-as-a-model-tool.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `read_past_chat` reads the search INDEX, never the other conversation's grain
 
@@ -3435,7 +3432,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`Select`, `FormatRead`), `tests/Agent42.Tests/PastChatToolTests.cs`
   (`Search_DropsHitsForConversationsNotInTheIndexGrain`, `Search_NeverFindsAnIncognitoTurn`),
   `.agentic/decisions/0112-past-chats-as-a-model-tool.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The community `OrleansDashboard` package does not start the silo on Orleans 10.x — it CRASHES PROD
 
@@ -3479,7 +3476,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`Packages_DoNotReferenceTheDeprecatedCommunityDashboard`),
   `src/Agent42.Backend/Orleans/DashboardRegistration.cs`,
   `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The prefs drill-down must NOT be driven from `wireTabs`' `select` — every open would land in detail
 
@@ -3495,17 +3492,18 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `e.target.closest('[role="tab"]')` — delegated so it survives nothing in particular, and `closest`
   because the rail buttons carry an inline `<svg>` icon, so `e.target` is usually a `<path>` and a bare
   `e.target` check misses most presses. `openProfileDialog()` calls `exitPrefsDetail()` **before**
-  `showModal()`. The one programmatic case that genuinely wants detail is the interactive-OAuth return,
-  which calls `enterPrefsDetail(3)` beside its own untouched `profileTabs.select(3)`.
+  `showModal()`. The programmatic cases that genuinely want detail are the two OAuth returns: MCP interactive OAuth
+  (`mcp.js`, `enterPrefsDetail(3)`) and GitHub sign-in (`providers.js`, `enterPrefsDetail(2)`), each beside
+  its own untouched `profileTabs.select(n)`.
 - **Related:** the drill-down title must read the tab's `.prefs__navlabel` span, never
   `button.textContent` — the Tools button contains the count badge, so `textContent` there is measured
   as `"Tools 9/9"`.
-- **Evidence:** `src/Agent42.Backend/wwwroot/js/profile.js`, `src/Agent42.Backend/wwwroot/js/tabs.js`,
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/profile.js`, `src/Agent42.Backend/wwwroot/js/tabs.js`, `src/Agent42.Backend/wwwroot/js/providers.js`,
   `src/Agent42.Backend/wwwroot/js/mcp.js`,
   `tests/Agent42.Tests/PreferencesLayoutAssetsTests.cs`
   (`DetailView_IsEnteredByRailClick_NotByProgrammaticSelect`),
   `.agentic/decisions/0065-preferences-rail-and-drill-down.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The prefs CSS cannot be one contiguous block — and the comments explaining that break the guards
 
@@ -3537,7 +3535,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`PrefsCss_IsOrderedAgainstBothConstraints`, `AgentDialogTabs_AreNotRestyled`),
   `tests/Agent42.Tests/McpServersAssetsTests.cs`,
   `.agentic/decisions/0065-preferences-rail-and-drill-down.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### After a retention prune, REMAP `_ephemeralOrdinals` — never `Clear()` it
 
@@ -3577,7 +3575,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`Prune_DoesNotIndexAnEphemeralTurn_AfterOrdinalsShift`),
   `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
   `.agentic/decisions/0034-ephemeral-chat.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A pruned-turn delta is a PROJECTED-turn count, and a failed index delete is the one thing reindex cannot repair
 
@@ -3616,7 +3614,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `Prune_DoesNotIndexAnEphemeralTurn_TakenBetweenAFailedReconcileAndItsRetry`),
   `.agentic/decisions/0068-prune-continuous-agent-history-to-a-24-hour-window.md`,
   `.agentic/decisions/0061-searchable-chat-message-projection.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 
 ### Bounding a drained agent turn: cap the WAIT, never the enumeration — abandoning it LOSES the turn
@@ -3647,7 +3645,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   loop), `tests/Agent42.Tests/AgentMcpServerTests.cs` (`AskAgent_TimedOut_StillPersistsTheTurn`),
   `.agentic/decisions/0070-expose-stored-agents-as-an-mcp-server.md`,
   `.agentic/decisions/0046-recover-a-reply-whose-stream-died.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A caller-supplied conversation id needs THREE defences — the id shape is not the whole one
 
@@ -3679,7 +3677,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/AgentMcpServerTests.cs` (`AskAgent_RejectsAnotherAgentsConversation`,
   `IsValidConversationId_AcceptsOnlyAMintedId`),
   `.agentic/decisions/0070-expose-stored-agents-as-an-mcp-server.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `reply` is NOT the persistence path — it feeds the follow-up call, and the two fail differently
 
@@ -3721,7 +3719,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ReasoningText_IsNotPersisted`,
   `ReasoningText_IsNotPersisted_OnTheBackgroundPath`, `ReasoningText_DoesNotReachTheFollowUpCall`),
   `.agentic/decisions/0071-show-reasoning-output.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Visible reasoning is `ChatOptions.Reasoning`, NOT `includeReasoningEncryptedContent`
 
@@ -3755,7 +3753,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `NoReasoningField_IsSent_WhenReasoningIsNotRequested`),
   `tests/Agent42.Tests/ModelProviderTests.cs` (`ReasoningModel_WiresTheReasoningRequest`),
   `.agentic/decisions/0071-show-reasoning-output.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A local-bridge key hash is GRAIN-OWNED — `SaveAsync` carries it unconditionally, and revocation must also close the live socket
 
@@ -3777,7 +3775,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/UserMcpConfigGrainTests.cs` (`Edit_PreservesBridgeKeyHash`, `MintBridgeKey_RegenerateRevokesOld`),
   `tests/Agent42.Tests/LocalBridgeApiTests.cs` (`ManagementWrites_CloseLiveSocket`),
   `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The bridge key is accepted from the `X-Api-Key` HEADER only — never add a query-string fallback
 
@@ -3799,7 +3797,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `Endpoint_RejectsAWebPageOrigin_EvenWithAValidKey`, `Endpoint_SubprotocolKey_OnlyFromTheExtensionOrigin`),
   `tests/Agent42.Tests/LocalBridgeKestrelTests.cs` (`Endpoint_NeverEchoesTheKeyInResponseHeaders`),
   `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Client_KeyFromEnvHeaderOnly`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Nothing in a browser tab can relay to BrowserOS neo — any `Origin` gets a 403
 
@@ -3813,7 +3811,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tools/Agent42.LocalBridge/BridgeOptions.cs` (`DefaultUpstream`),
   `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Upstream_SendsNoOrigin`),
   `.agentic/specs/completed/plan-browseros-neo-as-an-mcp-tool.md` ("Option D")
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The bridge confirmation gate: exact `readOnlyHint: true` only, URL-shaped args still prompt, and the prompt is sanitized and never truncated
 
@@ -3852,7 +3850,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `ConsolePrompt_ReadsOnlyTheThreeAnswers`, `Gate_Yolo_AllowsEveryCallWithoutPrompting`),
   `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md` (Verification — 0 ESC and 0 U+202E
   bytes on the real terminal; the 2026-09-20 amendment block)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The Chrome extension cannot do three things a console helper can: set a socket header, see a 401, or stay awake on pings
 
@@ -3872,7 +3870,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/ChromeExtensionBridgeTests.cs` (`ExtensionCore_StopsOnRevokedKey`,
   `ExtensionCore_HeartbeatKeepsTheSocketOpen`), `tests/Agent42.Tests/ChromeExtensionScriptTests.cs`
   (`Manifest_GivesWebPagesNoWayIn`), `.agentic/decisions/0109-chrome-extension-bridge-and-mcp-image-results.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The extension's hard floor: `chrome.debugger` can script the extension's OWN pages, so no tool may touch them
 
@@ -3889,11 +3887,11 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tools/Agent42.ChromeExtension/test/tools.test.mjs` ("no tool acts on the extension's own pages…", "the tab's
   address is re-checked after the gate"), `tests/Agent42.Tests/ChromeExtensionScriptTests.cs`
   (`InjectedFunctions_NeverTouchExtensionApis`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A multi-part MCP result is an `AIContent[]`; images are taken out before truncation and shown for ONE turn only
 
-- **Claim:** with ModelContextProtocol 2.2.0, `McpClientTool` returns a `TextContent` for a text-only result and an
+- **Claim:** with ModelContextProtocol 2.2.0 (measured; the repo now pins 2.4.0, not re-measured), `McpClientTool` returns a `TextContent` for a text-only result and an
   `AIContent[]` for a multi-part one. The array's `ToString()` is its **type name**, so a `ToString()`-length budget
   never truncated it, and an image passed through as `DataContent` into the persisted session (both measured, and
   fixed by ADR 0109's `McpToolResultShaper`). Rules that must survive:
@@ -3911,7 +3909,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Mcp/McpToolResultShaper.cs`, `src/Agent42.Agents/Models/ToolImageChatClient.cs`,
   `src/Agent42.Agents/Conversations/TurnContext.cs` (`RecordToolImage`), `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Build`),
   `src/Agent42.Agents/Models/IChatClientFactory.cs` (`SingleChatClientFactory`), `tests/Agent42.Tests/McpToolImageTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A bridge that connects after a chat activated is invisible to it — invalidate on CONNECT, rate-limited, never on disconnect
 
@@ -3930,12 +3928,12 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Mcp/LocalBridgeSession.cs` (`RunAsync`),
   `tests/Agent42.Tests/LocalBridgeEndpointTests.cs` (`Connect_InvalidatesToolCache_RateLimited`),
   `tests/Agent42.Tests/LocalBridgeKestrelTests.cs` (`SocketDrop_FaultsPendingCall`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### MCP SDK 2.2.0 opens with a `server/discover` probe that waits 5 s — and a custom `TransportBase` must `SetDisconnected` in `DisposeAsync`
 
 - **Claim:** two measured facts about writing an MCP transport or a fake server on `ModelContextProtocol.Core`
-  2.2.0. **(1)** With `ProtocolVersion` unset, `McpClient.CreateAsync` first sends `server/discover` (the
+  2.2.0. (The repo now pins 2.4.0; neither fact is re-measured there.) **(1)** With `ProtocolVersion` unset, `McpClient.CreateAsync` first sends `server/discover` (the
   `2026-07-28` revision) and falls back to `initialize` only on an error **or after `DiscoverProbeTimeout`
   (5 s)**. A fake server that silently ignores unknown methods makes every connect take 5 s — the tests still
   pass, just slowly, which hides it (measured: 5090 ms; answering `-32601 Method not found` → 121 ms). Real
@@ -3946,7 +3944,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Mcp/LocalBridgeChannelTransport.cs` (`DisposeAsync`, `Fault`),
   `tests/Agent42.Tests/LocalBridgeTestSupport.cs` (`FakeBridgeHelper.HandleAsync` — the `-32601` answer),
   `.agentic/decisions/0076-local-bridge-for-machine-local-mcp-servers.md` (Verification)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A cancelled Agent Framework run persists NOTHING — so a stopped turn is appended by hand, and `reply` becomes the persistence path
 
@@ -3987,7 +3985,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `TryPrepareStoppedTurn`, the call site's comment), `src/Agent42.Agents/Conversations/HistoryRetention.cs`
   (the same list, and its header on the round-trip property),
   `tests/Agent42.Tests/StopGenerationTests.cs`, `.agentic/decisions/0078-stop-generation.md`
-- **Verified:** 2026-09-20 (audit 2026-11-21: StopGenerationTests now has 15 tests; the 7-of-12 mutation result was not re-run)
+- **Verified:** 2026-11-24 (audit 2026-11-21: StopGenerationTests now has 15 tests; the 7-of-12 mutation result was not re-run)
 
 ### The stop handle is a field published by identity, an iterator cannot catch around a `yield`, and `StopAsync` must interleave
 
@@ -4018,7 +4016,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Conversations/IAgentGrain.cs` (`StopAsync`'s attributes and their remarks),
   `tests/Agent42.Tests/StopGenerationTests.cs` (`Stop_DoesNotCancelABackgroundTurn`,
   `Stop_AfterTheTurnEnded_DoesNotAffectTheNextTurn`), `.agentic/decisions/0078-stop-generation.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `CompactionProvider` freezes the request on AF 1.19 — bound the research prompt with a chat-client REDUCER
 
@@ -4034,7 +4032,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`WithResearchBudget`),
   `tests/Agent42.Tests/ResearchAgentTests.cs` (`ResearchPrompt_IsBoundedWithRag`),
   `.agentic/decisions/0082-seeded-research-agent-loop.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `LoopAgent` persists each iteration MID-TURN — hide the turn while it runs, fold it when it ends
 
@@ -4054,7 +4052,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`AppendStoppedTurnToSession`), `tests/Agent42.Tests/ResearchAgentTests.cs`
   (`ResearchTurn_HistoryHasOneAssistantTurn`), `tests/Agent42.Tests/StopGenerationTests.cs`
   (`Stop_MidResearchLoop_KeepsHistoryConsistent`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A storage request filter must EXTEND `IsInjectedOrReplayed`, never replace it — and loop feedback must be dropped
 
@@ -4068,7 +4066,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   assistant messages carry the (user-editable) agent name.
 - **Evidence:** `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`ExcludeInjectedContextMessages`),
   `tests/Agent42.Tests/ResearchAgentTests.cs` (`ResearchTurn_HistoryHasOneAssistantTurn`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `AgentRunOptions.AdditionalProperties` is copied into EVERY model call's `ChatOptions`
 
@@ -4077,7 +4075,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   body. Per-run state for the research loop is keyed by the turn's own user `ChatMessage` in a
   `ConditionalWeakTable` instead: `LoopContext.InitialMessages` holds that very reference (measured).
 - **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`_researchRuns`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A record parameter a Cosmos document lacks binds to `null`, not to its C# default
 
@@ -4088,7 +4086,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   null. Class-shaped state (`AgentGrainState`) keeps its property initializer, so this is about records.
 - **Evidence:** `src/Agent42.Agents/StoredAgents/AgentDefinition.cs` (`Kind`),
   `tests/Agent42.Tests/GrainStorageSerializerTests.cs` (`DocumentsWithoutResearchFields_Deserialize`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Spiking Agent Framework in a file-based app needs reflection JSON switched back on
 
@@ -4099,7 +4097,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   returns **false** on it — code that reads the history length before a first turn must treat that as 0.
 - **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`BeginResearchRun`),
   `.agentic/specs/completed/plan-research-agent.md` (Spike results)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Rich rendering runs on FINALIZE only — a new streaming call must pass `caret: true`, a new final one must not
 
@@ -4115,7 +4113,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/thread.js` (`setAgentMarkdown`),
   `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` (`enhance`, `mathExtensions`),
   `tests/Agent42.Tests/RichTextAssetsTests.cs`, `.agentic/decisions/0083-rich-inline-rendering.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The rich-rendering libs live ONLY under `/shared/lib/`, and the heavy ones are lazy and NOT in SHELL
 
@@ -4134,7 +4132,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/wwwroot/sw.js` (`SHELL`), `src/Agent42.Backend/wwwroot/shared/index.html`,
   `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` (`renderChart`), `tests/Agent42.Tests/PwaAssetsTests.cs`,
   `.agentic/decisions/0083-rich-inline-rendering.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Artifact tool ARGUMENTS are persisted too, so they are compacted after the turn
 
@@ -4162,7 +4160,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   compaction disabled), `tests/Agent42.Tests/ReadDocumentToolTests.cs` (`ReadDocumentParts_DoNotBlowTheSessionSizeBudget`
   fails with the `read_document` branch removed), `.agentic/decisions/0084-artifact-pane.md`,
   `.agentic/decisions/0098-read-document-sequential-reading.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `/frame` safety is the CSP `sandbox` HEADER, not the iframe attribute
 
@@ -4185,7 +4183,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/wwwroot/shared/lib/artifactpane.js` (`renderBody`), `tests/Agent42.Tests/ArtifactsApiTests.cs`
   (`Frame_And_Content_SendSandboxHeaders`),
   `.agentic/decisions/0084-artifact-pane.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Palette tokens live in `src/Agent42.Backend/wwwroot/shared/themes.css` only
 
@@ -4197,7 +4195,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   amber/light's accent is the one pinned exception.
 - **Evidence:** `src/Agent42.Backend/wwwroot/shared/themes.css`, `src/Agent42.Backend/Artifacts/ArtifactThemePalettes.cs`,
   `tests/Agent42.Tests/ThemePaletteTests.cs`, `.agentic/decisions/0129-palette-second-axis-shared-themes-css.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Artifact blobs are stored as octet-stream because the attachment proxies serve ANY id
 
@@ -4211,7 +4209,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Attachments/AgentApi.Attachments.cs`, `src/Agent42.Backend/Sharing/AgentApi.Sharing.cs`,
   `tests/Agent42.Tests/ArtifactToolTests.cs` (`ArtifactTools_StoreOctetStream`),
   `tests/Agent42.Tests/ArtifactsApiTests.cs` (`AttachmentProxies_SendNoSniff`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The Copilot runtime calls custom tools OFF the grain's scheduler — bind every tool handed to it to the activation
 
@@ -4224,7 +4222,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `CopilotTool_InvokedFromForeignThread_RunsOnGrainScheduler` and two reminder tests.
 - **Evidence:** `src/Agent42.Agents/Copilot/SchedulerBoundAIFunction.cs`, `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs`
   (`CopilotFunctions`), `tests/Agent42.Tests/CopilotAgentTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A Copilot AF session is only a POINTER — its transcript lives in `SessionFs`, and AF 1.22 cannot resume it
 
@@ -4241,7 +4239,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`BuildSessionConfig`), `Directory.Packages.props`
   (the AF pin comment), `tests/Agent42.Tests/LiveCopilotTests.cs` (`LiveCopilot_ToolTurn_ResumesFromSessionFs`,
   `LiveCopilot_PreexistingSession_ResumesWithWorkspaceShell`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A non-`ChatClientAgent` session has NO in-memory history until a run completes — seed it, or a stopped first turn is dropped
 
@@ -4253,20 +4251,20 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `AIAgent` the grain runs that is not a `ChatClientAgent` must seed an empty list on create and on deserialize.
 - **Evidence:** `src/Agent42.Agents/Copilot/CopilotChatAgent.cs` (`WithMirror`),
   `tests/Agent42.Tests/StopGenerationTests.cs` (`Stop_CopilotTurn_PersistsPartialReply`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `Microsoft.Agents.AI.GitHub.Copilot` downloads the CLI of the SDK it was PACKED with — reference `GitHub.Copilot.SDK` directly
 
 - **Claim:** the runtime binary comes from the SDK's MSBuild targets (downloaded per RID and SHA256-checked). For a
   project that references the SDK only transitively, the AF package's `buildTransitive` imports the targets of
-  `_MicrosoftAgentsAICopilotSdkPackagedVersion` (1.0.14, so CLI 1.0.85, for AF 1.23.0 through 1.25.0), not the pinned SDK (1.0.16,
+  `_MicrosoftAgentsAICopilotSdkPackagedVersion` (1.0.14, so CLI 1.0.85, for AF 1.23.0 through 1.28.0), not the pinned SDK (1.0.34 now; measured on 1.0.16,
   CLI 1.0.90). Tests and DevHost silently shipped a different runtime than the Backend until they got a direct
   `GitHub.Copilot.SDK` `PackageReference`. Every project whose output runs the runtime needs one. Separately, in a
   file-based spike the SDK's own bundled launch failed (`Copilot runtime wrapper not found ... copilot-runtime.exe`),
   so spikes and the app pass an explicit `RuntimeConnection.ForStdio(.../runtimes/<rid>/native/copilot)`.
 - **Evidence:** `tests/Agent42.Tests/Agent42.Tests.csproj`, `tools/Agent42.DevHost/Agent42.DevHost.csproj`,
   `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`RuntimePath`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 
 ### A client tool's wait: route the broker per RUN, interleave the answer, cap the wait and never the turn
@@ -4299,7 +4297,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/ClientTools/ClientToolBroker.cs`,
   `src/Agent42.Agents/Conversations/IAgentGrain.cs`, `src/Agent42.Backend/wwwroot/js/clienttools.js`
   (`confirmAction`), `tests/Agent42.Tests/ClientToolTests.cs`, `.agentic/decisions/0089-client-tools-and-shared-state.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### MCP elicitation: the SDK's handler runs off the grain scheduler, on a per-USER connection, and HTTP loses the async local
 
@@ -4326,7 +4324,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`ElicitationArrivedFirstAsync`), `src/Agent42.Backend/Mcp/McpElicitationClient.cs`,
   `tests/Agent42.Tests/McpElicitationIntegrationTests.cs`, `tests/Agent42.Tests/McpElicitationTests.cs`,
   `.agentic/decisions/0095-mcp-elicitation-on-the-client.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Shared state: text in grain state, no write while a run is in flight, and the patch library is neither atomic nor strict
 
@@ -4351,7 +4349,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatCoreAsync`, `ReceiveReminder`),
   `tests/Agent42.Tests/SharedStateTests.cs`, `tests/Agent42.Tests/SharedStatePatchTests.cs`,
   `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `ZipArchive` writes synchronously even through its async APIs — never hand it the response body
 
@@ -4365,7 +4363,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Export/AgentApi.Export.cs` (`ZipResult`),
   `tests/Agent42.Tests/ConversationExportApiTests.cs` (every ZIP test goes through TestServer),
   `.agentic/decisions/0091-owner-export-of-conversations.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A fork must COPY blobs: every proxy resolves a blob by `(ownerKey, id)`, never by id alone
 
@@ -4384,7 +4382,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` (`CopyAsync`),
   `tests/Agent42.Tests/ConversationEditForkApiTests.cs` (`Fork_AttachmentsAndArtifacts_AreServedUnderTheForkId`),
   `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Truncating history removes WHOLE session turns, and re-anchors everything that indexes off them
 
@@ -4416,7 +4414,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/EditRegenerateForkTests.cs` (`Truncate_WithOrphanTurnAttachment_StaysAligned` fails when step
   3 is "remove the last entry", checked by mutation), `tests/Agent42.Tests/ConversationForkingTests.cs`,
   `.agentic/decisions/0092-edit-regenerate-and-fork-conversations.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The fleet's event log coalesces streamed text: an append blob holds at most 50,000 blocks
 
@@ -4430,7 +4428,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetEventLog.cs` (`FlushAsync`, `Coalesce`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Events_TextCoalesced_Complete`, `LogCap_DropsTextButKeepsFinished`),
   `.agentic/decisions/0097-agent-fleet-recursive-teams.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Fleet replay-then-live: subscribe BEFORE reading the store, and skip at or below the last seq sent
 
@@ -4443,7 +4441,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetEventLog.cs` (`Subscribe`, `ReplayAsync`),
   `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`SubscribeAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Subscribe_ReplaysThenLive_ExactlyOnce`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A fleet task's `interrupted` status is computed on read, and nothing scans at startup
 
@@ -4457,7 +4455,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`SubmitAsync`, `NormalizeAsync`, `StopAsync`),
   `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`FinishAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`RunningNotInRegistry_IsInterrupted_AndPersisted`, `Shutdown_PersistsInterrupted`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The fleet workspace sync DELETES stored files that aren't on local disk: materialize before a run writes
 
@@ -4472,7 +4470,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`RunAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Submit_WithFiles_StoresInputs`),
   `.agentic/decisions/0101-fleet-task-files-and-documents.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The fleet canvas lives OUTSIDE the workspace prefix, because the workspace sync would delete it
 
@@ -4486,7 +4484,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Fleet/FleetCanvas.cs`, `tests/Agent42.Tests/FleetCanvasTests.cs` (`Canvas_SurvivesWorkspaceSync`),
   `tests/Agent42.Tests/FleetStoreTests.cs` (`DeleteTask_KeepsSharedCanvasUntilLastTask`),
   `.agentic/decisions/0102-fleet-shared-canvas.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A fleet Copilot `SessionConfig` must NOT set `AvailableTools`
 
@@ -4533,7 +4531,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Fleet/AgentApi.Fleet.cs` (`DownloadFleetFile`, `IsUtf8Text`),
   `src/Agent42.Agents/Fleet/FleetStore.cs` (`NormalizeWorkspacePath`),
   `tests/Agent42.Tests/FleetApiTests.cs` (`FileDownload_IsAttachment_NoSniff_NotHtml`, `FileDownload_PathTraversal_Refused`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The fleet's Copilot client is NOT ADR 0085's client: don't merge them
 
@@ -4553,7 +4551,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`BuildClientOptions`),
   `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs`, `tests/Agent42.Tests/LiveCopilotTests.cs`,
   `.agentic/decisions/0097-agent-fleet-recursive-teams.md`, `.agentic/decisions/0107-copilot-chat-builtin-tools.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A Copilot chat's shell needs a REAL working directory: route only `/state` to the store
 
@@ -4572,12 +4570,12 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Copilot/CopilotSessionFsProvider.cs`, `src/Agent42.Backend/Copilot/CopilotWorkspaceFiles.cs`,
   `src/Agent42.Backend/Copilot/ICopilotSessionStore.cs` (`CopilotSessionPaths.IsStatePath`, `CopilotWorkspacePaths`),
   `tests/Agent42.Tests/CopilotWorkspaceFsTests.cs`, `.agentic/decisions/0107-copilot-chat-builtin-tools.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### AF Workflows 1.23: `AgentResponseUpdateEvent` IS a `WorkflowOutputEvent`, and Declarative never throws on bad YAML
 
 - **Claim:** two measured traps for anything that drives Agent Framework workflows or declarative agents (spike of
-  2026-10-12, AF 1.23.0 / Declarative 1.23.0-rc1; the repo now pins 1.25.0). (1) `AgentResponseUpdateEvent` derives from
+  2026-10-12, AF 1.23.0 / Declarative 1.23.0-rc1; the repo now pins Microsoft.Agents.AI and Workflows 1.28.0, Declarative 1.25.0-rc1; not re-measured). (1) `AgentResponseUpdateEvent` derives from
   `WorkflowOutputEvent`: a loop that ends on "the first `WorkflowOutputEvent`" ends on the first streamed token.
   Exclude update events first, and match outputs by their `Data` type. (2) `CreateFromYamlAsync` on malformed
   YAML does NOT throw: it returns an agent with a wrong or empty name. The fleet's "the name in the YAML must
@@ -4586,7 +4584,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetTeamRunner.Workflows.cs` (`FinalResult`),
   `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs` (`CheckAgent`),
   `tests/Agent42.Tests/FleetTeamRunnerTests.cs` (`InvalidYaml_ErrorsBackToPlanner`, `HostedToolKind_Rejected`)
-- **Verified:** 2026-10-13 (audit 2026-11-21: measured on AF 1.23.0; the repo pins 1.25.0 and it was not re-measured)
+- **Verified:** 2026-11-24 (audit 2026-11-21: measured on AF 1.23.0; the repo pins 1.28.0 and it was not re-measured)
 
 ### A page that writes must not set `<meta name="referrer" content="no-referrer">`: its POSTs get `Origin: null` and Easy Auth 403s them
 
@@ -4599,7 +4597,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   keep `no-referrer` because they only read.
 - **Evidence:** `src/Agent42.Backend/wwwroot/fleet/index.html` (referrer meta),
   `tests/Agent42.Tests/FleetPageAssetsTests.cs` (`FleetPage_ReferrerPolicy_KeepsTheOriginOnWrites`)
-- **Verified:** 2026-11-21 (the 403 from Easy Auth was observed. The fix is unverified in production until it is deployed.)
+- **Verified:** 2026-11-24 (the 403 from Easy Auth was observed. The fix is unverified in production until it is deployed.)
 
 ### The Anthropic SDK reads `ANTHROPIC_*` env vars and defaults `max_tokens` to 1024: set both explicitly
 
@@ -4616,7 +4614,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/AnthropicEnvironmentTests.cs` (`AnthropicRequest_UsesStoredKey_NotEnvironment`),
   `tests/Agent42.Tests/AnthropicProviderTests.cs` (`AnthropicRequest_DefaultsMaxTokens`),
   `.agentic/decisions/0103-anthropic-provider-kind.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Current Claude models 400 on forced tool choice, sampling params, disabled thinking and assistant prefill: the shim owns all four
 
@@ -4629,13 +4627,13 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   never mutate the messages or options the shim is handed: they are the grain's live session history (ADR 0004). Two
   traps inside the shim: a trailing assistant message that is a **pending tool call** must not get the `"Continue."` turn
   (it would break `tool_use`/`tool_result` pairing), and a message with tool content must never be dropped (an
-  orphaned `tool_result` is a 400). Its drop rule mirrors what SDK 12.58.0 skips (measured), so re-measure it
+  orphaned `tool_result` is a 400). Its drop rule mirrors what SDK 12.58.0 skips (measured; the repo now pins Anthropic 13.12.0, so this re-measure is DUE), so re-measure it
   after an SDK bump.
 - **Evidence:** `src/Agent42.Backend/Models/AnthropicCompatibilityChatClient.cs`,
   `src/Agent42.Backend/Fleet/ModeratedGroupChatManager.cs` (`ToolMode = ChatToolMode.RequireAny`),
   `tests/Agent42.Tests/AnthropicCompatibilityChatClientTests.cs`, `tests/Agent42.Tests/ModeratedGroupChatManagerTests.cs`,
   `.agentic/decisions/0103-anthropic-provider-kind.md`
-- **Verified:** 2026-11-21 (the 400s are the documented model behaviour, unverified live in this repo until
+- **Verified:** 2026-11-24 (the 400s are the documented model behaviour, unverified live in this repo until
   `LiveAnthropicChatTests` runs with a key)
 
 ### A `RawRepresentationFactory` returning `MessageCreateParams` silently overrides `ModelId` and `MaxOutputTokens`
@@ -4649,7 +4647,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Models/AnthropicCompatibilityChatClient.cs` (`CachingFactory`),
   `tests/Agent42.Tests/AnthropicCompatibilityChatClientTests.cs` (`Wire_UnderFactory_KeepsEveryField`,
   `CallerFactory_KeepsItsParams_GainsCaching`, `ForeignFactory_PassesThrough`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A GitHub Copilot model must never reach an `IChatClient` — the guard is the refusing client, not the picker
 
@@ -4666,7 +4664,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`IsCopilotComposition`),
   `tests/Agent42.Tests/ModelProviderTests.cs` (`GitHubCopilotModel_ChatClientRefuses`,
   `GitHubCopilotModel_CapabilitiesAreToolsOnly`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The GitHub token goes on every Copilot session create AND resume, never on the client or in its environment
 
@@ -4680,7 +4678,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `BuildClientOptions`), `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`BuildSessionConfig`),
   `tests/Agent42.Tests/CopilotGitHubAccountTests.cs` (`RuntimeEnvironment_CarriesNoGitHubToken`,
   `ChatSessionConfig_GitHubMode_TokenNoProviderTelemetryOff`), `.agentic/decisions/0108-github-copilot-provider.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A disconnected `github-copilot:` id must refuse, not take `Resolve`'s fallback — and the kind is never a default
 
@@ -4697,7 +4695,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `LegacyUnqualifiedId_NeverResolvesToGitHubCopilot`), `tests/Agent42.Tests/CopilotGitHubAccountTests.cs`
   (`CreateAgent_DisconnectedGitHubModel_IsNotConnected`), `tests/Agent42.Tests/UserProviderResolverTests.cs`
   (`PinnedGitHubCopilotDefault_IsIgnored`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The Telegram bot token is in the URL PATH: it leaks through HttpClient spans AND logs, and it breaks `new Uri(base, relative)`
 
@@ -4712,7 +4710,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `"./bot…"`. Any new client whose path holds a secret needs all three.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Telegram/TelegramBotApi.cs`, `tests/Agent42.Tests/TelegramTests.cs`,
   `.agentic/decisions/0111-chat-gateway-for-chat-apps.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The chat gateway holds outbound connections, so a revision rollover would run it twice: it needs the lease
 
@@ -4725,7 +4723,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/ChatGateway/ChatGatewayLease.cs`, `src/Agent42.Backend/ChatGateway/ChatGatewayService.cs`,
   `infra/modules/storage.bicep` (`chatGatewayContainer`), `tests/Agent42.Tests/ChatGatewayServiceTests.cs`
   (`LeaseHandover_NoOverlap`, `LostRenewal_DisconnectsEverything`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A chat-driven turn must be `interactive: false`, and chat commands must skip the queue
 
@@ -4737,7 +4735,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   claimed synchronously, before any await, or a second message races the first.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/ChatTurnPipeline.cs`, `src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Turn.cs`,
   `tests/Agent42.Tests/ChatTurnPipelineTests.cs` (`Pipeline_Stop_BypassesQueue`, `Pipeline_SameRoute_InOrder`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Stream plain frames, format only the final, and never sleep a long rate limit
 
@@ -4747,7 +4745,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   97-minute Telegram flood wait verbatim and froze every platform. Every platform call is time-boxed, so a hung platform
   delays one reply, not the chat's queue, and the turn still persists (`Pipeline_HangingSession_StillPersists`).
 - **Evidence:** `src/Agent42.Backend/ChatGateway/ChatReplyStreamer.cs`, `tests/Agent42.Tests/ChatReplyStreamerTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Cosmos JSON omits a CLR-default member, so a bool initialised to `true` flips on reload
 
@@ -4758,7 +4756,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   default to `false` (name the property for its false meaning if needed). Binary serialization does not show this; only
   the Cosmos path does (`ChatConnection_Disabled_StaysDisabledThroughCosmosJson`, mutation-checked).
 - **Evidence:** `src/Agent42.Agents/ChatGateway/ChatConnection.cs`, `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Every Slack Socket Mode envelope must be acked, ignored ones included, and Slack commands start with `!`
 
@@ -4773,7 +4771,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   pairing text must use the capability's prefix, never a literal `/`.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Slack/SlackAdapter.cs` (`HandleEnvelopeAsync`),
   `tests/Agent42.Tests/SlackTests.cs` (`Slack_AcksEveryEnvelope`, mutation-checked; `Slack_Disconnect_Reconnects`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Discord: send with `allowed_mentions` none, and catch 4004 yourself, because Discord.Net reconnects forever
 
@@ -4789,7 +4787,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   what lets tests and DevHost point it at a stand-in.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs`,
   `src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs` (`IsPermanent`), `tests/Agent42.Tests/DiscordTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Chat delivery is a per-host port, accumulated only at the two away-reply sites, and it must never hold the grain
 
@@ -4809,7 +4807,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Agents/ChatGateway/AgentGrain.ChatDelivery.cs`,
   `src/Agent42.Backend/ChatGateway/ChatDeliverySender.cs`, `tests/Agent42.Tests/ChatDeliveryTests.cs`,
   `tests/Agent42.Tests/SiloRegistrationTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Neither OpenAI nor Azure documents Ogg for transcription, and three platforms send voice notes as Ogg/Opus
 
@@ -4821,7 +4819,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   NAME's extension, so a voice note without one gets an extension inferred from its media type.
 - **Evidence:** `src/Agent42.Agents/Speech/ISpeechTranscriptionService.cs` (`SpeechTranscriptionFormats`),
   `.agentic/decisions/0113-server-side-speech-to-text-for-voice-notes.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The provider editor's capability checkboxes are positional: append a new flag LAST
 
@@ -4830,7 +4828,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `[tools, vision, image, embed, speech, reasoning, transcription]`. A flag inserted mid-list silently shifts every
   later one onto the wrong field on save. No test pins the order yet; keep `capDefs` and `collectModels` in step by hand.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/providers.js`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Slack image upload needs `files:write`, and the upload URL Slack returns is pinned like a download
 
@@ -4841,16 +4839,16 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   reinstalled; until then each upload fails and the reply's note points to Agent42.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Slack/SlackWebApi.cs`, `tests/Agent42.Tests/SlackTests.cs`
   (`UploadImage_ToAnUntrustedUploadUrl_SendsNothing`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A .NET file-based app (`dotnet run app.cs`) defaults to `PublishAot`, so reflection JSON fails with an empty 500
 
 - **Claim:** A `#:sdk Microsoft.NET.Sdk.Web` file-based app gets `PublishAot=true`, which turns off reflection-based
   `System.Text.Json`. Any `Results.Ok(new { … })` or anonymous-type body then throws, and with logging cleared it
-  shows only as an empty 500 on every route. Add `#:property PublishAot=false` to a throwaway stand-in or spike (the
-  phase 1b Slack/Discord stand-ins hit it).
-- **Evidence:** the phase 1b DevHost exercise (`.agentic/specs/plan-chat-gateway.md`, "Progress and divergences")
-- **Verified:** 2026-11-21
+  shows only as an empty 500 on every route. Add `#:property PublishAot=false` to a throwaway stand-in or spike.
+- **Evidence:** the Signal DevHost exercise (`.agentic/specs/plan-chat-gateway.md`, the PublishAot note in "Progress and
+  divergences") and `.agentic/specs/completed/plan-self-host-local-storage.md` (same finding)
+- **Verified:** 2026-11-24 (measured on .NET 10; the default on .NET 11 is not re-checked)
 
 ### Easy Auth answers an unauthenticated NON-browser request with 401, not the login redirect
 
@@ -4862,7 +4860,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `Origin: null` is (see the no-referrer entry).
 - **Evidence:** `tools/Agent42.Android/app/src/main/java/nl/agent42/android/api/Credentials.kt`,
   `.agentic/decisions/0114-android-companion-app.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### Building the Android app on Windows: GRADLE_USER_HOME must be a short path, or AAPT2 "can't start"
 
@@ -4899,7 +4897,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/SignalDaemonTests.cs` (`ARenewal_ResetsTheWatchdog`, mutation-checked),
   `tests/Agent42.Tests/ChatGatewayServiceTests.cs` (`LeaseLost_NotifiesParticipants_BeforeSessionsStop`, mutation-checked),
   `.agentic/decisions/0111-chat-gateway-for-chat-apps.md` (phase 3 amendment)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A Signal number is registered, never pasted, and claimed before `register`
 
@@ -4916,7 +4914,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/ChatGateway/AgentApi.ChatGatewaySignal.cs`, `src/Agent42.Agents/ChatGateway/SignalNumberDirectoryGrain.cs`,
   `tests/Agent42.Tests/SignalRegistrationApiTests.cs` (`PastedSignalCredentials_AreRefused_OnCreateAndEdit`,
   mutation-checked; `Register_ANumberAnotherConnectionHolds_Is409_AndNeverCallsRegister`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `JsonContent` sends a chunked body with no Content-Length; signal-cli calls are sent buffered
 
@@ -4931,7 +4929,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   - **Signal has no message id.** Dedupe and quotes use `sender ACI:timestamp`.
 - **Evidence:** `src/Agent42.Backend/ChatGateway/Signal/SignalRpcClient.cs`, `tests/Agent42.Tests/SignalRpcTests.cs`
   (`EveryCall_SendsABufferedJsonBody_WithItsLength`), signal-cli's JSON-RPC man page (github.com/AsamK/signal-cli, man/signal-cli-jsonrpc.5.adoc)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The backend Dockerfile's signal-cli ARGs must stay before the first FROM
 
@@ -4941,7 +4939,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   checksum digest format", which reads like an ADD limitation but isn't. `SignalImageTests` pins the order and the
   pinned version, digest and date.
 - **Evidence:** `src/Agent42.Backend/Dockerfile`, `tests/Agent42.Tests/SignalImageTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A chat-started fleet task answers its own questions, its result turn can't start a task, and it reports after the save
 
@@ -4970,7 +4968,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `Finish_Done_WithOrigin_NotifiesOnce`, `Shutdown_Interrupted_DoesNotNotify`), `tests/Agent42.Tests/FleetToolTests.cs`
   (`Start_InFleetResultTurn_Refused`), `tests/Agent42.Tests/FleetResultDeliveryTests.cs`
   (`ResultTurn_DeletedConversation_Dropped`), `.agentic/decisions/0115-fleet-tasks-from-chat.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `AgentFunctions(context)` runs twice per attempt, so per-attempt state is memoized, never built inside it
 
@@ -5052,7 +5050,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Claim:** `GET /api/search` returns hits straight from `IChatSearchIndex` and does not filter by the conversation
   index, so a conversation that is deliberately never listed (the fleet analyzer panel's `fleet-analyzer-{taskId}`, ADR
   0123) still shows up in the sidebar search, and a click opens it in the chat app, unless the grain skips the projection.
-  `AgentGrain` skips `IndexNewTurnsAsync` for `AgentKinds.FleetAnalyzer`. `search_past_chats` is safe either way, because
+  `AgentGrain` skips `IndexNewTurnsAsync` when `AgentKinds.IsFleetAnalyzer(kind)` (in `PersistTurnUnlessEphemeralAsync`). `search_past_chats` is safe either way, because
   it filters by the index. The same id is reused after Clear, so the DELETE stops a running turn first, and deleting a
   task purges its analyzer conversation (nothing could reach it afterwards).
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`PersistTurnUnlessEphemeralAsync`),
@@ -5154,8 +5152,9 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   result for the browser on the run's `TurnContext` and returns the shaped, bounded value to the model as before; the raw one is
   capped at 64 KB, rides the stream event and the replay blob, and never the session (ADR 0004). An extension's capability value
   must be a `JsonElement`: an anonymous object throws `NotSupportedException` from the source-generated context on the first request.
-- **Evidence:** `src/Agent42.Backend/Mcp/McpConnectionFactory.cs` (`TruncatingMcpTool`), `src/Agent42.Backend/Mcp/McpAppResultCapture.cs`, `tests/Agent42.Tests/McpAppsGrainTests.cs`
-- **Verified:** 2026-11-21
+- **Evidence:** `src/Agent42.Backend/Mcp/McpConnectionFactory.cs` (`TruncatingMcpTool`), `src/Agent42.Backend/Mcp/McpAppResultCapture.cs`,
+  `src/Agent42.Agents/Mcp/McpToolLimits.cs` (`MaxAppResultBytes`, the 64 KB cap), `tests/Agent42.Tests/McpAppsGrainTests.cs`
+- **Verified:** 2026-11-24 (SDK 2.2.0 measurements not re-run on ModelContextProtocol 2.4.0)
 
 ### Tool visibility has TWO writers: the provider and the connection tester
 
@@ -5207,7 +5206,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`Approve_Twice_SecondIsAConflict_PromptChangedOnce`)
 - **Verified:** 2026-11-24
 
-## A stream failure is a 200 with `ErrorContent`, not an exception, and an empty message is never stored
+### A stream failure is a 200 with `ErrorContent`, not an exception, and an empty message is never stored
 - **Claim:** On the Responses path a provider failure can arrive two ways, and only one throws. An HTTP 400 throws
   `ClientResultException` (ADR 0046's "Transmission failed"). A Responses `error` SSE event is a 200 whose update carries
   `ErrorContent`, and `ProjectStreamedContent` used to drop it, so the user saw an empty bubble. The framework also stores an
