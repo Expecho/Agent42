@@ -451,6 +451,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   timeout does *not* bound the body read, and a slow-drip response would stall the non-reentrant grain
   indefinitely. `WebDocumentLimits.DownloadDeadline` (a linked `CancellationTokenSource` over the whole
   download) is what actually bounds it. Do not "simplify" it away as a duplicate of the timeout.
+- **Enforced by:** `ProjectLayoutTests.EveryNamedHttpClient_RemovesTheInheritedRetryPipeline` (every `services.AddHttpClient` in `src/`)
 - **Evidence:** `src/Agent42.ServiceDefaults/Extensions.cs` (`ConfigureHttpClientDefaults`),
   `src/Agent42.Backend/Program.cs` (`RemoveAllResilienceHandlers` on every named client — SearXNG
   search, the SearXNG UI proxy (ADR 0059), the geocoding
@@ -525,6 +526,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   nothing said so. The client now sends no `safesearch` parameter at all, so the instance owns the policy
   and the config file means what it says. Same trap shape as `server.port` above: a setting that looks
   authoritative but is overridden elsewhere. (Current instance policy: `safe_search: 0`.)
+- **Enforced by:** `SearxngEngineConfigTests.JsonFormatIsOn_AndTheClientSendsNoSafeSearch`
 - **Evidence:** `infra/searxng/settings.yml`, `infra/searxng/Dockerfile`,
   `infra/modules/container-app.bicep` (`SEARXNG_PORT`), `src/Agent42.Backend/Web/SearxngWebSearch.cs`
   (the 403 message names the cause; no `safesearch` on the query string)
@@ -2462,9 +2464,8 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   4. **The drag gate is per INTERACTION, never per device.** `li.draggable = e.pointerType === "mouse"`,
      set in the `pointerdown` handler `wireRowReveal` already owns. A fine-pointer media query reports
      the **primary** pointer, so a touchscreen laptop matches it — the exact device where a live
-     `draggable` races the 400 ms reveal. **No test asserts that query's absence today** (audit 2026-11-24:
-     nothing under `tests/` mentions it, though the `sidebar.js` comment claims a test does), so
-     re-adding it is caught only by review. For the same reason the move action is a fourth glyph
+     `draggable` races the 400 ms reveal. Enforced by `ChatGroupAssetsTests.DragToFile_IsDecidedPerInteraction_NeverByAFinePointerQuery`, a plain
+     substring search that matches comments too, so never spell the rejected query out in `sidebar.js`. For the same reason the move action is a fourth glyph
      at **every** width rather than a touch-only one — a hybrid laptop matches `(hover: hover)` and still
      raises the long press, so a gated glyph strands it with no way to file a chat.
   Two smaller ones in the same family: drag listeners are **delegated on `conversationList`**, since
@@ -4515,6 +4516,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   default to `false` (name the property for its false meaning if needed). Binary serialization does not show this; only
   the Cosmos path does (`ChatConnection_Disabled_StaysDisabledThroughCosmosJson`, mutation-checked).
 - **Evidence:** `src/Agent42.Agents/ChatGateway/ChatConnection.cs`, `tests/Agent42.Tests/GrainStorageSerializerTests.cs`
+- **Enforced by:** `GrainStorageSerializerTests.NoSerializedBool_DefaultsToTrue` (every `[GenerateSerializer]` type in Agent42.Agents)
 - **Verified:** 2026-11-24
 
 ### Every Slack Socket Mode envelope must be acked, ignored ones included, and Slack commands start with `!`
@@ -4587,6 +4589,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `[tools, vision, image, embed, speech, reasoning, transcription]`. A flag inserted mid-list silently shifts every
   later one onto the wrong field on save. No test pins the order yet; keep `capDefs` and `collectModels` in step by hand.
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/providers.js`
+- **Enforced by:** `ModelRouterAssetsTests.ProviderEditor_CapabilityCheckboxes_StayInOrder` (update both lists in it when you add a flag)
 - **Verified:** 2026-11-24
 
 ### Slack image upload needs `files:write`, and the upload URL Slack returns is pinned like a download
@@ -4747,7 +4750,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs` (`PlannerInstructions`, `CreateAgentFactory`),
   `tests/Agent42.Tests/FleetTeamRunnerTests.cs` (`TodosFor_SameAttemptSameList`),
   `.agentic/decisions/0117-fleet-todos.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A fleet `LoopAgent` must keep its feedback IN the output: `ExcludeOnBehalfOfMessages = false`
 
@@ -4764,7 +4767,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Fleet/FleetEventMapper.cs` (`Publish`),
   `tests/Agent42.Tests/FleetSelfReviewTests.cs` (`Runner_Sequential_TheTeamResultIsTheSecondDraft`,
   `Loop_AJudgeThatFails_KeepsTheResult`), `.agentic/decisions/0119-fleet-self-review.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A fleet share link exposes the live WORKSPACE, and its public routes reuse the owner's serving cores
 
@@ -4782,7 +4785,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `FleetCanvasVersionAsync`, `DeleteFleetTask`), `tests/Agent42.Tests/FleetShareApiTests.cs`
   (`Public_Task_ReturnsExactlyTheAllowlist`, `Public_EndedTask_ReasonIsFixedText`, `Public_Files_ListAndDownload_AreSafe`,
   `DeleteTask_RevokesLink`), `.agentic/decisions/0120-fleet-share-links.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 
 ### The fleet analyzer sees only the caller's own spans, and a re-run it starts is NOT an origin task
@@ -4804,7 +4807,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `Rerun_StartsANonOriginTask_WithTheNoteTheCapAndANarrowedSelection`, `Rerun_DisableTools_CanOnlyNarrow`),
   `tests/Agent42.Tests/CopilotAgentTests.cs` (`CopilotFunctions_ExcludeTheFleetAnalyzer`),
   `.agentic/decisions/0122-fleet-analyzer.md`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 
 ### An internal conversation id must be kept out of chat search by the grain, not by the index filter
@@ -4818,7 +4821,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.cs` (`PersistTurnUnlessEphemeralAsync`),
   `src/Agent42.Backend/Fleet/AgentApi.FleetAnalyzer.cs`, `tests/Agent42.Tests/FleetAnalyzerPanelApiTests.cs`
   (`Panel_NotListed`, `DeletingTheTask_PurgesItsAnalyzerConversation`)
-- **Verified:** 2026-11-09 (audit 2026-11-21: the kind guard exists only in PersistTurnUnlessEphemeralAsync; the other IndexNewTurnsAsync sites (reminder fire, edit/fork, image turn) have none, and whether the analyzer kind can reach them is unchecked)
+- **Verified:** 2026-11-24 (audit 2026-11-21: the kind guard exists only in PersistTurnUnlessEphemeralAsync; the other IndexNewTurnsAsync sites (reminder fire, edit/fork, image turn) have none, and whether the analyzer kind can reach them is unchecked)
 
 ### Local storage writes the same `$type` JSON as Cosmos, so every persisted-state rule holds on both providers
 
@@ -4833,7 +4836,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   row version, so a second write through a fresh `GrainState` for the same id throws `InconsistentStateException` (a grain's
   own `IPersistentState` carries the version, so only hand-driven storage calls hit it).
 - **Evidence:** `src/Agent42.Backend/Storage/PostgresSchema.cs`, `tests/Agent42.Tests/PostgresGrainStorageTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### pgvector cannot index a vector above 2000 dimensions, so the local document index is an exact scan
 
@@ -4842,7 +4845,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   outgrows the scan, a `halfvec` column can be HNSW-indexed. `Storage:Local:DocChunksDimensions` fixes the column at creation: changing
   it needs a new database, and ingest's pre-upsert dimension check (ADR 0030) is what turns a mismatch into a clear message.
 - **Evidence:** `src/Agent42.Backend/Storage/PostgresDocumentIndex.cs`, `src/Agent42.Backend/Storage/Sql/agent42.sql`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The model's attachment URL is persisted in the session, so local storage cannot use a data: URL
 
@@ -4855,7 +4858,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   must go through the store, and any new `IChatClient` path must be built by that factory, or it will send the reference.
 - **Evidence:** `src/Agent42.Backend/Storage/AttachmentInlineChatClient.cs`, `tests/Agent42.Tests/AttachmentUrlRewriteTests.cs`
   (`EveryProviderKind_TheFactoryBuilds_RewritesTheReference`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `LocalFileStore.Resolve` is the only place a storage key becomes a file path
 
@@ -4865,13 +4868,14 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   store may build a path itself or call `Path.Combine` on a key. The attachment store escapes each segment first and keeps
   its metadata sidecars in a separate folder, so a client-chosen attachment id can never read a sidecar as content.
 - **Evidence:** `src/Agent42.Backend/Storage/LocalFileStore.cs`, `tests/Agent42.Tests/LocalFileStoreTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### An absent GitHub variable expands to empty, and empty means "off" for optional Bicep params
 
 - **Claim:** `${{ vars.X }}` for an unset variable is an empty string, not an error. For `customDomainName` that means "bind no domain" (silently unbinds a live one), for the shared-infra names it means "create a new registry and environment" (a stray ACR, pushed to), and for `cosmosLocation` an attempted move of an immutable account. The `preflight` job (first in `deploy.yml`, both other jobs `needs` it) fails closed on each, and passes optional values to Bicep only when set. A new optional variable needs the same treatment: pass it only when non-empty, and add a preflight check if empty would destroy something. Secrets behave the same way (see `searxngSecret`'s `@minLength`).
 - **Evidence:** `.github/workflows/deploy.yml` (`preflight`, the `optional=()` array), `infra/main.bicep` (`searxngSecret`), `tests/Agent42.Tests/InfraPortabilityTests.cs`
-- **Verified:** 2026-11-21
+- **Enforced by:** `InfraPortabilityTests.Deploy_PassesEveryOptionalParam_OnlyWhenItsVariableIsSet`
+- **Verified:** 2026-11-24
 
 ### Published images are public, so nothing tenant-specific may be baked into them
 
@@ -4881,7 +4885,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   private until the owner flips it public once in the package settings (a workflow cannot), and the image names must keep
   matching `infra/main.bicep`'s `imageName` defaults or an imported image is not found.
 - **Evidence:** `.github/workflows/publish-images.yml`, `tests/Agent42.Tests/PublishImagesTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The MCP App frame route's CSP header is the safety, and declared domains are untrusted input
 
@@ -4894,7 +4898,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   bare TLD, at most 16) and dropped on doubt: a dropped entry narrows the policy and never widens it. Regex `$` matches before a
   trailing newline; the parser uses `\z`.
 - **Evidence:** `src/Agent42.Backend/Mcp/McpAppCsp.cs`, `src/Agent42.Backend/Mcp/AgentApi.McpApps.cs`, `tests/Agent42.Tests/McpAppCspTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A view's postMessage origin is `"null"`: authenticate by `event.source`, reply to `"*"`
 
@@ -4904,7 +4908,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tool-result`, and send `ui/resource-teardown` before removing the frame. `ui/open-link` needs `navigator.userActivation.isActive`
   (a click inside the frame does not reach the page's own listeners).
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/mcpapps.js`, `tests/Agent42.Tests/McpAppsAssetsTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The model's MCP result and the view's result differ, and the raw one must stay out of the session
 
@@ -4924,7 +4928,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   write tool names, so both call `McpAppMeta.ModelTools`. With apps off nothing is filtered. A view's own `tools/call` is a third
   reader: it goes through `McpAppRegistry`, which accepts only tools visible to `"app"` on the route's server.
 - **Evidence:** `src/Agent42.Backend/Mcp/McpAppMeta.cs`, `tests/Agent42.Tests/UserMcpToolProviderTests.cs`, `tests/Agent42.Tests/McpConnectionTesterTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The fleet's run path reads the task's RESOLVED options, never the singleton
 
@@ -4940,7 +4944,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetSettingsService.cs`, `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`SubmitAsync`,
   `Register`), `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`BuildRunAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Task_UsesUserSettings_AndOtherUserUnaffected`, `Running_KeepsSnapshot`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A rule the dream's model must follow goes in the tool description, never only in the `dream` prompt
 
@@ -4979,7 +4983,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ProviderErrorEvent_IsStreamed_NotStored_AndLeavesNoEmptyMessage`,
   `EmptyReply_IsReportedAsAnError_AndNotStoredAsAnEmptyMessage`). The fake needs an update with NO contents but a message id
   (`FakeChatClient.EmptyReplyMarker`) to reach the empty-message state: zero updates stores nothing.
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### `auto` is a wire value: it is never persisted, and every entry that takes a model refuses it
 
@@ -4997,7 +5001,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Agents/Conversations/AgentGrain.ModelRouting.cs`, `src/Agent42.Backend/Models/Routing/AutoModelRefusal.cs`,
   `tests/Agent42.Tests/ModelRouterGrainTests.cs` (`AutoOutsideChat_BindAgent_IsRefused_AndNothingIsPersisted`, `StaleAuto_*`),
   `tests/Agent42.Tests/ProvidersApiTests.cs` (`AutoOutsideChat_*`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### An Auto picture turn never switches the conversation's model, and an image model is never the "current" model
 
@@ -5015,7 +5019,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Models/Routing/ModelRouterService.cs` (`DecideImage`, `DecideChat`), `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`
   (`ImageInputRef`), `tests/Agent42.Tests/ModelRouterGrainTests.cs` (`AutoImageTurn_*`, `AutoFromAnImageModel_*`),
   `tests/Agent42.Tests/ModelRouterServiceTests.cs` (`ImageBar_*`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A DecisionModel provider is not a chat model: it must stay out of every list, default and fallback
 
@@ -5027,7 +5031,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   origin. Tests that loop over `Enum.GetValues<ProviderKind>` see the new member.
 - **Evidence:** `src/Agent42.Backend/Models/ModelProviderBuilder.cs`, `src/Agent42.Backend/Models/DecisionModelOnlyChatClient.cs`,
   `src/Agent42.Backend/Models/Routing/FoundryDecisionClient.cs`, `tests/Agent42.Tests/DecisionModelProviderTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The Decision-1 router is not an `IChatClient`, so its tokens are outside the usage dashboard
 
@@ -5038,7 +5042,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `AddServiceDefaults` retry pipeline (CLAUDE.md rule 8) and the call has a 4 s cap, so a retry never doubles a turn's wait.
 - **Evidence:** `src/Agent42.Backend/Models/Routing/FoundryDecisionClient.cs`, `src/Agent42.Agents/Models/Routing/ModelRouterService.cs`,
   `tests/Agent42.Tests/DecisionModelProviderTests.cs` (`Parse_ReadsTheCapturedSample`)
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 
 ### .NET SDK 11 Debug builds of two chained Web projects fail on a Hot Reload browser-tools asset
@@ -5049,7 +5053,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `_HotReloadBrowserToolsEnabled`: the SDK overwrites that underscore one unconditionally. Delete `obj/Debug` after changing it.
   Also: Anthropic SDK 13 sends `ApiKey` as `Authorization: Bearer`, not `x-api-key` (`AnthropicEnvironmentTests` pins it).
 - **Evidence:** `Directory.Build.props`, `tests/Agent42.Tests/AnthropicEnvironmentTests.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### The Aspire AppHost has no SDK: keep `Aspire.Hosting.AppHost` a direct reference, and it needs the Aspire CLI 17+
 
@@ -5062,7 +5066,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   the packages (or none) breaks `dotnet run --project src/Agent42.AppHost`. A DCP "controller host" timeout of 2 minutes is
   usually `~\.dcp` state with the wrong owner: move that folder aside.
 - **Evidence:** `src/Agent42.AppHost/Agent42.AppHost.csproj`, `src/Agent42.AppHost/AppHost.cs`
-- **Verified:** 2026-11-21
+- **Verified:** 2026-11-24
 
 ### A Responses stream with no `output_text.delta` events yields only usage: the answer rides in `response.completed`
 
@@ -5073,4 +5077,4 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   A stream that streamed text is untouched, so nothing is doubled. Chat Completions is not affected.
 - **Evidence:** `src/Agent42.Backend/Models/ResponsesCompletedTextFallbackChatClient.cs`, `src/Agent42.Backend/Models/ChatClientFactory.cs`,
   `tests/Agent42.Tests/ResponsesCompletedTextFallbackTests.cs`
-- **Verified:** 2026-11-22
+- **Verified:** 2026-11-24
