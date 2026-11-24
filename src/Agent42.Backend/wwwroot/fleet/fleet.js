@@ -32,6 +32,7 @@
     clarify: null,          // the clarify phase (ADR 0118), from its event log: { phase: "asking" | "done", brief, questions, cleared }
     detailView: loadDetailView(), // "result" | "graph" | "details" (ADR 0116), the open tab, a per-viewer preference kept in localStorage
     search: "",             // the sidebar's task filter
+    threadOpen: new Map(),  // first task id -> open, for the follow-up threads the user opened or closed by hand
     graphOpen: new Set(),   // done sub-teams the graph shows in full although the fleet is large
   };
 
@@ -701,15 +702,63 @@
     }
   }
 
-  // The sidebar's task list: the request is the title, the number, state and time the meta line.
+  // Follow-up threads: every task under the first task of its chain (followUpOf, walked while the parent is in the list
+  // and older, so a deleted parent starts a thread and no loop is possible), the follow-ups oldest first. `tasks` is
+  // newest first, so a thread is met first through its newest task and the Map's insertion order is "latest activity
+  // first": a new follow-up moves its thread to the top.
+  function taskThreads(tasks) {
+    const at = new Map(tasks.map((t, i) => [t.id, i]));
+    const rootOf = t => {
+      while (t.followUpOf && at.get(t.followUpOf) > at.get(t.id)) t = tasks[at.get(t.followUpOf)];
+      return t;
+    };
+    const threads = new Map();
+    for (const t of tasks) {
+      const root = rootOf(t);
+      if (!threads.has(root.id)) threads.set(root.id, { root, followUps: [] });
+      if (root !== t) threads.get(root.id).followUps.unshift(t);
+    }
+    return [...threads.values()];
+  }
+
+  // A thread is open while the user left it open, or by default while it holds the selected task or a running follow-up.
+  function threadOpen(thread) {
+    if (S.threadOpen.has(thread.root.id)) return S.threadOpen.get(thread.root.id);
+    return thread.followUps.some(t => t.id === S.selectedTask || t.status === "running");
+  }
+
+  // The sidebar's task list, one thread per chain of follow-ups: the request is the title, the number, state and time
+  // the meta line. A search keeps a thread whose first task or any follow-up matches, and opens it on the matches only.
   function renderTaskList() {
     const q = S.search.trim().toLowerCase();
     const total = S.tasks.length;
-    const items = S.tasks.map((t, i) => ({ t, n: total - i })).filter(({ t, n }) => !q || (t.request || "").toLowerCase().includes(q) || `#${n}` === q);
+    const num = new Map(S.tasks.map((t, i) => [t.id, total - i]));
+    const matches = t => !q || (t.request || "").toLowerCase().includes(q) || `#${num.get(t.id)}` === q;
+    const row = (t, extra, onParent) => h("div", { class: "task-item" + extra + (t.id === S.selectedTask && S.view === "tasks" ? " sel" : ""), onclick: () => selectTask(t.id) },
+      h("div", { class: "task-title", text: firstLine(t.request, 70) }),
+      h("div", { class: "task-meta" }, h("span", { class: "dot " + t.status }), `#${num.get(t.id)} · ${statusText(t.status)} · `, dur(t.startedAt, t.finishedAt),
+        onParent && h("span", { class: "on-parent", title: `Follow-up on #${num.get(onParent)}`, text: `↳ #${num.get(onParent)}` })));
+    const items = [];
+    for (const thread of taskThreads(S.tasks)) {
+      const shown = q ? thread.followUps.filter(matches) : thread.followUps;
+      if (q && !matches(thread.root) && shown.length === 0) continue;
+      const open = q ? shown.length > 0 : threadOpen(thread);
+      const n = thread.followUps.length;
+      const newest = thread.followUps[n - 1];
+      const label = `${open ? "Hide" : "Show"} ${n} follow-up${n === 1 ? "" : "s"}`;
+      const toggle = n > 0 && !q && h("button", {
+        class: "thread-toggle" + (open ? " open" : ""), "aria-expanded": String(open), "aria-label": label, title: label,
+        onclick: e => { e.stopPropagation(); S.threadOpen.set(thread.root.id, !open); renderTaskList(); },
+      }, !open && h("span", { class: "dot " + newest.status }), String(n));
+      const head = row(thread.root, n > 0 ? " thread-root" : "");
+      if (toggle) head.querySelector(".task-meta").append(toggle);
+      if (!open) { items.push(head); continue; }
+      // A follow-up says which task it continues only when that is not the row right above it (a branch).
+      const kids = shown.map((t, i) => row(t, " follow-up", t.followUpOf !== (shown[i - 1] || thread.root).id && num.has(t.followUpOf) ? t.followUpOf : null));
+      items.push(h("div", { class: "thread" }, head, h("div", { class: "thread-kids" }, kids)));
+    }
     $("#taskList").replaceChildren(...(items.length
-      ? items.map(({ t, n }) => h("div", { class: "task-item" + (t.id === S.selectedTask && S.view === "tasks" ? " sel" : ""), onclick: () => selectTask(t.id) },
-        h("div", { class: "task-title", text: firstLine(t.request, 70) }),
-        h("div", { class: "task-meta" }, h("span", { class: "dot " + t.status }), `#${n} · ${statusText(t.status)} · `, dur(t.startedAt, t.finishedAt))))
+      ? items
       : [h("div", { class: "sb-empty muted", text: total ? "No task matches." : "No tasks yet." })]));
   }
 
@@ -1821,6 +1870,9 @@
   function selectTask(taskId) {
     S.view = "tasks"; S.panel = null; S.freshTask = !taskById(taskId)?.canFollowUp;
     S.selectedTask = taskId || null;
+    // A thread closed by hand opens again when one of its follow-ups is selected, so the selection is never hidden.
+    const root = taskId && taskThreads(S.tasks).find(th => th.followUps.some(t => t.id === taskId))?.root;
+    if (root) S.threadOpen.delete(root.id);
     S.selectedTeam = null; S.selectedAttempt = null; S.files = null; S.canvas = null;
     closeCanvasPane();
     resetTaskState();

@@ -125,6 +125,27 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("adoptOrphans(m, team, a, subs);", script, StringComparison.Ordinal);
     }
 
+    /// <summary>ADR 0142: the task list groups follow-ups under the first task of their chain. The walk follows only an
+    /// OLDER parent (no loop, a deleted parent starts a thread), the list renders threads rather than raw tasks, the
+    /// toggle never selects the row it sits on, a request is set as text, and selecting a follow-up reopens its thread.</summary>
+    [Fact]
+    public async Task FleetJs_TaskList_GroupsFollowUpsIntoThreads()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+        var css = await _client.GetStringAsync("/fleet/fleet.css");
+
+        Assert.Contains("while (t.followUpOf && at.get(t.followUpOf) > at.get(t.id)) t = tasks[at.get(t.followUpOf)];", script, StringComparison.Ordinal);
+        var start = script.IndexOf("function renderTaskList(", StringComparison.Ordinal);
+        Assert.True(start > 0, "renderTaskList is missing");
+        var body = script[start..script.IndexOf("function teamLabel(", start, StringComparison.Ordinal)];
+        Assert.Contains("for (const thread of taskThreads(S.tasks))", body, StringComparison.Ordinal);
+        Assert.Contains("onclick: e => { e.stopPropagation(); S.threadOpen.set(thread.root.id, !open); renderTaskList(); }", body, StringComparison.Ordinal);
+        Assert.Contains("h(\"div\", { class: \"task-title\", text: firstLine(t.request, 70) })", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("innerHTML", body, StringComparison.Ordinal);
+        Assert.Contains("if (root) S.threadOpen.delete(root.id);", script, StringComparison.Ordinal);
+        Assert.Contains(".thread-kids {", css, StringComparison.Ordinal);
+    }
+
     /// <summary>ADR 0116: /fleet is not in the service worker's SHELL, so a change to it needs no CACHE bump.</summary>
     [Fact]
     public async Task ServiceWorker_LeavesFleetOutOfTheShell()

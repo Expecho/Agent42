@@ -34,7 +34,7 @@ A Details | Graph switch above the task shows teams as boxes and agents as nodes
 
 ## Follow up and delete
 
-A done task can be followed up: a new team gets the earlier requests, results and workspace. **Delete task** removes a task that is not running, with its log. The workspace and its files go once no follow-up shares them. Workspace files are listed under the task and download as attachments.
+A done task can be followed up: a new team gets the earlier requests, results and workspace. In the sidebar's task list, follow-ups sit under the first task of their chain, and a thread moves to the top when it gets a new follow-up. A thread with a running or selected follow-up opens by itself, and its chip shows or hides the follow-ups. A follow-up that branches from an earlier step says which task it continues (`↳ #12`). **Delete task** removes a task that is not running, with its log. The workspace and its files go once no follow-up shares them. Workspace files are listed under the task and download as attachments.
 
 ## Start a task from a chat
 
