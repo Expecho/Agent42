@@ -79,8 +79,10 @@ public static partial class AgentApi
                 new AgentDefinition(id, request.Name, request.Description, request.Model, request.SystemPrompt,
                     default, default, request.Continuous, request.EnabledTools,
                     McpExposed: request.McpExposed, RetentionMinutes: request.RetentionMinutes),
-                request.RegenerateKey, request.RegenerateEmail);
-            return Results.Json(new AgentSaveResponse(result.Agent, result.PlaintextApiKey));
+                request.RegenerateKey, request.RegenerateEmail, request.PlainEmail);
+            return result.EmailError is { } emailError
+                ? EmailRefusal(emailError)
+                : Results.Json(new AgentSaveResponse(result.Agent, result.PlaintextApiKey));
         });
 
         // Deletes a stored agent (and deregisters its key). Existing chats started from it keep their
@@ -93,6 +95,26 @@ public static partial class AgentApi
 
         app.MapPost("/api/agent-run", RunAgentAsync).DisableAntiforgery();
     }
+
+    // A refused plain-name address change (ADR 0141): the registry changed nothing. A taken name is a conflict (409);
+    // everything else is a request the caller can fix (400). Plain-text bodies like the other refusals.
+    private static IResult EmailRefusal(string error) => error switch
+    {
+        EmailErrors.Taken => Results.Text(
+            "That address is taken. Rename the agent first.", "text/plain", statusCode: StatusCodes.Status409Conflict),
+        EmailErrors.Empty => Results.Text(
+            "The agent's name has no letters or digits to build an address from. Rename it first.", "text/plain",
+            statusCode: StatusCodes.Status400BadRequest),
+        EmailErrors.Reserved => Results.Text(
+            "That address is reserved. Rename the agent first.", "text/plain", statusCode: StatusCodes.Status400BadRequest),
+        EmailErrors.NotPlain => Results.Text(
+            "A plain-name address cannot be regenerated. Turn the plain name off first.", "text/plain",
+            statusCode: StatusCodes.Status400BadRequest),
+        EmailErrors.UnsafeTools => Results.Text(
+            "A plain-name address needs an agent without shell tools, memory, past-chats search or the all-tools default.",
+            "text/plain", statusCode: StatusCodes.Status400BadRequest),
+        _ => Results.Text("The address change was refused.", "text/plain", statusCode: StatusCodes.Status400BadRequest),
+    };
 
     private const string RetentionRefusal = "Unknown retention. Use one of 60, 1440, 10080, 43200 minutes, or omit it.";
 

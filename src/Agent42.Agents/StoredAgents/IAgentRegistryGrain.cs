@@ -32,10 +32,14 @@ public interface IAgentRegistryGrain : IGrainWithStringKey
     ///
     /// <para>Owns the inbound email token the same way (ADR 0096): minted on insert and, when
     /// <paramref name="regenerateEmail"/> is set, on update, keeping <see cref="IEmailAddressDirectoryGrain"/> in
-    /// sync. The incoming <see cref="AgentDefinition.EmailToken"/> is ignored too.</para>
+    /// sync. The incoming <see cref="AgentDefinition.EmailToken"/> and <see cref="AgentDefinition.EmailPlain"/> are ignored too:
+    /// <paramref name="plainEmail"/> (<c>null</c> keep, <c>true</c> opt in, <c>false</c> opt out) is the only way to change
+    /// them, update-only (ADR 0141). A refused opt-in, rename or save while plain comes back as
+    /// <see cref="AgentSaveResult.EmailError"/> with the stored agent unchanged.</para>
     /// </summary>
     [Alias("SaveAsync")]
-    Task<AgentSaveResult> SaveAsync(AgentDefinition agent, bool regenerateKey = false, bool regenerateEmail = false);
+    Task<AgentSaveResult> SaveAsync(
+        AgentDefinition agent, bool regenerateKey = false, bool regenerateEmail = false, bool? plainEmail = null);
 
     /// <summary>
     /// Seeds the built-in research agent (ADR 0082) on <paramref name="model"/>, at most once per user. A no-op
@@ -60,4 +64,5 @@ public interface IAgentRegistryGrain : IGrainWithStringKey
 [Alias("Agent42.Agents.AgentSaveResult")]
 public sealed record AgentSaveResult(
     [property: Id(0)] AgentDefinition Agent,
-    [property: Id(1)] string? PlaintextApiKey);
+    [property: Id(1)] string? PlaintextApiKey,
+    [property: Id(2)] string? EmailError = null);

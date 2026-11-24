@@ -302,6 +302,28 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
         Assert.Equal("tok", agent.EmailToken);
     }
 
+    // ADR 0141: EmailPlain is a trailing nullable on the Cosmos JSON path; a document without it reads null.
+    [Fact]
+    public void AgentDefinition_EmailPlain_RoundTripsJson()
+    {
+        var registry = Serializer().Deserialize<AgentRegistryState>(Serializer().Serialize(new AgentRegistryState
+        {
+            Agents =
+            [
+                new AgentDefinition("a-1", "Plain", "", "fake-model", "sys", default, default,
+                    ApiKeyHash: "h", EmailToken: "plain", RetentionMinutes: 60, EmailPlain: true),
+                new AgentDefinition("a-2", "Random", "", "fake-model", "sys", default, default, EmailToken: "agent-x"),
+            ],
+        }));
+
+        Assert.True(registry.Agents[0].EmailPlain);
+        Assert.Equal(60, registry.Agents[0].RetentionMinutes);
+        Assert.Equal("plain", registry.Agents[0].EmailToken);
+        Assert.Null(registry.Agents[1].EmailPlain);
+        Assert.Null(Assert.Single(
+            Serializer().Deserialize<AgentRegistryState>(new BinaryData(PreResearchAgentRegistryJson)).Agents).EmailPlain);
+    }
+
     [Fact]
     public void DocumentsWithoutRetention_ReadNull()
     {

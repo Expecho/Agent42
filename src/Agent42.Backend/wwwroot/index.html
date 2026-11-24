@@ -409,6 +409,14 @@
             <button class="agent-form__btn" type="button" id="agentEmailCopyBtn">Copy</button>
           </div>
           <button class="agent-form__btn" type="button" id="agentRegenerateEmailBtn">Regenerate address</button>
+          <!-- Plain-name address (ADR 0141): opt-in, replaces the random address with one built from the agent's name.
+               The address stops being a secret, so the save confirms and the server refuses unsafe tools. -->
+          <label class="agent-form__field agent-form__field--check" id="agentEmailPlainRow">
+            <input class="agent-form__checkbox" type="checkbox" id="agentEmailPlainInput">
+            <span class="agent-form__label">// readable address from the name</span>
+          </label>
+          <p class="agent-form__note" id="agentEmailPlainHint" hidden></p>
+          <p class="agent-form__note agent-form__note--error" id="agentEmailError" role="alert" hidden></p>
           <p class="agent-form__note" id="agentEmailNote">Email or forward a message to this address and the agent runs on it, attachments included. The reply appears in your chat list; nothing is emailed back. Anyone who has the address can do this, so only use it with an agent whose tools you trust with untrusted mail: turn off Past chats, Long-term memory and web fetching for it, or a message can ask it to look through your other chats and send them on.</p>
         </section>
       </div>

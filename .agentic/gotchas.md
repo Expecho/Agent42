@@ -2021,13 +2021,23 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `IEmailAddressDirectoryGrain` in the **same three orders, independently**: `regenerateEmail` deregisters the old
   token's hash first, and `DeleteAsync` deregisters both (after the webhook clear and the registry write). A missed
   email deregister is worse than a missed key one, because anybody who ever saw the address can use it.
+  **A plain-name address (ADR 0141) adds a claim order:** opt-in and rename are `TryClaim(new)` (refuse before any change),
+  then deregister the old, then write; opt-out deregisters the slug FIRST. Every save of a plain agent re-claims its current
+  slug (idempotent), or a crash after the deregister leaves the address dead for good. Cross-user conflicts are refused with
+  no call to the holder's registry (two non-reentrant registries can deadlock); only a same-user holder is inspected, from
+  `_state`, never through the grain's own interface. Delete clears a plain slug with `DeregisterIfHeldBy`, not unconditionally.
+- **A plain-name address is not a credential (ADR 0141).** Rotation, the 160-bit assumption and "regenerate is the only
+  revocation" do not hold for it, so never rely on the address for secrecy. That is why the registry refuses it for Copilot
+  kinds and for `EnabledTools` null/`memory`/`past_chats` (`EmailAddressLifecycle`), and why `PlainEmailRateLimiter` exists.
 - **Evidence:** `src/Agent42.Agents/StoredAgents/ApiKey.cs`, `src/Agent42.Agents/StoredAgents/AgentKeyDirectoryGrain.cs`,
   `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs` (`SaveAsync` per-operation ordering, `DeleteAsync`),
   `tests/Agent42.Tests/AgentRegistryGrainTests.cs` (`AgentKey_Regenerate_InvalidatesOldKey`,
   `AgentDelete_DeregistersKey`, `EmailAddress_Regenerate_InvalidatesOld`, `AgentDelete_DeregistersBothDirectories`),
   `.agentic/decisions/0022-per-agent-api-key-and-async-run-endpoint.md`,
-  `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`
-- **Verified:** 2026-11-21
+  `.agentic/decisions/0096-inbound-email-triggers-a-stored-agent.md`,
+  `.agentic/decisions/0141-plain-name-inbound-email-address.md`, `src/Agent42.Agents/Email/EmailAddressLifecycle.cs`,
+  `tests/Agent42.Tests/AgentRegistryGrainTests.cs` (`PlainEmail_*`)
+- **Verified:** 2026-11-23
 
 ### An Easy-Auth `excludedPaths` endpoint is publicly reachable and must self-enforce auth + fail closed
 

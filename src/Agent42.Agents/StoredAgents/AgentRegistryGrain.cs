@@ -40,7 +40,8 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
     public Task<AgentDefinition?> GetAsync(string id)
         => Task.FromResult(_state.State.Agents.FirstOrDefault(a => a.Id == id));
 
-    public async Task<AgentSaveResult> SaveAsync(AgentDefinition agent, bool regenerateKey = false, bool regenerateEmail = false)
+    public async Task<AgentSaveResult> SaveAsync(
+        AgentDefinition agent, bool regenerateKey = false, bool regenerateEmail = false, bool? plainEmail = null)
     {
         var agents = _state.State.Agents;
         var now = DateTimeOffset.UtcNow;
@@ -70,6 +71,14 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
         var storedHash = previous.ApiKeyHash;
         string? plaintext = null;
 
+        // The inbound address runs its own order and may refuse (ADR 0141): decide it BEFORE the key is touched, so a
+        // refusal changes nothing at all.
+        var email = await EmailLifecycle().ApplyAsync(previous, agent, plainEmail, regenerateEmail);
+        if (email.Error is not null)
+        {
+            return new AgentSaveResult(previous, null, email.Error);
+        }
+
         if (regenerateKey)
         {
             // Regenerate order (constraint 2) — the OPPOSITE of create/delete, deliberately: deregister
@@ -87,14 +96,6 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             storedHash = newHash;
         }
 
-        // The email token follows the same regenerate order, independently (ADR 0096): the OLD address dies first.
-        var storedEmailToken = previous.EmailToken;
-        if (regenerateEmail)
-        {
-            await DeregisterEmailAsync(previous.EmailToken);
-            storedEmailToken = EmailAddress.Generate().Token;
-        }
-
         // Kind is preserved exactly like the hash: the grain is the authority, and an update never changes it
         // (ADR 0082). Research and copilot agents are per-chat only (ADR 0016: a continuous chat is one 2 MB
         // grain), so Continuous is forced off rather than trusted.
@@ -103,7 +104,8 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             CreatedAt = previous.CreatedAt,
             UpdatedAt = now,
             ApiKeyHash = storedHash,
-            EmailToken = storedEmailToken,
+            EmailToken = email.Token,
+            EmailPlain = email.Plain,
             Kind = previous.Kind,
             Continuous = agent.Continuous && !AgentKinds.IsPerChatOnly(previous.Kind),
             // Retention is per-chat-only-forbidden for the same reason (ADR 0140): a copilot transcript lives outside the session.
@@ -117,9 +119,9 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             await Directory(storedHash).RegisterAsync(userId, updated.Id);
         }
 
-        if (regenerateEmail)
+        if (email.RegisterAfterWrite)
         {
-            await EmailDirectory(storedEmailToken!).RegisterAsync(userId, updated.Id);
+            await EmailDirectory(email.Token!).RegisterAsync(userId, updated.Id);
         }
 
         return new AgentSaveResult(updated, plaintext);
@@ -198,7 +200,7 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
             await Directory(agent.ApiKeyHash).DeregisterAsync();
         }
 
-        await DeregisterEmailAsync(agent.EmailToken);
+        await EmailLifecycle().ReleaseAsync(agent);
     }
 
     // The email directory entry for a raw token (ADR 0096): its own grain type, never the key directory, so an
@@ -206,13 +208,9 @@ public sealed class AgentRegistryGrain : Grain, IAgentRegistryGrain
     private IEmailAddressDirectoryGrain EmailDirectory(string token)
         => GrainFactory.GetGrain<IEmailAddressDirectoryGrain>(EmailAddress.Hash(token));
 
-    private async Task DeregisterEmailAsync(string? token)
-    {
-        if (!string.IsNullOrEmpty(token))
-        {
-            await EmailDirectory(token).DeregisterAsync();
-        }
-    }
+    // Reads this grain's own state directly, never through its own interface (a self-call would deadlock).
+    private EmailAddressLifecycle EmailLifecycle()
+        => new(GrainFactory, this.GetPrimaryKeyString(), id => _state.State.Agents.FirstOrDefault(a => a.Id == id));
 
     // The global key-hash → owner directory grain for a given hash (ADR 0022). Keyed by the hash, so
     // this is an O(1) grain reference — the registry keeps it in sync on every hash change.

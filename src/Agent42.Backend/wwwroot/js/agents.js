@@ -3,7 +3,7 @@
 import { clearPendingAttachments } from "./attachments.js";
 import { cacheGet, cachePut } from "./cache.js";
 import { selectConversation, setActiveAgentId, setActiveAgentKind, setActiveId, setPendingAgentId } from "./conversations.js";
-import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentContinuousNote, agentDescriptionInput, agentRetentionSelect, agentDialog, agentEmailCopyBtn, agentEmailNote, agentEmailSection, agentEmailValue, agentForm, agentFormTitle, agentKeyCopyBtn, agentKindField, agentKindSelect, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateEmailBtn, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
+import { addAgentBtn, agentCancelBtn, agentContinuousInput, agentContinuousNote, agentDescriptionInput, agentRetentionSelect, agentDialog, agentEmailCopyBtn, agentEmailError, agentEmailNote, agentEmailPlainHint, agentEmailPlainInput, agentEmailPlainRow, agentEmailSection, agentEmailValue, agentForm, agentFormTitle, agentKeyCopyBtn, agentKindField, agentKindSelect, agentKeyReveal, agentKeySection, agentKeyValue, agentLabel, agentList, agentMcpExposedInput, agentMcpUrl, agentMcpUrlCopyBtn, agentModelSelect, agentNameInput, agentRegenerateEmailBtn, agentRegenerateKeyBtn, agentRunUrl, agentRunUrlCopyBtn, agentSystemPromptInput, agentTabs, agentToolChecks, incognitoBtn, input, modelField, toolsBtn } from "./dom.js";
 import { closeDrawer } from "./drawer.js";
 import { defaultModel, fillModelOptions, modelLabel, selectModel, setModel } from "./models.js";
 import { streaming } from "./send.js";
@@ -186,6 +186,7 @@ function openAgentDialog(agent) {
   agentMcpUrlCopyBtn.textContent = "Copy";
   pendingRegenerate = false;
   pendingEmailRegenerate = false;
+  emailPlainWhenOpened = agent?.emailPlain === true;
   renderEmailAddress(agent);
   // Null enabledTools (a new agent, or one saved before ADR 0021) means "all selectable tools".
   renderToolChecks(agentToolChecks, agent?.enabledTools ?? allToolKeys());
@@ -224,6 +225,9 @@ let pendingRegenerate = false;
 // pendingRegenerate, so a plain Save never rotates it.
 let pendingEmailRegenerate = false;
 
+// Whether the opened agent already had a readable address, so a save sends plainEmail only on a change (ADR 0141).
+let emailPlainWhenOpened = false;
+
 // GET /api/email/config, fetched once: whether inbound email is on, and the domain an agent's token is shown at.
 let emailConfig = null;
 
@@ -246,8 +250,56 @@ async function renderEmailAddress(agent) {
   agentEmailValue.textContent = address
     || (config.enabled ? "No address yet. Regenerate to create one." : "Inbound email isn't set up on this server.");
   agentEmailCopyBtn.hidden = !address;
-  agentRegenerateEmailBtn.hidden = !config.enabled;
+  const plain = agent.emailPlain === true;
+  // A plain-name address cannot be rotated (ADR 0141): the name is the address, so Regenerate is hidden while it is on.
+  agentRegenerateEmailBtn.hidden = !config.enabled || plain;
   agentEmailNote.hidden = !config.enabled;
+  agentEmailError.hidden = true;
+  // Per-chat-only kinds (copilot has shell tools, research is built-in) can never take a guessable address.
+  const perChatOnly = agent.kind === "copilot" || agent.kind === "research";
+  agentEmailPlainRow.hidden = !config.enabled;
+  agentEmailPlainInput.checked = plain;
+  agentEmailPlainInput.disabled = perChatOnly;
+  updatePlainHint(config, perChatOnly);
+}
+
+// Mirrors PlainEmailName.Slugify on the server, which stays the authority: lowercase, no diacritics, runs of anything
+// else become one "-", trimmed, 40 characters.
+export function plainSlug(name) {
+  return name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/g, "");
+}
+
+function updatePlainHint(config, perChatOnly) {
+  const on = agentEmailPlainInput.checked;
+  const slug = plainSlug(agentNameInput.value);
+  let text = "";
+  if (perChatOnly) text = "This kind of agent can't use a readable address: it runs tools that must never act on mail from a guessable address.";
+  else if (on && !slug) text = "This name has no letters or digits to build an address from. Rename the agent first.";
+  else if (on) text = `Address: ${slug}@${config.domain}. Anyone who guesses it can instruct this agent. Renaming the agent changes the address, and the old one stops working at once.`;
+  agentEmailPlainHint.textContent = text;
+  agentEmailPlainHint.hidden = !text;
+}
+
+// The tool rows an opted-in address cannot coexist with (the server refuses them, ADR 0141), and the ones that are only
+// warned about because a message could still steer them.
+const PLAIN_BLOCKED_TOOLS = { memory: "Long-term memory", past_chats: "Past chats" };
+const PLAIN_WARN_TOOLS = { web_search: "web search", read_web_document: "web page reading", fleet: "agent teams", push_notification: "push notifications" };
+
+// Runs when a save turns the readable address ON. Returns false when the user backs out. Unticks the blocked tools
+// (the "turn those off" step) so the save the server sees is one it accepts.
+function confirmPlainEmail() {
+  const box = (key) => agentToolChecks.querySelector(`input[type=checkbox][value="${key}"]`);
+  const blocked = Object.keys(PLAIN_BLOCKED_TOOLS).filter((k) => box(k)?.checked === true);
+  const warn = Object.keys(PLAIN_WARN_TOOLS).filter((k) => box(k)?.checked === true).map((k) => PLAIN_WARN_TOOLS[k]);
+  const mcp = [...agentToolChecks.querySelectorAll("input[type=checkbox]")].some((c) => c.checked && c.value.startsWith("mcp"));
+  if (mcp) warn.push("MCP tools");
+  let message = "A readable address is not a secret: anyone who guesses it can email this agent and have it act on the message. It can't be rotated, and the random address stops working.";
+  if (blocked.length) message += `\n\nThese must be turned off first, and will be: ${blocked.map((k) => PLAIN_BLOCKED_TOOLS[k]).join(", ")}.`;
+  if (warn.length) message += `\n\nStill on, and reachable by a message: ${warn.join(", ")}.`;
+  if (!confirm(`${message}\n\nUse a readable address?`)) return false;
+  for (const key of blocked) box(key).checked = false;
+  return true;
 }
 
 // What the MCP-exposure box read when the dialog was opened, so a save can detect the OFF -> ON
@@ -276,6 +328,15 @@ async function saveAgent() {
       && confirm("Exposing this agent lets anyone holding its API key read its replies, not just send it prompts. Regenerate the key now so the old one stops working?")) {
     pendingRegenerate = true;
   }
+  // Readable address (ADR 0141): sent only on a change, and only for a saved agent (an update). Opting in confirms first.
+  if (editingAgentId && agentEmailPlainInput.checked !== emailPlainWhenOpened) {
+    if (agentEmailPlainInput.checked && !confirmPlainEmail()) {
+      agentEmailPlainInput.checked = false;
+      updatePlainHint(await loadEmailConfig(), false);
+      return;
+    }
+    payload.plainEmail = agentEmailPlainInput.checked;
+  }
   // The full explicit list (never null) — "all selected" is the whole list, per ADR 0021. But ONLY
   // when the catalog actually loaded: if /api/tools failed, toolCatalog is [] and readToolChecks would
   // return [] (= none), silently disabling every tool. Omit the field so the server keeps the default
@@ -295,7 +356,19 @@ async function saveAgent() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      // A refused address change says why (taken, reserved, unsafe tools). Shown where the address is, on the tab
+      // that holds it, instead of a silent no-op.
+      // Only an address refusal: every one of the server's address messages says "address", so an unrelated 400 (retention,
+      // model) is not mislabelled.
+      const text = await res.text().catch(() => "");
+      if (res.status === 409 || (res.status === 400 && /address/i.test(text))) {
+        agentEmailError.textContent = text || "The address change was refused.";
+        agentEmailError.hidden = false;
+        agentTabs.select(2);
+      }
+      return;
+    }
     body = await res.json().catch(() => null);
   } catch { return; /* silo may be unreachable; leave the dialog open */ }
 
@@ -320,7 +393,8 @@ async function saveAgent() {
     // A new agent has its id now, so its webhook tab can open up.
     openWebhookPanel(body.agent.id);
     renderEmailAddress(body.agent);
-  } else if (body && payload.regenerateEmail) {
+  } else if (body && (payload.regenerateEmail || payload.plainEmail !== undefined)) {
+    emailPlainWhenOpened = body.agent.emailPlain === true;
     // Stay open on the API tab so the new address can be copied; the old one is already dead.
     agentTabs.select(2);
     renderEmailAddress(body.agent);
@@ -409,6 +483,14 @@ export function wireAgents() {
     pendingEmailRegenerate = true;
     saveAgent();
   });
+
+  // The readable address previews live as the box or the name changes (ADR 0141); the server stays the authority.
+  const refreshPlainHint = async () => {
+    if (!editingAgentId) return;
+    updatePlainHint(await loadEmailConfig(), agentEmailPlainInput.disabled);
+  };
+  agentEmailPlainInput.addEventListener("change", refreshPlainHint);
+  agentNameInput.addEventListener("input", refreshPlainHint);
 
   agentEmailCopyBtn.addEventListener("click", async () => {
     try {

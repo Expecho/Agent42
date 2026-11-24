@@ -310,6 +310,78 @@ public sealed class EmailApiTests(EmailApiFixture fixture) : SharedClusterTests<
 
         return request;
     }
+
+    // ── Plain-name address (ADR 0141) ──
+    private async Task<(string User, AgentDefinition Agent)> NewPlainAgentAsync()
+    {
+        var user = $"email-plain-{Guid.NewGuid():N}";
+        var name = $"Plain Bot {Guid.NewGuid():N}"[..20];
+        var created = await Client.SendAsync(Request(HttpMethod.Post, "/api/agents", user,
+            new AgentUpsertRequest(name, "", "gpt-4o", "You read mail.", EnabledTools: new List<string> { "web_search" })));
+        created.EnsureSuccessStatusCode();
+        var agent = (await created.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+
+        var put = await Client.SendAsync(Request(HttpMethod.Put, $"/api/agents/{agent.Id}", user,
+            new AgentUpsertRequest(agent.Name, "", agent.Model, agent.SystemPrompt,
+                EnabledTools: new List<string> { "web_search" }, PlainEmail: true)));
+        put.EnsureSuccessStatusCode();
+        return (user, (await put.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent);
+    }
+
+    [Fact]
+    public async Task EmailIn_PlainAddress_Resolves()
+    {
+        var (user, agent) = await NewPlainAgentAsync();
+        Assert.True(agent.EmailPlain);
+        Assert.DoesNotContain("agent-", agent.EmailToken!, StringComparison.Ordinal);
+
+        using var res = await PostEmailAsync(Address(agent), subject: "Plain hello");
+
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        var turns = await PollMessagesAsync(user, await ConversationIdAsync(res), t => t.Any(x => x.Role == "assistant"));
+        Assert.Contains("Subject: Plain hello", Assert.Single(turns, t => t.Role == "user").Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EmailIn_PlainAddress_Uppercased_AndPlusTag_Resolve()
+    {
+        var (_, agent) = await NewPlainAgentAsync();
+
+        using var upper = await PostEmailAsync(Address(agent).ToUpperInvariant());
+        using var tagged = await PostEmailAsync($"{agent.EmailToken}+invoices@{EmailApiFixture.Domain}");
+
+        Assert.Equal(HttpStatusCode.OK, upper.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, tagged.StatusCode);
+    }
+
+    [Fact]
+    public async Task EmailIn_PlainAddress_OverLimit_406_AndTheTokenStaysClaimed()
+    {
+        var (_, agent) = await NewPlainAgentAsync();
+        for (var i = 0; i < EmailApiFixture.PlainMaxPerHour; i++)
+        {
+            using var ok = await PostEmailAsync(Address(agent));
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        }
+
+        var token = $"tok-{Guid.NewGuid():N}";
+        using var limited = await PostEmailAsync(Address(agent), token: token);
+        using var replay = await PostEmailAsync(Address(agent), token: token);
+
+        Assert.Equal(HttpStatusCode.NotAcceptable, limited.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
+    }
+
+    [Fact]
+    public async Task EmailIn_RandomAddress_NotLimited()
+    {
+        var (_, agent) = await NewAgentAsync();
+        for (var i = 0; i < EmailApiFixture.PlainMaxPerHour + 2; i++)
+        {
+            using var res = await PostEmailAsync(Address(agent));
+            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        }
+    }
 }
 
 /// <summary>AC8 (ADR 0096): with no signing key the endpoint answers 503 and accepts nothing, even a well-formed POST.</summary>

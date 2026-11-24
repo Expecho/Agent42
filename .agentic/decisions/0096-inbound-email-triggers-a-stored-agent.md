@@ -7,6 +7,11 @@ supersedes: []
 amends: [0013, 0022]
 ---
 
+> **Amended by [ADR 0141](0141-plain-name-inbound-email-address.md) (2026-11-23).** An agent may opt into a readable,
+> name-derived address. That address is **not a credential**, so D3 ("the token is the only credential") and "regenerate is
+> the only revocation" do not hold for it: it cannot be regenerated, is rate-limited, and the server refuses it for
+> Copilot agents and for tools lists with `memory`, `past_chats` or all tools.
+
 > **Amended by [ADR 0112](0112-past-chats-as-a-model-tool.md) (2026-10-21).** A new key, `past_chats`, lets the model search
 > and read the owner's other conversations, and it is ON for an agent bound with `null == all`. Add it to the
 > mitigation below: point email at an agent whose `EnabledTools` excludes `past_chats` as well as `memory` and the fetch

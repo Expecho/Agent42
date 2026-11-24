@@ -49,9 +49,15 @@ namespace Agent42.Agents;
 /// <para><see cref="EmailToken"/> is the local part of the agent's inbound email address (ADR 0096), stored
 /// <b>raw</b> (unlike <see cref="ApiKeyHash"/>) because the owner must read the address again to set up a
 /// forwarding rule — ADR 0035's share-token reasoning. It is a credential in cleartext grain state, so rotation
-/// is the only revocation. The grain is the authority on it, exactly as on the hash: a request never carries it.
+/// is the only revocation — except when <see cref="EmailPlain"/> is true (ADR 0141), where it holds a readable
+/// slug built from the name, is not a credential, and cannot be rotated. The grain is the authority on it, exactly
+/// as on the hash: a request never carries it.
 /// <c>null</c> means none minted yet (agents stored before it get one on their next regenerate); nullable for
 /// the same Cosmos JSON reason as <see cref="Kind"/>.</para>
+///
+/// <para><see cref="EmailPlain"/> (ADR 0141) is <c>true</c> when the agent opted into a readable address, so
+/// <see cref="EmailToken"/> is a slug; <c>null</c> (never <c>false</c>) means a random token. Trailing and nullable for
+/// the same Cosmos JSON reason as <see cref="Kind"/>. Set only through <c>SaveAsync(plainEmail:)</c>.</para>
 ///
 /// <para><see cref="RetentionMinutes"/> is the per-agent message-retention preset (ADR 0140, amends 0068), one of
 /// <see cref="RetentionLimits.Presets"/>; <c>null</c> = unset (a per-chat chat keeps everything, a continuous chat keeps
@@ -74,4 +80,5 @@ public sealed record AgentDefinition(
     [property: Id(10)] bool McpExposed = false,
     [property: Id(11)] string? Kind = null,
     [property: Id(12)] string? EmailToken = null,
-    [property: Id(13)] int? RetentionMinutes = null);
+    [property: Id(13)] int? RetentionMinutes = null,
+    [property: Id(14)] bool? EmailPlain = null);

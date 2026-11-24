@@ -1499,4 +1499,71 @@ public sealed class AgentApiTests(AgentApiFixture fixture) : SharedClusterTests<
         res.EnsureSuccessStatusCode();
         return (await res.Content.ReadFromJsonAsync<AttachmentMetadata>())!.Id;
     }
+
+    // ── Plain-name inbound address (ADR 0141) ──
+    private async Task<AgentDefinition> CreateSafeAgentAsync(string name)
+    {
+        var res = await Client.PostAsJsonAsync("/api/agents",
+            new AgentUpsertRequest(name, "", "gpt-4o", "sys", EnabledTools: new List<string> { "web_search" }));
+        res.EnsureSuccessStatusCode();
+        return (await res.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+    }
+
+    private Task<HttpResponseMessage> PutAgentAsync(AgentDefinition agent, bool? plainEmail = null, bool regenerateEmail = false)
+        => Client.PutAsJsonAsync($"/api/agents/{agent.Id}",
+            new AgentUpsertRequest(agent.Name, "", "gpt-4o", "sys", EnabledTools: new List<string> { "web_search" },
+                RegenerateEmail: regenerateEmail, PlainEmail: plainEmail));
+
+    [Fact]
+    public async Task PutAgent_PlainEmail_OptsInAndOmittingItKeepsIt()
+    {
+        var name = "Api Plain " + Guid.NewGuid().ToString("N")[..8];
+        var agent = await CreateSafeAgentAsync(name);
+
+        var optIn = await PutAgentAsync(agent, plainEmail: true);
+        optIn.EnsureSuccessStatusCode();
+        var plain = (await optIn.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+        Assert.True(plain.EmailPlain);
+        Assert.Equal(PlainEmailName.Slugify(name), plain.EmailToken);
+
+        var kept = (await (await PutAgentAsync(agent)).Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+        Assert.True(kept.EmailPlain);
+        Assert.Equal(plain.EmailToken, kept.EmailToken);
+    }
+
+    [Fact]
+    public async Task PutAgent_PlainEmailTaken_Returns409()
+    {
+        var name = "Api Taken " + Guid.NewGuid().ToString("N")[..8];
+        (await PutAgentAsync(await CreateSafeAgentAsync(name), plainEmail: true)).EnsureSuccessStatusCode();
+        var second = await CreateSafeAgentAsync(name);
+
+        var res = await PutAgentAsync(second, plainEmail: true);
+
+        Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task PutAgent_RegenerateOnPlain_Returns400()
+    {
+        var agent = await CreateSafeAgentAsync("Api Regen " + Guid.NewGuid().ToString("N")[..8]);
+        (await PutAgentAsync(agent, plainEmail: true)).EnsureSuccessStatusCode();
+
+        var res = await PutAgentAsync(agent, regenerateEmail: true);
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task PutAgent_PlainEmailWithAllTools_Returns400()
+    {
+        var created = await Client.PostAsJsonAsync("/api/agents",
+            new AgentUpsertRequest("Api Unsafe " + Guid.NewGuid().ToString("N")[..8], "", "gpt-4o", "sys"));
+        var agent = (await created.Content.ReadFromJsonAsync<AgentSaveResponse>())!.Agent;
+
+        var res = await Client.PutAsJsonAsync($"/api/agents/{agent.Id}",
+            new AgentUpsertRequest(agent.Name, "", "gpt-4o", "sys", PlainEmail: true));
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
 }

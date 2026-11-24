@@ -14,9 +14,13 @@ public sealed class EmailApiFixture : SharedApiFixture
     public const string SigningKey = "test-mailgun-signing-key";
     public const string Domain = "in.test.example";
 
+    /// <summary>A small plain-name cap, so the rate-limit test needs only a few messages.</summary>
+    public const int PlainMaxPerHour = 3;
+
     protected override void Configure(WebApplicationBuilder builder)
     {
         builder.Services.AddSingleton(new EmailConfig(SigningKey, Domain));
         builder.Services.AddSingleton<MailgunReplayGuard>();
+        builder.Services.AddSingleton(new PlainEmailRateLimiter(PlainMaxPerHour));
     }
 }

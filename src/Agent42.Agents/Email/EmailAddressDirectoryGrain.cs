@@ -36,6 +36,30 @@ public sealed class EmailAddressDirectoryGrain : Grain, IEmailAddressDirectoryGr
         await _state.WriteStateAsync();
     }
 
+    public async Task<bool> TryClaimAsync(string userId, string agentId)
+    {
+        if (_state.State is { UserId: { Length: > 0 }, AgentId: { Length: > 0 } })
+        {
+            return _state.State.UserId == userId && _state.State.AgentId == agentId;
+        }
+
+        _state.State.UserId = userId;
+        _state.State.AgentId = agentId;
+        await _state.WriteStateAsync();
+        return true;
+    }
+
+    public async Task<bool> DeregisterIfHeldByAsync(string userId, string agentId)
+    {
+        if (_state.State.UserId != userId || _state.State.AgentId != agentId)
+        {
+            return false;
+        }
+
+        await DeregisterAsync();
+        return true;
+    }
+
     public Task<AgentKeyOwner?> ResolveAsync()
         => Task.FromResult(
             _state.State is { UserId: { Length: > 0 } userId, AgentId: { Length: > 0 } agentId }

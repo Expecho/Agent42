@@ -21,6 +21,22 @@ public interface IEmailAddressDirectoryGrain : IGrainWithStringKey
     [Alias("RegisterAsync")]
     Task RegisterAsync(string userId, string agentId);
 
+    /// <summary>
+    /// Compare-and-claim for a plain-name address (ADR 0141): succeeds when the hash is empty or already held by the
+    /// same <paramref name="userId"/>/<paramref name="agentId"/> (idempotent, which heals a crash leftover), and returns
+    /// <c>false</c>, changing nothing, when someone else holds it. This grain is single-threaded per hash, so it is the
+    /// only race-free arbiter of a first-come name.
+    /// </summary>
+    [Alias("TryClaimAsync")]
+    Task<bool> TryClaimAsync(string userId, string agentId);
+
+    /// <summary>
+    /// Compare-and-clear: removes the registration only while it is still held by this exact holder, so a holder who
+    /// re-claimed between a caller's check and its clear is not wiped. Returns whether it cleared.
+    /// </summary>
+    [Alias("DeregisterIfHeldByAsync")]
+    Task<bool> DeregisterIfHeldByAsync(string userId, string agentId);
+
     /// <summary>Returns the owner this hash points at, or <c>null</c> when the hash is unregistered.</summary>
     [Alias("ResolveAsync")]
     Task<AgentKeyOwner?> ResolveAsync();
