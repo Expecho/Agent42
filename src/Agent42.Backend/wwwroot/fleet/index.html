@@ -36,20 +36,6 @@
   </script>
 </head>
 <body>
-  <header class="fleet__topbar">
-    <a class="fleet__back" href="/" title="Back to the chat">← Agent 42</a>
-    <span class="fleet__brand"><span id="conn" class="conn" title="Not connected"></span><span class="fleet__mark">42</span>AGENT FLEET</span>
-    <select id="taskSelect" aria-label="Task"></select>
-    <button id="newTaskBtn" class="btn" type="button">New task</button>
-    <label class="follow" title="Jump to the team that is working right now"><input type="checkbox" id="follow" checked> Follow live</label>
-    <button id="stopBtn" class="btn danger" type="button" hidden>Stop task</button>
-    <button id="shareBtn" class="btn" type="button" hidden>Share</button>
-    <button id="analyzeBtn" class="btn" type="button" hidden title="Ask an analyzer why this task behaved as it did">Analyze</button>
-    <button id="deleteBtn" class="btn danger" type="button" hidden>Delete task</button>
-    <button id="lessonsBtn" class="btn" type="button" title="What the fleet learned from your finished tasks">Lessons <span id="lessonsBadge" class="badge" hidden>0</span></button>
-    <button id="promptsBtn" class="btn" type="button">System prompts</button>
-    <button id="settingsBtn" class="btn" type="button" title="Limits for your own tasks and dream">Advanced</button>
-  </header>
   <div id="signInBanner" class="banner" hidden>
     Your session has expired or the server can't be reached. <a href="/">Sign in again</a>
   </div>
@@ -62,8 +48,43 @@
     </form>
   </div>
   <main>
-    <aside id="tree"></aside>
-    <section id="detail"></section>
+    <aside id="sidebar">
+      <div class="sb-brand">
+        <span class="fleet__mark">42</span>
+        <span class="sb-brand-text"><b>AGENT 42</b><small>agent fleet</small></span>
+        <span id="conn" class="conn" title="Not connected"></span>
+      </div>
+      <button id="newTaskBtn" class="btn sb-new" type="button">+ New task</button>
+      <div class="sb-scroll">
+        <div id="treeLabel" class="sb-label">// teams</div>
+        <div id="tree"></div>
+        <div id="taskLabel" class="sb-label">// tasks</div>
+        <input id="taskSearch" class="sb-search" type="search" placeholder="search tasks" aria-label="Search tasks" autocomplete="off">
+        <div id="taskList" class="sb-tasks"></div>
+      </div>
+      <nav class="sb-foot">
+        <a class="sb-btn" href="/" title="Back to the chat" aria-label="Back to the chat"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></a>
+        <button id="lessonsBtn" class="sb-btn" type="button" title="Lessons: what the fleet learned from your finished tasks" aria-label="Lessons"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2V17h6v-.3c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/></svg><span id="lessonsBadge" class="badge" hidden>0</span></button>
+        <button id="promptsBtn" class="sb-btn" type="button" title="System prompts" aria-label="System prompts"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></button>
+        <button id="settingsBtn" class="sb-btn" type="button" title="Advanced: limits for your own tasks and dream" aria-label="Advanced"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></button>
+      </nav>
+    </aside>
+    <div id="center">
+      <div class="page-actions">
+        <button id="shareBtn" class="btn" type="button" hidden>Share</button>
+        <details id="moreMenu" class="more-menu pop-host" hidden>
+          <summary class="btn" aria-label="More actions" title="More actions">&middot;&middot;&middot;</summary>
+          <div class="more-pop">
+            <label class="menu-item follow" title="Jump to the team that is working right now"><input type="checkbox" id="follow" checked> Follow live</label>
+            <button id="analyzeBtn" class="menu-item" type="button" hidden title="Ask an analyzer why this task behaved as it did">Analyze</button>
+            <button id="stopBtn" class="menu-item danger" type="button" hidden>Stop task</button>
+            <button id="deleteBtn" class="menu-item danger" type="button" hidden>Delete task</button>
+          </div>
+        </details>
+      </div>
+      <section id="detail"></section>
+      <div id="dock"></div>
+    </div>
     <section id="agentPanel" hidden aria-label="Agent output"><div id="panelHead" class="panel-head"></div><div id="panelBody"></div></section>
   </main>
   <!-- Read-only share link for the selected task (ADR 0120). Nothing is minted until Create is pressed: that press is the
@@ -104,7 +125,8 @@
       <button id="anSend" class="btn primary" type="submit">Send</button>
     </form>
   </aside>
-  <footer>
+  <footer id="budget">
+    <span class="muted-label">// budget</span>
     <span>Agents spawned <b id="mAgents">0</b> <span id="mDepth"></span></span>
     <span>Tokens <b id="mIn">0</b> in (<b id="mCached">0</b> cached) / <b id="mOut">0</b> out</span>
     <div class="budget">
