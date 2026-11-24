@@ -152,6 +152,16 @@ body:not([data-view="tasks"]) #treeLabel { display: none; }
 .task-item.sel { background: var(--amber-glow); border-color: var(--amber-deep); }
 .task-title { font: 500 15px/1.3 var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+/* Follow-up threads (ADR 0142): a chain's follow-ups sit under its first task, behind one rule, one level deep. */
+.thread { display: grid; gap: 2px; }
+.thread-kids { display: grid; gap: 2px; margin-left: 14px; padding-left: 8px; border-left: 2px solid var(--amber-deep); }
+.task-item.follow-up { padding: 6px 10px; }
+.task-item.follow-up .task-title { font-size: 13.5px; }
+.task-meta .on-parent { margin-left: auto; color: var(--faint); }
+.thread-toggle { display: inline-flex; flex: none; align-items: center; gap: 5px; margin-left: auto; padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+.thread-toggle::before { content: "▸"; font-size: 9px; }
+.thread-toggle.open::before { content: "▾"; }
+.thread-toggle:hover { color: var(--accent); border-color: var(--amber-deep); }
 /* Back, Lessons, System prompts and Advanced: one row of equal icon-only buttons, like the chat sidebar's. The name is the tooltip. */
 .sb-foot { display: flex; gap: 8px; padding: 12px 16px 14px; border-top: 1px solid var(--line-soft); }
 .sb-btn { position: relative; flex: 1; display: inline-flex; align-items: center; justify-content: center; padding: 8px 0; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; text-decoration: none; transition: color .15s ease, border-color .15s ease, background .15s ease; }
