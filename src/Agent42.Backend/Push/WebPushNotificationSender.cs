@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Agent42.Agents;
 
 namespace Agent42.Backend;
@@ -45,9 +46,9 @@ public sealed class WebPushNotificationSender : IPushNotificationSender
                 return;
             }
 
-            // The service worker reads title/body/conversationId off event.data.json() (ADR 0028, sw.js).
+            // The service worker reads title/body/conversationId, and url when set, off event.data.json() (ADR 0028, sw.js).
             var payload = JsonSerializer.Serialize(
-                new PushPayload(message.Title, message.Body, message.ConversationId), PayloadJson);
+                new PushPayload(message.Title, message.Body, message.ConversationId, message.Url), PayloadJson);
 
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(SendBudget);
@@ -84,5 +85,8 @@ public sealed class WebPushNotificationSender : IPushNotificationSender
     // Shared with PushTestNotifier so the test push reaches the SW in exactly the shape a real one does.
     internal static readonly JsonSerializerOptions PayloadJson = new(JsonSerializerOptions.Web);
 
-    internal sealed record PushPayload(string Title, string Body, string ConversationId);
+    // Url is left out when null (ADR 0144): only a fleet push carries one, so the chat's payload stays as it was.
+    internal sealed record PushPayload(
+        string Title, string Body, string ConversationId,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Url = null);
 }

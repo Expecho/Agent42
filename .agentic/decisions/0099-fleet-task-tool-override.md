@@ -5,6 +5,7 @@ status: accepted
 tags: [fleet, tools, selectable-tools, mcp, blob, no-migration, no-egress]
 supersedes: []
 amends: [0097]
+amended_by: [0144]   # 0144: the override also gates skills, memory, past chats and push in the fleet
 ---
 
 # A fleet task can override the user's default tool selection

@@ -50,4 +50,8 @@ public interface IPushNotificationSender
 /// <param name="Title">Notification title — the bound agent's name or "Agent 42" on the away-reply path; model-authored and sanitized on the tool path.</param>
 /// <param name="Body">A short generic body line on the away-reply path; model-authored and sanitized on the tool path.</param>
 /// <param name="ConversationId">The conversation to open when the user taps the notification.</param>
-public sealed record PushMessage(string Title, string Body, string ConversationId);
+/// <param name="Url">
+/// A same-origin page to open on tap instead of a conversation (ADR 0144: a fleet task's <c>/fleet/?task={id}</c>). Null on
+/// every chat path. This record never crosses a grain boundary (the sender is a silo service), so it needs no <c>[Id]</c>.
+/// </param>
+public sealed record PushMessage(string Title, string Body, string ConversationId, string? Url = null);

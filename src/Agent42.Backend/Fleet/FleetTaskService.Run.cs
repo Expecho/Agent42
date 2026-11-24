@@ -125,9 +125,17 @@ public sealed partial class FleetTaskService
         var documentTools = documents is null || record.Documents.Count == 0
             ? []
             : new FleetDocumentTools(chatClients, documents, record.UserId, record.WorkspaceId, record.Documents, logger).Tools;
-        var functions = tools is null
-            ? documentTools
-            : await tools.BuildAsync(record.UserId, record.Request, record.EnabledTools, task.Questions, task.Budget.Token, documentTools);
+        var toolSet = tools is null
+            ? new FleetToolSet(documentTools, [])
+            : await tools.BuildAsync(
+                new FleetToolContext(record.UserId, record.Id, record.Request, record.EnabledTools, task.Questions)
+                {
+                    DocumentTools = documentTools,
+                    Workspace = workspace,
+                    Models = factory,
+                    ImageModels = await ImageModelsAsync(record.UserId, task.Budget.Token),
+                },
+                task.Budget.Token);
         // GitHub Copilot models (ADR 0108) are offered to Copilot agents only; every chat client below is built from the rest.
         var chatModels = models.Where(m => !m.CopilotOnly).ToList();
         var reachable = FleetCopilotAgentFactory.ReachableModels(factory, models);
@@ -137,7 +145,7 @@ public sealed partial class FleetTaskService
             ? null
             : new FleetCopilotAgentFactory(copilot, factory, [.. models.Select(m => m.Id)], record.PlannerModel, workspace, canvas, prompts,
                 new FleetCopilotPermissionPolicy(workspace.Root, task.Questions, task.Budget.Token, task.AutoApprove ? task.Log : null),
-                task.Options.DefaultCopilotModel);
+                task.Options.DefaultCopilotModel, toolSet.Tools, toolSet.Skills);
         return new FleetRun
         {
             TaskId = record.Id,
@@ -150,7 +158,7 @@ public sealed partial class FleetTaskService
             Clients = chatModels.ToDictionary(m => m.Id, m => (IChatClient)new FleetBudgetChatClient(factory.GetClient(m.Id), task.Budget)),
             ModelNames = chatModels.ToDictionary(m => m.Id, m => m.DisplayName),
             CopilotModelNames = models.Where(m => m.CopilotOnly).ToDictionary(m => m.Id, m => m.DisplayName),
-            Tools = functions,
+            Tools = toolSet.Tools,
             CopilotByokModelIds = reachable.Where(m => !m.CopilotOnly).ToDictionary(m => m.Id, m => m.DisplayName),
             CopilotDefaultModel = copilotFactory?.ModelFor("copilot"),
             CopilotFactory = copilotFactory,
@@ -164,6 +172,13 @@ public sealed partial class FleetTaskService
             Logger = logger,
             AfterAttempt = ct => SyncWorkspaceAsync(record, workspace, ct),
         };
+    }
+
+    // The user's image-generation models (ADR 0144), which the run's model list leaves out (they can't run an agent).
+    private async Task<IReadOnlyList<string>> ImageModelsAsync(string userId, CancellationToken cancellationToken)
+    {
+        var catalog = await (await catalogs.GetForUserAsync(userId, cancellationToken)).GetAsync(cancellationToken);
+        return [.. catalog.Models.Where(m => m.SupportsImageGeneration).Select(m => m.Id)];
     }
 
     // The first time a planner of the run gets lessons (ADR 0124). The in-memory record is assigned FIRST: FinishAsync

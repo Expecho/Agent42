@@ -35,6 +35,23 @@ public sealed class WebPushNotificationSenderTests(SharedClusterFixture fixture)
             client.Sent.OrderBy(e => e).ToArray());
     }
 
+    // ADR 0144: a fleet push carries the task's url; a chat push's payload has no url key at all.
+    [Fact]
+    public async Task Push_PayloadUrl_OnlyWhenSet()
+    {
+        const string user = "push-url";
+        await SeedAsync(user, "https://push/url");
+        var client = new FakeWebPushClient();
+
+        await Sender(client).SendAsync(user, Message());
+        var chat = client.Payloads["https://push/url"];
+        await Sender(client).SendAsync(user, new PushMessage("Done", "Report ready.", "", "/fleet/?task=t1"));
+        var fleet = client.Payloads["https://push/url"];
+
+        Assert.DoesNotContain("\"url\"", chat);
+        Assert.Contains("\"url\":\"/fleet/?task=t1\"", fleet);
+    }
+
     // AC6: a 410 prunes exactly that subscription; the others survive.
     [Fact]
     public async Task Prunes410Subscription()

@@ -44,7 +44,8 @@ public sealed class FleetRun
     /// <summary>The catalog id a plain <c>copilot</c> resolves to (honours <c>Fleet:DefaultCopilotModel</c>), or null when unknown.</summary>
     public string? CopilotDefaultModel { get; init; }
 
-    /// <summary>The catalog's tools (web, MCP), besides the workspace tools and <c>delegate_to_team</c>.</summary>
+    /// <summary>The catalog's tools (documents, the personal tools of ADR 0144, web, MCP), besides the workspace tools and
+    /// <c>delegate_to_team</c>. Copilot agents get them through <see cref="CopilotFactory"/>.</summary>
     public IReadOnlyList<AIFunction> Tools { get; init; } = [];
 
     /// <summary>Creates <c>copilot</c> agents, or null when the host has none. It returns null for any other model.</summary>

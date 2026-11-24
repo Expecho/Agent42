@@ -41,17 +41,23 @@ public sealed class ToolSelection : IToolSelection
     /// <para>Used by BOTH the provider gate and the <c>skills</c> wildcard expansion, deliberately: the picker
     /// and the gate must agree about which skills exist, or a key the user can tick would gate nothing.</para>
     /// </summary>
-    public IReadOnlyList<SkillInfo> MergedSkills(ToolSelectionContext context)
+    public IReadOnlyList<SkillInfo> MergedSkills(ToolSelectionContext context) => Merge(context.UserSkills);
+
+    /// <summary>
+    /// <see cref="MergedSkills"/> for a caller with no grain context: the fleet (ADR 0144) merges a user's uploads
+    /// with the shipped catalog by the same rule, so the two can't disagree about which skills exist.
+    /// </summary>
+    public static IReadOnlyList<SkillInfo> Merge(IReadOnlyList<SkillInfo> userSkills)
     {
-        if (context.UserSkills.Count == 0)
+        if (userSkills.Count == 0)
         {
             return SkillCatalog.Skills;
         }
 
-        var shadowed = context.UserSkills.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var shadowed = userSkills.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         return
         [
-            .. context.UserSkills
+            .. userSkills
                 .Concat(SkillCatalog.Skills.Where(s => !shadowed.Contains(s.Name)))
                 .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase),
         ];

@@ -546,16 +546,20 @@
   // ---------- tools picker (ADR 0099) ----------
   // A task follows the user's default chat selection unless this picker was changed: only then is an override sent,
   // so a new MCP server still reaches a task that didn't override (ADR 0021, null == all). It shows only what the
-  // fleet uses, web_search and the MCP servers with their tools, so a sent override
+  // fleet uses: web_search, the user's skills, long-term memory (a row only when /api/tools lists it, ADR 0131), past
+  // chats, push notifications (ADR 0144), and the MCP servers with their tools, so a sent override
   // drops every other key on purpose: it is this task's, never written back to the profile. A local picker, because
-  // this classic script can't import js/tools.js. MCP names are server-supplied: text only.
-  const fleetToolKey = key => key === "web_search" || key.startsWith("mcp:");
+  // this classic script can't import js/tools.js. MCP and skill names are server- or user-supplied: text only.
+  const FLEET_STATIC_KEYS = new Set(["web_search", "memory", "past_chats", "push_notification"]);
+  const fleetToolKey = key => FLEET_STATIC_KEYS.has(key) || key.startsWith("mcp:") || key.startsWith("skill:");
   const toolPicker = { picked: new Set(), dirty: false, target: undefined };
   const toolChildren = row => (S.tools || []).filter(r => r.parentKey === row.key);
 
-  // Whether a selection grants a row, as ToolCatalog.IsMcpToolEnabled does: the bare mcp, its server's key, or its own.
+  // Whether a selection grants a row, as ToolCatalog.IsMcpToolEnabled / IsSkillEnabled do: the bare mcp or skills
+  // wildcard (expanded here into its rows, like the chat's picker), the server's key, or the row's own key.
   const grants = (selection, row) => selection.has(row.key)
-    || (row.key.startsWith("mcp:") && selection.has("mcp")) || (!!row.parentKey && selection.has(row.parentKey));
+    || (row.key.startsWith("mcp:") && selection.has("mcp")) || (row.key.startsWith("skill:") && selection.has("skills"))
+    || (!!row.parentKey && selection.has(row.parentKey));
 
   // Starts the picker from an override, or from the user's default for null. A given override stays dirty, so a
   // follow-up sends it again.
