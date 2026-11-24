@@ -535,8 +535,8 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Claim:** adding a sidecar is not free and not independent. Azure Container Apps bills the
   **per-replica** total, and the **sum** of CPU/memory across every container in the replica must land on
   an allowed combination (CPU in 0.25 steps, memory ≈ 2 GiB per CPU) — an invalid sum is rejected at
-  deploy, not at authoring. The SearXNG sidecar took the replica from `0.5 CPU / 1Gi` to
-  **`1.0 CPU / 2Gi`** (backend unchanged + sidecar `0.5/1Gi`), roughly doubling the app's compute cost. (Defaults at the 2026-11-21 audit: backend `0.25 CPU / 0.5Gi` + sidecar `0.5 CPU / 1Gi` = `0.75 CPU / 1.5Gi` per replica, `infra/main.bicep`.)
+  deploy, not at authoring. (Defaults at the 2026-11-21 audit: backend `0.25 CPU / 0.5Gi` + sidecar `0.5 CPU / 1Gi` = `0.75 CPU / 1.5Gi` per replica, `infra/main.bicep`.)
+  The sidecar's cost history: ADR 0011, "Operational".
   Replicas stay pinned at 1 (`@minValue(1) @maxValue(1)` — Orleans localhost clustering), so there is
   exactly one sidecar per deployment. `az bicep build` will not catch a bad combination; an
   `az deployment group validate` against the real RG will.
@@ -553,9 +553,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `ReceiveReminder`) and passed explicitly down the grain side as a `turn` parameter. **Never put such state back in
   a field:** a private field lives for the *activation*, and two runs can be in flight on one activation —
   `ChatAsync` suspends between `yield return`s, and a reminder or `EnqueuePromptAsync` run executes in that gap.
-  Measured: while these were fields, a reminder firing mid-stream reset the streaming turn's push budget (a fourth
-  push went out) and unset its incognito (the turn persisted). There are no reset rituals any more, because there
-  is nothing turn-valued left to reset.
+  The measured interleaving bug: ADR 0106, "The interleaving bug was live, not theoretical".
   **(1) Reach.** Tools and context providers have no per-run argument, so they read `TurnContext.CurrentOrClosed`:
   one private `AsyncLocal`, set only by `TurnContext.RunInAsync`, which the grain wraps around every pull and the
   dispose of a streaming run (`PullAsync`/`DisposeRunAsync`) and around the reminder's `RunAsync`. Code outside
@@ -610,24 +608,11 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### `get_current_location` is NOT an SSRF sink — and exactly two properties keep it that way
 
-- **Claim:** it makes an outbound HTTP call from the same container whose managed identity IMDS will mint
-  Cosmos/Storage/OpenAI tokens for — the setup that once made a model-chosen fetch URL dangerous — yet it
-  deliberately has **no SSRF address-guard**, and adding one to "fix the asymmetry" would be cargo cult.
-  (There **is** a `PrivateAddressGuard` in the repo again since ADR 0066 — but it belongs to
-  `read_web_document`, whose URL *is* model-supplied. That is the asymmetry working as intended, not an
-  argument for copying it here.) The claim
-  rests on two properties, and **both are load-bearing**: (1) the host is **fixed** (`maps.googleapis.com`,
-  config-pinned, never model-supplied), and (2) the tool takes **zero model-supplied parameters** — the
-  only variable input is a lat/lon pair from the *browser*, range-validated server-side, and a `double`
-  cannot inject a host. Since ADR 0093 that pair arrives as the client tool's answer through
-  `POST /api/chat/{id}/tool-result`, not on the chat request: `ParseBrowserFix` reads it as JSON numbers and
-  checks `UserLocation.IsValid`, and anything else never reaches the geocoder
-  (`GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`, `PostResult_OutOfRangeFix_IsNotGeocoded`). The failure mode is a later contributor dissolving property (2) without noticing:
-  adding a `[Description("address to look up")] string` parameter turns this into a genuine SSRF sink
-  **while the reassuring comment still sits above it**. A comment cannot defend itself, so the shape is
-  pinned by `GetCurrentLocation_ExposesNoParameters`, which asserts the JSON schema the model actually sees
-  has no properties. If you ever need the model to name a place, that is *forward* geocoding — a different
-  tool, and it needs the guard.
+- **Claim:** it has no SSRF guard on purpose (fixed host, zero model-supplied parameters; the lat/lon comes from the
+  browser, range-checked). Adding a string parameter ("address to look up") silently turns it into an SSRF sink;
+  a model-named place is *forward* geocoding, a different tool that needs `PrivateAddressGuard`.
+- **Enforced by:** `AgentGrainTests.GetCurrentLocation_ExposesNoParameters` (`tests/Agent42.Tests/AgentGrainTests.cs`;
+  also `GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`)
 - **Evidence:** `src/Agent42.Backend/Location/GoogleGeocoder.cs`, `src/Agent42.Agents/Location/AgentGrain.LocationTool.cs`
   (`GetCurrentLocationAsync`, `ParseBrowserFix`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`GetCurrentLocation_ExposesNoParameters`, `GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`),
@@ -704,35 +689,12 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### The usage dashboard counts tokens from `chat` spans ONLY — `orchestrate_tools` is the summed parent
 
-- **Claim:** the usage dashboard (ADR 0031) is fed purely from the OTel gen_ai spans the chat client already
-  emits, projected by `UsageSpanProjector`. The load-bearing rule is invisible in the aggregate numbers and
-  easy to "fix" wrongly: a tool-calling turn emits **three** span kinds on the `Agent42.Backend` source —
-  `chat` (per model round-trip, carries `gen_ai.usage.input_tokens`/`output_tokens`), `execute_tool` (carries
-  `gen_ai.tool.name`, no tokens), and **`orchestrate_tools`, whose usage is the SUM of its child `chat`
-  spans**. A spike (2026-07-22, Microsoft.Agents.AI 1.13.0 / Microsoft.Extensions.AI 10.6.0) showed the
-  `orchestrate_tools` span carrying `input_tokens=140` = exactly the two child chats (100+40). So the
-  projector **whitelists `chat` for tokens and `execute_tool` for tool events and DROPS everything else** —
-  adding `orchestrate_tools` (or `invoke_agent`) to "capture more" double/triple-counts every multi-turn
-  conversation. Three more facts the same spike pinned, each a silent trap: (1) **corrected by ADR 0104:** the
-  emitter DOES tag `gen_ai.usage.cache_read.input_tokens` and the reasoning count whenever the response's
-  `UsageDetails` carry them, and the projector already reads both — the spike's provider (GitHub Models) simply
-  reported none, which read as "always 0". Do not add a grain counter for them (ADR 0031 keeps the dashboard
-  OTel-only; `ChatSpan_CarriesCachedAndReasoningTokens` pins the emitter); (2) **all three span kinds are already on the
-  registered `Agent42.Backend` source and already OTLP-exported**, so the ingestion processor needs **no new
-  `AddSource`** and adds no new export/PII surface — it filters in `OnEnd`; (3) async paths (fired reminders,
-  agent-run) have no request identity in `RequestContext`, so their `chat` spans carry no `user.*` and their
-  tokens land in an **unreported** user bucket by design (correct total, no attribution).
-- **Load-bearing storage bound:** the rollups live in ONE global grain (`UsageRollupGrain`, key `"global"`)
-  riding `agent-state` on the `"usage-rollups"` state (the `UserPushGrain` pattern — no new container), which
-  re-serializes into one ≤2 MB Cosmos item per write (ADR 0004). It **prunes on every write** (hourly ~48 h,
-  daily ~92 d); `range=all` therefore means "the retained daily window", not all-time. Retention constants
-  live only in `UsageRetention` — a longer window multiplies state toward the cap. The `application`
-  dimension is **per-agent** (the grain publishes the agent name into `RequestContext`
-  (`PublishUsageApplication`); `UserTelemetrySpanProcessor` stamps it as the `agent42.application` span tag
-  at OnStart — the ADR 0010 mechanism; the projector reads it, non-agent chats fall back to `"Agent42"`), so
-  many agents multiply the bucket rows — shard by day into per-date grains before that bites. **Do not add
-  the dimension by overriding `gen_ai.operation.name`** — that is set by the libraries per the OTel semconv
-  and is also exported (ADR 0009); a new dimension is always a NEW tag, never a rewrite of a semconv one.
+- **Claim:** `orchestrate_tools` (and `invoke_agent`) spans carry the SUM of their child `chat` spans' tokens, so
+  counting them to "capture more" double/triple-counts every tool-calling turn. The projector whitelists `chat` for
+  tokens and `execute_tool` for tool events and drops the rest. A new dimension is a NEW span tag, never a rewrite of
+  a semconv one like `gen_ai.operation.name`; retention lives only in `UsageRetention` (a longer window grows the
+  one global ≤2 MB grain). Rationale and the spike numbers: ADR 0031, 'Notes moved from gotchas.md'.
+- **Enforced by:** `UsageSpanProjectorTests.AggregateSpan_IsNotCounted` (`tests/Agent42.Tests/UsageSpanProjectorTests.cs`)
 - **Evidence:** `src/Agent42.Agents/Telemetry/UsageSpanProjector.cs` (the operation-name whitelist; `ApplicationTag`),
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`PublishUsageApplication`),
   `src/Agent42.Backend/Telemetry/UserTelemetrySpanProcessor.cs` (stamps `agent42.application`),
@@ -744,16 +706,13 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### Estimated cost: Anthropic input already CONTAINS cache reads and writes, and a model without a row is "—", not $0
 
-- **Claim:** `ModelPricing` (ADR 0110) prices tokens from a checked-in table. Three traps sit in it. First, the
-  Anthropic `IChatClient` reports `InputTokenCount` as plain input + cache reads + cache writes (spike 2026-10-21:
-  wire `10 / 100 / 50` → `160`), so the formula SUBTRACTS both before billing the remainder at the input rate. Adding
-  them on top double-bills every cached Claude turn. Reasoning is part of output, so it has no term either. Second,
-  matching is EXACT after lower-casing and stripping a date suffix: a prefix match prices `gpt-5.4-pro` as `gpt-5.4`.
-  A new model is therefore unpriced until a row is added. That is by design, so add the row and do not loosen the
-  match. Third, the price key includes the provider KIND, which only `agent42.provider.kind` carries
-  (`gen_ai.provider.name` is `"openai"` for Azure and OpenAI-compatible alike), and the table keys are the
-  `ProviderKind` enum names: renaming an enum member silently unprices that kind
-  (`PriceTableKinds_MatchTheProviderKindEnum`).
+- **Claim:** three traps in `ModelPricing`: Anthropic's `InputTokenCount` already includes cache reads and writes
+  (subtract them, never add them on top); model matching is EXACT after normalization, so a new model is unpriced
+  until it gets a row (add the row, never loosen the match); the table keys are `ProviderKind` enum names, so renaming
+  a member unprices that kind.
+- **Enforced by:** `ModelPricingTests.Compute_AnthropicInputIncludesCacheReadAndWrite`, `ModelPricingTests.Resolve_NoPrefixMatch`
+  (`tests/Agent42.Tests/ModelPricingTests.cs`), `ProviderKindTagTests.PriceTableKinds_MatchTheProviderKindEnum`
+  (`tests/Agent42.Tests/ProviderKindTagTests.cs`)
 - **Evidence:** `src/Agent42.Agents/Telemetry/ModelPricing.cs`, `src/Agent42.Backend/Models/ProviderKindTagChatClient.cs`,
   `tests/Agent42.Tests/ModelPricingTests.cs`, `tests/Agent42.Tests/ProviderKindTagTests.cs`,
   `.agentic/decisions/0110-estimated-cost-from-a-checked-in-price-table.md`
@@ -801,17 +760,8 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   key, which is why that key keeps its `ToolNameToKey` entries even though it became a wildcard (the
   key-coverage guard test found this).
 
-  **As of ADR 0057 the RAG-vs-skills asymmetry above is a THREE-way split, and the new arm breaks the
-  rule the other two follow.** Long-term memory (`ToolCatalog.Memory`) is like RAG in being *not a tool*,
-  and like skills in being *selectable* — so it is gated by the selection but **NOT** by capability:
-
-  | provider | is a tool? | gated by capability | gated by selection |
-  |---|---|---|---|
-  | `AgentSkillsProvider` | yes (`load_skill`) | yes | yes (`skill:{name}` / `skills`) |
-  | RAG `TextSearchProvider` | no | no | no — document presence only (ADR 0008) |
-  | Hindsight memory | no | **no** | **yes** (`memory`) |
-
-  The tidy-looking mistake is now the reverse of the original one: memory owns a catalog key, so folding
+  **Third arm (ADR 0057): long-term memory is gated by selection but NOT by capability** (the three-way gating
+  table is in ADR 0057). The tidy-looking mistake is now the reverse of the original one: memory owns a catalog key, so folding
   it in beside the skills provider under `capabilities.SupportsTools` reads as consistency and is wrong —
   a text-only model with `memory` selected **must** still get memory. `NoToolModel_StillGetsMemory`
   (null selection) and `MemorySelection_IsNotIntersectedWithCapability` (explicit selection) are the two
@@ -1299,7 +1249,10 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### Cosmos account region is pinned to northeurope and immutable
 
-- **Claim:** West Europe rejected new Cosmos accounts at creation time; the account was created in North Europe and a Cosmos account's region can't change after creation. Since ADR 0128 the region is the repo variable `COSMOS_LOCATION` (unset falls back to the resource group's location), so prod must keep it at `northeurope`: a missing variable would try to move the account. The `preflight` job compares it with the existing account and fails with the variable's name.
+- **Claim:** a Cosmos account's region can't change, and prod's is `northeurope`; unsetting the `COSMOS_LOCATION`
+  repo variable (ADR 0128) falls back to the resource group's location and would try to move it.
+- **Enforced by:** the deploy `preflight` job (`.github/workflows/deploy.yml`, `az cosmosdb list` comparison), which
+  fails with the variable's name
 - **Evidence:** `.github/workflows/deploy.yml` (`preflight`, `az cosmosdb list`), `docs/features/azure-deployment.md`
 - **Verified:** 2026-11-24
 
@@ -1317,12 +1270,11 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### A merge to `main` deploys only when it touches what the images are built from
 
-- **Claim:** `deploy.yml` is path-filtered (`src/**`, `infra/**`, `Directory.Packages.props`,
-  `.dockerignore`, the workflow itself), so a merge that changes only tests, docs, `.agentic/` or other
-  root files **does not deploy** — never tell the user "merging ships it" without checking the diff
-  against that list; dispatch the workflow instead. #166, a `Directory.Packages.props`-only fix for a prod
-  outage, merged without deploying because the pin was not yet in the list. A new root-level file a
-  Dockerfile COPYs must join the list — `DeployTriggerTests` fails the build if it does not.
+- **Claim:** `deploy.yml` is path-filtered, so a merge touching only tests, docs, `.agentic/` or other root files
+  does NOT deploy: never tell the user "merging ships it" without checking the diff against the push `paths` list;
+  dispatch the workflow instead. A new root-level file a Dockerfile COPYs must join that list.
+- **Enforced by:** `DeployTriggerTests.EveryFileTheBackendImageCopies_TriggersADeploy`,
+  `DeployTriggerTests.TheBuildContextFilter_TriggersADeploy` (`tests/Agent42.Tests/DeployTriggerTests.cs`)
 - **Evidence:** `.github/workflows/deploy.yml` (its push `paths` list), `src/Agent42.Backend/Dockerfile`,
   `tests/Agent42.Tests/DeployTriggerTests.cs`
 - **Verified:** 2026-11-24
@@ -1454,22 +1406,10 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### Embeddings are a per-user model, not an operator prerequisite (ADR 0030 — supersedes the old "manual deployment" gotcha)
 
-- **Claim:** as of **ADR 0030** the embedding model is **per-user**, not a fixed operator deployment.
-  There is **no** `AzureOpenAI:EmbeddingDeploymentName`, **no** eager `AzureOpenAI:ApiKey` startup check,
-  and **no** operator `IEmbeddingGenerator` singleton — all removed. A user declares an embedding model on
-  a provider (the `SupportsEmbeddings` opt-in flag, like ADR 0020's image flag) and picks it as the
-  **default embedding model** in Preferences (`PUT /api/default-embedding-model`); ingestion and retrieval
-  resolve the generator via **`IChatClientFactory.GetEmbeddingGenerator()`** (a `Func` on `Provider`,
-  mirroring `GetImageGenerationService` — **no** new provider interface, **no** new every-host registration).
-  Two behaviours are load-bearing: **upload** of a document with no embedding model configured is rejected
-  (composer gates it client-side; server 4xx as defense-in-depth), while **retrieval** on an existing
-  document conversation with no embedding model **degrades to empty context — never throws** (guard on
-  `DefaultEmbeddingModelId == ""` before embedding; `NoEmbeddingGenerator.GenerateAsync` would throw, and
-  the retrieval path must not reach it — the ADR 0019 no-model-chat discipline extended to embeddings). The
-  `text-embedding-3-large` deployment is still an Azure resource a user's Foundry provider points at, but it
-  is **not** a repo prerequisite and needs no RBAC (API-key auth). `AzureOpenAI:Endpoint`/`ApiKey` survive
-  ONLY as the **dormant** Foundry-provider inheritance source; `AzureOpenAI:TenantId` still binds
-  `DefaultAzureCredential`. The `AZURE_OPENAI_API_KEY` GitHub secret + ACA secret are **removed**.
+- **Claim:** retrieval on an existing document conversation with no embedding model must **degrade to empty
+  context, never throw**: guard on `DefaultEmbeddingModelId == ""` before embedding, because
+  `NoEmbeddingGenerator.GenerateAsync` throws and the retrieval path must not reach it. (Upload without one is
+  rejected instead.) Rationale: ADR 0030, 'Notes moved from gotchas.md'.
 - **Evidence:** `src/Agent42.Agents/Models/IChatClientFactory.cs` (`GetEmbeddingGenerator`/`DefaultEmbeddingModelId`), `src/Agent42.Backend/Models/ChatClientFactory.cs` (Foundry/OpenAICompatible embedding funcs), `src/Agent42.Agents/Documents/NoEmbeddingGenerator.cs`, `src/Agent42.Backend/Documents/DocumentIngestionService.cs`, `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`SearchDocumentContextAsync` empty-id guard), `src/Agent42.Backend/Models/UserProviderResolver.cs` (`EmbeddingDefaultModelId`), `.agentic/decisions/0030-user-configured-embedding-model.md`
 - **Verified:** 2026-11-24
 
@@ -1873,12 +1813,9 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### MCP interactive OAuth is hand-rolled: the SDK flow blocks, the callback must stay behind Easy Auth
 
-- **Claim:** MCP InteractiveOAuth (ADR 0025) does NOT use the `ModelContextProtocol` SDK's OAuth. The SDK
-  drives authorization through a **blocking** `AuthorizationRedirectDelegate(authorizationUri, redirectUri,
-  ct) → Task<string>` that must open a browser and block until the code returns — a desktop/loopback
-  assumption that cannot bridge Agent 42's stateless two-request web flow (`/api/mcp/oauth/start` then a
-  separate `/callback`). So the app drives authorization-code + PKCE itself (PRM discovery → authz redirect →
-  token exchange). **Two traps.** (1) **Both endpoints must stay BEHIND Easy Auth — never in
+- **Claim:** MCP InteractiveOAuth (ADR 0025) does NOT use the `ModelContextProtocol` SDK's OAuth; the app drives
+  authorization-code + PKCE itself. Why not the SDK (its blocking redirect delegate): ADR 0025, Context.
+  **Two traps.** (1) **Both endpoints must stay BEHIND Easy Auth — never in
   `excludedPaths`** — or `GetUserId()` returns `local-dev` and the tokens bind to the wrong (or no) user; the
   external identity provider redirects the *browser* to `/callback`, which re-enters through the same Easy
   Auth session cookie, so `GetUserId()` works. Manual prereq: the redirect URI
@@ -2132,9 +2069,8 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 ### A read-only share link stores the RAW token and revokes by deregistering the directory FIRST
 
 - **Claim:** the share-link grains (ADR 0035) mirror the ADR 0022 key directory with **two deliberate
-  inversions**. **(1)** `UserShareLinksGrain` persists the **raw** `shr_` token, not just its hash (contrast
-  `AgentDefinition.ApiKeyHash`): the owner re-displays and copies the link repeatedly, and it is a
-  low-sensitivity, single-conversation, read-only capability — so there is no once-shown secret to protect.
+  inversions**. **(1)** `UserShareLinksGrain` persists the **raw** `shr_` token on purpose; don't "harden" it to a
+  hash-only store (rationale: ADR 0035, "Two deliberate differences from ADR 0022").
   **(2)** Revoke **deregisters the global `ShareLinkDirectoryGrain` FIRST**, then drops the list entry — the
   *opposite* order to an agent-key delete. An agent-key delete removes the registry entry first because the
   run endpoint re-checks the agent exists and 401s on a mid-failure orphan; **unsharing does not delete the
@@ -2304,12 +2240,8 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   ROOT type — `JsonSerializationException: Error resolving type specified in JSON` — so the read fails
   whole; there is no partial recovery, and it would take out every conversation, stored agent, user
   profile, provider config, MCP server, push subscription, share link and usage rollup at once.
-- **This nearly shipped.** ADR 0039 moved the 73 flat files of `Agent42.Agents` into feature folders and
-  gave each a folder-matching namespace. It passed the full suite, `dotnet format`, and an adversarial
-  review, because the serialization test in the branch used a hand-built `Serializer<T>` — Orleans'
-  **binary** serializer, the one that carries grain-to-grain calls. Cosmos does not use it. The move was
-  reported as "measured inert" on the strength of a test that could not see the failure. The namespaces
-  were reverted to flat and only the folders kept.
+- **A binary-serializer test cannot see this** (it nearly shipped that way; incident: ADR 0039, "The mistake,
+  recorded because it is the most useful thing in this ADR").
 - **Consequences to hold on to:** (1) `src/Agent42.Agents` is organised into folders whose namespaces
   deliberately do NOT match — `.editorconfig` turns IDE0130 off so the IDE stops suggesting the change,
   and `ProjectLayoutTests.EveryFileStaysInTheFlatNamespace` catches it if made by hand. (2) `[Alias]`
@@ -3224,17 +3156,9 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   preferences save emits one from `SEARXNG_BASE_URL`, so rejecting all absolutes 502s the commonest
   redirect in the UI), so accept only the upstream authority or the request host and reject the rest —
   the app origin hosts two OAuth callbacks, so an open redirector here is not benign.
-- **⚠ The SECOND such surface diverges from this entry, and the divergence is the point.** ADR 0062
-  mounts the Orleans dashboard at `/dashboard` — third-party UI on our origin again — and applies **no
-  CSP and no sandbox**. That is not an oversight and not "it's our own data" (an argument that was
-  drafted, and is **false**: reminder names are model-supplied free text and grain primary keys are
-  client-supplied, so injection-influenced content does render there). The difference is that
-  `/dashboard` is **in-process** — no proxy, no forwarded headers, no upstream cookies, so the two
-  outbound leaks above cannot arise — and that the escaping was **measured** rather than assumed:
-  payloads in a reminder name and a grain key render inert (`&lt;img src=x …`), zero elements created,
-  zero inline handlers in the document, canary never fires. See ADR 0062's Consequences for the table.
-  **If you are adding a THIRD such surface, the rule is: measure, then decide.** Two instances with
-  different threat models is not yet a pattern, and neither answer generalises.
+- **⚠ The SECOND such surface (`/dashboard`, ADR 0062) applies no CSP and no sandbox, on purpose** (in-process, and
+  its escaping was measured; rationale and measurements: ADR 0062, Consequences). Neither answer generalises:
+  **if you are adding a THIRD such surface, measure, then decide.**
 - **Evidence:** `src/Agent42.Backend/Web/SearxngProxy.cs`, `src/Agent42.Backend/Web/AgentApi.Web.cs`,
   `tests/Agent42.Tests/SearxngProxyTests.cs` (`Proxy_ServesTheCanonicalSlashUrlWithoutLooping`,
   `Proxy_CannotBeSteeredOffTheSidecarByAProtocolRelativePath`, `Proxy_RejectsOffSiteRedirects`,
@@ -3310,15 +3234,10 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Claim:** every `IChatSearchIndex` call from the grain is wrapped in its **own try/catch, logged and
   never rethrown**, including the delete inside `PurgeAsync` (which a synchronous, non-reentrant
   `DELETE /api/conversations/{id}` awaits). The index is a **projection**: losing a write costs search
-  results, never conversation content, so nothing about search may be able to fail a turn.
-  Do **not** describe the feature as "following ADR 0008" — 0008's *Alternatives* explicitly **rejects**
-  "always-on but ungated", and its per-conversation `DocumentNames.Count > 0` gate is load-bearing. This
-  takes the shape 0008 refused, and the distinction that makes it acceptable is the failure mode: 0008
-  rejected a per-turn **third-party embedding round trip**, whose breakage broke every conversation,
-  whereas this is a **local Cosmos upsert** — no third party, no embedding, no new egress, no new
-  availability dependency. The honest cost is that a dropped write is an *invisible* gap in results,
-  which is the same invisibility the backfill decision rejected; what closes it is that
-  `POST /api/search/reindex` is user-invocable and idempotent, so a suspected gap is repairable.
+  results, never conversation content, so nothing about search may be able to fail a turn. A dropped write is
+  an invisible gap; `POST /api/search/reindex` (user-invocable, idempotent) repairs it.
+  Do **not** describe the feature as "following ADR 0008" (it takes the shape 0008 rejected). Rationale: ADR 0061,
+  "The write is best-effort, and this is NOT ADR 0008's rejected shape".
 - **Evidence:** `src/Agent42.Agents/Search/ChatSearchProjection.cs` (each index call's own try/catch, including
   `DeleteConversationAsync`, which `PurgeAsync` awaits),
   `tests/Agent42.Tests/ChatSearchIndexingTests.cs` (`ThrowingIndex_DoesNotBreakTheReply`,
@@ -3328,38 +3247,22 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### A multi-property `ORDER BY` needs a composite index, or chat search 400s — and it looks like "no matches"
 
-- **Claim:** Cosmos NoSQL serves a **single**-property `ORDER BY` from the default range index, but a
-  **multi**-property one is a hard **400** — *"The order by query does not have a corresponding composite
-  index that it can be served from"* — unless that exact path sequence is declared as a `compositeIndexes`
-  entry on the container. ADR 0061 shipped `BuildSearchSql` ordering by `c.conversationId, c.ordinal`
-  against a `chat-messages` container that declared **no composite index at all**, so every
-  `GET /api/search` with a non-blank query failed in production. Note the irony before removing the
-  `ORDER BY` to "fix" it: it is there deliberately (without it `TOP` returns an arbitrary *n*, diverging
-  from `InMemoryChatSearchIndex`), so the composite index is the fix and dropping the ordering is not.
-  **Two things made it hide unusually well, and both generalise.** Writes were never affected —
-  `IndexTurnsAsync` is an `UpsertItemAsync`, which runs no query — so the corpus filled up normally and
-  only *reads* were broken, which rules out "the index must be empty" as the first hypothesis. And
-  `search.js` maps a non-ok response to zero hits (`hits = res.ok ? … : []`), so the 400 rendered as the
-  ordinary **"no matches"** row: a 409 (index unregistered), a 500, an offline fetch and a genuinely
-  empty result are **visually identical** in the sidebar. When search returns nothing, read the status
-  code of `/api/search` before theorising.
-  The composite index is also the **one** part of this container that can be changed after creation —
-  unlike `fullTextPolicy` — so the repair is a plain Bicep redeploy with a background reindex, no
-  migration and no re-backfill.
+- **Claim:** a multi-property Cosmos `ORDER BY` without a matching `compositeIndexes` entry is a hard 400, and
+  `search.js` renders any non-ok `/api/search` as the ordinary "no matches" row. When search returns nothing, read
+  the status code first. Fix a 400 with the composite index (changeable after creation, a plain Bicep redeploy),
+  never by dropping the `ORDER BY` (`TOP` would then diverge from `InMemoryChatSearchIndex`). The production
+  incident: ADR 0061, "Correction (2026-09-02)".
+- **Enforced by:** `CompositeIndexMatchesTheSearchQueryTests.EveryMultiPropertyOrderBy_HasAMatchingCompositeIndex`
+  (`tests/Agent42.Tests/CompositeIndexMatchesTheSearchQueryTests.cs`)
 - **Evidence:** `infra/modules/cosmos.bicep` (`chatMessagesContainer.indexingPolicy.compositeIndexes`),
   `src/Agent42.Backend/Search/CosmosChatSearchIndex.cs` (`BuildSearchSql`),
-  `src/Agent42.Backend/wwwroot/js/search.js` (`runSearch`),
-  `tests/Agent42.Tests/CompositeIndexMatchesTheSearchQueryTests.cs` — which pins the SQL's `ORDER BY`
-  against the Bicep and was **mutation checked** three ways (index removed, paths swapped, direction
-  flipped; each fails only the assertion that should catch it)
+  `src/Agent42.Backend/wwwroot/js/search.js` (`runSearch`)
 - **Verified:** 2026-11-24
 
 ### The sidebar search and the model's `search_past_chats` are DIFFERENT queries on purpose — and the twin is not BM25
 
-- **Claim:** `GET /api/search` uses `CONTAINS(c.text, @q, true)`, a whole-substring match, because people type
-  substrings. `search_past_chats` (ADR 0112) uses `SearchRankedAsync`: `FullTextContainsAny` + `ORDER BY RANK
-  FullTextScore`, because models type keywords. Do not "unify" them without an ADR: the sidebar would stop matching
-  phrases, or the tool would almost never match. The in-memory twin ranks by distinct terms matched, then
+- **Claim:** `GET /api/search` (whole-substring `CONTAINS`) and `search_past_chats` (`SearchRankedAsync`, ranked
+  any-term) differ on purpose; do not "unify" them without an ADR (why: ADR 0112, Decision 2). The in-memory twin ranks by distinct terms matched, then
   occurrences. It has **no IDF and no stemming**, so a test asserting a Cosmos/BM25 order offline asserts something
   false. Pin only "any term matches" and "more matched terms first". The Cosmos half is pinned as SQL text
   (`RankedSearchSql_*`) and executes only in prod. If Cosmos refuses `ORDER BY RANK`, the fallback is one `CONTAINS`
@@ -3386,44 +3289,15 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### The community `OrleansDashboard` package does not start the silo on Orleans 10.x — it CRASHES PROD
 
-- **Claim:** there are two packages with almost the same name, and picking the wrong one takes the whole
-  app down rather than producing a broken page. Use **`Microsoft.Orleans.Dashboard`** (the official one,
-  versioned with the Orleans stack). **Never** `OrleansDashboard` (the community one).
-  Measured on Orleans 10.2.2 with `OrleansDashboard` 8.2.0 — its latest, built 2024-07-13:
-
-  ```
-  System.MissingMethodException: Method not found:
-  '!!0 Orleans.Serialization.Invocation.ITargetHolder.GetTarget()'
-  ```
-
-  thrown from its pre-baked `OrleansCodeGen.OrleansDashboard.Invokable_*` types. The exception is
-  **unhandled out of `Silo.StartAsync`**, so the silo never starts.
-- **⚠ Why that is a production outage and not a broken page.** The app co-hosts the silo in the same
-  process (`builder.UseOrleans`), so a silo that will not start is a process that will not start. In
-  Container Apps revision health is gated on **every** container in the replica — the same mechanism
-  that makes a crash-looping SearXNG sidecar take the backend down — so this is the `SEARXNG_SECRET`
-  failure shape (on the availability path), not the `GOOGLE_MAPS_API_KEY` one (degrades per call).
-  It is also **invisible to a code review**: the two package ids differ by a prefix, both compile, and
-  the API surfaces are similar enough that the calling code looks right either way.
-- **It fails the vulnerability gate too, independently.** Its dependency tree pulls
-  `OpenTelemetry.Api` 1.9.0, which carries a known moderate advisory — a `vulnerable_packages: 0`
-  failure on its own, before the silo is even reached.
-- **Upstream is not going to fix it.** Issue #450 was closed without a fix; the project was deprecated
-  in Nov 2025 and merged into `dotnet/orleans` (PR #9751). The official package IS that merge.
-- **The guard matches the exact `Include` attribute, and must keep doing so.**
-  `Assert.DoesNotContain("Include=\"OrleansDashboard\"", …)` — a bare `Contains("Dashboard")` would
-  false-positive on `Microsoft.Orleans.Dashboard`, which this repo legitimately references, so the test
-  would fail on the correct state. The same test also asserts the Microsoft package IS present, so it
-  cannot pass by the whole section being deleted.
-- **Two more measured facts about the official package**, both worth knowing before touching it:
-  it installs a `GrainProfilerFilter` as an `IIncomingGrainCallFilter`, so **every** grain call is
-  profiled — including `AgentGrain`'s non-reentrant turn path — and it opens **no listener of its own**
-  (`DashboardOptions` has no `Port`/`HostSelf`, unlike the community package). The second one matters:
-  containers in one Container App share a network namespace, so a self-hosted dashboard port would have
-  been reachable from the SearXNG sidecar, which ADR 0059 treats as untrusted. It is not.
+- **Claim:** use `Microsoft.Orleans.Dashboard`, never the near-identically named community `OrleansDashboard`: on
+  Orleans 10.x it throws `MissingMethodException` out of `Silo.StartAsync`, and because the silo is co-hosted that is a
+  crash-looping app, not a broken page. Keep the ban matching the exact `Include` attribute (a bare "Dashboard" match
+  false-positives on the official package). The official package profiles EVERY grain call (`GrainProfilerFilter`).
+  Measured crash history and package facts: ADR 0062, "The community `OrleansDashboard` package must never be
+  referenced (measured)".
+- **Enforced by:** `QualityGateTests.Packages_DoNotReferenceTheDeprecatedCommunityDashboard`
+  (`tests/Agent42.Tests/QualityGateTests.cs`)
 - **Evidence:** `Directory.Packages.props` (the pin, with the ban in a comment beside it),
-  `tests/Agent42.Tests/QualityGateTests.cs`
-  (`Packages_DoNotReferenceTheDeprecatedCommunityDashboard`),
   `src/Agent42.Backend/Orleans/DashboardRegistration.cs`,
   `.agentic/decisions/0062-orleans-dashboard-owner-restricted.md`
 - **Verified:** 2026-11-24
@@ -3457,15 +3331,11 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### The prefs CSS cannot be one contiguous block — and the comments explaining that break the guards
 
-- **⚠ Two guards pull `styles.css` in opposite directions.** `.prefs` must be authored **after**
-  `.agent-dialog`: both are single classes, so specificity **ties** and source order decides — above
-  it, the Preferences dialog silently stays `min(520px, 92vw)` and the whole redesign is inert on
-  desktop, **with every other assertion in the suite still green**. Meanwhile the prefs
-  narrow-viewport block must **not** be the first 760px media block in the file, because
-  `tests/Agent42.Tests/TopbarActionsAssetsTests.cs` takes the first one and requires the base
-  `.topbar__brand` rule to appear before it. So the base rules sit after the shared `.agent-form__*`
-  family and the media block must not be the FIRST 760px block (`PrefsCss_IsOrderedAgainstBothConstraints`).
-- **⚠ The second-order trap, which cost two red tests.** Both guards are a plain `IndexOf` over the
+- **Claim:** `.prefs` must come after `.agent-dialog` (equal specificity, source order decides) while its
+  narrow-viewport block must not be the FIRST 760px media block (`TopbarActionsAssetsTests` reads that one).
+- **Enforced by:** `PreferencesLayoutAssetsTests.PrefsCss_IsOrderedAgainstBothConstraints`
+  (`tests/Agent42.Tests/PreferencesLayoutAssetsTests.cs`)
+- **⚠ Not enforced — the second-order trap, which cost two red tests.** Both guards are a plain `IndexOf` over the
   whole stylesheet text, and **`IndexOf` does not skip comments**. The natural comment explaining the
   split — "its `@media (max-width: 760px)` counterpart is at the end of the file", or "requires
   `.topbar__brand {` before it" — puts that exact literal **above** the rule it describes, so the guard
@@ -3729,31 +3599,22 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### The bridge key is accepted from the `X-Api-Key` HEADER only — never add a query-string fallback
 
-- **Claim:** `/api/local-bridge` is on `excludedPaths`, and the one thing keeping a **web page** from opening
-  that socket with a stolen or guessed key is that browsers cannot set custom headers on a WebSocket. A
-  `?key=` fallback — the usual fix when some WebSocket client "can't send headers" — removes that, and puts
-  the key in access logs as well. `Endpoint_FailsClosed("query-string")` pins the 401. The same reasoning is
-  why the helper takes the key from `AGENT42_BRIDGE_KEY` and refuses `--key`: argv is visible to every
-  process that can list this one.
-  **Since ADR 0109 there is exactly one other place: `Sec-WebSocket-Protocol`, and only under the Chrome
-  extension's exact `Origin`.** A browser WebSocket cannot set `X-Api-Key`, and declarativeNetRequest does not
-  touch an extension's own socket (measured). What keeps pages out is now the **Origin rule**: any present
-  `Origin` other than `LocalBridgeLimits.ExtensionOrigin` is refused even with a valid key, because pages cannot
-  forge `Origin`. Never accept the subprotocol key without that exact Origin, never echo the key back (echo
-  only `agent42-bridge.v1`), and never treat the Origin as a credential: the manifest key is public, and Node can
-  send that header (measured).
-- **Evidence:** `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs` (`ResolveKey`), `tools/Agent42.LocalBridge/BridgeOptions.cs`,
-  `tests/Agent42.Tests/LocalBridgeEndpointTests.cs` (`Endpoint_FailsClosed`,
-  `Endpoint_RejectsAWebPageOrigin_EvenWithAValidKey`, `Endpoint_SubprotocolKey_OnlyFromTheExtensionOrigin`),
-  `tests/Agent42.Tests/LocalBridgeKestrelTests.cs` (`Endpoint_NeverEchoesTheKeyInResponseHeaders`),
-  `tests/Agent42.Tests/LocalBridgeHelperTests.cs` (`Client_KeyFromEnvHeaderOnly`)
+- **Claim:** `/api/local-bridge` is Easy-Auth-excluded, and what keeps a web page off it is that browsers can't set
+  custom WebSocket headers. A `?key=` fallback removes that (and logs the key); so would a helper `--key` flag (argv
+  is visible). The only other key source is `Sec-WebSocket-Protocol` under the extension's exact `Origin` (ADR 0109);
+  never accept it without that Origin, never echo the key, and never treat the Origin as a credential.
+- **Enforced by:** `LocalBridgeEndpointTests.Endpoint_FailsClosed` (`"query-string"` case),
+  `Endpoint_RejectsAWebPageOrigin_EvenWithAValidKey`, `Endpoint_SubprotocolKey_OnlyFromTheExtensionOrigin`
+  (`tests/Agent42.Tests/LocalBridgeEndpointTests.cs`); `LocalBridgeKestrelTests.Endpoint_NeverEchoesTheKeyInResponseHeaders`;
+  `LocalBridgeHelperTests.Client_KeyFromEnvHeaderOnly`
+- **Evidence:** `src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs` (`ResolveKey`), `tools/Agent42.LocalBridge/BridgeOptions.cs`
 - **Verified:** 2026-11-24
 
 ### Nothing in a browser tab can relay to BrowserOS neo — any `Origin` gets a 403
 
 - **Claim:** measured on neo 0.0.53: an `initialize` with no `Origin` → 200; with **any** `Origin` (or
-  `Sec-Fetch-*`) → **403**. That is neo's own defence against web pages driving the signed-in browser, and it
-  is why the bridge is a console app rather than a page on our origin — do not try the browser relay again.
+  `Sec-Fetch-*`) → **403**, so do not try a browser relay again (why the bridge is a console app: ADR 0076,
+  Alternatives, "Relay from a browser tab").
   The flip side: the helper must **never add an `Origin`** upstream. A .NET `HttpClient` sends none by
   default; `Upstream_SendsNoOrigin` pins that on the production `HttpUpstream` against a real socket. Also
   measured: neo listens on **9210**, not the 9239 its docs name — take the URL as config.
@@ -4038,28 +3899,13 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `tests/Agent42.Tests/GrainStorageSerializerTests.cs` (`DocumentsWithoutResearchFields_Deserialize`)
 - **Verified:** 2026-11-24
 
-### Spiking Agent Framework in a file-based app needs reflection JSON switched back on
-
-- **Claim:** `dotnet run spike.cs` defaults to AOT-style settings, so `SerializeSessionAsync` fails on provider state
-  (compaction, todos) for reasons that do not exist in the repo. Add `#:property PublishAot=false` and
-  `#:property JsonSerializerIsReflectionEnabledByDefault=true`, or the spike reports a false failure. Also: a
-  brand-new `AgentSession` has no history state until its first run completes, so `TryGetInMemoryChatHistory`
-  returns **false** on it — code that reads the history length before a first turn must treat that as 0.
-- **Evidence:** `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`BeginResearchRun`),
-  `.agentic/specs/completed/plan-research-agent.md` (Spike results)
-- **Verified:** 2026-11-24
-
 ### Rich rendering runs on FINALIZE only — a new streaming call must pass `caret: true`, a new final one must not
 
-- **Claim:** markdown is re-parsed on every stream chunk, so `richtext.js`'s `enhance` (mermaid, highlight, KaTeX,
-  Chart.js) is NOT in `renderMarkdown`. It runs inside `setAgentMarkdown`'s non-caret branch, which makes every
-  non-streaming caller (stream end, stop, error, history, recovery) enhanced with no per-site wiring. The caret flag
-  therefore carries meaning: a new per-chunk call that forgets `{ caret: true }` runs mermaid on half a diagram on
-  every token, and a final render that passes it is never enhanced. `RichTextAssetsTests.Enhance_RunsOnFinalizeOnly`
-  counts the caret calls in the whole app corpus, so a new one fails the test until it is placed deliberately.
-  Comments count as well: don't write the literal `caret: true` in prose.
-- The marked math extensions DO run per chunk, but they only tokenize into `.math-inline`/`.math-block`
-  placeholders. Typesetting is part of `enhance`.
+- **Claim:** `enhance` (mermaid, highlight, KaTeX, Chart.js) runs only in `setAgentMarkdown`'s non-caret branch. A
+  new per-chunk call that forgets `{ caret: true }` runs mermaid on half a diagram every token, and a final render that
+  passes it is never enhanced. The test counts the literal `caret: true` in the whole app corpus, comments included,
+  so don't write it in prose.
+- **Enforced by:** `RichTextAssetsTests.Enhance_RunsOnFinalizeOnly` (`tests/Agent42.Tests/RichTextAssetsTests.cs`)
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/thread.js` (`setAgentMarkdown`),
   `src/Agent42.Backend/wwwroot/shared/lib/richtext.js` (`enhance`, `mathExtensions`),
   `tests/Agent42.Tests/RichTextAssetsTests.cs`, `.agentic/decisions/0083-rich-inline-rendering.md`
@@ -4087,14 +3933,12 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 ### Artifact tool ARGUMENTS are persisted too, so they are compacted after the turn
 
 - **Claim:** the "tool RETURN value is persisted" entry covers results. `create_artifact`/`update_artifact` carry
-  the whole artifact source in their ARGUMENTS, and the `FunctionCallContent` stays in the session as well. Ten
-  revisions of a 60 KB app would put 600 KB of dead text into the 2 MB item (ADR 0004), re-sent every turn, until
-  the conversation bricks in prod only. `CompactToolPayloads` (renamed from `CompactArtifactCalls` by ADR 0098)
+  the whole artifact source in their ARGUMENTS, and the `FunctionCallContent` stays in the session as well, growing
+  the 2 MB item (ADR 0004) until the conversation bricks in prod only. `CompactToolPayloads` (renamed from `CompactArtifactCalls` by ADR 0098)
   therefore runs at the **five** post-turn persist sites (`AgentGrain.cs` ×2, `AgentGrain.EditFork.cs` ×2,
   `AgentGrain.ImageTurn.cs` ×1), beside `ApplyRetention()` where the site has one. It replaces each call's `content` with `ArtifactLimits.Stub(id, v)` and each
   `read_artifact` result with the same stub. It replaces the content object rather than editing the argument
-  dictionary, and joins results by `CallId`. Measured on AF 1.22: a 60 KB call's session went from 60 603 to 630
-  bytes, and the next turn still pairs the call with its result. A new artifact-like tool (anything whose
+  dictionary, and joins results by `CallId` (the size measurement and 2 MB arithmetic: ADR 0084). A new artifact-like tool (anything whose
   arguments hold a document) needs the same treatment. A cap on what one call may carry is not enough, because
   every call stays. Since ADR 0098 the same pass has a second family: each successful `read_document` part
   (a result starting with `ReadDocumentLimits.PartHeaderPrefix`) becomes `ReadDocumentLimits.Stub(file, part)`;
@@ -4114,20 +3958,13 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### `/frame` safety is the CSP `sandbox` HEADER, not the iframe attribute
 
-- **Claim:** `<iframe sandbox="allow-scripts">` protects only the embedded case. Anyone can open
-  `…/artifacts/{a}/versions/{n}/frame` as a top-level page, where no attribute exists, and model-written script
-  would then run on the app origin with the Easy Auth cookie. That is stored XSS a prompt injection can plant. The
-  protection is `AgentApi.ArtifactCsp` on EVERY response of the artifact routes, failures included. Its
-  `sandbox allow-scripts` directive (never `allow-same-origin`) gives an opaque origin, `connect-src 'none'` stops
-  fetch/XHR/WebSocket from the artifact itself, and `form-action 'none'` stops a cookie-bearing form post (never
-  `'self'`, measured useless in the SearXNG entry). Still open by design (ADR 0084): self-navigation, `frame-src
-  https:` (an embedded page is sandboxed but NOT under this CSP, so it can make any request), and a framed
-  navigation to a same-origin GET carries the cookie. So a new authenticated GET with a side effect is reachable from an artifact. Keep side
-  effects off GET, or record the measurement in ADR 0084.
-  `/frame` also injects `ArtifactTheme` into the source. It goes AFTER the doctype and never before it, because a
-  style block ahead of `<!doctype>` puts the page in quirks mode. Its two Google Fonts hosts are the only CSP
-  allowances the theme needs, so keep its tokens in sync with `src/Agent42.Backend/wwwroot/shared/themes.css`: `ArtifactThemePalettes.cs` mirrors it and
-  `ThemePaletteTests` fails on drift (ADR 0129).
+- **Claim:** `<iframe sandbox="allow-scripts">` protects only the embedded case: `/frame` opened top-level would run
+  model-written script on the app origin with the Easy Auth cookie. The protection is `AgentApi.ArtifactCsp` on EVERY
+  response of the artifact routes, failures included; never add `allow-same-origin` or loosen `connect-src`/`form-action`.
+  Not covered by the test: a framed navigation to a same-origin GET still carries the cookie, so keep side effects off
+  authenticated GETs (or record the measurement in ADR 0084).
+- **Enforced by:** `ArtifactsApiTests.Frame_And_Content_SendSandboxHeaders` via `AssertSandboxHeaders`
+  (`tests/Agent42.Tests/ArtifactsApiTests.cs`); the theme-after-doctype rule by `tests/Agent42.Tests/ArtifactThemeTests.cs`
 - **Evidence:** `src/Agent42.Backend/Artifacts/AgentApi.Artifacts.cs` (`ArtifactCsp`, `AddArtifactHeaders`),
   `src/Agent42.Backend/Artifacts/ArtifactTheme.cs`, `tests/Agent42.Tests/ArtifactThemeTests.cs`,
   `src/Agent42.Backend/wwwroot/shared/lib/artifactpane.js` (`renderBody`), `tests/Agent42.Tests/ArtifactsApiTests.cs`
@@ -4137,24 +3974,22 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### Palette tokens live in `src/Agent42.Backend/wwwroot/shared/themes.css` only
 
-- **Claim:** every palette (10 x dark/light) is defined once, in `src/Agent42.Backend/wwwroot/shared/themes.css`; pages load it before their
-  own stylesheet and keep only non-palette tokens. A page that sets `data-theme` but not `data-palette` falls to the
-  amber fallback blocks, so never remove those (the public `/shared` pages rely on them for OS light). `ArtifactTheme`
-  cannot read the file, so its C# table is a mirror guarded by `ThemePaletteTests`; change a colour in the CSS, then the
-  table, never one alone. `--amber` means "the accent" in every palette. Contrast floors are measured there, and
-  amber/light's accent is the one pinned exception.
+- **Claim:** a palette colour changed in one place drifts: `ArtifactThemePalettes.cs` is a C# mirror of `themes.css`,
+  so change the CSS, then the table, never one alone. Never remove the amber fallback blocks: a page that sets
+  `data-theme` but not `data-palette` (the public `/shared` pages, for OS light) falls to them.
+- **Enforced by:** `ThemePaletteTests` (`ArtifactTheme_TableEqualsTheCss`, `ThemesCss_HasAmberFallbacks_ForPagesWithoutADataPalette`,
+  `EverySet_MeetsTheContrastFloors`; `tests/Agent42.Tests/ThemePaletteTests.cs`)
 - **Evidence:** `src/Agent42.Backend/wwwroot/shared/themes.css`, `src/Agent42.Backend/Artifacts/ArtifactThemePalettes.cs`,
   `tests/Agent42.Tests/ThemePaletteTests.cs`, `.agentic/decisions/0129-palette-second-axis-shared-themes-css.md`
 - **Verified:** 2026-11-24
 
 ### Artifact blobs are stored as octet-stream because the attachment proxies serve ANY id
 
-- **Claim:** `/api/conversations/{c}/attachments/{id}` and the public `/api/share/{token}/attachments/{id}` return
-  any blob under the owner key with its STORED media type and no CSP. An artifact saved as `text/html` or
-  `image/svg+xml` would render there on the app origin, for an anonymous share visitor too. So artifact bytes are
-  always saved as `application/octet-stream` (the kind lives in `ArtifactRecord`), both proxies send nosniff, and
-  `ArtifactVersionRef.AttachmentId` is `[JsonIgnore]` so the page never learns the raw id. Any new feature that
-  stores model- or web-authored bytes through `IAttachmentStore` must do the same.
+- **Claim:** both attachment proxies serve ANY blob under the owner key with its STORED media type and no CSP, so
+  model- or web-authored bytes saved as `text/html`/`image/svg+xml` render on the app origin (for an anonymous share
+  visitor too). Any new feature storing such bytes through `IAttachmentStore` must save `application/octet-stream`.
+- **Enforced by:** `ArtifactToolTests.ArtifactTools_StoreOctetStream` (`tests/Agent42.Tests/ArtifactToolTests.cs`),
+  `ArtifactsApiTests.AttachmentProxies_SendNoSniff` (`tests/Agent42.Tests/ArtifactsApiTests.cs`)
 - **Evidence:** `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs` (`ArtifactMediaType`),
   `src/Agent42.Backend/Attachments/AgentApi.Attachments.cs`, `src/Agent42.Backend/Sharing/AgentApi.Sharing.cs`,
   `tests/Agent42.Tests/ArtifactToolTests.cs` (`ArtifactTools_StoreOctetStream`),
@@ -4223,11 +4058,9 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   must reach the tool per run, never through a field.** A background run (`EnqueuePromptAsync`, a reminder) executes
   in a gap of the streaming turn, so a field read by `confirm_action` would hand the background run's call to the
   user's open browser. The broker is the run's `TurnContext.Broker` (ADR 0106), read through
-  `TurnContext.CurrentOrClosed`, which `PullAsync` sets around each of the run's own `MoveNextAsync` calls: the
-  iterator body (and FICC's tool invocation) runs under the caller's execution context, so only that run sees it, and
-  a run with no broker (or no run) gets null. Measured with a file-based spike on AF 1.23.0 (an interleaved second run
-  saw `null`), and mutation-checked: routing through `_clientToolBrokers` instead turns exactly
-  `BackgroundRun_CannotRouteToTheInteractiveBroker` red. `_clientToolBrokers` is only the by-identity registry the
+  `TurnContext.CurrentOrClosed`, which `PullAsync` sets around each of the run's own `MoveNextAsync` calls; a run
+  with no broker (or no run) gets null. Routing through `_clientToolBrokers` instead turns
+  `BackgroundRun_CannotRouteToTheInteractiveBroker` red (spike and mutation check: ADR 0089). `_clientToolBrokers` is only the by-identity registry the
   interleaved calls look ids up in. **(2)** `SubmitClientToolResultAsync`
   (and the pending query) are `[AlwaysInterleave]` on the INTERFACE and not `[OneWay]`: the turn is suspended inside
   a `MoveNext` waiting for exactly that call, so a queued call deadlocks until the wait times out. **(3)** The call is
@@ -4235,8 +4068,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   invokes the tool; an answer that completed nothing would be lost. The completion uses
   `RunContinuationsAsynchronously` so the interleaved call never resumes the turn inline. **(4)** Cap the WAIT
   (`WaitAsync(timeout, toolToken)` → a normal `{"status":"timeout"}` result), never the turn (the "Bounding a drained
-  agent turn" entry). Orleans delivers the call event at once and keeps the stream alive across a 150 s wait
-  (measured), and ACA's request timeout is 240 s, so `confirm_action`'s 120 s fits. Also: `<dialog>` keeps its old
+  agent turn" entry); keep it under ACA's 240 s request timeout (measurements: ADR 0089). Also: `<dialog>` keeps its old
   `returnValue` when Esc closes it, so the confirm dialog resets it before `showModal()`, or Esc after an Approve is a yes.
   **(5) A client tool may keep its own selectable key** (ADR 0093): `get_current_location` is in
   `ClientToolLimits.ToolNames` but maps to `location`, not `browser_tools` — moving it would turn it OFF for every
@@ -4254,10 +4086,8 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Claim:** ADR 0095. The elicitation handler runs on the MCP session's thread, on a connection that every
   conversation of the user shares, so it can neither read the run's `TurnContext.Broker` nor touch the broker's no-lock
   tool-call map. **(1) Routing.** `ElicitingMcpTool` opens a scope on the connection's `McpElicitationRouter` around
-  each call. Measured on SDK 2.2.0: over a **stateful streamable-HTTP** server the session negotiates 2025-11-25 (even
-  though the client defaults to 2026-07-28), and the router's `AsyncLocal` does **not** reach the handler
-  (`handlerSaw=<null>`). Over the local bridge's **stream** transport it negotiates 2026-07-28, and the `AsyncLocal`
-  **does** reach it. Remote servers therefore route by "the only scope in flight on this connection", and any
+  each call. The router's `AsyncLocal` reaches the handler over the local bridge's stream transport but NOT over a
+  stateful streamable-HTTP server (SDK measurements: ADR 0095, Context). Remote servers therefore route by "the only scope in flight on this connection", and any
   overlapping call to the same server answers `cancel`. Do not "fix" that with a guess. **(2) Thread affinity.** The
   handler enqueues into the broker's separate, **locked** `McpElicitationQueue`; the grain reads it on its own
   scheduler. A closed queue must refuse at once (`TryEnqueue` returns null), or an SDK-thread wait hangs after the
@@ -4325,8 +4155,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   rewriting: `assistantImageId` lives in message properties, and session image URLs are re-minted from
   `AttachmentRef.BlobPath` every turn. Only `BlobPath` changes. An artifact version holds only an attachment id,
   so its ref has to be looked up under the SOURCE key first. A version whose blob is missing is dropped, which
-  is why new versions are numbered after the last version rather than after the count. Any new
-  `IAttachmentStore` must implement `CopyAsync`; so must the two test fakes.
+  is why new versions are numbered after the last version rather than after the count.
 - **Evidence:** `src/Agent42.Agents/Conversations/ConversationForking.cs` (`CopyForkBlobAsync`,
   `CopyForkArtifactsAsync`), `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (`InitializeFromForkAsync`),
   `src/Agent42.Backend/Attachments/BlobAttachmentStore.cs` (`CopyAsync`),
@@ -4438,18 +4267,13 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### A fleet Copilot `SessionConfig` must NOT set `AvailableTools`
 
-- **Claim:** with built-in tools OFF, the copilot chat kind (`src/Agent42.Backend/Copilot/CopilotAgentFactory.cs`)
-  sets `AvailableTools` to its custom tool names, which restricts a `Mode.Empty` session to exactly those. Copying
-  that into `FleetCopilotAgentFactory.BuildSessionConfig` (or into the chat's built-ins-ON path, ADR 0107) would
-  restrict a default-mode session the same way and hide the shell and file built-ins. The fleet sets only `Tools`
-  (the canvas tools, ADR 0102; the attempt's todo tools, ADR 0117; and since ADR 0144 the task's catalog tools minus
-  `load_skill`) plus `SkillDirectories`/`EnableSkills` for the selected skills. Measured live for the chat kind on
-  2026-10-20: a default-mode BYOK session offers custom `Tools` alongside the built-ins (`web_search` and
-  `create`/`powershell` in one chat).
+- **Claim:** copying the chat kind's built-ins-OFF `AvailableTools` into `FleetCopilotAgentFactory.BuildSessionConfig`
+  (or the chat's built-ins-ON path, ADR 0107) restricts a default-mode session to the custom tools and hides the
+  shell and file built-ins. Set only `Tools` (plus `SkillDirectories`/`EnableSkills`).
+- **Enforced by:** `FleetCopilotAgentFactoryTests.SessionConfig_CarriesCanvasTools_KeepsBuiltins`,
+  `SessionConfig_CarriesCatalogTools_KeepsBuiltins` (`tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs`);
+  `CopilotRuntimeTests.SessionConfig_BuiltIns_PerConversationWorkingDirectory_NoAvailableTools`
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`BuildSessionConfig`),
-  `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs` (`SessionConfig_CarriesCanvasTools_KeepsBuiltins`,
-  `SessionConfig_CarriesCatalogTools_KeepsBuiltins`),
-  `tests/Agent42.Tests/CopilotRuntimeTests.cs` (`SessionConfig_BuiltIns_PerConversationWorkingDirectory_NoAvailableTools`),
   `.agentic/decisions/0102-fleet-shared-canvas.md`, `.agentic/decisions/0144-fleet-uses-user-tools.md`
 - **Verified:** 2026-11-24
 
@@ -4471,32 +4295,22 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### Fleet workspace downloads are an XSS sink: attachment, nosniff, never an HTML or SVG type
 
-- **Claim:** workspace files are written by models (and by Copilot shells). `/api/fleet/tasks/{id}/files/{**path}`
-  serves them from the APP ORIGIN, behind Easy Auth, so a file served as `text/html` or `image/svg+xml` would run
-  script with the user's session. `DownloadFleetFile` always sends `Content-Disposition: attachment`,
-  `X-Content-Type-Options: nosniff`, and `text/plain; charset=utf-8` (valid UTF-8, no NUL) or
-  `application/octet-stream`, whatever the extension. Never add a "preview" by content type here: a preview belongs
-  in a sandboxed origin, as the ADR 0084 artifact frame does. Paths with `..`, rooted paths and backslash tricks
-  are refused in `FleetStore.NormalizeWorkspacePath`.
+- **Claim:** model-written workspace files are served from the APP ORIGIN; served as `text/html`/`image/svg+xml`
+  they would run script with the user's session. Never add a "preview" by content type here: a preview belongs in a
+  sandboxed origin (the ADR 0084 artifact frame).
+- **Enforced by:** `FleetApiTests.FileDownload_IsAttachment_NoSniff_NotHtml`, `FleetApiTests.FileDownload_PathTraversal_Refused`
+  (`tests/Agent42.Tests/FleetApiTests.cs`)
 - **Evidence:** `src/Agent42.Backend/Fleet/AgentApi.Fleet.cs` (`DownloadFleetFile`, `IsUtf8Text`),
-  `src/Agent42.Agents/Fleet/FleetStore.cs` (`NormalizeWorkspacePath`),
-  `tests/Agent42.Tests/FleetApiTests.cs` (`FileDownload_IsAttachment_NoSniff_NotHtml`, `FileDownload_PathTraversal_Refused`)
+  `src/Agent42.Agents/Fleet/FleetStore.cs` (`NormalizeWorkspacePath`)
 - **Verified:** 2026-11-24
 
 ### The fleet's Copilot client is NOT ADR 0085's client: don't merge them
 
-- **Claim:** two `CopilotClient`s live in one silo on purpose. `CopilotAgentFactory` (the copilot agent kind) HAS
-  a `SessionFs` (the transcript in Blob, so chats resume across deploys) and auto-approves. With
-  `Copilot:BuiltInToolsEnabled` on (ADR 0107) it runs default mode with a real per-conversation directory on the Azure
-  Files share; off, it runs `CopilotClientMode.Empty` at a virtual `/work`. `FleetCopilotHost` runs default mode
-  with NO `SessionFs` (fleet sessions are one-shot), `SessionConfig.WorkingDirectory` set to the task's local
-  workspace, and a per-task policy that ASKS the user ("always" never outlives the task). Sharing one client would
-  give fleet agents a store-routed filesystem, or tie the chat's kill switch to the fleet's. Both environments are
-  `CopilotAgentFactory.ShellEnvironment()` (`MinimalEnvironment()` plus `PATH`) when built-ins are on, and both
-  approve `PermissionRequestCustomTool` without asking (default mode still raises it). The fleet's kill switch is
-  `Fleet:CopilotAgentsEnabled`. Since ADR 0102 fleet sessions carry the canvas tools as custom `Tools`. Measured
-  live for the chat client (2026-10-20): a default-mode BYOK session raises write and shell permissions, honours
-  the working directory, and offers custom tools.
+- **Claim:** two `CopilotClient`s live in one silo on purpose; do not share one. Sharing would give fleet agents the
+  chat's store-routed `SessionFs` filesystem, or tie the chat's kill switch (`Copilot:BuiltInToolsEnabled`) to the
+  fleet's (`Fleet:CopilotAgentsEnabled`). Both approve `PermissionRequestCustomTool` without asking (default mode
+  still raises it). Why two clients and how each is configured: ADR 0097, Decision 7, and
+  ADR 0107.
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs` (`FleetCopilotHost.BuildClientOptions`),
   `src/Agent42.Backend/Copilot/CopilotAgentFactory.cs` (`BuildClientOptions`),
   `tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs`, `tests/Agent42.Tests/LiveCopilotTests.cs`,
@@ -4538,31 +4352,26 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### A page that writes must not set `<meta name="referrer" content="no-referrer">`: its POSTs get `Origin: null` and Easy Auth 403s them
 
-- **Claim:** under a `no-referrer` policy the browser serialises the request origin as `null` (Fetch spec), so every
-  POST, PUT and DELETE from the page carries `Origin: null`. Easy Auth rejects those cookie-session writes with a
-  bare 403: no body, no `Content-Type`, only `X-Ms-Middleware-Request-Id`. The request never reaches the app, so
-  `/logs` shows nothing. GETs carry no `Origin`, so the page loads and reads fine, and only its writes fail. Seen on
-  `/fleet/` (2026-10-13): "Run task" answered 403 in production and 202 on DevHost, which has no Easy Auth. Use
-  `same-origin`: the page's own calls keep their real origin, and nothing leaks cross-site. `/logs` and `/shared`
-  keep `no-referrer` because they only read.
-- **Evidence:** `src/Agent42.Backend/wwwroot/fleet/index.html` (referrer meta),
-  `tests/Agent42.Tests/FleetPageAssetsTests.cs` (`FleetPage_ReferrerPolicy_KeepsTheOriginOnWrites`)
+- **Claim:** under `no-referrer` every write carries `Origin: null`, and Easy Auth answers it with a bare 403 that
+  never reaches the app (nothing in `/logs`); reads keep working, so only writes fail, in prod only. A page that
+  writes uses `same-origin`; read-only pages (`/logs`, `/shared`) may keep `no-referrer`.
+- **Enforced by:** `FleetPageAssetsTests.FleetPage_ReferrerPolicy_KeepsTheOriginOnWrites`
+  (`tests/Agent42.Tests/FleetPageAssetsTests.cs`) for `/fleet/` only; a new writing page needs its own check
+- **Evidence:** `src/Agent42.Backend/wwwroot/fleet/index.html` (referrer meta)
 - **Verified:** 2026-11-24 (the 403 from Easy Auth was observed. The fix is unverified in production until it is deployed.)
 
 ### The Anthropic SDK reads `ANTHROPIC_*` env vars and defaults `max_tokens` to 1024: set both explicitly
 
-- **Claim:** `AnthropicClient` falls back to `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` for
-  any of `ApiKey`/`AuthToken`/`BaseUrl` left unset. A per-user provider would then silently run on an ambient operator
-  credential (or send an extra `Authorization` bearer), against the no-operator-model rule (ADR 0019/0030). Its
-  `AsIChatClient` also sends `max_tokens: 1024` when neither `ChatOptions.MaxOutputTokens` nor `defaultMaxOutputTokens`
-  is set, which truncates a chat reply or a long `create_artifact` argument with no error. `Provider.Anthropic` sets
-  all three (with `AuthToken = null`) and passes `AnthropicLimits.DefaultMaxOutputTokens`. Keep it that way in any new
-  Anthropic client (a Foundry-hosted Claude kind included), and keep the live test's key in
-  `AGENT42_LIVE_ANTHROPIC_KEY`, never `ANTHROPIC_API_KEY`.
+- **Claim:** an `AnthropicClient` with `ApiKey`/`AuthToken`/`BaseUrl` unset silently uses ambient `ANTHROPIC_*`
+  env vars (an operator credential, against ADR 0019/0030), and `AsIChatClient` without a max-output setting sends
+  `max_tokens: 1024`, truncating replies and long `create_artifact` arguments with no error. Any new Anthropic client
+  (a Foundry-hosted Claude kind included) must set all three plus `AnthropicLimits.DefaultMaxOutputTokens`; the live
+  test's key lives in `AGENT42_LIVE_ANTHROPIC_KEY`, never `ANTHROPIC_API_KEY`.
+- **Enforced by:** `AnthropicEnvironmentTests.AnthropicRequest_UsesStoredKey_NotEnvironment`
+  (`tests/Agent42.Tests/AnthropicEnvironmentTests.cs`), `AnthropicProviderTests.AnthropicRequest_DefaultsMaxTokens`
+  (`tests/Agent42.Tests/AnthropicProviderTests.cs`), for `Provider.Anthropic` only
 - **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.Anthropic`),
   `src/Agent42.Backend/Models/AnthropicCompatibilityChatClient.cs` (`AnthropicLimits`),
-  `tests/Agent42.Tests/AnthropicEnvironmentTests.cs` (`AnthropicRequest_UsesStoredKey_NotEnvironment`),
-  `tests/Agent42.Tests/AnthropicProviderTests.cs` (`AnthropicRequest_DefaultsMaxTokens`),
   `.agentic/decisions/0103-anthropic-provider-kind.md`
 - **Verified:** 2026-11-24
 
@@ -4796,8 +4605,16 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Claim:** A `#:sdk Microsoft.NET.Sdk.Web` file-based app gets `PublishAot=true`, which turns off reflection-based
   `System.Text.Json`. Any `Results.Ok(new { … })` or anonymous-type body then throws, and with logging cleared it
   shows only as an empty 500 on every route. Add `#:property PublishAot=false` to a throwaway stand-in or spike.
+  An Agent Framework spike (`dotnet run spike.cs`) hits the same default as a false failure of `SerializeSessionAsync`
+  on provider state (compaction, todos): add `#:property PublishAot=false` AND
+  `#:property JsonSerializerIsReflectionEnabledByDefault=true`.
+- Also from the AF spike: a brand-new `AgentSession` has no history state until its first run completes, so
+  `TryGetInMemoryChatHistory` returns **false** on it — code that reads the history length before a first turn must
+  treat that as 0.
 - **Evidence:** the Signal DevHost exercise (`.agentic/specs/plan-chat-gateway.md`, the PublishAot note in "Progress and
-  divergences") and `.agentic/specs/completed/plan-self-host-local-storage.md` (same finding)
+  divergences") and `.agentic/specs/completed/plan-self-host-local-storage.md` (same finding);
+  `src/Agent42.Agents/Research/AgentGrain.Research.cs` (`BeginResearchRun`),
+  `.agentic/specs/completed/plan-research-agent.md` (Spike results)
 - **Verified:** 2026-11-24 (measured on .NET 10; the default on .NET 11 is not re-checked)
 
 ### Easy Auth answers an unauthenticated NON-browser request with 401, not the login redirect
@@ -4823,13 +4640,10 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### The signal-cli daemon has no auth and lives and dies with the gateway lease: told "lost" FIRST, watched by a watchdog
 
-- **Claim:** signal-cli's HTTP daemon has no authentication. It validates the Host header only when it binds a loopback
-  name; on `0.0.0.0` that validation is off. Measured on 0.14.9: `/api/v1/rpc` with a foreign Host answers 421, and
-  `/api/v1/check` answers 200 regardless. So `SignalDaemon` binds `--http=127.0.0.1:<port>`, and that bind is the
-  network control.
-
-  Its store is SQLite in WAL mode behind Java file locks, so two daemons on one store (a revision rollover) would be
-  corruption. That is why it is a child process run only while the gateway lease is held, never a sidecar:
+- **Claim:** signal-cli's HTTP daemon has no authentication, so `SignalDaemon` binds `--http=127.0.0.1:<port>`; that
+  bind is the network control (never `0.0.0.0`). Two daemons on one store would corrupt it, so it runs only while the
+  gateway lease is held. Why a child process and not a sidecar, and the Host-header measurement: ADR 0111, phase 3
+  amendment ("Rejected: a sidecar container"). Three traps hold it together:
   - **"Lost" comes before the sessions stop.** `ChatGatewayService` notifies `IChatGatewayLeaseParticipant`s "lost"
     BEFORE `StopAllAsync`, because a hung session dispose must not delay the kill. It does so on renewal failure, in
     the failure path and on shutdown, always before releasing the lease. The hook must be idempotent and fast: each
@@ -4954,10 +4768,8 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### A fleet share link exposes the live WORKSPACE, and its public routes reuse the owner's serving cores
 
-- **Claim:** a follow-up task shares its predecessor's workspace and canvas, so a fleet share link (ADR 0120) reaches
-  every file and canvas page of that workspace: the user's uploads under `inputs/`, generated text copies, whatever a
-  shell agent wrote, and later follow-ups, until the link is revoked. It is a live view, so say so wherever a link is
-  offered. Three things keep it safe, and each is easy to undo by "simplifying". **(1)** The task view is an allowlist
+- **Claim:** a fleet share link is a LIVE view of the whole workspace (uploads, shell output, later follow-ups); say so
+  wherever a link is offered (threat model: ADR 0120, Context and Consequences). Three things keep it safe, and each is easy to undo by "simplifying". **(1)** The task view is an allowlist
   DTO (`SharedFleetTaskResponse`), never `FleetTaskRecord`, and `reason` is a fixed string per status because the stored
   one is a raw exception message. **(2)** The public file and canvas routes call the SAME cores as the owner routes
   (`FleetFileDownloadAsync`, `FleetCanvasVersionAsync`), so attachment, `nosniff`, never-HTML and the artifact sandbox
@@ -5025,10 +4837,9 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### pgvector cannot index a vector above 2000 dimensions, so the local document index is an exact scan
 
-- **Claim:** HNSW and IVFFlat refuse a `vector` column over 2000 dimensions, and the document index default is 3072
-  (`text-embedding-3-large`). `PostgresDocumentIndex` therefore has NO ANN index: it orders by `embedding <=> @query` over the
-  owner's rows (every query is owner-scoped, so the scan is one conversation's chunks). A 3072-dimension `halfvec` can be
-  HNSW-indexed, if a corpus ever outgrows the scan. `Storage:Local:DocChunksDimensions` fixes the column at creation: changing
+- **Claim:** do not add an HNSW/IVFFlat index on the 3072-dim `vector` column: pgvector refuses one above 2000
+  dimensions, so `PostgresDocumentIndex` is an exact owner-scoped scan (decision: ADR 0127, Decision 7). If a corpus
+  outgrows the scan, a `halfvec` column can be HNSW-indexed. `Storage:Local:DocChunksDimensions` fixes the column at creation: changing
   it needs a new database, and ingest's pre-upsert dimension check (ADR 0030) is what turns a mismatch into a clear message.
 - **Evidence:** `src/Agent42.Backend/Storage/PostgresDocumentIndex.cs`, `src/Agent42.Backend/Storage/Sql/agent42.sql`
 - **Verified:** 2026-11-21

@@ -56,3 +56,21 @@ no embedding capability until a user configures one.
 - Zero migration: trailing `[Id(5)]` `SupportsEmbeddings` on `StoredModel`, trailing `[Id(3)]`
   `EmbeddingDefault` on `UserProviderConfig`. Offline (DevHost/tests) keeps the deterministic 128-dim
   generator behind the same per-user factory seam.
+
+## Notes moved from gotchas.md (2026-11-24)
+
+- **"Embeddings are a per-user model, not an operator prerequisite":** as of **ADR 0030** the embedding model is
+  **per-user**, not a fixed operator deployment. There is **no** `AzureOpenAI:EmbeddingDeploymentName`, **no** eager
+  `AzureOpenAI:ApiKey` startup check, and **no** operator `IEmbeddingGenerator` singleton — all removed. A user
+  declares an embedding model on a provider (the `SupportsEmbeddings` opt-in flag, like ADR 0020's image flag) and
+  picks it as the **default embedding model** in Preferences (`PUT /api/default-embedding-model`); ingestion and
+  retrieval resolve the generator via **`IChatClientFactory.GetEmbeddingGenerator()`** (a `Func` on `Provider`,
+  mirroring `GetImageGenerationService` — **no** new provider interface, **no** new every-host registration). Two
+  behaviours are load-bearing: **upload** of a document with no embedding model configured is rejected (composer
+  gates it client-side; server 4xx as defense-in-depth), while **retrieval** on an existing document conversation
+  with no embedding model **degrades to empty context — never throws** (the ADR 0019 no-model-chat discipline
+  extended to embeddings). The `text-embedding-3-large` deployment is still an Azure resource a user's Foundry
+  provider points at, but it is **not** a repo prerequisite and needs no RBAC (API-key auth).
+  `AzureOpenAI:Endpoint`/`ApiKey` survive ONLY as the **dormant** Foundry-provider inheritance source;
+  `AzureOpenAI:TenantId` still binds `DefaultAzureCredential`. The `AZURE_OPENAI_API_KEY` GitHub secret + ACA secret
+  are **removed**.
