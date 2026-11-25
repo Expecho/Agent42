@@ -417,22 +417,21 @@ function appendToolIo(item, label, json) {
   item.appendChild(io);
 }
 
-// The Auto router's choice (ADR 0137): a small live-only label beside AGENT 42. Never part of the reply text, so copy, export
-// and regenerate are untouched, and a reload (which replays stored turns) shows none.
+// The Auto router's choice (ADR 0137): remembered on the message and shown on its usage line, next to the tokens. Never part
+// of the reply text, so copy, export and regenerate are untouched, and a reload (which replays stored turns) shows none.
 export function renderRouted(msg, name) {
-  const meta = msg.querySelector(".msg__meta");
-  if (!meta || !name) return;
-  let label = meta.querySelector(".msg__routed");
-  if (!label) {
-    label = document.createElement("span");
-    label.className = "msg__routed";
-    meta.appendChild(label);
-  }
-  label.textContent = ` · auto → ${name}`;
+  if (!name) return;
+  msg.dataset.routed = name;
+  const usage = msg.querySelector(".msg__usage");
+  if (usage) usage.textContent = `auto → ${name} · ${usage.textContent}`;
 }
 
 export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheWriteTokens, costUsd, costStatus }) {
-  if (inputTokens == null && outputTokens == null) return;
+  const routed = msg.dataset.routed;
+  if (inputTokens == null && outputTokens == null) {
+    if (routed) appendUsage(msg, `auto → ${routed}`);
+    return;
+  }
   const parts = [];
   if (inputTokens != null) parts.push(`${inputTokens.toLocaleString()} in`);
   if (outputTokens != null) parts.push(`${outputTokens.toLocaleString()} out`);
@@ -443,8 +442,12 @@ export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheW
   // than a misleading $0; a Copilot model is included in the user's plan.
   if (costStatus === "priced") parts.push(`≈ ${formatCost(costUsd, costStatus)}`);
   if (costStatus === "included") parts.push("included in Copilot plan");
+  appendUsage(msg, `${routed ? `auto → ${routed} · ` : ""}tokens · ${parts.join(" · ")}`);
+}
+
+function appendUsage(msg, text) {
   const usage = document.createElement("div");
   usage.className = "msg__usage";
-  usage.textContent = `tokens · ${parts.join(" · ")}`;
+  usage.textContent = text;
   msg.appendChild(usage);
 }

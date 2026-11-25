@@ -266,7 +266,7 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v91", sw);
+        Assert.Contains("agent42-shell-v92", sw);
     }
 
     // Operator consoles (ADR 0054/0062/0121): the links to /logs and the Orleans dashboard sit INSIDE the

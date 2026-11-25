@@ -1033,7 +1033,6 @@ body {
 }
 
 /* The Auto router's pick (ADR 0137), live-only, beside AGENT 42. */
-.msg__routed { opacity: 0.7; text-transform: none; letter-spacing: 0; }
 
 .msg__meta {
   font-size: 10.5px;

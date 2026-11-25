@@ -81,8 +81,9 @@ public sealed class ModelRouterAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("chunk.type === \"routed\"", send);
         Assert.Contains("renderRouted(agentMsg, chunk.text)", send);
         Assert.Contains("export function renderRouted(msg, name)", thread);
-        // The label goes on the meta line, never into the reply's text.
-        Assert.Contains("msg.querySelector(\".msg__meta\")", thread);
+        // The label goes on the usage line next to the tokens, never into the reply's text.
+        Assert.Contains("msg.dataset.routed = name", thread);
+        Assert.Contains("auto → ${routed} · ", thread);
     }
 
     // Gotcha "The provider editor's capability checkboxes are positional": the save path destructures the checkboxes BY
@@ -116,6 +117,5 @@ public sealed class ModelRouterAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("hint: row.querySelector(\".provider-model-row__hint\").value.trim() || null", providers);
         Assert.Contains("hint.value = model?.hint ?? \"\";", providers);
         Assert.Contains(".provider-models--router .provider-model-row__hint", css);
-        Assert.Contains(".msg__routed", css);
     }
 }
