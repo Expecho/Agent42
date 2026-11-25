@@ -6,7 +6,7 @@ tags: [auth, easy-auth, authorization, owner-tier, telemetry, usage, risk-accept
 supersedes: []
 extends: [0062]
 amends: [0002, 0018, 0024, 0029, 0031, 0054, 0059, 0062, 0074, 0090, 0097, 0107]
-amended_by: [0128]   # 0128: Access:Owners ships empty and is set from the ACCESS_OWNERS repo variable
+amended_by: [0128, 0145]   # 0128: Access:Owners ships empty and is set from the ACCESS_OWNERS repo variable; 0145: native Entra sign-in is an alternative to Easy Auth
 ---
 
 # Open sign-in to everybody, with an advisory owner tier

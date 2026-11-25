@@ -1,0 +1,77 @@
+# Run Agent 42 in plain Docker against AZURE storage (Cosmos DB + Blob) with real Entra sign-in done by the app itself
+# (ADR 0145, Auth:Mode=entra): no Azure Container Apps, no Easy Auth, no Postgres. Each person signs in with their own
+# Entra account and keeps their own data, keyed by their Entra object id.
+#
+#   cp .env.example .env        # fill the "Azure + Entra sign-in" block
+#   docker compose -f compose.azure.yaml up -d
+#   open http://localhost:8080
+#
+# This is a standalone file, not an override of compose.yaml: compose cannot remove the Postgres dependency compose.yaml
+# gives the app. Read docs/setup/docker-entra.md first: the Entra app registration, the service principal and the Cosmos and
+# Blob role assignments are all yours to create (nothing here runs a role assignment).
+#
+# HTTPS: the session cookie is Secure whenever the request is https. http://localhost works (browsers treat it as a secure
+# context). On any other host, put a TLS-terminating proxy (Caddy, Traefik) in front, have it send X-Forwarded-Proto, and set
+# AUTH_PUBLIC_BASE_URL to the public address.
+
+services:
+  # The app image ends with USER $APP_UID (1654); a fresh named volume is owned by root. See compose.yaml.
+  init-volumes:
+    image: alpine:3.22
+    command: chown -R 1654:1654 /copilot
+    volumes:
+      - agent42-copilot:/copilot
+
+  searxng:
+    image: ${AGENT42_REGISTRY:-ghcr.io/expecho}/agent42-searxng:${AGENT42_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      SEARXNG_PORT: "8888"
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env}
+      SEARXNG_BASE_URL: http://searxng:8888/searxng/
+
+  app:
+    image: ${AGENT42_REGISTRY:-ghcr.io/expecho}/agent42-backend:${AGENT42_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      init-volumes:
+        condition: service_completed_successfully
+      searxng:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Sign-in is done by the app (ADR 0145). It refuses to start when the tenant, client id or secret is missing.
+      Auth__Mode: entra
+      Auth__Entra__TenantId: ${AZURE_TENANT_ID:?set AZURE_TENANT_ID in .env}
+      Auth__Entra__ClientId: ${AUTH_CLIENT_ID:?set AUTH_CLIENT_ID in .env}
+      Auth__Entra__ClientSecret: ${AUTH_CLIENT_SECRET:?set AUTH_CLIENT_SECRET in .env}
+      # Optional: the public address when a proxy rewrites Host (used for the OIDC redirect and sign-out URIs).
+      Auth__PublicBaseUrl: ${AUTH_PUBLIC_BASE_URL:-}
+      # Azure storage. The key ring goes to Blob only on the BlobEndpoint path (never a connection string), so sessions and
+      # stored provider keys survive a restart.
+      ConnectionStrings__cosmos: ${COSMOS_ACCOUNT_ENDPOINT:?set COSMOS_ACCOUNT_ENDPOINT in .env}
+      Storage__BlobEndpoint: ${BLOB_ENDPOINT:?set BLOB_ENDPOINT in .env}
+      Cosmos__DocChunksContainerName: ${COSMOS_DOC_CHUNKS_CONTAINER:-doc-chunks}
+      Cosmos__ChatMessagesContainerName: ${COSMOS_CHAT_MESSAGES_CONTAINER:-chat-messages}
+      # DefaultAzureCredential reads these three: a service principal that holds the Cosmos data-plane and Blob roles.
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:?set AZURE_CLIENT_ID in .env}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:?set AZURE_CLIENT_SECRET in .env}
+      AzureOpenAI__TenantId: ${AZURE_TENANT_ID}
+      WebSearch__Endpoint: http://searxng:8888
+      # OFF: a signed-in user can run the Copilot shell INSIDE this container (ADR 0107), where it can read the service
+      # principal secret above and forge the principal header (ADR 0121, 0145). Turn it on only for people you fully trust.
+      Copilot__BuiltInToolsEnabled: "false"
+      Copilot__WorkspaceRoot: /copilot
+      # Your own Entra object id (Entra ID -> Users -> Object ID). Never `local-dev`: nobody is local-dev with real sign-in.
+      # Env vars override array items by index, so entry 0 is yours and the committed entry 1 is blanked.
+      Access__Owners__0: ${OWNER_OBJECT_ID:?set OWNER_OBJECT_ID in .env}
+      Access__Owners__1: ""
+    volumes:
+      - agent42-copilot:/copilot
+    # Loopback only: put a TLS-terminating proxy in front before exposing it beyond this machine.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  agent42-copilot:

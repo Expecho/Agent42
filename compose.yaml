@@ -9,6 +9,9 @@
 #
 # Read docs/features/self-hosting.md first. The short version: there is NO authentication (every request is the one user
 # "local-dev"), so the app is bound to 127.0.0.1 only. Put an authenticating reverse proxy in front before exposing it.
+#
+# Want real Entra sign-in and your Azure Cosmos + Blob data in Docker instead? See compose.azure.yaml and
+# docs/setup/docker-entra.md (ADR 0145).
 
 services:
   # The app image ends with USER $APP_UID (1654, the aspnet image's non-root user), and a fresh named volume is owned by

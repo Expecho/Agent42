@@ -16,7 +16,9 @@ public static class LocalModeWarning
     /// <summary>Logs <see cref="Text"/> when the provider is <see cref="StorageProvider.Local"/>. Returns whether it did.</summary>
     public static bool LogIfLocal(IConfiguration configuration, ILogger logger)
     {
-        if (StorageProviderSetting.Read(configuration) != StorageProvider.Local)
+        // With Auth:Mode=entra (ADR 0145) the app does have sign-in, so the "no authentication" warning would be false.
+        if (StorageProviderSetting.Read(configuration) != StorageProvider.Local
+            || AuthModeSetting.Read(configuration) == AuthMode.Entra)
         {
             return false;
         }

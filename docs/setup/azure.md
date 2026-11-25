@@ -2,7 +2,8 @@
 
 A step-by-step guide to running your own copy on Azure Container Apps, with Entra ID sign-in, deployed by GitHub Actions.
 It takes about an hour the first time, most of it waiting for the first deploy. Without an Azure account, use
-[Run locally](local.md) instead.
+[Run locally](local.md) instead. Easy Auth does the sign-in on Container Apps; to use Docker with your Azure storage instead,
+see [Docker with Entra sign-in](docker-entra.md).
 
 This guide is the walkthrough. The complete reference for every secret and variable, and what each missing one does, is
 [`docs/features/azure-deployment.md`](../features/azure-deployment.md).

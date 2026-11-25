@@ -31,6 +31,7 @@
     <!-- Chat gateway (ADR 0111, phase 1b): the Discord GATEWAY websocket only (heartbeat, identify, resume, close
          codes). Replies use the hand-rolled DiscordRestApi. Chosen over NetCord, which has no stable release. -->
     <PackageVersion Include="Discord.Net.WebSocket" Version="3.20.2" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Orleans.Persistence.AdoNet" Version="10.4.2" />
     <PackageVersion Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.4.2" />
     <PackageVersion Include="Npgsql" Version="11.0.0" />
@@ -109,4 +110,4 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
-</Project>
+</Project>

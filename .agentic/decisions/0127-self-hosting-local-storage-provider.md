@@ -6,6 +6,7 @@ tags: [storage, self-hosting, postgres, orleans, attachments, docker, no-migrati
 supersedes: []
 extends: [0001, 0004, 0007, 0018, 0061, 0111]
 amends: [0001, 0004, 0007, 0018, 0061, 0111]
+amended_by: [0145]
 ---
 
 # A second storage provider: Postgres and a filesystem volume, selected by `Storage:Provider`

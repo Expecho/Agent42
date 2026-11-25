@@ -43,6 +43,13 @@ Embedding models are chosen per user, so they don't appear in this report. Check
 With local storage, the report adds a storage provider row, and the Azure-only items (blob endpoint,
 tenant id) show as not applicable. See [Self-hosting](self-hosting.md).
 
+## Sign-in rows
+
+An `Auth:Mode` row says whether Easy Auth or the app's own Entra sign-in is in use. With `entra`, two more rows appear:
+`Auth:DataProtectionKeyRing` is an error when the key ring is not persisted (every restart then signs everyone out and
+loses stored provider keys), and `Auth:OwnersLocalDev` is an error when `Access:Owners` lists `local-dev`. See
+[Docker with Entra sign-in](../setup/docker-entra.md).
+
 ## For operators
 
 Owners are the object ids listed in the `Access:Owners` setting. If it is empty, nobody is an owner and

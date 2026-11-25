@@ -50,7 +50,9 @@ session files, the Data Protection key ring) and `agent42-copilot` (chat workspa
 
 - **No authentication.** Every request is the single user `local-dev`. The compose file binds the app to loopback and the
   app logs a warning at startup. To reach it from elsewhere, put a reverse proxy that authenticates in front. Do not publish
-  port 8080 as it is.
+  port 8080 as it is. Alternatively set `Auth__Mode=entra` (with `Auth__Entra__*`) to make the app itself sign users in with
+  Entra ID, which works with local storage too; see [Docker with Entra sign-in](../setup/docker-entra.md). In that mode the
+  startup warning is not logged.
 - **Images are sent as bytes.** A hosted model cannot fetch a URL on your machine, so each request carries the images inline.
   An image over 4 MB, or images beyond 16 MB in one request, are replaced by a short text note, oldest first, and the chat
   carries on. Tune with `Storage:Local:InlineImageMaxBytes` and `Storage:Local:InlineImagesTotalBytes`.

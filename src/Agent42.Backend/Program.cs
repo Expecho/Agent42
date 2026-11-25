@@ -15,6 +15,15 @@ const string OtelSourceName = LiveTelemetryCaptureExtensions.OtelSourceName;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Who authenticates the caller (ADR 0145): Easy Auth in front of the app (the default; absent changes nothing and prod's
+// Bicep needs no change), or this process via native Entra OIDC. `entra` with a missing setting throws here, at startup:
+// failing open to an anonymous `local-dev` owner is worse than not booting.
+var authMode = AuthModeSetting.Read(builder.Configuration);
+if (authMode == AuthMode.Entra)
+{
+    builder.Services.AddEntraAuth(EntraAuthSettings.Read(builder.Configuration));
+}
+
 // Usage-telemetry ingestion channel (ADR 0031): the span processor enqueues projected usage events
 // here (OnEnd, best-effort) and UsageIngestionService drains them into the global rollup grain.
 // Bounded + DropWrite so a slow grain can never back-pressure the OTel export path.
@@ -55,9 +64,15 @@ builder.Services.AddSingleton<IOwnerPolicy>(OwnerPolicy.FromConfiguration(builde
 // the Backend, keeping the shared ServiceDefaults generic (ADR 0002). This Configure delegate
 // composes with the AddAspNetCoreInstrumentation Filter set in ServiceDefaults — both run, they set
 // different options properties, so neither overwrites the other.
-builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(options =>
-    options.EnrichWithHttpRequest = (activity, request) =>
-        activity.ApplyUserTelemetryTags(request.Headers, userIdAliases));
+//
+// Skipped in `entra` mode (ADR 0145): this runs at HttpRequestIn.Start, BEFORE any middleware, so it would tag the span from
+// a FORGED X-MS-CLIENT-* header. PrincipalHeaderMiddleware re-applies the tags after it has stamped the real principal.
+if (authMode != AuthMode.Entra)
+{
+    builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(options =>
+        options.EnrichWithHttpRequest = (activity, request) =>
+            activity.ApplyUserTelemetryTags(request.Headers, userIdAliases));
+}
 
 // No operator embedding floor any more: embeddings are a per-user model chosen in Preferences (the
 // document-RAG generator resolves from the user's overlay, ADR 0007/0018), so AzureOpenAI:Endpoint/ApiKey
@@ -416,6 +431,9 @@ var app = builder.Build();
 // Local storage (Storage:Provider = local) runs with no authentication: say so once at startup. See LocalModeWarning.
 LocalModeWarning.LogIfLocal(builder.Configuration, app.Logger);
 
+// Native Entra sign-in (ADR 0145): an ephemeral Data Protection ring or a `local-dev` owner must not fail silently.
+AuthStartupChecks.LogIfEntra(builder.Configuration, app.Logger);
+
 // An alias entry is an authorization grant, so one refused for being malformed must be visible rather
 // than silently absent. Warning, not Information: Logging:LogLevel:Default is Warning in production, so
 // an Information record would never reach a log at all (ADR 0054). The Configuration health tab reports
@@ -474,6 +492,18 @@ forwardedHeaders.KnownIPNetworks.Clear();
 forwardedHeaders.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeaders);
 
+// Native Entra sign-in (ADR 0145), only in `entra` mode. This is the trust boundary that replaces the Easy Auth ingress:
+// authenticate the cookie, strip every inbound X-MS-CLIENT-* header and stamp them from the principal (so it precedes
+// UserTelemetryMiddleware, which reads them), then gate. The gate MUST stay ABOVE UseDefaultFiles/UseStaticFiles: those are
+// terminal middleware that no authorization policy ever sees, and Easy Auth used to gate /index.html and /logs too. The
+// stamper and gate also precede UseWebSockets (inside UseLocalBridge).
+if (authMode == AuthMode.Entra)
+{
+    app.UseAuthentication();
+    app.Use(PrincipalHeaderMiddleware.InvokeAsync);
+    app.Use(AuthGateMiddleware.InvokeAsync);
+}
+
 // First of our own middleware (the proxy fix-up above only corrects what the ingress obscured): extract
 // the request's identity once and publish it into Orleans
 // RequestContext, so it propagates to every downstream span — in-request HttpClient spans and,
@@ -503,6 +533,12 @@ app.UseAgentMcpKeyGate();
 app.UseLocalBridge();
 
 app.MapDefaultEndpoints();
+
+// /.auth/login/aad, /.auth/logout, /.auth/me: Easy Auth's URLs, served here only when this process does the sign-in.
+if (authMode == AuthMode.Entra)
+{
+    app.MapAuthEndpoints();
+}
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

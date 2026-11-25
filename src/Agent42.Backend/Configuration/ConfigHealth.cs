@@ -80,6 +80,8 @@ public static class ConfigHealth
             "Injected by Bicep into the Container App's auth sidecar; it is not visible to app config, "
             + "so it cannot be presence-checked here.", Billable: false));
 
+        AddAuthChecks(checks, config);
+
         // ————— Optional / degrading features (the high-value items) —————
         checks.Add(PresenceCheck(GroupOptional, "Geocoding:GoogleApiKey", config["Geocoding:GoogleApiKey"],
             present: "reverse geocoding enabled",
@@ -205,6 +207,37 @@ public static class ConfigHealth
                 : $"{aliases.Count} alias(es) active: that many additional accounts resolve to another "
                     + "account's data.",
             Billable: false);
+    }
+
+    // Who authenticates the caller (ADR 0145). In entra mode the two silent failures are surfaced: an ephemeral Data Protection
+    // ring (every restart signs everyone out and orphans stored provider keys) and `local-dev` listed as an owner.
+    private static void AddAuthChecks(List<ConfigCheck> checks, IConfiguration config)
+    {
+        if (AuthModeSetting.Read(config) != AuthMode.Entra)
+        {
+            checks.Add(new ConfigCheck(GroupInfra, AuthModeSetting.Key, Ok,
+                "easyauth — sign-in is done by Azure Container Apps built-in authentication in front of the app (the default).",
+                Billable: false));
+            return;
+        }
+
+        checks.Add(new ConfigCheck(GroupInfra, AuthModeSetting.Key, Ok,
+            "entra — the app signs users in itself (Entra OIDC) and stamps the principal headers.", Billable: false));
+
+        var persisted = AuthStartupChecks.DataProtectionRingPersisted(config);
+        checks.Add(new ConfigCheck(GroupInfra, "Auth:DataProtectionKeyRing", persisted ? Ok : Error,
+            persisted
+                ? "persisted — sessions and stored provider keys survive a restart."
+                : "ephemeral — every restart signs everyone out and orphans stored provider API keys. Set Storage:BlobEndpoint "
+                    + "(not ConnectionStrings:blobs) or use Storage:Provider=local.",
+            Billable: false));
+
+        var localDevOwner = AuthStartupChecks.OwnersContainLocalDev(config);
+        checks.Add(new ConfigCheck(GroupInfra, "Auth:OwnersLocalDev", localDevOwner ? Error : Ok,
+            localDevOwner
+                ? "Access:Owners lists 'local-dev'. Remove it: with real sign-in it would make unauthenticated public-path requests owners."
+                : "Access:Owners does not list 'local-dev'.",
+            Billable: false));
     }
 
     // The Azure-only keys are not applicable offline, and not applicable when Storage:Provider is local (Postgres plus a

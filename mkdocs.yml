@@ -42,6 +42,7 @@ nav:
       - Run locally: setup/local.md
       - Deploy to Azure: setup/azure.md
       - Self-hosting: features/self-hosting.md
+      - Docker with Entra sign-in: setup/docker-entra.md
       - Azure deployment details: features/azure-deployment.md
   - Features:
       - Overview: features/README.md

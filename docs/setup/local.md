@@ -118,7 +118,8 @@ provider keys.
 
 What differs from the Azure deployment, and the limits of this mode (no auth, images sent as bytes, no document-search
 index, Copilot shell disabled, one replica), are in [`self-hosting.md`](../features/self-hosting.md). Read its "Limits"
-section before exposing the app to anyone else.
+section before exposing the app to anyone else. If you want real accounts instead of `local-dev`, run Docker with the app's
+own Entra sign-in and Azure storage: [Docker with Entra sign-in](docker-entra.md).
 
 ## Add your first model provider
 

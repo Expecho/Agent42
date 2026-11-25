@@ -5078,3 +5078,22 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Models/ResponsesCompletedTextFallbackChatClient.cs`, `src/Agent42.Backend/Models/ChatClientFactory.cs`,
   `tests/Agent42.Tests/ResponsesCompletedTextFallbackTests.cs`
 - **Verified:** 2026-11-24
+
+### In `Auth:Mode=entra` the header stamper and the gate ARE the trust boundary
+
+- **Claim:** In Azure the ingress strips inbound `X-MS-CLIENT-*` and gates every path, static files included. In `entra` mode
+  (ADR 0145) nothing does, so `PrincipalHeaderMiddleware` deletes every inbound `X-MS-CLIENT-*` header (public paths too) and
+  stamps them only from the cookie principal, and `AuthGateMiddleware` challenges anything not in `PublicPaths` or `/.auth/*`.
+  Four traps: (1) the gate must sit ABOVE `UseDefaultFiles`/`UseStaticFiles`: they are terminal middleware, so a fallback
+  authorization policy never sees `/index.html`, `/logs` or `/sw.js`; (2) the user id is the `oid` claim, never `sub`
+  (pairwise per app, a wrong choice silently orphans all stored data); (3) `PublicPaths` is a copy of the Bicep
+  `excludedPaths`, pinned equal by `PublicPathsTests`, so change both together; (4) the pre-pipeline
+  `EnrichWithHttpRequest` reads raw headers before any middleware and is skipped in `entra` mode, else a forged header tags spans.
+  Only a GET with `Accept: text/html` is redirected; Android sends no `Accept`, so a bare 401 is its sign-in-again signal, and a POST
+  is never redirected. The cookie ticket is trimmed to four claims so it stays one chunk (Android sends one cookie). Query
+  response mode keeps the correlation cookie Lax so plain `http://localhost` works. Stripping protects against the network, not
+  a process inside the container (the Copilot shell can forge the header, ADR 0121).
+- **Evidence:** `src/Agent42.Backend/Auth/PrincipalHeaderMiddleware.cs`, `src/Agent42.Backend/Auth/AuthGateMiddleware.cs`,
+  `src/Agent42.Backend/Auth/PublicPaths.cs`, `tests/Agent42.Tests/EntraAuthTests.cs`, `tests/Agent42.Tests/ProjectLayoutTests.cs`,
+  `.agentic/decisions/0145-native-entra-sign-in.md`
+- **Verified:** 2026-11-25
