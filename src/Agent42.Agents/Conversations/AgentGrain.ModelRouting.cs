@@ -86,7 +86,6 @@ public sealed partial class AgentGrain
             return UnroutedAuto();
         }
 
-        var wasAuto = _state.State.AutoModel;
         _state.State.AutoModel = true;
 
         var decision = await RouteSafelyAsync(router, message, attachments);
@@ -98,7 +97,7 @@ public sealed partial class AgentGrain
             return UnroutedAuto();
         }
 
-        return await ApplyDecisionAsync(decision, wasAuto);
+        return await ApplyDecisionAsync(decision);
     }
 
     // The router call itself. A failure keeps the current model (ADR 0137), so it never throws out of the turn.
@@ -119,7 +118,7 @@ public sealed partial class AgentGrain
         }
     }
 
-    private async Task<TurnModel> ApplyDecisionAsync(RouterDecision decision, bool wasAuto)
+    private async Task<TurnModel> ApplyDecisionAsync(RouterDecision decision)
     {
         if (decision.Changed)
         {
@@ -137,7 +136,7 @@ public sealed partial class AgentGrain
             return new TurnModel(null, routed, decision.ModelId);
         }
 
-        return new TurnModel(decision.Changed ? decision.ModelId : null, decision.Changed || !wasAuto ? routed : null);
+        return new TurnModel(decision.Changed ? decision.ModelId : null, routed);
     }
 
     // An Auto turn that was not routed. Normally it keeps the current model, but a conversation left on an image model must not

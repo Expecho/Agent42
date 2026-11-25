@@ -91,7 +91,7 @@ public sealed class ModelRouterGrainTests(SharedClusterFixture fixture) : Shared
     }
 
     [Fact]
-    public async Task Sticky_LabelsOnlyTheFirstAutoTurnAndRealChanges()
+    public async Task Sticky_LabelsEveryAutoTurnWithTheModelInUse()
     {
         var router = UseRouter(To(Blind));
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(NewKey());
@@ -103,7 +103,7 @@ public sealed class ModelRouterGrainTests(SharedClusterFixture fixture) : Shared
         var third = await Collect(agent.ChatAsync("three", AutoModelId.Value));
 
         Assert.Contains(first, e => e.Type == AgentStreamEventType.Routed);
-        Assert.DoesNotContain(second, e => e.Type == AgentStreamEventType.Routed);
+        Assert.Equal(Blind, Assert.Single(second, e => e.Type == AgentStreamEventType.Routed).Model);
         Assert.Equal(TestSiloConfigurator.DefaultModel, Assert.Single(third, e => e.Type == AgentStreamEventType.Routed).Model);
         Assert.Equal(3, router.Calls.Count);
         // The router is told the model the conversation is on, so it can be sticky.
