@@ -1804,6 +1804,7 @@
     approvalDepth: ["Approval depth", "Teams up to this depth ask you to approve their plan; -1 turns approval off."],
     maxClarifyingQuestions: ["Clarifying questions", "Questions the clarify step may ask before a task is planned."],
     selfReviewMaxIterations: ["Self-review runs", "Most runs of the agent that writes a result in a self-review, the first included. 1 turns it off."],
+    defaultModel: ["Default model", "The model a task runs on when you pick none in the composer. Blank: your default model from Settings."],
     defaultCopilotModel: ["Copilot agent model", "The model a plain copilot agent runs on. Blank: the task's model."],
     dreamAtUtc: ["Dream starts at (UTC)", "The time of day the nightly dream window opens, as HH:mm."],
     dreamWindowHours: ["Dream window (hours)", "How long the window stays open."],
@@ -1837,16 +1838,19 @@
   function settingInput(f, d, current) {
     const attrs = { id: "setting-" + f.key, "aria-label": SETTING_TEXT[f.key]?.[0] || f.key };
     let input;
-    if (f.kind === "model") {
-      input = h("select", attrs, h("option", { value: "", text: d[f.key] ? `Operator's value (${d[f.key]})` : "Operator's value (the task's model)" }),
-        (S.settings.copilotModels || []).map(m => h("option", { value: m.id, text: m.name === m.id ? m.id : `${m.name} (${m.id})` })));
+    const isModel = f.kind === "model" || f.kind === "taskmodel";
+    if (isModel) {
+      const blank = f.kind === "taskmodel" ? "your default model" : "the task's model";
+      const choices = f.kind === "taskmodel" ? S.settings.taskModels : S.settings.copilotModels;
+      input = h("select", attrs, h("option", { value: "", text: d[f.key] ? `Operator's value (${d[f.key]})` : `Operator's value (${blank})` }),
+        (choices || []).map(m => h("option", { value: m.id, text: m.name === m.id ? m.id : `${m.name} (${m.id})` })));
     } else if (f.kind === "time") {
       input = h("input", { ...attrs, type: "text", inputmode: "numeric", maxlength: "5", placeholder: d[f.key] || "HH:mm" });
     } else {
       input = h("input", { ...attrs, type: "number", min: f.min, max: f.max, step: f.kind === "number" ? "0.05" : "1", placeholder: String(d[f.key] ?? "") });
     }
     // A saved model that is no longer offered stays selectable, so pressing Save does not silently clear it.
-    if (f.kind === "model" && current && ![...input.options].some(o => o.value === current)) input.append(h("option", { value: current, text: `${current} (no longer offered)` }));
+    if (isModel && current && ![...input.options].some(o => o.value === current)) input.append(h("option", { value: current, text: `${current} (no longer offered)` }));
     input.value = current ?? "";
     return input;
   }

@@ -59,7 +59,7 @@ public sealed class FleetSettingsApiTests(FleetSettingsApiFixture fixture) : Sha
         Assert.Equal(JsonValueKind.Null, body.GetProperty("settings").GetProperty("maxAttempts").ValueKind);
         Assert.Equal(4, body.GetProperty("defaults").GetProperty("maxAttempts").GetInt32());
         var fields = body.GetProperty("fields").EnumerateArray().ToList();
-        Assert.Equal(25, fields.Count);
+        Assert.Equal(26, fields.Count);
         var attempts = fields.Single(f => f.GetProperty("key").GetString() == "maxAttempts");
         Assert.Equal((1, 6), (attempts.GetProperty("min").GetInt32(), attempts.GetProperty("max").GetInt32()));
         Assert.DoesNotContain(fields, f => f.GetProperty("key").GetString() == "maxTokensPerTaskLimit");

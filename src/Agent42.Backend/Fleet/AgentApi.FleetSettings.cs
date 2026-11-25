@@ -38,6 +38,7 @@ public static partial class AgentApi
                 max = d.Kind is "int" or "number" ? (double?)d.Max : null,
                 followsTeamDepth = d.FollowsTeamDepth,
             }),
+            taskModels = (await settings.TaskModelChoicesAsync(userId, ct)).Select(m => new { id = m.Id, name = m.DisplayName ?? m.Id }),
             copilotModels = (await settings.CopilotModelChoicesAsync(userId, ct)).Select(m => new { id = m.Id, name = m.DisplayName ?? m.Id }),
         });
     }

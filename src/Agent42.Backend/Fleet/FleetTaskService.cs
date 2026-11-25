@@ -73,15 +73,14 @@ public sealed partial class FleetTaskService(
         // A GitHub Copilot model (ADR 0108) is never the task's model, only a Copilot agent's: it rides along to the run
         // for the Copilot factory and the planner prompt, after the check below.
         var copilotOnly = catalog.Models.Where(m => m.CopilotOnly && m.SupportsTools).ToList();
-        var model = string.IsNullOrWhiteSpace(request.Model) ? catalog.Default : request.Model;
+        // The user's overrides (ADR 0135), resolved ONCE: the budget below and the whole run use this snapshot, so a save
+        // mid-submit or mid-run changes the next task, never this one.
+        var effective = await ResolveOptionsAsync(userId, cancellationToken);
+        var model = ChooseModel(request.Model, effective.DefaultModel, catalog.Default, models);
         if (!models.Any(m => m.Id.Equals(model, StringComparison.Ordinal)))
         {
             return (null, "Pick one of your models that supports tools.");
         }
-
-        // The user's overrides (ADR 0135), resolved ONCE: the budget below and the whole run use this snapshot, so a save
-        // mid-submit or mid-run changes the next task, never this one.
-        var effective = await ResolveOptionsAsync(userId, cancellationToken);
 
         FleetTaskRecord? previous = null;
         if (!string.IsNullOrWhiteSpace(request.FollowUpOf)
@@ -348,6 +347,18 @@ public sealed partial class FleetTaskService(
     /// A model the fleet can run on a chat client (planner, judge, manager, ordinary agents): one that takes tools and is
     /// a chat model. A GitHub Copilot model is not (ADR 0108): it runs only as a Copilot agent's <c>copilot/&lt;id&gt;</c>.
     /// </summary>
+    /// <summary>The request's model, else the user's fleet default while the catalog still offers it (a stale one must not
+    /// fail the task), else the catalog default.</summary>
+    private static string ChooseModel(string? requested, string fleetDefault, string catalogDefault, IReadOnlyList<ModelInfo> models)
+    {
+        if (!string.IsNullOrWhiteSpace(requested))
+        {
+            return requested;
+        }
+
+        return models.Any(m => m.Id.Equals(fleetDefault, StringComparison.Ordinal)) ? fleetDefault : catalogDefault;
+    }
+
     public static bool IsToolCapable(ModelInfo model)
         => model.SupportsTools && !model.SupportsEmbeddings && !model.SupportsSpeech && !model.SupportsTranscription && !model.SupportsImageGeneration
             && !model.CopilotOnly;

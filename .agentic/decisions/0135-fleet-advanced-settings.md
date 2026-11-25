@@ -56,4 +56,9 @@ nothing else. A user wanted to tune the rest for their own tasks and their own d
 - `FleetTaskService`, `FleetLessonService` and `FleetCopilotAgentFactory` take the new dependency as an optional trailing parameter
   (null: the operator's options), so a host or test that does not register `FleetSettingsService` behaves as before.
 - `/fleet/` is outside `SHELL` (ADR 0116), so there is no `sw.js` bump.
+- **Amendment (2026-11-25): a 26th field, `DefaultModel`** (kind `taskmodel`), the model a task runs on when its request names
+  none. Resolution is request model, then this field while the user's catalog still offers it, then the catalog default; a stale
+  value falls back instead of failing the task. It must be a `FleetTaskService.IsToolCapable` model, so unlike
+  `DefaultCopilotModel` a Copilot-only model is refused. `SubmitAsync` now resolves the options before choosing the model. The
+  GET payload carries `taskModels` beside `copilotModels`.
 - Out of scope: operator-only fields, a global or owner-set layer, per-task overrides, retroactive pruning, the Android app.

@@ -9,6 +9,7 @@ namespace Agent42.Agents;
 public sealed record FleetUserSettings
 {
     // Behaviour
+    public string? DefaultModel { get; init; }
     public int? MaxTeamDepth { get; init; }
     public int? MaxAgentsPerTask { get; init; }
     public int? MaxConcurrentSubTeamsPerLevel { get; init; }
