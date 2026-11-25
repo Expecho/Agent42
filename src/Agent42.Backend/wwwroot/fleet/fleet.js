@@ -401,7 +401,7 @@
     if (structural) {
       structural = false;
       renderTaskList(); renderBudget(); renderHeader(); renderDock();
-      if (S.view === "tasks") { renderTree(); renderDetail(); }
+      if (S.view === "tasks") { $("#tree").replaceChildren(); renderDetail(); }
       renderPanel();
     }
     const now = performance.now();
@@ -777,30 +777,6 @@
     return team.status;
   }
 
-  function renderTree() {
-    const tree = $("#tree");
-    const task = taskById(S.selectedTask);
-    if (!task) {
-      tree.replaceChildren(h("div", { class: "sb-empty muted", text: "Pick a task to see its team." }));
-      return;
-    }
-    const node = id => {
-      const team = S.teams.get(id);
-      const a = team.attempts[team.attempts.length - 1];
-      const plan = currentPlan(a);
-      const meta = [plan && plan.pattern, plan && `${plan.agents.length} agent${plan.agents.length === 1 ? "" : "s"}`, team.attempts.length > 1 && `attempt ${team.attempts.length}`].filter(Boolean).join(" · ");
-      return h("div", null,
-        h("div", { class: "team-card" + (S.selectedTeam === id && S.detailView === "details" ? " sel" : ""), onclick: () => { select(team.id); if (S.detailView === "result") setDetailView("details"); } },
-          h("div", { class: "team-card-head" }, h("span", { class: "dot " + teamStatus(team) }), h("span", { class: "label", text: teamLabel(team) })),
-          team.depth > 0 && h("div", { class: "sub", text: firstLine(team.task, 140) }),
-          meta && h("div", { class: "meta", text: meta })),
-        team.children.length > 0 && h("div", { class: "children" }, team.children.map(node)));
-    };
-    tree.replaceChildren(S.rootTeamId ? node(S.rootTeamId)
-      : task.status === "running" ? h("div", { class: "team-card" }, h("div", { class: "team-card-head" }, h("span", { class: "dot planning" }), h("span", { class: "muted", text: "Starting…" })))
-      : h("div", { class: "sb-empty muted", text: "No team ran." }));
-  }
-
   function select(teamId) {
     if (S.selectedTeam !== teamId) S.panel = null;
     S.selectedTeam = teamId; S.selectedAttempt = null;
@@ -810,7 +786,7 @@
 
   function setFollow(on) { S.follow = on; $("#follow").checked = on; }
 
-  const TABS = [["result", "Result"], ["graph", "Graph"], ["details", "Details"]];
+  const TABS = [["result", "Result"], ["graph", "Teams"], ["details", "Details"]];
 
   // One quiet page per task: a title and state, three tabs, and the composer docked below. Only the Details tab carries the
   // team, the agents and every step; Result is what the task produced.
@@ -823,7 +799,7 @@
         h("div", { text: "Describe a task below. A planner designs a team of agents for it, and you can watch it work." })))));
       return;
     }
-    const body = S.detailView === "graph" ? graphTab() : S.detailView === "details" ? detailsTab(task) : resultTab(task);
+    const body = S.detailView === "graph" ? graphTab(task) : S.detailView === "details" ? detailsTab(task) : resultTab(task);
     const page = h("div", { class: "detail-inner" + (S.detailView === "graph" ? " wide" : "") }, taskHeader(task), tabBar(), h("div", { class: "tab-body" }, body));
     if (S.detailView === "graph") showGraph(pane, page); else pane.replaceChildren(page);
   }
@@ -862,23 +838,28 @@
         last ? [h("b", { style: `--c:${agentColor(last.agent)}`, text: last.agent }), h("span", { class: "act-preview", "data-turn-preview": last.id, text: turnPreview(last) })]
           : h("span", { class: "muted", text: S.clarify?.phase === "asking" ? "Asking you a few questions first…" : "The planner is putting a team together…" })),
       a && renderTodos(a),
-      h("button", { class: "more", type: "button", text: "See what the agents are doing →", onclick: () => setDetailView("details") }));
+      h("button", { class: "more", type: "button", text: "See what the agents are doing →", onclick: () => setDetailView("graph") }));
   }
 
-  const graphTab = () => S.rootTeamId ? renderGraph() : h("div", { class: "muted", text: "No team yet." });
+  // The picture of every team, then the selected team's own details under it (click a team box to pick another).
+  const graphTab = task => S.rootTeamId ? [renderGraph(), h("div", { class: "team-detail" }, teamDetails(task))] : h("div", { class: "muted", text: "No team yet." });
 
-  // The team, its agents and every step: the noisy view, one tab away.
+  // The task itself: its request, attached files, lessons and requirements. Everything about the team lives on the Graph tab.
   function detailsTab(task) {
-    const team = S.teams.get(S.selectedTeam);
-    if (!team) return [
+    return [
       h("div", { class: "card" }, h("div", { class: "sub-head" }, `${task.plannerModel} · `, dur(task.startedAt, task.finishedAt), toolsText(task)),
         clampText("task-" + task.id, "task-text", task.request, 600)),
       attachedCard(task),
       lessonsAppliedCard(task),
-      task.status === "running" && h("div", { class: "card waiting", style: "margin-top:12px" }, h("span", { class: "dot planning" }), "The planner is putting a team together…"),
       requirementsCard(),
       autoAnswersCard(),
     ];
+  }
+
+  // The selected team, its agents and every step: the noisy view, below the graph.
+  function teamDetails(task) {
+    const team = S.teams.get(S.selectedTeam);
+    if (!team) return task.status === "running" ? h("div", { class: "card waiting" }, h("span", { class: "dot planning" }), "The planner is putting a team together…") : null;
     const a = (S.selectedAttempt && team.attempts.find(x => x.n === S.selectedAttempt)) || team.attempts[team.attempts.length - 1];
 
     const chain = [];
@@ -899,8 +880,7 @@
       onclick: () => { S.selectedAttempt = x.n; setFollow(false); invalidate(); },
     }, h("span", { class: "dot " + x.status }), `Attempt ${x.n}`, x.fix && h("span", { class: "muted", text: "fix" }), x.verdict && h("span", { class: "muted", text: `${x.verdict.score}/10` }))));
 
-    return [head, team.depth === 0 && attachedCard(task), team.depth === 0 && lessonsAppliedCard(task), tabs, a ? renderAttempt(team, a) : null,
-      team.depth === 0 && [requirementsCard(), autoAnswersCard()]];
+    return [head, tabs, a ? renderAttempt(team, a) : null];
   }
 
   // Whether the task ran on the user's default tools or on its own override (ADR 0099).
