@@ -312,7 +312,9 @@ There is no authentication in this mode, so keep it on localhost or put an authe
 from the Azure deployment, and its limits, are in [`docs/features/self-hosting.md`](docs/features/self-hosting.md).
 
 To run in Docker with **real Entra sign-in** and your Azure Cosmos + Blob data instead (`Auth:Mode=entra`,
-`docker compose -f compose.azure.yaml up -d`), see [`docs/setup/docker-entra.md`](docs/setup/docker-entra.md).
+`docker compose -f compose.azure.yaml up -d`), see [`docs/setup/docker-entra.md`](docs/setup/docker-entra.md). Its
+quick start uses [`infra/docker-entra-setup.sh`](infra/docker-entra-setup.sh) to create the app registrations and the
+Cosmos and Blob role assignments, which you run yourself.
 
 ## Run your own
 

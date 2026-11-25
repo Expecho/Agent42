@@ -2,7 +2,9 @@
 # (ADR 0145, Auth:Mode=entra): no Azure Container Apps, no Easy Auth, no Postgres. Each person signs in with their own
 # Entra account and keeps their own data, keyed by their Entra object id.
 #
-#   cp .env.example .env        # fill the "Azure + Entra sign-in" block
+#   infra/docker-entra-setup.sh init --resource-group <rg> --cosmos-account <c> --storage-account <s>
+#                               # creates the app registrations + roles, prints the .env block (you run it, never an agent)
+#   cp .env.example .env        # paste that block in, set SEARXNG_SECRET
 #   docker compose -f compose.azure.yaml up -d
 #   open http://localhost:8080
 #
