@@ -62,7 +62,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 /* ————— composer (docked under the page) ————— */
 #dock { padding: 0 36px 14px; }
 .composer { max-width: 780px; margin: 0 auto; }
-.composer-card { background: var(--bg-raised); border: 1px solid var(--amber-deep); border-radius: 16px; padding: 12px 12px 10px; display: grid; gap: 8px; }
+.composer-card { background: var(--bg-raised); border: 1px solid var(--amber-deep); border-radius: 16px; padding: 12px 12px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .composer.dropping .composer-card { border-style: dashed; border-color: var(--accent); }
 .composer textarea { width: 100%; resize: none; min-height: 66px; max-height: 40vh; border: 0; background: transparent; font: 16px/1.5 var(--serif); padding: 4px 6px; }
 .composer textarea:focus { outline: none; }
@@ -72,10 +72,10 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 .composer-row .btn.primary { padding: 10px 18px; font-size: 12.5px; }
 .icon-btn { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--bg-inset); color: var(--muted); cursor: pointer; flex: none; }
 .icon-btn:hover { color: var(--accent); border-color: var(--amber-deep); }
-.opts { position: relative; }
+.opts { position: relative; min-width: 0; }
 .opts > summary { list-style: none; cursor: pointer; }
 .opts > summary::-webkit-details-marker { display: none; }
-.opts-chip { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 10px; background: var(--bg-inset); border: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); white-space: nowrap; max-width: 280px; }
+.opts-chip { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 10px; background: var(--bg-inset); border: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); white-space: nowrap; max-width: 280px; min-width: 0; }
 .opts-chip .chip-text { overflow: hidden; text-overflow: ellipsis; }
 .opts[open] > .opts-chip, .opts-chip:hover { border-color: var(--amber-deep); color: var(--accent); }
 .opts-pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30; width: min(340px, calc(100vw - 48px)); display: grid; gap: 10px; padding: 14px; background: var(--bg-raised); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .25); font-size: 12px; color: var(--muted); }
