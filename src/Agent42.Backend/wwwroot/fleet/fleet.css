@@ -142,7 +142,6 @@ main.with-panel { grid-template-columns: 264px minmax(0, 1fr) minmax(380px, 44%)
 .sb-new { margin: 0 16px 4px; padding: 10px 12px; border-radius: 12px; border-color: var(--amber-deep); color: var(--accent); background: var(--bg-raised); font-size: 12.5px; }
 .sb-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 16px 12px; }
 .sb-label { margin: 20px 0 8px; font-size: 11px; color: var(--faint); }
-body:not([data-view="tasks"]) #treeLabel { display: none; }
 .sb-empty { font-size: 12px; padding: 4px 2px; }
 .sb-search { width: 100%; margin: 0 0 8px; padding: 9px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-inset); font-size: 12px; }
 .sb-search::placeholder { color: var(--faint); }
@@ -168,16 +167,7 @@ body:not([data-view="tasks"]) #treeLabel { display: none; }
 .sb-btn:hover, .sb-btn.active { color: var(--accent); border-color: var(--amber-deep); background: var(--amber-glow); }
 .sb-btn .badge { position: absolute; top: -6px; right: 4px; background: var(--bg-raised); }
 
-.team-card { padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--bg); cursor: pointer; }
-.team-card:hover { border-color: var(--amber-deep); }
-.team-card.sel { border-color: var(--amber-deep); background: var(--amber-glow); }
-.team-card-head { display: flex; align-items: center; gap: 8px; }
-.team-card .label { font: 500 15px/1.3 var(--serif); }
-.team-card .dot.done, .team-card .dot.passed { display: none; }
-.team-card .meta, .team-card .sub { margin-top: 2px; font-size: 11px; color: var(--muted); }
-.team-card .sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-#tree > div + div, .children > div { margin-top: 6px; }
-.children { margin-left: 10px; padding-left: 8px; border-left: 1px dashed var(--line); }
+#tree > div + div { margin-top: 6px; }
 
 /* The page: title, state, tabs. */
 .page-actions { position: absolute; top: 30px; right: max(36px, calc((100% - 780px) / 2)); z-index: 5; display: flex; gap: 8px; align-items: center; }
@@ -566,6 +556,9 @@ footer .budget { display: flex; align-items: center; gap: 14px; margin-left: aut
 
 /* ————— graph view (ADR 0116) ————— */
 .detail-inner.wide { max-width: none; }
+.team-detail { max-width: 780px; margin: 24px auto 0; }
+.team-detail > h2 { margin: 26px 0 8px; font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: lowercase; color: var(--faint); }
+.team-detail > h2::before { content: "// "; }
 .graph-scroll { overflow: auto; max-height: calc(100vh - 330px); min-height: 160px; padding: 4px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--panel-2); }
 .graph { position: relative; }
 .gedges { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
