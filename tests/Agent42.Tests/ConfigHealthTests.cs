@@ -328,6 +328,20 @@ public sealed class ConfigHealthTests
     // ————— Storage:Provider (the self-hosting plan; AC12) —————
 
     [Theory]
+    [InlineData(null, ConfigHealth.Error)]
+    [InlineData("Host=db;Password=secret", ConfigHealth.Ok)]
+    public void LocalStorage_ReportsThePostgresConnectionString_WithoutLeakingIt(string? value, string status)
+    {
+        var report = ConfigHealth.BuildStatic(
+            Config(("WebSearch:Endpoint", "http://localhost:8888"), ("Storage:Provider", "local"), ("ConnectionStrings:postgres", value)),
+            Env("Production"), Push());
+
+        var check = Find(report, "ConnectionStrings:postgres");
+        Assert.Equal(status, check.Status);
+        Assert.DoesNotContain("secret", check.Message);
+    }
+
+    [Theory]
     [InlineData("Production")]
     [InlineData("Development")]
     public void LocalStorage_MakesTheAzureOnlyKeysNotApplicable_InAnyEnvironment(string environment)
