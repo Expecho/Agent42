@@ -61,6 +61,22 @@ public sealed class SearxngEngineConfigTests
         }
     }
 
+    /// <summary>
+    /// Gotcha "SearXNG: JSON API 403 unless enabled": the JSON API is off by default, so <c>json</c> must stay under
+    /// <c>search.formats</c> or every <c>web_search</c> call 403s. And the client sends no <c>safesearch</c>: a per-request
+    /// value overrides <c>search.safe_search</c>, which would make that setting dead config.
+    /// </summary>
+    [Fact]
+    public void JsonFormatIsOn_AndTheClientSendsNoSafeSearch()
+    {
+        var client = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Agent42.Backend", "Web", "SearxngWebSearch.cs"));
+        var code = string.Join('\n', client.Split('\n').Where(l => !l.TrimStart().StartsWith("//", StringComparison.Ordinal)));
+
+        Assert.Matches(new Regex(@"\n\s*formats:\s*\n(\s*-\s*\w+\s*\n)*?\s*-\s*json\s*\n"), Settings());
+        Assert.Matches(new Regex(@"\n\s*safe_search:\s*\d"), Settings());
+        Assert.DoesNotContain("safesearch", code, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void BaseTag_IsPinnedAndImmutable()
     {

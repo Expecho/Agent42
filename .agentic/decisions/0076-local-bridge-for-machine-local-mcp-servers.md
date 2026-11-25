@@ -6,6 +6,7 @@ tags: [mcp, local-bridge, websocket, browser-automation, api-key, excluded-paths
 supersedes: []
 extends: [0022]
 amends: [0002, 0024, 0042, 0070]
+amended_by: [0095, 0109]
 ---
 
 > **Amended by [ADR 0109](0109-chrome-extension-bridge-and-mcp-image-results.md) (2026-10-20): a Chrome extension is a

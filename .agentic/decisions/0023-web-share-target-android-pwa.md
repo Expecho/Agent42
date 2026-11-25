@@ -3,6 +3,7 @@ id: 0023
 date: 2026-07-18
 status: accepted
 tags: [pwa, web-share-target, service-worker, easy-auth, attachments, egress, android, frontend]
+amended_by: [0043]
 ---
 
 # Web Share Target for the Android PWA

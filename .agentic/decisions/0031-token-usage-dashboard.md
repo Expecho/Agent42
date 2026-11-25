@@ -3,6 +3,7 @@ id: 0031
 date: 2026-07-22
 status: accepted
 tags: [telemetry, opentelemetry, usage, tokens, dashboard, grains, cosmos, cross-user, easy-auth, egress]
+amended_by: [0104, 0110, 0121]
 ---
 
 # Token-usage dashboard fed from OpenTelemetry, stored in a global grain
@@ -104,3 +105,27 @@ counter in `AgentGrain` — and stored in Cosmos **without a new container**.
 - If the global grain's state ever approaches 2 MB, the escape hatch is sharding by day into per-date grains
   (out of scope now); the retention constants live in one place (`UsageRetention`).
 - No new secret, no new package (ingestion is in-process), no infra change.
+
+## Notes moved from gotchas.md (2026-11-24)
+
+- **"The usage dashboard counts tokens from `chat` spans ONLY":** a tool-calling turn emits **three** span kinds on
+  the `Agent42.Backend` source — `chat` (per model round-trip, carries `gen_ai.usage.input_tokens`/`output_tokens`),
+  `execute_tool` (carries `gen_ai.tool.name`, no tokens), and **`orchestrate_tools`, whose usage is the SUM of its
+  child `chat` spans**. A spike (2026-07-22, Microsoft.Agents.AI 1.13.0 / Microsoft.Extensions.AI 10.6.0) showed the
+  `orchestrate_tools` span carrying `input_tokens=140` = exactly the two child chats (100+40). Three more facts the
+  same spike pinned: (1) **corrected by ADR 0104:** the emitter DOES tag `gen_ai.usage.cache_read.input_tokens` and
+  the reasoning count whenever the response's `UsageDetails` carry them, and the projector already reads both — the
+  spike's provider (GitHub Models) simply reported none, which read as "always 0". Do not add a grain counter for
+  them (`ChatSpan_CarriesCachedAndReasoningTokens` pins the emitter); (2) all three span kinds are already on the
+  registered `Agent42.Backend` source and already OTLP-exported, so the ingestion processor needs no new `AddSource`
+  and adds no new export/PII surface — it filters in `OnEnd`; (3) async paths (fired reminders, agent-run) have no
+  request identity in `RequestContext`, so their `chat` spans carry no `user.*` and their tokens land in an
+  unreported user bucket by design.
+  - Storage bound: the rollups live in ONE global grain (`UsageRollupGrain`, key `"global"`) riding `agent-state` on
+    the `"usage-rollups"` state (the `UserPushGrain` pattern — no new container), which re-serializes into one ≤2 MB
+    Cosmos item per write (ADR 0004). It prunes on every write (hourly ~48 h, daily ~92 d); `range=all` therefore
+    means "the retained daily window", not all-time. The `application` dimension is per-agent (the grain publishes the
+    agent name into `RequestContext` (`PublishUsageApplication`); `UserTelemetrySpanProcessor` stamps it as the
+    `agent42.application` span tag at OnStart — the ADR 0010 mechanism; non-agent chats fall back to `"Agent42"`), so
+    many agents multiply the bucket rows — shard by day into per-date grains before that bites.
+    `gen_ai.operation.name` is set by the libraries per the OTel semconv and is also exported (ADR 0009).

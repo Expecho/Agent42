@@ -15,7 +15,7 @@ sidebar still listed every task flat, newest first, so a chain was scattered bet
 looked like any other task.
 
 ## Decision
-Frontend only (`wwwroot/fleet/fleet.js`, `taskThreads` + `renderTaskList`); no API or storage change.
+Frontend only (`src/Agent42.Backend/wwwroot/fleet/fleet.js`, `taskThreads` + `renderTaskList`); no API or storage change.
 - **Thread = chain root.** Each task is walked up `followUpOf` while the parent is in the list **and older**. A deleted
   parent makes its follow-up a root, and the "older" rule makes a loop impossible.
 - **Order:** threads by latest activity (their newest task's start), so a new follow-up moves its thread to the top.

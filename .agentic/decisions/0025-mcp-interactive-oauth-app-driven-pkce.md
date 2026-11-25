@@ -3,6 +3,7 @@ id: 0025
 date: 2026-07-19
 status: accepted
 tags: [mcp, oauth, pkce, auth, security, egress]
+amended_by: [0081]
 ---
 
 # Title: Interactive-OAuth MCP auth — app-driven PKCE with PRM discovery, not the SDK's blocking flow

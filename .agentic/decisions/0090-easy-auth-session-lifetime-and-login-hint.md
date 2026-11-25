@@ -6,6 +6,7 @@ tags: [auth, easy-auth, infra, frontend, pwa]
 supersedes: []
 extends: [0002, 0074]
 amends: []
+amended_by: [0121]
 ---
 
 # Easy Auth session lasts 14 days, Entra gets a login hint, and the sidebar has Sign out

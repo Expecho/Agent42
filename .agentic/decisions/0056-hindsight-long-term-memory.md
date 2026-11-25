@@ -6,6 +6,7 @@ tags: [memory, egress, prompt-injection, third-party, secrets, packaging, open-s
 supersedes: []
 extends: [0004, 0012, 0013, 0034, 0039, 0040, 0050]
 amends: [0008]
+amended_by: [0057, 0066, 0104]
 ---
 
 # Long-term memory across conversations, via a .NET package we publish

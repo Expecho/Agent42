@@ -6,6 +6,7 @@ tags: [auth, identity, azure, security, telemetry, configuration, no-migration]
 supersedes: []
 extends: []
 amends: [0001, 0002, 0009, 0062]
+amended_by: [0121]
 ---
 
 # A second Entra account signs in as an existing user, by config-driven identity alias

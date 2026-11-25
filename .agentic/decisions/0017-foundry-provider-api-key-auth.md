@@ -3,7 +3,8 @@ id: 0017
 date: 2026-07-16
 status: accepted
 tags: [models, providers, foundry, auth, api-key, managed-identity, responses-api, embeddings, config, infra]
-supersedes: 0013, 0014 (credential mechanism only)
+supersedes: [0013, 0014]   # 0013, 0014 (credential mechanism only)
+amended_by: [0018, 0019, 0030, 0128]
 ---
 
 # Authenticate the Foundry provider with an Azure OpenAI API key, not managed identity

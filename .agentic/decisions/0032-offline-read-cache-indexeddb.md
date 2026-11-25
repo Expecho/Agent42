@@ -3,7 +3,7 @@ id: 0032
 date: 2026-07-25
 status: accepted
 tags: [pwa, offline, indexeddb, service-worker, easy-auth, frontend, egress]
-amended_by: 0083   # rich rendering: SHELL lists only the eager renderer libs
+amended_by: [0083]   # rich rendering: SHELL lists only the eager renderer libs
 ---
 
 # Offline read cache for agents and chats in IndexedDB

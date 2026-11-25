@@ -5,7 +5,7 @@ status: accepted
 tags: [mcp, oauth, frontend, stream-events, pwa, no-migration]
 supersedes: []
 amends: [0081]
-amended_by: 0092   # edit/regenerate now rewrite the session tail on an explicit user request; the rejection below is narrowed, not reversed
+amended_by: [0092]   # edit/regenerate now rewrite the session tail on an explicit user request; the rejection below is narrowed, not reversed
 ---
 
 # Re-send the turn by itself once the user has reconnected its MCP server from the transcript

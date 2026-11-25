@@ -3,6 +3,7 @@ id: 0011
 date: 2026-07-12
 status: accepted
 tags: [web-search, tools, agent-framework, security, ssrf, prompt-injection, container-apps]
+amended_by: [0059, 0060, 0066, 0067, 0125]
 ---
 
 # Web search as function tools over a self-hosted SearXNG sidecar

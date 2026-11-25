@@ -5,6 +5,7 @@ status: accepted
 tags: [models, providers, anthropic, claude, reasoning, fleet, copilot, egress, no-migration]
 supersedes: []
 extends: [0013, 0018]
+amended_by: [0104]
 ---
 
 # Anthropic (Claude) is a native provider kind, behind one compatibility shim

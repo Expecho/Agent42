@@ -3,6 +3,7 @@ id: 0024
 date: 2026-07-19
 status: accepted
 tags: [mcp, tools, per-user, egress, security, agent-framework]
+amended_by: [0026, 0064, 0076, 0095, 0121]
 ---
 
 # Title: Config-driven remote MCP servers — per-user, encrypted, gated by one `mcp` tool key

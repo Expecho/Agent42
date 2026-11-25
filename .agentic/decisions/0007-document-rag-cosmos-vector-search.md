@@ -3,7 +3,7 @@ id: 0007
 date: 2026-07-09
 status: accepted
 tags: [rag, documents, cosmos, vector-search, retrieval, multimodal]
-superseded_by: 0008   # partial — only the retrieval mechanism (agentic search_documents tool); storage/ingest/scoping remain authoritative
+amended_by: [0008, 0030, 0098, 0127]   # 0008: partial supersession — only the retrieval mechanism (agentic search_documents tool); storage/ingest/scoping remain authoritative
 ---
 
 # Document Q&A via Cosmos vector search and an agentic search_documents tool

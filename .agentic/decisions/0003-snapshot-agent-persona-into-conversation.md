@@ -3,6 +3,7 @@ id: 0003
 date: 2026-07-07
 status: accepted
 tags: [agents, grains, persona]
+amended_by: [0082, 0123]
 ---
 
 # Snapshot an agent's persona into the conversation at bind time

@@ -5,6 +5,7 @@ status: accepted
 tags: [agents, stored-agents, email, mailgun, inbound, excluded-paths, security, credentials, prompt-injection, orleans, no-migration]
 supersedes: []
 amends: [0013, 0022]
+amended_by: [0112, 0141]
 ---
 
 > **Amended by [ADR 0141](0141-plain-name-inbound-email-address.md) (2026-11-23).** An agent may opt into a readable,

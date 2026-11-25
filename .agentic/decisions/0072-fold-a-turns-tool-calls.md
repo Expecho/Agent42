@@ -6,6 +6,7 @@ tags: [frontend, chat, streaming, tools, no-migration]
 supersedes: []
 extends: [0041]
 amends: []
+amended_by: [0080]
 ---
 
 # A turn's tool calls fold into one counted disclosure once there are more than three

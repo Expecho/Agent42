@@ -6,6 +6,7 @@ tags: [fleet, agents, tools, selection, diagnostics, telemetry, egress, untruste
 supersedes: []
 extends: [0013, 0054, 0097, 0115]
 amends: []
+amended_by: [0123]   # 0123: the fleet_analyzer chat key is removed; the analyzer is a panel on /fleet/
 ---
 
 # A chat can diagnose a fleet task and stop or re-run it, through one more selectable tool key

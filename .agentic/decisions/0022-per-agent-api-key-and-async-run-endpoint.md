@@ -3,6 +3,7 @@ id: 0022
 date: 2026-07-17
 status: accepted
 tags: [agents, api-key, easy-auth, external-invocation, attachments, egress, agent-definition]
+amended_by: [0070, 0096]
 ---
 
 # Per-agent API key + async run endpoint (`POST /api/agent-run`)

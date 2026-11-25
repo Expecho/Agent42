@@ -6,7 +6,7 @@ tags: [streaming, tools, frontend, stream-events, shared-state, human-in-the-loo
 supersedes: []
 extends: [0004, 0021, 0082, 0084]
 amends: [0046]
-amended_by: 0093   # get_current_location became a fourth client tool, under its own location key
+amended_by: [0093, 0095, 0104, 0106]   # get_current_location became a fourth client tool, under its own location key
 ---
 
 # Client (browser-run) tools and shared agent↔UI state on the NDJSON stream

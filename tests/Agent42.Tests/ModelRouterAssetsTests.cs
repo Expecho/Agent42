@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Agent42.Tests;
 
 /// <summary>
@@ -81,6 +83,24 @@ public sealed class ModelRouterAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("export function renderRouted(msg, name)", thread);
         // The label goes on the meta line, never into the reply's text.
         Assert.Contains("msg.querySelector(\".msg__meta\")", thread);
+    }
+
+    // Gotcha "The provider editor's capability checkboxes are positional": the save path destructures the checkboxes BY
+    // ORDER, so capDefs and the destructure must list the flags in the same order, and a new flag goes LAST in both.
+    [Fact]
+    public async Task ProviderEditor_CapabilityCheckboxes_StayInOrder()
+    {
+        var providers = await Js("providers.js");
+
+        var defs = Regex.Matches(providers[providers.IndexOf("const capDefs = [", StringComparison.Ordinal)..], @"checked: model\?\.(\w+) \?\? false")
+            .Select(m => m.Groups[1].Value).Take(7).ToArray();
+        var destructure = Regex.Match(providers, @"const \[([\w, ]+)\] =\s*row\.querySelectorAll\(""\.agent-form__checkbox""\)").Groups[1].Value
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal(
+            ["supportsTools", "supportsVision", "supportsImageGeneration", "supportsEmbeddings", "supportsSpeech", "supportsReasoning", "supportsTranscription"],
+            defs);
+        Assert.Equal(["tools", "vision", "image", "embed", "speech", "reasoning", "transcription"], destructure);
     }
 
     // The editor: a DecisionModel kind, the per-model hint read by class (never positionally, a flag added there would shift), and the router CSS.

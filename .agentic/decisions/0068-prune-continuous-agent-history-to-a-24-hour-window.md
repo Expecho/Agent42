@@ -6,6 +6,7 @@ tags: [conversations, retention, orleans, cosmos, search, no-migration]
 supersedes: []
 extends: [0004]
 amends: [0016, 0061]
+amended_by: [0070, 0140]
 ---
 
 # A continuous agent's history is pruned to a 24-hour window

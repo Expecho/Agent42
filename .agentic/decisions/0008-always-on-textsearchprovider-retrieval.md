@@ -3,8 +3,8 @@ id: 0008
 date: 2026-07-10
 status: accepted
 tags: [rag, documents, retrieval, agent-framework, context-provider]
-supersedes: 0007   # partial — only ADR 0007's retrieval mechanism (the agentic search_documents tool)
-amended_by: 0056   # the ungated shape rejected below was later adopted, for memory rather than RAG
+supersedes: [0007]   # partial — only ADR 0007's retrieval mechanism (the agentic search_documents tool)
+amended_by: [0056]   # the ungated shape rejected below was later adopted, for memory rather than RAG
 ---
 
 # Always-on TextSearchProvider retrieval, replacing the agentic search_documents tool

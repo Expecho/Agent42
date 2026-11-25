@@ -187,7 +187,7 @@ internal sealed class FakeBridgeHelper : IAsyncDisposable
         var method = rpc["method"]?.GetValue<string>();
         if (method is not ("initialize" or "tools/list" or "tools/call"))
         {
-            // Answer like a pre-2026-07-28 server. MCP SDK 2.2.0 opens with a `server/discover` probe and only
+            // Answer like a pre-2026-07-28 server. MCP SDK 2.2.0 (measured; not re-measured on the pinned 2.4.0) opens with a `server/discover` probe and only
             // falls back to `initialize` on an error — or after a 5 s timeout if the frame is dropped (measured).
             await SendAsync(new JsonObject
             {

@@ -6,6 +6,7 @@ tags: [models, providers, caching, prompt-cache, memory, shared-state, attachmen
 supersedes: []
 extends: [0004, 0013, 0031, 0097, 0103]
 amends: [0031, 0056, 0089, 0103]
+amended_by: [0109]
 ---
 
 > **Amended by [ADR 0109](0109-chrome-extension-bridge-and-mcp-image-results.md) (2026-10-20).** A run that shows the

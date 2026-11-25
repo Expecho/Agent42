@@ -6,6 +6,7 @@ tags: [auth, easy-auth, excluded-paths, sharing, infra, azure, container-apps]
 supersedes: []
 amends: [0002, 0035]
 extends: []
+amended_by: [0070, 0076]
 ---
 
 # Wildcard `excludedPaths` entries, and trusting the ingress's `X-Forwarded-Proto`

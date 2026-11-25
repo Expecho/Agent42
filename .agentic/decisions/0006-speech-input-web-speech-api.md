@@ -3,6 +3,7 @@ id: 0006
 date: 2026-07-08
 status: accepted
 tags: [frontend, speech-input, dictation, privacy, data-residency]
+amended_by: [0038]
 ---
 
 # Use the browser-native Web Speech API for voice dictation, not server-side Azure transcription

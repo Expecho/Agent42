@@ -3,7 +3,8 @@ id: 0026
 date: 2026-07-19
 status: accepted
 tags: [mcp, tools, per-user, ux, no-migration]
-amends: 0021, 0024 (MCP gate + static-catalog scope only — see "Amends")
+amends: [0021, 0024]   # 0021, 0024 (MCP gate + static-catalog scope only — see "Amends")
+amended_by: [0058, 0064]
 ---
 
 # Title: Per-MCP-server selectable tools — `mcp:{id}` keys with an `mcp` wildcard

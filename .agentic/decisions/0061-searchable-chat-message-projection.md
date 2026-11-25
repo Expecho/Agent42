@@ -6,6 +6,7 @@ tags: [search, cosmos, projection, privacy, data-at-rest, no-migration]
 supersedes: []
 extends: [0004, 0034, 0039]
 amends: []
+amended_by: [0068, 0112, 0127]
 ---
 
 > **Amended by [ADR 0112](0112-past-chats-as-a-model-tool.md) (2026-10-21).** The model now searches this projection too

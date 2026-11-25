@@ -3,6 +3,7 @@ id: 0009
 date: 2026-07-11
 status: accepted
 tags: [telemetry, observability, privacy, auth]
+amended_by: [0074]
 ---
 
 # Enrich traces with the full OpenTelemetry `user.*` identity attribute set

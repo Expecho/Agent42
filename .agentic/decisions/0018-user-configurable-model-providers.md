@@ -3,7 +3,8 @@ id: 0018
 date: 2026-07-16
 status: accepted
 tags: [models, providers, config, security, data-egress, secrets, encryption, data-protection, per-user, ssrf]
-supersedes: 0013, 0017 (invariant scope only — see "Partial supersession")
+supersedes: [0013, 0017]   # 0013, 0017 (invariant scope only — see "Partial supersession")
+amended_by: [0019, 0020, 0121, 0127]
 ---
 
 # A signed-in user configures their own model providers, without a redeploy

@@ -28,7 +28,7 @@ enforcement:
                              # ADR 0050 had to carry).
 
 dependencies:
-  vulnerable_packages: 0     # hard block (CI: package-freshness job)
+  vulnerable_packages: 0     # hard block (CI: vulnerable-packages job, .github/workflows/pr-checks.yml)
   outdated_packages: report  # soft — surfaced in CI, upgraded via MRs, not blocked
   add_policy: latest-stable  # new deps resolved from the feed at add time, never from memory
 

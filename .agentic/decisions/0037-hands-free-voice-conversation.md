@@ -5,6 +5,7 @@ status: accepted
 tags: [frontend, speech, tts, voice, barge-in, privacy, data-residency]
 supersedes: []
 extends: [0006]
+amended_by: [0038, 0078, 0079]
 ---
 
 # Hands-free voice conversation with barge-in (browser-native TTS + auto-listen loop)

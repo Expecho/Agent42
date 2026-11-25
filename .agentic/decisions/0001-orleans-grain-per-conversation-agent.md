@@ -3,6 +3,7 @@ id: 0001
 date: 2026-07-05
 status: accepted
 tags: [architecture, orleans, agent-framework]
+amended_by: [0074, 0127]
 ---
 
 # Host each conversation as an Orleans grain wrapping an Agent Framework agent

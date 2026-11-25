@@ -228,6 +228,36 @@ public sealed class InfraPortabilityTests
         return next < 0 ? markdown[start..] : markdown[start..next];
     }
 
+    /// <summary>
+    /// Gotcha "An absent GitHub variable expands to empty, and empty means off": every optional Bicep parameter is passed
+    /// only when its variable is set, either on the same line (<c>[ -z "$X" ] || optional+=(…)</c>) or inside an
+    /// <c>if [ -n "$X" ]; then … fi</c> block. An unguarded <c>optional+=</c> would pass <c>param=</c> and switch it off.
+    /// </summary>
+    [Fact]
+    public void Deploy_PassesEveryOptionalParam_OnlyWhenItsVariableIsSet()
+    {
+        var unguarded = new List<string>();
+        var insideGuard = false;
+        foreach (var line in StripYamlComments(Read(".github", "workflows", "deploy.yml")).Split('\n').Select(l => l.Trim()))
+        {
+            if (Regex.IsMatch(line, @"^if \[ -n ""\$\w+"" \]; then$"))
+            {
+                insideGuard = true;
+            }
+            else if (line == "fi")
+            {
+                insideGuard = false;
+            }
+            else if (line.Contains("optional+=(", StringComparison.Ordinal)
+                && !insideGuard && !Regex.IsMatch(line, @"^\[ -z ""\$\w+"" \] \|\| optional\+=\("))
+            {
+                unguarded.Add(line);
+            }
+        }
+
+        Assert.True(unguarded.Count == 0, "Unguarded optional Bicep params in deploy.yml:\n" + string.Join("\n", unguarded));
+    }
+
     // A single-quoted string (with backslash escapes) matches first, so a // inside it (https://) is never taken for a comment.
     private static readonly Regex BicepTokens = new(
         @"'(?:\\.|[^'\\\r\n])*'|//[^\r\n]*|/\*.*?\*/", RegexOptions.Singleline);

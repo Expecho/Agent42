@@ -6,6 +6,7 @@ tags: [mcp, web, tools, security, prompt-injection, allowlist, no-migration]
 supersedes: []
 extends: [0024, 0026]
 amends: [0011, 0066]
+amended_by: [0125]
 ---
 
 # MCP tool results may seed the conversation's fetchable-URL allowlist (per-server opt-in)

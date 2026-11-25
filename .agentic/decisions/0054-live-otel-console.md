@@ -3,6 +3,7 @@ id: 0054
 date: 2026-08-27
 status: accepted
 tags: [observability, opentelemetry, diagnostics, frontend, privacy]
+amended_by: [0121]
 ---
 
 # Title: A live OpenTelemetry console at `/logs`

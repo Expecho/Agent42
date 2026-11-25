@@ -6,6 +6,7 @@ tags: [frontend, ux, topbar, incognito, sharing, css, pwa]
 supersedes: []
 extends: []
 amends: [0034, 0035]
+amended_by: [0086]
 ---
 
 # Promote incognito and share into a persistent top-right action cluster

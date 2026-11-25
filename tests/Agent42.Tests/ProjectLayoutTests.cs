@@ -853,6 +853,47 @@ public sealed class ProjectLayoutTests
             StringComparison.Ordinal);
     }
 
+    // Rule 8 / gotcha "A named HttpClient silently inherits AddServiceDefaults' retry pipeline": every named client
+    // registered in src/ opts out with RemoveAllResilienceHandlers() in the same statement. A statement runs from
+    // `services.AddHttpClient(` to the `;` at bracket depth 0, so a lambda body's own `;` doesn't end it.
+    [Fact]
+    public void EveryNamedHttpClient_RemovesTheInheritedRetryPipeline()
+    {
+        var offenders = new List<string>();
+        var registrations = 0;
+        foreach (var file in Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)))
+        {
+            var source = File.ReadAllText(file);
+            foreach (Match match in Regex.Matches(source, @"\b[sS]ervices\.AddHttpClient\("))
+            {
+                registrations++;
+                if (!Statement(source, match.Index).Contains(".RemoveAllResilienceHandlers()", StringComparison.Ordinal))
+                {
+                    offenders.Add($"{Path.GetRelativePath(RepoRoot(), file)}: {source[match.Index..].Split('\n')[0].Trim()}");
+                }
+            }
+        }
+
+        Assert.True(registrations > 10, $"Found only {registrations} AddHttpClient registrations; the scan is broken.");
+        Assert.True(offenders.Count == 0, "Named HttpClients without RemoveAllResilienceHandlers():\n" + string.Join("\n", offenders));
+    }
+
+    private static string Statement(string source, int start)
+    {
+        var depth = 0;
+        for (var i = start; i < source.Length; i++)
+        {
+            depth += source[i] switch { '(' or '{' or '[' => 1, ')' or '}' or ']' => -1, _ => 0 };
+            if (source[i] == ';' && depth == 0)
+            {
+                return source[start..i];
+            }
+        }
+
+        return source[start..];
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

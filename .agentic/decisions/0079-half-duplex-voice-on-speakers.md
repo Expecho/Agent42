@@ -6,6 +6,7 @@ tags: [frontend, voice, speech, barge-in, half-duplex, audio-devices, heuristic,
 supersedes: []
 extends: [0037]
 amends: [0037, 0078]
+amended_by: [0114]
 ---
 
 # Close the microphone while the assistant speaks, unless the reply is going to a headset

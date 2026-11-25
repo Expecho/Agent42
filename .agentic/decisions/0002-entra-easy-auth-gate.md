@@ -3,6 +3,7 @@ id: 0002
 date: 2026-07-05
 status: accepted
 tags: [auth, azure, container-apps]
+amended_by: [0042, 0070, 0074, 0076, 0121]
 ---
 
 # Gate the Container App behind Entra ID Easy Auth instead of app-level auth

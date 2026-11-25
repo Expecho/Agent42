@@ -3,7 +3,7 @@ id: 0004
 date: 2026-07-08
 status: accepted
 tags: [attachments, storage, grains, multimodal]
-amended_by: 0084   # artifacts: artifact tool-call content is compacted out of the session at the persist sites
+amended_by: [0020, 0084, 0109, 0127]   # artifacts: artifact tool-call content is compacted out of the session at the persist sites
 ---
 
 > **Amended by [ADR 0127](0127-self-hosting-local-storage-provider.md) (2026-11-14): with `Storage:Provider = local`, attachments are files and the model read URL is a constant `agent42-attachment://` reference that a chat-client wrapper swaps for the image bytes at request time.** The SAS design below is the `azure` provider and is unchanged for it.
