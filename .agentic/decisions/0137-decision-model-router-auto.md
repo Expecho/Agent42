@@ -40,7 +40,7 @@ per option and no generated text (spike 2026-11-21: p50 0.24 s, p95 0.28 s, 4 op
   run starts while the router call is awaited, the decision is dropped and the turn keeps its model. The router reads the catalog
   fresh every turn, and a grain reloads its chat-client factory before switching onto the model the router chose (ADR 0018 resolves
   it once per activation), so a model added mid-conversation is usable at once instead of falling back to the default.
-- A new `Routed` stream event (appended last) shows the chosen model as a non-persisted label.
+- A new `Routed` stream event (appended last) shows the model an Auto turn runs on, on every routed turn (2026-11-25: not only on a switch), as a non-persisted label.
 
 ## Egress (ADR 0013 extension)
 The last user message (trimmed) and the option texts (each candidate's display name, the user's hints, and public model-card text, which is untrusted content in the classifier prompt but cannot widen capabilities because the capability filter runs first) go to the user's own Foundry resource, opt-in: no `DecisionModel` provider means
