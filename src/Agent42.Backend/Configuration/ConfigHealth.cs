@@ -224,6 +224,9 @@ public static class ConfigHealth
                 "Not used — the local provider keeps files on a volume.", Billable: false));
             checks.Add(new ConfigCheck(GroupInfra, "AzureOpenAI:TenantId", NotApplicable,
                 "Not used — there is no managed identity with local storage.", Billable: false));
+            // Local mode throws at startup without it (LocalStorageRegistration); presence only, the value holds a password.
+            checks.Add(PresenceCheck(GroupInfra, "ConnectionStrings:postgres", config["ConnectionStrings:postgres"],
+                present: "configured", missing: "not set — the local provider cannot start without the Postgres connection string"));
         }
         else if (isDevelopment)
         {
