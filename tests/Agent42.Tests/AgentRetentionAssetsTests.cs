@@ -42,7 +42,7 @@ public sealed class AgentRetentionAssetsTests(StaticAssetsServerFixture fixture)
     {
         var sw = await fixture.Client.GetStringAsync("/sw.js");
 
-        Assert.Contains("agent42-shell-v90", sw);
+        Assert.Contains("agent42-shell-v91", sw);
     }
 
     private static string CodeOnly(string source) =>
