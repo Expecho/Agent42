@@ -11,6 +11,9 @@ import { send, streaming } from "./send.js";
 export function clearThread() {
   teardownAppCards(); // MCP App views are told before their frames go (ADR 0133)
   thread.querySelectorAll(".msg").forEach((el) => el.remove());
+  // A switch away from a still-loading chat leaves its spinner behind: that open's `finally` only hides it
+  // while it is still the active one. Whoever clears the thread owns the spinner, and a new open re-shows it.
+  threadLoadingEl?.remove();
   closeArtifactPane(); // every chat switch and new chat clears the thread, and the pane belongs to the old one
   clearSharedState(); // ...and so does the shared-state panel (ADR 0089); selectConversation loads the new one
 }
