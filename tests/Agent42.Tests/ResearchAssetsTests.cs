@@ -16,7 +16,7 @@ public sealed class ResearchAssetsTests(StaticAssetsServerFixture fixture)
         var sw = await fixture.Client.GetStringAsync("/sw.js");
 
         Assert.Contains("\"/js/research.js\"", sw);
-        Assert.Contains("agent42-shell-v93", sw);
+        Assert.Contains("agent42-shell-v94", sw);
     }
 
     private static string CodeOnly(string source) =>

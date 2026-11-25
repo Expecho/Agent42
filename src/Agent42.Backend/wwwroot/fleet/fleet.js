@@ -611,10 +611,15 @@
       ...(toolPicker.dirty ? [h("a", { class: "switch", text: "Back to your defaults", onclick: () => resetToolPicker(null) })] : []));
   }
 
+  // The user's own fleet default model (Advanced settings), or "" when they set none. Only an override counts: the operator's
+  // value is not in `settings`, and the chat default below is the fallback.
+  const fleetDefaultModel = () => S.settings?.settings?.defaultModel || "";
+
   function fillComposerOptions() {
+    S.appliedFleetDefault = fleetDefaultModel();
     const models = (S.models?.models || []).filter(toolCapable);
     composer.model.replaceChildren(...models.map(m => h("option", { value: m.id, text: m.displayName ? `${m.displayName} (${m.id})` : m.id })));
-    const preferred = models.find(m => m.id === S.models?.default) || models[0];
+    const preferred = models.find(m => m.id === fleetDefaultModel()) || models.find(m => m.id === S.models?.default) || models[0];
     if (preferred) composer.model.value = preferred.id;
     if (S.config) {
       composer.tokens.value = S.config.defaultMaxTokens;
@@ -1833,7 +1838,12 @@
     renderSettingsView();
   }
 
-  function closeSettings() { S.view = "tasks"; invalidate(); }
+  function closeSettings() {
+    S.view = "tasks";
+    // A changed fleet default model must reach the composer, which always sends the model it shows.
+    if (fleetDefaultModel() !== S.appliedFleetDefault) fillComposerOptions();
+    invalidate();
+  }
 
   function settingInput(f, d, current) {
     const attrs = { id: "setting-" + f.key, "aria-label": SETTING_TEXT[f.key]?.[0] || f.key };
@@ -2176,8 +2186,10 @@
   });
 
   (async function start() {
-    const [config, models, tools, profile] = await Promise.all([
-      api("GET", "/api/fleet/config"), api("GET", "/api/models"), api("GET", "/api/tools"), api("GET", "/api/profile")]);
+    const [config, models, tools, profile, settings] = await Promise.all([
+      api("GET", "/api/fleet/config"), api("GET", "/api/models"), api("GET", "/api/tools"), api("GET", "/api/profile"),
+      api("GET", "/api/fleet/settings")]);
+    S.settings = settings.ok ? settings.data : null;
     if (!config.ok && config.status !== 503 && !models.ok) $("#signInBanner").hidden = false;
     S.config = config.ok ? config.data : null;
     S.models = models.ok ? models.data : { models: [] };
