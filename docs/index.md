@@ -10,6 +10,7 @@ too big for one agent, hand it to a **fleet** that designs its own team, runs it
 |---|---|
 | Try it on my machine, no Azure account | [Run locally](setup/local.md) |
 | Host it with Docker and Postgres | [Self-hosting](features/self-hosting.md) |
+| Run it in Docker with Azure storage and real Entra sign-in | [Docker with Entra sign-in](setup/docker-entra.md) |
 | Deploy it to Azure Container Apps | [Deploy to Azure](setup/azure.md) |
 | Wire up Telegram, Slack, GitHub sign-in and the like | [Integration setup](integrations/README.md) |
 

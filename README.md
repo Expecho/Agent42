@@ -311,6 +311,9 @@ docker compose up -d          # pulls the published images; UI at http://localho
 There is no authentication in this mode, so keep it on localhost or put an authenticating proxy in front. What differs
 from the Azure deployment, and its limits, are in [`docs/features/self-hosting.md`](docs/features/self-hosting.md).
 
+To run in Docker with **real Entra sign-in** and your Azure Cosmos + Blob data instead (`Auth:Mode=entra`,
+`docker compose -f compose.azure.yaml up -d`), see [`docs/setup/docker-entra.md`](docs/setup/docker-entra.md).
+
 ## Run your own
 
 Three ways, from least to most setup. The repo ships no operator credentials, owners or identities: everything specific

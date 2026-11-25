@@ -102,7 +102,7 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Backend",
             [
-                "Access", "Api", "Artifacts", "Attachments", "ChatGateway", "ClientTools", "Configuration", "Conversations", "Copilot",
+                "Access", "Api", "Artifacts", "Attachments", "Auth", "ChatGateway", "ClientTools", "Configuration", "Conversations", "Copilot",
                 "Documents", "Email", "Export", "Fleet", "ImageGeneration", "Location", "Mcp", "Memory", "Models", "Orleans", "Properties", "Push",
                 "Search", "SharedState", "Sharing", "Speech", "Storage", "StoredAgents", "Telemetry", "Tools", "UserSkills",
                 "Users", "Web", "Webhooks", "wwwroot",
@@ -514,6 +514,68 @@ public sealed class ProjectLayoutTests
             var index = program.IndexOf(later, StringComparison.Ordinal);
             Assert.True(index > forwarded, $"{later} runs before UseForwardedHeaders — the scheme is still http there.");
         }
+    }
+
+    // ADR 0145. Nothing runs Program.cs, so the entra-mode pipeline is pinned as source text. The order is the security
+    // model: the stamper must strip forged X-MS-CLIENT-* headers before anything reads them, and the gate must sit above the
+    // static-file middleware (terminal, never seen by an authorization policy), or /index.html and /logs fail open.
+    [Fact]
+    public void Program_EntraAuth_StamperAndGatePrecedeEveryReaderAndTheStaticFiles()
+    {
+        var program = StrippedSource(Path.Combine(ProjectDir("Agent42.Backend"), "Program.cs"));
+
+        int At(string needle)
+        {
+            var index = program.IndexOf(needle, StringComparison.Ordinal);
+            Assert.True(index >= 0, $"Program.cs no longer contains {needle}");
+            return index;
+        }
+
+        var forwarded = At("app.UseForwardedHeaders(");
+        var authenticate = At("app.UseAuthentication()");
+        var stamper = At("app.Use(PrincipalHeaderMiddleware.InvokeAsync)");
+        var gate = At("app.Use(AuthGateMiddleware.InvokeAsync)");
+
+        Assert.True(forwarded < authenticate && authenticate < stamper && stamper < gate,
+            "Order must be UseForwardedHeaders -> UseAuthentication -> PrincipalHeaderMiddleware -> AuthGateMiddleware.");
+
+        foreach (var later in new[]
+                 {
+                     "app.Use(UserTelemetryMiddleware.InvokeAsync)", "app.UseOwnerGate()", "app.UseAgentMcpKeyGate()",
+                     "app.UseLocalBridge()", "app.UseDefaultFiles()", "app.UseStaticFiles()", "app.MapAgentApi()",
+                 })
+        {
+            Assert.True(At(later) > gate, $"{later} runs before the entra gate, so it is reachable unauthenticated or reads a forged principal.");
+        }
+    }
+
+    [Fact]
+    public void Program_EntraAuth_IsRegisteredAndMappedOnlyInEntraMode_AndSkipsTheForgeableEnrichment()
+    {
+        var program = StrippedSource(Path.Combine(ProjectDir("Agent42.Backend"), "Program.cs"));
+
+        Assert.Contains("var authMode = AuthModeSetting.Read(builder.Configuration);", program, StringComparison.Ordinal);
+
+        // Each entra-only call must sit inside an `if (authMode == AuthMode.Entra)` block, so the default (Easy Auth) mode
+        // registers nothing and prod's behaviour is unchanged.
+        foreach (var call in new[]
+                 {
+                     "builder.Services.AddEntraAuth(", "app.UseAuthentication()", "app.Use(PrincipalHeaderMiddleware.InvokeAsync)",
+                     "app.Use(AuthGateMiddleware.InvokeAsync)", "app.MapAuthEndpoints()",
+                 })
+        {
+            var index = program.IndexOf(call, StringComparison.Ordinal);
+            Assert.True(index >= 0, $"Program.cs no longer calls {call}");
+            var guard = program.LastIndexOf("if (authMode == AuthMode.Entra)", index, StringComparison.Ordinal);
+            Assert.True(guard >= 0 && index - guard < 400, $"{call} is not guarded by `if (authMode == AuthMode.Entra)`.");
+        }
+
+        // The pre-pipeline enrichment reads raw headers before any middleware, so in entra mode it would tag spans from a
+        // forged header. It must be registered only when the mode is NOT entra.
+        var enrich = program.IndexOf("EnrichWithHttpRequest", StringComparison.Ordinal);
+        Assert.True(enrich >= 0);
+        var notEntra = program.LastIndexOf("if (authMode != AuthMode.Entra)", enrich, StringComparison.Ordinal);
+        Assert.True(notEntra >= 0 && enrich - notEntra < 400, "EnrichWithHttpRequest must be skipped in entra mode.");
     }
 
     /// <summary>

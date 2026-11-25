@@ -15,6 +15,7 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 | Run dev (offline) | `dotnet run --project tools/Agent42.DevHost` — canned LLM, in-memory grains; UI at http://localhost:61326 |
 | Run full stack | `dotnet run --project src/Agent42.AppHost` — Aspire + Cosmos emulator (needs Docker and Aspire CLI 17+) |
 | Self-host (no Azure) | `docker compose up -d` after `cp .env.example .env` (pulls the published images, ADR 0130; `-f compose.yaml -f compose.build.yaml up -d --build` builds from source) — Postgres + a volume, UI at http://localhost:8080, no auth (ADR 0127) |
+| Docker + Azure storage + Entra sign-in | `docker compose -f compose.azure.yaml up -d` after filling the `compose.azure.yaml only` block of `.env` (`Auth:Mode=entra`, the app does the OIDC sign-in, ADR 0145; see `docs/setup/docker-entra.md`) |
 | Test | `dotnet test Agent42.slnx` |
 | Lint | `dotnet format Agent42.slnx --verify-no-changes` |
 | Type check | `dotnet build Agent42.slnx` |
@@ -176,7 +177,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 |------|------|
 | Core: grain per conversation, auth, persona snapshot, blob attachments, profile | 0001, 0002, 0003, 0004, 0005 |
 | Telemetry, `/logs` console, usage dashboard + estimated cost (checked-in price table), Orleans dashboard, App Insights export | 0009, 0010, 0031, 0054, 0062, 0077, 0104, 0110 |
-| Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out; **invite-only sign-in (assignment required + B2B guests, no `allowedPrincipals`) + the advisory owner tier** (`Access:Owners`, `OwnerGate`, own-data-only usage, non-owner telemetry redaction) | 0074, 0090, 0121 |
+| Identity alias (second Entra account, an **authorization grant**); Easy Auth session lifetime, login hint, sign out; **invite-only sign-in (assignment required + B2B guests, no `allowedPrincipals`) + the advisory owner tier** (`Access:Owners`, `OwnerGate`, own-data-only usage, non-owner telemetry redaction); **native Entra sign-in as an opt-in alternative to Easy Auth** (`Auth:Mode=entra`: OIDC in the Backend, header stamper + gate as the trust boundary, `/.auth/*`, public list pinned to the Bicep) | 0074, 0090, 0121, 0145 |
 | Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens), GitHub Copilot kind (Sign in with GitHub, copilot-agents-only models), Auto model (a per-user Decision-1 router kind, sticky per-turn routing, reserved `auto` value; picture requests route to an image model as a one-off turn; Auto can be the default model) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104, 0108, 0137, 0138, 0139 |
 | Image generation, speech (STT/TTS/voice loop), server-side transcription model (chat voice notes), reasoning output (+ summary fallback, visible empty replies) | 0006, 0020, 0037, 0038, 0071, 0113, 0136 |
 | Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces), fleet workspace documents | 0007, 0008, 0030, 0066, 0098, 0101 |

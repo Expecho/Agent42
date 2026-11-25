@@ -39,6 +39,9 @@ page, just sign in again.
 
 - Sign-in is Entra ID through the platform's built-in authentication in front of the app.
   Turn on "assignment required" on the enterprise application so only invited people can get in.
+- Outside Azure Container Apps the app can do the same sign-in itself (`Auth__Mode=entra`). The session is the same cookie,
+  `AppServiceAuthSession`, valid for 14 days from sign-in in both modes, and the Android app reads it the same way. Signing
+  out ends your Entra session too. See [Docker with Entra sign-in](../setup/docker-entra.md).
 - Some people (owners, listed in the `Access:Owners` setting) also see the diagnostics pages. See
   [Usage & diagnostics](usage-and-diagnostics.md) and [Configuration health](configuration-health.md).
 - Setup is covered in [Azure deployment](azure-deployment.md).

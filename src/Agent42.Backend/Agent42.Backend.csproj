@@ -20,6 +20,7 @@
     <PackageReference Include="Microsoft.Agents.AI.Declarative" />
     <PackageReference Include="Microsoft.Agents.AI.GitHub.Copilot" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
     <PackageReference Include="Microsoft.Orleans.Dashboard" />
     <PackageReference Include="Microsoft.Orleans.Persistence.AdoNet" />
     <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet" />

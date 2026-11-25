@@ -9,7 +9,10 @@ namespace Agent42.Backend;
 /// Resolves the signed-in user from the headers that Container Apps built-in
 /// authentication (Easy Auth) injects on every authenticated request. The
 /// ingress strips X-MS-CLIENT-* headers from incoming traffic, so inside the
-/// app the headers can only originate from Easy Auth itself (ADR 0002). This is
+/// app the headers can only originate from Easy Auth itself (ADR 0002). With
+/// <c>Auth:Mode=entra</c> (ADR 0145) nothing strips them, so <c>PrincipalHeaderMiddleware</c>
+/// deletes every inbound one and stamps these same headers from the OIDC cookie
+/// principal; this reader is unchanged. This is
 /// the single home of Easy Auth header knowledge — both grain keying
 /// (<see cref="GetUserId"/>) and telemetry enrichment
 /// (<see cref="GetUserTelemetryTags"/>) read the headers here.

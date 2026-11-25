@@ -29,7 +29,7 @@ Finding the MCP OAuth routes or the share-link contract meant knowing a line ran
 ## Decision
 
 ### 1. Twenty-nine feature folders, flat namespace, same as ADR 0039
-`Api/`, `Artifacts/`, `Attachments/`, `ChatGateway/` (ADR 0111; its `Telegram/`, `Slack/` and `Discord/` subfolders keep the flat namespace), `ClientTools/`, `Configuration/`, `Conversations/`, `Copilot/`,
+`Api/`, `Artifacts/`, `Attachments/`, `Auth/` (ADR 0145), `ChatGateway/` (ADR 0111; its `Telegram/`, `Slack/` and `Discord/` subfolders keep the flat namespace), `ClientTools/`, `Configuration/`, `Conversations/`, `Copilot/`,
 `Documents/`, `Export/`, `Fleet/` (ADR 0097), `ImageGeneration/`, `Location/`, `Mcp/`, `Memory/`, `Models/`, `Orleans/`, `Push/`, `Search/`,
 `SharedState/`, `Sharing/`, `Speech/`, `StoredAgents/`, `Telemetry/`, `Tools/`, `UserSkills/`, `Users/`, `Web/`, `Webhooks/` (ADR 0094).
 

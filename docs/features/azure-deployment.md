@@ -4,7 +4,9 @@
 > every secret and variable.
 
 The Azure setup is tenant-portable: a fork runs one bootstrap script, sets the GitHub secrets and
-variables it prints, and pushes. Without an Azure account, use [self-hosting](self-hosting.md) instead.
+variables it prints, and pushes. Without an Azure account, use [self-hosting](self-hosting.md) instead. Easy Auth is the
+sign-in here and stays the default; to run the image in plain Docker against the same Cosmos and Blob accounts with the app
+doing its own Entra sign-in, see [Docker with Entra sign-in](../setup/docker-entra.md).
 
 ## The fork flow
 
