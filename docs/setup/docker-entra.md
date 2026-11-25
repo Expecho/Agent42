@@ -22,7 +22,34 @@ Easy Auth stays the default on Azure. Nothing changes there unless you set `Auth
 - A **service principal** (a second app registration with a secret) that the container uses to reach Cosmos and Blob.
 - Docker, and the repository's `compose.azure.yaml`.
 
-## Set it up
+## Quick start
+
+1. Sign in with the Azure CLI (`az login`) as someone who can create app registrations and assign roles on your Cosmos and
+   Storage accounts.
+2. Run the setup script. It is for you to run by hand and reads like a checklist, so skim it first
+   ([`infra/docker-entra-setup.sh`](https://github.com/Expecho/Agent42/blob/main/infra/docker-entra-setup.sh)):
+
+   ```bash
+   infra/docker-entra-setup.sh init --resource-group <rg> --cosmos-account <cosmos-account> --storage-account <storage-account>
+   ```
+
+   It creates the sign-in app registration (invite-only, with you assigned), a service principal for the container, grants
+   the Cosmos and Blob roles, and prints a block of `.env` values.
+3. Copy `.env.example` to `.env`, paste the printed block in, and set `SEARXNG_SECRET` to a long random string.
+4. Start it with the repository's [`compose.azure.yaml`](https://github.com/Expecho/Agent42/blob/main/compose.azure.yaml):
+
+   ```bash
+   docker compose -f compose.azure.yaml up -d
+   ```
+
+5. Open <http://localhost:8080>, sign in, then add a model provider under Preferences.
+
+Role assignments can take a few minutes to take effect, so if the first start shows storage errors, wait and restart.
+Other commands of the script: `assign` lets another person sign in, `redirect` adds a public address, and `roles` only grants
+the two roles to a service principal you already have. Run it with `help` for details. The sections below explain each
+piece, and the commands to run them by hand.
+
+## Set it up by hand
 
 ### 1. The sign-in app registration
 
@@ -49,7 +76,8 @@ error `AADSTS50105`.
 
 ### 2. The service principal and its roles
 
-Create the service principal and give it the two data roles. **You run these commands**, they are not run for you:
+Create the service principal and give it the two data roles (`infra/docker-entra-setup.sh roles` does the second part).
+**You run these commands**, they are not run for you:
 
 ```bash
 # Cosmos DB data plane (grain state, reminders, document vectors, chat search)
