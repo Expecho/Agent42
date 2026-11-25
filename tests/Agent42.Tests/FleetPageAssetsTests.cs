@@ -52,6 +52,19 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("$(\"#mCached\").textContent = nf.format(b?.cachedInputTokens || 0);", script, StringComparison.Ordinal);
     }
 
+    /// <summary>The composer always sends the model it shows, so it must preselect the user's fleet default model (Advanced
+    /// settings) before the chat default, load the settings at start, and refresh when the settings view closes.</summary>
+    [Fact]
+    public async Task FleetPage_ComposerPreselectsTheFleetDefaultModel()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("const fleetDefaultModel = () => S.settings?.settings?.defaultModel || \"\";", script, StringComparison.Ordinal);
+        Assert.Contains("models.find(m => m.id === fleetDefaultModel()) || models.find(m => m.id === S.models?.default)", script, StringComparison.Ordinal);
+        Assert.Contains("api(\"GET\", \"/api/fleet/settings\")]);", script, StringComparison.Ordinal);
+        Assert.Contains("if (fleetDefaultModel() !== S.appliedFleetDefault) fillComposerOptions();", script, StringComparison.Ordinal);
+    }
+
     /// <summary>ADR 0118: <c>renderPrompt</c> writes the banner label by id, so a page without it would throw on the first
     /// question; and the composer must send the flag and handle both events or the interview never shows.</summary>
     [Fact]
