@@ -2992,6 +2992,14 @@ body {
 .config-health__link:hover,
 .config-health__link:focus-visible { border-color: var(--amber); background: var(--amber-glow); }
 
+.admin-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.admin-links .config-health__link { margin-left: 0; }
+
 .provider-row__meta {
   flex: 1;
   min-width: 0;

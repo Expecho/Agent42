@@ -721,6 +721,17 @@
                      back gesture returns to the chat. -->
                 <a class="config-health__link" id="searxngUiLink" href="/searxng/" target="_blank" rel="noopener">Open search UI &rarr;</a>
               </section>
+              <!-- Operator consoles (ADR 0054/0062). This whole panel is owner-only: tabConfig stays [hidden] until
+                   /api/access says isOwner (confighealth.js), and locally "local-dev" is the owner, so a single-user
+                   run sees it too. The routes are owner-gated server-side regardless (OwnerGate, ADR 0121). New tab,
+                   like the search UI above. -->
+              <section class="agent-form__section">
+                <span class="agent-form__label">// operator consoles</span>
+                <div class="admin-links">
+                  <a class="config-health__link" id="logsLink" href="/logs" target="_blank" rel="noopener">Open logs &rarr;</a>
+                  <a class="config-health__link" id="orleansDashboardLink" href="/dashboard" target="_blank" rel="noopener">Open Orleans dashboard &rarr;</a>
+                </div>
+              </section>
             </div>
 
             <div class="agent-form__panel" role="tabpanel" id="panelSkills" aria-labelledby="tabSkills" hidden>

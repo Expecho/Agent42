@@ -266,7 +266,27 @@ public sealed class PwaAssetsTests
         // SKEWED module graph, and a renamed export then throws "does not provide an export named X" —
         // a blank app, not a degraded one. Every MR touching wwwroot/js/ must bump this.
         var sw = await _client.GetStringAsync("/sw.js");
-        Assert.Contains("agent42-shell-v90", sw);
+        Assert.Contains("agent42-shell-v91", sw);
+    }
+
+    // Operator consoles (ADR 0054/0062/0121): the links to /logs and the Orleans dashboard sit INSIDE the
+    // owner-only Configuration panel, which is [hidden] until /api/access says isOwner. A link placed outside
+    // panelConfig would show to every user.
+    [Fact]
+    public async Task OperatorConsoleLinks_LiveInsideTheOwnerOnlyConfigurationPanel()
+    {
+        var index = await _client.GetStringAsync("/index.html");
+        var tab = index.IndexOf("id=\"tabConfig\"", StringComparison.Ordinal);
+        var panel = index.IndexOf("id=\"panelConfig\"", StringComparison.Ordinal);
+        var end = index.IndexOf("id=\"panelSkills\"", StringComparison.Ordinal);
+        Assert.True(tab >= 0 && panel > tab && end > panel);
+        Assert.Contains("hidden", index.Substring(tab, 200));
+
+        foreach (var href in new[] { "href=\"/logs\"", "href=\"/dashboard\"" })
+        {
+            var at = index.IndexOf(href, StringComparison.Ordinal);
+            Assert.True(at > panel && at < end, $"{href} must be inside panelConfig");
+        }
     }
 
     // Palette axis (ADR 0129): source-text proof that the picker, the engine, the head scripts and the offline
