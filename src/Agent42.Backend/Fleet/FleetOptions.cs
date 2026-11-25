@@ -83,6 +83,10 @@ public sealed class FleetOptions
     /// for one gets a load error.</summary>
     public bool CopilotAgentsEnabled { get; set; } = true;
 
+    /// <summary>The catalog model id a task runs on when its request names none (ADR 0135). Empty: the user's catalog
+    /// default. A stale id (the model left the catalog) falls back to that default instead of failing the task.</summary>
+    public string DefaultModel { get; set; } = "";
+
     /// <summary>The user's catalog model id a plain <c>copilot</c> agent runs on. Empty: the task's model.</summary>
     public string DefaultCopilotModel { get; set; } = "";
 

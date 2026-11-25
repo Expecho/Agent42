@@ -8,7 +8,7 @@ namespace Agent42.Backend;
 /// <see cref="FleetUserSettings"/>), where the page groups it, and its bounds.</summary>
 /// <param name="Key">The property name, which is also the JSON member (camelCased).</param>
 /// <param name="Group"><c>behaviour</c> or <c>dream</c>.</param>
-/// <param name="Kind"><c>int</c>, <c>number</c>, <c>time</c> (<c>HH:mm</c>) or <c>model</c>.</param>
+/// <param name="Kind"><c>int</c>, <c>number</c>, <c>time</c> (<c>HH:mm</c>), <c>model</c> (a Copilot agent's) or <c>taskmodel</c> (the task's).</param>
 /// <param name="Min">The lowest allowed value (numbers only).</param>
 /// <param name="Max">The highest allowed value (numbers only).</param>
 /// <param name="FollowsTeamDepth">The upper bound is the effective <c>MaxTeamDepth</c> (the user's, else the operator's).</param>
@@ -27,6 +27,7 @@ public sealed class FleetSettingsService(FleetOptions options, IFleetStore store
     /// fields that are bounded by it).</summary>
     public static readonly IReadOnlyList<FleetSettingDescriptor> Descriptors =
     [
+        new(nameof(FleetOptions.DefaultModel), "behaviour", "taskmodel"),
         new(nameof(FleetOptions.MaxTeamDepth), "behaviour", "int", 1, 10),
         new(nameof(FleetOptions.MaxAgentsPerTask), "behaviour", "int", 1, 100),
         new(nameof(FleetOptions.MaxConcurrentSubTeamsPerLevel), "behaviour", "int", 1, 12),
@@ -98,7 +99,11 @@ public sealed class FleetSettingsService(FleetOptions options, IFleetStore store
     /// </summary>
     public async Task<(string? Field, string? Error)> SaveAsync(string userId, FleetUserSettings settings, CancellationToken cancellationToken = default)
     {
-        var normalized = settings with { DefaultCopilotModel = string.IsNullOrWhiteSpace(settings.DefaultCopilotModel) ? null : settings.DefaultCopilotModel.Trim() };
+        var normalized = settings with
+        {
+            DefaultModel = string.IsNullOrWhiteSpace(settings.DefaultModel) ? null : settings.DefaultModel.Trim(),
+            DefaultCopilotModel = string.IsNullOrWhiteSpace(settings.DefaultCopilotModel) ? null : settings.DefaultCopilotModel.Trim(),
+        };
         var depth = normalized.MaxTeamDepth ?? options.MaxTeamDepth;
         foreach (var descriptor in Descriptors)
         {
@@ -107,6 +112,11 @@ public sealed class FleetSettingsService(FleetOptions options, IFleetStore store
             {
                 return (descriptor.Key, error);
             }
+        }
+
+        if (normalized.DefaultModel is { } taskModel && !(await TaskModelChoicesAsync(userId, cancellationToken)).Any(m => m.Id.Equals(taskModel, StringComparison.Ordinal)))
+        {
+            return (nameof(FleetOptions.DefaultModel), "Pick one of your models that supports tools.");
         }
 
         if (normalized.DefaultCopilotModel is { } model && !await IsKnownCopilotModelAsync(userId, model, cancellationToken))
@@ -125,6 +135,7 @@ public sealed class FleetSettingsService(FleetOptions options, IFleetStore store
             case "time":
                 return TimeOnly.TryParseExact((string)value, "HH:mm", null, DateTimeStyles.None, out _) ? null : "Use a time of day as HH:mm (UTC).";
             case "model":
+            case "taskmodel":
                 return null;
             default:
                 var number = Convert.ToDouble(value, CultureInfo.InvariantCulture);
@@ -142,6 +153,7 @@ public sealed class FleetSettingsService(FleetOptions options, IFleetStore store
             case "time":
                 return TimeOnly.TryParseExact((string)value, "HH:mm", null, DateTimeStyles.None, out _) ? value : null;
             case "model":
+            case "taskmodel":
                 return string.IsNullOrWhiteSpace((string)value) ? null : value;
             default:
                 var max = descriptor.FollowsTeamDepth ? effective.MaxTeamDepth : descriptor.Max;
@@ -162,6 +174,13 @@ public sealed class FleetSettingsService(FleetOptions options, IFleetStore store
     {
         var catalog = await (await catalogs.GetForUserAsync(userId, cancellationToken)).GetAsync(cancellationToken);
         return [.. catalog.Models.Where(m => FleetTaskService.IsToolCapable(m) || (m.CopilotOnly && m.SupportsTools))];
+    }
+
+    /// <summary>The models a task can run on: the same predicate <see cref="FleetTaskService"/> checks a request's model with.</summary>
+    public async Task<IReadOnlyList<ModelInfo>> TaskModelChoicesAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var catalog = await (await catalogs.GetForUserAsync(userId, cancellationToken)).GetAsync(cancellationToken);
+        return [.. catalog.Models.Where(FleetTaskService.IsToolCapable)];
     }
 
     private async Task<bool> IsKnownCopilotModelAsync(string userId, string model, CancellationToken cancellationToken)

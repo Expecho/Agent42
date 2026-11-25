@@ -62,6 +62,29 @@ public sealed class FleetTaskLessonsTests : IAsyncDisposable
         return (id!, script);
     }
 
+    [Theory]
+    [InlineData(LessonCatalogs.ModelB, null, LessonCatalogs.ModelB)]
+    [InlineData(LessonCatalogs.ModelB, LessonCatalogs.ModelA, LessonCatalogs.ModelA)]
+    [InlineData("fake:gone", null, LessonCatalogs.ModelA)]
+    [InlineData(null, null, LessonCatalogs.ModelA)]
+    public async Task ATasksModel_IsTheRequests_ElseTheUsersFleetDefault_ElseTheCatalogDefault(string? saved, string? requested, string expected)
+    {
+        var options = new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1 };
+        var provider = new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(new FakeChatClient(), LessonCatalogs.ModelA));
+        var catalogs = new LessonCatalogs();
+        var settings = new FleetSettingsService(options, _store, catalogs);
+        var tasks = new FleetTaskService(_store, options, provider, catalogs, NullLogger<FleetTaskService>.Instance, settings: settings);
+        _services.Add(tasks);
+        // Stored directly: a hand-edited or stale value must fall back, never fail the task.
+        await _store.SetSettingsAsync(User, new FleetUserSettings { DefaultModel = saved });
+
+        var script = new FakeChatClient.FleetScript([FleetRunHarness.Plan("Sequential", "Writer")]);
+        var (id, error) = await tasks.SubmitAsync(User, new(FakeChatClient.FleetTask("Write a haiku", script), Model: requested));
+
+        Assert.Null(error);
+        Assert.Equal(expected, (await Finished(tasks, id!)).PlannerModel);
+    }
+
     [Fact]
     public async Task APlannerGetsOnlyActiveUnexpiredLessons_AndTheStoredRecordKeepsWhatWasApplied()
     {

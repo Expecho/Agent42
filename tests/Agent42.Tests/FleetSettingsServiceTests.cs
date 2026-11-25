@@ -72,6 +72,21 @@ public class FleetSettingsServiceTests
     }
 
     [Fact]
+    public async Task Save_DefaultModel_MustBeAToolCapableNonCopilotModel()
+    {
+        Assert.Equal(nameof(FleetOptions.DefaultModel), (await _service.SaveAsync(User, new FleetUserSettings { DefaultModel = "nope" })).Field);
+        Assert.Equal(nameof(FleetOptions.DefaultModel), (await _service.SaveAsync(User, new FleetUserSettings { DefaultModel = LessonCatalogs.NoToolsModel })).Field);
+        // A Copilot-only model is never a task's model (ADR 0108), so it is refused here though a copilot agent may use it.
+        Assert.Equal(nameof(FleetOptions.DefaultModel), (await _service.SaveAsync(User, new FleetUserSettings { DefaultModel = LessonCatalogs.CopilotModel })).Field);
+
+        Assert.Null((await _service.SaveAsync(User, new FleetUserSettings { DefaultModel = LessonCatalogs.ModelB })).Error);
+        Assert.Equal(LessonCatalogs.ModelB, (await _service.ResolveAsync(User)).DefaultModel);
+
+        Assert.Null((await _service.SaveAsync(User, new FleetUserSettings { DefaultModel = " " })).Error);
+        Assert.Equal("", (await _service.ResolveAsync(User)).DefaultModel);
+    }
+
+    [Fact]
     public async Task Save_IsTheFullSet_ANullClears_AndResetClearsAll()
     {
         await _service.SaveAsync(User, new FleetUserSettings { MaxAttempts = 5, PassingScore = 9 });
@@ -122,7 +137,7 @@ public class FleetSettingsServiceTests
 
         Assert.Empty(FleetSettingsService.Descriptors.Select(d => d.Key).Intersect(operatorOnly));
         Assert.Empty(typeof(FleetUserSettings).GetProperties().Select(p => p.Name).Intersect(operatorOnly));
-        Assert.Equal(25, FleetSettingsService.Descriptors.Count);
+        Assert.Equal(26, FleetSettingsService.Descriptors.Count);
 
         var resolved = await _service.ResolveAsync(User);
         Assert.Equal(456, resolved.MaxTokensPerTaskLimit);
