@@ -1937,6 +1937,13 @@
   $("#stopBtn").addEventListener("click", () => S.selectedTask && api("POST", `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/stop`));
   function newTask() { disconnect(); closeCanvasPane(); S.selectedTask = null; S.freshTask = true; resetTaskState(); S.view = "tasks"; invalidate(); requestAnimationFrame(() => composer.ta.focus()); }
   $("#newTaskBtn").addEventListener("click", newTask);
+  // Narrow screens: the sidebar is a flyout drawer. Choosing a task, a view or New task closes it; so do the backdrop and Escape.
+  const setNav = open => { document.body.classList.toggle("nav-open", open); $("#navBackdrop").hidden = !open; $("#menuBtn").setAttribute("aria-expanded", String(open)); };
+  $("#menuBtn").addEventListener("click", () => setNav(!document.body.classList.contains("nav-open")));
+  $("#navBackdrop").addEventListener("click", () => setNav(false));
+  document.addEventListener("keydown", e => { if (e.key === "Escape") setNav(false); });
+  $("#sidebar").addEventListener("click", e => { if (e.target.closest(".task-item, .sb-btn, #newTaskBtn") && !e.target.closest(".thread-toggle")) setNav(false); });
+  matchMedia("(min-width: 761px)").addEventListener("change", e => { if (e.matches) setNav(false); });
   // Deletes the record, its event log and, once no follow-up shares it, the workspace with its files.
   $("#deleteBtn").addEventListener("click", async () => {
     const id = S.selectedTask;
