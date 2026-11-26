@@ -77,6 +77,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 .opts > summary::-webkit-details-marker { display: none; }
 .opts-chip { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 10px; background: var(--bg-inset); border: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); white-space: nowrap; max-width: 100%; min-width: 0; }
 .opts-chip .chip-text { overflow: hidden; text-overflow: ellipsis; }
+/* the summary is display:block (.opts > summary wins), so the chip text must clip itself or it runs under Run task */
+.opts > summary.opts-chip { overflow: hidden; text-overflow: ellipsis; line-height: 34px; }
 .opts[open] > .opts-chip, .opts-chip:hover { border-color: var(--amber-deep); color: var(--accent); }
 .opts-pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30; width: min(340px, calc(100vw - 48px)); display: grid; gap: 10px; padding: 14px; background: var(--bg-raised); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .25); font-size: 12px; color: var(--muted); }
 .opts-pop label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
