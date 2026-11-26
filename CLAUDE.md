@@ -19,6 +19,7 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 | Test | `dotnet test Agent42.slnx` |
 | Lint | `dotnet format Agent42.slnx --verify-no-changes` |
 | Type check | `dotnet build Agent42.slnx` |
+| Code shape | `node .agentic/scripts/code-shape.mjs` — method length (lines of code), params, class size per `src/`, `tools/`, `tests/`; `--json <file>` writes machine-readable output (baseline: `.agentic/code-shape-baseline.json`). A report, not a gate |
 | Android app (test, lint, build) | `./gradlew test lint assembleDebug` in `tools/Agent42.Android` — needs JDK 21 + Android SDK (`ANDROID_HOME`); CI runs it in `.github/workflows/android.yml` |
 
 ## Hard rules
