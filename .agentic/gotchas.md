@@ -4971,6 +4971,34 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`Approve_Twice_SecondIsAConflict_PromptChangedOnce`)
 - **Verified:** 2026-11-24
 
+### A skill proposal never touches the frontmatter, and is re-applied to the CURRENT `SKILL.md`
+
+- **Claim:** The dream's skill proposals (ADR 0146) are code-built or body-only. A create supplies name, a one-line description
+  (letters, digits, spaces and `. , ; ( ) - /  % +` only, so no `: `, quote, `#` or `---` can inject YAML) and a body, and
+  `FleetSkillProposals.BuildMarkdown` writes the frontmatter. An edit's `find`/`replacement` apply to the text after the closing
+  `---` only (`SplitFrontmatter`), so the picker key `skill:{name}` and the description never change. Approve reads the skill's
+  `SKILL.md` as it is NOW from the stored zip (`{name}/SKILL.md`), re-applies the edit (not exactly once: `outdated`, 409; an append
+  already at the end: applied, no install), and rebuilds the zip with the other entries untouched. A shipped or companion name is
+  never an edit target (even an upload that shadows it) and a created skill may not take any shipped name: an upload of that name
+  silently replaces the shipped skill, and `websearch`'s SKILL.md holds the ADR 0011 mitigation. Size is the whole `SKILL.md`
+  against `SkillToolLimits.MaxSkillBodyLength`, because that is what `load_skill` returns. An edit installs with `autoEnable: false`
+  so a skill the user switched off stays off; a create installs with `true`.
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetSkillProposals.cs`, `src/Agent42.Backend/Fleet/FleetLessonService.Skills.cs`,
+  `tests/Agent42.Tests/FleetSkillProposalsTests.cs` (`Apply_OnlyEditsTheBody`, `BuildMarkdown_RoundTripsThroughNormalize`,
+  `Validate_Description_RefusesYamlAndInjection`), `tests/Agent42.Tests/FleetSkillProposalServiceTests.cs` (`ApproveSkillEdit_*`)
+- **Verified:** 2026-11-26
+
+### `UserSkillInstaller` is the one skill install path
+
+- **Claim:** Normalize into scratch, per-user cap, store the package under a fresh id, record the grain row, delete what it
+  superseded, then optionally auto-enable: all of it lives in `UserSkillInstaller.InstallAsync`, used by `POST /api/skills` and by
+  Approve of a dream skill proposal. Don't re-implement a slice of it; a second path drifts from the cap and cleanup rules. It
+  resolves `ISkillPackageStore` optionally through `IServiceProvider` (so `TryAddSingleton` in `AddAgent42Api` adds no mandatory
+  port), and `FleetLessonService` takes it as an optional trailing parameter: without a store the dream offers no skill tool.
+- **Evidence:** `src/Agent42.Backend/UserSkills/UserSkillInstaller.cs`, `src/Agent42.Backend/Api/Agent42ApiRegistration.cs`,
+  `tests/Agent42.Tests/UserSkillInstallerTests.cs`
+- **Verified:** 2026-11-26
+
 ### A stream failure is a 200 with `ErrorContent`, not an exception, and an empty message is never stored
 - **Claim:** On the Responses path a provider failure can arrive two ways, and only one throws. An HTTP 400 throws
   `ClientResultException` (ADR 0046's "Transmission failed"). A Responses `error` SSE event is a 200 whose update carries

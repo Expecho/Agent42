@@ -155,6 +155,75 @@ public static class SkillPackage
             && name.IndexOfAny(['/', '\\', ':', '.', ' ']) < 0
             && name.Length <= 64;
 
+    /// <summary>
+    /// The text of <c>{name}/SKILL.md</c> in a stored (normalized) skill zip, or null when the zip has no such entry or
+    /// cannot be read. Read-only: the zip is one this process wrote, but a corrupt blob must not throw into a caller.
+    /// </summary>
+    public static string? ReadSkillMarkdown(byte[] zip, string name)
+    {
+        try
+        {
+            using var stream = new MemoryStream(zip, writable: false);
+            using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+            var entry = archive.GetEntry($"{name}/{SkillFileName}");
+            if (entry is null)
+            {
+                return null;
+            }
+
+            using var reader = new StreamReader(entry.Open(), new UTF8Encoding(false));
+            return reader.ReadToEnd();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds a stored skill zip with <c>{name}/SKILL.md</c> replaced by <paramref name="markdown"/> and every other
+    /// entry copied untouched, in the same <c>{name}/...</c> layout <see cref="Normalize"/> produces. Returns null when the
+    /// zip cannot be read or has no <c>SKILL.md</c> to replace.
+    /// </summary>
+    public static byte[]? ReplaceSkillMarkdown(byte[] zip, string name, string markdown)
+    {
+        var target = $"{name}/{SkillFileName}";
+        try
+        {
+            using var source = new MemoryStream(zip, writable: false);
+            using var input = new ZipArchive(source, ZipArchiveMode.Read);
+            if (input.GetEntry(target) is null)
+            {
+                return null;
+            }
+
+            using var buffer = new MemoryStream();
+            using (var output = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                foreach (var entry in input.Entries)
+                {
+                    var copy = output.CreateEntry(entry.FullName);
+                    using var to = copy.Open();
+                    if (entry.FullName == target)
+                    {
+                        to.Write(new UTF8Encoding(false).GetBytes(markdown));
+                    }
+                    else
+                    {
+                        using var from = entry.Open();
+                        from.CopyTo(to);
+                    }
+                }
+            }
+
+            return buffer.ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
     // ---- bare .md ------------------------------------------------------------------------------------
 
     // Scans the frontmatter for `name:`, validates it, and only THEN creates {staging}/{name}/SKILL.md.

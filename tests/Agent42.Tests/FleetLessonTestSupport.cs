@@ -50,6 +50,9 @@ public sealed class ScriptedDreamClient(Func<DreamCall, ChatResponse> script) : 
     public int Calls => Volatile.Read(ref _calls);
     public string? Instructions { get; private set; }
     public string? UserText { get; private set; }
+
+    /// <summary>The names of the tools offered on the last call.</summary>
+    public IReadOnlyList<string> ToolNames { get; private set; } = [];
     public object? SeenUser { get; private set; }
     public object? SeenApplication { get; private set; }
 
@@ -70,6 +73,15 @@ public sealed class ScriptedDreamClient(Func<DreamCall, ChatResponse> script) : 
                 ["promptKey"] = promptKey, ["kind"] = kind, ["find"] = find, ["replacement"] = replacement, ["rationale"] = rationale, ["evidence"] = evidence,
             })]));
 
+    /// <summary>A <c>propose_skill_change</c> call (ADR 0146).</summary>
+    public static ChatResponse ProposeSkill(string skillName, string kind, string? find, string? description, string replacement, string rationale, params string[] evidence)
+        => new(new ChatMessage(ChatRole.Assistant,
+            [new FunctionCallContent(Guid.NewGuid().ToString("N"), "propose_skill_change", new Dictionary<string, object?>
+            {
+                ["skillName"] = skillName, ["kind"] = kind, ["find"] = find, ["description"] = description, ["replacement"] = replacement,
+                ["rationale"] = rationale, ["evidence"] = evidence,
+            })]));
+
     public static object Proposed(string text, IEnumerable<string> evidence, string topic = FleetLessonTopics.Staging, string confidence = FleetLessonConfidence.Medium)
         => new { text, topic, confidence, evidence = evidence.ToArray() };
 
@@ -78,6 +90,7 @@ public sealed class ScriptedDreamClient(Func<DreamCall, ChatResponse> script) : 
         var list = messages.ToList();
         var number = Interlocked.Increment(ref _calls);
         Instructions = options?.Instructions;
+        ToolNames = [.. options?.Tools?.Select(t => t.Name) ?? []];
         UserText = string.Join("\n", list.Where(m => m.Role == ChatRole.User).Select(m => m.Text));
         SeenUser = Orleans.Runtime.RequestContext.Get(UserTelemetryContext.RequestContextKey);
         SeenApplication = Orleans.Runtime.RequestContext.Get(UsageSpanProjector.ApplicationContextKey);

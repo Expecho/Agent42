@@ -26,6 +26,8 @@ public sealed class FleetLessonApiFixture : SharedApiFixture
         ]));
         builder.Services.AddSingleton<IUserChatClientFactoryProvider>(
             new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(DreamClient, LessonCatalogs.ModelA)));
+        // The skill proposals install through UserSkillInstaller, which needs a package store (ADR 0146).
+        builder.Services.AddSingleton<ISkillPackageStore, InMemorySkillPackageStore>();
         builder.Services.AddAgentFleetInMemory(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Fleet:ApprovalDepth"] = "-1",
@@ -340,5 +342,72 @@ public sealed class FleetLessonApiTests(FleetLessonApiFixture fixture) : SharedC
 
         Assert.Equal(HttpStatusCode.Conflict, (await Send(HttpMethod.Post, "/api/fleet/lessons/proposals/done/approve", user)).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await Send(HttpMethod.Post, "/api/fleet/lessons/proposals/done/dismiss", user)).StatusCode);
+    }
+
+    // ---- Skill proposals (ADR 0146) ----
+
+    private UserSkillInstaller Installer => Fixture.App.Services.GetRequiredService<UserSkillInstaller>();
+
+    private async Task SeedSkillProposals(string user, params FleetSkillProposal[] proposals)
+    {
+        var doc = await Store.GetLessonsAsync(user);
+        await Store.SetLessonsAsync(user, doc with { SkillProposals = proposals });
+    }
+
+    private static FleetSkillProposal SkillProposal(string id, string skill = "deploys", string kind = FleetSkillProposalKind.Replace,
+        string? find = "Then run the tests.", string replacement = "Then run the tests and the linter.", string? description = null, string status = FleetPromptProposalStatus.Pending)
+        => new() { Id = id, SkillName = skill, Kind = kind, Find = find, Replacement = replacement, Description = description, Rationale = "Steps repeated.", Evidence = ["t0", "t1", "t2"], Status = status, CreatedAt = DateTimeOffset.UtcNow };
+
+    private Task InstallSkill(string user, string name = "deploys")
+        => Installer.InstallAsync(user, "SKILL.md", System.Text.Encoding.UTF8.GetBytes(FleetSkillProposals.BuildMarkdown(name, "How to deploy.", "Run the build.\nThen run the tests.")), autoEnable: false);
+
+    [Fact]
+    public async Task FleetLessonApi_SkillProposals_ListApproveDismiss_ScopedToTheCaller()
+    {
+        var alice = NewUser();
+        var bob = NewUser();
+        await InstallSkill(alice);
+        await SeedSkillProposals(alice, SkillProposal("s1"),
+            SkillProposal("s2", "release-notes", FleetSkillProposalKind.Create, null, "Group changes by area.", "How to write release notes."),
+            SkillProposal("old", "gone", status: FleetPromptProposalStatus.Dismissed));
+
+        var document = await Get(alice);
+        var listed = document.GetProperty("skillProposals").EnumerateArray().ToDictionary(p => p.GetProperty("id").GetString()!);
+        Assert.Equal(["old", "s1", "s2"], listed.Keys.Order());
+        Assert.Equal(("deploys", true), (listed["s1"].GetProperty("name").GetString(), listed["s1"].GetProperty("applies").GetBoolean()));
+        Assert.True(listed["s2"].GetProperty("applies").GetBoolean());
+        Assert.Equal("How to write release notes.", listed["s2"].GetProperty("description").GetString());
+        Assert.False(listed["old"].GetProperty("applies").GetBoolean());
+        Assert.True(document.GetProperty("newCount").GetInt32() >= 2);
+        Assert.Equal(0, (await Get(bob)).GetProperty("skillProposals").GetArrayLength());
+
+        Assert.Equal(HttpStatusCode.NotFound, (await Send(HttpMethod.Post, "/api/fleet/lessons/skill-proposals/s1/approve", bob)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await Send(HttpMethod.Post, "/api/fleet/lessons/skill-proposals/s1/dismiss", bob)).StatusCode);
+
+        var approve = await Send(HttpMethod.Post, "/api/fleet/lessons/skill-proposals/s1/approve", alice);
+        Assert.Equal(HttpStatusCode.OK, approve.StatusCode);
+        Assert.Equal("deploys", (await approve.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("name").GetString());
+        Assert.Contains("and the linter", await Installer.ReadSkillMarkdownAsync(alice, "deploys"));
+
+        Assert.Equal(HttpStatusCode.OK, (await Send(HttpMethod.Post, "/api/fleet/lessons/skill-proposals/s2/dismiss", alice)).StatusCode);
+        var after = (await Get(alice)).GetProperty("skillProposals").EnumerateArray().ToDictionary(p => p.GetProperty("id").GetString()!, p => p.GetProperty("status").GetString());
+        Assert.Equal(("approved", "dismissed"), (after["s1"], after["s2"]));
+        Assert.Null(await Installer.ReadSkillMarkdownAsync(alice, "release-notes"));
+    }
+
+    [Fact]
+    public async Task FleetLessonApi_SkillProposals_OutdatedAndDecided_AreConflicts()
+    {
+        var user = NewUser();
+        await SeedSkillProposals(user, SkillProposal("gone"), SkillProposal("done", "other", status: FleetPromptProposalStatus.Approved));
+
+        Assert.False((await Get(user)).GetProperty("skillProposals").EnumerateArray().Single(p => p.GetProperty("id").GetString() == "gone").GetProperty("applies").GetBoolean());
+        var approve = await Send(HttpMethod.Post, "/api/fleet/lessons/skill-proposals/gone/approve", user);
+
+        Assert.Equal(HttpStatusCode.Conflict, approve.StatusCode);
+        Assert.Contains("no longer installed", (await approve.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+        Assert.Equal(FleetPromptProposalStatus.Outdated, (await Store.GetLessonsAsync(user)).SkillProposals.Single(p => p.Id == "gone").Status);
+        Assert.Equal(HttpStatusCode.Conflict, (await Send(HttpMethod.Post, "/api/fleet/lessons/skill-proposals/done/approve", user)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Send(HttpMethod.Post, "/api/fleet/lessons/skill-proposals/done/dismiss", user)).StatusCode);
     }
 }

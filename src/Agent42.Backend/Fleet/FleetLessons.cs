@@ -106,8 +106,9 @@ public static partial class FleetLessons
     }
 
     /// <summary>The evidence rule: every id is in the digest, and they span at least <c>DreamMinSupport</c> workspaces. Shared
-    /// with prompt proposals (ADR 0143); <paramref name="what"/> names the thing that needs the evidence.</summary>
-    public static string? EvidenceProblem(IReadOnlyList<string>? evidence, IReadOnlyDictionary<string, string> taskWorkspaces, FleetOptions options, string what = "The lesson")
+    /// with prompt proposals (ADR 0143); <paramref name="what"/> names the thing that needs the evidence. A <paramref name="minSupport"/>
+    /// above <c>DreamMinSupport</c> raises the bar (skill proposals need 3, ADR 0146).</summary>
+    public static string? EvidenceProblem(IReadOnlyList<string>? evidence, IReadOnlyDictionary<string, string> taskWorkspaces, FleetOptions options, string what = "The lesson", int minSupport = 0)
     {
         var ids = (evidence ?? []).Distinct().ToList();
         if (ids.FirstOrDefault(id => !taskWorkspaces.ContainsKey(id)) is { } unknown)
@@ -115,7 +116,7 @@ public static partial class FleetLessons
             return $"Evidence task id '{unknown}' is not in the digest. Cite only task ids that appear there.";
         }
 
-        var support = Math.Max(1, options.DreamMinSupport);
+        var support = Math.Max(Math.Max(1, options.DreamMinSupport), minSupport);
         var workspaces = ids.Select(id => taskWorkspaces[id]).Distinct().Count();
         return workspaces >= support
             ? null

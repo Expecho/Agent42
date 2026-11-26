@@ -32,6 +32,63 @@ public static partial class AgentApi
             => EditFleetLessonAsync(services, http, (s, user) => s.DeleteAsync(user, id, ct)));
         app.MapPost("/api/fleet/lessons/proposals/{id}/approve", ApproveFleetPromptProposalAsync);
         app.MapPost("/api/fleet/lessons/proposals/{id}/dismiss", DismissFleetPromptProposalAsync);
+        app.MapPost("/api/fleet/lessons/skill-proposals/{id}/approve", ApproveFleetSkillProposalAsync);
+        app.MapPost("/api/fleet/lessons/skill-proposals/{id}/dismiss", DismissFleetSkillProposalAsync);
+    }
+
+    // The skill proposals (ADR 0146), in the order of the prompt proposals. A pending one carries whether it still applies: an edit
+    // to the skill's current SKILL.md, a creation to a free name. With no installer (null snapshots) nothing applies.
+    private static IEnumerable<object> FleetSkillProposalViews(FleetLessonsDocument document, IReadOnlyList<FleetSkillSnapshot>? installed)
+    {
+        var shipped = FleetSkillProposals.ShippedNames();
+        return document.SkillProposals
+            .OrderBy(p => p.Status == FleetPromptProposalStatus.Pending ? 0 : 1)
+            .ThenByDescending(p => p.DecidedAt ?? p.CreatedAt)
+            .Select(p => new
+            {
+                p.Id,
+                name = p.SkillName,
+                p.Kind,
+                p.Find,
+                p.Replacement,
+                p.Description,
+                p.Rationale,
+                p.Evidence,
+                p.Status,
+                p.CreatedAt,
+                p.DecidedAt,
+                applies = p.Status == FleetPromptProposalStatus.Pending && installed is not null && SkillProposalApplies(p, installed, shipped),
+            });
+    }
+
+    private static bool SkillProposalApplies(FleetSkillProposal p, IReadOnlyList<FleetSkillSnapshot> installed, IReadOnlySet<string> shipped)
+    {
+        var current = installed.FirstOrDefault(s => string.Equals(s.Name, p.SkillName, StringComparison.OrdinalIgnoreCase));
+        return p.Kind == FleetSkillProposalKind.Create
+            ? current is null && !shipped.Contains(p.SkillName) && installed.Count < SkillToolLimits.MaxInstalledSkillsPerUser
+            : current is not null && !shipped.Contains(current.Name) && FleetSkillProposals.Apply(current.Markdown, p).Ok;
+    }
+
+    private static async Task<IResult> ApproveFleetSkillProposalAsync(string id, IServiceProvider services, HttpContext http, CancellationToken ct)
+    {
+        if (services.GetService<FleetLessonService>() is not { } lessons)
+        {
+            return FleetUnavailable();
+        }
+
+        var decision = await lessons.ApproveSkillProposalAsync(http.GetUserId(), id, ct);
+        return decision.Outcome == FleetProposalOutcome.Done ? Results.Json(new { name = decision.SkillName }) : FleetProposalProblem(decision);
+    }
+
+    private static async Task<IResult> DismissFleetSkillProposalAsync(string id, IServiceProvider services, HttpContext http, CancellationToken ct)
+    {
+        if (services.GetService<FleetLessonService>() is not { } lessons)
+        {
+            return FleetUnavailable();
+        }
+
+        var decision = await lessons.DismissSkillProposalAsync(http.GetUserId(), id, ct);
+        return decision.Outcome == FleetProposalOutcome.Done ? Results.Json(new { }) : FleetProposalProblem(decision);
     }
 
     // The prompt proposals (ADR 0143): pending first, newest first, then the decided ones. A pending one carries whether its edit
@@ -130,6 +187,8 @@ public static partial class AgentApi
             settings = document.Settings,
             runs = document.Runs,
             proposals = FleetPromptProposalViews(document, await lessons.PromptsAsync(userId, ct)),
+            skillProposals = FleetSkillProposalViews(document,
+                document.SkillProposals.Any(p => p.Status == FleetPromptProposalStatus.Pending) ? await lessons.SkillSnapshotsAsync(userId, ct) : null),
             newCount = FleetLessonService.NewCount(document),
             running = lessons.IsRunning(userId),
             dreamEnabled = lessons.Options.DreamEnabled,
