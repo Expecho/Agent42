@@ -20,15 +20,14 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90' font-family='monospace' fill='%23FFB13D'>42</text></svg>" />
   <meta name="theme-color" content="#100f0d" />
   <script>
-    // No-FOUC theme resolve (the mode half of index.html). A recipient has no server profile, so this reads the
-    // OS preference only — an explicit data-theme on <html> before first paint, never a dark flash.
+    // No-FOUC theme resolve. Public share pages default to LIGHT regardless of the OS preference; a recipient's
+    // explicit toggle (below) is remembered in localStorage. A recipient has no server profile.
     (function () {
-      try {
-        var dark = matchMedia("(prefers-color-scheme: dark)").matches;
-        document.documentElement.dataset.theme = dark ? "dark" : "light";
-        var meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.content = dark ? "#100f0d" : "#f4efe4";
-      } catch (e) { /* matchMedia unavailable → CSS dark default stands */ }
+      var dark = false;
+      try { dark = localStorage.getItem("agent42.share.theme") === "dark"; } catch (e) { /* default light */ }
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.content = dark ? "#100f0d" : "#f4efe4";
     })();
   </script>
 </head>
@@ -37,6 +36,7 @@
     <header class="viewer__topbar">
       <span class="viewer__brand"><span class="viewer__mark">42</span>AGENT&nbsp;42</span>
       <span class="viewer__badge">read-only</span>
+      <button type="button" class="viewer__theme" id="themeToggle" aria-label="Switch to dark theme" title="Toggle dark theme">&#9790;</button>
     </header>
 
     <main class="viewer__scroll">
@@ -67,5 +67,25 @@
   <!-- Artifact cards + pane, the same file the chat app loads. Artifacts run in a sandboxed iframe. -->
   <script src="lib/artifactpane.js"></script>
   <script src="viewer.js"></script>
+  <script>
+    // Light/dark toggle (default light). richtext.js and artifactpane.js observe data-theme, so they follow.
+    (function () {
+      var btn = document.getElementById("themeToggle");
+      function sync() {
+        var dark = document.documentElement.dataset.theme === "dark";
+        btn.textContent = dark ? "☀" : "☾";
+        btn.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+      }
+      btn.addEventListener("click", function () {
+        var dark = document.documentElement.dataset.theme !== "dark";
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = dark ? "#100f0d" : "#f4efe4";
+        try { localStorage.setItem("agent42.share.theme", dark ? "dark" : "light"); } catch (e) { /* best-effort */ }
+        sync();
+      });
+      sync();
+    })();
+  </script>
 </body>
 </html>
