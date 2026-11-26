@@ -1,0 +1,3709 @@
+{
+ "measuredAt": "02ebdf0",
+ "metric": "loc = non-blank non-comment lines from the method name line to its closing line; see code-shape.mjs",
+ "floor": "methods loc>=40 or params>=5; classes loc>=400 or ctorParams>=5",
+ "sections": {
+  "src": {
+   "summary": {
+    "files": 517,
+    "methods": 2854,
+    "methodsOver60": 9,
+    "methodsOver80": 4,
+    "methodsOver100": 0,
+    "methodsWith7PlusParams": 28,
+    "classes": 637,
+    "classesOver500Loc": 6,
+    "classesWithCtor7Plus": 17
+   },
+   "methods": [
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.ChatTurnAsync(string,string?,IReadOnlyList<AttachmentRef>?,TurnContext,bool)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
+     "name": "Agent42.Agents.AgentGrain.ChatTurnAsync",
+     "line": 580,
+     "loc": 99,
+     "span": 199,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs::Agent42.Agents.AgentGrain.SelectableTools(ModelCapabilities,HashSet<string>,bool)",
+     "file": "src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs",
+     "name": "Agent42.Agents.AgentGrain.SelectableTools",
+     "line": 196,
+     "loc": 91,
+     "span": 154,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Backend/Models/AgentApi.Models.cs::Agent42.Backend.AgentApi.MapModelEndpoints(IEndpointRouteBuilder)",
+     "file": "src/Agent42.Backend/Models/AgentApi.Models.cs",
+     "name": "Agent42.Backend.AgentApi.MapModelEndpoints",
+     "line": 10,
+     "loc": 91,
+     "span": 149,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs::Agent42.Agents.AgentGrain.GenerateImageTurnAsync(string,IReadOnlyList<AttachmentRef>?,WebhookTurn,TurnContext,string,bool)",
+     "file": "src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs",
+     "name": "Agent42.Agents.AgentGrain.GenerateImageTurnAsync",
+     "line": 31,
+     "loc": 81,
+     "span": 126,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetTaskService.cs::Agent42.Backend.FleetTaskService.SubmitAsync(string,FleetSubmit,UserTelemetryContext?,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetTaskService.cs",
+     "name": "Agent42.Backend.FleetTaskService.SubmitAsync",
+     "line": 57,
+     "loc": 74,
+     "span": 89,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.RunReminderAsync(string,TurnContext)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
+     "name": "Agent42.Agents.AgentGrain.RunReminderAsync",
+     "line": 1640,
+     "loc": 74,
+     "span": 131,
+     "params": 2
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/AgentApi.Mcp.cs::Agent42.Backend.AgentApi.MapMcpEndpoints(IEndpointRouteBuilder)",
+     "file": "src/Agent42.Backend/Mcp/AgentApi.Mcp.cs",
+     "name": "Agent42.Backend.AgentApi.MapMcpEndpoints",
+     "line": 11,
+     "loc": 74,
+     "span": 120,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Agents/Telemetry/UsageRollupState.cs::Agent42.Agents.UsageRollupState.Query(string,string?,string,string?,DateTimeOffset)",
+     "file": "src/Agent42.Agents/Telemetry/UsageRollupState.cs",
+     "name": "Agent42.Agents.UsageRollupState.Query",
+     "line": 116,
+     "loc": 67,
+     "span": 74,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/UserMcpToolProvider.cs::Agent42.Backend.UserMcpToolProvider.ConnectAllAsync(string,UserMcpConfig,CancellationToken)",
+     "file": "src/Agent42.Backend/Mcp/UserMcpToolProvider.cs",
+     "name": "Agent42.Backend.UserMcpToolProvider.ConnectAllAsync",
+     "line": 97,
+     "loc": 62,
+     "span": 103,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs::Agent42.Agents.AgentRegistryGrain.SaveAsync(AgentDefinition,bool,bool,bool?)",
+     "file": "src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs",
+     "name": "Agent42.Agents.AgentRegistryGrain.SaveAsync",
+     "line": 43,
+     "loc": 60,
+     "span": 86,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs::Agent42.Backend.FleetTaskService.FinishAsync(RunningFleetTask,FleetWorkspace?,string?,string?)",
+     "file": "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs",
+     "name": "Agent42.Backend.FleetTaskService.FinishAsync",
+     "line": 286,
+     "loc": 60,
+     "span": 64,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs::Agent42.Agents.AgentGrain.ReadWebDocumentAsync(string,string)",
+     "file": "src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs",
+     "name": "Agent42.Agents.AgentGrain.ReadWebDocumentAsync",
+     "line": 46,
+     "loc": 60,
+     "span": 79,
+     "params": 2
+    },
+    {
+     "key": "src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs::Agent42.Backend.AgentApi.MapStoredAgentEndpoints(IEndpointRouteBuilder)",
+     "file": "src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs",
+     "name": "Agent42.Backend.AgentApi.MapStoredAgentEndpoints",
+     "line": 12,
+     "loc": 59,
+     "span": 86,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Backend/Conversations/AgentApi.Conversations.cs::Agent42.Backend.AgentApi.ChatAsync(string,ChatRequest,IGrainFactory,IAttachmentStore,HttpContext)",
+     "file": "src/Agent42.Backend/Conversations/AgentApi.Conversations.cs",
+     "name": "Agent42.Backend.AgentApi.ChatAsync",
+     "line": 146,
+     "loc": 57,
+     "span": 86,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/McpConnectionTester.cs::Agent42.Backend.McpConnectionTester.TestAsync(string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/Mcp/McpConnectionTester.cs",
+     "name": "Agent42.Backend.McpConnectionTester.TestAsync",
+     "line": 68,
+     "loc": 57,
+     "span": 76,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/AgentApi.Mcp.cs::Agent42.Backend.AgentApi.StartMcpOAuthAsync(string,McpOAuthClient,IGrainFactory,HttpContext)",
+     "file": "src/Agent42.Backend/Mcp/AgentApi.Mcp.cs",
+     "name": "Agent42.Backend.AgentApi.StartMcpOAuthAsync",
+     "line": 284,
+     "loc": 56,
+     "span": 67,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.StreamModelReplyAsync(ChatMessage,StringBuilder,TurnTokenTotals,TurnOutcome,ResearchRun?,TurnContext,CancellationToken)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
+     "name": "Agent42.Agents.AgentGrain.StreamModelReplyAsync",
+     "line": 847,
+     "loc": 55,
+     "span": 72,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/Sharing/AgentApi.Sharing.cs::Agent42.Backend.AgentApi.MapSharingEndpoints(IEndpointRouteBuilder)",
+     "file": "src/Agent42.Backend/Sharing/AgentApi.Sharing.cs",
+     "name": "Agent42.Backend.AgentApi.MapSharingEndpoints",
+     "line": 12,
+     "loc": 55,
+     "span": 108,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs::Agent42.Backend.FleetTaskService.BuildRunAsync(RunningFleetTask,FleetWorkspace,FleetCanvas,IReadOnlyList<ModelInfo>)",
+     "file": "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs",
+     "name": "Agent42.Backend.FleetTaskService.BuildRunAsync",
+     "line": 120,
+     "loc": 54,
+     "span": 56,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Backend/Auth/EntraAuthRegistration.cs::Agent42.Backend.EntraAuthRegistration.ConfigureOidc(OpenIdConnectOptions,EntraAuthSettings)",
+     "file": "src/Agent42.Backend/Auth/EntraAuthRegistration.cs",
+     "name": "Agent42.Backend.EntraAuthRegistration.ConfigureOidc",
+     "line": 66,
+     "loc": 54,
+     "span": 59,
+     "params": 2
+    },
+    {
+     "key": "src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs::Agent42.Agents.AgentGrain.ComposeAgent(string)",
+     "file": "src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs",
+     "name": "Agent42.Agents.AgentGrain.ComposeAgent",
+     "line": 40,
+     "loc": 54,
+     "span": 151,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs::Agent42.Backend.FleetTeamRunner.PlanSubmission.SubmitAsync(string,FleetPattern?,FleetAgentDefinition ?,int,string,string ?)",
+     "file": "src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs",
+     "name": "Agent42.Backend.FleetTeamRunner.PlanSubmission.SubmitAsync",
+     "line": 170,
+     "loc": 53,
+     "span": 61,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Turn.cs::Agent42.Backend.ChatTurnPipeline.RunTurnAsync(ChatTurnWork)",
+     "file": "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Turn.cs",
+     "name": "Agent42.Backend.ChatTurnPipeline.RunTurnAsync",
+     "line": 27,
+     "loc": 52,
+     "span": 66,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs::Agent42.Backend.LocalBridgeEndpoint.HandleAsync(HttpContext)",
+     "file": "src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs",
+     "name": "Agent42.Backend.LocalBridgeEndpoint.HandleAsync",
+     "line": 95,
+     "loc": 52,
+     "span": 63,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs::Agent42.Backend.FleetTaskService.RunAsync(RunningFleetTask,IReadOnlyList<ModelInfo>,FleetTaskRecord?,UserTelemetryContext)",
+     "file": "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs",
+     "name": "Agent42.Backend.FleetTaskService.RunAsync",
+     "line": 16,
+     "loc": 51,
+     "span": 60,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/AgentApi.ChatGatewaySignal.cs::Agent42.Backend.AgentApi.VerifySignalNumberAsync(string,SignalVerifyRequest,IGrainFactory,IServiceProvider,HttpContext)",
+     "file": "src/Agent42.Backend/ChatGateway/AgentApi.ChatGatewaySignal.cs",
+     "name": "Agent42.Backend.AgentApi.VerifySignalNumberAsync",
+     "line": 82,
+     "loc": 50,
+     "span": 60,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetTeamRunner.cs::Agent42.Backend.FleetTeamRunner.ReviewAsync(TeamRun,FleetTeamPlan,string,int,int)",
+     "file": "src/Agent42.Backend/Fleet/FleetTeamRunner.cs",
+     "name": "Agent42.Backend.FleetTeamRunner.ReviewAsync",
+     "line": 107,
+     "loc": 49,
+     "span": 53,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Web/SearxngWebSearch.cs::Agent42.Backend.SearxngWebSearch.SearchAsync(string,int,CancellationToken)",
+     "file": "src/Agent42.Backend/Web/SearxngWebSearch.cs",
+     "name": "Agent42.Backend.SearxngWebSearch.SearchAsync",
+     "line": 22,
+     "loc": 49,
+     "span": 69,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.FleetSharing.cs::Agent42.Backend.AgentApi.MapFleetSharingEndpoints(IEndpointRouteBuilder)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.FleetSharing.cs",
+     "name": "Agent42.Backend.AgentApi.MapFleetSharingEndpoints",
+     "line": 22,
+     "loc": 49,
+     "span": 64,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetDreamer.cs::Agent42.Backend.FleetDreamer.RunAsync(IChatClient,UserTelemetryContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetDreamer.cs",
+     "name": "Agent42.Backend.FleetDreamer.RunAsync",
+     "line": 116,
+     "loc": 48,
+     "span": 52,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs::Agent42.Agents.AgentGrain.InitializeFromForkAsync(ConversationFork)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs",
+     "name": "Agent42.Agents.AgentGrain.InitializeFromForkAsync",
+     "line": 130,
+     "loc": 48,
+     "span": 60,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs::Agent42.Backend.AgentApi.SubmitFleetTaskWithFiles(IServiceProvider,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+     "name": "Agent42.Backend.AgentApi.SubmitFleetTaskWithFiles",
+     "line": 106,
+     "loc": 47,
+     "span": 54,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/McpConnectionFactory.cs::Agent42.Backend.McpConnectionFactory.ConnectAsync(StoredMcpServer,McpConnectionSecrets,CancellationToken)",
+     "file": "src/Agent42.Backend/Mcp/McpConnectionFactory.cs",
+     "name": "Agent42.Backend.McpConnectionFactory.ConnectAsync",
+     "line": 66,
+     "loc": 47,
+     "span": 58,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Backend/Configuration/ConfigHealth.cs::Agent42.Backend.ConfigHealth.ProbeAsync(ConfigHealthReport,IServiceProvider,IConfiguration,CancellationToken)",
+     "file": "src/Agent42.Backend/Configuration/ConfigHealth.cs",
+     "name": "Agent42.Backend.ConfigHealth.ProbeAsync",
+     "line": 294,
+     "loc": 46,
+     "span": 55,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/ChatGatewayService.cs::Agent42.Backend.ChatGatewayService.RunOnceAsync(ConnectionRunner,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/ChatGatewayService.cs",
+     "name": "Agent42.Backend.ChatGatewayService.RunOnceAsync",
+     "line": 282,
+     "loc": 45,
+     "span": 47,
+     "params": 2
+    },
+    {
+     "key": "src/Agent42.Backend/Models/ModelCatalog.cs::Agent42.Backend.AzureModelCatalog.GetAsync(CancellationToken)",
+     "file": "src/Agent42.Backend/Models/ModelCatalog.cs",
+     "name": "Agent42.Backend.AzureModelCatalog.GetAsync",
+     "line": 77,
+     "loc": 45,
+     "span": 55,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Backend/Push/AgentApi.Push.cs::Agent42.Backend.AgentApi.MapPushEndpoints(IEndpointRouteBuilder)",
+     "file": "src/Agent42.Backend/Push/AgentApi.Push.cs",
+     "name": "Agent42.Backend.AgentApi.MapPushEndpoints",
+     "line": 12,
+     "loc": 45,
+     "span": 69,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Backend/Email/AgentApi.Email.cs::Agent42.Backend.AgentApi.ReceiveEmailAsync(HttpContext,IGrainFactory,IAttachmentStore,DocumentIngestionService,IServiceProvider,ILoggerFactory)",
+     "file": "src/Agent42.Backend/Email/AgentApi.Email.cs",
+     "name": "Agent42.Backend.AgentApi.ReceiveEmailAsync",
+     "line": 38,
+     "loc": 44,
+     "span": 55,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/AgentMcpRunner.cs::Agent42.Backend.AgentMcpRunner.DrainWithinBudgetAsync(IAgentGrain,string,string,TimeSpan,ILogger?)",
+     "file": "src/Agent42.Backend/Mcp/AgentMcpRunner.cs",
+     "name": "Agent42.Backend.AgentMcpRunner.DrainWithinBudgetAsync",
+     "line": 123,
+     "loc": 44,
+     "span": 73,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Telemetry/UsageSpanProjector.cs::Agent42.Agents.UsageSpanProjector.Project(IReadOnlyDictionary<string,object?>,DateTimeOffset,bool,string)",
+     "file": "src/Agent42.Agents/Telemetry/UsageSpanProjector.cs",
+     "name": "Agent42.Agents.UsageSpanProjector.Project",
+     "line": 53,
+     "loc": 44,
+     "span": 49,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Backend/Configuration/ConfigHealth.cs::Agent42.Backend.ConfigHealth.BuildStatic(IConfiguration,IHostEnvironment,PushConfig,TimeProvider?)",
+     "file": "src/Agent42.Backend/Configuration/ConfigHealth.cs",
+     "name": "Agent42.Backend.ConfigHealth.BuildStatic",
+     "line": 56,
+     "loc": 44,
+     "span": 78,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Agents/Push/AgentGrain.PushTool.cs::Agent42.Agents.AgentGrain.SendPushNotificationAsync(string,string,CancellationToken)",
+     "file": "src/Agent42.Agents/Push/AgentGrain.PushTool.cs",
+     "name": "Agent42.Agents.AgentGrain.SendPushNotificationAsync",
+     "line": 49,
+     "loc": 44,
+     "span": 78,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Signal/SignalEvents.cs::Agent42.Backend.SignalEvents.Parse(JsonElement,string?)",
+     "file": "src/Agent42.Backend/ChatGateway/Signal/SignalEvents.cs",
+     "name": "Agent42.Backend.SignalEvents.Parse",
+     "line": 24,
+     "loc": 44,
+     "span": 47,
+     "params": 2
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs::Agent42.Agents.AgentGrain.CreateForkAsync(int,int,string)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs",
+     "name": "Agent42.Agents.AgentGrain.CreateForkAsync",
+     "line": 74,
+     "loc": 43,
+     "span": 55,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Agents/UserSkills/SkillPackage.cs::Agent42.Agents.SkillPackage.ExtractZip(byte,string,List<string>)",
+     "file": "src/Agent42.Agents/UserSkills/SkillPackage.cs",
+     "name": "Agent42.Agents.SkillPackage.ExtractZip",
+     "line": 277,
+     "loc": 43,
+     "span": 56,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.FollowUps.cs::Agent42.Agents.AgentGrain.GenerateFollowUpsAsync(string,string)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.FollowUps.cs",
+     "name": "Agent42.Agents.AgentGrain.GenerateFollowUpsAsync",
+     "line": 24,
+     "loc": 43,
+     "span": 56,
+     "params": 2
+    },
+    {
+     "key": "src/Agent42.Backend/Documents/DocumentIngestionService.cs::Agent42.Backend.DocumentIngestionService.IngestSegmentsAsync(string,string,IReadOnlyList<DocumentSegment>,int?,CancellationToken)",
+     "file": "src/Agent42.Backend/Documents/DocumentIngestionService.cs",
+     "name": "Agent42.Backend.DocumentIngestionService.IngestSegmentsAsync",
+     "line": 55,
+     "loc": 42,
+     "span": 57,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/AgentApi.Mcp.cs::Agent42.Backend.AgentApi.CompleteMcpOAuthAsync(McpOAuthClient,IMcpSecretProtector,IGrainFactory,ILoggerFactory,HttpContext)",
+     "file": "src/Agent42.Backend/Mcp/AgentApi.Mcp.cs",
+     "name": "Agent42.Backend.AgentApi.CompleteMcpOAuthAsync",
+     "line": 354,
+     "loc": 42,
+     "span": 54,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/UserSkills/UserSkillInstaller.cs::Agent42.Backend.UserSkillInstaller.InstallAsync(string,string,byte,bool,CancellationToken)",
+     "file": "src/Agent42.Backend/UserSkills/UserSkillInstaller.cs",
+     "name": "Agent42.Backend.UserSkillInstaller.InstallAsync",
+     "line": 32,
+     "loc": 42,
+     "span": 51,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.ServiceDefaults/Extensions.cs::Microsoft.Extensions.Hosting.Extensions.AddOpenTelemetryExporters(this TBuilder)",
+     "file": "src/Agent42.ServiceDefaults/Extensions.cs",
+     "name": "Microsoft.Extensions.Hosting.Extensions.AddOpenTelemetryExporters",
+     "line": 101,
+     "loc": 42,
+     "span": 73,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.AgentGrain(IPersistentState<AgentGrainState>,IUserChatClientFactoryProvider,IUserMcpToolProvider,IUserSkillProvider,IAttachmentStore,IDocumentIndex,IChatSearchIndex,IWebSearch,IWebDocumentFetcher,IDocumentIngestor,IGeocoder,HindsightIntegration,IPushNotificationSender,IChatDeliverySender,IFleetLauncher,ILogger<AgentGrain>,TimeProvider?,ClientToolTimeouts?,IUserModelRouterProvider?)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
+     "name": "Agent42.Agents.AgentGrain.AgentGrain",
+     "line": 223,
+     "loc": 41,
+     "span": 41,
+     "params": 19
+    },
+    {
+     "key": "src/Agent42.Backend/Webhooks/HttpAgentWebhookSender.cs::Agent42.Backend.HttpAgentWebhookSender.AttemptAsync(HttpClient,string,string,long,string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/Webhooks/HttpAgentWebhookSender.cs",
+     "name": "Agent42.Backend.HttpAgentWebhookSender.AttemptAsync",
+     "line": 86,
+     "loc": 41,
+     "span": 42,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/AgentApi.ChatGatewaySignal.cs::Agent42.Backend.AgentApi.RegisterSignalNumberAsync(string,SignalRegisterRequest,IGrainFactory,IServiceProvider,HttpContext)",
+     "file": "src/Agent42.Backend/ChatGateway/AgentApi.ChatGatewaySignal.cs",
+     "name": "Agent42.Backend.AgentApi.RegisterSignalNumberAsync",
+     "line": 31,
+     "loc": 41,
+     "span": 50,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.FleetAnalyzer.cs::Agent42.Backend.AgentApi.FleetAnalyzerChatAsync(string,FleetAnalyzerRequest,IServiceProvider,IGrainFactory,HttpContext)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.FleetAnalyzer.cs",
+     "name": "Agent42.Backend.AgentApi.FleetAnalyzerChatAsync",
+     "line": 27,
+     "loc": 41,
+     "span": 49,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs::Agent42.Agents.AgentGrain.SchedulePromptAsync(string,string,double,double)",
+     "file": "src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs",
+     "name": "Agent42.Agents.AgentGrain.SchedulePromptAsync",
+     "line": 23,
+     "loc": 41,
+     "span": 52,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs::Agent42.Backend.AgentApi.RunAgentAsync(HttpContext,IGrainFactory,IAttachmentStore,DocumentIngestionService)",
+     "file": "src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs",
+     "name": "Agent42.Backend.AgentApi.RunAgentAsync",
+     "line": 132,
+     "loc": 41,
+     "span": 54,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Slack/SlackWebApi.cs::Agent42.Backend.SlackWebApi.UploadFileAsync(string,string,string?,byte,string,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Slack/SlackWebApi.cs",
+     "name": "Agent42.Backend.SlackWebApi.UploadFileAsync",
+     "line": 97,
+     "loc": 40,
+     "span": 44,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Web/AgentApi.Web.cs::Agent42.Backend.AgentApi.ProxyToSearxngAsync(string?,IServiceProvider,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Web/AgentApi.Web.cs",
+     "name": "Agent42.Backend.AgentApi.ProxyToSearxngAsync",
+     "line": 51,
+     "loc": 40,
+     "span": 51,
+     "params": 4
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.BuildUserTurnAsync(string,IReadOnlyList<AttachmentRef>?,bool)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
+     "name": "Agent42.Agents.AgentGrain.BuildUserTurnAsync",
+     "line": 1322,
+     "loc": 40,
+     "span": 65,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Agents/Copilot/CopilotChatAgent.cs::Agent42.Agents.CopilotChatAgent.Mirror(AgentSession?,List<ChatMessage>,IList<ChatMessage>)",
+     "file": "src/Agent42.Agents/Copilot/CopilotChatAgent.cs",
+     "name": "Agent42.Agents.CopilotChatAgent.Mirror",
+     "line": 85,
+     "loc": 40,
+     "span": 46,
+     "params": 3
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Signal/SignalRpcClient.cs::Agent42.Backend.SignalRpcClient.ReadEventsAsync(string,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Signal/SignalRpcClient.cs",
+     "name": "Agent42.Backend.SignalRpcClient.ReadEventsAsync",
+     "line": 259,
+     "loc": 40,
+     "span": 43,
+     "params": 2
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetEventLog.cs::Agent42.Backend.FleetEventLog.FlushAsync(CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetEventLog.cs",
+     "name": "Agent42.Backend.FleetEventLog.FlushAsync",
+     "line": 101,
+     "loc": 40,
+     "span": 46,
+     "params": 1
+    },
+    {
+     "key": "src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs::Agent42.Agents.AgentGrain.CreateArtifactAsync(string,string,string,string?,CancellationToken)",
+     "file": "src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs",
+     "name": "Agent42.Agents.AgentGrain.CreateArtifactAsync",
+     "line": 73,
+     "loc": 38,
+     "span": 46,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Files.cs::Agent42.Backend.ChatTurnPipeline.PrepareFileAsync(ChatTurnWork,ChatInboundFile,string,bool,ChatTurnFiles)",
+     "file": "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Files.cs",
+     "name": "Agent42.Backend.ChatTurnPipeline.PrepareFileAsync",
+     "line": 75,
+     "loc": 36,
+     "span": 40,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Copilot/AgentApi.GitHubCopilot.cs::Agent42.Backend.AgentApi.CompleteGitHubSignInAsync(IServiceProvider,IProviderSecretProtector,IGrainFactory,ILoggerFactory,HttpContext)",
+     "file": "src/Agent42.Backend/Copilot/AgentApi.GitHubCopilot.cs",
+     "name": "Agent42.Backend.AgentApi.CompleteGitHubSignInAsync",
+     "line": 40,
+     "loc": 36,
+     "span": 41,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetWorkspace.cs::Agent42.Backend.FleetWorkspace.SyncCoreAsync(IFleetStore,string,long,int,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetWorkspace.cs",
+     "name": "Agent42.Backend.FleetWorkspace.SyncCoreAsync",
+     "line": 122,
+     "loc": 36,
+     "span": 41,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/McpAppRegistry.cs::Agent42.Backend.McpAppRegistry.CallToolAsync(string,string,string,JsonElement?,CancellationToken)",
+     "file": "src/Agent42.Backend/Mcp/McpAppRegistry.cs",
+     "name": "Agent42.Backend.McpAppRegistry.CallToolAsync",
+     "line": 131,
+     "loc": 34,
+     "span": 42,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Export/ConversationZipWriter.cs::Agent42.Backend.ConversationZipWriter.WriteConversationAsync(ZipArchive,string,ConversationExport,IAttachmentStore,string,DateTimeOffset,ExportManifest,CancellationToken)",
+     "file": "src/Agent42.Backend/Export/ConversationZipWriter.cs",
+     "name": "Agent42.Backend.ConversationZipWriter.WriteConversationAsync",
+     "line": 17,
+     "loc": 33,
+     "span": 35,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Backend/Email/AgentApi.Email.cs::Agent42.Backend.AgentApi.AcceptEmailAsync(IFormCollection,IGrainFactory,IAttachmentStore,DocumentIngestionService,ILogger,PlainEmailRateLimiter?,DateTimeOffset)",
+     "file": "src/Agent42.Backend/Email/AgentApi.Email.cs",
+     "name": "Agent42.Backend.AgentApi.AcceptEmailAsync",
+     "line": 94,
+     "loc": 32,
+     "span": 40,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/AgentApi.ChatGateway.cs::Agent42.Backend.AgentApi.UpdateChatConnectionAsync(string,ChatConnectionRequest,IGrainFactory,IServiceProvider,HttpContext)",
+     "file": "src/Agent42.Backend/ChatGateway/AgentApi.ChatGateway.cs",
+     "name": "Agent42.Backend.AgentApi.UpdateChatConnectionAsync",
+     "line": 84,
+     "loc": 32,
+     "span": 38,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Export/AgentApi.Export.cs::Agent42.Backend.AgentApi.ExportPartAsync(string?,IGrainFactory,IAttachmentStore,ILoggerFactory,HttpContext)",
+     "file": "src/Agent42.Backend/Export/AgentApi.Export.cs",
+     "name": "Agent42.Backend.AgentApi.ExportPartAsync",
+     "line": 74,
+     "loc": 32,
+     "span": 34,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Export/AgentApi.Export.cs::Agent42.Backend.AgentApi.ExportConversationAsync(string,string?,IGrainFactory,IAttachmentStore,ILoggerFactory,HttpContext)",
+     "file": "src/Agent42.Backend/Export/AgentApi.Export.cs",
+     "name": "Agent42.Backend.AgentApi.ExportConversationAsync",
+     "line": 25,
+     "loc": 31,
+     "span": 35,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetLessonService.cs::Agent42.Backend.FleetLessonService.DreamAsync(string,string,string?,UserTelemetryContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetLessonService.cs",
+     "name": "Agent42.Backend.FleetLessonService.DreamAsync",
+     "line": 452,
+     "loc": 31,
+     "span": 34,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/McpOAuthTokenResolver.cs::Agent42.Backend.McpOAuthTokenResolver.ResolveAsync(string,string,bool,string?,CancellationToken)",
+     "file": "src/Agent42.Backend/Mcp/McpOAuthTokenResolver.cs",
+     "name": "Agent42.Backend.McpOAuthTokenResolver.ResolveAsync",
+     "line": 77,
+     "loc": 31,
+     "span": 35,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Export/AgentApi.Export.cs::Agent42.Backend.AgentApi.WriteBulkPartAsync(ZipArchive,IReadOnlyList<ConversationInfo>,string,IGrainFactory,IAttachmentStore,ExportManifest,ILogger,CancellationToken)",
+     "file": "src/Agent42.Backend/Export/AgentApi.Export.cs",
+     "name": "Agent42.Backend.AgentApi.WriteBulkPartAsync",
+     "line": 111,
+     "loc": 30,
+     "span": 34,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetCanvas.cs::Agent42.Backend.FleetCanvas.WriteAsync(string,string,string,int,string?,string?,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetCanvas.cs",
+     "name": "Agent42.Backend.FleetCanvas.WriteAsync",
+     "line": 144,
+     "loc": 30,
+     "span": 32,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.cs::Agent42.Backend.ChatTurnPipeline.ChatTurnPipeline(IGrainFactory,InboundDeduper,ChatSessionRegistry,ChatReplyStreamer,IEnumerable<IChatPlatformAdapter>,TimeProvider,ILogger<ChatTurnPipeline>,IUserModelCatalogProvider?,TimeSpan?,IAttachmentStore?,DocumentIngestionService?,IUserChatClientFactoryProvider?,IUserModelRouterProvider?)",
+     "file": "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.cs",
+     "name": "Agent42.Backend.ChatTurnPipeline.ChatTurnPipeline",
+     "line": 64,
+     "loc": 29,
+     "span": 29,
+     "params": 13
+    },
+    {
+     "key": "src/Agent42.Agents/Documents/DocumentPartReader.cs::Agent42.Agents.DocumentPartReader.ReadAsync(IDocumentIndex,string,string,int,bool,CancellationToken)",
+     "file": "src/Agent42.Agents/Documents/DocumentPartReader.cs",
+     "name": "Agent42.Agents.DocumentPartReader.ReadAsync",
+     "line": 19,
+     "loc": 28,
+     "span": 34,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Attachments/AgentApi.Attachments.cs::Agent42.Backend.AgentApi.UploadAttachmentAsync(string,IFormFile,IAttachmentStore,DocumentIngestionService,IGrainFactory,HttpContext)",
+     "file": "src/Agent42.Backend/Attachments/AgentApi.Attachments.cs",
+     "name": "Agent42.Backend.AgentApi.UploadAttachmentAsync",
+     "line": 30,
+     "loc": 28,
+     "span": 43,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetLessonService.cs::Agent42.Backend.FleetLessonService.ExecuteAsync(string,string,string?,UserTelemetryContext?,CancellationToken,TaskCompletionSource?)",
+     "file": "src/Agent42.Backend/Fleet/FleetLessonService.cs",
+     "name": "Agent42.Backend.FleetLessonService.ExecuteAsync",
+     "line": 419,
+     "loc": 28,
+     "span": 32,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/ChatGateway/UserChatConnectionsGrain.cs::Agent42.Agents.UserChatConnectionsGrain.TryPairAsync(string,string,string?,string,DateTimeOffset)",
+     "file": "src/Agent42.Agents/ChatGateway/UserChatConnectionsGrain.cs",
+     "name": "Agent42.Agents.UserChatConnectionsGrain.TryPairAsync",
+     "line": 92,
+     "loc": 28,
+     "span": 31,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.FleetLessons.cs::Agent42.Backend.AgentApi.PutFleetLessonSettingsAsync(FleetLessonSettingsRequest,IServiceProvider,IGrainFactory,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.FleetLessons.cs",
+     "name": "Agent42.Backend.AgentApi.PutFleetLessonSettingsAsync",
+     "line": 221,
+     "loc": 28,
+     "span": 33,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/McpOAuth.cs::Agent42.Backend.McpOAuthClient.PostTokenAsync(Uri,string,Dictionary<string,string>,IReadOnlyList<string>,CancellationToken)",
+     "file": "src/Agent42.Backend/Mcp/McpOAuth.cs",
+     "name": "Agent42.Backend.McpOAuthClient.PostTokenAsync",
+     "line": 215,
+     "loc": 28,
+     "span": 34,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Signal/SignalRpcClient.cs::Agent42.Backend.SignalRpcClient.SendAsync(string,string,string,IReadOnlyList<string>?,IReadOnlyList<string>?,long?,string?,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Signal/SignalRpcClient.cs",
+     "name": "Agent42.Backend.SignalRpcClient.SendAsync",
+     "line": 146,
+     "loc": 27,
+     "span": 30,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Backend/Attachments/AgentApi.Attachments.cs::Agent42.Backend.AgentApi.IngestDocumentAsync(string,byte,DocumentIngestionService,IGrainFactory,string,string)",
+     "file": "src/Agent42.Backend/Attachments/AgentApi.Attachments.cs",
+     "name": "Agent42.Backend.AgentApi.IngestDocumentAsync",
+     "line": 76,
+     "loc": 27,
+     "span": 40,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/AgentMcpRunner.cs::Agent42.Backend.AgentMcpRunner.RunAsync(AgentMcpCaller,string,string?,IGrainFactory,TimeSpan?,ILogger?)",
+     "file": "src/Agent42.Backend/Mcp/AgentMcpRunner.cs",
+     "name": "Agent42.Backend.AgentMcpRunner.RunAsync",
+     "line": 29,
+     "loc": 27,
+     "span": 42,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetLauncher.Analyze.cs::Agent42.Backend.FleetLauncher.RerunAsync(string,string,string?,IReadOnlyList<string>?,long?,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetLauncher.Analyze.cs",
+     "name": "Agent42.Backend.FleetLauncher.RerunAsync",
+     "line": 124,
+     "loc": 26,
+     "span": 30,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetDigest.cs::Agent42.Backend.FleetDigest.BuildAsync(IFleetStore,string,IReadOnlyList<FleetTaskRecord>,FleetOptions,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetDigest.cs",
+     "name": "Agent42.Backend.FleetDigest.BuildAsync",
+     "line": 49,
+     "loc": 26,
+     "span": 28,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetLessons.cs::Agent42.Backend.FleetLessons.Merge(FleetLessonsDocument,IReadOnlyList<FleetLessonProposal>,DateTimeOffset,FleetOptions,Func<string>?)",
+     "file": "src/Agent42.Backend/Fleet/FleetLessons.cs",
+     "name": "Agent42.Backend.FleetLessons.Merge",
+     "line": 169,
+     "loc": 26,
+     "span": 27,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Artifacts/AgentApi.Artifacts.cs::Agent42.Backend.AgentApi.ServeArtifactVersionAsync(string,string,int,bool,IGrainFactory,IAttachmentStore,HttpContext)",
+     "file": "src/Agent42.Backend/Artifacts/AgentApi.Artifacts.cs",
+     "name": "Agent42.Backend.AgentApi.ServeArtifactVersionAsync",
+     "line": 55,
+     "loc": 25,
+     "span": 31,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetDreamer.cs::Agent42.Backend.FleetDreamer.ProposeSkillChange(string,string,string,string,string?,string?,string ?)",
+     "file": "src/Agent42.Backend/Fleet/FleetDreamer.cs",
+     "name": "Agent42.Backend.FleetDreamer.ProposeSkillChange",
+     "line": 293,
+     "loc": 25,
+     "span": 26,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Signal/SignalRpcClient.cs::Agent42.Backend.SignalRpcClient.GetAttachmentAsync(string,string,string,long,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Signal/SignalRpcClient.cs",
+     "name": "Agent42.Backend.SignalRpcClient.GetAttachmentAsync",
+     "line": 192,
+     "loc": 25,
+     "span": 27,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetLessonService.cs::Agent42.Backend.FleetLessonService.MergeRun(FleetLessonsDocument,FleetDreamRun,DreamProgress,DateTimeOffset,FleetOptions)",
+     "file": "src/Agent42.Backend/Fleet/FleetLessonService.cs",
+     "name": "Agent42.Backend.FleetLessonService.MergeRun",
+     "line": 560,
+     "loc": 25,
+     "span": 25,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Email/InboundEmailPrompt.cs::Agent42.Backend.InboundEmailPrompt.Build(string?,string?,string?,string?,bool,IReadOnlyList<string>)",
+     "file": "src/Agent42.Backend/Email/InboundEmailPrompt.cs",
+     "name": "Agent42.Backend.InboundEmailPrompt.Build",
+     "line": 24,
+     "loc": 24,
+     "span": 27,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetDocumentIngest.cs::Agent42.Backend.FleetDocumentIngest.IngestOneAsync(FleetTaskRecord,FleetWorkspace,string,string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetDocumentIngest.cs",
+     "name": "Agent42.Backend.FleetDocumentIngest.IngestOneAsync",
+     "line": 89,
+     "loc": 24,
+     "span": 24,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetDocumentIngest.cs::Agent42.Backend.FleetDocumentIngest.WriteTextCopyAsync(FleetTaskRecord,FleetWorkspace,string,string,IReadOnlyList<DocumentSegment>,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetDocumentIngest.cs",
+     "name": "Agent42.Backend.FleetDocumentIngest.WriteTextCopyAsync",
+     "line": 116,
+     "loc": 24,
+     "span": 27,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetDocumentTools.cs::Agent42.Backend.FleetDocumentTools.FleetDocumentTools(IUserChatClientFactoryProvider,IDocumentIndex,string,string,IReadOnlyList<string>,ILogger)",
+     "file": "src/Agent42.Backend/Fleet/FleetDocumentTools.cs",
+     "name": "Agent42.Backend.FleetDocumentTools.FleetDocumentTools",
+     "line": 37,
+     "loc": 24,
+     "span": 24,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Storage/PostgresDocumentIndex.cs::Agent42.Backend.PostgresDocumentIndex.ReadChunksAsync(string,string,int,int,CancellationToken)",
+     "file": "src/Agent42.Backend/Storage/PostgresDocumentIndex.cs",
+     "name": "Agent42.Backend.PostgresDocumentIndex.ReadChunksAsync",
+     "line": 73,
+     "loc": 24,
+     "span": 28,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/AgentMcpTools.cs::Agent42.Backend.AgentMcpTools.AskAgentAsync(IHttpContextAccessor,IGrainFactory,ILogger<AgentMcpTools>,string,string?)",
+     "file": "src/Agent42.Backend/Mcp/AgentMcpTools.cs",
+     "name": "Agent42.Backend.AgentMcpTools.AskAgentAsync",
+     "line": 31,
+     "loc": 23,
+     "span": 41,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Models/ChatClientFactory.cs::Agent42.Backend.MultiProviderChatClientFactory.MultiProviderChatClientFactory(IReadOnlyDictionary<string,Provider>,string,string,ILogger<MultiProviderChatClientFactory>,string,string,string,AttachmentInliner?)",
+     "file": "src/Agent42.Backend/Models/ChatClientFactory.cs",
+     "name": "Agent42.Backend.MultiProviderChatClientFactory.MultiProviderChatClientFactory",
+     "line": 39,
+     "loc": 22,
+     "span": 34,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/AgentApi.ChatGateway.cs::Agent42.Backend.AgentApi.SaveChatConnectionAsync(ChatConnection,ChatConnectionRequest,ChatValidatedCredentials?,ChatGatewayParts,IGrainFactory,HttpContext,int)",
+     "file": "src/Agent42.Backend/ChatGateway/AgentApi.ChatGateway.cs",
+     "name": "Agent42.Backend.AgentApi.SaveChatConnectionAsync",
+     "line": 125,
+     "loc": 22,
+     "span": 26,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetDreamer.cs::Agent42.Backend.FleetDreamer.ProposePromptChange(string,string,string,string,string?,string ?)",
+     "file": "src/Agent42.Backend/Fleet/FleetDreamer.cs",
+     "name": "Agent42.Backend.FleetDreamer.ProposePromptChange",
+     "line": 239,
+     "loc": 22,
+     "span": 23,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Email/MailgunWebhook.cs::Agent42.Backend.MailgunWebhook.IsValid(string?,string?,string?,string?,DateTimeOffset)",
+     "file": "src/Agent42.Backend/Email/MailgunWebhook.cs",
+     "name": "Agent42.Backend.MailgunWebhook.IsValid",
+     "line": 41,
+     "loc": 22,
+     "span": 25,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.ChatAsync(string,string?,IReadOnlyList<AttachmentRef>?,bool,bool,IReadOnlyList<string>?,bool,string?)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
+     "name": "Agent42.Agents.AgentGrain.ChatAsync",
+     "line": 411,
+     "loc": 21,
+     "span": 30,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Backend/Export/ConversationZipWriter.cs::Agent42.Backend.ConversationZipWriter.TryCopyBlobAsync(ZipArchive,string,IAttachmentStore,string,string,ExportManifest,CancellationToken)",
+     "file": "src/Agent42.Backend/Export/ConversationZipWriter.cs",
+     "name": "Agent42.Backend.ConversationZipWriter.TryCopyBlobAsync",
+     "line": 59,
+     "loc": 21,
+     "span": 24,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetToolCatalog.cs::Agent42.Backend.FleetToolCatalog.Build(IReadOnlyList<string>?,string,IReadOnlyList<McpServerTools>,IFleetInteraction,IReadOnlyList<AIFunction>?,IReadOnlyList<AIFunction>?)",
+     "file": "src/Agent42.Backend/Fleet/FleetToolCatalog.cs",
+     "name": "Agent42.Backend.FleetToolCatalog.Build",
+     "line": 105,
+     "loc": 21,
+     "span": 23,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Documents/InMemoryDocumentIndex.cs::Agent42.Agents.InMemoryDocumentIndex.ReadChunksAsync(string,string,int,int,CancellationToken)",
+     "file": "src/Agent42.Agents/Documents/InMemoryDocumentIndex.cs",
+     "name": "Agent42.Agents.InMemoryDocumentIndex.ReadChunksAsync",
+     "line": 71,
+     "loc": 21,
+     "span": 26,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Web/SearxngProxy.cs::Agent42.Backend.SearxngProxy.TryApplyResponseHeaders(HttpResponseMessage,IHeaderDictionary,Uri,string?,string)",
+     "file": "src/Agent42.Backend/Web/SearxngProxy.cs",
+     "name": "Agent42.Backend.SearxngProxy.TryApplyResponseHeaders",
+     "line": 257,
+     "loc": 21,
+     "span": 24,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Webhooks/AgentApi.Webhooks.cs::Agent42.Backend.AgentApi.PutWebhookAsync(string,WebhookUpsertRequest,IGrainFactory,IServiceProvider,HttpContext)",
+     "file": "src/Agent42.Backend/Webhooks/AgentApi.Webhooks.cs",
+     "name": "Agent42.Backend.AgentApi.PutWebhookAsync",
+     "line": 30,
+     "loc": 21,
+     "span": 24,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Signal/SignalDaemon.cs::Agent42.Backend.SignalDaemon.SignalDaemon(SignalOptions,ISignalProcessLauncher,IHttpClientFactory,Func<bool>,IChatGatewayLease,TimeProvider,ILogger<SignalDaemon>,SignalDaemonTimings?)",
+     "file": "src/Agent42.Backend/ChatGateway/Signal/SignalDaemon.cs",
+     "name": "Agent42.Backend.SignalDaemon.SignalDaemon",
+     "line": 76,
+     "loc": 20,
+     "span": 20,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs::Agent42.Backend.FleetTaskService.FollowUpInputAsync(FleetTaskRecord,FleetTaskRecord,FleetWorkspace,FleetPromptSet,string)",
+     "file": "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs",
+     "name": "Agent42.Backend.FleetTaskService.FollowUpInputAsync",
+     "line": 231,
+     "loc": 20,
+     "span": 21,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Attachments/BlobAttachmentStore.cs::Agent42.Backend.BlobAttachmentStore.SaveAsync(string,string,string,byte,CancellationToken)",
+     "file": "src/Agent42.Backend/Attachments/BlobAttachmentStore.cs",
+     "name": "Agent42.Backend.BlobAttachmentStore.SaveAsync",
+     "line": 51,
+     "loc": 19,
+     "span": 25,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs::Agent42.Backend.DiscordRestApi.CreateMessageWithFileAsync(string,string,byte,string,string,string?,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs",
+     "name": "Agent42.Backend.DiscordRestApi.CreateMessageWithFileAsync",
+     "line": 96,
+     "loc": 18,
+     "span": 19,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetLessonService.cs::Agent42.Backend.FleetLessonService.DreamOverAsync(string,List<FleetTaskRecord>,DateTimeOffset?,string,UserTelemetryContext,FleetOptions,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetLessonService.cs",
+     "name": "Agent42.Backend.FleetLessonService.DreamOverAsync",
+     "line": 491,
+     "loc": 18,
+     "span": 19,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Agents/Documents/DocumentPartReader.cs::Agent42.Agents.DocumentPartReader.FormatPart(string,int,int,List<DocumentChunk>,string,bool)",
+     "file": "src/Agent42.Agents/Documents/DocumentPartReader.cs",
+     "name": "Agent42.Agents.DocumentPartReader.FormatPart",
+     "line": 61,
+     "loc": 18,
+     "span": 22,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Turn.cs::Agent42.Backend.ChatTurnPipeline.DrainAsync(IAgentGrain,string,string?,List<AttachmentRef>,ChatReplyBuffer)",
+     "file": "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Turn.cs",
+     "name": "Agent42.Backend.ChatTurnPipeline.DrainAsync",
+     "line": 155,
+     "loc": 18,
+     "span": 21,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs::Agent42.Backend.AgentApi.FleetFileDownloadAsync(FleetTaskService,FleetTaskRecord,string,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+     "name": "Agent42.Backend.AgentApi.FleetFileDownloadAsync",
+     "line": 331,
+     "loc": 18,
+     "span": 20,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.FleetAnalyzer.cs::Agent42.Backend.AgentApi.FleetAnalyzerHistoryAsync(string,IServiceProvider,IGrainFactory,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.FleetAnalyzer.cs",
+     "name": "Agent42.Backend.AgentApi.FleetAnalyzerHistoryAsync",
+     "line": 97,
+     "loc": 18,
+     "span": 21,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetCanvas.cs::Agent42.Backend.FleetCanvas.ValidateCreate(CanvasState,string,string?,string?,int)",
+     "file": "src/Agent42.Backend/Fleet/FleetCanvas.cs",
+     "name": "Agent42.Backend.FleetCanvas.ValidateCreate",
+     "line": 290,
+     "loc": 18,
+     "span": 21,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetPromptProposals.cs::Agent42.Backend.FleetPromptProposals.Merge(FleetLessonsDocument,IReadOnlyList<FleetPromptProposalDraft>,DateTimeOffset,FleetOptions,Func<string>?)",
+     "file": "src/Agent42.Backend/Fleet/FleetPromptProposals.cs",
+     "name": "Agent42.Backend.FleetPromptProposals.Merge",
+     "line": 225,
+     "loc": 18,
+     "span": 20,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetSkillProposals.cs::Agent42.Backend.FleetSkillProposals.Merge(FleetLessonsDocument,IReadOnlyList<FleetSkillProposalDraft>,DateTimeOffset,FleetOptions,Func<string>?)",
+     "file": "src/Agent42.Backend/Fleet/FleetSkillProposals.cs",
+     "name": "Agent42.Backend.FleetSkillProposals.Merge",
+     "line": 272,
+     "loc": 18,
+     "span": 20,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Storage/PostgresChatSearchIndex.cs::Agent42.Backend.PostgresChatSearchIndex.GetTurnsAsync(string,string,int,int,CancellationToken)",
+     "file": "src/Agent42.Backend/Storage/PostgresChatSearchIndex.cs",
+     "name": "Agent42.Backend.PostgresChatSearchIndex.GetTurnsAsync",
+     "line": 92,
+     "loc": 18,
+     "span": 20,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs::Agent42.Backend.AgentApi.FleetCanvasVersionAsync(FleetTaskService,FleetTaskRecord,string,int,bool,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+     "name": "Agent42.Backend.AgentApi.FleetCanvasVersionAsync",
+     "line": 404,
+     "loc": 17,
+     "span": 19,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/Configuration/ConfigHealth.cs::Agent42.Backend.ConfigHealth.UriCheck(string,string,string?,bool,string,string?)",
+     "file": "src/Agent42.Backend/Configuration/ConfigHealth.cs",
+     "name": "Agent42.Backend.ConfigHealth.UriCheck",
+     "line": 352,
+     "loc": 17,
+     "span": 19,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.ChatCoreAsync(string,string?,IReadOnlyList<AttachmentRef>?,TurnContext,bool)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
+     "name": "Agent42.Agents.AgentGrain.ChatCoreAsync",
+     "line": 562,
+     "loc": 17,
+     "span": 17,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Search/InMemoryChatSearchIndex.cs::Agent42.Agents.InMemoryChatSearchIndex.GetTurnsAsync(string,string,int,int,CancellationToken)",
+     "file": "src/Agent42.Agents/Search/InMemoryChatSearchIndex.cs",
+     "name": "Agent42.Agents.InMemoryChatSearchIndex.GetTurnsAsync",
+     "line": 103,
+     "loc": 17,
+     "span": 19,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Documents/CosmosDocumentIndex.cs::Agent42.Backend.CosmosDocumentIndex.ReadChunksAsync(string,string,int,int,CancellationToken)",
+     "file": "src/Agent42.Backend/Documents/CosmosDocumentIndex.cs",
+     "name": "Agent42.Backend.CosmosDocumentIndex.ReadChunksAsync",
+     "line": 93,
+     "loc": 17,
+     "span": 20,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs::Agent42.Backend.AgentApi.DeleteFleetTask(string,IServiceProvider,IGrainFactory,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+     "name": "Agent42.Backend.AgentApi.DeleteFleetTask",
+     "line": 194,
+     "loc": 17,
+     "span": 21,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/UserSkills/AgentApi.UserSkills.cs::Agent42.Backend.AgentApi.DeleteSkillAsync(string,IGrainFactory,IServiceProvider,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/UserSkills/AgentApi.UserSkills.cs",
+     "name": "Agent42.Backend.AgentApi.DeleteSkillAsync",
+     "line": 87,
+     "loc": 17,
+     "span": 19,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Telegram/TelegramBotApi.cs::Agent42.Backend.TelegramBotApi.UploadAsync(string,string,IReadOnlyDictionary<string,string>,string,byte,string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Telegram/TelegramBotApi.cs",
+     "name": "Agent42.Backend.TelegramBotApi.UploadAsync",
+     "line": 131,
+     "loc": 16,
+     "span": 18,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs::Agent42.Backend.AgentApi.StartAgentRunAsync(IGrainFactory,string,AgentDefinition,string,string,string,List<AttachmentRef>,List<string>)",
+     "file": "src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs",
+     "name": "Agent42.Backend.AgentApi.StartAgentRunAsync",
+     "line": 189,
+     "loc": 16,
+     "span": 22,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Signal/SignalAdapter.cs::Agent42.Backend.SignalSession.SignalSession(SignalRpcClient,ChatConnectionRuntime,IChatInboundSink,TimeProvider,ILogger,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Signal/SignalAdapter.cs",
+     "name": "Agent42.Backend.SignalSession.SignalSession",
+     "line": 101,
+     "loc": 16,
+     "span": 17,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs::Agent42.Backend.AgentApi.SubmitFleetAsync(FleetTaskService,FleetSubmitRequest,IReadOnlyList<FleetInputFile>,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+     "name": "Agent42.Backend.AgentApi.SubmitFleetAsync",
+     "line": 161,
+     "loc": 16,
+     "span": 19,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/McpOAuth.cs::Agent42.Backend.McpOAuthClient.ExchangeCodeAsync(Uri,string,string,string,Uri,Uri,IReadOnlyList<string>,CancellationToken)",
+     "file": "src/Agent42.Backend/Mcp/McpOAuth.cs",
+     "name": "Agent42.Backend.McpOAuthClient.ExchangeCodeAsync",
+     "line": 186,
+     "loc": 15,
+     "span": 15,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs::Agent42.Backend.DiscordSession.DiscordSession(DiscordRestApi,DiscordOptions,ChatConnectionRuntime,IChatInboundSink,ILogger,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs",
+     "name": "Agent42.Backend.DiscordSession.DiscordSession",
+     "line": 123,
+     "loc": 15,
+     "span": 15,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetSkillProposals.cs::Agent42.Backend.FleetSkillProposals.Validate(FleetSkillProposalDraft,IReadOnlyList<FleetSkillSnapshot>,IReadOnlySet<string>,IReadOnlyList<FleetSkillProposal>,IReadOnlyDictionary<string,string>,FleetOptions)",
+     "file": "src/Agent42.Backend/Fleet/FleetSkillProposals.cs",
+     "name": "Agent42.Backend.FleetSkillProposals.Validate",
+     "line": 58,
+     "loc": 15,
+     "span": 16,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs::Agent42.Backend.DiscordRestApi.SendAsync(string,HttpMethod,string,object?,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs",
+     "name": "Agent42.Backend.DiscordRestApi.SendAsync",
+     "line": 175,
+     "loc": 15,
+     "span": 16,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetLauncher.cs::Agent42.Backend.FleetLauncher.StartAsync(string,string,string,string?,string?,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetLauncher.cs",
+     "name": "Agent42.Backend.FleetLauncher.StartAsync",
+     "line": 16,
+     "loc": 14,
+     "span": 17,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.TrailingEventsAsync(string,StringBuilder,TurnOutcome,McpReauthTurnObserver,bool)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
+     "name": "Agent42.Agents.AgentGrain.TrailingEventsAsync",
+     "line": 790,
+     "loc": 14,
+     "span": 16,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Turn.cs::Agent42.Backend.ChatTurnPipeline.PrepareTurnFilesAsync(ChatTurnWork,List<ChatInboundFile>,string,IAgentGrain,AgentBinding?)",
+     "file": "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Turn.cs",
+     "name": "Agent42.Backend.ChatTurnPipeline.PrepareTurnFilesAsync",
+     "line": 96,
+     "loc": 14,
+     "span": 16,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Signal/SignalText.cs::Agent42.Backend.SignalText.TryPaired(string,ref int,Builder,string,string)",
+     "file": "src/Agent42.Backend/ChatGateway/Signal/SignalText.cs",
+     "name": "Agent42.Backend.SignalText.TryPaired",
+     "line": 130,
+     "loc": 14,
+     "span": 15,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Telegram/TelegramAdapter.cs::Agent42.Backend.TelegramSession.TelegramSession(TelegramBotApi,ChatConnectionRuntime,IChatInboundSink,ILogger,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Telegram/TelegramAdapter.cs",
+     "name": "Agent42.Backend.TelegramSession.TelegramSession",
+     "line": 99,
+     "loc": 14,
+     "span": 14,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Telegram/TelegramAdapter.cs::Agent42.Backend.TelegramSession.UploadImageAsync(ChatTarget,byte,string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Telegram/TelegramAdapter.cs",
+     "name": "Agent42.Backend.TelegramSession.UploadImageAsync",
+     "line": 145,
+     "loc": 14,
+     "span": 16,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs::Agent42.Backend.AgentApi.SetFleetPrompt(string,string?,IServiceProvider,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+     "name": "Agent42.Backend.AgentApi.SetFleetPrompt",
+     "line": 469,
+     "loc": 14,
+     "span": 16,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetPromptProposals.cs::Agent42.Backend.FleetPromptProposals.Validate(FleetPromptProposalDraft,FleetPromptSet,IReadOnlyList<FleetPromptProposal>,IReadOnlyDictionary<string,string>,FleetOptions)",
+     "file": "src/Agent42.Backend/Fleet/FleetPromptProposals.cs",
+     "name": "Agent42.Backend.FleetPromptProposals.Validate",
+     "line": 54,
+     "loc": 14,
+     "span": 15,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Search/CosmosChatSearchIndex.cs::Agent42.Backend.CosmosChatSearchIndex.GetTurnsAsync(string,string,int,int,CancellationToken)",
+     "file": "src/Agent42.Backend/Search/CosmosChatSearchIndex.cs",
+     "name": "Agent42.Backend.CosmosChatSearchIndex.GetTurnsAsync",
+     "line": 97,
+     "loc": 14,
+     "span": 15,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/UserSkills/UserSkillInstaller.cs::Agent42.Backend.UserSkillInstaller.StoreAsync(string,IUserSkillsGrain,ISkillPackageStore,NormalizedSkill,CancellationToken)",
+     "file": "src/Agent42.Backend/UserSkills/UserSkillInstaller.cs",
+     "name": "Agent42.Backend.UserSkillInstaller.StoreAsync",
+     "line": 108,
+     "loc": 14,
+     "span": 21,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs::Agent42.Backend.AgentApi.ServeFleetCanvasAsync(string,string,int,bool,IServiceProvider,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+     "name": "Agent42.Backend.AgentApi.ServeFleetCanvasAsync",
+     "line": 385,
+     "loc": 13,
+     "span": 14,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/ChatDeliverySender.cs::Agent42.Backend.ChatDeliverySender.ChatDeliverySender(IGrainFactory,ChatSessionRegistry,ChatReplyStreamer,IEnumerable<IChatPlatformAdapter>,ILogger<ChatDeliverySender>)",
+     "file": "src/Agent42.Backend/ChatGateway/ChatDeliverySender.cs",
+     "name": "Agent42.Backend.ChatDeliverySender.ChatDeliverySender",
+     "line": 28,
+     "loc": 13,
+     "span": 13,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Slack/SlackAdapter.cs::Agent42.Backend.SlackSession.SlackSession(SlackWebApi,ChatConnectionRuntime,IChatInboundSink,ILogger,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Slack/SlackAdapter.cs",
+     "name": "Agent42.Backend.SlackSession.SlackSession",
+     "line": 151,
+     "loc": 13,
+     "span": 13,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetLessons.cs::Agent42.Backend.FleetLessons.EvidenceProblem(IReadOnlyList<string>?,IReadOnlyDictionary<string,string>,FleetOptions,string,int)",
+     "file": "src/Agent42.Backend/Fleet/FleetLessons.cs",
+     "name": "Agent42.Backend.FleetLessons.EvidenceProblem",
+     "line": 111,
+     "loc": 13,
+     "span": 14,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetPromptProposals.cs::Agent42.Backend.FleetPromptProposals.Apply(string,string,string,string,string)",
+     "file": "src/Agent42.Backend/Fleet/FleetPromptProposals.cs",
+     "name": "Agent42.Backend.FleetPromptProposals.Apply",
+     "line": 169,
+     "loc": 13,
+     "span": 14,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetWorkspace.cs::Agent42.Backend.FleetWorkspace.SyncToStoreAsync(IFleetStore,string,long,int,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetWorkspace.cs",
+     "name": "Agent42.Backend.FleetWorkspace.SyncToStoreAsync",
+     "line": 108,
+     "loc": 13,
+     "span": 13,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/McpConnectionTester.cs::Agent42.Backend.McpConnectionTester.McpConnectionTester(IGrainFactory,IMcpConnectionFactory,IMcpSecretProtector,McpOAuthTokenResolver,ILogger<McpConnectionTester>)",
+     "file": "src/Agent42.Backend/Mcp/McpConnectionTester.cs",
+     "name": "Agent42.Backend.McpConnectionTester.McpConnectionTester",
+     "line": 49,
+     "loc": 13,
+     "span": 13,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/UserMcpToolProvider.cs::Agent42.Backend.UserMcpToolProvider.UserMcpToolProvider(IGrainFactory,IMcpConnectionFactory,IMcpSecretProtector,McpOAuthTokenResolver,ILogger<UserMcpToolProvider>)",
+     "file": "src/Agent42.Backend/Mcp/UserMcpToolProvider.cs",
+     "name": "Agent42.Backend.UserMcpToolProvider.UserMcpToolProvider",
+     "line": 42,
+     "loc": 13,
+     "span": 13,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetPushTools.cs::Agent42.Backend.FleetPushTools.FleetPushTools(IPushNotificationSender,IGrainFactory,string,string,ILogger)",
+     "file": "src/Agent42.Backend/Fleet/FleetPushTools.cs",
+     "name": "Agent42.Backend.FleetPushTools.FleetPushTools",
+     "line": 29,
+     "loc": 12,
+     "span": 12,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Sharing/AgentApi.Sharing.cs::Agent42.Backend.AgentApi.ServeSharedArtifactVersionAsync(string,string,int,bool,IGrainFactory,IAttachmentStore,HttpContext)",
+     "file": "src/Agent42.Backend/Sharing/AgentApi.Sharing.cs",
+     "name": "Agent42.Backend.AgentApi.ServeSharedArtifactVersionAsync",
+     "line": 123,
+     "loc": 11,
+     "span": 11,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetLauncher.Analyze.cs::Agent42.Backend.FleetLauncher.ReadEventsAsync(string,string,string?,long,int,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetLauncher.Analyze.cs",
+     "name": "Agent42.Backend.FleetLauncher.ReadEventsAsync",
+     "line": 45,
+     "loc": 11,
+     "span": 12,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs::Agent42.Backend.AgentApi.DownloadFleetFile(string,string,IServiceProvider,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+     "name": "Agent42.Backend.AgentApi.DownloadFleetFile",
+     "line": 314,
+     "loc": 11,
+     "span": 12,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetAnalysis.cs::Agent42.Backend.FleetAnalysis.Page(IReadOnlyList<Event>,string?,long,int,string)",
+     "file": "src/Agent42.Backend/Fleet/FleetAnalysis.cs",
+     "name": "Agent42.Backend.FleetAnalysis.Page",
+     "line": 147,
+     "loc": 10,
+     "span": 10,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs::Agent42.Backend.FleetTaskService.ComposeInputAsync(RunningFleetTask,FleetTaskRecord,FleetTaskRecord?,FleetWorkspace,FleetRun)",
+     "file": "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs",
+     "name": "Agent42.Backend.FleetTaskService.ComposeInputAsync",
+     "line": 218,
+     "loc": 10,
+     "span": 10,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/ModeratedGroupChatManager.cs::Agent42.Backend.ModeratedGroupChatManager.ModeratedGroupChatManager(IReadOnlyList<AIAgent>,IChatClient,FleetPromptSet,string,string)",
+     "file": "src/Agent42.Backend/Fleet/ModeratedGroupChatManager.cs",
+     "name": "Agent42.Backend.ModeratedGroupChatManager.ModeratedGroupChatManager",
+     "line": 33,
+     "loc": 10,
+     "span": 10,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.FleetSharing.cs::Agent42.Backend.AgentApi.ServeSharedFleetCanvasAsync(string,string,int,bool,IServiceProvider,IGrainFactory,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.FleetSharing.cs",
+     "name": "Agent42.Backend.AgentApi.ServeSharedFleetCanvasAsync",
+     "line": 107,
+     "loc": 9,
+     "span": 9,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetBudget.cs::Agent42.Backend.FleetBudget.FleetBudget(long,int,double,int,int,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetBudget.cs",
+     "name": "Agent42.Backend.FleetBudget.FleetBudget",
+     "line": 22,
+     "loc": 9,
+     "span": 10,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Attachments/InMemoryAttachmentStore.cs::Agent42.Agents.InMemoryAttachmentStore.SaveAsync(string,string,string,byte,CancellationToken)",
+     "file": "src/Agent42.Agents/Attachments/InMemoryAttachmentStore.cs",
+     "name": "Agent42.Agents.InMemoryAttachmentStore.SaveAsync",
+     "line": 22,
+     "loc": 9,
+     "span": 9,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs::Agent42.Backend.DiscordRestApi.CreateMessageAsync(string,string,string,string?,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs",
+     "name": "Agent42.Backend.DiscordRestApi.CreateMessageAsync",
+     "line": 81,
+     "loc": 9,
+     "span": 10,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Telegram/TelegramAdapter.cs::Agent42.Backend.TelegramSession.EditAsync(ChatTarget,string,string,ChatTextFormat,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Telegram/TelegramAdapter.cs",
+     "name": "Agent42.Backend.TelegramSession.EditAsync",
+     "line": 131,
+     "loc": 9,
+     "span": 9,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetSelfReview.cs::Agent42.Backend.FleetSelfReview.Apply(FleetRun,FleetTeamPlan,List<AIAgent>,IReadOnlyDictionary<string,string>,FleetTeamContext)",
+     "file": "src/Agent42.Backend/Fleet/FleetSelfReview.cs",
+     "name": "Agent42.Backend.FleetSelfReview.Apply",
+     "line": 64,
+     "loc": 9,
+     "span": 10,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Documents/WebDocumentIngestor.cs::Agent42.Backend.WebDocumentIngestor.IngestAsync(string,string,string,byte,int?,CancellationToken)",
+     "file": "src/Agent42.Backend/Documents/WebDocumentIngestor.cs",
+     "name": "Agent42.Backend.WebDocumentIngestor.IngestAsync",
+     "line": 21,
+     "loc": 8,
+     "span": 8,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Export/AgentApi.Export.cs::Agent42.Backend.AgentApi.WriteSingleZipAsync(ZipArchive,ConversationExport,IAttachmentStore,string,DateTimeOffset,CancellationToken)",
+     "file": "src/Agent42.Backend/Export/AgentApi.Export.cs",
+     "name": "Agent42.Backend.AgentApi.WriteSingleZipAsync",
+     "line": 61,
+     "loc": 8,
+     "span": 8,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/TurnContext.cs::Agent42.Agents.TurnContext.TurnContext(bool,bool,ClientToolBroker?,bool,bool)",
+     "file": "src/Agent42.Agents/Conversations/TurnContext.cs",
+     "name": "Agent42.Agents.TurnContext.TurnContext",
+     "line": 24,
+     "loc": 8,
+     "span": 8,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetTaskService.cs::Agent42.Backend.FleetTaskService.AnswerAsync(string,string,string,int?,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/FleetTaskService.cs",
+     "name": "Agent42.Backend.FleetTaskService.AnswerAsync",
+     "line": 219,
+     "loc": 8,
+     "span": 10,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Documents/IDocumentIngestor.cs::Agent42.Agents.IDocumentIngestor.IngestAsync(string,string,string,byte,int?,CancellationToken)",
+     "file": "src/Agent42.Agents/Documents/IDocumentIngestor.cs",
+     "name": "Agent42.Agents.IDocumentIngestor.IngestAsync",
+     "line": 52,
+     "loc": 7,
+     "span": 7,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Documents/DocumentIngestionService.cs::Agent42.Backend.DocumentIngestionService.IngestAsync(string,string,string,byte,int?,CancellationToken)",
+     "file": "src/Agent42.Backend/Documents/DocumentIngestionService.cs",
+     "name": "Agent42.Backend.DocumentIngestionService.IngestAsync",
+     "line": 38,
+     "loc": 7,
+     "span": 7,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs::Agent42.Backend.DiscordSession.EditAsync(ChatTarget,string,string,ChatTextFormat,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs",
+     "name": "Agent42.Backend.DiscordSession.EditAsync",
+     "line": 180,
+     "loc": 7,
+     "span": 7,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs::Agent42.Backend.DiscordSession.UploadImageAsync(ChatTarget,byte,string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs",
+     "name": "Agent42.Backend.DiscordSession.UploadImageAsync",
+     "line": 193,
+     "loc": 7,
+     "span": 7,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Slack/SlackAdapter.cs::Agent42.Backend.SlackSession.EditAsync(ChatTarget,string,string,ChatTextFormat,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Slack/SlackAdapter.cs",
+     "name": "Agent42.Backend.SlackSession.EditAsync",
+     "line": 183,
+     "loc": 7,
+     "span": 7,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Telegram/TelegramBotApi.cs::Agent42.Backend.TelegramBotApi.SendAsync(string,string,string,object?,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Telegram/TelegramBotApi.cs",
+     "name": "Agent42.Backend.TelegramBotApi.SendAsync",
+     "line": 150,
+     "loc": 7,
+     "span": 7,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Storage/FileAttachmentStore.cs::Agent42.Backend.FileAttachmentStore.SaveAsync(string,string,string,byte,CancellationToken)",
+     "file": "src/Agent42.Backend/Storage/FileAttachmentStore.cs",
+     "name": "Agent42.Backend.FileAttachmentStore.SaveAsync",
+     "line": 30,
+     "loc": 7,
+     "span": 7,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Search/IChatSearchIndex.cs::Agent42.Agents.IChatSearchIndex.GetTurnsAsync(string,string,int,int,CancellationToken)",
+     "file": "src/Agent42.Agents/Search/IChatSearchIndex.cs",
+     "name": "Agent42.Agents.IChatSearchIndex.GetTurnsAsync",
+     "line": 74,
+     "loc": 6,
+     "span": 6,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Signal/SignalAdapter.cs::Agent42.Backend.SignalSession.UploadImageAsync(ChatTarget,byte,string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Signal/SignalAdapter.cs",
+     "name": "Agent42.Backend.SignalSession.UploadImageAsync",
+     "line": 141,
+     "loc": 6,
+     "span": 6,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Slack/SlackAdapter.cs::Agent42.Backend.SlackSession.UploadImageAsync(ChatTarget,byte,string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Slack/SlackAdapter.cs",
+     "name": "Agent42.Backend.SlackSession.UploadImageAsync",
+     "line": 195,
+     "loc": 6,
+     "span": 6,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Export/ConversationZipWriter.cs::Agent42.Backend.ConversationZipWriter.WriteEntryAsync(ZipArchive,string,byte,CompressionLevel,CancellationToken)",
+     "file": "src/Agent42.Backend/Export/ConversationZipWriter.cs",
+     "name": "Agent42.Backend.ConversationZipWriter.WriteEntryAsync",
+     "line": 84,
+     "loc": 6,
+     "span": 6,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Configuration/ConfigHealth.cs::Agent42.Backend.ConfigHealth.PresenceCheck(string,string,string?,string,string,string)",
+     "file": "src/Agent42.Backend/Configuration/ConfigHealth.cs",
+     "name": "Agent42.Backend.ConfigHealth.PresenceCheck",
+     "line": 372,
+     "loc": 5,
+     "span": 5,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetToolCatalog.cs::Agent42.Backend.FleetToolCatalog.BuildAsync(string,string,IReadOnlyList<string>?,IFleetInteraction,CancellationToken,IReadOnlyList<AIFunction>?)",
+     "file": "src/Agent42.Backend/Fleet/FleetToolCatalog.cs",
+     "name": "Agent42.Backend.FleetToolCatalog.BuildAsync",
+     "line": 44,
+     "loc": 5,
+     "span": 5,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Storage/FileAttachmentStore.cs::Agent42.Backend.FileAttachmentStore.WriteAsync(string,string,byte,Meta,CancellationToken)",
+     "file": "src/Agent42.Backend/Storage/FileAttachmentStore.cs",
+     "name": "Agent42.Backend.FileAttachmentStore.WriteAsync",
+     "line": 103,
+     "loc": 5,
+     "span": 5,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Conversations/IAgentGrain.cs::Agent42.Agents.IAgentGrain.ChatAsync(string,string?,IReadOnlyList<AttachmentRef>?,bool,bool,IReadOnlyList<string>?,bool,string?)",
+     "file": "src/Agent42.Agents/Conversations/IAgentGrain.cs",
+     "name": "Agent42.Agents.IAgentGrain.ChatAsync",
+     "line": 69,
+     "loc": 4,
+     "span": 4,
+     "params": 8
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/IFleetLauncher.cs::Agent42.Agents.DisabledFleetLauncher.RerunAsync(string,string,string?,IReadOnlyList<string>?,long?,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/IFleetLauncher.cs",
+     "name": "Agent42.Agents.DisabledFleetLauncher.RerunAsync",
+     "line": 95,
+     "loc": 4,
+     "span": 4,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs::Agent42.Backend.AgentApi.AnswerFleetTask(string,FleetAnswerRequest,IServiceProvider,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+     "name": "Agent42.Backend.AgentApi.AnswerFleetTask",
+     "line": 221,
+     "loc": 4,
+     "span": 4,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Webhooks/AgentGrain.Webhooks.cs::Agent42.Agents.AgentGrain.WebhookTurn(string,string,string,bool,int,string?,bool)",
+     "file": "src/Agent42.Agents/Webhooks/AgentGrain.Webhooks.cs",
+     "name": "Agent42.Agents.AgentGrain.WebhookTurn",
+     "line": 59,
+     "loc": 3,
+     "span": 3,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/IFleetLauncher.cs::Agent42.Agents.DisabledFleetLauncher.StartAsync(string,string,string,string?,string?,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/IFleetLauncher.cs",
+     "name": "Agent42.Agents.DisabledFleetLauncher.StartAsync",
+     "line": 68,
+     "loc": 3,
+     "span": 3,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/IFleetLauncher.cs::Agent42.Agents.IFleetLauncher.RerunAsync(string,string,string?,IReadOnlyList<string>?,long?,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/IFleetLauncher.cs",
+     "name": "Agent42.Agents.IFleetLauncher.RerunAsync",
+     "line": 51,
+     "loc": 3,
+     "span": 3,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Attachments/IAttachmentStore.cs::Agent42.Agents.IAttachmentStore.SaveAsync(string,string,string,byte,CancellationToken)",
+     "file": "src/Agent42.Agents/Attachments/IAttachmentStore.cs",
+     "name": "Agent42.Agents.IAttachmentStore.SaveAsync",
+     "line": 22,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Telemetry/ModelPricing.cs::Agent42.Agents.ModelPricing.Azure(string,string,decimal,decimal,decimal)",
+     "file": "src/Agent42.Agents/Telemetry/ModelPricing.cs",
+     "name": "Agent42.Agents.ModelPricing.Azure",
+     "line": 197,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs::Agent42.Backend.DiscordRestApi.EditMessageAsync(string,string,string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs",
+     "name": "Agent42.Backend.DiscordRestApi.EditMessageAsync",
+     "line": 116,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs::Agent42.Backend.DiscordRestApi.StartThreadAsync(string,string,string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Discord/DiscordRestApi.cs",
+     "name": "Agent42.Backend.DiscordRestApi.StartThreadAsync",
+     "line": 124,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/Signal/SignalAdapter.cs::Agent42.Backend.SignalSession.EditAsync(ChatTarget,string,string,ChatTextFormat,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/Signal/SignalAdapter.cs",
+     "name": "Agent42.Backend.SignalSession.EditAsync",
+     "line": 133,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Documents/CosmosDocumentIndex.cs::Agent42.Backend.CosmosDocumentIndex.ChunkDocument(string,string,string,int?,int,string,float)",
+     "file": "src/Agent42.Backend/Documents/CosmosDocumentIndex.cs",
+     "name": "Agent42.Backend.CosmosDocumentIndex.ChunkDocument",
+     "line": 172,
+     "loc": 2,
+     "span": 2,
+     "params": 7
+    },
+    {
+     "key": "src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs::Agent42.Agents.AgentGrain.ArtifactReadResult(string,int,string,string,string?,string)",
+     "file": "src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs",
+     "name": "Agent42.Agents.AgentGrain.ArtifactReadResult",
+     "line": 410,
+     "loc": 2,
+     "span": 2,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/FleetStore.cs::Agent42.Agents.FleetStore.PutCanvasVersionAsync(string,string,string,int,byte,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/FleetStore.cs",
+     "name": "Agent42.Agents.FleetStore.PutCanvasVersionAsync",
+     "line": 115,
+     "loc": 2,
+     "span": 2,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/IFleetLauncher.cs::Agent42.Agents.DisabledFleetLauncher.ReadEventsAsync(string,string,string?,long,int,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/IFleetLauncher.cs",
+     "name": "Agent42.Agents.DisabledFleetLauncher.ReadEventsAsync",
+     "line": 81,
+     "loc": 2,
+     "span": 2,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/IFleetLauncher.cs::Agent42.Agents.IFleetLauncher.StartAsync(string,string,string,string?,string?,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/IFleetLauncher.cs",
+     "name": "Agent42.Agents.IFleetLauncher.StartAsync",
+     "line": 16,
+     "loc": 2,
+     "span": 2,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Backend/Search/CosmosChatSearchIndex.cs::Agent42.Backend.CosmosChatSearchIndex.MessageDocument(string,string,string,string,string,int)",
+     "file": "src/Agent42.Backend/Search/CosmosChatSearchIndex.cs",
+     "name": "Agent42.Backend.CosmosChatSearchIndex.MessageDocument",
+     "line": 261,
+     "loc": 2,
+     "span": 2,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/ChatGateway/IUserChatConnectionsGrain.cs::Agent42.Agents.IUserChatConnectionsGrain.TryPairAsync(string,string,string?,string,DateTimeOffset)",
+     "file": "src/Agent42.Agents/ChatGateway/IUserChatConnectionsGrain.cs",
+     "name": "Agent42.Agents.IUserChatConnectionsGrain.TryPairAsync",
+     "line": 57,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Documents/IDocumentIndex.cs::Agent42.Agents.IDocumentIndex.ReadChunksAsync(string,string,int,int,CancellationToken)",
+     "file": "src/Agent42.Agents/Documents/IDocumentIndex.cs",
+     "name": "Agent42.Agents.IDocumentIndex.ReadChunksAsync",
+     "line": 50,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/FleetStore.cs::Agent42.Agents.FleetStore.DeleteCanvasVersionAsync(string,string,string,int,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/FleetStore.cs",
+     "name": "Agent42.Agents.FleetStore.DeleteCanvasVersionAsync",
+     "line": 121,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/FleetStore.cs::Agent42.Agents.FleetStore.GetCanvasVersionAsync(string,string,string,int,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/FleetStore.cs",
+     "name": "Agent42.Agents.FleetStore.GetCanvasVersionAsync",
+     "line": 118,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/FleetStore.cs::Agent42.Agents.FleetStore.PutWorkspaceFileAsync(string,string,string,byte,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/FleetStore.cs",
+     "name": "Agent42.Agents.FleetStore.PutWorkspaceFileAsync",
+     "line": 78,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/IChatPlatformAdapter.cs::Agent42.Backend.IChatPlatformSession.EditAsync(ChatTarget,string,string,ChatTextFormat,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/IChatPlatformAdapter.cs",
+     "name": "Agent42.Backend.IChatPlatformSession.EditAsync",
+     "line": 66,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/ChatGateway/IChatPlatformAdapter.cs::Agent42.Backend.IChatPlatformSession.UploadImageAsync(ChatTarget,byte,string,string,CancellationToken)",
+     "file": "src/Agent42.Backend/ChatGateway/IChatPlatformAdapter.cs",
+     "name": "Agent42.Backend.IChatPlatformSession.UploadImageAsync",
+     "line": 73,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs::Agent42.Backend.AgentApi.PutFleetPrompt(string,FleetPromptRequest,IServiceProvider,HttpContext,CancellationToken)",
+     "file": "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+     "name": "Agent42.Backend.AgentApi.PutFleetPrompt",
+     "line": 463,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Mcp/McpAppRegistry.cs::Agent42.Backend.IMcpAppRegistry.CallToolAsync(string,string,string,JsonElement?,CancellationToken)",
+     "file": "src/Agent42.Backend/Mcp/McpAppRegistry.cs",
+     "name": "Agent42.Backend.IMcpAppRegistry.CallToolAsync",
+     "line": 68,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/IFleetLauncher.cs::Agent42.Agents.IFleetLauncher.ReadEventsAsync(string,string,string?,long,int,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/IFleetLauncher.cs",
+     "name": "Agent42.Agents.IFleetLauncher.ReadEventsAsync",
+     "line": 33,
+     "loc": 1,
+     "span": 1,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/IFleetStore.cs::Agent42.Agents.IFleetStore.PutCanvasVersionAsync(string,string,string,int,byte,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/IFleetStore.cs",
+     "name": "Agent42.Agents.IFleetStore.PutCanvasVersionAsync",
+     "line": 46,
+     "loc": 1,
+     "span": 1,
+     "params": 6
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/IFleetStore.cs::Agent42.Agents.IFleetStore.DeleteCanvasVersionAsync(string,string,string,int,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/IFleetStore.cs",
+     "name": "Agent42.Agents.IFleetStore.DeleteCanvasVersionAsync",
+     "line": 51,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/IFleetStore.cs::Agent42.Agents.IFleetStore.GetCanvasVersionAsync(string,string,string,int,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/IFleetStore.cs",
+     "name": "Agent42.Agents.IFleetStore.GetCanvasVersionAsync",
+     "line": 49,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Agents/Fleet/IFleetStore.cs::Agent42.Agents.IFleetStore.PutWorkspaceFileAsync(string,string,string,byte,CancellationToken)",
+     "file": "src/Agent42.Agents/Fleet/IFleetStore.cs",
+     "name": "Agent42.Agents.IFleetStore.PutWorkspaceFileAsync",
+     "line": 29,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "src/Agent42.Backend/Fleet/FleetPrompts.cs::Agent42.Backend.FleetPrompts.Definition(string,string,string,IReadOnlyDictionary<string,string>,string)",
+     "file": "src/Agent42.Backend/Fleet/FleetPrompts.cs",
+     "name": "Agent42.Backend.FleetPrompts.Definition",
+     "line": 12,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    }
+   ],
+   "classes": [
+    {
+     "key": "Agent42.Agents.AgentGrain",
+     "files": [
+      "src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs",
+      "src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs",
+      "src/Agent42.Agents/ChatGateway/AgentGrain.ChatDelivery.cs",
+      "src/Agent42.Agents/ClientTools/AgentGrain.ClientTools.cs",
+      "src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs",
+      "src/Agent42.Agents/Conversations/AgentGrain.FollowUps.cs",
+      "src/Agent42.Agents/Conversations/AgentGrain.ModelRouting.cs",
+      "src/Agent42.Agents/Conversations/AgentGrain.RenderingHints.cs",
+      "src/Agent42.Agents/Conversations/AgentGrain.Retention.cs",
+      "src/Agent42.Agents/Conversations/AgentGrain.RetentionSweep.cs",
+      "src/Agent42.Agents/Conversations/AgentGrain.cs",
+      "src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs",
+      "src/Agent42.Agents/Documents/AgentGrain.Documents.cs",
+      "src/Agent42.Agents/Documents/AgentGrain.ReadDocumentTool.cs",
+      "src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs",
+      "src/Agent42.Agents/Fleet/AgentGrain.FleetAnalyzerAgent.cs",
+      "src/Agent42.Agents/Fleet/AgentGrain.FleetAnalyzerTools.cs",
+      "src/Agent42.Agents/Fleet/AgentGrain.FleetTools.cs",
+      "src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs",
+      "src/Agent42.Agents/Location/AgentGrain.LocationTool.cs",
+      "src/Agent42.Agents/Mcp/AgentGrain.McpApps.cs",
+      "src/Agent42.Agents/Memory/AgentGrain.Memory.cs",
+      "src/Agent42.Agents/Push/AgentGrain.Push.cs",
+      "src/Agent42.Agents/Push/AgentGrain.PushTool.cs",
+      "src/Agent42.Agents/Research/AgentGrain.Research.cs",
+      "src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs",
+      "src/Agent42.Agents/Search/AgentGrain.PastChatTools.cs",
+      "src/Agent42.Agents/Search/AgentGrain.Search.cs",
+      "src/Agent42.Agents/SharedState/AgentGrain.SharedState.cs",
+      "src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs",
+      "src/Agent42.Agents/Web/AgentGrain.WebTools.cs",
+      "src/Agent42.Agents/Webhooks/AgentGrain.Webhooks.cs"
+     ],
+     "loc": 4099,
+     "span": 6653,
+     "ctorParams": 19,
+     "members": 333
+    },
+    {
+     "key": "Agent42.Backend.AgentApi",
+     "files": [
+      "src/Agent42.Backend/Api/AgentApi.cs",
+      "src/Agent42.Backend/Artifacts/AgentApi.Artifacts.cs",
+      "src/Agent42.Backend/Attachments/AgentApi.Attachments.cs",
+      "src/Agent42.Backend/ChatGateway/AgentApi.ChatGateway.cs",
+      "src/Agent42.Backend/ChatGateway/AgentApi.ChatGatewaySignal.cs",
+      "src/Agent42.Backend/ClientTools/AgentApi.ClientTools.cs",
+      "src/Agent42.Backend/Configuration/AgentApi.Configuration.cs",
+      "src/Agent42.Backend/Conversations/AgentApi.ChatGroups.cs",
+      "src/Agent42.Backend/Conversations/AgentApi.Conversations.cs",
+      "src/Agent42.Backend/Copilot/AgentApi.GitHubCopilot.cs",
+      "src/Agent42.Backend/Email/AgentApi.Email.cs",
+      "src/Agent42.Backend/Export/AgentApi.Export.cs",
+      "src/Agent42.Backend/Fleet/AgentApi.Fleet.cs",
+      "src/Agent42.Backend/Fleet/AgentApi.FleetAnalyzer.cs",
+      "src/Agent42.Backend/Fleet/AgentApi.FleetLessons.cs",
+      "src/Agent42.Backend/Fleet/AgentApi.FleetSettings.cs",
+      "src/Agent42.Backend/Fleet/AgentApi.FleetSharing.cs",
+      "src/Agent42.Backend/Mcp/AgentApi.Mcp.cs",
+      "src/Agent42.Backend/Mcp/AgentApi.McpApps.cs",
+      "src/Agent42.Backend/Models/AgentApi.Models.cs",
+      "src/Agent42.Backend/Push/AgentApi.Push.cs",
+      "src/Agent42.Backend/Search/AgentApi.Search.cs",
+      "src/Agent42.Backend/SharedState/AgentApi.SharedState.cs",
+      "src/Agent42.Backend/Sharing/AgentApi.Sharing.cs",
+      "src/Agent42.Backend/Speech/AgentApi.Speech.cs",
+      "src/Agent42.Backend/StoredAgents/AgentApi.StoredAgents.cs",
+      "src/Agent42.Backend/Telemetry/AgentApi.Diagnostics.cs",
+      "src/Agent42.Backend/Telemetry/AgentApi.Telemetry.cs",
+      "src/Agent42.Backend/Tools/AgentApi.Tools.cs",
+      "src/Agent42.Backend/UserSkills/AgentApi.UserSkills.cs",
+      "src/Agent42.Backend/Users/AgentApi.Users.cs",
+      "src/Agent42.Backend/Web/AgentApi.Web.cs",
+      "src/Agent42.Backend/Webhooks/AgentApi.Webhooks.cs"
+     ],
+     "loc": 3340,
+     "span": 4683,
+     "ctorParams": 0,
+     "members": 207
+    },
+    {
+     "key": "Agent42.Backend.ChatTurnPipeline",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Commands.cs",
+      "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Files.cs",
+      "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Turn.cs",
+      "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.Voice.cs",
+      "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.cs"
+     ],
+     "loc": 799,
+     "span": 991,
+     "ctorParams": 13,
+     "members": 85
+    },
+    {
+     "key": "Agent42.Backend.FleetTaskService",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetTaskService.Inputs.cs",
+      "src/Agent42.Backend/Fleet/FleetTaskService.Run.cs",
+      "src/Agent42.Backend/Fleet/FleetTaskService.cs"
+     ],
+     "loc": 739,
+     "span": 931,
+     "ctorParams": 14,
+     "members": 56
+    },
+    {
+     "key": "Agent42.Backend.FleetTeamRunner",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs",
+      "src/Agent42.Backend/Fleet/FleetTeamRunner.Workflows.cs",
+      "src/Agent42.Backend/Fleet/FleetTeamRunner.cs"
+     ],
+     "loc": 614,
+     "span": 783,
+     "ctorParams": 1,
+     "members": 32
+    },
+    {
+     "key": "Agent42.Backend.FleetLessonService",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetLessonService.Skills.cs",
+      "src/Agent42.Backend/Fleet/FleetLessonService.cs"
+     ],
+     "loc": 545,
+     "span": 703,
+     "ctorParams": 9,
+     "members": 53
+    },
+    {
+     "key": "Agent42.Backend.SignalDaemon",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/Signal/SignalDaemon.cs"
+     ],
+     "loc": 352,
+     "span": 417,
+     "ctorParams": 8,
+     "members": 47
+    },
+    {
+     "key": "Agent42.Backend.ChatGatewayService",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/ChatGatewayService.cs"
+     ],
+     "loc": 303,
+     "span": 354,
+     "ctorParams": 10,
+     "members": 27
+    },
+    {
+     "key": "Agent42.Backend.MultiProviderChatClientFactory",
+     "files": [
+      "src/Agent42.Backend/Models/ChatClientFactory.cs"
+     ],
+     "loc": 273,
+     "span": 564,
+     "ctorParams": 8,
+     "members": 22
+    },
+    {
+     "key": "Agent42.Backend.FleetDreamer",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetDreamer.cs"
+     ],
+     "loc": 230,
+     "span": 284,
+     "ctorParams": 7,
+     "members": 27
+    },
+    {
+     "key": "Agent42.Backend.SlackSession",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/Slack/SlackAdapter.cs"
+     ],
+     "loc": 225,
+     "span": 279,
+     "ctorParams": 5,
+     "members": 32
+    },
+    {
+     "key": "Agent42.Backend.UserMcpToolProvider",
+     "files": [
+      "src/Agent42.Backend/Mcp/UserMcpToolProvider.cs"
+     ],
+     "loc": 206,
+     "span": 298,
+     "ctorParams": 5,
+     "members": 18
+    },
+    {
+     "key": "Agent42.Backend.DiscordSession",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/Discord/DiscordAdapter.cs"
+     ],
+     "loc": 194,
+     "span": 232,
+     "ctorParams": 6,
+     "members": 30
+    },
+    {
+     "key": "Agent42.Agents.TurnContext",
+     "files": [
+      "src/Agent42.Agents/Conversations/TurnContext.cs"
+     ],
+     "loc": 182,
+     "span": 313,
+     "ctorParams": 5,
+     "members": 45
+    },
+    {
+     "key": "Agent42.Backend.FleetEventLog",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetEventLog.cs"
+     ],
+     "loc": 161,
+     "span": 195,
+     "ctorParams": 5,
+     "members": 19
+    },
+    {
+     "key": "Agent42.Backend.FleetLauncher",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetLauncher.Analyze.cs",
+      "src/Agent42.Backend/Fleet/FleetLauncher.cs"
+     ],
+     "loc": 156,
+     "span": 185,
+     "ctorParams": 5,
+     "members": 12
+    },
+    {
+     "key": "Agent42.Backend.TelegramSession",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/Telegram/TelegramAdapter.cs"
+     ],
+     "loc": 122,
+     "span": 149,
+     "ctorParams": 5,
+     "members": 19
+    },
+    {
+     "key": "Agent42.Backend.SignalSession",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/Signal/SignalAdapter.cs"
+     ],
+     "loc": 118,
+     "span": 148,
+     "ctorParams": 6,
+     "members": 23
+    },
+    {
+     "key": "Agent42.Backend.McpConnectionTester",
+     "files": [
+      "src/Agent42.Backend/Mcp/McpConnectionTester.cs"
+     ],
+     "loc": 111,
+     "span": 162,
+     "ctorParams": 5,
+     "members": 11
+    },
+    {
+     "key": "Agent42.Backend.FleetToolCatalog",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetToolCatalog.cs"
+     ],
+     "loc": 109,
+     "span": 144,
+     "ctorParams": 8,
+     "members": 10
+    },
+    {
+     "key": "Agent42.Backend.MultiProviderChatClientFactory.Provider",
+     "files": [
+      "src/Agent42.Backend/Models/ChatClientFactory.cs"
+     ],
+     "loc": 104,
+     "span": 272,
+     "ctorParams": 8,
+     "members": 16
+    },
+    {
+     "key": "Agent42.Backend.FleetDocumentTools",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetDocumentTools.cs"
+     ],
+     "loc": 98,
+     "span": 114,
+     "ctorParams": 6,
+     "members": 15
+    },
+    {
+     "key": "Agent42.Backend.FleetBudget",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetBudget.cs"
+     ],
+     "loc": 89,
+     "span": 113,
+     "ctorParams": 6,
+     "members": 29
+    },
+    {
+     "key": "Agent42.Backend.FleetCopilotAgentFactory",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetCopilotAgentFactory.cs"
+     ],
+     "loc": 82,
+     "span": 127,
+     "ctorParams": 11,
+     "members": 10
+    },
+    {
+     "key": "Agent42.Backend.ChatDeliverySender",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/ChatDeliverySender.cs"
+     ],
+     "loc": 73,
+     "span": 93,
+     "ctorParams": 5,
+     "members": 12
+    },
+    {
+     "key": "Agent42.Backend.AzureModelCatalog",
+     "files": [
+      "src/Agent42.Backend/Models/ModelCatalog.cs"
+     ],
+     "loc": 70,
+     "span": 86,
+     "ctorParams": 6,
+     "members": 2
+    },
+    {
+     "key": "Agent42.Backend.ModeratedGroupChatManager",
+     "files": [
+      "src/Agent42.Backend/Fleet/ModeratedGroupChatManager.cs"
+     ],
+     "loc": 70,
+     "span": 85,
+     "ctorParams": 5,
+     "members": 11
+    },
+    {
+     "key": "Agent42.Backend.FleetPushTools",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetPushTools.cs"
+     ],
+     "loc": 56,
+     "span": 71,
+     "ctorParams": 5,
+     "members": 13
+    },
+    {
+     "key": "Agent42.Agents.UserTelemetryContext",
+     "files": [
+      "src/Agent42.Agents/Telemetry/UserTelemetryContext.cs"
+     ],
+     "loc": 40,
+     "span": 62,
+     "ctorParams": 6,
+     "members": 8
+    },
+    {
+     "key": "Agent42.Backend.CatalogModelRouter",
+     "files": [
+      "src/Agent42.Backend/Models/Routing/UserModelRouterProvider.cs"
+     ],
+     "loc": 37,
+     "span": 42,
+     "ctorParams": 6,
+     "members": 3
+    },
+    {
+     "key": "Agent42.Backend.ConversationExportDocument",
+     "files": [
+      "src/Agent42.Backend/Export/ConversationExport.cs"
+     ],
+     "loc": 36,
+     "span": 42,
+     "ctorParams": 10,
+     "members": 4
+    },
+    {
+     "key": "Agent42.Backend.UserModelRouterProvider",
+     "files": [
+      "src/Agent42.Backend/Models/Routing/UserModelRouterProvider.cs"
+     ],
+     "loc": 35,
+     "span": 40,
+     "ctorParams": 5,
+     "members": 2
+    },
+    {
+     "key": "Agent42.Agents.SingleChatClientFactory",
+     "files": [
+      "src/Agent42.Agents/Models/IChatClientFactory.cs"
+     ],
+     "loc": 30,
+     "span": 56,
+     "ctorParams": 10,
+     "members": 12
+    },
+    {
+     "key": "Agent42.Agents.AgentWebhookEvent",
+     "files": [
+      "src/Agent42.Agents/Webhooks/AgentWebhookEvent.cs"
+     ],
+     "loc": 25,
+     "span": 30,
+     "ctorParams": 14,
+     "members": 2
+    },
+    {
+     "key": "Agent42.Backend.SlackResponse",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/Slack/SlackWebApi.cs"
+     ],
+     "loc": 24,
+     "span": 31,
+     "ctorParams": 5,
+     "members": 2
+    },
+    {
+     "key": "Agent42.Backend.TelegramResponse",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/Telegram/TelegramBotApi.cs"
+     ],
+     "loc": 24,
+     "span": 27,
+     "ctorParams": 5,
+     "members": 1
+    },
+    {
+     "key": "Agent42.Backend.SignalDaemonTimings",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/Signal/SignalDaemon.cs"
+     ],
+     "loc": 20,
+     "span": 21,
+     "ctorParams": 8,
+     "members": 1
+    },
+    {
+     "key": "Agent42.Backend.DiagnosticsConfig",
+     "files": [
+      "src/Agent42.Backend/Telemetry/LiveTelemetryContracts.cs"
+     ],
+     "loc": 18,
+     "span": 30,
+     "ctorParams": 6,
+     "members": 3
+    },
+    {
+     "key": "Agent42.Backend.McpOAuthTokens",
+     "files": [
+      "src/Agent42.Backend/Mcp/McpOAuth.cs"
+     ],
+     "loc": 16,
+     "span": 26,
+     "ctorParams": 7,
+     "members": 3
+    },
+    {
+     "key": "Agent42.Backend.ResolvedProviderSet",
+     "files": [
+      "src/Agent42.Backend/Models/UserProviderResolver.cs"
+     ],
+     "loc": 13,
+     "span": 22,
+     "ctorParams": 8,
+     "members": 1
+    },
+    {
+     "key": "Agent42.Backend.SignalRpcResult",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/Signal/SignalRpcClient.cs"
+     ],
+     "loc": 13,
+     "span": 19,
+     "ctorParams": 6,
+     "members": 4
+    },
+    {
+     "key": "Agent42.Backend.FleetTaskService.RunningFleetTask",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetTaskService.cs"
+     ],
+     "loc": 12,
+     "span": 20,
+     "ctorParams": 5,
+     "members": 9
+    },
+    {
+     "key": "Agent42.Backend.ConversationExport",
+     "files": [
+      "src/Agent42.Backend/Export/ConversationExport.cs"
+     ],
+     "loc": 11,
+     "span": 17,
+     "ctorParams": 6,
+     "members": 2
+    },
+    {
+     "key": "Agent42.Agents.McpAppRecord",
+     "files": [
+      "src/Agent42.Agents/Mcp/McpAppRecord.cs"
+     ],
+     "loc": 10,
+     "span": 13,
+     "ctorParams": 6,
+     "members": 1
+    },
+    {
+     "key": "Agent42.Agents.UserProviderConfig",
+     "files": [
+      "src/Agent42.Agents/Models/UserProviderConfig.cs"
+     ],
+     "loc": 10,
+     "span": 22,
+     "ctorParams": 6,
+     "members": 1
+    },
+    {
+     "key": "Agent42.Agents.UserProfile",
+     "files": [
+      "src/Agent42.Agents/Users/UserProfile.cs"
+     ],
+     "loc": 9,
+     "span": 25,
+     "ctorParams": 5,
+     "members": 1
+    },
+    {
+     "key": "Agent42.Backend.ChatTurnWork",
+     "files": [
+      "src/Agent42.Backend/ChatGateway/ChatTurnPipeline.cs"
+     ],
+     "loc": 9,
+     "span": 14,
+     "ctorParams": 5,
+     "members": 2
+    },
+    {
+     "key": "Agent42.Backend.FleetDreamOutcome",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetDreamer.cs"
+     ],
+     "loc": 8,
+     "span": 11,
+     "ctorParams": 6,
+     "members": 4
+    },
+    {
+     "key": "Agent42.Backend.FleetToolContext",
+     "files": [
+      "src/Agent42.Backend/Fleet/FleetToolCatalog.cs"
+     ],
+     "loc": 8,
+     "span": 14,
+     "ctorParams": 5,
+     "members": 4
+    }
+   ]
+  },
+  "tools": {
+   "summary": {
+    "files": 12,
+    "methods": 87,
+    "methodsOver60": 0,
+    "methodsOver80": 0,
+    "methodsOver100": 0,
+    "methodsWith7PlusParams": 0,
+    "classes": 20,
+    "classesOver500Loc": 0,
+    "classesWithCtor7Plus": 0
+   },
+   "methods": [
+    {
+     "key": "tools/Agent42.DevHost/CannedChatClient.cs::Agent42.DevHost.CannedChatClient.SelectToolCall(IEnumerable<ChatMessage>,ChatOptions?)",
+     "file": "tools/Agent42.DevHost/CannedChatClient.cs",
+     "name": "Agent42.DevHost.CannedChatClient.SelectToolCall",
+     "line": 281,
+     "loc": 58,
+     "span": 95,
+     "params": 2
+    },
+    {
+     "key": "tools/Agent42.LocalBridge/ConfirmationGate.cs::Agent42.LocalBridge.ConfirmationGate.ReviewAsync(string,JsonNode?,CancellationToken)",
+     "file": "tools/Agent42.LocalBridge/ConfirmationGate.cs",
+     "name": "Agent42.LocalBridge.ConfirmationGate.ReviewAsync",
+     "line": 150,
+     "loc": 46,
+     "span": 54,
+     "params": 3
+    },
+    {
+     "key": "tools/Agent42.LocalBridge/BridgeOptions.cs::Agent42.LocalBridge.BridgeOptions.Parse(IReadOnlyList<string>,Func<string,string?>)",
+     "file": "tools/Agent42.LocalBridge/BridgeOptions.cs",
+     "name": "Agent42.LocalBridge.BridgeOptions.Parse",
+     "line": 40,
+     "loc": 43,
+     "span": 47,
+     "params": 2
+    },
+    {
+     "key": "tools/Agent42.LocalBridge/BridgeClient.cs::Agent42.LocalBridge.BridgeClient.BridgeClient(BridgeOptions,IUpstream,ConfirmationGate,Action<string>,Func<TimeSpan,CancellationToken,Task>?)",
+     "file": "tools/Agent42.LocalBridge/BridgeClient.cs",
+     "name": "Agent42.LocalBridge.BridgeClient.BridgeClient",
+     "line": 54,
+     "loc": 13,
+     "span": 13,
+     "params": 5
+    },
+    {
+     "key": "tools/Agent42.LocalBridge/UpstreamChannel.cs::Agent42.LocalBridge.UpstreamChannel.UpstreamChannel(int,IUpstream,ConfirmationGate,Func<BridgeEnvelope,Task>,Action<string>)",
+     "file": "tools/Agent42.LocalBridge/UpstreamChannel.cs",
+     "name": "Agent42.LocalBridge.UpstreamChannel.UpstreamChannel",
+     "line": 74,
+     "loc": 9,
+     "span": 9,
+     "params": 5
+    }
+   ],
+   "classes": [
+    {
+     "key": "Agent42.DevHost.CannedChatClient",
+     "files": [
+      "tools/Agent42.DevHost/CannedChatClient.ClientTools.cs",
+      "tools/Agent42.DevHost/CannedChatClient.Research.cs",
+      "tools/Agent42.DevHost/CannedChatClient.cs"
+     ],
+     "loc": 481,
+     "span": 696,
+     "ctorParams": 0,
+     "members": 62
+    },
+    {
+     "key": "Agent42.LocalBridge.BridgeClient",
+     "files": [
+      "tools/Agent42.LocalBridge/BridgeClient.cs"
+     ],
+     "loc": 184,
+     "span": 214,
+     "ctorParams": 5,
+     "members": 20
+    },
+    {
+     "key": "Agent42.LocalBridge.UpstreamChannel",
+     "files": [
+      "tools/Agent42.LocalBridge/UpstreamChannel.cs"
+     ],
+     "loc": 135,
+     "span": 156,
+     "ctorParams": 5,
+     "members": 21
+    },
+    {
+     "key": "Agent42.LocalBridge.BridgeOptions",
+     "files": [
+      "tools/Agent42.LocalBridge/BridgeOptions.cs"
+     ],
+     "loc": 64,
+     "span": 80,
+     "ctorParams": 5,
+     "members": 5
+    }
+   ]
+  },
+  "tests": {
+   "summary": {
+    "files": 376,
+    "methods": 5222,
+    "methodsOver60": 3,
+    "methodsOver80": 0,
+    "methodsOver100": 0,
+    "methodsWith7PlusParams": 14,
+    "classes": 585,
+    "classesOver500Loc": 11,
+    "classesWithCtor7Plus": 1
+   },
+   "methods": [
+    {
+     "key": "tests/Agent42.Tests/FakeChatClient.cs::Agent42.Tests.FakeChatClient.StreamCoreAsync(IEnumerable<ChatMessage>,ChatOptions?,CancellationToken)",
+     "file": "tests/Agent42.Tests/FakeChatClient.cs",
+     "name": "Agent42.Tests.FakeChatClient.StreamCoreAsync",
+     "line": 294,
+     "loc": 67,
+     "span": 98,
+     "params": 3
+    },
+    {
+     "key": "tests/Agent42.Tests/LocalBridgeTestSupport.cs::Agent42.Tests.FakeBridgeHelper.HandleAsync(JsonObject)",
+     "file": "tests/Agent42.Tests/LocalBridgeTestSupport.cs",
+     "name": "Agent42.Tests.FakeBridgeHelper.HandleAsync",
+     "line": 165,
+     "loc": 66,
+     "span": 73,
+     "params": 1
+    },
+    {
+     "key": "tests/Agent42.Tests/LocalBridgeLiveTests.cs::Agent42.Tests.LocalBridgeLiveTests.RealNeo_ListsReadsGatesAndRevokes()",
+     "file": "tests/Agent42.Tests/LocalBridgeLiveTests.cs",
+     "name": "Agent42.Tests.LocalBridgeLiveTests.RealNeo_ListsReadsGatesAndRevokes",
+     "line": 38,
+     "loc": 66,
+     "span": 83,
+     "params": 0
+    },
+    {
+     "key": "tests/Agent42.Tests/TestSiloConfigurator.cs::Agent42.Tests.TestSiloConfigurator.Configure(ISiloBuilder)",
+     "file": "tests/Agent42.Tests/TestSiloConfigurator.cs",
+     "name": "Agent42.Tests.TestSiloConfigurator.Configure",
+     "line": 55,
+     "loc": 50,
+     "span": 97,
+     "params": 1
+    },
+    {
+     "key": "tests/Agent42.Tests/ToolSelectionApiTests.cs::Agent42.Tests.ToolSelectionApiTests.Agent_RoundTripsEnabledTools()",
+     "file": "tests/Agent42.Tests/ToolSelectionApiTests.cs",
+     "name": "Agent42.Tests.ToolSelectionApiTests.Agent_RoundTripsEnabledTools",
+     "line": 220,
+     "loc": 50,
+     "span": 58,
+     "params": 0
+    },
+    {
+     "key": "tests/Agent42.Tests/LiveModelChatTests.cs::Agent42.Tests.LiveModelChatTests.RealModel_DescribesAnUploadedImage()",
+     "file": "tests/Agent42.Tests/LiveModelChatTests.cs",
+     "name": "Agent42.Tests.LiveModelChatTests.RealModel_DescribesAnUploadedImage",
+     "line": 163,
+     "loc": 49,
+     "span": 56,
+     "params": 0
+    },
+    {
+     "key": "tests/Agent42.Tests/EntraAuthTests.cs::Agent42.Tests.EntraAuthTests.BuildAsync(string?)",
+     "file": "tests/Agent42.Tests/EntraAuthTests.cs",
+     "name": "Agent42.Tests.EntraAuthTests.BuildAsync",
+     "line": 32,
+     "loc": 48,
+     "span": 54,
+     "params": 1
+    },
+    {
+     "key": "tests/Agent42.Tests/ClientToolApiTests.cs::Agent42.Tests.ClientToolApiTests.AdvertisedMcpElicitation_IsKept_AndTheAnswerIs204ThenLateIs404()",
+     "file": "tests/Agent42.Tests/ClientToolApiTests.cs",
+     "name": "Agent42.Tests.ClientToolApiTests.AdvertisedMcpElicitation_IsKept_AndTheAnswerIs204ThenLateIs404",
+     "line": 195,
+     "loc": 47,
+     "span": 50,
+     "params": 0
+    },
+    {
+     "key": "tests/Agent42.Tests/LocalBridgeEndpointTests.cs::Agent42.Tests.LocalBridgeEndpointTests.Endpoint_FailsClosed(string)",
+     "file": "tests/Agent42.Tests/LocalBridgeEndpointTests.cs",
+     "name": "Agent42.Tests.LocalBridgeEndpointTests.Endpoint_FailsClosed",
+     "line": 60,
+     "loc": 46,
+     "span": 51,
+     "params": 1
+    },
+    {
+     "key": "tests/Agent42.Tests/ChatStreamDisconnectTests.cs::Agent42.Tests.ChatStreamDisconnectTests.ClientDisconnectsDuringAClientToolWait_ResultStillResumesAndPersists()",
+     "file": "tests/Agent42.Tests/ChatStreamDisconnectTests.cs",
+     "name": "Agent42.Tests.ChatStreamDisconnectTests.ClientDisconnectsDuringAClientToolWait_ResultStillResumesAndPersists",
+     "line": 153,
+     "loc": 45,
+     "span": 54,
+     "params": 0
+    },
+    {
+     "key": "tests/Agent42.Tests/LiveMetricExporterTests.cs::Agent42.Tests.LiveMetricExporterTests.MetricExporter_HandlesEveryMetricType()",
+     "file": "tests/Agent42.Tests/LiveMetricExporterTests.cs",
+     "name": "Agent42.Tests.LiveMetricExporterTests.MetricExporter_HandlesEveryMetricType",
+     "line": 31,
+     "loc": 45,
+     "span": 65,
+     "params": 0
+    },
+    {
+     "key": "tests/Agent42.Tests/AuthEndpointTests.cs::Agent42.Tests.AuthEndpointTests.BuildAsync()",
+     "file": "tests/Agent42.Tests/AuthEndpointTests.cs",
+     "name": "Agent42.Tests.AuthEndpointTests.BuildAsync",
+     "line": 24,
+     "loc": 44,
+     "span": 47,
+     "params": 0
+    },
+    {
+     "key": "tests/Agent42.Tests/McpServersApiTests.cs::Agent42.Tests.McpServersApiTests.ClientCredentials_Validation_RejectsMissingFields()",
+     "file": "tests/Agent42.Tests/McpServersApiTests.cs",
+     "name": "Agent42.Tests.McpServersApiTests.ClientCredentials_Validation_RejectsMissingFields",
+     "line": 176,
+     "loc": 43,
+     "span": 49,
+     "params": 0
+    },
+    {
+     "key": "tests/Agent42.Tests/ProvidersApiTests.cs::Agent42.Tests.ProvidersApiTests.Providers_AcceptTranscriptionModel_AndDefaultRoundTrips()",
+     "file": "tests/Agent42.Tests/ProvidersApiTests.cs",
+     "name": "Agent42.Tests.ProvidersApiTests.Providers_AcceptTranscriptionModel_AndDefaultRoundTrips",
+     "line": 419,
+     "loc": 43,
+     "span": 49,
+     "params": 0
+    },
+    {
+     "key": "tests/Agent42.Tests/FakeChatClient.cs::Agent42.Tests.FakeChatClient.SelectToolCall(IEnumerable<ChatMessage>,ChatOptions?)",
+     "file": "tests/Agent42.Tests/FakeChatClient.cs",
+     "name": "Agent42.Tests.FakeChatClient.SelectToolCall",
+     "line": 949,
+     "loc": 42,
+     "span": 77,
+     "params": 2
+    },
+    {
+     "key": "tests/Agent42.Tests/TestHttpServer.cs::Agent42.Tests.TestHttpServer.ServeAsync(TcpClient,Func<string,HttpReply>)",
+     "file": "tests/Agent42.Tests/TestHttpServer.cs",
+     "name": "Agent42.Tests.TestHttpServer.ServeAsync",
+     "line": 68,
+     "loc": 41,
+     "span": 50,
+     "params": 2
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetTaskServiceTests.cs::Agent42.Tests.FleetTaskServiceTests.Subscribe_ReplaysThenLive_ExactlyOnce()",
+     "file": "tests/Agent42.Tests/FleetTaskServiceTests.cs",
+     "name": "Agent42.Tests.FleetTaskServiceTests.Subscribe_ReplaysThenLive_ExactlyOnce",
+     "line": 1008,
+     "loc": 41,
+     "span": 48,
+     "params": 0
+    },
+    {
+     "key": "tests/Agent42.Tests/FakeChatClient.cs::Agent42.Tests.FakeChatClient.TryChainedToolCall(IReadOnlyList<ChatMessage>,int,HashSet<string>,ChatOptions?,string,out FunctionCallContent?)",
+     "file": "tests/Agent42.Tests/FakeChatClient.cs",
+     "name": "Agent42.Tests.FakeChatClient.TryChainedToolCall",
+     "line": 1036,
+     "loc": 37,
+     "span": 56,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetTestDoubles.cs::Agent42.Tests.FleetRunHarness.FleetRunHarness(FleetOptions?,long,IReadOnlyList<AIFunction>?,bool,IChatClient?,IReadOnlyList<FleetLesson>?,Func<IReadOnlyList<FleetLesson>,Task>?,params string)",
+     "file": "tests/Agent42.Tests/FleetTestDoubles.cs",
+     "name": "Agent42.Tests.FleetRunHarness.FleetRunHarness",
+     "line": 57,
+     "loc": 36,
+     "span": 36,
+     "params": 8
+    },
+    {
+     "key": "tests/Agent42.Tests/EmailApiTests.cs::Agent42.Tests.EmailApiTests.PostEmailAsync(string,string,string,string?,string?,string?,string?,(byte Bytes,string ContentType,string FileName) ?)",
+     "file": "tests/Agent42.Tests/EmailApiTests.cs",
+     "name": "Agent42.Tests.EmailApiTests.PostEmailAsync",
+     "line": 234,
+     "loc": 35,
+     "span": 39,
+     "params": 8
+    },
+    {
+     "key": "tests/Agent42.Tests/ChatTurnPipelineTests.cs::Agent42.Tests.ChatTurnPipelineTests.CreateAsync(string?,bool,TimeSpan?,string?,TimeSpan?,bool,ISpeechTranscriptionService?,IUserModelRouterProvider?)",
+     "file": "tests/Agent42.Tests/ChatTurnPipelineTests.cs",
+     "name": "Agent42.Tests.ChatTurnPipelineTests.CreateAsync",
+     "line": 651,
+     "loc": 29,
+     "span": 30,
+     "params": 8
+    },
+    {
+     "key": "tests/Agent42.Tests/AgentGrainTests.cs::Agent42.Tests.AgentGrainTests.InstallSkillAsync(string,string,string,string?,params (string Path,string Content))",
+     "file": "tests/Agent42.Tests/AgentGrainTests.cs",
+     "name": "Agent42.Tests.AgentGrainTests.InstallSkillAsync",
+     "line": 2438,
+     "loc": 27,
+     "span": 29,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetAnalyzerTests.cs::Agent42.Tests.FleetAnalyzerTests.SeedAsync(string,string,string?,string,string,IReadOnlyList<string>?,long,params string)",
+     "file": "tests/Agent42.Tests/FleetAnalyzerTests.cs",
+     "name": "Agent42.Tests.FleetAnalyzerTests.SeedAsync",
+     "line": 46,
+     "loc": 24,
+     "span": 25,
+     "params": 8
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetTaskServiceTests.cs::Agent42.Tests.FleetTaskServiceTests.Service(FleetOptions?,FleetToolCatalog?,IChatClient?,IDocumentIndex?,IEmbeddingGenerator<string,Embedding<float>>?,IFleetCompletionNotifier?,FleetStore?,bool)",
+     "file": "tests/Agent42.Tests/FleetTaskServiceTests.cs",
+     "name": "Agent42.Tests.FleetTaskServiceTests.Service",
+     "line": 31,
+     "loc": 23,
+     "span": 23,
+     "params": 8
+    },
+    {
+     "key": "tests/Agent42.Tests/ChatDeliveryTests.cs::Agent42.Tests.ChatDeliveryTests.ConnectAsync(string,ChatSessionRegistry,bool,string?,bool,bool)",
+     "file": "tests/Agent42.Tests/ChatDeliveryTests.cs",
+     "name": "Agent42.Tests.ChatDeliveryTests.ConnectAsync",
+     "line": 307,
+     "loc": 23,
+     "span": 25,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/ConversationEditForkApiTests.cs::Agent42.Tests.ConversationEditForkApiTests.ChatAsync(string,string,string,bool,int?,string?,bool,string ?,string?)",
+     "file": "tests/Agent42.Tests/ConversationEditForkApiTests.cs",
+     "name": "Agent42.Tests.ConversationEditForkApiTests.ChatAsync",
+     "line": 184,
+     "loc": 22,
+     "span": 22,
+     "params": 9
+    },
+    {
+     "key": "tests/Agent42.Tests/FakeChatClient.cs::Agent42.Tests.FakeChatClient.TryScriptedSequenceCall(IReadOnlyList<ChatMessage>,int,ChatOptions?,string,out FunctionCallContent?)",
+     "file": "tests/Agent42.Tests/FakeChatClient.cs",
+     "name": "Agent42.Tests.FakeChatClient.TryScriptedSequenceCall",
+     "line": 1125,
+     "loc": 19,
+     "span": 21,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetCanvasTests.cs::Agent42.Tests.FleetCanvasTests.Write_Limits_Refused(string,string,string?,int,string)",
+     "file": "tests/Agent42.Tests/FleetCanvasTests.cs",
+     "name": "Agent42.Tests.FleetCanvasTests.Write_Limits_Refused",
+     "line": 132,
+     "loc": 18,
+     "span": 20,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/ChatGatewayFakes.cs::Agent42.Tests.FakeChatSession.RecordAsync(string,ChatTarget,string,ChatTextFormat,string?,CancellationToken)",
+     "file": "tests/Agent42.Tests/ChatGatewayFakes.cs",
+     "name": "Agent42.Tests.FakeChatSession.RecordAsync",
+     "line": 172,
+     "loc": 16,
+     "span": 18,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/LocalBridgeHelperTests.cs::Agent42.Tests.LocalBridgeHelperTests.NewClient(Uri,List<TimeSpan>,int,CancellationTokenSource?,string)",
+     "file": "tests/Agent42.Tests/LocalBridgeHelperTests.cs",
+     "name": "Agent42.Tests.LocalBridgeHelperTests.NewClient",
+     "line": 391,
+     "loc": 15,
+     "span": 16,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetSkillProposalServiceTests.cs::Agent42.Tests.FleetSkillProposalServiceTests.Pending(string,string,string,string?,string,string?)",
+     "file": "tests/Agent42.Tests/FleetSkillProposalServiceTests.cs",
+     "name": "Agent42.Tests.FleetSkillProposalServiceTests.Pending",
+     "line": 127,
+     "loc": 14,
+     "span": 14,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/ConversationEditForkApiTests.cs::Agent42.Tests.ConversationEditForkApiTests.ForkAsync(string,string,int,int,string)",
+     "file": "tests/Agent42.Tests/ConversationEditForkApiTests.cs",
+     "name": "Agent42.Tests.ConversationEditForkApiTests.ForkAsync",
+     "line": 207,
+     "loc": 14,
+     "span": 14,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FakeFleetLauncher.cs::Agent42.Tests.FakeFleetLauncher.RerunAsync(string,string,string?,IReadOnlyList<string>?,long?,CancellationToken)",
+     "file": "tests/Agent42.Tests/FakeFleetLauncher.cs",
+     "name": "Agent42.Tests.FakeFleetLauncher.RerunAsync",
+     "line": 109,
+     "loc": 13,
+     "span": 14,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetDigestTests.cs::Agent42.Tests.FleetDigestTests.Task(string,string,string?,string,int)",
+     "file": "tests/Agent42.Tests/FleetDigestTests.cs",
+     "name": "Agent42.Tests.FleetDigestTests.Task",
+     "line": 16,
+     "loc": 13,
+     "span": 13,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs::Agent42.Tests.FleetCopilotAgentFactoryTests.Factory(FleetCopilotHost,IChatClientFactory?,string?,IReadOnlyList<AIFunction>?,IReadOnlyList<SkillInfo>?)",
+     "file": "tests/Agent42.Tests/FleetCopilotAgentFactoryTests.cs",
+     "name": "Agent42.Tests.FleetCopilotAgentFactoryTests.Factory",
+     "line": 37,
+     "loc": 12,
+     "span": 12,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/ConversationExportApiTests.cs::Agent42.Tests.ConversationExportApiTests.Chat(string,string,string,IReadOnlyList<string>?,bool)",
+     "file": "tests/Agent42.Tests/ConversationExportApiTests.cs",
+     "name": "Agent42.Tests.ConversationExportApiTests.Chat",
+     "line": 31,
+     "loc": 11,
+     "span": 11,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/McpAppsApiTests.cs::Agent42.Tests.StubMcpAppRegistry.CallToolAsync(string,string,string,JsonElement?,CancellationToken)",
+     "file": "tests/Agent42.Tests/McpAppsApiTests.cs",
+     "name": "Agent42.Tests.StubMcpAppRegistry.CallToolAsync",
+     "line": 44,
+     "loc": 11,
+     "span": 11,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetCanvasTests.cs::Agent42.Tests.FleetCanvasTests.WriteAsync(string,string,int,string,string?,string?)",
+     "file": "tests/Agent42.Tests/FleetCanvasTests.cs",
+     "name": "Agent42.Tests.FleetCanvasTests.WriteAsync",
+     "line": 34,
+     "loc": 10,
+     "span": 10,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetStoreTests.cs::Agent42.Tests.FleetStoreTests.Task(string,string,string,DateTimeOffset,string?)",
+     "file": "tests/Agent42.Tests/FleetStoreTests.cs",
+     "name": "Agent42.Tests.FleetStoreTests.Task",
+     "line": 17,
+     "loc": 10,
+     "span": 10,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/GoogleGeocoderTests.cs::Agent42.Tests.GoogleGeocoderTests.RecordingLogger.Log(LogLevel,EventId,TState,Exception?,Func<TState,Exception?,string>)",
+     "file": "tests/Agent42.Tests/GoogleGeocoderTests.cs",
+     "name": "Agent42.Tests.GoogleGeocoderTests.RecordingLogger.Log",
+     "line": 213,
+     "loc": 10,
+     "span": 10,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/ChatTurnPipelineTests.cs::Agent42.Tests.ChatTurnPipelineTests.PairedAsync(string?,bool,TimeSpan?,string?,TimeSpan?,bool,ISpeechTranscriptionService?,IUserModelRouterProvider?)",
+     "file": "tests/Agent42.Tests/ChatTurnPipelineTests.cs",
+     "name": "Agent42.Tests.ChatTurnPipelineTests.PairedAsync",
+     "line": 682,
+     "loc": 9,
+     "span": 9,
+     "params": 8
+    },
+    {
+     "key": "tests/Agent42.Tests/EditRegenerateForkTests.cs::Agent42.Tests.EditRegenerateForkTests.ForkAsync(IAgentGrain,int,int,string,string)",
+     "file": "tests/Agent42.Tests/EditRegenerateForkTests.cs",
+     "name": "Agent42.Tests.EditRegenerateForkTests.ForkAsync",
+     "line": 596,
+     "loc": 9,
+     "span": 9,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/TestChatSearchIndex.cs::Agent42.Tests.TestChatSearchIndex.GetTurnsAsync(string,string,int,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/TestChatSearchIndex.cs",
+     "name": "Agent42.Tests.TestChatSearchIndex.GetTurnsAsync",
+     "line": 60,
+     "loc": 9,
+     "span": 9,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FakeFleetLauncher.cs::Agent42.Tests.FakeFleetLauncher.StartAsync(string,string,string,string?,string?,CancellationToken)",
+     "file": "tests/Agent42.Tests/FakeFleetLauncher.cs",
+     "name": "Agent42.Tests.FakeFleetLauncher.StartAsync",
+     "line": 71,
+     "loc": 8,
+     "span": 8,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/EditRegenerateForkTests.cs::Agent42.Tests.EditRegenerateForkTests.ChatAsync(IAgentGrain,string,IReadOnlyList<AttachmentRef>?,string?,bool)",
+     "file": "tests/Agent42.Tests/EditRegenerateForkTests.cs",
+     "name": "Agent42.Tests.EditRegenerateForkTests.ChatAsync",
+     "line": 587,
+     "loc": 8,
+     "span": 8,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetLessonTestSupport.cs::Agent42.Tests.ScriptedDreamClient.ProposeSkill(string,string,string?,string?,string,string,params string)",
+     "file": "tests/Agent42.Tests/FleetLessonTestSupport.cs",
+     "name": "Agent42.Tests.ScriptedDreamClient.ProposeSkill",
+     "line": 77,
+     "loc": 7,
+     "span": 7,
+     "params": 7
+    },
+    {
+     "key": "tests/Agent42.Tests/AuthConfigHealthTests.cs::Agent42.Tests.AuthConfigHealthTests.ListLogger.Log(LogLevel,EventId,TState,Exception?,Func<TState,Exception?,string>)",
+     "file": "tests/Agent42.Tests/AuthConfigHealthTests.cs",
+     "name": "Agent42.Tests.AuthConfigHealthTests.ListLogger.Log",
+     "line": 99,
+     "loc": 7,
+     "span": 7,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetClarifierTests.cs::Agent42.Tests.FleetClarifierTests.RunAsync(FakeChatClient.FleetScript,FleetOptions?,string ?,string,string?)",
+     "file": "tests/Agent42.Tests/FleetClarifierTests.cs",
+     "name": "Agent42.Tests.FleetClarifierTests.RunAsync",
+     "line": 26,
+     "loc": 7,
+     "span": 7,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetLessonTestSupport.cs::Agent42.Tests.ScriptedDreamClient.ProposePrompt(string,string,string?,string,string,params string)",
+     "file": "tests/Agent42.Tests/FleetLessonTestSupport.cs",
+     "name": "Agent42.Tests.ScriptedDreamClient.ProposePrompt",
+     "line": 69,
+     "loc": 6,
+     "span": 6,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/LiveTelemetryBufferTests.cs::Agent42.Tests.LiveTelemetryBufferTests.Config(int,int,int,long,int)",
+     "file": "tests/Agent42.Tests/LiveTelemetryBufferTests.cs",
+     "name": "Agent42.Tests.LiveTelemetryBufferTests.Config",
+     "line": 15,
+     "loc": 5,
+     "span": 5,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/ThemePaletteTests.cs::Agent42.Tests.ThemePaletteTests.Floor(string,string,string,string,double)",
+     "file": "tests/Agent42.Tests/ThemePaletteTests.cs",
+     "name": "Agent42.Tests.ThemePaletteTests.Floor",
+     "line": 160,
+     "loc": 5,
+     "span": 5,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/WebDocumentProbeSilo.cs::Agent42.Tests.ProbeDocumentIndex.ReadChunksAsync(string,string,int,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/WebDocumentProbeSilo.cs",
+     "name": "Agent42.Tests.ProbeDocumentIndex.ReadChunksAsync",
+     "line": 56,
+     "loc": 5,
+     "span": 5,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/UsageRollupTests.cs::Agent42.Tests.UsageRollupTests.Token(DateTimeOffset,string,string,string,long,long,bool,string,string)",
+     "file": "tests/Agent42.Tests/UsageRollupTests.cs",
+     "name": "Agent42.Tests.UsageRollupTests.Token",
+     "line": 17,
+     "loc": 4,
+     "span": 4,
+     "params": 9
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetPromptProposalsTests.cs::Agent42.Tests.FleetPromptProposalsTests.Stored(string,string,string,string?,string,string,DateTimeOffset?,DateTimeOffset?)",
+     "file": "tests/Agent42.Tests/FleetPromptProposalsTests.cs",
+     "name": "Agent42.Tests.FleetPromptProposalsTests.Stored",
+     "line": 27,
+     "loc": 4,
+     "span": 4,
+     "params": 8
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetSkillProposalsTests.cs::Agent42.Tests.FleetSkillProposalsTests.Stored(string,string,string,string,string?,string,DateTimeOffset?,DateTimeOffset?)",
+     "file": "tests/Agent42.Tests/FleetSkillProposalsTests.cs",
+     "name": "Agent42.Tests.FleetSkillProposalsTests.Stored",
+     "line": 37,
+     "loc": 4,
+     "span": 4,
+     "params": 8
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetPromptProposalsTests.cs::Agent42.Tests.FleetPromptProposalsTests.Draft(string,string,string?,string,string,params string)",
+     "file": "tests/Agent42.Tests/FleetPromptProposalsTests.cs",
+     "name": "Agent42.Tests.FleetPromptProposalsTests.Draft",
+     "line": 19,
+     "loc": 4,
+     "span": 4,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/UsageRollupTests.cs::Agent42.Tests.UsageRollupTests.Tool(DateTimeOffset,string,string,bool,string,string)",
+     "file": "tests/Agent42.Tests/UsageRollupTests.cs",
+     "name": "Agent42.Tests.UsageRollupTests.Tool",
+     "line": 22,
+     "loc": 4,
+     "span": 4,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/ChatSearchProjectionTests.cs::Agent42.Tests.ChatSearchProjectionTests.RecordingIndex.GetTurnsAsync(string,string,int,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/ChatSearchProjectionTests.cs",
+     "name": "Agent42.Tests.ChatSearchProjectionTests.RecordingIndex.GetTurnsAsync",
+     "line": 250,
+     "loc": 4,
+     "span": 4,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetPersonalToolsTests.cs::Agent42.Tests.FleetPersonalToolsTests.Catalog(IGrainFactory?,HindsightIntegration?,IChatSearchIndex?,IPushNotificationSender?,ILogger<FleetToolCatalog>?)",
+     "file": "tests/Agent42.Tests/FleetPersonalToolsTests.cs",
+     "name": "Agent42.Tests.FleetPersonalToolsTests.Catalog",
+     "line": 17,
+     "loc": 4,
+     "span": 4,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetSkillProposalsTests.cs::Agent42.Tests.FleetSkillProposalsTests.Edit(string,string,string?,string,params string)",
+     "file": "tests/Agent42.Tests/FleetSkillProposalsTests.cs",
+     "name": "Agent42.Tests.FleetSkillProposalsTests.Edit",
+     "line": 23,
+     "loc": 4,
+     "span": 4,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetLessonApiTests.cs::Agent42.Tests.FleetLessonApiTests.SkillProposal(string,string,string,string?,string,string?,string)",
+     "file": "tests/Agent42.Tests/FleetLessonApiTests.cs",
+     "name": "Agent42.Tests.FleetLessonApiTests.SkillProposal",
+     "line": 357,
+     "loc": 3,
+     "span": 3,
+     "params": 7
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetLessonApiTests.cs::Agent42.Tests.FleetLessonApiTests.Proposal(string,string,string,string?,string,string)",
+     "file": "tests/Agent42.Tests/FleetLessonApiTests.cs",
+     "name": "Agent42.Tests.FleetLessonApiTests.Proposal",
+     "line": 288,
+     "loc": 3,
+     "span": 3,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetLessonServiceTests.cs::Agent42.Tests.FleetLessonServiceTests.Pending(string,string,string,string?,string,DateTimeOffset?)",
+     "file": "tests/Agent42.Tests/FleetLessonServiceTests.cs",
+     "name": "Agent42.Tests.FleetLessonServiceTests.Pending",
+     "line": 605,
+     "loc": 3,
+     "span": 3,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/AttachmentRehydrateTests.cs::Agent42.Tests.CountingAttachmentStore.SaveAsync(string,string,string,byte,CancellationToken)",
+     "file": "tests/Agent42.Tests/AttachmentRehydrateTests.cs",
+     "name": "Agent42.Tests.CountingAttachmentStore.SaveAsync",
+     "line": 17,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/ChatGatewayFakes.cs::Agent42.Tests.FakeChatSession.EditAsync(ChatTarget,string,string,ChatTextFormat,CancellationToken)",
+     "file": "tests/Agent42.Tests/ChatGatewayFakes.cs",
+     "name": "Agent42.Tests.FakeChatSession.EditAsync",
+     "line": 112,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/ChatGatewayFakes.cs::Agent42.Tests.FakeChatSession.UploadImageAsync(ChatTarget,byte,string,string,CancellationToken)",
+     "file": "tests/Agent42.Tests/ChatGatewayFakes.cs",
+     "name": "Agent42.Tests.FakeChatSession.UploadImageAsync",
+     "line": 122,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/DocumentIngestionServiceTests.cs::Agent42.Tests.DocumentIngestionServiceTests.FakeIndex.ReadChunksAsync(string,string,int,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/DocumentIngestionServiceTests.cs",
+     "name": "Agent42.Tests.DocumentIngestionServiceTests.FakeIndex.ReadChunksAsync",
+     "line": 239,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/LiveModelChatTests.cs::Agent42.Tests.DataUrlAttachmentStore.SaveAsync(string,string,string,byte,CancellationToken)",
+     "file": "tests/Agent42.Tests/LiveModelChatTests.cs",
+     "name": "Agent42.Tests.DataUrlAttachmentStore.SaveAsync",
+     "line": 86,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/LocalModeWarningTests.cs::Agent42.Tests.LocalModeWarningTests.CollectingLogger.Log(LogLevel,EventId,TState,Exception?,Func<TState,Exception?,string>)",
+     "file": "tests/Agent42.Tests/LocalModeWarningTests.cs",
+     "name": "Agent42.Tests.LocalModeWarningTests.CollectingLogger.Log",
+     "line": 19,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/RecordingHttpHandler.cs::Agent42.Tests.RecordingHttpHandler.Call(string,string,string,string?,IReadOnlyDictionary<string,string>?)",
+     "file": "tests/Agent42.Tests/RecordingHttpHandler.cs",
+     "name": "Agent42.Tests.RecordingHttpHandler.Call",
+     "line": 24,
+     "loc": 3,
+     "span": 3,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/UsageRollupTests.cs::Agent42.Tests.UsageRollupTests.Priced(DateTimeOffset,string,string,long,long,long,string)",
+     "file": "tests/Agent42.Tests/UsageRollupTests.cs",
+     "name": "Agent42.Tests.UsageRollupTests.Priced",
+     "line": 197,
+     "loc": 2,
+     "span": 2,
+     "params": 7
+    },
+    {
+     "key": "tests/Agent42.Tests/FakeFleetLauncher.cs::Agent42.Tests.FakeFleetLauncher.ReadEventsAsync(string,string,string?,long,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/FakeFleetLauncher.cs",
+     "name": "Agent42.Tests.FakeFleetLauncher.ReadEventsAsync",
+     "line": 95,
+     "loc": 2,
+     "span": 2,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/ChatTurnPipelineTests.cs::Agent42.Tests.ChatTurnPipelineTests.Harness(ChatTurnPipeline,FakeChatSession,ChatSessionRegistry,string,string)",
+     "file": "tests/Agent42.Tests/ChatTurnPipelineTests.cs",
+     "name": "Agent42.Tests.ChatTurnPipelineTests.Harness",
+     "line": 648,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetLessonsTests.cs::Agent42.Tests.FleetLessonsTests.Lesson(string,string,string,DateTimeOffset?,DateTimeOffset?)",
+     "file": "tests/Agent42.Tests/FleetLessonsTests.cs",
+     "name": "Agent42.Tests.FleetLessonsTests.Lesson",
+     "line": 19,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetPersonalToolsTests.cs::Agent42.Tests.FleetPersonalToolsTests.CapturingLogger.Log(LogLevel,EventId,TState,Exception?,Func<TState,Exception?,string>)",
+     "file": "tests/Agent42.Tests/FleetPersonalToolsTests.cs",
+     "name": "Agent42.Tests.FleetPersonalToolsTests.CapturingLogger.Log",
+     "line": 208,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetTaskServiceTests.cs::Agent42.Tests.FleetTaskServiceTests.FailingIndex.ReadChunksAsync(string,string,int,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/FleetTaskServiceTests.cs",
+     "name": "Agent42.Tests.FleetTaskServiceTests.FailingIndex.ReadChunksAsync",
+     "line": 1298,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetTaskServiceTests.cs::Agent42.Tests.FleetTaskServiceTests.OrderedDeleteIndex.ReadChunksAsync(string,string,int,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/FleetTaskServiceTests.cs",
+     "name": "Agent42.Tests.FleetTaskServiceTests.OrderedDeleteIndex.ReadChunksAsync",
+     "line": 1333,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/SignalAdapterTests.cs::Agent42.Tests.SignalAdapterTests.CapturingLoggerProvider.Capturing.Log(LogLevel,EventId,TState,Exception?,Func<TState,Exception?,string>)",
+     "file": "tests/Agent42.Tests/SignalAdapterTests.cs",
+     "name": "Agent42.Tests.SignalAdapterTests.CapturingLoggerProvider.Capturing.Log",
+     "line": 256,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/SignalDaemonTests.cs::Agent42.Tests.SignalDaemonTests.CapturingLogger.Log(LogLevel,EventId,TState,Exception?,Func<TState,Exception?,string>)",
+     "file": "tests/Agent42.Tests/SignalDaemonTests.cs",
+     "name": "Agent42.Tests.SignalDaemonTests.CapturingLogger.Log",
+     "line": 436,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/TelegramTests.cs::Agent42.Tests.CapturingLoggerProvider.Logger.Log(LogLevel,EventId,TState,Exception?,Func<TState,Exception?,string>)",
+     "file": "tests/Agent42.Tests/TelegramTests.cs",
+     "name": "Agent42.Tests.CapturingLoggerProvider.Logger.Log",
+     "line": 432,
+     "loc": 2,
+     "span": 2,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/ConversationExportApiTests.cs::Agent42.Tests.ConversationExportApiTests.Part(IReadOnlyList<string>,int,int,int,string?,JsonElement,ZipArchive)",
+     "file": "tests/Agent42.Tests/ConversationExportApiTests.cs",
+     "name": "Agent42.Tests.ConversationExportApiTests.Part",
+     "line": 253,
+     "loc": 1,
+     "span": 1,
+     "params": 7
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetLessonServiceTests.cs::Agent42.Tests.FleetLessonServiceTests.StaleFirstLessonRead.PutCanvasVersionAsync(string,string,string,int,byte,CancellationToken)",
+     "file": "tests/Agent42.Tests/FleetLessonServiceTests.cs",
+     "name": "Agent42.Tests.FleetLessonServiceTests.StaleFirstLessonRead.PutCanvasVersionAsync",
+     "line": 776,
+     "loc": 1,
+     "span": 1,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetReviewFixTests.cs::Agent42.Tests.FleetReviewFixTests.StaleFirstReadStore.PutCanvasVersionAsync(string,string,string,int,byte,CancellationToken)",
+     "file": "tests/Agent42.Tests/FleetReviewFixTests.cs",
+     "name": "Agent42.Tests.FleetReviewFixTests.StaleFirstReadStore.PutCanvasVersionAsync",
+     "line": 141,
+     "loc": 1,
+     "span": 1,
+     "params": 6
+    },
+    {
+     "key": "tests/Agent42.Tests/FakeFleetLauncher.cs::Agent42.Tests.FakeFleetLauncher.Rerun(string,string,string?,IReadOnlyList<string>?,long?)",
+     "file": "tests/Agent42.Tests/FakeFleetLauncher.cs",
+     "name": "Agent42.Tests.FakeFleetLauncher.Rerun",
+     "line": 30,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FakeFleetLauncher.cs::Agent42.Tests.FakeFleetLauncher.Start(string,string,string,string?,string?)",
+     "file": "tests/Agent42.Tests/FakeFleetLauncher.cs",
+     "name": "Agent42.Tests.FakeFleetLauncher.Start",
+     "line": 15,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetLessonServiceTests.cs::Agent42.Tests.FleetLessonServiceTests.StaleFirstLessonRead.DeleteCanvasVersionAsync(string,string,string,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/FleetLessonServiceTests.cs",
+     "name": "Agent42.Tests.FleetLessonServiceTests.StaleFirstLessonRead.DeleteCanvasVersionAsync",
+     "line": 778,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetLessonServiceTests.cs::Agent42.Tests.FleetLessonServiceTests.StaleFirstLessonRead.GetCanvasVersionAsync(string,string,string,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/FleetLessonServiceTests.cs",
+     "name": "Agent42.Tests.FleetLessonServiceTests.StaleFirstLessonRead.GetCanvasVersionAsync",
+     "line": 777,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetLessonServiceTests.cs::Agent42.Tests.FleetLessonServiceTests.StaleFirstLessonRead.PutWorkspaceFileAsync(string,string,string,byte,CancellationToken)",
+     "file": "tests/Agent42.Tests/FleetLessonServiceTests.cs",
+     "name": "Agent42.Tests.FleetLessonServiceTests.StaleFirstLessonRead.PutWorkspaceFileAsync",
+     "line": 769,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetPersonalToolsTests.cs::Agent42.Tests.FleetPersonalToolsTests.PastChatWorld(FakeUserGrainFactory,InMemoryChatSearchIndex,string,string,string)",
+     "file": "tests/Agent42.Tests/FleetPersonalToolsTests.cs",
+     "name": "Agent42.Tests.FleetPersonalToolsTests.PastChatWorld",
+     "line": 73,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetReviewFixTests.cs::Agent42.Tests.FleetReviewFixTests.StaleFirstReadStore.DeleteCanvasVersionAsync(string,string,string,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/FleetReviewFixTests.cs",
+     "name": "Agent42.Tests.FleetReviewFixTests.StaleFirstReadStore.DeleteCanvasVersionAsync",
+     "line": 143,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetReviewFixTests.cs::Agent42.Tests.FleetReviewFixTests.StaleFirstReadStore.GetCanvasVersionAsync(string,string,string,int,CancellationToken)",
+     "file": "tests/Agent42.Tests/FleetReviewFixTests.cs",
+     "name": "Agent42.Tests.FleetReviewFixTests.StaleFirstReadStore.GetCanvasVersionAsync",
+     "line": 142,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/FleetReviewFixTests.cs::Agent42.Tests.FleetReviewFixTests.StaleFirstReadStore.PutWorkspaceFileAsync(string,string,string,byte,CancellationToken)",
+     "file": "tests/Agent42.Tests/FleetReviewFixTests.cs",
+     "name": "Agent42.Tests.FleetReviewFixTests.StaleFirstReadStore.PutWorkspaceFileAsync",
+     "line": 134,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    },
+    {
+     "key": "tests/Agent42.Tests/LocalBridgeHelperTests.cs::Agent42.Tests.LocalBridgeHelperTests.StubServer.Recorded(string,string,string?,string?,string?)",
+     "file": "tests/Agent42.Tests/LocalBridgeHelperTests.cs",
+     "name": "Agent42.Tests.LocalBridgeHelperTests.StubServer.Recorded",
+     "line": 550,
+     "loc": 1,
+     "span": 1,
+     "params": 5
+    }
+   ],
+   "classes": [
+    {
+     "key": "Agent42.Tests.AgentGrainTests",
+     "files": [
+      "tests/Agent42.Tests/AgentGrainTests.cs"
+     ],
+     "loc": 2800,
+     "span": 4585,
+     "ctorParams": 1,
+     "members": 232
+    },
+    {
+     "key": "Agent42.Tests.AgentApiTests",
+     "files": [
+      "tests/Agent42.Tests/AgentApiTests.cs"
+     ],
+     "loc": 1103,
+     "span": 1549,
+     "ctorParams": 1,
+     "members": 82
+    },
+    {
+     "key": "Agent42.Tests.FleetTaskServiceTests",
+     "files": [
+      "tests/Agent42.Tests/FleetTaskServiceTests.cs"
+     ],
+     "loc": 1092,
+     "span": 1408,
+     "ctorParams": 0,
+     "members": 84
+    },
+    {
+     "key": "Agent42.Tests.FakeChatClient",
+     "files": [
+      "tests/Agent42.Tests/FakeChatClient.Fleet.cs",
+      "tests/Agent42.Tests/FakeChatClient.Research.cs",
+      "tests/Agent42.Tests/FakeChatClient.cs"
+     ],
+     "loc": 967,
+     "span": 1646,
+     "ctorParams": 0,
+     "members": 131
+    },
+    {
+     "key": "Agent42.Tests.GrainStorageSerializerTests",
+     "files": [
+      "tests/Agent42.Tests/GrainStorageSerializerTests.cs"
+     ],
+     "loc": 787,
+     "span": 1184,
+     "ctorParams": 1,
+     "members": 65
+    },
+    {
+     "key": "Agent42.Tests.ProjectLayoutTests",
+     "files": [
+      "tests/Agent42.Tests/ProjectLayoutTests.cs"
+     ],
+     "loc": 636,
+     "span": 954,
+     "ctorParams": 0,
+     "members": 42
+    },
+    {
+     "key": "Agent42.Tests.FleetLessonServiceTests",
+     "files": [
+      "tests/Agent42.Tests/FleetLessonServiceTests.cs"
+     ],
+     "loc": 623,
+     "span": 787,
+     "ctorParams": 0,
+     "members": 56
+    },
+    {
+     "key": "Agent42.Tests.ModelProviderTests",
+     "files": [
+      "tests/Agent42.Tests/ModelProviderTests.cs"
+     ],
+     "loc": 592,
+     "span": 830,
+     "ctorParams": 0,
+     "members": 50
+    },
+    {
+     "key": "Agent42.Tests.ChatTurnPipelineTests",
+     "files": [
+      "tests/Agent42.Tests/ChatTurnPipelineTests.cs"
+     ],
+     "loc": 566,
+     "span": 733,
+     "ctorParams": 1,
+     "members": 60
+    },
+    {
+     "key": "Agent42.Tests.AgentRegistryGrainTests",
+     "files": [
+      "tests/Agent42.Tests/AgentRegistryGrainTests.cs"
+     ],
+     "loc": 520,
+     "span": 695,
+     "ctorParams": 1,
+     "members": 45
+    },
+    {
+     "key": "Agent42.Tests.EditRegenerateForkTests",
+     "files": [
+      "tests/Agent42.Tests/EditRegenerateForkTests.cs"
+     ],
+     "loc": 512,
+     "span": 657,
+     "ctorParams": 1,
+     "members": 43
+    },
+    {
+     "key": "Agent42.Tests.ModelRouterGrainTests",
+     "files": [
+      "tests/Agent42.Tests/ModelRouterGrainTests.cs"
+     ],
+     "loc": 487,
+     "span": 625,
+     "ctorParams": 1,
+     "members": 47
+    },
+    {
+     "key": "Agent42.Tests.ProvidersApiTests",
+     "files": [
+      "tests/Agent42.Tests/ProvidersApiTests.cs"
+     ],
+     "loc": 485,
+     "span": 614,
+     "ctorParams": 1,
+     "members": 29
+    },
+    {
+     "key": "Agent42.Tests.AgentMcpServerTests",
+     "files": [
+      "tests/Agent42.Tests/AgentMcpServerTests.cs"
+     ],
+     "loc": 432,
+     "span": 683,
+     "ctorParams": 1,
+     "members": 46
+    },
+    {
+     "key": "Agent42.Tests.LocalBridgeHelperTests",
+     "files": [
+      "tests/Agent42.Tests/LocalBridgeHelperTests.cs"
+     ],
+     "loc": 430,
+     "span": 558,
+     "ctorParams": 0,
+     "members": 22
+    },
+    {
+     "key": "Agent42.Tests.UserMcpToolProviderTests",
+     "files": [
+      "tests/Agent42.Tests/UserMcpToolProviderTests.cs"
+     ],
+     "loc": 416,
+     "span": 580,
+     "ctorParams": 1,
+     "members": 31
+    },
+    {
+     "key": "Agent42.Tests.SignalDaemonTests",
+     "files": [
+      "tests/Agent42.Tests/SignalDaemonTests.cs"
+     ],
+     "loc": 408,
+     "span": 525,
+     "ctorParams": 0,
+     "members": 27
+    },
+    {
+     "key": "Agent42.Tests.FleetApiTests",
+     "files": [
+      "tests/Agent42.Tests/FleetApiTests.cs"
+     ],
+     "loc": 405,
+     "span": 494,
+     "ctorParams": 1,
+     "members": 33
+    },
+    {
+     "key": "Agent42.Tests.FleetRunHarness",
+     "files": [
+      "tests/Agent42.Tests/FleetTestDoubles.cs"
+     ],
+     "loc": 63,
+     "span": 71,
+     "ctorParams": 8,
+     "members": 15
+    },
+    {
+     "key": "Agent42.Tests.FakeChatClient.FleetScript",
+     "files": [
+      "tests/Agent42.Tests/FakeChatClient.Fleet.cs"
+     ],
+     "loc": 30,
+     "span": 55,
+     "ctorParams": 6,
+     "members": 21
+    }
+   ]
+  }
+ }
+}
