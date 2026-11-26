@@ -67,6 +67,7 @@ body {
 }
 
 .viewer__badge {
+  margin-left: auto;
   font-size: 10.5px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -582,3 +583,18 @@ body {
 
 .fleet-files a { color: var(--amber-deep); }
 .fleet-files__size { color: var(--ink-faint); white-space: nowrap; }
+
+.viewer__theme {
+  margin-left: 0;
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  width: 30px;
+  height: 26px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.viewer__theme:hover { opacity: 1; }
