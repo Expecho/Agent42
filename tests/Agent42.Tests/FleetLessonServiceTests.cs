@@ -638,7 +638,7 @@ public class FleetLessonServiceTests
 
         // Nothing at all: the reason accounts for both.
         var idle = await Service(new ScriptedDreamClient(_ => Say("nothing"))).RunManualAsync(User, null, Telemetry);
-        Assert.Equal("The model proposed no lessons or prompt changes.", idle.Run!.Reason);
+        Assert.Equal("The model proposed no lessons, prompt changes or skill changes.", idle.Run!.Reason);
     }
 
     [Fact]

@@ -332,4 +332,22 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Contains("The prompt changed since this was proposed", section, StringComparison.Ordinal);
         Assert.Contains("proposalsBlock(d)", section, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task FleetPage_SkillProposals_AreWired()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+        var start = script.IndexOf("// ---------- lessons (ADR 0124)", StringComparison.Ordinal);
+        var end = script.IndexOf("// ---------- wiring ----------", StringComparison.Ordinal);
+        var section = script[start..end];
+
+        Assert.Contains("function skillProposalCard(", section, StringComparison.Ordinal);
+        Assert.Contains("/api/fleet/lessons/skill-proposals/", section, StringComparison.Ordinal);
+        Assert.Contains("id: \"skillProposals\"", section, StringComparison.Ordinal);
+        Assert.Contains("skillProposalsBlock(d)", section, StringComparison.Ordinal);
+        Assert.Contains("run.skillsProposed", section, StringComparison.Ordinal);
+        Assert.Contains("Approving installs this skill and turns it on", section, StringComparison.Ordinal);
+        Assert.Contains("Approving changes your installed skill", section, StringComparison.Ordinal);
+        Assert.DoesNotContain("innerHTML", section, StringComparison.Ordinal);
+    }
 }

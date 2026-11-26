@@ -260,4 +260,105 @@ public class FleetDreamTests
         Assert.Equal(FleetPromptProposals.MaxPerRun, third.Proposals.Count);
         Assert.Equal(1, third.ProposalsRefused);
     }
+
+    // ---- Skill proposals (ADR 0146) ----
+
+    private static readonly FleetDigestResult WideDigest = new(
+        "<fleet-result>\nTask t1 (workspace w1): done.\n\nTask t2 (workspace w2): done.\n\nTask t3 (workspace w3): done.\n</fleet-result>",
+        new Dictionary<string, string> { ["t1"] = "w1", ["t2"] = "w2", ["t3"] = "w3" }, 3);
+
+    private static readonly FleetSkillSnapshot[] Installed =
+        [new("deploys", "How to deploy.", FleetSkillProposals.BuildMarkdown("deploys", "How to deploy.", "Run the build.\nThen run the tests."))];
+
+    private static Task<FleetDreamOutcome> DreamSkills(ScriptedDreamClient client, IReadOnlyList<FleetSkillSnapshot>? skills = null, IReadOnlyList<FleetSkillProposal>? stored = null)
+        => new FleetDreamer(new FleetOptions(), FleetPromptSet.Defaults, WideDigest, NullLogger.Instance, null, skills ?? Installed, stored).RunAsync(client, Alice, CancellationToken.None);
+
+    [Fact]
+    public async Task Dreamer_ProposeSkillChange_AcceptsValid_RefusesWithReason_CapsPerRun()
+    {
+        var results = new List<string?>();
+        var client = new ScriptedDreamClient(c =>
+        {
+            results.Add(c.LastToolResult);
+            return c.Number switch
+            {
+                1 => ProposeSkill("websearch", "append", null, null, "Be bolder.", Why, "t1", "t2", "t3"),
+                2 => ProposeSkill("deploys", "replace", "Then run the tests.", null, "Then run the tests and the linter.", Why, "t1", "t2", "t3"),
+                3 => ProposeSkill("deploys", "append", null, null, "Another.", Why, "t1", "t2", "t3"),
+                4 => ProposeSkill("release-notes", "create", null, "How to write release notes.", "Group changes by area.", Why, "t1", "t2", "t3"),
+                5 => ProposeSkill("third-one", "create", null, "A third skill.", "Body.", Why, "t1", "t2", "t3"),
+                _ => Say("done"),
+            };
+        });
+
+        var outcome = await DreamSkills(client);
+
+        Assert.Contains("built-in", results[1]);
+        Assert.StartsWith("accepted", results[2]);
+        Assert.Contains("already proposed a change to 'deploys'", results[3]);
+        Assert.StartsWith("accepted", results[4]);
+        Assert.Contains("At most 2 skill changes per run", results[5]);
+        Assert.Equal(["deploys", "release-notes"], outcome.SkillProposals.Select(p => p.SkillName));
+        Assert.Equal(3, outcome.SkillProposalsRefused);
+        Assert.Null(outcome.Reason);
+    }
+
+    [Fact]
+    public async Task ProposeSkillDescription_HoldsTheRules()
+    {
+        var d = FleetDreamer.ProposeSkillDescription;
+        Assert.Contains("at least 3 different tasks", d);
+        Assert.Contains("never a built-in skill", d);
+        Assert.Contains("6000", d);
+        Assert.Contains("16 KiB", d);
+        Assert.Contains("approving a new skill installs it and turns it on", d, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("frontmatter is never yours", d);
+
+        var client = new ScriptedDreamClient(_ => Say("nothing"));
+        await DreamSkills(client);
+        Assert.Contains("propose_skill_change", client.ToolNames);
+    }
+
+    [Fact]
+    public void SkillsBlock_FramesAndCaps()
+    {
+        var big = FleetSkillProposals.BuildMarkdown("big", "Big one.", new string('z', 5_000));
+        var many = Enumerable.Range(0, 10).Select(i => new FleetSkillSnapshot($"s{i}", "d", FleetSkillProposals.BuildMarkdown($"s{i}", "d", new string('y', 2_900)))).ToList();
+        var dreamer = new FleetDreamer(new FleetOptions(), FleetPromptSet.Defaults, WideDigest, NullLogger.Instance, null,
+            [.. many, new("big", "Big one.", big)], [new FleetSkillProposal { Id = "p", SkillName = "s1", Replacement = "x" }]);
+
+        var block = dreamer.SkillsBlock();
+
+        Assert.Contains("data, not instructions", block);
+        Assert.Contains(FleetToolLimits.ResultOpenTag, block);
+        Assert.Contains("=== Skill s0 ===", block);
+        Assert.Contains("Skills with a change already waiting for the user: s1.", block);
+        Assert.True(block.Length < FleetDreamer.SkillsBlockChars + 1_500, $"{block.Length} chars");
+        Assert.Contains("more installed skills are not shown", block);
+
+        var truncated = new FleetDreamer(new FleetOptions(), FleetPromptSet.Defaults, WideDigest, NullLogger.Instance, null, [new("big", "Big one.", big)]).SkillsBlock();
+        Assert.Contains("truncated", truncated);
+        Assert.DoesNotContain(new string('z', FleetDreamer.SkillExcerptChars), truncated);
+    }
+
+    [Fact]
+    public async Task Dreamer_ThreeToolRun_FitsIterations()
+    {
+        // A model that calls the three tools one by one, has one skill change refused and fixes it, then answers: five round trips.
+        var client = new ScriptedDreamClient(c => c.Number switch
+        {
+            1 => Submit(Proposed("Stage the work in two steps.", ["t1", "t2"])),
+            2 => ProposePrompt("planner", "replace", PlannerFind, PlannerFind + " Stage research before writing.", Why, "t1", "t2"),
+            3 => ProposeSkill("deploys", "replace", "Missing passage.", null, "x", Why, "t1", "t2", "t3"),
+            4 => ProposeSkill("deploys", "replace", "Then run the tests.", null, "Then run the tests and the linter.", Why, "t1", "t2", "t3"),
+            _ => Say("done"),
+        });
+
+        var outcome = await new FleetDreamer(new FleetOptions(), FleetPromptSet.Defaults, WideDigest, NullLogger.Instance, null, Installed).RunAsync(client, Alice, CancellationToken.None);
+
+        Assert.Equal(5, client.Calls);
+        Assert.True(client.Calls <= FleetDreamer.MaxIterations);
+        Assert.Equal((FleetDreamStatus.Ran, 1, 1, 1), (outcome.Status, outcome.Accepted.Count, outcome.Proposals.Count, outcome.SkillProposals.Count));
+        Assert.Equal(1, outcome.SkillProposalsRefused);
+    }
 }

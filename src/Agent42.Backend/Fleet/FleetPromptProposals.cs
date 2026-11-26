@@ -83,7 +83,7 @@ public static class FleetPromptProposals
             : InvisibleProblem(find, "find") ?? InvisibleProblem(replacement, "replacement");
     }
 
-    private static string? InvisibleProblem(string text, string field)
+    internal static string? InvisibleProblem(string text, string field)
     {
         var at = text.ToList().FindIndex(IsInvisible);
         return at < 0 ? null
@@ -93,7 +93,7 @@ public static class FleetPromptProposals
     // Control (except new line and tab), format (zero-width, bidi), private-use, surrogates (emoji among them), line and
     // paragraph separators, unassigned code points and every space but the plain one (no-break and wide spaces): anything
     // that could hide in a diff the user reviews.
-    private static bool IsInvisible(char c)
+    internal static bool IsInvisible(char c)
         => c is not ('\n' or '\t' or ' ') && CharUnicodeInfo.GetUnicodeCategory(c) is
             UnicodeCategory.Control or UnicodeCategory.Format or UnicodeCategory.PrivateUse or UnicodeCategory.Surrogate
             or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator or UnicodeCategory.OtherNotAssigned
@@ -129,7 +129,7 @@ public static class FleetPromptProposals
               + "tools, models, delegation, approvals or commands; the user changes those in the prompt editor.";
     }
 
-    private static string? LookalikeProblem(string replacement, string current)
+    internal static string? LookalikeProblem(string replacement, string current)
     {
         // Combining marks count too: one can turn a Latin letter into a lookalike.
         var bad = replacement.FirstOrDefault(c => (char.IsLetter(c) || IsMark(c)) && c > 'ɏ' && !current.Contains(c));
@@ -196,7 +196,7 @@ public static class FleetPromptProposals
             : new FleetPromptApply(result, null);
     }
 
-    private static int Occurrences(string text, string find)
+    internal static int Occurrences(string text, string find)
     {
         var count = 0;
         for (var at = text.IndexOf(find, StringComparison.Ordinal); at >= 0; at = text.IndexOf(find, at + 1, StringComparison.Ordinal))
@@ -207,7 +207,7 @@ public static class FleetPromptProposals
         return count;
     }
 
-    private static string ReplaceOnce(string text, string find, string replacement)
+    internal static string ReplaceOnce(string text, string find, string replacement)
     {
         var at = text.IndexOf(find, StringComparison.Ordinal);
         return string.Concat(text.AsSpan(0, at), replacement, text.AsSpan(at + find.Length));

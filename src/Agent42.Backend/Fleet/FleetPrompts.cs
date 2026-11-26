@@ -257,6 +257,9 @@ public static partial class FleetPrompts
 
             You also see the user's current fleet prompts. When several tasks show that one of them steered the teams wrong, you may
             call propose_prompt_change with one small, exact edit; the user reviews it and decides. Proposing nothing is fine.
+
+            You also see the user's installed skills. When several tasks repeat a procedure worth keeping, you may call
+            propose_skill_change to improve a skill or write a new one; the user reviews it and decides. Proposing nothing is fine.
             """),
         new("copilot-report", "Copilot report",
             "Added to the instructions of every Copilot agent. Its last message is its result for the next agent and the judge, while its "

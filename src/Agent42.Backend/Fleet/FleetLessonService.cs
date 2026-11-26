@@ -37,7 +37,7 @@ public enum FleetProposalOutcome
 
 /// <summary>The result of <see cref="FleetLessonService.ApproveProposalAsync"/> or <see cref="FleetLessonService.DismissProposalAsync"/>:
 /// the outcome, an error text, and the prompt key an approve changed.</summary>
-public sealed record FleetProposalDecision(FleetProposalOutcome Outcome, string? Error = null, string? PromptKey = null);
+public sealed record FleetProposalDecision(FleetProposalOutcome Outcome, string? Error = null, string? PromptKey = null, string? SkillName = null);
 
 /// <summary>
 /// The fleet's lessons (ADR 0124): the nightly "dream" that distills a user's recent finished tasks into a few lessons
@@ -53,7 +53,7 @@ public sealed record FleetProposalDecision(FleetProposalOutcome Outcome, string?
 /// lock with a re-read (the pattern of <see cref="FleetTaskService"/>).
 /// </para>
 /// </summary>
-public sealed class FleetLessonService(
+public sealed partial class FleetLessonService(
     IFleetStore store,
     FleetOptions options,
     IUserChatClientFactoryProvider chatClients,
@@ -61,7 +61,8 @@ public sealed class FleetLessonService(
     ILogger<FleetLessonService> logger,
     TimeProvider? time = null,
     Microsoft.Extensions.Hosting.IHostApplicationLifetime? lifetime = null,
-    FleetSettingsService? settings = null)
+    FleetSettingsService? settings = null,
+    UserSkillInstaller? skills = null)
 {
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
 
@@ -91,7 +92,8 @@ public sealed class FleetLessonService(
     {
         var seen = document.Settings.SeenAt ?? DateTimeOffset.MinValue;
         return document.Lessons.Count(l => l.Status == FleetLessonStatus.Active && l.CreatedAt > seen)
-            + document.PromptProposals.Count(p => p.Status == FleetPromptProposalStatus.Pending && p.CreatedAt > seen);
+            + document.PromptProposals.Count(p => p.Status == FleetPromptProposalStatus.Pending && p.CreatedAt > seen)
+            + document.SkillProposals.Count(p => p.Status == FleetPromptProposalStatus.Pending && p.CreatedAt > seen);
     }
 
     /// <summary>The lessons a planner of this user gets now. Fails open: a failing read logs a warning and returns none.</summary>
@@ -492,9 +494,11 @@ public sealed class FleetLessonService(
         var digest = await FleetDigest.BuildAsync(store, userId, finished, effective, cancellationToken);
         var prompts = new FleetPromptSet(await store.GetPromptsAsync(userId, cancellationToken));
         // Unlocked, like the rest of the run: the merge re-checks the stored proposals under the lock (ADR 0143).
-        var stored = (await store.GetLessonsAsync(userId, cancellationToken)).PromptProposals;
+        var lessons = await store.GetLessonsAsync(userId, cancellationToken);
+        var installed = await SkillSnapshotsAsync(userId, cancellationToken);
         var client = (await chatClients.GetForUserAsync(userId, cancellationToken)).GetClient(model);
-        var outcome = await new FleetDreamer(effective, prompts, digest, logger, stored).RunAsync(client, telemetry, cancellationToken);
+        var outcome = await new FleetDreamer(effective, prompts, digest, logger, lessons.PromptProposals, installed, lessons.SkillProposals)
+            .RunAsync(client, telemetry, cancellationToken);
         var since = previousRunAt ?? DateTimeOffset.MinValue;
         return new DreamProgress(outcome.Status, outcome.Reason)
         {
@@ -545,27 +549,38 @@ public sealed class FleetLessonService(
         var final = run;
         await MutateAsync(userId, d =>
         {
-            var merge = progress.Outcome is { Accepted.Count: > 0 } outcome
-                ? FleetLessons.Merge(d, outcome.Accepted, now, effective)
-                : new FleetLessonMerge(FleetLessons.Expire(d, now, effective), 0, 0, 0);
-            var proposals = FleetPromptProposals.Merge(merge.Document, progress.Outcome?.Proposals ?? [], now, effective);
-            final = run with
-            {
-                Status = progress.Status,
-                Reason = progress.Reason,
-                FinishedAt = now,
-                TasksRead = progress.TasksRead,
-                NewTasks = progress.NewTasks,
-                Learned = merge.Learned,
-                Reinforced = merge.Reinforced,
-                Refused = merge.Refused + (progress.Outcome?.Refused ?? 0),
-                InputTokens = progress.Outcome?.InputTokens,
-                OutputTokens = progress.Outcome?.OutputTokens,
-                Proposed = proposals.Proposed,
-            };
-            return proposals.Document with { Runs = [.. proposals.Document.Runs.Select(r => r.Id == run.Id ? final : r)] };
+            var (document, merged) = MergeRun(d, run, progress, now, effective);
+            final = merged;
+            return document;
         }, CancellationToken.None);
         return final;
+    }
+
+    // The run's accepted lessons, prompt proposals and skill proposals merged into the fresh document, and the finished run entry.
+    private static (FleetLessonsDocument Document, FleetDreamRun Run) MergeRun(
+        FleetLessonsDocument d, FleetDreamRun run, DreamProgress progress, DateTimeOffset now, FleetOptions effective)
+    {
+        var merge = progress.Outcome is { Accepted.Count: > 0 } outcome
+            ? FleetLessons.Merge(d, outcome.Accepted, now, effective)
+            : new FleetLessonMerge(FleetLessons.Expire(d, now, effective), 0, 0, 0);
+        var proposals = FleetPromptProposals.Merge(merge.Document, progress.Outcome?.Proposals ?? [], now, effective);
+        var skillProposals = FleetSkillProposals.Merge(proposals.Document, progress.Outcome?.SkillProposals ?? [], now, effective);
+        var final = run with
+        {
+            Status = progress.Status,
+            Reason = progress.Reason,
+            FinishedAt = now,
+            TasksRead = progress.TasksRead,
+            NewTasks = progress.NewTasks,
+            Learned = merge.Learned,
+            Reinforced = merge.Reinforced,
+            Refused = merge.Refused + (progress.Outcome?.Refused ?? 0),
+            InputTokens = progress.Outcome?.InputTokens,
+            OutputTokens = progress.Outcome?.OutputTokens,
+            Proposed = proposals.Proposed,
+            SkillsProposed = skillProposals.Proposed,
+        };
+        return (skillProposals.Document with { Runs = [.. skillProposals.Document.Runs.Select(r => r.Id == run.Id ? final : r)] }, final);
     }
 
     // The model: the request's, else the setting's, else the catalog default; it must take tools and be a chat model, never a

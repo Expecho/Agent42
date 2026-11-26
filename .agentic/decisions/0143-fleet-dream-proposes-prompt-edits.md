@@ -6,6 +6,7 @@ tags: [fleet, agents, lessons, prompts, unattended, egress, untrusted, approval,
 supersedes: []
 extends: [0124, 0097]
 amends: [0124]
+amended_by: [0146]
 ---
 
 # The fleet dream proposes targeted edits to the user's fleet prompts, and only the user's Approve applies them

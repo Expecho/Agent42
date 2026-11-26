@@ -29,6 +29,10 @@ public static class Agent42ApiRegistration
         // as a handler parameter, and McpOAuthTokenResolver refreshes per request through it since ADR 0081.
         services.TryAddSingleton(_ => new McpOAuthClient(new HttpClient()));
 
+        // The one skill install path (ADR 0146): the upload endpoint and the approval of a dream's skill proposal. It resolves
+        // ISkillPackageStore optionally, so registering it here adds no mandatory both-hosts port.
+        services.TryAddSingleton<UserSkillInstaller>();
+
         return services;
     }
 }

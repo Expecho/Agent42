@@ -93,6 +93,9 @@ public sealed record FleetDreamRun
 
     /// <summary>The prompt changes this run proposed and stored as pending (ADR 0143).</summary>
     public int Proposed { get; init; }
+
+    /// <summary>The skill changes (edits and creations) this run proposed and stored as pending (ADR 0146).</summary>
+    public int SkillsProposed { get; init; }
 }
 
 /// <summary>What started a <see cref="FleetDreamRun"/>.</summary>
@@ -127,6 +130,10 @@ public sealed record FleetLessonsDocument
     /// <summary>The prompt changes the dream proposed (ADR 0143): pending ones wait for the user's Approve or Dismiss, decided
     /// ones stay as tombstones so a dismissed change is not proposed again.</summary>
     public IReadOnlyList<FleetPromptProposal> PromptProposals { get; init; } = [];
+
+    /// <summary>The changes to the user's uploaded skills the dream proposed (ADR 0146): the same pending / decided life as
+    /// <see cref="PromptProposals"/>. Trailing and defaulted, so an older document reads without a migration.</summary>
+    public IReadOnlyList<FleetSkillProposal> SkillProposals { get; init; } = [];
 }
 
 /// <summary>
@@ -171,6 +178,51 @@ public static class FleetPromptProposalStatus
 
     /// <summary>The prompt changed so the edit no longer applies; found when the user tried to approve it.</summary>
     public const string Outdated = "outdated";
+}
+
+/// <summary>
+/// A change to one of the user's uploaded skills that the dream proposed (ADR 0146): a targeted edit of an installed skill's
+/// body, or a new skill. Nothing changes until the user approves it; an edit is re-applied to the CURRENT <c>SKILL.md</c> on
+/// approve, and a creation installs the skill and turns it on.
+/// </summary>
+public sealed record FleetSkillProposal
+{
+    public required string Id { get; init; }
+
+    /// <summary>The skill's name (also its directory name and picker key suffix): the edit target, or the name a creation takes.</summary>
+    public required string SkillName { get; init; }
+
+    public string Kind { get; init; } = FleetSkillProposalKind.Replace;
+
+    /// <summary>The exact body passage to replace (<see cref="FleetSkillProposalKind.Replace"/>), or null.</summary>
+    public string? Find { get; init; }
+
+    /// <summary>The replacement or appended text of an edit; the whole body of a creation.</summary>
+    public string Replacement { get; init; } = "";
+
+    /// <summary>The one-line description of a creation; null for an edit (an edit never changes the frontmatter).</summary>
+    public string? Description { get; init; }
+
+    public string Rationale { get; init; } = "";
+
+    /// <summary>The ids of the finished tasks that support it.</summary>
+    public IReadOnlyList<string> Evidence { get; init; } = [];
+
+    /// <summary>One of <see cref="FleetPromptProposalStatus"/>: the same states as a prompt proposal.</summary>
+    public string Status { get; init; } = FleetPromptProposalStatus.Pending;
+
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? DecidedAt { get; init; }
+}
+
+/// <summary>The kinds of <see cref="FleetSkillProposal"/>.</summary>
+public static class FleetSkillProposalKind
+{
+    public const string Replace = "replace";
+    public const string Append = "append";
+    public const string Create = "create";
+
+    public static readonly IReadOnlyList<string> All = [Replace, Append, Create];
 }
 
 /// <summary>A lesson a task's planner received: its id and a text snapshot, so the task view stays right after the lesson is deleted.</summary>

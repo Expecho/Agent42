@@ -31,20 +31,19 @@ public static partial class AgentApi
         return Results.Json(new UserSkillsResponse([.. config.Skills.Select(ToResponse)]));
     }
 
-    // Installs one upload. Orchestration order matters: normalize into a scratch directory FIRST (nothing
-    // durable is written until the framework has agreed the upload contains a real skill), then store the
-    // package, then record the row, then clean up whatever the row superseded, then auto-enable.
+    // Installs one upload through UserSkillInstaller (ADR 0146: the one install path, shared with the approval of a dream's
+    // skill proposal). The endpoint keeps the size and HTTP checks; the installer owns normalize -> cap -> store -> row ->
+    // supersede cleanup -> auto-enable.
     //
     // Errors are text/plain on 400, matching the attachment upload, so the browser can render the body as
     // a clean unquoted message. DisableAntiforgery is applied at the registration above: the app is
     // Easy-Auth gated, not cookie/forms.
     //
-    // ISkillPackageStore is resolved OPTIONALLY via IServiceProvider rather than taken as a handler
-    // parameter, mirroring /api/speech and /api/config-health: MapAgentApi infers every endpoint's
-    // parameters up front, and one a host does not register would be treated as a body and break routing
-    // for the WHOLE host. This adds no new mandatory both-hosts registration.
+    // The installer is resolved OPTIONALLY via IServiceProvider rather than taken as a handler parameter, mirroring
+    // /api/speech and /api/config-health: MapAgentApi infers every endpoint's parameters up front, and one a host does not
+    // register would be treated as a body and break routing for the WHOLE host.
     private static async Task<IResult> UploadSkillAsync(
-        IFormFile file, IGrainFactory grains, IServiceProvider services, HttpContext http, CancellationToken ct)
+        IFormFile file, IServiceProvider services, HttpContext http, CancellationToken ct)
     {
         if (file is null || file.Length == 0)
         {
@@ -58,79 +57,28 @@ public static partial class AgentApi
                 "text/plain", statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var packages = services.GetService<ISkillPackageStore>();
-        if (packages is null)
+        if (services.GetService<UserSkillInstaller>() is not { Available: true } installer)
         {
             return Results.Text(
                 "Skill uploads are not available on this deployment.",
                 "text/plain", statusCode: StatusCodes.Status409Conflict);
         }
 
-        var userId = http.GetUserId();
-        var grain = grains.GetGrain<IUserSkillsGrain>(userId);
-
         using var buffer = new MemoryStream();
         await file.CopyToAsync(buffer, ct);
 
-        var staging = Path.Combine(Path.GetTempPath(), "agent42-skill-upload-" + Guid.NewGuid().ToString("n"));
-        SkillPackageResult result;
-        try
+        var result = await installer.InstallAsync(http.GetUserId(), file.FileName, buffer.ToArray(), autoEnable: true, ct);
+        if (result.Error is { } error)
         {
-            result = SkillPackage.Normalize(file.FileName, buffer.ToArray(), staging);
-            if (result.Error is { } error)
-            {
-                return Results.Text(error, "text/plain", statusCode: StatusCodes.Status400BadRequest);
-            }
-
-            // Per-user install cap (SkillToolLimits): the 10 MB per-upload limit bounds a single request,
-            // not what a user can accumulate on the container filesystem over many of them. Counted
-            // against the names that would REMAIN after this upload, so replacing an existing skill is
-            // always allowed even at the cap.
-            var installed = (await grain.GetAsync()).Skills.Select(s => s.Name);
-            var resulting = installed
-                .Concat(result.Skills.Select(s => s.Name))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Count();
-            if (resulting > SkillToolLimits.MaxInstalledSkillsPerUser)
-            {
-                return Results.Text(
-                    $"You can install at most {SkillToolLimits.MaxInstalledSkillsPerUser} skills. Delete one first.",
-                    "text/plain", statusCode: StatusCodes.Status400BadRequest);
-            }
-
-            var stored = new List<StoredUserSkill>();
-            foreach (var skill in result.Skills)
-            {
-                // A FRESH id on every upload, including a replace — that is what makes the materialized
-                // directory immutable and so needing no cache invalidation (see StoredUserSkill).
-                var id = Guid.NewGuid().ToString("n");
-                await packages.SaveAsync(userId, id, skill.Zip, ct);
-
-                var row = new StoredUserSkill(id, skill.Name, skill.Description, skill.Files, DateTimeOffset.UtcNow);
-                var superseded = await grain.SaveAsync(row);
-                stored.Add(row);
-
-                // The grain does no blob or disk IO, so cleaning up what it replaced is this handler's
-                // job — and only the OLD id can address either the blob or the directory.
-                if (superseded is not null)
-                {
-                    await packages.DeleteAsync(userId, superseded.Id, ct);
-                    services.GetService<IUserSkillProvider>()?.RemoveMaterialized(superseded.Id);
-                }
-            }
-
-            await AutoEnableUploadedSkillsAsync(grains, userId, stored);
-
-            return Results.Json(new UserSkillUploadResponse(
-                [.. stored.Select(ToResponse)],
-                result.Skipped,
-                ShadowingWarnings(stored)));
-        }
-        finally
-        {
-            try { Directory.Delete(staging, recursive: true); } catch { /* best effort */ }
+            return Results.Text(
+                error, "text/plain",
+                statusCode: result.Unavailable ? StatusCodes.Status409Conflict : StatusCodes.Status400BadRequest);
         }
 
+        return Results.Json(new UserSkillUploadResponse(
+            [.. result.Stored.Select(ToResponse)],
+            result.Skipped,
+            ShadowingWarnings(result.Stored)));
     }
 
     // Removes a skill: the grain row, its package, and — best effort — its materialized directory. A
@@ -154,45 +102,6 @@ public static partial class AgentApi
 
         services.GetService<IUserSkillProvider>()?.RemoveMaterialized(removed.Id);
         return Results.NoContent();
-
-    }
-    /// <summary>
-    /// Appends the newly installed skills' <c>skill:{name}</c> keys to the user's DEFAULT tool selection —
-    /// but only when that selection is non-null.
-    ///
-    /// <para><b>Why this is needed at all.</b> ADR 0048: the picker materialises "all" as the full explicit
-    /// list, so a skill added later is silently OFF for anyone who has ever pressed Save. An uploaded skill
-    /// <i>is</i> a later-added skill, which would make the headline user story — upload a skill, use it — do
-    /// nothing at all for exactly the users who have expressed a preference. Uploading is an explicit act of
-    /// wanting the skill, so it opts itself in.</para>
-    ///
-    /// <para>A <c>null</c> selection is left null: it already means "all", and materialising it here would
-    /// freeze today's tool set as the user's explicit choice.</para>
-    ///
-    /// <para><b>Bounded, deliberately.</b> Per-conversation overrides and per-agent snapshots (ADR
-    /// 0003/0021) are NOT rewritten — an existing conversation with a materialised override, and an existing
-    /// agent, still need a manual tick. The Skills tab says so.</para>
-    /// </summary>
-    private static async Task AutoEnableUploadedSkillsAsync(
-        IGrainFactory grains, string userId, IReadOnlyList<StoredUserSkill> installed)
-    {
-        var profileGrain = grains.GetGrain<IUserProfileGrain>(userId);
-        var profile = await profileGrain.GetAsync();
-        if (profile.EnabledTools is not { } selection)
-        {
-            return;
-        }
-
-        var missing = installed
-            .Where(s => !ToolCatalog.IsCompanionSkill(s.Name)) // follows its tool's key; a skill: key would be inert
-            .Select(s => ToolCatalog.SkillKey(s.Name))
-            .Where(key => !selection.Contains(key, StringComparer.Ordinal))
-            .ToList();
-
-        if (missing.Count > 0)
-        {
-            await profileGrain.SaveAsync(profile with { EnabledTools = [.. selection, .. missing] });
-        }
     }
 
     // One warning per shipped skill an upload has replaced. The user chose "uploaded skill wins", so this
