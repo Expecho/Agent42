@@ -71,3 +71,18 @@ coverage_new_code_pct_min 80; cognitive_complexity_max 15; `dotnet format` clean
 `FakeTimeProvider`; rewriting fakes' simulated latency; production behaviour changes.
 
 ## Review
+
+(Critic pass on the diff: 2 HIGH, 2 MEDIUM, all HIGH/MEDIUM applied except finding 3, see below.)
+
+## Implementation notes — where it diverged from the plan
+
+- **`TestWait`** (`TestWait.cs`): `WaitUntilAsync(Func<bool> | Func<Task<bool>>, what, timeout, ct)` and `WaitForAsync<T>(produce, ready, what, ...)` for helpers that return the polled value. `what` is **optional** (default "the condition") instead of required: ~100 call sites already had no description, and a required string would have been 100 invented ones. New call sites should still pass it. The default deadline is 30 s everywhere (was 5-30 s), measured with `Stopwatch`.
+- **Helpers that silently returned on timeout now throw** (`AgentGrainTests.PollUntilAsync`/`PollHistoryAsync`, the `Poll*Async` return-value helpers, `PollDeliveriesAsync`): a timeout is now a `TimeoutException` naming what was awaited instead of a later, unrelated assertion failure. No caller relied on a false predicate.
+- **More copies than the plan listed.** The guard found ~20 inline poll loops the scout and critic missed (`Poll*Async` return-value helpers, `FinishedAsync`, `CrashObservedAsync`, `Finished`, several `for … Task.Delay` loops inside tests). All converted. `LocalBridgeTestHost.WaitUntilAsync` and `SignalDaemon.WaitForOpensAsync` were removed (callers use `TestWait`). `FleetApiTests.WaitForEventAsync` is an SSE reader, not a poll loop: renamed `ReadEventsUntilAsync` so the name guard stays strict.
+- **Guard** (`ProjectLayoutTests.NoTestFile_DeclaresItsOwnPollHelper`): by name AND by shape (a `Task.Delay` anywhere under an enclosing `while`/`for`, climbing out of nested blocks to the method). Proven on planted copies (new name, delay directly under the loop, delay nested under an `if`, name-only). The allowlist is per **file + loop header** (a fake lease's blocking acquire, the streamer pacing loop, the fake-clock pump in `SignalDaemonTests`), not global.
+- **Negative assertions.** Dropped messages (stranger, own echo/bot, group pairing, duplicate) are decided inline before `InjectAsync` returns, so their sleep was dead weight and is removed. The cases that act on the turn's worker (queued message while the gate is closed, `/stop` drop, files-only-unusable, voice failures) have no positive event to wait for and keep a **named** bound (`ChatTurnPipelineTests.NothingHappensGrace`, with the reason). A first draft removed the last two sleeps; the critic showed that narrowed what the tests detect, and they were restored.
+- **Not done (critic finding 3, deliberate):** about 15 other `Task.Delay(<literal>)` sites followed by a negative assertion (`ChatGatewayServiceTests`, `SignalDaemonTests`, `AgentWebhookGrainTests`, `ChatDeliveryTests`, `FleetResultDeliveryTests`, `LocalBridgeKestrelTests`, `UsageIngestionServiceTests`, Slack/Telegram/Discord) keep their literal. The plan's Step 3 mandated only the pipeline sites; they are not poll loops, and none was observed flaky in the 20x runs. A follow-up can name them.
+- `ChatReplyStreamerTests` delays are pacing for the streamer's real-time edit throttle (not waits): left alone.
+- **Step 5 (production `TimeProvider`) not done:** no converted test needed one.
+- **Step 4 evidence:** the 33 touched test classes + `CopilotAgentTests` ran 20 times: see the PR description for the pass count.
+

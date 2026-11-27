@@ -62,16 +62,6 @@ public class FleetLessonServiceTests
     private static FleetLesson Lesson(string id, string text, string status = FleetLessonStatus.Active, DateTimeOffset? at = null)
         => new() { Id = id, Text = text, Status = status, CreatedAt = at ?? Night.AddDays(-1), LastSupportedAt = at ?? Night.AddDays(-1) };
 
-    private static async Task Until(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (!condition())
-        {
-            Assert.True(DateTime.UtcNow < deadline, "timed out waiting");
-            await Task.Delay(10);
-        }
-    }
-
     private async Task<FleetLessonsDocument> Settled(FleetLessonService service)
     {
         await service.WhenIdleAsync(User);
@@ -364,7 +354,7 @@ public class FleetLessonServiceTests
         var service = Service(client);
 
         var first = service.RunManualAsync(User, null, Telemetry);
-        await Until(() => client.Calls == 1);
+        await TestWait.WaitUntilAsync(() => client.Calls == 1);
         var second = await service.RunManualAsync(User, null, Telemetry);
         var tick = await service.TickAsync(User);
 
@@ -390,7 +380,7 @@ public class FleetLessonServiceTests
         var service = Service(client);
 
         var run = service.RunManualAsync(User, null, Telemetry);
-        await Until(() => client.Calls == 1);
+        await TestWait.WaitUntilAsync(() => client.Calls == 1);
         Assert.True(await service.DisableAsync(User, "x"));
         Assert.True(await service.DeleteAsync(User, "y"));
         gate.SetResult();
@@ -478,7 +468,7 @@ public class FleetLessonServiceTests
         var service = Service(client);
 
         var run = service.RunManualAsync(User, null, Telemetry);
-        await Until(() => client.Calls == 1);
+        await TestWait.WaitUntilAsync(() => client.Calls == 1);
         Assert.Equal(FleetDreamStatus.Running, (await service.GetAsync(User)).Runs[0].Status);
         gate.SetResult();
         await run;
@@ -654,7 +644,7 @@ public class FleetLessonServiceTests
         var service = Service(client);
 
         var run = service.RunManualAsync(User, null, Telemetry);
-        await Until(() => client.Calls == 1);
+        await TestWait.WaitUntilAsync(() => client.Calls == 1);
         Assert.Equal(FleetProposalOutcome.Done, (await service.DismissProposalAsync(User, "p")).Outcome);
         gate.SetResult();
         var result = await run;

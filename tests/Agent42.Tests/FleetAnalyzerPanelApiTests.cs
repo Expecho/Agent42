@@ -151,12 +151,10 @@ public sealed class FleetAnalyzerPanelApiTests(FleetApiFixture fixture) : Shared
         var taskId = await SubmitAsync(user);
         await AskAsync(user, taskId, "remember me");
         (await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/stop", user)).EnsureSuccessStatusCode();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        while ((await (await Send(HttpMethod.Get, $"/api/fleet/tasks/{taskId}", user)).Content.ReadFromJsonAsync<JsonElement>())
-            .GetProperty("status").GetString() == FleetTaskStatus.Running)
-        {
-            await System.Threading.Tasks.Task.Delay(20, timeout.Token);
-        }
+        await TestWait.WaitUntilAsync(
+            async () => (await (await Send(HttpMethod.Get, $"/api/fleet/tasks/{taskId}", user)).Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("status").GetString() != FleetTaskStatus.Running,
+            "the stopped task to leave Running");
 
         (await Send(HttpMethod.Delete, $"/api/fleet/tasks/{taskId}", user)).EnsureSuccessStatusCode();
 

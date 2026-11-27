@@ -215,10 +215,7 @@ public sealed class FleetLessonApiTests(FleetLessonApiFixture fixture) : SharedC
         try
         {
             var first = Send(HttpMethod.Post, "/api/fleet/lessons/dream", user);
-            for (var i = 0; i < 250 && Fixture.DreamClient.Calls == calls; i++)
-            {
-                await Task.Delay(20);
-            }
+            await TestWait.WaitUntilAsync(() => Fixture.DreamClient.Calls != calls, "the first dream to reach the model");
 
             var second = await Send(HttpMethod.Post, "/api/fleet/lessons/dream", user);
             Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);

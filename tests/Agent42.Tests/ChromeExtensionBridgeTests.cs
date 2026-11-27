@@ -99,7 +99,7 @@ public sealed class ChromeExtensionBridgeTests(SharedClusterFixture fixture) : S
         var harness = StartHarness(app, key, answers, heartbeatMs);
         try
         {
-            await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the extension to connect");
+            await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the extension to connect");
         }
         catch (TimeoutException)
         {
@@ -241,7 +241,7 @@ public sealed class ChromeExtensionBridgeTests(SharedClusterFixture fixture) : S
 
         Assert.Equal(4, await first.ExitCodeWithin(TimeSpan.FromSeconds(20)));
         Assert.Contains("STATUS replaced", first.Output, StringComparison.Ordinal);
-        await LocalBridgeTestHost.WaitUntilAsync(
+        await TestWait.WaitUntilAsync(
             () => registry.FindByKeyHash(server.BridgeKeyHash!) is { } now && !ReferenceEquals(now, firstSession), "the second bridge");
     }
 

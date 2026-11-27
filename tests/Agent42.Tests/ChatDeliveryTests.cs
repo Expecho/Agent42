@@ -41,7 +41,7 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
         CloseGates();
         await FinalReplyAsync(h);
         await h.Session.InjectAsync(Dm("second"));
-        await Until(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
 
         Assert.Equal(conversationId, (await Route(h).GetAsync()).ConversationId);
         var kept = await StoredOriginAsync(h.UserId, conversationId);
@@ -74,7 +74,7 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
 
         await Agent(h.UserId, conversationId).EnqueuePromptAsync("hi again", null);
 
-        await Until(() => DeliveriesFor(conversationId).Count >= 1);
+        await TestWait.WaitUntilAsync(() => DeliveriesFor(conversationId).Count >= 1);
         var delivery = Assert.Single(DeliveriesFor(conversationId));
         Assert.Equal(ChatDeliveryKind.AwayReply, delivery.Kind);
         Assert.Equal((h.ConnectionId, Owner), (delivery.Origin!.ConnectionId, delivery.Origin.RouteKey));
@@ -110,7 +110,7 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
 
         await agent.EnqueuePromptAsync("hi", null);
 
-        await Until(() => DeliveriesFor("deliv-web-conv").Count >= 1);
+        await TestWait.WaitUntilAsync(() => DeliveriesFor("deliv-web-conv").Count >= 1);
         var delivery = Assert.Single(DeliveriesFor("deliv-web-conv"));
         Assert.Null(delivery.Origin);
         Assert.Equal(ChatDeliveryKind.AwayReply, delivery.Kind);
@@ -142,7 +142,7 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
 
         await agent.EnqueuePromptAsync("send me a notification", null);
 
-        await Until(() => DeliveriesFor("deliv-both-conv").Count >= 1);
+        await TestWait.WaitUntilAsync(() => DeliveriesFor("deliv-both-conv").Count >= 1);
         await Task.Delay(300);
         Assert.Equal(ChatDeliveryKind.Notification, Assert.Single(DeliveriesFor("deliv-both-conv")).Kind);
     }
@@ -213,7 +213,7 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
 
         Assert.True(handOff.IsCompleted);
         origin.Session.Hang.SetResult();
-        await ChatGatewayServiceTests.Until(() => origin.Session.Sent.Any(s => s.Op == "send"));
+        await TestWait.WaitUntilAsync(() => origin.Session.Sent.Any(s => s.Op == "send"));
     }
 
     [Fact]
@@ -365,7 +365,7 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
         => new(Interlocked.Increment(ref _messageId).ToString(), Owner, ChatType.Direct, null, Owner, null, false, text, false, false, [], Now);
 
     private static async Task FinalReplyAsync(Harness h)
-        => await Until(() => h.Session.VisibleMessages().Any(m => m.Contains(Reply, StringComparison.Ordinal)
+        => await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Any(m => m.Contains(Reply, StringComparison.Ordinal)
             && !m.EndsWith(" ▍", StringComparison.Ordinal)));
 
     private IChatRouteGrain Route(Harness h)
@@ -412,5 +412,4 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
         }
     }
 
-    private static Task Until(Func<bool> condition) => ChatGatewayServiceTests.Until(condition);
 }

@@ -59,23 +59,9 @@ public sealed class SignalDaemonStub : HttpMessageHandler, ISignalDaemon
         }
     }
 
-    /// <summary>Waits until the account's stream has been opened <paramref name="times"/> times.</summary>
-    public async Task WaitForOpensAsync(string account, int times)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        while (StreamOpens.GetValueOrDefault(account) < times)
-        {
-            await Task.Delay(20, timeout.Token);
-        }
-    }
-
     private async Task<Pipe> StreamAsync(string account)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        while (!_streams.ContainsKey(account))
-        {
-            await Task.Delay(20, timeout.Token);
-        }
+        await TestWait.WaitUntilAsync(() => _streams.ContainsKey(account), $"the stream for {account}");
 
         return _streams[account];
     }

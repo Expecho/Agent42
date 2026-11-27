@@ -44,7 +44,7 @@ public sealed class UsageIngestionServiceTests : IAsyncLifetime
         try
         {
             var grain = _cluster.GrainFactory.GetGrain<IUsageRollupGrain>(UsageRollupGrain.GlobalKey);
-            await WaitUntilAsync(async () => (await grain.QueryForUserAsync("30d", null, "oid-bob", null)).Totals.InputTokens == 200);
+            await TestWait.WaitUntilAsync(async () => (await grain.QueryForUserAsync("30d", null, "oid-bob", null)).Totals.InputTokens == 200);
 
             var ada = await grain.QueryForUserAsync("30d", null, "oid-ada", null);
             Assert.Equal(100, ada.Totals.InputTokens);
@@ -74,18 +74,4 @@ public sealed class UsageIngestionServiceTests : IAsyncLifetime
         Assert.Equal(0, report.Totals.CallCount);
     }
 
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition)
-    {
-        for (var i = 0; i < 100; i++)
-        {
-            if (await condition())
-            {
-                return;
-            }
-
-            await Task.Delay(20);
-        }
-
-        throw new TimeoutException("Condition not met within the timeout.");
-    }
 }

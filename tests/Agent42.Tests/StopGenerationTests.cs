@@ -229,7 +229,7 @@ public sealed class StopGenerationTests(SharedClusterFixture fixture) : SharedCl
         await agent.StopAsync();
         CloseStreamGates();
 
-        var history = await WaitForTurnsAsync(agent, 2);
+        var history = await TestWait.WaitForAsync(() => agent.GetHistoryAsync(), h => h.Count >= 2, "the background turn to reach 2 history turns");
         Assert.Contains(ReplyTail, history[^1].Text ?? "", StringComparison.Ordinal);
     }
 
@@ -394,21 +394,4 @@ public sealed class StopGenerationTests(SharedClusterFixture fixture) : SharedCl
         Cluster.Silos.Sum(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
             .GetRequiredService<FakeChatClient>().SuggestionCalls);
 
-    // EnqueuePromptAsync is [OneWay], so the background turn finishes on its own schedule.
-    private static async Task<IReadOnlyList<ChatTurn>> WaitForTurnsAsync(IAgentGrain agent, int count)
-    {
-        for (var attempt = 0; attempt < 100; attempt++)
-        {
-            var history = await agent.GetHistoryAsync();
-            if (history.Count >= count)
-            {
-                return history;
-            }
-
-            await Task.Delay(50);
-        }
-
-        Assert.Fail($"The background turn never reached {count} history turns.");
-        return [];
-    }
 }

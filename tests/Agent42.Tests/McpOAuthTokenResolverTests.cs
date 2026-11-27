@@ -108,7 +108,7 @@ public sealed class McpOAuthTokenResolverTests(SharedClusterFixture fixture) : S
 
         var first = resolver.ResolveAsync(user, "o1");
         var second = resolver.ResolveAsync(user, "o1");
-        await WaitUntilAsync(() => _endpoint.Calls >= 1);
+        await TestWait.WaitUntilAsync(() => _endpoint.Calls >= 1);
         _endpoint.Gate.SetResult();
 
         var results = await Task.WhenAll(first, second);
@@ -210,13 +210,4 @@ public sealed class McpOAuthTokenResolverTests(SharedClusterFixture fixture) : S
         Assert.Null((await StoredAsync(grain)).ReauthRequiredAt);
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (!condition())
-        {
-            Assert.True(DateTime.UtcNow < deadline, "condition not reached");
-            await Task.Delay(10);
-        }
-    }
 }

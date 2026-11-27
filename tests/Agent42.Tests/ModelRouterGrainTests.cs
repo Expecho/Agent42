@@ -275,16 +275,6 @@ public sealed class ModelRouterGrainTests(SharedClusterFixture fixture) : Shared
         }
     }
 
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (!condition())
-        {
-            Assert.True(DateTime.UtcNow < deadline, "timed out waiting for a condition");
-            await Task.Delay(20);
-        }
-    }
-
     private static async Task<byte[]> StoredBytesAsync(string key, AgentStreamEvent image)
         => (await new InMemoryAttachmentStore().OpenReadAsync(key, image.AttachmentId!))!.Bytes;
 
@@ -520,9 +510,9 @@ public sealed class ModelRouterGrainTests(SharedClusterFixture fixture) : Shared
 
         // A by-hand picture parked at the generator, then an Auto turn that overlaps it.
         var first = Collect(agent.ChatAsync("draw a cat", Maker));
-        await WaitUntil(() => Probes().Sum(p => p.Entered) == 1);
+        await TestWait.WaitUntilAsync(() => Probes().Sum(p => p.Entered) == 1);
         var second = Collect(agent.ChatAsync("and a dog", AutoModelId.Value));
-        await WaitUntil(() => Probes().Sum(p => p.Entered) == 2);
+        await TestWait.WaitUntilAsync(() => Probes().Sum(p => p.Entered) == 2);
         gate.SetResult();
         await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(20));
 
@@ -567,7 +557,7 @@ public sealed class ModelRouterGrainTests(SharedClusterFixture fixture) : Shared
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(NewKey());
 
         var auto = Collect(agent.ChatAsync("draw a cat", AutoModelId.Value));
-        await WaitUntil(() => router.Calls.Count == 1);
+        await TestWait.WaitUntilAsync(() => router.Calls.Count == 1);
         await using var slow = agent.ChatAsync(FakeChatClient.SlowStreamMarker, TestSiloConfigurator.DefaultModel).GetAsyncEnumerator();
         Assert.True(await slow.MoveNextAsync());
         gate.SetResult();

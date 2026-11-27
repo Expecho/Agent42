@@ -129,17 +129,10 @@ public sealed class ChatStreamDisconnectTests : IAsyncLifetime
 
         // Nobody is listening any more, so the turn must now run to completion on its own and land in
         // the history. Polled, because that is the whole claim: it finishes AFTER the client is gone.
-        List<ChatTurn>? turns = null;
-        for (var attempt = 0; attempt < 100; attempt++)
-        {
-            turns = await _client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages");
-            if (turns!.Any(t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text)))
-            {
-                break;
-            }
-
-            await Task.Delay(50);
-        }
+        var turns = await TestWait.WaitForAsync(
+            async () => (await _client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages"))!,
+            all => all.Any(t => t.Role == "assistant" && !string.IsNullOrWhiteSpace(t.Text)),
+            "the assistant reply to land in the history");
 
         Assert.NotNull(turns);
         Assert.Contains(turns!, t => t.Role == "user" && t.Text == prompt);
@@ -188,19 +181,12 @@ public sealed class ChatStreamDisconnectTests : IAsyncLifetime
             $"/api/chat/{id}/tool-result", new { toolCallId = call.ToolCallId, result = new { approved = true } });
         Assert.Equal(HttpStatusCode.NoContent, post.StatusCode);
 
-        List<ChatTurn>? turns = null;
-        for (var attempt = 0; attempt < 100; attempt++)
-        {
-            turns = await _client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages");
-            if (turns!.Any(t => t.Role == "assistant"))
-            {
-                break;
-            }
+        var turns = await TestWait.WaitForAsync(
+            async () => (await _client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{id}/messages"))!,
+            all => all.Any(t => t.Role == "assistant"),
+            "the assistant reply to land in the history");
 
-            await Task.Delay(50);
-        }
-
-        var reply = Assert.Single(turns!, t => t.Role == "assistant");
+        var reply = Assert.Single(turns, t => t.Role == "assistant");
         Assert.Contains("approved", reply.ToolCalls![0].ToolResult, StringComparison.Ordinal);
         Assert.Contains("\"approved\":true", reply.Text, StringComparison.Ordinal);
     }

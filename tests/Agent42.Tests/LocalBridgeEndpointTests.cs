@@ -235,7 +235,7 @@ public sealed class LocalBridgeEndpointTests(SharedClusterFixture fixture) : Sha
 
         await helper.SendAsync(new System.Text.Json.Nodes.JsonObject { ["ch"] = 0, ["type"] = "ping" });
 
-        await LocalBridgeTestHost.WaitUntilAsync(() => !helper.Pongs.IsEmpty, "a pong");
+        await TestWait.WaitUntilAsync(() => !helper.Pongs.IsEmpty, "a pong");
         Assert.Equal([0], helper.Pongs);
     }
 
@@ -251,7 +251,7 @@ public sealed class LocalBridgeEndpointTests(SharedClusterFixture fixture) : Sha
         await helper.SendAsync(new System.Text.Json.Nodes.JsonObject { ["ch"] = 5, ["type"] = "ping" });
         await helper.SendAsync(new System.Text.Json.Nodes.JsonObject { ["ch"] = 0, ["type"] = "ping" });
 
-        await LocalBridgeTestHost.WaitUntilAsync(() => !helper.Pongs.IsEmpty, "a pong");
+        await TestWait.WaitUntilAsync(() => !helper.Pongs.IsEmpty, "a pong");
         await Task.Delay(100);
         Assert.Equal([0], helper.Pongs);
     }
@@ -264,7 +264,7 @@ public sealed class LocalBridgeEndpointTests(SharedClusterFixture fixture) : Sha
         var (server, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, "bridge-ep-call");
         await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, registry);
         await using var helper = await LocalBridgeTestHost.ConnectTestServerAsync(app, key);
-        await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the bridge to register");
+        await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the bridge to register");
 
         var connection = await Factory(registry).ConnectAsync(server, NoSecrets, CancellationToken.None);
         await using var _ = connection.Connection;
@@ -282,7 +282,7 @@ public sealed class LocalBridgeEndpointTests(SharedClusterFixture fixture) : Sha
         var (server, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, "bridge-ep-channels");
         await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, registry);
         await using var helper = await LocalBridgeTestHost.ConnectTestServerAsync(app, key);
-        await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the bridge to register");
+        await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the bridge to register");
         var factory = Factory(registry);
 
         var first = await factory.ConnectAsync(server, NoSecrets, CancellationToken.None);
@@ -299,7 +299,7 @@ public sealed class LocalBridgeEndpointTests(SharedClusterFixture fixture) : Sha
 
         // Disposing one client closes only its channel, and the other keeps working.
         await first.Connection.DisposeAsync();
-        await LocalBridgeTestHost.WaitUntilAsync(() => helper.ClosedChannels.Count == 1, "the channel close frame");
+        await TestWait.WaitUntilAsync(() => helper.ClosedChannels.Count == 1, "the channel close frame");
         Assert.Contains("helper:", await CallEchoAsync(second), StringComparison.Ordinal);
     }
 
@@ -325,7 +325,7 @@ public sealed class LocalBridgeEndpointTests(SharedClusterFixture fixture) : Sha
         var (server, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, "bridge-ep-limits");
         await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, registry);
         await using var helper = await LocalBridgeTestHost.ConnectTestServerAsync(app, key);
-        await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the bridge to register");
+        await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the bridge to register");
         var factory = Factory(registry);
 
         // Incoming oversize: the helper answers with a frame past the cap; that call faults — promptly, which is
@@ -375,9 +375,9 @@ public sealed class LocalBridgeEndpointTests(SharedClusterFixture fixture) : Sha
         async Task ConnectAndDropAsync()
         {
             await using var helper = await LocalBridgeTestHost.ConnectTestServerAsync(app, key);
-            await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the bridge to register");
+            await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the bridge to register");
             await helper.CloseAsync();
-            await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is null, "the bridge to unregister");
+            await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is null, "the bridge to unregister");
         }
 
         await ConnectAndDropAsync();

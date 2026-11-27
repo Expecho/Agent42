@@ -1082,18 +1082,10 @@ public sealed class FleetTaskServiceTests : IAsyncDisposable
 
     private static async Task<FleetTaskRecord> FinishedAsync(FleetTaskService service, string user, string taskId)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        while (true)
-        {
-            var record = await service.GetAsync(user, taskId, timeout.Token);
-            // Interrupted can't happen here: the task is in the registry until its final state is saved.
-            if (record is { Status: not FleetTaskStatus.Running })
-            {
-                return record;
-            }
-
-            await System.Threading.Tasks.Task.Delay(20, timeout.Token);
-        }
+        // Interrupted can't happen here: the task is in the registry until its final state is saved.
+        var record = await TestWait.WaitForAsync(
+            () => service.GetAsync(user, taskId), r => r is { Status: not FleetTaskStatus.Running }, "the task to finish");
+        return record!;
     }
 
     private static (string Name, Dictionary<string, object?> Arguments) AskCall(string question, params string[] choices)

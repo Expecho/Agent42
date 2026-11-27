@@ -76,21 +76,6 @@ internal static class LocalBridgeTestHost
         return new FakeBridgeHelper(socket, label);
     }
 
-    /// <summary>Polls until <paramref name="condition"/> holds — the socket registers asynchronously.</summary>
-    public static async Task WaitUntilAsync(Func<bool> condition, string what)
-    {
-        for (var i = 0; i < 200; i++)
-        {
-            if (condition())
-            {
-                return;
-            }
-
-            await Task.Delay(25);
-        }
-
-        throw new TimeoutException($"Timed out waiting for {what}.");
-    }
 }
 
 /// <summary>

@@ -93,7 +93,7 @@ public sealed class ClientToolTests(SharedClusterFixture fixture) : SharedCluste
 
         // Answered while the next pull is already waiting inside the tool, which is the browser's real timing.
         var drain = DrainRestAsync(stream, events);
-        await WaitForPendingAsync(agent, call.ToolCallId!);
+        await TestWait.WaitForAsync(() => agent.GetPendingClientToolCallsAsync(), p => p.Any(c => c.ToolCallId == call.ToolCallId!), "the client tool call to become pending");
         Assert.True(await agent.SubmitClientToolResultAsync(call.ToolCallId!, """{"approved":true}"""));
         await drain;
 
@@ -163,7 +163,7 @@ public sealed class ClientToolTests(SharedClusterFixture fixture) : SharedCluste
 
         var call = await ReadToClientCallAsync(stream, events);
         var drain = DrainRestAsync(stream, events);
-        await WaitForPendingAsync(agent, call.ToolCallId!);
+        await TestWait.WaitForAsync(() => agent.GetPendingClientToolCallsAsync(), p => p.Any(c => c.ToolCallId == call.ToolCallId!), "the client tool call to become pending");
         await agent.StopAsync();
         await drain;
 
@@ -190,7 +190,7 @@ public sealed class ClientToolTests(SharedClusterFixture fixture) : SharedCluste
         // The interactive turn is parked between pulls, so the background run executes now, in the gap, with the
         // interactive broker open. It must complete BEFORE the interactive call is answered, or this proves nothing.
         await agent.EnqueuePromptAsync(ConfirmPrompt("Background action"), null);
-        var history = await WaitForTurnsAsync(agent, 2);
+        var history = await TestWait.WaitForAsync(() => agent.GetHistoryAsync(), h => h.Count >= 2, "the background turn to reach 2 history turns");
         var background = history.Last(t => t.Role == "assistant");
         Assert.Contains("unavailable", background.ToolCalls![0].ToolResult, StringComparison.Ordinal);
 
@@ -212,7 +212,7 @@ public sealed class ClientToolTests(SharedClusterFixture fixture) : SharedCluste
         var call = await ReadToClientCallAsync(stream, events);
         var drain = DrainRestAsync(stream, events);
 
-        var pending = Assert.Single(await WaitForPendingAsync(agent, call.ToolCallId!));
+        var pending = Assert.Single(await TestWait.WaitForAsync(() => agent.GetPendingClientToolCallsAsync(), p => p.Any(c => c.ToolCallId == call.ToolCallId!), "the client tool call to become pending"));
         Assert.Equal((ClientToolLimits.ConfirmAction, call.ToolInput), (pending.ToolName, pending.ToolInput));
 
         await agent.SubmitClientToolResultAsync(call.ToolCallId!, """{"approved":true}""");
@@ -288,39 +288,4 @@ public sealed class ClientToolTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains("\"ok\":true", Result(events), StringComparison.Ordinal);
     }
 
-    // The interleaved pending query is the test's way to know the tool is really waiting.
-    private static async Task<IReadOnlyList<PendingClientToolCall>> WaitForPendingAsync(IAgentGrain agent, string callId)
-    {
-        for (var attempt = 0; attempt < 100; attempt++)
-        {
-            var pending = await agent.GetPendingClientToolCallsAsync();
-            if (pending.Any(p => p.ToolCallId == callId))
-            {
-                return pending;
-            }
-
-            await Task.Delay(10);
-        }
-
-        Assert.Fail($"Call {callId} never became pending.");
-        return [];
-    }
-
-    // EnqueuePromptAsync is [OneWay], so the background turn finishes on its own schedule.
-    private static async Task<IReadOnlyList<ChatTurn>> WaitForTurnsAsync(IAgentGrain agent, int count)
-    {
-        for (var attempt = 0; attempt < 100; attempt++)
-        {
-            var history = await agent.GetHistoryAsync();
-            if (history.Count >= count)
-            {
-                return history;
-            }
-
-            await Task.Delay(20);
-        }
-
-        Assert.Fail($"The background turn never reached {count} history turns.");
-        return [];
-    }
 }

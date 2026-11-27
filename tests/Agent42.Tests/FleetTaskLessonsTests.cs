@@ -41,17 +41,9 @@ public sealed class FleetTaskLessonsTests : IAsyncDisposable
 
     private static async Task<FleetTaskRecord> Finished(FleetTaskService tasks, string taskId)
     {
-        for (var i = 0; i < 500; i++)
-        {
-            if (await tasks.GetAsync(User, taskId) is { Status: not FleetTaskStatus.Running } record)
-            {
-                return record;
-            }
-
-            await Task.Delay(20);
-        }
-
-        throw new TimeoutException("the task did not finish");
+        var record = await TestWait.WaitForAsync(
+            () => tasks.GetAsync(User, taskId), r => r is { Status: not FleetTaskStatus.Running }, "the task to finish");
+        return record!;
     }
 
     private async Task<(string TaskId, FakeChatClient.FleetScript Script)> Submit(FleetTaskService tasks)
@@ -162,10 +154,7 @@ public sealed class FleetTaskLessonsTests : IAsyncDisposable
         var (taskId, script) = await Submit(tasks);
 
         // The planner is called while the counters' write is still blocked: planning did not wait for it.
-        for (var i = 0; i < 250 && script.PlannerInputs.IsEmpty; i++)
-        {
-            await Task.Delay(20);
-        }
+        await TestWait.WaitUntilAsync(() => !script.PlannerInputs.IsEmpty, "the planner to be called");
 
         Assert.Contains("Stage research first.", Assert.Single(script.PlannerInputs));
         Assert.Equal(FleetTaskStatus.Running, (await tasks.GetAsync(User, taskId))!.Status);

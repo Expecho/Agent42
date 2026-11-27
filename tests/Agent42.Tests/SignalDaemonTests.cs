@@ -114,21 +114,18 @@ public sealed class SignalDaemonTests
     // not always enough, so wait until it refuses (it is in backoff) instead of sleeping.
     private static async Task CrashObservedAsync(SignalDaemon daemon)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (true)
+        await TestWait.WaitUntilAsync(async () =>
         {
             try
             {
                 await daemon.EnsureRunningAsync(CancellationToken.None);
+                return false;
             }
             catch (SignalDaemonUnavailableException)
             {
-                return;
+                return true;
             }
-
-            Assert.True(DateTime.UtcNow < deadline, "The daemon never noticed the crash.");
-            await Task.Delay(20);
-        }
+        }, "the daemon to notice the crash");
     }
 
     [Fact]
@@ -228,7 +225,7 @@ public sealed class SignalDaemonTests
         Assert.False(process.Terminated);
 
         _time.Advance(TimeSpan.FromSeconds(11));
-        await Until(() => process.Exited.IsCompleted);
+        await TestWait.WaitUntilAsync(() => process.Exited.IsCompleted);
 
         Assert.True(process.Terminated);
         await Assert.ThrowsAsync<SignalDaemonUnavailableException>(() => daemon.EnsureRunningAsync(CancellationToken.None));
@@ -299,16 +296,6 @@ public sealed class SignalDaemonTests
         }
 
         return await task.WaitAsync(TimeSpan.FromSeconds(10));
-    }
-
-    private static async Task Until(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (!condition())
-        {
-            Assert.True(DateTime.UtcNow < deadline, "Timed out waiting for the condition.");
-            await Task.Delay(10);
-        }
     }
 
     private sealed class StubLease : IChatGatewayLease

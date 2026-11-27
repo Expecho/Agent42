@@ -241,7 +241,7 @@ public sealed class SlackAdapterTests : IAsyncLifetime
         await Task.Delay(150);
         Assert.Equal(0, _server.Connections);
         session.Start();
-        await ChatGatewayServiceTests.Until(() => _server.Connections == 1);
+        await TestWait.WaitUntilAsync(() => _server.Connections == 1);
 
         await _server.PushAsync("""{"type":"hello","num_connections":1,"debug_info":{"approximate_connection_time":3600}}""");
         await _server.PushAsync(EventsApi("e1", """{"type":"message","channel":"D1","user":"U1","text":"hi","ts":"1.1","channel_type":"im"}"""));
@@ -251,7 +251,7 @@ public sealed class SlackAdapterTests : IAsyncLifetime
         await _server.PushAsync("""{"envelope_id":"e5","type":"events_api","payload":{"event":{"type":"message","channel":"D1"}}}""");
         await _server.PushAsync("not json");
 
-        await ChatGatewayServiceTests.Until(() => _server.Acks.Count >= 5);
+        await TestWait.WaitUntilAsync(() => _server.Acks.Count >= 5);
         Assert.Equal(["e1", "e2", "e3", "e4", "e5"], _server.Acks.ToArray());
         Assert.Equal("hi", Assert.Single(sink.Messages).Text);
         Assert.False(session.Completion.IsCompleted);
@@ -265,13 +265,13 @@ public sealed class SlackAdapterTests : IAsyncLifetime
         var sink = new RecordingSink();
         await using var session = await Adapter.ConnectAsync(Runtime(), sink, CancellationToken.None);
         session.Start();
-        await ChatGatewayServiceTests.Until(() => _server.Connections == 1);
+        await TestWait.WaitUntilAsync(() => _server.Connections == 1);
 
         var huge = new string('x', SlackAdapter.MaxEnvelopeBytes + 1024);
         await _server.PushAsync($$$"""{"payload":{"event":{"type":"message","text":"{{{huge}}}"}},"type":"events_api","envelope_id":"big-1"}""");
         await _server.PushAsync(EventsApi("e2", """{"type":"message","channel":"D1","user":"U1","text":"after","ts":"9.1","channel_type":"im"}"""));
 
-        await ChatGatewayServiceTests.Until(() => _server.Acks.Count >= 2);
+        await TestWait.WaitUntilAsync(() => _server.Acks.Count >= 2);
         Assert.Equal(["big-1", "e2"], _server.Acks.ToArray());
         Assert.Equal("after", Assert.Single(sink.Messages).Text);
     }
@@ -284,13 +284,13 @@ public sealed class SlackAdapterTests : IAsyncLifetime
         var sink = new RecordingSink();
         await using var session = await Adapter.ConnectAsync(Runtime(), sink, CancellationToken.None);
         session.Start();
-        await ChatGatewayServiceTests.Until(() => _server.Connections == 1);
+        await TestWait.WaitUntilAsync(() => _server.Connections == 1);
 
         await _server.PushAsync("""{"envelope_id":"d1","type":"disconnect","reason":"refresh_requested","debug_info":{"host":"x"}}""");
-        await ChatGatewayServiceTests.Until(() => _server.Connections == 2);
+        await TestWait.WaitUntilAsync(() => _server.Connections == 2);
         await _server.PushAsync(EventsApi("e1", """{"type":"message","channel":"D1","user":"U1","text":"after","ts":"2.1","channel_type":"im"}"""));
 
-        await ChatGatewayServiceTests.Until(() => !sink.Messages.IsEmpty);
+        await TestWait.WaitUntilAsync(() => !sink.Messages.IsEmpty);
         Assert.Equal("after", Assert.Single(sink.Messages).Text);
         Assert.Equal(2, _server.Requests.Count(r => r.Method == "apps.connections.open"));
         Assert.False(session.Completion.IsCompleted);
@@ -301,14 +301,14 @@ public sealed class SlackAdapterTests : IAsyncLifetime
     {
         await using var disabled = await Adapter.ConnectAsync(Runtime(), new RecordingSink(), CancellationToken.None);
         disabled.Start();
-        await ChatGatewayServiceTests.Until(() => _server.Connections == 1);
+        await TestWait.WaitUntilAsync(() => _server.Connections == 1);
         await _server.PushAsync("""{"type":"disconnect","reason":"link_disabled"}""");
         var fault = await Assert.ThrowsAsync<ChatAuthException>(() => disabled.Completion);
         Assert.Contains("Socket Mode was turned off", fault.Message, StringComparison.Ordinal);
 
         await using var dropped = await Adapter.ConnectAsync(Runtime(), new RecordingSink(), CancellationToken.None);
         dropped.Start();
-        await ChatGatewayServiceTests.Until(() => _server.Connections == 2);
+        await TestWait.WaitUntilAsync(() => _server.Connections == 2);
         await _server.CloseCurrentAsync();
         var transient = await Assert.ThrowsAnyAsync<Exception>(() => dropped.Completion.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.IsNotType<ChatAuthException>(transient);
@@ -332,7 +332,7 @@ public sealed class SlackAdapterTests : IAsyncLifetime
         var sink = new RecordingSink();
         await using var session = await Adapter.ConnectAsync(Runtime(), sink, CancellationToken.None);
         session.Start();
-        await ChatGatewayServiceTests.Until(() => _server.Connections == 1);
+        await TestWait.WaitUntilAsync(() => _server.Connections == 1);
 
         var sent = await session.SendAsync(new ChatTarget("C1", "1.1", "C1:1.1"), "**hi** <!channel>", ChatTextFormat.Formatted, CancellationToken.None);
         var edited = await session.EditAsync(new ChatTarget("C1", "1.1"), sent.MessageId!, "plain *x*", ChatTextFormat.Plain, CancellationToken.None);
@@ -346,7 +346,7 @@ public sealed class SlackAdapterTests : IAsyncLifetime
         Assert.Equal(("C1", "1700000000.000900", "plain *x*"), (Str(update, "channel"), Str(update, "ts"), Str(update, "text")));
 
         await _server.PushAsync(EventsApi("e1", """{"type":"message","channel":"C1","user":"U1","text":"follow-up","ts":"1.5","thread_ts":"1.1","channel_type":"channel"}"""));
-        await ChatGatewayServiceTests.Until(() => !sink.Messages.IsEmpty);
+        await TestWait.WaitUntilAsync(() => !sink.Messages.IsEmpty);
         Assert.True(Assert.Single(sink.Messages).RepliesToBot);
     }
 

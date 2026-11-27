@@ -112,7 +112,7 @@ public sealed class FleetToolTests(SharedClusterFixture fixture) : SharedCluster
         // The result text is the injection: it asks for another task. The grain marks this turn, so the tool refuses.
         await agent.ReceiveFleetResultAsync("task-0",
             FakeChatClient.CallToolPrompt(FleetToolLimits.StartToolName, new { task = "start another one" }));
-        await PollUntilAsync(async () => (await agent.GetHistoryAsync()).Count > before + 1);
+        await TestWait.WaitUntilAsync(async () => (await agent.GetHistoryAsync()).Count > before + 1);
 
         Assert.Empty(Starts("fleet-loop-user"));
         Assert.Contains("can't start another fleet task", await LastToolResultAsync(agent), StringComparison.Ordinal);
@@ -248,21 +248,6 @@ public sealed class FleetToolTests(SharedClusterFixture fixture) : SharedCluster
         }
 
         return collected;
-    }
-
-    private static async Task PollUntilAsync(Func<Task<bool>> condition)
-    {
-        for (var attempt = 0; attempt < 300; attempt++)
-        {
-            if (await condition())
-            {
-                return;
-            }
-
-            await Task.Delay(100);
-        }
-
-        Assert.Fail("The result turn never completed.");
     }
 
     private static int Count(string text, string value)
