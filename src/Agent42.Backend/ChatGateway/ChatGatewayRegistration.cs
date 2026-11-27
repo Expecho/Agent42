@@ -27,6 +27,11 @@ public static class ChatGatewayRegistration
         services.AddSingleton<ChatSessionRegistry>();
         services.AddSingleton(sp => new ChatReplyStreamer(
             sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<ChatReplyStreamer>>()));
+        // The pipeline's collaborators (cc-05): each takes its own optional ports (attachments, ingestion, transcriber
+        // source, model catalog, router), which a host that registers none of them simply omits.
+        services.AddSingleton<ChatModelCommands>();
+        services.AddSingleton<ChatInboundFiles>();
+        services.AddSingleton<ChatVoiceTranscription>();
         services.AddSingleton<ChatTurnPipeline>();
         // The per-host IChatDeliverySender port (ADR 0105, C9), registered here because only a host that runs the
         // gateway has sessions to deliver into, and ProjectLayoutTests pins that such a host calls this BEFORE
