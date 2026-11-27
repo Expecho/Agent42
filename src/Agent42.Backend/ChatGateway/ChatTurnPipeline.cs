@@ -375,13 +375,14 @@ internal sealed record ChatTurnWork(
 {
     public string QueueKey => Connection.Id + "\n" + RouteKey;
 
+    /// <summary>The conversation's route grain: where /new, /model and the turn driver keep per-chat state.</summary>
+    public IChatRouteGrain Route(IGrainFactory grains)
+        => grains.GetGrain<IChatRouteGrain>(ChatRouteKey.GrainKey(UserId, Connection.Id, RouteKey));
+
     /// <summary>
     /// Replies go to the same chat and thread. In a group the reply quotes the triggering message, so the conversation
     /// is legible to everyone there; in a DM it does not need to.
     /// </summary>
-    public IChatRouteGrain Route(IGrainFactory grains)
-        => grains.GetGrain<IChatRouteGrain>(ChatRouteKey.GrainKey(UserId, Connection.Id, RouteKey));
-
     public ChatTarget Target => new(
         Message.ChatId,
         Message.ThreadId,

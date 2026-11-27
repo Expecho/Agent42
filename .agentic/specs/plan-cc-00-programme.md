@@ -77,7 +77,7 @@ existing test suite staying green plus the narrow new tests the child names.
 | 02 | `completed/plan-cc-02-test-waits.md` | `feature/cc-02-test-waits` | done (pending merge) | |
 | 03 | `completed/plan-cc-03-silent-catches.md` | `fix/cc-03-silent-catches` | done (pending merge) | |
 | 04 | `completed/plan-cc-04-adapter-helpers.md` | `feature/cc-04-adapter-helpers` | done (pending merge) | |
-| 05 | `plan-cc-05-pipeline-split.md` | `feature/cc-05-pipeline-split` | todo | |
+| 05 | `plan-cc-05-pipeline-split.md` | `feature/cc-05-pipeline-split` | done | |
 | 06 | `plan-cc-06-composition-roots.md` | `feature/cc-06-composition-roots` | todo | |
 | 07 | `plan-cc-07-fleet-config-endpoints.md` | `feature/cc-07-fleet-config-endpoints` | todo | |
 | 08 | `plan-cc-08-grain-persist-phases.md` | `feature/cc-08-grain-persist-phases` | todo | |
