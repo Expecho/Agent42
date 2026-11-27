@@ -51,7 +51,7 @@ public static partial class AgentApi
                 JsonSerializer.SerializeToUtf8Bytes(ConversationExportDocument.From(export, exportedAt, null), ConversationExportDocument.Json),
                 "application/json; charset=utf-8", ExportFileNames.Download(conversation, "json")),
             "zip" => ZipResult(http, ExportFileNames.Download(conversation, "zip"), loggers,
-                (zip, ct) => WriteSingleZipAsync(zip, export, attachments, ownerKey, exportedAt, ct)),
+                (zip, ct) => WriteSingleZipAsync(zip, export, attachments, ownerKey, exportedAt, loggers.CreateLogger("Agent42.Backend.Export"), ct)),
             _ => Results.File(
                 Encoding.UTF8.GetBytes(ConversationMarkdown.Render(export, exportedAt)),
                 "text/markdown; charset=utf-8", ExportFileNames.Download(conversation, "md")),
@@ -60,10 +60,10 @@ public static partial class AgentApi
 
     private static async Task WriteSingleZipAsync(
         ZipArchive zip, ConversationExport export, IAttachmentStore attachments, string ownerKey,
-        DateTimeOffset exportedAt, CancellationToken ct)
+        DateTimeOffset exportedAt, ILogger logger, CancellationToken ct)
     {
         var manifest = new ExportManifest { ExportedAt = exportedAt };
-        await ConversationZipWriter.WriteConversationAsync(zip, "", export, attachments, ownerKey, exportedAt, manifest, ct);
+        await ConversationZipWriter.WriteConversationAsync(zip, "", export, attachments, ownerKey, exportedAt, manifest, logger, ct);
         await ConversationZipWriter.WriteManifestAsync(zip, manifest, ct);
     }
 
@@ -137,7 +137,7 @@ public static partial class AgentApi
                 folders.Add(folder);
             }
 
-            await ConversationZipWriter.WriteConversationAsync(zip, folder, export, attachments, ownerKey, manifest.ExportedAt, manifest, ct);
+            await ConversationZipWriter.WriteConversationAsync(zip, folder, export, attachments, ownerKey, manifest.ExportedAt, manifest, logger, ct);
         }
 
         await ConversationZipWriter.WriteManifestAsync(zip, manifest, ct);

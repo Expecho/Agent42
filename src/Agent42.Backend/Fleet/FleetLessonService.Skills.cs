@@ -91,7 +91,7 @@ public sealed partial class FleetLessonService
         }
 
         var zip = await skills.ReadPackageAsync(userId, row.Id, cancellationToken);
-        if (zip is null || SkillPackage.ReadSkillMarkdown(zip, row.Name) is not { } current)
+        if (zip is null || SkillPackage.ReadSkillMarkdown(zip, row.Name, logger) is not { } current)
         {
             return Outdated(Changed + "its text could not be read.");
         }
@@ -108,7 +108,7 @@ public sealed partial class FleetLessonService
             return (done, FleetPromptProposalStatus.Approved);
         }
 
-        var rebuilt = SkillPackage.ReplaceSkillMarkdown(zip, row.Name, applied.Markdown!);
+        var rebuilt = SkillPackage.ReplaceSkillMarkdown(zip, row.Name, applied.Markdown!, logger);
         var result = rebuilt is null ? null : await skills.InstallAsync(userId, row.Name + ".zip", rebuilt, autoEnable: false, cancellationToken);
         return result is { Error: null } ? (done, FleetPromptProposalStatus.Approved) : Outdated(Changed + (result?.Error ?? "its package could not be rebuilt."));
     }

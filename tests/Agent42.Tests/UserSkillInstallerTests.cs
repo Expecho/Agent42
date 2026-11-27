@@ -85,6 +85,23 @@ public sealed class UserSkillInstallerTests(SharedClusterFixture fixture) : Shar
     }
 
     [Fact]
+    public void SkillPackage_LogsWithoutContent()
+    {
+        var logger = new TestLogger();
+
+        Assert.Null(SkillPackage.ReadSkillMarkdown([1, 2, 3], "alpha", logger));
+        Assert.Null(SkillPackage.ReplaceSkillMarkdown([1, 2, 3], "alpha", "PRIVATE BODY", logger));
+
+        Assert.Equal(2, logger.Entries.Count);
+        Assert.All(logger.Entries, e =>
+        {
+            Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, e.Level);
+            Assert.Contains("alpha", e.Message);
+            Assert.DoesNotContain("PRIVATE", e.Message);
+        });
+    }
+
+    [Fact]
     public void ReplaceSkillMarkdown_KeepsOtherEntries_AndReadsBack()
     {
         var zip = ZipTestData.Zip(

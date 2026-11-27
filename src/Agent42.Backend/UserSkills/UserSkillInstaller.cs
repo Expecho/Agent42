@@ -94,7 +94,7 @@ public sealed class UserSkillInstaller(IGrainFactory grains, IServiceProvider se
             .FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
         return row is null || await packages.ReadAsync(userId, row.Id, cancellationToken) is not { } zip
             ? null
-            : SkillPackage.ReadSkillMarkdown(zip, row.Name);
+            : SkillPackage.ReadSkillMarkdown(zip, row.Name, services.GetService<ILoggerFactory>()?.CreateLogger<UserSkillInstaller>());
     }
 
     /// <summary>The user's installed skill rows (name, description, id), from the grain alone.</summary>

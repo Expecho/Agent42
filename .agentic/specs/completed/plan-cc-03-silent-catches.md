@@ -62,4 +62,24 @@ coverage_new_code_pct_min 80; cognitive_complexity_max 15; `dotnet format` clean
 
 A shared helper; changing swallow→rethrow; the export MISSING.txt behaviour (ask, don't do).
 
+## Divergences from the plan (as built)
+
+- **Logger threading.** `SkillPackage.ReadSkillMarkdown`/`ReplaceSkillMarkdown` take an optional `ILogger? logger = null` rather than
+  returning a result carrying the reason: three call sites, so the signature change is small and every caller still branches
+  on null. `FleetLessonService.Skills` passes its logger; `UserSkillInstaller` resolves `ILoggerFactory` optionally. Known
+  trade-off: a future caller can omit the logger. The installer wiring has no test of its own.
+- **Export and digest** take a required `ILogger` (the export endpoints already had an `ILoggerFactory`).
+- **Test files.** The export test lives in a new `ConversationZipWriterLoggingTests.cs`, the skill test in
+  `UserSkillInstallerTests.cs` (where the existing `SkillPackage.*SkillMarkdown` tests are), the digest test in `FleetDigestTests.cs`.
+- **Shared `TestLogger`** (`tests/Agent42.Tests/TestLogger.cs`) added; the six private copies were **not** repointed (optional step,
+  left as a follow-up to keep this diff small).
+- **Step 3 guard skipped.** A source-text guard cannot be made precise: ~160 `catch` sites carry a justification comment in
+  varied shapes, and "logs or rethrows" is not decidable by regex without false positives. No flaky test added.
+- **Bare `catch { }` pass.** All ~18 reviewed: each rethrows, cleans up and rethrows, or carries a justification comment.
+  The only one that swallows with no log is `SkillCatalog.cs:115` (justified in its comment: a malformed skill must cost the
+  skills, not the host). Follow-up, not changed here.
+
 ## Review
+
+critic (2026-11-27): no blocking findings; ids-only logging and unchanged behaviour confirmed. Its notes (undocumented logger
+decision, bare-catch outcome, skipped guard, test-file mapping) are recorded above.

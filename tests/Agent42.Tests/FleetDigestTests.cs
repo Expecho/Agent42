@@ -1,6 +1,8 @@
 using System.Text;
 using Agent42.Agents;
 using Agent42.Backend;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent42.Tests;
 
@@ -34,7 +36,24 @@ public class FleetDigestTests
         => await _store.AppendEventsAsync("alice", taskId, string.Concat(events));
 
     private Task<FleetDigestResult> Build(IReadOnlyList<FleetTaskRecord> tasks, FleetOptions? options = null)
-        => FleetDigest.BuildAsync(_store, "alice", tasks, options ?? new FleetOptions(), CancellationToken.None);
+        => FleetDigest.BuildAsync(_store, "alice", tasks, options ?? new FleetOptions(), NullLogger.Instance, CancellationToken.None);
+
+    [Fact]
+    public async Task FleetDigest_LogsAndReturnsEmpty_OnFailure()
+    {
+        var logger = new TestLogger();
+        _blobs.FailEventReads = true;
+
+        var digest = await FleetDigest.BuildAsync(_store, "alice", [Task("t1", request: "private request")], new FleetOptions(), logger, CancellationToken.None);
+
+        Assert.Equal(1, digest.TasksRead);
+        Assert.Contains("Task t1", digest.Text);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.IsType<IOException>(entry.Exception);
+        Assert.Contains("t1", entry.Message);
+        Assert.DoesNotContain("private", entry.Message);
+    }
 
     [Fact]
     public async Task Block_CarriesPlanVerdictFeedbackCountsOutcomeAndAppliedLessons()
@@ -222,10 +241,16 @@ public class FleetDigestTests
 
         public List<string> Reads { get; } = [];
         public int MaxInFlight { get; private set; }
+        public bool FailEventReads { get; set; }
 
         public async Task<byte[]?> GetAsync(string key, CancellationToken cancellationToken = default)
         {
             Reads.Add(key);
+            if (FailEventReads && key.Contains("/events/", StringComparison.Ordinal))
+            {
+                throw new IOException("log unreadable");
+            }
+
             MaxInFlight = Math.Max(MaxInFlight, Interlocked.Increment(ref _inFlight));
             try
             {
