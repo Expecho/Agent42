@@ -6,7 +6,7 @@ tags: [mcp, web, tools, security, prompt-injection, allowlist, no-migration]
 supersedes: []
 extends: [0024, 0026]
 amends: [0011, 0066]
-amended_by: [0125]
+amended_by: [0125, 0150]
 ---
 
 # MCP tool results may seed the conversation's fetchable-URL allowlist (per-server opt-in)
@@ -21,8 +21,8 @@ amended_by: [0125]
 
 ## Context
 
-`AgentGrainState.FetchableUrls` is fed from exactly two places: `WebSearchAsync` (every result URL) and
-`RememberFetchableUrlsInUserText` (a real user turn). A URL that arrives any other way is refused by
+`AgentGrainState.FetchableUrls` is fed from exactly two places: `WebTools.WebSearchAsync` (every result URL) and
+`WebTools.RememberFromUserText` (a real user turn). A URL that arrives any other way is refused by
 `fetch_web_page` and `read_web_document`.
 
 The sibling repo's `Scraper.Mcp` exposes `find_links(url, filter)`, which returns link texts with
@@ -36,7 +36,7 @@ one missing edge in the graph.
 A **per-server opt-in flag**, `StoredMcpServer.SeedsFetchableUrls` (trailing `[Id(13)]`, default
 `false`). When it is on, `BuildAgent` wraps that server's tools in a delegating `UrlHarvestingMcpTool`
 which harvests absolute http(s) URLs out of each tool result into a **separate**, separately-bounded
-`AgentGrainState.SeededFetchableUrls` (trailing `[Id(13)]`). `IsFetchableUrl` consults both lists, so a
+`AgentGrainState.SeededFetchableUrls` (trailing `[Id(13)]`). `FetchableUrlList.IsFetchable` consults both lists, so a
 seeded URL is fetchable by `fetch_web_page` and readable by `read_web_document`.
 
 Two caps, both new constants beside `MaxFetchableUrls`:
@@ -95,7 +95,7 @@ attacker-planted URL's lifetime. It is still the right trade — losing the user
 while the eviction of a poisoned seed was never a control anyone was relying on — but it is a trade.
 
 **The audit line is part of the decision, not a nicety.** Provenance is only real if something reads it,
-so `RememberSeededUrlsFromToolResult` logs the seeding server id and the URLs — the
+so `WebTools.RememberSeededUrlsFromToolResult` logs the seeding server id and the URLs — the
 `WebSearchAsync`/`FetchWebPageAsync` idiom, and ADR 0027's rule that allowlist-exempt channels must be
 auditable after the fact. Without that line the separate list is dead state cited as a design reason.
 
@@ -125,7 +125,7 @@ closes over `this`, so it is conversation-scoped by construction.
 
 ## Deliberately NOT guarded on the reminder path
 
-`RememberFetchableUrlsInUserText` is called only on real user turns, never on the reminder path, because
+`WebTools.RememberFromUserText` is called only on real user turns, never on the reminder path, because
 a scheduled prompt's text is *model*-authored. That rule does not transfer here: it is about harvesting
 from **prompt text**, and a tool result is equally untrusted on both paths. A reminder-path guard would
 buy nothing while implying the chat path is trusted. Stated explicitly so a reader does not assume it was

@@ -3,7 +3,7 @@ id: 0011
 date: 2026-07-12
 status: accepted
 tags: [web-search, tools, agent-framework, security, ssrf, prompt-injection, container-apps]
-amended_by: [0059, 0060, 0066, 0067, 0125]
+amended_by: [0059, 0060, 0066, 0067, 0125, 0150]
 ---
 
 # Web search as function tools over a self-hosted SearXNG sidecar
@@ -137,7 +137,7 @@ for free — the case a URL-only check misses.
 > **Amended by [ADR 0067](0067-mcp-results-seed-the-fetch-allowlist.md) (2026-09-05) — the allowlist
 > gains a THIRD feeder, per-server and opt-in.** A remote MCP server the user has marked
 > `SeedsFetchableUrls` may seed the URLs in its tool results into a **separate**, separately-bounded
-> `AgentGrainState.SeededFetchableUrls`, which `IsFetchableUrl` also consults. The "whole URLs, not
+> `AgentGrainState.SeededFetchableUrls`, which `FetchableUrlList.IsFetchable` also consults. The "whole URLs, not
 > hosts" reasoning below is **narrowed, not deleted**: it still holds verbatim for the two feeders named
 > here and for every server without the flag. What a seeding server gives up is the *verbatim* property
 > in the crux paragraph — a seeded URL was authored on a scraped page, not by a search engine or the

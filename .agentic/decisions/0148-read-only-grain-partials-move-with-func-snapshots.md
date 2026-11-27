@@ -6,6 +6,7 @@ tags: [refactor, structure, agents, orleans, tools, testing, no-migration]
 supersedes: []
 extends: [0147]
 amends: [0111, 0098]
+amended_by: [0150]
 ---
 
 # Read-only grain partials move into per-activation classes, reading state through `Func`s

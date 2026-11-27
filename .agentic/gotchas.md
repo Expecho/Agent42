@@ -19,7 +19,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
 | Shape                                          | Exemplar                                          | Verified   |
 |------------------------------------------------|---------------------------------------------------|------------|
 | Orleans grain (state + reminders + agent tools) | `src/Agent42.Agents/Conversations/AgentGrain.cs` | 2026-11-21 |
-| Feature-sliced partial of a large grain          | `src/Agent42.Agents/Web/AgentGrain.WebTools.cs`   | 2026-11-21 |
+| Feature-sliced partial of a large grain          | `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs`   | 2026-11-21 |
 | Grain-delegated service (per-activation, explicit context, interface for tests) | `src/Agent42.Agents/Search/ChatSearchProjection.cs` | 2026-11-21 |
 | Per-user registry grain (list-in-state)         | `src/Agent42.Agents/StoredAgents/AgentRegistryGrain.cs`        | 2026-11-21 |
 | Per-user singleton-preference grain (get/save)  | `src/Agent42.Agents/Users/UserProfileGrain.cs`          | 2026-11-21 |
@@ -344,7 +344,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 ### Seeding URLs from an MCP result: harvest in the GRAIN, and the model is told not to on four surfaces
 
 - **Claim:** a server the user marks `SeedsFetchableUrls` (ADR 0067) may put the URLs from its tool
-  results into `AgentGrainState.SeededFetchableUrls`, which `IsFetchableUrl` consults alongside
+  results into `AgentGrainState.SeededFetchableUrls`, which `FetchableUrlList.IsFetchable` consults alongside
   `FetchableUrls`. The list below is the authority on what is easy to get wrong — not any count of it;
   most of these fail *silently*:
   - **Leave the flag OFF on the Gmail MCP server, and on any other mail-shaped server.** The sibling
@@ -370,7 +370,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   - **A stricter regex than `UrlPattern()`.** That one matches bare hostnames because *user prose* says
     "look at wikipedia.org". An MCP result is JSON, where a bare host turns up in prose, error strings and
     unrelated fields — so `AbsoluteUrlPattern()` requires a scheme. **And trim trailing JSON punctuation:**
-    a URL arrives as `"href":"https://…pdf"`, so a naive match keeps the closing quote, `IsFetchableUrl`
+    a URL arrives as `"href":"https://…pdf"`, so a naive match keeps the closing quote, `FetchableUrlList.IsFetchable`
     never matches, and the feature looks broken while every regex test passes.
   - **The harvest sees the ALREADY-TRUNCATED result.** The wrapper sits *outside* `TruncatingMcpTool`, so a
     URL straddling `McpToolLimits.MaxToolResultLength` (8 KB) arrives as a garbage prefix that consumes a
@@ -392,10 +392,10 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   - Two smaller ones. The flag is a **setting**, so `ToStored` must carry it and `UserMcpConfigGrain.SaveAsync`
     must **not** gain a `Keep` clause for it — with one, seeding could be turned on and never off (the exact
     opposite of `KnownToolNames` two entries down). And the reminder-path guard on
-    `RememberFetchableUrlsInUserText` deliberately does **not** extend here: that rule is about harvesting
+    `WebTools.RememberFromUserText` deliberately does **not** extend here: that rule is about harvesting
     from *prompt text*, and a tool result is equally untrusted on both paths.
 - **Evidence:** `src/Agent42.Agents/Mcp/UrlHarvestingMcpTool.cs`,
-  `src/Agent42.Agents/Web/AgentGrain.WebTools.cs` (`RememberSeededUrlsFromToolResult`,
+  `src/Agent42.Agents/Web/WebTools.cs` (`RememberSeededUrlsFromToolResult`,
   `IsAtTruncationBoundary`, `AbsoluteUrlPattern`),
   `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs` (`WithUrlSeeding`),
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`SeededFetchableUrls`),
@@ -418,7 +418,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   produced *verbatim*, so attacker-chosen data cannot ride in the path or query. **Since ADR 0067 there
   is a THIRD feeder and the *verbatim* half is narrowed:** a remote MCP server the user marked
   `SeedsFetchableUrls` may seed the URLs in its tool results into a separate
-  `AgentGrainState.SeededFetchableUrls`, which `IsFetchableUrl` also consults — so on such a server the
+  `AgentGrainState.SeededFetchableUrls`, which `FetchableUrlList.IsFetchable` also consults — so on such a server the
   model can fetch a URL authored on a scraped page. The whole-URL rule above is otherwise unchanged and
   still holds verbatim for the two feeders named here and for every server without the flag; see the
   seeding entry above for the traps that come with it. Two further traps:
@@ -428,7 +428,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   the model, which escapes apostrophes (`won't`), so a test asserting on the refusal text must anchor on
   an apostrophe-free phrase or it passes vacuously. The offline `InMemoryWebSearch` deliberately returns
   a queried-for host as its first result **because** the regression test needs to express that attack.
-- **Evidence:** `src/Agent42.Agents/Web/AgentGrain.WebTools.cs` (`IsFetchableUrl`, `RememberFetchableUrlsInUserText`),
+- **Evidence:** `src/Agent42.Agents/Web/FetchableUrlList.cs` (`IsFetchable`), `src/Agent42.Agents/Web/WebTools.cs` (`RememberFromUserText`),
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`FetchableUrls`),
   `tests/Agent42.Tests/WebDocumentToolTests.cs` (`ReadWebDocument_RefusesAttackerUrlWhoseHostItsOwnSearchSurfaced`),
   `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`

@@ -49,7 +49,7 @@ Export **traces and metrics, never logs**, to the existing resource, **alongside
 
   Other spans (HTTP, Orleans) are untouched.
 - **Metrics** go through `AddAzureMonitorMetricExporter`, the gen_ai histograms included.
-- **No logs.** Warning+ log templates carry model-chosen search queries and URLs (`AgentGrain.WebTools`,
+- **No logs.** Warning+ log templates carry model-chosen search queries and URLs (`WebTools`,
   `SearxngWebSearch`, `ContextWebPageFetcher`), rendered because `IncludeFormattedMessage` is on.
 - **Statsbeat off.** The container env sets `APPLICATIONINSIGHTS_STATSBEAT_DISABLED=true`, and so does
   every test that builds an exporter. The exporter option for it is internal in 1.9.0. **Live Metrics is

@@ -30,7 +30,7 @@ whole-URL allowlist, the 8 KB result cap and the timeout.
 3. `web_search` (SearXNG) and the whole-URL allowlist (`FetchableUrls`, `SeededFetchableUrls`, ADR 0011/0067) are
    unchanged. The allowlist is **not** dead code: it now guards `read_web_document` only. The security rationale
    that lived in `FetchWebPageAsync`'s doc (whole URL, not host; the "search for attacker.example `<secret>`, then
-   fetch it" bypass) moves onto `IsFetchableUrl`.
+   fetch it" bypass) moves onto `FetchableUrlList.IsFetchable`.
 4. The fleet loses its own fetch allowlist with its fetch (`FleetWebTools` keeps only `web_search`). Its search
    result cut now uses a new documented backstop, `WebToolLimits.MaxSearchPayloadLength` (24 KB), in place of the
    deleted page budgets.

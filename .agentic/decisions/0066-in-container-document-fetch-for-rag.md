@@ -6,7 +6,7 @@ tags: [rag, documents, web, ssrf, security, prompt-injection, tools, no-migratio
 supersedes: []
 extends: [0007, 0008, 0021]
 amends: [0011, 0027, 0056]
-amended_by: [0067, 0098, 0106, 0125]
+amended_by: [0067, 0098, 0106, 0125, 0150]
 ---
 
 # `read_web_document`: fetch a web-hosted document in-container and ingest it into conversation RAG
@@ -226,7 +226,7 @@ total characters) that ADR 0004's 2 MB session requires.
   Hindsight bank, which has **no delete path** (out of scope here as in ADR 0056). Do not describe this
   feature as bounded to the conversation.
 - **`/api/agent-run` reachability changed (ADR 0022).** That endpoint is on `excludedPaths` — publicly
-  reachable with an API key — and drains `ChatCoreAsync`, so `RememberFetchableUrlsInUserText` whitelists
+  reachable with an API key — and drains `ChatCoreAsync`, so `WebTools.RememberFromUserText` whitelists
   URLs written in its prompt. An API key holder can therefore now cause **our container**, which holds
   the managed identity, to open an outbound connection to a URL of their choosing. `PrivateAddressGuard`
   is precisely the right control and is why it is restored; the point recorded here is that the
@@ -244,7 +244,7 @@ total characters) that ADR 0004's 2 MB session requires.
   remedy, as with `memory` (ADR 0057).
 - **On a hosted-tools model the tool is nearly inert.** It registers on both capability branches — it is
   document ingestion, which no hosted tool provides, so it is not part of ADR 0015's swap. But nothing
-  calls `RememberFetchableUrl` there (the native `HostedWebSearchTool` cannot), so `FetchableUrls` is
+  calls `FetchableUrlList.Remember` there (the native `HostedWebSearchTool` cannot), so `FetchableUrls` is
   user-text-only on that branch and the tool is reachable only for URLs the **user** typed.
 - **`PdfLock` is process-wide.** `DocumentTextExtractor` serializes PDF extraction because PDFium is not
   thread-safe, and `infra/main.bicep` pins a single replica — so ingesting a large PDF blocks every other

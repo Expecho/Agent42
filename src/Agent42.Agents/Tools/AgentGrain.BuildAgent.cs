@@ -242,7 +242,7 @@ public sealed partial class AgentGrain
                 "this only when the user wants to clear all of their reminders, not a single one.");
 
         var webSearch = AIFunctionFactory.Create(
-            WebSearchAsync,
+            _webTools.WebSearchAsync,
             name: "web_search",
             description: "Search the web and get back ranked results (title, URL, snippet). Use this " +
                 "for anything you don't reliably know: current events, recent releases, prices, or any " +
@@ -282,7 +282,7 @@ public sealed partial class AgentGrain
         // read_web_document (ADR 0066) sits in the UNCONDITIONAL list, NOT in the swap below, and that is
         // deliberate: it is document ingestion into this conversation's own retrieval index, which no
         // hosted tool provides — so a Responses model needs it just as much as a Chat Completions one.
-        // The consequence worth knowing is that on a hosted model nothing calls RememberFetchableUrl
+        // The consequence worth knowing is that on a hosted model nothing calls FetchableUrlList.Remember
         // (the native HostedWebSearchTool cannot), so FetchableUrls is user-text-only there and the tool
         // is reachable only for URLs the USER typed.
         List<AITool> tools =
@@ -367,7 +367,7 @@ public sealed partial class AgentGrain
     // attached there would cross-contaminate conversations.
     private AITool WithUrlSeeding(McpServerTools server, AITool tool)
         => server.SeedsFetchableUrls && tool is AIFunction fn
-            ? new UrlHarvestingMcpTool(fn, server.ServerId, RememberSeededUrlsFromToolResult)
+            ? new UrlHarvestingMcpTool(fn, server.ServerId, _webTools.RememberSeededUrlsFromToolResult)
             : tool;
 
     // The INNERMOST MCP wrapper (ADR 0095): opens a scope on the connection's elicitation router around each call,

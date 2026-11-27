@@ -155,3 +155,7 @@ Critic (2026-11-27): do-not-approve-as-written, 10 findings, all accepted and fo
 - 2 ADR 0147/0148 amendment, 3 TurnContext in tools, 4 persist handle decision, 5 artifacts stay-list and visibility, 6 McpApps pieces,
   7 shared-file conflicts, 8 slim WebDocumentTool partial, 9 dependency lists, 10 `ArtifactToolSet` name: all applied.
 Rejected: none.
+
+## Progress / divergences
+
+- **Step 1 (2026-11-27, `feature/cc-12-1-fetchable-url-port`):** done as planned. ADR is **0150** (0149 was taken by cc-11); it also amends 0066 and 0011/0067. `UrlNormalizer`, `FetchableUrlList`, `WebTools`; consts stay on the grain. Source guards added to `ProjectLayoutTests` (one caller of `RememberFromUserText`, seeded feeder only via `UrlHarvestingMcpTool`, lists written only by the port, `new WebTools(`/`new FetchableUrlList(` only in `AgentGrain.cs`). The reminder test needed its own `FakeChatClient` trigger worded without "remind"/"cancel" (an earlier wording was shadowed by the generic reminder row); mutation-checked.

