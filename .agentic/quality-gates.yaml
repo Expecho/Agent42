@@ -17,6 +17,13 @@ gates:
   # analyzer's built-in default exactly, so there is one source of truth; changing it requires a
   # SonarLint.xml AdditionalFile, and QualityGateTests fails if the two ever disagree.
   cognitive_complexity_max: 15
+  # SonarAnalyzer.CSharp rule S138, at build time (.editorconfig, severity error). Lines of CODE (non-blank,
+  # non-comment). 80 is the analyzer's built-in default, so there is one number; QualityGateTests pins it.
+  method_lines_max: 80
+  # SonarAnalyzer.CSharp rule S107, at build time. 11 is NOT the analyzer's default (7): it is where the code was
+  # when the gate was set (25 offenders over 7), carried by SonarLint.xml, and ratchets down. One reasoned
+  # exemption (the AgentGrain ctor, 18) is a path-scoped section in .editorconfig.
+  method_params_max: 11
 
 enforcement:
   local: soft_warning        # skills render the gate table, ask proceed/abort on FAIL

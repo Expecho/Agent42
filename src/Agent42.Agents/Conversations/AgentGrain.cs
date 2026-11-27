@@ -612,26 +612,21 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         var interactive = turn.Interactive;
 
-        _logger.LogInformation(
-            "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s))",
-            this.GetPrimaryKeyString(), message.Length, attachments?.Count ?? 0);
+        LogTurnReceived(message, attachments);
 
         // No model configured (ADR 0019): see EnsureModelBoundAsync. A false result means still none, so tell the user and stop.
         var (bound, requestedModel) = await EnsureModelBoundAsync(model);
         if (!bound)
         {
-            yield return new AgentStreamEvent(
-                AgentStreamEventType.TextDelta,
-                // GitHub Copilot alone is not enough (ADR 0108): its models run only in Copilot agents.
-                Text: "_No model provider is configured. Add one in Settings → model providers to "
-                    + "start chatting. GitHub Copilot needs an ordinary provider alongside it._\n\n");
-            yield return new AgentStreamEvent(AgentStreamEventType.Done);
+            foreach (var evt in NoProviderEvents())
+            {
+                yield return evt;
+            }
+
             yield break;
         }
 
-        model = requestedModel;
-
-        var routing = await ResolveTurnModelAsync(model, message, attachments, turn);
+        var routing = await ResolveTurnModelAsync(requestedModel, message, attachments, turn);
         await SwitchModelAsync(routing.Model);
         if (routing.Routed is { } routed)
         {
@@ -671,8 +666,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // A dead-grant MCP server (ADR 0081): first pick up a reconnect made elsewhere, then tell the user about any
         // server this conversation uses that still needs one — before the model runs, so the button is there even
         // if the model never tries the missing tools.
-        await ReResolveMcpAfterReconnectAsync(interactive);
-        foreach (var notice in TakeMcpReauthNotices(McpServersNeedingReauth(), interactive))
+        foreach (var notice in await PreTurnMcpNoticesAsync(interactive))
         {
             yield return notice;
         }
@@ -685,10 +679,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // the user's own chat bubble on every later reload.
         if (skippedImages > 0)
         {
-            yield return new AgentStreamEvent(
-                AgentStreamEventType.TextDelta,
-                Text: $"_The selected model cannot see images, so {skippedImages} attachment(s) were "
-                    + "not sent to it. Switch to a vision-capable model to ask about them._\n\n");
+            yield return SkippedImagesNotice(skippedImages);
         }
 
         // Token usage arrives as UsageContent updates, one per LLM turn (a tool-calling
@@ -750,9 +741,6 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // appended by hand, and this is the ONE branch on which `reply` is the persistence path.
         var prepared = TryPrepareStoppedTurn(outcome, userMessage, reply, research);
 
-        // After the stopped-turn append, so a stopped research turn folds its tail in with the rest.
-        FoldResearchRun(research);
-
         if (!prepared)
         {
             // The history was unreachable, so there is nothing coherent to write. Skip the persist rather
@@ -774,6 +762,22 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         yield return tokens.ToDoneEvent(outcome.Stopped);
     }
+
+    // The reply to a turn with no model provider at all (ADR 0019). GitHub Copilot alone is not enough (ADR 0108): its
+    // models run only in Copilot agents.
+    private static AgentStreamEvent[] NoProviderEvents() =>
+    [
+        new AgentStreamEvent(
+            AgentStreamEventType.TextDelta,
+            Text: "_No model provider is configured. Add one in Settings → model providers to "
+                + "start chatting. GitHub Copilot needs an ordinary provider alongside it._\n\n"),
+        new AgentStreamEvent(AgentStreamEventType.Done),
+    ];
+
+    private static AgentStreamEvent SkippedImagesNotice(int skippedImages) => new(
+        AgentStreamEventType.TextDelta,
+        Text: $"_The selected model cannot see images, so {skippedImages} attachment(s) were "
+            + "not sent to it. Switch to a vision-capable model to ask about them._\n\n");
 
     // The input phase of a chat turn: the vision gate, the history rehydrate and the user message itself. Returns the
     // message and how many images were withheld; the caller streams the notice, because this method cannot yield.
@@ -962,10 +966,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
     // True when the turn may be persisted: it ran to completion (nothing to prepare), or it was stopped and
     // its partial turn has been appended to the session. False only in the one case where persisting would
-    // destroy rather than record — see AppendStoppedTurnToSession.
+    // destroy rather than record — see AppendStoppedTurnToSession. Then a research run folds its tail in: after the
+    // stopped-turn append, so a stopped research turn folds with the rest, and whether or not the append succeeded.
     private bool TryPrepareStoppedTurn(
         TurnOutcome outcome, ChatMessage userMessage, StringBuilder reply, ResearchRun? research)
-        => !outcome.Stopped || AppendStoppedTurnToSession(userMessage, reply, research);
+    {
+        var prepared = !outcome.Stopped || AppendStoppedTurnToSession(userMessage, reply, research);
+        FoldResearchRun(research);
+        return prepared;
+    }
 
     // Writes a stopped turn into the session by hand, because the framework wrote nothing (see the call
     // site). Returns false when the history cannot be reached, which is the one caller for which the usual
@@ -1886,6 +1895,19 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             "Agent grain {GrainKey} re-resolved its MCP tools after a reconnect (version {Version})",
             this.GetPrimaryKeyString(), set.Version);
     }
+
+    // A dead-grant MCP server (ADR 0081), before the model runs: pick up a reconnect made elsewhere, then the notices
+    // for every server this conversation uses that still needs one.
+    private async Task<List<AgentStreamEvent>> PreTurnMcpNoticesAsync(bool interactive)
+    {
+        await ReResolveMcpAfterReconnectAsync(interactive);
+        return TakeMcpReauthNotices(McpServersNeedingReauth(), interactive);
+    }
+
+    private void LogTurnReceived(string message, IReadOnlyList<AttachmentRef>? attachments)
+        => _logger.LogInformation(
+            "Agent grain {GrainKey} received a message ({Length} chars, {Attachments} attachment(s))",
+            this.GetPrimaryKeyString(), message.Length, attachments?.Count ?? 0);
 
     // The flagged servers this conversation actually uses: ANY of its tools enabled (IsMcpToolEnabled), not
     // IsMcpServerEnabled — a partial per-tool selection (mcp:{id}:{tool}, ADR 0058) must still get the notice.

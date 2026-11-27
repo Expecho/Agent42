@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Code-shape measurement: method length, parameter count and class size over the C# tree.
-// A REPORT tool (clean-code programme, plan cc-01): it adds no gate. Plan cc-11 may turn the numbers
-// into one; until then every threshold-shaped claim about the code should quote this output.
+// A REPORT tool (clean-code programme, plan cc-01): it adds no gate. The gates are SonarAnalyzer S138/S107
+// (ADR 0149), which count a few lines differently, so this output is for orientation and the build is the verdict.
 //
 // Usage:
 //   node .agentic/scripts/code-shape.mjs [--root <dir>] [--top <n>] [--json <file>] [--all]
@@ -15,7 +15,7 @@
 //             code or ctor >= 5 params): the full tree would be a megabyte of noise.
 //     --all   no floor.
 //
-// METRIC DEFINITIONS (match Sonar S138 / S107, which plan cc-11 may enforce):
+// METRIC DEFINITIONS (aim to match Sonar S138 / S107, which ADR 0149 enforces):
 //   * Method length is LINES OF CODE: the non-blank, non-comment lines from the line the method NAME
 //     is on to the line of its closing `}` (or the `;` ending an expression body), inclusive.
 //     Attribute lines above the name are not counted. A line holding only a string literal (a

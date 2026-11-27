@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Parameters for the adopted SonarAnalyzer.CSharp rules whose gate is NOT the analyzer's built-in default.
+     Wired in by Directory.Build.props. The number here must equal `.agentic/quality-gates.yaml` (QualityGateTests). -->
+<AnalysisInput>
+  <Rules>
+    <Rule>
+      <Key>S107</Key>
+      <Parameters>
+        <Parameter>
+          <Key>max</Key>
+          <Value>11</Value>
+        </Parameter>
+      </Parameters>
+    </Rule>
+  </Rules>
+</AnalysisInput>
