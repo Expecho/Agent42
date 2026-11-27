@@ -104,6 +104,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private readonly IPushNotificationSender _pushSender;
 
     private readonly IChatDeliverySender _chatDelivery;
+    private ChatDeliveryRelay _chatRelay = null!;
+    private ReadDocumentTool _readDocument = null!;
     private readonly IFleetLauncher _fleet;
 
     private readonly ILogger<AgentGrain> _logger;
@@ -284,9 +286,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _pastChats = new PastChatTools(
             _chatSearchIndex, GrainFactory, _userId, ConversationIdFromGrainKey(this.GetPrimaryKeyString()),
             this.GetPrimaryKeyString(), _logger);
+        _readDocument = new ReadDocumentTool(
+            _documentIndex, this.GetPrimaryKeyString(), _logger,
+            () => _state.State.DocumentNames, () => _state.State.WebDocumentNames);
+        _chatRelay = new ChatDeliveryRelay(
+            _chatDelivery, _userId, ConversationIdFromGrainKey(this.GetPrimaryKeyString()), this.GetPrimaryKeyString(), _logger,
+            () => _state.State.Origin, () => _state.State.AgentName);
         _push = new PushTools(
             _pushSender, GrainFactory, _logger, this.GetPrimaryKeyString(), _userId,
-            ConversationIdFromGrainKey(this.GetPrimaryKeyString()), DeliverNotificationToChatAsync);
+            ConversationIdFromGrainKey(this.GetPrimaryKeyString()), _chatRelay.DeliverNotificationAsync);
         _fleetTools = new FleetTools(
             _fleet, _logger, this.GetPrimaryKeyString(), _userId, ConversationIdFromGrainKey(this.GetPrimaryKeyString()),
             () => _modelId);
@@ -549,7 +557,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             // is never delivered as a reply.
             if (!string.IsNullOrEmpty(_modelId))
             {
-                await DeliverAwayReplyToChatAsync(turn, reply.Text);
+                await _chatRelay.DeliverAwayReplyAsync(turn, reply.Text);
             }
         }
         catch (Exception ex)
@@ -1732,8 +1740,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // the defensive try below are both unchanged.
         //
         // Chat delivery (ADR 0111) sits BEFORE that early return: the origin chat is not a shade notification, so the
-        // model's own push does not make it redundant (DeliverAwayReplyToChatAsync skips only the home fallback then).
-        await DeliverAwayReplyToChatAsync(turn, LastAssistantText(response));
+        // model's own push does not make it redundant (ChatDeliveryRelay skips only the home fallback then).
+        await _chatRelay.DeliverAwayReplyAsync(turn, LastAssistantText(response));
 
         if (turn.PushesSent == 0)
         {

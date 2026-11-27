@@ -6,7 +6,7 @@ tags: [chat-gateway, telegram, slack, discord, whatsapp, signal, signal-cli, azu
 supersedes: []
 extends: [0013, 0016, 0022, 0028, 0075, 0096, 0107]
 amends: [0028, 0075]
-amended_by: [0127]
+amended_by: [0127, 0148]
 ---
 
 # A chat gateway: each user's own bots on chat apps, connected outward from the single replica
