@@ -45,6 +45,12 @@ session read (`LiveSessionCallIds`) stay in a slim `src/Agent42.Agents/Mcp/Agent
 before the end-of-turn write, `Reconcile` after the retention prune and the edit/regenerate truncation. Purge still clears
 the list in the grain.
 
+**Step 5: `DocumentContext`.** The read-only half of document RAG moves: the always-on `TextSearchProvider` and its search
+callback, and the document-awareness instruction sentences (the uploaded / web-fetched split of ADR 0066 is kept verbatim
+and `DocumentContext.WithAwareness` is now where `WebDocument_IsNotDescribedAsUserUploaded` looks). It takes the chat-client
+factory as a `Func` (the grain reassigns it) and the two name lists as `Func`s. `RegisterDocumentAsync` (swaps `_agent` and
+`_session`) and `ExcludeInjectedContextMessages` (a static shared by ImageTurn, FleetAnalyzer and Research) stay in the grain.
+
 **The call sites are the control.** A fired reminder never feeds the list because `ReceiveReminder` calls the agent directly
 and never reaches `BuildUserTurnAsync`; there is deliberately no `TurnContext` check or flag in the port, because every turn
 kind that does reach it has an open context. Agent-run and fleet-result turns feeding the list is existing behaviour, kept.

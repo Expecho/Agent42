@@ -162,6 +162,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private WebDocumentTool _webDocumentTool = null!;
     private ArtifactToolSet _artifactTools = null!;
     private McpAppStore _mcpApps = null!;
+    private DocumentContext _documentContext = null!;
 
     // The user's DEFAULT selectable-tools set (ADR 0021), read ONCE on activation from IUserProfileGrain —
     // null means "all selectable tools" (the null==all sentinel). It is the middle layer of the resolution
@@ -292,6 +293,9 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _forking = new ConversationForking(_attachments, _logger);
         _fetchableUrls = new FetchableUrlList(() => _state.State);
         _webTools = new WebTools(_webSearch, _logger, this.GetPrimaryKeyString(), _fetchableUrls);
+        _documentContext = new DocumentContext(
+            _documentIndex, () => _chatClientFactory, () => _state.State.DocumentNames,
+            () => _state.State.WebDocumentNames, _logger, this.GetPrimaryKeyString());
         _mcpApps = new McpAppStore(
             () => _state.State.McpApps, LiveSessionCallIds, _attachments, _logger, this.GetPrimaryKeyString());
         _artifactTools = new ArtifactToolSet(

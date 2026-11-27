@@ -76,7 +76,7 @@ public sealed partial class AgentGrain
                 Name = _state.State.AgentName ?? "Agent42",
                 ChatOptions = new ChatOptions
                 {
-                    Instructions = WithDocumentAwareness(WithRenderingHints(_state.State.SystemPrompt ?? Instructions)),
+                    Instructions = _documentContext.WithAwareness(WithRenderingHints(_state.State.SystemPrompt ?? Instructions)),
                     // A model that can't do function tools at all (ADR 0013) gets NO schema — including
                     // the hosted ones — even if it somehow reported SupportsHostedTools.
                     Tools = capabilities.SupportsTools ? tools : [],
@@ -177,7 +177,7 @@ public sealed partial class AgentGrain
         // keep, and it is intact.
         if (_state.State.DocumentNames.Count + _state.State.WebDocumentNames.Count > 0)
         {
-            contextProviders.Add(BuildDocumentSearchProvider());
+            contextProviders.Add(_documentContext.BuildSearchProvider());
         }
 
         if (BuildMemoryProvider(enabled) is { } memoryProvider)

@@ -158,7 +158,7 @@ public sealed class AgentGrainState
     /// separation is a security property, not tidiness.
     ///
     /// <para><b>These documents were not uploaded by the user, and the instructions must never say they
-    /// were.</b> <c>WithDocumentAwareness</c> renders <see cref="DocumentNames"/> under "the user has
+    /// were.</b> <c>DocumentContext.WithAwareness</c> renders <see cref="DocumentNames"/> under "the user has
     /// uploaded…", which is the strongest trust signal in the system prompt. A model-chosen URL can point
     /// at attacker-authored content, so folding these into that list would assert user provenance for it
     /// — the exact inverse of the <c>"UNTRUSTED: …"</c> labelling ADR 0027 treats as load-bearing on the

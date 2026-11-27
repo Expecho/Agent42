@@ -114,7 +114,7 @@ public sealed class GrainStorageSerializerTests(SharedClusterFixture fixture) : 
     // AC21 (ADR 0066): the committed golden was written before [Id(11)] WebDocumentNames existed, so it
     // carries no such key at all. Newtonsoft binding a MISSING property onto the initializer default is
     // the actual risk here — the ADR 0045 precedent — and it must bind to an EMPTY LIST, not null:
-    // WithDocumentAwareness and the widened retrieval gate both read .Count on it unguarded, so a null
+    // DocumentContext.WithAwareness and the widened retrieval gate both read .Count on it unguarded, so a null
     // would NRE on the first turn of every conversation that predates this deployment.
     [Fact]
     public void DocumentWrittenBeforeWebDocumentNames_StillDeserializes()
