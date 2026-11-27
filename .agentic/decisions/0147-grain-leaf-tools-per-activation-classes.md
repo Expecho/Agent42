@@ -35,7 +35,8 @@ call helper), and past-chat result compaction (it shares `ToolText`/`PartArgumen
   that games a constructor-count metric.
 - **Moving the tools into `IServiceCollection`-built singletons** — the tools read per-activation values and per-run state,
   so a singleton would need those passed on every call.
-- **Moving the `_state`-reading partials too** — that is the tier-B work of plan cc-10, decided after this one.
+- **Moving the `_state`-reading partials too** — that is the tier-B work of plan cc-10, decided after this one. ADR 0148
+  moves the two read-only ones (chat delivery, `read_document`); the write-based ones stay partials.
 
 ## Consequences
 - The grain constructor keeps its parameters: it still receives the services and passes them in, and `_geocoder`, `_fleet`,

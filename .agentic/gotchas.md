@@ -3949,7 +3949,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   persists the very bytes the test measures. `FakeChatClient.CallToolPrompt` keeps arguments in a side table, and
   `ScriptedResultEcho` is capped for that reason (head 2000 + tail 500 characters).
 - **Evidence:** `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs` (`CompactToolPayloads`),
-  `src/Agent42.Agents/Documents/AgentGrain.ReadDocumentTool.cs` (`CompactReadDocumentResult`),
+  `src/Agent42.Agents/Documents/AgentGrain.ReadDocumentTool.cs` (`CompactReadDocumentResult`; the tool itself is `src/Agent42.Agents/Documents/ReadDocumentTool.cs`, ADR 0148),
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (two persist sites), `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (two),
   `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`, `tests/Agent42.Tests/ArtifactToolTests.cs`
   (`ArtifactUpdates_DoNotBlowTheSessionSizeBudget`, `CompactedArtifactCall_NextTurnSucceeds` — both fail with
@@ -4566,7 +4566,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   Finally, the conversation grain is non-reentrant. A platform send can take the streamer's 30 s time-box several
   times over, so `ChatDeliverySender.DeliverAsync` detaches the send and returns at once. Awaiting it would stall the
   conversation on a hung platform (`Sender_HandsOff_WithoutWaitingOnAHungPlatform`).
-- **Evidence:** `src/Agent42.Agents/ChatGateway/AgentGrain.ChatDelivery.cs`,
+- **Evidence:** `src/Agent42.Agents/ChatGateway/AgentGrain.ChatDelivery.cs`, `src/Agent42.Agents/ChatGateway/ChatDeliveryRelay.cs`,
   `src/Agent42.Backend/ChatGateway/ChatDeliverySender.cs`, `tests/Agent42.Tests/ChatDeliveryTests.cs`,
   `tests/Agent42.Tests/SiloRegistrationTests.cs`
 - **Verified:** 2026-11-24
