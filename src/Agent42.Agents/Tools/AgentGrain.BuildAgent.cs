@@ -253,7 +253,7 @@ public sealed partial class AgentGrain
         var getCurrentLocation = _location.Function();
 
         var readWebDocument = AIFunctionFactory.Create(
-            ReadWebDocumentAsync,
+            _webDocumentTool.ReadWebDocumentAsync,
             name: ToolCatalog.ReadWebDocument,
             description: "Read a web-hosted DOCUMENT — a PDF, Word, PowerPoint, Excel or text file — into " +
                 "this conversation, and get back the passages that answer your question. It cannot read an " +

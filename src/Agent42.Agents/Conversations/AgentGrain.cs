@@ -158,6 +158,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // The web tools and the fetchable-URL port they write through (plan cc-12). The port reads _state.State live.
     private FetchableUrlList _fetchableUrls = null!;
     private WebTools _webTools = null!;
+    private WebDocumentList _webDocuments = null!;
+    private WebDocumentTool _webDocumentTool = null!;
 
     // The user's DEFAULT selectable-tools set (ADR 0021), read ONCE on activation from IUserProfileGrain —
     // null means "all selectable tools" (the null==all sentinel). It is the middle layer of the resolution
@@ -288,6 +290,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _forking = new ConversationForking(_attachments, _logger);
         _fetchableUrls = new FetchableUrlList(() => _state.State);
         _webTools = new WebTools(_webSearch, _logger, this.GetPrimaryKeyString(), _fetchableUrls);
+        _webDocuments = new WebDocumentList(() => _state.State);
+        _webDocumentTool = new WebDocumentTool(
+            _fetchableUrls, _webDocuments, _webDocumentFetcher, _documentIngestor, _logger, this.GetPrimaryKeyString(),
+            () => _chatClientFactory, () => _state.WriteStateAsync());
         _location = new LocationTools(_geocoder, _logger, this.GetPrimaryKeyString(), AwaitClientResultAsync);
         _pastChats = new PastChatTools(
             _chatSearchIndex, GrainFactory, _userId, ConversationIdFromGrainKey(this.GetPrimaryKeyString()),
@@ -1653,8 +1659,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // deactivation would otherwise see a grain whose chunks are already gone but whose
         // WebDocumentNames still gate the retrieval provider AND still name attacker-influenced filenames
         // in the system prompt (ADR 0066).
-        _state.State.WebDocumentNames.Clear();
-        _state.State.WebDocumentUrls.Clear();
+        _webDocuments.Clear();
         // The metadata goes; the blobs stay, the same gap attachments have (no blob delete on purge).
         _state.State.Artifacts.Clear();
         _state.State.McpApps.Clear();
