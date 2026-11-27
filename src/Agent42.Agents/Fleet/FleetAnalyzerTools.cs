@@ -14,7 +14,7 @@ namespace Agent42.Agents;
 /// a task, so it shares <see cref="FleetTools.FleetStartRefusal"/> with <c>start_fleet_task</c> (incognito, fleet-result turn, one
 /// per turn). A tool never throws into the turn: failures come back as text.</para>
 ///
-/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by the leaf-tool ADR); public only
+/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by ADR 0147); public only
 /// because this repo has no <c>InternalsVisibleTo</c>.</para>
 /// </summary>
 public sealed class FleetAnalyzerTools(IFleetLauncher fleet, ILogger logger, string grainKey, string userId)

@@ -94,3 +94,14 @@ Tier B/C partials (plan 10 / never); changing tool behaviour, keys or descriptio
 Critic (2025-11 review of this plan set): HIGH #1 accepted — aggregate rejected, per-activation `new` instead, ctor target
 dropped, ADR via `/decide`, ADR 0105 safeguard preserved, Copilot wrap cited. LOW (Push.cs/Webhooks read `_state`) accepted —
 re-tiered above. Doc-path finding (#8) accepted — see Affected areas.
+
+## Divergences from the plan (implementation, 2026-11-27)
+
+- Step 0: no catalog snapshot existed. Added `ToolCatalogSnapshotTests` + `ToolSchemas.golden.txt`, fed by a `ToolSchemaDumpMarker` echo in `FakeChatClient`. It covers the default (chat-completions) tool set, 22 function tools; the memory provider is not a tool and is not in it.
+- Classes are `public sealed`, not `internal`: the repo has no `InternalsVisibleTo` and the tests reach them.
+- Steps 1-4 done as `LocationTools`, `PastChatTools`, `FleetTools`, `FleetAnalyzerTools`, `PushTools`. The model id reaches `FleetTools` as a `Func<string>` (it changes after activation); `AwaitClientResultAsync` and `DeliverNotificationToChatAsync` are passed as method groups.
+- Past-chat result compaction stays in `Search/AgentGrain.PastChatTools.cs` (shares `ToolText`/`PartArgument` with the other branches), so that partial remains. `Push/AgentGrain.Push.cs` stays (reads `_state`).
+- Step 5: memory provider builder, FollowUps and Webhooks left in the grain, as the plan allowed; reasons in ADR 0147.
+- `ProjectLayoutTests.AgentGrainParts` lost the Location and PushTool entries; `GetCurrentLocation_ExposesNoParameters` and `PushTool_DoesNotLogNotificationText` re-pointed (assertions unchanged). Added `CopilotFunctions_MovedToolSets_AreSchedulerBound`.
+- ADR 0147 amends 0039, 0075, 0106, 0112, 0115 (`amended_by` added to each). Doc path fixes in ADR 0039, ADR 0075 and gotchas.md are path-only.
+- Result: grain partial lines 8388 -> 7726; constructor params 19 -> 19 (unchanged, as the plan expected).

@@ -16,7 +16,7 @@ namespace Agent42.Agents;
 /// drops anything the user no longer has. Results are stubbed out of the session after the turn
 /// (<c>AgentGrain.CompactPastChatResult</c>).</para>
 ///
-/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by the leaf-tool ADR); public only
+/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by ADR 0147); public only
 /// because this repo has no <c>InternalsVisibleTo</c>. It holds the index and the user and conversation ids, no grain
 /// state; the per-run budget is on the <see cref="TurnContext"/>.</para>
 /// </summary>

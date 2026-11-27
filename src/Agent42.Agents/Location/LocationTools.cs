@@ -11,7 +11,7 @@ namespace Agent42.Agents;
 /// request. This tool is deliberately NOT an SSRF sink and must not grow an address guard; see the ADR 0012
 /// gotchas.
 ///
-/// <para>Built per grain activation with <c>new</c> (public only because this repo has no <c>InternalsVisibleTo</c>) (ADR 0106's pattern, extended by the leaf-tool ADR). It reaches
+/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by ADR 0147; public only because this repo has no <c>InternalsVisibleTo</c>). It reaches
 /// the browser only through <paramref name="awaitClientResult"/>, the grain's client-tool wait, so it holds no
 /// grain state.</para>
 /// </summary>

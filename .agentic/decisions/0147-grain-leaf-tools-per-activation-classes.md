@@ -38,7 +38,9 @@ call helper), and past-chat result compaction (it shares `ToolText`/`PartArgumen
 - **Moving the `_state`-reading partials too** — that is the tier-B work of plan cc-10, decided after this one.
 
 ## Consequences
-- The grain constructor keeps its parameters: it still receives the services and passes them in. The gain is cohesion, not a
-  smaller constructor.
+- The grain constructor keeps its parameters: it still receives the services and passes them in, and `_geocoder`, `_fleet`,
+  `_pushSender` and `_chatSearchIndex` are now used by the grain only to build the tool sets (`_chatSearchIndex` also feeds
+  the search projection). The gain is cohesion, not a smaller constructor.
+- `FleetTools.FleetStartRefusal` is public static, shared by `FleetTools` and `FleetAnalyzerTools`, so the two start paths keep one set of refusals.
 - The privacy guard `PushTool_DoesNotLogNotificationText` now reads `src/Agent42.Agents/Push/PushTools.cs`; the assertion is unchanged.
 - A new tool set follows this shape; a tool that must write `_state`, `_session` or `_agent` stays a partial.

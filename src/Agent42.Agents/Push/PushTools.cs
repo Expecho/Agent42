@@ -30,7 +30,7 @@ namespace Agent42.Agents;
 /// strongest true statement available, and both this return value and the tool description say exactly
 /// that.</para>
 ///
-/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by the leaf-tool ADR); public only
+/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by ADR 0147); public only
 /// because this repo has no <c>InternalsVisibleTo</c>. <paramref name="deliverToChat"/> is the grain's chat-gateway
 /// delivery (ADR 0111), a method group because it reads grain state.</para>
 /// </summary>

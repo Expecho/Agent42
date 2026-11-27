@@ -16,7 +16,7 @@ namespace Agent42.Agents;
 /// a field: an incognito turn (a task outlives the turn and would leave a trace, the <c>schedule_prompt</c> rule), a
 /// fleet-result turn (the loop guard), and a second start in one turn.</para>
 ///
-/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by the leaf-tool ADR); public only
+/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by ADR 0147); public only
 /// because this repo has no <c>InternalsVisibleTo</c>. <paramref name="modelId"/> is a delegate because the grain's model
 /// can change after activation; everything else is fixed for the activation.</para>
 /// </summary>
