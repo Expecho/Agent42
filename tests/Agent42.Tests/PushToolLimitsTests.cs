@@ -108,11 +108,11 @@ public sealed class PushToolLimitsTests
 
     // AC14: the tool must never log the notification title or body — they are model-authored text about
     // whatever this user is doing, and this repo stamps user identity onto every span (ADR 0010). The same
-    // rule GetCurrentLocationAsync carries for the coordinates.
+    // rule LocationTools.GetCurrentLocationAsync carries for the coordinates.
     //
     // A SOURCE-TEXT guard, because there is no log-capture seam in this project (no ILoggerProvider or
     // fake-logger implementation exists to assert on). The precedent for reading C# source in a test is
-    // McpUrlSeedingTests. It is scoped to the ONE _logger call in the file and asserts on that call's
+    // McpUrlSeedingTests. It is scoped to the ONE logger call in the file and asserts on that call's
     // argument list, which is what keeps it from going vacuous — ADR 0072's lesson is that a loosely
     // anchored source-text assertion goes vacuous rather than red. Mutation-checked: adding cleanTitle to
     // the logger call makes this fail.
@@ -120,13 +120,13 @@ public sealed class PushToolLimitsTests
     public void PushTool_DoesNotLogNotificationText()
     {
         var source = File.ReadAllText(Path.Combine(
-            RepoRoot(), "src", "Agent42.Agents", "Push", "AgentGrain.PushTool.cs"));
+            RepoRoot(), "src", "Agent42.Agents", "Push", "PushTools.cs"));
 
         // Exactly one logging call, so "the logger call" below is unambiguous. A second one added later
         // fails here rather than slipping past the scoped assertion.
-        Assert.Equal(1, CountOccurrences(source, "_logger."));
+        Assert.Equal(1, CountOccurrences(source, "logger."));
 
-        var callStart = source.IndexOf("_logger.", StringComparison.Ordinal);
+        var callStart = source.IndexOf("logger.", StringComparison.Ordinal);
         Assert.True(callStart > 0, "the tool no longer logs at all; this guard is then anchored on nothing");
         var callEnd = source.IndexOf(");", callStart, StringComparison.Ordinal);
         Assert.True(callEnd > callStart, "could not find the end of the logger call");

@@ -16,7 +16,7 @@ public sealed partial class AgentGrain
         List<AITool> tools =
         [
             AIFunctionFactory.Create(GetDate, name: "get_date", description: "Get the current date and time. Returns a string in the local timezone."),
-            .. FleetAnalyzerTools(),
+            .. _fleetAnalyzerTools.Functions(),
         ];
 
         var agent = new ChatClientAgent(

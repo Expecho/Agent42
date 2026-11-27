@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Agent42.Agents;
@@ -9,8 +10,16 @@ namespace Agent42.Agents;
 /// through the ADR 0089 round trip only when the model calls it, so the position no longer rides every chat
 /// request. This tool is deliberately NOT an SSRF sink and must not grow an address guard; see the ADR 0012
 /// gotchas.
+///
+/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by ADR 0147; public only because this repo has no <c>InternalsVisibleTo</c>). It reaches
+/// the browser only through <paramref name="awaitClientResult"/>, the grain's client-tool wait, so it holds no
+/// grain state.</para>
 /// </summary>
-public sealed partial class AgentGrain
+public sealed class LocationTools(
+    IGeocoder geocoder,
+    ILogger logger,
+    string grainKey,
+    Func<string, CancellationToken, Task<string>> awaitClientResult)
 {
     private const string NotSharedText =
         "The user has not shared their location with this conversation, so I don't know " +
@@ -25,6 +34,23 @@ public sealed partial class AgentGrain
     private const string UnavailableText =
         "No browser is connected to this chat right now (for example, this is a scheduled or " +
         "background run), so the user's location cannot be read. Do not guess or assume a location.";
+
+    /// <summary>
+    /// The <c>get_current_location</c> function as the model sees it. Zero parameters, and that is load-bearing (ADR 0012).
+    /// The model cannot supply coordinates — the position comes from the browser, as the answer to this client tool
+    /// (ADR 0093), parsed and range-checked by the tool — which is half of why this tool is not an SSRF sink despite
+    /// making an outbound call (the other half: the geocoder's host is config-pinned).
+    /// <c>GetCurrentLocation_ExposesNoParameters</c> pins the shape, because a later contributor adding a
+    /// <c>string address</c> parameter would quietly turn it into one.
+    /// </summary>
+    public AIFunction Function() => AIFunctionFactory.Create(
+        GetCurrentLocationAsync,
+        name: ClientToolLimits.GetCurrentLocation,
+        description: "Get the user's current location from their device: their coordinates and, when " +
+            "it can be resolved, their street address. Use this for anything that depends on where the " +
+            "user is — local weather, what's nearby, travel times, 'where am I'. If the user has not " +
+            "shared their location, or the device cannot get a position, this says so; ask them to " +
+            "share it rather than guessing.");
 
     /// <summary>
     /// Agent tool: reports where the user is (ADR 0012). Exposed to the model as
@@ -48,15 +74,15 @@ public sealed partial class AgentGrain
     /// non-reentrant — an abandoned turn should not hold the activation for the wait or the geocode's full
     /// timeout. The security property is about the <i>schema</i>, which is what <c>GetCurrentLocation_ExposesNoParameters</c> asserts on.</para>
     /// </summary>
-    private async Task<string> GetCurrentLocationAsync(CancellationToken cancellationToken)
+    internal async Task<string> GetCurrentLocationAsync(CancellationToken cancellationToken)
     {
-        var answer = await AwaitClientResultAsync(ClientToolLimits.GetCurrentLocation, cancellationToken);
+        var answer = await awaitClientResult(ClientToolLimits.GetCurrentLocation, cancellationToken);
         var (location, status) = ParseBrowserFix(answer);
         if (location is null)
         {
-            _logger.LogInformation(
+            logger.LogInformation(
                 "Agent grain {GrainKey} has no usable location from the browser ({Status})",
-                this.GetPrimaryKeyString(), status);
+                grainKey, status);
             return status switch
             {
                 "not_shared" => NotSharedText,
@@ -65,7 +91,7 @@ public sealed partial class AgentGrain
             };
         }
 
-        var place = await _geocoder.ReverseAsync(location, cancellationToken);
+        var place = await geocoder.ReverseAsync(location, cancellationToken);
 
         // Only the fields worth persisting. A raw Google response carries several candidate results,
         // every address component and the bounding geometry — none of that is returned, because this
@@ -93,9 +119,9 @@ public sealed partial class AgentGrain
 
         // Never log the coordinates: they are where a named human is standing, and this repo stamps
         // user identity onto every span (ADR 0010). Log that the tool ran, not what it found.
-        _logger.LogInformation(
+        logger.LogInformation(
             "Agent grain {GrainKey} reported the user's current location (address resolved: {Resolved})",
-            this.GetPrimaryKeyString(), place is not null);
+            grainKey, place is not null);
 
         return JsonSerializer.Serialize(result);
     }

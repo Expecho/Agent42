@@ -6,7 +6,7 @@ tags: [push-notifications, tools, selectable-tools, prompt-injection, security, 
 supersedes: []
 extends: [0021]
 amends: [0028, 0070]
-amended_by: [0106, 0111]
+amended_by: [0106, 0111, 0147]
 ---
 
 # A model-invoked push notification tool
@@ -53,7 +53,7 @@ in `EnqueuePromptAsync`, the post-`WriteStateAsync` position in `ReceiveReminder
 
 A model-invoked notification is a different thing. The model asked for it, about something it judged
 worth interrupting for, so it may fire from any path. That is why the tool lives in a **new partial**,
-`src/Agent42.Agents/Push/AgentGrain.PushTool.cs`, a sibling of `src/Agent42.Agents/Push/AgentGrain.Push.cs`
+`src/Agent42.Agents/Push/PushTools.cs` (path as of plan cc-09; it was `AgentGrain.PushTool.cs`), a sibling of `src/Agent42.Agents/Push/AgentGrain.Push.cs`
 rather than an addition to it: the split is itself the record that these are two rules, not one.
 
 ### The counter resets in TWO places, and that is the trap

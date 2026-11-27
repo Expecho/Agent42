@@ -6,7 +6,7 @@ tags: [refactor, structure, agents, orleans, serialization, tooling]
 supersedes: []
 amends: []
 extends: []
-amended_by: [0063, 0106]
+amended_by: [0063, 0106, 0147]
 ---
 
 # Feature folders in `Agent42.Agents` — files move, namespaces deliberately do not
@@ -98,12 +98,12 @@ any style key added there reformats the whole repo on the next run.
 `src/Agent42.Agents/Documents/AgentGrain.Documents.cs`,
 `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`,
 `src/Agent42.Agents/Web/AgentGrain.WebTools.cs`,
-`src/Agent42.Agents/Location/AgentGrain.LocationTool.cs`,
+`src/Agent42.Agents/Location/LocationTools.cs` (was `AgentGrain.LocationTool.cs`, moved out of the grain by plan cc-09),
 `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`,
 `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,
 `src/Agent42.Agents/Attachments/AgentGrain.Attachments.cs`,
 `src/Agent42.Agents/Push/AgentGrain.Push.cs`,
-`src/Agent42.Agents/Push/AgentGrain.PushTool.cs`,
+`src/Agent42.Agents/Push/PushTools.cs` (was `AgentGrain.PushTool.cs`, moved out of the grain by plan cc-09),
 `src/Agent42.Agents/Memory/AgentGrain.Memory.cs` (ADR 0056),
 `src/Agent42.Agents/Search/AgentGrain.Search.cs` (ADR 0061),
 `src/Agent42.Agents/Research/AgentGrain.Research.cs` (ADR 0082),
