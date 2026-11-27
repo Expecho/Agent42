@@ -10,9 +10,20 @@ namespace Agent42.Backend;
 /// never the provider's text and never two notices (Hermes <c>run_inbound.py</c>).
 ///
 /// <para>The audio goes to the owner's own transcription model (their provider, the same trust path as their chat
-/// model). There is no operator model: without one the owner is told to add it.</para>
+/// model). There is no operator model: without one the owner is told to add it. A host that registers no
+/// <see cref="IUserChatClientFactoryProvider"/> (<paramref name="chatClients"/> null) answers the same way.</para>
+///
+/// <para>It never sends anything itself: the one reply, if any, comes back in <see cref="VoiceNote.Reply"/> for the
+/// pipeline to send.</para>
+///
+/// <para>Public only because the pipeline's public constructor takes it and this repo has no
+/// <c>InternalsVisibleTo</c>.</para>
 /// </summary>
-public sealed partial class ChatTurnPipeline
+public sealed class ChatVoiceTranscription(
+    ChatSessionRegistry sessions,
+    TimeProvider timeProvider,
+    ILogger<ChatVoiceTranscription> logger,
+    IUserChatClientFactoryProvider? chatClients = null)
 {
     private const string VoiceOffText = "Voice notes are turned off for this chat. Turn them on for this connection in Agent42, or type your message.";
     private const string NoTranscriptionModelText = "To use voice notes, add a transcription model to one of your model providers in Agent42 and pick it as your default.";
@@ -21,16 +32,14 @@ public sealed partial class ChatTurnPipeline
     private const int MaxEchoChars = 300;
     private static readonly TimeSpan TranscriptionTimeout = TimeSpan.FromMinutes(2);
 
-    /// <summary>The outcome of reading a message's voice note.</summary>
-    private sealed record VoiceNote(bool Proceed, string? Transcript)
+    /// <summary>The outcome of reading a message's voice note: whether the turn goes on, its transcript, and the one reply to send first.</summary>
+    internal sealed record VoiceNote(bool Proceed, string? Transcript, string? Reply = null)
     {
         public static VoiceNote None { get; } = new(true, null);
-
-        public static VoiceNote Stop { get; } = new(false, null);
     }
 
-    // The first voice note, transcribed. Proceed is false when the turn must not run (a reply has already been sent).
-    private async Task<VoiceNote> TranscribeVoiceNoteAsync(ChatTurnWork work)
+    // The first voice note, transcribed. Proceed is false when the turn must not run (Reply says why).
+    internal async Task<VoiceNote> TranscribeVoiceNoteAsync(ChatTurnWork work)
     {
         if (work.Message.Files.FirstOrDefault(f => f.IsVoiceNote) is not { } voice)
         {
@@ -40,22 +49,23 @@ public sealed partial class ChatTurnPipeline
         var transcriber = await TranscriberAsync(work.UserId);
         if (VoiceRefusal(work, voice, transcriber) is { } refusal)
         {
-            await ReplyAsync(work, refusal);
-            return VoiceNote.Stop;
+            return new VoiceNote(false, null, refusal);
         }
 
         var transcript = await TranscribeAsync(work, voice, transcriber!);
         if (string.IsNullOrWhiteSpace(transcript))
         {
-            await ReplyAsync(work, transcript is null ? TranscriptionFailedText : "I couldn't hear any words in that voice note.");
-            return VoiceNote.Stop;
+            return new VoiceNote(false, null, transcript is null ? TranscriptionFailedText : "I couldn't hear any words in that voice note.");
         }
 
         transcript = transcript.Trim();
         var echo = transcript.Length <= MaxEchoChars ? transcript : transcript[..MaxEchoChars] + "…";
-        await ReplyAsync(work, "> " + echo.ReplaceLineEndings(" "));
-        return new VoiceNote(true, transcript);
+        return new VoiceNote(true, transcript, "> " + echo.ReplaceLineEndings(" "));
     }
+
+    // The turn's words: a voice note's transcript, marked so the model knows it was spoken, then any caption.
+    internal static string WithTranscript(string text, string? transcript)
+        => transcript is null ? text : ("[Voice note] " + transcript + (text.Length > 0 ? "\n" + text : "")).Trim();
 
     // Why a voice note can't be read at all, judged before anything is downloaded; null when it can be tried.
     private static string? VoiceRefusal(ChatTurnWork work, ChatInboundFile voice, ISpeechTranscriptionService? transcriber)
@@ -76,18 +86,18 @@ public sealed partial class ChatTurnPipeline
 
     private async Task<ISpeechTranscriptionService?> TranscriberAsync(string userId)
     {
-        if (_chatClients is null)
+        if (chatClients is null)
         {
             return null;
         }
 
         try
         {
-            return (await _chatClients.GetForUserAsync(userId)).GetTranscriptionService();
+            return (await chatClients.GetForUserAsync(userId)).GetTranscriptionService();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Resolving a transcription model for a chat voice note failed.");
+            logger.LogWarning(ex, "Resolving a transcription model for a chat voice note failed.");
             return null;
         }
     }
@@ -95,14 +105,14 @@ public sealed partial class ChatTurnPipeline
     // Downloads and transcribes; null on any failure (the caller sends the one curated reply).
     private async Task<string?> TranscribeAsync(ChatTurnWork work, ChatInboundFile voice, ISpeechTranscriptionService transcriber)
     {
-        if (_sessions.Get(work.Connection.Id) is not { } session)
+        if (sessions.Get(work.Connection.Id) is not { } session)
         {
             return null;
         }
 
         try
         {
-            using var timeout = new CancellationTokenSource(TranscriptionTimeout, _timeProvider);
+            using var timeout = new CancellationTokenSource(TranscriptionTimeout, timeProvider);
             if (await session.DownloadAsync(voice, SpeechTranscriptionFormats.MaxBytes, timeout.Token) is not { } audio)
             {
                 return null;
@@ -116,12 +126,8 @@ public sealed partial class ChatTurnPipeline
         {
             // SpeechTranscriptionException is the provider refusing the audio; anything else is a transport failure. The
             // owner gets the same curated line either way.
-            _logger.LogWarning(ex, "A chat voice note on connection {ConnectionId} could not be transcribed.", work.Connection.Id);
+            logger.LogWarning(ex, "A chat voice note on connection {ConnectionId} could not be transcribed.", work.Connection.Id);
             return null;
         }
     }
-
-    // The turn's words: a voice note's transcript, marked so the model knows it was spoken, then any caption.
-    private static string WithTranscript(string text, string? transcript)
-        => transcript is null ? text : ("[Voice note] " + transcript + (text.Length > 0 ? "\n" + text : "")).Trim();
 }

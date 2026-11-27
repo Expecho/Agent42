@@ -32,23 +32,28 @@ public sealed partial class ChatTurnPipeline
         RequestContext.Set(UserTelemetryContext.RequestContextKey,
             work.Connection.OwnerTelemetry ?? new UserTelemetryContext(work.UserId, null, null, null, null, null));
 
-        var voice = await TranscribeVoiceNoteAsync(work);
+        var voice = await _voice.TranscribeVoiceNoteAsync(work);
+        if (voice.Reply is not null)
+        {
+            await ReplyAsync(work, voice.Reply);
+        }
+
         if (!voice.Proceed)
         {
             return;
         }
 
         work = work with { Transcript = voice.Transcript };
-        var files = AttachableFiles(work.Message);
-        if (PromptText(work).Length == 0 && !AnyFileLooksUsable(files))
+        var files = ChatInboundFiles.AttachableFiles(work.Message);
+        if (PromptText(work).Length == 0 && !ChatInboundFiles.AnyFileLooksUsable(files))
         {
             // Nothing a turn could read: say why, and mint no conversation for it.
-            await ReplyAsync(work, files.Count == 0 ? TextOnlyText : SkippedNotice(
-                files.Select(f => AgentApi.AgentRunFileError(FileName(f), f.DeclaredMediaType, f.Size, copilot: false)!).ToList()));
+            await ReplyAsync(work, files.Count == 0 ? TextOnlyText : ChatInboundFiles.SkippedNotice(
+                files.Select(f => ChatInboundFiles.FileError(f)!).ToList()));
             return;
         }
 
-        var route = _grains.GetGrain<IChatRouteGrain>(ChatRouteKey.GrainKey(work.UserId, work.Connection.Id, work.RouteKey));
+        var route = work.Route(_grains);
         var index = _grains.GetGrain<IConversationIndexGrain>(work.UserId);
         var current = (await route.GetAsync()).ConversationId;
         // A conversation the owner deleted in the web UI starts fresh rather than resurrecting a hidden history.
@@ -72,7 +77,7 @@ public sealed partial class ChatTurnPipeline
         var agentGrain = _grains.GetGrain<IAgentGrain>(ownerKey);
         var binding = await agentGrain.GetAgentBindingAsync();
         var prepared = await PrepareTurnFilesAsync(work, files, ownerKey, agentGrain, binding);
-        var prompt = PromptWithFiles(PromptText(work), files, prepared);
+        var prompt = ChatInboundFiles.PromptWithFiles(PromptText(work), files, prepared);
         if (prompt.Length == 0 || (PromptText(work).Length == 0 && !prepared.HasUsable))
         {
             // Every file failed after all (a download, an ingest), and there is no text: the notice was the answer.
@@ -80,14 +85,14 @@ public sealed partial class ChatTurnPipeline
         }
 
         // An agent conversation runs on the agent's own model; /model applies to plain chat only (the web UI's rule).
-        var model = binding is null ? turn.ModelOverride ?? await AutoDefaultAsync(work.UserId) : null;
+        var model = binding is null ? turn.ModelOverride ?? await _modelCommands.AutoDefaultAsync(work.UserId) : null;
         var buffer = new ChatReplyBuffer();
         // Detached and never awaited past the cap: the turn runs to its persist whatever the chat does.
         _ = Task.Run(() => DrainAsync(agentGrain, prompt, model, prepared.Images, buffer));
         using var cap = new CancellationTokenSource();
         _ = Task.Delay(_maxTurnWait, _timeProvider, cap.Token)
             .ContinueWith(t => buffer.Fail(LongTurnText), CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
-        await _streamer.StreamAsync(Destination(work) with { UploadImage = ImageUploader(work, ownerKey) }, buffer, CancellationToken.None);
+        await _streamer.StreamAsync(Destination(work) with { UploadImage = _files.ImageUploader(work, ownerKey) }, buffer, CancellationToken.None);
         await cap.CancelAsync();
     }
 
@@ -96,7 +101,7 @@ public sealed partial class ChatTurnPipeline
     private async Task<ChatTurnFiles> PrepareTurnFilesAsync(
         ChatTurnWork work, List<ChatInboundFile> files, string ownerKey, IAgentGrain agentGrain, AgentBinding? binding)
     {
-        var prepared = await PrepareFilesAsync(work, files, ownerKey, AgentKinds.IsCopilot(binding?.Kind));
+        var prepared = await _files.PrepareAsync(work, files, ownerKey, AgentKinds.IsCopilot(binding?.Kind));
         foreach (var document in prepared.Documents)
         {
             await agentGrain.RegisterDocumentAsync(document);
@@ -104,7 +109,7 @@ public sealed partial class ChatTurnPipeline
 
         if (prepared.Skipped.Count > 0)
         {
-            await ReplyAsync(work, SkippedNotice(prepared.Skipped));
+            await ReplyAsync(work, ChatInboundFiles.SkippedNotice(prepared.Skipped));
         }
 
         return prepared;
@@ -183,7 +188,7 @@ public sealed partial class ChatTurnPipeline
             text = text.Replace("@" + bot, "", StringComparison.OrdinalIgnoreCase).Trim();
         }
 
-        return WithTranscript(text.Trim(), work.Transcript);
+        return ChatVoiceTranscription.WithTranscript(text.Trim(), work.Transcript);
     }
 
     private static string Title(ChatTurnWork work)
@@ -192,7 +197,7 @@ public sealed partial class ChatTurnPipeline
         var firstLine = (work.Transcript ?? PromptText(work)).Split('\n', 2)[0].Trim();
         if (firstLine.Length == 0 && work.Message.Files.FirstOrDefault(f => !f.IsVoiceNote) is { } file)
         {
-            firstLine = FileName(file);
+            firstLine = ChatInboundFiles.FileName(file);
         }
 
         return firstLine.Length == 0

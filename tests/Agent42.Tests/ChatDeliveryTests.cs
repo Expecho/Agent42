@@ -354,7 +354,10 @@ public sealed class ChatDeliveryTests(SharedClusterFixture fixture) : SharedClus
         var pipeline = new ChatTurnPipeline(
             Cluster.GrainFactory, new InboundDeduper(TimeProvider.System), sessions,
             new ChatReplyStreamer(TimeProvider.System, NullLogger<ChatReplyStreamer>.Instance),
-            [new FakeChatPlatformAdapter()], TimeProvider.System, NullLogger<ChatTurnPipeline>.Instance);
+            [new FakeChatPlatformAdapter()], TimeProvider.System, NullLogger<ChatTurnPipeline>.Instance,
+            new ChatModelCommands(Cluster.GrainFactory, NullLogger<ChatModelCommands>.Instance),
+            new ChatInboundFiles(sessions, TimeProvider.System, NullLogger<ChatInboundFiles>.Instance),
+            new ChatVoiceTranscription(sessions, TimeProvider.System, NullLogger<ChatVoiceTranscription>.Instance));
         var session = new FakeChatSession(
             new ChatConnectionRuntime(userId, connection, new ChatCredentials("token"), _ => Task.CompletedTask), pipeline);
         sessions.Set(connection.Id, session);

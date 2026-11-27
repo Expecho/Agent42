@@ -72,3 +72,16 @@ coverage_new_code_pct_min 80; cognitive_complexity_max 15; `dotnet format` clean
 The adapters (04); the single-replica/lease design; any reply-text change.
 
 ## Review
+
+## Divergence from the plan
+
+- The collaborators are `public sealed`, not `internal`: the pipeline's public constructor takes them and the repo has no
+  `InternalsVisibleTo` (tests build the pipeline by hand). Their members stay `internal`.
+- `ChatTurnPipeline.Turn.cs` was kept (the turn driver is not empty); only `.Commands`, `.Files` and `.Voice` were deleted.
+  `/new`, `/stop` and the dispatch table moved into `ChatTurnPipeline.cs` since `/stop` needs the queue.
+- `ChatVoiceTranscription` returns its one reply in `VoiceNote.Reply` and the pipeline sends it, instead of the collaborator
+  sending it. Order and text are unchanged.
+- Pipeline constructor: 13 params before, 11 after.
+- The test harness gained a `bare` option (no optional ports) for the three characterisation tests.
+- Full-suite failures seen were the Live* tests (Azure 401, no credentials) and one flaky `EmailAddressDirectoryGrainTests`
+  case that passes alone.

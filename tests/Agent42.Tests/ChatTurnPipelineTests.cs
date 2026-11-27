@@ -636,6 +636,56 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         }
     }
 
+    // cc-05 characterisation: a host that registers none of the optional ports (no attachments, ingestion, transcriber
+    // source, model catalog or router) answers exactly as it did before the pipeline was split.
+    [Fact]
+    public async Task VoiceNote_WithoutTranscriber_RepliesAsBefore()
+    {
+        var h = await PairedAsync(voice: true, bare: true);
+        h.Session.Files["v"] = new ChatDownloadedFile([1, 2, 3], "voice.ogg", "audio/ogg");
+
+        await h.Session.InjectAsync(Dm("", files: [Voice("v")]));
+
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count > 0);
+        await Task.Delay(NothingHappensGrace);
+        Assert.StartsWith("To use voice notes, add a transcription model", Assert.Single(h.Session.VisibleMessages()), StringComparison.Ordinal);
+        Assert.Empty(h.Session.Downloads);
+        Assert.Empty(await Index(h).GetConversationsAsync());
+    }
+
+    [Fact]
+    public async Task ModelCommand_WithoutRouter_Unchanged()
+    {
+        var h = await PairedAsync(bare: true);
+
+        await h.Session.InjectAsync(Dm("/model auto"));
+        await h.Session.InjectAsync(Dm("/model list"));
+        await h.Session.InjectAsync(Dm("/model gpt-x"));
+
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count == 3);
+        var replies = h.Session.VisibleMessages();
+        Assert.StartsWith("Auto isn't set up", replies[0]);
+        Assert.StartsWith("Couldn't load your models right now", replies[1]);
+        Assert.StartsWith("Couldn't load your models right now", replies[2]);
+        Assert.Null((await Route(h).GetAsync()).ModelOverride);
+    }
+
+    [Fact]
+    public async Task Files_WithoutAttachments_Unchanged()
+    {
+        var h = await PairedAsync(bare: true);
+        h.Session.Files["img"] = new ChatDownloadedFile([1, 2, 3, 4], "pic.png", "image/png");
+
+        await h.Session.InjectAsync(Dm("look", files: [new ChatInboundFile("img", "pic.png", "image/png", 4, false)]));
+
+        await FinalReplyAsync(h, Reply);
+        Assert.Contains(h.Session.VisibleMessages(), m => m.StartsWith("Files can't be read on this server.", StringComparison.Ordinal));
+        Assert.Empty(h.Session.Downloads);
+        var conversationId = (await Route(h).GetAsync()).ConversationId!;
+        Assert.Equal("look\n[Attachment skipped: Files can't be read on this server.]",
+            Assert.Single(await Agent(h, conversationId).GetHistoryAsync(), t => t.Role == "user").Text);
+    }
+
     private static ChatInboundFile Voice(string fileRef) => new(fileRef, "voice.ogg", "audio/ogg", 3, true);
 
     private sealed class RefusingTranscriber : ISpeechTranscriptionService
@@ -653,7 +703,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
     private async Task<Harness> CreateAsync(
         string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null, TimeSpan? maxTurnWait = null,
-        bool voice = false, ISpeechTranscriptionService? transcriber = null, IUserModelRouterProvider? routers = null)
+        bool voice = false, ISpeechTranscriptionService? transcriber = null, IUserModelRouterProvider? routers = null, bool bare = false)
     {
         userId ??= "pipe-user-" + Guid.NewGuid().ToString("N");
         var store = Cluster.GrainFactory.GetGrain<IUserChatConnectionsGrain>(userId);
@@ -664,29 +714,43 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         var adapter = new FakeChatPlatformAdapter();
         var sessions = new ChatSessionRegistry();
-        var pipeline = new ChatTurnPipeline(
-            Cluster.GrainFactory, new InboundDeduper(TimeProvider.System), sessions,
-            new ChatReplyStreamer(TimeProvider.System, NullLogger<ChatReplyStreamer>.Instance, callTimeout),
-            [adapter], TimeProvider.System, NullLogger<ChatTurnPipeline>.Instance,
-            new SingleUserModelCatalogProvider(new StaticModelCatalog(TestSiloConfigurator.DefaultModel,
-            [
-                new ModelInfo(TestSiloConfigurator.DefaultModel, "fake", null, null, null, true, true),
-                new ModelInfo(TestSiloConfigurator.NoVisionModel, "fake", null, null, null, true, false),
-            ])), maxTurnWait,
-            SiloServices.GetRequiredService<IAttachmentStore>(), SiloServices.GetRequiredService<DocumentIngestionService>(),
-            new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(new FakeChatClient(), transcriber: transcriber)),
-            routers);
+        var streamer = new ChatReplyStreamer(TimeProvider.System, NullLogger<ChatReplyStreamer>.Instance, callTimeout);
+        // `bare` is a host that registers none of the optional ports (ADR 0105's per-host ports): DevHost-shaped.
+        var pipeline = bare
+            ? Pipeline(sessions, streamer, adapter, maxTurnWait)
+            : Pipeline(
+                sessions, streamer, adapter, maxTurnWait,
+                new SingleUserModelCatalogProvider(new StaticModelCatalog(TestSiloConfigurator.DefaultModel,
+                [
+                    new ModelInfo(TestSiloConfigurator.DefaultModel, "fake", null, null, null, true, true),
+                    new ModelInfo(TestSiloConfigurator.NoVisionModel, "fake", null, null, null, true, false),
+                ])),
+                SiloServices.GetRequiredService<IAttachmentStore>(), SiloServices.GetRequiredService<DocumentIngestionService>(),
+                new SingleUserChatClientFactoryProvider(new SingleChatClientFactory(new FakeChatClient(), transcriber: transcriber)),
+                routers);
         var runtime = new ChatConnectionRuntime(userId, connection, new ChatCredentials("token"), _ => Task.CompletedTask);
         var session = new FakeChatSession(runtime, pipeline);
         sessions.Set(connection.Id, session);
         return new Harness(pipeline, session, sessions, userId, connection.Id);
     }
 
+    private ChatTurnPipeline Pipeline(
+        ChatSessionRegistry sessions, ChatReplyStreamer streamer, FakeChatPlatformAdapter adapter, TimeSpan? maxTurnWait,
+        IUserModelCatalogProvider? modelCatalogs = null, IAttachmentStore? attachments = null, DocumentIngestionService? ingestion = null,
+        IUserChatClientFactoryProvider? chatClients = null, IUserModelRouterProvider? routers = null)
+        => new(
+            Cluster.GrainFactory, new InboundDeduper(TimeProvider.System), sessions, streamer,
+            [adapter], TimeProvider.System, NullLogger<ChatTurnPipeline>.Instance,
+            new ChatModelCommands(Cluster.GrainFactory, NullLogger<ChatModelCommands>.Instance, modelCatalogs, routers),
+            new ChatInboundFiles(sessions, TimeProvider.System, NullLogger<ChatInboundFiles>.Instance, attachments, ingestion),
+            new ChatVoiceTranscription(sessions, TimeProvider.System, NullLogger<ChatVoiceTranscription>.Instance, chatClients),
+            maxTurnWait);
+
     private async Task<Harness> PairedAsync(
         string? targetAgentId = null, bool groups = false, TimeSpan? callTimeout = null, string? userId = null, TimeSpan? maxTurnWait = null,
-        bool voice = false, ISpeechTranscriptionService? transcriber = null, IUserModelRouterProvider? routers = null)
+        bool voice = false, ISpeechTranscriptionService? transcriber = null, IUserModelRouterProvider? routers = null, bool bare = false)
     {
-        var h = await CreateAsync(targetAgentId, groups, callTimeout, userId, maxTurnWait, voice, transcriber, routers);
+        var h = await CreateAsync(targetAgentId, groups, callTimeout, userId, maxTurnWait, voice, transcriber, routers, bare);
         var code = (await Store(h).GetAsync(h.ConnectionId))!.PairingCode!;
         Assert.Equal(ChatPairingOutcome.Paired, await Store(h).TryPairAsync(h.ConnectionId, Owner, null, code, Now));
         return h;

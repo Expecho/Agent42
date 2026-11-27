@@ -2,6 +2,14 @@ using Agent42.Agents;
 
 namespace Agent42.Backend;
 
+/// <summary>The files of one message, made ready for its turn.</summary>
+internal sealed record ChatTurnFiles(List<AttachmentRef> Images, List<string> Documents, List<string> Skipped)
+{
+    public static ChatTurnFiles None => new([], [], []);
+
+    public bool HasUsable => Images.Count > 0 || Documents.Count > 0;
+}
+
 /// <summary>
 /// Inbound files and outbound images (ADR 0111, phase 1c). Inbound files reuse the agent-run core (old D7): images
 /// become attachments that ride the turn, documents are ingested and registered BEFORE the turn (gotcha "A mid-run
@@ -15,37 +23,65 @@ namespace Agent42.Backend;
 /// <para>Every file is checked from its <b>metadata</b> (name, declared type, size) before anything is downloaded
 /// (old C8), and downloaded only through the connection's adapter, which pins the platform's own host and caps the
 /// read.</para>
+///
+/// <para>A host that registers no attachment store or ingestion (<paramref name="attachments"/> or
+/// <paramref name="ingestion"/> null) skips every file with "Files can't be read on this server." and uploads no image.</para>
+///
+/// <para>Public only because the pipeline's public constructor takes it and this repo has no
+/// <c>InternalsVisibleTo</c>.</para>
 /// </summary>
-public sealed partial class ChatTurnPipeline
+public sealed class ChatInboundFiles(
+    ChatSessionRegistry sessions,
+    TimeProvider timeProvider,
+    ILogger<ChatInboundFiles> logger,
+    IAttachmentStore? attachments = null,
+    DocumentIngestionService? ingestion = null)
 {
     /// <summary>Files one message may carry into a turn; Slack and Discord allow ten.</summary>
     public const int MaxFilesPerMessage = 10;
 
     private static readonly TimeSpan DownloadTimeout = TimeSpan.FromSeconds(60);
 
-    /// <summary>The files of one message, made ready for its turn.</summary>
-    private sealed record ChatTurnFiles(List<AttachmentRef> Images, List<string> Documents, List<string> Skipped)
-    {
-        public static ChatTurnFiles None => new([], [], []);
-
-        public bool HasUsable => Images.Count > 0 || Documents.Count > 0;
-    }
-
     // The files a turn would try: every attachment but a voice note (those are transcribed, not attached).
-    private static List<ChatInboundFile> AttachableFiles(ChatInboundMessage message)
+    internal static List<ChatInboundFile> AttachableFiles(ChatInboundMessage message)
         => message.Files.Where(f => !f.IsVoiceNote).ToList();
 
-    private static string FileName(ChatInboundFile file)
+    internal static string FileName(ChatInboundFile file)
         => string.IsNullOrWhiteSpace(file.FileName) ? "file" : Path.GetFileName(file.FileName);
 
     // Whether any file could ride a turn, judged from metadata alone. Lets a message with no text and only unusable
     // files be answered without minting a conversation.
-    private static bool AnyFileLooksUsable(IEnumerable<ChatInboundFile> files)
-        => files.Any(f => AgentApi.AgentRunFileError(FileName(f), f.DeclaredMediaType, f.Size, copilot: false) is null);
+    internal static bool AnyFileLooksUsable(IEnumerable<ChatInboundFile> files)
+        => files.Any(f => FileError(f) is null);
+
+    // Why one file cannot ride a turn (from its metadata alone), or null.
+    internal static string? FileError(ChatInboundFile file)
+        => AgentApi.AgentRunFileError(FileName(file), file.DeclaredMediaType, file.Size, copilot: false);
+
+    // The prompt the model sees: the owner's words, what was skipped (so the model never claims to have read it), and,
+    // for a files-only message, what was sent.
+    internal static string PromptWithFiles(string text, IReadOnlyList<ChatInboundFile> files, ChatTurnFiles prepared)
+    {
+        var prompt = text;
+        if (prompt.Length == 0 && prepared.HasUsable)
+        {
+            prompt = "The user sent " + string.Join(", ", files.Select(f => $"'{FileName(f)}'")) + ".";
+        }
+
+        foreach (var reason in prepared.Skipped)
+        {
+            prompt += $"\n[Attachment skipped: {reason}]";
+        }
+
+        return prompt.Trim();
+    }
+
+    internal static string SkippedNotice(IReadOnlyList<string> skipped)
+        => skipped.Count == 1 ? skipped[0] : "Some files were skipped:\n" + string.Join('\n', skipped.Select(s => "• " + s));
 
     // Validates, downloads and stores each file under the conversation's owner key. Never throws: a file that fails any
     // step is skipped with a reason the owner can read.
-    private async Task<ChatTurnFiles> PrepareFilesAsync(ChatTurnWork work, List<ChatInboundFile> files, string ownerKey, bool copilot)
+    internal async Task<ChatTurnFiles> PrepareAsync(ChatTurnWork work, List<ChatInboundFile> files, string ownerKey, bool copilot)
     {
         if (files.Count == 0)
         {
@@ -53,7 +89,7 @@ public sealed partial class ChatTurnPipeline
         }
 
         var result = ChatTurnFiles.None;
-        if (_attachments is null || _ingestion is null)
+        if (attachments is null || ingestion is null)
         {
             result.Skipped.Add("Files can't be read on this server.");
             return result;
@@ -70,6 +106,20 @@ public sealed partial class ChatTurnPipeline
         }
 
         return result;
+    }
+
+    // Uploads one generated image from the conversation's store through the session the streamer is using.
+    internal Func<IChatPlatformSession, string, CancellationToken, Task<ChatSendResult>>? ImageUploader(ChatTurnWork work, string ownerKey)
+    {
+        if (attachments is not { } store)
+        {
+            return null;
+        }
+
+        return async (session, attachmentId, cancellationToken) =>
+            await store.OpenReadAsync(ownerKey, attachmentId, cancellationToken) is { } content
+                ? await session.UploadImageAsync(work.Target, content.Bytes, content.FileName, content.MediaType, cancellationToken)
+                : ChatSendResult.Fail(ChatSendErrorKind.NotFound);
     }
 
     private async Task PrepareFileAsync(ChatTurnWork work, ChatInboundFile file, string ownerKey, bool copilot, ChatTurnFiles result)
@@ -91,7 +141,7 @@ public sealed partial class ChatTurnPipeline
         {
             var (images, documents, storeError) = await AgentApi.StoreAgentRunFilesAsync(
                 [new AgentRunFileContent(name, file.DeclaredMediaType ?? downloaded.MediaType, downloaded.Bytes)],
-                _attachments!, _ingestion!, ownerKey);
+                attachments!, ingestion!, ownerKey);
             if (storeError is not null)
             {
                 // The ingest error names the owner's embedding setup; it is ours, but keep the chat text fixed anyway.
@@ -108,7 +158,7 @@ public sealed partial class ChatTurnPipeline
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "A chat file on connection {ConnectionId} could not be stored.", work.Connection.Id);
+            logger.LogWarning(ex, "A chat file on connection {ConnectionId} could not be stored.", work.Connection.Id);
             result.Skipped.Add($"'{name}' couldn't be stored.");
         }
     }
@@ -116,55 +166,20 @@ public sealed partial class ChatTurnPipeline
     // Through the connection's CURRENT session (host-pinned and capped by the adapter), time-boxed, never throwing.
     private async Task<ChatDownloadedFile?> DownloadAsync(ChatTurnWork work, ChatInboundFile file)
     {
-        if (_sessions.Get(work.Connection.Id) is not { } session)
+        if (sessions.Get(work.Connection.Id) is not { } session)
         {
             return null;
         }
 
         try
         {
-            using var timeout = new CancellationTokenSource(DownloadTimeout, _timeProvider);
+            using var timeout = new CancellationTokenSource(DownloadTimeout, timeProvider);
             return await session.DownloadAsync(file, AgentApi.MaxAttachmentBytes, timeout.Token);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "A chat file download on connection {ConnectionId} failed.", work.Connection.Id);
+            logger.LogWarning(ex, "A chat file download on connection {ConnectionId} failed.", work.Connection.Id);
             return null;
         }
-    }
-
-    // The prompt the model sees: the owner's words, what was skipped (so the model never claims to have read it), and,
-    // for a files-only message, what was sent.
-    private static string PromptWithFiles(string text, IReadOnlyList<ChatInboundFile> files, ChatTurnFiles prepared)
-    {
-        var prompt = text;
-        if (prompt.Length == 0 && prepared.HasUsable)
-        {
-            prompt = "The user sent " + string.Join(", ", files.Select(f => $"'{FileName(f)}'")) + ".";
-        }
-
-        foreach (var reason in prepared.Skipped)
-        {
-            prompt += $"\n[Attachment skipped: {reason}]";
-        }
-
-        return prompt.Trim();
-    }
-
-    private static string SkippedNotice(IReadOnlyList<string> skipped)
-        => skipped.Count == 1 ? skipped[0] : "Some files were skipped:\n" + string.Join('\n', skipped.Select(s => "• " + s));
-
-    // Uploads one generated image from the conversation's store through the session the streamer is using.
-    private Func<IChatPlatformSession, string, CancellationToken, Task<ChatSendResult>>? ImageUploader(ChatTurnWork work, string ownerKey)
-    {
-        if (_attachments is not { } attachments)
-        {
-            return null;
-        }
-
-        return async (session, attachmentId, cancellationToken) =>
-            await attachments.OpenReadAsync(ownerKey, attachmentId, cancellationToken) is { } content
-                ? await session.UploadImageAsync(work.Target, content.Bytes, content.FileName, content.MediaType, cancellationToken)
-                : ChatSendResult.Fail(ChatSendErrorKind.NotFound);
     }
 }

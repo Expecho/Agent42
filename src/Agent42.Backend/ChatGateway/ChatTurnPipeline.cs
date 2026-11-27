@@ -47,10 +47,9 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
     private readonly ChatSessionRegistry _sessions;
     private readonly ChatReplyStreamer _streamer;
     private readonly Dictionary<string, IChatPlatformAdapter> _adapters;
-    private readonly IUserModelCatalogProvider? _modelCatalogs;
-    private readonly IAttachmentStore? _attachments;
-    private readonly DocumentIngestionService? _ingestion;
-    private readonly IUserChatClientFactoryProvider? _chatClients;
+    private readonly ChatModelCommands _modelCommands;
+    private readonly ChatInboundFiles _files;
+    private readonly ChatVoiceTranscription _voice;
     private readonly TimeSpan _maxTurnWait;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ChatTurnPipeline> _logger;
@@ -58,9 +57,11 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
     private readonly Dictionary<string, Queue<ChatTurnWork>> _queues = new(StringComparer.Ordinal);
     private readonly Lock _queueGate = new();
 
-    // The Auto router port (ADR 0137): null when the host registers none, and then /model auto is refused.
-    private readonly IUserModelRouterProvider? _routers;
-
+    /// <summary>
+    /// The model/agent commands, inbound files and voice notes are collaborators (cc-05), each owning its own optional
+    /// ports; this keeps dispatch, the dedupe, the per-conversation queue and the turn driver, which are the in-process
+    /// single-replica state (CLAUDE.md rule 12) and so stay here.
+    /// </summary>
     public ChatTurnPipeline(
         IGrainFactory grains,
         InboundDeduper deduper,
@@ -69,18 +70,12 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
         IEnumerable<IChatPlatformAdapter> adapters,
         TimeProvider timeProvider,
         ILogger<ChatTurnPipeline> logger,
-        IUserModelCatalogProvider? modelCatalogs = null,
-        TimeSpan? maxTurnWait = null,
-        IAttachmentStore? attachments = null,
-        DocumentIngestionService? ingestion = null,
-        IUserChatClientFactoryProvider? chatClients = null,
-        IUserModelRouterProvider? routers = null)
+        ChatModelCommands modelCommands,
+        ChatInboundFiles files,
+        ChatVoiceTranscription voice,
+        TimeSpan? maxTurnWait = null)
     {
-        _routers = routers;
-        _chatClients = chatClients;
         _maxTurnWait = maxTurnWait ?? DefaultMaxTurnWait;
-        _attachments = attachments;
-        _ingestion = ingestion;
         _grains = grains;
         _deduper = deduper;
         _sessions = sessions;
@@ -88,7 +83,9 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
         _adapters = adapters.ToDictionary(a => a.Kind, StringComparer.Ordinal);
         _timeProvider = timeProvider;
         _logger = logger;
-        _modelCatalogs = modelCatalogs;
+        _modelCommands = modelCommands;
+        _files = files;
+        _voice = voice;
     }
 
     public async Task AcceptAsync(ChatConnectionRuntime runtime, ChatInboundMessage message, CancellationToken cancellationToken)
@@ -301,6 +298,51 @@ public sealed partial class ChatTurnPipeline : IChatInboundSink
         }
     }
 
+    // Name → handler, never an if-chain (Hermes' dispatch table). Each returns the reply text.
+    private IReadOnlyDictionary<string, Func<ChatTurnWork, string, Task<string>>> CommandHandlers => field ??= new Dictionary<string, Func<ChatTurnWork, string, Task<string>>>(StringComparer.Ordinal)
+    {
+        [ChatCommands.New] = NewAsync,
+        [ChatCommands.Stop] = StopAsync,
+        [ChatCommands.Model] = (work, args) => _modelCommands.ModelAsync(work, args, Capabilities(work.Connection).CommandPrefix),
+        [ChatCommands.Agent] = (work, args) => _modelCommands.AgentAsync(work, args, Capabilities(work.Connection).CommandPrefix),
+        [ChatCommands.SetHome] = (work, _) => _modelCommands.SetHomeAsync(work),
+        [ChatCommands.Status] = (work, _) => _modelCommands.StatusAsync(work),
+        [ChatCommands.Help] = (work, _) => Task.FromResult(ChatCommands.HelpText(Capabilities(work.Connection).CommandPrefix)),
+    };
+
+    private async Task RunCommandAsync(ChatTurnWork work, ChatCommand command)
+    {
+        string reply;
+        try
+        {
+            reply = await CommandHandlers[command.Name](work, command.Arguments);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Chat command {Command} failed.", command.Name);
+            reply = "That command failed. Try again in a moment.";
+        }
+
+        await ReplyAsync(work, reply);
+    }
+
+    private async Task<string> NewAsync(ChatTurnWork work, string arguments)
+    {
+        await work.Route(_grains).StartNewAsync();
+        return "Started a new conversation.";
+    }
+
+    private async Task<string> StopAsync(ChatTurnWork work, string arguments)
+    {
+        var dropped = ClearWaiting(work.QueueKey);
+        if ((await work.Route(_grains).GetAsync()).ConversationId is { } conversationId)
+        {
+            await _grains.GetGrain<IAgentGrain>($"{work.UserId}/{conversationId}").StopAsync();
+        }
+
+        return dropped == 0 ? "Stopped." : $"Stopped, and dropped {dropped} waiting message{(dropped == 1 ? "" : "s")}.";
+    }
+
     private ChatPlatformCapabilities Capabilities(ChatConnection connection) => _adapters[connection.Platform].Capabilities;
 
     private ChatReplyDestination Destination(ChatTurnWork work)
@@ -332,6 +374,10 @@ internal sealed record ChatTurnWork(
     string UserId, ChatConnection Connection, ChatInboundMessage Message, string RouteKey, string? Transcript = null)
 {
     public string QueueKey => Connection.Id + "\n" + RouteKey;
+
+    /// <summary>The conversation's route grain: where /new, /model and the turn driver keep per-chat state.</summary>
+    public IChatRouteGrain Route(IGrainFactory grains)
+        => grains.GetGrain<IChatRouteGrain>(ChatRouteKey.GrainKey(UserId, Connection.Id, RouteKey));
 
     /// <summary>
     /// Replies go to the same chat and thread. In a group the reply quotes the triggering message, so the conversation
